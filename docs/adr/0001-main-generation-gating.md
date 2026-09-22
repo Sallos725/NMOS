@@ -27,3 +27,9 @@ Everything else passes through untouched.
   main generation. This was not observed; it is accepted as a rare, harmless over-injection.
 - A chat whose latest user message is transformed by host regex scripts before prompting would
   fail rule 2 and get no packet (fail-safe direction).
+
+## Amendment (2026-09-22)
+
+Rule 2 compares *cleaned* text (markup stripped, whitespace collapsed) and accepts containment of a
+64-character anchor from the host message. Sim bots and input scripts often wrap or reshape the user
+turn, and exact equality would silently turn memory off for them.

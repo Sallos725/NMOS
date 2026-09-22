@@ -39,12 +39,31 @@ export function isMainGeneration(prompt: PromptMessage[], mode: unknown, hostMes
     }
   }
   if (!promptUser) return false;
-  const expected = norm(selectedContent(hostMessages[hostIndex]));
-  return expected.length > 0 && norm(contentText(promptUser.content)) === expected;
+  // Cleaned-text containment instead of equality: input scripts may wrap or reshape the user turn.
+  const expected = cleanText(selectedContent(hostMessages[hostIndex]));
+  const sent = cleanText(contentText(promptUser.content));
+  return expected.length > 0 && (sent === expected || sent.includes(anchorOf(expected, 64)));
 }
 
 export function hasPacket(prompt: PromptMessage[]): boolean {
   return Array.isArray(prompt) && prompt.some((m) => contentText(m?.content).includes(PACKET_TAG));
+}
+
+/** Visible text only: host regex scripts and status HTML often reshape what is sent to the model. */
+export function cleanText(value: unknown): string {
+  return normalizeText(value)
+    .replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<[^>\n]{1,500}>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** A distinctive slice from the middle of a message: survives prefixes/suffixes added or removed by scripts. */
+export function anchorOf(text: string, size = 48): string {
+  if (text.length <= size) return text;
+  const start = Math.floor((text.length - size) / 2);
+  return text.slice(start, start + size);
 }
 
 /**
@@ -54,18 +73,19 @@ export function hasPacket(prompt: PromptMessage[]): boolean {
  * Stops after a few anchorable misses (the start of the sent window).
  */
 export function inContextIds(prompt: PromptMessage[], hostMessages: HostMessage[], minAnchor = 16, maxMisses = 3): string[] {
-  const texts = prompt.map((m) => normalizeText(contentText(m?.content)));
+  const texts = prompt.map((m) => cleanText(contentText(m?.content)));
   let pointer = texts.length - 1;
   let boundary = hostMessages.length;
   let misses = 0;
   for (let i = hostMessages.length - 1; i >= 0 && pointer >= 0; i -= 1) {
     const m = hostMessages[i] as HostMessage;
     if (!isActive(m)) continue;
-    const text = norm(selectedContent(m));
+    const text = cleanText(selectedContent(m));
     if (text.length < minAnchor) continue;
+    const anchor = anchorOf(text);
     let found = -1;
     for (let k = pointer; k >= 0; k -= 1) {
-      if ((texts[k] as string).includes(text)) {
+      if ((texts[k] as string).includes(anchor)) {
         found = k;
         break;
       }

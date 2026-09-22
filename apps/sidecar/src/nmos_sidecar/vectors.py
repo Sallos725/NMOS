@@ -9,6 +9,7 @@ from uuid import UUID
 import psycopg
 
 from .llm import Embedder
+from .packet import clean_text
 
 CHUNK_CHARS = 700
 MAX_CHUNKS = 8
@@ -45,10 +46,11 @@ def process_embed(conn: psycopg.Connection, job: dict[str, Any], embedder: Embed
         return "obsolete"
     if done:
         return "done"
-    spans = chunks(row["content"])
+    text = clean_text(row["content"])  # spans index into the cleaned text (retrieval slices the same way)
+    spans = chunks(text)
     if not spans:
         return "done"
-    vectors = embedder.embed([row["content"][s:e] for s, e in spans], timeout_s=60)
+    vectors = embedder.embed([text[s:e] for s, e in spans], timeout_s=60)
     with conn.transaction():
         with conn.cursor() as cur:
             cur.executemany(

@@ -124,7 +124,6 @@ ${revisionHash}`;
     if (content == null) return "";
     return JSON.stringify(content);
   }
-  var norm = (value) => normalizeText(value).trim();
   function isActive(message) {
     return message.disabled !== true && !message.isComment;
   }
@@ -147,25 +146,35 @@ ${revisionHash}`;
       }
     }
     if (!promptUser) return false;
-    const expected = norm(selectedContent(hostMessages[hostIndex]));
-    return expected.length > 0 && norm(contentText(promptUser.content)) === expected;
+    const expected = cleanText(selectedContent(hostMessages[hostIndex]));
+    const sent = cleanText(contentText(promptUser.content));
+    return expected.length > 0 && (sent === expected || sent.includes(anchorOf(expected, 64)));
   }
   function hasPacket(prompt) {
     return Array.isArray(prompt) && prompt.some((m) => contentText(m?.content).includes(PACKET_TAG));
   }
+  function cleanText(value) {
+    return normalizeText(value).replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ").replace(/<[^>\n]{1,500}>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+  }
+  function anchorOf(text, size = 48) {
+    if (text.length <= size) return text;
+    const start = Math.floor((text.length - size) / 2);
+    return text.slice(start, start + size);
+  }
   function inContextIds(prompt, hostMessages, minAnchor = 16, maxMisses = 3) {
-    const texts = prompt.map((m) => normalizeText(contentText(m?.content)));
+    const texts = prompt.map((m) => cleanText(contentText(m?.content)));
     let pointer = texts.length - 1;
     let boundary = hostMessages.length;
     let misses = 0;
     for (let i = hostMessages.length - 1; i >= 0 && pointer >= 0; i -= 1) {
       const m = hostMessages[i];
       if (!isActive(m)) continue;
-      const text = norm(selectedContent(m));
+      const text = cleanText(selectedContent(m));
       if (text.length < minAnchor) continue;
+      const anchor = anchorOf(text);
       let found = -1;
       for (let k = pointer; k >= 0; k -= 1) {
-        if (texts[k].includes(text)) {
+        if (texts[k].includes(anchor)) {
           found = k;
           break;
         }

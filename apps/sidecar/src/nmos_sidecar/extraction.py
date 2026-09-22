@@ -14,6 +14,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from .ids import uuid7
+from .packet import clean_text
 from .predicates import registry_prompt, validate
 from .reconcile import Entry, RevKey, window_hashes
 
@@ -166,11 +167,11 @@ def build_prompt(ctx: dict[str, Any]) -> str:
     for row in ctx["context"]:
         if row["metadata"].get("isComment") or row["metadata"].get("disabled") in (True, "true"):
             continue
-        lines.append(f"[turn {row['position']}] {_speaker(row['metadata'])}: {row['content'][:2000]}")
+        lines.append(f"[turn {row['position']}] {_speaker(row['metadata'])}: {clean_text(row['content'])[:2000]}")
     if len(lines) == 1:
         lines.append("(none)")
     t = ctx["target"]
-    lines += ["", f"TARGET [turn {t['position']}] {_speaker(t['metadata'])}:", t["content"][:6000]]
+    lines += ["", f"TARGET [turn {t['position']}] {_speaker(t['metadata'])}:", clean_text(t["content"])[:6000]]
     return "\n".join(lines)
 
 
@@ -184,7 +185,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         return "obsolete"  # the head changed; a newer job covers the new window
     if ctx["done"]:
         return "done"
-    if len(ctx["target"]["content"].strip()) < MIN_CONTENT_CHARS:
+    if len(clean_text(ctx["target"]["content"])) < MIN_CONTENT_CHARS:
         parsed, raw = {"assertions": []}, ""
     else:
         parsed, raw = complete(SYSTEM_PROMPT.format(registry=registry_prompt()), build_prompt(ctx))

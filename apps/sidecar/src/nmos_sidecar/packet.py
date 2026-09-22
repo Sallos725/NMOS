@@ -13,6 +13,25 @@ PACKET_NOTE = ("  <Note>Memory from earlier in this conversation (state, facts, 
 PACKET_CLOSE = "</NarrativeMemory>"
 MAX_EXCERPT_CHARS = 480
 
+_DROP_BLOCKS = re.compile(r"<(style|script)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+_TAG = re.compile(r"<[^>\n]{1,500}>")
+_BLOCK_TAG = re.compile(r"</?(?:br|p|div|li|tr|h[1-6]|details|summary|table|section)\b[^>]*>", re.IGNORECASE)
+_SPACES = re.compile(r"[ \t\u00a0]+")
+_BLANK_LINES = re.compile(r"\n\s*\n+")
+
+
+def clean_text(content: str) -> str:
+    """Readable text for recall/embedding/extraction: bots (especially sim bots) wrap replies in
+    status HTML. Keeps visible text, drops markup and style/script blocks. Raw evidence is untouched."""
+    text = _DROP_BLOCKS.sub(" ", content)
+    text = _BLOCK_TAG.sub("\n", text)
+    text = _TAG.sub("", text)
+    text = text.replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+    text = _SPACES.sub(" ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    return _BLANK_LINES.sub("\n", text).strip()
+
+
 _SENTENCE = re.compile(r"[^.!?。！？…\n]+(?:[.!?。！？…]+[\"'”’」』)]*|\n+|$)")
 
 

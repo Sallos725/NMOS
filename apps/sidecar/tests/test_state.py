@@ -135,3 +135,23 @@ def test_inspector_and_read_apis(state_client):
     del state_client.headers["Authorization"]
     assert state_client.get("/inspector").status_code == 401
     assert state_client.get("/inspector", params={"token": "test-token"}).status_code == 200
+
+
+def test_clean_text_keeps_visible_text_only():
+    from nmos_sidecar.packet import clean_text
+    raw = ('<style>.hp{color:red}</style><div class="status"><span>HP</span>: 30<br>장소: 성당</div>\n\n\n'
+           '<script>x()</script>"안녕," 하나가 말했다. &amp; 끝')
+    assert clean_text(raw) == 'HP: 30\n장소: 성당\n"안녕," 하나가 말했다. & 끝'
+
+
+def test_sim_bot_state_is_scoped_per_character():
+    ruleset = compile_rules({"rules": [
+        {"id": "roster", "kind": "block", "start": r"<status>", "end": r"</status>",
+         "entity_line": r"[\[【■]\s*(?P<entity>[^\]】]+?)\s*[\]】]?"},
+        {"id": "inline", "kind": "regex", "pattern": r"(?P<entity>\S+)의 호감도\s*[:：]\s*(?P<value>\d+)", "key": "호감도"},
+    ]})
+    content = ("오늘의 교실.\n<status>\n[하나]\nHP: 30/100\n기분: 불안\n[카이토]\nHP: 80/100\n기분: 평온\n</status>\n"
+               "하나의 호감도: 42 / 카이토의 호감도: 17")
+    pairs = {k: v for _, k, v in parse(ruleset, content, "char", None)}
+    assert pairs == {"하나.HP": "30/100", "하나.기분": "불안", "카이토.HP": "80/100", "카이토.기분": "평온",
+                     "하나.호감도": "42", "카이토.호감도": "17"}

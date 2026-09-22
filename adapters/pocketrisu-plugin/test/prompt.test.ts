@@ -32,6 +32,11 @@ describe('gating (D13)', () => {
     expect(isMainGeneration(mainPrompt, 'model', [])).toBe(false);
   });
 
+  it('accepts a user turn reshaped by an input script', () => {
+    const wrapped: PromptMessage[] = [{ role: 'user', content: '<user_input>Where did we hide the lantern?</user_input>\n(OOC: stay in character)' }];
+    expect(isMainGeneration(wrapped, 'model', host)).toBe(true);
+  });
+
   it('ignores disabled user messages when finding the latest one', () => {
     const withDisabled: HostMessage[] = [...host, { role: 'user', data: 'hidden', chatId: 'u3', disabled: true }];
     expect(isMainGeneration(mainPrompt, 'model', withDisabled)).toBe(true);
@@ -78,6 +83,18 @@ describe('in-context detection (D3)', () => {
       { role: 'user', content: 'What did we talk about earlier today?' },
     ];
     expect(inContextIds(sent, repeated)).toEqual(['new-dup', 'last']);
+  });
+
+  it('matches messages that host scripts reshaped (status HTML stripped, prefix added)', () => {
+    const shaped: HostMessage[] = [
+      { role: 'char', data: '<div class="st">HP 30</div>The rain did not stop all night long, and she waited.', chatId: 'c1' },
+      { role: 'user', data: 'Then we walked to the harbor together at dawn.', chatId: 'u1' },
+    ];
+    const sent: PromptMessage[] = [
+      { role: 'assistant', content: '[Narrator] The rain did not stop all night long, and she waited.' },
+      { role: 'user', content: 'Then we walked to the harbor together at dawn.' },
+    ];
+    expect(inContextIds(sent, shaped)).toEqual(['c1', 'u1']);
   });
 
   it('returns nothing when the prompt shares no text', () => {

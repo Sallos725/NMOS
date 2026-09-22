@@ -27,6 +27,7 @@ class Rule:
     prefix: str = ""
     role: str | None = None
     character: str | None = None
+    entity_line: re.Pattern[str] | None = None  # block rules: a line like "[하나]" switches the entity
 
 
 @dataclass(frozen=True)
@@ -57,8 +58,11 @@ def compile_rules(spec: Any) -> RuleSet:
                     raise ValueError("regex rule needs a 'value' group and a 'key' group or key field")
                 rules.append(Rule(pattern=pattern, key=item.get("key"), **common))
             elif kind == "block":
+                entity_line = re.compile(item["entity_line"]) if item.get("entity_line") else None
+                if entity_line is not None and "entity" not in entity_line.groupindex:
+                    raise ValueError("entity_line needs an 'entity' group")
                 rules.append(Rule(start=re.compile(item["start"], re.MULTILINE),
-                                  end=re.compile(item["end"], re.MULTILINE), **common))
+                                  end=re.compile(item["end"], re.MULTILINE), entity_line=entity_line, **common))
             else:
                 raise ValueError(f"unknown kind {kind!r}")
         except (KeyError, ValueError, re.error) as exc:
@@ -86,8 +90,16 @@ def _clean(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text).strip()[:MAX_VALUE]
 
 
+def _key(rule: Rule, key: str, entity: str | None) -> str:
+    key = rule.prefix + _clean(key)
+    entity = _clean(entity or "")
+    return f"{entity}.{key}" if entity else key
+
+
 def parse(ruleset: RuleSet, content: str, role: str | None, character: str | None) -> list[tuple[str, str, str]]:
-    """(rule_id, key, value) pairs found in one message. Later matches of a key win."""
+    """(rule_id, key, value) pairs found in one message. Later matches of a key win.
+
+    Keys are "<entity>.<key>" when a rule captures an entity (sim bots: one card, many characters)."""
     out: dict[str, tuple[str, str, str]] = {}
     for rule in ruleset.rules:
         if rule.role and rule.role != role:
@@ -99,17 +111,22 @@ def parse(ruleset: RuleSet, content: str, role: str | None, character: str | Non
                 key = rule.key or m.group("key")
                 value = m.group("value")
                 if key and value is not None:
-                    k = rule.prefix + _clean(key)
+                    k = _key(rule, key, m.groupdict().get("entity"))
                     out[k] = (rule.id, k, _clean(value))
         elif rule.kind == "block" and rule.start and rule.end:
             pos = 0
             while (s := rule.start.search(content, pos)) is not None:
                 e = rule.end.search(content, s.end())
                 block = content[s.end(): e.start() if e else len(content)]
+                entity = s.groupdict().get("entity")
                 for line in block.splitlines():
-                    m = KV_LINE.match(_clean(line))
+                    line = _clean(line)
+                    if rule.entity_line and (em := rule.entity_line.fullmatch(line.strip())):
+                        entity = em.group("entity")
+                        continue
+                    m = KV_LINE.match(line)
                     if m:
-                        k = rule.prefix + m.group("key").strip()
+                        k = _key(rule, m.group("key").strip(), entity)
                         out[k] = (rule.id, k, m.group("value").strip()[:MAX_VALUE])
                 pos = e.end() if e else len(content)
     return list(out.values())

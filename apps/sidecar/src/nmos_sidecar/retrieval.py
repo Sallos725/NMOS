@@ -17,7 +17,7 @@ from .facts import fact_line, fact_versions, relevant_facts
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
-from .packet import Excerpt, StateItem, compile_packet, excerpt
+from .packet import Excerpt, StateItem, clean_text, compile_packet, excerpt
 from .state import current_state
 from .vectors import vector_candidates
 
@@ -145,7 +145,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         Excerpt(
             turn=c["position"],
             speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
-            text=excerpt(c["content"] if c.get("user_score") else c["content"][c["text_start"]:c["text_end"]], focus),
+            text=excerpt(clean_text(c["content"]) if c.get("user_score")
+                         else clean_text(c["content"])[c["text_start"]:c["text_end"]], focus),
             score=float(c["rrf"]),
             revision_id=str(c["id"]),
         )
@@ -156,6 +157,9 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         state_items = [StateItem(key=r["key"], value=r["value"], turn=r["position"])
                        for r in current_state(conn, head, options.rules_version)
                        if r["host_logical_id"] not in in_context]
+        # Sim bots track many characters: state of characters mentioned right now gets the budget first.
+        now_text = f"{query} {previous_ai}"
+        state_items.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in now_text), reverse=True)
     fact_lines: list[str] = []
     if fresh and options.facts_limit > 0:
         facts = relevant_facts(fact_versions(conn, head), query, previous_ai, in_context, options.facts_limit)
