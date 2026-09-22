@@ -1,6 +1,6 @@
 # Starter Contents
 
-> Historical: this describes the repository as originally packaged (Phase 0A only). For the
+> Historical (archived 2026-09-22): this describes the repository as originally packaged (Phase 0A only). For the
 > current layout see `ARCHITECTURE.md §7` and `docs/STATUS.md`.
 
 This starter intentionally contains only **Phase 0A executable scaffolding**.

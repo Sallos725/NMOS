@@ -12,9 +12,11 @@ packet with what the model can no longer see:
 - **Facts** extracted in the background by an LLM of your choice (optional): where people are,
   who knows what, promises, relationships — with history and provenance
 
-It follows PocketRisu faithfully: edits, deletes, rerolls, swipes, "Continue", hidden messages,
-"Cut Messages for AI", branches and imports never leave stale memory behind. If the sidecar is down or
-slow, your chat simply continues without memory.
+It tracks what PocketRisu shows: edits, deletes, rerolls, swipes, "Continue", hidden messages,
+"Cut Messages for AI", branches and imports are followed so that removed or replaced text is not
+recalled. This is verified on the tested PocketRisu build (see [Status and limits](#status-and-limits));
+other PocketRisu versions may behave differently. If the sidecar is down or slow, your chat
+continues without memory.
 
 ## Requirements
 
@@ -76,7 +78,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_VECTOR_MIN_SIM` | `0.42` | Minimum cosine similarity for semantic recall (model-dependent) |
 | `NMOS_EMBED_QUERY_INSTRUCTION` | `auto` | Query instruction for instruction-tuned embedders (`auto` = Qwen3 format for `qwen3-embedding`; `none`; or your text) |
 | `NMOS_TRACE_RETENTION_DAYS` | `30` | How long retrieval traces are kept |
-| `NMOS_AUTH_TOKEN` | off | Only if you expose the sidecar beyond loopback (`NMOS_SIDECAR_BIND`); set the plugin's `auth_token` too |
+| `NMOS_AUTH_TOKEN` | off | Required if you expose the sidecar beyond loopback (`NMOS_SIDECAR_BIND`); set the plugin's `auth_token` too. See [Security](#security) |
 | `NMOS_SIDECAR_BIND` / `NMOS_SIDECAR_PORT` | `127.0.0.1` / `8790` | Where the sidecar listens |
 
 Plugin arguments: `sidecar_url`, `auth_token`, `disabled` (1 = off), `reserved_memory_tokens`
@@ -105,19 +107,35 @@ A system message right before your latest message, marked as reference data (not
 </NarrativeMemory>
 ```
 
-Only main generations get a packet (not summaries, translations or suggestions), retries inject exactly
-once, and nothing that is already in the prompt is repeated.
+On the tested PocketRisu build, only main generations get a packet (not summaries, translations or
+suggestions), retries inject once, and excerpts already in the prompt are not repeated.
 
 ## Privacy
 
-Everything stays on your machine: chat text is stored in the local Postgres volume. Text leaves your
-machine only if you configure an LLM or embedding endpoint that is remote.
-`docker compose down -v` deletes all NMOS data.
+Chat text is stored in the local Postgres volume. Text leaves your machine only if you configure an
+LLM or embedding endpoint that is remote. `docker compose down -v` deletes all NMOS data.
+
+## Security
+
+- **API keys are stored unencrypted.** Keys entered in the NMOS settings panel are saved in plain text
+  in the local Postgres database (`app_config` table); keys given in `.env` stay in that file. NMOS does
+  not encrypt them. Anyone who can read the Postgres volume, connect to the database, or read `.env`
+  can read the keys. The settings API reports only whether a key is set, never its value.
+- **Keep the sidecar and database off the internet.** By default the sidecar listens on `127.0.0.1`
+  only, and the release Compose file publishes no database port. Do not port-forward either one or put
+  them behind a public reverse proxy.
+- **Set a token before binding beyond loopback.** If you set `NMOS_SIDECAR_BIND` to a LAN or Tailscale
+  address, also set `NMOS_AUTH_TOKEN` and the plugin's `auth_token`. Without a token, anyone who
+  can reach the port can read your stored chats and change settings — including pointing the LLM
+  endpoint at their own server, which would then receive your stored API key.
+- The plugin's `auth_token` is kept in PocketRisu's plugin settings and is readable by anyone who can
+  open them (see [ADR 0003](docs/adr/0003-sidecar-token-without-secret-header.md)).
 
 ## Status and limits
 
-Beta. Tested against PocketRisu `a14c911` (v1.12.0) in real UI runs; see `docs/perf/phase0.md` for
-latency (≈90–200 ms added per message at 500–1,000 messages). Known limits: no group chats (PocketRisu
+Beta. Tested against PocketRisu `a14c911` (v1.12.0) in real UI runs. The behavior described in this
+README is verified on that build only; other PocketRisu versions may differ — please report what you
+see. See `docs/perf/phase0.md` for latency (≈90–200 ms added per message at 500–1,000 messages). Known limits: no group chats (PocketRisu
 build has none), character knowledge is annotated (`known_by` / `hidden_from`) rather than hard-isolated, recall thresholds are
 tuned on limited data — please report cases where memory is wrong or missing.
 

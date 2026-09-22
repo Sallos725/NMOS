@@ -11,7 +11,7 @@
 
 - PocketRisu commit/version: `a14c911fd927a2bf63c8665bae202f29643920b4` (v1.12.0), image built from a clean `git archive` of that commit.
 - Deployment mode: isolated Node server container (`nmos-spike-pocketrisu`, host network, `PORT=6101`, empty save dir). The owner's production instance was not touched.
-- Browser/client: headless Chromium 1223 (Playwright over CDP), origin `http://localhost:6101` (secure context). A second check used `http://192.168.219.103:6101` (plain HTTP LAN, not a secure context).
+- Browser/client: headless Chromium 1223 (Playwright over CDP), origin `http://localhost:6101` (secure context). A second check used `http://192.168.x.x:6101` (plain HTTP LAN, not a secure context).
 - Model: `tools/spike_stub_llm.py` configured as PocketRisu "Custom API" (OpenAI-compatible) for main and auxiliary model.
 - Spike: `nmos-host-spike.js` v0.2.0, hash format v1.
 - Date: 2026-09-22.
@@ -113,7 +113,7 @@ Conclusion: the marker gives origin chat id + branch-point message id; the copie
 Availability:
 
 - `http://localhost` (secure context): available inside the V3 plugin sandbox iframe (`hashMethod: crypto.subtle` in every fixture's `environment`).
-- `http://192.168.219.103:6101` (plain HTTP LAN): the page is not a secure context. `crypto.subtle` and `crypto.randomUUID` are both undefined, and **the V3 plugin never loaded** (no `[NMOS-SPIKE] loaded`, no collector traffic). PocketRisu itself shows "Connected over HTTP — Some features such as plugins may not work. Use the Remote Access feature for an HTTPS connection." **Source reading:** the V3 sandbox host calls `crypto.randomUUID()` (`src/ts/plugins/apiV3/factory.ts:437`), which exists only in secure contexts.
+- `http://192.168.x.x:6101` (plain HTTP LAN): the page is not a secure context. `crypto.subtle` and `crypto.randomUUID` are both undefined, and **the V3 plugin never loaded** (no `[NMOS-SPIKE] loaded`, no collector traffic). PocketRisu itself shows "Connected over HTTP — Some features such as plugins may not work. Use the Remote Access feature for an HTTPS connection." **Source reading:** the V3 sandbox host calls `crypto.randomUUID()` (`src/ts/plugins/apiV3/factory.ts:437`), which exists only in secure contexts.
 
 1,000-message hash time (hash payload v1, 413,048 payload bytes; `F/*S14-1000-hash__hashBenchmark*`):
 

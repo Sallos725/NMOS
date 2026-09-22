@@ -1,5 +1,8 @@
 # Codex handoff prompt
 
+> Historical (archived 2026-09-22): the prompts used to start Phase 0A. Phase 0 is complete and
+> Phases 1–3 plus a soft Phase 4 have shipped; see `docs/STATUS.md` and `AGENTS.md` for current work.
+
 The repository is designed so this can be the entire initial request:
 
 > **Build NMOS. Follow `AGENTS.md` and the current phase exactly. Work autonomously until you hit a real evidence/owner-decision boundary.**
