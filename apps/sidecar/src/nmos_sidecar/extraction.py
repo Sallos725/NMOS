@@ -14,7 +14,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from .ids import uuid7
-from .packet import clean_text
+from . import normtext
 from .predicates import registry_prompt, validate
 from .reconcile import Entry, RevKey, window_hashes
 
@@ -136,7 +136,7 @@ def load_context(conn: psycopg.Connection, revision_id: UUID, window_hash: str, 
     with conn.transaction():
         target = conn.execute(
             """
-            SELECT am.commit_id, am.position, sr.content, sr.metadata, so.conversation_id
+            SELECT am.commit_id, am.position, sr.id, sr.metadata, so.conversation_id
             FROM active_membership am
             JOIN conversation c ON c.head_commit_id = am.commit_id
             JOIN source_revision sr ON sr.id = am.source_revision_id
@@ -149,7 +149,7 @@ def load_context(conn: psycopg.Connection, revision_id: UUID, window_hash: str, 
             return None
         context = conn.execute(
             """
-            SELECT am.position, sr.content, sr.metadata FROM active_membership am
+            SELECT am.position, sr.id, sr.metadata FROM active_membership am
             JOIN source_revision sr ON sr.id = am.source_revision_id
             WHERE am.commit_id = %s AND am.position >= %s AND am.position < %s ORDER BY am.position
             """,
@@ -159,6 +159,9 @@ def load_context(conn: psycopg.Connection, revision_id: UUID, window_hash: str, 
             "SELECT 1 FROM extraction WHERE source_revision_id = %s AND window_hash = %s AND compiler_version = %s",
             (revision_id, window_hash, COMPILER_VERSION),
         ).fetchone()
+        # Model input is the normalized projection (#9), the same text lexical recall and embeddings see.
+        for row in [target, *context]:
+            row["content"] = normtext.get(conn, row["id"])["clean_content"]
     return {"target": target, "context": context, "done": bool(done)}
 
 
@@ -171,11 +174,11 @@ def build_prompt(ctx: dict[str, Any]) -> str:
     for row in ctx["context"]:
         if row["metadata"].get("isComment") or row["metadata"].get("disabled") in (True, "true"):
             continue
-        lines.append(f"[turn {row['position']}] {_speaker(row['metadata'])}: {clean_text(row['content'])[:2000]}")
+        lines.append(f"[turn {row['position']}] {_speaker(row['metadata'])}: {row['content'][:2000]}")
     if len(lines) == 1:
         lines.append("(none)")
     t = ctx["target"]
-    lines += ["", f"TARGET [turn {t['position']}] {_speaker(t['metadata'])}:", clean_text(t["content"])[:6000]]
+    lines += ["", f"TARGET [turn {t['position']}] {_speaker(t['metadata'])}:", t["content"][:6000]]
     return "\n".join(lines)
 
 
@@ -189,7 +192,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         return "obsolete"  # the head changed; a newer job covers the new window
     if ctx["done"]:
         return "done"
-    if len(clean_text(ctx["target"]["content"])) < MIN_CONTENT_CHARS:
+    if len(ctx["target"]["content"]) < MIN_CONTENT_CHARS:
         parsed, raw = {"assertions": []}, ""
     else:
         parsed, raw = complete(SYSTEM_PROMPT.format(registry=registry_prompt()), build_prompt(ctx))

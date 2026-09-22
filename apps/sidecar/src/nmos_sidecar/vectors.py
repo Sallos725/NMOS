@@ -8,8 +8,8 @@ from uuid import UUID
 
 import psycopg
 
+from . import normtext
 from .llm import Embedder
-from .packet import clean_text
 
 CHUNK_CHARS = 700
 MAX_CHUNKS = 8
@@ -39,14 +39,14 @@ def vector_literal(values: list[float]) -> str:
 def process_embed(conn: psycopg.Connection, job: dict[str, Any], embedder: Embedder, model: str) -> str:
     revision_id = UUID(job["payload"]["revision_id"])
     with conn.transaction():
-        row = conn.execute("SELECT content FROM source_revision WHERE id = %s", (revision_id,)).fetchone()
+        row = normtext.get(conn, revision_id)
         done = conn.execute("SELECT 1 FROM revision_embedding WHERE source_revision_id = %s AND model = %s LIMIT 1",
                             (revision_id, model)).fetchone()
     if row is None:
         return "obsolete"
     if done:
         return "done"
-    text = clean_text(row["content"])  # spans index into the cleaned text (retrieval slices the same way)
+    text = row["clean_content"]  # spans index into the normalized text (retrieval slices the same way)
     spans = chunks(text)
     if not spans:
         return "done"
@@ -69,12 +69,13 @@ def vector_candidates(conn: psycopg.Connection, head: UUID, query_vec: list[floa
     return conn.execute(
         """
         WITH best AS (
-            SELECT DISTINCT ON (sr.id) sr.id, am.position, so.host_logical_id, sr.content,
+            SELECT DISTINCT ON (sr.id) sr.id, am.position, so.host_logical_id, rt.clean_content AS clean,
                    sr.metadata->>'role' AS role, sr.metadata->>'name' AS name,
                    1 - (re.embedding <=> %(q)s::vector) AS sim, re.text_start, re.text_end
             FROM active_membership am
             JOIN source_revision sr ON sr.id = am.source_revision_id
             JOIN source_object so ON so.id = sr.source_object_id
+            JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
             JOIN revision_embedding re ON re.source_revision_id = sr.id AND re.model = %(model)s AND re.dim = %(dim)s
             WHERE am.commit_id = %(head)s AND sr.lifecycle = 'accepted' AND am.position > %(cut)s
               AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
@@ -84,5 +85,5 @@ def vector_candidates(conn: psycopg.Connection, head: UUID, query_vec: list[floa
         SELECT * FROM best ORDER BY sim DESC LIMIT %(limit)s
         """,
         {"q": vector_literal(query_vec), "model": model, "dim": len(query_vec), "head": head, "cut": cut,
-         "limit": limit},
+         "limit": limit, "norm": normtext.NORMALIZER_VERSION},
     ).fetchall()

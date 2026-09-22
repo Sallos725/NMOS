@@ -16,7 +16,7 @@ from psycopg_pool import ConnectionPool
 
 from urllib.parse import quote
 
-from . import __version__, inspector, ledger, readmodel, runtime
+from . import __version__, inspector, ledger, normtext, readmodel, runtime
 from .config import Settings
 from .db import make_pool
 from .extraction import COMPILER_VERSION, backfill_jobs, enqueue_after_apply, job_counts, stale_extractions_exist
@@ -95,6 +95,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         app.state.pool = pool or make_pool(settings.database_url)
         with app.state.pool.connection() as conn:
             rebuild(runtime.stored(conn))
+            normalized = normtext.backfill(conn)
+            if normalized:
+                log.info("normalized text written for %d revisions (%s)", normalized, normtext.NORMALIZER_VERSION)
             backfilled = sync_rules(conn, rt["rules"])
             cur = rt["settings"]
             if cur.llm_url and cur.llm_model and stale_extractions_exist(conn):
@@ -192,10 +195,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def bodies(body: BodiesRequest, request: Request):
         with request.app.state.pool.connection() as conn:
             conv = ledger.lock_conversation(conn, body.host, body.chat_id, None)
-            stored, rejected = ledger.store_bodies(
-                conn, conv.id, [b.model_dump() for b in body.bodies],
-                on_insert=lambda rid, content, meta: write_state(conn, rt["rules"], conv.id, rid, content, meta),
-            )
+            def derive(rid: UUID, content: str, meta: dict[str, Any]) -> None:
+                normtext.write(conn, rid, content)
+                write_state(conn, rt["rules"], conv.id, rid, content, meta)
+
+            stored, rejected = ledger.store_bodies(conn, conv.id, [b.model_dump() for b in body.bodies],
+                                                   on_insert=derive)
             result = None
             if body.then_reconcile is not None and not rejected:
                 if body.then_reconcile.chat_id != body.chat_id:

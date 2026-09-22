@@ -17,6 +17,7 @@ from .facts import fact_line, fact_versions, relevant_facts
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
+from .normtext import NORMALIZER_VERSION
 from .packet import Excerpt, StateItem, clean_text, compile_packet, excerpt
 from .state import current_state
 from .vectors import vector_candidates
@@ -64,26 +65,30 @@ def _cut(conn: psycopg.Connection, head: UUID) -> int:
 def _lexical(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, cut: int,
              threshold: float) -> list[dict[str, Any]]:
     # `<%` applies pg_trgm.word_similarity_threshold and can use the trigram GIN index (D11).
+    # Searches the normalized projection (#9): text that only exists inside dropped reasoning or
+    # markup blocks never produces a hit.
     conn.execute("SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)", (str(threshold),))
     return conn.execute(
         """
-        SELECT sr.id, am.position, so.host_logical_id, sr.content, sr.metadata->>'role' AS role,
+        SELECT sr.id, am.position, so.host_logical_id, rt.clean_content AS clean, sr.metadata->>'role' AS role,
                sr.metadata->>'name' AS name, s.user_score,
-               s.user_score + %(w)s * CASE WHEN %(ai)s = '' THEN 0 ELSE word_similarity(%(ai)s, sr.content) END AS score
+               s.user_score + %(w)s * CASE WHEN %(ai)s = '' THEN 0 ELSE word_similarity(%(ai)s, rt.clean_content) END AS score
         FROM active_membership am
         JOIN source_revision sr ON sr.id = am.source_revision_id
         JOIN source_object so ON so.id = sr.source_object_id
-        CROSS JOIN LATERAL (SELECT word_similarity(%(q)s, sr.content) AS user_score) s
+        JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+        CROSS JOIN LATERAL (SELECT word_similarity(%(q)s, rt.clean_content) AS user_score) s
         WHERE am.commit_id = %(head)s
           AND sr.lifecycle = 'accepted'
           AND am.position > %(cut)s
           AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
           AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
-          AND %(q)s <%% sr.content
+          AND %(q)s <%% rt.clean_content
         ORDER BY score DESC, am.position DESC
         LIMIT %(limit)s
         """,
-        {"head": head, "q": query, "ai": previous_ai, "w": AI_TIEBREAK_WEIGHT, "cut": cut, "limit": CANDIDATE_LIMIT},
+        {"head": head, "q": query, "ai": previous_ai, "w": AI_TIEBREAK_WEIGHT, "cut": cut, "limit": CANDIDATE_LIMIT,
+         "norm": NORMALIZER_VERSION},
     ).fetchall()
 
 
@@ -114,8 +119,10 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     fresh = (request.active_commit is None or request.active_commit == head) and (
         request.manifest_hash is None or request.manifest_hash == conv.head_manifest_hash
     )
-    query = request.query or ""
-    previous_ai = request.previous_ai or ""
+    # The query side is normalized like the corpus: reasoning blocks in the previous AI turn must not
+    # steer lexical scores, fact relevance or excerpt focus either.
+    query = clean_text(request.query or "")
+    previous_ai = clean_text(request.previous_ai or "")
     timings: dict[str, float] = {}
     vector_note = "off"
     lexical: list[dict[str, Any]] = []
@@ -145,8 +152,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         Excerpt(
             turn=c["position"],
             speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
-            text=excerpt(clean_text(c["content"]) if c.get("user_score")
-                         else clean_text(c["content"])[c["text_start"]:c["text_end"]], focus),
+            text=excerpt(c["clean"] if c.get("user_score") else c["clean"][c["text_start"]:c["text_end"]], focus),
             score=float(c["rrf"]),
             revision_id=str(c["id"]),
         )
