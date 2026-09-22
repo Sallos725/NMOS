@@ -15,6 +15,7 @@ from psycopg.rows import dict_row
 from .config import Settings
 from .extraction import claim, fail, finish, process_extract
 from .llm import ChatModel, Embedder, LLMError
+from .runtime import effective, stored
 
 log = logging.getLogger("nmos.worker")
 
@@ -56,22 +57,35 @@ def prune(conn: psycopg.Connection, trace_days: int) -> None:
     conn.execute("DELETE FROM retrieval_trace WHERE created_at < now() - make_interval(days => %s)", (trace_days,))
 
 
-def maintenance(settings: Settings, stop: threading.Event) -> None:
+def maintenance(settings: Settings, stop: threading.Event, holder: dict[str, Any]) -> None:
+    """Reload settings saved from the plugin UI every 30 s; prune bookkeeping every 10 min."""
+    last_prune = 0.0
+    signature = None
     while not stop.is_set():
         try:
-            with psycopg.connect(settings.database_url, autocommit=True) as conn:
-                prune(conn, settings.trace_retention_days)
+            with psycopg.connect(settings.database_url, row_factory=dict_row, autocommit=True) as conn:
+                current = effective(settings, stored(conn))
+                new_signature = (current.llm_url, current.llm_model, current.llm_api_key, current.llm_json_mode,
+                                 current.embed_url, current.embed_model, current.embed_api_key)
+                if new_signature != signature:
+                    holder["jobs"] = handlers(current)
+                    signature = new_signature
+                    log.info("job kinds now: %s", sorted(holder["jobs"]) or "none (no LLM/embedding configured)")
+                if time.monotonic() - last_prune > 600:
+                    prune(conn, settings.trace_retention_days)
+                    last_prune = time.monotonic()
         except psycopg.Error as exc:
             log.warning("maintenance skipped: %s", exc)
-        stop.wait(600)
+        stop.wait(30)
 
 
-def loop(settings: Settings, stop: threading.Event, jobs: dict) -> None:
+def loop(settings: Settings, stop: threading.Event, holder: dict[str, Any]) -> None:
     while not stop.is_set():
         try:
             with psycopg.connect(settings.database_url, row_factory=dict_row, autocommit=True) as conn:
                 while not stop.is_set():
-                    if not run_once(conn, jobs):
+                    jobs = holder["jobs"]
+                    if not jobs or not run_once(conn, jobs):
                         stop.wait(1.0)
         except psycopg.OperationalError as exc:
             log.warning("database unavailable (%s); retrying", exc)
@@ -81,18 +95,16 @@ def loop(settings: Settings, stop: threading.Event, jobs: dict) -> None:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = Settings()
-    jobs = handlers(settings)
-    if not jobs:
-        log.info("no LLM or embedding endpoint configured (NMOS_LLM_URL / NMOS_EMBED_URL); idling")
+    holder: dict[str, Any] = {"jobs": {}}
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
-    threads = [threading.Thread(target=loop, args=(settings, stop, jobs), daemon=True)
-               for _ in range(max(1, settings.worker_concurrency))] if jobs else []
-    threads.append(threading.Thread(target=maintenance, args=(settings, stop), daemon=True))
+    threads = [threading.Thread(target=maintenance, args=(settings, stop, holder), daemon=True)]
+    threads += [threading.Thread(target=loop, args=(settings, stop, holder), daemon=True)
+                for _ in range(max(1, settings.worker_concurrency))]
     for t in threads:
         t.start()
-    log.info("worker started: kinds=%s concurrency=%d", sorted(jobs), len(threads) - 1)
+    log.info("worker started: concurrency=%d", len(threads) - 1)
     while not stop.is_set():
         time.sleep(0.5)
     for t in threads:

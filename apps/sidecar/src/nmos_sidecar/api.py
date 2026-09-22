@@ -6,6 +6,7 @@ import hmac
 import logging
 import time
 from contextlib import asynccontextmanager
+from typing import Any
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -15,10 +16,10 @@ from psycopg_pool import ConnectionPool
 
 from urllib.parse import quote
 
-from . import __version__, inspector, ledger, readmodel
+from . import __version__, inspector, ledger, readmodel, runtime
 from .config import Settings
 from .db import make_pool
-from .extraction import enqueue_after_apply, job_counts
+from .extraction import backfill_jobs, enqueue_after_apply, job_counts
 from .facts import fact_versions
 from .ids import uuid7
 from .models import (
@@ -33,10 +34,9 @@ from .models import (
     RevisionRef,
 )
 from .reconcile import Entry, plan
-from .parsers import load_rules
 from .llm import Embedder
 from .retrieval import RecallOptions, query_prefix, retrieve
-from .state import current_state, sync_rules, write_state
+from .state import current_state, rebuild_state, sync_rules, write_state
 
 log = logging.getLogger("nmos.sidecar")
 
@@ -73,24 +73,31 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                embedder: Embedder | None = None) -> FastAPI:
     settings = settings or Settings()
 
-    rules = load_rules(settings.parsers_file)
-    recall = RecallOptions(
-        top_k=settings.recall_top_k, threshold=settings.recall_threshold, rules_version=rules.version,
-        facts_limit=settings.facts_limit,
-        embedder=embedder or (Embedder(settings.embed_url, settings.embed_model, settings.embed_api_key)
-                              if settings.embed_url and settings.embed_model else None),
-        embed_model=settings.embed_model, embed_timeout_ms=settings.embed_timeout_ms,
-        vector_min_sim=settings.vector_min_sim,
-        query_prefix=query_prefix(settings.embed_model, settings.embed_query_instruction),
-    )
+    # Runtime-editable part (plugin settings UI): effective settings, parser rules, recall options.
+    rt: dict[str, Any] = {}
+
+    def rebuild(overrides: dict[str, Any]) -> None:
+        cur = runtime.effective(settings, overrides)
+        rules = runtime.ruleset(settings, overrides)
+        emb = embedder or (Embedder(cur.embed_url, cur.embed_model, cur.embed_api_key)
+                           if cur.embed_url and cur.embed_model else None)
+        rt.update(settings=cur, rules=rules, overrides=overrides, recall=RecallOptions(
+            top_k=cur.recall_top_k, threshold=cur.recall_threshold, rules_version=rules.version,
+            facts_limit=cur.facts_limit, embedder=emb, embed_model=cur.embed_model,
+            embed_timeout_ms=cur.embed_timeout_ms, vector_min_sim=cur.vector_min_sim,
+            query_prefix=query_prefix(cur.embed_model, cur.embed_query_instruction),
+        ))
+
+    rebuild({})
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.pool = pool or make_pool(settings.database_url)
         with app.state.pool.connection() as conn:
-            backfilled = sync_rules(conn, rules)
+            rebuild(runtime.stored(conn))
+            backfilled = sync_rules(conn, rt["rules"])
         if backfilled:
-            log.info("state backfilled: %d observations for rules %s", backfilled, rules.version)
+            log.info("state backfilled: %d observations for rules %s", backfilled, rt["rules"].version)
         try:
             yield
         finally:
@@ -149,11 +156,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             f"{conv.id}:{result.manifest_hash}:manifest",
         )
         head = ledger.apply_plan(conn, conv, state, result, observation, settings.extract_window)
-        if settings.llm_url or settings.embed_url:
+        cur = rt["settings"]
+        if cur.llm_url or cur.embed_url:
             enqueue_after_apply(conn, conv.id, state.head, state.lifecycle, manifest,
                                 {**state.lifecycle, **result.lifecycle}, state.revision_ids,
-                                settings.extract_window, settings.extract_backfill,
-                                extract=bool(settings.llm_url), embed_model=settings.embed_model or None)
+                                settings.extract_window, cur.extract_backfill,
+                                extract=bool(cur.llm_url and cur.llm_model),
+                                embed_model=(cur.embed_model or None) if cur.embed_url else None)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=result.manifest_hash, changes_summary=result.summary,
                                  commit_reason=result.commit_reason)
@@ -163,8 +172,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         with request.app.state.pool.connection() as conn:
             conn.execute("SELECT 1")
         return {"ok": True, "service": "nmos-sidecar", "version": __version__,
-                "features": {"state": bool(rules.rules), "extraction": bool(settings.llm_url),
-                             "vectors": recall.embedder is not None}}
+                "features": {"state": bool(rt["rules"].rules),
+                             "extraction": bool(rt["settings"].llm_url and rt["settings"].llm_model),
+                             "vectors": rt["recall"].embedder is not None}}
 
     @app.post("/v1/sync/reconcile", response_model=ReconcileResponse, dependencies=[Depends(auth)])
     def reconcile(body: ReconcileRequest, request: Request):
@@ -178,7 +188,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = ledger.lock_conversation(conn, body.host, body.chat_id, None)
             stored, rejected = ledger.store_bodies(
                 conn, conv.id, [b.model_dump() for b in body.bodies],
-                on_insert=lambda rid, content, meta: write_state(conn, rules, conv.id, rid, content, meta),
+                on_insert=lambda rid, content, meta: write_state(conn, rt["rules"], conv.id, rid, content, meta),
             )
             result = None
             if body.then_reconcile is not None and not rejected:
@@ -193,7 +203,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def retrieve_route(body: RetrieveRequest, request: Request):
         delay()
         with request.app.state.pool.connection() as conn:
-            out = retrieve(conn, body, recall)
+            out = retrieve(conn, body, rt["recall"])
         return RetrieveResponse(
             trace_id=out["trace_id"] or uuid7(),
             freshness=out["freshness"],
@@ -232,7 +242,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            return current_state(conn, conv["head_commit_id"], rules.version) if conv["head_commit_id"] else []
+            return current_state(conn, conv["head_commit_id"], rt["rules"].version) if conv["head_commit_id"] else []
 
     @app.get("/v1/conversations/{conv_id}/traces", dependencies=[Depends(auth)])
     def conversation_traces(conv_id: UUID, request: Request, limit: int = 30):
@@ -248,6 +258,51 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             facts = fact_versions(conn, conv["head_commit_id"]) if conv["head_commit_id"] else []
         return [{k: v for k, v in f.items() if history or k != "history"} for f in facts]
 
+    @app.get("/v1/config", dependencies=[Depends(auth)])
+    def get_config():
+        return runtime.public_view(rt["settings"], rt["overrides"], rt["rules"])
+
+    @app.put("/v1/config", dependencies=[Depends(auth)])
+    def put_config(update: dict[str, Any], request: Request):
+        clean, errors = runtime.validate_update(update)
+        if errors:
+            raise HTTPException(status_code=422, detail=errors)
+        before = rt["settings"]
+        with request.app.state.pool.connection() as conn:
+            runtime.save(conn, clean)
+            rebuild(runtime.stored(conn))
+            cur = rt["settings"]
+            if runtime.PARSERS_KEY in clean:
+                rebuild_state(conn, rt["rules"])
+            queued = backfill_jobs(
+                conn,
+                extract=bool(cur.llm_url and cur.llm_model)
+                and (cur.llm_url, cur.llm_model) != (before.llm_url, before.llm_model),
+                embed_model=cur.embed_model if cur.embed_url and cur.embed_model
+                and (cur.embed_url, cur.embed_model) != (before.embed_url, before.embed_model) else None,
+                backfill=cur.extract_backfill,
+            )
+        return {**runtime.public_view(rt["settings"], rt["overrides"], rt["rules"]), "queued_jobs": queued}
+
+    @app.post("/v1/config/test", dependencies=[Depends(auth)])
+    def test_config(body: dict[str, Any]):
+        cur = rt["settings"]
+        kind = body.get("kind")
+        if kind == "llm":
+            return runtime.test_llm(body.get("url") or cur.llm_url, body.get("model") or cur.llm_model,
+                                    body.get("api_key") or cur.llm_api_key, bool(body.get("json_mode", cur.llm_json_mode)))
+        if kind == "embeddings":
+            return runtime.test_embeddings(body.get("url") or cur.embed_url, body.get("model") or cur.embed_model,
+                                           body.get("api_key") or cur.embed_api_key)
+        raise HTTPException(status_code=422, detail="kind must be 'llm' or 'embeddings'")
+
+    @app.post("/v1/config/models", dependencies=[Depends(auth)])
+    def config_models(body: dict[str, Any]):
+        cur = rt["settings"]
+        kind = body.get("kind", "llm")
+        fallback_key = cur.embed_api_key if kind == "embeddings" else cur.llm_api_key
+        return runtime.list_models(body.get("url") or "", body.get("api_key") or fallback_key)
+
     @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_index(request: Request, token: str | None = None):
         with request.app.state.pool.connection() as conn:
@@ -260,7 +315,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             head = conv["head_commit_id"]
-            return inspector.detail(conv, current_state(conn, head, rules.version), readmodel.membership(conn, head),
+            return inspector.detail(conv, current_state(conn, head, rt["rules"].version), readmodel.membership(conn, head),
                                     readmodel.commits(conn, conv_id), readmodel.traces(conn, conv_id),
                                     fact_versions(conn, head)[:300], _q(token))
 

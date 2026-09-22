@@ -234,3 +234,34 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
 def job_counts(conn: psycopg.Connection) -> dict[str, int]:
     return {r["status"]: r["n"] for r in conn.execute("SELECT status, count(*) AS n FROM job GROUP BY status").fetchall()}
 
+
+
+def backfill_jobs(conn: psycopg.Connection, extract: bool, embed_model: str | None, backfill: int) -> int:
+    """After enabling or changing a model: queue the latest `backfill` eligible head messages of every chat."""
+    total = 0
+    eligible = """
+        FROM conversation c
+        JOIN active_membership am ON am.commit_id = c.head_commit_id
+        JOIN source_revision sr ON sr.id = am.source_revision_id
+        WHERE sr.lifecycle = 'accepted' AND am.window_hash IS NOT NULL
+          AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
+          AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+          AND am.position >= (SELECT count(*) FROM active_membership x WHERE x.commit_id = c.head_commit_id) - %(n)s
+    """
+    if extract:
+        total += conn.execute(
+            "INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority)"
+            " SELECT 'extract', 'extract:' || sr.id || ':' || am.window_hash || ':' || %(ver)s, c.id,"
+            " jsonb_build_object('revision_id', sr.id::text, 'window_hash', am.window_hash), 250" + eligible +
+            " ON CONFLICT (dedupe_key) DO NOTHING",
+            {"n": backfill, "ver": COMPILER_VERSION},
+        ).rowcount
+    if embed_model:
+        total += conn.execute(
+            "INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority)"
+            " SELECT 'embed', 'embed:' || sr.id || ':' || %(model)s, c.id,"
+            " jsonb_build_object('revision_id', sr.id::text), 200" + eligible +
+            " ON CONFLICT (dedupe_key) DO NOTHING",
+            {"n": backfill, "model": embed_model},
+        ).rowcount
+    return total

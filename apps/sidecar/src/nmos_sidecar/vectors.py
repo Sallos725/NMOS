@@ -50,7 +50,9 @@ def process_embed(conn: psycopg.Connection, job: dict[str, Any], embedder: Embed
     spans = chunks(text)
     if not spans:
         return "done"
-    vectors = embedder.embed([text[s:e] for s, e in spans], timeout_s=60)
+    # One chunk per request: Ollama serves embeddings in order, and a large batch here would delay the
+    # request-path query embedding past its timeout (measured: 582 ms behind an 8-chunk batch vs ~25 ms).
+    vectors = [embedder.embed([text[s:e]], timeout_s=60)[0] for s, e in spans]
     with conn.transaction():
         with conn.cursor() as cur:
             cur.executemany(
