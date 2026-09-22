@@ -4,10 +4,9 @@
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Next: Phase 1 — BLOCKED on a phase specification.** `docs/phases/PHASE-1.md` does not exist yet.
-ARCHITECTURE §8 requires each phase to have its own spec with acceptance criteria before work starts.
-Phase 1 (deterministic state parsers D10, read-only inspector v0, traces) also needs real examples
-of the owner's bots' status windows / HTML / regex blocks — an evidence boundary like Phase 0A.
+**Current: Phase 1–3 toward a public beta (owner authorization 2026-09-22).** Specs:
+`docs/phases/PHASE-1.md` (deterministic state, inspector), `PHASE-2.md` (LLM extraction, facts),
+`PHASE-3.md` (hybrid retrieval). Phase 4 (principal modes) and 5+ (threads, MCP) are outside the beta.
 
 ## What exists
 

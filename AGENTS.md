@@ -13,7 +13,7 @@ Continue the **current phase** as far as possible without violating any stop con
 
 The current phase is always the one named in `docs/STATUS.md`. As of 2026-09-22:
 
-> **Phase 0 (0A + 0B) complete. Phase 1 is blocked until `docs/phases/PHASE-1.md` exists and is approved.**
+> **Phase 0 complete. Phases 1–3 authorized by the owner for a public beta (specs in `docs/phases/`).**
 
 Do not start a phase without its phase document and without the evidence it requires.
 
