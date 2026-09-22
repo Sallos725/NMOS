@@ -4,7 +4,7 @@
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.4` (2026-09-23), private repository.** Stabilization release (issues
+**Public beta `v0.1.0-beta.4` (2026-09-23), public repository and image.** Stabilization release (issues
 #6–#19) and UI review on top of `v0.1.0-beta.3` (2026-09-22). Phases 1–3 complete. Phase 4 soft
 subset complete (knowledge scope `public` / `limited` / `unknown`, D19, `docs/phases/PHASE-4.md`).
 Plugin settings panel configures providers, embeddings, tuning and parser rules. Validated with a
@@ -45,10 +45,9 @@ Known limitations: `CHANGELOG.md` → 0.1.0-beta.4.
 
 - O1 — relationship to MIRRA / VEIL.
 - O5 — retention of abandoned worldlines, `host_observation` growth, and superseded projection generations (ADR 0006).
-- Making the repository and GHCR package public — checklist below.
 - Phase 5+ scope.
 
-## Before making the repository public
+## Public release checklist (done 2026-09-23)
 
 | Item | State |
 |---|---|
@@ -56,8 +55,9 @@ Known limitations: `CHANGELOG.md` → 0.1.0-beta.4.
 | README/guide claims scoped to the tested PocketRisu build | done |
 | Private IP in experiment notes generalized (`192.168.x.x`) | done |
 | Outdated agent docs (`CODEX-PROMPT.md`, `STARTER-CONTENTS.md`) archived to `docs/reference/`; `AGENTS.md` current; `PHASE-4.md` added | done |
-| Commit author email in git history | done — `main` and tags `v0.1.0-beta.1`–`3` rewritten to the GitHub noreply address |
+| Commit author email in git history | done — `main` and tags `v0.1.0-beta.1`–`3` rewritten to the GitHub noreply address; later commits use it |
 | Repository description/topics | done |
-| GHCR `nmos-sidecar` package visibility → Public | owner action (package settings); anonymous pull failed with 401/403 when last checked |
-| Anonymous `docker pull` + fresh install from release assets after the item above | pending |
+| Repository visibility → Public | done 2026-09-23 (after `v0.1.0-beta.4`) |
+| GHCR `nmos-sidecar` package visibility → Public | done 2026-09-23 (owner) |
+| Anonymous `docker pull` + fresh install from release assets | done 2026-09-23 — `0.1.0-beta.4` and `beta` pulled without login (same image); release compose file up with migrations 0001–0010; release plugin file installed in PocketRisu `a14c911`, synced a 37-message chat, Inspector showed it as *bot · chat* in Korean |
 | README screenshot (settings panel or Inspector) | pending |
