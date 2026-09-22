@@ -8,7 +8,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from conftest import make_client
+from conftest import active_generation, make_client
 from nmos_sidecar.llm import LLMError
 from nmos_sidecar.vectors import chunks, process_embed
 from nmos_sidecar.worker import run_once
@@ -38,11 +38,14 @@ class FakeEmbedder:
         return out
 
 
-def drain_embeddings(url: str) -> None:
-    emb = FakeEmbedder()
+def drain_embeddings(url: str, emb=None) -> int:
+    emb = emb or FakeEmbedder()
+    n = 0
     with psycopg.connect(url, row_factory=dict_row, autocommit=True) as conn:
-        while run_once(conn, {"embed": lambda c, job: process_embed(c, job, emb, "fake-embed")}):
-            pass
+        gen = active_generation(conn, "embed")
+        while run_once(conn, {"embed": (gen.key, lambda c, job: process_embed(c, job, emb, gen))}):
+            n += 1
+    return n
 
 
 def build_chat() -> SimChat:

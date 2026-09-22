@@ -84,3 +84,12 @@ def client(migrated: str) -> Iterator[TestClient]:
 def db(migrated: str) -> Iterator[psycopg.Connection]:
     with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
         yield conn
+
+
+def active_generation(conn: psycopg.Connection, kind: str):
+    """The generation the sidecar activated for `kind` (tests run jobs with the matching handler)."""
+    from nmos_sidecar.generations import Generation
+
+    row = conn.execute("SELECT * FROM projection_generation WHERE kind = %s ORDER BY activated_at DESC LIMIT 1",
+                       (kind,)).fetchone()
+    return Generation(kind=row["kind"], model=row["model"], endpoint=row["endpoint"], spec=row["spec"], key=row["key"])

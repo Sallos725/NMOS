@@ -9,18 +9,18 @@ permissions:
   packages: write
 
 jobs:
+  # A tag publishes only if the full main-branch suite passes on the tagged commit: sidecar pytest,
+  # plugin typecheck/tests/build and the dist-is-current check.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   release:
+    needs: ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Tag matches package versions
-        run: |
-          tag="${GITHUB_REF_NAME#v}"                       # e.g. 0.1.0-beta.2
-          py=$(grep -m1 '^version' apps/sidecar/pyproject.toml | cut -d'"' -f2)   # e.g. 0.1.0b2
-          js=$(node -p "require('./adapters/pocketrisu-plugin/package.json').version")
-          pep=$(echo "$tag" | sed -E 's/-beta\.([0-9]+)$/b\1/; s/-rc\.([0-9]+)$/rc\1/')
-          echo "tag=$tag plugin=$js sidecar=$py"
-          [ "$js" = "$tag" ] && [ "$py" = "$pep" ] || { echo "version mismatch"; exit 1; }
+      - name: Tag, versions, changelog, status and migrations agree
+        run: python3 tools/check_release.py "$GITHUB_REF_NAME"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
