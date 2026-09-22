@@ -38,9 +38,21 @@ NMOS가 **지금 대화와 관련된 예전 내용**을 골라 답변 생성 직
 여기까지만 해도 기본 기억(글자 일치 검색)이 동작합니다. **http://127.0.0.1:8790/inspector** 에서
 NMOS가 무엇을 저장했고 무엇을 넣었는지 볼 수 있습니다.
 
-## 더 똑똑하게: LLM·임베딩 켜기
+## 설정 창
 
-`docker-compose.yml` 옆에 `.env` 파일을 만들고 적은 뒤 `docker compose up -d`:
+PocketRisu → 설정 → **NMOS 설정 / Settings**를 누르면 NMOS 설정 창이 열립니다.
+
+- **연결**: 사이드카 주소, 경로, 기억 예산, 켜기/끄기, 현재 상태
+- **사실 추출 LLM**, **의미 검색 임베딩**: 제공자 선택(Ollama(이 PC), OpenRouter, OpenAI, Gemini, 직접 입력),
+  모델 목록 불러오기, API 키, **연결 테스트**(실제로 한 번 호출해 봄). 저장하면 바로 적용되고,
+  기존 채팅은 백그라운드에서 처리합니다.
+- **검색 조정**, **상태창 규칙**(저장 전에 검사)
+
+**NMOS 상태 / Status** 메뉴는 연결 상태와 마지막으로 넣은 기억을 한 화면에 보여 줍니다.
+
+## (선택) 환경 변수로 기본값 지정
+
+설정 창 대신 `.env` 파일로 기본값을 정할 수도 있습니다. `docker-compose.yml` 옆에 만들고 `docker compose up -d`:
 
 ```bash
 # 같은 PC의 Ollama 예시
@@ -57,8 +69,12 @@ NMOS_LLM_MODEL=원하는-모델-이름
 
 ## 상태창 읽기
 
-`config/parsers.json`에 규칙을 적고 `.env`에 `NMOS_PARSERS_FILE=/config/parsers.json`을 넣으세요.
+설정 창의 **상태창 규칙**에 적는 것이 가장 쉽습니다("예시 넣기" 버튼). 파일로 관리하려면
+`config/parsers.json`에 적고 `.env`에 `NMOS_PARSERS_FILE=/config/parsers.json`을 넣으세요.
 예시는 [config/parsers.example.json](../config/parsers.example.json).
+
+- 시뮬봇(한 카드에 여러 인물): `block` 규칙에 `entity_line`(예: `\[(?P<entity>[^\]]+)\]`)을 주면
+  `[하나]`, `[카이토]` 줄마다 인물별로 `하나.HP`, `카이토.HP`처럼 따로 기록합니다.
 
 - `block`: 시작·끝 패턴 사이의 `키: 값` 줄을 읽습니다 (`:` `：` `=` `|` `｜` 구분자 지원).
 - `regex`: 이름 붙은 그룹 `key`/`value`로 뽑습니다.

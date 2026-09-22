@@ -3,6 +3,7 @@
 import type { HostPort, Settings } from './core';
 import type { InjectPosition } from './prompt';
 import type { HostChat } from './types';
+import { openSettingsPanel, type PanelDeps } from './ui';
 
 declare const risuai: {
   getArgument(key: string): Promise<string | number | undefined>;
@@ -14,6 +15,9 @@ declare const risuai: {
   addRisuChatListener(mode: 'output', fn: (arg: unknown) => unknown): Promise<void>;
   registerSetting(name: string, callback: () => unknown, icon?: string, iconType?: string, id?: string): Promise<unknown>;
   alert(message: string): Promise<void>;
+  setArgument(key: string, value: string | number): Promise<void>;
+  showContainer(type: 'fullscreen'): Promise<void>;
+  hideContainer(): Promise<void>;
 };
 
 const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8790';
@@ -68,26 +72,13 @@ export const risuHost: HostPort = {
     return risuai.getChatFromIndex(characterIndex, chatIndex);
   },
 
-  async post(url, body, headers, timeoutMs, route) {
+  async request(method, url, body, headers, timeoutMs, route) {
     const res = await risuai.nativeFetch(url, {
-      method: 'POST',
+      method,
       headers,
-      body: JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       requestTimeoutMs: Math.max(1, Math.floor(timeoutMs)),
       ...fetchOptions(route),
-    });
-    let json: unknown = null;
-    try {
-      json = await res.json();
-    } catch {
-      json = null;
-    }
-    return { status: res.status, json };
-  },
-
-  async get(url, headers, timeoutMs, route) {
-    const res = await risuai.nativeFetch(url, {
-      method: 'GET', headers, requestTimeoutMs: Math.max(1, Math.floor(timeoutMs)), ...fetchOptions(route),
     });
     let json: unknown = null;
     try {
@@ -107,9 +98,19 @@ export async function registerHooks(
   beforeRequest: (prompt: unknown, mode: unknown) => Promise<unknown>,
   onOutput: (arg: unknown) => void,
   status: () => Promise<string>,
+  api: PanelDeps['api'],
 ): Promise<void> {
   await risuai.addRisuReplacer('beforeRequest', beforeRequest);
   await risuai.addRisuChatListener('output', onOutput);
+  await risuai.registerSetting('NMOS 설정 / Settings', async () => {
+    await openSettingsPanel({
+      api,
+      getArg: arg,
+      setArg: (key, value) => risuai.setArgument(key, value),
+      show: () => risuai.showContainer('fullscreen'),
+      hide: () => risuai.hideContainer(),
+    });
+  }, '⚙️', 'html', 'nmos-settings');
   await risuai.registerSetting('NMOS 상태 / Status', async () => {
     await risuai.alert(await status());
   }, '🧠', 'html', 'nmos-status');

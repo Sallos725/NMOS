@@ -46,9 +46,22 @@ slow, your chat simply continues without memory.
 That's it: raw recall works with no model configured. Open **http://127.0.0.1:8790/inspector** to see
 what NMOS stored and what it injected.
 
-## Configuration
+## Settings panel
 
-Put a `.env` file next to `docker-compose.yml`. Everything is optional.
+PocketRisu → Settings → **NMOS 설정 / Settings** opens NMOS's own panel:
+
+- connection (sidecar URL, route, memory budget, on/off) and a live status line;
+- **fact-extraction LLM** and **embeddings**: provider presets (Ollama on this PC, OpenRouter, OpenAI,
+  Gemini, any OpenAI-compatible endpoint), model list, API key, and a **connection test** that makes a
+  real call. Saving applies immediately and processes existing chats in the background;
+- recall tuning and status-window parser rules (validated before saving).
+
+**NMOS 상태 / Status** shows a one-screen health summary and what the last request injected.
+
+## Configuration (environment)
+
+Everything above can be set in the panel. The environment only provides defaults (useful for
+headless setups): put a `.env` file next to `docker-compose.yml`.
 
 | Variable | Default | Meaning |
 |---|---|---|

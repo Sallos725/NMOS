@@ -235,7 +235,7 @@ ${revisionHash}`;
       cache.set(key, { packet, expires: host.now() + ttl });
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
     }
-    async function call(settings, path, body, deadline) {
+    async function call(settings, path, body, deadline, method) {
       const remaining = deadline - host.now();
       if (remaining <= 0) throw new DeadlineError(`deadline before ${path}`);
       const url = settings.sidecarUrl.replace(/\/+$/, "") + path;
@@ -246,9 +246,12 @@ ${revisionHash}`;
         timer = setTimeout(() => reject(new DeadlineError(`deadline during ${path}`)), remaining);
       });
       try {
-        const request = body === void 0 ? host.get(url, headers, remaining, settings.route) : host.post(url, body, headers, remaining, settings.route);
-        const res = await Promise.race([request, timeout]);
-        if (res.status < 200 || res.status >= 300) throw new Error(`${path} -> HTTP ${res.status}`);
+        const verb = method ?? (body === void 0 ? "GET" : "POST");
+        const res = await Promise.race([host.request(verb, url, body, headers, remaining, settings.route), timeout]);
+        if (res.status < 200 || res.status >= 300) {
+          const detail = res.json?.detail;
+          throw new Error(`${path} -> HTTP ${res.status}${detail ? `: ${Array.isArray(detail) ? detail.join("; ") : String(detail)}` : ""}`);
+        }
         return res.json;
       } finally {
         clearTimeout(timer);
@@ -390,11 +393,326 @@ ${revisionHash}`;
       }
       return lines.join("\n");
     }
-    return { beforeRequest, onOutput, statusText };
+    async function api(method, path, body, timeoutMs = 9e4) {
+      const settings = await host.settings();
+      return call(settings, path, body, host.now() + timeoutMs, method);
+    }
+    return { beforeRequest, onOutput, statusText, api };
   }
   function firstSaying(messages) {
     for (const m of messages) if (m.role === "char" && m.saying) return m.saying;
     return null;
+  }
+
+  // src/ui.ts
+  var LLM_PRESETS = [
+    { label: "\uC0AC\uC6A9 \uC548 \uD568 / Off", url: "" },
+    { label: "Ollama (\uC774 PC)", url: "http://host.docker.internal:11434/v1" },
+    { label: "OpenRouter", url: "https://openrouter.ai/api/v1", key: true },
+    { label: "OpenAI", url: "https://api.openai.com/v1", model: "gpt-4o-mini", key: true },
+    { label: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.5-flash", key: true },
+    { label: "\uC9C1\uC811 \uC785\uB825 / Custom (OpenAI \uD638\uD658)", url: "custom" }
+  ];
+  var EMBED_PRESETS = [
+    { label: "\uC0AC\uC6A9 \uC548 \uD568 / Off", url: "" },
+    { label: "Ollama (\uC774 PC)", url: "http://host.docker.internal:11434/v1", model: "qwen3-embedding:0.6b" },
+    { label: "OpenAI", url: "https://api.openai.com/v1", model: "text-embedding-3-small", key: true },
+    { label: "\uC9C1\uC811 \uC785\uB825 / Custom (OpenAI \uD638\uD658)", url: "custom" }
+  ];
+  var PARSER_EXAMPLE = {
+    rules: [
+      { id: "roster", kind: "block", role: "char", start: "<status>", end: "</status>", entity_line: "\\[(?P<entity>[^\\]]+)\\]" },
+      { id: "hp", kind: "regex", pattern: "HP\\s*[:\uFF1A]\\s*(?P<value>\\d+\\s*/\\s*\\d+)", key: "HP" }
+    ]
+  };
+  var CSS = `
+.nmos{position:fixed;inset:0;overflow:auto;background:rgba(12,12,16,.94);font:14px/1.55 system-ui,-apple-system,"Noto Sans KR",sans-serif;color:#e8e8ec}
+.nmos *{box-sizing:border-box}
+.nmos .wrap{max-width:760px;margin:0 auto;padding:20px 14px 60px}
+.nmos header{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.nmos h1{font-size:19px;margin:0;flex:1}
+.nmos .card{background:#1d1e24;border:1px solid #30323b;border-radius:10px;padding:16px;margin:12px 0}
+.nmos h2{font-size:15px;margin:0 0 2px}
+.nmos .sub{color:#9a9ca8;font-size:12.5px;margin:0 0 12px}
+.nmos label{display:block;font-size:12.5px;color:#b8bac4;margin:10px 0 4px}
+.nmos input,.nmos select,.nmos textarea{width:100%;background:#15161b;color:#e8e8ec;border:1px solid #3a3c46;border-radius:6px;padding:8px 10px;font:inherit}
+.nmos textarea{min-height:160px;font-family:ui-monospace,monospace;font-size:12.5px}
+.nmos .row{display:flex;gap:10px;flex-wrap:wrap}.nmos .row>*{flex:1;min-width:140px}
+.nmos .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.nmos button{background:#2b2d36;color:#e8e8ec;border:1px solid #444654;border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer}
+.nmos button.primary{background:#4c6ef5;border-color:#4c6ef5;color:#fff}
+.nmos button:disabled{opacity:.5;cursor:default}
+.nmos .msg{margin-top:10px;font-size:13px;white-space:pre-wrap}
+.nmos .ok{color:#69db7c}.nmos .err{color:#ff8787}.nmos .muted{color:#9a9ca8}
+.nmos .status{white-space:pre-wrap;font-size:13px}
+.nmos .check{display:flex;align-items:center;gap:8px;margin-top:10px}.nmos .check input{width:auto}
+`;
+  function el(tag, attrs = {}, ...children) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v === void 0 || v === false) continue;
+      if (k === "class") node.className = String(v);
+      else if (k === "text") node.textContent = String(v);
+      else node.setAttribute(k, v === true ? "" : String(v));
+    }
+    for (const child of children) node.append(child);
+    return node;
+  }
+  function say(target, text, kind = "muted") {
+    target.className = `msg ${kind}`;
+    target.textContent = text;
+  }
+  function field(labelText, input) {
+    return el("div", {}, el("label", { text: labelText }), input);
+  }
+  function presetIndex(presets, url) {
+    if (!url) return 0;
+    const i = presets.findIndex((p) => p.url === url);
+    return i >= 0 ? i : presets.length - 1;
+  }
+  function errorText(error) {
+    const text = error instanceof Error ? error.message : String(error);
+    return text.replace(/^\/v1\/\S+ -> HTTP 422: /, "\uC785\uB825 \uC624\uB958 / invalid: ").replace(/^\/v1\/\S+ -> /, "\uC0AC\uC774\uB4DC\uCE74 \uC624\uB958 / sidecar error: ");
+  }
+  async function openSettingsPanel(deps) {
+    document.getElementById("nmos-panel")?.remove();
+    if (!document.getElementById("nmos-style")) document.head.append(el("style", { id: "nmos-style", text: CSS }));
+    const root = el("div", { class: "nmos", id: "nmos-panel" });
+    const wrap = el("div", { class: "wrap" });
+    root.append(wrap);
+    const close = el("button", { text: "\uB2EB\uAE30 / Close" });
+    close.addEventListener("click", () => {
+      root.remove();
+      void deps.hide();
+    });
+    wrap.append(el("header", {}, el("h1", { text: "NMOS \uAE30\uC5B5 \uC124\uC815" }), close));
+    const statusBox = el("div", { class: "status muted", text: "\uC0AC\uC774\uB4DC\uCE74 \uD655\uC778 \uC911\u2026 / checking sidecar\u2026" });
+    wrap.append(el("div", { class: "card" }, el("h2", { text: "\uC0C1\uD0DC / Status" }), statusBox));
+    const url = el("input", { value: await deps.getArg("sidecar_url") || "http://127.0.0.1:8790" });
+    const route = el("select", {}, ...["auto", "direct", "server"].map((v) => el("option", { value: v, text: v })));
+    route.value = await deps.getArg("route") || "auto";
+    const enabled = el("input", { type: "checkbox" });
+    enabled.checked = Number(await deps.getArg("disabled")) !== 1;
+    const reserved = el("input", { type: "number", min: 100, max: 8e3, value: Number(await deps.getArg("reserved_memory_tokens")) || 600 });
+    const deadline = el("input", { type: "number", min: 200, max: 5e3, value: Number(await deps.getArg("deadline_ms")) || 800 });
+    const connMsg = el("div", { class: "msg" });
+    const connSave = el("button", { class: "primary", text: "\uC800\uC7A5 / Save" });
+    connSave.addEventListener("click", async () => {
+      await deps.setArg("sidecar_url", url.value.trim());
+      await deps.setArg("route", route.value);
+      await deps.setArg("disabled", enabled.checked ? 0 : 1);
+      await deps.setArg("reserved_memory_tokens", Number(reserved.value) || 600);
+      await deps.setArg("deadline_ms", Number(deadline.value) || 800);
+      say(connMsg, "\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. / Saved.", "ok");
+      void refreshServer();
+    });
+    wrap.append(el(
+      "div",
+      { class: "card" },
+      el("h2", { text: "\uC5F0\uACB0 / Connection" }),
+      el("p", { class: "sub", text: "\uC774 \uBE0C\uB77C\uC6B0\uC800\uC758 PocketRisu \uD50C\uB7EC\uADF8\uC778 \uC124\uC815\uC785\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uAC00 \uB2E4\uB978 \uAE30\uAE30\uC5D0 \uC788\uC73C\uBA74 route=server\uAC00 \uC790\uB3D9\uC73C\uB85C \uC4F0\uC785\uB2C8\uB2E4." }),
+      field("\uC0AC\uC774\uB4DC\uCE74 \uC8FC\uC18C / Sidecar URL", url),
+      el("div", { class: "row" }, field("\uACBD\uB85C / Route", route), field("\uAE30\uC5B5 \uC608\uC0B0(\uD1A0\uD070) / Memory budget", reserved), field("\uC81C\uD55C \uC2DC\uAC04(ms) / Deadline", deadline)),
+      el("div", { class: "check" }, enabled, el("span", { text: "\uAE30\uC5B5 \uB123\uAE30 \uCF1C\uAE30 / Memory on" })),
+      el("p", { class: "sub", text: "PocketRisu\uC758 \uCD5C\uB300 \uCEE8\uD14D\uC2A4\uD2B8\uB97C \uAE30\uC5B5 \uC608\uC0B0\uB9CC\uD07C \uC904\uC5EC \uB450\uC138\uC694." }),
+      el("div", { class: "btns" }, connSave),
+      connMsg
+    ));
+    function modelSection(kind, title, sub, presets) {
+      const preset = el("select", {}, ...presets.map((p, i) => el("option", { value: String(i), text: p.label })));
+      const endpoint = el("input", { placeholder: "https://\u2026/v1" });
+      const model = el("input", { placeholder: kind === "llm" ? "\uBAA8\uB378 \uC774\uB984 / model" : "\uC784\uBCA0\uB529 \uBAA8\uB378 / embedding model" });
+      const list = el("select", { style: "display:none" });
+      const key = el("input", { type: "password", placeholder: "API \uD0A4 (\uD544\uC694\uD560 \uB54C\uB9CC) / API key" });
+      const msg = el("div", { class: "msg" });
+      const load = el("button", { text: "\uBAA8\uB378 \uBAA9\uB85D / Load models" });
+      const test = el("button", { text: "\uC5F0\uACB0 \uD14C\uC2A4\uD2B8 / Test" });
+      const save = el("button", { class: "primary", text: "\uC800\uC7A5 / Save" });
+      preset.addEventListener("change", () => {
+        const p = presets[Number(preset.value)];
+        if (p.url !== "custom") endpoint.value = p.url;
+        if (p.model) model.value = p.model;
+        if (!p.url) model.value = "";
+      });
+      list.addEventListener("change", () => {
+        model.value = list.value;
+      });
+      load.addEventListener("click", async () => {
+        say(msg, "\uBD88\uB7EC\uC624\uB294 \uC911\u2026 / loading\u2026");
+        try {
+          const r = await deps.api(
+            "POST",
+            "/v1/config/models",
+            { kind, url: endpoint.value.trim(), api_key: key.value.trim() || void 0 }
+          );
+          if (!r.ok) return say(msg, `\uBAA9\uB85D\uC744 \uAC00\uC838\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${r.error}`, "err");
+          list.replaceChildren(
+            el("option", { value: "", text: `\u2014 ${r.models.length}\uAC1C \uBAA8\uB378 \uC120\uD0DD \u2014` }),
+            ...r.models.map((m) => el("option", { value: m, text: m }))
+          );
+          list.style.display = "";
+          say(msg, `${r.models.length}\uAC1C \uBAA8\uB378\uC744 \uCC3E\uC558\uC2B5\uB2C8\uB2E4.`, "ok");
+        } catch (error) {
+          say(msg, errorText(error), "err");
+        }
+      });
+      test.addEventListener("click", async () => {
+        test.disabled = true;
+        say(msg, "\uC2E4\uC81C \uD638\uCD9C\uB85C \uD655\uC778 \uC911\u2026 / calling the model\u2026");
+        try {
+          const r = await deps.api(
+            "POST",
+            "/v1/config/test",
+            { kind, url: endpoint.value.trim(), model: model.value.trim(), api_key: key.value.trim() || void 0 }
+          );
+          say(msg, r.ok ? `\uC131\uACF5 ${r.ms}ms${r.dimensions ? ` \xB7 ${r.dimensions}\uCC28\uC6D0` : ""} / OK` : `\uC2E4\uD328 / failed: ${r.error}`, r.ok ? "ok" : "err");
+        } catch (error) {
+          say(msg, errorText(error), "err");
+        } finally {
+          test.disabled = false;
+        }
+      });
+      save.addEventListener("click", async () => {
+        const prefix = kind === "llm" ? "llm" : "embed";
+        const body = { [`${prefix}_url`]: endpoint.value.trim(), [`${prefix}_model`]: model.value.trim() };
+        if (key.value.trim()) body[`${prefix}_api_key`] = key.value.trim();
+        try {
+          const r = await deps.api("PUT", "/v1/config", body);
+          key.value = "";
+          fillFields(kind === "llm" ? r.llm : r.embeddings);
+          say(msg, `\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4.${r.queued_jobs ? ` \uAE30\uC874 \uCC44\uD305 ${r.queued_jobs}\uAC74\uC744 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uCC98\uB9AC\uD569\uB2C8\uB2E4.` : ""} / Saved.`, "ok");
+          void refreshStatus();
+        } catch (error) {
+          say(msg, errorText(error), "err");
+        }
+      });
+      const card = el(
+        "div",
+        { class: "card" },
+        el("h2", { text: title }),
+        el("p", { class: "sub", text: sub }),
+        field("\uC81C\uACF5\uC790 / Provider", preset),
+        field("\uC8FC\uC18C / Endpoint (OpenAI \uD638\uD658 /v1)", endpoint),
+        field("\uBAA8\uB378 / Model", model),
+        list,
+        field("API \uD0A4 / API key", key),
+        el("div", { class: "btns" }, load, test, save),
+        msg
+      );
+      function fillFields(cfg) {
+        preset.value = String(presetIndex(presets, cfg.url));
+        endpoint.value = cfg.url;
+        model.value = cfg.model;
+        key.placeholder = cfg.api_key_set ? "\uC800\uC7A5\uB428 \u2014 \uBC14\uAFC0 \uB54C\uB9CC \uC785\uB825 / saved" : "API \uD0A4 (\uD544\uC694\uD560 \uB54C\uB9CC) / API key";
+      }
+      return { card, fill: (c) => fillFields(kind === "llm" ? c.llm : c.embeddings) };
+    }
+    const llm = modelSection(
+      "llm",
+      "\uC0AC\uC2E4 \uCD94\uCD9C LLM / Fact extraction",
+      "\uD655\uC815\uB41C \uBA54\uC2DC\uC9C0\uB9C8\uB2E4 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uD55C \uBC88 \uD638\uCD9C\uD574 \uC778\uBB3C\xB7\uC7A5\uC18C\xB7\uC57D\uC18D\xB7\uAD00\uACC4\uB97C \uAE30\uB85D\uD569\uB2C8\uB2E4. \uC720\uB8CC API\uB294 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4.",
+      LLM_PRESETS
+    );
+    const emb = modelSection(
+      "embeddings",
+      "\uC758\uBBF8 \uAC80\uC0C9 \uC784\uBCA0\uB529 / Semantic recall",
+      "\uB2E4\uB978 \uB9D0\uB85C \uBB3C\uC5B4\uB3C4 \uC608\uC804 \uC7A5\uBA74\uC744 \uCC3E\uC2B5\uB2C8\uB2E4. Ollama\uC758 qwen3-embedding:0.6b\uB97C \uCD94\uCC9C\uD569\uB2C8\uB2E4.",
+      EMBED_PRESETS
+    );
+    wrap.append(llm.card, emb.card);
+    const threshold = el("input", { type: "number", step: 0.05, min: 0.05, max: 1 });
+    const minSim = el("input", { type: "number", step: 0.01, min: 0, max: 1 });
+    const topK = el("input", { type: "number", min: 0, max: 20 });
+    const factsLimit = el("input", { type: "number", min: 0, max: 30 });
+    const backfill = el("input", { type: "number", min: 0, max: 5e3 });
+    const tuneMsg = el("div", { class: "msg" });
+    const tuneSave = el("button", { class: "primary", text: "\uC800\uC7A5 / Save" });
+    tuneSave.addEventListener("click", async () => {
+      try {
+        const r = await deps.api("PUT", "/v1/config", {
+          recall_threshold: Number(threshold.value),
+          vector_min_sim: Number(minSim.value),
+          recall_top_k: Number(topK.value),
+          facts_limit: Number(factsLimit.value),
+          extract_backfill: Number(backfill.value)
+        });
+        fillAll(r);
+        say(tuneMsg, "\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. / Saved.", "ok");
+      } catch (error) {
+        say(tuneMsg, errorText(error), "err");
+      }
+    });
+    wrap.append(el(
+      "div",
+      { class: "card" },
+      el("h2", { text: "\uAC80\uC0C9 \uC870\uC815 / Recall tuning" }),
+      el("p", { class: "sub", text: "\uC5C9\uB6B1\uD55C \uBC1C\uCDCC\uAC00 \uB4E4\uC5B4\uAC00\uBA74 \uAE30\uC900\uAC12\uC744 \uC62C\uB9AC\uACE0, \uAE30\uC5B5\uC774 \uB108\uBB34 \uC548 \uB4E4\uC5B4\uAC00\uBA74 \uB0B4\uB9AC\uC138\uC694." }),
+      el("div", { class: "row" }, field("\uAE00\uC790 \uC77C\uCE58 \uAE30\uC900 / Lexical threshold", threshold), field("\uC758\uBBF8 \uC720\uC0AC\uB3C4 \uAE30\uC900 / Vector min sim", minSim)),
+      el("div", { class: "row" }, field("\uBC1C\uCDCC \uC218 / Excerpts", topK), field("\uC0AC\uC2E4 \uC218 / Facts", factsLimit), field("\uCC98\uC74C \uC5F0\uACB0 \uC2DC \uCC98\uB9AC\uD560 \uBA54\uC2DC\uC9C0 \uC218 / Backfill", backfill)),
+      el("div", { class: "btns" }, tuneSave),
+      tuneMsg
+    ));
+    const rules = el("textarea", { spellcheck: "false" });
+    const rulesMsg = el("div", { class: "msg" });
+    const example = el("button", { text: "\uC608\uC2DC \uB123\uAE30 / Example" });
+    example.addEventListener("click", () => {
+      rules.value = JSON.stringify(PARSER_EXAMPLE, null, 2);
+    });
+    const rulesSave = el("button", { class: "primary", text: "\uC800\uC7A5 / Save" });
+    rulesSave.addEventListener("click", async () => {
+      try {
+        const r = await deps.api("PUT", "/v1/config", { parsers: rules.value.trim() ? rules.value : null });
+        fillAll(r);
+        say(rulesMsg, `\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. \uADDC\uCE59 ${r.parsers.active_rules}\uAC1C \uC801\uC6A9, \uAE30\uC874 \uBA54\uC2DC\uC9C0\uB97C \uB2E4\uC2DC \uC77D\uC5C8\uC2B5\uB2C8\uB2E4.`, "ok");
+      } catch (error) {
+        say(rulesMsg, errorText(error), "err");
+      }
+    });
+    wrap.append(el(
+      "div",
+      { class: "card" },
+      el("h2", { text: "\uC0C1\uD0DC\uCC3D \uADDC\uCE59 / Status-window rules" }),
+      el("p", { class: "sub", text: 'block: \uC2DC\uC791~\uB05D \uC0AC\uC774\uC758 "\uD0A4: \uAC12" \uC904\uC744 \uC77D\uC2B5\uB2C8\uB2E4. entity_line\uC73C\uB85C [\uC778\uBB3C] \uC904\uB9C8\uB2E4 \uC778\uBB3C\uBCC4\uB85C \uB098\uB215\uB2C8\uB2E4 (\uC2DC\uBBAC\uBD07). regex: key/value \uC774\uB984 \uADF8\uB8F9.' }),
+      rules,
+      el("div", { class: "btns" }, example, rulesSave),
+      rulesMsg
+    ));
+    function fillAll(cfg) {
+      llm.fill(cfg);
+      emb.fill(cfg);
+      threshold.value = String(cfg.recall.threshold);
+      minSim.value = String(cfg.recall.vector_min_sim);
+      topK.value = String(cfg.recall.top_k);
+      factsLimit.value = String(cfg.recall.facts_limit);
+      backfill.value = String(cfg.extraction.backfill);
+      if (cfg.parsers.source === "ui") rules.value = JSON.stringify(cfg.parsers.rules, null, 2);
+      else if (cfg.parsers.source === "file") rules.placeholder = `\uD30C\uC77C\uC5D0\uC11C \uADDC\uCE59 ${cfg.parsers.active_rules}\uAC1C\uB97C \uC77D\uB294 \uC911 (\uC5EC\uAE30\uC5D0 \uC800\uC7A5\uD558\uBA74 \uB300\uCCB4\uB429\uB2C8\uB2E4)`;
+      else rules.placeholder = '\uADDC\uCE59 \uC5C6\uC74C \u2014 "\uC608\uC2DC \uB123\uAE30"\uB85C \uC2DC\uC791\uD558\uC138\uC694';
+    }
+    async function refreshStatus() {
+      try {
+        const h = await deps.api("GET", "/v1/health", void 0, 5e3);
+        const on = (b) => b ? "\uCF1C\uC9D0" : "\uAEBC\uC9D0";
+        statusBox.className = "status ok";
+        statusBox.textContent = `\uC5F0\uACB0\uB428 \xB7 NMOS ${h.version}
+\uC0C1\uD0DC\uCC3D ${on(h.features.state)} \xB7 \uC0AC\uC2E4 \uCD94\uCD9C ${on(h.features.extraction)} \xB7 \uC758\uBBF8 \uAC80\uC0C9 ${on(h.features.vectors)}
+\uC778\uC2A4\uD399\uD130: ${url.value.replace(/\/+$/, "")}/inspector`;
+      } catch (error) {
+        statusBox.className = "status err";
+        statusBox.textContent = `\uC0AC\uC774\uB4DC\uCE74\uC5D0 \uC5F0\uACB0\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: ${errorText(error)}
+\uD655\uC778: docker compose up -d \xB7 \uC8FC\uC18C \xB7 NMOS_CORS_ORIGINS`;
+      }
+    }
+    async function refreshServer() {
+      await refreshStatus();
+      try {
+        fillAll(await deps.api("GET", "/v1/config", void 0, 5e3));
+      } catch {
+      }
+    }
+    document.body.append(root);
+    await deps.show();
+    await refreshServer();
   }
 
   // src/host.ts
@@ -439,26 +757,11 @@ ${revisionHash}`;
       const chatIndex = await risuai.getCurrentChatIndex();
       return risuai.getChatFromIndex(characterIndex, chatIndex);
     },
-    async post(url, body, headers, timeoutMs, route) {
+    async request(method, url, body, headers, timeoutMs, route) {
       const res = await risuai.nativeFetch(url, {
-        method: "POST",
+        method,
         headers,
-        body: JSON.stringify(body),
-        requestTimeoutMs: Math.max(1, Math.floor(timeoutMs)),
-        ...fetchOptions(route)
-      });
-      let json = null;
-      try {
-        json = await res.json();
-      } catch {
-        json = null;
-      }
-      return { status: res.status, json };
-    },
-    async get(url, headers, timeoutMs, route) {
-      const res = await risuai.nativeFetch(url, {
-        method: "GET",
-        headers,
+        ...body === void 0 ? {} : { body: JSON.stringify(body) },
         requestTimeoutMs: Math.max(1, Math.floor(timeoutMs)),
         ...fetchOptions(route)
       });
@@ -474,9 +777,18 @@ ${revisionHash}`;
     debug: (...args) => console.debug(...args),
     now: () => performance.now()
   };
-  async function registerHooks(beforeRequest, onOutput, status) {
+  async function registerHooks(beforeRequest, onOutput, status, api) {
     await risuai.addRisuReplacer("beforeRequest", beforeRequest);
     await risuai.addRisuChatListener("output", onOutput);
+    await risuai.registerSetting("NMOS \uC124\uC815 / Settings", async () => {
+      await openSettingsPanel({
+        api,
+        getArg: arg,
+        setArg: (key, value) => risuai.setArgument(key, value),
+        show: () => risuai.showContainer("fullscreen"),
+        hide: () => risuai.hideContainer()
+      });
+    }, "\u2699\uFE0F", "html", "nmos-settings");
     await risuai.registerSetting("NMOS \uC0C1\uD0DC / Status", async () => {
       await risuai.alert(await status());
     }, "\u{1F9E0}", "html", "nmos-status");
@@ -494,7 +806,8 @@ ${revisionHash}`;
         }
       },
       (arg2) => adapter.onOutput(arg2),
-      () => adapter.statusText()
+      () => adapter.statusText(),
+      (method, path, body, timeoutMs) => adapter.api(method, path, body, timeoutMs)
     );
     console.log("[NMOS] adapter loaded", { version: "0.1.0-beta.1" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));

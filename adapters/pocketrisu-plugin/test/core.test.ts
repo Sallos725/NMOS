@@ -24,14 +24,10 @@ function fakeHost(handler: (path: string, body: any) => Promise<HttpResult> | Ht
     settings: async () => ({ sidecarUrl: 'http://sidecar', authToken: 't', enabled: true, reservedMemoryTokens: 600,
       deadlineMs: 200, injectPosition: 'before_last_user', route: 'direct', ...overrides }),
     currentChat: async () => structuredClone(chat),
-    post: async (url, body) => {
+    request: async (_method, url, body) => {
       const path = url.replace('http://sidecar', '');
       calls.push(path);
       return handler(path, body);
-    },
-    get: async (url) => {
-      calls.push(url.replace('http://sidecar', ''));
-      return handler(url.replace('http://sidecar', ''), undefined);
     },
     warn,
     debug: () => {},

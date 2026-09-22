@@ -25,8 +25,8 @@ export interface HttpResult {
 export interface HostPort {
   settings(): Promise<Settings>;
   currentChat(): Promise<HostChat | null>;
-  post(url: string, body: unknown, headers: Record<string, string>, timeoutMs: number, route: Settings['route']): Promise<HttpResult>;
-  get(url: string, headers: Record<string, string>, timeoutMs: number, route: Settings['route']): Promise<HttpResult>;
+  request(method: 'GET' | 'POST' | 'PUT', url: string, body: unknown, headers: Record<string, string>,
+          timeoutMs: number, route: Settings['route']): Promise<HttpResult>;
   warn(...args: unknown[]): void;
   debug(...args: unknown[]): void;
   now(): number;
@@ -68,7 +68,8 @@ export function createAdapter(host: HostPort) {
     while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
   }
 
-  async function call<T>(settings: Settings, path: string, body: unknown, deadline: number): Promise<T> {
+  async function call<T>(settings: Settings, path: string, body: unknown, deadline: number,
+                         method?: 'GET' | 'POST' | 'PUT'): Promise<T> {
     const remaining = deadline - host.now();
     if (remaining <= 0) throw new DeadlineError(`deadline before ${path}`);
     const url = settings.sidecarUrl.replace(/\/+$/, '') + path;
@@ -79,11 +80,12 @@ export function createAdapter(host: HostPort) {
       timer = setTimeout(() => reject(new DeadlineError(`deadline during ${path}`)), remaining);
     });
     try {
-      const request = body === undefined
-        ? host.get(url, headers, remaining, settings.route)
-        : host.post(url, body, headers, remaining, settings.route);
-      const res = await Promise.race([request, timeout]);
-      if (res.status < 200 || res.status >= 300) throw new Error(`${path} -> HTTP ${res.status}`);
+      const verb = method ?? (body === undefined ? 'GET' : 'POST');
+      const res = await Promise.race([host.request(verb, url, body, headers, remaining, settings.route), timeout]);
+      if (res.status < 200 || res.status >= 300) {
+        const detail = (res.json as { detail?: unknown } | null)?.detail;
+        throw new Error(`${path} -> HTTP ${res.status}${detail ? `: ${Array.isArray(detail) ? detail.join('; ') : String(detail)}` : ''}`);
+      }
       return res.json as T;
     } finally {
       clearTimeout(timer);
@@ -220,7 +222,13 @@ export function createAdapter(host: HostPort) {
     return lines.join('\n');
   }
 
-  return { beforeRequest, onOutput, statusText };
+  /** Sidecar API for the settings UI (longer timeout: connection tests call real models). */
+  async function api<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeoutMs = 90_000): Promise<T> {
+    const settings = await host.settings();
+    return call<T>(settings, path, body, host.now() + timeoutMs, method);
+  }
+
+  return { beforeRequest, onOutput, statusText, api };
 }
 
 function firstSaying(messages: HostMessage[]): string | null {
