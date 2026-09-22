@@ -23,6 +23,7 @@ links, verifier, MCP (Phase 5+).
 | Tests | `apps/sidecar/tests` (62), `adapters/pocketrisu-plugin/test` (28) | all passing (CI) |
 | Performance | `docs/perf/phase0.md` | all Phase 0 targets met |
 | Decisions | `docs/adr/0001`–`0005` | gating, branches, token (optional), recall scoring, hybrid tuning |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-4.md` | 0–3 met; 4 soft form met |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 
 ## Evidence status (Phase 0A)
@@ -37,5 +38,18 @@ links, verifier, MCP (Phase 5+).
 
 - O1 — relationship to MIRRA / VEIL.
 - O5 — retention of abandoned worldlines (and `host_observation` growth).
-- Making the repository and GHCR package public.
+- Making the repository and GHCR package public — checklist below.
 - Phase 5+ scope.
+
+## Before making the repository public
+
+| Item | State |
+|---|---|
+| Security notice (plain-text API keys in `app_config`, no internet exposure, token for LAN/Tailscale) | done — README "Security", guide.ko "보안 주의" |
+| README/guide claims scoped to the tested PocketRisu build | done |
+| Private IP in experiment notes generalized (`192.168.x.x`) | done |
+| Outdated agent docs (`CODEX-PROMPT.md`, `STARTER-CONTENTS.md`) archived to `docs/reference/`; `AGENTS.md` current; `PHASE-4.md` added | done |
+| Commit author email in git history | owner decision (keep, or rewrite history to a noreply address before publishing) |
+| GHCR `nmos-sidecar` package visibility → Public | owner action (package settings); anonymous pull currently fails with 401/403 |
+| Anonymous `docker pull` + fresh install from release assets after the two items above | pending |
+| Repository description/topics, README screenshot | pending |

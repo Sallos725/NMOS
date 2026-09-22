@@ -13,7 +13,9 @@ Continue the **current phase** as far as possible without violating any stop con
 
 The current phase is always the one named in `docs/STATUS.md`. As of 2026-09-22:
 
-> **Phase 0 complete. Phases 1–3 authorized by the owner for a public beta (specs in `docs/phases/`).**
+> **Phases 0–3 complete; Phase 4 complete in its soft form (D19, `docs/phases/PHASE-4.md`).
+> Public beta `v0.1.0-beta.3`. Work now is beta stabilization (bug fixes, hardening, docs) within
+> the scope of the shipped phases. Phase 5+ has no phase document and is not authorized.**
 
 Do not start a phase without its phase document and without the evidence it requires.
 
@@ -27,15 +29,17 @@ Read these files in this order before changing code:
 
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
-3. `docs/phases/PHASE-0.md` — current phase specification.
-4. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
-5. Relevant ADRs in `docs/adr/`.
+3. `docs/STATUS.md` — current phase and open owner decisions.
+4. `docs/phases/PHASE-*.md` — the specification of the phase your change touches (0–4).
+5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
+6. Relevant ADRs in `docs/adr/`.
 
 Reference only:
 
 - `docs/reference/ultimate_narrative_memory_architecture.md`
 - `docs/reference/initial_narrative_memory_plan.md`
 - `docs/reference/CLAUDE-original.md`
+- `docs/reference/CODEX-PROMPT.md`, `docs/reference/STARTER-CONTENTS.md` (historical Phase 0A handoff)
 
 Reference documents explain intent. They are **not** permission to implement future-phase features.
 
@@ -48,18 +52,20 @@ If two normative documents appear to conflict:
 
 ---
 
-## 2. Current phase gate
+## 2. Phase gates
 
-Phase 0 contains 0A and 0B, but **0B is locked** until all Phase 0A exit criteria are met.
-
-At repository creation time, assume:
+Current status (see `docs/STATUS.md`):
 
 ```text
-Phase 0A status: NOT VERIFIED
-Phase 0B status: LOCKED
+Phase 0A/0B: COMPLETE     Phases 1–3: COMPLETE     Phase 4: COMPLETE (soft, D19)
+Phase 5+:    NOT AUTHORIZED (needs an owner-approved phase document)
 ```
 
-The following are real-world evidence gates, not boxes an agent may check optimistically:
+A new phase needs its phase document and owner authorization first. Re-running host evidence
+(e.g. for a new PocketRisu version) follows the same evidence rules as Phase 0A.
+
+The Phase 0A gate below is kept as the model for evidence gates. It was real-world evidence, not
+boxes an agent may check optimistically:
 
 - all S1–S14 scenarios were actually executed against the target PocketRisu build;
 - `docs/HOST-FACTS.md` answers Phase 0A questions 1–8 with evidence;
@@ -166,7 +172,7 @@ Do not "helpfully" implement the next phase after finishing the current slice.
 
 ---
 
-## 6. Phase 0A-specific instructions
+## 6. Phase 0A-specific instructions (historical; applies again when re-running host evidence)
 
 The Phase 0A spike is deliberately throwaway.
 
@@ -214,7 +220,7 @@ running PocketRisu instance) has executed S1–S14 and saved the evidence.
 
 ---
 
-## 7. Phase 0B unlock procedure
+## 7. Phase 0B unlock procedure (historical; completed 2026-09-22)
 
 When Phase 0A evidence exists:
 
@@ -301,7 +307,7 @@ Do not ask questions merely to avoid making an implementation choice already cov
 
 ## 11. Commands
 
-### Phase 0B (current code)
+### Current code
 
 ```bash
 cp .env.example .env && docker compose up -d --build           # postgres 16 + sidecar on 127.0.0.1:8790
@@ -336,7 +342,7 @@ The PocketRisu spike itself is loaded through PocketRisu's plugin UI.
 
 ### Future commands
 
-Add commands for later phases only when the phase is unlocked and the files exist. Keep this section accurate.
+Add commands only when the files exist. Keep this section accurate.
 
 ---
 
