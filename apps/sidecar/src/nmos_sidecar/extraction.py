@@ -32,7 +32,7 @@ Allowed predicates (anything else is rejected):
 
 Entity types: character, place, item, group, concept.
 Rules:
-- Name entities exactly as the story does (keep the chat's language). The user's persona is "{{user}}"
+- Name entities exactly as the story does (keep the chat's language). The user's persona is "{{{{user}}}}"
   only if no name is given.
 - `value` is a short phrase in the chat's language. `evidence` is a short quote from the TARGET.
 - `epistemic`: "stated" if explicit, "implied" if strongly implied. Skip speculation, jokes, OOC text,

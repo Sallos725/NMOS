@@ -35,7 +35,7 @@ from .models import (
 from .reconcile import Entry, plan
 from .parsers import load_rules
 from .llm import Embedder
-from .retrieval import RecallOptions, retrieve
+from .retrieval import RecallOptions, query_prefix, retrieve
 from .state import current_state, sync_rules, write_state
 
 log = logging.getLogger("nmos.sidecar")
@@ -81,6 +81,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                               if settings.embed_url and settings.embed_model else None),
         embed_model=settings.embed_model, embed_timeout_ms=settings.embed_timeout_ms,
         vector_min_sim=settings.vector_min_sim,
+        query_prefix=query_prefix(settings.embed_model, settings.embed_query_instruction),
     )
 
     @asynccontextmanager

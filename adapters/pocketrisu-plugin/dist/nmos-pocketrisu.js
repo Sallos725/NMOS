@@ -153,16 +153,25 @@ ${revisionHash}`;
     return Array.isArray(prompt) && prompt.some((m) => contentText(m?.content).includes(PACKET_TAG));
   }
   function inContextIds(prompt, hostMessages, minAnchor = 16, maxMisses = 3) {
-    const haystack = prompt.map((m) => normalizeText(contentText(m?.content))).join("\n\0\n");
+    const texts = prompt.map((m) => normalizeText(contentText(m?.content)));
+    let pointer = texts.length - 1;
     let boundary = hostMessages.length;
     let misses = 0;
-    for (let i = hostMessages.length - 1; i >= 0; i -= 1) {
+    for (let i = hostMessages.length - 1; i >= 0 && pointer >= 0; i -= 1) {
       const m = hostMessages[i];
       if (!isActive(m)) continue;
       const text = norm(selectedContent(m));
       if (text.length < minAnchor) continue;
-      if (haystack.includes(text)) {
+      let found = -1;
+      for (let k = pointer; k >= 0; k -= 1) {
+        if (texts[k].includes(text)) {
+          found = k;
+          break;
+        }
+      }
+      if (found >= 0) {
         boundary = i;
+        pointer = found - 1;
         misses = 0;
       } else if (++misses >= maxMisses) {
         break;

@@ -65,6 +65,21 @@ describe('in-context detection (D3)', () => {
     expect(inContextIds(mainPrompt, host)).toEqual(['u1', 'c1', 'u2']);
   });
 
+  it('does not let older duplicate lines extend the window', () => {
+    const repeated: HostMessage[] = [
+      { role: 'char', data: 'She nods and looks out of the window.', chatId: 'old-dup' },
+      { role: 'user', data: 'A unique early fact about the silver key.', chatId: 'fact' },
+      { role: 'char', data: 'She nods and looks out of the window.', chatId: 'new-dup' },
+      { role: 'user', data: 'What did we talk about earlier today?', chatId: 'last' },
+    ];
+    const sent: PromptMessage[] = [
+      { role: 'system', content: 'narrator' },
+      { role: 'assistant', content: 'She nods and looks out of the window.' },
+      { role: 'user', content: 'What did we talk about earlier today?' },
+    ];
+    expect(inContextIds(sent, repeated)).toEqual(['new-dup', 'last']);
+  });
+
   it('returns nothing when the prompt shares no text', () => {
     expect(inContextIds([{ role: 'user', content: 'unrelated' }], host)).toEqual([]);
   });

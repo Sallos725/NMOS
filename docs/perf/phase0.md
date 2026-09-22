@@ -30,3 +30,11 @@ Optimizations made after the first measurement (both kept):
 
 Not measured: a phone browser, HTTPS through PocketRisu Remote Access, a sidecar on a different
 machine, chats above 1,000 messages.
+
+## Phase 3 hybrid recall (2026-09-22)
+
+Korean 120→150-message chat, max context 1,500 tokens (≈40 messages in the prompt), vectors
+(`qwen3-embedding:0.6b`, Ollama, RTX 2060 SUPER) and facts enabled. Added `beforeRequest` latency was
+107–155 ms over 5 sends: query embedding ≈20 ms, sidecar total ≈30–60 ms. The first query after Ollama
+unloads an idle model exceeds `NMOS_EMBED_TIMEOUT_MS` (300 ms) and falls back to lexical for that one
+request.

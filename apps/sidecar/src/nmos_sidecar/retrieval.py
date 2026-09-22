@@ -23,6 +23,8 @@ from .vectors import vector_candidates
 
 CANDIDATE_LIMIT = 50
 RRF_K = 60
+QWEN3_QUERY_INSTRUCTION = ("Instruct: Given a question or remark from a role-play chat, retrieve the earlier story "
+                           "passage that answers or relates to it\nQuery: ")
 # Candidates must match the user's message; the previous AI turn only breaks ties in ranking
 # (as a filter it pulled in near-duplicate filler during manual testing).
 AI_TIEBREAK_WEIGHT = 0.2
@@ -37,7 +39,16 @@ class RecallOptions:
     embedder: Embedder | None = None
     embed_model: str = ""
     embed_timeout_ms: int = 300
-    vector_min_sim: float = 0.45
+    vector_min_sim: float = 0.42
+    query_prefix: str = ""
+
+
+def query_prefix(model: str, setting: str) -> str:
+    if setting == "auto":
+        return QWEN3_QUERY_INSTRUCTION if "qwen3-embedding" in model.lower() else ""
+    if setting in ("", "none"):
+        return ""
+    return f"Instruct: {setting}\nQuery: "
 
 
 def _cut(conn: psycopg.Connection, head: UUID) -> int:
@@ -116,7 +127,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         if options.embedder is not None:
             t0 = time.perf_counter()
             try:
-                (qvec,) = options.embedder.embed([query], timeout_s=options.embed_timeout_ms / 1000)
+                (qvec,) = options.embedder.embed([options.query_prefix + query],
+                                                 timeout_s=options.embed_timeout_ms / 1000)
                 timings["embed"] = round((time.perf_counter() - t0) * 1000, 2)
                 vector = vector_candidates(conn, head, qvec, options.embed_model, cut, CANDIDATE_LIMIT)
                 timings["vector"] = round((time.perf_counter() - t0) * 1000 - timings["embed"], 2)
