@@ -64,8 +64,6 @@ def _compact_observation(body: ReconcileRequest, result, base_hash: str | None, 
 
 def create_app(settings: Settings | None = None, pool: ConnectionPool | None = None) -> FastAPI:
     settings = settings or Settings()
-    if not settings.auth_token:
-        raise RuntimeError("NMOS_AUTH_TOKEN must be set")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -87,6 +85,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         )
 
     def auth(authorization: str | None = Header(default=None)) -> None:
+        if not settings.auth_token:
+            return  # optional (default): the sidecar binds to loopback unless configured otherwise
         expected = f"Bearer {settings.auth_token}"
         if authorization is None or not hmac.compare_digest(authorization.encode(), expected.encode()):
             raise HTTPException(status_code=401, detail="unauthorized")

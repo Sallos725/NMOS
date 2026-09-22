@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class Settings:
     database_url: str = field(default_factory=lambda: os.environ.get("NMOS_DATABASE_URL", "postgresql://nmos:nmos@127.0.0.1:5436/nmos"))
+    # Optional. Empty = no auth; set it only when the sidecar is reachable beyond loopback.
     auth_token: str = field(default_factory=lambda: os.environ.get("NMOS_AUTH_TOKEN", ""))
     cors_origins: tuple[str, ...] = field(
         default_factory=lambda: tuple(o.strip() for o in os.environ.get("NMOS_CORS_ORIGINS", "").split(",") if o.strip())

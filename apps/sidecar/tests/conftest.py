@@ -67,7 +67,8 @@ def migrated(database_url: str) -> str:
 
 
 def make_client(url: str, **overrides) -> TestClient:
-    settings = Settings(database_url=url, auth_token=TOKEN, cors_origins=("http://localhost:6101",), **overrides)
+    overrides.setdefault("auth_token", TOKEN)
+    settings = Settings(database_url=url, cors_origins=("http://localhost:6101",), **overrides)
     client = TestClient(create_app(settings))
     client.headers["Authorization"] = f"Bearer {TOKEN}"
     return client

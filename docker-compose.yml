@@ -24,7 +24,7 @@ services:
       dockerfile: docker/sidecar.Dockerfile
     environment:
       NMOS_DATABASE_URL: postgresql://nmos:${NMOS_DB_PASSWORD:-nmos}@postgres:5432/nmos
-      NMOS_AUTH_TOKEN: ${NMOS_AUTH_TOKEN:?set NMOS_AUTH_TOKEN in .env}
+      NMOS_AUTH_TOKEN: ${NMOS_AUTH_TOKEN:-}
       NMOS_CORS_ORIGINS: ${NMOS_CORS_ORIGINS:-http://localhost:6001}
       NMOS_DEBUG_DELAY_MS: ${NMOS_DEBUG_DELAY_MS:-0}
     ports:

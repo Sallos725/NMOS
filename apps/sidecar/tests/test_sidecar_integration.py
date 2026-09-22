@@ -123,6 +123,12 @@ def test_auth_required(migrated):
         assert pre.status_code == 200 and pre.headers["access-control-allow-origin"] == "http://localhost:6101"
 
 
+def test_auth_is_optional(migrated):
+    with make_client(migrated, auth_token="") as c:
+        del c.headers["Authorization"]
+        assert c.get("/v1/health").status_code == 200
+
+
 def test_bad_body_hash_is_rejected(client):
     chat = SimChat()
     chat.user("real text")

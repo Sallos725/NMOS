@@ -60,7 +60,8 @@ export function createAdapter(host: HostPort) {
     const remaining = deadline - host.now();
     if (remaining <= 0) throw new DeadlineError(`deadline before ${path}`);
     const url = settings.sidecarUrl.replace(/\/+$/, '') + path;
-    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.authToken}` };
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (settings.authToken) headers.Authorization = `Bearer ${settings.authToken}`;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new DeadlineError(`deadline during ${path}`)), remaining);

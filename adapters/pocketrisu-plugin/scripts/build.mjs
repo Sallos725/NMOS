@@ -9,7 +9,7 @@ const header = [
   '//@api 3.0',
   `//@version ${pkg.version}`,
   '//@arg sidecar_url string NMOS sidecar base URL, e.g. http://127.0.0.1:8790',
-  '//@arg auth_token string Sidecar bearer token (NMOS_AUTH_TOKEN)',
+  '//@arg auth_token string Optional; only if the sidecar sets NMOS_AUTH_TOKEN',
   '//@arg disabled int 1 = pass every request through untouched',
   '//@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 600)',
   '//@arg deadline_ms int Hard request-path deadline in ms (0 = 800)',

@@ -12,19 +12,20 @@ Requirements: Docker, and PocketRisu opened from **`http://localhost…` or HTTP
 Access). Over plain-HTTP LAN addresses PocketRisu does not load V3 plugins at all (ARCHITECTURE H8).
 
 ```bash
-cp .env.example .env   # set NMOS_AUTH_TOKEN to a long random string, NMOS_CORS_ORIGINS to your PocketRisu origin
+cp .env.example .env   # set NMOS_CORS_ORIGINS to the address you open PocketRisu at
 docker compose up -d --build
 ```
 
 ```bash
-curl -H "Authorization: Bearer $NMOS_AUTH_TOKEN" http://127.0.0.1:8790/v1/health
+curl http://127.0.0.1:8790/v1/health
 ```
 
 In PocketRisu:
 
 1. Settings → Plugin → Import plugin → `adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js`, allow
    the "replace content" permission.
-2. Set the plugin arguments `sidecar_url` (e.g. `http://127.0.0.1:8790`) and `auth_token`.
+2. Set the plugin argument `sidecar_url` (e.g. `http://127.0.0.1:8790`). `auth_token` is only needed
+   if you set `NMOS_AUTH_TOKEN` (when exposing the sidecar beyond loopback).
 3. Lower the host's max context by `reserved_memory_tokens` (default 600). The packet never exceeds it.
 4. **Reload the page.** Required after every install, update or disable of any V3 plugin
    (ARCHITECTURE H13). Without it, generation hangs.

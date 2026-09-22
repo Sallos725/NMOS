@@ -3,7 +3,7 @@
 //@api 3.0
 //@version 0.1.0
 //@arg sidecar_url string NMOS sidecar base URL, e.g. http://127.0.0.1:8790
-//@arg auth_token string Sidecar bearer token (NMOS_AUTH_TOKEN)
+//@arg auth_token string Optional; only if the sidecar sets NMOS_AUTH_TOKEN
 //@arg disabled int 1 = pass every request through untouched
 //@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 600)
 //@arg deadline_ms int Hard request-path deadline in ms (0 = 800)
@@ -217,7 +217,8 @@ ${revisionHash}`;
       const remaining = deadline - host.now();
       if (remaining <= 0) throw new DeadlineError(`deadline before ${path}`);
       const url = settings.sidecarUrl.replace(/\/+$/, "") + path;
-      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${settings.authToken}` };
+      const headers = { "Content-Type": "application/json" };
+      if (settings.authToken) headers.Authorization = `Bearer ${settings.authToken}`;
       let timer;
       const timeout = new Promise((_, reject) => {
         timer = setTimeout(() => reject(new DeadlineError(`deadline during ${path}`)), remaining);
