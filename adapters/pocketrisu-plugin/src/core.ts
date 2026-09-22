@@ -13,6 +13,8 @@ export interface Settings {
   reservedMemoryTokens: number;
   deadlineMs: number;
   injectPosition: InjectPosition;
+  /** 'direct' = browser fetch (proxy fallback); 'server' = always via the PocketRisu server. */
+  route: 'direct' | 'server';
 }
 
 export interface HttpResult {
@@ -23,8 +25,8 @@ export interface HttpResult {
 export interface HostPort {
   settings(): Promise<Settings>;
   currentChat(): Promise<HostChat | null>;
-  post(url: string, body: unknown, headers: Record<string, string>, timeoutMs: number): Promise<HttpResult>;
-  get(url: string, headers: Record<string, string>, timeoutMs: number): Promise<HttpResult>;
+  post(url: string, body: unknown, headers: Record<string, string>, timeoutMs: number, route: Settings['route']): Promise<HttpResult>;
+  get(url: string, headers: Record<string, string>, timeoutMs: number, route: Settings['route']): Promise<HttpResult>;
   warn(...args: unknown[]): void;
   debug(...args: unknown[]): void;
   now(): number;
@@ -77,7 +79,9 @@ export function createAdapter(host: HostPort) {
       timer = setTimeout(() => reject(new DeadlineError(`deadline during ${path}`)), remaining);
     });
     try {
-      const request = body === undefined ? host.get(url, headers, remaining) : host.post(url, body, headers, remaining);
+      const request = body === undefined
+        ? host.get(url, headers, remaining, settings.route)
+        : host.post(url, body, headers, remaining, settings.route);
       const res = await Promise.race([request, timeout]);
       if (res.status < 200 || res.status >= 300) throw new Error(`${path} -> HTTP ${res.status}`);
       return res.json as T;

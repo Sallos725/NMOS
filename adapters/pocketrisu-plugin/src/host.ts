@@ -24,6 +24,23 @@ async function arg(key: string): Promise<string> {
   return String((await risuai.getArgument(key)) ?? '').trim();
 }
 
+// A sidecar on this machine is reached directly from the browser. Anything else (LAN IP, Docker
+// service name) goes through the PocketRisu server: an HTTPS page cannot fetch http:// directly, and
+// a Docker name only resolves on the server. PocketRisu routes local-network hosts via /proxy2.
+export function routeFor(url: string, setting: string): 'direct' | 'server' {
+  if (setting === 'direct' || setting === 'server') return setting;
+  try {
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, '');
+    return ['localhost', '127.0.0.1', '::1'].includes(host) ? 'direct' : 'server';
+  } catch {
+    return 'direct';
+  }
+}
+
+function fetchOptions(route: 'direct' | 'server'): Record<string, unknown> {
+  return route === 'server' ? { networkRoute: 'local_network' } : {};
+}
+
 // PocketRisu initialises int args to 0, so 0 means "use the default".
 function positiveInt(value: string, fallback: number): number {
   const n = Number(value);
@@ -33,8 +50,10 @@ function positiveInt(value: string, fallback: number): number {
 export const risuHost: HostPort = {
   async settings(): Promise<Settings> {
     const position = await arg('inject_position');
+    const sidecarUrl = (await arg('sidecar_url')) || DEFAULT_SIDECAR_URL;
     return {
-      sidecarUrl: (await arg('sidecar_url')) || DEFAULT_SIDECAR_URL,
+      sidecarUrl,
+      route: routeFor(sidecarUrl, await arg('route')),
       authToken: await arg('auth_token'),
       enabled: Number(await arg('disabled')) !== 1,
       reservedMemoryTokens: positiveInt(await arg('reserved_memory_tokens'), DEFAULT_RESERVED_TOKENS),
@@ -49,12 +68,13 @@ export const risuHost: HostPort = {
     return risuai.getChatFromIndex(characterIndex, chatIndex);
   },
 
-  async post(url, body, headers, timeoutMs) {
+  async post(url, body, headers, timeoutMs, route) {
     const res = await risuai.nativeFetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
       requestTimeoutMs: Math.max(1, Math.floor(timeoutMs)),
+      ...fetchOptions(route),
     });
     let json: unknown = null;
     try {
@@ -65,8 +85,10 @@ export const risuHost: HostPort = {
     return { status: res.status, json };
   },
 
-  async get(url, headers, timeoutMs) {
-    const res = await risuai.nativeFetch(url, { method: 'GET', headers, requestTimeoutMs: Math.max(1, Math.floor(timeoutMs)) });
+  async get(url, headers, timeoutMs, route) {
+    const res = await risuai.nativeFetch(url, {
+      method: 'GET', headers, requestTimeoutMs: Math.max(1, Math.floor(timeoutMs)), ...fetchOptions(route),
+    });
     let json: unknown = null;
     try {
       json = await res.json();

@@ -10,6 +10,7 @@
 //@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 600)
 //@arg deadline_ms int Hard request-path deadline in ms (0 = 800)
 //@arg inject_position string before_last_user (default) or end
+//@arg route string auto (default) / direct / server — how to reach the sidecar
 "use strict";
 (() => {
   // src/canonical.ts
@@ -236,7 +237,7 @@ ${revisionHash}`;
         timer = setTimeout(() => reject(new DeadlineError(`deadline during ${path}`)), remaining);
       });
       try {
-        const request = body === void 0 ? host.get(url, headers, remaining) : host.post(url, body, headers, remaining);
+        const request = body === void 0 ? host.get(url, headers, remaining, settings.route) : host.post(url, body, headers, remaining, settings.route);
         const res = await Promise.race([request, timeout]);
         if (res.status < 200 || res.status >= 300) throw new Error(`${path} -> HTTP ${res.status}`);
         return res.json;
@@ -394,6 +395,18 @@ ${revisionHash}`;
   async function arg(key) {
     return String(await risuai.getArgument(key) ?? "").trim();
   }
+  function routeFor(url, setting) {
+    if (setting === "direct" || setting === "server") return setting;
+    try {
+      const host = new URL(url).hostname.replace(/^\[|\]$/g, "");
+      return ["localhost", "127.0.0.1", "::1"].includes(host) ? "direct" : "server";
+    } catch {
+      return "direct";
+    }
+  }
+  function fetchOptions(route) {
+    return route === "server" ? { networkRoute: "local_network" } : {};
+  }
   function positiveInt(value, fallback) {
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
@@ -401,8 +414,10 @@ ${revisionHash}`;
   var risuHost = {
     async settings() {
       const position = await arg("inject_position");
+      const sidecarUrl = await arg("sidecar_url") || DEFAULT_SIDECAR_URL;
       return {
-        sidecarUrl: await arg("sidecar_url") || DEFAULT_SIDECAR_URL,
+        sidecarUrl,
+        route: routeFor(sidecarUrl, await arg("route")),
         authToken: await arg("auth_token"),
         enabled: Number(await arg("disabled")) !== 1,
         reservedMemoryTokens: positiveInt(await arg("reserved_memory_tokens"), DEFAULT_RESERVED_TOKENS),
@@ -415,12 +430,13 @@ ${revisionHash}`;
       const chatIndex = await risuai.getCurrentChatIndex();
       return risuai.getChatFromIndex(characterIndex, chatIndex);
     },
-    async post(url, body, headers, timeoutMs) {
+    async post(url, body, headers, timeoutMs, route) {
       const res = await risuai.nativeFetch(url, {
         method: "POST",
         headers,
         body: JSON.stringify(body),
-        requestTimeoutMs: Math.max(1, Math.floor(timeoutMs))
+        requestTimeoutMs: Math.max(1, Math.floor(timeoutMs)),
+        ...fetchOptions(route)
       });
       let json = null;
       try {
@@ -430,8 +446,13 @@ ${revisionHash}`;
       }
       return { status: res.status, json };
     },
-    async get(url, headers, timeoutMs) {
-      const res = await risuai.nativeFetch(url, { method: "GET", headers, requestTimeoutMs: Math.max(1, Math.floor(timeoutMs)) });
+    async get(url, headers, timeoutMs, route) {
+      const res = await risuai.nativeFetch(url, {
+        method: "GET",
+        headers,
+        requestTimeoutMs: Math.max(1, Math.floor(timeoutMs)),
+        ...fetchOptions(route)
+      });
       let json = null;
       try {
         json = await res.json();
@@ -466,6 +487,6 @@ ${revisionHash}`;
       (arg2) => adapter.onOutput(arg2),
       () => adapter.statusText()
     );
-    console.log("[NMOS] adapter loaded", { phase: "0B", version: "0.1.0-beta.1" });
+    console.log("[NMOS] adapter loaded", { version: "0.1.0-beta.1" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));
 })();

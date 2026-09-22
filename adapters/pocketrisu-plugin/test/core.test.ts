@@ -22,7 +22,7 @@ function fakeHost(handler: (path: string, body: any) => Promise<HttpResult> | Ht
   const warn = vi.fn();
   const host: HostPort = {
     settings: async () => ({ sidecarUrl: 'http://sidecar', authToken: 't', enabled: true, reservedMemoryTokens: 600,
-      deadlineMs: 200, injectPosition: 'before_last_user', ...overrides }),
+      deadlineMs: 200, injectPosition: 'before_last_user', route: 'direct', ...overrides }),
     currentChat: async () => structuredClone(chat),
     post: async (url, body) => {
       const path = url.replace('http://sidecar', '');
@@ -183,5 +183,16 @@ describe('status text', () => {
   it('explains how to fix an unreachable sidecar', async () => {
     const { host } = fakeHost(() => Promise.reject(new TypeError('Failed to fetch')));
     expect(await createAdapter(host).statusText()).toContain('docker compose up -d');
+  });
+});
+
+describe('route selection', () => {
+  it('uses the browser for this machine and the PocketRisu server for anything else', async () => {
+    const { routeFor } = await import('../src/host');
+    expect(routeFor('http://127.0.0.1:8790', '')).toBe('direct');
+    expect(routeFor('http://localhost:8790', 'auto')).toBe('direct');
+    expect(routeFor('http://nmos-sidecar:8790', '')).toBe('server');
+    expect(routeFor('http://192.168.0.10:8790', '')).toBe('server');
+    expect(routeFor('http://192.168.0.10:8790', 'direct')).toBe('direct');
   });
 });

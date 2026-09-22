@@ -16,6 +16,7 @@ const header = [
   '//@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 600)',
   '//@arg deadline_ms int Hard request-path deadline in ms (0 = 800)',
   '//@arg inject_position string before_last_user (default) or end',
+  '//@arg route string auto (default) / direct / server — how to reach the sidecar',
   '',
 ].join('\n');
 
