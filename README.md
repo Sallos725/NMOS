@@ -70,6 +70,9 @@ page reload.
 The Inspector lists conversations as **bot name · chat name** (after the next message in that chat)
 and is Korean by default; switch to English at the top right.
 
+<p><img src="docs/images/panel-status.png" alt="NMOS panel, Status tab: sidecar connected, semantic recall on, last request injected 835 characters in 90 ms" width="560"></p>
+<p><img src="docs/images/inspector.png" alt="NMOS Inspector: one conversation shown as bot name · chat name, with vector coverage 43/43" width="760"></p>
+
 ## Configuration (environment)
 
 Everything above can be set in the panel. The environment only provides defaults (useful for

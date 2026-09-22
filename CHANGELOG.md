@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The Inspector list shows "—" instead of "partial 0 %" for a feature that was never switched on
+  (e.g. fact coverage with no LLM configured).
+- README and the Korean guide show the panel and the Inspector.
+
 ## 0.1.0-beta.4
 
 Stabilization release (issues #6–#19) and a UI review. Correctness before new features. Upgrading applies migrations 0007–0010. At startup the sidecar
