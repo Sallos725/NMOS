@@ -1,5 +1,50 @@
 # Changelog
 
+## Unreleased — stabilization (issues #6–#14)
+
+Correctness before new features. Upgrading applies migrations 0007–0009. At startup the sidecar
+backfills normalized text and then re-queues derived work under the new generations, recent messages
+first. Until that work finishes, the Inspector shows facts and vector coverage as *partial*.
+
+- **Model/endpoint changes re-derive memory** (#6, #7). Extraction and embeddings are bound to a
+  generation key: compiler, prompt, predicate registry, normalizer, endpoint, model and settings;
+  credentials excluded. Changing the LLM or embedding model or endpoint re-extracts or re-embeds.
+  Changing only an API key does not. A worker never runs a new model's jobs with the old model during
+  its 30 s settings reload. Vectors from different endpoints or models are never compared.
+- **Upgrades keep fact coverage** (#8). A new generation rebuilds the recent window first, then every
+  older message the previous generation covered, in the background. Coverage per chat is shown in the
+  Inspector and at `GET /v1/conversations/{id}/coverage`. Old generations stay for audit.
+- **Recall ignores reasoning blocks** (#9). Lexical search, embeddings, extraction and excerpts share
+  one versioned normalized text. Words that only appear inside `<Thoughts>`/`<think>`/style blocks no
+  longer produce hits, in the corpus or in the query.
+- **Character knowledge: public / limited / unknown** (#10). "Not listed" now means unknown, not
+  "does not know". Existing marks migrate (names → limited, empty → unknown). The extraction compiler
+  is now `extract-v3`.
+- **Settings save from a localhost sidecar** (#11). CORS allows `PUT`.
+- **Large chats** (#12). Manifests up to 30,000 messages are accepted (was 20,000), with measurements
+  for 1k/5k/10k/25k in `docs/perf/scale.md`. Lexical recall now reliably uses the trigram index:
+  10k messages went from ≈0.8 s to ≈10 ms per query. Lexical recall has a time budget
+  (`NMOS_LEXICAL_TIMEOUT_MS`, default 300); a query that exceeds it contributes no lexical candidates
+  for that request instead of holding a database connection for seconds.
+- **Long messages** (#13). Per message, the Inspector shows how much was embedded (8 × 700 chars) and
+  seen by extraction (6,000 chars), and flags partial processing.
+- Release workflow runs the full CI suite first and checks that tag, versions, changelog, status and
+  migration list agree (#14). `docs/phases/PHASE-4.md` records the soft-knowledge subset.
+
+### Known limitations
+
+- Warm per-message sync cost grows linearly with chat length (full-manifest design). With the default
+  800 ms deadline, memory is injected reliably up to ≈5,000 messages on the measured machine. At
+  10,000+ messages requests fail open (no memory) unless `deadline_ms` is raised; see
+  `docs/perf/scale.md`.
+- A query whose words appear in nearly every message (a character's name alone, a phrase repeated in
+  every reply) makes lexical recall score every message. With long chats this exceeds its 300 ms
+  budget, so such a message gets no lexical excerpts; vectors, state and facts still apply.
+- Changing the extraction model re-extracts all previously covered history with that model (cost).
+- Knowledge names are free text; hard character-POV isolation is not implemented.
+- Messages longer than 5,600 normalized chars are only partially embedded; extraction reads the
+  first 6,000 chars of a target message.
+
 ## 0.1.0-beta.3
 
 - Embeddings use their own first-sight backfill (`NMOS_EMBED_BACKFILL`, default 2000) instead of the

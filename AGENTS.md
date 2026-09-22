@@ -13,11 +13,12 @@ Continue the **current phase** as far as possible without violating any stop con
 
 The current phase is always the one named in `docs/STATUS.md`. As of 2026-09-22:
 
-> **Phases 0–3 complete; Phase 4 complete in its soft form (D19, `docs/phases/PHASE-4.md`).
-> Public beta `v0.1.0-beta.3`. Work now is beta stabilization (bug fixes, hardening, docs) within
-> the scope of the shipped phases. Phase 5+ has no phase document and is not authorized.**
+> **Phases 0–3 complete; Phase 4 soft subset (knowledge scope, `docs/phases/PHASE-4.md`) complete.
+> Public beta. Hard POV isolation (D9 `character_pov`) and Phase 5+ are not authorized.**
 
-Do not start a phase without its phase document and without the evidence it requires.
+Do not start a phase without its phase document and without the evidence it requires. Work that is
+not a phase feature (bug fixes, correctness, docs, CI) is allowed at any time. It must still keep the
+invariants and must not pre-build the next phase.
 
 A short or vague owner prompt does not authorize scope expansion.
 
@@ -30,7 +31,8 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-*.md` — the specification of the phase your change touches (0–4).
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-4.md` is the latest;
+   `PHASE-0.md`…`PHASE-3.md` still define the behavior they introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
 6. Relevant ADRs in `docs/adr/`.
 
@@ -52,31 +54,31 @@ If two normative documents appear to conflict:
 
 ---
 
-## 2. Phase gates
+## 2. Current phase gate
 
-Current status (see `docs/STATUS.md`):
+| Phase | State | Spec |
+|---|---|---|
+| 0A / 0B | complete (host evidence S1–S14, O3/O4 resolved) | `PHASE-0.md`, `PHASE-0-RETRO.md` |
+| 1 — deterministic state | complete (beta) | `PHASE-1.md` |
+| 2 — bounded extraction | complete (beta) | `PHASE-2.md` |
+| 3 — hybrid recall | complete (beta) | `PHASE-3.md` |
+| 4 — character knowledge, soft subset | complete (beta) | `PHASE-4.md` |
+| 4 — hard POV isolation (`character_pov`) | **not authorized** | — |
+| 5+ | **not authorized** | — |
 
-```text
-Phase 0A/0B: COMPLETE     Phases 1–3: COMPLETE     Phase 4: COMPLETE (soft, D19)
-Phase 5+:    NOT AUTHORIZED (needs an owner-approved phase document)
-```
+Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
+ADR 0006/0007, `docs/perf/scale.md`).
 
-A new phase needs its phase document and owner authorization first. Re-running host evidence
-(e.g. for a new PocketRisu version) follows the same evidence rules as Phase 0A.
-
-The Phase 0A gate below is kept as the model for evidence gates. It was real-world evidence, not
-boxes an agent may check optimistically:
-
-- all S1–S14 scenarios were actually executed against the target PocketRisu build;
-- `docs/HOST-FACTS.md` answers Phase 0A questions 1–8 with evidence;
-- at least S1–S9 have recorded fixtures;
-- any contradicted host facts were corrected in `ARCHITECTURE.md`;
-- owner decisions O3 and O4 were explicitly resolved.
+Real-world evidence gates are not boxes an agent may check optimistically. Host behavior comes from
+`ARCHITECTURE.md §4` and `docs/HOST-FACTS.md`; performance claims come from measurements in
+`docs/perf/`.
 
 **Never fabricate fixtures, measurements, host facts, timings, or scenario results.**
 
-If the spike code is ready but live PocketRisu scenarios have not been run, the correct action is to
-stop at the evidence boundary and tell the owner exactly what to run. Do not proceed to 0B.
+If code is ready but a live host or model check has not been run, stop at the evidence boundary and
+tell the owner exactly what to run. Re-running host evidence (e.g. for a new PocketRisu version)
+follows the Phase 0A rules: real scenarios against the target build, recorded fixtures, corrections to
+`ARCHITECTURE.md §4` where evidence contradicts it.
 
 ---
 
@@ -110,7 +112,8 @@ A change that weakens one of these requires an explicit owner decision.
 - Anything under the current phase's **Out of scope** is forbidden, including speculative
   interfaces, migrations, empty "future" services, or convenience stubs.
 - Do not implement from the long-form reference document unless the current phase explicitly asks for it.
-- Do not add a PocketRisu fork or bridge patch during Phase 0A/0B. `ARCHITECTURE D1` is binding.
+- Do not add a PocketRisu fork or bridge patch. `ARCHITECTURE D1` is binding unless the owner decides
+  otherwise.
 
 ### Host behavior
 
@@ -125,15 +128,18 @@ A change that weakens one of these requires an explicit owner decision.
 
 - `source_revision.content` and `source_revision.revision_hash` are immutable once written.
 - Lifecycle transitions may change lifecycle state when the active phase permits it.
-- Schema changes, once Phase 0B is unlocked, go through new numbered SQL files in `migrations/`.
+- Schema changes go through new numbered SQL files in `migrations/`.
 - Never edit an already-applied migration.
+- Derived rows (extractions, embeddings, normalized text) carry the generation/normalizer that
+  produced them (D20, D21). A change to a prompt, registry, normalizer, chunker, model or endpoint
+  must produce a new generation, never overwrite or silently reuse old rows.
 
 ### Plugin
 
 - Keep the plugin thin.
 - No memory DB, ranking, semantic extraction, embedding, or long-running work in the plugin.
 - No retry-with-backoff loops inside `beforeRequest`.
-- Any request-path call must have a hard deadline once Phase 0B is unlocked.
+- Any request-path call must have a hard deadline.
 - Fail open: return the host's messages unchanged on plugin failure.
 - Never call `setChatToIndex`, `setCharacterToIndex`, or otherwise mutate host data.
 - Treat injected memory as untrusted data, not as instructions.
@@ -141,8 +147,8 @@ A change that weakens one of these requires an explicit owner decision.
 
 ### Models
 
-- No LLM calls in Phase 0 or Phase 1.
-- No embeddings until the phase document explicitly unlocks them.
+- Generative LLM calls run only in the worker, never on the request path (PHASE-2).
+- The request path may embed the query only, with its own short timeout and lexical fallback (PHASE-3).
 - Do not add model-provider abstractions early merely because the reference architecture will need them.
 
 ### Dependencies
@@ -172,65 +178,20 @@ Do not "helpfully" implement the next phase after finishing the current slice.
 
 ---
 
-## 6. Phase 0A-specific instructions (historical; applies again when re-running host evidence)
+## 6. Phase 0A spike (historical)
 
-The Phase 0A spike is deliberately throwaway.
-
-Its job is to measure PocketRisu, not become production infrastructure.
-
-Expected durable outputs:
-
-```text
-docs/HOST-FACTS.md
-fixtures/host/*
-ARCHITECTURE.md corrections, if evidence contradicts §4
-```
-
-The spike itself may later be discarded.
-
-### The spike must
-
-- register a `beforeRequest` replacer;
-- return `formated` unchanged;
-- record model-mode value and call frequency;
-- register an `output` listener;
-- record stable host IDs and generation/swipe metadata;
-- support manual "Dump snapshot";
-- measure `getChatFromIndex()` time and serialized size;
-- test `crypto.subtle.digest` availability and hashing time;
-- optionally POST observations to the local throwaway collector;
-- avoid logging full message bodies at normal info level.
-
-### The spike must not
-
-- inject memory;
-- alter prompts;
-- mutate chats;
-- create a sidecar production API;
-- create source-ledger migrations;
-- perform semantic interpretation;
-- call an LLM or embedding model.
-
-### Evidence boundary
-
-Codex may create the spike, collector, runbook, and fixture format autonomously.
-
-Codex may **not** claim Phase 0A complete until the owner (or an agent with actual access to the
-running PocketRisu instance) has executed S1–S14 and saved the evidence.
+The Phase 0A observation spike (`adapters/pocketrisu-spike/`, `tools/spike_*`) is kept only for
+re-running host observations. If it is re-run, it must still never inject memory, alter prompts,
+mutate chats, or call a model. Its results go to `docs/HOST-FACTS.md` and `fixtures/host/`.
 
 ---
 
-## 7. Phase 0B unlock procedure (historical; completed 2026-09-22)
+## 7. Starting a new phase
 
-When Phase 0A evidence exists:
-
-1. Read every S1–S14 fixture.
-2. Complete `docs/HOST-FACTS.md`.
-3. Reconcile findings with `ARCHITECTURE.md §4`.
-4. Present O3 and O4 to the owner with evidence-backed options if still unresolved.
-5. Obtain the owner's explicit O3/O4 decisions.
-6. Change `docs/STATUS.md` from `0A` to `0B`.
-7. Only then create Phase 0B production skeleton/code.
+1. The owner authorizes the phase explicitly.
+2. A `docs/phases/PHASE-N.md` exists with goal, scope, out-of-scope and acceptance criteria.
+3. `docs/STATUS.md` and §0/§2 of this file name it as current.
+4. Only then implement it; record evidence against each acceptance criterion.
 
 Do not infer owner decisions from preference or convenience.
 
@@ -278,7 +239,7 @@ Do not ask questions merely to avoid making an implementation choice already cov
 
 ## 10. Coding conventions
 
-### Python — once Phase 0B is unlocked
+### Python
 
 - Python 3.12.
 - Type hints everywhere.
@@ -298,7 +259,7 @@ Do not ask questions merely to avoid making an implementation choice already cov
   - manifest construction,
   - injection,
   - marker detection.
-- Host calls isolated behind `host.ts` once the production adapter exists.
+- Host calls isolated behind `host.ts`.
 - Never use array index as durable message identity.
 - PocketRisu `Message.chatId` is the host logical ID only within the verified semantics.
 - Normalize Unicode NFC and CRLF→LF where the phase spec requires canonical hashing.
@@ -315,6 +276,14 @@ cd apps/sidecar && uv sync && uv run pytest                     # needs compose 
 cd adapters/pocketrisu-plugin && npm install && npm test && npm run typecheck && npm run build
 docker compose exec sidecar nmos-migrate                        # apply migrations
 docker compose exec sidecar nmos-rebuild                        # rebuild active_membership from commits
+docker compose exec sidecar nmos-rebuild --text                 # rewrite the normalized-text projection
+```
+
+Scale benchmarks (#12, results in `docs/perf/scale.md`):
+
+```bash
+cd apps/sidecar && uv run python ../../tools/bench_scale.py 1000,5000,10000,25000
+cd adapters/pocketrisu-plugin && node scripts/bench-manifest.mjs 1000,5000,10000,25000
 ```
 
 After installing or updating the plugin in PocketRisu, reload the page (ARCHITECTURE H13).
@@ -340,9 +309,7 @@ cat adapters/pocketrisu-spike/nmos-host-spike.js
 
 The PocketRisu spike itself is loaded through PocketRisu's plugin UI.
 
-### Future commands
-
-Add commands only when the files exist. Keep this section accurate.
+Keep this section accurate when commands change.
 
 ---
 
@@ -358,4 +325,5 @@ A change is done only when:
 - no out-of-scope architecture was pre-built;
 - the next blocked action is explicit.
 
-For Phase 0A specifically, "code complete" and "phase complete" are different states.
+"Code complete" and "phase complete" are different states: a phase is complete only when its
+evidence-bearing acceptance criteria were actually met.

@@ -117,7 +117,7 @@ for review, not facts.
 **D7 — Bounded extraction context.** Extraction of revision *n* may read at most the previous
 `K` active messages (config). An edit at position *p* re-extracts only revisions in
 `[p, p+K]`; projections beyond that are replayed deterministically from cached assertions.
-Extraction is keyed by `(revision_hash, context_window_hash, compiler_version)`.
+Extraction is keyed by `(revision, context_window_hash, extractor generation)` (D20).
 
 **D8 — Synchronous invalidation, asynchronous recompilation.** At `beforeRequest`, stale
 derived rows are masked synchronously (no LLM). Re-extraction is queued. Until it finishes,
@@ -134,7 +134,8 @@ before any LLM extraction. This is the preferred source for current-state facts.
 
 **D11 — Lexical recall must work for CJK.** Postgres default FTS tokenization is inadequate
 for Korean/Japanese. Use `pg_trgm` (or `pg_bigm` if available) for raw evidence recall.
-Exact-quote recall always prefers lexical over vector search.
+Exact-quote recall always prefers lexical over vector search. The trigram index covers the normalized
+text projection (D21), not raw content.
 
 **D13 — Main-generation gating (O3, ADR 0001).** Inject only when `mode === 'model'` and the
 prompt's last `user` turn equals the host chat's latest user message (normalized).
@@ -158,10 +159,31 @@ through a SKIP LOCKED queue; single-valued predicates form fact versions.
 RRF with lexical, abstention by per-signal bars, query-side instruction for instruction-tuned embedders,
 fail-open to lexical on embedding timeout.
 
-**D19 — Soft character knowledge (Phase 4 subset).** Extraction records `known_by` / `hidden_from`
-per assertion; facts carry them into the packet and the Note tells the model that unlisted characters
-do not know the fact. A fact hidden from a character addressed right now is ranked first. Hard POV
-isolation stays out of scope: a sim bot writes every character in one generation (D9).
+**D19 — Soft character knowledge (Phase 4 subset; revised 2026-09-22, ADR 0007).** Each assertion
+has `knowledge = public | limited | unknown`. `public` is openly known and needs no list; `limited`
+names characters shown to know it (`known_by`) and/or characters it is kept from (`hidden_from`);
+`unknown` means the evidence does not show who knows. Awareness of anyone not listed is unknown, never
+"does not know"; the packet Note says exactly this. A name in both lists is contradictory evidence and
+is dropped from both (noted on the assertion). Names are free text in this soft phase. A fact hidden
+from a character addressed right now is ranked first. Hard POV isolation stays out of scope: a sim bot
+writes every character in one generation (D9).
+
+**D20 — Derived projections are bound to a generation (ADR 0006).** An extractor generation hashes
+compiler version, prompt and predicate-registry fingerprints, normalizer version, endpoint identity,
+model and output-affecting settings. An embedding projection hashes endpoint, model, normalizer,
+chunker and document profile. Credentials are never part of a key. Jobs, extractions and embedding
+rows carry their key. A worker only claims jobs for the generation its handler implements. Readers
+use only the active generation. Older generations stay stored for audit and are never mixed in.
+Activation queues the recent window first, then every older item an earlier generation covered, at
+background priority. Coverage (compiled / pending / failed / not queued) is measured per conversation
+and partial coverage is shown as partial.
+
+**D21 — One normalized-text projection (ADR 0006).** `revision_text(revision, normalizer)` stores
+`clean_text()` output. Lexical recall, embedding, extraction and excerpting read it, and query text is
+normalized the same way. It is derived: written at ingest, backfilled at startup, rebuildable with
+`nmos-rebuild --text`. Raw `source_revision.content` is unchanged. Bounded processing of long messages
+(embedding 8 × 700 chars, extraction 6,000 target / 2,000 context chars) is recorded per revision and
+visible in the Inspector.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
@@ -188,8 +210,8 @@ nmos/
 ├── docs/
 │   ├── HOST-FACTS.md          # runtime host evidence (Phase 0A, extended in 0B)
 │   ├── STATUS.md
-│   ├── phases/PHASE-0.md (+ PHASE-0-RETRO.md)
-│   ├── perf/phase0.md
+│   ├── phases/PHASE-0.md … PHASE-4.md (+ PHASE-0-RETRO.md)
+│   ├── perf/phase0.md, perf/scale.md
 │   ├── adr/
 │   └── reference/             # long-form design doc (non-normative)
 ├── adapters/
@@ -218,7 +240,7 @@ consumer needs it; empty future directories are not created in advance.
 | 1 | Deterministic state parsers (D10), inspector v0 (read-only), traces — **done (beta)** | No |
 | 2 | Predicate registry (D6), bounded extraction (D7), assertions, fact versions — **done (beta)** | Yes, async |
 | 3 | Hybrid retrieval (SQL + trigram + pgvector), RRF, selector, abstention — **done (beta)** | Embeddings only |
-| 4 | Principal modes (D9), knowledge projection | Yes |
+| 4 | Soft subset — knowledge marks (D19) — **done (beta)**; hard principal modes (D9 `character_pov`) not authorized | Yes |
 | 5+ | Threads, causal links, hierarchy, verifier, forensic recall, MCP | Yes |
 
 Each phase gets its own `PHASE-N.md` with acceptance criteria before work starts.

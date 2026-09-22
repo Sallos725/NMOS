@@ -18,7 +18,8 @@ Single-valued predicates form **fact versions**: the current value and its histo
 3. **Worker** (`nmos-worker`, separate process/compose service): Postgres job table with
    `FOR UPDATE SKIP LOCKED`, retries with backoff, dead-lettering.
 4. **Bounded context (D7)**: extraction of a revision sees at most the previous `K` (default 6)
-   active messages. Extractions are keyed by `(revision, window_hash, compiler_version)`;
+   active messages. Extractions are keyed by `(revision, window_hash, compiler_version)` (since
+   the stabilization work: the extractor generation, D20);
    `window_hash` is materialized on `active_membership`, so any edit inside the window makes the
    old extraction non-matching **immediately** (D8) and re-queues work.
 5. **Lazy compilation (D5)**: only `accepted` revisions are extracted.

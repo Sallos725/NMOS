@@ -135,9 +135,18 @@ LLM or embedding endpoint that is remote. `docker compose down -v` deletes all N
 
 Beta. Tested against PocketRisu `a14c911` (v1.12.0) in real UI runs. The behavior described in this
 README is verified on that build only; other PocketRisu versions may differ — please report what you
-see. See `docs/perf/phase0.md` for latency (≈90–200 ms added per message at 500–1,000 messages). Known limits: no group chats (PocketRisu
-build has none), character knowledge is annotated (`known_by` / `hidden_from`) rather than hard-isolated, recall thresholds are
-tuned on limited data — please report cases where memory is wrong or missing.
+see. See `docs/perf/phase0.md` for latency (≈90–200 ms added per message at 500–1,000 messages).
+Known limits:
+
+- No group chats (the tested PocketRisu build has none).
+- Character knowledge is annotated (`knowledge="public"`, `known_by` / `hidden_from`, or unknown)
+  rather than hard-isolated.
+- Very long chats: memory arrives within the default 800 ms deadline up to about 5,000 messages on the
+  measured machine; beyond about 8,000 most requests fail open (no memory) unless you raise
+  `deadline_ms`. See `docs/perf/scale.md`.
+- Changing the LLM or embedding model/endpoint re-processes previously covered history with the new
+  model (recent messages first; the Inspector shows coverage as partial until done).
+- Recall thresholds are tuned on limited data — please report cases where memory is wrong or missing.
 
 ## Develop
 
