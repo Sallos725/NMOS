@@ -18,13 +18,15 @@ Recall that works for paraphrases and Korean text, not only shared trigrams.
    request falls back to lexical-only (fail open, recorded in the trace).
 5. **Fusion**: reciprocal-rank fusion of lexical and vector candidates; **abstention**: a candidate
    needs lexical score ≥ threshold or cosine ≥ `NMOS_VECTOR_MIN_SIM`.
-6. Facts (Phase 2) are ranked with the same fused scores of their source revisions plus their own
-   lexical match.
+6. Facts (Phase 2) are ranked by entity mention in the latest turns plus lexical match. *(Beta
+   deviation: ranking facts by their source revisions' fused scores is deferred.)*
 
 ## Acceptance criteria
 
-- [ ] Paraphrased question recalls the right out-of-context excerpt that lexical recall misses
+Status 2026-09-22 — met. Evidence: `apps/sidecar/tests/test_vectors.py`; live Korean run with `qwen3-embedding:0.6b` (ADR 0005): five paraphrased questions recalled the right out-of-context passage; Ollama cold start exceeded the 300 ms embed timeout once and fell back to lexical; added latency 107–155 ms.
+
+- [x] Paraphrased question recalls the right out-of-context excerpt that lexical recall misses
       (Korean test chat, real embedding model).
-- [ ] Embedding service down → packet still built lexically within the deadline.
-- [ ] Inactive revisions never recalled through the vector path (tests).
-- [ ] p95 added latency stays < 300 ms on a 500-message chat with vectors enabled.
+- [x] Embedding service down → packet still built lexically within the deadline.
+- [x] Inactive revisions never recalled through the vector path (tests).
+- [x] p95 added latency stays < 300 ms on a 500-message chat with vectors enabled.

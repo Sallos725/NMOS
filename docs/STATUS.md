@@ -4,9 +4,9 @@
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Current: Phase 1–3 toward a public beta (owner authorization 2026-09-22).** Specs:
-`docs/phases/PHASE-1.md` (deterministic state, inspector), `PHASE-2.md` (LLM extraction, facts),
-`PHASE-3.md` (hybrid retrieval). Phase 4 (principal modes) and 5+ (threads, MCP) are outside the beta.
+**Phases 1–3 complete — public beta `v0.1.0-beta.1` (2026-09-22).** Specs with evidence:
+`docs/phases/PHASE-1.md`, `PHASE-2.md`, `PHASE-3.md`. Outside the beta: Phase 4 (principal /
+character-POV knowledge, D9) and 5+ (threads, causal links, verifier, MCP).
 
 ## What exists
 
@@ -14,13 +14,13 @@
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
 | Architecture | `ARCHITECTURE.md` | H1–H14, D1–D15, O2/O3/O4 resolved |
-| Sidecar | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3) | reconcile / bodies / retrieve / output / trace / health |
-| Schema | `migrations/0001_source_layer.sql` | source layer + observations + traces; immutability triggers |
+| Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
+| Schema | `migrations/0001`–`0004` | source layer, state, extraction/jobs, embeddings (pgvector) |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (35), `adapters/pocketrisu-plugin/test` (22) | all passing |
+| Tests | `apps/sidecar/tests` (52), `adapters/pocketrisu-plugin/test` (23) | all passing (CI) |
 | Performance | `docs/perf/phase0.md` | all Phase 0 targets met |
-| Decisions | `docs/adr/0001`–`0004` | gating, branches, token, recall scoring |
+| Decisions | `docs/adr/0001`–`0005` | gating, branches, token (optional), recall scoring, hybrid tuning |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 
 ## Evidence status (Phase 0A)
@@ -35,4 +35,4 @@
 
 - O1 — relationship to MIRRA / VEIL.
 - O5 — retention of abandoned worldlines (and `host_observation` growth).
-- Phase 1 scope/spec approval.
+- Phase 4+ scope.

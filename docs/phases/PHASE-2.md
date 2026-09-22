@@ -34,10 +34,12 @@ Embeddings, principal/character-POV filtering, verifier model, threads, MCP.
 
 ## Acceptance criteria
 
-- [ ] With no LLM configured, nothing is queued and all Phase 0/1 behavior is unchanged.
-- [ ] Worker processes jobs concurrently without double-processing (SKIP LOCKED test).
-- [ ] Invalid/unknown predicates are stored as `pending`, never injected.
-- [ ] An edit at position p masks extractions in `[p, p+K]` synchronously and re-queues them.
-- [ ] Fact versions: superseding single-valued facts; history preserved; deleted/retracted sources
+Status 2026-09-22 — met. Evidence: `apps/sidecar/tests/test_extraction.py` (no-LLM no-jobs, SKIP LOCKED exclusivity, pending predicates, window re-queue after edit, supersession/history, deletion); live: `deepseek-v4-flash:cloud` via Ollama extracted 121/121 turns of a Korean chat (identity, relationship, promise, injury, item location), injected as `<Facts>` for paraphrased questions.
+
+- [x] With no LLM configured, nothing is queued and all Phase 0/1 behavior is unchanged.
+- [x] Worker processes jobs concurrently without double-processing (SKIP LOCKED test).
+- [x] Invalid/unknown predicates are stored as `pending`, never injected.
+- [x] An edit at position p masks extractions in `[p, p+K]` synchronously and re-queues them.
+- [x] Fact versions: superseding single-valued facts; history preserved; deleted/retracted sources
       never contribute.
-- [ ] Real LLM run (Ollama-compatible endpoint) extracts facts from a Korean test chat.
+- [x] Real LLM run (Ollama-compatible endpoint) extracts facts from a Korean test chat.

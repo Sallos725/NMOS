@@ -32,10 +32,12 @@ LLM extraction, embeddings, editing through the inspector, parser authoring UI.
 
 ## Acceptance criteria
 
-- [ ] Parser rules of both kinds produce state from stored revisions; invalid rules are reported at
+Status 2026-09-22 — met. Evidence: `apps/sidecar/tests/test_state.py` (parsers, invalidation through membership, rebuild, budget, inspector escaping); live PocketRisu run with `config/parsers.example.json` injected `<State>` (장소/시간/HP as of turn 59) only after that turn left the prompt; inspector rendered live conversations.
+
+- [x] Parser rules of both kinds produce state from stored revisions; invalid rules are reported at
       startup and skipped, never crash the sidecar.
-- [ ] Current state follows edit / delete / swipe / reroll / disable / allBefore through head
+- [x] Current state follows edit / delete / swipe / reroll / disable / allBefore through head
       membership (tests).
-- [ ] State is rebuildable: deleting `state_observation` and running the rebuild reproduces it.
-- [ ] Packet contains `<State>` only for out-of-context state and never exceeds the budget.
-- [ ] Inspector pages render for a real host conversation; they escape all content.
+- [x] State is rebuildable: deleting `state_observation` and running the rebuild reproduces it.
+- [x] Packet contains `<State>` only for out-of-context state and never exceeds the budget.
+- [x] Inspector pages render for a real host conversation; they escape all content.

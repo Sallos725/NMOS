@@ -70,7 +70,7 @@ NMOS_LLM_MODEL=원하는-모델-이름
 | 메시지를 보냈는데 계속 생성 중 | 플러그인 설치/업데이트 후 새로고침을 안 했습니다. F5 |
 | 기억이 전혀 안 들어감 | `http://localhost` 또는 HTTPS로 접속했는지, `curl …/v1/health`, 인스펙터의 "Recent retrievals" 확인 |
 | 브라우저 콘솔에 CORS 오류 | `.env`의 `NMOS_CORS_ORIGINS`에 PocketRisu 주소를 넣고 재시작 |
-| 엉뚱한 발췌가 들어감 | `NMOS_RECALL_THRESHOLD`(기본 0.4)나 `NMOS_VECTOR_MIN_SIM`(기본 0.45)을 올리세요 |
+| 엉뚱한 발췌가 들어감 | `NMOS_RECALL_THRESHOLD`(기본 0.4)나 `NMOS_VECTOR_MIN_SIM`(기본 0.42)을 올리세요 |
 
 ## 개인정보
 

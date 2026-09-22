@@ -147,6 +147,17 @@ cross-conversation revision linking.
 (`word_similarity ≥ 0.4`); the previous AI turn only breaks ties; `disabled` and `allBefore`-cut
 ranges are inactive and never recalled.
 
+**D16 — Deterministic state via parser rules (Phase 1).** JSON rules → `state_observation`
+projection; current state read through head membership (inherits D8 invalidation).
+
+**D17 — Extraction validity is keyed by window (Phase 2, D7).** `active_membership.window_hash` makes
+an extraction valid only while the head shows the same bounded context; jobs run in `nmos-worker`
+through a SKIP LOCKED queue; single-valued predicates form fact versions.
+
+**D18 — Hybrid recall (Phase 3, ADR 0005).** Exact cosine over head-membership chunk embeddings (pgvector),
+RRF with lexical, abstention by per-signal bars, query-side instruction for instruction-tuned embedders,
+fail-open to lexical on embedding timeout.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
@@ -199,9 +210,9 @@ consumer needs it; empty future directories are not created in advance.
 |---|---|---|
 | 0A | Host observation spike → `HOST-FACTS.md` | No |
 | 0B | Adapter + sidecar + ledger + reconcile + raw lexical recall + budgeted injection | No |
-| 1 | Deterministic state parsers (D10), inspector v0 (read-only), traces | No |
-| 2 | Predicate registry (D6), bounded extraction (D7), assertions, fact versions | Yes, async |
-| 3 | Hybrid retrieval (SQL + trigram + pgvector), RRF, selector, abstention | Embeddings only |
+| 1 | Deterministic state parsers (D10), inspector v0 (read-only), traces — **done (beta)** | No |
+| 2 | Predicate registry (D6), bounded extraction (D7), assertions, fact versions — **done (beta)** | Yes, async |
+| 3 | Hybrid retrieval (SQL + trigram + pgvector), RRF, selector, abstention — **done (beta)** | Embeddings only |
 | 4 | Principal modes (D9), knowledge projection | Yes |
 | 5+ | Threads, causal links, hierarchy, verifier, forensic recall, MCP | Yes |
 
