@@ -12,7 +12,7 @@ from psycopg.types.json import Jsonb
 
 from .canonical import normalize_text, revision_hash
 from .ids import uuid7
-from .reconcile import Entry, Lifecycle, Plan, RevKey, apply_ops
+from .reconcile import Entry, Lifecycle, Plan, RevKey, apply_ops, window_hashes
 
 META_KEYS = ("chatId", "role", "saying", "name", "otherUser", "isComment", "disabled", "swipeId", "generationId")
 
@@ -152,16 +152,20 @@ def store_bodies(
     return stored, rejected
 
 
-def _membership_rows(conn: psycopg.Connection, commit_id: UUID, keys: list[RevKey], ids: dict[RevKey, UUID], start: int = 0) -> None:
+def _membership_rows(conn: psycopg.Connection, commit_id: UUID, members: list[RevKey], ids: dict[RevKey, UUID],
+                     window: int, start: int = 0) -> None:
+    """Insert head membership rows for positions >= start, with their D7 window hashes."""
+    windows = window_hashes(members, window)
     with conn.cursor() as cur:
         cur.executemany(
-            "INSERT INTO active_membership (commit_id, position, source_revision_id) VALUES (%s, %s, %s)",
-            [(commit_id, start + i, ids[k]) for i, k in enumerate(keys)],
+            "INSERT INTO active_membership (commit_id, position, source_revision_id, window_hash) VALUES (%s, %s, %s, %s)",
+            [(commit_id, i, ids[members[i]], windows[i]) for i in range(start, len(members))],
         )
 
 
 def apply_plan(
-    conn: psycopg.Connection, conv: Conversation, state: ConversationState, result: Plan, observation_id: UUID
+    conn: psycopg.Connection, conv: Conversation, state: ConversationState, result: Plan, observation_id: UUID,
+    window: int = 6,
 ) -> UUID:
     """Write lifecycle/lineage changes, the commit (if any) and head membership. Returns head commit id."""
     ids = state.revision_ids
@@ -186,7 +190,7 @@ def apply_plan(
             " '{changes}', (delta->'changes') || %s) WHERE id = %s",
             (Jsonb(result.ops), Jsonb(changes), conv.head_commit_id),
         )
-        _membership_rows(conn, conv.head_commit_id, result.membership[len(state.head):], ids, start=len(state.head))
+        _membership_rows(conn, conv.head_commit_id, result.membership, ids, window, start=len(state.head))
         head_id = conv.head_commit_id
     else:
         head_id = uuid7()
@@ -199,7 +203,7 @@ def apply_plan(
         )
         if conv.head_commit_id:
             conn.execute("DELETE FROM active_membership WHERE commit_id = %s", (conv.head_commit_id,))
-        _membership_rows(conn, head_id, result.membership, ids)
+        _membership_rows(conn, head_id, result.membership, ids, window)
 
     branch = result.branch
     if branch:
@@ -218,7 +222,7 @@ def apply_plan(
     return head_id
 
 
-def rebuild_membership(conn: psycopg.Connection, conv_id: UUID) -> tuple[UUID | None, int]:
+def rebuild_membership(conn: psycopg.Connection, conv_id: UUID, window: int = 6) -> tuple[UUID | None, int]:
     """Reconstruct the head's active_membership purely from worldline_commit deltas."""
     commits = conn.execute(
         "SELECT id, delta FROM worldline_commit WHERE conversation_id = %s ORDER BY seq", (conv_id,)
@@ -239,6 +243,6 @@ def rebuild_membership(conn: psycopg.Connection, conv_id: UUID) -> tuple[UUID | 
         "DELETE FROM active_membership WHERE commit_id IN (SELECT id FROM worldline_commit WHERE conversation_id = %s)",
         (conv_id,),
     )
-    _membership_rows(conn, head_id, members, ids)
+    _membership_rows(conn, head_id, members, ids, window)
     conn.execute("UPDATE conversation SET head_commit_id = %s WHERE id = %s", (head_id, conv_id))
     return head_id, len(members)

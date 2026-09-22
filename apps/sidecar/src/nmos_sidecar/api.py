@@ -18,6 +18,8 @@ from urllib.parse import quote
 from . import inspector, ledger, readmodel
 from .config import Settings
 from .db import make_pool
+from .extraction import enqueue_after_apply
+from .facts import fact_versions
 from .ids import uuid7
 from .models import (
     BodiesRequest,
@@ -135,7 +137,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             _compact_observation(body, result, conv.head_manifest_hash, len(state.head or [])),
             f"{conv.id}:{result.manifest_hash}:manifest",
         )
-        head = ledger.apply_plan(conn, conv, state, result, observation)
+        head = ledger.apply_plan(conn, conv, state, result, observation, settings.extract_window)
+        if settings.llm_url:
+            enqueue_after_apply(conn, conv.id, state.head, state.lifecycle, manifest,
+                                {**state.lifecycle, **result.lifecycle}, state.revision_ids,
+                                settings.extract_window, settings.extract_backfill)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=result.manifest_hash, changes_summary=result.summary,
                                  commit_reason=result.commit_reason)
@@ -173,7 +179,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def retrieve_route(body: RetrieveRequest, request: Request):
         delay()
         with request.app.state.pool.connection() as conn:
-            out = retrieve(conn, body, settings.recall_top_k, settings.recall_threshold, rules.version)
+            out = retrieve(conn, body, settings.recall_top_k, settings.recall_threshold, rules.version, settings.facts_limit)
         return RetrieveResponse(
             trace_id=out["trace_id"] or uuid7(),
             freshness=out["freshness"],
@@ -219,6 +225,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         with request.app.state.pool.connection() as conn:
             return readmodel.traces(conn, conv_id, min(limit, 200))
 
+    @app.get("/v1/conversations/{conv_id}/facts", dependencies=[Depends(auth)])
+    def conversation_facts(conv_id: UUID, request: Request, history: bool = False):
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            facts = fact_versions(conn, conv["head_commit_id"]) if conv["head_commit_id"] else []
+        return [{k: v for k, v in f.items() if history or k != "history"} for f in facts]
+
     @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_index(request: Request, token: str | None = None):
         with request.app.state.pool.connection() as conn:
@@ -232,7 +247,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="conversation not found")
             head = conv["head_commit_id"]
             return inspector.detail(conv, current_state(conn, head, rules.version), readmodel.membership(conn, head),
-                                    readmodel.commits(conn, conv_id), readmodel.traces(conn, conv_id), [], _q(token))
+                                    readmodel.commits(conn, conv_id), readmodel.traces(conn, conv_id),
+                                    fact_versions(conn, head)[:300], _q(token))
 
     return app
 

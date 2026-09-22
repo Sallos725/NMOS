@@ -27,11 +27,46 @@ services:
       NMOS_AUTH_TOKEN: ${NMOS_AUTH_TOKEN:-}
       NMOS_CORS_ORIGINS: ${NMOS_CORS_ORIGINS:-http://localhost:6001}
       NMOS_DEBUG_DELAY_MS: ${NMOS_DEBUG_DELAY_MS:-0}
+      NMOS_PARSERS_FILE: ${NMOS_PARSERS_FILE:-}
+      NMOS_LLM_URL: ${NMOS_LLM_URL:-}
+      NMOS_LLM_MODEL: ${NMOS_LLM_MODEL:-}
+      NMOS_EXTRACT_WINDOW: ${NMOS_EXTRACT_WINDOW:-6}
+      NMOS_EXTRACT_BACKFILL: ${NMOS_EXTRACT_BACKFILL:-100}
+      NMOS_EMBED_URL: ${NMOS_EMBED_URL:-}
+      NMOS_EMBED_MODEL: ${NMOS_EMBED_MODEL:-}
+      NMOS_EMBED_API_KEY: ${NMOS_EMBED_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./config:/config:ro
     ports:
       - "${NMOS_SIDECAR_BIND:-127.0.0.1}:${NMOS_SIDECAR_PORT:-8790}:8790"
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/sidecar.Dockerfile
+    command: ["nmos-worker"]
+    environment:
+      NMOS_DATABASE_URL: postgresql://nmos:${NMOS_DB_PASSWORD:-nmos}@postgres:5432/nmos
+      NMOS_LLM_URL: ${NMOS_LLM_URL:-}
+      NMOS_LLM_MODEL: ${NMOS_LLM_MODEL:-}
+      NMOS_LLM_API_KEY: ${NMOS_LLM_API_KEY:-}
+      NMOS_LLM_JSON_MODE: ${NMOS_LLM_JSON_MODE:-1}
+      NMOS_WORKER_CONCURRENCY: ${NMOS_WORKER_CONCURRENCY:-2}
+      NMOS_EXTRACT_WINDOW: ${NMOS_EXTRACT_WINDOW:-6}
+      NMOS_EMBED_URL: ${NMOS_EMBED_URL:-}
+      NMOS_EMBED_MODEL: ${NMOS_EMBED_MODEL:-}
+      NMOS_EMBED_API_KEY: ${NMOS_EMBED_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      sidecar:
+        condition: service_started
     restart: unless-stopped
 
 volumes:

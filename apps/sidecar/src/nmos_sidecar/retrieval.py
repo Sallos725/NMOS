@@ -12,6 +12,7 @@ from psycopg.types.json import Jsonb
 from .ids import uuid7
 from .ledger import find_conversation
 from .packet import Excerpt, StateItem, compile_packet, excerpt
+from .facts import fact_line, fact_versions, relevant_facts
 from .state import current_state
 
 CANDIDATE_LIMIT = 50
@@ -21,7 +22,7 @@ AI_TIEBREAK_WEIGHT = 0.2
 
 
 def retrieve(conn: psycopg.Connection, request: Any, top_k: int, threshold: float,
-             rules_version: str = "none") -> dict[str, Any]:
+             rules_version: str = "none", facts_limit: int = 8) -> dict[str, Any]:
     started = time.perf_counter()
     conv = find_conversation(conn, request.host, request.chat_id)
     if conv is None or conv.head_commit_id is None:
@@ -85,7 +86,11 @@ def retrieve(conn: psycopg.Connection, request: Any, top_k: int, threshold: floa
         state_items = [StateItem(key=r["key"], value=r["value"], turn=r["position"])
                        for r in current_state(conn, conv.head_commit_id, rules_version)
                        if r["host_logical_id"] not in in_context]
-    text, tokens, chosen = compile_packet(ranked, request.budget_tokens, state=state_items)
+    fact_lines: list[str] = []
+    if fresh and facts_limit > 0:
+        facts = relevant_facts(fact_versions(conn, conv.head_commit_id), query, previous_ai, in_context, facts_limit)
+        fact_lines = [fact_line(f) for f in facts]
+    text, tokens, chosen = compile_packet(ranked, request.budget_tokens, state=state_items, facts=fact_lines)
     total_ms = (time.perf_counter() - started) * 1000
 
     trace_id: UUID = uuid7()

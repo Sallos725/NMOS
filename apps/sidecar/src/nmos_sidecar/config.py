@@ -17,6 +17,23 @@ class Settings:
     recall_top_k: int = field(default_factory=lambda: int(os.environ.get("NMOS_RECALL_TOP_K", "5")))
     recall_threshold: float = field(default_factory=lambda: float(os.environ.get("NMOS_RECALL_THRESHOLD", "0.4")))
     large_divergence_ratio: float = field(default_factory=lambda: float(os.environ.get("NMOS_LARGE_DIVERGENCE_RATIO", "0.5")))
+    # Phase 2: LLM extraction (off unless NMOS_LLM_URL is set). OpenAI-compatible base URL, e.g.
+    # http://host.docker.internal:11434/v1 for Ollama.
+    llm_url: str = field(default_factory=lambda: os.environ.get("NMOS_LLM_URL", ""))
+    llm_model: str = field(default_factory=lambda: os.environ.get("NMOS_LLM_MODEL", ""))
+    llm_api_key: str = field(default_factory=lambda: os.environ.get("NMOS_LLM_API_KEY", ""))
+    llm_json_mode: bool = field(default_factory=lambda: os.environ.get("NMOS_LLM_JSON_MODE", "1") != "0")
+    llm_timeout_s: float = field(default_factory=lambda: float(os.environ.get("NMOS_LLM_TIMEOUT_S", "120")))
+    extract_window: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_WINDOW", "6")))
+    extract_backfill: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_BACKFILL", "100")))
+    worker_concurrency: int = field(default_factory=lambda: int(os.environ.get("NMOS_WORKER_CONCURRENCY", "2")))
+    facts_limit: int = field(default_factory=lambda: int(os.environ.get("NMOS_FACTS_LIMIT", "8")))
+    # Phase 3: embeddings (off unless NMOS_EMBED_URL is set).
+    embed_url: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_URL", ""))
+    embed_model: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_MODEL", ""))
+    embed_api_key: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_API_KEY", ""))
+    embed_timeout_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_EMBED_TIMEOUT_MS", "300")))
+    vector_min_sim: float = field(default_factory=lambda: float(os.environ.get("NMOS_VECTOR_MIN_SIM", "0.55")))
     parsers_file: str = field(default_factory=lambda: os.environ.get("NMOS_PARSERS_FILE", ""))
     # Test hook for the "sidecar slower than deadlineMs" acceptance check. Never set in production.
     debug_delay_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_DEBUG_DELAY_MS", "0")))

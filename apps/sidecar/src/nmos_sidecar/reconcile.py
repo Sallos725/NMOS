@@ -6,6 +6,7 @@ to row ids. Case table: docs/phases/PHASE-0.md "Reconciliation cases"; host beha
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Literal
@@ -242,6 +243,15 @@ def _ops(old: list[RevKey], new: list[RevKey], full: bool) -> list[dict]:
     if apply_ops(old, ops) != new:
         return [{"op": "set", "members": [list(k) for k in new]}]
     return ops
+
+
+def window_hashes(members: list[RevKey], k: int) -> list[str]:
+    """Per position: hash of the revision and the previous k members (D7 bounded context)."""
+    out = []
+    for i in range(len(members)):
+        window = [rev_hash for _, rev_hash in members[max(0, i - k): i + 1]]
+        out.append(hashlib.sha256("\n".join(window).encode()).hexdigest()[:32])
+    return out
 
 
 def apply_ops(members: list[RevKey], ops: list[dict]) -> list[RevKey]:
