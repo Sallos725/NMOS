@@ -32,6 +32,9 @@ class ReconcileRequest(BaseModel):
     host: Literal["pocketrisu"] = "pocketrisu"
     chat_id: str = Field(min_length=1, max_length=200)
     character_ref: str | None = None
+    # Display labels (the host's bot and chat names), refreshed on every sync; never identity.
+    character_name: str | None = Field(default=None, max_length=200)
+    chat_name: str | None = Field(default=None, max_length=200)
     hash_version: Literal[1] = 1
     messages: list[ManifestMessage] = Field(max_length=MAX_MANIFEST_MESSAGES)
 

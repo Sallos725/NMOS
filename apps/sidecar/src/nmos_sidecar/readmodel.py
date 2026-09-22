@@ -13,7 +13,7 @@ from .normtext import NORMALIZER_VERSION
 def list_conversations(conn: psycopg.Connection, limit: int = 200) -> list[dict[str, Any]]:
     return conn.execute(
         """
-        SELECT c.id, c.host_chat_ref, c.host_character_ref, c.created_at, c.head_commit_id,
+        SELECT c.id, c.host_chat_ref, c.host_character_ref, c.host_character_name, c.host_chat_name, c.created_at, c.head_commit_id,
                c.branched_from_host_chat_ref,
                (SELECT count(*) FROM active_membership am WHERE am.commit_id = c.head_commit_id) AS messages,
                (SELECT count(*) FROM worldline_commit w WHERE w.conversation_id = c.id) AS commits,
