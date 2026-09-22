@@ -45,6 +45,25 @@ def ruleset(base: Settings, overrides: dict[str, Any]) -> RuleSet:
     return load_rules(base.parsers_file)
 
 
+_TYPE_NAMES = {bool: "a JSON boolean", int: "an integer", float: "a number", str: "a string"}
+
+
+def _typed(kind: type, value: Any) -> Any:
+    """The value as `kind` when its JSON type already is `kind` (an integral number counts as an
+    integer, any number as a float), else None. No truthiness or string parsing (#19)."""
+    if kind is bool:
+        return value if isinstance(value, bool) else None
+    if isinstance(value, bool):
+        return None  # bool is an int subclass: true is not 1 here
+    if kind is int:
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        return value if isinstance(value, int) else None
+    if kind is float:
+        return float(value) if isinstance(value, (int, float)) else None
+    return value if isinstance(value, str) else None
+
+
 def validate_update(update: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     clean: dict[str, Any] = {}
     errors: list[str] = []
@@ -71,10 +90,9 @@ def validate_update(update: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         if value is None:
             clean[key] = None  # reset to the environment default
             continue
-        try:
-            coerced = kind(value) if kind is not bool else bool(value)
-        except (TypeError, ValueError):
-            errors.append(f"{key}: expected {kind.__name__}")
+        coerced = _typed(kind, value)
+        if coerced is None:
+            errors.append(f"{key}: expected {_TYPE_NAMES[kind]}, got {type(value).__name__} {value!r:.40}")
             continue
         if key in RANGES and not RANGES[key][0] <= coerced <= RANGES[key][1]:
             errors.append(f"{key}: must be between {RANGES[key][0]} and {RANGES[key][1]}")
