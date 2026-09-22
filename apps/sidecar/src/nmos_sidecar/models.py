@@ -23,12 +23,17 @@ class ManifestMessage(BaseModel):
     special_comments: list[str] = Field(default_factory=list, max_length=8)
 
 
+# Supported chat length (#12, docs/perf/scale.md): measured up to 25,000 messages; the extra room
+# keeps a chat that grows past the measured tier syncing instead of failing with 422.
+MAX_MANIFEST_MESSAGES = 30_000
+
+
 class ReconcileRequest(BaseModel):
     host: Literal["pocketrisu"] = "pocketrisu"
     chat_id: str = Field(min_length=1, max_length=200)
     character_ref: str | None = None
     hash_version: Literal[1] = 1
-    messages: list[ManifestMessage] = Field(max_length=20000)
+    messages: list[ManifestMessage] = Field(max_length=MAX_MANIFEST_MESSAGES)
 
 
 class RevisionRef(BaseModel):

@@ -41,6 +41,7 @@ class RecallOptions:
     embed_projection: str = ""  # corpus vectors of this projection only (D20)
     extractor_key: str | None = None  # facts of this extractor generation only (D20)
     embed_timeout_ms: int = 300
+    lexical_timeout_ms: int = 300
     vector_min_sim: float = 0.42
     query_prefix: str = ""
 
@@ -63,12 +64,42 @@ def _cut(conn: psycopg.Connection, head: UUID) -> int:
     ).fetchone()["position"]
 
 
+# Settings applied to the lexical statement only (restored after it; a cancelled savepoint reverts them).
+#  - pg_trgm.word_similarity_threshold: the `<%` bar (D11, D15).
+#  - enable_seqscan / enable_indexscan off: the planner cannot estimate `<%` selectivity and otherwise
+#    filters every head row with word_similarity instead of asking the trigram index (measured with
+#    long messages: 82 ms at 1k and 818 ms at 10k, vs 1 ms / 0.05 ms through the index).
+#  - statement_timeout: a query whose words occur in nearly every message (a character's name alone)
+#    still scores every row (6 s at 10k). The plugin has failed open by then, so the statement is
+#    cancelled instead of holding a pooled connection. See docs/perf/scale.md.
+_RESTORED = ("enable_seqscan", "enable_indexscan", "statement_timeout")  # the threshold is always set before use
+
+
 def _lexical(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, cut: int,
-             threshold: float) -> list[dict[str, Any]]:
-    # `<%` applies pg_trgm.word_similarity_threshold and can use the trigram GIN index (D11).
-    # Searches the normalized projection (#9): text that only exists inside dropped reasoning or
-    # markup blocks never produces a hit.
-    conn.execute("SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)", (str(threshold),))
+             threshold: float, timeout_ms: int) -> list[dict[str, Any]] | None:
+    """Lexical candidates over the normalized projection (#9), or None when the query ran out of time
+    (recall then abstains from lexical candidates for this request)."""
+    try:
+        with conn.transaction():  # savepoint: a cancelled statement does not abort the request
+            previous = conn.execute("SELECT " + ", ".join(f"current_setting('{k}') AS \"{k}\""
+                                                          for k in _RESTORED)).fetchone()
+            wanted = {"pg_trgm.word_similarity_threshold": str(threshold), "enable_seqscan": "off",
+                      "enable_indexscan": "off", "statement_timeout": str(timeout_ms)}
+            _apply(conn, wanted)
+            rows = _lexical_candidates(conn, head, query, previous_ai, cut)
+            _apply(conn, dict(previous))
+            return rows
+    except psycopg.errors.QueryCanceled:
+        return None
+
+
+def _apply(conn: psycopg.Connection, settings: dict[str, str]) -> None:
+    conn.execute("SELECT " + ", ".join("set_config(%s, %s, true)" for _ in settings),
+                 [x for kv in settings.items() for x in kv])
+
+
+def _lexical_candidates(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str,
+                        cut: int) -> list[dict[str, Any]]:
     return conn.execute(
         """
         SELECT sr.id, am.position, so.host_logical_id, rt.clean_content AS clean, sr.metadata->>'role' AS role,
@@ -126,11 +157,13 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     previous_ai = clean_text(request.previous_ai or "")
     timings: dict[str, float] = {}
     vector_note = "off"
+    lexical_note = "off"
     lexical: list[dict[str, Any]] = []
     vector: list[dict[str, Any]] = []
     if fresh and query.strip():
         cut = _cut(conn, head)
-        lexical = _lexical(conn, head, query, previous_ai, cut, options.threshold)
+        found = _lexical(conn, head, query, previous_ai, cut, options.threshold, options.lexical_timeout_ms)
+        lexical, lexical_note = (found, "on") if found is not None else ([], "timeout")
         timings["lexical"] = round((time.perf_counter() - started) * 1000, 2)
         if options.embedder is not None:
             t0 = time.perf_counter()
@@ -191,7 +224,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             Jsonb([{"revision_id": e.revision_id, "turn": e.turn, "score": round(e.score, 5)} for e in chosen]),
             Jsonb([brief(c) for c in excluded]),
             tokens,
-            Jsonb({**timings, "vector_mode": vector_note, "state_items": len(state_items), "facts": len(fact_lines),
+            Jsonb({**timings, "lexical_mode": lexical_note, "vector_mode": vector_note, "state_items": len(state_items), "facts": len(fact_lines),
                    "embedding_projection": options.embed_projection[:20] if options.embedder else None,
                    "extractor": (options.extractor_key or "")[:20] or None,
                    **{f"client_{k}": v for k, v in request.client_timings_ms.items()}}),
