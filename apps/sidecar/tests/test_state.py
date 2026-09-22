@@ -155,3 +155,9 @@ def test_sim_bot_state_is_scoped_per_character():
     pairs = {k: v for _, k, v in parse(ruleset, content, "char", None)}
     assert pairs == {"하나.HP": "30/100", "하나.기분": "불안", "카이토.HP": "80/100", "카이토.기분": "평온",
                      "하나.호감도": "42", "카이토.호감도": "17"}
+
+
+def test_clean_text_drops_model_reasoning():
+    from nmos_sidecar.packet import clean_text
+    raw = "<Thoughts>\n우리가 도서관에 도착했을 때...\n</Thoughts>\n도서관 창가 자리, 하나는 노트를 펼쳤다.<think>hmm</think>"
+    assert clean_text(raw) == "도서관 창가 자리, 하나는 노트를 펼쳤다."

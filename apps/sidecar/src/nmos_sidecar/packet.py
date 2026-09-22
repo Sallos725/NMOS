@@ -13,7 +13,8 @@ PACKET_NOTE = ("  <Note>Memory from earlier in this conversation (state, facts, 
 PACKET_CLOSE = "</NarrativeMemory>"
 MAX_EXCERPT_CHARS = 480
 
-_DROP_BLOCKS = re.compile(r"<(style|script)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+# Markup and model reasoning that is not story: style/script blocks and <Thoughts>/<think> sections.
+_DROP_BLOCKS = re.compile(r"<(style|script|thoughts|think|thinking)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
 _TAG = re.compile(r"<[^>\n]{1,500}>")
 _BLOCK_TAG = re.compile(r"</?(?:br|p|div|li|tr|h[1-6]|details|summary|table|section)\b[^>]*>", re.IGNORECASE)
 _SPACES = re.compile(r"[ \t\u00a0]+")
