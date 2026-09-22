@@ -1,0 +1,66 @@
+# NMOS — Narrative Memory for PocketRisu. Download this file, optionally create a .env next to it
+# (see https://github.com/Sallos725/NMOS#configuration), then: docker compose up -d
+name: nmos
+
+x-nmos-env: &nmos-env
+  NMOS_DATABASE_URL: postgresql://nmos:${NMOS_DB_PASSWORD:-nmos}@postgres:5432/nmos
+  NMOS_AUTH_TOKEN: ${NMOS_AUTH_TOKEN:-}
+  NMOS_CORS_ORIGINS: ${NMOS_CORS_ORIGINS:-http://localhost:6001,http://127.0.0.1:6001}
+  NMOS_PARSERS_FILE: ${NMOS_PARSERS_FILE:-}
+  NMOS_RECALL_THRESHOLD: ${NMOS_RECALL_THRESHOLD:-0.4}
+  NMOS_LLM_URL: ${NMOS_LLM_URL:-}
+  NMOS_LLM_MODEL: ${NMOS_LLM_MODEL:-}
+  NMOS_LLM_API_KEY: ${NMOS_LLM_API_KEY:-}
+  NMOS_LLM_JSON_MODE: ${NMOS_LLM_JSON_MODE:-1}
+  NMOS_EXTRACT_WINDOW: ${NMOS_EXTRACT_WINDOW:-6}
+  NMOS_EXTRACT_BACKFILL: ${NMOS_EXTRACT_BACKFILL:-100}
+  NMOS_WORKER_CONCURRENCY: ${NMOS_WORKER_CONCURRENCY:-2}
+  NMOS_EMBED_URL: ${NMOS_EMBED_URL:-}
+  NMOS_EMBED_MODEL: ${NMOS_EMBED_MODEL:-}
+  NMOS_EMBED_API_KEY: ${NMOS_EMBED_API_KEY:-}
+  NMOS_EMBED_TIMEOUT_MS: ${NMOS_EMBED_TIMEOUT_MS:-300}
+  NMOS_VECTOR_MIN_SIM: ${NMOS_VECTOR_MIN_SIM:-0.45}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: nmos
+      POSTGRES_PASSWORD: ${NMOS_DB_PASSWORD:-nmos}
+      POSTGRES_DB: nmos
+    volumes:
+      - nmos_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nmos -d nmos"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  sidecar:
+    image: ghcr.io/sallos725/nmos-sidecar:${NMOS_VERSION:-beta}
+    environment: *nmos-env
+    ports:
+      - "${NMOS_SIDECAR_BIND:-127.0.0.1}:${NMOS_SIDECAR_PORT:-8790}:8790"
+    volumes:
+      - ./config:/config:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    image: ghcr.io/sallos725/nmos-sidecar:${NMOS_VERSION:-beta}
+    command: ["nmos-worker"]
+    environment: *nmos-env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      sidecar:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  nmos_pg:

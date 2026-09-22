@@ -1,0 +1,22 @@
+{
+  "rules": [
+    {
+      "id": "status-block",
+      "kind": "block",
+      "role": "char",
+      "start": "```status",
+      "end": "```"
+    },
+    {
+      "id": "hp",
+      "kind": "regex",
+      "pattern": "HP\\s*[:：]\\s*(?P<value>\\d+\\s*/\\s*\\d+)",
+      "key": "HP"
+    },
+    {
+      "id": "html-status",
+      "kind": "regex",
+      "pattern": "<span class=\"stat-(?P<key>[a-z]+)\">(?P<value>[^<]+)</span>"
+    }
+  ]
+}

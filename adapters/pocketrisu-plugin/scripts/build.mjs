@@ -8,6 +8,8 @@ const header = [
   '//@display-name NMOS Narrative Memory',
   '//@api 3.0',
   `//@version ${pkg.version}`,
+  '//@link https://github.com/Sallos725/NMOS Documentation',
+  '//@update-url https://raw.githubusercontent.com/Sallos725/NMOS/main/adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js',
   '//@arg sidecar_url string NMOS sidecar base URL, e.g. http://127.0.0.1:8790',
   '//@arg auth_token string Optional; only if the sidecar sets NMOS_AUTH_TOKEN',
   '//@arg disabled int 1 = pass every request through untouched',

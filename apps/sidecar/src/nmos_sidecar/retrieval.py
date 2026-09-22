@@ -37,7 +37,7 @@ class RecallOptions:
     embedder: Embedder | None = None
     embed_model: str = ""
     embed_timeout_ms: int = 300
-    vector_min_sim: float = 0.55
+    vector_min_sim: float = 0.45
 
 
 def _cut(conn: psycopg.Connection, head: UUID) -> int:

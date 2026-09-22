@@ -33,7 +33,7 @@ class Settings:
     embed_model: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_MODEL", ""))
     embed_api_key: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_API_KEY", ""))
     embed_timeout_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_EMBED_TIMEOUT_MS", "300")))
-    vector_min_sim: float = field(default_factory=lambda: float(os.environ.get("NMOS_VECTOR_MIN_SIM", "0.55")))
+    vector_min_sim: float = field(default_factory=lambda: float(os.environ.get("NMOS_VECTOR_MIN_SIM", "0.45")))
     parsers_file: str = field(default_factory=lambda: os.environ.get("NMOS_PARSERS_FILE", ""))
     # Test hook for the "sidecar slower than deadlineMs" acceptance check. Never set in production.
     debug_delay_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_DEBUG_DELAY_MS", "0")))

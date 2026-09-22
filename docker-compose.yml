@@ -35,6 +35,9 @@ services:
       NMOS_EMBED_URL: ${NMOS_EMBED_URL:-}
       NMOS_EMBED_MODEL: ${NMOS_EMBED_MODEL:-}
       NMOS_EMBED_API_KEY: ${NMOS_EMBED_API_KEY:-}
+      NMOS_EMBED_TIMEOUT_MS: ${NMOS_EMBED_TIMEOUT_MS:-300}
+      NMOS_VECTOR_MIN_SIM: ${NMOS_VECTOR_MIN_SIM:-0.45}
+      NMOS_RECALL_THRESHOLD: ${NMOS_RECALL_THRESHOLD:-0.4}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

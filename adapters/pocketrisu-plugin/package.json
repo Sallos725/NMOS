@@ -1,14 +1,13 @@
 {
   "name": "nmos-pocketrisu-plugin",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "private": true,
   "type": "module",
-  "description": "NMOS Phase 0B thin host adapter for PocketRisu (V3 plugin)",
+  "description": "NMOS thin host adapter for PocketRisu (V3 plugin)",
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
-    "vectors": "node scripts/hash-vectors.mjs"
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

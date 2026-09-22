@@ -15,7 +15,7 @@ from psycopg_pool import ConnectionPool
 
 from urllib.parse import quote
 
-from . import inspector, ledger, readmodel
+from . import __version__, inspector, ledger, readmodel
 from .config import Settings
 from .db import make_pool
 from .extraction import enqueue_after_apply
@@ -96,7 +96,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if pool is None:
                 app.state.pool.close()
 
-    app = FastAPI(title="NMOS sidecar", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="NMOS sidecar", version=__version__, lifespan=lifespan)
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -161,7 +161,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def health(request: Request):
         with request.app.state.pool.connection() as conn:
             conn.execute("SELECT 1")
-        return {"ok": True, "service": "nmos-sidecar", "phase": "0B"}
+        return {"ok": True, "service": "nmos-sidecar", "version": __version__,
+                "features": {"state": bool(rules.rules), "extraction": bool(settings.llm_url),
+                             "vectors": recall.embedder is not None}}
 
     @app.post("/v1/sync/reconcile", response_model=ReconcileResponse, dependencies=[Depends(auth)])
     def reconcile(body: ReconcileRequest, request: Request):
