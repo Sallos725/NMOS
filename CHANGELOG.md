@@ -3,8 +3,11 @@
 ## Unreleased — stabilization (issues #6–#14)
 
 Correctness before new features. Upgrading applies migrations 0007–0009. At startup the sidecar
-backfills normalized text and then re-queues derived work under the new generations, recent messages
-first. Until that work finishes, the Inspector shows facts and vector coverage as *partial*.
+backfills normalized text, adopts existing embeddings (vector recall keeps working), and re-queues fact
+extraction under the new extractor generation, recent messages first. **Facts extracted by beta.3 are
+not injected until the worker has re-extracted them with the configured LLM** (they stay stored for
+audit). The Inspector shows fact coverage as *partial* until then. Verified by upgrading a database
+written by beta.3.
 
 - **Model/endpoint changes re-derive memory** (#6, #7). Extraction and embeddings are bound to a
   generation key: compiler, prompt, predicate registry, normalizer, endpoint, model and settings;
