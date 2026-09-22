@@ -4,7 +4,7 @@
 //@version 0.1.0-beta.1
 //@link https://github.com/Sallos725/NMOS Documentation
 //@update-url https://raw.githubusercontent.com/Sallos725/NMOS/main/adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js
-//@arg sidecar_url string NMOS sidecar base URL, e.g. http://127.0.0.1:8790
+//@arg sidecar_url string NMOS sidecar URL (empty = http://127.0.0.1:8790)
 //@arg auth_token string Optional; only if the sidecar sets NMOS_AUTH_TOKEN
 //@arg disabled int 1 = pass every request through untouched
 //@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 600)
@@ -220,6 +220,7 @@ ${revisionHash}`;
   var BODY_CHUNK = 250;
   function createAdapter(host) {
     const cache = /* @__PURE__ */ new Map();
+    let last = null;
     function remember(key, packet, ttl) {
       cache.set(key, { packet, expires: host.now() + ttl });
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
@@ -235,7 +236,8 @@ ${revisionHash}`;
         timer = setTimeout(() => reject(new DeadlineError(`deadline during ${path}`)), remaining);
       });
       try {
-        const res = await Promise.race([host.post(url, body, headers, remaining), timeout]);
+        const request = body === void 0 ? host.get(url, headers, remaining) : host.post(url, body, headers, remaining);
+        const res = await Promise.race([request, timeout]);
         if (res.status < 200 || res.status >= 300) throw new Error(`${path} -> HTTP ${res.status}`);
         return res.json;
       } finally {
@@ -248,15 +250,15 @@ ${revisionHash}`;
         const needed = (result.needed_bodies ?? []).map((n) => bodies.get(bodyKey(n.host_logical_id, n.revision_hash)));
         if (needed.some((b) => !b)) throw new Error("sidecar asked for an unknown body");
         for (let i = 0; i < needed.length; i += BODY_CHUNK) {
-          const last = i + BODY_CHUNK >= needed.length;
+          const last2 = i + BODY_CHUNK >= needed.length;
           const out = await call(settings, "/v1/sync/bodies", {
             host: "pocketrisu",
             chat_id: request.chat_id,
             bodies: needed.slice(i, i + BODY_CHUNK),
-            then_reconcile: last ? request : null
+            then_reconcile: last2 ? request : null
           }, deadline);
           if (!out.ok) throw new Error("sidecar rejected bodies");
-          if (last) {
+          if (last2) {
             if (!out.reconcile) throw new Error("sidecar did not reconcile");
             result = out.reconcile;
           }
@@ -313,9 +315,22 @@ ${revisionHash}`;
           retrieveMs: Math.round(host.now() - t2),
           packetChars: packet.length
         });
+        last = {
+          at: Date.now(),
+          ms: Math.round(host.now() - started),
+          packetChars: packet.length,
+          outcome: packet ? "injected" : "nothing-relevant"
+        };
         return injectPacket(prompt, packet, settings.injectPosition);
       } catch (error) {
         if (key) remember(key, "", FAILURE_TTL_MS);
+        last = {
+          at: Date.now(),
+          ms: Math.round(host.now() - started),
+          packetChars: 0,
+          outcome: "failed",
+          error: error instanceof Error ? error.message : String(error)
+        };
         host.warn("[NMOS] memory skipped for this request (fail open):", error instanceof Error ? error.message : error);
         return prompt;
       }
@@ -336,7 +351,36 @@ ${revisionHash}`;
         }, host.now() + settings.deadlineMs);
       })().catch((error) => host.debug("[NMOS] output notification failed:", error instanceof Error ? error.message : error));
     }
-    return { beforeRequest, onOutput };
+    async function statusText() {
+      const settings = await host.settings();
+      const lines = [];
+      if (!settings.enabled) lines.push("NMOS: \uAEBC\uC9D0 (disabled = 1) / disabled");
+      try {
+        const res = await call(
+          settings,
+          "/v1/health",
+          void 0,
+          host.now() + 3e3
+        );
+        const f = res.features ?? {};
+        const on = (b) => b ? "on" : "off";
+        lines.push(`NMOS ${res.version} \uC5F0\uACB0\uB428 / connected \u2014 ${settings.sidecarUrl}`);
+        lines.push(`\uC0C1\uD0DC\uCC3D state ${on(f.state)} \xB7 \uC0AC\uC2E4 facts ${on(f.extraction)} \xB7 \uC758\uBBF8\uAC80\uC0C9 vectors ${on(f.vectors)}`);
+      } catch (error) {
+        lines.push(`\uC0AC\uC774\uB4DC\uCE74\uC5D0 \uC5F0\uACB0\uD560 \uC218 \uC5C6\uC74C / cannot reach sidecar: ${settings.sidecarUrl}`);
+        lines.push(`(${error instanceof Error ? error.message : String(error)})`);
+        lines.push("\uD655\uC778: docker compose up -d \xB7 NMOS_CORS_ORIGINS\uC5D0 \uC774 \uC8FC\uC18C \uD3EC\uD568 \xB7 localhost/HTTPS\uB85C \uC811\uC18D");
+      }
+      if (last) {
+        const ago = Math.round((Date.now() - last.at) / 1e3);
+        const what = last.outcome === "injected" ? `\uAE30\uC5B5 \uC8FC\uC785 ${last.packetChars}\uC790 / injected` : last.outcome === "nothing-relevant" ? "\uAD00\uB828 \uAE30\uC5B5 \uC5C6\uC74C / nothing relevant" : `\uC2E4\uD328 / failed: ${last.error}`;
+        lines.push(`\uB9C8\uC9C0\uB9C9 \uC694\uCCAD / last request: ${ago}s \uC804 \xB7 ${what} \xB7 ${last.ms}ms`);
+      } else {
+        lines.push("\uC544\uC9C1 \uC694\uCCAD \uC5C6\uC74C \u2014 \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4 \uBCF4\uC138\uC694 / no request yet");
+      }
+      return lines.join("\n");
+    }
+    return { beforeRequest, onOutput, statusText };
   }
   function firstSaying(messages) {
     for (const m of messages) if (m.role === "char" && m.saying) return m.saying;
@@ -344,6 +388,7 @@ ${revisionHash}`;
   }
 
   // src/host.ts
+  var DEFAULT_SIDECAR_URL = "http://127.0.0.1:8790";
   var DEFAULT_RESERVED_TOKENS = 600;
   var DEFAULT_DEADLINE_MS = 800;
   async function arg(key) {
@@ -357,7 +402,7 @@ ${revisionHash}`;
     async settings() {
       const position = await arg("inject_position");
       return {
-        sidecarUrl: await arg("sidecar_url"),
+        sidecarUrl: await arg("sidecar_url") || DEFAULT_SIDECAR_URL,
         authToken: await arg("auth_token"),
         enabled: Number(await arg("disabled")) !== 1,
         reservedMemoryTokens: positiveInt(await arg("reserved_memory_tokens"), DEFAULT_RESERVED_TOKENS),
@@ -385,13 +430,26 @@ ${revisionHash}`;
       }
       return { status: res.status, json };
     },
+    async get(url, headers, timeoutMs) {
+      const res = await risuai.nativeFetch(url, { method: "GET", headers, requestTimeoutMs: Math.max(1, Math.floor(timeoutMs)) });
+      let json = null;
+      try {
+        json = await res.json();
+      } catch {
+        json = null;
+      }
+      return { status: res.status, json };
+    },
     warn: (...args) => console.warn(...args),
     debug: (...args) => console.debug(...args),
     now: () => performance.now()
   };
-  async function registerHooks(beforeRequest, onOutput) {
+  async function registerHooks(beforeRequest, onOutput, status) {
     await risuai.addRisuReplacer("beforeRequest", beforeRequest);
     await risuai.addRisuChatListener("output", onOutput);
+    await risuai.registerSetting("NMOS \uC0C1\uD0DC / Status", async () => {
+      await risuai.alert(await status());
+    }, "\u{1F9E0}", "html", "nmos-status");
   }
 
   // src/entry.ts
@@ -405,7 +463,8 @@ ${revisionHash}`;
           return prompt;
         }
       },
-      (arg2) => adapter.onOutput(arg2)
+      (arg2) => adapter.onOutput(arg2),
+      () => adapter.statusText()
     );
     console.log("[NMOS] adapter loaded", { phase: "0B", version: "0.1.0-beta.1" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));

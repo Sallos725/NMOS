@@ -12,8 +12,11 @@ declare const risuai: {
   nativeFetch(url: string, options: Record<string, unknown>): Promise<Response>;
   addRisuReplacer(name: 'beforeRequest', fn: (prompt: unknown, mode: unknown) => unknown): Promise<void>;
   addRisuChatListener(mode: 'output', fn: (arg: unknown) => unknown): Promise<void>;
+  registerSetting(name: string, callback: () => unknown, icon?: string, iconType?: string, id?: string): Promise<unknown>;
+  alert(message: string): Promise<void>;
 };
 
+const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8790';
 const DEFAULT_RESERVED_TOKENS = 600;
 const DEFAULT_DEADLINE_MS = 800;
 
@@ -31,7 +34,7 @@ export const risuHost: HostPort = {
   async settings(): Promise<Settings> {
     const position = await arg('inject_position');
     return {
-      sidecarUrl: await arg('sidecar_url'),
+      sidecarUrl: (await arg('sidecar_url')) || DEFAULT_SIDECAR_URL,
       authToken: await arg('auth_token'),
       enabled: Number(await arg('disabled')) !== 1,
       reservedMemoryTokens: positiveInt(await arg('reserved_memory_tokens'), DEFAULT_RESERVED_TOKENS),
@@ -62,6 +65,17 @@ export const risuHost: HostPort = {
     return { status: res.status, json };
   },
 
+  async get(url, headers, timeoutMs) {
+    const res = await risuai.nativeFetch(url, { method: 'GET', headers, requestTimeoutMs: Math.max(1, Math.floor(timeoutMs)) });
+    let json: unknown = null;
+    try {
+      json = await res.json();
+    } catch {
+      json = null;
+    }
+    return { status: res.status, json };
+  },
+
   warn: (...args) => console.warn(...args),
   debug: (...args) => console.debug(...args),
   now: () => performance.now(),
@@ -70,7 +84,11 @@ export const risuHost: HostPort = {
 export async function registerHooks(
   beforeRequest: (prompt: unknown, mode: unknown) => Promise<unknown>,
   onOutput: (arg: unknown) => void,
+  status: () => Promise<string>,
 ): Promise<void> {
   await risuai.addRisuReplacer('beforeRequest', beforeRequest);
   await risuai.addRisuChatListener('output', onOutput);
+  await risuai.registerSetting('NMOS 상태 / Status', async () => {
+    await risuai.alert(await status());
+  }, '🧠', 'html', 'nmos-status');
 }

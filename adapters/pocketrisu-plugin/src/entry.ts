@@ -13,6 +13,7 @@ import type { PromptMessage } from './types';
       }
     },
     (arg) => adapter.onOutput(arg as Parameters<typeof adapter.onOutput>[0]),
+    () => adapter.statusText(),
   );
   console.log('[NMOS] adapter loaded', { phase: '0B', version: __NMOS_VERSION__ });
 })().catch((error) => console.error('[NMOS] adapter failed to load', error));

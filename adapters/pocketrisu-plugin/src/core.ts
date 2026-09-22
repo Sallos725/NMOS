@@ -24,6 +24,7 @@ export interface HostPort {
   settings(): Promise<Settings>;
   currentChat(): Promise<HostChat | null>;
   post(url: string, body: unknown, headers: Record<string, string>, timeoutMs: number): Promise<HttpResult>;
+  get(url: string, headers: Record<string, string>, timeoutMs: number): Promise<HttpResult>;
   warn(...args: unknown[]): void;
   debug(...args: unknown[]): void;
   now(): number;
@@ -48,8 +49,17 @@ const FAILURE_TTL_MS = 30_000;
 const CACHE_LIMIT = 64;
 const BODY_CHUNK = 250;
 
+export interface LastRequest {
+  at: number;
+  ms: number;
+  packetChars: number;
+  outcome: 'injected' | 'nothing-relevant' | 'failed';
+  error?: string;
+}
+
 export function createAdapter(host: HostPort) {
   const cache = new Map<string, CacheEntry>();
+  let last: LastRequest | null = null;
 
   function remember(key: string, packet: string, ttl: number): void {
     cache.set(key, { packet, expires: host.now() + ttl });
@@ -67,7 +77,8 @@ export function createAdapter(host: HostPort) {
       timer = setTimeout(() => reject(new DeadlineError(`deadline during ${path}`)), remaining);
     });
     try {
-      const res = await Promise.race([host.post(url, body, headers, remaining), timeout]);
+      const request = body === undefined ? host.get(url, headers, remaining) : host.post(url, body, headers, remaining);
+      const res = await Promise.race([request, timeout]);
       if (res.status < 200 || res.status >= 300) throw new Error(`${path} -> HTTP ${res.status}`);
       return res.json as T;
     } finally {
@@ -146,10 +157,14 @@ export function createAdapter(host: HostPort) {
       remember(key, packet, SUCCESS_TTL_MS);
       host.debug('[NMOS] request done', { ms: Math.round(host.now() - started), manifestMs: Math.round(manifestMs),
         syncMs: Math.round(syncMs), retrieveMs: Math.round(host.now() - t2), packetChars: packet.length });
+      last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length,
+        outcome: packet ? 'injected' : 'nothing-relevant' };
       return injectPacket(prompt, packet, settings.injectPosition);
     } catch (error) {
       // Cache the miss briefly so host retries of this request (H2) do not wait out the deadline again.
       if (key) remember(key, '', FAILURE_TTL_MS);
+      last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: 0, outcome: 'failed',
+        error: error instanceof Error ? error.message : String(error) };
       host.warn('[NMOS] memory skipped for this request (fail open):', error instanceof Error ? error.message : error);
       return prompt;
     }
@@ -173,7 +188,35 @@ export function createAdapter(host: HostPort) {
     })().catch((error) => host.debug('[NMOS] output notification failed:', error instanceof Error ? error.message : error));
   }
 
-  return { beforeRequest, onOutput };
+  /** Human-readable status for the settings menu (Korean first, English second). */
+  async function statusText(): Promise<string> {
+    const settings = await host.settings();
+    const lines: string[] = [];
+    if (!settings.enabled) lines.push('NMOS: 꺼짐 (disabled = 1) / disabled');
+    try {
+      const res = await call<{ version: string; features: Record<string, boolean> }>(
+        settings, '/v1/health', undefined, host.now() + 3000);
+      const f = res.features ?? {};
+      const on = (b: boolean | undefined) => (b ? 'on' : 'off');
+      lines.push(`NMOS ${res.version} 연결됨 / connected — ${settings.sidecarUrl}`);
+      lines.push(`상태창 state ${on(f.state)} · 사실 facts ${on(f.extraction)} · 의미검색 vectors ${on(f.vectors)}`);
+    } catch (error) {
+      lines.push(`사이드카에 연결할 수 없음 / cannot reach sidecar: ${settings.sidecarUrl}`);
+      lines.push(`(${error instanceof Error ? error.message : String(error)})`);
+      lines.push('확인: docker compose up -d · NMOS_CORS_ORIGINS에 이 주소 포함 · localhost/HTTPS로 접속');
+    }
+    if (last) {
+      const ago = Math.round((Date.now() - last.at) / 1000);
+      const what = last.outcome === 'injected' ? `기억 주입 ${last.packetChars}자 / injected`
+        : last.outcome === 'nothing-relevant' ? '관련 기억 없음 / nothing relevant' : `실패 / failed: ${last.error}`;
+      lines.push(`마지막 요청 / last request: ${ago}s 전 · ${what} · ${last.ms}ms`);
+    } else {
+      lines.push('아직 요청 없음 — 메시지를 보내 보세요 / no request yet');
+    }
+    return lines.join('\n');
+  }
+
+  return { beforeRequest, onOutput, statusText };
 }
 
 function firstSaying(messages: HostMessage[]): string | null {

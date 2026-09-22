@@ -29,6 +29,10 @@ function fakeHost(handler: (path: string, body: any) => Promise<HttpResult> | Ht
       calls.push(path);
       return handler(path, body);
     },
+    get: async (url) => {
+      calls.push(url.replace('http://sidecar', ''));
+      return handler(url.replace('http://sidecar', ''), undefined);
+    },
     warn,
     debug: () => {},
     now: () => performance.now(),
@@ -159,5 +163,25 @@ describe('body upload', () => {
     host.currentChat = async () => structuredClone(big);
     await createAdapter(host).beforeRequest(prompt, 'model');
     expect(chunks).toEqual([250, 250, 101]);
+  });
+});
+
+describe('status text', () => {
+  it('reports connection, features and the last request', async () => {
+    const { host } = fakeHost((path, body) => path === '/v1/health'
+      ? { status: 200, json: { version: '0.1.0b1', features: { state: false, extraction: true, vectors: true } } }
+      : happy(path, body));
+    const adapter = createAdapter(host);
+    expect(await adapter.statusText()).toContain('아직 요청 없음');
+    await adapter.beforeRequest(prompt, 'model');
+    const text = await adapter.statusText();
+    expect(text).toContain('0.1.0b1 연결됨');
+    expect(text).toContain('facts on');
+    expect(text).toContain('기억 주입');
+  });
+
+  it('explains how to fix an unreachable sidecar', async () => {
+    const { host } = fakeHost(() => Promise.reject(new TypeError('Failed to fetch')));
+    expect(await createAdapter(host).statusText()).toContain('docker compose up -d');
   });
 });

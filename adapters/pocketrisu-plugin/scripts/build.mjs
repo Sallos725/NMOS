@@ -10,7 +10,7 @@ const header = [
   `//@version ${pkg.version}`,
   '//@link https://github.com/Sallos725/NMOS Documentation',
   '//@update-url https://raw.githubusercontent.com/Sallos725/NMOS/main/adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js',
-  '//@arg sidecar_url string NMOS sidecar base URL, e.g. http://127.0.0.1:8790',
+  '//@arg sidecar_url string NMOS sidecar URL (empty = http://127.0.0.1:8790)',
   '//@arg auth_token string Optional; only if the sidecar sets NMOS_AUTH_TOKEN',
   '//@arg disabled int 1 = pass every request through untouched',
   '//@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 600)',
