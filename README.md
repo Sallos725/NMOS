@@ -1,6 +1,8 @@
 # NMOS — Narrative Memory for PocketRisu
 
 **Beta.** Long-term memory for [PocketRisu](https://github.com/PocketRisu/PocketRisu) role-play.
+PocketRisu is a fork of [RisuAI](https://github.com/kwaroran/RisuAI); NMOS is a plugin that uses the
+RisuAI-family V3 plugin API. It is an independent project, not affiliated with PocketRisu or RisuAI.
 한국어 안내: [docs/guide.ko.md](docs/guide.ko.md)
 
 Long chats fall out of the model's context window. NMOS keeps an **immutable history** of your chat
@@ -146,6 +148,8 @@ README is verified on that build only; other PocketRisu versions may differ — 
 see. See `docs/perf/phase0.md` for latency (≈90–200 ms added per message at 500–1,000 messages).
 Known limits:
 
+- Upstream RisuAI is untested. PocketRisu is a RisuAI fork and NMOS only uses the shared V3 plugin
+  API, so it may work there; reports are welcome.
 - No group chats (the tested PocketRisu build has none).
 - Character knowledge is annotated (`knowledge="public"`, `known_by` / `hidden_from`, or unknown)
   rather than hard-isolated.

@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased — stabilization (issues #6–#19)
+## 0.1.0-beta.4
 
-Correctness before new features. Upgrading applies migrations 0007–0010. At startup the sidecar
+Stabilization release (issues #6–#19) and a UI review. Correctness before new features. Upgrading applies migrations 0007–0010. At startup the sidecar
 backfills normalized text and re-queues fact extraction and embeddings under the new generations,
 recent messages first. **Facts extracted by beta.3 are not injected until the worker has re-extracted
 them with the configured LLM, and beta.3 embeddings are not searched until the worker has re-embedded
@@ -70,6 +70,10 @@ database written by beta.3.
 - Knowledge names are free text; hard character-POV isolation is not implemented.
 - Messages longer than 5,600 normalized chars are only partially embedded; extraction reads the
   first 6,000 chars of a target message.
+- The Inspector shows a conversation's bot name from the second message after upgrading (the plugin
+  reads it in the background). Plugin menu names switch language after a page reload.
+- Tested on PocketRisu `a14c911` only. PocketRisu is a fork of RisuAI and NMOS uses the RisuAI-family
+  V3 plugin API, but upstream RisuAI has not been tested.
 
 ## 0.1.0-beta.3
 

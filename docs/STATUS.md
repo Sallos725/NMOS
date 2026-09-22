@@ -4,16 +4,18 @@
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.3` (2026-09-22), private repository.** Phases 1–3 complete. Phase 4 soft
+**Public beta `v0.1.0-beta.4` (2026-09-23), private repository.** Stabilization release (issues
+#6–#19) and UI review on top of `v0.1.0-beta.3` (2026-09-22). Phases 1–3 complete. Phase 4 soft
 subset complete (knowledge scope `public` / `limited` / `unknown`, D19, `docs/phases/PHASE-4.md`).
 Plugin settings panel configures providers, embeddings, tuning and parser rules. Validated with a
 real RisuRealm sim bot and a fresh install from release assets. Still outside the beta: hard
 character-POV isolation, threads/causal links, verifier, MCP (Phase 5+; not authorized).
 
-**Stabilization (issues #6–#19) and the UI review implemented on the `main` line after beta.3, not yet released.**
-Projection generations and coverage (D20, ADR 0006), normalized text (D21), knowledge scope (ADR 0007),
-CORS PUT, large-chat envelope (`docs/perf/scale.md`), release gate. The next beta is a stabilization
-release; see `CHANGELOG.md` → Unreleased for known limitations.
+**beta.4 contents.** Projection generations and coverage (D20, ADR 0006), normalized text (D21),
+knowledge scope (ADR 0007), CORS PUT, large-chat envelope (`docs/perf/scale.md`), release gate, no
+search of unverifiable beta.3 vectors (#17), immediate provider disable (#18), strict config types
+(#19), one NMOS panel (status/settings tabs, chat-menu entry, Korean/English), Inspector labels.
+Known limitations: `CHANGELOG.md` → 0.1.0-beta.4.
 
 ## What exists
 

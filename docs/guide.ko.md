@@ -1,6 +1,10 @@
 # NMOS 사용 안내 (베타)
 
-NMOS는 PocketRisu 롤플레이용 장기 기억 장치입니다. 채팅이 길어져 모델이 예전 내용을 못 보게 되면,
+NMOS는 PocketRisu 롤플레이용 장기 기억 장치입니다. PocketRisu는 [RisuAI](https://github.com/kwaroran/RisuAI)의
+포크이고, NMOS는 RisuAI 계열의 V3 플러그인 API를 쓰는 플러그인입니다. PocketRisu·RisuAI와 관계없는
+개인 프로젝트이며, 검증한 호스트는 PocketRisu뿐입니다(원본 RisuAI는 아직 테스트하지 않았습니다).
+
+채팅이 길어져 모델이 예전 내용을 못 보게 되면,
 NMOS가 **지금 대화와 관련된 예전 내용**을 골라 답변 생성 직전에 조금만 넣어 줍니다.
 
 - **발췌**: 방금 쓴 말과 관련된 예전 대사 (글자 일치 + 선택 시 의미 검색)
