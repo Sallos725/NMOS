@@ -55,7 +55,18 @@ export interface BuiltManifest {
 
 export const bodyKey = (logicalId: string, revisionHash: string): string => `${logicalId}\n${revisionHash}`;
 
-export async function buildManifest(chat: HostChat, characterRef: string | null): Promise<BuiltManifest> {
+export interface Labels {
+  characterName?: string | null;
+}
+
+const LABEL_MAX = 200;
+
+function labelOf(value: unknown): string | undefined {
+  const text = typeof value === 'string' ? value.trim() : '';
+  return text ? text.slice(0, LABEL_MAX) : undefined;
+}
+
+export async function buildManifest(chat: HostChat, characterRef: string | null, labels: Labels = {}): Promise<BuiltManifest> {
   const messages = Array.isArray(chat.message) ? chat.message : [];
   const hashes = await Promise.all(messages.map((m) => sha256Hex(canonicalJson(hashPayload(m)))));
   const bodies = new Map<string, Body>();
@@ -83,7 +94,10 @@ export async function buildManifest(chat: HostChat, characterRef: string | null)
     };
   });
   return {
-    request: { host: 'pocketrisu', chat_id: String(chat.id ?? ''), character_ref: characterRef, hash_version: 1, messages: entries },
+    request: {
+      host: 'pocketrisu', chat_id: String(chat.id ?? ''), character_ref: characterRef,
+      character_name: labelOf(labels.characterName), chat_name: labelOf(chat.name), hash_version: 1, messages: entries,
+    },
     bodies,
   };
 }

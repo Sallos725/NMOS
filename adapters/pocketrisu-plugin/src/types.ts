@@ -16,6 +16,7 @@ export interface HostMessage {
 
 export interface HostChat {
   id?: string;
+  name?: string;
   message: HostMessage[];
 }
 
@@ -49,6 +50,9 @@ export interface ReconcileRequest {
   host: 'pocketrisu';
   chat_id: string;
   character_ref: string | null;
+  /** Display labels for the inspector (bot and chat names); never identity. */
+  character_name?: string;
+  chat_name?: string;
   hash_version: 1;
   messages: ManifestMessage[];
 }

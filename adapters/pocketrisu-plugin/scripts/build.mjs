@@ -17,6 +17,7 @@ const header = [
   '//@arg deadline_ms int Hard request-path deadline in ms (0 = 800)',
   '//@arg inject_position string before_last_user (default) or end',
   '//@arg route string auto (default) / direct / server — how to reach the sidecar',
+  '//@arg language string Panel language: ko (default) or en',
   '',
 ].join('\n');
 

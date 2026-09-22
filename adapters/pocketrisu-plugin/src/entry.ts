@@ -13,7 +13,7 @@ import type { PromptMessage } from './types';
       }
     },
     (arg) => adapter.onOutput(arg as Parameters<typeof adapter.onOutput>[0]),
-    () => adapter.statusText(),
+    () => adapter.status(),
     (method, path, body, timeoutMs) => adapter.api(method, path, body, timeoutMs),
   );
   console.log('[NMOS] adapter loaded', { version: __NMOS_VERSION__ });
