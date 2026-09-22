@@ -1,0 +1,52 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build plugin
+        working-directory: adapters/pocketrisu-plugin
+        run: npm ci && npm run build
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        run: |
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then echo "channel=beta" >> "$GITHUB_OUTPUT"; else echo "channel=latest" >> "$GITHUB_OUTPUT"; fi
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/sidecar.Dockerfile
+          push: true
+          tags: |
+            ghcr.io/sallos725/nmos-sidecar:${{ steps.meta.outputs.version }}
+            ghcr.io/sallos725/nmos-sidecar:${{ steps.meta.outputs.channel }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/Sallos725/NMOS
+            org.opencontainers.image.licenses=MIT
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js nmos-pocketrisu.js
+          cp deploy/docker-compose.yml nmos-docker-compose.yml
+          flags=""; [[ "$GITHUB_REF_NAME" == *-* ]] && flags="--prerelease"
+          notes=$(awk -v v="## ${GITHUB_REF_NAME#v}" '$0==v{f=1;next} /^## /{f=0} f' CHANGELOG.md)
+          gh release create "$GITHUB_REF_NAME" nmos-pocketrisu.js nmos-docker-compose.yml \
+            --title "NMOS $GITHUB_REF_NAME" --notes "$notes" $flags
