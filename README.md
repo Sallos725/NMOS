@@ -48,17 +48,25 @@ continues without memory.
 That's it: raw recall works with no model configured. Open **http://127.0.0.1:8790/inspector** to see
 what NMOS stored and what it injected.
 
-## Settings panel
+## NMOS panel (status and settings)
 
-PocketRisu → Settings → **NMOS 설정 / Settings** opens NMOS's own panel:
+Open it from the **☰ menu left of the chat input → NMOS 기억 / NMOS memory**, or from PocketRisu →
+Settings → **NMOS 상태 / NMOS 설정**. Tabs switch between **Status** and **Settings**; the language
+picker (Korean by default, or English) is at the top right. Menu names follow the language after a
+page reload.
 
-- connection (sidecar URL, route, memory budget, on/off) and a live status line;
-- **fact-extraction LLM** and **embeddings**: provider presets (Ollama on this PC, OpenRouter, OpenAI,
-  Gemini, any OpenAI-compatible endpoint), model list, API key, and a **connection test** that makes a
-  real call. Saving applies immediately and processes existing chats in the background;
-- recall tuning and status-window parser rules (validated before saving).
+- **Status**: sidecar connection, which features are on (status window, facts, semantic recall), what the
+  last request injected, and a link to the Inspector.
+- **Settings**: connection (sidecar URL, route, memory budget, deadline, on/off); **fact-extraction LLM**
+  and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, any
+  OpenAI-compatible endpoint), model list, API key and a **connection test** that makes a real call;
+  recall tuning; status-window parser rules (validated before saving).
+- One **Save** button at the bottom saves every changed section together. Unsaved changes are listed
+  there, and closing asks whether to save them. Saving applies immediately and processes existing
+  chats in the background.
 
-**NMOS 상태 / Status** shows a one-screen health summary and what the last request injected.
+The Inspector lists conversations as **bot name · chat name** (after the next message in that chat)
+and is Korean by default; switch to English at the top right.
 
 ## Configuration (environment)
 

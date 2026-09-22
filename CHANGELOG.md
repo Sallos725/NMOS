@@ -2,7 +2,7 @@
 
 ## Unreleased — stabilization (issues #6–#19)
 
-Correctness before new features. Upgrading applies migrations 0007–0009. At startup the sidecar
+Correctness before new features. Upgrading applies migrations 0007–0010. At startup the sidecar
 backfills normalized text and re-queues fact extraction and embeddings under the new generations,
 recent messages first. **Facts extracted by beta.3 are not injected until the worker has re-extracted
 them with the configured LLM, and beta.3 embeddings are not searched until the worker has re-embedded
@@ -29,6 +29,17 @@ database written by beta.3.
   422 instead of converting them: `"false"` is no longer read as true, `3.5` is not truncated to 3,
   and numbers are not accepted where text is expected. The settings panel already sends the right
   types. `null` still resets a value to the environment default.
+- **One NMOS panel, reachable from the chat** (UI review). The ☰ menu left of the chat input now has
+  **NMOS 기억 / NMOS memory**; it and the two settings entries open one full-screen panel with a
+  **Status** tab (connection, features, last injection, Inspector link) and a **Settings** tab. The
+  status used to be a plain host alert. The panel is opaque (the host settings page no longer shows
+  through), has a Korean/English picker (Korean by default, new plugin arg `language`), and saves every
+  changed section with one **Save** button: unsaved changes are listed, and closing asks first. Server
+  settings from several sections are validated and saved in one request.
+- **Inspector names conversations** (UI review). Conversations show as *bot name · chat name* as
+  PocketRisu last reported them, with the chat id underneath (migration 0010). The plugin reads the bot
+  name in the background, so it appears from the second message after an upgrade. The Inspector is
+  Korean by default, with an English switch that the panel's language also selects.
 - **Recall ignores reasoning blocks** (#9). Lexical search, embeddings, extraction and excerpts share
   one versioned normalized text. Words that only appear inside `<Thoughts>`/`<think>`/style blocks no
   longer produce hits, in the corpus or in the query.
