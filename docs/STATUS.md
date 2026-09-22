@@ -60,4 +60,4 @@ Known limitations: `CHANGELOG.md` → 0.1.0-beta.4.
 | Repository visibility → Public | done 2026-09-23 (after `v0.1.0-beta.4`) |
 | GHCR `nmos-sidecar` package visibility → Public | done 2026-09-23 (owner) |
 | Anonymous `docker pull` + fresh install from release assets | done 2026-09-23 — `0.1.0-beta.4` and `beta` pulled without login (same image); release compose file up with migrations 0001–0010; release plugin file installed in PocketRisu `a14c911`, synced a 37-message chat, Inspector showed it as *bot · chat* in Korean |
-| README screenshot (settings panel or Inspector) | pending |
+| README screenshot (settings panel or Inspector) | done 2026-09-23 — `docs/images/` (panel Status tab, Inspector), taken on the `v0.1.0-beta.4` release stack |

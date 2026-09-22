@@ -63,6 +63,9 @@ NMOS 화면이 열립니다. 위쪽 탭으로 **상태**와 **설정**을 오가
 인스펙터(http://127.0.0.1:8790/inspector)는 대화를 **봇 이름 · 채팅 이름**으로 보여 줍니다(메시지를 한 번
 보낸 뒤부터). 기본은 한국어이고 오른쪽 위에서 English로 바꿀 수 있습니다.
 
+<p><img src="images/panel-status.png" alt="NMOS 화면의 상태 탭: 사이드카 연결됨, 의미 검색 켜짐, 마지막 요청에 기억 835자 주입" width="560"></p>
+<p><img src="images/inspector.png" alt="NMOS 인스펙터: 대화가 봇 이름 · 채팅 이름으로 표시됨" width="760"></p>
+
 ## (선택) 환경 변수로 기본값 지정
 
 설정 창 대신 `.env` 파일로 기본값을 정할 수도 있습니다. `docker-compose.yml` 옆에 만들고 `docker compose up -d`:
