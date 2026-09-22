@@ -34,7 +34,8 @@ from .models import (
 )
 from .reconcile import Entry, plan
 from .parsers import load_rules
-from .retrieval import retrieve
+from .llm import Embedder
+from .retrieval import RecallOptions, retrieve
 from .state import current_state, sync_rules, write_state
 
 log = logging.getLogger("nmos.sidecar")
@@ -68,10 +69,19 @@ def _compact_observation(body: ReconcileRequest, result, base_hash: str | None, 
     return {"chat_id": body.chat_id, "columns": columns, "entries": rows}
 
 
-def create_app(settings: Settings | None = None, pool: ConnectionPool | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, pool: ConnectionPool | None = None,
+               embedder: Embedder | None = None) -> FastAPI:
     settings = settings or Settings()
 
     rules = load_rules(settings.parsers_file)
+    recall = RecallOptions(
+        top_k=settings.recall_top_k, threshold=settings.recall_threshold, rules_version=rules.version,
+        facts_limit=settings.facts_limit,
+        embedder=embedder or (Embedder(settings.embed_url, settings.embed_model, settings.embed_api_key)
+                              if settings.embed_url and settings.embed_model else None),
+        embed_model=settings.embed_model, embed_timeout_ms=settings.embed_timeout_ms,
+        vector_min_sim=settings.vector_min_sim,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -138,10 +148,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             f"{conv.id}:{result.manifest_hash}:manifest",
         )
         head = ledger.apply_plan(conn, conv, state, result, observation, settings.extract_window)
-        if settings.llm_url:
+        if settings.llm_url or settings.embed_url:
             enqueue_after_apply(conn, conv.id, state.head, state.lifecycle, manifest,
                                 {**state.lifecycle, **result.lifecycle}, state.revision_ids,
-                                settings.extract_window, settings.extract_backfill)
+                                settings.extract_window, settings.extract_backfill,
+                                extract=bool(settings.llm_url), embed_model=settings.embed_model or None)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=result.manifest_hash, changes_summary=result.summary,
                                  commit_reason=result.commit_reason)
@@ -179,7 +190,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def retrieve_route(body: RetrieveRequest, request: Request):
         delay()
         with request.app.state.pool.connection() as conn:
-            out = retrieve(conn, body, settings.recall_top_k, settings.recall_threshold, rules.version, settings.facts_limit)
+            out = retrieve(conn, body, recall)
         return RetrieveResponse(
             trace_id=out["trace_id"] or uuid7(),
             freshness=out["freshness"],

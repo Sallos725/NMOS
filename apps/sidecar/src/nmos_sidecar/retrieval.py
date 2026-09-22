@@ -1,113 +1,176 @@
-"""Raw lexical recall over the head membership (Phase 0: pg_trgm only, D11)."""
+"""Recall over the head membership: lexical (pg_trgm, D11) + optional vectors (Phase 3), fused with RRF.
+
+Also assembles the packet sections: state (Phase 1), facts (Phase 2), excerpts.
+"""
 
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
 import psycopg
 from psycopg.types.json import Jsonb
 
+from .facts import fact_line, fact_versions, relevant_facts
 from .ids import uuid7
 from .ledger import find_conversation
+from .llm import Embedder, LLMError
 from .packet import Excerpt, StateItem, compile_packet, excerpt
-from .facts import fact_line, fact_versions, relevant_facts
 from .state import current_state
+from .vectors import vector_candidates
 
 CANDIDATE_LIMIT = 50
+RRF_K = 60
 # Candidates must match the user's message; the previous AI turn only breaks ties in ranking
 # (as a filter it pulled in near-duplicate filler during manual testing).
 AI_TIEBREAK_WEIGHT = 0.2
 
 
-def retrieve(conn: psycopg.Connection, request: Any, top_k: int, threshold: float,
-             rules_version: str = "none", facts_limit: int = 8) -> dict[str, Any]:
+@dataclass(frozen=True)
+class RecallOptions:
+    top_k: int = 5
+    threshold: float = 0.4
+    rules_version: str = "none"
+    facts_limit: int = 8
+    embedder: Embedder | None = None
+    embed_model: str = ""
+    embed_timeout_ms: int = 300
+    vector_min_sim: float = 0.55
+
+
+def _cut(conn: psycopg.Connection, head: UUID) -> int:
+    """Messages at or before the last 'allBefore' cut are hidden from the model by the host (inv. 7)."""
+    return conn.execute(
+        "SELECT coalesce(max(am.position), -1) AS position FROM active_membership am"
+        " JOIN source_revision sr ON sr.id = am.source_revision_id"
+        " WHERE am.commit_id = %s AND sr.metadata->>'disabled' = 'allBefore'",
+        (head,),
+    ).fetchone()["position"]
+
+
+def _lexical(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, cut: int,
+             threshold: float) -> list[dict[str, Any]]:
+    # `<%` applies pg_trgm.word_similarity_threshold and can use the trigram GIN index (D11).
+    conn.execute("SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)", (str(threshold),))
+    return conn.execute(
+        """
+        SELECT sr.id, am.position, so.host_logical_id, sr.content, sr.metadata->>'role' AS role,
+               sr.metadata->>'name' AS name, s.user_score,
+               s.user_score + %(w)s * CASE WHEN %(ai)s = '' THEN 0 ELSE word_similarity(%(ai)s, sr.content) END AS score
+        FROM active_membership am
+        JOIN source_revision sr ON sr.id = am.source_revision_id
+        JOIN source_object so ON so.id = sr.source_object_id
+        CROSS JOIN LATERAL (SELECT word_similarity(%(q)s, sr.content) AS user_score) s
+        WHERE am.commit_id = %(head)s
+          AND sr.lifecycle = 'accepted'
+          AND am.position > %(cut)s
+          AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+          AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
+          AND %(q)s <%% sr.content
+        ORDER BY score DESC, am.position DESC
+        LIMIT %(limit)s
+        """,
+        {"head": head, "q": query, "ai": previous_ai, "w": AI_TIEBREAK_WEIGHT, "cut": cut, "limit": CANDIDATE_LIMIT},
+    ).fetchall()
+
+
+def fuse(lexical: list[dict[str, Any]], vector: list[dict[str, Any]], threshold: float,
+         min_sim: float) -> list[dict[str, Any]]:
+    """Reciprocal-rank fusion with abstention: a candidate needs a lexical or a vector signal above its bar."""
+    merged: dict[Any, dict[str, Any]] = {}
+    for rank, row in enumerate(lexical):
+        item = merged.setdefault(row["id"], {**row, "sim": None, "rrf": 0.0})
+        item["rrf"] += 1 / (RRF_K + rank + 1)
+    for rank, row in enumerate(vector):
+        item = merged.setdefault(row["id"], {**row, "user_score": 0.0, "score": 0.0, "rrf": 0.0})
+        item["sim"] = float(row["sim"])
+        item["text_start"], item["text_end"] = row["text_start"], row["text_end"]
+        item["rrf"] += 1 / (RRF_K + rank + 1)
+    kept = [m for m in merged.values()
+            if float(m.get("user_score") or 0) >= threshold or (m.get("sim") is not None and m["sim"] >= min_sim)]
+    kept.sort(key=lambda m: (m["rrf"], m["position"]), reverse=True)
+    return kept
+
+
+def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> dict[str, Any]:
     started = time.perf_counter()
     conv = find_conversation(conn, request.host, request.chat_id)
     if conv is None or conv.head_commit_id is None:
         return {"freshness": "unknown_conversation", "trace_id": None, "text": "", "tokens": 0, "count": 0}
-
-    fresh = (request.active_commit is None or request.active_commit == conv.head_commit_id) and (
+    head = conv.head_commit_id
+    fresh = (request.active_commit is None or request.active_commit == head) and (
         request.manifest_hash is None or request.manifest_hash == conv.head_manifest_hash
     )
     query = request.query or ""
     previous_ai = request.previous_ai or ""
-    rows: list[dict[str, Any]] = []
+    timings: dict[str, float] = {}
+    vector_note = "off"
+    lexical: list[dict[str, Any]] = []
+    vector: list[dict[str, Any]] = []
     if fresh and query.strip():
-        # Messages at or before the last 'allBefore' cut are hidden from the model by the host (inv. 7).
-        cut = conn.execute(
-            "SELECT coalesce(max(am.position), -1) AS position FROM active_membership am"
-            " JOIN source_revision sr ON sr.id = am.source_revision_id"
-            " WHERE am.commit_id = %s AND sr.metadata->>'disabled' = 'allBefore'",
-            (conv.head_commit_id,),
-        ).fetchone()["position"]
-        # `<%` applies pg_trgm.word_similarity_threshold and can use the trigram GIN index (D11).
-        conn.execute("SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)", (str(threshold),))
-        rows = conn.execute(
-            """
-            SELECT sr.id, am.position, so.host_logical_id, sr.content, sr.metadata->>'role' AS role,
-                   sr.metadata->>'name' AS name, s.user_score,
-                   s.user_score + %(w)s * CASE WHEN %(ai)s = '' THEN 0 ELSE word_similarity(%(ai)s, sr.content) END AS score
-            FROM active_membership am
-            JOIN source_revision sr ON sr.id = am.source_revision_id
-            JOIN source_object so ON so.id = sr.source_object_id
-            CROSS JOIN LATERAL (SELECT word_similarity(%(q)s, sr.content) AS user_score) s
-            WHERE am.commit_id = %(head)s
-              AND sr.lifecycle = 'accepted'
-              AND am.position > %(cut)s
-              AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
-              AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
-              AND %(q)s <%% sr.content
-            ORDER BY score DESC, am.position DESC
-            LIMIT %(limit)s
-            """,
-            {"head": conv.head_commit_id, "q": query, "ai": previous_ai, "w": AI_TIEBREAK_WEIGHT,
-             "cut": cut, "limit": CANDIDATE_LIMIT},
-        ).fetchall()
-    db_ms = (time.perf_counter() - started) * 1000
+        cut = _cut(conn, head)
+        lexical = _lexical(conn, head, query, previous_ai, cut, options.threshold)
+        timings["lexical"] = round((time.perf_counter() - started) * 1000, 2)
+        if options.embedder is not None:
+            t0 = time.perf_counter()
+            try:
+                (qvec,) = options.embedder.embed([query], timeout_s=options.embed_timeout_ms / 1000)
+                timings["embed"] = round((time.perf_counter() - t0) * 1000, 2)
+                vector = vector_candidates(conn, head, qvec, options.embed_model, cut, CANDIDATE_LIMIT)
+                timings["vector"] = round((time.perf_counter() - t0) * 1000 - timings["embed"], 2)
+                vector_note = "on"
+            except (LLMError, ValueError) as exc:  # fail open to lexical-only
+                vector_note = f"fallback: {exc}"[:200]
 
     in_context = set(request.in_context_ids)
-    candidates = [r for r in rows if r["user_score"] >= threshold]
-    excluded = [r for r in candidates if r["host_logical_id"] in in_context]
-    eligible = [r for r in candidates if r["host_logical_id"] not in in_context][:top_k]
+    candidates = fuse(lexical, vector, options.threshold, options.vector_min_sim)
+    excluded = [c for c in candidates if c["host_logical_id"] in in_context]
+    eligible = [c for c in candidates if c["host_logical_id"] not in in_context][: options.top_k]
+    focus = f"{query} {previous_ai}"
     ranked = [
         Excerpt(
-            turn=r["position"],
-            speaker=r["name"] or ("user" if r["role"] == "user" else "character"),
-            text=excerpt(r["content"], f"{query} {previous_ai}"),
-            score=float(r["score"]),
-            revision_id=str(r["id"]),
+            turn=c["position"],
+            speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
+            text=excerpt(c["content"] if c.get("user_score") else c["content"][c["text_start"]:c["text_end"]], focus),
+            score=float(c["rrf"]),
+            revision_id=str(c["id"]),
         )
-        for r in eligible
+        for c in eligible
     ]
     state_items: list[StateItem] = []
-    if fresh and rules_version != "none":
+    if fresh and options.rules_version != "none":
         state_items = [StateItem(key=r["key"], value=r["value"], turn=r["position"])
-                       for r in current_state(conn, conv.head_commit_id, rules_version)
+                       for r in current_state(conn, head, options.rules_version)
                        if r["host_logical_id"] not in in_context]
     fact_lines: list[str] = []
-    if fresh and facts_limit > 0:
-        facts = relevant_facts(fact_versions(conn, conv.head_commit_id), query, previous_ai, in_context, facts_limit)
+    if fresh and options.facts_limit > 0:
+        facts = relevant_facts(fact_versions(conn, head), query, previous_ai, in_context, options.facts_limit)
         fact_lines = [fact_line(f) for f in facts]
     text, tokens, chosen = compile_packet(ranked, request.budget_tokens, state=state_items, facts=fact_lines)
-    total_ms = (time.perf_counter() - started) * 1000
+    timings["sidecar_total"] = round((time.perf_counter() - started) * 1000, 2)
+
+    def brief(c: dict[str, Any]) -> dict[str, Any]:
+        return {"revision_id": str(c["id"]), "position": c["position"], "host_logical_id": c["host_logical_id"],
+                "score": round(float(c.get("score") or 0), 4), "user_score": round(float(c.get("user_score") or 0), 4),
+                "sim": None if c.get("sim") is None else round(float(c["sim"]), 4),
+                "rrf": round(float(c.get("rrf") or 0), 5)}
 
     trace_id: UUID = uuid7()
-    brief = lambda r: {"revision_id": str(r["id"]), "position": r["position"], "host_logical_id": r["host_logical_id"],  # noqa: E731
-                       "score": round(float(r["score"]), 4), "user_score": round(float(r["user_score"]), 4)}
     conn.execute(
         "INSERT INTO retrieval_trace (id, conversation_id, commit_id, query, candidates, selected, excluded_in_context,"
         " token_estimate, latency_ms, freshness) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
-            trace_id, conv.id, conv.head_commit_id, query,
-            Jsonb([brief(r) for r in rows]),
-            Jsonb([{"revision_id": e.revision_id, "turn": e.turn, "score": round(e.score, 4)} for e in chosen]),
-            Jsonb([brief(r) for r in excluded]),
+            trace_id, conv.id, head, query,
+            Jsonb([brief(c) for c in candidates]),
+            Jsonb([{"revision_id": e.revision_id, "turn": e.turn, "score": round(e.score, 5)} for e in chosen]),
+            Jsonb([brief(c) for c in excluded]),
             tokens,
-            Jsonb({"sidecar_db": round(db_ms, 2), "sidecar_total": round(total_ms, 2),
+            Jsonb({**timings, "vector_mode": vector_note, "state_items": len(state_items), "facts": len(fact_lines),
                    **{f"client_{k}": v for k, v in request.client_timings_ms.items()}}),
             "fresh" if fresh else "stale",
         ),
     )
-    return {"freshness": "fresh" if fresh else "stale", "trace_id": trace_id, "text": text, "tokens": tokens, "count": len(chosen)}
+    return {"freshness": "fresh" if fresh else "stale", "trace_id": trace_id, "text": text, "tokens": tokens,
+            "count": len(chosen)}

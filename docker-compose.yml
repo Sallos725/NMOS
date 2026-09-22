@@ -2,7 +2,7 @@ name: nmos
 
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: nmos
       POSTGRES_PASSWORD: ${NMOS_DB_PASSWORD:-nmos}

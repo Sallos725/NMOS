@@ -54,8 +54,10 @@ def enqueue_after_apply(
     ids: dict[RevKey, UUID],
     window: int,
     backfill: int,
+    extract: bool = True,
+    embed_model: str | None = None,
 ) -> int:
-    """Queue extraction for (revision, window) pairs that became eligible with this sync.
+    """Queue extraction (and embedding) for (revision, window) pairs that became eligible with this sync.
 
     Eligible = accepted, not a comment, not disabled. Pairs that were already eligible under the
     previous head are skipped; on first sight of a chat only the latest `backfill` positions are queued.
@@ -73,13 +75,15 @@ def enqueue_after_apply(
     if old_head is None and backfill >= 0:
         fresh = [(pair, pos) for pair, pos in fresh if pos >= len(manifest) - backfill]
     rows = []
+    priority = 100 if old_head is not None else 200  # live turns before backfill
     for (key, win), pos in fresh:
         rev = ids[key]
-        rows.append((
-            "extract", f"extract:{rev}:{win}:{COMPILER_VERSION}", conv_id,
-            Jsonb({"revision_id": str(rev), "window_hash": win}),
-            100 if old_head is not None else 200,  # live turns before backfill
-        ))
+        if extract:
+            rows.append(("extract", f"extract:{rev}:{win}:{COMPILER_VERSION}", conv_id,
+                         Jsonb({"revision_id": str(rev), "window_hash": win}), priority))
+        if embed_model:
+            # Embeddings depend on content only; they run first because recall uses them directly.
+            rows.append(("embed", f"embed:{rev}:{embed_model}", conv_id, Jsonb({"revision_id": str(rev)}), priority - 50))
     if rows:
         with conn.cursor() as cur:
             cur.executemany(
