@@ -180,3 +180,37 @@ def test_prune_keeps_recent_and_unfinished(llm_client, migrated, db):
     assert db.execute("SELECT count(*) AS n FROM job").fetchone()["n"] == before - 1
     assert db.execute("SELECT count(*) AS n FROM retrieval_trace").fetchone()["n"] == 0
     assert "Background jobs:" in llm_client.get("/inspector").text
+
+
+def test_knowledge_annotations_reach_the_packet(migrated, db):
+    def complete(system, user):
+        if "비밀" not in user.split("TARGET", 1)[1]:
+            return {"assertions": []}, "{}"
+        return {"assertions": [{"subject": "{{user}}", "subject_type": "character", "predicate": "identity",
+                                "value": "이사장의 아들", "known_by": ["하나", "{{user}}"], "hidden_from": ["카이토"]}]}, "{}"
+    with make_client(migrated, llm_url="http://fake/v1", llm_model="fake") as c:
+        chat = SimChat()
+        chat.user("하나에게만 속삭인다. 비밀인데 나 이사장 아들이야.")
+        chat.reply("하나는 고개를 끄덕였다.")
+        filler(chat, 5)
+        sync(c, chat)
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            while run_once(conn, {"extract": lambda cn, job: process_extract(cn, job, complete, "fake", 6)}):
+                pass
+        text = recall(c, chat, "카이토, 내 정체 알아? {{user}}", in_context=[])["packet"]["text"]
+    assert 'known_by="하나, {{user}}" hidden_from="카이토"' in text
+    assert "do not know it" in text
+
+
+def test_secret_hidden_from_addressed_character_is_selected():
+    from nmos_sidecar.facts import relevant_facts
+    base = {"object": None, "epistemic": "stated", "host_logical_id": "x", "known_by": None, "hidden_from": None}
+    facts = [
+        {**base, "subject": "{{user}}", "predicate": "identity", "value": "이사장의 아들", "position": 1,
+         "known_by": ["하나", "{{user}}"], "hidden_from": ["카이토", "유이"]},
+        {**base, "subject": "카이토", "predicate": "goal", "value": "새 별 발견", "position": 3},
+        {**base, "subject": "마을", "predicate": "world_fact", "value": "축제", "position": 5},
+    ]
+    picked = relevant_facts(facts, "카이토, 혹시 내 정체에 대해 뭐 들은 거 있어?", "", set(), 8)
+    assert [f["predicate"] for f in picked][:2] == ["identity", "goal"]
+    assert all(f["subject"] != "마을" for f in picked)

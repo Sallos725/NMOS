@@ -19,7 +19,7 @@ from urllib.parse import quote
 from . import __version__, inspector, ledger, readmodel, runtime
 from .config import Settings
 from .db import make_pool
-from .extraction import backfill_jobs, enqueue_after_apply, job_counts
+from .extraction import COMPILER_VERSION, backfill_jobs, enqueue_after_apply, job_counts, stale_extractions_exist
 from .facts import fact_versions
 from .ids import uuid7
 from .models import (
@@ -96,6 +96,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         with app.state.pool.connection() as conn:
             rebuild(runtime.stored(conn))
             backfilled = sync_rules(conn, rt["rules"])
+            cur = rt["settings"]
+            if cur.llm_url and cur.llm_model and stale_extractions_exist(conn):
+                # The extraction prompt changed (compiler version): re-extract recent history.
+                log.info("re-queued %d extraction jobs for %s",
+                         backfill_jobs(conn, True, None, cur.extract_backfill), COMPILER_VERSION)
         if backfilled:
             log.info("state backfilled: %d observations for rules %s", backfilled, rt["rules"].version)
         try:

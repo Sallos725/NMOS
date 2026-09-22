@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from uuid import UUID
 
@@ -21,7 +22,7 @@ WITH m AS (
 ),
 cut AS (SELECT coalesce(max(position), -1) AS position FROM m WHERE metadata->>'disabled' = 'allBefore')
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.value, a.epistemic, a.confidence, a.evidence,
-       m.position, m.host_logical_id
+       a.known_by, a.hidden_from, m.position, m.host_logical_id
 FROM assertion a
 JOIN extraction e ON e.id = a.extraction_id AND e.compiler_version = %(ver)s
 JOIN m ON m.rid = a.source_revision_id AND m.window_hash = e.window_hash
@@ -73,18 +74,35 @@ def fact_text(f: dict[str, Any]) -> str:
     return f"{text}: {f['value']}" if f.get("value") else text
 
 
+FIRST_PERSON = re.compile(r"(^|\s)(내|나는|나를|나한테|나에게|나의|저는|제가|저를|제|i|my|me|mine)(\s|$|[?,.!])", re.IGNORECASE)
+USER_NAMES = {"{{user}}", "{user}", "user", "유저"}
+
+
 def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],
                    limit: int) -> list[dict[str, Any]]:
-    """Facts about entities mentioned now, then lexically related ones; never from in-context sources."""
+    """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
+
+    Knowledge marks count as mentions: a fact hidden from a character who is being addressed is the one
+    the model most needs to see (so it does not leak), and "내/my" questions concern the user's facts.
+    """
     q = _norm(query)
     ai = _norm(previous_ai)
     q_grams = _grams(query)
+    first_person = bool(FIRST_PERSON.search(query))
     scored = []
     for f in facts:
         if f["host_logical_id"] in in_context:
             continue
         names = [n for n in (_norm(f["subject"]), _norm(f.get("object"))) if len(n) >= 2]
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
+        hidden = [_norm(n) for n in f.get("hidden_from") or [] if len(_norm(n)) >= 2]
+        known = [_norm(n) for n in f.get("known_by") or [] if len(_norm(n)) >= 2 and _norm(n) not in USER_NAMES]
+        if any(n in q for n in hidden):
+            mention += 2.5
+        elif any(n in q for n in known):
+            mention += 1.0
+        if first_person and (_norm(f["subject"]) in USER_NAMES or _norm(f.get("value")).startswith(tuple(USER_NAMES))):
+            mention += 1.0
         grams = _grams(fact_text(f))
         lexical = len(grams & q_grams) / max(1, len(q_grams))
         score = mention + lexical
@@ -95,5 +113,12 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
 
 
 def fact_line(f: dict[str, Any]) -> str:
-    return (f"    <Fact kind={quoteattr(f['predicate'])} turn=\"{f['position']}\""
-            f"{' certainty=\"implied\"' if f.get('epistemic') == 'implied' else ''}>{escape(fact_text(f))}</Fact>")
+    """One <Fact>; known_by / hidden_from mark who knows it (soft character knowledge, D9)."""
+    attrs = f" kind={quoteattr(f['predicate'])} turn=\"{f['position']}\""
+    if f.get("epistemic") == "implied":
+        attrs += ' certainty="implied"'
+    if f.get("known_by"):
+        attrs += f" known_by={quoteattr(', '.join(f['known_by']))}"
+    if f.get("hidden_from"):
+        attrs += f" hidden_from={quoteattr(', '.join(f['hidden_from']))}"
+    return f"    <Fact{attrs}>{escape(fact_text(f))}</Fact>"

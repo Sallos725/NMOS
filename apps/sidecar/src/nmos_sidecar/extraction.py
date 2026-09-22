@@ -20,7 +20,7 @@ from .reconcile import Entry, RevKey, window_hashes
 
 log = logging.getLogger("nmos.extraction")
 
-COMPILER_VERSION = "extract-v1"
+COMPILER_VERSION = "extract-v2"  # v2: known_by / hidden_from
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
 
@@ -39,10 +39,14 @@ Rules:
 - `epistemic`: "stated" if explicit, "implied" if strongly implied. Skip speculation, jokes, OOC text,
   UI/status boilerplate, and anything that only restates earlier facts.
 - Prefer few, high-value facts. An empty list is a good answer for small talk.
+- Knowledge: `known_by` lists who knows or witnessed the fact (use names; include "{{{{user}}}}" when the
+  user's character knows). `hidden_from` lists characters it is explicitly kept from (a whispered
+  secret, a hidden identity, something done while others were away). Use [] when everyone present
+  knows or it is unclear. Never guess about characters who are not in the story.
 
 Answer with JSON only: {{"assertions": [{{"subject": "...", "subject_type": "...", "predicate": "...",
 "object": "... or null", "object_type": "... or null", "value": "... or null", "epistemic": "stated",
-"confidence": 0.0-1.0, "evidence": "..."}}]}}"""
+"confidence": 0.0-1.0, "evidence": "...", "known_by": [], "hidden_from": []}}]}}"""
 
 
 def enqueue_after_apply(
@@ -215,16 +219,23 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
                 confidence = float(item.get("confidence")) if item.get("confidence") is not None else None
             except (TypeError, ValueError):
                 confidence = None
+            def names(key: str) -> list[str] | None:
+                value = item.get(key)
+                if not isinstance(value, list):
+                    return None
+                out = [str(v).strip()[:60] for v in value if str(v or "").strip()]
+                return out[:12] or None
+
             rows.append((extraction_id, revision_id, text("subject", 120) or "?", text("subject_type", 20),
                          text("predicate", 40) or "?", text("object", 120), text("object_type", 20), text("value"),
                          "implied" if item.get("epistemic") == "implied" else "stated", confidence,
-                         text("evidence"), status, reason))
+                         text("evidence"), status, reason, names("known_by"), names("hidden_from")))
         if rows:
             with conn.cursor() as cur:
                 cur.executemany(
                     "INSERT INTO assertion (extraction_id, source_revision_id, subject, subject_type, predicate, object,"
-                    " object_type, value, epistemic, confidence, evidence, status, reason)"
-                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    " object_type, value, epistemic, confidence, evidence, status, reason, known_by, hidden_from)"
+                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     rows,
                 )
     log.info("extracted revision=%s window=%s assertions=%d", revision_id, window_hash, len(rows))
@@ -265,3 +276,8 @@ def backfill_jobs(conn: psycopg.Connection, extract: bool, embed_model: str | No
             {"n": backfill, "model": embed_model},
         ).rowcount
     return total
+
+
+def stale_extractions_exist(conn: psycopg.Connection) -> bool:
+    return conn.execute("SELECT 1 FROM extraction WHERE compiler_version <> %s LIMIT 1",
+                        (COMPILER_VERSION,)).fetchone() is not None

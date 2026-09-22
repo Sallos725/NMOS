@@ -117,7 +117,7 @@ machine only if you configure an LLM or embedding endpoint that is remote.
 
 Beta. Tested against PocketRisu `a14c911` (v1.12.0) in real UI runs; see `docs/perf/phase0.md` for
 latency (≈90–200 ms added per message at 500–1,000 messages). Known limits: no group chats (PocketRisu
-build has none), character point-of-view knowledge isolation is not implemented, recall thresholds are
+build has none), character knowledge is annotated (`known_by` / `hidden_from`) rather than hard-isolated, recall thresholds are
 tuned on limited data — please report cases where memory is wrong or missing.
 
 ## Develop

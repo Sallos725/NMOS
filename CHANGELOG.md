@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.0-beta.2
+
+- **Settings panel in the plugin** (PocketRisu → Settings → "NMOS 설정"): LLM and embedding providers
+  (Ollama / OpenRouter / OpenAI / Gemini / custom), model list, connection tests, recall tuning,
+  status-window rules. `.env` is optional; saving applies immediately and backfills existing chats.
+- **Sim bots**: per-character state (`하나.HP`), markup/`<Thoughts>` stripped from recall,
+  robust matching when scripts reshape messages, knowledge marks `known_by` / `hidden_from`.
+- "NMOS 상태 / Status" menu; default sidecar URL; non-local sidecars reached through the PocketRisu
+  server (works for phones/Remote Access and Docker service names).
+- Auth token optional (off by default). Worker prunes old jobs/traces; embedding contention fixed.
+
 ## 0.1.0-beta.1
 
 First public beta. Tested against PocketRisu `a14c911` (v1.12.0) with real UI runs.

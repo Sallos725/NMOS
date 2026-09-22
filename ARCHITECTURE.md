@@ -158,6 +158,11 @@ through a SKIP LOCKED queue; single-valued predicates form fact versions.
 RRF with lexical, abstention by per-signal bars, query-side instruction for instruction-tuned embedders,
 fail-open to lexical on embedding timeout.
 
+**D19 — Soft character knowledge (Phase 4 subset).** Extraction records `known_by` / `hidden_from`
+per assertion; facts carry them into the packet and the Note tells the model that unlisted characters
+do not know the fact. A fact hidden from a character addressed right now is ranked first. Hard POV
+isolation stays out of scope: a sim bot writes every character in one generation (D9).
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
