@@ -115,3 +115,23 @@ def test_state_respects_budget(state_client):
     sync(state_client, chat)
     out = recall(state_client, chat, "x", budget=70)["packet"]
     assert out["token_estimate"] <= 70
+
+
+def test_inspector_and_read_apis(state_client):
+    chat = SimChat(chat_id="<script>alert(1)</script>")
+    chat.user("<b>hello</b> & bye")
+    chat.reply(STATUS)
+    chat.user("next")
+    sync(state_client, chat)
+    recall(state_client, chat, "hello")
+    convs = state_client.get("/v1/conversations").json()
+    conv_id = convs[0]["id"]
+    assert state_client.get(f"/v1/conversations/{conv_id}/state").json()[0]["key"]
+    assert state_client.get(f"/v1/conversations/{conv_id}/traces").json()
+    index = state_client.get("/inspector")
+    assert index.status_code == 200 and "<script>alert(1)" not in index.text and "&lt;script&gt;" in index.text
+    detail = state_client.get(f"/inspector/c/{conv_id}").text
+    assert "폐허가 된 성당" in detail and "&lt;b&gt;hello&lt;/b&gt; &amp; bye" in detail and "<b>hello" not in detail
+    del state_client.headers["Authorization"]
+    assert state_client.get("/inspector").status_code == 401
+    assert state_client.get("/inspector", params={"token": "test-token"}).status_code == 200

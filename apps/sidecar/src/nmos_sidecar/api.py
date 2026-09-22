@@ -10,10 +10,12 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from psycopg_pool import ConnectionPool
 
-from . import ledger
+from urllib.parse import quote
+
+from . import inspector, ledger, readmodel
 from .config import Settings
 from .db import make_pool
 from .ids import uuid7
@@ -31,7 +33,7 @@ from .models import (
 from .reconcile import Entry, plan
 from .parsers import load_rules
 from .retrieval import retrieve
-from .state import sync_rules, write_state
+from .state import current_state, sync_rules, write_state
 
 log = logging.getLogger("nmos.sidecar")
 
@@ -92,11 +94,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             max_age=600,
         )
 
-    def auth(authorization: str | None = Header(default=None)) -> None:
+    def auth(authorization: str | None = Header(default=None), token: str | None = None) -> None:
         if not settings.auth_token:
             return  # optional (default): the sidecar binds to loopback unless configured otherwise
         expected = f"Bearer {settings.auth_token}"
-        if authorization is None or not hmac.compare_digest(authorization.encode(), expected.encode()):
+        given = authorization or (f"Bearer {token}" if token else "")
+        if not hmac.compare_digest(given.encode(), expected.encode()):
             raise HTTPException(status_code=401, detail="unauthorized")
 
     def delay() -> None:
@@ -198,7 +201,44 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             raise HTTPException(status_code=404, detail="trace not found")
         return row
 
+    @app.get("/v1/conversations", dependencies=[Depends(auth)])
+    def conversations(request: Request):
+        with request.app.state.pool.connection() as conn:
+            return readmodel.list_conversations(conn)
+
+    @app.get("/v1/conversations/{conv_id}/state", dependencies=[Depends(auth)])
+    def conversation_state(conv_id: UUID, request: Request):
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            return current_state(conn, conv["head_commit_id"], rules.version) if conv["head_commit_id"] else []
+
+    @app.get("/v1/conversations/{conv_id}/traces", dependencies=[Depends(auth)])
+    def conversation_traces(conv_id: UUID, request: Request, limit: int = 30):
+        with request.app.state.pool.connection() as conn:
+            return readmodel.traces(conn, conv_id, min(limit, 200))
+
+    @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def inspector_index(request: Request, token: str | None = None):
+        with request.app.state.pool.connection() as conn:
+            return inspector.index(readmodel.list_conversations(conn), _q(token))
+
+    @app.get("/inspector/c/{conv_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def inspector_detail(conv_id: UUID, request: Request, token: str | None = None):
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            head = conv["head_commit_id"]
+            return inspector.detail(conv, current_state(conn, head, rules.version), readmodel.membership(conn, head),
+                                    readmodel.commits(conn, conv_id), readmodel.traces(conn, conv_id), [], _q(token))
+
     return app
+
+
+def _q(token: str | None) -> str:
+    return f"?token={quote(token)}" if token else ""
 
 
 def app_factory() -> FastAPI:
