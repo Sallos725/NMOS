@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-beta.3
+
+- Embeddings use their own first-sight backfill (`NMOS_EMBED_BACKFILL`, default 2000) instead of the
+  LLM extraction limit (100), so semantic recall covers early turns of long chats. Found in a
+  fresh-install walkthrough.
+
 ## 0.1.0-beta.2
 
 - **Settings panel in the plugin** (PocketRisu → Settings → "NMOS 설정"): LLM and embedding providers
