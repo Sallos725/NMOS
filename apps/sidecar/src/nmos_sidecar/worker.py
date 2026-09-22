@@ -12,36 +12,45 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
+from . import generations
 from .config import Settings
-from .extraction import claim, fail, finish, process_extract
+from .extraction import claim, extractor, fail, finish, process_extract
 from .llm import ChatModel, Embedder, LLMError
 from .runtime import effective, stored
+from .vectors import process_embed, projection
+
+# kind -> (generation key the handler implements, handler)
+Handlers = dict[str, tuple[str, Callable[[psycopg.Connection, dict[str, Any]], str]]]
 
 log = logging.getLogger("nmos.worker")
 
 
-def handlers(settings: Settings) -> dict[str, Callable[[psycopg.Connection, dict[str, Any]], str]]:
-    out: dict[str, Callable[[psycopg.Connection, dict[str, Any]], str]] = {}
-    if settings.llm_url and settings.llm_model:
+def handlers(settings: Settings) -> Handlers:
+    out: Handlers = {}
+    ex = extractor(settings)
+    if ex is not None:
         model = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
                           settings.llm_json_mode)
-        out["extract"] = lambda conn, job: process_extract(conn, job, model.complete_json, settings.llm_model,
-                                                           settings.extract_window)
-    if settings.embed_url and settings.embed_model:
-        from .vectors import process_embed  # Phase 3
-
+        out["extract"] = (ex.key, lambda conn, job: process_extract(conn, job, model.complete_json, ex,
+                                                                     settings.extract_window))
+    pj = projection(settings)
+    if pj is not None:
         embedder = Embedder(settings.embed_url, settings.embed_model, settings.embed_api_key)
-        out["embed"] = lambda conn, job: process_embed(conn, job, embedder, settings.embed_model)
+        out["embed"] = (pj.key, lambda conn, job: process_embed(conn, job, embedder, pj))
     return out
 
 
-def run_once(conn: psycopg.Connection, jobs: dict[str, Callable[[psycopg.Connection, dict[str, Any]], str]]) -> bool:
-    """Process one job. Returns False when the queue had nothing ready."""
-    job = claim(conn, tuple(jobs))
+def run_once(conn: psycopg.Connection, jobs: Handlers) -> bool:
+    """Process one job of a generation some handler implements. Returns False when none was ready.
+
+    A job queued for another generation (e.g. right after the model was changed in the settings UI,
+    before this worker reloaded) is never claimed by this handler; it waits for a matching one.
+    """
+    job = claim(conn, {kind: key for kind, (key, _) in jobs.items()})
     if job is None:
         return False
     try:
-        status = jobs[job["kind"]](conn, job)
+        status = jobs[job["kind"]][1](conn, job)
         finish(conn, job["id"], status)
     except (LLMError, psycopg.Error, ValueError, KeyError) as exc:
         if conn.info.transaction_status != psycopg.pq.TransactionStatus.IDLE:
@@ -65,12 +74,17 @@ def maintenance(settings: Settings, stop: threading.Event, holder: dict[str, Any
         try:
             with psycopg.connect(settings.database_url, row_factory=dict_row, autocommit=True) as conn:
                 current = effective(settings, stored(conn))
-                new_signature = (current.llm_url, current.llm_model, current.llm_api_key, current.llm_json_mode,
-                                 current.embed_url, current.embed_model, current.embed_api_key)
+                jobs = handlers(current)
+                new_signature = (tuple(sorted((k, key) for k, (key, _) in jobs.items())), current.llm_api_key,
+                                 current.embed_api_key, current.llm_timeout_s)
                 if new_signature != signature:
-                    holder["jobs"] = handlers(current)
+                    for gen in (extractor(current), projection(current)):
+                        if gen is not None:
+                            generations.ensure(conn, gen)  # rows reference their generation
+                    holder["jobs"] = jobs
                     signature = new_signature
-                    log.info("job kinds now: %s", sorted(holder["jobs"]) or "none (no LLM/embedding configured)")
+                    log.info("job generations now: %s", {k: key[:20] for k, (key, _) in jobs.items()}
+                             or "none (no LLM/embedding configured)")
                 if time.monotonic() - last_prune > 600:
                     prune(conn, settings.trace_retention_days)
                     last_prune = time.monotonic()

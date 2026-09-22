@@ -9,7 +9,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from conftest import make_client
+from conftest import active_generation, make_client
 from nmos_sidecar.extraction import claim, process_extract
 from nmos_sidecar.worker import run_once
 from simchat import SimChat
@@ -29,14 +29,16 @@ def fake_complete(system: str, user: str) -> tuple[dict, str]:
     return {"assertions": items}, "{}"
 
 
-def jobs_for():
-    return {"extract": lambda conn, job: process_extract(conn, job, fake_complete, "fake", 6)}
+def jobs_for(conn, complete=fake_complete):
+    gen = active_generation(conn, "extract")
+    return {"extract": (gen.key, lambda cn, job: process_extract(cn, job, complete, gen, 6))}
 
 
-def drain(url: str) -> int:
+def drain(url: str, complete=fake_complete) -> int:
     n = 0
     with psycopg.connect(url, row_factory=dict_row, autocommit=True) as conn:
-        while run_once(conn, jobs_for()):
+        jobs = jobs_for(conn, complete)
+        while run_once(conn, jobs):
             n += 1
     return n
 
@@ -154,7 +156,8 @@ def test_skip_locked_claims_are_exclusive(llm_client, migrated):
 
     def worker():
         with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
-            while (job := claim(conn, ("extract",))) is not None:
+            handled = {"extract": active_generation(conn, "extract").key}
+            while (job := claim(conn, handled)) is not None:
                 with lock:
                     claimed.append(job["id"])
 
@@ -194,9 +197,7 @@ def test_knowledge_annotations_reach_the_packet(migrated, db):
         chat.reply("하나는 고개를 끄덕였다.")
         filler(chat, 5)
         sync(c, chat)
-        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
-            while run_once(conn, {"extract": lambda cn, job: process_extract(cn, job, complete, "fake", 6)}):
-                pass
+        drain(migrated, complete)
         text = recall(c, chat, "카이토, 내 정체 알아? {{user}}", in_context=[])["packet"]["text"]
     assert 'known_by="하나, {{user}}" hidden_from="카이토"' in text
     assert "do not know it" in text

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 import logging
 import time
+import dataclasses
 from contextlib import asynccontextmanager
 from typing import Any
 from uuid import UUID
@@ -16,10 +17,10 @@ from psycopg_pool import ConnectionPool
 
 from urllib.parse import quote
 
-from . import __version__, inspector, ledger, normtext, readmodel, runtime
+from . import __version__, extraction, generations, inspector, ledger, normtext, readmodel, runtime, vectors
 from .config import Settings
 from .db import make_pool
-from .extraction import COMPILER_VERSION, backfill_jobs, enqueue_after_apply, job_counts, stale_extractions_exist
+from .extraction import enqueue_after_apply, job_counts
 from .facts import fact_versions
 from .ids import uuid7
 from .models import (
@@ -81,12 +82,37 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         rules = runtime.ruleset(settings, overrides)
         emb = embedder or (Embedder(cur.embed_url, cur.embed_model, cur.embed_api_key)
                            if cur.embed_url and cur.embed_model else None)
-        rt.update(settings=cur, rules=rules, overrides=overrides, recall=RecallOptions(
+        pj = vectors.projection(cur)
+        rt.update(settings=cur, rules=rules, overrides=overrides, extractor=extraction.extractor(cur), projection=pj,
+                  recall=RecallOptions(
             top_k=cur.recall_top_k, threshold=cur.recall_threshold, rules_version=rules.version,
-            facts_limit=cur.facts_limit, embedder=emb, embed_model=cur.embed_model,
-            embed_timeout_ms=cur.embed_timeout_ms, vector_min_sim=cur.vector_min_sim,
-            query_prefix=query_prefix(cur.embed_model, cur.embed_query_instruction),
+            facts_limit=cur.facts_limit, embedder=emb if pj else None, embed_projection=pj.key if pj else "",
+            extractor_key=rt.get("active_extractor"), embed_timeout_ms=cur.embed_timeout_ms,
+            vector_min_sim=cur.vector_min_sim, query_prefix=query_prefix(cur.embed_model, cur.embed_query_instruction),
         ))
+
+    def activate(conn, before_extractor: str | None, before_projection: str | None) -> int:
+        """Make the configured generations active and queue what they are missing (D20, #8).
+
+        Runs at startup (idempotent: only missing work is queued) and whenever a setting changed a
+        generation key. An API-key-only change keeps the keys, so nothing is re-derived.
+        """
+        cur = rt["settings"]
+        queued = 0
+        ex, pj = rt["extractor"], rt["projection"]
+        if ex is not None and ex.key != before_extractor:
+            generations.activate(conn, ex)
+            queued += extraction.schedule_generation(conn, ex.key, cur.extract_backfill)
+        if pj is not None and pj.key != before_projection:
+            with conn.transaction():
+                adopted = vectors.adopt_legacy(conn, pj)
+                generations.activate(conn, pj)
+            if adopted:
+                log.info("adopted %d pre-projection embedding chunks into %s", adopted, pj.key)
+            queued += vectors.schedule_projection(conn, pj.key, cur.embed_backfill)
+        rt["active_extractor"] = generations.active(conn, "extract")
+        rt["recall"] = dataclasses.replace(rt["recall"], extractor_key=rt["active_extractor"])
+        return queued
 
     rebuild({})
 
@@ -99,11 +125,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if normalized:
                 log.info("normalized text written for %d revisions (%s)", normalized, normtext.NORMALIZER_VERSION)
             backfilled = sync_rules(conn, rt["rules"])
-            cur = rt["settings"]
-            if cur.llm_url and cur.llm_model and stale_extractions_exist(conn):
-                # The extraction prompt changed (compiler version): re-extract recent history.
-                log.info("re-queued %d extraction jobs for %s",
-                         backfill_jobs(conn, True, None, cur.extract_backfill), COMPILER_VERSION)
+            queued = activate(conn, None, None)
+            log.info("generations: extract=%s embed=%s; queued %d missing jobs",
+                     rt["active_extractor"], rt["projection"].key if rt["projection"] else None, queued)
         if backfilled:
             log.info("state backfilled: %d observations for rules %s", backfilled, rt["rules"].version)
         try:
@@ -165,12 +189,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         )
         head = ledger.apply_plan(conn, conv, state, result, observation, settings.extract_window)
         cur = rt["settings"]
-        if cur.llm_url or cur.embed_url:
+        if rt["extractor"] or rt["projection"]:
             enqueue_after_apply(conn, conv.id, state.head, state.lifecycle, manifest,
                                 {**state.lifecycle, **result.lifecycle}, state.revision_ids,
                                 settings.extract_window, cur.extract_backfill,
-                                extract=bool(cur.llm_url and cur.llm_model),
-                                embed_model=(cur.embed_model or None) if cur.embed_url else None,
+                                extractor_key=rt["extractor"].key if rt["extractor"] else None,
+                                embed_key=rt["projection"].key if rt["projection"] else None,
                                 embed_backfill=cur.embed_backfill)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=result.manifest_hash, changes_summary=result.summary,
@@ -183,7 +207,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return {"ok": True, "service": "nmos-sidecar", "version": __version__,
                 "features": {"state": bool(rt["rules"].rules),
                              "extraction": bool(rt["settings"].llm_url and rt["settings"].llm_model),
-                             "vectors": rt["recall"].embedder is not None}}
+                             "vectors": rt["recall"].embedder is not None},
+                "generations": {"extract": rt["active_extractor"],
+                                "embed": rt["projection"].key if rt["projection"] else None}}
 
     @app.post("/v1/sync/reconcile", response_model=ReconcileResponse, dependencies=[Depends(auth)])
     def reconcile(body: ReconcileRequest, request: Request):
@@ -266,8 +292,27 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            facts = fact_versions(conn, conv["head_commit_id"]) if conv["head_commit_id"] else []
+            facts = (fact_versions(conn, conv["head_commit_id"], rt["active_extractor"])
+                     if conv["head_commit_id"] else [])
         return [{k: v for k, v in f.items() if history or k != "history"} for f in facts]
+
+    @app.get("/v1/conversations/{conv_id}/coverage", dependencies=[Depends(auth)])
+    def conversation_coverage(conv_id: UUID, request: Request):
+        """How completely the active generations cover this chat's head (#8, #13)."""
+        with request.app.state.pool.connection() as conn:
+            if readmodel.conversation(conn, conv_id) is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            return coverage_view(conn, conv_id)
+
+    def coverage_view(conn, conv_id: UUID) -> dict[str, Any]:
+        ex_key = rt["active_extractor"]
+        pj_key = rt["projection"].key if rt["projection"] else None
+        return {
+            "extraction": {"generation": generations.describe(conn, ex_key),
+                           **extraction.coverage(conn, ex_key, conv_id).get(conv_id, {})},
+            "embeddings": {"generation": generations.describe(conn, pj_key),
+                           **vectors.coverage(conn, pj_key, conv_id).get(conv_id, {})},
+        }
 
     @app.get("/v1/config", dependencies=[Depends(auth)])
     def get_config():
@@ -278,21 +323,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         clean, errors = runtime.validate_update(update)
         if errors:
             raise HTTPException(status_code=422, detail=errors)
-        before = rt["settings"]
+        before_ex, before_pj = rt["extractor"], rt["projection"]
         with request.app.state.pool.connection() as conn:
             runtime.save(conn, clean)
             rebuild(runtime.stored(conn))
-            cur = rt["settings"]
             if runtime.PARSERS_KEY in clean:
                 rebuild_state(conn, rt["rules"])
-            queued = backfill_jobs(
-                conn,
-                extract=bool(cur.llm_url and cur.llm_model)
-                and (cur.llm_url, cur.llm_model) != (before.llm_url, before.llm_model),
-                embed_model=cur.embed_model if cur.embed_url and cur.embed_model
-                and (cur.embed_url, cur.embed_model) != (before.embed_url, before.embed_model) else None,
-                backfill=cur.extract_backfill, embed_backfill=cur.embed_backfill,
-            )
+            queued = activate(conn, before_ex.key if before_ex else None, before_pj.key if before_pj else None)
         return {**runtime.public_view(rt["settings"], rt["overrides"], rt["rules"]), "queued_jobs": queued}
 
     @app.post("/v1/config/test", dependencies=[Depends(auth)])
@@ -317,7 +354,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_index(request: Request, token: str | None = None):
         with request.app.state.pool.connection() as conn:
-            return inspector.index(readmodel.list_conversations(conn), _q(token), job_counts(conn))
+            ex_key = rt["active_extractor"]
+            pj_key = rt["projection"].key if rt["projection"] else None
+            return inspector.index(readmodel.list_conversations(conn), _q(token), job_counts(conn),
+                                   {"extraction": generations.describe(conn, ex_key),
+                                    "embeddings": generations.describe(conn, pj_key)},
+                                   extraction.coverage(conn, ex_key), vectors.coverage(conn, pj_key))
 
     @app.get("/inspector/c/{conv_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_detail(conv_id: UUID, request: Request, token: str | None = None):
@@ -326,9 +368,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             head = conv["head_commit_id"]
-            return inspector.detail(conv, current_state(conn, head, rt["rules"].version), readmodel.membership(conn, head),
+            ex_key = rt["active_extractor"]
+            pj_key = rt["projection"].key if rt["projection"] else None
+            return inspector.detail(conv, current_state(conn, head, rt["rules"].version),
+                                    readmodel.membership(conn, head, ex_key, pj_key),
                                     readmodel.commits(conn, conv_id), readmodel.traces(conn, conv_id),
-                                    fact_versions(conn, head)[:300], _q(token))
+                                    fact_versions(conn, head, ex_key)[:300], _q(token), coverage_view(conn, conv_id))
 
     return app
 

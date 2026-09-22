@@ -37,18 +37,73 @@ def table(headers: list[str], rows: Iterable[list[str]]) -> str:
     return f"<div class=\"wrap\"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
 
 
-def index(conversations: list[dict[str, Any]], q: str, jobs: dict[str, int] | None = None) -> str:
+def _generation(gen: dict[str, Any] | None) -> str:
+    if gen is None:
+        return "<span class=\"muted\">none</span>"
+    return (f"<span class=\"mono\" title=\"{_v(gen['key'])}\">{_v(gen['key'][:20])}</span> "
+            f"{_v(gen['model'])} @ {_v(gen['endpoint'])}")
+
+
+def _percent(stats: dict[str, Any] | None, done_key: str) -> str:
+    """Coverage of the active generation; partial coverage is never shown as complete (#8)."""
+    if not stats:
+        return "<span class=\"muted\">—</span>"
+    text = f"{stats[done_key]}/{stats['eligible']} ({stats['percent']}%)"
+    return text if stats["complete"] else f"<span class=\"chip\">partial</span> {text}"
+
+
+def index(conversations: list[dict[str, Any]], q: str, jobs: dict[str, int] | None = None,
+          gens: dict[str, dict[str, Any] | None] | None = None, extraction: dict | None = None,
+          embeddings: dict | None = None) -> str:
+    extraction, embeddings, gens = extraction or {}, embeddings or {}, gens or {}
     rows = [[f"<a href=\"/inspector/c/{c['id']}{q}\" class=\"mono\">{_v(c['host_chat_ref'])}</a>",
-             _v(c["messages"]), _v(c["commits"]), _v(c["branched_from_host_chat_ref"] or ""),
-             _v(str(c["last_retrieval"] or "")[:19])] for c in conversations]
+             _v(c["messages"]), _percent(extraction.get(c["id"]), "compiled"),
+             _percent(embeddings.get(c["id"]), "embedded"), _v(c["commits"]),
+             _v(c["branched_from_host_chat_ref"] or ""), _v(str(c["last_retrieval"] or "")[:19])]
+            for c in conversations]
     queue = " · ".join(f"{escape(k)} {v}" for k, v in sorted((jobs or {}).items())) or "empty"
     return page("NMOS inspector", "<h1>NMOS inspector</h1><p class=\"muted\">Read-only view of the source ledger."
                 f" Background jobs: {queue}</p>"
-                + table(["Host chat", "Messages", "Commits", "Branched from", "Last retrieval"], rows))
+                f"<p>Extractor generation: {_generation(gens.get('extraction'))}<br>"
+                f"Embedding projection: {_generation(gens.get('embeddings'))}</p>"
+                + table(["Host chat", "Messages", "Facts coverage", "Vector coverage", "Commits", "Branched from",
+                         "Last retrieval"], rows))
+
+
+def _coverage_section(cov: dict[str, Any]) -> str:
+    ex, emb = cov.get("extraction") or {}, cov.get("embeddings") or {}
+    rows = []
+    if ex.get("generation"):
+        rows.append(["Facts (extraction)", _generation(ex["generation"]), _percent(ex, "compiled"),
+                     _v(f"pending {ex.get('pending', 0)} · failed {ex.get('failed', 0)} · not queued "
+                        f"{ex.get('not_queued', 0)} · only older generations {ex.get('historical_only', 0)} · "
+                        f"target truncated {ex.get('target_truncated', 0)}")])
+    if emb.get("generation"):
+        rows.append(["Vectors (embedding)", _generation(emb["generation"]), _percent(emb, "embedded"),
+                     _v(f"pending {emb.get('pending', 0)} · failed {emb.get('failed', 0)} · "
+                        f"partially embedded {emb.get('partial', 0)}")])
+    if not rows:
+        return "<h2>Semantic coverage</h2><p class=\"muted\">No extractor or embedding generation is active.</p>"
+    return "<h2>Semantic coverage</h2>" + table(["Projection", "Generation", "Coverage", "Detail"], rows)
+
+
+def _processed(m: dict[str, Any]) -> str:
+    """Was the whole revision semantically processed? Normalized chars embedded / seen by extraction."""
+    clean = m.get("clean_chars")
+    if clean is None:
+        return "<span class=\"muted\">not normalized</span>"
+    parts = [f"raw {m['length']:,} → clean {clean:,}"]
+    for label, key in (("emb", "embedded_chars"), ("ext", "extracted_chars")):
+        if m.get(key) is not None:
+            done = m[key] >= clean
+            parts.append(f"{label} {'full' if done else f'{m[key]:,}/{clean:,}'}")
+    partial = any(m.get(k) is not None and m[k] < clean for k in ("embedded_chars", "extracted_chars"))
+    return ("<span class=\"chip\">partial</span> " if partial else "") + _v(" · ".join(parts))
 
 
 def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict[str, Any]],
-           commits: list[dict[str, Any]], traces: list[dict[str, Any]], facts: list[dict[str, Any]], q: str) -> str:
+           commits: list[dict[str, Any]], traces: list[dict[str, Any]], facts: list[dict[str, Any]], q: str,
+           coverage: dict[str, Any] | None = None) -> str:
     parts = [f"<p><a href=\"/inspector{q}\">← conversations</a></p>",
              f"<h1 class=\"mono\">{_v(conv['host_chat_ref'])}</h1>",
              f"<p class=\"muted\">conversation {_v(conv['id'])} · head {_v(conv['head_commit_id'])}"
@@ -57,6 +112,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     parts.append("<h2>Current state</h2>" + (table(["Key", "Value", "As of turn", "Rule"],
                  [[_v(s["key"]), _v(s["value"]), _v(s["position"]), _v(s["rule_id"])] for s in state])
                  if state else "<p class=\"muted\">No parser state.</p>"))
+    parts.append(_coverage_section(coverage or {}))
     if facts:
         parts.append("<h2>Current facts</h2>" + table(["Subject", "Predicate", "Object / value", "Turn", "Versions"],
                      [[_v(f["subject"]), f"<span class=\"chip\">{_v(f['predicate'])}</span>",
@@ -68,7 +124,9 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     parts.append("<h2>Commits</h2>" + table(["#", "Reason", "Changes", "Kinds", "When"],
                  [[_v(c["seq"]), f"<span class=\"chip\">{_v(c['reason'])}</span>", _v(c["changes"]), _v(c["kinds"]),
                    _v(str(c["created_at"])[:19])] for c in commits]))
-    parts.append("<h2>Head membership (newest first)</h2>" + table(["Turn", "Role", "Lifecycle", "Disabled", "Text"],
-                 [[_v(m["position"]), _v(m["role"]), f"<span class=\"chip\">{_v(m['lifecycle'])}</span>",
-                   _v(m["disabled"] or ""), _v(m["preview"]) + ("…" if m["length"] > 240 else "")] for m in members]))
+    parts.append("<h2>Head membership (newest first)</h2>" + table(
+        ["Turn", "Role", "Lifecycle", "Disabled", "Processed", "Text"],
+        [[_v(m["position"]), _v(m["role"]), f"<span class=\"chip\">{_v(m['lifecycle'])}</span>",
+          _v(m["disabled"] or ""), _processed(m), _v(m["preview"]) + ("…" if m["length"] > 240 else "")]
+         for m in members]))
     return page(f"NMOS · {conv['host_chat_ref']}", "".join(parts))

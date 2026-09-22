@@ -38,7 +38,8 @@ class RecallOptions:
     rules_version: str = "none"
     facts_limit: int = 8
     embedder: Embedder | None = None
-    embed_model: str = ""
+    embed_projection: str = ""  # corpus vectors of this projection only (D20)
+    extractor_key: str | None = None  # facts of this extractor generation only (D20)
     embed_timeout_ms: int = 300
     vector_min_sim: float = 0.42
     query_prefix: str = ""
@@ -137,7 +138,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                 (qvec,) = options.embedder.embed([options.query_prefix + query],
                                                  timeout_s=options.embed_timeout_ms / 1000)
                 timings["embed"] = round((time.perf_counter() - t0) * 1000, 2)
-                vector = vector_candidates(conn, head, qvec, options.embed_model, cut, CANDIDATE_LIMIT)
+                vector = vector_candidates(conn, head, qvec, options.embed_projection, cut, CANDIDATE_LIMIT)
                 timings["vector"] = round((time.perf_counter() - t0) * 1000 - timings["embed"], 2)
                 vector_note = "on"
             except (LLMError, ValueError) as exc:  # fail open to lexical-only
@@ -168,7 +169,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         state_items.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in now_text), reverse=True)
     fact_lines: list[str] = []
     if fresh and options.facts_limit > 0:
-        facts = relevant_facts(fact_versions(conn, head), query, previous_ai, in_context, options.facts_limit)
+        facts = relevant_facts(fact_versions(conn, head, options.extractor_key), query, previous_ai, in_context,
+                               options.facts_limit)
         fact_lines = [fact_line(f) for f in facts]
     text, tokens, chosen = compile_packet(ranked, request.budget_tokens, state=state_items, facts=fact_lines)
     timings["sidecar_total"] = round((time.perf_counter() - started) * 1000, 2)
@@ -190,6 +192,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             Jsonb([brief(c) for c in excluded]),
             tokens,
             Jsonb({**timings, "vector_mode": vector_note, "state_items": len(state_items), "facts": len(fact_lines),
+                   "embedding_projection": options.embed_projection[:20] if options.embedder else None,
+                   "extractor": (options.extractor_key or "")[:20] or None,
                    **{f"client_{k}": v for k, v in request.client_timings_ms.items()}}),
             "fresh" if fresh else "stale",
         ),
