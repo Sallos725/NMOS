@@ -19,12 +19,12 @@ from . import generations, normtext
 from .config import Settings
 from .generations import Generation
 from .ids import uuid7
-from .predicates import REGISTRY, registry_prompt, validate
+from .predicates import REGISTRY, knowledge, registry_prompt, validate
 from .reconcile import Entry, RevKey, window_hashes
 
 log = logging.getLogger("nmos.extraction")
 
-COMPILER_VERSION = "extract-v2"  # v2: known_by / hidden_from
+COMPILER_VERSION = "extract-v3"  # v2: known_by / hidden_from; v3: explicit knowledge scope (D19)
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
 TARGET_CHARS = 6000  # normalized chars of the target message the model sees (#13)
@@ -46,14 +46,19 @@ Rules:
 - `epistemic`: "stated" if explicit, "implied" if strongly implied. Skip speculation, jokes, OOC text,
   UI/status boilerplate, and anything that only restates earlier facts.
 - Prefer few, high-value facts. An empty list is a good answer for small talk.
-- Knowledge: `known_by` lists who knows or witnessed the fact (use names; include "{{{{user}}}}" when the
-  user's character knows). `hidden_from` lists characters it is explicitly kept from (a whispered
-  secret, a hidden identity, something done while others were away). Use [] when everyone present
-  knows or it is unclear. Never guess about characters who are not in the story.
+- Knowledge (who in the story is aware of the fact):
+  `knowledge` is "public" when it is openly known (said to everyone present, common knowledge in the
+  world), "limited" when only some characters know it or it is kept from someone, and "unknown" when
+  the messages do not show who knows. Do not guess; "unknown" is a good answer.
+  For "limited": `known_by` lists characters shown to know or witness it (names; include "{{{{user}}}}"
+  when the user's character knows) and `hidden_from` lists characters it is explicitly kept from (a
+  whispered secret, a hidden identity, something done while others were away). Characters not listed
+  are unknown, not unaware. Otherwise use [] for both. Never list characters who are not in the story.
 
 Answer with JSON only: {{"assertions": [{{"subject": "...", "subject_type": "...", "predicate": "...",
 "object": "... or null", "object_type": "... or null", "value": "... or null", "epistemic": "stated",
-"confidence": 0.0-1.0, "evidence": "...", "known_by": [], "hidden_from": []}}]}}"""
+"confidence": 0.0-1.0, "evidence": "...", "knowledge": "public|limited|unknown", "known_by": [],
+"hidden_from": []}}]}}"""
 
 
 def enqueue_after_apply(
@@ -244,23 +249,19 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
                 confidence = float(item.get("confidence")) if item.get("confidence") is not None else None
             except (TypeError, ValueError):
                 confidence = None
-            def names(key: str) -> list[str] | None:
-                value = item.get(key)
-                if not isinstance(value, list):
-                    return None
-                out = [str(v).strip()[:60] for v in value if str(v or "").strip()]
-                return out[:12] or None
-
+            scope, known_by, hidden_from, note = knowledge(item)
+            if note:
+                reason = f"{reason}; {note}" if reason else note
             rows.append((extraction_id, revision_id, text("subject", 120) or "?", text("subject_type", 20),
                          text("predicate", 40) or "?", text("object", 120), text("object_type", 20), text("value"),
                          "implied" if item.get("epistemic") == "implied" else "stated", confidence,
-                         text("evidence"), status, reason, names("known_by"), names("hidden_from")))
+                         text("evidence"), status, reason, scope, known_by, hidden_from))
         if rows:
             with conn.cursor() as cur:
                 cur.executemany(
                     "INSERT INTO assertion (extraction_id, source_revision_id, subject, subject_type, predicate, object,"
-                    " object_type, value, epistemic, confidence, evidence, status, reason, known_by, hidden_from)"
-                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    " object_type, value, epistemic, confidence, evidence, status, reason, knowledge, known_by,"
+                    " hidden_from) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     rows,
                 )
     log.info("extracted revision=%s window=%s assertions=%d", revision_id, window_hash, len(rows))

@@ -22,7 +22,7 @@ WITH m AS (
 ),
 cut AS (SELECT coalesce(max(position), -1) AS position FROM m WHERE metadata->>'disabled' = 'allBefore')
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.value, a.epistemic, a.confidence, a.evidence,
-       a.known_by, a.hidden_from, m.position, m.host_logical_id
+       a.knowledge, a.known_by, a.hidden_from, m.position, m.host_logical_id
 FROM assertion a
 JOIN extraction e ON e.id = a.extraction_id AND e.extractor_key = %(key)s
 JOIN m ON m.rid = a.source_revision_id AND m.window_hash = e.window_hash
@@ -115,12 +115,16 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
 
 
 def fact_line(f: dict[str, Any]) -> str:
-    """One <Fact>; known_by / hidden_from mark who knows it (soft character knowledge, D9)."""
+    """One <Fact> with its knowledge marks exactly as stored (D19): knowledge="public", or known_by /
+    hidden_from for limited facts, or no mark at all when who knows is unknown."""
     attrs = f" kind={quoteattr(f['predicate'])} turn=\"{f['position']}\""
     if f.get("epistemic") == "implied":
         attrs += ' certainty="implied"'
-    if f.get("known_by"):
-        attrs += f" known_by={quoteattr(', '.join(f['known_by']))}"
-    if f.get("hidden_from"):
-        attrs += f" hidden_from={quoteattr(', '.join(f['hidden_from']))}"
+    if f.get("knowledge") == "public":
+        attrs += ' knowledge="public"'
+    elif f.get("knowledge") == "limited":
+        if f.get("known_by"):
+            attrs += f" known_by={quoteattr(', '.join(f['known_by']))}"
+        if f.get("hidden_from"):
+            attrs += f" hidden_from={quoteattr(', '.join(f['hidden_from']))}"
     return f"    <Fact{attrs}>{escape(fact_text(f))}</Fact>"

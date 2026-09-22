@@ -70,6 +70,16 @@ def index(conversations: list[dict[str, Any]], q: str, jobs: dict[str, int] | No
                          "Last retrieval"], rows))
 
 
+def _knowledge(f: dict[str, Any]) -> str:
+    scope = f.get("knowledge") or "unknown"
+    detail = []
+    if f.get("known_by"):
+        detail.append("known by " + ", ".join(f["known_by"]))
+    if f.get("hidden_from"):
+        detail.append("hidden from " + ", ".join(f["hidden_from"]))
+    return f"<span class=\"chip\">{_v(scope)}</span> " + _v("; ".join(detail))
+
+
 def _coverage_section(cov: dict[str, Any]) -> str:
     ex, emb = cov.get("extraction") or {}, cov.get("embeddings") or {}
     rows = []
@@ -114,9 +124,11 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
                  if state else "<p class=\"muted\">No parser state.</p>"))
     parts.append(_coverage_section(coverage or {}))
     if facts:
-        parts.append("<h2>Current facts</h2>" + table(["Subject", "Predicate", "Object / value", "Turn", "Versions"],
-                     [[_v(f["subject"]), f"<span class=\"chip\">{_v(f['predicate'])}</span>",
-                       _v(f.get("object") or f.get("value")), _v(f["position"]), _v(f.get("versions", 1))] for f in facts]))
+        parts.append("<h2>Current facts</h2>" + table(
+            ["Subject", "Predicate", "Object / value", "Knowledge", "Turn", "Versions"],
+            [[_v(f["subject"]), f"<span class=\"chip\">{_v(f['predicate'])}</span>",
+              _v(f.get("object") or f.get("value")), _knowledge(f), _v(f["position"]), _v(f.get("versions", 1))]
+             for f in facts]))
     parts.append("<h2>Recent retrievals</h2>" + table(
         ["When", "Query", "Fresh", "Cand.", "Sel.", "In-ctx", "Tokens", "ms"],
         [[_v(str(t["created_at"])[:19]), _v(t["query"]), _v(t["freshness"]), _v(t["candidates"]), _v(t["selected"]),

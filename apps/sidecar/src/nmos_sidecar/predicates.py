@@ -69,3 +69,42 @@ def validate(item: dict[str, Any]) -> tuple[str, str | None]:
     if pred.needs_value and not str(item.get("value") or "").strip():
         return "pending", "missing value"
     return "valid", None
+
+
+KNOWLEDGE_SCOPES = ("public", "limited", "unknown")
+
+
+def knowledge(item: dict[str, Any]) -> tuple[str, list[str] | None, list[str] | None, str | None]:
+    """(scope, known_by, hidden_from, note) for one raw assertion (D19).
+
+    Unknown is a real state and is never turned into "does not know". A name in both lists is
+    contradictory evidence: it is dropped from both (that character's awareness is unknown) and noted.
+    """
+    def names(key: str) -> list[str]:
+        value = item.get(key)
+        if not isinstance(value, list):
+            return []
+        out: list[str] = []
+        for v in value:
+            name = str(v or "").strip()[:60]
+            if name and name.casefold() not in {o.casefold() for o in out}:
+                out.append(name)
+        return out[:12]
+
+    known, hidden = names("known_by"), names("hidden_from")
+    both = {n.casefold() for n in known} & {n.casefold() for n in hidden}
+    note = None
+    if both:
+        note = "contradictory knowledge for: " + ", ".join(n for n in known if n.casefold() in both)
+        known = [n for n in known if n.casefold() not in both]
+        hidden = [n for n in hidden if n.casefold() not in both]
+    scope = str(item.get("knowledge") or "").strip().lower()
+    if hidden:
+        scope = "limited"  # "public except X" is limited
+    elif scope == "public":
+        known = []  # everyone knows; a list adds nothing
+    elif known:
+        scope = "limited"
+    else:
+        scope = "unknown"  # includes "limited" with nobody named
+    return scope, known or None, hidden or None, note
