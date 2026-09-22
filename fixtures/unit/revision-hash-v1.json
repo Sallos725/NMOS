@@ -1,0 +1,148 @@
+[
+  {
+    "metadata": {
+      "chatId": "u1",
+      "role": "user",
+      "saying": null,
+      "name": null,
+      "otherUser": null,
+      "isComment": null,
+      "disabled": null,
+      "swipeId": null,
+      "generationId": null,
+      "swipeCount": 0,
+      "specialComments": []
+    },
+    "content": "plain ascii",
+    "canonical": "{\"chatId\":\"u1\",\"disabled\":null,\"generationId\":null,\"isComment\":null,\"name\":null,\"otherUser\":null,\"role\":\"user\",\"saying\":null,\"selectedContent\":\"plain ascii\",\"swipeId\":null,\"v\":1}",
+    "revision_hash": "a4e964a85ae827d1d686db5bd086ddc9c881abb92118420768947103c7364b1d"
+  },
+  {
+    "metadata": {
+      "chatId": "u2",
+      "role": "user",
+      "saying": null,
+      "name": null,
+      "otherUser": null,
+      "isComment": null,
+      "disabled": null,
+      "swipeId": null,
+      "generationId": null,
+      "swipeCount": 0,
+      "specialComments": []
+    },
+    "content": "windows\r\nline\r\nendings  ",
+    "canonical": "{\"chatId\":\"u2\",\"disabled\":null,\"generationId\":null,\"isComment\":null,\"name\":null,\"otherUser\":null,\"role\":\"user\",\"saying\":null,\"selectedContent\":\"windows\\nline\\nendings  \",\"swipeId\":null,\"v\":1}",
+    "revision_hash": "90b08a3198c92bff97b32e28bd2b3b9ae304f1f4ff3b3463fb7e838692425602"
+  },
+  {
+    "metadata": {
+      "chatId": "c1",
+      "role": "char",
+      "saying": "char-1",
+      "name": null,
+      "otherUser": null,
+      "isComment": null,
+      "disabled": null,
+      "swipeId": null,
+      "generationId": "c1",
+      "swipeCount": 0,
+      "specialComments": []
+    },
+    "content": "한국어 메시지와 이모지 🎐",
+    "canonical": "{\"chatId\":\"c1\",\"disabled\":null,\"generationId\":\"c1\",\"isComment\":null,\"name\":null,\"otherUser\":null,\"role\":\"char\",\"saying\":\"char-1\",\"selectedContent\":\"한국어 메시지와 이모지 🎐\",\"swipeId\":null,\"v\":1}",
+    "revision_hash": "5c61447b159b15a2c67fe5cd1268ed83180be86a9e3f29eec49ed59e83623d84"
+  },
+  {
+    "metadata": {
+      "chatId": "c2",
+      "role": "char",
+      "saying": null,
+      "name": "Hinata",
+      "otherUser": null,
+      "isComment": null,
+      "disabled": true,
+      "swipeId": null,
+      "generationId": null,
+      "swipeCount": 0,
+      "specialComments": []
+    },
+    "content": "Café NFD → NFC",
+    "canonical": "{\"chatId\":\"c2\",\"disabled\":true,\"generationId\":null,\"isComment\":null,\"name\":\"Hinata\",\"otherUser\":null,\"role\":\"char\",\"saying\":null,\"selectedContent\":\"Café NFD → NFC\",\"swipeId\":null,\"v\":1}",
+    "revision_hash": "432dc43820ca7c88af45ab0448d07a91f9754c4298b1c808a57a56b4da07bcae"
+  },
+  {
+    "metadata": {
+      "chatId": "c3",
+      "role": "char",
+      "saying": null,
+      "name": null,
+      "otherUser": null,
+      "isComment": null,
+      "disabled": null,
+      "swipeId": 0,
+      "generationId": "g3",
+      "swipeCount": 2,
+      "specialComments": []
+    },
+    "content": "A",
+    "canonical": "{\"chatId\":\"c3\",\"disabled\":null,\"generationId\":\"g3\",\"isComment\":null,\"name\":null,\"otherUser\":null,\"role\":\"char\",\"saying\":null,\"selectedContent\":\"A\",\"swipeId\":0,\"v\":1}",
+    "revision_hash": "a6d568a1d2553566ef32540161048c56cb58afc968d093d1536618bfb11fdd82"
+  },
+  {
+    "metadata": {
+      "chatId": "u3",
+      "role": "user",
+      "saying": null,
+      "name": null,
+      "otherUser": false,
+      "isComment": null,
+      "disabled": "allBefore",
+      "swipeId": null,
+      "generationId": null,
+      "swipeCount": 0,
+      "specialComments": []
+    },
+    "content": "quote \" backslash \\ tab\t ctrl\u0001 del",
+    "canonical": "{\"chatId\":\"u3\",\"disabled\":\"allBefore\",\"generationId\":null,\"isComment\":null,\"name\":null,\"otherUser\":false,\"role\":\"user\",\"saying\":null,\"selectedContent\":\"quote \\\" backslash \\\\ tab\\t ctrl\\u0001 del\",\"swipeId\":null,\"v\":1}",
+    "revision_hash": "d27f6a89ab4aff9b73dbed8ca04a36c19656b49b5229539f58373806ee9d37a0"
+  },
+  {
+    "metadata": {
+      "chatId": "c4",
+      "role": "char",
+      "saying": null,
+      "name": null,
+      "otherUser": null,
+      "isComment": true,
+      "disabled": true,
+      "swipeId": null,
+      "generationId": null,
+      "swipeCount": 0,
+      "specialComments": [
+        "{{specialcomment::branchedfrom::o::Name::m::}}"
+      ]
+    },
+    "content": "{{specialcomment::branchedfrom::o::Name::m::}}",
+    "canonical": "{\"chatId\":\"c4\",\"disabled\":true,\"generationId\":null,\"isComment\":true,\"name\":null,\"otherUser\":null,\"role\":\"char\",\"saying\":null,\"selectedContent\":\"{{specialcomment::branchedfrom::o::Name::m::}}\",\"swipeId\":null,\"v\":1}",
+    "revision_hash": "fae610d8fe68ba729c1e62ef8930c572bf66a96f81d13adc377979f130742724"
+  },
+  {
+    "metadata": {
+      "chatId": "u4",
+      "role": "user",
+      "saying": null,
+      "name": null,
+      "otherUser": null,
+      "isComment": null,
+      "disabled": null,
+      "swipeId": null,
+      "generationId": null,
+      "swipeCount": 0,
+      "specialComments": []
+    },
+    "content": "lone surrogate \ud800 here",
+    "canonical": "{\"chatId\":\"u4\",\"disabled\":null,\"generationId\":null,\"isComment\":null,\"name\":null,\"otherUser\":null,\"role\":\"user\",\"saying\":null,\"selectedContent\":\"lone surrogate \\ud800 here\",\"swipeId\":null,\"v\":1}",
+    "revision_hash": "953d9a9e579342e15001275e00828b027bba1ef01f946179f20b48c6959d88ea"
+  }
+]

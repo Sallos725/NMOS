@@ -1,0 +1,38 @@
+name: nmos
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: nmos
+      POSTGRES_PASSWORD: ${NMOS_DB_PASSWORD:-nmos}
+      POSTGRES_DB: nmos
+    ports:
+      - "127.0.0.1:${NMOS_DB_PORT:-5436}:5432"
+    volumes:
+      - nmos_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nmos -d nmos"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  sidecar:
+    build:
+      context: .
+      dockerfile: docker/sidecar.Dockerfile
+    environment:
+      NMOS_DATABASE_URL: postgresql://nmos:${NMOS_DB_PASSWORD:-nmos}@postgres:5432/nmos
+      NMOS_AUTH_TOKEN: ${NMOS_AUTH_TOKEN:?set NMOS_AUTH_TOKEN in .env}
+      NMOS_CORS_ORIGINS: ${NMOS_CORS_ORIGINS:-http://localhost:6001}
+      NMOS_DEBUG_DELAY_MS: ${NMOS_DEBUG_DELAY_MS:-0}
+    ports:
+      - "${NMOS_SIDECAR_BIND:-127.0.0.1}:${NMOS_SIDECAR_PORT:-8790}:8790"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  nmos_pg:

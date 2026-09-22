@@ -1,0 +1,66 @@
+{
+  "actionKey": "7f7323980a2f5c38d2c15156ab0156f8462e0b8eff1da934521aec6e656eaf36",
+  "callCountForActionKey": 1,
+  "callCountForFormatedHash": 1,
+  "characterIndex": 0,
+  "chatIndex": 0,
+  "environment": {
+    "cryptoSubtleAvailable": true,
+    "hashMethod": "crypto.subtle",
+    "isSecureContext": true,
+    "spikeVersion": "0.2.0",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36"
+  },
+  "formattedLastRole": "user",
+  "hostChatId": "26b153b7-fc92-44da-872e-72499dee0b08",
+  "hostLastMessage": {
+    "chatId": "fda7d327-b187-48b4-af8f-2a560be822ef",
+    "generationId": null,
+    "role": "user",
+    "swipeCount": 0,
+    "swipeId": null
+  },
+  "hostMessageCount": 7,
+  "hostTailIsUser": true,
+  "kind": "beforeRequest",
+  "latestUserInput": {
+    "hostHasUserMessage": true,
+    "hostLastUserIsHostTail": true,
+    "promptContainsHostLastUserAt": 8,
+    "promptLastUserExactMatch": true,
+    "promptLastUserIndex": 8,
+    "promptLength": 9
+  },
+  "mode": "model",
+  "modeType": "string",
+  "msSincePreviousCall": null,
+  "prompt": {
+    "approximateTokens": 342,
+    "chars": 1366,
+    "formatedHash": "6a1969ad5eb9133993d88028bf01150aff3772878cc3a08b2d27fc6eeda4b878",
+    "messageCount": 9,
+    "roleSequence": [
+      "system",
+      "system",
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+      "user"
+    ],
+    "roles": {
+      "assistant": 3,
+      "system": 2,
+      "user": 4
+    }
+  },
+  "scenario": "S2",
+  "seq": 1,
+  "timestamp": "2026-09-22T06:33:36.322Z",
+  "timings": {
+    "getChatElapsedMs": 4.200000286102295,
+    "observationElapsedMs": 7
+  }
+}

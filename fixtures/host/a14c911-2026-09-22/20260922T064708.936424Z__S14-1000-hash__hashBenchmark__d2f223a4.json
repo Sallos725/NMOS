@@ -1,0 +1,17 @@
+{
+  "environment": {
+    "cryptoSubtleAvailable": true,
+    "hashMethod": "crypto.subtle",
+    "isSecureContext": true,
+    "spikeVersion": "0.2.0",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36"
+  },
+  "fallbackMs": 16.899999618530273,
+  "kind": "hashBenchmark",
+  "messageCount": 1000,
+  "payloadBytes": 413048,
+  "resultsAgree": true,
+  "scenario": "S14-1000-hash",
+  "subtleMs": 6.100000381469727,
+  "timestamp": "2026-09-22T06:47:08.911Z"
+}

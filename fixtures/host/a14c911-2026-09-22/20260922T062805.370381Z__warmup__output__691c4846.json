@@ -1,0 +1,82 @@
+{
+  "characterIndex": 0,
+  "chatIndex": 0,
+  "environment": {
+    "cryptoSubtleAvailable": true,
+    "hashMethod": "crypto.subtle",
+    "isSecureContext": true,
+    "spikeVersion": "0.2.0",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36"
+  },
+  "hostChatId": "26b153b7-fc92-44da-872e-72499dee0b08",
+  "hostMessageCount": 2,
+  "kind": "output",
+  "manifest": {
+    "chatId": "26b153b7-fc92-44da-872e-72499dee0b08",
+    "chatNameHash": "d9c067abe63d0854d2d559a0bf0b52fdc2ed811ac2a4c464a26b910a60c2648c",
+    "hashFormatVersion": 1,
+    "hashMethod": "crypto.subtle",
+    "manifestHash": "41e9191c2810daf61d93b3a1affeab4253b2fcbb9a07ba7d174d78add750f164",
+    "messageCount": 2,
+    "messages": [
+      {
+        "chatId": "1a966c29-dabb-4ba0-ac07-93805d3a6a1a",
+        "contentHash": "027c6f8cafbdf2c073f10104e99dda2f7c84312ea30beae7e508fc183d8d90d0",
+        "contentLength": 43,
+        "dataEqualsSelectedSwipe": null,
+        "dataHash": "65a42af8095447145af123108710113d40dfda7f6d9701c394a675a90c0f1ed6",
+        "disabled": null,
+        "generationId": null,
+        "isComment": null,
+        "name": null,
+        "otherUser": null,
+        "position": 0,
+        "role": "user",
+        "saying": null,
+        "swipeCount": 0,
+        "swipeId": null,
+        "time": 1790058485331
+      },
+      {
+        "chatId": "41b095dc-1b29-4899-b83c-ef8a2d0996d6",
+        "contentHash": "bef752c4bb83b2193945d288f222240ab20905813421ee913e3acfa7b516e28d",
+        "contentLength": 67,
+        "dataEqualsSelectedSwipe": null,
+        "dataHash": "026a7f397b9e37abb6576f76446e3040e26cd0850f7b94418600a5842c2b080c",
+        "disabled": null,
+        "generationId": "41b095dc-1b29-4899-b83c-ef8a2d0996d6",
+        "isComment": null,
+        "name": null,
+        "otherUser": null,
+        "position": 1,
+        "role": "char",
+        "saying": "b8e5fc56-9b22-4265-9956-d753f55fba04",
+        "swipeCount": 0,
+        "swipeId": null,
+        "time": 1790058485358
+      }
+    ]
+  },
+  "message": {
+    "chatId": "41b095dc-1b29-4899-b83c-ef8a2d0996d6",
+    "contentHash": "bef752c4bb83b2193945d288f222240ab20905813421ee913e3acfa7b516e28d",
+    "contentLength": 67,
+    "dataEqualsSelectedSwipe": null,
+    "dataHash": "026a7f397b9e37abb6576f76446e3040e26cd0850f7b94418600a5842c2b080c",
+    "disabled": null,
+    "generationId": "41b095dc-1b29-4899-b83c-ef8a2d0996d6",
+    "isComment": null,
+    "name": null,
+    "otherUser": null,
+    "position": 1,
+    "role": "char",
+    "saying": "b8e5fc56-9b22-4265-9956-d753f55fba04",
+    "swipeCount": 0,
+    "swipeId": null,
+    "time": 1790058485358
+  },
+  "messageIndex": 1,
+  "messageIsTail": true,
+  "scenario": "warmup",
+  "timestamp": "2026-09-22T06:28:05.364Z"
+}

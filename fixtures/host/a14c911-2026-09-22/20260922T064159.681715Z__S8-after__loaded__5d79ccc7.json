@@ -1,0 +1,12 @@
+{
+  "environment": {
+    "cryptoSubtleAvailable": true,
+    "hashMethod": "crypto.subtle",
+    "isSecureContext": true,
+    "spikeVersion": "0.2.0",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36"
+  },
+  "kind": "loaded",
+  "scenario": "S8-after",
+  "timestamp": "2026-09-22T06:41:59.679Z"
+}

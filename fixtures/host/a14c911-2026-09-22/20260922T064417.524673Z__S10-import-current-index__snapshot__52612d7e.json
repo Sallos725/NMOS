@@ -1,0 +1,33 @@
+{
+  "characterIndex": 0,
+  "chatIndex": 1,
+  "environment": {
+    "cryptoSubtleAvailable": true,
+    "hashMethod": "crypto.subtle",
+    "isSecureContext": true,
+    "spikeVersion": "0.2.0",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36"
+  },
+  "hostChatId": "0455fcdf-edf6-4bc3-9ac1-121e96ff9ee1",
+  "kind": "snapshot",
+  "manifest": {
+    "chatId": "0455fcdf-edf6-4bc3-9ac1-121e96ff9ee1",
+    "chatNameHash": "c9aab3febf3b57f1ea9eb7de725b6c5614386fce0c63834ebdc2a98737c65954",
+    "hashFormatVersion": 1,
+    "hashMethod": "crypto.subtle",
+    "manifestHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "messageCount": 0,
+    "messages": []
+  },
+  "metrics": {
+    "cryptoSubtleAvailable": true,
+    "getChatElapsedMs": 0.2999997138977051,
+    "hashMethod": "crypto.subtle",
+    "manifestHashElapsedMs": 0.09999990463256836,
+    "messageCount": 0,
+    "serializeElapsedMs": 0,
+    "serializedBytes": 195
+  },
+  "scenario": "S10-import-current-index",
+  "timestamp": "2026-09-22T06:44:17.520Z"
+}
