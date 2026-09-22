@@ -191,4 +191,23 @@ describe('route selection', () => {
     expect(routeFor('http://192.168.0.10:8790', '')).toBe('server');
     expect(routeFor('http://192.168.0.10:8790', 'direct')).toBe('direct');
   });
+
+  it('saves settings with a direct PUT to a localhost sidecar (the sidecar CORS must allow PUT)', async () => {
+    const { routeFor } = await import('../src/host');
+    const seen: Array<{ method: string; url: string; route: string; headers: Record<string, string> }> = [];
+    const host: HostPort = {
+      settings: async () => ({ sidecarUrl: 'http://localhost:8790', authToken: 't', enabled: true,
+        reservedMemoryTokens: 600, deadlineMs: 200, injectPosition: 'before_last_user',
+        route: routeFor('http://localhost:8790', '') }),
+      currentChat: async () => null,
+      request: async (method, url, _body, headers, _timeout, route) => {
+        seen.push({ method, url, route, headers });
+        return { status: 200, json: { queued_jobs: 0 } };
+      },
+      warn: () => {}, debug: () => {}, now: () => performance.now(),
+    };
+    await createAdapter(host).api('PUT', '/v1/config', { facts_limit: 3 });
+    expect(seen).toEqual([{ method: 'PUT', url: 'http://localhost:8790/v1/config', route: 'direct',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer t' } }]);
+  });
 });

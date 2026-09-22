@@ -63,3 +63,18 @@ def test_connection_tests_report_failures_cleanly(client):
     models = client.post("/v1/config/models", json={"url": "http://127.0.0.1:9/v1"}).json()
     assert llm["ok"] is False and "error" in llm
     assert emb["ok"] is False and models["ok"] is False and models["models"] == []
+
+
+def test_cors_preflight_allows_settings_put_from_allowed_origin_only(client):
+    """The settings panel saves with a direct cross-origin PUT when the sidecar is on localhost (#11)."""
+    headers = {"Access-Control-Request-Method": "PUT", "Access-Control-Request-Headers": "content-type,authorization"}
+    ok = client.options("/v1/config", headers={"Origin": "http://localhost:6101", **headers})
+    assert ok.status_code == 200
+    assert ok.headers["access-control-allow-origin"] == "http://localhost:6101"
+    assert "PUT" in ok.headers["access-control-allow-methods"]
+    assert {h.strip().lower() for h in ok.headers["access-control-allow-headers"].split(",")} >= {"content-type",
+                                                                                                  "authorization"}
+    denied = client.options("/v1/config", headers={"Origin": "http://evil.example", **headers})
+    assert denied.status_code == 400 and "access-control-allow-origin" not in denied.headers
+    put = client.put("/v1/config", json={"facts_limit": 4}, headers={"Origin": "http://localhost:6101"})
+    assert put.status_code == 200 and put.headers["access-control-allow-origin"] == "http://localhost:6101"

@@ -114,7 +114,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         app.add_middleware(
             CORSMiddleware,
             allow_origins=list(settings.cors_origins),
-            allow_methods=["GET", "POST"],
+            allow_methods=["GET", "POST", "PUT"],  # PUT: settings panel saves /v1/config directly
             allow_headers=["Authorization", "Content-Type"],
             max_age=600,
         )
