@@ -21,6 +21,34 @@ def test_config_roundtrip_masks_secrets_and_validates(client):
     assert reset["llm"]["url"] == "" and reset["llm"]["api_key_set"] is False
 
 
+def test_runtime_config_accepts_real_json_boolean_false(client):
+    assert client.put("/v1/config", json={"llm_json_mode": False}).json()["llm"]["json_mode"] is False
+    assert client.put("/v1/config", json={"llm_json_mode": True}).json()["llm"]["json_mode"] is True
+
+
+def test_runtime_config_rejects_ambiguous_boolean_string(client):
+    for value in ("false", "0", "no", 0, 1):
+        bad = client.put("/v1/config", json={"llm_json_mode": value})
+        assert bad.status_code == 422 and "llm_json_mode: expected a JSON boolean" in bad.json()["detail"][0]
+    assert client.get("/v1/config").json()["llm"]["json_mode"] is True  # nothing was saved
+
+
+def test_runtime_config_rejects_wrong_scalar_types(client):
+    bad = client.put("/v1/config", json={"recall_top_k": 3.5, "facts_limit": True, "extract_backfill": "12",
+                                         "recall_threshold": "0.5", "llm_model": 123, "embed_model": ["x"]})
+    assert bad.status_code == 422 and len(bad.json()["detail"]) == 6
+    ok = client.put("/v1/config", json={"recall_top_k": 4.0, "recall_threshold": 1, "vector_min_sim": 0.5}).json()
+    assert ok["recall"]["top_k"] == 4 and ok["recall"]["threshold"] == 1.0 and ok["recall"]["vector_min_sim"] == 0.5
+    assert client.put("/v1/config", json={"recall_top_k": 21}).status_code == 422  # ranges unchanged
+
+
+def test_runtime_config_null_still_resets_to_environment_default(migrated):
+    with make_client(migrated, llm_json_mode=False, recall_top_k=7) as c:
+        c.put("/v1/config", json={"llm_json_mode": True, "recall_top_k": 2})
+        view = c.put("/v1/config", json={"llm_json_mode": None, "recall_top_k": None}).json()
+        assert view["llm"]["json_mode"] is False and view["recall"]["top_k"] == 7 and view["overridden"] == []
+
+
 def test_config_persists_across_restarts(migrated):
     with make_client(migrated) as c:
         c.put("/v1/config", json={"facts_limit": 3})

@@ -96,20 +96,26 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         """Make the configured generations active and queue what they are missing (D20, #8).
 
         Runs at startup (idempotent: only missing work is queued) and whenever a setting changed a
-        generation key. An API-key-only change keeps the keys, so nothing is re-derived.
+        generation key. An API-key-only change keeps the keys, so nothing is re-derived. A provider
+        that is off gets no further jobs started, in the same transaction as the settings save (#18).
         """
         cur = rt["settings"]
         queued = 0
         ex, pj = rt["extractor"], rt["projection"]
-        if ex is not None and ex.key != before_extractor:
+        if ex is None:
+            if retired := extraction.retire(conn, "extract"):
+                log.info("LLM extraction is off: %d queued extract jobs made obsolete", retired)
+        elif ex.key != before_extractor:
             generations.activate(conn, ex)
             queued += extraction.schedule_generation(conn, ex.key, cur.extract_backfill)
-        if pj is not None and pj.key != before_projection:
-            with conn.transaction():
-                adopted = vectors.adopt_legacy(conn, pj)
-                generations.activate(conn, pj)
-            if adopted:
-                log.info("adopted %d pre-projection embedding chunks into %s", adopted, pj.key)
+        if pj is None:
+            if retired := extraction.retire(conn, "embed"):
+                log.info("embeddings are off: %d queued embed jobs made obsolete", retired)
+        elif pj.key != before_projection:
+            # Vectors from before projections existed (migration 0008: 'legacy:<model>') recorded no
+            # endpoint, so their space is unknown: they stay for audit and are never searched. The
+            # revisions they covered are re-embedded at background priority (#17).
+            generations.activate(conn, pj)
             queued += vectors.schedule_projection(conn, pj.key, cur.embed_backfill)
         rt["active_extractor"] = generations.active(conn, "extract")
         rt["recall"] = dataclasses.replace(rt["recall"], extractor_key=rt["active_extractor"])

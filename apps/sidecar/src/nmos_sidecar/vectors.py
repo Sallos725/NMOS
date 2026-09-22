@@ -14,7 +14,7 @@ import psycopg
 
 from . import generations, normtext
 from .config import Settings
-from .extraction import ELIGIBLE
+from .extraction import ELIGIBLE, REQUEUE
 from .generations import Generation
 from .llm import Embedder
 
@@ -114,15 +114,6 @@ def vector_candidates(conn: psycopg.Connection, head: UUID, query_vec: list[floa
     ).fetchall()
 
 
-def adopt_legacy(conn: psycopg.Connection, gen: Generation) -> int:
-    """Once, when the first projection is registered: vectors written before projections existed
-    (same normalizer and chunker, endpoint unrecorded) join the projection for their model."""
-    if generations.active(conn, "embed") is not None:
-        return 0
-    return conn.execute("UPDATE revision_embedding SET projection = %s WHERE projection = %s",
-                        (gen.key, f"legacy:{gen.model}")).rowcount
-
-
 def schedule_projection(conn: psycopg.Connection, key: str, backfill: int, conv: UUID | None = None) -> int:
     """Queue what the active projection is missing: the latest `backfill` eligible revisions of each chat,
     then (background priority) every older revision an earlier projection had embedded. Idempotent."""
@@ -144,8 +135,7 @@ def schedule_projection(conn: psycopg.Connection, key: str, backfill: int, conv:
                                 AND x.projection = %(key)s)
               AND (r.recent OR EXISTS (SELECT 1 FROM revision_embedding x WHERE x.source_revision_id = r.rid
                                          AND x.projection <> %(key)s))
-            ON CONFLICT (dedupe_key) DO NOTHING
-            """,
+            """ + REQUEUE,
             {"conv": conv, "key": key, "n": backfill, "recent": RECENT_PRIORITY, "history": HISTORY_PRIORITY,
              "norm": normtext.NORMALIZER_VERSION},
         ).rowcount

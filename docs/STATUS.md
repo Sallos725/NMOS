@@ -10,7 +10,7 @@ Plugin settings panel configures providers, embeddings, tuning and parser rules.
 real RisuRealm sim bot and a fresh install from release assets. Still outside the beta: hard
 character-POV isolation, threads/causal links, verifier, MCP (Phase 5+; not authorized).
 
-**Stabilization (issues #6–#14) implemented on the `main` line after beta.3, not yet released.**
+**Stabilization (issues #6–#19) implemented on the `main` line after beta.3, not yet released.**
 Projection generations and coverage (D20, ADR 0006), normalized text (D21), knowledge scope (ADR 0007),
 CORS PUT, large-chat envelope (`docs/perf/scale.md`), release gate. The next beta is a stabilization
 release; see `CHANGELOG.md` → Unreleased for known limitations.
@@ -25,7 +25,7 @@ release; see `CHANGELOG.md` → Unreleased for known limitations.
 | Schema | `migrations/0001`–`0009` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (94), `adapters/pocketrisu-plugin/test` (29) | all passing |
+| Tests | `apps/sidecar/tests` (104), `adapters/pocketrisu-plugin/test` (29) | all passing |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met; default deadline met up to ≈5k messages, fail open beyond ≈8k |
 | Decisions | `docs/adr/0001`–`0007` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-4.md` | 0–3 met; 4 soft subset met |
