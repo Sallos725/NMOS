@@ -37,11 +37,13 @@ def table(headers: list[str], rows: Iterable[list[str]]) -> str:
     return f"<div class=\"wrap\"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
 
 
-def index(conversations: list[dict[str, Any]], q: str) -> str:
+def index(conversations: list[dict[str, Any]], q: str, jobs: dict[str, int] | None = None) -> str:
     rows = [[f"<a href=\"/inspector/c/{c['id']}{q}\" class=\"mono\">{_v(c['host_chat_ref'])}</a>",
              _v(c["messages"]), _v(c["commits"]), _v(c["branched_from_host_chat_ref"] or ""),
              _v(str(c["last_retrieval"] or "")[:19])] for c in conversations]
-    return page("NMOS inspector", "<h1>NMOS inspector</h1><p class=\"muted\">Read-only view of the source ledger.</p>"
+    queue = " · ".join(f"{escape(k)} {v}" for k, v in sorted((jobs or {}).items())) or "empty"
+    return page("NMOS inspector", "<h1>NMOS inspector</h1><p class=\"muted\">Read-only view of the source ledger."
+                f" Background jobs: {queue}</p>"
                 + table(["Host chat", "Messages", "Commits", "Branched from", "Last retrieval"], rows))
 
 

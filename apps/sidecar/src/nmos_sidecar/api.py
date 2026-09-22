@@ -18,7 +18,7 @@ from urllib.parse import quote
 from . import __version__, inspector, ledger, readmodel
 from .config import Settings
 from .db import make_pool
-from .extraction import enqueue_after_apply
+from .extraction import enqueue_after_apply, job_counts
 from .facts import fact_versions
 from .ids import uuid7
 from .models import (
@@ -251,7 +251,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_index(request: Request, token: str | None = None):
         with request.app.state.pool.connection() as conn:
-            return inspector.index(readmodel.list_conversations(conn), _q(token))
+            return inspector.index(readmodel.list_conversations(conn), _q(token), job_counts(conn))
 
     @app.get("/inspector/c/{conv_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_detail(conv_id: UUID, request: Request, token: str | None = None):

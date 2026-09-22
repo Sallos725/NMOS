@@ -37,6 +37,7 @@ class Settings:
     # Query-side instruction for instruction-tuned embedders. "auto": Qwen3-Embedding format when the
     # model name contains "qwen3-embedding", none otherwise. Documents are embedded without it.
     embed_query_instruction: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_QUERY_INSTRUCTION", "auto"))
+    trace_retention_days: int = field(default_factory=lambda: int(os.environ.get("NMOS_TRACE_RETENTION_DAYS", "30")))
     parsers_file: str = field(default_factory=lambda: os.environ.get("NMOS_PARSERS_FILE", ""))
     # Test hook for the "sidecar slower than deadlineMs" acceptance check. Never set in production.
     debug_delay_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_DEBUG_DELAY_MS", "0")))

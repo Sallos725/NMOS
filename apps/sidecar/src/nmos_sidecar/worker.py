@@ -50,6 +50,22 @@ def run_once(conn: psycopg.Connection, jobs: dict[str, Callable[[psycopg.Connect
     return True
 
 
+def prune(conn: psycopg.Connection, trace_days: int) -> None:
+    """Derived bookkeeping only: finished jobs after 7 days, retrieval traces after `trace_days`."""
+    conn.execute("DELETE FROM job WHERE status IN ('done', 'obsolete') AND updated_at < now() - interval '7 days'")
+    conn.execute("DELETE FROM retrieval_trace WHERE created_at < now() - make_interval(days => %s)", (trace_days,))
+
+
+def maintenance(settings: Settings, stop: threading.Event) -> None:
+    while not stop.is_set():
+        try:
+            with psycopg.connect(settings.database_url, autocommit=True) as conn:
+                prune(conn, settings.trace_retention_days)
+        except psycopg.Error as exc:
+            log.warning("maintenance skipped: %s", exc)
+        stop.wait(600)
+
+
 def loop(settings: Settings, stop: threading.Event, jobs: dict) -> None:
     while not stop.is_set():
         try:
@@ -73,9 +89,10 @@ def main() -> None:
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     threads = [threading.Thread(target=loop, args=(settings, stop, jobs), daemon=True)
                for _ in range(max(1, settings.worker_concurrency))] if jobs else []
+    threads.append(threading.Thread(target=maintenance, args=(settings, stop), daemon=True))
     for t in threads:
         t.start()
-    log.info("worker started: kinds=%s concurrency=%d", sorted(jobs), len(threads))
+    log.info("worker started: kinds=%s concurrency=%d", sorted(jobs), len(threads) - 1)
     while not stop.is_set():
         time.sleep(0.5)
     for t in threads:

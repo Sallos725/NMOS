@@ -164,3 +164,19 @@ def test_skip_locked_claims_are_exclusive(llm_client, migrated):
     for t in threads:
         t.join()
     assert len(claimed) == len(set(claimed)) == len(chat.messages)
+
+
+def test_prune_keeps_recent_and_unfinished(llm_client, migrated, db):
+    from nmos_sidecar.worker import prune
+    chat = SimChat()
+    filler(chat, 3)
+    chat.user("last")
+    sync(llm_client, chat)
+    recall(llm_client, chat, "clouds")
+    db.execute("UPDATE job SET status = 'done', updated_at = now() - interval '8 days' WHERE id = (SELECT min(id) FROM job)")
+    db.execute("UPDATE retrieval_trace SET created_at = now() - interval '40 days'")
+    before = db.execute("SELECT count(*) AS n FROM job").fetchone()["n"]
+    prune(db, 30)
+    assert db.execute("SELECT count(*) AS n FROM job").fetchone()["n"] == before - 1
+    assert db.execute("SELECT count(*) AS n FROM retrieval_trace").fetchone()["n"] == 0
+    assert "Background jobs:" in llm_client.get("/inspector").text
