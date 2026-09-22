@@ -1,13 +1,16 @@
 # Changelog
 
-## Unreleased — stabilization (issues #6–#14)
+## Unreleased — stabilization (issues #6–#19)
 
 Correctness before new features. Upgrading applies migrations 0007–0009. At startup the sidecar
-backfills normalized text, adopts existing embeddings (vector recall keeps working), and re-queues fact
-extraction under the new extractor generation, recent messages first. **Facts extracted by beta.3 are
-not injected until the worker has re-extracted them with the configured LLM** (they stay stored for
-audit). The Inspector shows fact coverage as *partial* until then. Verified by upgrading a database
-written by beta.3.
+backfills normalized text and re-queues fact extraction and embeddings under the new generations,
+recent messages first. **Facts extracted by beta.3 are not injected until the worker has re-extracted
+them with the configured LLM, and beta.3 embeddings are not searched until the worker has re-embedded
+them** (both stay stored for audit). beta.3 did not record which endpoint produced a vector, so it
+cannot be proven to match the configured one (#17). Until the worker catches up, recall is lexical
+for the affected messages and the Inspector shows coverage as *partial*. Embedding is fast next to
+extraction (a local Ollama embeds a message in tens of milliseconds). Verified by upgrading a
+database written by beta.3.
 
 - **Model/endpoint changes re-derive memory** (#6, #7). Extraction and embeddings are bound to a
   generation key: compiler, prompt, predicate registry, normalizer, endpoint, model and settings;
@@ -17,6 +20,15 @@ written by beta.3.
 - **Upgrades keep fact coverage** (#8). A new generation rebuilds the recent window first, then every
   older message the previous generation covered, in the background. Coverage per chat is shown in the
   Inspector and at `GET /v1/conversations/{id}/coverage`. Old generations stay for audit.
+- **Turning a provider off stops its queued work at once** (#18). Switching LLM extraction or
+  embeddings off in the settings makes their queued jobs obsolete in the same save, so a paid API is
+  not called for jobs that were waiting (previously up to the worker's 30 s reload). A request already
+  running finishes and is not retried. Turning it back on, or switching back to an earlier model,
+  queues what is missing again (previously work made obsolete by a switch was not re-queued).
+- **Settings API checks types** (#19). `PUT /v1/config` rejects values of the wrong JSON type with a
+  422 instead of converting them: `"false"` is no longer read as true, `3.5` is not truncated to 3,
+  and numbers are not accepted where text is expected. The settings panel already sends the right
+  types. `null` still resets a value to the environment default.
 - **Recall ignores reasoning blocks** (#9). Lexical search, embeddings, extraction and excerpts share
   one versioned normalized text. Words that only appear inside `<Thoughts>`/`<think>`/style blocks no
   longer produce hits, in the corpus or in the query.

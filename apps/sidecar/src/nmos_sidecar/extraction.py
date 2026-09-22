@@ -61,6 +61,12 @@ Answer with JSON only: {{"assertions": [{{"subject": "...", "subject_type": "...
 "hidden_from": []}}]}}"""
 
 
+# A job key names one unit of work (revision, window, generation). If that work was made obsolete
+# (generation switched away, provider disabled, head moved) and is wanted again, the row is revived.
+REQUEUE = """ON CONFLICT (dedupe_key) DO UPDATE SET status = 'queued', priority = EXCLUDED.priority, attempts = 0,
+    run_after = now(), locked_at = NULL, last_error = NULL, updated_at = now() WHERE job.status = 'obsolete'"""
+
+
 def enqueue_after_apply(
     conn: psycopg.Connection,
     conv_id: UUID,
@@ -105,11 +111,18 @@ def enqueue_after_apply(
     if rows:
         with conn.cursor() as cur:
             cur.executemany(
-                "INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority) VALUES (%s, %s, %s, %s, %s)"
-                " ON CONFLICT (dedupe_key) DO NOTHING",
+                "INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority) VALUES (%s, %s, %s, %s, %s) "
+                + REQUEUE,
                 rows,
             )
     return len(rows)
+
+
+def retire(conn: psycopg.Connection, kind: str) -> int:
+    """The provider for `kind` was turned off: no queued job of that kind may start (#18). A request
+    already in flight finishes; its job keeps the obsolete status."""
+    return conn.execute("UPDATE job SET status = 'obsolete', locked_at = NULL, updated_at = now()"
+                        " WHERE kind = %s AND status IN ('queued', 'running')", (kind,)).rowcount
 
 
 def claim(conn: psycopg.Connection, handled: dict[str, str]) -> dict[str, Any] | None:
@@ -133,7 +146,8 @@ def claim(conn: psycopg.Connection, handled: dict[str, str]) -> dict[str, Any] |
 
 def finish(conn: psycopg.Connection, job_id: int, status: str) -> None:
     with conn.transaction():
-        conn.execute("UPDATE job SET status = %s, locked_at = NULL, updated_at = now() WHERE id = %s", (status, job_id))
+        conn.execute("UPDATE job SET status = %s, locked_at = NULL, updated_at = now() WHERE id = %s"
+                     " AND status = 'running'", (status, job_id))
 
 
 def fail(conn: psycopg.Connection, job: dict[str, Any], error: str) -> None:
@@ -141,7 +155,7 @@ def fail(conn: psycopg.Connection, job: dict[str, Any], error: str) -> None:
     with conn.transaction():
         conn.execute(
             "UPDATE job SET status = %s, locked_at = NULL, last_error = %s, updated_at = now(),"
-            " run_after = now() + make_interval(secs => %s) WHERE id = %s",
+            " run_after = now() + make_interval(secs => %s) WHERE id = %s AND status = 'running'",
             ("dead" if dead else "queued", error[:1000], min(600, 15 * 2 ** job["attempts"]), job["id"]),
         )
 
@@ -329,8 +343,7 @@ def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv:
               AND (e.position >= e.n - %(n)s
                    OR EXISTS (SELECT 1 FROM extraction x WHERE x.source_revision_id = e.rid
                                 AND x.window_hash = e.window_hash AND x.extractor_key IS DISTINCT FROM %(key)s))
-            ON CONFLICT (dedupe_key) DO NOTHING
-            """,
+            """ + REQUEUE,
             {"conv": conv, "key": key, "n": backfill, "recent": RECENT_PRIORITY, "history": HISTORY_PRIORITY},
         ).rowcount
 
