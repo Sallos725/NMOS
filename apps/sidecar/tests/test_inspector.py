@@ -62,6 +62,12 @@ def test_inspector_is_korean_by_default_and_english_on_request(client):
     assert client.get("/inspector", params={"lang": "xx"}).text.startswith('<!doctype html><html lang="ko">')
 
 
+def test_coverage_of_a_feature_that_was_never_on_is_not_shown_as_partial(client):
+    sync_named(client, chat(), character_name="하나", chat_name="첫 대화")  # no LLM, no embeddings
+    page = client.get("/inspector").text
+    assert "일부" not in page and "0.0%" not in page
+
+
 def test_inspector_links_keep_token_and_language(migrated):
     with make_client(migrated) as c:
         sync_named(c, chat(), character_name="하나", chat_name="첫 대화")

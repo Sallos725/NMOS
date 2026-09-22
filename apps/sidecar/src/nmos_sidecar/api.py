@@ -365,7 +365,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             return inspector.index(readmodel.list_conversations(conn), token, job_counts(conn),
                                    {"extraction": generations.describe(conn, ex_key),
                                     "embeddings": generations.describe(conn, pj_key)},
-                                   extraction.coverage(conn, ex_key), vectors.coverage(conn, pj_key),
+                                   # no generation ever active: "—", not a 0 % that reads as unfinished work
+                                   extraction.coverage(conn, ex_key) if ex_key else {},
+                                   vectors.coverage(conn, pj_key) if pj_key else {},
                                    lang=inspector.lang_of(lang))
 
     @app.get("/inspector/c/{conv_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
