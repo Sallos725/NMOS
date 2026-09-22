@@ -29,7 +29,9 @@ from .models import (
     RevisionRef,
 )
 from .reconcile import Entry, plan
+from .parsers import load_rules
 from .retrieval import retrieve
+from .state import sync_rules, write_state
 
 log = logging.getLogger("nmos.sidecar")
 
@@ -65,9 +67,15 @@ def _compact_observation(body: ReconcileRequest, result, base_hash: str | None, 
 def create_app(settings: Settings | None = None, pool: ConnectionPool | None = None) -> FastAPI:
     settings = settings or Settings()
 
+    rules = load_rules(settings.parsers_file)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.pool = pool or make_pool(settings.database_url)
+        with app.state.pool.connection() as conn:
+            backfilled = sync_rules(conn, rules)
+        if backfilled:
+            log.info("state backfilled: %d observations for rules %s", backfilled, rules.version)
         try:
             yield
         finally:
@@ -145,7 +153,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def bodies(body: BodiesRequest, request: Request):
         with request.app.state.pool.connection() as conn:
             conv = ledger.lock_conversation(conn, body.host, body.chat_id, None)
-            stored, rejected = ledger.store_bodies(conn, conv.id, [b.model_dump() for b in body.bodies])
+            stored, rejected = ledger.store_bodies(
+                conn, conv.id, [b.model_dump() for b in body.bodies],
+                on_insert=lambda rid, content, meta: write_state(conn, rules, conv.id, rid, content, meta),
+            )
             result = None
             if body.then_reconcile is not None and not rejected:
                 if body.then_reconcile.chat_id != body.chat_id:
@@ -159,7 +170,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def retrieve_route(body: RetrieveRequest, request: Request):
         delay()
         with request.app.state.pool.connection() as conn:
-            out = retrieve(conn, body, settings.recall_top_k, settings.recall_threshold)
+            out = retrieve(conn, body, settings.recall_top_k, settings.recall_threshold, rules.version)
         return RetrieveResponse(
             trace_id=out["trace_id"] or uuid7(),
             freshness=out["freshness"],

@@ -11,7 +11,8 @@ from psycopg.types.json import Jsonb
 
 from .ids import uuid7
 from .ledger import find_conversation
-from .packet import Excerpt, compile_packet, excerpt
+from .packet import Excerpt, StateItem, compile_packet, excerpt
+from .state import current_state
 
 CANDIDATE_LIMIT = 50
 # Candidates must match the user's message; the previous AI turn only breaks ties in ranking
@@ -19,7 +20,8 @@ CANDIDATE_LIMIT = 50
 AI_TIEBREAK_WEIGHT = 0.2
 
 
-def retrieve(conn: psycopg.Connection, request: Any, top_k: int, threshold: float) -> dict[str, Any]:
+def retrieve(conn: psycopg.Connection, request: Any, top_k: int, threshold: float,
+             rules_version: str = "none") -> dict[str, Any]:
     started = time.perf_counter()
     conv = find_conversation(conn, request.host, request.chat_id)
     if conv is None or conv.head_commit_id is None:
@@ -78,7 +80,12 @@ def retrieve(conn: psycopg.Connection, request: Any, top_k: int, threshold: floa
         )
         for r in eligible
     ]
-    text, tokens, chosen = compile_packet(ranked, request.budget_tokens)
+    state_items: list[StateItem] = []
+    if fresh and rules_version != "none":
+        state_items = [StateItem(key=r["key"], value=r["value"], turn=r["position"])
+                       for r in current_state(conn, conv.head_commit_id, rules_version)
+                       if r["host_logical_id"] not in in_context]
+    text, tokens, chosen = compile_packet(ranked, request.budget_tokens, state=state_items)
     total_ms = (time.perf_counter() - started) * 1000
 
     trace_id: UUID = uuid7()

@@ -88,11 +88,12 @@ def scripted_session(client, chat: SimChat, echo=None) -> SimChat:
 
 
 def test_migrations_apply_cleanly_and_are_guarded(database_url, tmp_path):
-    assert apply_migrations(database_url) == ["0001_source_layer.sql"]
+    from nmos_sidecar.migrate import migrations_dir
+    expected = sorted(p.name for p in migrations_dir().glob("[0-9][0-9][0-9][0-9]_*.sql"))
+    assert apply_migrations(database_url) == expected and expected[0] == "0001_source_layer.sql"
     assert apply_migrations(database_url) == []
     edited = tmp_path / "migrations"
     edited.mkdir()
-    from nmos_sidecar.migrate import migrations_dir
     original = (migrations_dir() / "0001_source_layer.sql").read_text()
     (edited / "0001_source_layer.sql").write_text(original + "\n-- edited\n")
     with pytest.raises(RuntimeError, match="was modified"):

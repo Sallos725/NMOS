@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -112,7 +113,10 @@ def record_observation(
     return existing["id"]
 
 
-def store_bodies(conn: psycopg.Connection, conv_id: UUID, bodies: list[dict[str, Any]]) -> tuple[int, list[RevKey]]:
+def store_bodies(
+    conn: psycopg.Connection, conv_id: UUID, bodies: list[dict[str, Any]],
+    on_insert: Callable[[UUID, str, dict[str, Any]], None] | None = None,
+) -> tuple[int, list[RevKey]]:
     """Insert verified revisions. Idempotent: an existing (object, hash) row is left untouched."""
     stored = 0
     rejected: list[RevKey] = []
@@ -136,12 +140,15 @@ def store_bodies(conn: psycopg.Connection, conv_id: UUID, bodies: list[dict[str,
         stored_meta["swipeCount"] = meta.get("swipeCount") or 0
         stored_meta["specialComments"] = list(meta.get("specialComments") or [])
         initial = "accepted" if meta.get("role") == "user" or meta.get("isComment") else "provisional"
-        cur = conn.execute(
+        row = conn.execute(
             "INSERT INTO source_revision (id, source_object_id, revision_hash, content, metadata, lifecycle)"
-            " VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (source_object_id, revision_hash) DO NOTHING",
+            " VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (source_object_id, revision_hash) DO NOTHING RETURNING id",
             (uuid7(), obj["id"], body["revision_hash"], content, Jsonb(stored_meta), initial),
-        )
-        stored += cur.rowcount
+        ).fetchone()
+        if row:
+            stored += 1
+            if on_insert:
+                on_insert(row["id"], content, stored_meta)
     return stored, rejected
 
 

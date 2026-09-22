@@ -9,6 +9,8 @@ from psycopg.rows import dict_row
 
 from .config import Settings
 from .ledger import rebuild_membership
+from .parsers import load_rules
+from .state import rebuild_state
 
 
 def rebuild_all(database_url: str, conversation_id: str | None = None) -> dict[str, int]:
@@ -29,9 +31,14 @@ def rebuild_all(database_url: str, conversation_id: str | None = None) -> dict[s
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--conversation", help="rebuild one conversation id (default: all)")
+    parser.add_argument("--state", action="store_true", help="also re-parse state with NMOS_PARSERS_FILE")
     args = parser.parse_args()
-    for conv_id, count in rebuild_all(Settings().database_url, args.conversation).items():
+    settings = Settings()
+    for conv_id, count in rebuild_all(settings.database_url, args.conversation).items():
         print(f"{conv_id}: {count} members")
+    if args.state:
+        with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+            print(f"state: {rebuild_state(conn, load_rules(settings.parsers_file))} observations")
 
 
 if __name__ == "__main__":

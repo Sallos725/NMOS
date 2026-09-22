@@ -60,12 +60,43 @@ def excerpt_line(item: Excerpt) -> str:
     return f"  <Excerpt turn=\"{item.turn}\" speaker={quoteattr(item.speaker)}>{escape(item.text)}</Excerpt>"
 
 
-def compile_packet(ranked: list[Excerpt], budget_tokens: int) -> tuple[str, int, list[Excerpt]]:
-    """Take excerpts in score order while the whole packet fits the budget; emit them chronologically."""
-    frame = "\n".join([PACKET_OPEN, PACKET_NOTE, PACKET_CLOSE])
-    used = estimate_tokens(frame)
-    if not ranked or used >= budget_tokens:
+@dataclass(frozen=True)
+class StateItem:
+    key: str
+    value: str
+    turn: int
+
+
+def state_block(items: list[StateItem]) -> list[str]:
+    if not items:
+        return []
+    lines = ["  <State>"]
+    lines += [f"    <Item key={quoteattr(i.key)} as_of_turn=\"{i.turn}\">{escape(i.value)}</Item>" for i in items]
+    lines.append("  </State>")
+    return lines
+
+
+def compile_packet(ranked: list[Excerpt], budget_tokens: int, state: list[StateItem] | None = None,
+                   facts: list[str] | None = None) -> tuple[str, int, list[Excerpt]]:
+    """Fill the budget in priority order — state, facts, then excerpts by score — and emit the
+    excerpts chronologically. Returns ("", 0, []) when nothing fits or nothing is relevant."""
+    frame = [PACKET_OPEN, PACKET_NOTE, PACKET_CLOSE]
+    used = estimate_tokens("\n".join(frame))
+    if used >= budget_tokens:
         return "", 0, []
+    kept_state: list[StateItem] = []
+    for item in state or []:
+        extra = state_block(kept_state + [item])
+        cost = estimate_tokens("\n".join(extra)) - estimate_tokens("\n".join(state_block(kept_state)))
+        if used + cost <= budget_tokens:
+            kept_state.append(item)
+            used += cost
+    kept_facts: list[str] = []
+    for line in facts or []:
+        cost = estimate_tokens(line + "\n") + (estimate_tokens("  <Facts>\n  </Facts>\n") if not kept_facts else 0)
+        if used + cost <= budget_tokens:
+            kept_facts.append(line)
+            used += cost
     chosen: list[Excerpt] = []
     for item in ranked:
         cost = estimate_tokens(excerpt_line(item) + "\n")
@@ -73,8 +104,12 @@ def compile_packet(ranked: list[Excerpt], budget_tokens: int) -> tuple[str, int,
             continue
         chosen.append(item)
         used += cost
-    if not chosen:
+    if not chosen and not kept_state and not kept_facts:
         return "", 0, []
     chosen.sort(key=lambda e: e.turn)
-    text = "\n".join([PACKET_OPEN, PACKET_NOTE, *(excerpt_line(e) for e in chosen), PACKET_CLOSE])
+    body = state_block(kept_state)
+    if kept_facts:
+        body += ["  <Facts>", *kept_facts, "  </Facts>"]
+    body += [excerpt_line(e) for e in chosen]
+    text = "\n".join([PACKET_OPEN, PACKET_NOTE, *body, PACKET_CLOSE])
     return text, estimate_tokens(text), chosen
