@@ -4,16 +4,18 @@
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.3` (2026-09-22), private repository.** Phases 1–3 complete. Phase 4 soft
+**Public beta `v0.1.0-beta.4` (2026-09-23), private repository.** Stabilization release (issues
+#6–#19) and UI review on top of `v0.1.0-beta.3` (2026-09-22). Phases 1–3 complete. Phase 4 soft
 subset complete (knowledge scope `public` / `limited` / `unknown`, D19, `docs/phases/PHASE-4.md`).
 Plugin settings panel configures providers, embeddings, tuning and parser rules. Validated with a
 real RisuRealm sim bot and a fresh install from release assets. Still outside the beta: hard
 character-POV isolation, threads/causal links, verifier, MCP (Phase 5+; not authorized).
 
-**Stabilization (issues #6–#19) implemented on the `main` line after beta.3, not yet released.**
-Projection generations and coverage (D20, ADR 0006), normalized text (D21), knowledge scope (ADR 0007),
-CORS PUT, large-chat envelope (`docs/perf/scale.md`), release gate. The next beta is a stabilization
-release; see `CHANGELOG.md` → Unreleased for known limitations.
+**beta.4 contents.** Projection generations and coverage (D20, ADR 0006), normalized text (D21),
+knowledge scope (ADR 0007), CORS PUT, large-chat envelope (`docs/perf/scale.md`), release gate, no
+search of unverifiable beta.3 vectors (#17), immediate provider disable (#18), strict config types
+(#19), one NMOS panel (status/settings tabs, chat-menu entry, Korean/English), Inspector labels.
+Known limitations: `CHANGELOG.md` → 0.1.0-beta.4.
 
 ## What exists
 
@@ -22,10 +24,10 @@ release; see `CHANGELOG.md` → Unreleased for known limitations.
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
 | Architecture | `ARCHITECTURE.md` | H1–H14, D1–D21, O2/O3/O4 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
-| Schema | `migrations/0001`–`0009` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope |
+| Schema | `migrations/0001`–`0010` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (104), `adapters/pocketrisu-plugin/test` (29) | all passing |
+| Tests | `apps/sidecar/tests` (109), `adapters/pocketrisu-plugin/test` (35) | all passing |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met; default deadline met up to ≈5k messages, fail open beyond ≈8k |
 | Decisions | `docs/adr/0001`–`0007` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-4.md` | 0–3 met; 4 soft subset met |

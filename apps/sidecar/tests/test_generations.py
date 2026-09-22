@@ -148,7 +148,7 @@ def test_compiler_upgrade_tracks_partial_coverage_and_backfills_beyond_recent_wi
         assert prio == [extraction.RECENT_PRIORITY] * 4 + [extraction.HISTORY_PRIORITY] * (eligible - 4)
         assert cov["complete"] is False and cov["compiled"] == 0 and cov["pending"] == eligible
         assert cov["historical_only"] == eligible and cov["generation"]["spec"]["compiler"] == "extract-next"
-        assert "partial" in c.get("/inspector").text
+        assert "partial" in c.get("/inspector?lang=en").text
         drain(migrated)
         cov = c.get(f"/v1/conversations/{cid}/coverage").json()["extraction"]
         assert (cov["compiled"], cov["percent"], cov["complete"]) == (eligible, 100.0, True)

@@ -1,7 +1,7 @@
 //@name nmos_memory
 //@display-name NMOS Narrative Memory
 //@api 3.0
-//@version 0.1.0-beta.3
+//@version 0.1.0-beta.4
 //@link https://github.com/Sallos725/NMOS Documentation
 //@update-url https://raw.githubusercontent.com/Sallos725/NMOS/main/adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js
 //@arg sidecar_url string NMOS sidecar URL (empty = http://127.0.0.1:8790)
@@ -11,6 +11,7 @@
 //@arg deadline_ms int Hard request-path deadline in ms (0 = 800)
 //@arg inject_position string before_last_user (default) or end
 //@arg route string auto (default) / direct / server — how to reach the sidecar
+//@arg language string Panel language: ko (default) or en
 "use strict";
 (() => {
   // src/canonical.ts
@@ -84,7 +85,12 @@
   }
   var bodyKey = (logicalId, revisionHash) => `${logicalId}
 ${revisionHash}`;
-  async function buildManifest(chat, characterRef) {
+  var LABEL_MAX = 200;
+  function labelOf(value) {
+    const text = typeof value === "string" ? value.trim() : "";
+    return text ? text.slice(0, LABEL_MAX) : void 0;
+  }
+  async function buildManifest(chat, characterRef, labels = {}) {
     const messages = Array.isArray(chat.message) ? chat.message : [];
     const hashes = await Promise.all(messages.map((m) => sha256Hex(canonicalJson(hashPayload(m)))));
     const bodies = /* @__PURE__ */ new Map();
@@ -112,7 +118,15 @@ ${revisionHash}`;
       };
     });
     return {
-      request: { host: "pocketrisu", chat_id: String(chat.id ?? ""), character_ref: characterRef, hash_version: 1, messages: entries },
+      request: {
+        host: "pocketrisu",
+        chat_id: String(chat.id ?? ""),
+        character_ref: characterRef,
+        character_name: labelOf(labels.characterName),
+        chat_name: labelOf(chat.name),
+        hash_version: 1,
+        messages: entries
+      },
       bodies
     };
   }
@@ -228,9 +242,22 @@ ${revisionHash}`;
   var FAILURE_TTL_MS = 3e4;
   var CACHE_LIMIT = 64;
   var BODY_CHUNK = 250;
+  var NAME_TTL_MS = 10 * 6e4;
   function createAdapter(host) {
     const cache = /* @__PURE__ */ new Map();
+    const names = /* @__PURE__ */ new Map();
     let last = null;
+    function characterName(chatId) {
+      const hit = names.get(chatId);
+      if (host.characterName && (!hit || host.now() - hit.at > NAME_TTL_MS)) {
+        names.set(chatId, { name: hit?.name ?? null, at: host.now() });
+        host.characterName(chatId).then((name) => {
+          if (name) names.set(chatId, { name, at: host.now() });
+        }).catch(() => {
+        });
+      }
+      return hit?.name ?? null;
+    }
     function remember(key, packet, ttl) {
       cache.set(key, { packet, expires: host.now() + ttl });
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
@@ -293,7 +320,11 @@ ${revisionHash}`;
         const messages = Array.isArray(chat?.message) ? chat.message : [];
         if (!chat?.id || !isMainGeneration(prompt, mode, messages)) return prompt;
         const t0 = host.now();
-        const { request, bodies } = await buildManifest(chat, firstSaying(messages));
+        const { request, bodies } = await buildManifest(
+          chat,
+          firstSaying(messages),
+          { characterName: characterName(chat.id) }
+        );
         const manifestMs = host.now() - t0;
         key = await sha256Hex(canonicalJson([
           chat.id,
@@ -364,10 +395,15 @@ ${revisionHash}`;
         }, host.now() + settings.deadlineMs);
       })().catch((error) => host.debug("[NMOS] output notification failed:", error instanceof Error ? error.message : error));
     }
-    async function statusText() {
+    async function status() {
       const settings = await host.settings();
-      const lines = [];
-      if (!settings.enabled) lines.push("NMOS: \uAEBC\uC9D0 (disabled = 1) / disabled");
+      const info = {
+        enabled: settings.enabled,
+        sidecarUrl: settings.sidecarUrl,
+        language: settings.language,
+        connected: false,
+        last
+      };
       try {
         const res = await call(
           settings,
@@ -375,49 +411,203 @@ ${revisionHash}`;
           void 0,
           host.now() + 3e3
         );
-        const f = res.features ?? {};
-        const on = (b) => b ? "on" : "off";
-        lines.push(`NMOS ${res.version} \uC5F0\uACB0\uB428 / connected \u2014 ${settings.sidecarUrl}`);
-        lines.push(`\uC0C1\uD0DC\uCC3D state ${on(f.state)} \xB7 \uC0AC\uC2E4 facts ${on(f.extraction)} \xB7 \uC758\uBBF8\uAC80\uC0C9 vectors ${on(f.vectors)}`);
+        Object.assign(info, { connected: true, version: res.version, features: res.features ?? {} });
       } catch (error) {
-        lines.push(`\uC0AC\uC774\uB4DC\uCE74\uC5D0 \uC5F0\uACB0\uD560 \uC218 \uC5C6\uC74C / cannot reach sidecar: ${settings.sidecarUrl}`);
-        lines.push(`(${error instanceof Error ? error.message : String(error)})`);
-        lines.push("\uD655\uC778: docker compose up -d \xB7 NMOS_CORS_ORIGINS\uC5D0 \uC774 \uC8FC\uC18C \uD3EC\uD568 \xB7 localhost/HTTPS\uB85C \uC811\uC18D");
+        info.error = error instanceof Error ? error.message : String(error);
       }
-      if (last) {
-        const ago = Math.round((Date.now() - last.at) / 1e3);
-        const what = last.outcome === "injected" ? `\uAE30\uC5B5 \uC8FC\uC785 ${last.packetChars}\uC790 / injected` : last.outcome === "nothing-relevant" ? "\uAD00\uB828 \uAE30\uC5B5 \uC5C6\uC74C / nothing relevant" : `\uC2E4\uD328 / failed: ${last.error}`;
-        lines.push(`\uB9C8\uC9C0\uB9C9 \uC694\uCCAD / last request: ${ago}s \uC804 \xB7 ${what} \xB7 ${last.ms}ms`);
-      } else {
-        lines.push("\uC544\uC9C1 \uC694\uCCAD \uC5C6\uC74C \u2014 \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4 \uBCF4\uC138\uC694 / no request yet");
-      }
-      return lines.join("\n");
+      return info;
     }
     async function api(method, path, body, timeoutMs = 9e4) {
       const settings = await host.settings();
       return call(settings, path, body, host.now() + timeoutMs, method);
     }
-    return { beforeRequest, onOutput, statusText, api };
+    return { beforeRequest, onOutput, status, api };
   }
   function firstSaying(messages) {
     for (const m of messages) if (m.role === "char" && m.saying) return m.saying;
     return null;
   }
 
+  // src/i18n.ts
+  function langOf(value) {
+    return value === "en" ? "en" : "ko";
+  }
+  var STRINGS = {
+    // menus (registered once at load, in the language chosen then)
+    "menu.panel": ["NMOS \uAE30\uC5B5", "NMOS memory"],
+    "menu.settings": ["NMOS \uC124\uC815", "NMOS settings"],
+    "menu.status": ["NMOS \uC0C1\uD0DC", "NMOS status"],
+    // frame
+    "title": ["NMOS \uAE30\uC5B5", "NMOS memory"],
+    "tab.status": ["\uC0C1\uD0DC", "Status"],
+    "tab.settings": ["\uC124\uC815", "Settings"],
+    "close": ["\uB2EB\uAE30", "Close"],
+    "language": ["\uC5B8\uC5B4", "Language"],
+    // status view
+    "status.sidecar": ["\uC0AC\uC774\uB4DC\uCE74", "Sidecar"],
+    "status.checking": ["\uC0AC\uC774\uB4DC\uCE74 \uD655\uC778 \uC911\u2026", "Checking the sidecar\u2026"],
+    "status.connected": ["\uC5F0\uACB0\uB428", "Connected"],
+    "status.unreachable": ["\uC5F0\uACB0\uD560 \uC218 \uC5C6\uC74C", "Cannot reach"],
+    "status.fix": [
+      "\uD655\uC778: docker compose up -d \xB7 \uC8FC\uC18C \xB7 NMOS_CORS_ORIGINS\uC5D0 \uC774 PocketRisu \uC8FC\uC18C \uD3EC\uD568 \xB7 localhost \uB610\uB294 HTTPS\uB85C \uC811\uC18D",
+      "Check: docker compose up -d \xB7 the address \xB7 NMOS_CORS_ORIGINS includes this PocketRisu address \xB7 open via localhost or HTTPS"
+    ],
+    "status.memory_off": ["\uAE30\uC5B5 \uB123\uAE30\uAC00 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED\uC5D0\uC11C \uCF24 \uC218 \uC788\uC2B5\uB2C8\uB2E4.", "Memory is switched off. Turn it on in Settings."],
+    "status.features": ["\uAE30\uB2A5", "Features"],
+    "feature.state": ["\uC0C1\uD0DC\uCC3D", "Status window"],
+    "feature.extraction": ["\uC0AC\uC2E4 \uCD94\uCD9C", "Fact extraction"],
+    "feature.vectors": ["\uC758\uBBF8 \uAC80\uC0C9", "Semantic recall"],
+    "on": ["\uCF1C\uC9D0", "on"],
+    "off": ["\uAEBC\uC9D0", "off"],
+    "status.last": ["\uB9C8\uC9C0\uB9C9 \uC694\uCCAD", "Last request"],
+    "status.none": ["\uC544\uC9C1 \uC694\uCCAD\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uCC44\uD305\uC5D0\uC11C \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4 \uBCF4\uC138\uC694.", "No request yet. Send a message in a chat."],
+    "status.ago": ["{n}\uCD08 \uC804", "{n}s ago"],
+    "outcome.injected": ["\uAE30\uC5B5 {n}\uC790\uB97C \uB123\uC5C8\uC2B5\uB2C8\uB2E4", "Injected {n} characters of memory"],
+    "outcome.nothing": ["\uAD00\uB828\uB41C \uAE30\uC5B5\uC774 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4", "Nothing relevant to inject"],
+    "outcome.failed": ["\uAC74\uB108\uB700 (\uC6D0\uB798 \uC694\uCCAD\uC740 \uADF8\uB300\uB85C \uBCF4\uB0C4)", "Skipped (the request went out unchanged)"],
+    "status.inspector": ["\uC778\uC2A4\uD399\uD130 \uC5F4\uAE30", "Open inspector"],
+    "status.refresh": ["\uC0C8\uB85C \uACE0\uCE68", "Refresh"],
+    // settings: connection
+    "conn.title": ["\uC5F0\uACB0", "Connection"],
+    "conn.sub": [
+      "\uC774 \uBE0C\uB77C\uC6B0\uC800\uC758 PocketRisu \uD50C\uB7EC\uADF8\uC778 \uC124\uC815\uC785\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uAC00 \uB2E4\uB978 \uAE30\uAE30\uC5D0 \uC788\uC73C\uBA74 route=server\uAC00 \uC790\uB3D9\uC73C\uB85C \uC4F0\uC785\uB2C8\uB2E4.",
+      "This browser's PocketRisu plugin settings. If the sidecar runs on another device, route=server is used automatically."
+    ],
+    "conn.url": ["\uC0AC\uC774\uB4DC\uCE74 \uC8FC\uC18C", "Sidecar URL"],
+    "conn.route": ["\uACBD\uB85C", "Route"],
+    "conn.budget": ["\uAE30\uC5B5 \uC608\uC0B0(\uD1A0\uD070)", "Memory budget (tokens)"],
+    "conn.deadline": ["\uC81C\uD55C \uC2DC\uAC04(ms)", "Deadline (ms)"],
+    "conn.enabled": ["\uAE30\uC5B5 \uB123\uAE30 \uCF1C\uAE30", "Memory on"],
+    "conn.hint": ["PocketRisu\uC758 \uCD5C\uB300 \uCEE8\uD14D\uC2A4\uD2B8\uB97C \uAE30\uC5B5 \uC608\uC0B0\uB9CC\uD07C \uC904\uC5EC \uB450\uC138\uC694.", "Lower PocketRisu's max context by the memory budget."],
+    // settings: models
+    "llm.title": ["\uC0AC\uC2E4 \uCD94\uCD9C LLM", "Fact extraction LLM"],
+    "llm.sub": [
+      "\uD655\uC815\uB41C \uBA54\uC2DC\uC9C0\uB9C8\uB2E4 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uD55C \uBC88 \uD638\uCD9C\uD574 \uC778\uBB3C\xB7\uC7A5\uC18C\xB7\uC57D\uC18D\xB7\uAD00\uACC4\uB97C \uAE30\uB85D\uD569\uB2C8\uB2E4. \uC720\uB8CC API\uB294 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4.",
+      "Called once per settled message in the background to record people, places, promises and relationships. Paid APIs cost money."
+    ],
+    "emb.title": ["\uC758\uBBF8 \uAC80\uC0C9 \uC784\uBCA0\uB529", "Semantic recall embeddings"],
+    "emb.sub": [
+      "\uB2E4\uB978 \uB9D0\uB85C \uBB3C\uC5B4\uB3C4 \uC608\uC804 \uC7A5\uBA74\uC744 \uCC3E\uC2B5\uB2C8\uB2E4. Ollama\uC758 qwen3-embedding:0.6b\uB97C \uCD94\uCC9C\uD569\uB2C8\uB2E4.",
+      "Finds earlier scenes even when asked in other words. Ollama qwen3-embedding:0.6b is recommended."
+    ],
+    "preset.off": ["\uC0AC\uC6A9 \uC548 \uD568", "Off"],
+    "preset.ollama": ["Ollama (\uC774 PC)", "Ollama (this PC)"],
+    "preset.custom": ["\uC9C1\uC811 \uC785\uB825 (OpenAI \uD638\uD658)", "Custom (OpenAI-compatible)"],
+    "model.provider": ["\uC81C\uACF5\uC790", "Provider"],
+    "model.endpoint": ["\uC8FC\uC18C (OpenAI \uD638\uD658 /v1)", "Endpoint (OpenAI-compatible /v1)"],
+    "model.model": ["\uBAA8\uB378", "Model"],
+    "model.llm_placeholder": ["\uBAA8\uB378 \uC774\uB984", "model name"],
+    "model.emb_placeholder": ["\uC784\uBCA0\uB529 \uBAA8\uB378", "embedding model"],
+    "model.key": ["API \uD0A4", "API key"],
+    "model.key_placeholder": ["\uD544\uC694\uD560 \uB54C\uB9CC \uC785\uB825", "only if needed"],
+    "model.key_saved": ["\uC800\uC7A5\uB428 \u2014 \uBC14\uAFC0 \uB54C\uB9CC \uC785\uB825", "saved \u2014 type only to change"],
+    "model.load": ["\uBAA8\uB378 \uBAA9\uB85D", "Load models"],
+    "model.test": ["\uC5F0\uACB0 \uD14C\uC2A4\uD2B8", "Test"],
+    "model.loading": ["\uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Loading\u2026"],
+    "model.list_failed": ["\uBAA9\uB85D\uC744 \uAC00\uC838\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: {e}", "Could not list models: {e}"],
+    "model.pick": ["\u2014 \uBAA8\uB378 {n}\uAC1C \uC911 \uC120\uD0DD \u2014", "\u2014 pick one of {n} models \u2014"],
+    "model.found": ["\uBAA8\uB378 {n}\uAC1C\uB97C \uCC3E\uC558\uC2B5\uB2C8\uB2E4.", "Found {n} models."],
+    "model.testing": ["\uC2E4\uC81C \uD638\uCD9C\uB85C \uD655\uC778 \uC911\u2026", "Calling the model\u2026"],
+    "model.test_ok": ["\uC131\uACF5 {ms}ms", "OK {ms}ms"],
+    "model.dims": [" \xB7 {n}\uCC28\uC6D0", " \xB7 {n} dimensions"],
+    "model.test_failed": ["\uC2E4\uD328: {e}", "Failed: {e}"],
+    // settings: tuning
+    "tune.title": ["\uAC80\uC0C9 \uC870\uC815", "Recall tuning"],
+    "tune.sub": [
+      "\uC5C9\uB6B1\uD55C \uBC1C\uCDCC\uAC00 \uB4E4\uC5B4\uAC00\uBA74 \uAE30\uC900\uAC12\uC744 \uC62C\uB9AC\uACE0, \uAE30\uC5B5\uC774 \uB108\uBB34 \uC548 \uB4E4\uC5B4\uAC00\uBA74 \uB0B4\uB9AC\uC138\uC694.",
+      "Raise the thresholds if unrelated excerpts get in; lower them if too little memory is injected."
+    ],
+    "tune.threshold": ["\uAE00\uC790 \uC77C\uCE58 \uAE30\uC900", "Lexical threshold"],
+    "tune.min_sim": ["\uC758\uBBF8 \uC720\uC0AC\uB3C4 \uAE30\uC900", "Vector min similarity"],
+    "tune.top_k": ["\uBC1C\uCDCC \uC218", "Excerpts"],
+    "tune.facts": ["\uC0AC\uC2E4 \uC218", "Facts"],
+    "tune.backfill": ["\uCC98\uC74C \uC5F0\uACB0 \uC2DC \uCC98\uB9AC\uD560 \uBA54\uC2DC\uC9C0 \uC218", "Messages processed on first sync"],
+    // settings: parser rules
+    "rules.title": ["\uC0C1\uD0DC\uCC3D \uADDC\uCE59", "Status-window rules"],
+    "rules.sub": [
+      'block: \uC2DC\uC791~\uB05D \uC0AC\uC774\uC758 "\uD0A4: \uAC12" \uC904\uC744 \uC77D\uC2B5\uB2C8\uB2E4. entity_line\uC73C\uB85C [\uC778\uBB3C] \uC904\uB9C8\uB2E4 \uC778\uBB3C\uBCC4\uB85C \uB098\uB215\uB2C8\uB2E4 (\uC2DC\uBBAC\uBD07). regex: key/value \uC774\uB984 \uADF8\uB8F9.',
+      'block: reads "key: value" lines between start and end; entity_line splits them per [character] line (sim bots). regex: named groups key/value.'
+    ],
+    "rules.example": ["\uC608\uC2DC \uB123\uAE30", "Insert example"],
+    "rules.none": ['\uADDC\uCE59 \uC5C6\uC74C \u2014 "\uC608\uC2DC \uB123\uAE30"\uB85C \uC2DC\uC791\uD558\uC138\uC694', 'No rules \u2014 start with "Insert example"'],
+    "rules.from_file": ["\uD30C\uC77C\uC5D0\uC11C \uADDC\uCE59 {n}\uAC1C\uB97C \uC77D\uB294 \uC911 (\uC5EC\uAE30\uC5D0 \uC800\uC7A5\uD558\uBA74 \uB300\uCCB4\uB429\uB2C8\uB2E4)", "Reading {n} rules from a file (saving here replaces them)"],
+    // save bar
+    "save": ["\uC800\uC7A5", "Save"],
+    "revert": ["\uB418\uB3CC\uB9AC\uAE30", "Revert"],
+    "saving": ["\uC800\uC7A5 \uC911\u2026", "Saving\u2026"],
+    "saved": ["\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4.", "Saved."],
+    "saved_queued": ["\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. \uAE30\uC874 \uCC44\uD305 {n}\uAC74\uC744 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uCC98\uB9AC\uD569\uB2C8\uB2E4.", "Saved. {n} existing items are processed in the background."],
+    "saved_rules": ["\uADDC\uCE59 {n}\uAC1C\uB97C \uC801\uC6A9\uD558\uACE0 \uAE30\uC874 \uBA54\uC2DC\uC9C0\uB97C \uB2E4\uC2DC \uC77D\uC5C8\uC2B5\uB2C8\uB2E4.", "{n} rules applied; existing messages were re-read."],
+    "no_changes": ["\uBC14\uB010 \uB0B4\uC6A9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No changes."],
+    "unsaved": ["\uC800\uC7A5\uD558\uC9C0 \uC54A\uC740 \uBCC0\uACBD: {s}", "Unsaved changes: {s}"],
+    "close_unsaved": ["\uC800\uC7A5\uD558\uC9C0 \uC54A\uC740 \uBCC0\uACBD\uC774 \uC788\uC2B5\uB2C8\uB2E4.", "You have unsaved changes."],
+    "save_and_close": ["\uC800\uC7A5\uD558\uACE0 \uB2EB\uAE30", "Save and close"],
+    "discard_and_close": ["\uBC84\uB9AC\uACE0 \uB2EB\uAE30", "Discard and close"],
+    "cancel": ["\uCDE8\uC18C", "Cancel"],
+    "lang_unsaved": ["\uC5B8\uC5B4\uB97C \uBC14\uAFB8\uAE30 \uC804\uC5D0 \uBCC0\uACBD\uC744 \uC800\uC7A5\uD558\uAC70\uB098 \uB418\uB3CC\uB9AC\uC138\uC694.", "Save or revert your changes before switching the language."],
+    "conn_saved_server_failed": ["\uC5F0\uACB0 \uC124\uC815\uC740 \uC800\uC7A5\uD588\uC9C0\uB9CC \uC11C\uBC84 \uC124\uC815\uC740 \uC800\uC7A5\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: {e}", "Connection saved, but the server settings were not: {e}"],
+    "invalid": ["\uC785\uB825 \uC624\uB958: ", "Invalid: "],
+    "sidecar_error": ["\uC0AC\uC774\uB4DC\uCE74 \uC624\uB958: ", "Sidecar error: "]
+  };
+  function t(lang, key, vars = {}) {
+    const text = STRINGS[key][lang === "en" ? 1 : 0];
+    return text.replace(/\{(\w+)\}/g, (m, name) => name in vars ? String(vars[name]) : m);
+  }
+  var STRING_KEYS = Object.keys(STRINGS);
+
+  // src/form.ts
+  var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
+  function dirtySections(baseline, current2) {
+    return SECTIONS.filter((s) => JSON.stringify(baseline[s]) !== JSON.stringify(current2[s]));
+  }
+  function num(value) {
+    const n = Number(value.trim());
+    return value.trim() !== "" && Number.isFinite(n) ? n : value;
+  }
+  function configBody(dirty, v) {
+    const body = {};
+    for (const [section, prefix] of [["llm", "llm"], ["emb", "embed"]]) {
+      if (!dirty.includes(section)) continue;
+      body[`${prefix}_url`] = v[section].url.trim();
+      body[`${prefix}_model`] = v[section].model.trim();
+      if (v[section].key.trim()) body[`${prefix}_api_key`] = v[section].key.trim();
+    }
+    if (dirty.includes("tune")) {
+      Object.assign(body, {
+        recall_threshold: num(v.tune.threshold),
+        vector_min_sim: num(v.tune.minSim),
+        recall_top_k: num(v.tune.topK),
+        facts_limit: num(v.tune.facts),
+        extract_backfill: num(v.tune.backfill)
+      });
+    }
+    if (dirty.includes("rules")) body.parsers = v.rules.trim() ? v.rules : null;
+    return body;
+  }
+  function connArgs(v) {
+    return {
+      sidecar_url: v.url.trim(),
+      route: v.route,
+      disabled: v.enabled ? 0 : 1,
+      reserved_memory_tokens: Number(v.reserved) || 600,
+      deadline_ms: Number(v.deadline) || 800
+    };
+  }
+
   // src/ui.ts
   var LLM_PRESETS = [
-    { label: "\uC0AC\uC6A9 \uC548 \uD568 / Off", url: "" },
-    { label: "Ollama (\uC774 PC)", url: "http://host.docker.internal:11434/v1" },
-    { label: "OpenRouter", url: "https://openrouter.ai/api/v1", key: true },
-    { label: "OpenAI", url: "https://api.openai.com/v1", model: "gpt-4o-mini", key: true },
-    { label: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.5-flash", key: true },
-    { label: "\uC9C1\uC811 \uC785\uB825 / Custom (OpenAI \uD638\uD658)", url: "custom" }
+    { label: "preset.off", url: "" },
+    { label: "preset.ollama", url: "http://host.docker.internal:11434/v1" },
+    { label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
+    { label: "OpenAI", url: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+    { label: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.5-flash" },
+    { label: "preset.custom", url: "custom" }
   ];
   var EMBED_PRESETS = [
-    { label: "\uC0AC\uC6A9 \uC548 \uD568 / Off", url: "" },
-    { label: "Ollama (\uC774 PC)", url: "http://host.docker.internal:11434/v1", model: "qwen3-embedding:0.6b" },
-    { label: "OpenAI", url: "https://api.openai.com/v1", model: "text-embedding-3-small", key: true },
-    { label: "\uC9C1\uC811 \uC785\uB825 / Custom (OpenAI \uD638\uD658)", url: "custom" }
+    { label: "preset.off", url: "" },
+    { label: "preset.ollama", url: "http://host.docker.internal:11434/v1", model: "qwen3-embedding:0.6b" },
+    { label: "OpenAI", url: "https://api.openai.com/v1", model: "text-embedding-3-small" },
+    { label: "preset.custom", url: "custom" }
   ];
   var PARSER_EXAMPLE = {
     rules: [
@@ -425,27 +615,49 @@ ${revisionHash}`;
       { id: "hp", kind: "regex", pattern: "HP\\s*[:\uFF1A]\\s*(?P<value>\\d+\\s*/\\s*\\d+)", key: "HP" }
     ]
   };
+  var SECTION_TITLE = {
+    conn: "conn.title",
+    llm: "llm.title",
+    emb: "emb.title",
+    tune: "tune.title",
+    rules: "rules.title"
+  };
   var CSS = `
-.nmos{position:fixed;inset:0;overflow:auto;background:rgba(12,12,16,.94);font:14px/1.55 system-ui,-apple-system,"Noto Sans KR",sans-serif;color:#e8e8ec}
+html,body{margin:0;background:#0c0c10}
+.nmos{position:fixed;inset:0;overflow:auto;background:#0c0c10;font:14px/1.55 system-ui,-apple-system,"Noto Sans KR",sans-serif;color:#e8e8ec}
 .nmos *{box-sizing:border-box}
-.nmos .wrap{max-width:760px;margin:0 auto;padding:20px 14px 60px}
-.nmos header{display:flex;align-items:center;gap:12px;margin-bottom:14px}
-.nmos h1{font-size:19px;margin:0;flex:1}
+.nmos .wrap{max-width:760px;margin:0 auto;padding:16px 14px 24px}
+.nmos header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.nmos h1{font-size:19px;margin:0;flex:1;white-space:nowrap}
+.nmos .tabs{display:flex;gap:4px;border-bottom:1px solid #30323b;margin:6px 0 4px}
+.nmos .tabs button{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:8px 14px;color:#9a9ca8}
+.nmos .tabs button.on{color:#e8e8ec;border-bottom-color:#4c6ef5}
 .nmos .card{background:#1d1e24;border:1px solid #30323b;border-radius:10px;padding:16px;margin:12px 0}
 .nmos h2{font-size:15px;margin:0 0 2px}
 .nmos .sub{color:#9a9ca8;font-size:12.5px;margin:0 0 12px}
 .nmos label{display:block;font-size:12.5px;color:#b8bac4;margin:10px 0 4px}
 .nmos input,.nmos select,.nmos textarea{width:100%;background:#15161b;color:#e8e8ec;border:1px solid #3a3c46;border-radius:6px;padding:8px 10px;font:inherit}
+.nmos header select{width:auto;padding:5px 8px}
 .nmos textarea{min-height:160px;font-family:ui-monospace,monospace;font-size:12.5px}
 .nmos .row{display:flex;gap:10px;flex-wrap:wrap}.nmos .row>*{flex:1;min-width:140px}
 .nmos .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .nmos button{background:#2b2d36;color:#e8e8ec;border:1px solid #444654;border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer}
 .nmos button.primary{background:#4c6ef5;border-color:#4c6ef5;color:#fff}
-.nmos button:disabled{opacity:.5;cursor:default}
+.nmos button:disabled{opacity:.45;cursor:default}
 .nmos .msg{margin-top:10px;font-size:13px;white-space:pre-wrap}
-.nmos .ok{color:#69db7c}.nmos .err{color:#ff8787}.nmos .muted{color:#9a9ca8}
-.nmos .status{white-space:pre-wrap;font-size:13px}
+.nmos .ok{color:#69db7c}.nmos .err{color:#ff8787}.nmos .warn{color:#ffd43b}.nmos .muted{color:#9a9ca8}
 .nmos .check{display:flex;align-items:center;gap:8px;margin-top:10px}.nmos .check input{width:auto}
+.nmos .line{display:flex;align-items:baseline;gap:8px;margin:4px 0}
+.nmos .dot{flex:none;width:9px;height:9px;border-radius:50%;background:#6b6d78;transform:translateY(-1px)}
+.nmos .dot.ok{background:#51cf66}.nmos .dot.err{background:#ff6b6b}.nmos .dot.warn{background:#fcc419}
+.nmos .pills{display:flex;gap:8px;flex-wrap:wrap}
+.nmos .pill{border:1px solid #3a3c46;border-radius:999px;padding:3px 12px;font-size:13px;color:#9a9ca8}
+.nmos .pill.on{border-color:#2f9e44;color:#8ce99a}
+.nmos .mono{font-family:ui-monospace,monospace;font-size:12.5px;word-break:break-all}
+.nmos a{color:#91a7ff}
+.nmos a.btn{display:inline-block;background:#2b2d36;color:#e8e8ec;border:1px solid #444654;border-radius:6px;padding:7px 14px;text-decoration:none}
+.nmos .bar{position:sticky;bottom:0;background:#15161b;border-top:1px solid #30323b;padding:10px max(14px,calc((100% - 760px) / 2 + 14px));display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.nmos .bar .text{flex:1;min-width:160px;font-size:13px}
 `;
   function el(tag, attrs = {}, ...children) {
     const node = document.createElement(tag);
@@ -459,7 +671,7 @@ ${revisionHash}`;
     return node;
   }
   function say(target, text, kind = "muted") {
-    target.className = `msg ${kind}`;
+    target.className = `${target.classList.contains("text") ? "text" : "msg"} ${kind}`;
     target.textContent = text;
   }
   function field(labelText, input) {
@@ -470,249 +682,372 @@ ${revisionHash}`;
     const i = presets.findIndex((p) => p.url === url);
     return i >= 0 ? i : presets.length - 1;
   }
-  function errorText(error) {
+  function errorText(lang, error) {
     const text = error instanceof Error ? error.message : String(error);
-    return text.replace(/^\/v1\/\S+ -> HTTP 422: /, "\uC785\uB825 \uC624\uB958 / invalid: ").replace(/^\/v1\/\S+ -> /, "\uC0AC\uC774\uB4DC\uCE74 \uC624\uB958 / sidecar error: ");
+    return text.replace(/^\/v1\/\S+ -> HTTP 422: /, t(lang, "invalid")).replace(/^\/v1\/\S+ -> /, t(lang, "sidecar_error"));
   }
-  async function openSettingsPanel(deps) {
-    document.getElementById("nmos-panel")?.remove();
+  var current = null;
+  async function openPanel(deps, tab) {
+    if (current && document.body.contains(current.root)) {
+      current.select(tab);
+      await deps.show();
+      return;
+    }
     if (!document.getElementById("nmos-style")) document.head.append(el("style", { id: "nmos-style", text: CSS }));
+    const lang = langOf(await deps.getArg("language"));
+    current = await render(deps, lang, tab);
+    await deps.show();
+  }
+  async function render(deps, lang, tab) {
+    const L = (key, vars) => t(lang, key, vars);
     const root = el("div", { class: "nmos", id: "nmos-panel" });
     const wrap = el("div", { class: "wrap" });
     root.append(wrap);
-    const close = el("button", { text: "\uB2EB\uAE30 / Close" });
-    close.addEventListener("click", () => {
-      root.remove();
-      void deps.hide();
-    });
-    wrap.append(el("header", {}, el("h1", { text: "NMOS \uAE30\uC5B5 \uC124\uC815" }), close));
-    const statusBox = el("div", { class: "status muted", text: "\uC0AC\uC774\uB4DC\uCE74 \uD655\uC778 \uC911\u2026 / checking sidecar\u2026" });
-    wrap.append(el("div", { class: "card" }, el("h2", { text: "\uC0C1\uD0DC / Status" }), statusBox));
-    const url = el("input", { value: await deps.getArg("sidecar_url") || "http://127.0.0.1:8790" });
+    const language = el(
+      "select",
+      { "aria-label": L("language") },
+      el("option", { value: "ko", text: "\uD55C\uAD6D\uC5B4" }),
+      el("option", { value: "en", text: "English" })
+    );
+    language.value = lang;
+    const close = el("button", { text: L("close") });
+    const tabStatus = el("button", { text: L("tab.status") });
+    const tabSettings = el("button", { text: L("tab.settings") });
+    wrap.append(
+      el("header", {}, el("h1", { text: L("title") }), language, close),
+      el("nav", { class: "tabs" }, tabStatus, tabSettings)
+    );
+    const statusView = el("div");
+    const settingsView = el("div");
+    wrap.append(statusView, settingsView);
+    async function refreshStatus() {
+      statusView.replaceChildren(el("div", { class: "card muted", text: L("status.checking") }));
+      const s = await deps.status();
+      const base = s.sidecarUrl.replace(/\/+$/, "");
+      const conn = el("div", { class: "card" }, el("h2", { text: L("status.sidecar") }));
+      if (s.connected) {
+        conn.append(
+          el(
+            "div",
+            { class: "line" },
+            el("span", { class: "dot ok" }),
+            el("span", { text: `${L("status.connected")} \xB7 NMOS ${s.version ?? ""}` })
+          ),
+          el("div", { class: "mono muted", text: base })
+        );
+      } else {
+        conn.append(
+          el(
+            "div",
+            { class: "line" },
+            el("span", { class: "dot err" }),
+            el("span", { class: "err", text: `${L("status.unreachable")}: ${base}` })
+          ),
+          el("div", { class: "muted", text: s.error ?? "" }),
+          el("p", { class: "sub", text: L("status.fix") })
+        );
+      }
+      if (!s.enabled) conn.append(el(
+        "div",
+        { class: "line warn" },
+        el("span", { class: "dot warn" }),
+        el("span", { text: L("status.memory_off") })
+      ));
+      const features = el("div", { class: "card" }, el("h2", { text: L("status.features") }));
+      const pills = el("div", { class: "pills" });
+      for (const [key, name] of [["state", "feature.state"], ["extraction", "feature.extraction"], ["vectors", "feature.vectors"]]) {
+        const on = Boolean(s.features?.[key]);
+        pills.append(el("span", { class: on ? "pill on" : "pill", text: `${L(name)} ${on ? L("on") : L("off")}` }));
+      }
+      features.append(s.connected ? pills : el("div", { class: "muted", text: "\u2014" }));
+      const lastCard = el("div", { class: "card" }, el("h2", { text: L("status.last") }));
+      if (s.last) {
+        const kind = s.last.outcome === "injected" ? "ok" : s.last.outcome === "failed" ? "err" : "muted";
+        const what = s.last.outcome === "injected" ? L("outcome.injected", { n: s.last.packetChars }) : s.last.outcome === "nothing-relevant" ? L("outcome.nothing") : L("outcome.failed");
+        lastCard.append(
+          el("div", { class: "line" }, el("span", { class: `dot ${kind}` }), el("span", { text: what })),
+          el("div", { class: "muted", text: `${L("status.ago", { n: Math.round((Date.now() - s.last.at) / 1e3) })} \xB7 ${s.last.ms}ms` })
+        );
+        if (s.last.error) lastCard.append(el("div", { class: "mono muted", text: s.last.error }));
+      } else {
+        lastCard.append(el("div", { class: "muted", text: L("status.none") }));
+      }
+      const inspectorUrl = `${base}/inspector${lang === "en" ? "?lang=en" : ""}`;
+      const refresh = el("button", { text: L("status.refresh") });
+      refresh.addEventListener("click", () => void refreshStatus());
+      const links = el(
+        "div",
+        { class: "btns" },
+        refresh,
+        el("a", { href: inspectorUrl, target: "_blank", rel: "noopener", class: "btn" }, L("status.inspector"))
+      );
+      statusView.replaceChildren(conn, features, lastCard, links);
+    }
+    const url = el("input", { spellcheck: "false" });
     const route = el("select", {}, ...["auto", "direct", "server"].map((v) => el("option", { value: v, text: v })));
-    route.value = await deps.getArg("route") || "auto";
     const enabled = el("input", { type: "checkbox" });
-    enabled.checked = Number(await deps.getArg("disabled")) !== 1;
-    const reserved = el("input", { type: "number", min: 100, max: 8e3, value: Number(await deps.getArg("reserved_memory_tokens")) || 600 });
-    const deadline = el("input", { type: "number", min: 200, max: 5e3, value: Number(await deps.getArg("deadline_ms")) || 800 });
-    const connMsg = el("div", { class: "msg" });
-    const connSave = el("button", { class: "primary", text: "\uC800\uC7A5 / Save" });
-    connSave.addEventListener("click", async () => {
-      await deps.setArg("sidecar_url", url.value.trim());
-      await deps.setArg("route", route.value);
-      await deps.setArg("disabled", enabled.checked ? 0 : 1);
-      await deps.setArg("reserved_memory_tokens", Number(reserved.value) || 600);
-      await deps.setArg("deadline_ms", Number(deadline.value) || 800);
-      say(connMsg, "\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. / Saved.", "ok");
-      void refreshServer();
-    });
-    wrap.append(el(
+    const reserved = el("input", { type: "number", min: 100, max: 8e3 });
+    const deadline = el("input", { type: "number", min: 200, max: 5e3 });
+    settingsView.append(el(
       "div",
       { class: "card" },
-      el("h2", { text: "\uC5F0\uACB0 / Connection" }),
-      el("p", { class: "sub", text: "\uC774 \uBE0C\uB77C\uC6B0\uC800\uC758 PocketRisu \uD50C\uB7EC\uADF8\uC778 \uC124\uC815\uC785\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uAC00 \uB2E4\uB978 \uAE30\uAE30\uC5D0 \uC788\uC73C\uBA74 route=server\uAC00 \uC790\uB3D9\uC73C\uB85C \uC4F0\uC785\uB2C8\uB2E4." }),
-      field("\uC0AC\uC774\uB4DC\uCE74 \uC8FC\uC18C / Sidecar URL", url),
-      el("div", { class: "row" }, field("\uACBD\uB85C / Route", route), field("\uAE30\uC5B5 \uC608\uC0B0(\uD1A0\uD070) / Memory budget", reserved), field("\uC81C\uD55C \uC2DC\uAC04(ms) / Deadline", deadline)),
-      el("div", { class: "check" }, enabled, el("span", { text: "\uAE30\uC5B5 \uB123\uAE30 \uCF1C\uAE30 / Memory on" })),
-      el("p", { class: "sub", text: "PocketRisu\uC758 \uCD5C\uB300 \uCEE8\uD14D\uC2A4\uD2B8\uB97C \uAE30\uC5B5 \uC608\uC0B0\uB9CC\uD07C \uC904\uC5EC \uB450\uC138\uC694." }),
-      el("div", { class: "btns" }, connSave),
-      connMsg
+      el("h2", { text: L("conn.title") }),
+      el("p", { class: "sub", text: L("conn.sub") }),
+      field(L("conn.url"), url),
+      el("div", { class: "row" }, field(L("conn.route"), route), field(L("conn.budget"), reserved), field(L("conn.deadline"), deadline)),
+      el("div", { class: "check" }, enabled, el("span", { text: L("conn.enabled") })),
+      el("p", { class: "sub", text: L("conn.hint") })
     ));
     function modelSection(kind, title, sub, presets) {
-      const preset = el("select", {}, ...presets.map((p, i) => el("option", { value: String(i), text: p.label })));
-      const endpoint = el("input", { placeholder: "https://\u2026/v1" });
-      const model = el("input", { placeholder: kind === "llm" ? "\uBAA8\uB378 \uC774\uB984 / model" : "\uC784\uBCA0\uB529 \uBAA8\uB378 / embedding model" });
+      const preset = el("select", {}, ...presets.map((p, i) => el("option", {
+        value: String(i),
+        text: p.label.includes(".") ? L(p.label) : p.label
+      })));
+      const endpoint = el("input", { placeholder: "https://\u2026/v1", spellcheck: "false" });
+      const model = el("input", { placeholder: L(kind === "llm" ? "model.llm_placeholder" : "model.emb_placeholder"), spellcheck: "false" });
       const list = el("select", { style: "display:none" });
-      const key = el("input", { type: "password", placeholder: "API \uD0A4 (\uD544\uC694\uD560 \uB54C\uB9CC) / API key" });
+      const key = el("input", { type: "password", placeholder: L("model.key_placeholder"), autocomplete: "off" });
       const msg = el("div", { class: "msg" });
-      const load = el("button", { text: "\uBAA8\uB378 \uBAA9\uB85D / Load models" });
-      const test = el("button", { text: "\uC5F0\uACB0 \uD14C\uC2A4\uD2B8 / Test" });
-      const save = el("button", { class: "primary", text: "\uC800\uC7A5 / Save" });
+      const load = el("button", { text: L("model.load") });
+      const test = el("button", { text: L("model.test") });
       preset.addEventListener("change", () => {
         const p = presets[Number(preset.value)];
         if (p.url !== "custom") endpoint.value = p.url;
         if (p.model) model.value = p.model;
         if (!p.url) model.value = "";
+        update();
       });
       list.addEventListener("change", () => {
         model.value = list.value;
+        update();
       });
       load.addEventListener("click", async () => {
-        say(msg, "\uBD88\uB7EC\uC624\uB294 \uC911\u2026 / loading\u2026");
+        say(msg, L("model.loading"));
         try {
           const r = await deps.api(
             "POST",
             "/v1/config/models",
             { kind, url: endpoint.value.trim(), api_key: key.value.trim() || void 0 }
           );
-          if (!r.ok) return say(msg, `\uBAA9\uB85D\uC744 \uAC00\uC838\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${r.error}`, "err");
+          if (!r.ok) return say(msg, L("model.list_failed", { e: r.error ?? "" }), "err");
           list.replaceChildren(
-            el("option", { value: "", text: `\u2014 ${r.models.length}\uAC1C \uBAA8\uB378 \uC120\uD0DD \u2014` }),
+            el("option", { value: "", text: L("model.pick", { n: r.models.length }) }),
             ...r.models.map((m) => el("option", { value: m, text: m }))
           );
           list.style.display = "";
-          say(msg, `${r.models.length}\uAC1C \uBAA8\uB378\uC744 \uCC3E\uC558\uC2B5\uB2C8\uB2E4.`, "ok");
+          say(msg, L("model.found", { n: r.models.length }), "ok");
         } catch (error) {
-          say(msg, errorText(error), "err");
+          say(msg, errorText(lang, error), "err");
         }
       });
       test.addEventListener("click", async () => {
         test.disabled = true;
-        say(msg, "\uC2E4\uC81C \uD638\uCD9C\uB85C \uD655\uC778 \uC911\u2026 / calling the model\u2026");
+        say(msg, L("model.testing"));
         try {
           const r = await deps.api(
             "POST",
             "/v1/config/test",
             { kind, url: endpoint.value.trim(), model: model.value.trim(), api_key: key.value.trim() || void 0 }
           );
-          say(msg, r.ok ? `\uC131\uACF5 ${r.ms}ms${r.dimensions ? ` \xB7 ${r.dimensions}\uCC28\uC6D0` : ""} / OK` : `\uC2E4\uD328 / failed: ${r.error}`, r.ok ? "ok" : "err");
+          say(msg, r.ok ? L("model.test_ok", { ms: r.ms }) + (r.dimensions ? L("model.dims", { n: r.dimensions }) : "") : L("model.test_failed", { e: r.error ?? "" }), r.ok ? "ok" : "err");
         } catch (error) {
-          say(msg, errorText(error), "err");
+          say(msg, errorText(lang, error), "err");
         } finally {
           test.disabled = false;
         }
       });
-      save.addEventListener("click", async () => {
-        const prefix = kind === "llm" ? "llm" : "embed";
-        const body = { [`${prefix}_url`]: endpoint.value.trim(), [`${prefix}_model`]: model.value.trim() };
-        if (key.value.trim()) body[`${prefix}_api_key`] = key.value.trim();
-        try {
-          const r = await deps.api("PUT", "/v1/config", body);
-          key.value = "";
-          fillFields(kind === "llm" ? r.llm : r.embeddings);
-          say(msg, `\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4.${r.queued_jobs ? ` \uAE30\uC874 \uCC44\uD305 ${r.queued_jobs}\uAC74\uC744 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uCC98\uB9AC\uD569\uB2C8\uB2E4.` : ""} / Saved.`, "ok");
-          void refreshStatus();
-        } catch (error) {
-          say(msg, errorText(error), "err");
-        }
-      });
-      const card = el(
+      settingsView.append(el(
         "div",
         { class: "card" },
-        el("h2", { text: title }),
-        el("p", { class: "sub", text: sub }),
-        field("\uC81C\uACF5\uC790 / Provider", preset),
-        field("\uC8FC\uC18C / Endpoint (OpenAI \uD638\uD658 /v1)", endpoint),
-        field("\uBAA8\uB378 / Model", model),
+        el("h2", { text: L(title) }),
+        el("p", { class: "sub", text: L(sub) }),
+        field(L("model.provider"), preset),
+        field(L("model.endpoint"), endpoint),
+        field(L("model.model"), model),
         list,
-        field("API \uD0A4 / API key", key),
-        el("div", { class: "btns" }, load, test, save),
+        field(L("model.key"), key),
+        el("div", { class: "btns" }, load, test),
         msg
-      );
-      function fillFields(cfg) {
-        preset.value = String(presetIndex(presets, cfg.url));
-        endpoint.value = cfg.url;
-        model.value = cfg.model;
-        key.placeholder = cfg.api_key_set ? "\uC800\uC7A5\uB428 \u2014 \uBC14\uAFC0 \uB54C\uB9CC \uC785\uB825 / saved" : "API \uD0A4 (\uD544\uC694\uD560 \uB54C\uB9CC) / API key";
-      }
-      return { card, fill: (c) => fillFields(kind === "llm" ? c.llm : c.embeddings) };
+      ));
+      return {
+        values: () => ({ url: endpoint.value, model: model.value, key: key.value }),
+        fill(cfg) {
+          preset.value = String(presetIndex(presets, cfg.url));
+          endpoint.value = cfg.url;
+          model.value = cfg.model;
+          key.value = "";
+          key.placeholder = L(cfg.api_key_set ? "model.key_saved" : "model.key_placeholder");
+        }
+      };
     }
-    const llm = modelSection(
-      "llm",
-      "\uC0AC\uC2E4 \uCD94\uCD9C LLM / Fact extraction",
-      "\uD655\uC815\uB41C \uBA54\uC2DC\uC9C0\uB9C8\uB2E4 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uD55C \uBC88 \uD638\uCD9C\uD574 \uC778\uBB3C\xB7\uC7A5\uC18C\xB7\uC57D\uC18D\xB7\uAD00\uACC4\uB97C \uAE30\uB85D\uD569\uB2C8\uB2E4. \uC720\uB8CC API\uB294 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4.",
-      LLM_PRESETS
-    );
-    const emb = modelSection(
-      "embeddings",
-      "\uC758\uBBF8 \uAC80\uC0C9 \uC784\uBCA0\uB529 / Semantic recall",
-      "\uB2E4\uB978 \uB9D0\uB85C \uBB3C\uC5B4\uB3C4 \uC608\uC804 \uC7A5\uBA74\uC744 \uCC3E\uC2B5\uB2C8\uB2E4. Ollama\uC758 qwen3-embedding:0.6b\uB97C \uCD94\uCC9C\uD569\uB2C8\uB2E4.",
-      EMBED_PRESETS
-    );
-    wrap.append(llm.card, emb.card);
+    const llm = modelSection("llm", "llm.title", "llm.sub", LLM_PRESETS);
+    const emb = modelSection("embeddings", "emb.title", "emb.sub", EMBED_PRESETS);
     const threshold = el("input", { type: "number", step: 0.05, min: 0.05, max: 1 });
     const minSim = el("input", { type: "number", step: 0.01, min: 0, max: 1 });
     const topK = el("input", { type: "number", min: 0, max: 20 });
     const factsLimit = el("input", { type: "number", min: 0, max: 30 });
     const backfill = el("input", { type: "number", min: 0, max: 5e3 });
-    const tuneMsg = el("div", { class: "msg" });
-    const tuneSave = el("button", { class: "primary", text: "\uC800\uC7A5 / Save" });
-    tuneSave.addEventListener("click", async () => {
-      try {
-        const r = await deps.api("PUT", "/v1/config", {
-          recall_threshold: Number(threshold.value),
-          vector_min_sim: Number(minSim.value),
-          recall_top_k: Number(topK.value),
-          facts_limit: Number(factsLimit.value),
-          extract_backfill: Number(backfill.value)
-        });
-        fillAll(r);
-        say(tuneMsg, "\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. / Saved.", "ok");
-      } catch (error) {
-        say(tuneMsg, errorText(error), "err");
-      }
-    });
-    wrap.append(el(
+    settingsView.append(el(
       "div",
       { class: "card" },
-      el("h2", { text: "\uAC80\uC0C9 \uC870\uC815 / Recall tuning" }),
-      el("p", { class: "sub", text: "\uC5C9\uB6B1\uD55C \uBC1C\uCDCC\uAC00 \uB4E4\uC5B4\uAC00\uBA74 \uAE30\uC900\uAC12\uC744 \uC62C\uB9AC\uACE0, \uAE30\uC5B5\uC774 \uB108\uBB34 \uC548 \uB4E4\uC5B4\uAC00\uBA74 \uB0B4\uB9AC\uC138\uC694." }),
-      el("div", { class: "row" }, field("\uAE00\uC790 \uC77C\uCE58 \uAE30\uC900 / Lexical threshold", threshold), field("\uC758\uBBF8 \uC720\uC0AC\uB3C4 \uAE30\uC900 / Vector min sim", minSim)),
-      el("div", { class: "row" }, field("\uBC1C\uCDCC \uC218 / Excerpts", topK), field("\uC0AC\uC2E4 \uC218 / Facts", factsLimit), field("\uCC98\uC74C \uC5F0\uACB0 \uC2DC \uCC98\uB9AC\uD560 \uBA54\uC2DC\uC9C0 \uC218 / Backfill", backfill)),
-      el("div", { class: "btns" }, tuneSave),
-      tuneMsg
+      el("h2", { text: L("tune.title") }),
+      el("p", { class: "sub", text: L("tune.sub") }),
+      el("div", { class: "row" }, field(L("tune.threshold"), threshold), field(L("tune.min_sim"), minSim)),
+      el("div", { class: "row" }, field(L("tune.top_k"), topK), field(L("tune.facts"), factsLimit), field(L("tune.backfill"), backfill))
     ));
     const rules = el("textarea", { spellcheck: "false" });
-    const rulesMsg = el("div", { class: "msg" });
-    const example = el("button", { text: "\uC608\uC2DC \uB123\uAE30 / Example" });
+    const example = el("button", { text: L("rules.example") });
     example.addEventListener("click", () => {
       rules.value = JSON.stringify(PARSER_EXAMPLE, null, 2);
+      update();
     });
-    const rulesSave = el("button", { class: "primary", text: "\uC800\uC7A5 / Save" });
-    rulesSave.addEventListener("click", async () => {
-      try {
-        const r = await deps.api("PUT", "/v1/config", { parsers: rules.value.trim() ? rules.value : null });
-        fillAll(r);
-        say(rulesMsg, `\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. \uADDC\uCE59 ${r.parsers.active_rules}\uAC1C \uC801\uC6A9, \uAE30\uC874 \uBA54\uC2DC\uC9C0\uB97C \uB2E4\uC2DC \uC77D\uC5C8\uC2B5\uB2C8\uB2E4.`, "ok");
-      } catch (error) {
-        say(rulesMsg, errorText(error), "err");
-      }
-    });
-    wrap.append(el(
+    settingsView.append(el(
       "div",
       { class: "card" },
-      el("h2", { text: "\uC0C1\uD0DC\uCC3D \uADDC\uCE59 / Status-window rules" }),
-      el("p", { class: "sub", text: 'block: \uC2DC\uC791~\uB05D \uC0AC\uC774\uC758 "\uD0A4: \uAC12" \uC904\uC744 \uC77D\uC2B5\uB2C8\uB2E4. entity_line\uC73C\uB85C [\uC778\uBB3C] \uC904\uB9C8\uB2E4 \uC778\uBB3C\uBCC4\uB85C \uB098\uB215\uB2C8\uB2E4 (\uC2DC\uBBAC\uBD07). regex: key/value \uC774\uB984 \uADF8\uB8F9.' }),
+      el("h2", { text: L("rules.title") }),
+      el("p", { class: "sub", text: L("rules.sub") }),
       rules,
-      el("div", { class: "btns" }, example, rulesSave),
-      rulesMsg
+      el("div", { class: "btns" }, example)
     ));
-    function fillAll(cfg) {
-      llm.fill(cfg);
-      emb.fill(cfg);
+    const barText = el("span", { class: "text muted" });
+    const revert = el("button", { text: L("revert") });
+    const save = el("button", { class: "primary", text: L("save") });
+    const bar = el("div", { class: "bar" }, barText, revert, save);
+    root.append(bar);
+    function values() {
+      return {
+        conn: { url: url.value, route: route.value, enabled: enabled.checked, reserved: reserved.value, deadline: deadline.value },
+        llm: llm.values(),
+        emb: emb.values(),
+        tune: { threshold: threshold.value, minSim: minSim.value, topK: topK.value, facts: factsLimit.value, backfill: backfill.value },
+        rules: rules.value
+      };
+    }
+    let baseline = values();
+    let closing = false;
+    const dirty = () => dirtySections(baseline, values());
+    function update(message) {
+      const d = dirty();
+      save.disabled = d.length === 0;
+      revert.disabled = d.length === 0;
+      if (message) say(barText, message.text, message.kind);
+      else if (d.length) say(barText, L("unsaved", { s: d.map((s) => L(SECTION_TITLE[s])).join(", ") }), "warn");
+      else say(barText, "", "muted");
+    }
+    settingsView.addEventListener("input", () => update());
+    settingsView.addEventListener("change", () => update());
+    async function loadConn() {
+      url.value = await deps.getArg("sidecar_url") || "http://127.0.0.1:8790";
+      route.value = await deps.getArg("route") || "auto";
+      enabled.checked = Number(await deps.getArg("disabled")) !== 1;
+      reserved.value = String(Number(await deps.getArg("reserved_memory_tokens")) || 600);
+      deadline.value = String(Number(await deps.getArg("deadline_ms")) || 800);
+    }
+    function fillServer(cfg) {
+      llm.fill(cfg.llm);
+      emb.fill(cfg.embeddings);
       threshold.value = String(cfg.recall.threshold);
       minSim.value = String(cfg.recall.vector_min_sim);
       topK.value = String(cfg.recall.top_k);
       factsLimit.value = String(cfg.recall.facts_limit);
       backfill.value = String(cfg.extraction.backfill);
-      if (cfg.parsers.source === "ui") rules.value = JSON.stringify(cfg.parsers.rules, null, 2);
-      else if (cfg.parsers.source === "file") rules.placeholder = `\uD30C\uC77C\uC5D0\uC11C \uADDC\uCE59 ${cfg.parsers.active_rules}\uAC1C\uB97C \uC77D\uB294 \uC911 (\uC5EC\uAE30\uC5D0 \uC800\uC7A5\uD558\uBA74 \uB300\uCCB4\uB429\uB2C8\uB2E4)`;
-      else rules.placeholder = '\uADDC\uCE59 \uC5C6\uC74C \u2014 "\uC608\uC2DC \uB123\uAE30"\uB85C \uC2DC\uC791\uD558\uC138\uC694';
+      rules.value = cfg.parsers.source === "ui" ? JSON.stringify(cfg.parsers.rules, null, 2) : "";
+      rules.placeholder = cfg.parsers.source === "file" ? L("rules.from_file", { n: cfg.parsers.active_rules }) : L("rules.none");
     }
-    async function refreshStatus() {
+    async function loadAll() {
+      await loadConn();
       try {
-        const h = await deps.api("GET", "/v1/health", void 0, 5e3);
-        const on = (b) => b ? "\uCF1C\uC9D0" : "\uAEBC\uC9D0";
-        statusBox.className = "status ok";
-        statusBox.textContent = `\uC5F0\uACB0\uB428 \xB7 NMOS ${h.version}
-\uC0C1\uD0DC\uCC3D ${on(h.features.state)} \xB7 \uC0AC\uC2E4 \uCD94\uCD9C ${on(h.features.extraction)} \xB7 \uC758\uBBF8 \uAC80\uC0C9 ${on(h.features.vectors)}
-\uC778\uC2A4\uD399\uD130: ${url.value.replace(/\/+$/, "")}/inspector`;
-      } catch (error) {
-        statusBox.className = "status err";
-        statusBox.textContent = `\uC0AC\uC774\uB4DC\uCE74\uC5D0 \uC5F0\uACB0\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: ${errorText(error)}
-\uD655\uC778: docker compose up -d \xB7 \uC8FC\uC18C \xB7 NMOS_CORS_ORIGINS`;
-      }
-    }
-    async function refreshServer() {
-      await refreshStatus();
-      try {
-        fillAll(await deps.api("GET", "/v1/config", void 0, 5e3));
+        fillServer(await deps.api("GET", "/v1/config", void 0, 5e3));
       } catch {
       }
+      baseline = values();
+      update();
     }
+    async function saveAll() {
+      const d = dirty();
+      if (!d.length) {
+        update({ text: L("no_changes"), kind: "muted" });
+        return true;
+      }
+      save.disabled = true;
+      say(barText, L("saving"));
+      const v = values();
+      if (d.includes("conn")) {
+        for (const [k, value] of Object.entries(connArgs(v.conn))) await deps.setArg(k, value);
+        baseline = { ...baseline, conn: v.conn };
+      }
+      const body = configBody(d, v);
+      if (!Object.keys(body).length) {
+        update({ text: L("saved"), kind: "ok" });
+        return true;
+      }
+      try {
+        const r = await deps.api("PUT", "/v1/config", body);
+        fillServer(r);
+        baseline = values();
+        const parts = [r.queued_jobs ? L("saved_queued", { n: r.queued_jobs }) : L("saved")];
+        if (d.includes("rules") && r.parsers.active_rules) parts.push(L("saved_rules", { n: r.parsers.active_rules }));
+        update({ text: parts.join(" "), kind: "ok" });
+        return true;
+      } catch (error) {
+        const text = errorText(lang, error);
+        update({ text: d.includes("conn") ? L("conn_saved_server_failed", { e: text }) : text, kind: "err" });
+        return false;
+      }
+    }
+    save.addEventListener("click", () => void saveAll());
+    revert.addEventListener("click", () => void loadAll());
+    function shut() {
+      root.remove();
+      current = null;
+      void deps.hide();
+    }
+    close.addEventListener("click", () => {
+      if (!dirty().length || closing) return shut();
+      closing = true;
+      const saveClose = el("button", { class: "primary", text: L("save_and_close") });
+      const discard = el("button", { text: L("discard_and_close") });
+      const cancel = el("button", { text: L("cancel") });
+      const restore = () => {
+        closing = false;
+        bar.replaceChildren(barText, revert, save);
+        update();
+      };
+      saveClose.addEventListener("click", async () => {
+        if (await saveAll()) shut();
+        else restore();
+      });
+      discard.addEventListener("click", shut);
+      cancel.addEventListener("click", restore);
+      select("settings");
+      bar.replaceChildren(el("span", { class: "text warn", text: L("close_unsaved") }), cancel, discard, saveClose);
+    });
+    language.addEventListener("change", async () => {
+      if (dirty().length) {
+        language.value = lang;
+        select("settings");
+        update({ text: L("lang_unsaved"), kind: "warn" });
+        return;
+      }
+      const next = langOf(language.value);
+      await deps.setArg("language", next);
+      const shown = settingsView.style.display === "none" ? "status" : "settings";
+      root.remove();
+      current = await render(deps, next, shown);
+    });
+    function select(next) {
+      statusView.style.display = next === "status" ? "" : "none";
+      settingsView.style.display = bar.style.display = next === "settings" ? "" : "none";
+      tabStatus.className = next === "status" ? "on" : "";
+      tabSettings.className = next === "settings" ? "on" : "";
+      if (next === "status") void refreshStatus();
+    }
+    tabStatus.addEventListener("click", () => select("status"));
+    tabSettings.addEventListener("click", () => select("settings"));
     document.body.append(root);
-    await deps.show();
-    await refreshServer();
+    select(tab);
+    await loadAll();
+    return { root, select };
   }
 
   // src/host.ts
@@ -749,13 +1084,19 @@ ${revisionHash}`;
         enabled: Number(await arg("disabled")) !== 1,
         reservedMemoryTokens: positiveInt(await arg("reserved_memory_tokens"), DEFAULT_RESERVED_TOKENS),
         deadlineMs: positiveInt(await arg("deadline_ms"), DEFAULT_DEADLINE_MS),
-        injectPosition: position === "end" ? "end" : "before_last_user"
+        injectPosition: position === "end" ? "end" : "before_last_user",
+        language: langOf(await arg("language"))
       };
     },
     async currentChat() {
       const characterIndex = await risuai.getCurrentCharacterIndex();
       const chatIndex = await risuai.getCurrentChatIndex();
       return risuai.getChatFromIndex(characterIndex, chatIndex);
+    },
+    async characterName(chatId) {
+      const character = await risuai.getCharacterFromIndex(await risuai.getCurrentCharacterIndex());
+      if (!character?.chats?.some((c) => c?.id === chatId)) return null;
+      return typeof character.name === "string" && character.name.trim() ? character.name.trim() : null;
     },
     async request(method, url, body, headers, timeoutMs, route) {
       const res = await risuai.nativeFetch(url, {
@@ -780,18 +1121,22 @@ ${revisionHash}`;
   async function registerHooks(beforeRequest, onOutput, status, api) {
     await risuai.addRisuReplacer("beforeRequest", beforeRequest);
     await risuai.addRisuChatListener("output", onOutput);
-    await risuai.registerSetting("NMOS \uC124\uC815 / Settings", async () => {
-      await openSettingsPanel({
-        api,
-        getArg: arg,
-        setArg: (key, value) => risuai.setArgument(key, value),
-        show: () => risuai.showContainer("fullscreen"),
-        hide: () => risuai.hideContainer()
-      });
-    }, "\u2699\uFE0F", "html", "nmos-settings");
-    await risuai.registerSetting("NMOS \uC0C1\uD0DC / Status", async () => {
-      await risuai.alert(await status());
-    }, "\u{1F9E0}", "html", "nmos-status");
+    const deps = {
+      api,
+      status,
+      getArg: arg,
+      setArg: (key, value) => risuai.setArgument(key, value),
+      show: () => risuai.showContainer("fullscreen"),
+      hide: () => risuai.hideContainer()
+    };
+    const open = (tab) => openPanel(deps, tab);
+    const lang = langOf(await arg("language"));
+    await risuai.registerSetting(t(lang, "menu.settings"), () => open("settings"), "\u2699\uFE0F", "html", "nmos-settings");
+    await risuai.registerSetting(t(lang, "menu.status"), () => open("status"), "\u{1F9E0}", "html", "nmos-status");
+    await risuai.registerButton(
+      { name: t(lang, "menu.panel"), icon: "\u{1F9E0}", iconType: "html", location: "chat", id: "nmos-chat" },
+      () => open("status")
+    );
   }
 
   // src/entry.ts
@@ -806,9 +1151,9 @@ ${revisionHash}`;
         }
       },
       (arg2) => adapter.onOutput(arg2),
-      () => adapter.statusText(),
+      () => adapter.status(),
       (method, path, body, timeoutMs) => adapter.api(method, path, body, timeoutMs)
     );
-    console.log("[NMOS] adapter loaded", { version: "0.1.0-beta.3" });
+    console.log("[NMOS] adapter loaded", { version: "0.1.0-beta.4" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));
 })();

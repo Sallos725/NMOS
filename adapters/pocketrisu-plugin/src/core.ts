@@ -2,6 +2,7 @@
 
 import { canonicalJson } from './canonical';
 import { sha256Hex } from './hash';
+import type { Lang } from './i18n';
 import { bodyKey, buildManifest, hashPayload } from './manifest';
 import { hasPacket, inContextIds, injectPacket, isMainGeneration, queryTexts, type InjectPosition } from './prompt';
 import type { Body, HostChat, HostMessage, PromptMessage, ReconcileRequest } from './types';
@@ -15,6 +16,7 @@ export interface Settings {
   injectPosition: InjectPosition;
   /** 'direct' = browser fetch (proxy fallback); 'server' = always via the PocketRisu server. */
   route: 'direct' | 'server';
+  language: Lang;
 }
 
 export interface HttpResult {
@@ -25,6 +27,8 @@ export interface HttpResult {
 export interface HostPort {
   settings(): Promise<Settings>;
   currentChat(): Promise<HostChat | null>;
+  /** Name of the bot that owns chat `chatId` (a display label only). May be slow: never awaited on the request path. */
+  characterName?(chatId: string): Promise<string | null>;
   request(method: 'GET' | 'POST' | 'PUT', url: string, body: unknown, headers: Record<string, string>,
           timeoutMs: number, route: Settings['route']): Promise<HttpResult>;
   warn(...args: unknown[]): void;
@@ -59,9 +63,35 @@ export interface LastRequest {
   error?: string;
 }
 
+export interface StatusInfo {
+  enabled: boolean;
+  sidecarUrl: string;
+  language: Lang;
+  connected: boolean;
+  version?: string;
+  features?: Record<string, boolean>;
+  error?: string;
+  last: LastRequest | null;
+}
+
+const NAME_TTL_MS = 10 * 60_000;
+
 export function createAdapter(host: HostPort) {
   const cache = new Map<string, CacheEntry>();
+  const names = new Map<string, { name: string | null; at: number }>();
   let last: LastRequest | null = null;
+
+  /** The bot name for this chat as last resolved; a stale or missing entry is refreshed in the background. */
+  function characterName(chatId: string): string | null {
+    const hit = names.get(chatId);
+    if (host.characterName && (!hit || host.now() - hit.at > NAME_TTL_MS)) {
+      names.set(chatId, { name: hit?.name ?? null, at: host.now() });
+      host.characterName(chatId)
+        .then((name) => { if (name) names.set(chatId, { name, at: host.now() }); })
+        .catch(() => {});
+    }
+    return hit?.name ?? null;
+  }
 
   function remember(key: string, packet: string, ttl: number): void {
     cache.set(key, { packet, expires: host.now() + ttl });
@@ -134,7 +164,8 @@ export function createAdapter(host: HostPort) {
       // packet is reused only for the same state (host retries, reroll of an unchanged chat) and never
       // survives an edit anywhere in the chat.
       const t0 = host.now();
-      const { request, bodies } = await buildManifest(chat, firstSaying(messages));
+      const { request, bodies } = await buildManifest(chat, firstSaying(messages),
+        { characterName: characterName(chat.id) });
       const manifestMs = host.now() - t0;
       key = await sha256Hex(canonicalJson([
         chat.id, mode, prompt.length, request.messages.map((m) => [m.host_logical_id, m.revision_hash]),
@@ -195,31 +226,18 @@ export function createAdapter(host: HostPort) {
   }
 
   /** Human-readable status for the settings menu (Korean first, English second). */
-  async function statusText(): Promise<string> {
+  async function status(): Promise<StatusInfo> {
     const settings = await host.settings();
-    const lines: string[] = [];
-    if (!settings.enabled) lines.push('NMOS: 꺼짐 (disabled = 1) / disabled');
+    const info: StatusInfo = { enabled: settings.enabled, sidecarUrl: settings.sidecarUrl, language: settings.language,
+      connected: false, last };
     try {
       const res = await call<{ version: string; features: Record<string, boolean> }>(
         settings, '/v1/health', undefined, host.now() + 3000);
-      const f = res.features ?? {};
-      const on = (b: boolean | undefined) => (b ? 'on' : 'off');
-      lines.push(`NMOS ${res.version} 연결됨 / connected — ${settings.sidecarUrl}`);
-      lines.push(`상태창 state ${on(f.state)} · 사실 facts ${on(f.extraction)} · 의미검색 vectors ${on(f.vectors)}`);
+      Object.assign(info, { connected: true, version: res.version, features: res.features ?? {} });
     } catch (error) {
-      lines.push(`사이드카에 연결할 수 없음 / cannot reach sidecar: ${settings.sidecarUrl}`);
-      lines.push(`(${error instanceof Error ? error.message : String(error)})`);
-      lines.push('확인: docker compose up -d · NMOS_CORS_ORIGINS에 이 주소 포함 · localhost/HTTPS로 접속');
+      info.error = error instanceof Error ? error.message : String(error);
     }
-    if (last) {
-      const ago = Math.round((Date.now() - last.at) / 1000);
-      const what = last.outcome === 'injected' ? `기억 주입 ${last.packetChars}자 / injected`
-        : last.outcome === 'nothing-relevant' ? '관련 기억 없음 / nothing relevant' : `실패 / failed: ${last.error}`;
-      lines.push(`마지막 요청 / last request: ${ago}s 전 · ${what} · ${last.ms}ms`);
-    } else {
-      lines.push('아직 요청 없음 — 메시지를 보내 보세요 / no request yet');
-    }
-    return lines.join('\n');
+    return info;
   }
 
   /** Sidecar API for the settings UI (longer timeout: connection tests call real models). */
@@ -228,7 +246,7 @@ export function createAdapter(host: HostPort) {
     return call<T>(settings, path, body, host.now() + timeoutMs, method);
   }
 
-  return { beforeRequest, onOutput, statusText, api };
+  return { beforeRequest, onOutput, status, api };
 }
 
 function firstSaying(messages: HostMessage[]): string | null {

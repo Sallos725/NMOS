@@ -182,7 +182,7 @@ def test_prune_keeps_recent_and_unfinished(llm_client, migrated, db):
     prune(db, 30)
     assert db.execute("SELECT count(*) AS n FROM job").fetchone()["n"] == before - 1
     assert db.execute("SELECT count(*) AS n FROM retrieval_trace").fetchone()["n"] == 0
-    assert "Background jobs:" in llm_client.get("/inspector").text
+    assert "Background jobs:" in llm_client.get("/inspector?lang=en").text
 
 
 def test_knowledge_annotations_reach_the_packet(migrated, db):

@@ -15,8 +15,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from psycopg_pool import ConnectionPool
 
-from urllib.parse import quote
-
 from . import __version__, extraction, generations, inspector, ledger, normtext, readmodel, runtime, vectors
 from .config import Settings
 from .db import make_pool
@@ -176,7 +174,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return response
 
     def do_reconcile(conn, body: ReconcileRequest) -> ReconcileResponse:
-        conv = ledger.lock_conversation(conn, body.host, body.chat_id, body.character_ref)
+        conv = ledger.lock_conversation(conn, body.host, body.chat_id, body.character_ref, body.character_name,
+                                        body.chat_name)
         state = ledger.load_state(conn, conv)
         manifest = _entries(body)
         result = plan(state.head, conv.head_manifest_hash, manifest, state.known, state.lifecycle,
@@ -359,17 +358,18 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return runtime.list_models(body.get("url") or "", body.get("api_key") or fallback_key)
 
     @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
-    def inspector_index(request: Request, token: str | None = None):
+    def inspector_index(request: Request, token: str | None = None, lang: str | None = None):
         with request.app.state.pool.connection() as conn:
             ex_key = rt["active_extractor"]
             pj_key = rt["projection"].key if rt["projection"] else None
-            return inspector.index(readmodel.list_conversations(conn), _q(token), job_counts(conn),
+            return inspector.index(readmodel.list_conversations(conn), token, job_counts(conn),
                                    {"extraction": generations.describe(conn, ex_key),
                                     "embeddings": generations.describe(conn, pj_key)},
-                                   extraction.coverage(conn, ex_key), vectors.coverage(conn, pj_key))
+                                   extraction.coverage(conn, ex_key), vectors.coverage(conn, pj_key),
+                                   lang=inspector.lang_of(lang))
 
     @app.get("/inspector/c/{conv_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
-    def inspector_detail(conv_id: UUID, request: Request, token: str | None = None):
+    def inspector_detail(conv_id: UUID, request: Request, token: str | None = None, lang: str | None = None):
         with request.app.state.pool.connection() as conn:
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
@@ -380,13 +380,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             return inspector.detail(conv, current_state(conn, head, rt["rules"].version),
                                     readmodel.membership(conn, head, ex_key, pj_key),
                                     readmodel.commits(conn, conv_id), readmodel.traces(conn, conv_id),
-                                    fact_versions(conn, head, ex_key)[:300], _q(token), coverage_view(conn, conv_id))
+                                    fact_versions(conn, head, ex_key)[:300], token, coverage_view(conn, conv_id),
+                                    lang=inspector.lang_of(lang))
 
     return app
-
-
-def _q(token: str | None) -> str:
-    return f"?token={quote(token)}" if token else ""
 
 
 def app_factory() -> FastAPI:

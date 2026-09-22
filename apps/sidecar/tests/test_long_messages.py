@@ -56,7 +56,7 @@ def test_embedding_reports_partial_coverage_for_long_message(client_all, migrate
     assert all(covered[n] < n and covered[n] <= limit for n in (6_000, 10_000, 20_000))
     cov = client_all.get(f"/v1/conversations/{conv_id(client_all, chat)}/coverage").json()["embeddings"]
     assert cov["partial"] == 3 and cov["complete"] is False
-    page = client_all.get(f"/inspector/c/{conv_id(client_all, chat)}").text
+    page = client_all.get(f"/inspector/c/{conv_id(client_all, chat)}?lang=en").text
     assert "partially embedded 3" in page and "emb full" in page and f"emb {covered[20_000]:,}/20,000" in page
 
 
@@ -74,7 +74,7 @@ def test_extraction_reports_target_truncation(client_all, migrated, db):
     assert truncated_context == 3  # a 6-message window holds at most three of the long messages, each cut
     cov = client_all.get(f"/v1/conversations/{conv_id(client_all, chat)}/coverage").json()["extraction"]
     assert cov["target_truncated"] == 2
-    assert "ext 6,000/20,000" in client_all.get(f"/inspector/c/{conv_id(client_all, chat)}").text
+    assert "ext 6,000/20,000" in client_all.get(f"/inspector/c/{conv_id(client_all, chat)}?lang=en").text
 
 
 def test_long_message_raw_evidence_remains_complete(client_all, migrated, db):

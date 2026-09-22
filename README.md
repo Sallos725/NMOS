@@ -1,6 +1,8 @@
 # NMOS — Narrative Memory for PocketRisu
 
 **Beta.** Long-term memory for [PocketRisu](https://github.com/PocketRisu/PocketRisu) role-play.
+PocketRisu is a fork of [RisuAI](https://github.com/kwaroran/RisuAI); NMOS is a plugin that uses the
+RisuAI-family V3 plugin API. It is an independent project, not affiliated with PocketRisu or RisuAI.
 한국어 안내: [docs/guide.ko.md](docs/guide.ko.md)
 
 Long chats fall out of the model's context window. NMOS keeps an **immutable history** of your chat
@@ -48,17 +50,25 @@ continues without memory.
 That's it: raw recall works with no model configured. Open **http://127.0.0.1:8790/inspector** to see
 what NMOS stored and what it injected.
 
-## Settings panel
+## NMOS panel (status and settings)
 
-PocketRisu → Settings → **NMOS 설정 / Settings** opens NMOS's own panel:
+Open it from the **☰ menu left of the chat input → NMOS 기억 / NMOS memory**, or from PocketRisu →
+Settings → **NMOS 상태 / NMOS 설정**. Tabs switch between **Status** and **Settings**; the language
+picker (Korean by default, or English) is at the top right. Menu names follow the language after a
+page reload.
 
-- connection (sidecar URL, route, memory budget, on/off) and a live status line;
-- **fact-extraction LLM** and **embeddings**: provider presets (Ollama on this PC, OpenRouter, OpenAI,
-  Gemini, any OpenAI-compatible endpoint), model list, API key, and a **connection test** that makes a
-  real call. Saving applies immediately and processes existing chats in the background;
-- recall tuning and status-window parser rules (validated before saving).
+- **Status**: sidecar connection, which features are on (status window, facts, semantic recall), what the
+  last request injected, and a link to the Inspector.
+- **Settings**: connection (sidecar URL, route, memory budget, deadline, on/off); **fact-extraction LLM**
+  and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, any
+  OpenAI-compatible endpoint), model list, API key and a **connection test** that makes a real call;
+  recall tuning; status-window parser rules (validated before saving).
+- One **Save** button at the bottom saves every changed section together. Unsaved changes are listed
+  there, and closing asks whether to save them. Saving applies immediately and processes existing
+  chats in the background.
 
-**NMOS 상태 / Status** shows a one-screen health summary and what the last request injected.
+The Inspector lists conversations as **bot name · chat name** (after the next message in that chat)
+and is Korean by default; switch to English at the top right.
 
 ## Configuration (environment)
 
@@ -138,6 +148,8 @@ README is verified on that build only; other PocketRisu versions may differ — 
 see. See `docs/perf/phase0.md` for latency (≈90–200 ms added per message at 500–1,000 messages).
 Known limits:
 
+- Upstream RisuAI is untested. PocketRisu is a RisuAI fork and NMOS only uses the shared V3 plugin
+  API, so it may work there; reports are welcome.
 - No group chats (the tested PocketRisu build has none).
 - Character knowledge is annotated (`knowledge="public"`, `known_by` / `hidden_from`, or unknown)
   rather than hard-isolated.

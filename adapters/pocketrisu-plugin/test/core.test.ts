@@ -22,7 +22,7 @@ function fakeHost(handler: (path: string, body: any) => Promise<HttpResult> | Ht
   const warn = vi.fn();
   const host: HostPort = {
     settings: async () => ({ sidecarUrl: 'http://sidecar', authToken: 't', enabled: true, reservedMemoryTokens: 600,
-      deadlineMs: 200, injectPosition: 'before_last_user', route: 'direct', ...overrides }),
+      deadlineMs: 200, injectPosition: 'before_last_user', route: 'direct', language: 'ko', ...overrides }),
     currentChat: async () => structuredClone(chat),
     request: async (_method, url, body) => {
       const path = url.replace('http://sidecar', '');
@@ -162,23 +162,48 @@ describe('body upload', () => {
   });
 });
 
-describe('status text', () => {
+describe('status', () => {
   it('reports connection, features and the last request', async () => {
     const { host } = fakeHost((path, body) => path === '/v1/health'
       ? { status: 200, json: { version: '0.1.0b1', features: { state: false, extraction: true, vectors: true } } }
       : happy(path, body));
     const adapter = createAdapter(host);
-    expect(await adapter.statusText()).toContain('아직 요청 없음');
+    expect((await adapter.status()).last).toBeNull();
     await adapter.beforeRequest(prompt, 'model');
-    const text = await adapter.statusText();
-    expect(text).toContain('0.1.0b1 연결됨');
-    expect(text).toContain('facts on');
-    expect(text).toContain('기억 주입');
+    const s = await adapter.status();
+    expect(s).toMatchObject({ connected: true, version: '0.1.0b1', enabled: true, language: 'ko',
+      features: { extraction: true, vectors: true, state: false } });
+    expect(s.last).toMatchObject({ outcome: 'injected', packetChars: PACKET.length });
   });
 
-  it('explains how to fix an unreachable sidecar', async () => {
+  it('reports an unreachable sidecar with the error', async () => {
     const { host } = fakeHost(() => Promise.reject(new TypeError('Failed to fetch')));
-    expect(await createAdapter(host).statusText()).toContain('docker compose up -d');
+    const s = await createAdapter(host).status();
+    expect(s.connected).toBe(false);
+    expect(s.error).toContain('Failed to fetch');
+  });
+});
+
+describe('conversation labels', () => {
+  it('sends the chat name at once and the bot name once it resolved in the background', async () => {
+    const reconciles: any[] = [];
+    const { host } = fakeHost((path, body) => {
+      if (path === '/v1/sync/reconcile') reconciles.push(body);
+      return happy(path, body);
+    });
+    let resolve!: (name: string) => void;
+    const lookups: string[] = [];
+    host.characterName = (chatId) => { lookups.push(chatId); return new Promise((r) => { resolve = r; }); };
+    host.currentChat = async () => ({ ...structuredClone(chat), name: '  벨로나 등대  ' });
+    const adapter = createAdapter(host);
+    await adapter.beforeRequest(prompt, 'model');
+    expect(reconciles[0]).toMatchObject({ chat_name: '벨로나 등대' });
+    expect(reconciles[0].character_name).toBeUndefined(); // never waited for on the request path
+    resolve('하나');
+    await new Promise((r) => setTimeout(r, 0));
+    await adapter.beforeRequest([...prompt, { role: 'user', content: 'Where did we hide the lantern?' }], 'model');
+    expect(reconciles.at(-1)).toMatchObject({ character_name: '하나', chat_name: '벨로나 등대' });
+    expect(lookups).toEqual(['chat-1']); // cached, not looked up per request
   });
 });
 
@@ -198,7 +223,7 @@ describe('route selection', () => {
     const host: HostPort = {
       settings: async () => ({ sidecarUrl: 'http://localhost:8790', authToken: 't', enabled: true,
         reservedMemoryTokens: 600, deadlineMs: 200, injectPosition: 'before_last_user',
-        route: routeFor('http://localhost:8790', '') }),
+        route: routeFor('http://localhost:8790', ''), language: 'ko' }),
       currentChat: async () => null,
       request: async (method, url, _body, headers, _timeout, route) => {
         seen.push({ method, url, route, headers });
