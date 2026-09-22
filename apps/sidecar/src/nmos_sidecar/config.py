@@ -26,6 +26,8 @@ class Settings:
     llm_timeout_s: float = field(default_factory=lambda: float(os.environ.get("NMOS_LLM_TIMEOUT_S", "120")))
     extract_window: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_WINDOW", "6")))
     extract_backfill: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_BACKFILL", "100")))
+    # Embeddings are cheap (local models): cover far more history on first sight than LLM extraction.
+    embed_backfill: int = field(default_factory=lambda: int(os.environ.get("NMOS_EMBED_BACKFILL", "2000")))
     worker_concurrency: int = field(default_factory=lambda: int(os.environ.get("NMOS_WORKER_CONCURRENCY", "2")))
     facts_limit: int = field(default_factory=lambda: int(os.environ.get("NMOS_FACTS_LIMIT", "8")))
     # Phase 3: embeddings (off unless NMOS_EMBED_URL is set).

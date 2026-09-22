@@ -167,7 +167,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                 {**state.lifecycle, **result.lifecycle}, state.revision_ids,
                                 settings.extract_window, cur.extract_backfill,
                                 extract=bool(cur.llm_url and cur.llm_model),
-                                embed_model=(cur.embed_model or None) if cur.embed_url else None)
+                                embed_model=(cur.embed_model or None) if cur.embed_url else None,
+                                embed_backfill=cur.embed_backfill)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=result.manifest_hash, changes_summary=result.summary,
                                  commit_reason=result.commit_reason)
@@ -285,7 +286,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 and (cur.llm_url, cur.llm_model) != (before.llm_url, before.llm_model),
                 embed_model=cur.embed_model if cur.embed_url and cur.embed_model
                 and (cur.embed_url, cur.embed_model) != (before.embed_url, before.embed_model) else None,
-                backfill=cur.extract_backfill,
+                backfill=cur.extract_backfill, embed_backfill=cur.embed_backfill,
             )
         return {**runtime.public_view(rt["settings"], rt["overrides"], rt["rules"]), "queued_jobs": queued}
 

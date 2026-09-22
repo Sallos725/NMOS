@@ -69,6 +69,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_LLM_URL` / `NMOS_LLM_MODEL` / `NMOS_LLM_API_KEY` | off | Background fact extraction. Ollama on the host: `http://host.docker.internal:11434/v1` |
 | `NMOS_EMBED_URL` / `NMOS_EMBED_MODEL` | off | Semantic recall, e.g. `qwen3-embedding:0.6b` |
 | `NMOS_EXTRACT_BACKFILL` | `100` | On first sight of a chat, extract only the latest N messages (cost control) |
+| `NMOS_EMBED_BACKFILL` | `2000` | On first sight of a chat, embed the latest N messages (cheap; covers long histories) |
 | `NMOS_WORKER_CONCURRENCY` | `2` | Parallel background jobs |
 | `NMOS_PARSERS_FILE` | off | State parser rules, e.g. `/config/parsers.json` (mounted from `./config`) |
 | `NMOS_RECALL_THRESHOLD` | `0.4` | Minimum trigram match for lexical recall |

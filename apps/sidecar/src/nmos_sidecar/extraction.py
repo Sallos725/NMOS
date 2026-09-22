@@ -61,6 +61,7 @@ def enqueue_after_apply(
     backfill: int,
     extract: bool = True,
     embed_model: str | None = None,
+    embed_backfill: int = 2000,
 ) -> int:
     """Queue extraction (and embedding) for (revision, window) pairs that became eligible with this sync.
 
@@ -77,16 +78,15 @@ def enqueue_after_apply(
     now = eligible(manifest, new_lifecycle)
     before = eligible(old_head, old_lifecycle) if old_head else {}
     fresh = [(pair, pos) for pair, pos in now.items() if pair not in before]
-    if old_head is None and backfill >= 0:
-        fresh = [(pair, pos) for pair, pos in fresh if pos >= len(manifest) - backfill]
     rows = []
     priority = 100 if old_head is not None else 200  # live turns before backfill
     for (key, win), pos in fresh:
         rev = ids[key]
-        if extract:
+        first_sight = old_head is None
+        if extract and not (first_sight and pos < len(manifest) - backfill):
             rows.append(("extract", f"extract:{rev}:{win}:{COMPILER_VERSION}", conv_id,
                          Jsonb({"revision_id": str(rev), "window_hash": win}), priority))
-        if embed_model:
+        if embed_model and not (first_sight and pos < len(manifest) - embed_backfill):
             # Embeddings depend on content only; they run first because recall uses them directly.
             rows.append(("embed", f"embed:{rev}:{embed_model}", conv_id, Jsonb({"revision_id": str(rev)}), priority - 50))
     if rows:
@@ -247,7 +247,8 @@ def job_counts(conn: psycopg.Connection) -> dict[str, int]:
 
 
 
-def backfill_jobs(conn: psycopg.Connection, extract: bool, embed_model: str | None, backfill: int) -> int:
+def backfill_jobs(conn: psycopg.Connection, extract: bool, embed_model: str | None, backfill: int,
+                  embed_backfill: int = 2000) -> int:
     """After enabling or changing a model: queue the latest `backfill` eligible head messages of every chat."""
     total = 0
     eligible = """
@@ -273,7 +274,7 @@ def backfill_jobs(conn: psycopg.Connection, extract: bool, embed_model: str | No
             " SELECT 'embed', 'embed:' || sr.id || ':' || %(model)s, c.id,"
             " jsonb_build_object('revision_id', sr.id::text), 200" + eligible +
             " ON CONFLICT (dedupe_key) DO NOTHING",
-            {"n": backfill, "model": embed_model},
+            {"n": embed_backfill, "model": embed_model},
         ).rowcount
     return total
 

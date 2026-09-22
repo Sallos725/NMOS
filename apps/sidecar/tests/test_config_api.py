@@ -52,8 +52,9 @@ def test_enabling_embeddings_backfills_existing_chats(client, db):
     sync(client, chat)
     assert db.execute("SELECT count(*) AS n FROM job").fetchone()["n"] == 0
     out = client.put("/v1/config", json={"embed_url": "http://emb.example/v1", "embed_model": "e", "extract_backfill": 3}).json()
-    assert out["queued_jobs"] == 3
-    assert db.execute("SELECT count(*) AS n FROM job WHERE kind = 'embed'").fetchone()["n"] == 3
+    # Embeddings cover the whole (short) history; the LLM backfill limit does not apply to them.
+    assert out["queued_jobs"] == len(chat.messages) - 0 and db.execute(
+        "SELECT count(*) AS n FROM job WHERE kind = 'embed'").fetchone()["n"] == len(chat.messages)
 
 
 def test_connection_tests_report_failures_cleanly(client):
