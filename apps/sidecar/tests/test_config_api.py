@@ -106,3 +106,18 @@ def test_cors_preflight_allows_settings_put_from_allowed_origin_only(client):
     assert denied.status_code == 400 and "access-control-allow-origin" not in denied.headers
     put = client.put("/v1/config", json={"facts_limit": 4}, headers={"Origin": "http://localhost:6101"})
     assert put.status_code == 200 and put.headers["access-control-allow-origin"] == "http://localhost:6101"
+
+
+def test_raising_extraction_backfill_queues_older_turns_without_restart(migrated, db):
+    from conftest import make_client
+    with make_client(migrated, llm_url="http://fake-llm/v1", llm_model="fake", extract_backfill=2) as c:
+        chat = SimChat()
+        for i in range(6):
+            chat.user(f"line {i}")
+            chat.reply(f"reply {i}")
+        chat.user("last")
+        sync(c, chat)
+        assert db.execute("SELECT count(*) AS n FROM job WHERE kind = 'extract'").fetchone()["n"] == 2
+        assert c.put("/v1/config", json={"extract_backfill": 5}).json()["queued_jobs"] == 3
+        assert c.put("/v1/config", json={"extract_backfill": 1}).json()["queued_jobs"] == 0
+    assert db.execute("SELECT count(*) AS n FROM job WHERE kind = 'extract'").fetchone()["n"] == 5

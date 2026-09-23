@@ -333,12 +333,18 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         if errors:
             raise HTTPException(status_code=422, detail=errors)
         before_ex, before_pj = rt["extractor"], rt["projection"]
+        before_backfill = rt["settings"].extract_backfill
         with request.app.state.pool.connection() as conn:
             runtime.save(conn, clean)
             rebuild(runtime.stored(conn))
             if runtime.PARSERS_KEY in clean:
                 rebuild_state(conn, rt["rules"])
             queued = activate(conn, before_ex.key if before_ex else None, before_pj.key if before_pj else None)
+            ex = rt["extractor"]
+            if ex and before_ex and ex.key == before_ex.key and rt["settings"].extract_backfill != before_backfill:
+                # Same generation, different backfill: queue what the new window is missing now, not at
+                # the next restart (ADR 0008). Idempotent; a smaller backfill queues nothing.
+                queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill)
         return {**runtime.public_view(rt["settings"], rt["overrides"], rt["rules"]), "queued_jobs": queued}
 
     @app.post("/v1/config/test", dependencies=[Depends(auth)])

@@ -52,8 +52,8 @@ const STRINGS = {
   'conn.hint': ['PocketRisu의 최대 컨텍스트를 기억 예산만큼 줄여 두세요.', "Lower PocketRisu's max context by the memory budget."],
   // settings: models
   'llm.title': ['사실 추출 LLM', 'Fact extraction LLM'],
-  'llm.sub': ['확정된 메시지마다 백그라운드에서 한 번 호출해 인물·장소·약속·관계를 기록합니다. 유료 API는 비용이 듭니다.',
-    'Called once per settled message in the background to record people, places, promises and relationships. Paid APIs cost money.'],
+  'llm.sub': ['확정된 턴(입력과 응답)마다 백그라운드에서 한 번 호출해 인물·장소·약속·관계를 기록합니다. 유료 API는 비용이 듭니다.',
+    'Called once per settled turn (input and reply) in the background to record people, places, promises and relationships. Paid APIs cost money.'],
   'emb.title': ['의미 검색 임베딩', 'Semantic recall embeddings'],
   'emb.sub': ['다른 말로 물어도 예전 장면을 찾습니다. Ollama의 qwen3-embedding:0.6b를 추천합니다.',
     'Finds earlier scenes even when asked in other words. Ollama qwen3-embedding:0.6b is recommended.'],
@@ -86,7 +86,7 @@ const STRINGS = {
   'tune.min_sim': ['의미 유사도 기준', 'Vector min similarity'],
   'tune.top_k': ['발췌 수', 'Excerpts'],
   'tune.facts': ['사실 수', 'Facts'],
-  'tune.backfill': ['처음 연결 시 처리할 메시지 수', 'Messages processed on first sync'],
+  'tune.backfill': ['처음 연결 시 추출할 턴 수', 'Turns extracted on first sync'],
   // settings: parser rules
   'rules.title': ['상태창 규칙', 'Status-window rules'],
   'rules.sub': ['block: 시작~끝 사이의 "키: 값" 줄을 읽습니다. entity_line으로 [인물] 줄마다 인물별로 나눕니다 (시뮬봇). regex: key/value 이름 그룹.',
