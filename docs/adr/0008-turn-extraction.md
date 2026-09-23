@@ -74,10 +74,11 @@ active (e.g. extraction switched off).
 
 ### 3. Backfill counts turns, and applies without a restart
 
-- `NMOS_EXTRACT_BACKFILL` (panel: "처음 연결 시 처리할 턴 수") counts **turns**. The default stays
+- `NMOS_EXTRACT_BACKFILL` (panel: "처음 연결 시 추출할 턴 수") counts **turns**. The default stays
   100, which is about 200 messages for the same number of calls as before.
-- Saving a different extraction or embedding backfill in the panel schedules the missing work at
-  once. The coverage policy is idempotent, so a restart is no longer needed.
+- Saving a different extraction backfill in the panel schedules the missing turns at once. The
+  coverage policy is idempotent, so a restart is no longer needed. The embedding backfill is
+  environment-only, and restarts apply it as before.
 
 ### 4. Per-chat actions (D22)
 
