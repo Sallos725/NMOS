@@ -128,3 +128,20 @@ def test_mass_delete_hides_facts_and_a_restored_range_reuses_its_extractions(mig
         sync(c, chat)
         drain(migrated, complete)
         assert len(calls) == before and [f["object"] for f in facts(c, chat)] == ["bell tower"]
+
+
+def test_extract_history_retries_failed_turns(migrated, db):
+    with make_client(migrated, extract_backfill=2, **LLM) as c:
+        chat = history_chat()
+        sync(c, chat)
+        db.execute("UPDATE job SET status = 'dead', attempts = 5 WHERE kind = 'extract'")
+        cid = conv_id(c, chat)
+        assert c.get(f"/v1/conversations/{cid}/coverage").json()["extraction"]["failed"] == 2
+        assert c.post(f"/v1/conversations/{cid}/extract-history").json()["queued"]["extract"] == 8
+        assert db.execute("SELECT count(*) AS n FROM job WHERE status = 'queued' AND attempts = 0").fetchone()["n"] == 8
+        # Newest turns are claimed first within a priority (claim() takes the highest id).
+        order = [r["t"] for r in db.execute(
+            "SELECT (SELECT am.turn FROM active_membership am JOIN conversation cv ON cv.head_commit_id = am.commit_id"
+            " WHERE am.source_revision_id = (j.payload->>'revision_id')::uuid) AS t"
+            " FROM job j WHERE j.status = 'queued' ORDER BY j.priority, j.id DESC")]
+        assert order[:2] == [7, 6] and order[2:] == [5, 4, 3, 2, 1, 0]

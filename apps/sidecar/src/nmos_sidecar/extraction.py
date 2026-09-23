@@ -374,11 +374,18 @@ def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv:
                                 AND x.window_hash = e.turn_hash AND x.extractor_key = %(key)s
                                 AND x.discarded_at IS NULL)
               AND (e.turn >= e.turns - %(n)s OR %(all)s OR """ + COVERED_BEFORE + """)
-            ORDER BY e.conv, e.turn DESC
+            ORDER BY e.conv, e.turn  -- claim() takes the highest id first: newest turns first
             """ + REQUEUE,
             {"conv": conv, "key": key, "n": backfill, "all": history, "recent": RECENT_PRIORITY,
              "history": HISTORY_PRIORITY},
         ).rowcount
+
+
+def retry_failed(conn: psycopg.Connection, kind: str, key: str, conv: UUID) -> int:
+    """Dead jobs of this chat and generation become obsolete, so the next scheduling run revives them
+    (per-chat "extract all history", D22: nothing the chat is missing stays failed)."""
+    return conn.execute("UPDATE job SET status = 'obsolete', updated_at = now() WHERE kind = %s AND status = 'dead'"
+                        " AND conversation_id = %s AND payload->>'generation' = %s", (kind, conv, key)).rowcount
 
 
 def discard(conn: psycopg.Connection, key: str, conv: UUID) -> int:

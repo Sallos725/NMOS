@@ -38,7 +38,7 @@ Known limitations: `CHANGELOG.md` → 0.1.0-beta.4.
 | Schema | `migrations/0001`–`0011` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (131), `adapters/pocketrisu-plugin/test` (40) | all passing |
+| Tests | `apps/sidecar/tests` (132), `adapters/pocketrisu-plugin/test` (40) | all passing |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met; default deadline met up to ≈5k messages, fail open beyond ≈8k |
 | Decisions | `docs/adr/0001`–`0008` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-4.md` | 0–3 met; 4 soft subset met |

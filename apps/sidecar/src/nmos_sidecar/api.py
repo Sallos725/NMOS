@@ -327,13 +327,16 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     @app.post("/v1/conversations/{conv_id}/extract-history", dependencies=[Depends(auth)])
     def extract_history(conv_id: UUID, request: Request):
         """Queue every turn / message of this chat's head that the active generations have not
-        processed, beyond the first-sight backfill, at background priority."""
+        processed, beyond the first-sight backfill, at background priority; failed ones are retried."""
         ex, pj, cur = rt["extractor"], rt["projection"], rt["settings"]
         with request.app.state.pool.connection() as conn:
             if readmodel.conversation(conn, conv_id) is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             if ex is None and pj is None:
                 raise HTTPException(status_code=409, detail="fact extraction and embeddings are both off")
+            for kind, gen in (("extract", ex), ("embed", pj)):
+                if gen:
+                    extraction.retry_failed(conn, kind, gen.key, conv_id)
             queued = {
                 "extract": extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id, history=True)
                 if ex else 0,

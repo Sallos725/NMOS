@@ -18,7 +18,8 @@ and writes turn data at startup), then replace the plugin file and reload Pocket
   turns (default 100 ≈ 200 messages, same number of calls). Changing it in the panel queues the
   missing turns at once; no restart.
 - **Per-chat actions.** On a conversation in the panel's Inspector tab: **과거 전체 추출 / Extract all
-  history** extracts and embeds the older turns the first sync skipped. **기억 재구축 / Rebuild
+  history** extracts and embeds the older turns the first sync skipped, and retries turns whose
+  extraction failed. **기억 재구축 / Rebuild
   memory** (two clicks) discards that chat's facts (kept for audit) and extracts every turn again.
   Raw messages are never touched. API: `POST /v1/conversations/{id}/extract-history` and
   `/rebuild`.
