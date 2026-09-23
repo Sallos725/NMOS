@@ -133,7 +133,7 @@ wheels = [
 
 [[package]]
 name = "nmos-sidecar"
-version = "0.1.0b10"
+version = "0.1.0b11"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },

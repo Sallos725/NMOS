@@ -3,12 +3,16 @@
 ## Current phase
 
 **Phase 5 — Entity Identity and Semantic Assertions: current (authorized 2026-09-23).** Spec
-`docs/phases/PHASE-5.md`, ADRs 0012–0014. Step 1 of 6 (generation fallback, ADR 0014) done, unreleased; it also fixed a released stall in fact
-and state reads after edits in long chats (`docs/perf/scale.md`). Next: step 2 (schema and `extract-v5`).
+`docs/phases/PHASE-5.md`, ADRs 0012–0014. Step 1 of 6 (generation fallback, ADR 0014) done and released in `v0.1.0-beta.11`, with the fix for
+a stall in fact and state reads after edits in long chats (`docs/perf/scale.md`). Next: step 2 (schema
+and `extract-v5`).
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.10` (2026-09-23), public repository and image.** Track A stabilization:
+**Public beta `v0.1.0-beta.11` (2026-09-24), public repository and image.** Phase 5 step 1: a new LLM
+model re-extracts only each chat's recent window and older turns keep the previous model's facts (ADR
+0014, D20 amended); fact and state reads no longer stall for seconds after an edit, reroll or swipe in a
+long chat. No schema change. `v0.1.0-beta.10` (2026-09-23): Track A stabilization:
 verified append fast path and incremental plugin manifest (ADR 0010, migration 0013), default request
 deadline 3 s after a real-host check at 5k/10k/15k messages (D24), one current holder per item (ADR
 0011, D25), broad lexical queries stopped at 200 matches, and a deterministic memory evaluation

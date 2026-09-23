@@ -5,7 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-Phase 5 (entity identity and semantic assertions, `docs/phases/PHASE-5.md`) is in progress.
+## 0.1.0-beta.11
+
+Fix release with the first step of Phase 5 (`docs/phases/PHASE-5.md`). No schema change (migrations
+stay at 0013), no plugin change (its version is bumped only to keep versions in step). Upgrade the
+sidecar: `docker compose pull && docker compose up -d`. Replacing the plugin file is optional.
 
 - **Changing the LLM no longer re-extracts whole chats** (ADR 0014). A new extraction model, endpoint
   or prompt re-extracts only each chat's latest `NMOS_EXTRACT_BACKFILL` turns (default 100). Older turns
@@ -17,8 +21,15 @@ Phase 5 (entity identity and semantic assertions, `docs/phases/PHASE-5.md`) is i
   its `allBefore` check once per row: about 7 s at 10,000 messages instead of about 60 ms, so that
   request went without memory. The check now runs once. The state query had the same shape and is
   fixed the same way (`docs/perf/scale.md`).
-- `docs/KNOWN-ISSUES.md`: one current list of known issues (K1–K21) with workarounds and where each
-  would be fixed; limitations resolved since they were listed are marked there.
+- `docs/KNOWN-ISSUES.md`: one current list of known issues with workarounds; resolved ones marked.
+
+### Known limitations
+
+- Changing the LLM leaves older turns on the previous model's facts until **Extract all history**; a
+  better model improves them only then. A chat served by several models shows which in the Inspector.
+- A fact read at 10,000 messages takes ≈70 ms (was ≈50 ms without the stalls), measured with one
+  assertion per turn (`docs/perf/scale.md`).
+- Otherwise unchanged from 0.1.0-beta.10; the full list is `docs/KNOWN-ISSUES.md`.
 
 ## 0.1.0-beta.10
 
