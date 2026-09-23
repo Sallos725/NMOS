@@ -246,6 +246,16 @@ user blocks → system note) and `tools/spike_stub_llm.py` as the model:
   one packet with the turn-0 excerpt, placed before the `<Current Input>` run
   (`roles=[system, user, assistant, system(packet), user, user, user, user, user, system]`).
 
+### Bulk deletion and per-turn extraction (2026-09-23, ADR 0008)
+
+On an isolated `ghcr.io/pocketrisu/pocketrisu:latest` (v1.12.0), a message's trash icon asks "Remove
+this message?" with **Remove this message only**, **Remove this and following messages (N)** and
+Cancel. N counts the message itself and every later one. The plugin sees no event. At the next main
+request the manifest simply lacks the removed messages. A reply that was generated but never followed
+by a request was never synced, so NMOS counts one deletion fewer than the host: 6 removed in the UI
+gave `delete ×5, append ×1`. The message ☰ menu offers Branch, Disable Message and Cut Messages for AI
+(S8/S8b), with no bulk delete. Full run: `docs/perf/turn-extraction.md` § Host check.
+
 ---
 
 ## Scenario evidence index

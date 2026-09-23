@@ -59,7 +59,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "h.coverage": ("커버리지", "Coverage"), "h.detail": ("상세", "Detail"),
     "facts_row": ("사실 (추출)", "Facts (extraction)"), "vectors_row": ("벡터 (임베딩)", "Vectors (embedding)"),
     "pending": ("대기", "pending"), "failed": ("실패", "failed"), "not_queued": ("대기열 밖", "not queued"),
-    "older_only": ("이전 세대만", "only older generations"), "truncated": ("대상 잘림", "target truncated"),
+    "older_only": ("이전 세대·재구축 전만", "only older generations or before a rebuild"), "truncated": ("대상 잘림", "target truncated"),
     "partially_embedded": ("일부만 임베딩", "partially embedded"),
     "facts": ("현재 사실", "Current facts"),
     "h.subject": ("주어", "Subject"), "h.predicate": ("술어", "Predicate"), "h.object": ("대상 / 값", "Object / value"),
