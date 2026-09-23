@@ -148,21 +148,19 @@ ${revisionHash}`;
     }
     return -1;
   }
-  function isMainGeneration(prompt, mode, hostMessages) {
-    if (mode !== "model" || !Array.isArray(prompt)) return false;
+  function userTurnIndex(prompt, hostMessages) {
+    if (!Array.isArray(prompt)) return -1;
     const hostIndex = latestUserIndex(hostMessages);
-    if (hostIndex < 0) return false;
-    let promptUser;
-    for (let i = prompt.length - 1; i >= 0; i -= 1) {
-      if (prompt[i]?.role === "user") {
-        promptUser = prompt[i];
-        break;
-      }
-    }
-    if (!promptUser) return false;
+    if (hostIndex < 0) return -1;
     const expected = cleanText(selectedContent(hostMessages[hostIndex]));
-    const sent = cleanText(contentText(promptUser.content));
-    return expected.length > 0 && (sent === expected || sent.includes(anchorOf(expected, 64)));
+    if (!expected) return -1;
+    const anchor = anchorOf(expected, 64);
+    for (let i = prompt.length - 1; i >= 0; i -= 1) {
+      if (prompt[i]?.role === "assistant") continue;
+      const sent = cleanText(contentText(prompt[i]?.content));
+      if (sent === expected || sent.includes(anchor)) return i;
+    }
+    return -1;
   }
   function hasPacket(prompt) {
     return Array.isArray(prompt) && prompt.some((m) => contentText(m?.content).includes(PACKET_TAG));
@@ -203,7 +201,7 @@ ${revisionHash}`;
     }
     return hostMessages.slice(boundary).map((m) => String(m.chatId ?? "")).filter(Boolean);
   }
-  function injectPacket(prompt, packet, position = "before_last_user") {
+  function injectPacket(prompt, packet, position = "before_last_user", turn = -1) {
     if (!packet || hasPacket(prompt)) return prompt;
     const message = { role: "system", content: packet };
     const out = prompt.slice();
@@ -211,13 +209,11 @@ ${revisionHash}`;
       out.push(message);
       return out;
     }
-    let index = out.length;
-    for (let i = out.length - 1; i >= 0; i -= 1) {
-      if (out[i]?.role === "user") {
-        index = i;
-        break;
-      }
+    let index = turn >= 0 && turn < out.length && out[turn]?.role !== "assistant" ? turn : out.length;
+    for (let i = out.length - 1; index === out.length && i >= 0; i -= 1) {
+      if (out[i]?.role === "user") index = i;
     }
+    while (index > 0 && out[index]?.role === "user" && out[index - 1]?.role === "user") index -= 1;
     out.splice(index, 0, message);
     return out;
   }
@@ -318,7 +314,8 @@ ${revisionHash}`;
         const deadline = started + settings.deadlineMs;
         const chat = await host.currentChat();
         const messages = Array.isArray(chat?.message) ? chat.message : [];
-        if (!chat?.id || !isMainGeneration(prompt, mode, messages)) return prompt;
+        const turn = userTurnIndex(prompt, messages);
+        if (!chat?.id || turn < 0) return prompt;
         const t0 = host.now();
         const { request, bodies } = await buildManifest(
           chat,
@@ -333,7 +330,7 @@ ${revisionHash}`;
           request.messages.map((m) => [m.host_logical_id, m.revision_hash])
         ]));
         const cached = cache.get(key);
-        if (cached && cached.expires > host.now()) return injectPacket(prompt, cached.packet, settings.injectPosition);
+        if (cached && cached.expires > host.now()) return injectPacket(prompt, cached.packet, settings.injectPosition, turn);
         const t1 = host.now();
         const synced = await sync(settings, request, bodies, deadline);
         const syncMs = host.now() - t1;
@@ -365,7 +362,7 @@ ${revisionHash}`;
           packetChars: packet.length,
           outcome: packet ? "injected" : "nothing-relevant"
         };
-        return injectPacket(prompt, packet, settings.injectPosition);
+        return injectPacket(prompt, packet, settings.injectPosition, turn);
       } catch (error) {
         if (key) remember(key, "", FAILURE_TTL_MS);
         last = {
@@ -555,6 +552,17 @@ ${revisionHash}`;
     return text.replace(/\{(\w+)\}/g, (m, name) => name in vars ? String(vars[name]) : m);
   }
   var STRING_KEYS = Object.keys(STRINGS);
+
+  // src/route.ts
+  function routeFor(url, setting) {
+    if (setting === "direct" || setting === "server") return setting;
+    try {
+      const host = new URL(url).hostname.replace(/^\[|\]$/g, "");
+      return ["localhost", "127.0.0.1", "::1"].includes(host) ? "direct" : "server";
+    } catch {
+      return "direct";
+    }
+  }
 
   // src/form.ts
   var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
@@ -827,7 +835,8 @@ html,body{margin:0;background:#0c0c10}
       inspectorPath = path;
       inspectorBody.replaceChildren(el("div", { class: "card muted", text: L("insp.loading") }));
       const base = (await deps.getArg("sidecar_url") || "http://127.0.0.1:8790").replace(/\/+$/, "");
-      inspectorAddress.textContent = L("insp.browser", { url: `${base}/inspector${lang === "en" ? "?lang=en" : ""}` });
+      const direct = routeFor(base, await deps.getArg("route")) === "direct";
+      inspectorAddress.textContent = direct ? L("insp.browser", { url: `${base}/inspector${lang === "en" ? "?lang=en" : ""}` }) : "";
       try {
         const r = await deps.api("GET", `${path}${lang === "en" ? "?lang=en" : ""}`, void 0, 15e3);
         inspectorBody.replaceChildren(safeFragment(r.html));
@@ -1126,15 +1135,6 @@ html,body{margin:0;background:#0c0c10}
   var DEFAULT_DEADLINE_MS = 800;
   async function arg(key) {
     return String(await risuai.getArgument(key) ?? "").trim();
-  }
-  function routeFor(url, setting) {
-    if (setting === "direct" || setting === "server") return setting;
-    try {
-      const host = new URL(url).hostname.replace(/^\[|\]$/g, "");
-      return ["localhost", "127.0.0.1", "::1"].includes(host) ? "direct" : "server";
-    } catch {
-      return "direct";
-    }
   }
   function fetchOptions(route) {
     return route === "server" ? { networkRoute: "local_network" } : {};

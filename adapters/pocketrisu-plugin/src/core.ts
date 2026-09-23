@@ -4,7 +4,7 @@ import { canonicalJson } from './canonical';
 import { sha256Hex } from './hash';
 import type { Lang } from './i18n';
 import { bodyKey, buildManifest, hashPayload } from './manifest';
-import { hasPacket, inContextIds, injectPacket, isMainGeneration, queryTexts, type InjectPosition } from './prompt';
+import { hasPacket, inContextIds, injectPacket, queryTexts, userTurnIndex, type InjectPosition } from './prompt';
 import type { Body, HostChat, HostMessage, PromptMessage, ReconcileRequest } from './types';
 
 export interface Settings {
@@ -158,7 +158,8 @@ export function createAdapter(host: HostPort) {
 
       const chat = await host.currentChat();
       const messages: HostMessage[] = Array.isArray(chat?.message) ? chat!.message : [];
-      if (!chat?.id || !isMainGeneration(prompt, mode, messages)) return prompt;
+      const turn = userTurnIndex(prompt, messages); // D13: the chat's latest user turn is in this prompt
+      if (!chat?.id || turn < 0) return prompt;
 
       // Cache key = exact chat state (every message id + revision hash) + prompt shape, so a cached
       // packet is reused only for the same state (host retries, reroll of an unchanged chat) and never
@@ -171,7 +172,7 @@ export function createAdapter(host: HostPort) {
         chat.id, mode, prompt.length, request.messages.map((m) => [m.host_logical_id, m.revision_hash]),
       ]));
       const cached = cache.get(key);
-      if (cached && cached.expires > host.now()) return injectPacket(prompt, cached.packet, settings.injectPosition);
+      if (cached && cached.expires > host.now()) return injectPacket(prompt, cached.packet, settings.injectPosition, turn);
 
       const t1 = host.now();
       const synced = await sync(settings, request, bodies, deadline);
@@ -196,7 +197,7 @@ export function createAdapter(host: HostPort) {
         syncMs: Math.round(syncMs), retrieveMs: Math.round(host.now() - t2), packetChars: packet.length });
       last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length,
         outcome: packet ? 'injected' : 'nothing-relevant' };
-      return injectPacket(prompt, packet, settings.injectPosition);
+      return injectPacket(prompt, packet, settings.injectPosition, turn);
     } catch (error) {
       // Cache the miss briefly so host retries of this request (H2) do not wait out the deadline again.
       if (key) remember(key, '', FAILURE_TTL_MS);

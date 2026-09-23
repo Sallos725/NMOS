@@ -4,7 +4,10 @@ import type { HostPort, Settings, StatusInfo } from './core';
 import { langOf, t } from './i18n';
 import type { InjectPosition } from './prompt';
 import type { HostChat } from './types';
+import { routeFor } from './route';
 import { openPanel, type PanelDeps, type Tab } from './ui';
+
+export { routeFor };
 
 declare const risuai: {
   getArgument(key: string): Promise<string | number | undefined>;
@@ -30,19 +33,6 @@ const DEFAULT_DEADLINE_MS = 800;
 
 async function arg(key: string): Promise<string> {
   return String((await risuai.getArgument(key)) ?? '').trim();
-}
-
-// A sidecar on this machine is reached directly from the browser. Anything else (LAN IP, Docker
-// service name) goes through the PocketRisu server: an HTTPS page cannot fetch http:// directly, and
-// a Docker name only resolves on the server. PocketRisu routes local-network hosts via /proxy2.
-export function routeFor(url: string, setting: string): 'direct' | 'server' {
-  if (setting === 'direct' || setting === 'server') return setting;
-  try {
-    const host = new URL(url).hostname.replace(/^\[|\]$/g, '');
-    return ['localhost', '127.0.0.1', '::1'].includes(host) ? 'direct' : 'server';
-  } catch {
-    return 'direct';
-  }
 }
 
 function fetchOptions(route: 'direct' | 'server'): Record<string, unknown> {

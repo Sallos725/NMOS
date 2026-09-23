@@ -225,6 +225,27 @@ container on `http://localhost:6101` with an empty save dir, headless Chromium 1
    conversation → list round trip stayed in the frame: no new page, no frame navigation, no console
    errors; markup in chat text was shown as text.
 
+
+## Preset-shaped prompts (2026-09-23)
+
+The owner reported that memory was never used over the HTTPS reverse proxy. The owner's PocketRisu
+request log (`save/request-logs.db`, read from a copy) showed the plugin's `/v1/output`, `/v1/health`,
+`/v1/config` and `/v1/inspector` calls through the server proxy, but **no `/v1/sync/reconcile` and
+no `/v1/retrieve` in any request**. The logged model requests show why. The preset (HELENA) sends the
+turn as three user messages (`<Current Input>` + fence, the input, the closing fence plus
+instructions), then three more user-role instruction blocks. The last block is a system note, which
+Gemini conversion turned into `user` with a `system:` prefix. The last user message never carried
+the input, so ADR 0001 rule 2 classed every request as auxiliary.
+
+Reproduced on an isolated `ghcr.io/pocketrisu/pocketrisu:latest` (v1.12.0) with an imported JSON
+preset of the same shape (chat history → `<Current Input>` wrapper → input → closing wrapper → two
+user blocks → system note) and `tools/spike_stub_llm.py` as the model:
+
+- Released 0.1.0-beta.6 plugin: 0 reconcile calls, stub saw `nmos_packets=0`.
+- Plugin with ADR 0001 amendment 2, same chat and query: reconcile + retrieve ran, and the stub saw
+  one packet with the turn-0 excerpt, placed before the `<Current Input>` run
+  (`roles=[system, user, assistant, system(packet), user, user, user, user, user, system]`).
+
 ---
 
 ## Scenario evidence index

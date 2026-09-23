@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Memory works with presets that add instructions after the user's turn.** The plugin used to
+  treat a request as the main chat request only if the prompt's **last** user message was the
+  user's input. Presets that wrap the input (e.g. `<Current Input>`) and add instruction blocks
+  after it therefore got no memory at all: no sync, no recall, and no hint why. Now the input is
+  searched in every non-assistant message, whatever the preset layout, and the memory block goes in
+  front of the input block instead of inside it (ADR 0001 amendment 2).
+- The Inspector tab shows the "open in a browser" address only when the browser can reach the
+  sidecar itself; a sidecar reached through the PocketRisu server (Docker name, LAN address behind
+  HTTPS) is only reachable from that server.
+
 ## 0.1.0-beta.6
 
 Fix release on top of 0.1.0-beta.5: no schema change (migrations stay at 0010), no change to memory

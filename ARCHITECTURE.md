@@ -139,7 +139,8 @@ Exact-quote recall always prefers lexical over vector search. The trigram index 
 text projection (D21), not raw content.
 
 **D13 — Main-generation gating (O3, ADR 0001).** Inject only when `mode === 'model'` and the
-prompt's last `user` turn equals the host chat's latest user message (normalized).
+host chat's latest user message is in a non-assistant prompt message (cleaned-text anchor match,
+newest first; no preset layout assumed). The packet goes before that turn.
 
 **D14 — Branches are new conversations (O4, ADR 0002).** Record origin chat ref, origin
 conversation (if known) and branch-point message ref from the `branchedfrom` marker; no

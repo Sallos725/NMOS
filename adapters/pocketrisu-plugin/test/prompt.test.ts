@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasPacket, inContextIds, injectPacket, isMainGeneration, PACKET_TAG, queryTexts } from '../src/prompt';
+import { hasPacket, inContextIds, injectPacket, isMainGeneration, PACKET_TAG, queryTexts, userTurnIndex } from '../src/prompt';
 import type { HostMessage, PromptMessage } from '../src/types';
 
 const host: HostMessage[] = [
@@ -15,6 +15,22 @@ const mainPrompt: PromptMessage[] = [
   { role: 'user', content: 'Tell me about the harbor bell again.' },
   { role: 'assistant', content: 'The harbor bell rang twice at dusk.' },
   { role: 'user', content: 'Where did we hide the lantern?' },
+];
+
+// Shape of a real preset (owner's HELENA, 2026-09-23): the turn is wrapped over several user messages
+// and followed by user-role instruction blocks, the last one a converted system note.
+const presetPrompt: PromptMessage[] = [
+  { role: 'system', content: '# System Prompt' },
+  { role: 'user', content: 'Tell me about the harbor bell again.' },
+  { role: 'assistant', content: '<Last output>' },
+  { role: 'assistant', content: 'The harbor bell rang twice at dusk.' },
+  { role: 'assistant', content: '</Last output>' },
+  { role: 'user', content: '<Current Input>\n\n```' },
+  { role: 'user', content: 'Where did we hide the lantern?' },
+  { role: 'user', content: '```\n</Current Input>\n\nTake my current input as inspiration.' },
+  { role: 'user', content: '---\n\n# Feedback\n- Proactive Writer' },
+  { role: 'user', content: '---\n\n# Tags' },
+  { role: 'user', content: 'system: POV : Omniscient Point of View.' },
 ];
 
 describe('gating (D13)', () => {
@@ -37,6 +53,18 @@ describe('gating (D13)', () => {
     expect(isMainGeneration(wrapped, 'model', host)).toBe(true);
   });
 
+  it('finds the turn when a preset adds instruction blocks after it', () => {
+    expect(userTurnIndex(presetPrompt, host)).toBe(6);
+    expect(isMainGeneration(presetPrompt, 'model', host)).toBe(true);
+  });
+
+  it('finds the turn in a system message and never in assistant messages', () => {
+    const inSystem: PromptMessage[] = [{ role: 'system', content: 'Chat log:\nUser: Where did we hide the lantern?\nReply now.' }];
+    expect(userTurnIndex(inSystem, host)).toBe(0);
+    const echoed: PromptMessage[] = [{ role: 'system', content: 'Narrate.' }, { role: 'assistant', content: 'Where did we hide the lantern?' }];
+    expect(userTurnIndex(echoed, host)).toBe(-1);
+  });
+
   it('ignores disabled user messages when finding the latest one', () => {
     const withDisabled: HostMessage[] = [...host, { role: 'user', data: 'hidden', chatId: 'u3', disabled: true }];
     expect(isMainGeneration(mainPrompt, 'model', withDisabled)).toBe(true);
@@ -57,6 +85,13 @@ describe('injection (H2 idempotency)', () => {
   it('never injects twice', () => {
     const once = injectPacket(mainPrompt, packet);
     expect(injectPacket(once, packet)).toBe(once);
+  });
+
+  it('goes before the whole user run that holds the turn, not inside the preset wrapper', () => {
+    const out = injectPacket(presetPrompt, packet, 'before_last_user', userTurnIndex(presetPrompt, host));
+    expect(out[5]?.content).toBe(packet);
+    expect(out[6]?.content).toBe('<Current Input>\n\n```');
+    expect(out).toHaveLength(presetPrompt.length + 1);
   });
 
   it('supports end placement and empty packets', () => {
