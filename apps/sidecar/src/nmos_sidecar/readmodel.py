@@ -68,7 +68,10 @@ def commits(conn: psycopg.Connection, conv_id: UUID, limit: int = 100) -> list[d
         """
         SELECT w.seq, w.id, w.reason, w.created_at,
                (SELECT count(*) FROM jsonb_array_elements(w.delta->'changes')) AS changes,
-               (SELECT string_agg(DISTINCT x->>'kind', ', ') FROM jsonb_array_elements(w.delta->'changes') x) AS kinds
+               -- per kind with its count, e.g. "delete ×12, edit ×1" (ADR 0008: mass deletions are visible)
+               (SELECT string_agg(k.kind || ' ×' || k.n, ', ' ORDER BY k.n DESC, k.kind)
+                FROM (SELECT x->>'kind' AS kind, count(*) AS n FROM jsonb_array_elements(w.delta->'changes') x
+                      GROUP BY 1) k) AS kinds
         FROM worldline_commit w WHERE w.conversation_id = %s ORDER BY w.seq DESC LIMIT %s
         """,
         (conv_id, limit),
