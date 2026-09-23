@@ -59,6 +59,26 @@ At 1,000 messages with extraction off: append 70 (84), edits 95 / 84. Up to abou
 sync path, within run-to-run noise at 1k. The envelope below is unchanged. Membership grows by the
 two columns: 10.4 MB instead of about 9 MB at 5k.
 
+### Deleting a conversation (2026-09-23, ADR 0009)
+
+`ledger.delete_conversation` on one chat while a second chat of the same size stays in the database.
+Each reply has one extraction with two assertions (synthetic rows, no model). Same machine, ms:
+
+| Messages | before 0012 indexes | with 0012 indexes |
+|---|---:|---:|
+| 1,000 | 269 | 78 |
+| 5,000 | 5,271 | 384 |
+| 10,000 | — | 696 |
+| 25,000 | — | 1,808 |
+
+Without the indexes, the key checks scanned whole tables once per deleted row, so the time grew
+quadratically. The largest single cost was the partial unique index on `extraction` (0011): the
+check can't use it. With the indexes, about 75 % of the time is the `source_revision` delete itself
+(guard trigger and key checks per row). The sync path is unchanged within run-to-run noise. Two runs each at
+10,000 messages, `bench_scale.py`: warm append p50 738 / 745 → 739 / 741 ms, cold sync
+9.60 / 9.64 → 9.63 / 9.57 s, edit near head p50 859 / 861 → 857 / 885 ms. Head membership grows by
+about 6 % (20.7 → 21.9 MB at 10k).
+
 ### Estimated added `beforeRequest` latency (warm path)
 
 Plugin copy + manifest + sidecar append + selective retrieve; network and host snapshot overhead

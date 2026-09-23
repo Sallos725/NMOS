@@ -271,6 +271,49 @@ def rebuild_membership(conn: psycopg.Connection, conv_id: UUID, window: int = 6,
     return head_id, len(members)
 
 
+def delete_conversation(conn: psycopg.Connection, conv_id: UUID) -> dict[str, int] | None:
+    """Delete one conversation and everything recorded for it (ADR 0009): raw revisions, commits,
+    observations, derived rows, traces and jobs. Irreversible; only on the owner's explicit request.
+    Returns deleted row counts, or None if the conversation does not exist.
+
+    Runs in one transaction and takes the conversation lock first, so a concurrent sync waits and
+    then records the chat as new. Branches keep their origin's host refs; only the link is cleared."""
+    with conn.transaction():
+        if conn.execute("SELECT 1 FROM conversation WHERE id = %s FOR UPDATE", (conv_id,)).fetchone() is None:
+            return None
+        # Lets the source_revision guard (migration 0012) pass for this conversation's rows only.
+        conn.execute("SELECT set_config('nmos.delete_conversation', %s, true)", (str(conv_id),))
+        revs = ("SELECT sr.id FROM source_revision sr JOIN source_object so ON so.id = sr.source_object_id"
+                " WHERE so.conversation_id = %(c)s")
+        extractions = f"SELECT id FROM extraction WHERE source_revision_id IN ({revs})"
+        steps = [
+            ("branch_links", "UPDATE conversation SET branched_from_conversation_id = NULL"
+                             " WHERE branched_from_conversation_id = %(c)s"),
+            ("jobs", "DELETE FROM job WHERE conversation_id = %(c)s"),
+            ("traces", "DELETE FROM retrieval_trace WHERE conversation_id = %(c)s"),
+            ("assertions", f"DELETE FROM assertion WHERE extraction_id IN ({extractions})"),
+            ("assertions", f"DELETE FROM assertion WHERE source_revision_id IN ({revs})"),
+            ("extractions", f"DELETE FROM extraction WHERE source_revision_id IN ({revs})"),
+            ("embeddings", f"DELETE FROM revision_embedding WHERE source_revision_id IN ({revs})"),
+            ("texts", f"DELETE FROM revision_text WHERE source_revision_id IN ({revs})"),
+            ("state", "DELETE FROM state_observation WHERE conversation_id = %(c)s"),
+            ("head", "UPDATE conversation SET head_commit_id = NULL WHERE id = %(c)s"),
+            ("membership", "DELETE FROM active_membership WHERE commit_id IN"
+                           " (SELECT id FROM worldline_commit WHERE conversation_id = %(c)s)"),
+            ("commits", "DELETE FROM worldline_commit WHERE conversation_id = %(c)s"),
+            ("revisions", f"DELETE FROM source_revision WHERE id IN ({revs})"),
+            ("messages", "DELETE FROM source_object WHERE conversation_id = %(c)s"),
+            ("observations", "DELETE FROM host_observation WHERE conversation_id = %(c)s"),
+            ("conversation", "DELETE FROM conversation WHERE id = %(c)s"),
+        ]
+        counts: dict[str, int] = {}
+        for name, sql in steps:
+            n = conn.execute(sql, {"c": conv_id}).rowcount
+            if name != "head":
+                counts[name] = counts.get(name, 0) + n
+        return counts
+
+
 def refresh_turns(conn: psycopg.Connection, turns: int) -> int:
     """Bring every head's turn data up to date (ADR 0008): after migration 0011, or when K changed.
     Idempotent; returns the number of rewritten rows."""
