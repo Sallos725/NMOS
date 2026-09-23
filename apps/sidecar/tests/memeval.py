@@ -48,12 +48,31 @@ RULES: list[tuple[re.Pattern[str], Callable[[re.Match[str]], dict[str, Any]]]] =
     (re.compile(r"(?P<who>\w+) keeps a secret from (?P<other>\w+): (?P<what>[^.]+)\."),
      lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "knows", "value": m["what"],
                 "knowledge": "limited", "hidden_from": [m["other"]]}),
+    # Phase 5 (ADR 0013): negation, non-actual modality, a character's claim.
+    (re.compile(r"(?P<who>\w+) (?:lost|does not have) the (?P<item>\w+)\."),
+     lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "possesses",
+                "object": m["item"], "object_type": "item", "polarity": "negative"}),
+    (re.compile(r"(?P<who>\w+) (?:did not enter|is not in) the (?P<where>\w+)\."),
+     lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "located_in",
+                "object": m["where"], "object_type": "place", "polarity": "negative"}),
+    (re.compile(r"If (?P<who>\w+) goes to the (?P<where>\w+),"),
+     lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "located_in",
+                "object": m["where"], "object_type": "place", "modality": "hypothetical"}),
+    (re.compile(r"(?P<who>\w+) dreamed (?:she|he) was in the (?P<where>\w+)\."),
+     lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "located_in",
+                "object": m["where"], "object_type": "place", "modality": "dreamed"}),
+    (re.compile(r"(?P<who>\w+) is a (?P<what>\w+)\."),
+     lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "identity", "value": m["what"]}),
+    (re.compile(r'(?P<who>\w+) says: "I am a (?P<what>\w+)\."'),
+     lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "identity", "value": m["what"],
+                "source": "character_claim", "asserted_by": m["who"]}),
 ]
 
 
 def stub_extractor(system: str, user: str) -> tuple[dict, str]:
     target = user.split("TARGET", 1)[1]
-    items = [{**build(m), "epistemic": "stated", "confidence": 0.9, "evidence": m.group(0)}
+    items = [{"modality": "actual", "source": "narration", **build(m), "epistemic": "stated", "confidence": 0.9,
+              "evidence": m.group(0)}
              for pattern, build in RULES for m in pattern.finditer(target)]
     return {"assertions": items}, "{}"
 
@@ -161,6 +180,28 @@ CASES: list[Case] = [
     Case("secret kept from someone", "soft knowledge",
          [turn("Hana keeps a secret from Kaito: the letter is forged."), pad()],
          "Kaito, what do you know about the letter?", gold=['hidden_from="Kaito"', "the letter is forged"]),
+    Case("lost item", "negation",
+         [turn("Hana has the map."), pad(2), turn("Hana lost the map."), pad()],
+         "Who has the map now?", gold=['negated="true">Hana possesses map'],
+         stale=['turn="1">Hana possesses map</Fact>']),
+    Case("negated entry", "negation",
+         [turn("Alice did not enter the hall."), pad()],
+         "Did Alice go into the hall?", gold=['negated="true">Alice located in hall']),
+    Case("negation of another place", "negation",
+         [turn("Hinata is in the chapel."), pad(2), turn("Hinata is not in the harbor."), pad()],
+         "Where is Hinata?", gold=['turn="1">Hinata located in chapel</Fact>']),
+    Case("denial by a non-holder", "negation",
+         [turn("Hana has the map."), pad(2), turn("Kaito does not have the map."), pad()],
+         "Who has the map?", gold=['turn="1">Hana possesses map</Fact>']),
+    Case("hypothetical and dream", "modality",
+         [turn("Hinata is in the chapel."), pad(2), turn("If Hinata goes to the harbor, she will see the ship."),
+          turn("Hinata dreamed she was in the desert."), pad()],
+         "Where is Hinata?", gold=["Hinata located in chapel</Fact>"],
+         stale=["Hinata located in harbor", "Hinata located in desert"]),
+    Case("lie in dialogue", "source",
+         [turn("Ren is a squire."), pad(2), turn('Ren says: "I am a knight."'), pad()],
+         "What is Ren?", gold=["Ren identity: squire</Fact>", '<Claim by="Ren"'],
+         stale=["Ren identity: knight</Fact>"]),
     Case("unrelated question", "irrelevant-memory suppression",
          [turn("Hinata is in the chapel."), pad()],
          "Tell me a joke about bananas.", irrelevant=True),

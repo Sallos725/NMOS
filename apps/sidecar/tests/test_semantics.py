@@ -137,3 +137,99 @@ def test_prompt_asks_for_the_new_fields():
                  "character_claim", "also_called"):
         assert word in prompt
     assert "Skip speculation" not in prompt
+
+
+# --- reading (ADR 0013) --------------------------------------------------------------------------
+
+def row(pos: int, subject: str, predicate: str, obj: str | None = None, value: str | None = None, **kw):
+    return {"id": pos, "position": pos, "turn": pos, "host_logical_id": f"m{pos}", "subject": subject,
+            "predicate": predicate, "object": obj, "value": value, "polarity": "positive", "modality": "actual",
+            "source": "narration", "asserted_by": None, "epistemic": "stated", **kw}
+
+
+def current(history):
+    from nmos_sidecar.facts import _versions
+    return [(f["subject"], f["object"] or f["value"], f["polarity"]) for f in _versions(history)]
+
+
+def test_negation_ends_only_the_relation_it_denies():
+    home, station = row(1, "하나", "located_in", "집"), row(2, "하나", "located_in", "역", polarity="negative")
+    assert current([home, station]) == [("하나", "집", "positive"), ("하나", "역", "negative")]
+    assert current([home, row(2, "하나", "located_in", "집", polarity="negative")]) == [("하나", "집", "negative")]
+    # A later positive statement of the denied relation replaces the negation.
+    assert current([home, station, row(3, "하나", "located_in", "역")]) == [("하나", "역", "positive")]
+
+
+def test_item_negation_needs_the_holder():
+    held = row(1, "하나", "possesses", "지도")
+    assert current([held, row(2, "하나", "possesses", "지도", polarity="negative")]) == [("하나", "지도", "negative")]
+    assert current([held, row(2, "카이토", "possesses", "지도", polarity="negative")]) == [
+        ("하나", "지도", "positive"), ("카이토", "지도", "negative")]
+
+
+def test_negation_without_a_current_version_is_a_negative_fact():
+    assert current([row(1, "Alice", "located_in", "hall", polarity="negative")]) == [("Alice", "hall", "negative")]
+
+
+def test_packet_note_explains_marks_only_when_used():
+    from nmos_sidecar.packet import PACKET_NOTE, compile_packet
+    plain, _, _ = compile_packet([], 600, facts=['    <Fact kind="located_in" turn="1">A located in B</Fact>'])
+    assert PACKET_NOTE in plain and "negated" not in plain.split("<Facts>")[0]
+    marked, _, _ = compile_packet([], 600, facts=[
+        '    <Fact kind="located_in" turn="1" negated="true">A located in B</Fact>',
+        '    <Claim by="C" kind="identity" turn="2">C identity: knight</Claim>'])
+    note = marked.split("<Facts>")[0]
+    assert 'negated="true" marks' in note and "A Claim is what that character said" in note
+
+
+def claim_complete(system: str, user: str) -> tuple[dict, str]:
+    target = user.split("TARGET", 1)[1]
+    items = []
+    if "squire" in target:
+        items.append({"subject": "Ren", "subject_type": "character", "predicate": "identity", "value": "squire",
+                      "modality": "actual", "source": "narration"})
+    if "knight" in target:
+        items.append({"subject": "Ren", "subject_type": "character", "predicate": "identity", "value": "knight",
+                      "modality": "actual", "source": "character_claim", "asserted_by": "Ren"})
+    if "someday" in target:
+        items.append({"subject": "Ren", "subject_type": "character", "predicate": "identity", "value": "captain",
+                      "modality": "hypothetical"})
+    if "legacy" in target:
+        items.append({"subject": "Mina", "subject_type": "character", "predicate": "identity", "value": "healer",
+                      "modality": "actual"})
+    return {"assertions": items}, "{}"
+
+
+def test_claims_attach_and_non_actual_stays_out(migrated, db):
+    from test_extraction import facts
+    chat = SimChat()
+    chat.user("Ren is a squire.")
+    chat.reply("He polishes armor.")
+    chat.user('Ren: "I am a knight."')
+    chat.reply("Sure.")
+    chat.user("Ren will be a captain someday.")
+    chat.reply("Maybe.")
+    chat.user("next")
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        drain(migrated, claim_complete)
+        got = facts(c, chat)
+        assert [(f["value"], f["source"]) for f in got] == [("squire", "narration")]
+        assert [(cl["by"], cl["value"]) for cl in got[0]["claims"]] == [("Ren", "knight")]
+        cid = next(x["id"] for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)
+        page = c.get(f"/inspector/c/{cid}?lang=en").text
+    assert "knight" in page and "captain" in page and "hypothetical" in page
+
+
+def test_legacy_rows_read_as_narration(migrated, db):
+    """Rows without a source (extract-v4 and older) keep their meaning: narration, never a claim."""
+    from test_extraction import facts
+    chat = SimChat()
+    chat.user("A legacy line.")
+    chat.reply("ok")
+    chat.user("next")
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        drain(migrated, claim_complete)
+        db.execute("UPDATE assertion SET source = NULL")
+        assert [(f["value"], f["source"]) for f in facts(c, chat)] == [("healer", None)]

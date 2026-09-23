@@ -63,6 +63,10 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "older_gen": ("이전 세대", "older generation"), "truncated": ("대상 잘림", "target truncated"),
     "partially_embedded": ("일부만 임베딩", "partially embedded"),
     "facts": ("현재 사실", "Current facts"),
+    "negated": ("부정", "negated"), "legacy": ("이전 형식", "legacy"),
+    "claims": ("인물의 주장", "Claims by characters"), "h.by": ("말한 인물", "Said by"),
+    "other": ("실제가 아닌 단언 (가정·꿈·미상)", "Not actual (hypothetical, dreamed, unknown)"),
+    "h.modality": ("양태", "Modality"),
     "h.subject": ("주어", "Subject"), "h.predicate": ("술어", "Predicate"), "h.object": ("대상 / 값", "Object / value"),
     "h.knowledge": ("아는 범위", "Knowledge"), "h.turn": ("턴", "Turn"), "h.versions": ("버전", "Versions"),
     "h.position": ("#", "#"),
@@ -212,7 +216,8 @@ def _processed(m: dict[str, Any], lang: str) -> str:
 
 def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict[str, Any]],
            commits: list[dict[str, Any]], traces: list[dict[str, Any]], facts: list[dict[str, Any]],
-           token: str | None, coverage: dict[str, Any] | None = None, lang: str = "ko", embed: bool = False) -> str:
+           token: str | None, coverage: dict[str, Any] | None = None, lang: str = "ko", embed: bool = False,
+           claims: list[dict[str, Any]] | None = None, other: list[dict[str, Any]] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -236,9 +241,25 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
             [[_v(f["subject"]), f"<span class=\"chip\">{_v(f['predicate'])}</span>",
               _v(f.get("object") or f.get("value")), _knowledge(f, lang),
               _v(f["turn"] if f.get("turn") is not None else f["position"])
-              + (older if active and f.get("generation") not in (None, active) else ""),
+              + (older if active and f.get("generation") not in (None, active) else "")
+              + (f" <span class=\"chip\">{t('negated')}</span>" if f.get("polarity") == "negative" else "")
+              + (f" <span class=\"chip\">{t('legacy')}</span>" if f.get("source") is None else ""),
               _v(f.get("versions", 1))]
              for f in facts]))
+
+    def turn_of(a: dict[str, Any]) -> str:
+        return _v(a["turn"] if a.get("turn") is not None else a["position"])
+
+    if claims:
+        parts.append(f"<h2>{t('claims')}</h2>" + table(
+            [t(k) for k in ("h.by", "h.subject", "h.predicate", "h.object", "h.turn")],
+            [[_v(c.get("asserted_by")), _v(c["subject"]), f"<span class=\"chip\">{_v(c['predicate'])}</span>",
+              _v(c.get("object") or c.get("value")), turn_of(c)] for c in claims[:100]]))
+    if other:
+        parts.append(f"<h2>{t('other')}</h2>" + table(
+            [t(k) for k in ("h.modality", "h.subject", "h.predicate", "h.object", "h.turn")],
+            [[_v(a["modality"]), _v(a["subject"]), f"<span class=\"chip\">{_v(a['predicate'])}</span>",
+              _v(a.get("object") or a.get("value")), turn_of(a)] for a in other[:100]]))
     parts.append(f"<h2>{t('retrievals')}</h2>" + table(
         [t(k) for k in ("h.when", "h.query", "h.fresh", "h.cand", "h.sel", "h.in_ctx", "h.tokens")] + ["ms"],
         [[_v(str(r["created_at"])[:19]), _v(r["query"]), _v(r["freshness"]), _v(r["candidates"]), _v(r["selected"]),

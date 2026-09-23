@@ -43,7 +43,8 @@ live AS (
       AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
 )
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.value, a.epistemic, a.confidence, a.evidence,
-       a.knowledge, a.known_by, a.hidden_from, l.position, l.turn, l.host_logical_id, l.extractor_key AS generation
+       a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by,
+       l.position, l.turn, l.host_logical_id, l.extractor_key AS generation
 FROM live l
 JOIN assertion a ON a.extraction_id = l.eid
 WHERE l.extractor_key = l.chosen AND a.status = 'valid'
@@ -64,24 +65,86 @@ def version_key(a: dict[str, Any]) -> tuple:
     return (a["predicate"], _norm(a["subject"]), _norm(a["object"]), _norm(a["value"]))
 
 
-def fact_versions(conn: psycopg.Connection, head: UUID, extractor_key: str | None) -> list[dict[str, Any]]:
-    """Current fact per version key (latest by position) with its history, oldest→newest."""
-    if extractor_key is None:
-        return []
-    rows = conn.execute(ACTIVE_ASSERTIONS, {"head": head, "key": extractor_key}).fetchall()
-    groups: dict[tuple, list[dict[str, Any]]] = {}
-    for row in rows:
-        if row["predicate"] in REGISTRY:
-            groups.setdefault(version_key(row), []).append(row)
+def relation(a: dict[str, Any]) -> tuple:
+    """What a negation must match, beyond the version key, to end a version (ADR 0013, item 4): the same
+    holder for an item, the same object and value for other single-valued predicates. Multi-valued keys
+    already contain everything."""
+    if a["predicate"] in HOLDER_PER_ITEM:
+        return (_norm(a["subject"]),)
+    pred = REGISTRY[a["predicate"]]
+    if pred.cardinality == "single":
+        return ((_norm(a["value"]),) if pred.per_object else (_norm(a["object"]), _norm(a["value"])))
+    return ()
+
+
+def _versions(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One version key's facts from its narrated, actual assertions in position order.
+
+    A positive assertion becomes current. A negative one ends the current version only if it denies the
+    same relation, and is then current itself (rendered negated); otherwise it stands as its own negative
+    fact ("not in the harbor" while at home) until a positive assertion of that relation replaces it.
+    """
+    current: dict[str, Any] | None = None
+    negatives: dict[tuple, dict[str, Any]] = {}
+    for a in history:
+        rel = relation(a)
+        if a["polarity"] == "negative" and current is not None and relation(current) != rel:
+            negatives[rel] = a
+            continue
+        negatives.pop(rel, None)
+        current = a
     out = []
-    for history in groups.values():
-        current = dict(history[-1])
-        current["versions"] = len(history)
-        current["history"] = [{"position": h["position"], "turn": h["turn"], "subject": h["subject"], "value": h["value"],
-                               "object": h["object"]} for h in history]
-        out.append(current)
-    out.sort(key=lambda f: f["position"], reverse=True)
+    for fact in ([current] if current else []) + list(negatives.values()):
+        f = dict(fact)
+        f["versions"] = len(history)
+        f["history"] = [{"position": h["position"], "turn": h["turn"], "subject": h["subject"], "value": h["value"],
+                         "object": h["object"], "polarity": h["polarity"]} for h in history]
+        f["claims"] = []
+        out.append(f)
     return out
+
+
+def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None) -> dict[str, list[dict[str, Any]]]:
+    """The head's assertions by what they may do (ADR 0013).
+
+    - facts: current fact versions from actual narration (legacy rows without a source count as
+      narration), each with the characters' claims about the same key;
+    - claims: the latest claim per speaker and version key, whether or not a narrated fact exists; a claim
+      never supersedes narration;
+    - other: hypothetical, dreamed and unknown assertions, stored and inspectable, never in the packet.
+    """
+    if extractor_key is None:
+        return {"facts": [], "claims": [], "other": []}
+    rows = conn.execute(ACTIVE_ASSERTIONS, {"head": head, "key": extractor_key}).fetchall()
+    narrated: dict[tuple, list[dict[str, Any]]] = {}
+    claimed: dict[tuple, dict[str, Any]] = {}
+    other: list[dict[str, Any]] = []
+    for row in rows:
+        if row["predicate"] not in REGISTRY:
+            continue
+        if row["modality"] != "actual":
+            other.append(dict(row))
+        elif row["source"] == "character_claim":
+            claimed[version_key(row) + (_norm(row["asserted_by"]),)] = dict(row)  # latest wins
+        else:
+            narrated.setdefault(version_key(row), []).append(row)
+    facts = [f for history in narrated.values() for f in _versions(history)]
+    by_key: dict[tuple, list[dict[str, Any]]] = {}
+    for f in facts:
+        by_key.setdefault(version_key(f), []).append(f)
+    claims = sorted(claimed.values(), key=lambda c: c["position"], reverse=True)
+    for c in claims:
+        for f in by_key.get(version_key(c), []):
+            f["claims"].append({"by": c["asserted_by"], "turn": c["turn"], "position": c["position"],
+                                "object": c["object"], "value": c["value"], "polarity": c["polarity"]})
+    facts.sort(key=lambda f: f["position"], reverse=True)
+    other.sort(key=lambda a: a["position"], reverse=True)
+    return {"facts": facts, "claims": claims, "other": other}
+
+
+def fact_versions(conn: psycopg.Connection, head: UUID, extractor_key: str | None) -> list[dict[str, Any]]:
+    """Current narrated fact versions (see `memory_view`), newest first."""
+    return memory_view(conn, head, extractor_key)["facts"]
 
 
 def _grams(text: str) -> set[str]:
@@ -137,9 +200,12 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
 
 def fact_line(f: dict[str, Any]) -> str:
     """One <Fact> with its knowledge marks exactly as stored (D19): knowledge="public", or known_by /
-    hidden_from for limited facts, or no mark at all when who knows is unknown."""
+    hidden_from for limited facts, or no mark at all when who knows is unknown. A negated fact is
+    explicitly not (or no longer) true (ADR 0013)."""
     turn = f["turn"] if f.get("turn") is not None else f["position"]
     attrs = f" kind={quoteattr(f['predicate'])} turn=\"{turn}\""
+    if f.get("polarity") == "negative":
+        attrs += ' negated="true"'
     if f.get("epistemic") == "implied":
         attrs += ' certainty="implied"'
     if f.get("knowledge") == "public":
@@ -150,3 +216,12 @@ def fact_line(f: dict[str, Any]) -> str:
         if f.get("hidden_from"):
             attrs += f" hidden_from={quoteattr(', '.join(f['hidden_from']))}"
     return f"    <Fact{attrs}>{escape(fact_text(f))}</Fact>"
+
+
+def claim_line(c: dict[str, Any]) -> str:
+    """What a character said (ADR 0013): never a fact, whatever the narration says."""
+    turn = c["turn"] if c.get("turn") is not None else c["position"]
+    attrs = f" by={quoteattr(c.get('asserted_by') or '?')} kind={quoteattr(c['predicate'])} turn=\"{turn}\""
+    if c.get("polarity") == "negative":
+        attrs += ' negated="true"'
+    return f"    <Claim{attrs}>{escape(fact_text(c))}</Claim>"

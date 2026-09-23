@@ -13,7 +13,7 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
-from .facts import fact_line, fact_versions, relevant_facts
+from .facts import claim_line, fact_line, memory_view, relevant_facts
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
@@ -225,9 +225,11 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         state_items.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in now_text), reverse=True)
     fact_lines: list[str] = []
     if fresh and options.facts_limit > 0:
-        facts = relevant_facts(fact_versions(conn, head, options.extractor_key), query, previous_ai, in_context,
-                               options.facts_limit)
-        fact_lines = [fact_line(f) for f in facts]
+        view = memory_view(conn, head, options.extractor_key)
+        facts = relevant_facts(view["facts"], query, previous_ai, in_context, options.facts_limit)
+        # Claims after facts, so the budget serves narration first (ADR 0013).
+        claims = relevant_facts(view["claims"], query, previous_ai, in_context, max(1, options.facts_limit // 2))
+        fact_lines = [fact_line(f) for f in facts] + [claim_line(c) for c in claims]
     text, tokens, chosen = compile_packet(ranked, request.budget_tokens, state=state_items, facts=fact_lines)
     timings["sidecar_total"] = round((time.perf_counter() - started) * 1000, 2)
 
