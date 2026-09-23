@@ -2,9 +2,23 @@
 
 ## Unreleased
 
+## 0.1.0-beta.5
+
+Packaging release on top of 0.1.0-beta.4: no schema change (migrations stay at 0010), no change to
+memory behavior. Upgrading is a plain `docker compose pull` and replacing the plugin file.
+
 - The Inspector list shows "—" instead of "partial 0 %" for a feature that was never switched on
   (e.g. fact coverage with no LLM configured).
 - README and the Korean guide show the panel and the Inspector.
+- The release image is now multi-arch (`linux/amd64`, `linux/arm64`); a single `docker compose pull`
+  now works on Raspberry Pi / Apple Silicon / other arm64 hosts without a rebuild.
+- Every tagged release also pushes `ghcr.io/sallos725/nmos-sidecar:latest`, so `docker pull
+  ghcr.io/sallos725/nmos-sidecar:latest` always gets the newest published build (beta or stable).
+  `beta` still tracks prereleases, and the release compose file still defaults to `beta`.
+
+### Known limitations
+
+- Unchanged from 0.1.0-beta.4 (see below).
 
 ## 0.1.0-beta.4
 
