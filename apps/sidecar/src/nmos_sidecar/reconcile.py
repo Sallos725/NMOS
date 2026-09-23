@@ -271,3 +271,41 @@ def apply_ops(members: list[RevKey], ops: list[dict]) -> list[RevKey]:
         else:
             raise ValueError(f"unknown op {kind}")
     return out
+
+
+def _turn_member(entry: Entry) -> bool:
+    return not entry.is_comment and entry.disabled not in (True, "true", "allBefore")
+
+
+def turn_layout(members: list[Entry], k: int) -> list[tuple[int | None, str | None]]:
+    """Per position: (turn index, turn hash) as ADR 0008 defines them.
+
+    A turn is a run of user messages plus the run of replies that answers it; messages before the
+    first user message are turn 0. Comments, disabled messages and everything up to the last
+    `allBefore` cut are not members (None, None). Only a turn's anchor — its last reply — carries a
+    hash: the turn's revisions and those of the previous `k` turns. A turn without a reply has none.
+    """
+    cut = max((i for i, m in enumerate(members) if m.disabled == "allBefore"), default=-1)
+    groups: list[list[int]] = []
+    replied = False
+    out: list[tuple[int | None, str | None]] = [(None, None)] * len(members)
+    for i, m in enumerate(members):
+        if i <= cut or not _turn_member(m):
+            continue
+        if m.role == "user":
+            if not groups or replied:
+                groups.append([])
+                replied = False
+        else:
+            if not groups:
+                groups.append([])
+            replied = True
+        groups[-1].append(i)
+        out[i] = (len(groups) - 1, None)
+    for t, positions in enumerate(groups):
+        anchor = positions[-1]
+        if members[anchor].role == "user":
+            continue
+        window = "|".join(",".join(members[p].revision_hash for p in groups[u]) for u in range(max(0, t - k), t + 1))
+        out[anchor] = (t, hashlib.sha256(f"turn\n{window}".encode()).hexdigest()[:32])
+    return out
