@@ -6,6 +6,7 @@ import type { StatusInfo } from './core';
 import { configBody, connArgs, dirtySections, type FormValues, type Section } from './form';
 import { langOf, t, type Lang, type StringKey } from './i18n';
 import { inspectorApiPath, safeFragment } from './inspector';
+import { routeFor } from './route';
 
 export type Tab = 'status' | 'inspector' | 'settings';
 
@@ -230,8 +231,11 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   async function showInspector(path = inspectorPath): Promise<void> {
     inspectorPath = path;
     inspectorBody.replaceChildren(el('div', { class: 'card muted', text: L('insp.loading') }));
+    // Only a sidecar the browser reaches itself can be opened in a tab; a server-routed one (Docker
+    // name, LAN address behind HTTPS) is reachable from the PocketRisu server only.
     const base = ((await deps.getArg('sidecar_url')) || 'http://127.0.0.1:8790').replace(/\/+$/, '');
-    inspectorAddress.textContent = L('insp.browser', { url: `${base}/inspector${lang === 'en' ? '?lang=en' : ''}` });
+    const direct = routeFor(base, await deps.getArg('route')) === 'direct';
+    inspectorAddress.textContent = direct ? L('insp.browser', { url: `${base}/inspector${lang === 'en' ? '?lang=en' : ''}` }) : '';
     try {
       const r = await deps.api<{ html: string }>('GET', `${path}${lang === 'en' ? '?lang=en' : ''}`, undefined, 15_000);
       inspectorBody.replaceChildren(safeFragment(r.html));

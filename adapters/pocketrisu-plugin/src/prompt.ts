@@ -26,23 +26,29 @@ export function latestUserIndex(messages: HostMessage[]): number {
   return -1;
 }
 
-/** D13 / ADR 0001: mode 'model' and the prompt's last user turn is the host chat's latest user message. */
-export function isMainGeneration(prompt: PromptMessage[], mode: unknown, hostMessages: HostMessage[]): boolean {
-  if (mode !== 'model' || !Array.isArray(prompt)) return false;
+/**
+ * D13 / ADR 0001: index of the prompt message that carries the host chat's latest user message, newest
+ * first, or -1. No preset layout is assumed: presets wrap the turn, add instruction blocks after it or
+ * send it in a system message, so every message except the model's own (assistant) is searched.
+ */
+export function userTurnIndex(prompt: PromptMessage[], hostMessages: HostMessage[]): number {
+  if (!Array.isArray(prompt)) return -1;
   const hostIndex = latestUserIndex(hostMessages);
-  if (hostIndex < 0) return false;
-  let promptUser: PromptMessage | undefined;
-  for (let i = prompt.length - 1; i >= 0; i -= 1) {
-    if (prompt[i]?.role === 'user') {
-      promptUser = prompt[i];
-      break;
-    }
-  }
-  if (!promptUser) return false;
+  if (hostIndex < 0) return -1;
   // Cleaned-text containment instead of equality: input scripts may wrap or reshape the user turn.
   const expected = cleanText(selectedContent(hostMessages[hostIndex]));
-  const sent = cleanText(contentText(promptUser.content));
-  return expected.length > 0 && (sent === expected || sent.includes(anchorOf(expected, 64)));
+  if (!expected) return -1;
+  const anchor = anchorOf(expected, 64);
+  for (let i = prompt.length - 1; i >= 0; i -= 1) {
+    if (prompt[i]?.role === 'assistant') continue;
+    const sent = cleanText(contentText(prompt[i]?.content));
+    if (sent === expected || sent.includes(anchor)) return i;
+  }
+  return -1;
+}
+
+export function isMainGeneration(prompt: PromptMessage[], mode: unknown, hostMessages: HostMessage[]): boolean {
+  return mode === 'model' && userTurnIndex(prompt, hostMessages) >= 0;
 }
 
 export function hasPacket(prompt: PromptMessage[]): boolean {
@@ -103,8 +109,14 @@ export function inContextIds(prompt: PromptMessage[], hostMessages: HostMessage[
 
 export type InjectPosition = 'before_last_user' | 'end';
 
-/** Returns a new prompt array with the packet as a system message; never mutates the input. */
-export function injectPacket(prompt: PromptMessage[], packet: string, position: InjectPosition = 'before_last_user'): PromptMessage[] {
+/**
+ * Returns a new prompt array with the packet as a system message; never mutates the input.
+ * `before_last_user` places it before the user turn (`turn`, from userTurnIndex), or before the last
+ * user message when the turn is unknown. A preset may split the turn over several user messages (an
+ * opening wrapper, then the text), so the packet goes before the whole run of user messages.
+ */
+export function injectPacket(prompt: PromptMessage[], packet: string, position: InjectPosition = 'before_last_user',
+                             turn = -1): PromptMessage[] {
   if (!packet || hasPacket(prompt)) return prompt;
   const message: PromptMessage = { role: 'system', content: packet };
   const out = prompt.slice();
@@ -112,13 +124,11 @@ export function injectPacket(prompt: PromptMessage[], packet: string, position: 
     out.push(message);
     return out;
   }
-  let index = out.length;
-  for (let i = out.length - 1; i >= 0; i -= 1) {
-    if (out[i]?.role === 'user') {
-      index = i;
-      break;
-    }
+  let index = turn >= 0 && turn < out.length && out[turn]?.role !== 'assistant' ? turn : out.length;
+  for (let i = out.length - 1; index === out.length && i >= 0; i -= 1) {
+    if (out[i]?.role === 'user') index = i;
   }
+  while (index > 0 && out[index]?.role === 'user' && out[index - 1]?.role === 'user') index -= 1;
   out.splice(index, 0, message);
   return out;
 }
