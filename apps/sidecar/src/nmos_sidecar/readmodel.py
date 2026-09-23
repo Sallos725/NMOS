@@ -7,6 +7,7 @@ from uuid import UUID
 
 import psycopg
 
+from .extraction import TARGET_CHARS
 from .normtext import NORMALIZER_VERSION
 
 
@@ -34,17 +35,23 @@ def conversation(conn: psycopg.Connection, conv_id: UUID) -> dict[str, Any] | No
 def membership(conn: psycopg.Connection, head: UUID, extractor_key: str | None = None,
                projection_key: str | None = None, limit: int = 2000) -> list[dict[str, Any]]:
     """Head members with how much of each was semantically processed (#13): raw and normalized length,
-    normalized chars covered by the active embedding projection and seen by the active extractor."""
+    normalized chars covered by the active embedding projection and seen by the active extractor (the
+    extraction of the member's turn, ADR 0008, or its own for per-message generations)."""
     return conn.execute(
         """
-        SELECT am.position, so.host_logical_id, sr.id AS revision_id, sr.lifecycle, sr.metadata->>'role' AS role,
+        SELECT am.position, am.turn, so.host_logical_id, sr.id AS revision_id, sr.lifecycle, sr.metadata->>'role' AS role,
                sr.metadata->>'disabled' AS disabled, left(sr.content, 240) AS preview, length(sr.content) AS length,
                rt.clean_chars,
                (SELECT max(re.text_end) FROM revision_embedding re
                 WHERE re.source_revision_id = sr.id AND re.projection = %(pj)s) AS embedded_chars,
-               (SELECT (x.coverage->>'target_used')::int FROM extraction x
-                WHERE x.source_revision_id = sr.id AND x.window_hash = am.window_hash
-                  AND x.extractor_key = %(ex)s) AS extracted_chars
+               coalesce(
+                   (SELECT least(rt.clean_chars, %(target)s) FROM active_membership a
+                    JOIN extraction x ON x.source_revision_id = a.source_revision_id AND x.window_hash = a.turn_hash
+                     AND x.extractor_key = %(ex)s AND x.discarded_at IS NULL
+                    WHERE a.commit_id = am.commit_id AND a.turn = am.turn AND a.turn_hash IS NOT NULL),
+                   (SELECT (x.coverage->>'target_used')::int FROM extraction x
+                    WHERE x.source_revision_id = sr.id AND x.window_hash = am.window_hash
+                      AND x.extractor_key = %(ex)s AND x.discarded_at IS NULL)) AS extracted_chars
         FROM active_membership am
         JOIN source_revision sr ON sr.id = am.source_revision_id
         JOIN source_object so ON so.id = sr.source_object_id
@@ -52,7 +59,7 @@ def membership(conn: psycopg.Connection, head: UUID, extractor_key: str | None =
         WHERE am.commit_id = %(head)s ORDER BY am.position DESC LIMIT %(limit)s
         """,
         {"head": head, "limit": limit, "ex": extractor_key or "", "pj": projection_key or "",
-         "norm": NORMALIZER_VERSION},
+         "norm": NORMALIZER_VERSION, "target": TARGET_CHARS},
     ).fetchall()
 
 

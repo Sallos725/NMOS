@@ -57,7 +57,7 @@ def test_changing_llm_model_reextracts_existing_chat(migrated, db):
         old = active_generation(db, "extract")
         assert [f["object"] for f in facts(c, chat)] == ["old chapel"]
         out = c.put("/v1/config", json={"llm_model": "fake-2"}).json()
-        eligible = len(chat.messages) - 1
+        eligible = chat.complete_turns()
         assert out["queued_jobs"] == eligible  # every pair the old generation covered is rebuilt
         new = active_generation(db, "extract")
         assert new.key != old.key and new.model == "fake-2"
@@ -78,7 +78,7 @@ def test_changing_llm_endpoint_reextracts_existing_chat(migrated, db):
         sync(c, chat)
         drain(migrated)
         out = c.put("/v1/config", json={"llm_url": "http://other-provider/v1"}).json()
-        assert out["queued_jobs"] == len(chat.messages) - 1
+        assert out["queued_jobs"] == chat.complete_turns()
         assert active_generation(db, "extract").endpoint == "http://other-provider/v1"
 
 
@@ -101,7 +101,7 @@ def test_worker_does_not_process_new_generation_job_with_old_handler(migrated, d
         old_handlers = handlers(Settings(database_url=migrated, **LLM))  # the worker before its 30 s reload
         c.put("/v1/config", json={"llm_model": "fake-2"})
     pending = queued(db, "extract")
-    assert pending == len(chat.messages) - 1
+    assert pending == chat.complete_turns()
     # The old model's queued jobs became obsolete; the new ones are not claimable by the old handler.
     assert db.execute("SELECT count(*) AS n FROM job WHERE status = 'obsolete'").fetchone()["n"] == pending
     with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
@@ -131,7 +131,7 @@ def long_chat(n: int = 15) -> SimChat:
 
 def test_compiler_upgrade_tracks_partial_coverage_and_backfills_beyond_recent_window(migrated, db, monkeypatch):
     chat = long_chat()
-    eligible = len(chat.messages)
+    eligible = chat.complete_turns()
     with make_client(migrated, extract_backfill=100, **LLM) as c:
         sync(c, chat)
         drain(migrated)

@@ -32,7 +32,7 @@ def handlers(settings: Settings) -> Handlers:
         model = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
                           settings.llm_json_mode)
         out["extract"] = (ex.key, lambda conn, job: process_extract(conn, job, model.complete_json, ex,
-                                                                     settings.extract_window))
+                                                                     settings.extract_turns))
     pj = projection(settings)
     if pj is not None:
         embedder = Embedder(settings.embed_url, settings.embed_model, settings.embed_api_key)

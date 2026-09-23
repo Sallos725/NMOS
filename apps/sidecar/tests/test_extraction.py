@@ -31,7 +31,7 @@ def fake_complete(system: str, user: str) -> tuple[dict, str]:
 
 def jobs_for(conn, complete=fake_complete):
     gen = active_generation(conn, "extract")
-    return {"extract": (gen.key, lambda cn, job: process_extract(cn, job, complete, gen, 6))}
+    return {"extract": (gen.key, lambda cn, job: process_extract(cn, job, complete, gen, gen.spec["context_turns"]))}
 
 
 def drain(url: str, complete=fake_complete) -> int:
@@ -76,11 +76,11 @@ def test_extraction_fact_versions_and_packet(llm_client, migrated, db):
     chat.reply("The chapel is quiet.")
     filler(chat, 5)
     sync(llm_client, chat)
-    # Only accepted revisions are queued (the tail reply is still provisional, D5).
-    assert db.execute("SELECT count(*) AS n FROM job").fetchone()["n"] == len(chat.messages) - 1
+    # One job per turn the user continued from (the tail reply is still provisional, D5, ADR 0008).
+    assert db.execute("SELECT count(*) AS n FROM job").fetchone()["n"] == chat.complete_turns() == 5
     drain(migrated)
     current = facts(llm_client, chat)
-    assert [(f["subject"], f["object"], f["position"]) for f in current] == [("Hinata", "old chapel", 0)]
+    assert [(f["subject"], f["object"], f["turn"]) for f in current] == [("Hinata", "old chapel", 0)]
 
     # A later statement supersedes the single-valued fact; history keeps both.
     chat.user("Hinata moved to the bell tower.")
@@ -94,7 +94,7 @@ def test_extraction_fact_versions_and_packet(llm_client, migrated, db):
 
     packet = recall(llm_client, chat, "Where is Hinata now?", in_context=[m["chatId"] for m in chat.messages[-4:]])
     text = packet["packet"]["text"]
-    assert '<Fact kind="located_in" turn="12">Hinata located in bell tower</Fact>' in text
+    assert '<Fact kind="located_in" turn="6">Hinata located in bell tower</Fact>' in text
     assert "old chapel</Fact>" not in text
 
     # Editing the source masks its extraction synchronously (D8) and re-queues the new window.
@@ -105,7 +105,8 @@ def test_extraction_fact_versions_and_packet(llm_client, migrated, db):
     drain(migrated)
     assert facts(llm_client, chat)[0]["object"] == "harbor"
 
-    # Deleting the source removes the fact version; the earlier one becomes current again.
+    # Deleting the source removes the fact version; the earlier one becomes current again. (Its reply
+    # now continues the previous turn, whose anchor and hash change.)
     chat.delete(12)
     sync(llm_client, chat)
     assert facts(llm_client, chat)[0]["object"] == "old chapel"
@@ -120,7 +121,7 @@ def test_edit_inside_window_requeues_following_turns(llm_client, migrated, db):
     chat.edit(4, "Idle chatter changed.")
     sync(llm_client, chat)
     queued = db.execute("SELECT count(*) AS n FROM job WHERE status = 'queued'").fetchone()["n"]
-    assert queued == 7  # position 4 and its K=6 successors (D7)
+    assert queued == 4  # position 4 is in turn 2: turn 2 and its K=3 successors (D7, ADR 0008)
 
 
 def test_unknown_predicates_are_pending_never_injected(llm_client, migrated, db):
@@ -166,7 +167,7 @@ def test_skip_locked_claims_are_exclusive(llm_client, migrated):
         t.start()
     for t in threads:
         t.join()
-    assert len(claimed) == len(set(claimed)) == len(chat.messages)
+    assert len(claimed) == len(set(claimed)) == chat.complete_turns()
 
 
 def test_prune_keeps_recent_and_unfinished(llm_client, migrated, db):

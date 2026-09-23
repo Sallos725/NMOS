@@ -201,7 +201,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         if rt["extractor"] or rt["projection"]:
             enqueue_after_apply(conn, conv.id, state.head, state.lifecycle, manifest,
                                 {**state.lifecycle, **result.lifecycle}, state.revision_ids,
-                                settings.extract_window, cur.extract_backfill,
+                                settings.extract_turns, cur.extract_backfill,
                                 extractor_key=rt["extractor"].key if rt["extractor"] else None,
                                 embed_key=rt["projection"].key if rt["projection"] else None,
                                 embed_backfill=cur.embed_backfill)

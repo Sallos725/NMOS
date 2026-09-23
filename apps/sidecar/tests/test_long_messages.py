@@ -64,14 +64,16 @@ def test_extraction_reports_target_truncation(client_all, migrated, db):
     chat = long_chat()
     sync(client_all, chat)
     drain(migrated)
-    seen = {r["target_chars"]: r["target_used"] for r in db.execute(
+    # Each long message is the user's part of a turn whose reply is "ok" (ADR 0008: the turn is the target).
+    ok = len("ok")
+    seen = {r["target_chars"] - ok: r["target_used"] - ok for r in db.execute(
         "SELECT (coverage->>'target_chars')::int AS target_chars, (coverage->>'target_used')::int AS target_used"
         " FROM extraction").fetchall()}
     assert seen[5_000] == 5_000 and seen[6_000] == 6_000  # boundary: exactly TARGET_CHARS is complete
     assert seen[10_000] == seen[20_000] == TARGET_CHARS
     truncated_context = db.execute("SELECT max((coverage->>'context_truncated')::int) AS n FROM extraction"
                                    ).fetchone()["n"]
-    assert truncated_context == 3  # a 6-message window holds at most three of the long messages, each cut
+    assert truncated_context == 3  # three context turns hold at most three of the long messages, each cut
     cov = client_all.get(f"/v1/conversations/{conv_id(client_all, chat)}/coverage").json()["extraction"]
     assert cov["target_truncated"] == 2
     assert "ext 6,000/20,000" in client_all.get(f"/inspector/c/{conv_id(client_all, chat)}?lang=en").text
