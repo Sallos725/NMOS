@@ -67,12 +67,17 @@ def commits(conn: psycopg.Connection, conv_id: UUID, limit: int = 100) -> list[d
     return conn.execute(
         """
         SELECT w.seq, w.id, w.reason, w.created_at,
-               (SELECT count(*) FROM jsonb_array_elements(w.delta->'changes')) AS changes,
+               jsonb_array_length(j.changes) AS changes,
                -- per kind with its count, e.g. "delete ×12, edit ×1" (ADR 0008: mass deletions are visible)
                (SELECT string_agg(k.kind || ' ×' || k.n, ', ' ORDER BY k.n DESC, k.kind)
-                FROM (SELECT x->>'kind' AS kind, count(*) AS n FROM jsonb_array_elements(w.delta->'changes') x
+                FROM (SELECT x->>'kind' AS kind, count(*) AS n FROM jsonb_array_elements(j.changes) x
                       GROUP BY 1) k) AS kinds
-        FROM worldline_commit w WHERE w.conversation_id = %s ORDER BY w.seq DESC LIMIT %s
+        FROM worldline_commit w
+        -- the commit's own changes, then those of the appends it gained (migration 0013)
+        CROSS JOIN LATERAL (SELECT (w.delta->'changes') || coalesce(
+            (SELECT jsonb_agg(c ORDER BY a.seq) FROM worldline_append a, jsonb_array_elements(a.changes) c
+             WHERE a.commit_id = w.id), '[]') AS changes) j
+        WHERE w.conversation_id = %s ORDER BY w.seq DESC LIMIT %s
         """,
         (conv_id, limit),
     ).fetchall()

@@ -32,7 +32,8 @@ from .models import (
     RetrieveResponse,
     RevisionRef,
 )
-from .reconcile import Entry, plan
+from .canonical import manifest_hash, manifest_hashes
+from .reconcile import Entry, plan, plan_append
 from .llm import Embedder
 from .retrieval import RecallOptions, query_prefix, retrieve
 from .state import current_state, rebuild_state, sync_rules, write_state
@@ -40,7 +41,7 @@ from .state import current_state, rebuild_state, sync_rules, write_state
 log = logging.getLogger("nmos.sidecar")
 
 
-def _entries(request: ReconcileRequest) -> list[Entry]:
+def _entries(request: ReconcileRequest, start: int = 0) -> list[Entry]:
     return [
         Entry(
             host_logical_id=m.host_logical_id,
@@ -53,18 +54,19 @@ def _entries(request: ReconcileRequest) -> list[Entry]:
             generation_id=m.generation_id,
             special_comments=tuple(m.special_comments),
         )
-        for m in request.messages
+        for m in request.messages[start:]
     ]
 
 
 def _compact_observation(body: ReconcileRequest, result, base_hash: str | None, base_len: int) -> dict:
     """Host manifest as observed: every entry when a commit is created, only the appended tail otherwise."""
+    appended = result.commit_reason is None
     rows = [[m.host_logical_id, m.revision_hash, m.role, m.disabled, m.is_comment, m.swipe_id, m.swipe_count,
-             m.generation_id, m.special_comments or None] for m in body.messages]
+             m.generation_id, m.special_comments or None] for m in body.messages[base_len if appended else 0:]]
     columns = ["host_logical_id", "revision_hash", "role", "disabled", "is_comment", "swipe_id", "swipe_count",
                "generation_id", "special_comments"]
-    if result.commit_reason is None:
-        return {"chat_id": body.chat_id, "columns": columns, "base_manifest_hash": base_hash, "appended": rows[base_len:]}
+    if appended:
+        return {"chat_id": body.chat_id, "columns": columns, "base_manifest_hash": base_hash, "appended": rows}
     return {"chat_id": body.chat_id, "columns": columns, "entries": rows}
 
 
@@ -175,9 +177,71 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                  response.status_code, (time.perf_counter() - started) * 1000)
         return response
 
+    def enqueue(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids) -> None:
+        cur = rt["settings"]
+        if rt["extractor"] or rt["projection"]:
+            enqueue_after_apply(conn, conv_id, old_head, old_lifecycle, manifest, new_lifecycle, ids,
+                                settings.extract_turns, cur.extract_backfill,
+                                extractor_key=rt["extractor"].key if rt["extractor"] else None,
+                                embed_key=rt["projection"].key if rt["projection"] else None,
+                                embed_backfill=cur.embed_backfill)
+
+    def append_reconcile(conn, conv, body: ReconcileRequest) -> ReconcileResponse | None:
+        """Verified append fast path (Track A, A1): None means "not provably an append", and the caller
+        runs the full path. Every check here only decides between the two paths; results are equal."""
+        length = ledger.head_length(conn, conv.head_commit_id)
+        messages = body.messages
+        if length == 0 or len(messages) < length:
+            return None
+        keys = [(m.host_logical_id, m.revision_hash) for m in messages]
+        if len(messages) == length:
+            if manifest_hash(keys) != conv.head_manifest_hash:
+                return None
+            return ReconcileResponse(conversation_id=conv.id, status="noop", active_commit=conv.head_commit_id,
+                                     manifest_hash=conv.head_manifest_hash)
+        prefix_hash, full_hash = manifest_hashes(keys, length)
+        if prefix_hash != conv.head_manifest_hash:
+            return None
+        suffix = keys[length:]
+        ids = [k[0] for k in suffix]
+        if len(set(ids)) != len(ids) or any(m.disabled == "allBefore" for m in messages[length:]):
+            return None
+        stored, in_head = ledger.revisions_of(conn, conv, ids)
+        if in_head:
+            return None
+        needed = list(dict.fromkeys(k for k in suffix if k not in stored))
+        if needed:
+            return ReconcileResponse(
+                conversation_id=conv.id, status="needs_bodies", active_commit=None, manifest_hash=full_hash,
+                needed_bodies=[RevisionRef(host_logical_id=k[0], revision_hash=k[1]) for k in needed],
+            )
+        tail = ledger.load_tail(conn, conv, length, settings.extract_window, settings.extract_turns)
+        if tail is None:
+            return None
+        entries = _entries(body, tail.start)
+        lifecycle = {**tail.lifecycle, **{k: stored[k][0] for k in suffix}}
+        revision_ids = {**tail.revision_ids, **{k: stored[k][1] for k in suffix}}
+        result = plan_append(tail.start, tail.entries, entries, full_hash, lifecycle)
+        observation = ledger.record_observation(
+            conn, conv.id, "manifest", full_hash, _compact_observation(body, result, conv.head_manifest_hash, length),
+            f"{conv.id}:{full_hash}:manifest",
+        )
+        head = ledger.apply_append(conn, conv, tail, result, observation, entries, revision_ids,
+                                   settings.extract_window, settings.extract_turns)
+        # From the tail's first turn on is enough: lifecycle and turn hashes change only there.
+        offset = tail.turn_start - tail.start
+        enqueue(conn, conv.id, tail.entries[offset:], lifecycle, entries[offset:], {**lifecycle, **result.lifecycle},
+                revision_ids)
+        return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
+                                 manifest_hash=full_hash, changes_summary=result.summary, commit_reason=None)
+
     def do_reconcile(conn, body: ReconcileRequest) -> ReconcileResponse:
         conv = ledger.lock_conversation(conn, body.host, body.chat_id, body.character_ref, body.character_name,
                                         body.chat_name)
+        if settings.append_fast_path and conv.head_commit_id is not None:
+            fast = append_reconcile(conn, conv, body)
+            if fast is not None:
+                return fast
         state = ledger.load_state(conn, conv)
         manifest = _entries(body)
         result = plan(state.head, conv.head_manifest_hash, manifest, state.known, state.lifecycle,
@@ -197,14 +261,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         )
         head = ledger.apply_plan(conn, conv, state, result, observation, manifest, settings.extract_window,
                                 settings.extract_turns)
-        cur = rt["settings"]
-        if rt["extractor"] or rt["projection"]:
-            enqueue_after_apply(conn, conv.id, state.head, state.lifecycle, manifest,
-                                {**state.lifecycle, **result.lifecycle}, state.revision_ids,
-                                settings.extract_turns, cur.extract_backfill,
-                                extractor_key=rt["extractor"].key if rt["extractor"] else None,
-                                embed_key=rt["projection"].key if rt["projection"] else None,
-                                embed_backfill=cur.embed_backfill)
+        enqueue(conn, conv.id, state.head, state.lifecycle, manifest, {**state.lifecycle, **result.lifecycle},
+                state.revision_ids)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=result.manifest_hash, changes_summary=result.summary,
                                  commit_reason=result.commit_reason)

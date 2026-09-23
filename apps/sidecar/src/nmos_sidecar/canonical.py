@@ -59,4 +59,27 @@ def revision_hash(metadata: dict[str, Any], content: str) -> str:
 
 def manifest_hash(entries: list[tuple[str, str]]) -> str:
     """Hash of the ordered `(host_logical_id, revision_hash)` list."""
-    return sha256_hex(canonical_json([[logical_id, rev_hash] for logical_id, rev_hash in entries]))
+    return sha256_hex(_pairs_json(entries))
+
+
+def _pairs_json(entries: list[tuple[str, str]]) -> str:
+    """`canonical_json` of `[[id, hash], ...]` without the generic recursion (≈3× faster at 10k)."""
+    text = json.dumps([[normalize_text(i), normalize_text(h)] for i, h in entries], ensure_ascii=False,
+                      separators=(",", ":"))
+    return _LONE_SURROGATE.sub(lambda m: f"\\u{ord(m.group()):04x}", text)
+
+
+def manifest_hashes(entries: list[tuple[str, str]], split: int) -> tuple[str, str]:
+    """`(manifest_hash(entries[:split]), manifest_hash(entries))`, serializing each entry once.
+
+    A JSON array is `[` + items joined by `,` + `]`, so the full text is the prefix text without its
+    closing bracket, then `,` and the rest. Requires 0 < split < len(entries).
+    """
+    assert 0 < split < len(entries)
+    prefix = _pairs_json(entries[:split])
+    rest = _pairs_json(entries[split:])
+    digest = hashlib.sha256(prefix[:-1].encode("utf-8"))
+    head = digest.copy()
+    head.update(b"]")
+    digest.update(("," + rest[1:]).encode("utf-8"))
+    return head.hexdigest(), digest.hexdigest()

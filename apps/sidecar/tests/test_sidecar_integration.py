@@ -51,6 +51,11 @@ def ledger_state(url: str) -> dict:
             "SELECT c.host_chat_ref, w.reason, w.manifest_hash, w.delta FROM worldline_commit w"
             " JOIN conversation c ON c.id = w.conversation_id ORDER BY w.seq"
         ).fetchall()
+        appends = conn.execute(
+            "SELECT c.host_chat_ref, w.manifest_hash, a.ops, a.changes FROM worldline_append a"
+            " JOIN worldline_commit w ON w.id = a.commit_id JOIN conversation c ON c.id = w.conversation_id"
+            " ORDER BY a.seq"
+        ).fetchall()
         membership = conn.execute(
             "SELECT c.host_chat_ref, am.position, so.host_logical_id, sr.revision_hash, am.turn, am.turn_hash"
             " FROM active_membership am"
@@ -62,7 +67,8 @@ def ledger_state(url: str) -> dict:
             "SELECT host_chat_ref, head_manifest_hash, branched_from_host_chat_ref, branched_from_message_ref,"
             " (branched_from_conversation_id IS NOT NULL) AS linked FROM conversation ORDER BY 1"
         ).fetchall()
-    return {"revisions": revisions, "commits": commits, "membership": membership, "conversations": convs}
+    return {"revisions": revisions, "commits": commits, "appends": appends, "membership": membership,
+            "conversations": convs}
 
 
 def scripted_session(client, chat: SimChat, echo=None) -> SimChat:

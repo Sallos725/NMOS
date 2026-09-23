@@ -223,6 +223,39 @@ def plan(
     return result
 
 
+def plan_append(start: int, tail: list[Entry], entries: list[Entry], manifest_hash: str,
+                lifecycle: dict[RevKey, Lifecycle]) -> Plan:
+    """`plan()` for a verified append, without the whole head (Track A, A1).
+
+    The caller has verified that the request's first `start + len(tail)` messages are the stored head
+    (its manifest hash), that no message after them is a head member or an `allBefore` cut, and that
+    every new revision is stored. `tail` is the stored head from position `start` on and holds every
+    head member that is not accepted; members before it keep their lifecycle. `entries` are the
+    request's messages from `start` on; `lifecycle` covers them. The result equals `plan()` for the
+    same request (tests/test_append_fast_path.py), except that `membership` is left empty:
+    `ledger.apply_append` writes only the new rows.
+    """
+    assert tail and len(entries) > len(tail)
+    assert [e.key for e in tail] == [e.key for e in entries[:len(tail)]]
+    length = start + len(tail)
+    suffix = entries[len(tail):]
+    result = Plan(kind="apply", manifest_hash=manifest_hash)
+    result.changes = [Change("append", e.host_logical_id, length + i, new=e.key) for i, e in enumerate(suffix)]
+    previous = tail[-1].key
+    for entry in suffix:
+        result.ops.append({"op": "insert", "after": list(previous), "member": list(entry.key)})
+        previous = entry.key
+    # Acceptance of a member depends only on the members after it, so the tail plus the new messages
+    # decide every change (request entries, as plan() uses).
+    states: dict[RevKey, Lifecycle] = dict(lifecycle)
+    for entry in entries:
+        if states.get(entry.key) in ("superseded", "retracted"):
+            states[entry.key] = "provisional"
+    states.update(_acceptance(entries, states))
+    result.lifecycle = {k: v for k, v in states.items() if lifecycle.get(k) != v}
+    return result
+
+
 def _ops(old: list[RevKey], new: list[RevKey], full: bool) -> list[dict]:
     """Delta ops turning `old` membership into `new`; verified by replay, else a full set."""
     if full:
