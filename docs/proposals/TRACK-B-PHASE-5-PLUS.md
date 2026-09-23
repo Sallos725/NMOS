@@ -81,6 +81,30 @@ Needed later, not before B0/B1:
 The measured ownership-transfer error is handled in Track A (A4, item-centric `held_by`) so that it
 does not wait for B1 and B2.
 
+### Owner decisions (2026-09-23)
+
+Taken after `docs/KNOWN-ISSUES.md` mapped the remaining issues to stages (K8 → B1; K9, K10 → B2;
+K11 → B5). They set the boundary for B0; Phase 5 itself starts only when `docs/phases/PHASE-5.md` is
+approved (`AGENTS.md` §7).
+
+1. **Phase boundary: B1 only.** Phase 5 is entity identity and semantic assertions (Option 1).
+2. **Roadmap amendment: accepted.** The next stage after B1 is B2 (transition verifier), before B3
+   (narrative engine). K9 and K10 are therefore fixed in the phase after Phase 5.
+3. **Canon sources: later, in B4.** B1's authority classes are narration and character claim only.
+   No authored-canon class until card/lorebook host evidence exists; adding it then is a new
+   generation.
+4. **O5, superseded generations only:** keep what is costly to recreate, prune what is cheap. Once a
+   new generation reaches full coverage of a chat, superseded **LLM extraction** rows (and their
+   assertions) are kept for audit and rollback; superseded **embeddings** and **deterministic
+   projections** (e.g. B1's mention → entity resolver generations) may be pruned. Abandoned
+   worldlines and `host_observation` growth stay open (before B2). Owner suggestion recorded for B3:
+   keep important events first by priority, not by deleting the rest (see B3).
+5. **Re-extraction (§7): recent window automatic, older history on request.** B1's new extractor
+   generation re-extracts only the backfill window (`NMOS_EXTRACT_BACKFILL`, default 100 turns)
+   automatically. Older turns are re-extracted by the Inspector's "extract all history", as D22 does
+   for first-sight history; until then they are read through B1's compatibility path from the
+   previous generation, shown as partial coverage.
+
 ## 5. Options and trade-offs
 
 ### Option 1 — Narrow Phase 5A only (recommended)
@@ -238,7 +262,10 @@ Represent long-range narrative continuity that cannot be recovered reliably from
   and unfinished task;
 - thread resolution linked to evidence, never destructive deletion;
 - retrieval routes for current relationships, unresolved threads, and relevant events;
-- packet sections with independent budgets and provenance.
+- packet sections with independent budgets and provenance;
+- event salience: important ("central") events rank and budget ahead of minor ones in retrieval and
+  the packet. Owner suggestion (2026-09-23); it is a priority, never a reason to delete lower-ranked
+  memory or evidence.
 
 #### Initial causal-link scope
 
