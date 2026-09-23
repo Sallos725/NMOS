@@ -244,7 +244,11 @@ export function createAdapter(host: HostPort) {
   /** Sidecar API for the settings UI (longer timeout: connection tests call real models). */
   async function api<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeoutMs = 90_000): Promise<T> {
     const settings = await host.settings();
-    return call<T>(settings, path, body, host.now() + timeoutMs, method);
+    const out = await call<T>(settings, path, body, host.now() + timeoutMs, method);
+    // A settings save, rebuild or delete changes what a packet would contain: a reroll of an unchanged
+    // chat must not reuse a packet built before it (a deleted chat's memory, old facts).
+    if (method !== 'GET') cache.clear();
+    return out;
   }
 
   return { beforeRequest, onOutput, status, api };

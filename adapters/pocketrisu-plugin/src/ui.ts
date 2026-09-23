@@ -79,6 +79,7 @@ html,body{margin:0;background:#0c0c10}
 .nmos .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .nmos button{background:#2b2d36;color:#e8e8ec;border:1px solid #444654;border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer}
 .nmos button.primary{background:#4c6ef5;border-color:#4c6ef5;color:#fff}
+.nmos button.danger{background:#c92a2a;border-color:#c92a2a;color:#fff}
 .nmos button:disabled{opacity:.45;cursor:default}
 .nmos .msg{margin-top:10px;font-size:13px;white-space:pre-wrap}
 .nmos .ok{color:#69db7c}.nmos .err{color:#ff8787}.nmos .warn{color:#ffd43b}.nmos .muted{color:#9a9ca8}
@@ -227,22 +228,23 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const inspectorBody = el('div', { class: 'insp' });
   const inspectorRefresh = el('button', { text: L('refresh') });
   const inspectorAddress = el('p', { class: 'sub mono' });
-  // Per-chat actions (D22) on a conversation page: they run in the sidecar's background worker.
+  // Per-chat actions (D22, ADR 0009) on a conversation page: they run in the sidecar.
   const historyButton = el('button', { text: L('act.history') });
   const rebuildButton = el('button', { text: L('act.rebuild') });
+  const deleteButton = el('button', { text: L('act.delete') });
   const actionMsg = el('div', { class: 'msg' });
-  const actions = el('div', {}, el('div', { class: 'btns' }, historyButton, rebuildButton),
-    el('p', { class: 'sub', text: L('act.sub') }), actionMsg);
-  inspectorView.append(el('div', { class: 'btns' }, inspectorRefresh), actions, inspectorBody, inspectorAddress);
+  const actions = el('div', {}, el('div', { class: 'btns' }, historyButton, rebuildButton, deleteButton),
+    el('p', { class: 'sub', text: L('act.sub') }));
+  // The message sits outside the actions so a result stays visible after a delete returns to the list.
+  inspectorView.append(el('div', { class: 'btns' }, inspectorRefresh), actions, actionMsg, inspectorBody, inspectorAddress);
   let actionConversation: string | null = null;
-  let rebuildArmed = 0;
   async function showInspector(path = inspectorPath): Promise<void> {
     inspectorPath = path;
     const conversation = inspectorConversation(path);
     if (conversation !== actionConversation) {
       actionConversation = conversation;
       say(actionMsg, '');
-      disarmRebuild();
+      disarm();
     }
     actions.style.display = conversation ? '' : 'none';
     inspectorBody.replaceChildren(el('div', { class: 'card muted', text: L('insp.loading') }));
@@ -267,11 +269,30 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     if (path) void showInspector(path);
   });
   inspectorRefresh.addEventListener('click', () => void showInspector());
-  function disarmRebuild(): void {
-    window.clearTimeout(rebuildArmed);
-    rebuildArmed = 0;
-    rebuildButton.textContent = L('act.rebuild');
-    rebuildButton.className = '';
+  // Destructive actions take two clicks: the first arms the button for 6 s.
+  const confirmable: [HTMLButtonElement, StringKey, string][] = [
+    [rebuildButton, 'act.rebuild', 'primary'], [deleteButton, 'act.delete', 'danger']];
+  let armed: HTMLButtonElement | null = null;
+  let armTimer = 0;
+  function disarm(): void {
+    window.clearTimeout(armTimer);
+    armed = null;
+    for (const [button, label] of confirmable) {
+      button.textContent = L(label);
+      button.className = '';
+    }
+  }
+  function confirmed(button: HTMLButtonElement, confirm: StringKey, cls: string): boolean {
+    if (armed === button) {
+      disarm();
+      return true;
+    }
+    disarm();
+    armed = button;
+    button.textContent = L(confirm);
+    button.className = cls;
+    armTimer = window.setTimeout(disarm, 6000);
+    return false;
   }
   function actionError(error: unknown): string {
     return /HTTP 409/.test(error instanceof Error ? error.message : String(error)) ? L('act.off') : errorText(lang, error);
@@ -280,6 +301,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   historyButton.addEventListener('click', async () => {
     const conversation = actionConversation;
     if (!conversation) return;
+    disarm();
     historyButton.disabled = true;
     say(actionMsg, L('act.working'));
     try {
@@ -291,15 +313,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   });
   rebuildButton.addEventListener('click', async () => {
     const conversation = actionConversation;
-    if (!conversation) return;
-    if (!rebuildArmed) {
-      // Two clicks: the chat's facts disappear until they are extracted again.
-      rebuildButton.textContent = L('act.rebuild_confirm');
-      rebuildButton.className = 'primary';
-      rebuildArmed = window.setTimeout(disarmRebuild, 6000);
-      return;
-    }
-    disarmRebuild();
+    // Two clicks: the chat's facts disappear until they are extracted again.
+    if (!conversation || !confirmed(rebuildButton, 'act.rebuild_confirm', 'primary')) return;
     rebuildButton.disabled = true;
     say(actionMsg, L('act.working'));
     try {
@@ -307,6 +322,18 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       say(actionMsg, L('act.rebuild_done', { d: r.discarded ?? 0, t: r.queued.extract ?? 0 }), 'ok');
       await showInspector();
     } catch (error) { say(actionMsg, actionError(error), 'err'); } finally { rebuildButton.disabled = false; }
+  });
+  deleteButton.addEventListener('click', async () => {
+    const conversation = actionConversation;
+    // Two clicks: everything NMOS recorded for this chat is deleted and cannot be restored (ADR 0009).
+    if (!conversation || !confirmed(deleteButton, 'act.delete_confirm', 'danger')) return;
+    deleteButton.disabled = true;
+    say(actionMsg, L('act.working'));
+    try {
+      const r = await deps.api<{ deleted: { messages?: number } }>('POST', `/v1/conversations/${conversation}/delete`, {}, 60_000);
+      await showInspector('/v1/inspector');
+      say(actionMsg, L('act.delete_done', { m: r.deleted.messages ?? 0 }), 'ok');
+    } catch (error) { say(actionMsg, errorText(lang, error), 'err'); } finally { deleteButton.disabled = false; }
   });
 
   // --- settings tab: fields ---------------------------------------------------------------------

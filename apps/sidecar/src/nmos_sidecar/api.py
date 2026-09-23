@@ -362,6 +362,17 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             log.info("rebuild conversation=%s discarded=%d queued=%d", conv_id, discarded, queued)
             return {"discarded": discarded, "queued": {"extract": queued}, "coverage": coverage_view(conn, conv_id)}
 
+    @app.post("/v1/conversations/{conv_id}/delete", dependencies=[Depends(auth)])
+    def delete_conversation(conv_id: UUID, request: Request):
+        """Delete this chat from NMOS with everything recorded for it, raw messages included (ADR 0009).
+        Irreversible. If the host chat still exists, the next generation in it syncs it as a new chat."""
+        with request.app.state.pool.connection() as conn:
+            deleted = ledger.delete_conversation(conn, conv_id)
+        if deleted is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        log.info("deleted conversation=%s rows=%s", conv_id, deleted)
+        return {"deleted": deleted}
+
     @app.get("/v1/config", dependencies=[Depends(auth)])
     def get_config():
         return runtime.public_view(rt["settings"], rt["overrides"], rt["rules"])

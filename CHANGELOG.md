@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 0.1.0-beta.9
+
+Conversations can be deleted from NMOS (ADR 0009). Schema: migration 0012. Upgrade both parts:
+`docker compose pull && docker compose up -d` (the sidecar applies the migration at startup), then
+replace the plugin file and reload PocketRisu.
+
+- **대화 삭제 / Delete conversation.** On a conversation page in the panel's Inspector tab (two
+  clicks). It deletes everything NMOS stored for that chat, raw messages included, and cannot be
+  undone. The chat in PocketRisu is not touched. If you generate in it again, NMOS records it as a new
+  conversation (recent turns only; use "extract all history" for the rest). API:
+  `POST /v1/conversations/{id}/delete`.
+- Invariant 1 now reads: NMOS itself never destroys raw evidence; only the owner can delete a whole
+  conversation. The database still refuses every other delete of raw revisions.
+- Indexes on foreign-key columns keep a delete linear in chat size: 25,000 messages in about 2 s
+  (`docs/perf/scale.md`).
+- The plugin drops its cached memory packets after a panel action that changes data (delete, rebuild,
+  settings save). A reroll right after such an action no longer reuses a packet built before it.
+
+### Known limitations
+
+- A delete cannot be undone, and NMOS does not notice when a chat is deleted in PocketRisu (no host
+  hook, H10). Delete it in the panel yourself.
+- Migration 0012 builds seven indexes at startup. On a large database the first start after the
+  upgrade takes a little longer.
+- Otherwise unchanged from 0.1.0-beta.8.
+
 ## 0.1.0-beta.8
 
 Memory is extracted per **turn** (your message plus the reply) instead of per message, and each chat

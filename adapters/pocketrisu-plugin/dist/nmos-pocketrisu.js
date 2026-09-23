@@ -1,7 +1,7 @@
 //@name nmos_memory
 //@display-name NMOS Narrative Memory
 //@api 3.0
-//@version 0.1.0-beta.8
+//@version 0.1.0-beta.9
 //@link https://github.com/Sallos725/NMOS Documentation
 //@update-url https://raw.githubusercontent.com/Sallos725/NMOS/main/adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js
 //@arg sidecar_url string NMOS sidecar URL (empty = http://127.0.0.1:8790)
@@ -416,7 +416,9 @@ ${revisionHash}`;
     }
     async function api(method, path, body, timeoutMs = 9e4) {
       const settings = await host.settings();
-      return call(settings, path, body, host.now() + timeoutMs, method);
+      const out = await call(settings, path, body, host.now() + timeoutMs, method);
+      if (method !== "GET") cache.clear();
+      return out;
     }
     return { beforeRequest, onOutput, status, api };
   }
@@ -468,9 +470,11 @@ ${revisionHash}`;
     "act.history": ["\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C", "Extract all history"],
     "act.rebuild": ["\uAE30\uC5B5 \uC7AC\uAD6C\uCD95", "Rebuild memory"],
     "act.rebuild_confirm": ["\uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC7AC\uAD6C\uCD95\uD569\uB2C8\uB2E4", "Click again to rebuild"],
+    "act.delete": ["\uB300\uD654 \uC0AD\uC81C", "Delete conversation"],
+    "act.delete_confirm": ["\uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC601\uAD6C \uC0AD\uC81C\uD569\uB2C8\uB2E4", "Click again to delete for good"],
     "act.sub": [
-      "\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C: \uCC98\uC74C \uC5F0\uACB0\uD560 \uB54C \uAC74\uB108\uB6F4 \uC774 \uCC44\uD305\uC758 \uC774\uC804 \uD134\uAE4C\uC9C0 \uC0AC\uC2E4\uC744 \uCD94\uCD9C\uD558\uACE0 \uC784\uBCA0\uB529\uD569\uB2C8\uB2E4. \uAE30\uC5B5 \uC7AC\uAD6C\uCD95: \uC774 \uCC44\uD305\uC758 \uC0AC\uC2E4\uC744 \uBC84\uB9AC\uACE0 \uBAA8\uB4E0 \uD134\uC744 \uB2E4\uC2DC \uCD94\uCD9C\uD569\uB2C8\uB2E4(\uC6D0\uBB38\uC740 \uADF8\uB300\uB85C). \uC720\uB8CC API\uB294 \uD134\uB9C8\uB2E4 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4.",
-      "Extract all history: extract facts and embeddings for the older turns of this chat that the first sync skipped. Rebuild memory: discard this chat's facts and extract every turn again (raw messages stay). Paid APIs cost money per turn."
+      "\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C: \uCC98\uC74C \uC5F0\uACB0\uD560 \uB54C \uAC74\uB108\uB6F4 \uC774 \uCC44\uD305\uC758 \uC774\uC804 \uD134\uAE4C\uC9C0 \uC0AC\uC2E4\uC744 \uCD94\uCD9C\uD558\uACE0 \uC784\uBCA0\uB529\uD569\uB2C8\uB2E4. \uAE30\uC5B5 \uC7AC\uAD6C\uCD95: \uC774 \uCC44\uD305\uC758 \uC0AC\uC2E4\uC744 \uBC84\uB9AC\uACE0 \uBAA8\uB4E0 \uD134\uC744 \uB2E4\uC2DC \uCD94\uCD9C\uD569\uB2C8\uB2E4(\uC6D0\uBB38\uC740 \uADF8\uB300\uB85C). \uC720\uB8CC API\uB294 \uD134\uB9C8\uB2E4 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4. \uB300\uD654 \uC0AD\uC81C: NMOS\uC5D0 \uC800\uC7A5\uB41C \uC774 \uCC44\uD305\uC758 \uBAA8\uB4E0 \uAE30\uB85D(\uC6D0\uBB38 \uD3EC\uD568)\uC744 \uC9C0\uC6C1\uB2C8\uB2E4. \uB418\uB3CC\uB9B4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. PocketRisu\uC758 \uCC44\uD305\uC740 \uADF8\uB300\uB85C\uC774\uACE0, \uADF8 \uCC44\uD305\uC5D0\uC11C \uB2E4\uC2DC \uC0DD\uC131\uD558\uBA74 \uC0C8 \uB300\uD654\uB85C \uCC98\uC74C\uBD80\uD130 \uAE30\uB85D\uB429\uB2C8\uB2E4.",
+      "Extract all history: extract facts and embeddings for the older turns of this chat that the first sync skipped. Rebuild memory: discard this chat's facts and extract every turn again (raw messages stay). Paid APIs cost money per turn. Delete conversation: delete everything NMOS stored for this chat, raw messages included. This cannot be undone. The chat in PocketRisu stays; generating in it again records it as a new conversation from scratch."
     ],
     "act.working": ["\uC694\uCCAD \uC911\u2026", "Requesting\u2026"],
     "act.history_done": ["\uD134 {t}\uAC1C \uCD94\uCD9C\uACFC \uBA54\uC2DC\uC9C0 {m}\uAC1C \uC784\uBCA0\uB529\uC744 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0 \uB123\uC5C8\uC2B5\uB2C8\uB2E4.", "Queued {t} turns for extraction and {m} messages for embedding."],
@@ -479,6 +483,7 @@ ${revisionHash}`;
       "\uCD94\uCD9C {d}\uAC74\uC744 \uBC84\uB9AC\uACE0 \uD134 {t}\uAC1C\uB97C \uB2E4\uC2DC \uCD94\uCD9C\uD569\uB2C8\uB2E4. \uB05D\uB0A0 \uB54C\uAE4C\uC9C0 \uC774 \uCC44\uD305\uC758 \uC0AC\uC2E4\uC774 \uBE44\uC5B4 \uC788\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
       "Discarded {d} extractions; {t} turns are extracted again. Facts of this chat may be missing until then."
     ],
+    "act.delete_done": ["\uB300\uD654\uB97C \uC0AD\uC81C\uD588\uC2B5\uB2C8\uB2E4 (\uBA54\uC2DC\uC9C0 {m}\uAC1C\uC758 \uAE30\uB85D).", "Conversation deleted (records of {m} messages)."],
     "act.off": ["\uC0AC\uC2E4 \uCD94\uCD9C(\uB610\uB294 \uC784\uBCA0\uB529)\uC774 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED\uC5D0\uC11C \uCF1C\uC138\uC694.", "Fact extraction (or embeddings) is off. Turn it on in Settings."],
     // settings: connection
     "conn.title": ["\uC5F0\uACB0", "Connection"],
@@ -699,6 +704,7 @@ html,body{margin:0;background:#0c0c10}
 .nmos .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .nmos button{background:#2b2d36;color:#e8e8ec;border:1px solid #444654;border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer}
 .nmos button.primary{background:#4c6ef5;border-color:#4c6ef5;color:#fff}
+.nmos button.danger{background:#c92a2a;border-color:#c92a2a;color:#fff}
 .nmos button:disabled{opacity:.45;cursor:default}
 .nmos .msg{margin-top:10px;font-size:13px;white-space:pre-wrap}
 .nmos .ok{color:#69db7c}.nmos .err{color:#ff8787}.nmos .warn{color:#ffd43b}.nmos .muted{color:#9a9ca8}
@@ -851,24 +857,23 @@ html,body{margin:0;background:#0c0c10}
     const inspectorAddress = el("p", { class: "sub mono" });
     const historyButton = el("button", { text: L("act.history") });
     const rebuildButton = el("button", { text: L("act.rebuild") });
+    const deleteButton = el("button", { text: L("act.delete") });
     const actionMsg = el("div", { class: "msg" });
     const actions = el(
       "div",
       {},
-      el("div", { class: "btns" }, historyButton, rebuildButton),
-      el("p", { class: "sub", text: L("act.sub") }),
-      actionMsg
+      el("div", { class: "btns" }, historyButton, rebuildButton, deleteButton),
+      el("p", { class: "sub", text: L("act.sub") })
     );
-    inspectorView.append(el("div", { class: "btns" }, inspectorRefresh), actions, inspectorBody, inspectorAddress);
+    inspectorView.append(el("div", { class: "btns" }, inspectorRefresh), actions, actionMsg, inspectorBody, inspectorAddress);
     let actionConversation = null;
-    let rebuildArmed = 0;
     async function showInspector(path = inspectorPath) {
       inspectorPath = path;
       const conversation = inspectorConversation(path);
       if (conversation !== actionConversation) {
         actionConversation = conversation;
         say(actionMsg, "");
-        disarmRebuild();
+        disarm();
       }
       actions.style.display = conversation ? "" : "none";
       inspectorBody.replaceChildren(el("div", { class: "card muted", text: L("insp.loading") }));
@@ -891,11 +896,31 @@ html,body{margin:0;background:#0c0c10}
       if (path) void showInspector(path);
     });
     inspectorRefresh.addEventListener("click", () => void showInspector());
-    function disarmRebuild() {
-      window.clearTimeout(rebuildArmed);
-      rebuildArmed = 0;
-      rebuildButton.textContent = L("act.rebuild");
-      rebuildButton.className = "";
+    const confirmable = [
+      [rebuildButton, "act.rebuild", "primary"],
+      [deleteButton, "act.delete", "danger"]
+    ];
+    let armed = null;
+    let armTimer = 0;
+    function disarm() {
+      window.clearTimeout(armTimer);
+      armed = null;
+      for (const [button, label] of confirmable) {
+        button.textContent = L(label);
+        button.className = "";
+      }
+    }
+    function confirmed(button, confirm, cls) {
+      if (armed === button) {
+        disarm();
+        return true;
+      }
+      disarm();
+      armed = button;
+      button.textContent = L(confirm);
+      button.className = cls;
+      armTimer = window.setTimeout(disarm, 6e3);
+      return false;
     }
     function actionError(error) {
       return /HTTP 409/.test(error instanceof Error ? error.message : String(error)) ? L("act.off") : errorText(lang, error);
@@ -903,6 +928,7 @@ html,body{margin:0;background:#0c0c10}
     historyButton.addEventListener("click", async () => {
       const conversation = actionConversation;
       if (!conversation) return;
+      disarm();
       historyButton.disabled = true;
       say(actionMsg, L("act.working"));
       try {
@@ -918,14 +944,7 @@ html,body{margin:0;background:#0c0c10}
     });
     rebuildButton.addEventListener("click", async () => {
       const conversation = actionConversation;
-      if (!conversation) return;
-      if (!rebuildArmed) {
-        rebuildButton.textContent = L("act.rebuild_confirm");
-        rebuildButton.className = "primary";
-        rebuildArmed = window.setTimeout(disarmRebuild, 6e3);
-        return;
-      }
-      disarmRebuild();
+      if (!conversation || !confirmed(rebuildButton, "act.rebuild_confirm", "primary")) return;
       rebuildButton.disabled = true;
       say(actionMsg, L("act.working"));
       try {
@@ -936,6 +955,21 @@ html,body{margin:0;background:#0c0c10}
         say(actionMsg, actionError(error), "err");
       } finally {
         rebuildButton.disabled = false;
+      }
+    });
+    deleteButton.addEventListener("click", async () => {
+      const conversation = actionConversation;
+      if (!conversation || !confirmed(deleteButton, "act.delete_confirm", "danger")) return;
+      deleteButton.disabled = true;
+      say(actionMsg, L("act.working"));
+      try {
+        const r = await deps.api("POST", `/v1/conversations/${conversation}/delete`, {}, 6e4);
+        await showInspector("/v1/inspector");
+        say(actionMsg, L("act.delete_done", { m: r.deleted.messages ?? 0 }), "ok");
+      } catch (error) {
+        say(actionMsg, errorText(lang, error), "err");
+      } finally {
+        deleteButton.disabled = false;
       }
     });
     const url = el("input", { spellcheck: "false" });
@@ -1308,6 +1342,6 @@ html,body{margin:0;background:#0c0c10}
       () => adapter.status(),
       (method, path, body, timeoutMs) => adapter.api(method, path, body, timeoutMs)
     );
-    console.log("[NMOS] adapter loaded", { version: "0.1.0-beta.8" });
+    console.log("[NMOS] adapter loaded", { version: "0.1.0-beta.9" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));
 })();

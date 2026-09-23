@@ -34,7 +34,8 @@ Sidecar
 
 ## 2. Invariants (non-negotiable)
 
-1. **Raw evidence is never destroyed.** Summaries may replace text in the prompt, never in storage.
+1. **Raw evidence is never destroyed** by NMOS itself. Summaries may replace text in the prompt, never in storage.
+   The one exception is the owner explicitly deleting a whole conversation (D23, ADR 0009).
 2. **Derived memory is rebuildable** from `source ledger + compiler version + config`.
 3. **The response model never writes canonical memory.** MCP tools, if any, are read-only.
 4. **Unknown is a valid result.** States include known / unknown / ambiguous / conflicting / pending / inferred.
@@ -195,6 +196,12 @@ enters the ledger only when the user generates in it with the plugin on. First s
 latest `NMOS_EXTRACT_BACKFILL` turns; the rest of a chat is extracted on request
 (`POST /v1/conversations/{id}/extract-history`). A rebuild (`POST /v1/conversations/{id}/rebuild`)
 marks the chat's active-generation extractions discarded (kept for audit) and re-extracts every turn.
+
+**D23 — The owner can delete a conversation (ADR 0009).** `POST /v1/conversations/{id}/delete`
+removes a conversation and every row recorded for it, raw revisions included, in one transaction. The
+`source_revision` delete guard passes only inside that transaction and only for that conversation's
+rows (migration 0012). NMOS never deletes a conversation or raw evidence on its own. If the host chat
+still exists, it is synced as a new chat at the next generation.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
