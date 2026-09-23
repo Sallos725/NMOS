@@ -4,7 +4,11 @@
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.7` (2026-09-23), public repository and image.** Main-generation gating no
+**Public beta `v0.1.0-beta.8` (2026-09-23), public repository and image.** Facts are extracted per turn
+(user message + reply) with turn-counted backfill, and each chat has "extract all history" and
+"rebuild memory" in the Inspector (ADR 0008, D7/D17 revised, D22; migration 0011). Evidence:
+`docs/perf/turn-extraction.md` (model comparison, real-UI host check), `docs/perf/scale.md` re-check.
+`v0.1.0-beta.7` (2026-09-23): main-generation gating no
 longer assumes a preset layout (ADR 0001 amendment 2): presets that add instructions after the user's
 turn got no memory in beta.6 and earlier. `v0.1.0-beta.6` (2026-09-23): the Inspector opens inside
 the NMOS panel (Status | Inspector | Settings tabs): PocketRisu sandboxes plugins without
@@ -29,14 +33,14 @@ Known limitations: `CHANGELOG.md` → 0.1.0-beta.4.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H14, D1–D21, O2/O3/O4 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H15, D1–D22, O2/O3/O4 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
-| Schema | `migrations/0001`–`0010` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels |
+| Schema | `migrations/0001`–`0011` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (109), `adapters/pocketrisu-plugin/test` (35) | all passing |
+| Tests | `apps/sidecar/tests` (131), `adapters/pocketrisu-plugin/test` (40) | all passing |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met; default deadline met up to ≈5k messages, fail open beyond ≈8k |
-| Decisions | `docs/adr/0001`–`0007` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope |
+| Decisions | `docs/adr/0001`–`0008` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-4.md` | 0–3 met; 4 soft subset met |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 
