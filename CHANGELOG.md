@@ -20,9 +20,15 @@ latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once; older turns keep their 
 - **Plans, conditions and dreams are labeled, not facts.** They are stored with their modality
   (`hypothetical`, `dreamed`, `unknown`) and listed in the Inspector, never injected. A missing
   modality counts as unknown, not actual.
-- **`also_called`** records another name for an entity, only when the turn itself gives both names
-  (e.g. "하나(Hana)"); otherwise it stays pending. Linking names into one entity comes with Phase 5
-  step 4.
+- **One entity, several names** (ADR 0012). When the story itself gives two names for someone or
+  something in one turn ("하나(Hana)"), both names become one entity: a fact under "Hana" and one under
+  "하나" are versions of the same fact, and recall matches either name. Only the story links names:
+  never spelling similarity, a dream, or a character's claim. A name given to two different entities
+  (a nickname two people share) stays ambiguous and links neither. The same name for an item and a
+  place stays two entities; `{{user}}`, `user` and `유저` are one persona. Nothing is stored: deleting
+  the turn that gave the alias splits the entity again at the next request.
+- Inspector: an entity list (names, mentions, the turn each alias came from) and ambiguous names.
+  API: `GET /v1/conversations/{id}/entities`.
 - The packet Note explains `negated` and `Claim` only in packets that use them.
 - Inspector: facts marked *negated* or *legacy* (`extract-v4` and older), a list of claims, and a list
   of non-actual assertions.

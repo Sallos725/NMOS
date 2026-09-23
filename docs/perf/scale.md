@@ -150,6 +150,21 @@ so a long chat with extraction on could lose memory for the next request. The cu
 subquery that runs once (InitPlan): 62 ms for the same first call. `state.current_state` had the same
 shape and is fixed the same way.
 
+### Entity resolution (2026-09-24, Phase 5 step 4, ADR 0012)
+
+Same tier after steps 3–4 (semantic reading, read-time entities), load ≈2.3, ms:
+
+| Messages | Assertions | Fact read p50 (max), one generation | Resolver alone p50 |
+|---|---:|---:|---:|
+| 1,000 | 514 | 10 (24) | 1 |
+| 5,000 | 2,514 | 46 (67) | 3 |
+| 10,000 | 5,014 | 96 (119) | 7 |
+
+At 10k the fact read is ≈24 ms above step 1's 71 ms: ≈7 ms is the resolver, the rest is per-row
+annotation (entity of subject and object, every name for recall) and grouping. The PHASE-5 bound (at
+most +50 ms p50 at 10k) holds, so the resolver is not persisted. The database query stays the largest
+part (≈45 ms in a profile). Memoizing entity lookups by spelling took ≈30 ms off an earlier version.
+
 The first version of the fallback query picked each turn's generation with a self-join on a CTE; the
 same underestimate made it a nested loop (≈930 ms at 10k). It now uses a window function. The
 remaining ≈20 ms over the old p50 at 10k is the per-turn choice across all live extractions plus the

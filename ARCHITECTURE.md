@@ -222,6 +222,14 @@ and fail open is unchanged. Chats beyond the default's reach get memory only wit
 holder: an item's latest assertion is current, earlier holders are its history. A read-side rule
 outside the registry, so it needs no new extractor generation.
 
+**D26 — Entity identity at read time (Phase 5, ADR 0012).** Each fact read resolves subject and
+object mentions of the head's active assertions to entities of that conversation, without storage
+or model calls: the same entity type and normalized name is one entity, the persona names are one,
+and names are linked only by actual, narrated `also_called` assertions (both names in the source
+turn). A name linked to otherwise unconnected names is ambiguous and links nobody. Fact version keys
+use entity ids where resolved, text otherwise. Ids are `uuid5(conversation, RESOLVER_VERSION, type,
+name)`; a resolver change takes effect on the next read.
+
 **D27 — Assertion semantics (Phase 5, ADR 0013).** Each assertion has `polarity` (positive /
 negative), `modality` (actual / hypothetical / dreamed / unknown; missing means unknown) and `source`
 (narration / character_claim with `asserted_by`). Facts come only from actual narration; a negation

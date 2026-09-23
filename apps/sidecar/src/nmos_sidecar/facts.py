@@ -13,6 +13,7 @@ from uuid import UUID
 import psycopg
 from xml.sax.saxutils import escape, quoteattr
 
+from .entities import Resolution, resolve
 from .predicates import HOLDER_PER_ITEM, REGISTRY
 
 # `unit` is the turn (a message without one counts alone). `live` holds every extraction that still
@@ -56,28 +57,37 @@ def _norm(value: str | None) -> str:
     return " ".join((value or "").lower().split())
 
 
-def version_key(a: dict[str, Any]) -> tuple:
+def _subject(a: dict[str, Any], r: Resolution | None) -> str:
+    return r.key(a.get("subject_type"), a["subject"]) if r else _norm(a["subject"])
+
+
+def _object(a: dict[str, Any], r: Resolution | None) -> str:
+    return r.key(a.get("object_type"), a["object"]) if r and a.get("object") else _norm(a["object"])
+
+
+def version_key(a: dict[str, Any], r: Resolution | None = None) -> tuple:
+    """Subject and object are entity ids where the resolver links them (ADR 0012), text otherwise."""
     if a["predicate"] in HOLDER_PER_ITEM:  # one current holder per item (ADR 0011)
-        return (a["predicate"], "item", _norm(a["object"]))
+        return (a["predicate"], "item", _object(a, r))
     pred = REGISTRY[a["predicate"]]
     if pred.cardinality == "single":
-        return (a["predicate"], _norm(a["subject"])) + ((_norm(a["object"]),) if pred.per_object else ())
-    return (a["predicate"], _norm(a["subject"]), _norm(a["object"]), _norm(a["value"]))
+        return (a["predicate"], _subject(a, r)) + ((_object(a, r),) if pred.per_object else ())
+    return (a["predicate"], _subject(a, r), _object(a, r), _norm(a["value"]))
 
 
-def relation(a: dict[str, Any]) -> tuple:
+def relation(a: dict[str, Any], r: Resolution | None = None) -> tuple:
     """What a negation must match, beyond the version key, to end a version (ADR 0013, item 4): the same
     holder for an item, the same object and value for other single-valued predicates. Multi-valued keys
     already contain everything."""
     if a["predicate"] in HOLDER_PER_ITEM:
-        return (_norm(a["subject"]),)
+        return (_subject(a, r),)
     pred = REGISTRY[a["predicate"]]
     if pred.cardinality == "single":
-        return ((_norm(a["value"]),) if pred.per_object else (_norm(a["object"]), _norm(a["value"])))
+        return ((_norm(a["value"]),) if pred.per_object else (_object(a, r), _norm(a["value"])))
     return ()
 
 
-def _versions(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> list[dict[str, Any]]:
     """One version key's facts from its narrated, actual assertions in position order.
 
     A positive assertion becomes current. A negative one ends the current version only if it denies the
@@ -87,8 +97,8 @@ def _versions(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     current: dict[str, Any] | None = None
     negatives: dict[tuple, dict[str, Any]] = {}
     for a in history:
-        rel = relation(a)
-        if a["polarity"] == "negative" and current is not None and relation(current) != rel:
+        rel = relation(a, r)
+        if a["polarity"] == "negative" and current is not None and relation(current, r) != rel:
             negatives[rel] = a
             continue
         negatives.pop(rel, None)
@@ -111,35 +121,59 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
       narration), each with the characters' claims about the same key;
     - claims: the latest claim per speaker and version key, whether or not a narrated fact exists; a claim
       never supersedes narration;
-    - other: hypothetical, dreamed and unknown assertions, stored and inspectable, never in the packet.
+    - other: hypothetical, dreamed and unknown assertions, stored and inspectable, never in the packet;
+    - entities / ambiguous: the read-time entity resolution those keys use (ADR 0012). `also_called`
+      assertions feed it and are not facts themselves.
     """
     if extractor_key is None:
-        return {"facts": [], "claims": [], "other": []}
-    rows = conn.execute(ACTIVE_ASSERTIONS, {"head": head, "key": extractor_key}).fetchall()
+        return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": []}
+    rows = [r for r in conn.execute(ACTIVE_ASSERTIONS, {"head": head, "key": extractor_key}).fetchall()
+            if r["predicate"] in REGISTRY]
+    conv = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
+    r = resolve(conv["conversation_id"], rows)
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []
     for row in rows:
-        if row["predicate"] not in REGISTRY:
+        if row["predicate"] == "also_called":
             continue
+        _annotate(row, r)
         if row["modality"] != "actual":
-            other.append(dict(row))
+            other.append(row)
         elif row["source"] == "character_claim":
-            claimed[version_key(row) + (_norm(row["asserted_by"]),)] = dict(row)  # latest wins
+            claimed[version_key(row, r) + (_norm(row["asserted_by"]),)] = row  # latest wins
         else:
-            narrated.setdefault(version_key(row), []).append(row)
-    facts = [f for history in narrated.values() for f in _versions(history)]
+            narrated.setdefault(version_key(row, r), []).append(row)
+    facts = [f for history in narrated.values() for f in _versions(history, r)]
     by_key: dict[tuple, list[dict[str, Any]]] = {}
     for f in facts:
-        by_key.setdefault(version_key(f), []).append(f)
+        by_key.setdefault(version_key(f, r), []).append(f)
     claims = sorted(claimed.values(), key=lambda c: c["position"], reverse=True)
     for c in claims:
-        for f in by_key.get(version_key(c), []):
+        for f in by_key.get(version_key(c, r), []):
             f["claims"].append({"by": c["asserted_by"], "turn": c["turn"], "position": c["position"],
                                 "object": c["object"], "value": c["value"], "polarity": c["polarity"]})
     facts.sort(key=lambda f: f["position"], reverse=True)
     other.sort(key=lambda a: a["position"], reverse=True)
-    return {"facts": facts, "claims": claims, "other": other}
+    return {"facts": facts, "claims": claims, "other": other, "entities": r.entities(),
+            "ambiguous": r.ambiguous_mentions()}
+
+
+def _annotate(row: dict[str, Any], r: Resolution) -> None:
+    """Entity of subject and object, and every name they go by (recall matches any of them)."""
+    names: list[str] = []
+    for role, kind, name in (("subject", row.get("subject_type"), row["subject"]),
+                             ("object", row.get("object_type"), row.get("object"))):
+        if not name:
+            continue
+        e = r.entity(kind, name)
+        if e:
+            row[f"{role}_entity"] = {"id": e["id"], "name": e["name"]}
+            names += e["names"]
+        else:
+            row[f"{role}_entity"] = {"status": r.status(kind, name), "candidates": r.candidates(kind, name)}
+            names.append(name)
+    row["names"] = names
 
 
 def fact_versions(conn: psycopg.Connection, head: UUID, extractor_key: str | None) -> list[dict[str, Any]]:
@@ -179,7 +213,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     for f in facts:
         if f["host_logical_id"] in in_context:
             continue
-        names = [n for n in (_norm(f["subject"]), _norm(f.get("object"))) if len(n) >= 2]
+        names = [n for n in {_norm(x) for x in (f.get("names") or [f["subject"], f.get("object")])} if len(n) >= 2]
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
         hidden = [_norm(n) for n in f.get("hidden_from") or [] if len(_norm(n)) >= 2]
         known = [_norm(n) for n in f.get("known_by") or [] if len(_norm(n)) >= 2 and _norm(n) not in USER_NAMES]

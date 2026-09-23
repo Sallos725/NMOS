@@ -27,7 +27,8 @@ from simchat import SimChat  # noqa: E402
 from nmos_sidecar import generations  # noqa: E402
 from nmos_sidecar.api import create_app  # noqa: E402
 from nmos_sidecar.config import Settings  # noqa: E402
-from nmos_sidecar.facts import fact_versions  # noqa: E402
+from nmos_sidecar.entities import resolve  # noqa: E402
+from nmos_sidecar.facts import ACTIVE_ASSERTIONS, fact_versions  # noqa: E402
 from nmos_sidecar.ids import uuid7  # noqa: E402
 from nmos_sidecar.migrate import apply_migrations  # noqa: E402
 from nmos_sidecar.vectors import vector_candidates, vector_literal  # noqa: E402
@@ -206,7 +207,17 @@ def bench_facts(db: psycopg.Connection, head) -> dict:
 
     one = timed(add_generation(db, head, "bench-a", None))
     two = timed(add_generation(db, head, "bench-b", 100))
-    return {"one_generation": one, "two_generations": two}
+    # Entity resolution alone (ADR 0012; part of every fact read above) over the same rows.
+    key = generations.active(db, "extract")
+    rows = db.execute(ACTIVE_ASSERTIONS, {"head": head, "key": key}).fetchall()
+    conv = db.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()["conversation_id"]
+    ms = []
+    for _ in range(15):
+        t = time.perf_counter()
+        resolve(conv, rows)
+        ms.append((time.perf_counter() - t) * 1000)
+    return {"one_generation": one, "two_generations": two, "assertions": len(rows),
+            "resolve": {"p50": p(ms, 0.5), "max": max(ms)}}
 
 
 def main() -> None:
