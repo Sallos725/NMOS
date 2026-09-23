@@ -1,8 +1,6 @@
 # Phase 5 — Entity Identity and Semantic Assertions
 
-> **Status: draft for owner approval (2026-09-23). Not authorized yet.** Phase 5 starts when the
-> owner approves this document; then `docs/STATUS.md` and `AGENTS.md` §0/§2 name it as current
-> (`AGENTS.md` §7). ADRs 0012–0014 are proposed with it and are accepted with it.
+> **Status: current. Approved by the owner on 2026-09-23** (PR #34), with ADRs 0012–0014.
 >
 > Scope comes from the owner's decisions of 2026-09-23: Track B §4 "Owner decisions"
 > (`docs/proposals/TRACK-B-PHASE-5-PLUS.md`) and three design questions answered the same day (name
