@@ -5,7 +5,7 @@
 import type { StatusInfo } from './core';
 import { configBody, connArgs, dirtySections, type FormValues, type Section } from './form';
 import { langOf, t, type Lang, type StringKey } from './i18n';
-import { inspectorApiPath, safeFragment } from './inspector';
+import { inspectorApiPath, inspectorConversation, safeFragment } from './inspector';
 import { routeFor } from './route';
 
 export type Tab = 'status' | 'inspector' | 'settings';
@@ -227,9 +227,24 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const inspectorBody = el('div', { class: 'insp' });
   const inspectorRefresh = el('button', { text: L('refresh') });
   const inspectorAddress = el('p', { class: 'sub mono' });
-  inspectorView.append(el('div', { class: 'btns' }, inspectorRefresh), inspectorBody, inspectorAddress);
+  // Per-chat actions (D22) on a conversation page: they run in the sidecar's background worker.
+  const historyButton = el('button', { text: L('act.history') });
+  const rebuildButton = el('button', { text: L('act.rebuild') });
+  const actionMsg = el('div', { class: 'msg' });
+  const actions = el('div', {}, el('div', { class: 'btns' }, historyButton, rebuildButton),
+    el('p', { class: 'sub', text: L('act.sub') }), actionMsg);
+  inspectorView.append(el('div', { class: 'btns' }, inspectorRefresh), actions, inspectorBody, inspectorAddress);
+  let actionConversation: string | null = null;
+  let rebuildArmed = 0;
   async function showInspector(path = inspectorPath): Promise<void> {
     inspectorPath = path;
+    const conversation = inspectorConversation(path);
+    if (conversation !== actionConversation) {
+      actionConversation = conversation;
+      say(actionMsg, '');
+      disarmRebuild();
+    }
+    actions.style.display = conversation ? '' : 'none';
     inspectorBody.replaceChildren(el('div', { class: 'card muted', text: L('insp.loading') }));
     // Only a sidecar the browser reaches itself can be opened in a tab; a server-routed one (Docker
     // name, LAN address behind HTTPS) is reachable from the PocketRisu server only.
@@ -252,6 +267,47 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     if (path) void showInspector(path);
   });
   inspectorRefresh.addEventListener('click', () => void showInspector());
+  function disarmRebuild(): void {
+    window.clearTimeout(rebuildArmed);
+    rebuildArmed = 0;
+    rebuildButton.textContent = L('act.rebuild');
+    rebuildButton.className = '';
+  }
+  function actionError(error: unknown): string {
+    return /HTTP 409/.test(error instanceof Error ? error.message : String(error)) ? L('act.off') : errorText(lang, error);
+  }
+  interface ActionResult { queued: { extract?: number; embed?: number }; discarded?: number }
+  historyButton.addEventListener('click', async () => {
+    const conversation = actionConversation;
+    if (!conversation) return;
+    historyButton.disabled = true;
+    say(actionMsg, L('act.working'));
+    try {
+      const r = await deps.api<ActionResult>('POST', `/v1/conversations/${conversation}/extract-history`, {}, 30_000);
+      const n = (r.queued.extract ?? 0) + (r.queued.embed ?? 0);
+      say(actionMsg, n ? L('act.history_done', { t: r.queued.extract ?? 0, m: r.queued.embed ?? 0 }) : L('act.history_none'), 'ok');
+      await showInspector();
+    } catch (error) { say(actionMsg, actionError(error), 'err'); } finally { historyButton.disabled = false; }
+  });
+  rebuildButton.addEventListener('click', async () => {
+    const conversation = actionConversation;
+    if (!conversation) return;
+    if (!rebuildArmed) {
+      // Two clicks: the chat's facts disappear until they are extracted again.
+      rebuildButton.textContent = L('act.rebuild_confirm');
+      rebuildButton.className = 'primary';
+      rebuildArmed = window.setTimeout(disarmRebuild, 6000);
+      return;
+    }
+    disarmRebuild();
+    rebuildButton.disabled = true;
+    say(actionMsg, L('act.working'));
+    try {
+      const r = await deps.api<ActionResult>('POST', `/v1/conversations/${conversation}/rebuild`, {}, 30_000);
+      say(actionMsg, L('act.rebuild_done', { d: r.discarded ?? 0, t: r.queued.extract ?? 0 }), 'ok');
+      await showInspector();
+    } catch (error) { say(actionMsg, actionError(error), 'err'); } finally { rebuildButton.disabled = false; }
+  });
 
   // --- settings tab: fields ---------------------------------------------------------------------
   const url = el('input', { spellcheck: 'false' });

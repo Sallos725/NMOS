@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inspectorApiPath } from '../src/inspector';
+import { inspectorApiPath, inspectorConversation } from '../src/inspector';
 
 describe('inspector links', () => {
   it('map the sidecar inspector pages to their panel API and nothing else', () => {
@@ -12,5 +12,15 @@ describe('inspector links', () => {
       '/inspectorx', `/inspector/c/${id}/x`, '//evil/inspector']) {
       expect(inspectorApiPath(href), String(href)).toBeNull();
     }
+  });
+});
+
+describe('inspectorConversation', () => {
+  it('finds the conversation of a detail page only', () => {
+    const id = '0199a3b2-1c2d-7e3f-8a4b-5c6d7e8f9a0b';
+    expect(inspectorConversation(`/v1/inspector/c/${id}`)).toBe(id);
+    expect(inspectorConversation('/v1/inspector')).toBeNull();
+    expect(inspectorConversation(`/v1/inspector/c/${id}/x`)).toBeNull();
+    expect(inspectorConversation('/v1/inspector/c/not-a-uuid')).toBeNull();
   });
 });

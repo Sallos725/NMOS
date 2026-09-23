@@ -40,6 +40,17 @@ const STRINGS = {
   // inspector view
   'insp.loading': ['인스펙터를 불러오는 중…', 'Loading the inspector…'],
   'insp.browser': ['브라우저에서 직접 열 수도 있습니다: {url}', 'Also available in a browser: {url}'],
+  'act.history': ['과거 전체 추출', 'Extract all history'],
+  'act.rebuild': ['기억 재구축', 'Rebuild memory'],
+  'act.rebuild_confirm': ['한 번 더 누르면 재구축합니다', 'Click again to rebuild'],
+  'act.sub': ['과거 전체 추출: 처음 연결할 때 건너뛴 이 채팅의 이전 턴까지 사실을 추출하고 임베딩합니다. 기억 재구축: 이 채팅의 사실을 버리고 모든 턴을 다시 추출합니다(원문은 그대로). 유료 API는 턴마다 비용이 듭니다.',
+    'Extract all history: extract facts and embeddings for the older turns of this chat that the first sync skipped. Rebuild memory: discard this chat\'s facts and extract every turn again (raw messages stay). Paid APIs cost money per turn.'],
+  'act.working': ['요청 중…', 'Requesting…'],
+  'act.history_done': ['턴 {t}개 추출과 메시지 {m}개 임베딩을 백그라운드에 넣었습니다.', 'Queued {t} turns for extraction and {m} messages for embedding.'],
+  'act.history_none': ['이미 전부 처리되었거나 처리 중입니다.', 'Everything is already processed or queued.'],
+  'act.rebuild_done': ['추출 {d}건을 버리고 턴 {t}개를 다시 추출합니다. 끝날 때까지 이 채팅의 사실이 비어 있을 수 있습니다.',
+    'Discarded {d} extractions; {t} turns are extracted again. Facts of this chat may be missing until then.'],
+  'act.off': ['사실 추출(또는 임베딩)이 꺼져 있습니다. 설정 탭에서 켜세요.', 'Fact extraction (or embeddings) is off. Turn it on in Settings.'],
   // settings: connection
   'conn.title': ['연결', 'Connection'],
   'conn.sub': ['이 브라우저의 PocketRisu 플러그인 설정입니다. 사이드카가 다른 기기에 있으면 route=server가 자동으로 쓰입니다.',
