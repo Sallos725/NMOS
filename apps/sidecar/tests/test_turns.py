@@ -58,3 +58,45 @@ def test_appending_a_second_reply_moves_the_anchor():
     grown = turn_layout(members + [e(2, "char")], 3)
     assert anchors(grown) == [2] and turns(grown) == [0, 0, 0]
 
+
+
+# --- membership rows (sidecar) ------------------------------------------------------------------
+
+def head_turns(db, chat) -> list[tuple]:
+    return [(r["turn"], r["turn_hash"] is not None) for r in db.execute(
+        "SELECT am.turn, am.turn_hash FROM active_membership am JOIN conversation c ON c.head_commit_id = am.commit_id"
+        " WHERE c.host_chat_ref = %s ORDER BY am.position", (chat.id,)).fetchall()]
+
+
+def test_membership_rows_carry_turns_and_follow_appends(client, db):
+    from simchat import SimChat
+    from test_sidecar_integration import sync
+    chat = SimChat()
+    chat.reply("Greeting.")
+    chat.user("Hello there.")
+    chat.reply("First reply.")
+    sync(client, chat)
+    assert head_turns(db, chat) == [(0, True), (1, False), (1, True)]
+    # A second reply appended to the last turn moves its anchor (append path, no commit).
+    chat.reply("Second reply.")
+    sync(client, chat)
+    assert head_turns(db, chat) == [(0, True), (1, False), (1, False), (1, True)]
+    chat.user("Next input.")
+    sync(client, chat)
+    assert head_turns(db, chat)[-1] == (2, False)
+
+
+def test_refresh_turns_backfills_and_is_idempotent(client, db):
+    from nmos_sidecar.ledger import refresh_turns
+    from simchat import SimChat
+    from test_sidecar_integration import sync
+    chat = SimChat()
+    for i in range(3):
+        chat.user(f"User line {i}.")
+        chat.reply(f"Reply line {i}.")
+    sync(client, chat)
+    expected = head_turns(db, chat)
+    db.execute("UPDATE active_membership SET turn = NULL, turn_hash = NULL")  # as after migration 0011
+    assert refresh_turns(db, 3) == 6
+    assert head_turns(db, chat) == expected
+    assert refresh_turns(db, 3) == 0

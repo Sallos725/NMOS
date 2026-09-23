@@ -129,6 +129,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             normalized = normtext.backfill(conn)
             if normalized:
                 log.info("normalized text written for %d revisions (%s)", normalized, normtext.NORMALIZER_VERSION)
+            if turned := ledger.refresh_turns(conn, settings.extract_turns):
+                log.info("turn data written for %d head members (K=%d)", turned, settings.extract_turns)
             backfilled = sync_rules(conn, rt["rules"])
             queued = activate(conn, None, None)
             log.info("generations: extract=%s embed=%s; queued %d missing jobs",
@@ -193,7 +195,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             _compact_observation(body, result, conv.head_manifest_hash, len(state.head or [])),
             f"{conv.id}:{result.manifest_hash}:manifest",
         )
-        head = ledger.apply_plan(conn, conv, state, result, observation, settings.extract_window)
+        head = ledger.apply_plan(conn, conv, state, result, observation, manifest, settings.extract_window,
+                                settings.extract_turns)
         cur = rt["settings"]
         if rt["extractor"] or rt["projection"]:
             enqueue_after_apply(conn, conv.id, state.head, state.lifecycle, manifest,

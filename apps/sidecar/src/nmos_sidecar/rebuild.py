@@ -14,7 +14,8 @@ from .parsers import load_rules
 from .state import rebuild_state
 
 
-def rebuild_all(database_url: str, conversation_id: str | None = None, window: int = 6) -> dict[str, int]:
+def rebuild_all(database_url: str, conversation_id: str | None = None, window: int = 6,
+                turns: int = 3) -> dict[str, int]:
     out: dict[str, int] = {}
     with psycopg.connect(database_url, row_factory=dict_row) as conn:
         if conversation_id:
@@ -24,7 +25,7 @@ def rebuild_all(database_url: str, conversation_id: str | None = None, window: i
         for conv_id in ids:
             with conn.transaction():
                 conn.execute("SELECT id FROM conversation WHERE id = %s FOR UPDATE", (conv_id,))
-                _, count = rebuild_membership(conn, conv_id, window)  # type: ignore[arg-type]
+                _, count = rebuild_membership(conn, conv_id, window, turns)  # type: ignore[arg-type]
             out[conv_id] = count
     return out
 
@@ -37,7 +38,8 @@ def main() -> None:
                         help="drop and rewrite the normalized-text projection for the current normalizer")
     args = parser.parse_args()
     settings = Settings()
-    for conv_id, count in rebuild_all(settings.database_url, args.conversation, settings.extract_window).items():
+    for conv_id, count in rebuild_all(settings.database_url, args.conversation, settings.extract_window,
+                                          settings.extract_turns).items():
         print(f"{conv_id}: {count} members")
     if args.text:
         with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
