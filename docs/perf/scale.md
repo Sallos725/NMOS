@@ -18,7 +18,7 @@ compose`, loopback.
 1,024-dim vector per revision (the dimension of `qwen3-embedding:0.6b`), which is a lower bound because
 long revisions have up to 8 chunks.
 
-Not measured: PocketRisu itself at these sizes (a 25k-message chat was not loaded into the host), a
+Not measured here: PocketRisu itself (5k and 10k on the host: "Real-host check" below; 25k was not loaded), a
 phone browser, TLS/remote sidecars.
 
 ## Results
@@ -104,6 +104,42 @@ behind.
 and turn data, jobs and observations over random host action sequences, and that divergence, a new
 `allBefore` cut, or a repeated ID falls back to the full path.
 
+### Incremental plugin manifest (2026-09-23, Track A, A2)
+
+`scripts/bench-manifest.mjs` (Node 22), manifest after a two-message append, p50 (p95), including the
+packet-cache key: 1k 1.1 (3.2) ms, 5k 8.1 (11.1) ms, 10k 17.2 (46.2) ms, 25k 47.0 (54.9) ms, with 2
+messages hashed each time. Before: 19 / 84 / 175 / 474 ms p50.
+
+### Real-host check (2026-09-23, PocketRisu v1.12.0)
+
+Isolated `ghcr.io/pocketrisu/pocketrisu:latest` (v1.12.0), headless Chromium on the same machine,
+stub chat model, this branch's sidecar. Chats: synthetic exports in the `bench_scale.py` shape
+(5,000 and 10,000 messages, ~1,200-char Korean replies) imported through the chat import button. First
+sync done once with `deadline_ms` = 60,000; then warm generations. `[NMOS] request done` timings, ms:
+
+| Warm generation | 5,000 | 10,000 |
+|---|---:|---:|
+| Total added `beforeRequest` time | 1,450–1,490 | 2,590–2,810 |
+| Chat snapshot (`getChatFromIndex`) | ≈90 | ≈190 |
+| Manifest, this branch (A2) | 6–7 | 12–16 |
+| Manifest, released beta.9 plugin | — | 139–149 |
+| Sync (reconcile + bodies), plugin view | 1,190–1,360 | 2,090–2,510 |
+| Sync, sidecar processing (both calls) | ≈105 | ≈135–165 |
+| With `deadline_ms` = 800 | — | 8 of 8 fail open |
+
+**The host stalls after the chat snapshot.** A tiny `GET /v1/health` placed before
+`getChatFromIndex` returned in 7–18 ms; the same call right after it took ≈1,700 ms at 10k. At 5k the
+stall (≈0.9 s) delayed the reconcile *response* instead: the sidecar answered in 57 ms, and the plugin
+received it ≈0.9 s later. The 2.8 MB reconcile request itself crossed in 160–330 ms once the stall was
+over. `getChatFromIndex` returns a deep copy of the whole chat (`v(chat)` in the V3 API), and the V3
+API has no call that returns part of a chat. The released beta.9 plugin shows the same totals (≈2.7 s
+at 10k), so the stall is not caused by A2's cache. The mechanism inside the host (garbage collection
+after the copy is the likely candidate) was not isolated.
+
+Consequence: the sidecar and plugin work (A1, A2) removed ≈700 ms of NMOS computation at 10k, but on
+the real host a warm generation still needs ≈1.5 s at 5k and ≈2.7 s at 10k. The envelope below, which
+was estimated without the host, is contradicted by this evidence at 5k.
+
 ### Estimated added `beforeRequest` latency (warm path)
 
 Plugin copy + manifest + sidecar append + selective retrieve; network and host snapshot overhead
@@ -134,6 +170,10 @@ upload): ≈9 s of sidecar time at 10k, ≈27 s at 25k.
   made a 25k chat fail with HTTP 422 before anything could be measured). 25,000 is the largest
   measured tier; the extra room keeps a growing chat syncing.
 - **Within the default 800 ms deadline:** up to ≈5,000 messages (measured machine, desktop browser).
+  **Contradicted on the real host (2026-09-23, section above):** a warm generation took ≈1.5 s at
+  5,000 messages and ≈2.7 s at 10,000, mostly a host stall after the chat snapshot. The size up to
+  which the default deadline holds on the real host is not yet measured; re-deciding this envelope
+  is an open owner decision.
 - **5,000–30,000 messages:** synced correctly and never corrupted, but requests exceed the default
   deadline and fail open unless `deadline_ms` is raised. This is a documented limit, not a supported
   latency target.

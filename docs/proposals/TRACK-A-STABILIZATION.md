@@ -362,6 +362,13 @@ Stop and ask the owner if:
 - the optimized and full planners produce different logical ledger states;
 - mobile or real-host evidence contradicts the documented performance envelope.
 
+### Status (2026-09-23)
+
+A1 (ADR 0010) and A2 are implemented on branch `append-fast-path`. The real-host check hit the stop
+condition "real-host evidence contradicts the documented performance envelope": the host stalls after
+`getChatFromIndex` (≈0.9 s at 5k, ≈1.7 s at 10k), so the 800 ms deadline is not met at 5k or 10k
+(`docs/perf/scale.md`). A3–A5 wait for the owner's envelope decision (`docs/STATUS.md`).
+
 ## 9. Deliverables
 
 - optimized sidecar append path with safe fallback;

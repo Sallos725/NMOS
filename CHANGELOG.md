@@ -9,8 +9,17 @@ Schema: migration 0013 (applied at startup).
   `allBefore` cut) and reconciles from the end of the chat instead of the whole chat. Warm append at
   10,000 messages: 715 → 156 ms (p50) on the measured machine. Edits, deletes, swipes, rerolls and
   anything unproven take the unchanged full path (ADR 0010). `NMOS_APPEND_FAST_PATH=0` turns it off.
+- **Faster manifest in the plugin.** Only new or changed messages are hashed; bodies are built only
+  when the sidecar asks. 10,000 messages: 175 → 17 ms after an append.
 - Appends are stored as rows of their own (`worldline_append`) instead of rewriting the head commit's
   delta each time; `nmos-rebuild` and the Inspector's commit list read both.
+
+### Known limitations
+
+- Measured on PocketRisu v1.12.0, very long chats are still slow on the host side: a warm generation
+  takes ≈1.5 s at 5,000 messages and ≈2.7 s at 10,000, because the host pauses after handing the
+  plugin a copy of the whole chat. With the default 800 ms deadline these requests go without memory
+  (`docs/perf/scale.md`).
 
 ## 0.1.0-beta.9
 

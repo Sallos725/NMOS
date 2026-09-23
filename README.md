@@ -169,9 +169,9 @@ Known limits:
 - No group chats (the tested PocketRisu build has none).
 - Character knowledge is annotated (`knowledge="public"`, `known_by` / `hidden_from`, or unknown)
   rather than hard-isolated.
-- Very long chats: memory arrives within the default 800 ms deadline up to about 5,000 messages on the
-  measured machine; beyond about 8,000 most requests fail open (no memory) unless you raise
-  `deadline_ms`. See `docs/perf/scale.md`.
+- Very long chats: on PocketRisu v1.12.0 a warm generation took about 1.5 s at 5,000 messages and
+  2.7 s at 10,000 (the host pauses after handing NMOS the chat), so with the default 800 ms deadline
+  those requests go without memory unless you raise `deadline_ms`. See `docs/perf/scale.md`.
 - Changing the LLM or embedding model/endpoint re-processes previously covered history with the new
   model (recent messages first; the Inspector shows coverage as partial until done). Upgrading to
   0.1.0-beta.8 does the same once for facts (extraction became per turn, ADR 0008).
