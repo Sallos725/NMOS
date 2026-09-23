@@ -38,6 +38,12 @@ latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once; older turns keep their 
 - The packet Note explains `negated` and `Claim` only in packets that use them.
 - Inspector: facts marked *negated* or *legacy* (`extract-v4` and older), a list of claims, and a list
   of non-actual assertions.
+- **A missing entity type no longer loses the fact.** A model sometimes leaves `object_type` empty on a
+  name it typed elsewhere ("소우타 — relationship — 스즈키 히나타" while 히나타 is a `character` two lines up),
+  and validation parked the fact as pending. When the same reply or the known-entity list gives that
+  name exactly one type, the type is filled and the assertion is noted `object_type inferred`; a type
+  the model gave is never replaced, and conflicting evidence fills nothing. The extraction prompt now
+  also asks for both types and, more firmly, for values in the chat's language (never translated).
 
 ## 0.1.0-beta.11
 

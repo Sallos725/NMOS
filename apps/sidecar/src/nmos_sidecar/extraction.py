@@ -21,7 +21,7 @@ from .generations import Generation
 from .ids import uuid7
 from .entities import USER_NAMES, norm, resolve
 from .facts import ACTIVE_ASSERTIONS
-from .predicates import REGISTRY, alias_evidenced, knowledge, registry_prompt, semantics, validate
+from .predicates import REGISTRY, alias_evidenced, fill_types, knowledge, registry_prompt, semantics, validate
 from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
@@ -49,7 +49,10 @@ Rules:
   and a new name when it may be a different one.
 - Name entities exactly as the story does (keep the chat's language). The user's persona is "{{{{user}}}}"
   only if no name is given.
-- `value` is a short phrase in the chat's language. `evidence` is a short quote from the TARGET turn.
+- `value` is a short phrase in the chat's language: write it in the TARGET turn's language even when
+  these instructions are in English, and never translate names. `evidence` is a short quote from the
+  TARGET turn.
+- Give `subject_type`, and `object_type` whenever `object` is set, from the entity types above.
 - `epistemic`: "stated" if explicit, "implied" if strongly implied. Skip jokes, OOC text, UI/status
   boilerplate, and anything that only restates earlier facts.
 - `polarity`: "negative" when the TARGET turn says the relation does not hold or no longer holds (lost,
@@ -328,7 +331,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         if inserted is None:
             return "done"
         rows = []
-        for item in items[:40]:
+        for item, inferred in fill_types(items[:40], hints):
             if not isinstance(item, dict):
                 continue
             status, reason = validate(item)
@@ -347,8 +350,9 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
                 status, reason = "pending", "alias not stated in the turn"
             if status == "valid" and unclaimed:
                 status, reason = "pending", unclaimed
-            if note:
-                reason = f"{reason}; {note}" if reason else note
+            for extra in (note, inferred):
+                if extra:
+                    reason = f"{reason}; {extra}" if reason else extra
             rows.append((extraction_id, revision_id, text("subject", 120) or "?", text("subject_type", 20),
                          text("predicate", 40) or "?", text("object", 120), text("object_type", 20), text("value"),
                          "implied" if item.get("epistemic") == "implied" else "stated", confidence,
