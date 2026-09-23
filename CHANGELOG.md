@@ -38,6 +38,13 @@ latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once; older turns keep their 
 - The packet Note explains `negated` and `Claim` only in packets that use them.
 - Inspector: facts marked *negated* or *legacy* (`extract-v4` and older), a list of claims, and a list
   of non-actual assertions.
+- **Inline images are no longer read as story** (normalizer `clean-v2`). Image plugins write markup
+  into the message itself; an illustration insert (`<div><span style="…"><img src="{{raw::…}}">`)
+  outgrew the old 500-character tag limit, so the whole `<img …>` tag reached embeddings, extraction
+  and excerpts on every illustrated turn. `clean-v2` also drops RisuAI inlay/asset tokens
+  (`{{inlay::…}}`, `{{raw::…}}`, …), markdown images and `data:` URIs, lets HTML tags span lines with
+  attributes of any length, and no longer eats prose such as `HP < 30 … 3 > 2` as a tag. Upgrading
+  re-embeds every revision once and folds into the same one-time re-extraction as `extract-v5`.
 
 ## 0.1.0-beta.11
 
