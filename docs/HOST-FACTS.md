@@ -202,6 +202,29 @@ Evidence is in live sidecar/ledger state and the runs described in `docs/perf/ph
 4. **Chat UI lazy rendering.** Only recent messages are mounted. Older ones mount when the
    `.default-chat-screen` column-reverse scroller reaches the top. No data effect.
 
+
+## Plugin frame sandbox (2026-09-23)
+
+Observed on `ghcr.io/pocketrisu/pocketrisu:latest` (v1.12.0, the build the owner runs), isolated
+container on `http://localhost:6101` with an empty save dir, headless Chromium 1223, NMOS plugin
+0.1.0-beta.5. The owner reported that the panel's "Open inspector" link did nothing.
+
+1. **Sandbox flags (ARCHITECTURE H15).** The plugin iframe carries `sandbox="allow-scripts allow-modals
+   allow-downloads"` and `allow="screen-wake-lock"` (read from the live DOM). **Source reading:** the
+   bundled V3 factory adds exactly these three tokens (`this.iframe.sandbox.add(...)`).
+2. **No new tabs.** Clicking the beta.5 `<a target="_blank">` Inspector link opened no page and left
+   the host URL unchanged; Chromium logged *"Blocked opening 'http://127.0.0.1:8790/inspector' in a new
+   window because the request was made in a sandboxed frame whose 'allow-popups' permission is not
+   set."* Top-level navigation is not allowed either (no `allow-top-navigation`).
+3. **Clipboard.** Inside the frame, `navigator.clipboard.writeText` was rejected (*"blocked because of
+   a permissions policy"*); `document.execCommand('copy')` on a user click did copy. Not used by NMOS.
+4. **No URL-opening API.** The V3 API object exposes no method that opens a URL (its internal
+   `window.open` helper is used only for the host's own OAuth flow). `getRootDocument` needs the
+   `mainDom` permission and its anchors cannot set `target`.
+5. **In-panel inspector works.** With the Inspector rendered in the panel (0.1.0-beta.6), the list →
+   conversation → list round trip stayed in the frame: no new page, no frame navigation, no console
+   errors; markup in chat text was shown as text.
+
 ---
 
 ## Scenario evidence index

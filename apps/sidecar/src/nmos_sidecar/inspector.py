@@ -1,5 +1,6 @@
 """Read-only inspector: plain server-rendered HTML, every value escaped. Korean by default, English
-with `?lang=en` (the plugin panel links with the language chosen there)."""
+with `?lang=en`. `embed=True` returns only the body, without the language switch, for the plugin panel
+(which cannot open a browser tab, ARCHITECTURE H15)."""
 
 from __future__ import annotations
 
@@ -141,7 +142,7 @@ def _percent(stats: dict[str, Any] | None, done_key: str, lang: str) -> str:
 
 def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str, int] | None = None,
           gens: dict[str, dict[str, Any] | None] | None = None, extraction: dict | None = None,
-          embeddings: dict | None = None, lang: str = "ko") -> str:
+          embeddings: dict | None = None, lang: str = "ko", embed: bool = False) -> str:
     extraction, embeddings, gens = extraction or {}, embeddings or {}, gens or {}
     q = query(token, lang)
     rows = [[f"<a href=\"/inspector/c/{c['id']}{q}\">{_v(label(c))}</a>"
@@ -155,11 +156,12 @@ def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str
     listing = (table([_t(lang, k) for k in ("h.conversation", "h.messages", "h.facts_cov", "h.vector_cov",
                                             "h.commits", "h.branched", "h.last_retrieval")], rows)
                if rows else f"<p class=\"muted\">{_t(lang, 'no_conversations')}</p>")
-    return page(_t(lang, "title"),
-                f"<div class=\"top\"><h1>{_t(lang, 'title')}</h1>{_lang_switch('/inspector', token, lang)}</div>"
-                f"<p class=\"muted\">{_t(lang, 'intro')} {queue}</p>"
-                f"<p>{_t(lang, 'extractor')}: {_generation(gens.get('extraction'), lang)}<br>"
-                f"{_t(lang, 'projection')}: {_generation(gens.get('embeddings'), lang)}</p>" + listing, lang)
+    switch = "" if embed else _lang_switch("/inspector", token, lang)
+    body = (f"<div class=\"top\"><h1>{_t(lang, 'title')}</h1>{switch}</div>"
+            f"<p class=\"muted\">{_t(lang, 'intro')} {queue}</p>"
+            f"<p>{_t(lang, 'extractor')}: {_generation(gens.get('extraction'), lang)}<br>"
+            f"{_t(lang, 'projection')}: {_generation(gens.get('embeddings'), lang)}</p>" + listing)
+    return body if embed else page(_t(lang, "title"), body, lang)
 
 
 def _knowledge(f: dict[str, Any], lang: str) -> str:
@@ -208,12 +210,12 @@ def _processed(m: dict[str, Any], lang: str) -> str:
 
 def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict[str, Any]],
            commits: list[dict[str, Any]], traces: list[dict[str, Any]], facts: list[dict[str, Any]],
-           token: str | None, coverage: dict[str, Any] | None = None, lang: str = "ko") -> str:
+           token: str | None, coverage: dict[str, Any] | None = None, lang: str = "ko", embed: bool = False) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
     parts = [(f"<div class=\"top\"><p><a href=\"/inspector{q}\">{t('back')}</a></p>"
-              f"{_lang_switch(path, token, lang)}</div>"),
+              f"{'' if embed else _lang_switch(path, token, lang)}</div>"),
              f"<h1>{_v(name)}</h1>",
              f"<p class=\"muted\"><span class=\"mono\">{_v(conv['host_chat_ref'])}</span><br>"
              f"{t('conversation')} {_v(conv['id'])} · {t('head')} {_v(conv['head_commit_id'])}"
@@ -241,4 +243,4 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         [[_v(m["position"]), _v(m["role"]), f"<span class=\"chip\">{_v(m['lifecycle'])}</span>",
           _v(m["disabled"] or ""), _processed(m, lang), _v(m["preview"]) + ("…" if m["length"] > 240 else "")]
          for m in members]))
-    return page(f"NMOS · {name}", "".join(parts), lang)
+    return "".join(parts) if embed else page(f"NMOS · {name}", "".join(parts), lang)

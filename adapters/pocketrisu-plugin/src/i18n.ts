@@ -9,13 +9,13 @@ export function langOf(value: unknown): Lang {
 const STRINGS = {
   // menus (registered once at load, in the language chosen then)
   'menu.panel': ['NMOS 기억', 'NMOS memory'],
-  'menu.settings': ['NMOS 설정', 'NMOS settings'],
-  'menu.status': ['NMOS 상태', 'NMOS status'],
   // frame
   'title': ['NMOS 기억', 'NMOS memory'],
   'tab.status': ['상태', 'Status'],
+  'tab.inspector': ['인스펙터', 'Inspector'],
   'tab.settings': ['설정', 'Settings'],
   'close': ['닫기', 'Close'],
+  'refresh': ['새로 고침', 'Refresh'],
   'language': ['언어', 'Language'],
   // status view
   'status.sidecar': ['사이드카', 'Sidecar'],
@@ -37,8 +37,9 @@ const STRINGS = {
   'outcome.injected': ['기억 {n}자를 넣었습니다', 'Injected {n} characters of memory'],
   'outcome.nothing': ['관련된 기억이 없었습니다', 'Nothing relevant to inject'],
   'outcome.failed': ['건너뜀 (원래 요청은 그대로 보냄)', 'Skipped (the request went out unchanged)'],
-  'status.inspector': ['인스펙터 열기', 'Open inspector'],
-  'status.refresh': ['새로 고침', 'Refresh'],
+  // inspector view
+  'insp.loading': ['인스펙터를 불러오는 중…', 'Loading the inspector…'],
+  'insp.browser': ['브라우저에서 직접 열 수도 있습니다: {url}', 'Also available in a browser: {url}'],
   // settings: connection
   'conn.title': ['연결', 'Connection'],
   'conn.sub': ['이 브라우저의 PocketRisu 플러그인 설정입니다. 사이드카가 다른 기기에 있으면 route=server가 자동으로 쓰입니다.',

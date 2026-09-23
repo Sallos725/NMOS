@@ -1,12 +1,13 @@
-// NMOS panel, rendered inside the plugin's own sandboxed iframe (full screen): a status tab and a
-// settings tab. Plugin-side settings are PocketRisu plugin args; model/recall/parser settings live in
+// NMOS panel, rendered inside the plugin's own sandboxed iframe (full screen): status, inspector and
+// settings tabs. Plugin-side settings are PocketRisu plugin args; model/recall/parser settings live in
 // the sidecar and are saved together with one request.
 
 import type { StatusInfo } from './core';
 import { configBody, connArgs, dirtySections, type FormValues, type Section } from './form';
 import { langOf, t, type Lang, type StringKey } from './i18n';
+import { inspectorApiPath, safeFragment } from './inspector';
 
-export type Tab = 'status' | 'settings';
+export type Tab = 'status' | 'inspector' | 'settings';
 
 export interface PanelDeps {
   api<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeoutMs?: number): Promise<T>;
@@ -88,8 +89,18 @@ html,body{margin:0;background:#0c0c10}
 .nmos .pill{border:1px solid #3a3c46;border-radius:999px;padding:3px 12px;font-size:13px;color:#9a9ca8}
 .nmos .pill.on{border-color:#2f9e44;color:#8ce99a}
 .nmos .mono{font-family:ui-monospace,monospace;font-size:12.5px;word-break:break-all}
-.nmos a{color:#91a7ff}
-.nmos a.btn{display:inline-block;background:#2b2d36;color:#e8e8ec;border:1px solid #444654;border-radius:6px;padding:7px 14px;text-decoration:none}
+.nmos.wide>.wrap{max-width:1100px}
+.nmos .insp{margin-top:14px}.nmos .insp+.sub{margin-top:18px}
+.nmos .insp h1{font-size:17px;margin:4px 0}
+.nmos .insp h2{margin:22px 0 8px}
+.nmos .insp .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}.nmos .insp .top p{margin:0}
+.nmos .insp a{color:#91a7ff;text-decoration:none;cursor:pointer}
+.nmos .insp .ref{display:block;font-family:ui-monospace,monospace;font-size:11px;color:#9a9ca8}
+.nmos .insp .wrap{max-width:none;margin:0;padding:0;overflow-x:auto}
+.nmos .insp table{width:100%;border-collapse:collapse;font-size:13px}
+.nmos .insp th,.nmos .insp td{text-align:left;padding:6px 8px;border-bottom:1px solid #30323b;vertical-align:top}
+.nmos .insp th{font-weight:600;color:#9a9ca8;font-size:12px;white-space:nowrap}
+.nmos .insp .chip{display:inline-block;padding:0 6px;border-radius:4px;background:#2b2d36;font-size:12px}
 .nmos .bar{position:sticky;bottom:0;background:#15161b;border-top:1px solid #30323b;padding:10px max(14px,calc((100% - 760px) / 2 + 14px));display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .nmos .bar .text{flex:1;min-width:160px;font-size:13px}
 `;
@@ -155,12 +166,15 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   language.value = lang;
   const close = el('button', { text: L('close') });
   const tabStatus = el('button', { text: L('tab.status') });
+  const tabInspector = el('button', { text: L('tab.inspector') });
   const tabSettings = el('button', { text: L('tab.settings') });
   wrap.append(el('header', {}, el('h1', { text: L('title') }), language, close),
-    el('nav', { class: 'tabs' }, tabStatus, tabSettings));
+    el('nav', { class: 'tabs' }, tabStatus, tabInspector, tabSettings));
   const statusView = el('div');
+  const inspectorView = el('div');
   const settingsView = el('div');
-  wrap.append(statusView, settingsView);
+  wrap.append(statusView, inspectorView, settingsView);
+  let shown: Tab = tab;
 
   // --- status tab ------------------------------------------------------------------------------
   async function refreshStatus(): Promise<void> {
@@ -200,13 +214,40 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       lastCard.append(el('div', { class: 'muted', text: L('status.none') }));
     }
 
-    const inspectorUrl = `${base}/inspector${lang === 'en' ? '?lang=en' : ''}`;
-    const refresh = el('button', { text: L('status.refresh') });
+    const refresh = el('button', { text: L('refresh') });
     refresh.addEventListener('click', () => void refreshStatus());
-    const links = el('div', { class: 'btns' }, refresh,
-      el('a', { href: inspectorUrl, target: '_blank', rel: 'noopener', class: 'btn' }, L('status.inspector')));
-    statusView.replaceChildren(conn, features, lastCard, links);
+    statusView.replaceChildren(conn, features, lastCard, el('div', { class: 'btns' }, refresh));
   }
+
+  // --- inspector tab ---------------------------------------------------------------------------
+  // The sidecar's own inspector pages, shown in place: the plugin frame cannot open a tab (H15).
+  // Links are handled here; following one would navigate the plugin frame itself.
+  let inspectorPath = '/v1/inspector';
+  const inspectorBody = el('div', { class: 'insp' });
+  const inspectorRefresh = el('button', { text: L('refresh') });
+  const inspectorAddress = el('p', { class: 'sub mono' });
+  inspectorView.append(el('div', { class: 'btns' }, inspectorRefresh), inspectorBody, inspectorAddress);
+  async function showInspector(path = inspectorPath): Promise<void> {
+    inspectorPath = path;
+    inspectorBody.replaceChildren(el('div', { class: 'card muted', text: L('insp.loading') }));
+    const base = ((await deps.getArg('sidecar_url')) || 'http://127.0.0.1:8790').replace(/\/+$/, '');
+    inspectorAddress.textContent = L('insp.browser', { url: `${base}/inspector${lang === 'en' ? '?lang=en' : ''}` });
+    try {
+      const r = await deps.api<{ html: string }>('GET', `${path}${lang === 'en' ? '?lang=en' : ''}`, undefined, 15_000);
+      inspectorBody.replaceChildren(safeFragment(r.html));
+      root.scrollTop = 0;
+    } catch (error) {
+      inspectorBody.replaceChildren(el('div', { class: 'card err', text: errorText(lang, error) }));
+    }
+  }
+  inspectorBody.addEventListener('click', (event) => {
+    const link = event.target instanceof Element ? event.target.closest('a') : null;
+    if (!link) return;
+    event.preventDefault();
+    const path = inspectorApiPath(link.getAttribute('href'));
+    if (path) void showInspector(path);
+  });
+  inspectorRefresh.addEventListener('click', () => void showInspector());
 
   // --- settings tab: fields ---------------------------------------------------------------------
   const url = el('input', { spellcheck: 'false' });
@@ -413,19 +454,25 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
     const next = langOf(language.value);
     await deps.setArg('language', next);
-    const shown: Tab = settingsView.style.display === 'none' ? 'status' : 'settings';
     root.remove();
     current = await render(deps, next, shown);
   });
 
   function select(next: Tab): void {
-    statusView.style.display = next === 'status' ? '' : 'none';
-    settingsView.style.display = bar.style.display = next === 'settings' ? '' : 'none';
-    tabStatus.className = next === 'status' ? 'on' : '';
-    tabSettings.className = next === 'settings' ? 'on' : '';
+    shown = next;
+    const views: [Tab, HTMLElement, HTMLElement][] = [
+      ['status', statusView, tabStatus], ['inspector', inspectorView, tabInspector], ['settings', settingsView, tabSettings]];
+    for (const [name, view, button] of views) {
+      view.style.display = name === next ? '' : 'none';
+      button.className = name === next ? 'on' : '';
+    }
+    bar.style.display = next === 'settings' ? '' : 'none';
+    root.classList.toggle('wide', next === 'inspector');
     if (next === 'status') void refreshStatus();
+    if (next === 'inspector') void showInspector();
   }
   tabStatus.addEventListener('click', () => select('status'));
+  tabInspector.addEventListener('click', () => select('inspector'));
   tabSettings.addEventListener('click', () => select('settings'));
 
   document.body.append(root);

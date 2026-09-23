@@ -1,7 +1,7 @@
 //@name nmos_memory
 //@display-name NMOS Narrative Memory
 //@api 3.0
-//@version 0.1.0-beta.5
+//@version 0.1.0-beta.6
 //@link https://github.com/Sallos725/NMOS Documentation
 //@update-url https://raw.githubusercontent.com/Sallos725/NMOS/main/adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js
 //@arg sidecar_url string NMOS sidecar URL (empty = http://127.0.0.1:8790)
@@ -435,13 +435,13 @@ ${revisionHash}`;
   var STRINGS = {
     // menus (registered once at load, in the language chosen then)
     "menu.panel": ["NMOS \uAE30\uC5B5", "NMOS memory"],
-    "menu.settings": ["NMOS \uC124\uC815", "NMOS settings"],
-    "menu.status": ["NMOS \uC0C1\uD0DC", "NMOS status"],
     // frame
     "title": ["NMOS \uAE30\uC5B5", "NMOS memory"],
     "tab.status": ["\uC0C1\uD0DC", "Status"],
+    "tab.inspector": ["\uC778\uC2A4\uD399\uD130", "Inspector"],
     "tab.settings": ["\uC124\uC815", "Settings"],
     "close": ["\uB2EB\uAE30", "Close"],
+    "refresh": ["\uC0C8\uB85C \uACE0\uCE68", "Refresh"],
     "language": ["\uC5B8\uC5B4", "Language"],
     // status view
     "status.sidecar": ["\uC0AC\uC774\uB4DC\uCE74", "Sidecar"],
@@ -465,8 +465,9 @@ ${revisionHash}`;
     "outcome.injected": ["\uAE30\uC5B5 {n}\uC790\uB97C \uB123\uC5C8\uC2B5\uB2C8\uB2E4", "Injected {n} characters of memory"],
     "outcome.nothing": ["\uAD00\uB828\uB41C \uAE30\uC5B5\uC774 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4", "Nothing relevant to inject"],
     "outcome.failed": ["\uAC74\uB108\uB700 (\uC6D0\uB798 \uC694\uCCAD\uC740 \uADF8\uB300\uB85C \uBCF4\uB0C4)", "Skipped (the request went out unchanged)"],
-    "status.inspector": ["\uC778\uC2A4\uD399\uD130 \uC5F4\uAE30", "Open inspector"],
-    "status.refresh": ["\uC0C8\uB85C \uACE0\uCE68", "Refresh"],
+    // inspector view
+    "insp.loading": ["\uC778\uC2A4\uD399\uD130\uB97C \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Loading the inspector\u2026"],
+    "insp.browser": ["\uBE0C\uB77C\uC6B0\uC800\uC5D0\uC11C \uC9C1\uC811 \uC5F4 \uC218\uB3C4 \uC788\uC2B5\uB2C8\uB2E4: {url}", "Also available in a browser: {url}"],
     // settings: connection
     "conn.title": ["\uC5F0\uACB0", "Connection"],
     "conn.sub": [
@@ -594,6 +595,34 @@ ${revisionHash}`;
     };
   }
 
+  // src/inspector.ts
+  var TAGS = /* @__PURE__ */ new Set(["DIV", "P", "H1", "H2", "SPAN", "B", "BR", "A", "TABLE", "THEAD", "TBODY", "TR", "TH", "TD"]);
+  function inspectorApiPath(href) {
+    const m = /^\/inspector(\/c\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?(?:[?#]|$)/i.exec(href ?? "");
+    return m ? `/v1/inspector${m[1] ?? ""}` : null;
+  }
+  function safeFragment(html) {
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const clean = (parent) => {
+      for (const node of Array.from(parent.childNodes)) {
+        if (node.nodeType === Node.TEXT_NODE) continue;
+        if (node.nodeType !== Node.ELEMENT_NODE || !TAGS.has(node.nodeName)) {
+          node.remove();
+          continue;
+        }
+        const element = node;
+        for (const { name, value } of Array.from(element.attributes)) {
+          const keep = name === "class" || name === "title" || name === "href" && inspectorApiPath(value) !== null;
+          if (!keep) element.removeAttribute(name);
+        }
+        clean(element);
+      }
+    };
+    clean(template.content);
+    return template.content;
+  }
+
   // src/ui.ts
   var LLM_PRESETS = [
     { label: "preset.off", url: "" },
@@ -654,8 +683,18 @@ html,body{margin:0;background:#0c0c10}
 .nmos .pill{border:1px solid #3a3c46;border-radius:999px;padding:3px 12px;font-size:13px;color:#9a9ca8}
 .nmos .pill.on{border-color:#2f9e44;color:#8ce99a}
 .nmos .mono{font-family:ui-monospace,monospace;font-size:12.5px;word-break:break-all}
-.nmos a{color:#91a7ff}
-.nmos a.btn{display:inline-block;background:#2b2d36;color:#e8e8ec;border:1px solid #444654;border-radius:6px;padding:7px 14px;text-decoration:none}
+.nmos.wide>.wrap{max-width:1100px}
+.nmos .insp{margin-top:14px}.nmos .insp+.sub{margin-top:18px}
+.nmos .insp h1{font-size:17px;margin:4px 0}
+.nmos .insp h2{margin:22px 0 8px}
+.nmos .insp .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}.nmos .insp .top p{margin:0}
+.nmos .insp a{color:#91a7ff;text-decoration:none;cursor:pointer}
+.nmos .insp .ref{display:block;font-family:ui-monospace,monospace;font-size:11px;color:#9a9ca8}
+.nmos .insp .wrap{max-width:none;margin:0;padding:0;overflow-x:auto}
+.nmos .insp table{width:100%;border-collapse:collapse;font-size:13px}
+.nmos .insp th,.nmos .insp td{text-align:left;padding:6px 8px;border-bottom:1px solid #30323b;vertical-align:top}
+.nmos .insp th{font-weight:600;color:#9a9ca8;font-size:12px;white-space:nowrap}
+.nmos .insp .chip{display:inline-block;padding:0 6px;border-radius:4px;background:#2b2d36;font-size:12px}
 .nmos .bar{position:sticky;bottom:0;background:#15161b;border-top:1px solid #30323b;padding:10px max(14px,calc((100% - 760px) / 2 + 14px));display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .nmos .bar .text{flex:1;min-width:160px;font-size:13px}
 `;
@@ -712,14 +751,17 @@ html,body{margin:0;background:#0c0c10}
     language.value = lang;
     const close = el("button", { text: L("close") });
     const tabStatus = el("button", { text: L("tab.status") });
+    const tabInspector = el("button", { text: L("tab.inspector") });
     const tabSettings = el("button", { text: L("tab.settings") });
     wrap.append(
       el("header", {}, el("h1", { text: L("title") }), language, close),
-      el("nav", { class: "tabs" }, tabStatus, tabSettings)
+      el("nav", { class: "tabs" }, tabStatus, tabInspector, tabSettings)
     );
     const statusView = el("div");
+    const inspectorView = el("div");
     const settingsView = el("div");
-    wrap.append(statusView, settingsView);
+    wrap.append(statusView, inspectorView, settingsView);
+    let shown = tab;
     async function refreshStatus() {
       statusView.replaceChildren(el("div", { class: "card muted", text: L("status.checking") }));
       const s = await deps.status();
@@ -772,17 +814,36 @@ html,body{margin:0;background:#0c0c10}
       } else {
         lastCard.append(el("div", { class: "muted", text: L("status.none") }));
       }
-      const inspectorUrl = `${base}/inspector${lang === "en" ? "?lang=en" : ""}`;
-      const refresh = el("button", { text: L("status.refresh") });
+      const refresh = el("button", { text: L("refresh") });
       refresh.addEventListener("click", () => void refreshStatus());
-      const links = el(
-        "div",
-        { class: "btns" },
-        refresh,
-        el("a", { href: inspectorUrl, target: "_blank", rel: "noopener", class: "btn" }, L("status.inspector"))
-      );
-      statusView.replaceChildren(conn, features, lastCard, links);
+      statusView.replaceChildren(conn, features, lastCard, el("div", { class: "btns" }, refresh));
     }
+    let inspectorPath = "/v1/inspector";
+    const inspectorBody = el("div", { class: "insp" });
+    const inspectorRefresh = el("button", { text: L("refresh") });
+    const inspectorAddress = el("p", { class: "sub mono" });
+    inspectorView.append(el("div", { class: "btns" }, inspectorRefresh), inspectorBody, inspectorAddress);
+    async function showInspector(path = inspectorPath) {
+      inspectorPath = path;
+      inspectorBody.replaceChildren(el("div", { class: "card muted", text: L("insp.loading") }));
+      const base = (await deps.getArg("sidecar_url") || "http://127.0.0.1:8790").replace(/\/+$/, "");
+      inspectorAddress.textContent = L("insp.browser", { url: `${base}/inspector${lang === "en" ? "?lang=en" : ""}` });
+      try {
+        const r = await deps.api("GET", `${path}${lang === "en" ? "?lang=en" : ""}`, void 0, 15e3);
+        inspectorBody.replaceChildren(safeFragment(r.html));
+        root.scrollTop = 0;
+      } catch (error) {
+        inspectorBody.replaceChildren(el("div", { class: "card err", text: errorText(lang, error) }));
+      }
+    }
+    inspectorBody.addEventListener("click", (event) => {
+      const link = event.target instanceof Element ? event.target.closest("a") : null;
+      if (!link) return;
+      event.preventDefault();
+      const path = inspectorApiPath(link.getAttribute("href"));
+      if (path) void showInspector(path);
+    });
+    inspectorRefresh.addEventListener("click", () => void showInspector());
     const url = el("input", { spellcheck: "false" });
     const route = el("select", {}, ...["auto", "direct", "server"].map((v) => el("option", { value: v, text: v })));
     const enabled = el("input", { type: "checkbox" });
@@ -1031,18 +1092,27 @@ html,body{margin:0;background:#0c0c10}
       }
       const next = langOf(language.value);
       await deps.setArg("language", next);
-      const shown = settingsView.style.display === "none" ? "status" : "settings";
       root.remove();
       current = await render(deps, next, shown);
     });
     function select(next) {
-      statusView.style.display = next === "status" ? "" : "none";
-      settingsView.style.display = bar.style.display = next === "settings" ? "" : "none";
-      tabStatus.className = next === "status" ? "on" : "";
-      tabSettings.className = next === "settings" ? "on" : "";
+      shown = next;
+      const views = [
+        ["status", statusView, tabStatus],
+        ["inspector", inspectorView, tabInspector],
+        ["settings", settingsView, tabSettings]
+      ];
+      for (const [name, view, button] of views) {
+        view.style.display = name === next ? "" : "none";
+        button.className = name === next ? "on" : "";
+      }
+      bar.style.display = next === "settings" ? "" : "none";
+      root.classList.toggle("wide", next === "inspector");
       if (next === "status") void refreshStatus();
+      if (next === "inspector") void showInspector();
     }
     tabStatus.addEventListener("click", () => select("status"));
+    tabInspector.addEventListener("click", () => select("inspector"));
     tabSettings.addEventListener("click", () => select("settings"));
     document.body.append(root);
     select(tab);
@@ -1131,8 +1201,7 @@ html,body{margin:0;background:#0c0c10}
     };
     const open = (tab) => openPanel(deps, tab);
     const lang = langOf(await arg("language"));
-    await risuai.registerSetting(t(lang, "menu.settings"), () => open("settings"), "\u2699\uFE0F", "html", "nmos-settings");
-    await risuai.registerSetting(t(lang, "menu.status"), () => open("status"), "\u{1F9E0}", "html", "nmos-status");
+    await risuai.registerSetting(t(lang, "menu.panel"), () => open("status"), "\u{1F9E0}", "html", "nmos-panel");
     await risuai.registerButton(
       { name: t(lang, "menu.panel"), icon: "\u{1F9E0}", iconType: "html", location: "chat", id: "nmos-chat" },
       () => open("status")
@@ -1154,6 +1223,6 @@ html,body{margin:0;background:#0c0c10}
       () => adapter.status(),
       (method, path, body, timeoutMs) => adapter.api(method, path, body, timeoutMs)
     );
-    console.log("[NMOS] adapter loaded", { version: "0.1.0-beta.5" });
+    console.log("[NMOS] adapter loaded", { version: "0.1.0-beta.6" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));
 })();

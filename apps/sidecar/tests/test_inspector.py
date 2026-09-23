@@ -84,3 +84,23 @@ def test_container_entrypoint_builds_the_app(monkeypatch, migrated):
 
     monkeypatch.setenv("NMOS_DATABASE_URL", migrated)
     assert app_factory().title == "NMOS sidecar"
+
+
+def test_embedded_inspector_is_the_same_page_without_the_frame(client):
+    """The plugin panel shows the inspector in place (H15): body only, no language switch, still escaped."""
+    sync_named(client, chat(), character_name="<b>하나</b>", chat_name="첫 대화")
+    conv_id = client.get("/v1/conversations").json()[0]["id"]
+    listing = client.get("/v1/inspector", params={"lang": "en"}).json()["html"]
+    assert not listing.startswith("<!doctype") and "<style>" not in listing and "English" not in listing
+    assert "Facts coverage" in listing and f'href="/inspector/c/{conv_id}?lang=en"' in listing
+    assert "&lt;b&gt;하나&lt;/b&gt;" in listing and "<b>하나</b>" not in listing
+    detail = client.get(f"/v1/inspector/c/{conv_id}").json()["html"]
+    assert detail.startswith('<div class="top"><p><a href="/inspector">← 대화 목록</a></p></div>')
+    assert "현재 메시지 (최신순)" in detail
+    assert client.get("/v1/inspector/c/00000000-0000-0000-0000-000000000000").status_code == 404
+
+
+def test_embedded_inspector_requires_the_token(migrated):
+    with make_client(migrated) as c:
+        del c.headers["Authorization"]
+        assert c.get("/v1/inspector").status_code == 401
