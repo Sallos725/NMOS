@@ -32,6 +32,11 @@ latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once; older turns keep their 
 - The packet Note explains `negated` and `Claim` only in packets that use them.
 - Inspector: facts marked *negated* or *legacy* (`extract-v4` and older), a list of claims, and a list
   of non-actual assertions.
+- **Progress display** (plugin, D28; outside Phase 5, owner decision). An optional pill at the top right
+  of the chat screen shows each request's memory outcome and the open chat's background extraction and
+  embedding progress. Off by default; turn it on in the panel (Settings or Status), which asks for
+  PocketRisu's main-document permission. New plugin arg `hud`. Replace the plugin file and reload
+  PocketRisu to get it.
 
 ## 0.1.0-beta.11
 

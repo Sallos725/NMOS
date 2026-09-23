@@ -239,6 +239,15 @@ and value otherwise) and otherwise stands as a negative fact. A character's clai
 narration and reaches the packet only as a `<Claim>` after facts. Non-actual assertions are stored and
 inspectable, never injected. Rows from before `extract-v5` read as narration.
 
+**D28 — Optional progress display on the chat screen (owner decision 2026-09-24; not a phase feature).**
+A small pill at the top right of the PocketRisu page shows each main request's outcome (memory
+injected / nothing relevant / skipped and why) and the open chat's background extraction and embedding
+progress from `GET /v1/conversations/{id}/coverage`. Off by default (plugin arg `hud`); turning it on
+in the panel asks for the host's `mainDom` permission (H16), and a denial leaves it off. The request
+path only emits fire-and-forget events: the display cannot delay, change or fail a request. Coverage is
+polled every 3 s only while work is pending for the chat the user is on, at most once per second for
+bursts. Any drawing error stops the display for the session. No sidecar or schema change.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

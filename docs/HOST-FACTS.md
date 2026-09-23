@@ -289,6 +289,19 @@ probe plugins (`hud_spike`, `hud_deny`) that draw a pill from a settings entry. 
 5. **Stacking.** The panel frame is `position:fixed; z-index:1000` (`showContainer('fullscreen')`); host
    dialogs use `z-50`, so a permission prompt requested while the panel is open would sit under the
    frame. The plugin hides the frame while it asks.
+6. **The NMOS progress display, live (same instance, sidecar from this branch, stub chat model and a
+   1.5 s stub extractor).** Settings → Progress display: the frame was hidden (`display:none`) while
+   the host prompt was open and visible; Yes → the panel came back with "On", `hud` = 1. After a
+   denial the host shows a guide (*"Permission request from plugin "nmos_memory" was denied. Denied
+   permissions will not be asked again. … "Reset permission responses" …"*, button **Confirm**) and
+   `requestPluginPermission` resolves only after it is confirmed; the panel then showed the reset hint
+   with the switch off and `hud` = 0. Grants are stored per (plugin name, permission) (source:
+   `permissionKeyOf`), so updating the plugin file kept the grant with no new prompt. Messages showed
+   `– 관련 기억 없음` for 4 s, then `✓ 처리 완료` after that turn's extraction. **Rebuild memory** on a
+   5-turn chat showed `추출 0/5` → `추출 2/5` with the bar → `✓ 처리 완료` → hidden, at 1280 px and
+   390 px. A tap on the pill opened the panel. Switched off: no pill after the next message and no
+   `/coverage` request after the switch. Re-importing a plugin with the same name asks *"Duplicate plugin
+   found. do you want to update the existing plugin?"*; without Yes the old script keeps running.
 
 ## Scenario evidence index
 
