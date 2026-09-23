@@ -364,10 +364,19 @@ Stop and ask the owner if:
 
 ### Status (2026-09-23)
 
-A1 (ADR 0010) and A2 are implemented on branch `append-fast-path`. The real-host check hit the stop
-condition "real-host evidence contradicts the documented performance envelope": the host stalls after
-`getChatFromIndex` (≈0.9 s at 5k, ≈1.7 s at 10k), so the 800 ms deadline is not met at 5k or 10k
-(`docs/perf/scale.md`). A3–A5 wait for the owner's envelope decision (`docs/STATUS.md`).
+- **A1** done (ADR 0010, migration 0013). **A2** done.
+- **Real-host check** hit the stop condition "real-host evidence contradicts the documented
+  envelope": the host stalls after `getChatFromIndex` (≈0.9 s at 5k, ≈1.7 s at 10k). Owner decision:
+  stay plugin-only and raise the default deadline to 3 s, adjustable in the panel (D24). Measured:
+  memory on every warm generation up to 10k with the default; 15k needs ≈5 s.
+- **A3** done: stop at 200 matches, trace `too_broad` (`docs/perf/scale.md`).
+- **A4** done differently from the recommendation (ADR 0011): `possesses` is read per item from the
+  stored assertions, so no new predicate and no re-extraction.
+- **A5** deterministic tier done (`docs/perf/eval-baseline.md`, CI-gated); the model tier stays
+  report-only.
+- Acceptance: sidecar append p95 191 ms at 10k (target 150; ≈39 ms of it is the harness encoding the
+  request, the rest mostly parsing the manifest twice); manifest p95 46 ms (target 60); end-to-end on
+  the real host ≈2.7 s at 10k, dominated by the host stall rather than the 500 ms NMOS estimate.
 
 ## 9. Deliverables
 

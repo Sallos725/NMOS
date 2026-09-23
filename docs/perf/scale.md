@@ -110,6 +110,25 @@ and turn data, jobs and observations over random host action sequences, and that
 packet-cache key: 1k 1.1 (3.2) ms, 5k 8.1 (11.1) ms, 10k 17.2 (46.2) ms, 25k 47.0 (54.9) ms, with 2
 messages hashed each time. Before: 19 / 84 / 175 / 474 ms p50.
 
+### Broad lexical queries (2026-09-23, Track A, A3)
+
+Lexical recall now first collects at most `BROAD_LIMIT + 1` (201) matching head revisions; the
+statement stops there. More than 200 matches → lexical abstains for the request (trace
+`lexical_mode: too_broad`) and vectors, state and facts still run; otherwise only the matched
+revisions are scored. 10,000 messages, `bench_scale.py` chat, ms:
+
+| Query | Matches | All matches collected | Capped at 201 | Retrieve (new) | Mode |
+|---|---:|---:|---:|---:|---|
+| `오늘은 바람이 차네` (in every reply) | 4,999 | 852 | 36 | 49 | too_broad |
+| `하나` (the character's name) | 4,999 | 808 | 34 | 45 | too_broad |
+| `기차역` (one of 8 places, every 8th reply) | 1,221 | 110 | 100 | 109 | too_broad |
+| six selective questions | 0 | 3–8 | 3–7 | 9–17 | on |
+
+Before, the two broad queries ran until `NMOS_LEXICAL_TIMEOUT_MS` (305 ms at 10k) and then abstained
+as `timeout`. Trade-off: a word that occurs in more than 200 messages (the synthetic chat's `기차역`)
+no longer brings its most recent mentions lexically; vectors still can. The evaluation baseline's
+exact-quote and Korean paraphrase cases are unchanged (`docs/perf/eval-baseline.md`).
+
 ### Real-host check (2026-09-23, PocketRisu v1.12.0)
 
 Isolated `ghcr.io/pocketrisu/pocketrisu:latest` (v1.12.0), headless Chromium on the same machine,
@@ -137,8 +156,20 @@ at 10k), so the stall is not caused by A2's cache. The mechanism inside the host
 after the copy is the likely candidate) was not isolated.
 
 Consequence: the sidecar and plugin work (A1, A2) removed ≈700 ms of NMOS computation at 10k, but on
-the real host a warm generation still needs ≈1.5 s at 5k and ≈2.7 s at 10k. The envelope below, which
-was estimated without the host, is contradicted by this evidence at 5k.
+the real host a warm generation still needs ≈1.5 s at 5k and ≈2.7 s at 10k. The 800 ms envelope,
+estimated without the host, did not hold at 5k.
+
+**With the 3 s default (D24).** Same setup, plugin arg `deadline_ms` = 0 (default), eight warm
+generations per chat after one first sync:
+
+| Messages | Warm generation, ms | Memory added (3 s default) |
+|---|---:|---|
+| 5,000 | 1,413–1,761 | 8 of 8 |
+| 10,000 | 2,694–2,766 | 8 of 8 (≈0.25 s margin) |
+| 15,000 | 4,032–4,236 (measured with a 60 s deadline) | 0 of 8 — needs `deadline_ms` ≈5,000 |
+
+First sync of a chat NMOS has not seen yet: 7.4 s (5k), 15.2 s (10k), 22.4 s (15k) of sidecar and
+transfer time. With the default it completes over several generations (chunked bodies upload).
 
 ### Estimated added `beforeRequest` latency (warm path)
 
@@ -169,14 +200,11 @@ upload): ≈9 s of sidecar time at 10k, ≈27 s at 25k.
 - The API accepts manifests up to **30,000 messages** (`MAX_MANIFEST_MESSAGES`; it was 20,000, which
   made a 25k chat fail with HTTP 422 before anything could be measured). 25,000 is the largest
   measured tier; the extra room keeps a growing chat syncing.
-- **Within the default 800 ms deadline:** up to ≈5,000 messages (measured machine, desktop browser).
-  **Contradicted on the real host (2026-09-23, section above):** a warm generation took ≈1.5 s at
-  5,000 messages and ≈2.7 s at 10,000, mostly a host stall after the chat snapshot. The size up to
-  which the default deadline holds on the real host is not yet measured; re-deciding this envelope
-  is an open owner decision.
-- **5,000–30,000 messages:** synced correctly and never corrupted, but requests exceed the default
-  deadline and fail open unless `deadline_ms` is raised. This is a documented limit, not a supported
-  latency target.
+- **Within the default 3 s deadline (D24, 2026-09-23):** up to ≈10,000 messages on the real host
+  (PocketRisu v1.12.0, desktop Chromium, measured machine), with little margin at 10k. The earlier
+  "800 ms up to ≈5,000" was estimated without the host and did not hold there.
+- **Beyond ≈10,000 messages:** synced correctly and never corrupted; memory needs a higher
+  `deadline_ms` (≈5,000 at 15k), and replies start that much later. Phones were not measured.
 
 ## Bottlenecks found, and what was changed
 
@@ -184,7 +212,7 @@ upload): ≈9 s of sidecar time at 10k, ≈27 s at 25k.
    every head row with `word_similarity`: 82 ms at 1k, 818 ms at 10k. The lexical statement now
    disables plain seq/index scans for itself only, which leaves the bitmap scan on
    `revision_text_trgm`: 1 ms at 1k, 0.05 ms at 10k (query plan), 9–13 ms per request.
-2. **Broad lexical queries** (bounded). A query whose words occur in nearly every message — the
+2. **Broad lexical queries** (bounded; since A3 stopped at 200 matches, section above). A query whose words occur in nearly every message — the
    character's name alone (`하나`) or a phrase repeated in every reply — matched every row and scored
    each: 0.6 s at 1k, 6.2 s at 10k, 15.8 s at 25k, holding a pooled connection long after the plugin
    failed open. The lexical statement now has a budget (`NMOS_LEXICAL_TIMEOUT_MS`, default 300). When
@@ -206,10 +234,10 @@ In order of payoff:
    (verifiable against the stored head manifest hash and length, which observation compaction already
    uses), skip `load_state` of the whole chat and plan only the suffix. Also answer the first reconcile of an append with only the new
    keys. Expected: the sidecar append drops from ≈700 ms to tens of ms at 10k.
-2. **Incremental manifest in the plugin.** Cache per-message hashes keyed by the message object's
+2. **Done (A2).** **Incremental manifest in the plugin.** Cache per-message hashes keyed by the message object's
    content fields, so a generation hashes only changed messages. Expected: ≈186 ms → a few ms at 10k.
    Suffix/delta verification or Merkle identity is only needed if (1) and (2) are not enough.
-3. **Broad lexical queries:** score only a bounded, recency-ordered subset of index hits, or require
+3. **Done (A3).** **Broad lexical queries:** score only a bounded, recency-ordered subset of index hits, or require
    the query to have a minimum number of distinctive trigrams, instead of relying on the timeout.
 4. **Vectors beyond 10k:** an HNSW index scoped per projection, or keep exact search but limit it to
    revisions outside the prompt window.

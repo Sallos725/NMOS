@@ -2,8 +2,14 @@
 
 ## Unreleased
 
-Schema: migration 0013 (applied at startup).
+Schema: migration 0013 (applied at startup). Upgrade both parts: `docker compose pull && docker
+compose up -d`, then replace the plugin file and reload PocketRisu.
 
+- **Default deadline 3 s (was 800 ms).** On PocketRisu v1.12.0 long chats need more time on the host
+  side (below); with 800 ms, chats of about 5,000 messages and more never got memory. The deadline is
+  a cap, so short chats are as fast as before. **제한 시간(ms) / Deadline (ms)** in the panel's
+  Settings tab now accepts 200–30,000 ms and explains the trade-off, and the Status tab says what to
+  change when a request ran out of time. If you set `deadline_ms` yourself, your value is kept.
 - **Faster sync for long chats.** When a generation only adds messages (the usual case), the sidecar
   proves it from the request (prefix manifest hash, no repeated or already-present IDs, no new
   `allBefore` cut) and reconciles from the end of the chat instead of the whole chat. Warm append at
@@ -13,13 +19,25 @@ Schema: migration 0013 (applied at startup).
   when the sidecar asks. 10,000 messages: 175 → 17 ms after an append.
 - Appends are stored as rows of their own (`worldline_append`) instead of rewriting the head commit's
   delta each time; `nmos-rebuild` and the Inspector's commit list read both.
+- **An item has one current holder.** When an item changes hands (A → B → C), only C is shown as its
+  holder now; A and B stay in the fact history. Applies to already extracted facts at once, with no
+  re-extraction (ADR 0011).
+- **Broad searches stop early.** A question whose words occur in more than 200 messages (a
+  character's name alone) no longer scores most of the chat: lexical recall skips it (Inspector trace
+  `too_broad`), and vectors, state and facts still answer. 10,000 messages: 852 → 45 ms.
+- **Memory evaluation baseline.** A deterministic evaluation (synthetic cases, stub extractor) checks
+  every build for stale, deleted, rerolled or other-branch memory reaching the model, and compares
+  recent-context-only, lexical, hybrid and full memory (`docs/perf/eval-baseline.md`).
 
 ### Known limitations
 
-- Measured on PocketRisu v1.12.0, very long chats are still slow on the host side: a warm generation
-  takes ≈1.5 s at 5,000 messages and ≈2.7 s at 10,000, because the host pauses after handing the
-  plugin a copy of the whole chat. With the default 800 ms deadline these requests go without memory
-  (`docs/perf/scale.md`).
+- Measured on PocketRisu v1.12.0 (desktop Chromium): a generation in a long chat waits ≈1.5 s at
+  5,000 messages, ≈2.7 s at 10,000 and ≈4.1 s at 15,000 before the reply starts, mostly because the
+  host pauses after handing the plugin a copy of the whole chat. The 3 s default covers up to about
+  10,000 messages; beyond that, raise the deadline (≈5,000 ms at 15,000) or those requests go without
+  memory. Phones were not measured (`docs/perf/scale.md`).
+- An item that is lost or destroyed without a new holder still shows its last holder, and item names
+  are free text ("지도" and "해안 지도" are different items).
 
 ## 0.1.0-beta.9
 

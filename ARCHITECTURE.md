@@ -153,7 +153,8 @@ cross-conversation revision linking.
 
 **D15 — Raw recall scoring (ADR 0004).** Candidates must match the latest user message
 (`word_similarity ≥ 0.4`); the previous AI turn only breaks ties; `disabled` and `allBefore`-cut
-ranges are inactive and never recalled.
+ranges are inactive and never recalled. A query matching more than 200 head messages is too broad to
+score: lexical recall abstains for it (trace `too_broad`), other routes still run (Track A, A3).
 
 **D16 — Deterministic state via parser rules (Phase 1).** JSON rules → `state_observation`
 projection; current state read through head membership (inherits D8 invalidation).
@@ -204,6 +205,17 @@ removes a conversation and every row recorded for it, raw revisions included, in
 `source_revision` delete guard passes only inside that transaction and only for that conversation's
 rows (migration 0012). NMOS never deletes a conversation or raw evidence on its own. If the host chat
 still exists, it is synced as a new chat at the next generation.
+
+**D24 — Request deadline 3 s by default; long chats stay plugin-only (owner, 2026-09-23).** On
+PocketRisu v1.12.0 the host stalls after `getChatFromIndex` hands the plugin a copy of the whole chat
+(≈0.9 s at 5k messages, ≈1.7 s at 10k; `docs/perf/scale.md`), and the V3 API has no partial read. The
+plugin keeps reading the whole chat (D1, no bridge); the default `deadline_ms` is 3,000 (was 800) and
+the settings panel accepts 200 ms–30 s. The deadline is a cap: short chats still finish in ≈0.2 s,
+and fail open is unchanged. Chats beyond the default's reach get memory only with a higher deadline.
+
+**D25 — One current holder per item (ADR 0011).** `possesses` facts are versioned per item, not per
+holder: an item's latest assertion is current, earlier holders are its history. A read-side rule
+outside the registry, so it needs no new extractor generation.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
