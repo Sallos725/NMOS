@@ -4,7 +4,11 @@
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.9` (2026-09-23), public repository and image.** The owner can delete a
+**Public beta `v0.1.0-beta.10` (2026-09-23), public repository and image.** Track A stabilization:
+verified append fast path and incremental plugin manifest (ADR 0010, migration 0013), default request
+deadline 3 s after a real-host check at 5k/10k/15k messages (D24), one current holder per item (ADR
+0011, D25), broad lexical queries stopped at 200 matches, and a deterministic memory evaluation
+(`docs/perf/eval-baseline.md`). Evidence: `docs/perf/scale.md`. `v0.1.0-beta.9` (2026-09-23): the owner can delete a
 conversation from the panel's Inspector, raw messages included (ADR 0009, D23, invariant 1 amended;
 migration 0012). Evidence: `docs/perf/scale.md` (delete timings, sync A/B), real-UI host check in
 ADR 0009. `v0.1.0-beta.8` (2026-09-23): facts are extracted per turn

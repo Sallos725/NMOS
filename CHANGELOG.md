@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-Schema: migration 0013 (applied at startup). Upgrade both parts: `docker compose pull && docker
+## 0.1.0-beta.10
+
+Long chats get memory again, and faster. Schema: migration 0013 (applied at startup). Upgrade both parts: `docker compose pull && docker
 compose up -d`, then replace the plugin file and reload PocketRisu.
 
 - **Default deadline 3 s (was 800 ms).** On PocketRisu v1.12.0 long chats need more time on the host
