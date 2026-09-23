@@ -19,7 +19,7 @@ from . import __version__, extraction, generations, inspector, ledger, normtext,
 from .config import Settings
 from .db import make_pool
 from .extraction import enqueue_after_apply, job_counts
-from .facts import fact_versions
+from .facts import fact_versions, memory_view
 from .ids import uuid7
 from .models import (
     BodiesRequest,
@@ -495,11 +495,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             head = conv["head_commit_id"]
             ex_key = rt["active_extractor"]
             pj_key = rt["projection"].key if rt["projection"] else None
+            view = memory_view(conn, head, ex_key)
             return inspector.detail(conv, current_state(conn, head, rt["rules"].version),
                                     readmodel.membership(conn, head, ex_key, pj_key),
                                     readmodel.commits(conn, conv_id), readmodel.traces(conn, conv_id),
-                                    fact_versions(conn, head, ex_key)[:300], token, coverage_view(conn, conv_id),
-                                    lang=inspector.lang_of(lang), embed=embed)
+                                    view["facts"][:300], token, coverage_view(conn, conv_id),
+                                    lang=inspector.lang_of(lang), embed=embed, claims=view["claims"],
+                                    other=view["other"])
 
     @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_index(request: Request, token: str | None = None, lang: str | None = None):

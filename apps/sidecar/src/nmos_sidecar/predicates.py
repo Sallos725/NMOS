@@ -40,6 +40,8 @@ REGISTRY: dict[str, Predicate] = {p.name: p for p in (
     Predicate("event", ENTITY_TYPES, None, True, "multi", "world", "a notable event involving the subject"),
     Predicate("world_fact", ("place", "group", "concept", "item"), None, True, "multi", "world",
               "a durable fact about the setting"),
+    Predicate("also_called", ENTITY_TYPES, None, True, "multi", "world",
+              "another name for the subject that the TARGET turn itself gives (value: the other name)"),
 )}
 
 
@@ -77,6 +79,42 @@ def validate(item: dict[str, Any]) -> tuple[str, str | None]:
     if pred.needs_value and not str(item.get("value") or "").strip():
         return "pending", "missing value"
     return "valid", None
+
+
+def _casefold(text: str | None) -> str:
+    return " ".join(str(text or "").casefold().split())
+
+
+def alias_evidenced(item: dict[str, Any], turn_text: str) -> bool:
+    """An `also_called` assertion links two names only if both occur in the turn it comes from (ADR 0012)."""
+    names = [_casefold(item.get("subject")), _casefold(item.get("value"))]
+    text = _casefold(turn_text)
+    return all(names) and names[0] != names[1] and all(n in text for n in names)
+
+
+POLARITIES = ("positive", "negative")
+MODALITIES = ("actual", "hypothetical", "dreamed", "unknown")
+SOURCES = ("narration", "character_claim")
+
+
+def semantics(item: dict[str, Any]) -> tuple[str, str, str, str | None, str | None]:
+    """(polarity, modality, source, asserted_by, pending reason) for one raw assertion (ADR 0013).
+
+    A missing or unrecognised modality is `unknown`, never `actual`: only actual assertions form facts,
+    so a guess would turn plans or dreams into state. A missing source follows the speaker: with
+    `asserted_by` it is a character's claim, otherwise narration. A claim needs its speaker.
+    """
+    polarity = "negative" if str(item.get("polarity") or "").strip().lower() == "negative" else "positive"
+    modality = str(item.get("modality") or "").strip().lower()
+    if modality not in MODALITIES:
+        modality = "unknown"
+    speaker = str(item.get("asserted_by") or "").strip()[:60] or None
+    source = str(item.get("source") or "").strip().lower()
+    if source not in SOURCES:
+        source = "character_claim" if speaker else "narration"
+    if source == "narration":
+        return polarity, modality, source, None, None
+    return polarity, modality, source, speaker, None if speaker else "character_claim without asserted_by"
 
 
 KNOWLEDGE_SCOPES = ("public", "limited", "unknown")

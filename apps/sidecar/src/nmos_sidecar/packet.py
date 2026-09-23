@@ -13,6 +13,9 @@ PACKET_NOTE = ("  <Note>Memory from earlier in this conversation (state, facts, 
                "known_by characters know it; hidden_from characters do not know it. Whether anyone else knows "
                "a fact, or anyone at all knows an unmarked fact, is unknown: do not assume either way.</Note>")
 PACKET_CLOSE = "</NarrativeMemory>"
+# Added to the Note only when a kept line uses the mark (ADR 0013), so other packets stay as they were.
+NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly not, or no longer, true."),
+               ("<Claim ", " A Claim is what that character said, not established truth."))
 MAX_EXCERPT_CHARS = 480
 
 # Markup and model reasoning that is not story: style/script blocks and <Thoughts>/<think> sections.
@@ -115,10 +118,14 @@ def compile_packet(ranked: list[Excerpt], budget_tokens: int, state: list[StateI
             kept_state.append(item)
             used += cost
     kept_facts: list[str] = []
+    extras: list[str] = []
     for line in facts or []:
         cost = estimate_tokens(line + "\n") + (estimate_tokens("  <Facts>\n  </Facts>\n") if not kept_facts else 0)
+        needed = [text for mark, text in NOTE_EXTRAS if mark in line and text not in extras]
+        cost += sum(estimate_tokens(text) for text in needed)
         if used + cost <= budget_tokens:
             kept_facts.append(line)
+            extras += needed
             used += cost
     chosen: list[Excerpt] = []
     for item in ranked:
@@ -134,5 +141,6 @@ def compile_packet(ranked: list[Excerpt], budget_tokens: int, state: list[StateI
     if kept_facts:
         body += ["  <Facts>", *kept_facts, "  </Facts>"]
     body += [excerpt_line(e) for e in chosen]
-    text = "\n".join([PACKET_OPEN, PACKET_NOTE, *body, PACKET_CLOSE])
+    note = PACKET_NOTE.removesuffix("</Note>") + "".join(extras) + "</Note>"
+    text = "\n".join([PACKET_OPEN, note, *body, PACKET_CLOSE])
     return text, estimate_tokens(text), chosen

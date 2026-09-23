@@ -174,8 +174,12 @@ Each step is one reviewable change with its tests.
    `test_generations.py`; fact-read timings in `docs/perf/scale.md`, which also records the fixed
    `allBefore` stall).
 2. **Schema and `extract-v5`**: migration, prompt, validation, `also_called`, stored hints column
-   (empty until step 5).
+   (empty until step 5). *Done 2026-09-24* (`tests/test_semantics.py`).
 3. **Fact reading and packet (ADR 0013)**: actual narration only, negation, claims, legacy rows.
+   *Done 2026-09-24*: deterministic cases "lost item", "negated entry", "negation of another place",
+   "denial by a non-holder", "hypothetical and dream", "lie in dialogue" and legacy rows pass
+   (`docs/perf/eval-baseline.md`, `tests/test_semantics.py`). Landed with step 2 in one pull request so
+   that `main` never extracts v5 fields without reading them.
 4. **Entity resolution (ADR 0012)**: read-time resolver, entity-keyed versions, Inspector entities,
    facts-tier benchmark.
 5. **Name hints**: worker builds and records the list; generation key includes the count.

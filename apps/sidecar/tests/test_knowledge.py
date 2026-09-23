@@ -57,10 +57,10 @@ def test_hidden_from_is_preserved():
 def test_limited_known_by_is_rendered_consistently(migrated, db):
     replies = {
         "비밀": [{"subject": "{{user}}", "subject_type": "character", "predicate": "identity", "value": "이사장의 아들",
-                "knowledge": "limited", "known_by": ["하나", "{{user}}"], "hidden_from": ["카이토"]}],
+                "knowledge": "limited", "known_by": ["하나", "{{user}}"], "hidden_from": ["카이토"], "modality": "actual"}],
         "축제": [{"subject": "마을", "subject_type": "place", "predicate": "world_fact", "value": "축제 준비 중",
-                "knowledge": "public", "known_by": [], "hidden_from": []}],
-        "편지": [{"subject": "하나", "subject_type": "character", "predicate": "has_status", "value": "편지를 받음"}],
+                "knowledge": "public", "known_by": [], "hidden_from": [], "modality": "actual"}],
+        "편지": [{"subject": "하나", "subject_type": "character", "predicate": "has_status", "value": "편지를 받음", "modality": "actual"}],
     }
 
     def complete(system, user):

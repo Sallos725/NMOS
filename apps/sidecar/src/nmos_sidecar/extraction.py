@@ -19,12 +19,13 @@ from . import generations, normtext
 from .config import Settings
 from .generations import Generation
 from .ids import uuid7
-from .predicates import REGISTRY, knowledge, registry_prompt, validate
+from .predicates import REGISTRY, alias_evidenced, knowledge, registry_prompt, semantics, validate
 from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
 
-COMPILER_VERSION = "extract-v4"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008)
+COMPILER_VERSION = "extract-v5"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
+#                                 v5: polarity, modality, source, also_called (ADR 0012, ADR 0013)
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
 TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
@@ -45,8 +46,19 @@ Rules:
 - Name entities exactly as the story does (keep the chat's language). The user's persona is "{{{{user}}}}"
   only if no name is given.
 - `value` is a short phrase in the chat's language. `evidence` is a short quote from the TARGET turn.
-- `epistemic`: "stated" if explicit, "implied" if strongly implied. Skip speculation, jokes, OOC text,
-  UI/status boilerplate, and anything that only restates earlier facts.
+- `epistemic`: "stated" if explicit, "implied" if strongly implied. Skip jokes, OOC text, UI/status
+  boilerplate, and anything that only restates earlier facts.
+- `polarity`: "negative" when the TARGET turn says the relation does not hold or no longer holds (lost,
+  gave away, left, is not, did not); otherwise "positive". For a loss, give the relation that ended
+  with "negative" (e.g. possesses, negative).
+- `modality`: "actual" for what happens or is true in the story; "hypothetical" for plans, intentions,
+  conditions, questions and speculation that have not happened; "dreamed" for dreams, visions and
+  imagination; "unknown" when the text does not settle it. Label these instead of skipping them when
+  they matter to the story.
+- `source`: "narration" for the story's own narration, including the user's description of their
+  character's actions; "character_claim" for something a character says or writes in the story, with
+  `asserted_by` set to that character. A statement in dialogue is a claim even if it is probably true.
+- `also_called` only when the TARGET turn itself gives both names for the same entity (e.g. "하나(Hana)").
 - Prefer few, high-value facts. An empty list is a good answer for small talk.
 - Knowledge (who in the story is aware of the fact):
   `knowledge` is "public" when it is openly known (said to everyone present, common knowledge in the
@@ -58,9 +70,10 @@ Rules:
   are unknown, not unaware. Otherwise use [] for both. Never list characters who are not in the story.
 
 Answer with JSON only: {{"assertions": [{{"subject": "...", "subject_type": "...", "predicate": "...",
-"object": "... or null", "object_type": "... or null", "value": "... or null", "epistemic": "stated",
-"confidence": 0.0-1.0, "evidence": "...", "knowledge": "public|limited|unknown", "known_by": [],
-"hidden_from": []}}]}}"""
+"object": "... or null", "object_type": "... or null", "value": "... or null", "polarity": "positive|negative",
+"modality": "actual|hypothetical|dreamed|unknown", "source": "narration|character_claim",
+"asserted_by": "... or null", "epistemic": "stated", "confidence": 0.0-1.0, "evidence": "...",
+"knowledge": "public|limited|unknown", "known_by": [], "hidden_from": []}}]}}"""
 
 
 # A job key names one unit of work (revision, window, generation). If that work was made obsolete
@@ -257,6 +270,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     items = parsed.get("assertions")
     if not isinstance(items, list):
         items = []
+    turn_text = "\n".join(r["content"] for r in ctx["members"])
     with conn.transaction():
         extraction_id = uuid7()
         inserted = conn.execute(
@@ -282,18 +296,25 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
             except (TypeError, ValueError):
                 confidence = None
             scope, known_by, hidden_from, note = knowledge(item)
+            polarity, modality, source, asserted_by, unclaimed = semantics(item)
+            if status == "valid" and item.get("predicate") == "also_called" and not alias_evidenced(item, turn_text):
+                status, reason = "pending", "alias not stated in the turn"
+            if status == "valid" and unclaimed:
+                status, reason = "pending", unclaimed
             if note:
                 reason = f"{reason}; {note}" if reason else note
             rows.append((extraction_id, revision_id, text("subject", 120) or "?", text("subject_type", 20),
                          text("predicate", 40) or "?", text("object", 120), text("object_type", 20), text("value"),
                          "implied" if item.get("epistemic") == "implied" else "stated", confidence,
-                         text("evidence"), status, reason, scope, known_by, hidden_from))
+                         text("evidence"), status, reason, scope, known_by, hidden_from, polarity, modality, source,
+                         asserted_by))
         if rows:
             with conn.cursor() as cur:
                 cur.executemany(
                     "INSERT INTO assertion (extraction_id, source_revision_id, subject, subject_type, predicate, object,"
                     " object_type, value, epistemic, confidence, evidence, status, reason, knowledge, known_by,"
-                    " hidden_from) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    " hidden_from, polarity, modality, source, asserted_by)"
+                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     rows,
                 )
     log.info("extracted turn=%s revision=%s assertions=%d", ctx["target"]["turn"], revision_id, len(rows))

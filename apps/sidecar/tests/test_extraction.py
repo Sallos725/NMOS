@@ -22,8 +22,8 @@ def fake_complete(system: str, user: str) -> tuple[dict, str]:
     """Deterministic stand-in for the model: 'X is in the Y.' in the TARGET → located_in."""
     target = user.split("TARGET", 1)[1]
     items = [{"subject": m["who"], "subject_type": "character", "predicate": "located_in", "object": m["where"],
-              "object_type": "place", "epistemic": "stated", "confidence": 0.9, "evidence": m.group(0)}
-             for m in FACT.finditer(target)]
+              "object_type": "place", "epistemic": "stated", "confidence": 0.9, "evidence": m.group(0),
+              "modality": "actual"} for m in FACT.finditer(target)]
     if "SECRET" in target:
         items.append({"subject": "Mina", "subject_type": "character", "predicate": "hates_broccoli", "value": "yes"})
     return {"assertions": items}, "{}"
@@ -191,7 +191,8 @@ def test_knowledge_annotations_reach_the_packet(migrated, db):
         if "비밀" not in user.split("TARGET", 1)[1]:
             return {"assertions": []}, "{}"
         return {"assertions": [{"subject": "{{user}}", "subject_type": "character", "predicate": "identity",
-                                "value": "이사장의 아들", "known_by": ["하나", "{{user}}"], "hidden_from": ["카이토"]}]}, "{}"
+                                "value": "이사장의 아들", "known_by": ["하나", "{{user}}"], "hidden_from": ["카이토"],
+                                "modality": "actual"}]}, "{}"
     with make_client(migrated, llm_url="http://fake/v1", llm_model="fake") as c:
         chat = SimChat()
         chat.user("하나에게만 속삭인다. 비밀인데 나 이사장 아들이야.")
@@ -226,7 +227,7 @@ def holder_complete(system: str, user: str) -> tuple[dict, str]:
     target = user.split("TARGET", 1)[1]
     return {"assertions": [{"subject": m["who"], "subject_type": "character", "predicate": "possesses",
                             "object": m["item"], "object_type": "item", "epistemic": "stated", "confidence": 0.9,
-                            "evidence": m.group(0)} for m in GIVE.finditer(target)]}, "{}"
+                            "evidence": m.group(0), "modality": "actual"} for m in GIVE.finditer(target)]}, "{}"
 
 
 def test_an_item_has_one_current_holder_and_keeps_its_history(llm_client, migrated):
