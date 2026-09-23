@@ -86,7 +86,7 @@ follows the Phase 0A rules: real scenarios against the target build, recorded fi
 
 Treat `ARCHITECTURE.md §2` as binding. In particular:
 
-- Raw evidence is never destroyed.
+- Raw evidence is never destroyed (only the owner may delete a whole conversation; ADR 0009).
 - Derived memory must be rebuildable.
 - The response model never writes canonical memory.
 - Unknown/ambiguous/conflicting states are valid outcomes.
