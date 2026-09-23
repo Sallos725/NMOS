@@ -30,6 +30,8 @@ class Settings:
     extract_window: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_WINDOW", "6")))
     # Previous turns an extraction sees as context (ADR 0008); part of the extractor generation.
     extract_turns: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_TURNS", "3")))
+    # Known entity names shown to extraction (ADR 0012); 0 turns hints off. Part of the extractor generation.
+    extract_hints: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_HINTS", "40")))
     # Turns extracted when NMOS first sees a chat (ADR 0008: turns, not messages).
     extract_backfill: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_BACKFILL", "100")))
     # Embeddings are cheap (local models): cover far more history on first sight than LLM extraction.

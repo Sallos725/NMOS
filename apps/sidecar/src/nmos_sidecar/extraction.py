@@ -19,6 +19,8 @@ from . import generations, normtext
 from .config import Settings
 from .generations import Generation
 from .ids import uuid7
+from .entities import USER_NAMES, norm, resolve
+from .facts import ACTIVE_ASSERTIONS
 from .predicates import REGISTRY, alias_evidenced, knowledge, registry_prompt, semantics, validate
 from .reconcile import Entry, RevKey, turn_layout
 
@@ -43,6 +45,8 @@ Allowed predicates (anything else is rejected):
 
 Entity types: character, place, item, group, concept.
 Rules:
+- If KNOWN ENTITIES are listed, use a listed name when the TARGET turn clearly refers to that entity,
+  and a new name when it may be a different one.
 - Name entities exactly as the story does (keep the chat's language). The user's persona is "{{{{user}}}}"
   only if no name is given.
 - `value` is a short phrase in the chat's language. `evidence` is a short quote from the TARGET turn.
@@ -231,8 +235,45 @@ def _speaker(meta: dict[str, Any]) -> str:
     return meta.get("name") or ("USER" if meta.get("role") == "user" else "CHARACTER")
 
 
-def build_prompt(ctx: dict[str, Any]) -> str:
-    lines = ["CONTEXT:"]
+def entity_hints(conn: psycopg.Connection, ctx: dict[str, Any], key: str, limit: int) -> list[dict[str, str]]:
+    """Entities mentioned on the head before the target turn, most recently mentioned first, at most
+    `limit` (ADR 0012, item 5). Read like facts: active sources only, one generation per turn. The
+    persona is left out: the prompt names it already."""
+    target = ctx["target"]
+    rows = [r for r in conn.execute(ACTIVE_ASSERTIONS, {"head": target["commit_id"], "key": key}).fetchall()
+            if r["predicate"] in REGISTRY and r["turn"] is not None and r["turn"] < target["turn"]]
+    if limit <= 0 or not rows:
+        return []
+    r = resolve(target["conversation_id"], rows)
+    last: dict[str, int] = {}
+    seq = 0
+    for row in rows:  # position order: a later mention, or the object after the subject, is more recent
+        for kind, name in ((row.get("subject_type"), row["subject"]), (row.get("object_type"), row.get("object"))):
+            e = r.entity(kind, name) if name else None
+            if e and not any(norm(n) in USER_NAMES for n in e["names"]):
+                seq += 1
+                last[e["id"]] = seq
+    by_id = {e["id"]: e for e in r.entities()}
+    out = []
+    for eid in sorted(last, key=last.__getitem__, reverse=True)[:limit]:
+        e = by_id[eid]
+        hint = {"name": e["name"], "type": e["type"]}
+        if others := [n for n in e["names"] if n != e["name"]]:
+            hint["also"] = others
+        out.append(hint)
+    return out
+
+
+def hints_block(hints: list[dict[str, Any]]) -> list[str]:
+    if not hints:
+        return []
+    lines = ["KNOWN ENTITIES (names already used in this story):"]
+    lines += [f"- {' / '.join([h['name'], *h.get('also', [])])} ({h['type']})" for h in hints]
+    return lines + [""]
+
+
+def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None) -> str:
+    lines = hints_block(hints or []) + ["CONTEXT:"]
     for row in ctx["context"]:
         lines.append(f"[turn {row['turn']}] {_speaker(row['metadata'])}: {row['content'][:CONTEXT_CHARS]}")
     if len(lines) == 1:
@@ -263,10 +304,13 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         return "obsolete"  # the head changed; a newer job covers the new window
     if ctx["done"]:
         return "done"
+    hints: list[dict[str, Any]] | None = None
     if sum(len(r["content"]) for r in ctx["members"]) < MIN_CONTENT_CHARS:
         parsed, raw = {"assertions": []}, ""
     else:
-        parsed, raw = complete(SYSTEM_PROMPT.format(registry=registry_prompt()), build_prompt(ctx))
+        limit = gen.spec.get("hints", 0)
+        hints = entity_hints(conn, ctx, gen.key, limit) if limit > 0 else None
+        parsed, raw = complete(SYSTEM_PROMPT.format(registry=registry_prompt()), build_prompt(ctx, hints))
     items = parsed.get("assertions")
     if not isinstance(items, list):
         items = []
@@ -275,9 +319,11 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         extraction_id = uuid7()
         inserted = conn.execute(
             "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model, raw,"
-            " coverage, members) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING RETURNING id",
+            " coverage, members, hints) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " ON CONFLICT DO NOTHING RETURNING id",
             (extraction_id, revision_id, window_hash, COMPILER_VERSION, gen.key, gen.model,
-             Jsonb({"reply": raw[:20000]}), Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]]),
+             Jsonb({"reply": raw[:20000]}), Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]],
+             None if hints is None else Jsonb(hints)),
         ).fetchone()
         if inserted is None:
             return "done"
@@ -334,7 +380,7 @@ def extractor(settings: Settings) -> Generation | None:
         compiler=COMPILER_VERSION, prompt=generations.fingerprint(SYSTEM_PROMPT),
         predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.NORMALIZER_VERSION,
         json_mode=settings.llm_json_mode, temperature=0, unit="turn", context_turns=settings.extract_turns,
-        target_chars=TARGET_CHARS, context_chars=CONTEXT_CHARS,
+        target_chars=TARGET_CHARS, context_chars=CONTEXT_CHARS, hints=settings.extract_hints,
     )
 
 
