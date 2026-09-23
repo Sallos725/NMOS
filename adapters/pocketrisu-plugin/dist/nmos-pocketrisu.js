@@ -838,6 +838,7 @@ ${revisionHash}`;
   // src/hud-host.ts
   var POLL_MS = 3e3;
   var MAX_POLL_ERRORS = 5;
+  var MIN_POLL_GAP_MS = 1e3;
   var CLASS = "nmos-hud";
   var ROOT_STYLE = 'position:fixed;top:calc(8px + env(safe-area-inset-top));right:calc(8px + env(safe-area-inset-right));z-index:900;max-width:min(320px,calc(100vw - 72px));background:#1d1e24;border:1px solid #30323b;border-radius:12px;padding:6px 12px;font:13px/1.4 system-ui,-apple-system,"Noto Sans KR",sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.35);cursor:pointer;user-select:none';
   var TEXT_STYLE = "display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e8e8ec";
@@ -853,6 +854,7 @@ ${revisionHash}`;
     let pollTimer = null;
     let expiryTimer = null;
     let pollErrors = 0;
+    let lastPoll = -Infinity;
     let queue = Promise.resolve();
     function run(task) {
       queue = queue.then(task).catch(fail);
@@ -948,7 +950,7 @@ ${revisionHash}`;
     function startPolling() {
       if (pollTimer !== null || !conversation) return;
       pollErrors = 0;
-      pollTimer = deps.setTimer(() => run(poll), 0);
+      pollTimer = deps.setTimer(() => run(poll), Math.max(0, lastPoll + MIN_POLL_GAP_MS - deps.now()));
     }
     function stopPolling() {
       if (pollTimer !== null) deps.clearTimer(pollTimer);
@@ -963,6 +965,7 @@ ${revisionHash}`;
         return render2();
       }
       let again = false;
+      lastPoll = deps.now();
       try {
         const coverage = parseCoverage(await deps.coverage(conversation));
         pollErrors = 0;

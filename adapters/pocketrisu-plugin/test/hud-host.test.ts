@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DONE_MS } from '../src/hud';
-import { createHud, MAX_POLL_ERRORS, POLL_MS, type HudDeps, type HudDocument, type HudElement } from '../src/hud-host';
+import { createHud, MAX_POLL_ERRORS, MIN_POLL_GAP_MS, POLL_MS, type HudDeps, type HudDocument, type HudElement } from '../src/hud-host';
 
 interface FakeElement extends HudElement { tag: string; text: string; styles: Record<string, string>; children: FakeElement[];
   removed: boolean; classes: string[] }
@@ -134,6 +134,61 @@ describe('createHud', () => {
     expect(timers).toHaveLength(0);
   });
 
+  /** A coverage fake whose first call waits for `release()`; later calls answer at once. */
+  function gated(answers: unknown[]) {
+    let release: () => void = () => {};
+    let calls = 0;
+    const coverage = () => {
+      const answer = answers[Math.min(calls, answers.length - 1)];
+      calls += 1;
+      return calls === 1 ? new Promise<unknown>((r) => { release = () => r(answer); }) : Promise.resolve(answer);
+    };
+    return { coverage, release: () => release() };
+  }
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  it('keeps one poll loop when events arrive while a poll is in flight', async () => {
+    const gate = gated([cov(2, 2)]);
+    const { hud, advance, coverage } = setup({ coverage: gate.coverage });
+    hud.event({ type: 'request-end', outcome: 'nothing-relevant', chars: 0, conversationId: 'conv-1' });
+    const first = advance(0);
+    await tick();
+    hud.event({ type: 'background', conversationId: 'conv-1' });
+    hud.background();
+    gate.release();
+    await first;
+    await advance(0);
+    expect(coverage).toHaveBeenCalledTimes(1);
+    await advance(POLL_MS);
+    expect(coverage).toHaveBeenCalledTimes(2);
+  });
+
+  it('polls once more when asked during the last poll of a loop', async () => {
+    const gate = gated([cov(0, 4), cov(1, 3)]);
+    const { hud, advance, coverage } = setup({ coverage: gate.coverage });
+    hud.event({ type: 'request-end', outcome: 'nothing-relevant', chars: 0, conversationId: 'conv-1' });
+    const first = advance(0);
+    await tick();
+    hud.background(); // new work queued while the (empty) poll is in flight
+    gate.release();
+    await first;
+    await advance(0);
+    expect(coverage).toHaveBeenCalledTimes(1); // not straight away
+    await advance(MIN_POLL_GAP_MS);
+    expect(coverage).toHaveBeenCalledTimes(2);
+  });
+
+  it('a burst of request ends makes one coverage call', async () => {
+    const { hud, advance, coverage } = setup({ coverage: async () => cov(0, 4) });
+    for (let i = 0; i < 3; i++) {
+      hud.event({ type: 'request-start' });
+      hud.event({ type: 'request-end', outcome: 'nothing-relevant', chars: 0, conversationId: 'conv-1' });
+      await advance(100);
+    }
+    await advance(MIN_POLL_GAP_MS);
+    expect(coverage).toHaveBeenCalledTimes(2); // the first at once, the rest together a second later
+  });
+
   it('stops polling on 404 at once and after repeated errors', async () => {
     const gone = setup({ coverage: async () => { throw new Error('/v1/conversations/x/coverage -> HTTP 404'); } });
     gone.hud.background('x');
@@ -167,7 +222,7 @@ describe('createHud', () => {
     hud.event({ type: 'request-end', outcome: 'nothing-relevant', chars: 0, conversationId: 'conv-9' });
     await advance(0);
     hud.background();
-    await advance(0);
+    await advance(MIN_POLL_GAP_MS);
     expect(coverage.mock.calls.map((c) => c[0])).toEqual(['conv-9', 'conv-9']);
   });
 

@@ -41,6 +41,8 @@ export interface HudDeps {
 
 export const POLL_MS = 3000;
 export const MAX_POLL_ERRORS = 5;
+/** Bursts of events (host retries of one request, H2) share one coverage call. */
+export const MIN_POLL_GAP_MS = 1000;
 
 const CLASS = 'nmos-hud';
 // Under the panel frame (z-index 1000) so the open panel covers it.
@@ -64,6 +66,7 @@ export function createHud(deps: HudDeps) {
   let pollTimer: unknown = null;
   let expiryTimer: unknown = null;
   let pollErrors = 0;
+  let lastPoll = -Infinity;
   let queue: Promise<void> = Promise.resolve();
 
   /** All work runs in order on one chain; nothing here ever rejects to the caller. */
@@ -166,7 +169,7 @@ export function createHud(deps: HudDeps) {
   function startPolling(): void {
     if (pollTimer !== null || !conversation) return;
     pollErrors = 0;
-    pollTimer = deps.setTimer(() => run(poll), 0);
+    pollTimer = deps.setTimer(() => run(poll), Math.max(0, lastPoll + MIN_POLL_GAP_MS - deps.now()));
   }
 
   function stopPolling(): void {
@@ -183,6 +186,7 @@ export function createHud(deps: HudDeps) {
       return render();
     }
     let again = false;
+    lastPoll = deps.now();
     try {
       const coverage = parseCoverage(await deps.coverage(conversation));
       pollErrors = 0;
