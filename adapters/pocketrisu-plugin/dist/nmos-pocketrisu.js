@@ -8,7 +8,7 @@
 //@arg auth_token string Optional; only if the sidecar sets NMOS_AUTH_TOKEN
 //@arg disabled int 1 = pass every request through untouched
 //@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 600)
-//@arg deadline_ms int Hard request-path deadline in ms (0 = 800)
+//@arg deadline_ms int Hard request-path deadline in ms (0 = 3000)
 //@arg inject_position string before_last_user (default) or end
 //@arg route string auto (default) / direct / server — how to reach the sidecar
 //@arg language string Panel language: ko (default) or en
@@ -529,6 +529,10 @@ ${revisionHash}`;
     "status.last": ["\uB9C8\uC9C0\uB9C9 \uC694\uCCAD", "Last request"],
     "status.none": ["\uC544\uC9C1 \uC694\uCCAD\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uCC44\uD305\uC5D0\uC11C \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4 \uBCF4\uC138\uC694.", "No request yet. Send a message in a chat."],
     "status.ago": ["{n}\uCD08 \uC804", "{n}s ago"],
+    "status.deadline_hint": [
+      "\uC81C\uD55C \uC2DC\uAC04\uC744 \uB118\uACA8 \uC774\uBC88 \uC694\uCCAD\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4. \uAE34 \uCC44\uD305\uC774\uB77C\uBA74 \uC124\uC815 \uD0ED\uC758 \uC81C\uD55C \uC2DC\uAC04(ms)\uC744 \uB298\uB9AC\uC138\uC694.",
+      "This request ran out of time and went without memory. For a long chat, raise Deadline (ms) in the Settings tab."
+    ],
     "outcome.injected": ["\uAE30\uC5B5 {n}\uC790\uB97C \uB123\uC5C8\uC2B5\uB2C8\uB2E4", "Injected {n} characters of memory"],
     "outcome.nothing": ["\uAD00\uB828\uB41C \uAE30\uC5B5\uC774 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4", "Nothing relevant to inject"],
     "outcome.failed": ["\uAC74\uB108\uB700 (\uC6D0\uB798 \uC694\uCCAD\uC740 \uADF8\uB300\uB85C \uBCF4\uB0C4)", "Skipped (the request went out unchanged)"],
@@ -565,6 +569,10 @@ ${revisionHash}`;
     "conn.deadline": ["\uC81C\uD55C \uC2DC\uAC04(ms)", "Deadline (ms)"],
     "conn.enabled": ["\uAE30\uC5B5 \uB123\uAE30 \uCF1C\uAE30", "Memory on"],
     "conn.hint": ["PocketRisu\uC758 \uCD5C\uB300 \uCEE8\uD14D\uC2A4\uD2B8\uB97C \uAE30\uC5B5 \uC608\uC0B0\uB9CC\uD07C \uC904\uC5EC \uB450\uC138\uC694.", "Lower PocketRisu's max context by the memory budget."],
+    "conn.deadline_hint": [
+      "\uC81C\uD55C \uC2DC\uAC04 \uC548\uC5D0 \uAE30\uC5B5\uC744 \uC900\uBE44\uD558\uC9C0 \uBABB\uD558\uBA74 \uADF8 \uC694\uCCAD\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C5\uB2C8\uB2E4. \uAE30\uBCF8 3000ms. \uC544\uC8FC \uAE34 \uCC44\uD305(1\uB9CC \uAC1C \uC774\uC0C1)\uC5D0\uC11C \uAE30\uC5B5\uC774 \uC790\uC8FC \uBE60\uC9C0\uBA74 \uB298\uB9AC\uC138\uC694. \uB298\uB9B0 \uB9CC\uD07C \uB2F5\uC7A5 \uC2DC\uC791\uC774 \uB2A6\uC5B4\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+      "If memory is not ready within the deadline, that request goes without memory. Default 3000 ms. Raise it if very long chats (10,000+ messages) often miss memory; replies may start that much later."
+    ],
     // settings: models
     "llm.title": ["\uC0AC\uC2E4 \uCD94\uCD9C LLM", "Fact extraction LLM"],
     "llm.sub": [
@@ -641,18 +649,9 @@ ${revisionHash}`;
   }
   var STRING_KEYS = Object.keys(STRINGS);
 
-  // src/route.ts
-  function routeFor(url, setting) {
-    if (setting === "direct" || setting === "server") return setting;
-    try {
-      const host = new URL(url).hostname.replace(/^\[|\]$/g, "");
-      return ["localhost", "127.0.0.1", "::1"].includes(host) ? "direct" : "server";
-    } catch {
-      return "direct";
-    }
-  }
-
   // src/form.ts
+  var DEFAULT_DEADLINE_MS = 3e3;
+  var MAX_DEADLINE_MS = 3e4;
   var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
   function dirtySections(baseline, current2) {
     return SECTIONS.filter((s) => JSON.stringify(baseline[s]) !== JSON.stringify(current2[s]));
@@ -687,8 +686,19 @@ ${revisionHash}`;
       route: v.route,
       disabled: v.enabled ? 0 : 1,
       reserved_memory_tokens: Number(v.reserved) || 600,
-      deadline_ms: Number(v.deadline) || 800
+      deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS))
     };
+  }
+
+  // src/route.ts
+  function routeFor(url, setting) {
+    if (setting === "direct" || setting === "server") return setting;
+    try {
+      const host = new URL(url).hostname.replace(/^\[|\]$/g, "");
+      return ["localhost", "127.0.0.1", "::1"].includes(host) ? "direct" : "server";
+    } catch {
+      return "direct";
+    }
   }
 
   // src/inspector.ts
@@ -912,6 +922,9 @@ html,body{margin:0;background:#0c0c10}
           el("div", { class: "muted", text: `${L("status.ago", { n: Math.round((Date.now() - s.last.at) / 1e3) })} \xB7 ${s.last.ms}ms` })
         );
         if (s.last.error) lastCard.append(el("div", { class: "mono muted", text: s.last.error }));
+        if (s.last.outcome === "failed" && s.last.error?.startsWith("deadline")) {
+          lastCard.append(el("p", { class: "sub", text: L("status.deadline_hint") }));
+        }
       } else {
         lastCard.append(el("div", { class: "muted", text: L("status.none") }));
       }
@@ -1044,7 +1057,7 @@ html,body{margin:0;background:#0c0c10}
     const route = el("select", {}, ...["auto", "direct", "server"].map((v) => el("option", { value: v, text: v })));
     const enabled = el("input", { type: "checkbox" });
     const reserved = el("input", { type: "number", min: 100, max: 8e3 });
-    const deadline = el("input", { type: "number", min: 200, max: 5e3 });
+    const deadline = el("input", { type: "number", min: 200, max: MAX_DEADLINE_MS, step: 100 });
     settingsView.append(el(
       "div",
       { class: "card" },
@@ -1053,7 +1066,8 @@ html,body{margin:0;background:#0c0c10}
       field(L("conn.url"), url),
       el("div", { class: "row" }, field(L("conn.route"), route), field(L("conn.budget"), reserved), field(L("conn.deadline"), deadline)),
       el("div", { class: "check" }, enabled, el("span", { text: L("conn.enabled") })),
-      el("p", { class: "sub", text: L("conn.hint") })
+      el("p", { class: "sub", text: L("conn.hint") }),
+      el("p", { class: "sub", text: L("conn.deadline_hint") })
     ));
     function modelSection(kind, title, sub, presets) {
       const preset = el("select", {}, ...presets.map((p, i) => el("option", {
@@ -1198,7 +1212,7 @@ html,body{margin:0;background:#0c0c10}
       route.value = await deps.getArg("route") || "auto";
       enabled.checked = Number(await deps.getArg("disabled")) !== 1;
       reserved.value = String(Number(await deps.getArg("reserved_memory_tokens")) || 600);
-      deadline.value = String(Number(await deps.getArg("deadline_ms")) || 800);
+      deadline.value = String(Number(await deps.getArg("deadline_ms")) || DEFAULT_DEADLINE_MS);
     }
     function fillServer(cfg) {
       llm.fill(cfg.llm);
@@ -1319,7 +1333,6 @@ html,body{margin:0;background:#0c0c10}
   // src/host.ts
   var DEFAULT_SIDECAR_URL = "http://127.0.0.1:8790";
   var DEFAULT_RESERVED_TOKENS = 600;
-  var DEFAULT_DEADLINE_MS = 800;
   async function arg(key) {
     return String(await risuai.getArgument(key) ?? "").trim();
   }

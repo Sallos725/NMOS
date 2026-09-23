@@ -3,7 +3,7 @@ import { configBody, connArgs, dirtySections, type FormValues } from '../src/for
 import { STRING_KEYS, langOf, t } from '../src/i18n';
 
 const base: FormValues = {
-  conn: { url: 'http://127.0.0.1:8790', route: 'auto', enabled: true, reserved: '600', deadline: '800' },
+  conn: { url: 'http://127.0.0.1:8790', route: 'auto', enabled: true, reserved: '600', deadline: '3000' },
   llm: { url: 'http://llm/v1', model: 'm', key: '' },
   emb: { url: '', model: '', key: '' },
   tune: { threshold: '0.4', minSim: '0.42', topK: '5', facts: '8', backfill: '100' },
@@ -47,6 +47,12 @@ describe('batch save', () => {
     expect(configBody(['conn'], edited)).toEqual({});
     expect(connArgs(edited.conn)).toEqual({ sidecar_url: 'http://10.0.0.2:8790', route: 'server', disabled: 1,
       reserved_memory_tokens: 600, deadline_ms: 1200 });
+  });
+
+  it('defaults the deadline to 3 s and keeps it between 200 ms and 30 s', () => {
+    const deadline = (value: string) => connArgs({ ...base.conn, deadline: value }).deadline_ms;
+    expect([deadline(''), deadline('abc'), deadline('50'), deadline('4500.7'), deadline('99999')])
+      .toEqual([3000, 3000, 200, 4500, 30000]);
   });
 });
 

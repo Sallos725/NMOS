@@ -14,7 +14,7 @@ const header = [
   '//@arg auth_token string Optional; only if the sidecar sets NMOS_AUTH_TOKEN',
   '//@arg disabled int 1 = pass every request through untouched',
   '//@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 600)',
-  '//@arg deadline_ms int Hard request-path deadline in ms (0 = 800)',
+  '//@arg deadline_ms int Hard request-path deadline in ms (0 = 3000)',
   '//@arg inject_position string before_last_user (default) or end',
   '//@arg route string auto (default) / direct / server — how to reach the sidecar',
   '//@arg language string Panel language: ko (default) or en',

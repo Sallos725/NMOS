@@ -1,6 +1,11 @@
 // Settings form model: which sections changed, and the single sidecar update they add up to.
 
 export type Section = 'conn' | 'llm' | 'emb' | 'tune' | 'rules';
+
+/** Request-path deadline when the plugin arg is unset (0). 3 s: on PocketRisu v1.12.0 a warm
+ *  generation needs ≈1.5 s at 5,000 messages and ≈2.7 s at 10,000 (docs/perf/scale.md). */
+export const DEFAULT_DEADLINE_MS = 3000;
+export const MAX_DEADLINE_MS = 30_000;
 export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune', 'rules'];
 
 export interface ModelValues { url: string; model: string; key: string }
@@ -51,6 +56,6 @@ export function connArgs(v: FormValues['conn']): Record<string, string | number>
     route: v.route,
     disabled: v.enabled ? 0 : 1,
     reserved_memory_tokens: Number(v.reserved) || 600,
-    deadline_ms: Number(v.deadline) || 800,
+    deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS)),
   };
 }

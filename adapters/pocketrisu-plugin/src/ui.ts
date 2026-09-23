@@ -3,7 +3,7 @@
 // the sidecar and are saved together with one request.
 
 import type { StatusInfo } from './core';
-import { configBody, connArgs, dirtySections, type FormValues, type Section } from './form';
+import { configBody, connArgs, DEFAULT_DEADLINE_MS, dirtySections, MAX_DEADLINE_MS, type FormValues, type Section } from './form';
 import { langOf, t, type Lang, type StringKey } from './i18n';
 import { inspectorApiPath, inspectorConversation, safeFragment } from './inspector';
 import { routeFor } from './route';
@@ -212,6 +212,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       lastCard.append(el('div', { class: 'line' }, el('span', { class: `dot ${kind}` }), el('span', { text: what })),
         el('div', { class: 'muted', text: `${L('status.ago', { n: Math.round((Date.now() - s.last.at) / 1000) })} · ${s.last.ms}ms` }));
       if (s.last.error) lastCard.append(el('div', { class: 'mono muted', text: s.last.error }));
+      // A long chat that runs out of time gets no memory at all (fail open), silently: say what helps.
+      if (s.last.outcome === 'failed' && s.last.error?.startsWith('deadline')) {
+        lastCard.append(el('p', { class: 'sub', text: L('status.deadline_hint') }));
+      }
     } else {
       lastCard.append(el('div', { class: 'muted', text: L('status.none') }));
     }
@@ -341,13 +345,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const route = el('select', {}, ...['auto', 'direct', 'server'].map((v) => el('option', { value: v, text: v })));
   const enabled = el('input', { type: 'checkbox' });
   const reserved = el('input', { type: 'number', min: 100, max: 8000 });
-  const deadline = el('input', { type: 'number', min: 200, max: 5000 });
+  const deadline = el('input', { type: 'number', min: 200, max: MAX_DEADLINE_MS, step: 100 });
   settingsView.append(el('div', { class: 'card' },
     el('h2', { text: L('conn.title') }), el('p', { class: 'sub', text: L('conn.sub') }),
     field(L('conn.url'), url),
     el('div', { class: 'row' }, field(L('conn.route'), route), field(L('conn.budget'), reserved), field(L('conn.deadline'), deadline)),
     el('div', { class: 'check' }, enabled, el('span', { text: L('conn.enabled') })),
-    el('p', { class: 'sub', text: L('conn.hint') })));
+    el('p', { class: 'sub', text: L('conn.hint') }), el('p', { class: 'sub', text: L('conn.deadline_hint') })));
 
   function modelSection(kind: 'llm' | 'embeddings', title: StringKey, sub: StringKey, presets: Preset[]) {
     const preset = el('select', {}, ...presets.map((p, i) => el('option', { value: String(i),
@@ -460,7 +464,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     route.value = (await deps.getArg('route')) || 'auto';
     enabled.checked = Number(await deps.getArg('disabled')) !== 1;
     reserved.value = String(Number(await deps.getArg('reserved_memory_tokens')) || 600);
-    deadline.value = String(Number(await deps.getArg('deadline_ms')) || 800);
+    deadline.value = String(Number(await deps.getArg('deadline_ms')) || DEFAULT_DEADLINE_MS);
   }
 
   function fillServer(cfg: ServerConfig): void {
