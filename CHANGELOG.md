@@ -27,11 +27,24 @@ latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once; older turns keep their 
   (a nickname two people share) stays ambiguous and links neither. The same name for an item and a
   place stays two entities; `{{user}}`, `user` and `유저` are one persona. Nothing is stored: deleting
   the turn that gave the alias splits the entity again at the next request.
+- **Extraction reuses names** (ADR 0012). The extraction prompt lists up to 40 entities mentioned
+  earlier in the chat (`NMOS_EXTRACT_HINTS`, `0` = off), newest first, and asks the model to reuse a
+  listed name when the turn clearly means that entity. "해안 지도" then stays "해안 지도" instead of becoming
+  "지도" a few turns later. Each extraction records the names it was shown. Deleting the turn a name came
+  from does not invalidate extractions that used it. The list adds prompt tokens (measured in Phase 5
+  step 6).
 - Inspector: an entity list (names, mentions, the turn each alias came from) and ambiguous names.
   API: `GET /v1/conversations/{id}/entities`.
 - The packet Note explains `negated` and `Claim` only in packets that use them.
 - Inspector: facts marked *negated* or *legacy* (`extract-v4` and older), a list of claims, and a list
   of non-actual assertions.
+- **Inline images are no longer read as story** (normalizer `clean-v2`). Image plugins write markup
+  into the message itself; an illustration insert (`<div><span style="…"><img src="{{raw::…}}">`)
+  outgrew the old 500-character tag limit, so the whole `<img …>` tag reached embeddings, extraction
+  and excerpts on every illustrated turn. `clean-v2` also drops RisuAI inlay/asset tokens
+  (`{{inlay::…}}`, `{{raw::…}}`, …), markdown images and `data:` URIs, lets HTML tags span lines with
+  attributes of any length, and no longer eats prose such as `HP < 30 … 3 > 2` as a tag. Upgrading
+  re-embeds every revision once and folds into the same one-time re-extraction as `extract-v5`.
 - **Progress display** (plugin, D28; outside Phase 5, owner decision). An optional pill at the top right
   of the chat screen shows each request's memory outcome and the open chat's background extraction and
   embedding progress. Off by default; turn it on in the panel (Settings or Status), which asks for

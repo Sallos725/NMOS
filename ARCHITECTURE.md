@@ -124,7 +124,11 @@ extraction is the **turn**: a run of user messages plus the run of replies that 
 disabled and pre-`allBefore` messages excluded; the greeting is turn 0). A turn is extracted once,
 when its anchor (last reply) is accepted, with at most the previous `K` turns as context
 (`NMOS_EXTRACT_TURNS`, default 3). An edit inside turn *t* re-extracts only turns `[t, t+K]`.
-Extraction is keyed by `(anchor revision, turn_hash, extractor generation)` (D20).
+Extraction is keyed by `(anchor revision, turn_hash, extractor generation)` (D20). **Amended
+2026-09-24 (ADR 0012):** the prompt also lists up to `NMOS_EXTRACT_HINTS` (default 40; part of the
+generation) entities mentioned on the head before the target turn, newest first, so the model can reuse
+names. This is the only input from beyond the `K`-turn window; it is recorded on the extraction row
+(`hints`) and does not affect validity: every assertion still needs evidence in the target turn.
 
 **D8 — Synchronous invalidation, asynchronous recompilation.** At `beforeRequest`, stale
 derived rows are masked synchronously (no LLM). Re-extraction is queued. Until it finishes,

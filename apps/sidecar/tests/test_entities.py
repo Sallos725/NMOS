@@ -138,3 +138,5 @@ def test_inspector_lists_entities_and_the_alias_turn(migrated, db):
     hana = next(e for e in api if e["name"] == "하나")
     assert set(hana["names"]) == {"하나", "Hana"} and hana["aliases"][0]["turn"] == 0  # no greeting: the first turn is 0
     assert {e["name"] for e in api} >= {"하나", "station", "harbor"}
+    # Object mentions carry their own type through the fact query (a missing column typed them "?").
+    assert {(e["name"], e["type"]) for e in api} >= {("station", "place"), ("harbor", "place")}

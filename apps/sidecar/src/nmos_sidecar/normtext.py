@@ -14,7 +14,7 @@ import psycopg
 from .packet import clean_text
 
 # Bump whenever clean_text() output can change; embedding and extractor generations include it.
-NORMALIZER_VERSION = "clean-v1"
+NORMALIZER_VERSION = "clean-v2"
 
 
 def write(conn: psycopg.Connection, revision_id: UUID, content: str) -> None:

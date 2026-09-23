@@ -5,8 +5,9 @@
 **Phase 5 — Entity Identity and Semantic Assertions: current (authorized 2026-09-23).** Spec
 `docs/phases/PHASE-5.md`, ADRs 0012–0014. Step 1 of 6 (generation fallback, ADR 0014) done and released in `v0.1.0-beta.11`, with the fix for
 a stall in fact and state reads after edits in long chats (`docs/perf/scale.md`). Steps 2–3
-(`extract-v5`, migration 0014, fact reading and packet per ADR 0013, D27) and step 4 (read-time
-entities, ADR 0012, D26) done, unreleased. Next: step 5 (name hints in extraction).
+(`extract-v5`, migration 0014, fact reading and packet per ADR 0013, D27), step 4 (read-time
+entities, ADR 0012, D26) and step 5 (name hints in extraction, D7 amended) done, unreleased. Next: step 6
+(real-model evaluation tier, measurements, release).
 Outside the phase (owner decision 2026-09-24, D28): an optional progress display on the chat screen,
 unreleased.
 

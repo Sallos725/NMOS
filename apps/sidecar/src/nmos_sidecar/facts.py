@@ -43,7 +43,7 @@ live AS (
       AND m.position > (SELECT coalesce(max(position), -1) FROM m WHERE metadata->>'disabled' = 'allBefore')
       AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
 )
-SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.value, a.epistemic, a.confidence, a.evidence,
+SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.value, a.epistemic, a.confidence, a.evidence,
        a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by,
        l.position, l.turn, l.host_logical_id, l.extractor_key AS generation
 FROM live l

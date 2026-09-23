@@ -161,3 +161,40 @@ def test_clean_text_drops_model_reasoning():
     from nmos_sidecar.packet import clean_text
     raw = "<Thoughts>\n우리가 도서관에 도착했을 때...\n</Thoughts>\n도서관 창가 자리, 하나는 노트를 펼쳤다.<think>hmm</think>"
     assert clean_text(raw) == "도서관 창가 자리, 하나는 노트를 펼쳤다."
+
+
+def test_clean_text_drops_inline_images_and_media_tokens():
+    # Image plugins insert <div><img src="data:…;base64,…"></div> or RisuAI inlay tokens into the
+    # message itself; neither is story, and a base64 URI outgrows the old 500-char tag limit.
+    from nmos_sidecar.packet import clean_text
+    b64 = "iVBORw0KGgo" + "A" * 4000 + "=="
+    raw = (f'하나는 창밖을 보았다.\n<div style="text-align:center">\n<img\n  src="data:image/png;base64,{b64}"\n'
+           f'  alt="장면" style="max-width: 100%">\n</div>\n{{{{inlay::0b1c2d3e-aaaa-bbbb-cccc-1234567890ab}}}}'
+           f'{{{{inlayeddata::f00d}}}} {{{{img::smile}}}} ![장면](data:image/webp;base64,{b64})\n'
+           f'data:image/jpeg;base64,{b64}\n"가자." 카이토가 말했다.')
+    assert clean_text(raw) == '하나는 창밖을 보았다.\n"가자." 카이토가 말했다.'
+
+
+def test_clean_text_keeps_angle_brackets_that_are_not_tags():
+    from nmos_sidecar.packet import clean_text
+    assert clean_text("HP < 30 이면 도망친다. 3 > 2, <3 &quot;좋아&quot;") == 'HP < 30 이면 도망친다. 3 > 2, <3 "좋아"'
+
+
+def test_clean_text_drops_illustration_plugin_markup():
+    # Shape of a real illustration-plugin insert: the span's style outgrows 500 chars and the img src is a
+    # {{raw::asset}} token. clean-v1 left the whole <img …> tag in the text.
+    from nmos_sidecar.packet import clean_text
+    mid, asset = "00000000-0000-4000-8000-000000000001", "Hana.__am__.chat.00000000-0000-4000-8000-000000000002"
+    style = "display:flex;justify-content:center;margin:14px auto;width:var(--am-chat-image-width,70%);" * 8
+    raw = (f'하나는 고개를 들었다.\n<div class="am-illustration-projection" data-am-message-id="{mid}" '
+           f'data-am-slot-index="41" data-am-asset="{asset}"><span class="am-image" style="{style}">'
+           f'<img class="am-image__media" data-am-asset="{asset}" src="{{{{raw::{asset}}}}}" width="1024" alt="" '
+           f'loading="lazy" style="width:calc(760px * var(--am-chat-image-scale,1));max-width:100%"></span></div>\n'
+           '"괜찮아." 하나가 말했다.')
+    assert clean_text(raw) == '하나는 고개를 들었다.\n"괜찮아." 하나가 말했다.'
+
+
+def test_clean_text_does_not_read_prose_as_a_tag():
+    from nmos_sidecar.packet import clean_text
+    assert clean_text("x<b 는 크다\n그리고 3 > 2") == "x<b 는 크다\n그리고 3 > 2"
+    assert clean_text('<a href="x"\n  title=\'y\'>링크</a> <b>굵게</b><br/>끝') == "링크 굵게\n끝"
