@@ -3,9 +3,9 @@
 import { canonicalJson } from './canonical';
 import { sha256Hex } from './hash';
 import type { Lang } from './i18n';
-import { bodyKey, buildManifest, hashPayload } from './manifest';
+import { bodyKey, createManifestBuilder, hashPayload, type Bodies } from './manifest';
 import { hasPacket, inContextIds, injectPacket, queryTexts, userTurnIndex, type InjectPosition } from './prompt';
-import type { Body, HostChat, HostMessage, PromptMessage, ReconcileRequest } from './types';
+import type { HostChat, HostMessage, PromptMessage, ReconcileRequest } from './types';
 
 export interface Settings {
   sidecarUrl: string;
@@ -79,6 +79,7 @@ const NAME_TTL_MS = 10 * 60_000;
 export function createAdapter(host: HostPort) {
   const cache = new Map<string, CacheEntry>();
   const names = new Map<string, { name: string | null; at: number }>();
+  const buildManifest = createManifestBuilder();
   let last: LastRequest | null = null;
 
   /** The bot name for this chat as last resolved; a stale or missing entry is refreshed in the background. */
@@ -122,7 +123,7 @@ export function createAdapter(host: HostPort) {
     }
   }
 
-  async function sync(settings: Settings, request: ReconcileRequest, bodies: Map<string, Body>, deadline: number) {
+  async function sync(settings: Settings, request: ReconcileRequest, bodies: Bodies, deadline: number) {
     let result = await call<ReconcileResult>(settings, '/v1/sync/reconcile', request, deadline);
     if (result.status === 'needs_bodies') {
       const needed = (result.needed_bodies ?? []).map((n) => bodies.get(bodyKey(n.host_logical_id, n.revision_hash)));
@@ -168,7 +169,8 @@ export function createAdapter(host: HostPort) {
       const { request, bodies } = await buildManifest(chat, firstSaying(messages),
         { characterName: characterName(chat.id) });
       const manifestMs = host.now() - t0;
-      key = await sha256Hex(canonicalJson([
+      // Internal key only (not a cross-language hash): plain JSON keeps it linear and cheap.
+      key = await sha256Hex(JSON.stringify([
         chat.id, mode, prompt.length, request.messages.map((m) => [m.host_logical_id, m.revision_hash]),
       ]));
       const cached = cache.get(key);

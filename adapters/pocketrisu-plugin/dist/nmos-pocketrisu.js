@@ -90,33 +90,60 @@ ${revisionHash}`;
     const text = typeof value === "string" ? value.trim() : "";
     return text ? text.slice(0, LABEL_MAX) : void 0;
   }
-  async function buildManifest(chat, characterRef, labels = {}) {
-    const messages = Array.isArray(chat.message) ? chat.message : [];
-    const hashes = await Promise.all(messages.map((m) => sha256Hex(canonicalJson(hashPayload(m)))));
-    const bodies = /* @__PURE__ */ new Map();
-    const entries = messages.map((m, i) => {
-      const meta = revisionMetadata(m);
-      const revisionHash = hashes[i];
-      const logicalId = String(m.chatId ?? "");
-      bodies.set(bodyKey(logicalId, revisionHash), {
-        host_logical_id: logicalId,
-        revision_hash: revisionHash,
-        content: normalizeText(selectedContent(m)),
-        metadata: meta
-      });
-      return {
-        host_logical_id: logicalId,
-        revision_hash: revisionHash,
-        role: m.role,
-        name: m.name ?? null,
-        disabled: m.disabled ?? null,
-        is_comment: m.isComment ?? null,
-        swipe_id: m.swipeId ?? null,
-        swipe_count: meta.swipeCount,
-        generation_id: meta.generationId ?? null,
-        special_comments: meta.specialComments
-      };
-    });
+  function manifestEntry(m, revisionHash) {
+    const meta = revisionMetadata(m);
+    return {
+      host_logical_id: String(m.chatId ?? ""),
+      revision_hash: revisionHash,
+      role: m.role,
+      name: m.name ?? null,
+      disabled: m.disabled ?? null,
+      is_comment: m.isComment ?? null,
+      swipe_id: m.swipeId ?? null,
+      swipe_count: meta.swipeCount,
+      generation_id: meta.generationId ?? null,
+      special_comments: meta.specialComments
+    };
+  }
+  function snapshotOf(m) {
+    const content = selectedContent(m);
+    const data = typeof m.data === "string" ? m.data : "";
+    const out = [
+      m.role,
+      m.saying,
+      m.name,
+      m.otherUser,
+      m.isComment,
+      m.disabled,
+      m.swipeId,
+      m.generationInfo?.generationId,
+      Array.isArray(m.swipes) ? m.swipes.length : 0,
+      content,
+      data === content ? null : data
+    ];
+    return out.every((v) => v === null || v === void 0 || typeof v !== "object" && typeof v !== "function") ? out : void 0;
+  }
+  function sameSnapshot(a, b) {
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+  function finish(chat, messages, entries, characterRef, labels, hashed) {
+    const index = /* @__PURE__ */ new Map();
+    entries.forEach((e, i) => index.set(bodyKey(e.host_logical_id, e.revision_hash), i));
+    const bodies = {
+      get(key) {
+        const i = index.get(key);
+        if (i === void 0) return void 0;
+        const m = messages[i];
+        const e = entries[i];
+        return {
+          host_logical_id: e.host_logical_id,
+          revision_hash: e.revision_hash,
+          content: normalizeText(selectedContent(m)),
+          metadata: revisionMetadata(m)
+        };
+      }
+    };
     return {
       request: {
         host: "pocketrisu",
@@ -127,7 +154,47 @@ ${revisionHash}`;
         hash_version: 1,
         messages: entries
       },
-      bodies
+      bodies,
+      hashed
+    };
+  }
+  var CACHED_CHATS = 2;
+  function createManifestBuilder() {
+    const chats = /* @__PURE__ */ new Map();
+    return async function build(chat, characterRef, labels = {}) {
+      const messages = Array.isArray(chat.message) ? chat.message : [];
+      const chatKey = String(chat.id ?? "");
+      const previous = chats.get(chatKey) ?? /* @__PURE__ */ new Map();
+      chats.delete(chatKey);
+      const next = /* @__PURE__ */ new Map();
+      const entries = new Array(messages.length);
+      const snapshots = new Array(messages.length);
+      const missing = [];
+      const seen = /* @__PURE__ */ new Set();
+      messages.forEach((m, i) => {
+        const id = m.chatId;
+        const snapshot = typeof id === "string" && id !== "" && !seen.has(id) ? snapshotOf(m) : void 0;
+        if (typeof id === "string") seen.add(id);
+        snapshots[i] = snapshot;
+        const hit = snapshot ? previous.get(id) : void 0;
+        if (hit && sameSnapshot(hit.snapshot, snapshot)) {
+          entries[i] = hit.entry;
+          next.set(id, hit);
+        } else {
+          missing.push(i);
+        }
+      });
+      const hashes = await Promise.all(missing.map((i) => sha256Hex(canonicalJson(hashPayload(messages[i])))));
+      missing.forEach((i, j) => {
+        const m = messages[i];
+        const entry = manifestEntry(m, hashes[j]);
+        entries[i] = entry;
+        const snapshot = snapshots[i];
+        if (snapshot) next.set(m.chatId, { snapshot, entry });
+      });
+      chats.set(chatKey, next);
+      while (chats.size > CACHED_CHATS) chats.delete(chats.keys().next().value);
+      return finish(chat, messages, entries, characterRef, labels, missing.length);
     };
   }
 
@@ -242,6 +309,7 @@ ${revisionHash}`;
   function createAdapter(host) {
     const cache = /* @__PURE__ */ new Map();
     const names = /* @__PURE__ */ new Map();
+    const buildManifest = createManifestBuilder();
     let last = null;
     function characterName(chatId) {
       const hit = names.get(chatId);
@@ -323,7 +391,7 @@ ${revisionHash}`;
           { characterName: characterName(chat.id) }
         );
         const manifestMs = host.now() - t0;
-        key = await sha256Hex(canonicalJson([
+        key = await sha256Hex(JSON.stringify([
           chat.id,
           mode,
           prompt.length,
