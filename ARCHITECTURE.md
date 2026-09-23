@@ -181,11 +181,16 @@ writes every character in one generation (D9).
 compiler version, prompt and predicate-registry fingerprints, normalizer version, endpoint identity,
 model and output-affecting settings. An embedding projection hashes endpoint, model, normalizer,
 chunker and document profile. Credentials are never part of a key. Jobs, extractions and embedding
-rows carry their key. A worker only claims jobs for the generation its handler implements. Readers
-use only the active generation. Older generations stay stored for audit and are never mixed in.
-Activation queues the recent window first, then every older item an earlier generation covered, at
-background priority. Coverage (compiled / pending / failed / not queued) is measured per conversation
-and partial coverage is shown as partial.
+rows carry their key. A worker only claims jobs for the generation its handler implements. Vector
+readers use only the active projection. Older generations stay stored for audit; fact readers may fall
+back to one per turn (below), never mixing two in one turn.
+Embedding activation queues the recent window first, then every older item an earlier projection
+covered, at background priority. **Extractor activation (amended 2026-09-24, ADR 0014)** queues only
+the recent window (`NMOS_EXTRACT_BACKFILL` turns); per turn, facts come from the active generation if
+it has the turn, otherwise from the most recently active earlier generation that does (never two in
+one turn), until "extract all history". A rebuild discards every generation of that chat. Coverage
+(compiled / pending / failed / not queued / served by an older generation) is measured per
+conversation and partial coverage is shown as partial.
 
 **D21 — One normalized-text projection (ADR 0006).** `revision_text(revision, normalizer)` stores
 `clean_text()` output. Lexical recall, embedding, extraction and excerpting read it, and query text is

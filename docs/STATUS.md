@@ -3,7 +3,8 @@
 ## Current phase
 
 **Phase 5 — Entity Identity and Semantic Assertions: current (authorized 2026-09-23).** Spec
-`docs/phases/PHASE-5.md`, ADRs 0012–0014. Step 1 of 6 (generation fallback, ADR 0014) in progress.
+`docs/phases/PHASE-5.md`, ADRs 0012–0014. Step 1 of 6 (generation fallback, ADR 0014) done, unreleased; it also fixed a released stall in fact
+and state reads after edits in long chats (`docs/perf/scale.md`). Next: step 2 (schema and `extract-v5`).
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 

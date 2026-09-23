@@ -62,8 +62,9 @@ language after a page reload.
 - **Inspector**: the Inspector, inside the panel (PocketRisu does not let plugins open a browser tab).
   Click a conversation for its state, facts, recent retrievals, commits (with what each sync changed,
   e.g. `delete ×12`) and messages. On a conversation page three buttons act on that chat:
-  **Extract all history** extracts and embeds the older turns the first sync skipped, and **Rebuild
-  memory** (click twice) discards the chat's facts and extracts every turn again. Both leave raw
+  **Extract all history** extracts and embeds the older turns the first sync skipped (and moves turns
+  still served by an earlier LLM model to the current one), and **Rebuild memory** (click twice)
+  discards the chat's facts, from every model, and extracts every turn again. Both leave raw
   messages alone, run in the background and cost one LLM call per turn. **Delete conversation**
   (click twice) deletes everything NMOS stored for that chat, raw messages included, and cannot be
   undone. Use it after deleting the chat in PocketRisu. The PocketRisu chat itself is never touched;
@@ -173,9 +174,11 @@ The full list with workarounds is [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md)
   messages, 2.7 s at 10,000 and 4.1 s at 15,000 (the host pauses after handing NMOS the chat). The
   default 3 s deadline covers up to about 10,000 messages; for longer chats raise Deadline (ms) in the
   panel's Settings tab, or those requests go without memory. See `docs/perf/scale.md`.
-- Changing the LLM or embedding model/endpoint re-processes previously covered history with the new
-  model (recent messages first; the Inspector shows coverage as partial until done). Upgrading to
-  0.1.0-beta.8 does the same once for facts (extraction became per turn, ADR 0008).
+- Changing the embedding model/endpoint re-embeds previously covered history (recent messages first;
+  the Inspector shows coverage as partial until done). Changing the LLM model/endpoint re-extracts only
+  each chat's recent turns (`NMOS_EXTRACT_BACKFILL`, default 100); older turns keep the previous model's
+  facts, marked "older generation" in the Inspector, until you run **Extract all history** on that chat
+  (ADR 0014, unreleased).
 - Item and character names are free text: "지도" and "해안 지도" are different items, and an item that is
   lost or destroyed without a new holder still shows its last holder.
 - Recall thresholds are tuned on limited data — please report cases where memory is wrong or missing.

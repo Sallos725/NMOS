@@ -170,7 +170,9 @@ messages and reports fact-read time with and without entity resolution.
 Each step is one reviewable change with its tests.
 
 1. **Generation fallback (ADR 0014).** Useful on its own: it also bounds the cost of a plain model
-   change. Must land before step 2 activates `extract-v5`.
+   change. Must land before step 2 activates `extract-v5`. *Done 2026-09-24* (tests in
+   `test_generations.py`; fact-read timings in `docs/perf/scale.md`, which also records the fixed
+   `allBefore` stall).
 2. **Schema and `extract-v5`**: migration, prompt, validation, `also_called`, stored hints column
    (empty until step 5).
 3. **Fact reading and packet (ADR 0013)**: actual narration only, negation, claims, legacy rows.
