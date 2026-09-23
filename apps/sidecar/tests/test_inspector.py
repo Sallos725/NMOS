@@ -68,6 +68,20 @@ def test_coverage_of_a_feature_that_was_never_on_is_not_shown_as_partial(client)
     assert "일부" not in page and "0.0%" not in page
 
 
+def test_inspector_handles_active_extractor_without_eligible_turns(migrated):
+    with make_client(migrated, llm_url="http://fake-llm/v1", llm_model="fake") as client:
+        pending = SimChat()
+        pending.user("아직 답변이 없는 메시지")
+        sync_named(client, pending, character_name="하나", chat_name="대기 중")
+        conv_id = client.get("/v1/conversations").json()[0]["id"]
+        coverage = client.get(f"/v1/conversations/{conv_id}/coverage").json()["extraction"]
+
+        assert set(coverage) == {"generation"}
+        detail = client.get(f"/v1/inspector/c/{conv_id}")
+        assert detail.status_code == 200
+        assert '<span class="muted">—</span>' in detail.json()["html"]
+
+
 def test_inspector_links_keep_token_and_language(migrated):
     with make_client(migrated) as c:
         sync_named(c, chat(), character_name="하나", chat_name="첫 대화")

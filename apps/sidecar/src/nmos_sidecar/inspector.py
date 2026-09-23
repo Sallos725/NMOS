@@ -135,7 +135,7 @@ def _generation(gen: dict[str, Any] | None, lang: str) -> str:
 
 def _percent(stats: dict[str, Any] | None, done_key: str, lang: str) -> str:
     """Coverage of the active generation; partial coverage is never shown as complete (#8)."""
-    if not stats:
+    if not stats or any(key not in stats for key in (done_key, "eligible", "percent", "complete")):
         return "<span class=\"muted\">—</span>"
     text = f"{stats[done_key]}/{stats['eligible']} ({stats['percent']}%)"
     return text if stats["complete"] else f"<span class=\"chip\">{_t(lang, 'partial')}</span> {text}"
