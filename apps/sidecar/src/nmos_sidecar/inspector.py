@@ -67,6 +67,9 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "claims": ("인물의 주장", "Claims by characters"), "h.by": ("말한 인물", "Said by"),
     "other": ("실제가 아닌 단언 (가정·꿈·미상)", "Not actual (hypothetical, dreamed, unknown)"),
     "h.modality": ("양태", "Modality"),
+    "entities": ("엔티티", "Entities"), "h.type": ("종류", "Type"), "h.names": ("이름", "Names"),
+    "h.mentions": ("언급", "Mentions"), "h.alias_turns": ("별칭이 나온 턴", "Alias stated in turn"),
+    "ambiguous": ("모호한 이름 (연결 안 함)", "Ambiguous names (not linked)"), "h.candidates": ("후보", "Candidates"),
     "h.subject": ("주어", "Subject"), "h.predicate": ("술어", "Predicate"), "h.object": ("대상 / 값", "Object / value"),
     "h.knowledge": ("아는 범위", "Knowledge"), "h.turn": ("턴", "Turn"), "h.versions": ("버전", "Versions"),
     "h.position": ("#", "#"),
@@ -217,7 +220,8 @@ def _processed(m: dict[str, Any], lang: str) -> str:
 def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict[str, Any]],
            commits: list[dict[str, Any]], traces: list[dict[str, Any]], facts: list[dict[str, Any]],
            token: str | None, coverage: dict[str, Any] | None = None, lang: str = "ko", embed: bool = False,
-           claims: list[dict[str, Any]] | None = None, other: list[dict[str, Any]] | None = None) -> str:
+           claims: list[dict[str, Any]] | None = None, other: list[dict[str, Any]] | None = None,
+           entities: list[dict[str, Any]] | None = None, ambiguous: list[dict[str, Any]] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -250,6 +254,15 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     def turn_of(a: dict[str, Any]) -> str:
         return _v(a["turn"] if a.get("turn") is not None else a["position"])
 
+    if entities:
+        parts.append(f"<h2>{t('entities')}</h2>" + table(
+            [t(k) for k in ("h.type", "h.names", "h.mentions", "h.alias_turns")],
+            [[_v(e["type"]), _v(" · ".join(e["names"])), _v(e["mentions"]),
+              _v(", ".join(str(a["turn"]) for a in e["aliases"]))] for e in entities[:200]]))
+    if ambiguous:
+        parts.append(f"<h2>{t('ambiguous')}</h2>" + table(
+            [t(k) for k in ("h.type", "h.names", "h.candidates")],
+            [[_v(a["type"]), _v(a["name"]), _v(" · ".join(a["candidates"]))] for a in ambiguous]))
     if claims:
         parts.append(f"<h2>{t('claims')}</h2>" + table(
             [t(k) for k in ("h.by", "h.subject", "h.predicate", "h.object", "h.turn")],

@@ -17,7 +17,7 @@ without a PocketRisu change.
 | K5 | Every generation hangs after installing, updating or disabling the plugin until reload | Host | host (H13) |
 | K6 | PocketRisu must be opened at `localhost` or HTTPS | Host | browser rule |
 | K7 | Tested on one PocketRisu build only; no group chats | Host | evidence / host (H11) |
-| K8 | Names are free text: one item under two names, or two items under one name | Memory | Track B, B1 |
+| K8 | Names are free text: one item under two names, or two items under one name | Memory | Phase 5: stated aliases link names (unreleased, ADR 0012); name hints next |
 | K9 | A lost or destroyed item keeps its last holder | Memory | explicit loss: Phase 5 (unreleased, ADR 0013); other ends: Track B, B2 |
 | K10 | An item's holder and its place are separate facts and can disagree | Memory | Track B, B2 |
 | K11 | Character knowledge is a hint, not isolation | Memory | Track B, B5 (hard POV) |

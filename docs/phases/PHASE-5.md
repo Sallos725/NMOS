@@ -181,7 +181,8 @@ Each step is one reviewable change with its tests.
    (`docs/perf/eval-baseline.md`, `tests/test_semantics.py`). Landed with step 2 in one pull request so
    that `main` never extracts v5 fields without reading them.
 4. **Entity resolution (ADR 0012)**: read-time resolver, entity-keyed versions, Inspector entities,
-   facts-tier benchmark.
+   facts-tier benchmark. *Done 2026-09-24* (`tests/test_entities.py`; +24 ms p50 at 10k, resolver
+   7 ms, `docs/perf/scale.md`: the latency bound holds, no persisted fallback).
 5. **Name hints**: worker builds and records the list; generation key includes the count.
 6. **Evaluation and release**: real-model tier, measurements, docs, release notes with cost.
 

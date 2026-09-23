@@ -363,6 +363,17 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                      if conv["head_commit_id"] else [])
         return [{k: v for k, v in f.items() if history or k != "history"} for f in facts]
 
+    @app.get("/v1/conversations/{conv_id}/entities", dependencies=[Depends(auth)])
+    def conversation_entities(conv_id: UUID, request: Request):
+        """Read-time entities of this chat's head (ADR 0012): names, mentions, where aliases were stated."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            view = (memory_view(conn, conv["head_commit_id"], rt["active_extractor"])
+                    if conv["head_commit_id"] else {"entities": []})
+        return view["entities"]
+
     @app.get("/v1/conversations/{conv_id}/coverage", dependencies=[Depends(auth)])
     def conversation_coverage(conv_id: UUID, request: Request):
         """How completely the active generations cover this chat's head (#8, #13)."""
@@ -501,7 +512,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     readmodel.commits(conn, conv_id), readmodel.traces(conn, conv_id),
                                     view["facts"][:300], token, coverage_view(conn, conv_id),
                                     lang=inspector.lang_of(lang), embed=embed, claims=view["claims"],
-                                    other=view["other"])
+                                    other=view["other"], entities=view["entities"], ambiguous=view["ambiguous"])
 
     @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_index(request: Request, token: str | None = None, lang: str | None = None):
