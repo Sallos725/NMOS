@@ -60,7 +60,11 @@ language after a page reload.
 - **Status**: sidecar connection, which features are on (status window, facts, semantic recall), and what the
   last request injected.
 - **Inspector**: the Inspector, inside the panel (PocketRisu does not let plugins open a browser tab).
-  Click a conversation for its state, facts, recent retrievals and messages.
+  Click a conversation for its state, facts, recent retrievals, commits (with what each sync changed,
+  e.g. `delete ×12`) and messages. On a conversation page two buttons act on that chat:
+  **Extract all history** extracts and embeds the older turns the first sync skipped, and **Rebuild
+  memory** (click twice) discards the chat's facts and extracts every turn again. Raw messages are
+  never touched. Both run in the background and cost one LLM call per turn.
 - **Settings**: connection (sidecar URL, route, memory budget, deadline, on/off); **fact-extraction LLM**
   and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, any
   OpenAI-compatible endpoint), model list, API key and a **connection test** that makes a real call;
@@ -86,7 +90,8 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_CORS_ORIGINS` | `http://localhost:6001,…` | Address(es) you open PocketRisu at |
 | `NMOS_LLM_URL` / `NMOS_LLM_MODEL` / `NMOS_LLM_API_KEY` | off | Background fact extraction. Ollama on the host: `http://host.docker.internal:11434/v1` |
 | `NMOS_EMBED_URL` / `NMOS_EMBED_MODEL` | off | Semantic recall, e.g. `qwen3-embedding:0.6b` |
-| `NMOS_EXTRACT_BACKFILL` | `100` | On first sight of a chat, extract only the latest N messages (cost control) |
+| `NMOS_EXTRACT_BACKFILL` | `100` | On first sight of a chat, extract only the latest N **turns** (cost control; the rest on request) |
+| `NMOS_EXTRACT_TURNS` | `3` | Previous turns an extraction sees as context |
 | `NMOS_EMBED_BACKFILL` | `2000` | On first sight of a chat, embed the latest N messages (cheap; covers long histories) |
 | `NMOS_WORKER_CONCURRENCY` | `2` | Parallel background jobs |
 | `NMOS_PARSERS_FILE` | off | State parser rules, e.g. `/config/parsers.json` (mounted from `./config`) |
@@ -100,8 +105,10 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 Plugin arguments: `sidecar_url`, `auth_token`, `disabled` (1 = off), `reserved_memory_tokens`
 (0 = 600), `deadline_ms` (0 = 800), `inject_position` (`before_last_user` or `end`).
 
-**Cost note:** with an LLM configured, every accepted message is one extraction call (plus
-`NMOS_EXTRACT_BACKFILL` calls when a long chat is first seen). Rerolls you discard are never extracted.
+**Cost note:** with an LLM configured, every turn (your message plus the reply) is one extraction
+call once you continue from it, plus up to `NMOS_EXTRACT_BACKFILL` calls when a long chat is first seen.
+Rerolls you discard are never extracted. NMOS only reads chats you generate in with the plugin on; it
+never scans other chats by itself.
 
 ### State parsers
 
@@ -163,7 +170,8 @@ Known limits:
   measured machine; beyond about 8,000 most requests fail open (no memory) unless you raise
   `deadline_ms`. See `docs/perf/scale.md`.
 - Changing the LLM or embedding model/endpoint re-processes previously covered history with the new
-  model (recent messages first; the Inspector shows coverage as partial until done).
+  model (recent messages first; the Inspector shows coverage as partial until done). Upgrading to
+  0.1.0-beta.8 does the same once for facts (extraction became per turn, ADR 0008).
 - Recall thresholds are tuned on limited data — please report cases where memory is wrong or missing.
 
 ## Develop
