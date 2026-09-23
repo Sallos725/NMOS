@@ -68,8 +68,8 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
   Superseded generations: decided 2026-09-23 (keep LLM extractions, prune embeddings and
   deterministic projections after full coverage; Track B §4); not implemented yet.
 - Phase 5: scope decided 2026-09-23 (B1 entity identity and semantic assertions only; B2 next; canon
-  sources in B4; older history re-extracted on request). Not started: needs an approved
-  `docs/phases/PHASE-5.md` (Track B, B0).
+  sources in B4; older history re-extracted on request). Spec drafted for approval:
+  `docs/phases/PHASE-5.md` with proposed ADRs 0012–0014 (Track B, B0). Not started until approved.
 
 ## Public release checklist (done 2026-09-23)
 
