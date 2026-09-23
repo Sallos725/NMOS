@@ -406,8 +406,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     @app.post("/v1/conversations/{conv_id}/rebuild", dependencies=[Depends(auth)])
     def rebuild_memory(conv_id: UUID, request: Request):
-        """Redo this chat's facts: discard its extractions of the active generation (kept for audit)
-        and re-extract every turn, recent ones first. Raw evidence, state and embeddings stay."""
+        """Redo this chat's facts: discard its extractions of every generation (kept for audit, ADR
+        0014) and re-extract every turn, recent ones first. Raw evidence, state and embeddings stay."""
         ex, cur = rt["extractor"], rt["settings"]
         with request.app.state.pool.connection() as conn:
             if readmodel.conversation(conn, conv_id) is None:
@@ -415,7 +415,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if ex is None:
                 raise HTTPException(status_code=409, detail="fact extraction is off")
             with conn.transaction():
-                discarded = extraction.discard(conn, ex.key, conv_id)
+                discarded = extraction.discard(conn, conv_id)
                 queued = extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id, history=True)
             log.info("rebuild conversation=%s discarded=%d queued=%d", conv_id, discarded, queued)
             return {"discarded": discarded, "queued": {"extract": queued}, "coverage": coverage_view(conn, conv_id)}

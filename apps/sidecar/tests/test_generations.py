@@ -49,7 +49,7 @@ def test_generation_key_ignores_credentials_and_url_spelling():
     assert endpoint_identity("https://API.example.com:8443/v1/") == "https://api.example.com:8443/v1"
 
 
-def test_changing_llm_model_reextracts_existing_chat(migrated, db):
+def test_changing_llm_model_reextracts_the_recent_window(migrated, db):
     with make_client(migrated, **LLM) as c:
         chat = fact_chat()
         sync(c, chat)
@@ -58,14 +58,14 @@ def test_changing_llm_model_reextracts_existing_chat(migrated, db):
         assert [f["object"] for f in facts(c, chat)] == ["old chapel"]
         out = c.put("/v1/config", json={"llm_model": "fake-2"}).json()
         eligible = chat.complete_turns()
-        assert out["queued_jobs"] == eligible  # every pair the old generation covered is rebuilt
+        assert out["queued_jobs"] == eligible  # the whole chat is inside the recent window (ADR 0014)
         new = active_generation(db, "extract")
         assert new.key != old.key and new.model == "fake-2"
         assert c.get("/v1/health").json()["generations"]["extract"] == new.key
-        # Facts come only from the active generation: nothing until the new model has run.
-        assert facts(c, chat) == []
+        # Until the new model has run, the previous generation serves the turn (ADR 0014).
+        assert [(f["object"], f["generation"]) for f in facts(c, chat)] == [("old chapel", old.key)]
         drain(migrated)
-        assert [f["object"] for f in facts(c, chat)] == ["old chapel"]
+        assert [(f["object"], f["generation"]) for f in facts(c, chat)] == [("old chapel", new.key)]
         # The old generation stays for audit.
         by_gen = {r["extractor_key"]: r["n"] for r in db.execute(
             "SELECT extractor_key, count(*) AS n FROM extraction GROUP BY 1").fetchall()}
@@ -142,19 +142,98 @@ def test_compiler_upgrade_tracks_partial_coverage_and_backfills_beyond_recent_wi
     monkeypatch.setattr(extraction, "COMPILER_VERSION", "extract-next")  # a compiler upgrade
     with make_client(migrated, extract_backfill=4, **LLM) as c:
         cov = c.get(f"/v1/conversations/{cid}/coverage").json()["extraction"]
-        # Recent window first, the rest of the previously covered history at background priority.
+        # Only the recent window is queued (ADR 0014); older turns are served by the previous generation.
         prio = [r["priority"] for r in db.execute(
             "SELECT priority FROM job WHERE status = 'queued' ORDER BY priority").fetchall()]
-        assert prio == [extraction.RECENT_PRIORITY] * 4 + [extraction.HISTORY_PRIORITY] * (eligible - 4)
-        assert cov["complete"] is False and cov["compiled"] == 0 and cov["pending"] == eligible
+        assert prio == [extraction.RECENT_PRIORITY] * 4
+        assert cov["complete"] is False and cov["compiled"] == 0 and cov["pending"] == 4
         assert cov["historical_only"] == eligible and cov["generation"]["spec"]["compiler"] == "extract-next"
         assert "partial" in c.get("/inspector?lang=en").text
         drain(migrated)
         cov = c.get(f"/v1/conversations/{cid}/coverage").json()["extraction"]
-        assert (cov["compiled"], cov["percent"], cov["complete"]) == (eligible, 100.0, True)
+        assert (cov["compiled"], cov["historical_only"], cov["complete"]) == (4, eligible - 4, False)
+        # Older history moves to the new generation only on request.
+        assert c.post(f"/v1/conversations/{cid}/extract-history").json()["queued"]["extract"] == eligible - 4
+        drain(migrated)
+        cov = c.get(f"/v1/conversations/{cid}/coverage").json()["extraction"]
+        assert (cov["compiled"], cov["percent"], cov["complete"], cov["historical_only"]) == (eligible, 100.0, True, 0)
     # The previous generation's extractions are kept for audit.
     assert db.execute("SELECT count(*) AS n FROM extraction WHERE compiler_version <> 'extract-next'"
                       ).fetchone()["n"] == eligible
+
+
+def fallback_chat() -> SimChat:
+    chat = SimChat()
+    chat.user("Hinata is in the old chapel.")
+    chat.reply("The chapel is quiet.")
+    filler(chat, 5)
+    chat.user("Mina is in the harbor.")
+    chat.reply("Gulls circle.")
+    chat.user("last")
+    return chat
+
+
+def v2_complete(system: str, user: str) -> tuple[dict, str]:
+    """The new model: same facts, recognisably different output."""
+    out, raw = fake_complete(system, user)
+    return {"assertions": [{**a, "object": f"{a['object']} v2"} for a in out["assertions"]]}, raw
+
+
+def test_older_turns_are_served_by_the_previous_generation_one_generation_per_turn(migrated, db):
+    chat = fallback_chat()
+    eligible = chat.complete_turns()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        drain(migrated)
+        old = active_generation(db, "extract").key
+    with make_client(migrated, extract_backfill=2, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+        new = active_generation(db, "extract").key
+        assert queued(db, "extract") == 2  # the recent window only
+        drain(migrated, v2_complete)
+        served = {f["subject"]: (f["object"], f["generation"], len(f["history"])) for f in facts(c, chat)}
+        # Turn 0 is outside the window: the previous generation still serves it. The recent turn has
+        # extractions of both generations, and only the active one's reaches the facts, never both.
+        assert served == {"Hinata": ("old chapel", old, 1), "Mina": ("harbor v2", new, 1)}
+        cid = conv_id(c, chat)
+        cov = c.get(f"/v1/conversations/{cid}/coverage").json()["extraction"]
+        assert (cov["compiled"], cov["historical_only"], cov["eligible"]) == (2, eligible - 2, eligible)
+        page = c.get(f"/inspector/c/{cid}?lang=en").text
+        assert page.count("older generation") == 1 + 1  # coverage label + Hinata's fact
+        c.post(f"/v1/conversations/{cid}/extract-history")
+        drain(migrated, v2_complete)
+        assert {f["subject"]: f["generation"] for f in facts(c, chat)} == {"Hinata": new, "Mina": new}
+
+
+def test_rebuild_discards_every_generation_so_no_older_facts_reappear(migrated, db):
+    chat = fallback_chat()
+    eligible = chat.complete_turns()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        drain(migrated)
+    with make_client(migrated, extract_backfill=2, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+        drain(migrated, v2_complete)
+        cid = conv_id(c, chat)
+        out = c.post(f"/v1/conversations/{cid}/rebuild").json()
+        assert out["discarded"] == eligible + 2 and out["queued"] == {"extract": eligible}
+        assert facts(c, chat) == [] and out["coverage"]["extraction"]["historical_only"] == 0
+        drain(migrated, v2_complete)
+        assert {f["object"] for f in facts(c, chat)} == {"old chapel v2", "harbor v2"}
+
+
+def test_a_generation_that_never_covered_a_turn_does_not_serve_it(migrated, db):
+    """Fallback reads extractions that match the head; a turn edited after the switch is the new
+    generation's alone."""
+    chat = fallback_chat()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        drain(migrated)
+    with make_client(migrated, extract_backfill=2, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+        drain(migrated, v2_complete)
+        chat.edit(0, "Hinata is in the bell tower.")
+        sync(c, chat)
+        assert [f["subject"] for f in facts(c, chat)] == ["Mina"]  # the old extraction no longer matches
+        drain(migrated, v2_complete)
+        assert {f["subject"]: f["object"] for f in facts(c, chat)} == {"Mina": "harbor v2", "Hinata": "bell tower v2"}
 
 
 def test_historical_generation_does_not_trigger_permanent_stale_startup_loop(migrated, db):

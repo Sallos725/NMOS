@@ -340,24 +340,31 @@ ELIGIBLE = """
     )
 """
 
-# Another generation extracted a member of turn e (any window), or this one did before a rebuild
-# discarded it: history worth restoring (ADR 0006, D22). A rebuild interrupted before its jobs were
-# queued is completed by the next scheduling run.
-COVERED_BEFORE = """EXISTS (SELECT 1 FROM active_membership t
+# An earlier generation still serves turn e: one of its extractions matches the head (ADR 0014).
+OLDER_SERVES = """EXISTS (SELECT 1 FROM active_membership t
                    JOIN extraction x ON x.source_revision_id = t.source_revision_id
-                   WHERE t.commit_id = e.head AND t.turn = e.turn
-                     AND (x.extractor_key IS DISTINCT FROM %(key)s OR x.discarded_at IS NOT NULL))"""
+                                    AND x.window_hash IN (t.turn_hash, t.window_hash)
+                   JOIN projection_generation g ON g.key = x.extractor_key
+                   WHERE t.commit_id = e.head AND t.turn = e.turn AND x.discarded_at IS NULL
+                     AND x.extractor_key <> %(key)s)"""
+
+# A rebuild discarded turn e's extractions and nothing serves it yet (D22). A rebuild interrupted before
+# its jobs were queued is completed by the next scheduling run.
+REBUILD_PENDING = """(EXISTS (SELECT 1 FROM active_membership t
+                    JOIN extraction x ON x.source_revision_id = t.source_revision_id
+                    WHERE t.commit_id = e.head AND t.turn = e.turn AND x.discarded_at IS NOT NULL)
+                AND NOT """ + OLDER_SERVES + """)"""
 
 
 def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv: UUID | None = None,
                         history: bool = False) -> int:
     """Queue what the active extractor generation is missing (#8). Idempotent.
 
-    Policy: the latest `backfill` complete turns of each chat first, then — at background priority —
-    every older turn that an earlier generation had covered, so an upgrade restores the coverage that
-    existed instead of shrinking it to the recent window. `history` also queues older turns nobody
-    covered (per-chat "extract all history", D22). Queued jobs of other generations become obsolete;
-    their extractions stay for audit.
+    Policy (ADR 0014): the latest `backfill` complete turns of each chat. Older turns keep being served
+    by the earlier generation that covered them, and move to this one only on request: `history` queues
+    every older turn at background priority (per-chat "extract all history", D22). A rebuild's discarded
+    turns are always queued. Queued jobs of other generations become obsolete; their extractions stay
+    for audit and for fallback.
     """
     with conn.transaction():
         conn.execute("UPDATE job SET status = 'obsolete', updated_at = now() WHERE kind = 'extract'"
@@ -373,7 +380,7 @@ def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv:
               AND NOT EXISTS (SELECT 1 FROM extraction x WHERE x.source_revision_id = e.rid
                                 AND x.window_hash = e.turn_hash AND x.extractor_key = %(key)s
                                 AND x.discarded_at IS NULL)
-              AND (e.turn >= e.turns - %(n)s OR %(all)s OR """ + COVERED_BEFORE + """)
+              AND (e.turn >= e.turns - %(n)s OR %(all)s OR """ + REBUILD_PENDING + """)
             ORDER BY e.conv, e.turn  -- claim() takes the highest id first: newest turns first
             """ + REQUEUE,
             {"conv": conv, "key": key, "n": backfill, "all": history, "recent": RECENT_PRIORITY,
@@ -388,25 +395,26 @@ def retry_failed(conn: psycopg.Connection, kind: str, key: str, conv: UUID) -> i
                         " AND conversation_id = %s AND payload->>'generation' = %s", (kind, conv, key)).rowcount
 
 
-def discard(conn: psycopg.Connection, key: str, conv: UUID) -> int:
-    """Per-chat rebuild (D22): this chat's extractions of generation `key` stop counting (kept for
-    audit) and their jobs become obsolete, so `schedule_generation` queues every turn again."""
+def discard(conn: psycopg.Connection, conv: UUID) -> int:
+    """Per-chat rebuild (D22): this chat's extractions of every generation stop counting (kept for
+    audit), so no older generation serves a turn meanwhile (ADR 0014), and its extract jobs become
+    obsolete, so `schedule_generation` queues every turn again."""
     with conn.transaction():
         n = conn.execute(
             "UPDATE extraction x SET discarded_at = now() FROM source_revision sr, source_object so"
             " WHERE sr.id = x.source_revision_id AND so.id = sr.source_object_id AND so.conversation_id = %s"
-            " AND x.extractor_key = %s AND x.discarded_at IS NULL",
-            (conv, key),
+            " AND x.discarded_at IS NULL",
+            (conv,),
         ).rowcount
         conn.execute("UPDATE job SET status = 'obsolete', locked_at = NULL, updated_at = now()"
-                     " WHERE kind = 'extract' AND conversation_id = %s AND payload->>'generation' = %s",
-                     (conv, key))
+                     " WHERE kind = 'extract' AND conversation_id = %s", (conv,))
     return n
 
 
 def coverage(conn: psycopg.Connection, key: str | None, conv: UUID | None = None) -> dict[UUID, dict[str, Any]]:
     """Per conversation: how many complete turns of the head the active extractor generation has
-    compiled (#8, #13, ADR 0008)."""
+    compiled (#8, #13, ADR 0008). `historical_only`: turns it has not compiled that an earlier
+    generation still serves (ADR 0014)."""
     rows = conn.execute(
         "WITH" + ELIGIBLE + """
         SELECT e.conv,
@@ -414,7 +422,7 @@ def coverage(conn: psycopg.Connection, key: str | None, conv: UUID | None = None
                count(*) FILTER (WHERE cur.id IS NOT NULL) AS compiled,
                count(*) FILTER (WHERE cur.id IS NULL AND j.status IN ('queued', 'running')) AS pending,
                count(*) FILTER (WHERE cur.id IS NULL AND j.status = 'dead') AS failed,
-               count(*) FILTER (WHERE cur.id IS NULL AND """ + COVERED_BEFORE + """) AS historical_only,
+               count(*) FILTER (WHERE cur.id IS NULL AND """ + OLDER_SERVES + """) AS historical_only,
                count(*) FILTER (WHERE (cur.coverage->>'target_used')::int < (cur.coverage->>'target_chars')::int)
                    AS target_truncated
         FROM elig e

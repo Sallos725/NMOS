@@ -1,4 +1,4 @@
-"""Sidecar cost of large chats (#12): cold sync, warm append, edits, lexical/vector recall, storage.
+"""Sidecar cost of large chats (#12): cold sync, warm append, edits, lexical/vector recall, fact reads, storage.
 
 Drives the real FastAPI app (in-process TestClient: request parsing and validation included, network
 excluded) against the compose PostgreSQL, one throwaway database per size. Pair with the plugin
@@ -27,6 +27,8 @@ from simchat import SimChat  # noqa: E402
 from nmos_sidecar import generations  # noqa: E402
 from nmos_sidecar.api import create_app  # noqa: E402
 from nmos_sidecar.config import Settings  # noqa: E402
+from nmos_sidecar.facts import fact_versions  # noqa: E402
+from nmos_sidecar.ids import uuid7  # noqa: E402
 from nmos_sidecar.migrate import apply_migrations  # noqa: E402
 from nmos_sidecar.vectors import vector_candidates, vector_literal  # noqa: E402
 
@@ -160,11 +162,51 @@ def bench(n: int) -> dict:
                 vector_candidates(db, head, q, gen.key, -1, 50)
                 vec.append((time.perf_counter() - t) * 1000)
             result["vector_search_ms"] = {"p50": p(vec, 0.5), "p95": p(vec, 0.95)}
+            result["fact_read_ms"] = bench_facts(db, head)
             result["sizes"] = sizes(db)
     finally:
         with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
             admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
     return result
+
+
+def add_generation(db: psycopg.Connection, head, model: str, turns: int | None) -> str:
+    """Stub extractions for the latest `turns` turns of the head (all when None): one `located_in`
+    assertion per turn, about what a chat with extraction on accumulates."""
+    gen = generations.make("extract", "http://bench/v1", model, compiler="bench")
+    generations.activate(db, gen)
+    anchors = db.execute("SELECT source_revision_id AS rid, turn_hash, turn FROM active_membership"
+                         " WHERE commit_id = %s AND turn_hash IS NOT NULL ORDER BY turn DESC LIMIT %s",
+                         (head, turns)).fetchall()
+    ids = [uuid7() for _ in anchors]
+    with db.cursor() as cur:
+        cur.executemany("INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key,"
+                        " model, raw) VALUES (%s, %s, %s, 'bench', %s, %s, '{}')",
+                        [(i, a["rid"], a["turn_hash"], gen.key, model) for i, a in zip(ids, anchors)])
+        cur.executemany("INSERT INTO assertion (extraction_id, source_revision_id, subject, subject_type, predicate,"
+                        " object, object_type, status, knowledge) VALUES (%s, %s, %s, 'character', 'located_in', %s,"
+                        " 'place', 'valid', 'unknown')",
+                        [(i, a["rid"], f"인물{a['turn'] % 40}", PLACES[a["turn"] % len(PLACES)])
+                         for i, a in zip(ids, anchors)])
+    db.execute("ANALYZE extraction")
+    db.execute("ANALYZE assertion")
+    return gen.key
+
+
+def bench_facts(db: psycopg.Connection, head) -> dict:
+    """Fact read (`fact_versions`, per request): one generation covering every turn, then a newer one
+    covering only the recent window while the older serves the rest (ADR 0014)."""
+    def timed(key: str) -> dict:
+        ms = []
+        for _ in range(15):
+            t = time.perf_counter()
+            fact_versions(db, head, key)
+            ms.append((time.perf_counter() - t) * 1000)
+        return {"first": ms[0], "p50": p(ms, 0.5), "p95": p(ms, 0.95), "max": max(ms)}
+
+    one = timed(add_generation(db, head, "bench-a", None))
+    two = timed(add_generation(db, head, "bench-b", 100))
+    return {"one_generation": one, "two_generations": two}
 
 
 def main() -> None:

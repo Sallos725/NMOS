@@ -1,7 +1,8 @@
-"""Fact versions over valid assertions whose extraction matches the head window (D8) and was produced
-by the active extractor generation (D20). Other generations and discarded extractions (per-chat
-rebuild, D22) stay stored for audit only. A turn extraction (ADR 0008) matches its anchor's turn hash,
-a per-message one (older generations) the message window hash."""
+"""Fact versions over valid assertions whose extraction matches the head window (D8). Each turn is served
+by exactly one extractor generation (ADR 0014): the active one if it has the turn, otherwise the most
+recently active earlier generation that does. Discarded extractions (per-chat rebuild, D22) and rows
+from before generations existed stay stored for audit only. A turn extraction (ADR 0008) matches its
+anchor's turn hash, a per-message one (older generations) the message window hash."""
 
 from __future__ import annotations
 
@@ -14,25 +15,39 @@ from xml.sax.saxutils import escape, quoteattr
 
 from .predicates import HOLDER_PER_ITEM, REGISTRY
 
+# `unit` is the turn (a message without one counts alone). `live` holds every extraction that still
+# matches the head, and `chosen` the one generation that serves its unit: the active one first, then the
+# most recently activated. Rows without a generation (before migration 0008) never qualify. A window
+# function, not a self-join: the CTE's row estimate is far too low for a join (a nested loop at 10k).
+# The allBefore cut is an uncorrelated scalar subquery, so it runs once (InitPlan). As a joined CTE, a
+# head commit without fresh statistics (every edit makes one) let the planner re-run it per row: ≈7 s
+# at 10k messages instead of ≈60 ms.
 ACTIVE_ASSERTIONS = """
 WITH m AS (
-    SELECT am.position, am.turn, am.source_revision_id AS rid, am.window_hash, am.turn_hash, sr.lifecycle, sr.metadata,
-           so.host_logical_id
+    SELECT am.position, am.turn, coalesce(am.turn, -1 - am.position) AS unit, am.source_revision_id AS rid,
+           am.window_hash, am.turn_hash, sr.lifecycle, sr.metadata, so.host_logical_id
     FROM active_membership am
     JOIN source_revision sr ON sr.id = am.source_revision_id
     JOIN source_object so ON so.id = sr.source_object_id
     WHERE am.commit_id = %(head)s
 ),
-cut AS (SELECT coalesce(max(position), -1) AS position FROM m WHERE metadata->>'disabled' = 'allBefore')
+live AS (
+    SELECT e.id AS eid, e.extractor_key, m.position, m.turn, m.host_logical_id,
+           first_value(e.extractor_key) OVER (PARTITION BY m.unit
+               ORDER BY e.extractor_key = %(key)s DESC, g.activated_at DESC, g.key) AS chosen
+    FROM extraction e
+    JOIN projection_generation g ON g.key = e.extractor_key
+    JOIN m ON m.rid = e.source_revision_id AND e.window_hash IN (m.turn_hash, m.window_hash)
+    WHERE e.discarded_at IS NULL AND m.lifecycle = 'accepted'
+      AND m.position > (SELECT coalesce(max(position), -1) FROM m WHERE metadata->>'disabled' = 'allBefore')
+      AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+)
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.value, a.epistemic, a.confidence, a.evidence,
-       a.knowledge, a.known_by, a.hidden_from, m.position, m.turn, m.host_logical_id
-FROM assertion a
-JOIN extraction e ON e.id = a.extraction_id AND e.extractor_key = %(key)s AND e.discarded_at IS NULL
-JOIN m ON m.rid = a.source_revision_id AND e.window_hash IN (m.turn_hash, m.window_hash)
-CROSS JOIN cut
-WHERE a.status = 'valid' AND m.lifecycle = 'accepted' AND m.position > cut.position
-  AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
-ORDER BY m.position, a.id
+       a.knowledge, a.known_by, a.hidden_from, l.position, l.turn, l.host_logical_id, l.extractor_key AS generation
+FROM live l
+JOIN assertion a ON a.extraction_id = l.eid
+WHERE l.extractor_key = l.chosen AND a.status = 'valid'
+ORDER BY l.position, a.id
 """
 
 
