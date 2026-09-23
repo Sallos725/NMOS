@@ -2,7 +2,11 @@
 
 ## Unreleased
 
-Conversations can be deleted from NMOS (ADR 0009). Schema: migration 0012 (applied at startup).
+## 0.1.0-beta.9
+
+Conversations can be deleted from NMOS (ADR 0009). Schema: migration 0012. Upgrade both parts:
+`docker compose pull && docker compose up -d` (the sidecar applies the migration at startup), then
+replace the plugin file and reload PocketRisu.
 
 - **대화 삭제 / Delete conversation.** On a conversation page in the panel's Inspector tab (two
   clicks). It deletes everything NMOS stored for that chat, raw messages included, and cannot be
@@ -15,6 +19,14 @@ Conversations can be deleted from NMOS (ADR 0009). Schema: migration 0012 (appli
   (`docs/perf/scale.md`).
 - The plugin drops its cached memory packets after a panel action that changes data (delete, rebuild,
   settings save). A reroll right after such an action no longer reuses a packet built before it.
+
+### Known limitations
+
+- A delete cannot be undone, and NMOS does not notice when a chat is deleted in PocketRisu (no host
+  hook, H10). Delete it in the panel yourself.
+- Migration 0012 builds seven indexes at startup. On a large database the first start after the
+  upgrade takes a little longer.
+- Otherwise unchanged from 0.1.0-beta.8.
 
 ## 0.1.0-beta.8
 

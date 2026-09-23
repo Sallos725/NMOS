@@ -4,10 +4,10 @@
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Unreleased (on `main` after beta.8):** the owner can delete a conversation from the panel's
-Inspector, raw messages included (ADR 0009, D23, invariant 1 amended; migration 0012).
-
-**Public beta `v0.1.0-beta.8` (2026-09-23), public repository and image.** Facts are extracted per turn
+**Public beta `v0.1.0-beta.9` (2026-09-23), public repository and image.** The owner can delete a
+conversation from the panel's Inspector, raw messages included (ADR 0009, D23, invariant 1 amended;
+migration 0012). Evidence: `docs/perf/scale.md` (delete timings, sync A/B), real-UI host check in
+ADR 0009. `v0.1.0-beta.8` (2026-09-23): facts are extracted per turn
 (user message + reply) with turn-counted backfill, and each chat has "extract all history" and
 "rebuild memory" in the Inspector (ADR 0008, D7/D17 revised, D22; migration 0011). Evidence:
 `docs/perf/turn-extraction.md` (model comparison, real-UI host check), `docs/perf/scale.md` re-check.
