@@ -50,6 +50,17 @@ continues without memory.
 That's it: raw recall works with no model configured. The panel's **Inspector** tab shows what NMOS
 stored and what it injected.
 
+### Updating the PocketRisu plugin
+
+For later plugin updates, use PocketRisu's normal plugin update action instead of manually replacing
+the plugin file: open **Settings → Plugin**, use the **+ / update** action for NMOS, then **reload the
+PocketRisu page**. NMOS publishes `//@update-url` metadata in the plugin bundle so PocketRisu can
+resolve the current `dist/nmos-pocketrisu.js`. The reload remains required because of the verified
+PocketRisu V3 lifecycle issue described in **ARCHITECTURE H13**.
+
+This updates the PocketRisu plugin file only. It does not update the NMOS sidecar/container; update
+the sidecar through the release/Compose flow when a release changes it.
+
 ## NMOS panel (status, inspector, settings)
 
 Open it from the **☰ menu left of the chat input → NMOS 기억 / NMOS memory**, or from PocketRisu →
