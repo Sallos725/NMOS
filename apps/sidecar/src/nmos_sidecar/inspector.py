@@ -59,7 +59,8 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "h.coverage": ("커버리지", "Coverage"), "h.detail": ("상세", "Detail"),
     "facts_row": ("사실 (추출)", "Facts (extraction)"), "vectors_row": ("벡터 (임베딩)", "Vectors (embedding)"),
     "pending": ("대기", "pending"), "failed": ("실패", "failed"), "not_queued": ("대기열 밖", "not queued"),
-    "older_only": ("이전 세대·재구축 전만", "only older generations or before a rebuild"), "truncated": ("대상 잘림", "target truncated"),
+    "older_only": ("이전 세대에서 읽음", "served by an older generation"),
+    "older_gen": ("이전 세대", "older generation"), "truncated": ("대상 잘림", "target truncated"),
     "partially_embedded": ("일부만 임베딩", "partially embedded"),
     "facts": ("현재 사실", "Current facts"),
     "h.subject": ("주어", "Subject"), "h.predicate": ("술어", "Predicate"), "h.object": ("대상 / 값", "Object / value"),
@@ -227,11 +228,16 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
                  if state else f"<p class=\"muted\">{t('no_state')}</p>"))
     parts.append(_coverage_section(coverage or {}, lang))
     if facts:
+        # A fact whose turn the active generation has not compiled yet comes from an older one (ADR 0014).
+        active = (((coverage or {}).get("extraction") or {}).get("generation") or {}).get("key")
+        older = f" <span class=\"chip\">{t('older_gen')}</span>"
         parts.append(f"<h2>{t('facts')}</h2>" + table(
             [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.knowledge", "h.turn", "h.versions")],
             [[_v(f["subject"]), f"<span class=\"chip\">{_v(f['predicate'])}</span>",
               _v(f.get("object") or f.get("value")), _knowledge(f, lang),
-              _v(f["turn"] if f.get("turn") is not None else f["position"]), _v(f.get("versions", 1))]
+              _v(f["turn"] if f.get("turn") is not None else f["position"])
+              + (older if active and f.get("generation") not in (None, active) else ""),
+              _v(f.get("versions", 1))]
              for f in facts]))
     parts.append(f"<h2>{t('retrievals')}</h2>" + table(
         [t(k) for k in ("h.when", "h.query", "h.fresh", "h.cand", "h.sel", "h.in_ctx", "h.tokens")] + ["ms"],

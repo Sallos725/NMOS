@@ -79,7 +79,7 @@ def test_interrupted_rebuild_is_completed_by_the_next_scheduling_run(migrated, d
         sync(c, chat)
         c.post(f"/v1/conversations/{conv_id(c, chat)}/extract-history")
         drain(migrated)
-        extraction.discard(db, active_generation(db, "extract").key, conv_id(c, chat))  # crashed before queueing
+        extraction.discard(db, conv_id(c, chat))  # crashed before queueing
     with make_client(migrated, extract_backfill=2, **LLM):
         pass  # startup scheduling
     assert extract_jobs(db) == 8

@@ -2,6 +2,10 @@
 
 ## Current phase
 
+**Phase 5 — Entity Identity and Semantic Assertions: current (authorized 2026-09-23).** Spec
+`docs/phases/PHASE-5.md`, ADRs 0012–0014. Step 1 of 6 (generation fallback, ADR 0014) done, unreleased; it also fixed a released stall in fact
+and state reads after edits in long chats (`docs/perf/scale.md`). Next: step 2 (schema and `extract-v5`).
+
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
 **Public beta `v0.1.0-beta.10` (2026-09-23), public repository and image.** Track A stabilization:
@@ -48,9 +52,9 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Tests | `apps/sidecar/tests` (157), `adapters/pocketrisu-plugin/test` (46) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k (D24) |
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K21 current as of `v0.1.0-beta.10`, each with workaround and tracking (host, owner decision O5, Track B stage); resolved limitations listed |
-| Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B (Phase 5+) is a proposal, not authorized |
-| Decisions | `docs/adr/0001`–`0011` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder |
-| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-4.md` | 0–3 met; 4 soft subset met |
+| Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B B1 is Phase 5 (current); B2–B7 not authorized |
+| Decisions | `docs/adr/0001`–`0014` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-5.md` | 0–3 met; 4 soft subset met; 5 current |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 
 ## Evidence status (Phase 0A)
@@ -67,9 +71,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 - O5 — retention of abandoned worldlines and `host_observation` growth (needed before Track B, B2).
   Superseded generations: decided 2026-09-23 (keep LLM extractions, prune embeddings and
   deterministic projections after full coverage; Track B §4); not implemented yet.
-- Phase 5: scope decided 2026-09-23 (B1 entity identity and semantic assertions only; B2 next; canon
-  sources in B4; older history re-extracted on request). Spec drafted for approval:
-  `docs/phases/PHASE-5.md` with proposed ADRs 0012–0014 (Track B, B0). Not started until approved.
+- Phase 6+ (Track B, B2–B7): not authorized. B2 (transition verifier) is the intended next stage.
 
 ## Public release checklist (done 2026-09-23)
 

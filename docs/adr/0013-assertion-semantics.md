@@ -1,6 +1,6 @@
 # 0013 — Assertion semantics: polarity, modality, source class
 
-Status: proposed, 2026-09-23 (Phase 5, B0). Accepted when `docs/phases/PHASE-5.md` is approved.
+Status: accepted, 2026-09-23, with `docs/phases/PHASE-5.md` (owner approval, PR #34).
 Owner decisions behind it: Track B §4 "Owner decisions" (Phase 5 = B1; canon sources in B4) and the
 Phase 5 design question of 2026-09-23 (a negation ends the matching current fact).
 

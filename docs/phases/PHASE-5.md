@@ -1,8 +1,6 @@
 # Phase 5 — Entity Identity and Semantic Assertions
 
-> **Status: draft for owner approval (2026-09-23). Not authorized yet.** Phase 5 starts when the
-> owner approves this document; then `docs/STATUS.md` and `AGENTS.md` §0/§2 name it as current
-> (`AGENTS.md` §7). ADRs 0012–0014 are proposed with it and are accepted with it.
+> **Status: current. Approved by the owner on 2026-09-23** (PR #34), with ADRs 0012–0014.
 >
 > Scope comes from the owner's decisions of 2026-09-23: Track B §4 "Owner decisions"
 > (`docs/proposals/TRACK-B-PHASE-5-PLUS.md`) and three design questions answered the same day (name
@@ -172,7 +170,9 @@ messages and reports fact-read time with and without entity resolution.
 Each step is one reviewable change with its tests.
 
 1. **Generation fallback (ADR 0014).** Useful on its own: it also bounds the cost of a plain model
-   change. Must land before step 2 activates `extract-v5`.
+   change. Must land before step 2 activates `extract-v5`. *Done 2026-09-24* (tests in
+   `test_generations.py`; fact-read timings in `docs/perf/scale.md`, which also records the fixed
+   `allBefore` stall).
 2. **Schema and `extract-v5`**: migration, prompt, validation, `also_called`, stored hints column
    (empty until step 5).
 3. **Fact reading and packet (ADR 0013)**: actual narration only, negation, claims, legacy rows.

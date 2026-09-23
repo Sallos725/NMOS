@@ -5,6 +5,18 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+Phase 5 (entity identity and semantic assertions, `docs/phases/PHASE-5.md`) is in progress.
+
+- **Changing the LLM no longer re-extracts whole chats** (ADR 0014). A new extraction model, endpoint
+  or prompt re-extracts only each chat's latest `NMOS_EXTRACT_BACKFILL` turns (default 100). Older turns
+  keep the previous model's facts, marked "older generation" in the Inspector, until **Extract all
+  history** on that chat. Each turn uses one model's facts, never a mix. **Rebuild memory** now discards
+  the facts of every model for that chat. Embedding changes still re-embed everything, as before.
+- **Fact and state reads no longer stall after an edit in a long chat.** After an edit, reroll or swipe
+  (a new head commit whose statistics PostgreSQL has not gathered yet), the facts query could re-run
+  its `allBefore` check once per row: about 7 s at 10,000 messages instead of about 60 ms, so that
+  request went without memory. The check now runs once. The state query had the same shape and is
+  fixed the same way (`docs/perf/scale.md`).
 - `docs/KNOWN-ISSUES.md`: one current list of known issues (K1–K21) with workarounds and where each
   would be fixed; limitations resolved since they were listed are marked there.
 

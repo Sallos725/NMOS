@@ -57,15 +57,14 @@ def current_state(conn: psycopg.Connection, head_commit_id: UUID, rules_version:
             JOIN source_revision sr ON sr.id = am.source_revision_id
             JOIN source_object so ON so.id = sr.source_object_id
             WHERE am.commit_id = %(head)s
-        ),
-        cut AS (SELECT coalesce(max(position), -1) AS position FROM m WHERE metadata->>'disabled' = 'allBefore')
+        )
         SELECT DISTINCT ON (st.key) st.key, st.value, m.position, m.host_logical_id, st.rule_id
         FROM state_observation st
         JOIN m ON m.id = st.source_revision_id
-        CROSS JOIN cut
         WHERE st.rules_version = %(version)s
           AND m.lifecycle = 'accepted'
-          AND m.position > cut.position
+          -- a scalar subquery runs once; a joined CTE could be re-run per row (see facts.ACTIVE_ASSERTIONS)
+          AND m.position > (SELECT coalesce(max(position), -1) FROM m WHERE metadata->>'disabled' = 'allBefore')
           AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
         ORDER BY st.key, m.position DESC
         """,

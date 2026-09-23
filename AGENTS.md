@@ -11,10 +11,12 @@ This file is the operating contract for Codex and other implementation agents.
 
 Continue the **current phase** as far as possible without violating any stop condition.
 
-The current phase is always the one named in `docs/STATUS.md`. As of 2026-09-22:
+The current phase is always the one named in `docs/STATUS.md`. As of 2026-09-23:
 
-> **Phases 0–3 complete; Phase 4 soft subset (knowledge scope, `docs/phases/PHASE-4.md`) complete.
-> Public beta. Hard POV isolation (D9 `character_pov`) and Phase 5+ are not authorized.**
+> **Phase 5 — Entity Identity and Semantic Assertions (`docs/phases/PHASE-5.md`, ADRs 0012–0014) is
+> current, authorized by the owner on 2026-09-23.** Phases 0–3 and the Phase 4 soft subset are
+> complete. Public beta. Hard POV isolation (D9 `character_pov`) and everything past Phase 5 (Track B,
+> B2–B7) are not authorized.
 
 Do not start a phase without its phase document and without the evidence it requires. Work that is
 not a phase feature (bug fixes, correctness, docs, CI) is allowed at any time. It must still keep the
@@ -64,7 +66,8 @@ If two normative documents appear to conflict:
 | 3 — hybrid recall | complete (beta) | `PHASE-3.md` |
 | 4 — character knowledge, soft subset | complete (beta) | `PHASE-4.md` |
 | 4 — hard POV isolation (`character_pov`) | **not authorized** | — |
-| 5+ | **not authorized** | — |
+| 5 — entity identity and semantic assertions (Track B, B1) | **current** (authorized 2026-09-23) | `PHASE-5.md`, ADRs 0012–0014 |
+| 6+ (Track B, B2–B7) | **not authorized** | `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
 ADR 0006/0007, `docs/perf/scale.md`).

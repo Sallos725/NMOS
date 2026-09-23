@@ -129,6 +129,32 @@ as `timeout`. Trade-off: a word that occurs in more than 200 messages (the synth
 no longer brings its most recent mentions lexically; vectors still can. The evaluation baseline's
 exact-quote and Korean paraphrase cases are unchanged (`docs/perf/eval-baseline.md`).
 
+### Fact reads and generation fallback (2026-09-24, Phase 5 step 1, ADR 0014)
+
+`bench_scale.py` now times `fact_versions` (run on every request with extraction on) after the edits:
+stub extractions with one `located_in` assertion per turn under one generation, then a second
+generation covering the latest 100 turns while the first serves the rest. 15 calls each, ms:
+
+| Messages | Before: one generation p50 (max) | After: one generation p50 (max) | After: two generations p50 (max) |
+|---|---:|---:|---:|
+| 1,000 | 47 (63) | 6 (22) | 7 (7) |
+| 5,000 | — | 33 (36) | 33 (35) |
+| 10,000 | 50 (6,939) | 71 (88) | 71 (83) |
+
+"Before" is the `v0.1.0-beta.10` query (one generation only); load ≈1.7 then, ≈2.7 for "after".
+**The 7 s outliers were a released bug**, not noise: after the bench's edits the head commit is new,
+its `active_membership` rows have no statistics, and the planner estimated one row. It then placed the
+`allBefore` cut (a CTE joined to every row) inside a nested loop and re-ran it for each of 5,014 rows
+(`EXPLAIN ANALYZE`: 6.9 s, 2.4 M temp blocks read). Every edit, reroll or swipe makes such a commit,
+so a long chat with extraction on could lose memory for the next request. The cut is now a scalar
+subquery that runs once (InitPlan): 62 ms for the same first call. `state.current_state` had the same
+shape and is fixed the same way.
+
+The first version of the fallback query picked each turn's generation with a self-join on a CTE; the
+same underestimate made it a nested loop (≈930 ms at 10k). It now uses a window function. The
+remaining ≈20 ms over the old p50 at 10k is the per-turn choice across all live extractions plus the
+different load; it is within noise of the D24 margin (≈0.25 s at 10k).
+
 ### Real-host check (2026-09-23, PocketRisu v1.12.0)
 
 Isolated `ghcr.io/pocketrisu/pocketrisu:latest` (v1.12.0), headless Chromium on the same machine,

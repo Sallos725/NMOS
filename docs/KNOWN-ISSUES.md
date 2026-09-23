@@ -27,7 +27,7 @@ without a PocketRisu change.
 | K15 | Thresholds and extraction quality are checked on limited data | Quality | evaluation (A5 baseline) |
 | K16 | NMOS does not notice a chat deleted in PocketRisu | Data | host (H10) |
 | K17 | Storage only grows: old generations, abandoned branches, observations | Data | O5 (generations decided, not implemented) |
-| K18 | Changing a model or endpoint re-processes history at the provider's cost | Data | by design (ADR 0006) |
+| K18 | Changing a model or endpoint re-processes history at the provider's cost | Data | LLM: bounded to the recent window (ADR 0014, unreleased); embeddings: by design |
 | K19 | Plugin and sidecar versions are not checked against each other | Setup | not planned |
 | K20 | Small UI delays: bot name, menu language | UI | not planned |
 | K21 | API keys and the auth token are stored in plain text | Security | host (H12) |
@@ -136,7 +136,9 @@ you no longer use.
 **K18 — Model changes re-process history.** Changing the LLM or embedding model or endpoint, or a
 release that changes the extraction generation (as 0.1.0-beta.8 did), re-derives all previously
 covered history with the new model, recent turns first, at the provider's cost. Until done, the
-Inspector shows partial coverage and older facts may be missing (ADR 0006). With a reasoning model,
+Inspector shows partial coverage and older facts may be missing (ADR 0006). **Unreleased (Phase 5, ADR 0014):** an LLM change re-extracts only each chat's recent
+window (`NMOS_EXTRACT_BACKFILL`); older turns keep the previous model's facts until "extract all
+history". Embedding changes still re-embed everything covered. With a reasoning model,
 per-turn extraction produces ≈19 % more completion tokens than per-message did (≈9 % fewer tokens
 overall; ADR 0008).
 
