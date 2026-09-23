@@ -136,6 +136,10 @@ No migration is expected: head length is an index lookup (step 1). Add conversat
 through a new numbered migration only if measurement shows that lookup is a cost, and then update it
 in the same transaction as head membership. Do not modify an applied migration.
 
+Outcome (ADR 0010): head length needed no migration, but measurement found a different O(N) cost —
+each append rewrote the head commit's `delta` jsonb (2.2 MB, ≈117 ms at 10k). Migration 0013 stores
+appends as `worldline_append` rows.
+
 #### Tests
 
 - pure append, including acceptance of the previous provisional reply;

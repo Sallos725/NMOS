@@ -79,6 +79,31 @@ check can't use it. With the indexes, about 75 % of the time is the `source_revi
 9.60 / 9.64 → 9.63 / 9.57 s, edit near head p50 859 / 861 → 857 / 885 ms. Head membership grows by
 about 6 % (20.7 → 21.9 MB at 10k).
 
+### Append fast path (2026-09-23, ADR 0010, migration 0013)
+
+A sync that provably extends the head is reconciled from the head's tail, and appends are stored as
+`worldline_append` rows instead of rewriting the head commit's `delta` (2.2 MB at 10k). Same machine
+(load ≈1.5) and tool, p50 (p95) in ms:
+
+| Messages | 1,000 | 5,000 | 10,000 | 25,000 |
+|---|---:|---:|---:|---:|
+| Warm append, before (table above) | 71 (93) | 347 (382) | 715 (768) | 1,937 (1,978) |
+| Warm append, fast path | 28 (39) | 97 (111) | 156 (191) | 430 (496) |
+| Warm append, `NMOS_APPEND_FAST_PATH=0` (full path, append rows) | | | 592 (640) | |
+| Edit near head (full path, unchanged) | 87 | 431 | 917 | 2,372 |
+| Database size | 21 MB | 67 MB | 120 MB | 280 MB |
+
+The append numbers include the harness encoding the request JSON (≈19 ms per request at 10k,
+two requests per append), so the sidecar's own share at 10k is ≈117 ms p50. Of that, parsing and
+validating the full manifest takes ≈31 ms per request (JSON ≈13 ms, pydantic ≈19 ms); the plugin sends
+it twice (reconcile, then bodies with `then_reconcile`). Hashing the manifest takes ≈6 ms, the tail
+queries ≈5 ms. Database size drops because appends no longer leave rewritten 2 MB `delta` versions
+behind.
+
+`tests/test_append_fast_path.py` checks that the fast and full paths leave identical ledgers, window
+and turn data, jobs and observations over random host action sequences, and that divergence, a new
+`allBefore` cut, or a repeated ID falls back to the full path.
+
 ### Estimated added `beforeRequest` latency (warm path)
 
 Plugin copy + manifest + sidecar append + selective retrieve; network and host snapshot overhead
@@ -91,7 +116,12 @@ excluded, so real numbers are higher:
 | 10,000 | ≈965 ms | **missed on every request → fail open (no memory)** |
 | 25,000 | ≈2,550 ms | **missed on every request → fail open** |
 
-The sidecar still applies a sync that the plugin gave up waiting for, so the ledger stays current.
+With the append fast path (ADR 0010; plugin manifest unchanged): ≈405 ms at 10k (53 + 186 + 156 + 8)
+and ≈1,040 ms at 25k (116 + 478 + 430 + 14), still above the deadline. Vector search (≈100 ms at 10k) and the query embedding call come on top when
+embeddings are on. The envelope below is re-decided after the plugin-side work (Track A, A2) and a
+real-host check.
+
+Before the fast path: the sidecar still applies a sync that the plugin gave up waiting for, so the ledger stays current.
 However, the next request repeats the same O(N) work, so above ≈8k messages memory is effectively off
 unless `deadline_ms` is raised (≈1,200 ms at 10k on this machine).
 
@@ -120,7 +150,7 @@ upload): ≈9 s of sidecar time at 10k, ≈27 s at 25k.
    failed open. The lexical statement now has a budget (`NMOS_LEXICAL_TIMEOUT_MS`, default 300). When
    it runs out, lexical recall abstains for that request (trace `lexical_mode: timeout`); vectors,
    state and facts still run. Measured after the change: 305 ms at 10k.
-3. **Warm sync is O(N) twice per generation** (not changed; proposal below). Profile of one append at
+3. **Warm sync is O(N) twice per generation** (fixed for appends: ADR 0010, section above). Profile of one append at
    10k (559 ms bodies + apply): `load_state` 212 ms (loads every known revision), `apply_plan` 151 ms,
    `plan` 104 ms, `manifest_hash` 34 ms. The first reconcile call (`needs_bodies`) repeats most of it
    (256 ms). On the plugin side, hashing every message is ≈19 µs per message.
@@ -128,11 +158,11 @@ upload): ≈9 s of sidecar time at 10k, ≈27 s at 25k.
    277 ms at 25k with 1 chunk per revision. It stays exact (ARCHITECTURE D18) until the envelope needs
    more.
 
-## Proposed next steps (measured, not implemented)
+## Proposed next steps (measured)
 
 In order of payoff:
 
-1. **Append fast path on the sidecar.** When the manifest equals the head plus an appended suffix
+1. **Done (ADR 0010).** **Append fast path on the sidecar.** When the manifest equals the head plus an appended suffix
    (verifiable against the stored head manifest hash and length, which observation compaction already
    uses), skip `load_state` of the whole chat and plan only the suffix. Also answer the first reconcile of an append with only the new
    keys. Expected: the sidecar append drops from ≈700 ms to tens of ms at 10k.

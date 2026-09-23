@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+Schema: migration 0013 (applied at startup).
+
+- **Faster sync for long chats.** When a generation only adds messages (the usual case), the sidecar
+  proves it from the request (prefix manifest hash, no repeated or already-present IDs, no new
+  `allBefore` cut) and reconciles from the end of the chat instead of the whole chat. Warm append at
+  10,000 messages: 715 → 156 ms (p50) on the measured machine. Edits, deletes, swipes, rerolls and
+  anything unproven take the unchanged full path (ADR 0010). `NMOS_APPEND_FAST_PATH=0` turns it off.
+- Appends are stored as rows of their own (`worldline_append`) instead of rewriting the head commit's
+  delta each time; `nmos-rebuild` and the Inspector's commit list read both.
+
 ## 0.1.0-beta.9
 
 Conversations can be deleted from NMOS (ADR 0009). Schema: migration 0012. Upgrade both parts:

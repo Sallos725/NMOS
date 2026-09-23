@@ -38,12 +38,13 @@ Known limitations: `CHANGELOG.md` → 0.1.0-beta.4.
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
 | Architecture | `ARCHITECTURE.md` | H1–H15, D1–D23, O2/O3/O4 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
-| Schema | `migrations/0001`–`0012` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete |
+| Schema | `migrations/0001`–`0013` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (137), `adapters/pocketrisu-plugin/test` (41) | all passing |
-| Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met; default deadline met up to ≈5k messages, fail open beyond ≈8k |
-| Decisions | `docs/adr/0001`–`0009` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete |
+| Tests | `apps/sidecar/tests` (148), `adapters/pocketrisu-plugin/test` (41) | all passing |
+| Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met; released beta: default deadline met up to ≈5k messages, fail open beyond ≈8k. Unreleased append fast path (ADR 0010): sidecar append 715 → 156 ms at 10k; envelope re-decided after A2 and a real-host check |
+| Next work | `docs/proposals/` | Track A (stabilization) in progress: A1 done (unreleased); Track B (Phase 5+) is a proposal, not authorized |
+| Decisions | `docs/adr/0001`–`0010` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-4.md` | 0–3 met; 4 soft subset met |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 

@@ -105,7 +105,9 @@ not a retrieval payload by default.
 
 **D4 — Worldline commits only on divergence.** Appends update membership; commits are created
 for edit / delete / swipe / reroll / disable / branch / import / manual. Full DAG semantics
-are kept in the schema but not exercised beyond what reconciliation needs.
+are kept in the schema but not exercised beyond what reconciliation needs. An append is recorded as a
+`worldline_append` row of the head commit (migration 0013) and, when the request provably extends the
+head, reconciled from the head's tail only (ADR 0010).
 
 **D5 — Lazy compilation.** Assistant output enters the ledger as `PROVISIONAL` immediately,
 but semantic compilation runs only after it becomes `ACCEPTED` (user continued from it).
