@@ -114,8 +114,10 @@ and count (for example `delete ×12`).
 
 ## Consequences
 
-- About half the extraction calls per exchange, and fewer context tokens. This is computed, not
-  measured. The comparison run is recorded in `docs/perf/turn-extraction.md`.
+- Measured on one synthetic Korean chat with a reasoning model (`docs/perf/turn-extraction.md`):
+  41 % fewer calls, 37 % fewer prompt tokens, 19 % more completion tokens, 9 % fewer tokens overall.
+  The per-message run kept two false facts from refused user actions; the per-turn run did not.
+- Sync path: up to about 7 % slower at 5,000 messages (`docs/perf/scale.md`).
 - Facts are only as fresh as the last accepted turn, as they already were for replies. A user
   message's facts wait for the reply and the next user message.
 - Upgrading re-extracts previously covered history once, at the provider's cost, as any generation
