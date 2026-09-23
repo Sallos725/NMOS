@@ -137,6 +137,12 @@ A system message right before your latest message, marked as reference data (not
 On the tested PocketRisu build, only main generations get a packet (not summaries, translations or
 suggestions), retries inject once, and excerpts already in the prompt are not repeated.
 
+Facts come only from what the story narrates as happening (unreleased, ADR 0013). "Hana lost the map"
+ends Hana's holding and shows as `<Fact … negated="true">Hana possesses map</Fact>`. What a character
+says in dialogue is a `<Claim by="…">`, never a fact, and never overrides the narration. Plans,
+conditions and dreams are kept in the Inspector but not injected. The Note explains `negated` and
+`Claim` only when the packet uses them.
+
 ## Privacy
 
 Chat text is stored in the local Postgres volume. Text leaves your machine only if you configure an

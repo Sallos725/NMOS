@@ -5,6 +5,28 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+Phase 5 (entity identity and semantic assertions, `docs/phases/PHASE-5.md`), steps 2–3. Schema:
+migration 0014. With an LLM configured, extraction becomes `extract-v5`: each chat re-extracts its
+latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once; older turns keep their `extract-v4` facts until
+**Extract all history** (ADR 0014).
+
+- **Negation** (ADR 0013). "Hana lost the map" or "Alice did not enter the hall" is stored as a
+  negative assertion. It ends the current fact it denies (the same holder of an item, the same place)
+  and shows as `negated="true"`; a negation of something else ("not at the station" while at home)
+  stands as its own negative fact and leaves the current one alone.
+- **Claims are not facts.** What a character says in dialogue is a claim (`asserted_by`). It never
+  replaces narrated state, even when newer, and reaches the packet only as `<Claim by="…">` after the
+  facts, when relevant. A lie no longer overwrites the story.
+- **Plans, conditions and dreams are labeled, not facts.** They are stored with their modality
+  (`hypothetical`, `dreamed`, `unknown`) and listed in the Inspector, never injected. A missing
+  modality counts as unknown, not actual.
+- **`also_called`** records another name for an entity, only when the turn itself gives both names
+  (e.g. "하나(Hana)"); otherwise it stays pending. Linking names into one entity comes with Phase 5
+  step 4.
+- The packet Note explains `negated` and `Claim` only in packets that use them.
+- Inspector: facts marked *negated* or *legacy* (`extract-v4` and older), a list of claims, and a list
+  of non-actual assertions.
+
 ## 0.1.0-beta.11
 
 Fix release with the first step of Phase 5 (`docs/phases/PHASE-5.md`). No schema change (migrations

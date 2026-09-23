@@ -222,6 +222,14 @@ and fail open is unchanged. Chats beyond the default's reach get memory only wit
 holder: an item's latest assertion is current, earlier holders are its history. A read-side rule
 outside the registry, so it needs no new extractor generation.
 
+**D27 — Assertion semantics (Phase 5, ADR 0013).** Each assertion has `polarity` (positive /
+negative), `modality` (actual / hypothetical / dreamed / unknown; missing means unknown) and `source`
+(narration / character_claim with `asserted_by`). Facts come only from actual narration; a negation
+ends the current version only if it denies the same relation (same holder for an item, same object
+and value otherwise) and otherwise stands as a negative fact. A character's claim never supersedes
+narration and reaches the packet only as a `<Claim>` after facts. Non-actual assertions are stored and
+inspectable, never injected. Rows from before `extract-v5` read as narration.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
