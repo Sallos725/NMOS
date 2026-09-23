@@ -1,6 +1,6 @@
 # NMOS Known Issues
 
-Current as of `v0.1.0-beta.10` (2026-09-23). This is the single list of what does not work, or works
+Current as of `v0.1.0-beta.11` (2026-09-24). This is the single list of what does not work, or works
 only partly, in the current release. Each release's "Known limitations" in `CHANGELOG.md` describes
 that release at the time; entries fixed later are listed under [Resolved](#resolved) below.
 
@@ -27,7 +27,7 @@ without a PocketRisu change.
 | K15 | Thresholds and extraction quality are checked on limited data | Quality | evaluation (A5 baseline) |
 | K16 | NMOS does not notice a chat deleted in PocketRisu | Data | host (H10) |
 | K17 | Storage only grows: old generations, abandoned branches, observations | Data | O5 (generations decided, not implemented) |
-| K18 | Changing a model or endpoint re-processes history at the provider's cost | Data | LLM: bounded to the recent window (ADR 0014, unreleased); embeddings: by design |
+| K18 | Changing a model or endpoint re-processes history at the provider's cost | Data | LLM: bounded to the recent window since beta.11 (ADR 0014); embeddings: by design |
 | K19 | Plugin and sidecar versions are not checked against each other | Setup | not planned |
 | K20 | Small UI delays: bot name, menu language | UI | not planned |
 | K21 | API keys and the auth token are stored in plain text | Security | host (H12) |
@@ -136,7 +136,7 @@ you no longer use.
 **K18 — Model changes re-process history.** Changing the LLM or embedding model or endpoint, or a
 release that changes the extraction generation (as 0.1.0-beta.8 did), re-derives all previously
 covered history with the new model, recent turns first, at the provider's cost. Until done, the
-Inspector shows partial coverage and older facts may be missing (ADR 0006). **Unreleased (Phase 5, ADR 0014):** an LLM change re-extracts only each chat's recent
+Inspector shows partial coverage and older facts may be missing (ADR 0006). **Since 0.1.0-beta.11 (ADR 0014):** an LLM change re-extracts only each chat's recent
 window (`NMOS_EXTRACT_BACKFILL`); older turns keep the previous model's facts until "extract all
 history". Embedding changes still re-embed everything covered. With a reasoning model,
 per-turn extraction produces ≈19 % more completion tokens than per-message did (≈9 % fewer tokens
@@ -183,6 +183,8 @@ Not issues, but often reported as one:
 | 0.1.0-beta.4 | A query matching nearly every message ran into the 300 ms lexical budget | 0.1.0-beta.10 — stops at 200 matches (`too_broad`); rest is K12 |
 | ≤ 0.1.0-beta.6 | Presets that add instructions after the user's input got no memory | 0.1.0-beta.7 (ADR 0001, amendment 2) |
 | 0.1.0-beta.6 | beta.6 plugin against a beta.5 sidecar: Inspector tab 404 | general form is K19 |
+| (not listed; found 2026-09-24) | Fact and state reads could take ≈7 s at 10k messages right after an edit, reroll or swipe, so that request went without memory | 0.1.0-beta.11 (`docs/perf/scale.md`) |
+| K18 (LLM part) | A new LLM model re-extracted all covered history | 0.1.0-beta.11 — recent window only (ADR 0014); embeddings unchanged |
 
 One-time upgrade effects (migration 0012's index build, beta.8's re-extraction, beta.4's
 re-derivation of beta.3 facts and vectors) are described in their release notes and are not listed

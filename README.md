@@ -178,7 +178,7 @@ The full list with workarounds is [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md)
   the Inspector shows coverage as partial until done). Changing the LLM model/endpoint re-extracts only
   each chat's recent turns (`NMOS_EXTRACT_BACKFILL`, default 100); older turns keep the previous model's
   facts, marked "older generation" in the Inspector, until you run **Extract all history** on that chat
-  (ADR 0014, unreleased).
+  (ADR 0014, since 0.1.0-beta.11).
 - Item and character names are free text: "지도" and "해안 지도" are different items, and an item that is
   lost or destroyed without a new holder still shows its last holder.
 - Recall thresholds are tuned on limited data — please report cases where memory is wrong or missing.
