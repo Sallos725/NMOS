@@ -12,6 +12,7 @@
 //@arg inject_position string before_last_user (default) or end
 //@arg route string auto (default) / direct / server — how to reach the sidecar
 //@arg language string Panel language: ko (default) or en
+//@arg hud int 1 = progress display on the chat screen (turn it on from the NMOS panel)
 "use strict";
 (() => {
   // src/canonical.ts
@@ -306,11 +307,18 @@ ${revisionHash}`;
   var CACHE_LIMIT = 64;
   var BODY_CHUNK = 250;
   var NAME_TTL_MS = 10 * 6e4;
-  function createAdapter(host) {
+  function createAdapter(host, onActivity) {
     const cache = /* @__PURE__ */ new Map();
+    const conversations = /* @__PURE__ */ new Map();
     const names = /* @__PURE__ */ new Map();
     const buildManifest = createManifestBuilder();
     let last = null;
+    function emit(event) {
+      try {
+        onActivity?.(event);
+      } catch {
+      }
+    }
     function characterName(chatId) {
       const hit = names.get(chatId);
       if (host.characterName && (!hit || host.now() - hit.at > NAME_TTL_MS)) {
@@ -375,15 +383,23 @@ ${revisionHash}`;
       const started = host.now();
       let settings = null;
       let key = null;
+      let chatId = null;
+      let announced = false;
       try {
         if (mode !== "model" || hasPacket(prompt)) return prompt;
         settings = await host.settings();
         if (!settings.enabled || !settings.sidecarUrl) return prompt;
         const deadline = started + settings.deadlineMs;
+        emit({ type: "request-start" });
+        announced = true;
         const chat = await host.currentChat();
         const messages = Array.isArray(chat?.message) ? chat.message : [];
         const turn = userTurnIndex(prompt, messages);
-        if (!chat?.id || turn < 0) return prompt;
+        if (!chat?.id || turn < 0) {
+          emit({ type: "request-abandon" });
+          return prompt;
+        }
+        chatId = chat.id;
         const t0 = host.now();
         const { request, bodies } = await buildManifest(
           chat,
@@ -398,10 +414,23 @@ ${revisionHash}`;
           request.messages.map((m) => [m.host_logical_id, m.revision_hash])
         ]));
         const cached = cache.get(key);
-        if (cached && cached.expires > host.now()) return injectPacket(prompt, cached.packet, settings.injectPosition, turn);
+        if (cached && cached.expires > host.now()) {
+          emit({
+            type: "request-end",
+            outcome: cached.packet ? "injected" : "nothing-relevant",
+            chars: cached.packet.length,
+            conversationId: conversations.get(chat.id) ?? null
+          });
+          return injectPacket(prompt, cached.packet, settings.injectPosition, turn);
+        }
         const t1 = host.now();
         const synced = await sync(settings, request, bodies, deadline);
         const syncMs = host.now() - t1;
+        if (synced.conversation_id) {
+          conversations.delete(chat.id);
+          conversations.set(chat.id, synced.conversation_id);
+          while (conversations.size > CACHE_LIMIT) conversations.delete(conversations.keys().next().value);
+        }
         const { query, previousAi } = queryTexts(messages);
         const t2 = host.now();
         const retrieved = await call(settings, "/v1/retrieve", {
@@ -424,12 +453,9 @@ ${revisionHash}`;
           retrieveMs: Math.round(host.now() - t2),
           packetChars: packet.length
         });
-        last = {
-          at: Date.now(),
-          ms: Math.round(host.now() - started),
-          packetChars: packet.length,
-          outcome: packet ? "injected" : "nothing-relevant"
-        };
+        const outcome = packet ? "injected" : "nothing-relevant";
+        last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, outcome };
+        emit({ type: "request-end", outcome, chars: packet.length, conversationId: synced.conversation_id ?? null });
         return injectPacket(prompt, packet, settings.injectPosition, turn);
       } catch (error) {
         if (key) remember(key, "", FAILURE_TTL_MS);
@@ -440,6 +466,13 @@ ${revisionHash}`;
           outcome: "failed",
           error: error instanceof Error ? error.message : String(error)
         };
+        if (announced) emit({
+          type: "request-end",
+          outcome: "failed",
+          chars: 0,
+          error: last.error,
+          conversationId: chatId && conversations.get(chatId) || null
+        });
         host.warn("[NMOS] memory skipped for this request (fail open):", error instanceof Error ? error.message : error);
         return prompt;
       }
@@ -448,6 +481,7 @@ ${revisionHash}`;
       void (async () => {
         const settings = await host.settings();
         if (!settings.enabled || !settings.sidecarUrl || !arg2?.chat?.id) return;
+        emit({ type: "background", conversationId: conversations.get(arg2.chat.id) ?? null });
         const index = arg2.messageIndex ?? -1;
         const message = index >= 0 ? arg2.chat.message?.[index] : void 0;
         await call(settings, "/v1/output", {
@@ -640,6 +674,40 @@ ${revisionHash}`;
     "cancel": ["\uCDE8\uC18C", "Cancel"],
     "lang_unsaved": ["\uC5B8\uC5B4\uB97C \uBC14\uAFB8\uAE30 \uC804\uC5D0 \uBCC0\uACBD\uC744 \uC800\uC7A5\uD558\uAC70\uB098 \uB418\uB3CC\uB9AC\uC138\uC694.", "Save or revert your changes before switching the language."],
     "conn_saved_server_failed": ["\uC5F0\uACB0 \uC124\uC815\uC740 \uC800\uC7A5\uD588\uC9C0\uB9CC \uC11C\uBC84 \uC124\uC815\uC740 \uC800\uC7A5\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: {e}", "Connection saved, but the server settings were not: {e}"],
+    // progress display (HUD) on the chat screen
+    "hud.recalling": ["\u{1F9E0} \uAE30\uC5B5 \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "\u{1F9E0} Recalling memory\u2026"],
+    "hud.injected": ["\u2713 \uAE30\uC5B5 \uC8FC\uC785 ({n}\uC790)", "\u2713 Memory injected ({n} chars)"],
+    "hud.nothing": ["\u2013 \uAD00\uB828 \uAE30\uC5B5 \uC5C6\uC74C", "\u2013 Nothing relevant"],
+    "hud.skipped": ["\u26A0 \uAC74\uB108\uB700: {r}", "\u26A0 Skipped: {r}"],
+    "hud.reason.deadline": ["\uC81C\uD55C \uC2DC\uAC04 \uCD08\uACFC", "deadline"],
+    "hud.reason.error": ["\uC0AC\uC774\uB4DC\uCE74 \uC624\uB958", "sidecar error"],
+    "hud.extract": ["\uCD94\uCD9C {d}/{n}", "Facts {d}/{n}"],
+    "hud.embed": ["\uC784\uBCA0\uB529 {d}/{n}", "Embeddings {d}/{n}"],
+    "hud.failed": ["\u26A0 \uC2E4\uD328 {n}", "\u26A0 {n} failed"],
+    "hud.done": ["\u2713 \uCC98\uB9AC \uC644\uB8CC", "\u2713 Processing done"],
+    // progress display: panel
+    "hud.title": ["\uC9C4\uD589 \uD45C\uC2DC", "Progress display"],
+    "hud.sub": [
+      '\uCC44\uD305 \uD654\uBA74 \uC624\uB978\uCABD \uC704\uC5D0 \uAE30\uC5B5\uC774 \uB4E4\uC5B4\uAC14\uB294\uC9C0\uC640 \uBC31\uADF8\uB77C\uC6B4\uB4DC \uCC98\uB9AC \uC9C4\uD589\uC744 \uC791\uAC8C \uB744\uC6C1\uB2C8\uB2E4. \uCF1C\uBA74 PocketRisu\uAC00 "\uBA54\uC778 Document \uC811\uADFC" \uAD8C\uD55C\uC744 \uBB3B\uC2B5\uB2C8\uB2E4. NMOS\uB294 \uC774 \uAD8C\uD55C\uC73C\uB85C \uD45C\uC2DC \uD558\uB098\uB9CC \uADF8\uB9AC\uACE0 \uD654\uBA74 \uB0B4\uC6A9\uC740 \uC77D\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uB204\uB974\uBA74 \uC774 \uD328\uB110\uC774 \uC5F4\uB9BD\uB2C8\uB2E4.',
+      'Shows a small pill at the top right of the chat screen: whether memory went in, and background processing progress. Turning it on makes PocketRisu ask for "main Document" access. NMOS only draws the pill with it and reads nothing on the page. Tap the pill to open this panel.'
+    ],
+    "hud.toggle": ["\uCC44\uD305 \uD654\uBA74\uC5D0 \uC9C4\uD589 \uD45C\uC2DC \uB744\uC6B0\uAE30", "Show the progress display on the chat screen"],
+    "hud.enable": ["\uC9C4\uD589 \uD45C\uC2DC \uCF1C\uAE30", "Turn on progress display"],
+    "hud.hint": [
+      "\uC9C4\uD589 \uD45C\uC2DC\uAC00 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uCF1C\uBA74 \uAE30\uC5B5\uC774 \uB4E4\uC5B4\uAC14\uB294\uC9C0 \uCC44\uD305 \uD654\uBA74\uC5D0\uC11C \uBC14\uB85C \uBCF4\uC785\uB2C8\uB2E4.",
+      "The progress display is off. Turn it on to see on the chat screen whether memory went in."
+    ],
+    "hud.on": ["\uCF30\uC2B5\uB2C8\uB2E4. \uB2E4\uC74C \uBA54\uC2DC\uC9C0\uBD80\uD130 \uD45C\uC2DC\uB429\uB2C8\uB2E4.", "On. It shows from the next message."],
+    "hud.off": ["\uAED0\uC2B5\uB2C8\uB2E4.", "Off."],
+    "hud.denied": [
+      '\uAD8C\uD55C\uC774 \uAC70\uBD80\uB418\uC5B4 \uCF1C\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. PocketRisu\uB294 \uAC70\uBD80\uB97C \uAE30\uC5B5\uD569\uB2C8\uB2E4. \uC124\uC815 \u2192 \uD50C\uB7EC\uADF8\uC778 \u2192 NMOS \uC904\uC758 \uBA54\uB274 \u2192 "\uAD8C\uD55C \uC751\uB2F5 \uCD08\uAE30\uD654" \uD6C4 \uB2E4\uC2DC \uCF1C\uC138\uC694.',
+      "Permission was denied, so it stays off. PocketRisu remembers a denial: Settings \u2192 Plugin \u2192 the NMOS row menu \u2192 reset permission responses, then turn it on again."
+    ],
+    "hud.unsupported": [
+      "\uC774 PocketRisu \uBC84\uC804\uC740 \uD50C\uB7EC\uADF8\uC778\uC774 \uCC44\uD305 \uD654\uBA74\uC5D0 \uD45C\uC2DC\uB97C \uADF8\uB9AC\uB294 \uAE30\uB2A5\uC744 \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "This PocketRisu version does not let plugins draw on the chat screen."
+    ],
+    "hud.broken": ["\uC9C4\uD589 \uD45C\uC2DC\uB97C \uADF8\uB9AC\uC9C0 \uBABB\uD574 \uC774\uBC88 \uC138\uC158\uC5D0\uC11C\uB294 \uBA48\uCDC4\uC2B5\uB2C8\uB2E4: {e}", "The progress display stopped for this session: {e}"],
     "invalid": ["\uC785\uB825 \uC624\uB958: ", "Invalid: "],
     "sidecar_error": ["\uC0AC\uC774\uB4DC\uCE74 \uC624\uB958: ", "Sidecar error: "]
   };
@@ -687,6 +755,262 @@ ${revisionHash}`;
       disabled: v.enabled ? 0 : 1,
       reserved_memory_tokens: Number(v.reserved) || 600,
       deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS))
+    };
+  }
+
+  // src/hud.ts
+  var OUTCOME_MS = 4e3;
+  var DONE_MS = 3e3;
+  var EMPTY = { request: null, progress: null };
+  function pending(c) {
+    return (c.extract?.pending ?? 0) + (c.embed?.pending ?? 0);
+  }
+  function reduce(state, event, now) {
+    switch (event.type) {
+      case "request-start":
+        return { ...state, request: { phase: "running" } };
+      case "request-abandon":
+        return state.request?.phase === "running" ? { ...state, request: null } : state;
+      case "request-end":
+        return { ...state, request: {
+          phase: "done",
+          outcome: event.outcome,
+          chars: event.chars,
+          error: event.error,
+          until: now + OUTCOME_MS
+        } };
+      case "coverage":
+        if (pending(event.coverage) > 0) return { ...state, progress: { coverage: event.coverage } };
+        return state.progress && "coverage" in state.progress ? { ...state, progress: { finishedUntil: now + DONE_MS } } : state;
+      case "reset":
+        return EMPTY;
+      case "background":
+        return state;
+    }
+  }
+  function view(state, now, lang) {
+    const r = state.request;
+    if (r?.phase === "running") return { kind: "busy", text: t(lang, "hud.recalling"), fraction: null };
+    if (r?.phase === "done" && now < r.until) {
+      if (r.outcome === "injected") return { kind: "ok", text: t(lang, "hud.injected", { n: r.chars }), fraction: null };
+      if (r.outcome === "nothing-relevant") return { kind: "muted", text: t(lang, "hud.nothing"), fraction: null };
+      const reason = t(lang, r.error?.startsWith("deadline") ? "hud.reason.deadline" : "hud.reason.error");
+      return { kind: "warn", text: t(lang, "hud.skipped", { r: reason }), fraction: null };
+    }
+    const p = state.progress;
+    if (p && "coverage" in p) return progressView(p.coverage, lang);
+    if (p && now < p.finishedUntil) return { kind: "ok", text: t(lang, "hud.done"), fraction: 1 };
+    return null;
+  }
+  function progressView(c, lang) {
+    const parts = [];
+    let done = 0;
+    let total = 0;
+    let failed = 0;
+    for (const [key, counts] of [["hud.extract", c.extract], ["hud.embed", c.embed]]) {
+      if (!counts || counts.total === 0) continue;
+      parts.push(t(lang, key, { d: counts.done, n: counts.total }));
+      done += counts.done;
+      total += counts.total;
+      failed += counts.failed;
+    }
+    if (failed) parts.push(t(lang, "hud.failed", { n: failed }));
+    return { kind: "busy", text: parts.join(" \xB7 "), fraction: total ? done / total : null };
+  }
+  function nextChange(state, now) {
+    const times = [
+      state.request?.phase === "done" ? state.request.until : null,
+      state.progress && "finishedUntil" in state.progress ? state.progress.finishedUntil : null
+    ].filter((x) => x !== null && x > now);
+    return times.length ? Math.min(...times) : null;
+  }
+  function parseCoverage(json) {
+    const body = json ?? {};
+    const counts = (section, doneKey) => section?.generation && typeof section.eligible === "number" ? {
+      done: Number(section[doneKey]) || 0,
+      total: section.eligible,
+      pending: Number(section.pending) || 0,
+      failed: Number(section.failed) || 0
+    } : null;
+    return { extract: counts(body.extraction, "compiled"), embed: counts(body.embeddings, "embedded") };
+  }
+
+  // src/hud-host.ts
+  var POLL_MS = 3e3;
+  var MAX_POLL_ERRORS = 5;
+  var CLASS = "nmos-hud";
+  var ROOT_STYLE = 'position:fixed;top:calc(8px + env(safe-area-inset-top));right:calc(8px + env(safe-area-inset-right));z-index:900;max-width:min(320px,calc(100vw - 72px));background:#1d1e24;border:1px solid #30323b;border-radius:12px;padding:6px 12px;font:13px/1.4 system-ui,-apple-system,"Noto Sans KR",sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.35);cursor:pointer;user-select:none';
+  var TEXT_STYLE = "display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e8e8ec";
+  var TRACK_STYLE = "display:none;height:3px;margin-top:4px;background:#30323b;border-radius:2px;overflow:hidden";
+  var FILL_STYLE = "height:3px;width:0;background:#4c6ef5;border-radius:2px;transition:width .3s";
+  var COLORS = { busy: "#e8e8ec", ok: "#8ce99a", muted: "#9a9ca8", warn: "#ffd43b" };
+  function createHud(deps) {
+    let state = EMPTY;
+    let problem = null;
+    let drawn = null;
+    let conversation = null;
+    let where = null;
+    let pollTimer = null;
+    let expiryTimer = null;
+    let pollErrors = 0;
+    let queue = Promise.resolve();
+    function run(task) {
+      queue = queue.then(task).catch(fail);
+    }
+    async function fail(error) {
+      problem = error instanceof Error ? error.message : String(error);
+      deps.debug("[NMOS] progress display stopped for this session:", problem);
+      stopPolling();
+      await erase().catch(() => {
+      });
+    }
+    async function active() {
+      if (!problem && await deps.enabled()) return true;
+      stopPolling();
+      await erase();
+      return false;
+    }
+    async function erase() {
+      if (expiryTimer !== null) deps.clearTimer(expiryTimer);
+      expiryTimer = null;
+      const d = drawn;
+      drawn = null;
+      if (!d) return;
+      await d.root.removeEventListener("click", d.listener);
+      await d.root.remove();
+    }
+    async function draw() {
+      const doc = await deps.rootDocument();
+      if (!doc) throw new Error("no access to the PocketRisu page (mainDom permission)");
+      await (await doc.querySelector(`.${CLASS}`))?.remove();
+      const body = await doc.querySelector("body");
+      if (!body) throw new Error("the PocketRisu page has no body");
+      const root = await doc.createElement("div");
+      await root.addClass(CLASS);
+      await root.setStyleAttribute(ROOT_STYLE);
+      const text = await doc.createElement("span");
+      await text.setStyleAttribute(TEXT_STYLE);
+      const track = await doc.createElement("div");
+      await track.setStyleAttribute(TRACK_STYLE);
+      const fill = await doc.createElement("div");
+      await fill.setStyleAttribute(FILL_STYLE);
+      await track.appendChild(fill);
+      await root.appendChild(text);
+      await root.appendChild(track);
+      await body.appendChild(root);
+      const listener = await root.addEventListener("click", (event) => {
+        void hit(event);
+      });
+      return { root, text, track, fill, listener, last: "" };
+    }
+    async function hit(event) {
+      try {
+        const d = drawn;
+        if (!d) return;
+        const r = await d.root.getBoundingClientRect();
+        if (event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom) {
+          deps.openPanel();
+        }
+      } catch (error) {
+        deps.debug("[NMOS] progress display click failed:", error instanceof Error ? error.message : error);
+      }
+    }
+    async function render2() {
+      if (expiryTimer !== null) deps.clearTimer(expiryTimer);
+      expiryTimer = null;
+      const now = deps.now();
+      const v = view(state, now, await deps.lang());
+      if (!v) return erase();
+      drawn ??= await draw();
+      const d = drawn;
+      const key = JSON.stringify(v);
+      if (d.last !== key) {
+        d.last = key;
+        await d.text.setTextContent(v.text);
+        await d.text.setStyle("color", COLORS[v.kind]);
+        await d.track.setStyle("display", v.fraction === null ? "none" : "block");
+        if (v.fraction !== null) await d.fill.setStyle("width", `${Math.round(v.fraction * 100)}%`);
+      }
+      const next = nextChange(state, now);
+      if (next !== null) expiryTimer = deps.setTimer(() => {
+        expiryTimer = null;
+        run(render2);
+      }, next - now);
+    }
+    async function follow(conversationId) {
+      if (!conversationId) return;
+      where = await deps.position();
+      if (conversationId === conversation) return;
+      conversation = conversationId;
+      state = { ...state, progress: null };
+      stopPolling();
+    }
+    function startPolling() {
+      if (pollTimer !== null || !conversation) return;
+      pollErrors = 0;
+      pollTimer = deps.setTimer(() => run(poll), 0);
+    }
+    function stopPolling() {
+      if (pollTimer !== null) deps.clearTimer(pollTimer);
+      pollTimer = null;
+    }
+    async function poll() {
+      pollTimer = null;
+      if (!await active() || !conversation) return;
+      if (where !== null && await deps.position() !== where) {
+        conversation = null;
+        state = { ...state, progress: null };
+        return render2();
+      }
+      let again = false;
+      try {
+        const coverage = parseCoverage(await deps.coverage(conversation));
+        pollErrors = 0;
+        state = reduce(state, { type: "coverage", coverage }, deps.now());
+        again = pending(coverage) > 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        deps.debug("[NMOS] coverage poll failed:", message);
+        again = !/HTTP 404/.test(message) && ++pollErrors < MAX_POLL_ERRORS;
+      }
+      await render2();
+      if (again) pollTimer = deps.setTimer(() => run(poll), POLL_MS);
+    }
+    return {
+      /** Request-path activity from core.ts. */
+      event(event) {
+        run(async () => {
+          if (!await active()) return;
+          if (event.type === "request-end" || event.type === "background") await follow(event.conversationId);
+          state = reduce(state, event, deps.now());
+          await render2();
+          if (event.type === "request-end" || event.type === "background") startPolling();
+        });
+      },
+      /** A panel action queued background work: follow that conversation, or the last one seen. */
+      background(conversationId) {
+        run(async () => {
+          if (!await active()) return;
+          if (conversationId) await follow(conversationId);
+          startPolling();
+        });
+      },
+      /** The toggle changed: off erases at once; on clears an earlier failure. */
+      refresh() {
+        run(async () => {
+          if (await deps.enabled()) {
+            problem = null;
+            return;
+          }
+          stopPolling();
+          state = EMPTY;
+          await erase();
+        });
+      },
+      /** Why the display stopped for this session, if it did. */
+      problem: () => problem,
+      /** Resolves when queued work has run (tests). */
+      settled: () => queue
     };
   }
 
@@ -928,9 +1252,37 @@ html,body{margin:0;background:#0c0c10}
       } else {
         lastCard.append(el("div", { class: "muted", text: L("status.none") }));
       }
+      const cards = [conn, features, lastCard];
+      const problem = deps.hud.problem();
+      if (Number(await deps.getArg("hud")) !== 1) {
+        const turnOn = el("button", { text: L("hud.enable") });
+        const msg = el("div", { class: "msg" });
+        turnOn.addEventListener("click", async () => {
+          turnOn.disabled = true;
+          const result = await deps.hud.enable();
+          if (result === "on") return void refreshStatus();
+          turnOn.disabled = false;
+          say(msg, L(result === "denied" ? "hud.denied" : "hud.unsupported"), "warn");
+        });
+        cards.push(el(
+          "div",
+          { class: "card" },
+          el("h2", { text: L("hud.title") }),
+          el("div", { class: "muted", text: L("hud.hint") }),
+          el("div", { class: "btns" }, turnOn),
+          msg
+        ));
+      } else if (problem) {
+        cards.push(el(
+          "div",
+          { class: "card" },
+          el("h2", { text: L("hud.title") }),
+          el("div", { class: "warn", text: L("hud.broken", { e: problem }) })
+        ));
+      }
       const refresh = el("button", { text: L("refresh") });
       refresh.addEventListener("click", () => void refreshStatus());
-      statusView.replaceChildren(conn, features, lastCard, el("div", { class: "btns" }, refresh));
+      statusView.replaceChildren(...cards, el("div", { class: "btns" }, refresh));
     }
     let inspectorPath = "/v1/inspector";
     const inspectorBody = el("div", { class: "insp" });
@@ -1016,6 +1368,7 @@ html,body{margin:0;background:#0c0c10}
         const r = await deps.api("POST", `/v1/conversations/${conversation}/extract-history`, {}, 3e4);
         const n = (r.queued.extract ?? 0) + (r.queued.embed ?? 0);
         say(actionMsg, n ? L("act.history_done", { t: r.queued.extract ?? 0, m: r.queued.embed ?? 0 }) : L("act.history_none"), "ok");
+        if (n) deps.hud.background(conversation);
         await showInspector();
       } catch (error) {
         say(actionMsg, actionError(error), "err");
@@ -1031,6 +1384,7 @@ html,body{margin:0;background:#0c0c10}
       try {
         const r = await deps.api("POST", `/v1/conversations/${conversation}/rebuild`, {}, 3e4);
         say(actionMsg, L("act.rebuild_done", { d: r.discarded ?? 0, t: r.queued.extract ?? 0 }), "ok");
+        deps.hud.background(conversation);
         await showInspector();
       } catch (error) {
         say(actionMsg, actionError(error), "err");
@@ -1053,6 +1407,33 @@ html,body{margin:0;background:#0c0c10}
         deleteButton.disabled = false;
       }
     });
+    const hudBox = el("input", { type: "checkbox" });
+    const hudMsg = el("div", { class: "msg" });
+    hudBox.addEventListener("change", async () => {
+      hudBox.disabled = true;
+      try {
+        if (!hudBox.checked) {
+          await deps.hud.disable();
+          return say(hudMsg, L("hud.off"), "muted");
+        }
+        const result = await deps.hud.enable();
+        hudBox.checked = result === "on";
+        if (result === "on") say(hudMsg, L("hud.on"), "ok");
+        else say(hudMsg, L(result === "denied" ? "hud.denied" : "hud.unsupported"), "warn");
+      } catch (error) {
+        say(hudMsg, errorText(lang, error), "err");
+      } finally {
+        hudBox.disabled = false;
+      }
+    });
+    settingsView.append(el(
+      "div",
+      { class: "card" },
+      el("h2", { text: L("hud.title") }),
+      el("p", { class: "sub", text: L("hud.sub") }),
+      el("div", { class: "check" }, hudBox, el("span", { text: L("hud.toggle") })),
+      hudMsg
+    ));
     const url = el("input", { spellcheck: "false" });
     const route = el("select", {}, ...["auto", "direct", "server"].map((v) => el("option", { value: v, text: v })));
     const enabled = el("input", { type: "checkbox" });
@@ -1213,6 +1594,7 @@ html,body{margin:0;background:#0c0c10}
       enabled.checked = Number(await deps.getArg("disabled")) !== 1;
       reserved.value = String(Number(await deps.getArg("reserved_memory_tokens")) || 600);
       deadline.value = String(Number(await deps.getArg("deadline_ms")) || DEFAULT_DEADLINE_MS);
+      hudBox.checked = Number(await deps.getArg("hud")) === 1;
     }
     function fillServer(cfg) {
       llm.fill(cfg.llm);
@@ -1257,6 +1639,7 @@ html,body{margin:0;background:#0c0c10}
         fillServer(r);
         baseline = values();
         const parts = [r.queued_jobs ? L("saved_queued", { n: r.queued_jobs }) : L("saved")];
+        if (r.queued_jobs) deps.hud.background();
         if (d.includes("rules") && r.parsers.active_rules) parts.push(L("saved_rules", { n: r.parsers.active_rules }));
         update({ text: parts.join(" "), kind: "ok" });
         return true;
@@ -1312,8 +1695,8 @@ html,body{margin:0;background:#0c0c10}
         ["inspector", inspectorView, tabInspector],
         ["settings", settingsView, tabSettings]
       ];
-      for (const [name, view, button] of views) {
-        view.style.display = name === next ? "" : "none";
+      for (const [name, view2, button] of views) {
+        view2.style.display = name === next ? "" : "none";
         button.className = name === next ? "on" : "";
       }
       bar.style.display = next === "settings" ? "" : "none";
@@ -1388,7 +1771,46 @@ html,body{margin:0;background:#0c0c10}
     debug: (...args) => console.debug(...args),
     now: () => performance.now()
   };
-  async function registerHooks(beforeRequest, onOutput, status, api) {
+  function createRisuHud(link) {
+    const hud = createHud({
+      enabled: async () => Number(await arg("hud")) === 1,
+      lang: async () => langOf(await arg("language")),
+      rootDocument: async () => typeof risuai.getRootDocument === "function" ? risuai.getRootDocument() : null,
+      position: async () => `${await risuai.getCurrentCharacterIndex()}:${await risuai.getCurrentChatIndex()}`,
+      coverage: (conversationId) => link.coverage(conversationId),
+      openPanel: () => link.openPanel(),
+      now: () => performance.now(),
+      debug: (...args) => console.debug(...args),
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (handle) => clearTimeout(handle)
+    });
+    const control = {
+      event: hud.event,
+      async enable() {
+        if (typeof risuai.requestPluginPermission !== "function" || typeof risuai.getRootDocument !== "function") {
+          return "unsupported";
+        }
+        await risuai.hideContainer();
+        let granted = false;
+        try {
+          granted = await risuai.requestPluginPermission("mainDom") === true;
+        } finally {
+          await risuai.showContainer("fullscreen");
+        }
+        await risuai.setArgument("hud", granted ? 1 : 0);
+        hud.refresh();
+        return granted ? "on" : "denied";
+      },
+      async disable() {
+        await risuai.setArgument("hud", 0);
+        hud.refresh();
+      },
+      problem: hud.problem,
+      background: hud.background
+    };
+    return control;
+  }
+  async function registerHooks(beforeRequest, onOutput, status, api, hud) {
     await risuai.addRisuReplacer("beforeRequest", beforeRequest);
     await risuai.addRisuChatListener("output", onOutput);
     const deps = {
@@ -1397,7 +1819,8 @@ html,body{margin:0;background:#0c0c10}
       getArg: arg,
       setArg: (key, value) => risuai.setArgument(key, value),
       show: () => risuai.showContainer("fullscreen"),
-      hide: () => risuai.hideContainer()
+      hide: () => risuai.hideContainer(),
+      hud
     };
     const open = (tab) => openPanel(deps, tab);
     const lang = langOf(await arg("language"));
@@ -1406,12 +1829,19 @@ html,body{margin:0;background:#0c0c10}
       { name: t(lang, "menu.panel"), icon: "\u{1F9E0}", iconType: "html", location: "chat", id: "nmos-chat" },
       () => open("status")
     );
+    return () => void open("status");
   }
 
   // src/entry.ts
   (async () => {
-    const adapter = createAdapter(risuHost);
-    await registerHooks(
+    let openStatus = () => {
+    };
+    const hud = createRisuHud({
+      coverage: (conversationId) => adapter.api("GET", `/v1/conversations/${conversationId}/coverage`, void 0, 5e3),
+      openPanel: () => openStatus()
+    });
+    const adapter = createAdapter(risuHost, (event) => hud.event(event));
+    openStatus = await registerHooks(
       async (prompt, mode) => {
         try {
           return await adapter.beforeRequest(prompt, mode);
@@ -1421,7 +1851,8 @@ html,body{margin:0;background:#0c0c10}
       },
       (arg2) => adapter.onOutput(arg2),
       () => adapter.status(),
-      (method, path, body, timeoutMs) => adapter.api(method, path, body, timeoutMs)
+      (method, path, body, timeoutMs) => adapter.api(method, path, body, timeoutMs),
+      hud
     );
     console.log("[NMOS] adapter loaded", { version: "0.1.0-beta.11" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));

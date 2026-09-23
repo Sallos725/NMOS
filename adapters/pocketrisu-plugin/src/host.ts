@@ -5,8 +5,9 @@ import { langOf, t } from './i18n';
 import type { InjectPosition } from './prompt';
 import type { HostChat } from './types';
 import { DEFAULT_DEADLINE_MS } from './form';
+import { createHud, type HudDocument } from './hud-host';
 import { routeFor } from './route';
-import { openPanel, type PanelDeps, type Tab } from './ui';
+import { openPanel, type HudControl, type PanelDeps, type Tab } from './ui';
 
 export { routeFor };
 
@@ -26,6 +27,9 @@ declare const risuai: {
   setArgument(key: string, value: string | number): Promise<void>;
   showContainer(type: 'fullscreen'): Promise<void>;
   hideContainer(): Promise<void>;
+  // Main-page access (H16); missing on older builds.
+  requestPluginPermission?(permission: 'mainDom'): Promise<boolean>;
+  getRootDocument?(): Promise<HudDocument | null>;
 };
 
 const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8790';
@@ -96,12 +100,56 @@ export const risuHost: HostPort = {
   now: () => performance.now(),
 };
 
+/** The progress display (D28) on the PocketRisu page, and its toggle for the panel. */
+export function createRisuHud(link: { coverage(conversationId: string): Promise<unknown>; openPanel(): void }) {
+  const hud = createHud({
+    enabled: async () => Number(await arg('hud')) === 1,
+    lang: async () => langOf(await arg('language')),
+    rootDocument: async () => (typeof risuai.getRootDocument === 'function' ? risuai.getRootDocument() : null),
+    position: async () => `${await risuai.getCurrentCharacterIndex()}:${await risuai.getCurrentChatIndex()}`,
+    coverage: (conversationId) => link.coverage(conversationId),
+    openPanel: () => link.openPanel(),
+    now: () => performance.now(),
+    debug: (...args) => console.debug(...args),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  });
+  const control: HudControl & { event: typeof hud.event } = {
+    event: hud.event,
+    async enable() {
+      if (typeof risuai.requestPluginPermission !== 'function' || typeof risuai.getRootDocument !== 'function') {
+        return 'unsupported';
+      }
+      // The host's permission dialog would open under the full-screen panel frame (z-index 1000): hide
+      // the frame while it asks.
+      await risuai.hideContainer();
+      let granted = false;
+      try {
+        granted = (await risuai.requestPluginPermission('mainDom')) === true;
+      } finally {
+        await risuai.showContainer('fullscreen');
+      }
+      await risuai.setArgument('hud', granted ? 1 : 0);
+      hud.refresh();
+      return granted ? 'on' : 'denied';
+    },
+    async disable() {
+      await risuai.setArgument('hud', 0);
+      hud.refresh();
+    },
+    problem: hud.problem,
+    background: hud.background,
+  };
+  return control;
+}
+
 export async function registerHooks(
   beforeRequest: (prompt: unknown, mode: unknown) => Promise<unknown>,
   onOutput: (arg: unknown) => void,
   status: () => Promise<StatusInfo>,
   api: PanelDeps['api'],
-): Promise<void> {
+  hud: HudControl,
+): Promise<() => void> {
   await risuai.addRisuReplacer('beforeRequest', beforeRequest);
   await risuai.addRisuChatListener('output', onOutput);
   const deps: PanelDeps = {
@@ -111,6 +159,7 @@ export async function registerHooks(
     setArg: (key, value) => risuai.setArgument(key, value),
     show: () => risuai.showContainer('fullscreen'),
     hide: () => risuai.hideContainer(),
+    hud,
   };
   const open = (tab: Tab) => openPanel(deps, tab);
   // Menu names are fixed at load, in the language chosen then (they follow a change after a reload).
@@ -120,4 +169,5 @@ export async function registerHooks(
   // The ☰ menu left of the chat input.
   await risuai.registerButton({ name: t(lang, 'menu.panel'), icon: '🧠', iconType: 'html', location: 'chat', id: 'nmos-chat' },
     () => open('status'));
+  return () => void open('status');
 }

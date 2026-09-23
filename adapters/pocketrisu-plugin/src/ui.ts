@@ -10,6 +10,17 @@ import { routeFor } from './route';
 
 export type Tab = 'status' | 'inspector' | 'settings';
 
+/** The progress display on the chat screen (D28). */
+export interface HudControl {
+  /** Asks PocketRisu for main-page access and turns the display on if granted. */
+  enable(): Promise<'on' | 'denied' | 'unsupported'>;
+  disable(): Promise<void>;
+  /** Why the display stopped for this session, if it did. */
+  problem(): string | null;
+  /** Background work was queued: follow it (this conversation, or the last one seen). */
+  background(conversationId?: string): void;
+}
+
 export interface PanelDeps {
   api<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeoutMs?: number): Promise<T>;
   status(): Promise<StatusInfo>;
@@ -17,6 +28,7 @@ export interface PanelDeps {
   setArg(key: string, value: string | number): Promise<void>;
   show(): Promise<void>;
   hide(): Promise<void>;
+  hud: HudControl;
 }
 
 interface ServerConfig {
@@ -220,9 +232,27 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       lastCard.append(el('div', { class: 'muted', text: L('status.none') }));
     }
 
+    const cards: HTMLElement[] = [conn, features, lastCard];
+    const problem = deps.hud.problem();
+    if (Number(await deps.getArg('hud')) !== 1) {
+      const turnOn = el('button', { text: L('hud.enable') });
+      const msg = el('div', { class: 'msg' });
+      turnOn.addEventListener('click', async () => {
+        turnOn.disabled = true;
+        const result = await deps.hud.enable();
+        if (result === 'on') return void refreshStatus();
+        turnOn.disabled = false;
+        say(msg, L(result === 'denied' ? 'hud.denied' : 'hud.unsupported'), 'warn');
+      });
+      cards.push(el('div', { class: 'card' }, el('h2', { text: L('hud.title') }),
+        el('div', { class: 'muted', text: L('hud.hint') }), el('div', { class: 'btns' }, turnOn), msg));
+    } else if (problem) {
+      cards.push(el('div', { class: 'card' }, el('h2', { text: L('hud.title') }),
+        el('div', { class: 'warn', text: L('hud.broken', { e: problem }) })));
+    }
     const refresh = el('button', { text: L('refresh') });
     refresh.addEventListener('click', () => void refreshStatus());
-    statusView.replaceChildren(conn, features, lastCard, el('div', { class: 'btns' }, refresh));
+    statusView.replaceChildren(...cards, el('div', { class: 'btns' }, refresh));
   }
 
   // --- inspector tab ---------------------------------------------------------------------------
@@ -312,6 +342,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       const r = await deps.api<ActionResult>('POST', `/v1/conversations/${conversation}/extract-history`, {}, 30_000);
       const n = (r.queued.extract ?? 0) + (r.queued.embed ?? 0);
       say(actionMsg, n ? L('act.history_done', { t: r.queued.extract ?? 0, m: r.queued.embed ?? 0 }) : L('act.history_none'), 'ok');
+      if (n) deps.hud.background(conversation);
       await showInspector();
     } catch (error) { say(actionMsg, actionError(error), 'err'); } finally { historyButton.disabled = false; }
   });
@@ -324,6 +355,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     try {
       const r = await deps.api<ActionResult>('POST', `/v1/conversations/${conversation}/rebuild`, {}, 30_000);
       say(actionMsg, L('act.rebuild_done', { d: r.discarded ?? 0, t: r.queued.extract ?? 0 }), 'ok');
+      deps.hud.background(conversation);
       await showInspector();
     } catch (error) { say(actionMsg, actionError(error), 'err'); } finally { rebuildButton.disabled = false; }
   });
@@ -339,6 +371,30 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       say(actionMsg, L('act.delete_done', { m: r.deleted.messages ?? 0 }), 'ok');
     } catch (error) { say(actionMsg, errorText(lang, error), 'err'); } finally { deleteButton.disabled = false; }
   });
+
+  // --- settings tab: progress display (applied at once: it may ask PocketRisu for a permission) --
+  const hudBox = el('input', { type: 'checkbox' });
+  const hudMsg = el('div', { class: 'msg' });
+  hudBox.addEventListener('change', async () => {
+    hudBox.disabled = true;
+    try {
+      if (!hudBox.checked) {
+        await deps.hud.disable();
+        return say(hudMsg, L('hud.off'), 'muted');
+      }
+      const result = await deps.hud.enable();
+      hudBox.checked = result === 'on';
+      if (result === 'on') say(hudMsg, L('hud.on'), 'ok');
+      else say(hudMsg, L(result === 'denied' ? 'hud.denied' : 'hud.unsupported'), 'warn');
+    } catch (error) {
+      say(hudMsg, errorText(lang, error), 'err');
+    } finally {
+      hudBox.disabled = false;
+    }
+  });
+  settingsView.append(el('div', { class: 'card' },
+    el('h2', { text: L('hud.title') }), el('p', { class: 'sub', text: L('hud.sub') }),
+    el('div', { class: 'check' }, hudBox, el('span', { text: L('hud.toggle') })), hudMsg));
 
   // --- settings tab: fields ---------------------------------------------------------------------
   const url = el('input', { spellcheck: 'false' });
@@ -465,6 +521,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     enabled.checked = Number(await deps.getArg('disabled')) !== 1;
     reserved.value = String(Number(await deps.getArg('reserved_memory_tokens')) || 600);
     deadline.value = String(Number(await deps.getArg('deadline_ms')) || DEFAULT_DEADLINE_MS);
+    hudBox.checked = Number(await deps.getArg('hud')) === 1;
   }
 
   function fillServer(cfg: ServerConfig): void {
@@ -503,6 +560,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       fillServer(r);
       baseline = values();
       const parts = [r.queued_jobs ? L('saved_queued', { n: r.queued_jobs }) : L('saved')];
+      if (r.queued_jobs) deps.hud.background();
       if (d.includes('rules') && r.parsers.active_rules) parts.push(L('saved_rules', { n: r.parsers.active_rules }));
       update({ text: parts.join(' '), kind: 'ok' });
       return true;
