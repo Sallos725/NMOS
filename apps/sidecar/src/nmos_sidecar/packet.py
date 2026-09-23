@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import math
 import re
 from dataclasses import dataclass
@@ -20,8 +21,22 @@ MAX_EXCERPT_CHARS = 480
 
 # Markup and model reasoning that is not story: style/script blocks and <Thoughts>/<think> sections.
 _DROP_BLOCKS = re.compile(r"<(style|script|thoughts|think|thinking)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
-_TAG = re.compile(r"<[^>\n]{1,500}>")
-_BLOCK_TAG = re.compile(r"</?(?:br|p|div|li|tr|h[1-6]|details|summary|table|section)\b[^>]*>", re.IGNORECASE)
+# Inline media is not story either: RisuAI inlay/asset tokens (the names PocketRisu expands), markdown
+# images and bare data: URIs that image plugins write into the message itself.
+_MEDIA_TOKEN = re.compile(r"\{\{(?:inlay|inlayed|inlayeddata|img|image|asset|emotion|raw|path|bg|bgm|video|video-img|"
+                          r"audio|source)::[^{}]*\}\}", re.IGNORECASE)
+_MD_IMAGE = re.compile(r"!\[[^\]\n]*\]\([^)\s]*\)")
+_DATA_URI = re.compile(r"data:[\w.+-]+/[\w.+-]+(?:;[\w=.+-]+)*,[A-Za-z0-9+/=%]+")
+# An HTML element's tag may span lines, and a quoted attribute can hold `>` or any length (a base64 src).
+# Any other `<…>` must start with a letter and stay short on one line: `HP < 30` or `<3` is text.
+_ATTRS = r"""(?:\s+[A-Za-z_:@][\w:.@-]*(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>=`]+))?)*\s*/?"""
+_BLOCK_TAG = re.compile(rf"</?(?:br|p|div|li|tr|h[1-6]|details|summary|table|section)\b{_ATTRS}>", re.IGNORECASE)
+_HTML_TAG = re.compile(
+    r"</?(?:a|abbr|article|aside|audio|b|big|blockquote|button|canvas|center|code|del|em|embed|figcaption|figure|"
+    r"font|footer|header|hr|i|iframe|img|input|ins|kbd|label|main|mark|nav|object|ol|picture|pre|q|rp|rt|ruby|s|"
+    r"small|source|span|strike|strong|sub|sup|svg|tbody|td|tfoot|th|thead|track|u|ul|video)\b" + _ATTRS + ">",
+    re.IGNORECASE)
+_TAG = re.compile(r"</?[^\W\d_][^<>\n]{0,500}>|<![^<>\n]{0,500}>")
 _SPACES = re.compile(r"[ \t\u00a0]+")
 _BLANK_LINES = re.compile(r"\n\s*\n+")
 
@@ -30,9 +45,11 @@ def clean_text(content: str) -> str:
     """Readable text for recall/embedding/extraction: bots (especially sim bots) wrap replies in
     status HTML. Keeps visible text, drops markup and style/script blocks. Raw evidence is untouched."""
     text = _DROP_BLOCKS.sub(" ", content)
+    text = _MEDIA_TOKEN.sub("", text)
     text = _BLOCK_TAG.sub("\n", text)
-    text = _TAG.sub("", text)
-    text = text.replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+    text = _TAG.sub("", _HTML_TAG.sub("", text))
+    text = _MD_IMAGE.sub("", _DATA_URI.sub("", text))
+    text = html.unescape(text)
     text = _SPACES.sub(" ", text)
     text = re.sub(r" *\n *", "\n", text)
     return _BLANK_LINES.sub("\n", text).strip()
