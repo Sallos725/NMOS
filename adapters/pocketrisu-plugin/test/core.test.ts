@@ -139,6 +139,18 @@ describe('packet cache', () => {
     await adapter.beforeRequest(structuredClone(prompt), 'model');
     expect(calls.filter((c) => c === '/v1/retrieve')).toHaveLength(2);
   });
+
+  it('is emptied by a panel action, so a reroll after deleting the chat gets no old memory', async () => {
+    const { host, calls } = fakeHost((path, body) => path.startsWith('/v1/conversations') ? { status: 200, json: {} } : happy(path, body));
+    const adapter = createAdapter(host);
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    await adapter.api('GET', '/v1/conversations');
+    await adapter.beforeRequest(structuredClone(prompt), 'model');  // a read changes nothing: cached
+    expect(calls.filter((c) => c === '/v1/retrieve')).toHaveLength(1);
+    await adapter.api('POST', '/v1/conversations/x/delete', {});
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(calls.filter((c) => c === '/v1/retrieve')).toHaveLength(2);
+  });
 });
 
 describe('body upload', () => {
