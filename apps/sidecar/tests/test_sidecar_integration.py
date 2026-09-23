@@ -52,7 +52,8 @@ def ledger_state(url: str) -> dict:
             " JOIN conversation c ON c.id = w.conversation_id ORDER BY w.seq"
         ).fetchall()
         membership = conn.execute(
-            "SELECT c.host_chat_ref, am.position, so.host_logical_id, sr.revision_hash FROM active_membership am"
+            "SELECT c.host_chat_ref, am.position, so.host_logical_id, sr.revision_hash, am.turn, am.turn_hash"
+            " FROM active_membership am"
             " JOIN worldline_commit w ON w.id = am.commit_id JOIN conversation c ON c.id = w.conversation_id"
             " JOIN source_revision sr ON sr.id = am.source_revision_id JOIN source_object so ON so.id = sr.source_object_id"
             " ORDER BY 1, 2"

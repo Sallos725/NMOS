@@ -104,3 +104,18 @@ def test_embedded_inspector_requires_the_token(migrated):
     with make_client(migrated) as c:
         del c.headers["Authorization"]
         assert c.get("/v1/inspector").status_code == 401
+
+
+def test_detail_lists_turns_and_counts_changes_per_commit(client):
+    c = SimChat()
+    for i in range(4):
+        c.user(f"줄 {i}")
+        c.reply(f"답 {i}")
+    c.user("마지막")
+    sync(client, c)
+    c.messages = c.messages[:3]  # "delete all below": six messages at once
+    sync(client, c)
+    cid = client.get("/v1/conversations").json()[0]["id"]
+    page = client.get(f"/inspector/c/{cid}?lang=en").text
+    assert "delete ×6" in page
+    assert "<th>#</th><th>Turn</th>" in page

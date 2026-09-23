@@ -1,7 +1,7 @@
 //@name nmos_memory
 //@display-name NMOS Narrative Memory
 //@api 3.0
-//@version 0.1.0-beta.7
+//@version 0.1.0-beta.8
 //@link https://github.com/Sallos725/NMOS Documentation
 //@update-url https://raw.githubusercontent.com/Sallos725/NMOS/main/adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js
 //@arg sidecar_url string NMOS sidecar URL (empty = http://127.0.0.1:8790)
@@ -465,6 +465,21 @@ ${revisionHash}`;
     // inspector view
     "insp.loading": ["\uC778\uC2A4\uD399\uD130\uB97C \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Loading the inspector\u2026"],
     "insp.browser": ["\uBE0C\uB77C\uC6B0\uC800\uC5D0\uC11C \uC9C1\uC811 \uC5F4 \uC218\uB3C4 \uC788\uC2B5\uB2C8\uB2E4: {url}", "Also available in a browser: {url}"],
+    "act.history": ["\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C", "Extract all history"],
+    "act.rebuild": ["\uAE30\uC5B5 \uC7AC\uAD6C\uCD95", "Rebuild memory"],
+    "act.rebuild_confirm": ["\uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC7AC\uAD6C\uCD95\uD569\uB2C8\uB2E4", "Click again to rebuild"],
+    "act.sub": [
+      "\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C: \uCC98\uC74C \uC5F0\uACB0\uD560 \uB54C \uAC74\uB108\uB6F4 \uC774 \uCC44\uD305\uC758 \uC774\uC804 \uD134\uAE4C\uC9C0 \uC0AC\uC2E4\uC744 \uCD94\uCD9C\uD558\uACE0 \uC784\uBCA0\uB529\uD569\uB2C8\uB2E4. \uAE30\uC5B5 \uC7AC\uAD6C\uCD95: \uC774 \uCC44\uD305\uC758 \uC0AC\uC2E4\uC744 \uBC84\uB9AC\uACE0 \uBAA8\uB4E0 \uD134\uC744 \uB2E4\uC2DC \uCD94\uCD9C\uD569\uB2C8\uB2E4(\uC6D0\uBB38\uC740 \uADF8\uB300\uB85C). \uC720\uB8CC API\uB294 \uD134\uB9C8\uB2E4 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4.",
+      "Extract all history: extract facts and embeddings for the older turns of this chat that the first sync skipped. Rebuild memory: discard this chat's facts and extract every turn again (raw messages stay). Paid APIs cost money per turn."
+    ],
+    "act.working": ["\uC694\uCCAD \uC911\u2026", "Requesting\u2026"],
+    "act.history_done": ["\uD134 {t}\uAC1C \uCD94\uCD9C\uACFC \uBA54\uC2DC\uC9C0 {m}\uAC1C \uC784\uBCA0\uB529\uC744 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0 \uB123\uC5C8\uC2B5\uB2C8\uB2E4.", "Queued {t} turns for extraction and {m} messages for embedding."],
+    "act.history_none": ["\uC774\uBBF8 \uC804\uBD80 \uCC98\uB9AC\uB418\uC5C8\uAC70\uB098 \uCC98\uB9AC \uC911\uC785\uB2C8\uB2E4.", "Everything is already processed or queued."],
+    "act.rebuild_done": [
+      "\uCD94\uCD9C {d}\uAC74\uC744 \uBC84\uB9AC\uACE0 \uD134 {t}\uAC1C\uB97C \uB2E4\uC2DC \uCD94\uCD9C\uD569\uB2C8\uB2E4. \uB05D\uB0A0 \uB54C\uAE4C\uC9C0 \uC774 \uCC44\uD305\uC758 \uC0AC\uC2E4\uC774 \uBE44\uC5B4 \uC788\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+      "Discarded {d} extractions; {t} turns are extracted again. Facts of this chat may be missing until then."
+    ],
+    "act.off": ["\uC0AC\uC2E4 \uCD94\uCD9C(\uB610\uB294 \uC784\uBCA0\uB529)\uC774 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED\uC5D0\uC11C \uCF1C\uC138\uC694.", "Fact extraction (or embeddings) is off. Turn it on in Settings."],
     // settings: connection
     "conn.title": ["\uC5F0\uACB0", "Connection"],
     "conn.sub": [
@@ -480,8 +495,8 @@ ${revisionHash}`;
     // settings: models
     "llm.title": ["\uC0AC\uC2E4 \uCD94\uCD9C LLM", "Fact extraction LLM"],
     "llm.sub": [
-      "\uD655\uC815\uB41C \uBA54\uC2DC\uC9C0\uB9C8\uB2E4 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uD55C \uBC88 \uD638\uCD9C\uD574 \uC778\uBB3C\xB7\uC7A5\uC18C\xB7\uC57D\uC18D\xB7\uAD00\uACC4\uB97C \uAE30\uB85D\uD569\uB2C8\uB2E4. \uC720\uB8CC API\uB294 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4.",
-      "Called once per settled message in the background to record people, places, promises and relationships. Paid APIs cost money."
+      "\uD655\uC815\uB41C \uD134(\uC785\uB825\uACFC \uC751\uB2F5)\uB9C8\uB2E4 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uD55C \uBC88 \uD638\uCD9C\uD574 \uC778\uBB3C\xB7\uC7A5\uC18C\xB7\uC57D\uC18D\xB7\uAD00\uACC4\uB97C \uAE30\uB85D\uD569\uB2C8\uB2E4. \uC720\uB8CC API\uB294 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4.",
+      "Called once per settled turn (input and reply) in the background to record people, places, promises and relationships. Paid APIs cost money."
     ],
     "emb.title": ["\uC758\uBBF8 \uAC80\uC0C9 \uC784\uBCA0\uB529", "Semantic recall embeddings"],
     "emb.sub": [
@@ -519,7 +534,7 @@ ${revisionHash}`;
     "tune.min_sim": ["\uC758\uBBF8 \uC720\uC0AC\uB3C4 \uAE30\uC900", "Vector min similarity"],
     "tune.top_k": ["\uBC1C\uCDCC \uC218", "Excerpts"],
     "tune.facts": ["\uC0AC\uC2E4 \uC218", "Facts"],
-    "tune.backfill": ["\uCC98\uC74C \uC5F0\uACB0 \uC2DC \uCC98\uB9AC\uD560 \uBA54\uC2DC\uC9C0 \uC218", "Messages processed on first sync"],
+    "tune.backfill": ["\uCC98\uC74C \uC5F0\uACB0 \uC2DC \uCD94\uCD9C\uD560 \uD134 \uC218", "Turns extracted on first sync"],
     // settings: parser rules
     "rules.title": ["\uC0C1\uD0DC\uCC3D \uADDC\uCE59", "Status-window rules"],
     "rules.sub": [
@@ -608,6 +623,10 @@ ${revisionHash}`;
   function inspectorApiPath(href) {
     const m = /^\/inspector(\/c\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?(?:[?#]|$)/i.exec(href ?? "");
     return m ? `/v1/inspector${m[1] ?? ""}` : null;
+  }
+  function inspectorConversation(path) {
+    const m = /^\/v1\/inspector\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(path);
+    return m ? m[1] : null;
   }
   function safeFragment(html) {
     const template = document.createElement("template");
@@ -830,9 +849,28 @@ html,body{margin:0;background:#0c0c10}
     const inspectorBody = el("div", { class: "insp" });
     const inspectorRefresh = el("button", { text: L("refresh") });
     const inspectorAddress = el("p", { class: "sub mono" });
-    inspectorView.append(el("div", { class: "btns" }, inspectorRefresh), inspectorBody, inspectorAddress);
+    const historyButton = el("button", { text: L("act.history") });
+    const rebuildButton = el("button", { text: L("act.rebuild") });
+    const actionMsg = el("div", { class: "msg" });
+    const actions = el(
+      "div",
+      {},
+      el("div", { class: "btns" }, historyButton, rebuildButton),
+      el("p", { class: "sub", text: L("act.sub") }),
+      actionMsg
+    );
+    inspectorView.append(el("div", { class: "btns" }, inspectorRefresh), actions, inspectorBody, inspectorAddress);
+    let actionConversation = null;
+    let rebuildArmed = 0;
     async function showInspector(path = inspectorPath) {
       inspectorPath = path;
+      const conversation = inspectorConversation(path);
+      if (conversation !== actionConversation) {
+        actionConversation = conversation;
+        say(actionMsg, "");
+        disarmRebuild();
+      }
+      actions.style.display = conversation ? "" : "none";
       inspectorBody.replaceChildren(el("div", { class: "card muted", text: L("insp.loading") }));
       const base = (await deps.getArg("sidecar_url") || "http://127.0.0.1:8790").replace(/\/+$/, "");
       const direct = routeFor(base, await deps.getArg("route")) === "direct";
@@ -853,6 +891,53 @@ html,body{margin:0;background:#0c0c10}
       if (path) void showInspector(path);
     });
     inspectorRefresh.addEventListener("click", () => void showInspector());
+    function disarmRebuild() {
+      window.clearTimeout(rebuildArmed);
+      rebuildArmed = 0;
+      rebuildButton.textContent = L("act.rebuild");
+      rebuildButton.className = "";
+    }
+    function actionError(error) {
+      return /HTTP 409/.test(error instanceof Error ? error.message : String(error)) ? L("act.off") : errorText(lang, error);
+    }
+    historyButton.addEventListener("click", async () => {
+      const conversation = actionConversation;
+      if (!conversation) return;
+      historyButton.disabled = true;
+      say(actionMsg, L("act.working"));
+      try {
+        const r = await deps.api("POST", `/v1/conversations/${conversation}/extract-history`, {}, 3e4);
+        const n = (r.queued.extract ?? 0) + (r.queued.embed ?? 0);
+        say(actionMsg, n ? L("act.history_done", { t: r.queued.extract ?? 0, m: r.queued.embed ?? 0 }) : L("act.history_none"), "ok");
+        await showInspector();
+      } catch (error) {
+        say(actionMsg, actionError(error), "err");
+      } finally {
+        historyButton.disabled = false;
+      }
+    });
+    rebuildButton.addEventListener("click", async () => {
+      const conversation = actionConversation;
+      if (!conversation) return;
+      if (!rebuildArmed) {
+        rebuildButton.textContent = L("act.rebuild_confirm");
+        rebuildButton.className = "primary";
+        rebuildArmed = window.setTimeout(disarmRebuild, 6e3);
+        return;
+      }
+      disarmRebuild();
+      rebuildButton.disabled = true;
+      say(actionMsg, L("act.working"));
+      try {
+        const r = await deps.api("POST", `/v1/conversations/${conversation}/rebuild`, {}, 3e4);
+        say(actionMsg, L("act.rebuild_done", { d: r.discarded ?? 0, t: r.queued.extract ?? 0 }), "ok");
+        await showInspector();
+      } catch (error) {
+        say(actionMsg, actionError(error), "err");
+      } finally {
+        rebuildButton.disabled = false;
+      }
+    });
     const url = el("input", { spellcheck: "false" });
     const route = el("select", {}, ...["auto", "direct", "server"].map((v) => el("option", { value: v, text: v })));
     const enabled = el("input", { type: "checkbox" });
@@ -1223,6 +1308,6 @@ html,body{margin:0;background:#0c0c10}
       () => adapter.status(),
       (method, path, body, timeoutMs) => adapter.api(method, path, body, timeoutMs)
     );
-    console.log("[NMOS] adapter loaded", { version: "0.1.0-beta.7" });
+    console.log("[NMOS] adapter loaded", { version: "0.1.0-beta.8" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));
 })();

@@ -59,11 +59,12 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "h.coverage": ("커버리지", "Coverage"), "h.detail": ("상세", "Detail"),
     "facts_row": ("사실 (추출)", "Facts (extraction)"), "vectors_row": ("벡터 (임베딩)", "Vectors (embedding)"),
     "pending": ("대기", "pending"), "failed": ("실패", "failed"), "not_queued": ("대기열 밖", "not queued"),
-    "older_only": ("이전 세대만", "only older generations"), "truncated": ("대상 잘림", "target truncated"),
+    "older_only": ("이전 세대·재구축 전만", "only older generations or before a rebuild"), "truncated": ("대상 잘림", "target truncated"),
     "partially_embedded": ("일부만 임베딩", "partially embedded"),
     "facts": ("현재 사실", "Current facts"),
     "h.subject": ("주어", "Subject"), "h.predicate": ("술어", "Predicate"), "h.object": ("대상 / 값", "Object / value"),
     "h.knowledge": ("아는 범위", "Knowledge"), "h.turn": ("턴", "Turn"), "h.versions": ("버전", "Versions"),
+    "h.position": ("#", "#"),
     "known_by": ("아는 인물", "known by"), "hidden_from": ("모르는 인물", "hidden from"),
     "k.public": ("공개", "public"), "k.limited": ("일부만 앎", "limited"), "k.unknown": ("미상", "unknown"),
     "retrievals": ("최근 검색", "Recent retrievals"),
@@ -229,7 +230,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         parts.append(f"<h2>{t('facts')}</h2>" + table(
             [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.knowledge", "h.turn", "h.versions")],
             [[_v(f["subject"]), f"<span class=\"chip\">{_v(f['predicate'])}</span>",
-              _v(f.get("object") or f.get("value")), _knowledge(f, lang), _v(f["position"]), _v(f.get("versions", 1))]
+              _v(f.get("object") or f.get("value")), _knowledge(f, lang),
+              _v(f["turn"] if f.get("turn") is not None else f["position"]), _v(f.get("versions", 1))]
              for f in facts]))
     parts.append(f"<h2>{t('retrievals')}</h2>" + table(
         [t(k) for k in ("h.when", "h.query", "h.fresh", "h.cand", "h.sel", "h.in_ctx", "h.tokens")] + ["ms"],
@@ -239,8 +241,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
                  [[_v(c["seq"]), f"<span class=\"chip\">{_v(c['reason'])}</span>", _v(c["changes"]), _v(c["kinds"]),
                    _v(str(c["created_at"])[:19])] for c in commits]))
     parts.append(f"<h2>{t('members')}</h2>" + table(
-        [t(k) for k in ("h.turn", "h.role", "h.lifecycle", "h.disabled", "h.processed", "h.text")],
-        [[_v(m["position"]), _v(m["role"]), f"<span class=\"chip\">{_v(m['lifecycle'])}</span>",
+        [t(k) for k in ("h.position", "h.turn", "h.role", "h.lifecycle", "h.disabled", "h.processed", "h.text")],
+        [[_v(m["position"]), _v(m.get("turn")), _v(m["role"]), f"<span class=\"chip\">{_v(m['lifecycle'])}</span>",
           _v(m["disabled"] or ""), _processed(m, lang), _v(m["preview"]) + ("…" if m["length"] > 240 else "")]
          for m in members]))
     return "".join(parts) if embed else page(f"NMOS · {name}", "".join(parts), lang)

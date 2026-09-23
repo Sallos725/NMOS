@@ -83,7 +83,7 @@ def test_limited_known_by_is_rendered_consistently(migrated, db):
     assert stored["has_status"]["knowledge"] == "unknown"
     assert 'known_by="하나, {{user}}" hidden_from="카이토">' in text
     assert 'knowledge="public">마을 world fact: 축제 준비 중' in text
-    assert '<Fact kind="has_status" turn="2">하나 has status: 편지를 받음</Fact>' in text  # no marks
+    assert '<Fact kind="has_status" turn="1">하나 has status: 편지를 받음</Fact>' in text  # no marks
 
 
 def test_existing_knowledge_rows_migrate_conservatively(database_url, tmp_path):

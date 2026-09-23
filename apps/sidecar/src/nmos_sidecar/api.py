@@ -129,6 +129,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             normalized = normtext.backfill(conn)
             if normalized:
                 log.info("normalized text written for %d revisions (%s)", normalized, normtext.NORMALIZER_VERSION)
+            if turned := ledger.refresh_turns(conn, settings.extract_turns):
+                log.info("turn data written for %d head members (K=%d)", turned, settings.extract_turns)
             backfilled = sync_rules(conn, rt["rules"])
             queued = activate(conn, None, None)
             log.info("generations: extract=%s embed=%s; queued %d missing jobs",
@@ -193,12 +195,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             _compact_observation(body, result, conv.head_manifest_hash, len(state.head or [])),
             f"{conv.id}:{result.manifest_hash}:manifest",
         )
-        head = ledger.apply_plan(conn, conv, state, result, observation, settings.extract_window)
+        head = ledger.apply_plan(conn, conv, state, result, observation, manifest, settings.extract_window,
+                                settings.extract_turns)
         cur = rt["settings"]
         if rt["extractor"] or rt["projection"]:
             enqueue_after_apply(conn, conv.id, state.head, state.lifecycle, manifest,
                                 {**state.lifecycle, **result.lifecycle}, state.revision_ids,
-                                settings.extract_window, cur.extract_backfill,
+                                settings.extract_turns, cur.extract_backfill,
                                 extractor_key=rt["extractor"].key if rt["extractor"] else None,
                                 embed_key=rt["projection"].key if rt["projection"] else None,
                                 embed_backfill=cur.embed_backfill)
@@ -320,6 +323,45 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                            **vectors.coverage(conn, pj_key, conv_id).get(conv_id, {})},
         }
 
+    # Per-chat actions (D22, ADR 0008). Only for chats NMOS has seen: NMOS never ingests a chat itself.
+    @app.post("/v1/conversations/{conv_id}/extract-history", dependencies=[Depends(auth)])
+    def extract_history(conv_id: UUID, request: Request):
+        """Queue every turn / message of this chat's head that the active generations have not
+        processed, beyond the first-sight backfill, at background priority; failed ones are retried."""
+        ex, pj, cur = rt["extractor"], rt["projection"], rt["settings"]
+        with request.app.state.pool.connection() as conn:
+            if readmodel.conversation(conn, conv_id) is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            if ex is None and pj is None:
+                raise HTTPException(status_code=409, detail="fact extraction and embeddings are both off")
+            for kind, gen in (("extract", ex), ("embed", pj)):
+                if gen:
+                    extraction.retry_failed(conn, kind, gen.key, conv_id)
+            queued = {
+                "extract": extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id, history=True)
+                if ex else 0,
+                "embed": vectors.schedule_projection(conn, pj.key, cur.embed_backfill, conv_id, history=True)
+                if pj else 0,
+            }
+            log.info("extract history conversation=%s queued=%s", conv_id, queued)
+            return {"queued": queued, "coverage": coverage_view(conn, conv_id)}
+
+    @app.post("/v1/conversations/{conv_id}/rebuild", dependencies=[Depends(auth)])
+    def rebuild_memory(conv_id: UUID, request: Request):
+        """Redo this chat's facts: discard its extractions of the active generation (kept for audit)
+        and re-extract every turn, recent ones first. Raw evidence, state and embeddings stay."""
+        ex, cur = rt["extractor"], rt["settings"]
+        with request.app.state.pool.connection() as conn:
+            if readmodel.conversation(conn, conv_id) is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            if ex is None:
+                raise HTTPException(status_code=409, detail="fact extraction is off")
+            with conn.transaction():
+                discarded = extraction.discard(conn, ex.key, conv_id)
+                queued = extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id, history=True)
+            log.info("rebuild conversation=%s discarded=%d queued=%d", conv_id, discarded, queued)
+            return {"discarded": discarded, "queued": {"extract": queued}, "coverage": coverage_view(conn, conv_id)}
+
     @app.get("/v1/config", dependencies=[Depends(auth)])
     def get_config():
         return runtime.public_view(rt["settings"], rt["overrides"], rt["rules"])
@@ -330,12 +372,18 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         if errors:
             raise HTTPException(status_code=422, detail=errors)
         before_ex, before_pj = rt["extractor"], rt["projection"]
+        before_backfill = rt["settings"].extract_backfill
         with request.app.state.pool.connection() as conn:
             runtime.save(conn, clean)
             rebuild(runtime.stored(conn))
             if runtime.PARSERS_KEY in clean:
                 rebuild_state(conn, rt["rules"])
             queued = activate(conn, before_ex.key if before_ex else None, before_pj.key if before_pj else None)
+            ex = rt["extractor"]
+            if ex and before_ex and ex.key == before_ex.key and rt["settings"].extract_backfill != before_backfill:
+                # Same generation, different backfill: queue what the new window is missing now, not at
+                # the next restart (ADR 0008). Idempotent; a smaller backfill queues nothing.
+                queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill)
         return {**runtime.public_view(rt["settings"], rt["overrides"], rt["rules"]), "queued_jobs": queued}
 
     @app.post("/v1/config/test", dependencies=[Depends(auth)])

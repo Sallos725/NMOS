@@ -1,4 +1,4 @@
-"""Bounded LLM extraction (D5, D6, D7): job enqueueing, claiming and processing.
+"""Bounded LLM extraction per turn (D5, D6, D7, ADR 0008): job enqueueing, claiming and processing.
 
 The request path only enqueues. The worker holds no transaction while waiting for the model.
 Jobs and extractions are bound to an extractor generation (D20): a worker only runs jobs for the
@@ -20,20 +20,22 @@ from .config import Settings
 from .generations import Generation
 from .ids import uuid7
 from .predicates import REGISTRY, knowledge, registry_prompt, validate
-from .reconcile import Entry, RevKey, window_hashes
+from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
 
-COMPILER_VERSION = "extract-v3"  # v2: known_by / hidden_from; v3: explicit knowledge scope (D19)
+COMPILER_VERSION = "extract-v4"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008)
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
-TARGET_CHARS = 6000  # normalized chars of the target message the model sees (#13)
+TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
 CONTEXT_CHARS = 2000  # per context message
 RECENT_PRIORITY, HISTORY_PRIORITY = 250, 900  # generation rebuild: recent window first, then history
 
 SYSTEM_PROMPT = """You extract durable story facts for the long-term memory of a role-play chat.
-You are given recent CONTEXT messages and ONE TARGET message. Extract only facts that the TARGET
-message establishes or changes; use CONTEXT only to resolve who/what is meant.
+You are given the recent CONTEXT turns and ONE TARGET turn: the user's message(s) and the reply to
+them. Extract only facts that the TARGET turn establishes or changes; use CONTEXT only to resolve
+who/what is meant. When the reply contradicts, refuses or changes what the user's message attempts or
+claims, the reply decides what happened.
 
 Allowed predicates (anything else is rejected):
 {registry}
@@ -42,7 +44,7 @@ Entity types: character, place, item, group, concept.
 Rules:
 - Name entities exactly as the story does (keep the chat's language). The user's persona is "{{{{user}}}}"
   only if no name is given.
-- `value` is a short phrase in the chat's language. `evidence` is a short quote from the TARGET.
+- `value` is a short phrase in the chat's language. `evidence` is a short quote from the TARGET turn.
 - `epistemic`: "stated" if explicit, "implied" if strongly implied. Skip speculation, jokes, OOC text,
   UI/status boilerplate, and anything that only restates earlier facts.
 - Prefer few, high-value facts. An empty list is a good answer for small talk.
@@ -75,37 +77,50 @@ def enqueue_after_apply(
     manifest: list[Entry],
     new_lifecycle: dict[RevKey, str],
     ids: dict[RevKey, UUID],
-    window: int,
+    turns: int,
     backfill: int,
     extractor_key: str | None = None,
     embed_key: str | None = None,
     embed_backfill: int = 2000,
 ) -> int:
-    """Queue extraction (and embedding) for (revision, window) pairs that became eligible with this sync.
+    """Queue extraction of turns and embedding of messages that became eligible with this sync.
 
-    Eligible = accepted, not a comment, not disabled. Pairs that were already eligible under the
-    previous head are skipped; on first sight of a chat only the latest `backfill` positions are queued.
+    A turn is eligible once its anchor (last reply) is accepted, i.e. the user continued from it (D5,
+    ADR 0008); a message is eligible for embedding when it is accepted, not a comment and not disabled.
+    Work that was already eligible under the previous head is skipped. On first sight of a chat only
+    the latest `backfill` turns and `embed_backfill` messages are queued.
     """
-    def eligible(entries: list[Entry], lifecycle: dict[RevKey, str]) -> dict[tuple[RevKey, str], int]:
-        wins = window_hashes([e.key for e in entries], window)
-        return {
-            (e.key, wins[i]): i for i, e in enumerate(entries)
-            if lifecycle.get(e.key) == "accepted" and not e.is_comment and e.disabled not in (True, "allBefore")
-        }
+    def complete_turns(entries: list[Entry], lifecycle: dict[RevKey, str]) -> tuple[dict[tuple[RevKey, str], int], int]:
+        """Accepted anchors → turn index, and the number of turns that have a reply."""
+        anchored = [(entries[i].key, h, t) for i, (t, h) in enumerate(turn_layout(entries, turns)) if h is not None]
+        return ({(key, h): t for key, h, t in anchored if lifecycle.get(key) == "accepted"},
+                max((t for _, _, t in anchored), default=-1) + 1)
 
-    now = eligible(manifest, new_lifecycle)
-    before = eligible(old_head, old_lifecycle) if old_head else {}
-    fresh = [(pair, pos) for pair, pos in now.items() if pair not in before]
+    def messages(entries: list[Entry], lifecycle: dict[RevKey, str]) -> dict[RevKey, int]:
+        return {e.key: i for i, e in enumerate(entries)
+                if lifecycle.get(e.key) == "accepted" and not e.is_comment and e.disabled not in (True, "allBefore")}
+
+    first_sight = old_head is None
+    priority = 200 if first_sight else 100  # live turns before backfill
     rows = []
-    priority = 100 if old_head is not None else 200  # live turns before backfill
-    for (key, win), pos in fresh:
-        rev = ids[key]
-        first_sight = old_head is None
-        if extractor_key and not (first_sight and pos < len(manifest) - backfill):
-            rows.append(("extract", f"extract:{rev}:{win}:{extractor_key}", conv_id,
-                         Jsonb({"revision_id": str(rev), "window_hash": win, "generation": extractor_key}), priority))
-        if embed_key and not (first_sight and pos < len(manifest) - embed_backfill):
+    if extractor_key:
+        now, count = complete_turns(manifest, new_lifecycle)
+        before = complete_turns(old_head, old_lifecycle)[0] if old_head else {}
+        for (key, turn_hash), turn in now.items():
+            if (key, turn_hash) in before or (first_sight and turn < count - backfill):
+                continue
+            rev = ids[key]
+            rows.append(("extract", f"extract:{rev}:{turn_hash}:{extractor_key}", conv_id,
+                         Jsonb({"revision_id": str(rev), "window_hash": turn_hash, "generation": extractor_key}),
+                         priority))
+    if embed_key:
+        now_msgs = messages(manifest, new_lifecycle)
+        before_msgs = messages(old_head, old_lifecycle) if old_head else {}
+        for key, pos in now_msgs.items():
+            if key in before_msgs or (first_sight and pos < len(manifest) - embed_backfill):
+                continue
             # Embeddings depend on content only; they run first because recall uses them directly.
+            rev = ids[key]
             rows.append(("embed", f"embed:{rev}:{embed_key}", conv_id,
                          Jsonb({"revision_id": str(rev), "generation": embed_key}), priority - 50))
     if rows:
@@ -160,39 +175,43 @@ def fail(conn: psycopg.Connection, job: dict[str, Any], error: str) -> None:
         )
 
 
-def load_context(conn: psycopg.Connection, revision_id: UUID, window_hash: str, window: int,
+def load_context(conn: psycopg.Connection, revision_id: UUID, turn_hash: str, turns: int,
                  extractor_key: str) -> dict[str, Any] | None:
-    """Target revision + previous `window` head members, or None if the head no longer shows this window."""
+    """Target turn (anchored at `revision_id`) + the previous `turns` turns of the head, or None if the
+    head no longer shows this turn with this context."""
     with conn.transaction():
         target = conn.execute(
             """
-            SELECT am.commit_id, am.position, sr.id, sr.metadata, so.conversation_id
+            SELECT am.commit_id, am.position, am.turn, sr.id, sr.metadata, so.conversation_id
             FROM active_membership am
             JOIN conversation c ON c.head_commit_id = am.commit_id
             JOIN source_revision sr ON sr.id = am.source_revision_id
             JOIN source_object so ON so.id = sr.source_object_id
-            WHERE am.source_revision_id = %s AND am.window_hash = %s
+            WHERE am.source_revision_id = %s AND am.turn_hash = %s
             """,
-            (revision_id, window_hash),
+            (revision_id, turn_hash),
         ).fetchone()
         if target is None:
             return None
-        context = conn.execute(
+        rows = conn.execute(
             """
-            SELECT am.position, sr.id, sr.metadata FROM active_membership am
+            SELECT am.position, am.turn, sr.id, sr.metadata FROM active_membership am
             JOIN source_revision sr ON sr.id = am.source_revision_id
-            WHERE am.commit_id = %s AND am.position >= %s AND am.position < %s ORDER BY am.position
+            WHERE am.commit_id = %s AND am.turn >= %s AND am.turn <= %s ORDER BY am.position
             """,
-            (target["commit_id"], target["position"] - window, target["position"]),
+            (target["commit_id"], target["turn"] - turns, target["turn"]),
         ).fetchall()
         done = conn.execute(
-            "SELECT 1 FROM extraction WHERE source_revision_id = %s AND window_hash = %s AND extractor_key = %s",
-            (revision_id, window_hash, extractor_key),
+            "SELECT 1 FROM extraction WHERE source_revision_id = %s AND window_hash = %s AND extractor_key = %s"
+            " AND discarded_at IS NULL",
+            (revision_id, turn_hash, extractor_key),
         ).fetchone()
         # Model input is the normalized projection (#9), the same text lexical recall and embeddings see.
-        for row in [target, *context]:
+        for row in rows:
             row["content"] = normtext.get(conn, row["id"])["clean_content"]
-    return {"target": target, "context": context, "done": bool(done)}
+    members = [r for r in rows if r["turn"] == target["turn"]]
+    context = [r for r in rows if r["turn"] < target["turn"]]
+    return {"target": target, "members": members, "context": context, "done": bool(done)}
 
 
 def _speaker(meta: dict[str, Any]) -> str:
@@ -202,37 +221,36 @@ def _speaker(meta: dict[str, Any]) -> str:
 def build_prompt(ctx: dict[str, Any]) -> str:
     lines = ["CONTEXT:"]
     for row in ctx["context"]:
-        if row["metadata"].get("isComment") or row["metadata"].get("disabled") in (True, "true"):
-            continue
-        lines.append(f"[turn {row['position']}] {_speaker(row['metadata'])}: {row['content'][:CONTEXT_CHARS]}")
+        lines.append(f"[turn {row['turn']}] {_speaker(row['metadata'])}: {row['content'][:CONTEXT_CHARS]}")
     if len(lines) == 1:
         lines.append("(none)")
-    t = ctx["target"]
-    lines += ["", f"TARGET [turn {t['position']}] {_speaker(t['metadata'])}:", t["content"][:TARGET_CHARS]]
+    lines += ["", f"TARGET turn {ctx['target']['turn']}:"]
+    lines += [f"{_speaker(row['metadata'])}: {row['content'][:TARGET_CHARS]}" for row in ctx["members"]]
     return "\n".join(lines)
 
 
 def coverage_of(ctx: dict[str, Any]) -> dict[str, int]:
-    """How much of the normalized target/context the model saw (#13)."""
-    target = len(ctx["target"]["content"])
-    return {"target_chars": target, "target_used": min(target, TARGET_CHARS), "context_messages": len(ctx["context"]),
+    """How much of the normalized target turn/context the model saw (#13)."""
+    sizes = [len(r["content"]) for r in ctx["members"]]
+    return {"target_chars": sum(sizes), "target_used": sum(min(n, TARGET_CHARS) for n in sizes),
+            "target_messages": len(sizes), "context_messages": len(ctx["context"]),
             "context_truncated": sum(1 for r in ctx["context"] if len(r["content"]) > CONTEXT_CHARS)}
 
 
 def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[dict, str]],
-                    gen: Generation, window: int) -> str:
+                    gen: Generation, turns: int) -> str:
     """Returns the final job status."""
     if job["payload"].get("generation") != gen.key:
         # claim() never hands a handler another generation's job; refuse rather than mislabel output.
         raise ValueError(f"job generation {job['payload'].get('generation')} is not handler generation {gen.key}")
     revision_id = UUID(job["payload"]["revision_id"])
-    window_hash = job["payload"]["window_hash"]
-    ctx = load_context(conn, revision_id, window_hash, window, gen.key)
+    window_hash = job["payload"]["window_hash"]  # the anchor's turn hash (ADR 0008)
+    ctx = load_context(conn, revision_id, window_hash, turns, gen.key)
     if ctx is None:
         return "obsolete"  # the head changed; a newer job covers the new window
     if ctx["done"]:
         return "done"
-    if len(ctx["target"]["content"]) < MIN_CONTENT_CHARS:
+    if sum(len(r["content"]) for r in ctx["members"]) < MIN_CONTENT_CHARS:
         parsed, raw = {"assertions": []}, ""
     else:
         parsed, raw = complete(SYSTEM_PROMPT.format(registry=registry_prompt()), build_prompt(ctx))
@@ -243,9 +261,9 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         extraction_id = uuid7()
         inserted = conn.execute(
             "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model, raw,"
-            " coverage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING RETURNING id",
+            " coverage, members) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING RETURNING id",
             (extraction_id, revision_id, window_hash, COMPILER_VERSION, gen.key, gen.model,
-             Jsonb({"reply": raw[:20000]}), Jsonb(coverage_of(ctx))),
+             Jsonb({"reply": raw[:20000]}), Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]]),
         ).fetchone()
         if inserted is None:
             return "done"
@@ -278,7 +296,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
                     " hidden_from) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     rows,
                 )
-    log.info("extracted revision=%s window=%s assertions=%d", revision_id, window_hash, len(rows))
+    log.info("extracted turn=%s revision=%s assertions=%d", ctx["target"]["turn"], revision_id, len(rows))
     return "done"
 
 
@@ -294,22 +312,25 @@ def extractor(settings: Settings) -> Generation | None:
         "extract", settings.llm_url, settings.llm_model,
         compiler=COMPILER_VERSION, prompt=generations.fingerprint(SYSTEM_PROMPT),
         predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.NORMALIZER_VERSION,
-        json_mode=settings.llm_json_mode, temperature=0, window=settings.extract_window,
+        json_mode=settings.llm_json_mode, temperature=0, unit="turn", context_turns=settings.extract_turns,
         target_chars=TARGET_CHARS, context_chars=CONTEXT_CHARS,
     )
 
 
-# Eligible (revision, window) pairs of every head: accepted, not a comment, not disabled. `n` is the
-# head length, so `position >= n - backfill` is the recent window.
+# Eligible head members of every chat: accepted, not a comment, not disabled. `n` is the head length
+# and `turns` its number of turns that have a reply, so `position >= n - backfill` / `turn >= turns - backfill` is the
+# recent window. Extraction uses the anchors (`turn_hash IS NOT NULL`, ADR 0008), embedding every row.
 ELIGIBLE = """
     heads AS (
         SELECT c.id AS conv, c.head_commit_id AS head,
-               (SELECT count(*) FROM active_membership x WHERE x.commit_id = c.head_commit_id) AS n
+               (SELECT count(*) FROM active_membership x WHERE x.commit_id = c.head_commit_id) AS n,
+               (SELECT coalesce(max(x.turn), -1) + 1 FROM active_membership x
+                WHERE x.commit_id = c.head_commit_id AND x.turn_hash IS NOT NULL) AS turns
         FROM conversation c
         WHERE c.head_commit_id IS NOT NULL AND (%(conv)s::uuid IS NULL OR c.id = %(conv)s::uuid)
     ),
     elig AS (
-        SELECT h.conv, h.n, am.position, sr.id AS rid, am.window_hash
+        SELECT h.conv, h.head, h.n, h.turns, am.position, am.turn, am.turn_hash, sr.id AS rid, am.window_hash
         FROM heads h
         JOIN active_membership am ON am.commit_id = h.head
         JOIN source_revision sr ON sr.id = am.source_revision_id
@@ -319,14 +340,24 @@ ELIGIBLE = """
     )
 """
 
+# Another generation extracted a member of turn e (any window), or this one did before a rebuild
+# discarded it: history worth restoring (ADR 0006, D22). A rebuild interrupted before its jobs were
+# queued is completed by the next scheduling run.
+COVERED_BEFORE = """EXISTS (SELECT 1 FROM active_membership t
+                   JOIN extraction x ON x.source_revision_id = t.source_revision_id
+                   WHERE t.commit_id = e.head AND t.turn = e.turn
+                     AND (x.extractor_key IS DISTINCT FROM %(key)s OR x.discarded_at IS NOT NULL))"""
 
-def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv: UUID | None = None) -> int:
+
+def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv: UUID | None = None,
+                        history: bool = False) -> int:
     """Queue what the active extractor generation is missing (#8). Idempotent.
 
-    Policy: the latest `backfill` eligible messages of each chat first, then — at background priority —
-    every older pair that an earlier generation had covered, so an upgrade restores the coverage that
-    existed instead of shrinking it to the recent window. Queued jobs of other generations become
-    obsolete; their extractions stay for audit.
+    Policy: the latest `backfill` complete turns of each chat first, then — at background priority —
+    every older turn that an earlier generation had covered, so an upgrade restores the coverage that
+    existed instead of shrinking it to the recent window. `history` also queues older turns nobody
+    covered (per-chat "extract all history", D22). Queued jobs of other generations become obsolete;
+    their extractions stay for audit.
     """
     with conn.transaction():
         conn.execute("UPDATE job SET status = 'obsolete', updated_at = now() WHERE kind = 'extract'"
@@ -334,22 +365,48 @@ def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv:
         return conn.execute(
             "WITH" + ELIGIBLE + """
             INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority)
-            SELECT 'extract', 'extract:' || e.rid || ':' || e.window_hash || ':' || %(key)s, e.conv,
-                   jsonb_build_object('revision_id', e.rid::text, 'window_hash', e.window_hash, 'generation', %(key)s),
-                   CASE WHEN e.position >= e.n - %(n)s THEN %(recent)s ELSE %(history)s END
+            SELECT 'extract', 'extract:' || e.rid || ':' || e.turn_hash || ':' || %(key)s, e.conv,
+                   jsonb_build_object('revision_id', e.rid::text, 'window_hash', e.turn_hash, 'generation', %(key)s),
+                   CASE WHEN e.turn >= e.turns - %(n)s THEN %(recent)s ELSE %(history)s END
             FROM elig e
-            WHERE NOT EXISTS (SELECT 1 FROM extraction x WHERE x.source_revision_id = e.rid
-                                AND x.window_hash = e.window_hash AND x.extractor_key = %(key)s)
-              AND (e.position >= e.n - %(n)s
-                   OR EXISTS (SELECT 1 FROM extraction x WHERE x.source_revision_id = e.rid
-                                AND x.window_hash = e.window_hash AND x.extractor_key IS DISTINCT FROM %(key)s))
+            WHERE e.turn_hash IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM extraction x WHERE x.source_revision_id = e.rid
+                                AND x.window_hash = e.turn_hash AND x.extractor_key = %(key)s
+                                AND x.discarded_at IS NULL)
+              AND (e.turn >= e.turns - %(n)s OR %(all)s OR """ + COVERED_BEFORE + """)
+            ORDER BY e.conv, e.turn  -- claim() takes the highest id first: newest turns first
             """ + REQUEUE,
-            {"conv": conv, "key": key, "n": backfill, "recent": RECENT_PRIORITY, "history": HISTORY_PRIORITY},
+            {"conv": conv, "key": key, "n": backfill, "all": history, "recent": RECENT_PRIORITY,
+             "history": HISTORY_PRIORITY},
         ).rowcount
 
 
+def retry_failed(conn: psycopg.Connection, kind: str, key: str, conv: UUID) -> int:
+    """Dead jobs of this chat and generation become obsolete, so the next scheduling run revives them
+    (per-chat "extract all history", D22: nothing the chat is missing stays failed)."""
+    return conn.execute("UPDATE job SET status = 'obsolete', updated_at = now() WHERE kind = %s AND status = 'dead'"
+                        " AND conversation_id = %s AND payload->>'generation' = %s", (kind, conv, key)).rowcount
+
+
+def discard(conn: psycopg.Connection, key: str, conv: UUID) -> int:
+    """Per-chat rebuild (D22): this chat's extractions of generation `key` stop counting (kept for
+    audit) and their jobs become obsolete, so `schedule_generation` queues every turn again."""
+    with conn.transaction():
+        n = conn.execute(
+            "UPDATE extraction x SET discarded_at = now() FROM source_revision sr, source_object so"
+            " WHERE sr.id = x.source_revision_id AND so.id = sr.source_object_id AND so.conversation_id = %s"
+            " AND x.extractor_key = %s AND x.discarded_at IS NULL",
+            (conv, key),
+        ).rowcount
+        conn.execute("UPDATE job SET status = 'obsolete', locked_at = NULL, updated_at = now()"
+                     " WHERE kind = 'extract' AND conversation_id = %s AND payload->>'generation' = %s",
+                     (conv, key))
+    return n
+
+
 def coverage(conn: psycopg.Connection, key: str | None, conv: UUID | None = None) -> dict[UUID, dict[str, Any]]:
-    """Per conversation: how much of the head the active extractor generation has compiled (#8, #13)."""
+    """Per conversation: how many complete turns of the head the active extractor generation has
+    compiled (#8, #13, ADR 0008)."""
     rows = conn.execute(
         "WITH" + ELIGIBLE + """
         SELECT e.conv,
@@ -357,15 +414,14 @@ def coverage(conn: psycopg.Connection, key: str | None, conv: UUID | None = None
                count(*) FILTER (WHERE cur.id IS NOT NULL) AS compiled,
                count(*) FILTER (WHERE cur.id IS NULL AND j.status IN ('queued', 'running')) AS pending,
                count(*) FILTER (WHERE cur.id IS NULL AND j.status = 'dead') AS failed,
-               count(*) FILTER (WHERE cur.id IS NULL AND EXISTS (
-                   SELECT 1 FROM extraction x WHERE x.source_revision_id = e.rid AND x.window_hash = e.window_hash
-                     AND x.extractor_key IS DISTINCT FROM %(key)s)) AS historical_only,
+               count(*) FILTER (WHERE cur.id IS NULL AND """ + COVERED_BEFORE + """) AS historical_only,
                count(*) FILTER (WHERE (cur.coverage->>'target_used')::int < (cur.coverage->>'target_chars')::int)
                    AS target_truncated
         FROM elig e
-        LEFT JOIN extraction cur ON cur.source_revision_id = e.rid AND cur.window_hash = e.window_hash
-                                AND cur.extractor_key = %(key)s
-        LEFT JOIN job j ON j.dedupe_key = 'extract:' || e.rid || ':' || e.window_hash || ':' || %(key)s
+        LEFT JOIN extraction cur ON cur.source_revision_id = e.rid AND cur.window_hash = e.turn_hash
+                                AND cur.extractor_key = %(key)s AND cur.discarded_at IS NULL
+        LEFT JOIN job j ON j.dedupe_key = 'extract:' || e.rid || ':' || e.turn_hash || ':' || %(key)s
+        WHERE e.turn_hash IS NOT NULL
         GROUP BY e.conv
         """,
         {"conv": conv, "key": key or ""},

@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+## 0.1.0-beta.8
+
+Memory is extracted per **turn** (your message plus the reply) instead of per message, and each chat
+gets "extract all history" and "rebuild memory" in the Inspector (ADR 0008). Schema: migration 0011.
+Upgrade both parts: `docker compose pull && docker compose up -d` (the sidecar applies the migration
+and writes turn data at startup), then replace the plugin file and reload PocketRisu.
+
+- **One extraction per turn.** A turn is extracted once, after you continue from its reply, with the
+  previous 3 turns as context (`NMOS_EXTRACT_TURNS`). The model sees your message and the reply
+  together, and the reply decides what happened. An action the story refuses (a locked drawer, a
+  blocked attack) no longer becomes a fact from your message alone. On a test chat: 41 % fewer
+  calls, 37 % fewer prompt tokens (`docs/perf/turn-extraction.md`).
+- **Backfill counts turns.** `NMOS_EXTRACT_BACKFILL` / the panel's "처음 연결 시 추출할 턴 수" is in
+  turns (default 100 ≈ 200 messages, same number of calls). Changing it in the panel queues the
+  missing turns at once; no restart.
+- **Per-chat actions.** On a conversation in the panel's Inspector tab: **과거 전체 추출 / Extract all
+  history** extracts and embeds the older turns the first sync skipped, and retries turns whose
+  extraction failed. **기억 재구축 / Rebuild
+  memory** (two clicks) discards that chat's facts (kept for audit) and extracts every turn again.
+  Raw messages are never touched. API: `POST /v1/conversations/{id}/extract-history` and
+  `/rebuild`.
+- **Bulk deletion is visible.** The Inspector lists each commit's changes by kind and count (e.g.
+  `delete ×12`). Deleting "this and following messages" already removed those facts at the next
+  request; a restored range reuses its extractions without model calls.
+- The Inspector's message table shows position (#) and turn; facts and `<Fact turn="…">` use the
+  turn number.
+- NMOS reads only chats you generate in with the plugin on. It never scans other chats by itself
+  (documented, D22).
+
+### Known limitations
+
+- **Upgrading re-extracts facts once.** Extraction became a new generation (`extract-v4`), so with an
+  LLM configured, previously covered history is extracted again (recent turns first, one call per
+  turn). Until that finishes, a chat shows partial fact coverage and facts from older turns may be
+  missing. With extraction switched off, the previous generation's facts stay in use.
+- On a reasoning model, per-turn calls produce more completion tokens than per-message calls did
+  (+19 % on the test chat; −9 % tokens overall).
+- `possesses` is multi-valued: giving an item away does not end the previous holder's fact
+  (unchanged, seen in both extraction modes).
+- Otherwise unchanged from 0.1.0-beta.7.
+
 ## 0.1.0-beta.7
 
 Plugin fix on top of 0.1.0-beta.6: no schema change (migrations stay at 0010), no sidecar change.

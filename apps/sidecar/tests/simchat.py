@@ -43,6 +43,16 @@ class SimChat:
         self.id = chat_id or str(uuid.uuid4())
         self.messages: list[dict[str, Any]] = []
 
+    def complete_turns(self) -> int:
+        """Turns the user continued from (ADR 0008), for chats without comments or disabled messages."""
+        n, replied = 0, False
+        for m in self.messages:
+            if m["role"] == "user":
+                n, replied = n + replied, False
+            else:
+                replied = True
+        return n
+
     # --- host actions (behavior per HOST-FACTS) ---
     def user(self, text: str) -> dict[str, Any]:
         msg = {"role": "user", "data": text, "chatId": str(uuid.uuid4())}

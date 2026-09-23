@@ -9,6 +9,12 @@ export function inspectorApiPath(href: string | null): string | null {
   return m ? `/v1/inspector${m[1] ?? ''}` : null;
 }
 
+/** The conversation id of an inspector detail API path (`/v1/inspector/c/<id>`), or null. */
+export function inspectorConversation(path: string): string | null {
+  const m = /^\/v1\/inspector\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(path);
+  return m ? (m[1] as string) : null;
+}
+
 /** Parse inspector HTML inertly and drop every element and attribute the inspector does not use. */
 export function safeFragment(html: string): DocumentFragment {
   const template = document.createElement('template');

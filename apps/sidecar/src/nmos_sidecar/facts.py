@@ -1,5 +1,7 @@
 """Fact versions over valid assertions whose extraction matches the head window (D8) and was produced
-by the active extractor generation (D20). Other generations stay stored for audit only."""
+by the active extractor generation (D20). Other generations and discarded extractions (per-chat
+rebuild, D22) stay stored for audit only. A turn extraction (ADR 0008) matches its anchor's turn hash,
+a per-message one (older generations) the message window hash."""
 
 from __future__ import annotations
 
@@ -14,7 +16,8 @@ from .predicates import REGISTRY
 
 ACTIVE_ASSERTIONS = """
 WITH m AS (
-    SELECT am.position, am.source_revision_id AS rid, am.window_hash, sr.lifecycle, sr.metadata, so.host_logical_id
+    SELECT am.position, am.turn, am.source_revision_id AS rid, am.window_hash, am.turn_hash, sr.lifecycle, sr.metadata,
+           so.host_logical_id
     FROM active_membership am
     JOIN source_revision sr ON sr.id = am.source_revision_id
     JOIN source_object so ON so.id = sr.source_object_id
@@ -22,10 +25,10 @@ WITH m AS (
 ),
 cut AS (SELECT coalesce(max(position), -1) AS position FROM m WHERE metadata->>'disabled' = 'allBefore')
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.value, a.epistemic, a.confidence, a.evidence,
-       a.knowledge, a.known_by, a.hidden_from, m.position, m.host_logical_id
+       a.knowledge, a.known_by, a.hidden_from, m.position, m.turn, m.host_logical_id
 FROM assertion a
-JOIN extraction e ON e.id = a.extraction_id AND e.extractor_key = %(key)s
-JOIN m ON m.rid = a.source_revision_id AND m.window_hash = e.window_hash
+JOIN extraction e ON e.id = a.extraction_id AND e.extractor_key = %(key)s AND e.discarded_at IS NULL
+JOIN m ON m.rid = a.source_revision_id AND e.window_hash IN (m.turn_hash, m.window_hash)
 CROSS JOIN cut
 WHERE a.status = 'valid' AND m.lifecycle = 'accepted' AND m.position > cut.position
   AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
@@ -57,7 +60,7 @@ def fact_versions(conn: psycopg.Connection, head: UUID, extractor_key: str | Non
     for history in groups.values():
         current = dict(history[-1])
         current["versions"] = len(history)
-        current["history"] = [{"position": h["position"], "value": h["value"], "object": h["object"]} for h in history]
+        current["history"] = [{"position": h["position"], "turn": h["turn"], "value": h["value"], "object": h["object"]} for h in history]
         out.append(current)
     out.sort(key=lambda f: f["position"], reverse=True)
     return out
@@ -117,7 +120,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
 def fact_line(f: dict[str, Any]) -> str:
     """One <Fact> with its knowledge marks exactly as stored (D19): knowledge="public", or known_by /
     hidden_from for limited facts, or no mark at all when who knows is unknown."""
-    attrs = f" kind={quoteattr(f['predicate'])} turn=\"{f['position']}\""
+    turn = f["turn"] if f.get("turn") is not None else f["position"]
+    attrs = f" kind={quoteattr(f['predicate'])} turn=\"{turn}\""
     if f.get("epistemic") == "implied":
         attrs += ' certainty="implied"'
     if f.get("knowledge") == "public":

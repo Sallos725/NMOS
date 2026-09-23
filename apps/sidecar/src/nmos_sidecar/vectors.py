@@ -114,9 +114,11 @@ def vector_candidates(conn: psycopg.Connection, head: UUID, query_vec: list[floa
     ).fetchall()
 
 
-def schedule_projection(conn: psycopg.Connection, key: str, backfill: int, conv: UUID | None = None) -> int:
+def schedule_projection(conn: psycopg.Connection, key: str, backfill: int, conv: UUID | None = None,
+                        history: bool = False) -> int:
     """Queue what the active projection is missing: the latest `backfill` eligible revisions of each chat,
-    then (background priority) every older revision an earlier projection had embedded. Idempotent."""
+    then (background priority) every older revision an earlier projection had embedded, or with
+    `history` every older revision (per-chat "extract all history", D22). Idempotent."""
     with conn.transaction():
         conn.execute("UPDATE job SET status = 'obsolete', updated_at = now() WHERE kind = 'embed'"
                      " AND status = 'queued' AND payload->>'generation' IS DISTINCT FROM %s", (key,))
@@ -133,11 +135,11 @@ def schedule_projection(conn: psycopg.Connection, key: str, backfill: int, conv:
             FROM revs r
             WHERE NOT EXISTS (SELECT 1 FROM revision_embedding x WHERE x.source_revision_id = r.rid
                                 AND x.projection = %(key)s)
-              AND (r.recent OR EXISTS (SELECT 1 FROM revision_embedding x WHERE x.source_revision_id = r.rid
+              AND (r.recent OR %(all)s OR EXISTS (SELECT 1 FROM revision_embedding x WHERE x.source_revision_id = r.rid
                                          AND x.projection <> %(key)s))
             """ + REQUEUE,
-            {"conv": conv, "key": key, "n": backfill, "recent": RECENT_PRIORITY, "history": HISTORY_PRIORITY,
-             "norm": normtext.NORMALIZER_VERSION},
+            {"conv": conv, "key": key, "n": backfill, "all": history, "recent": RECENT_PRIORITY,
+             "history": HISTORY_PRIORITY, "norm": normtext.NORMALIZER_VERSION},
         ).rowcount
 
 

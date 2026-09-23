@@ -43,6 +43,22 @@ i.e. reconcile → `needs_bodies` → bodies + `then_reconcile`.
 Storage at 25k: source 25 MB, normalized text 12 MB, membership 28 MB, commits 55 MB, observations
 30 MB (from the cold sync), embeddings 137 MB (1 chunk per revision).
 
+### Re-check after per-turn extraction (2026-09-23, ADR 0008)
+
+Each sync now also computes the turn layout (`active_membership.turn` / `turn_hash`), and the append
+path rewrites the last turn's rows. Same machine and tool, p50 (p95) in ms:
+
+| 5,000 messages | `main` `0a31ce2` | per turn |
+|---|---:|---:|
+| Warm append, extraction off | 347 (382) (table above) | 336 (360) |
+| Warm append, extraction on (jobs queued, no worker) | 352 (370) | 363 (402) |
+| Edit near head, extraction on | 410 | 438 |
+| Edit deep, extraction on | 406 | 427 |
+
+At 1,000 messages with extraction off: append 70 (84), edits 95 / 84. Up to about 7 % more on the
+sync path, within run-to-run noise at 1k. The envelope below is unchanged. Membership grows by the
+two columns: 10.4 MB instead of about 9 MB at 5k.
+
 ### Estimated added `beforeRequest` latency (warm path)
 
 Plugin copy + manifest + sidecar append + selective retrieve; network and host snapshot overhead

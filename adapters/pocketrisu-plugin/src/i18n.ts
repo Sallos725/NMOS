@@ -40,6 +40,17 @@ const STRINGS = {
   // inspector view
   'insp.loading': ['인스펙터를 불러오는 중…', 'Loading the inspector…'],
   'insp.browser': ['브라우저에서 직접 열 수도 있습니다: {url}', 'Also available in a browser: {url}'],
+  'act.history': ['과거 전체 추출', 'Extract all history'],
+  'act.rebuild': ['기억 재구축', 'Rebuild memory'],
+  'act.rebuild_confirm': ['한 번 더 누르면 재구축합니다', 'Click again to rebuild'],
+  'act.sub': ['과거 전체 추출: 처음 연결할 때 건너뛴 이 채팅의 이전 턴까지 사실을 추출하고 임베딩합니다. 기억 재구축: 이 채팅의 사실을 버리고 모든 턴을 다시 추출합니다(원문은 그대로). 유료 API는 턴마다 비용이 듭니다.',
+    'Extract all history: extract facts and embeddings for the older turns of this chat that the first sync skipped. Rebuild memory: discard this chat\'s facts and extract every turn again (raw messages stay). Paid APIs cost money per turn.'],
+  'act.working': ['요청 중…', 'Requesting…'],
+  'act.history_done': ['턴 {t}개 추출과 메시지 {m}개 임베딩을 백그라운드에 넣었습니다.', 'Queued {t} turns for extraction and {m} messages for embedding.'],
+  'act.history_none': ['이미 전부 처리되었거나 처리 중입니다.', 'Everything is already processed or queued.'],
+  'act.rebuild_done': ['추출 {d}건을 버리고 턴 {t}개를 다시 추출합니다. 끝날 때까지 이 채팅의 사실이 비어 있을 수 있습니다.',
+    'Discarded {d} extractions; {t} turns are extracted again. Facts of this chat may be missing until then.'],
+  'act.off': ['사실 추출(또는 임베딩)이 꺼져 있습니다. 설정 탭에서 켜세요.', 'Fact extraction (or embeddings) is off. Turn it on in Settings.'],
   // settings: connection
   'conn.title': ['연결', 'Connection'],
   'conn.sub': ['이 브라우저의 PocketRisu 플러그인 설정입니다. 사이드카가 다른 기기에 있으면 route=server가 자동으로 쓰입니다.',
@@ -52,8 +63,8 @@ const STRINGS = {
   'conn.hint': ['PocketRisu의 최대 컨텍스트를 기억 예산만큼 줄여 두세요.', "Lower PocketRisu's max context by the memory budget."],
   // settings: models
   'llm.title': ['사실 추출 LLM', 'Fact extraction LLM'],
-  'llm.sub': ['확정된 메시지마다 백그라운드에서 한 번 호출해 인물·장소·약속·관계를 기록합니다. 유료 API는 비용이 듭니다.',
-    'Called once per settled message in the background to record people, places, promises and relationships. Paid APIs cost money.'],
+  'llm.sub': ['확정된 턴(입력과 응답)마다 백그라운드에서 한 번 호출해 인물·장소·약속·관계를 기록합니다. 유료 API는 비용이 듭니다.',
+    'Called once per settled turn (input and reply) in the background to record people, places, promises and relationships. Paid APIs cost money.'],
   'emb.title': ['의미 검색 임베딩', 'Semantic recall embeddings'],
   'emb.sub': ['다른 말로 물어도 예전 장면을 찾습니다. Ollama의 qwen3-embedding:0.6b를 추천합니다.',
     'Finds earlier scenes even when asked in other words. Ollama qwen3-embedding:0.6b is recommended.'],
@@ -86,7 +97,7 @@ const STRINGS = {
   'tune.min_sim': ['의미 유사도 기준', 'Vector min similarity'],
   'tune.top_k': ['발췌 수', 'Excerpts'],
   'tune.facts': ['사실 수', 'Facts'],
-  'tune.backfill': ['처음 연결 시 처리할 메시지 수', 'Messages processed on first sync'],
+  'tune.backfill': ['처음 연결 시 추출할 턴 수', 'Turns extracted on first sync'],
   // settings: parser rules
   'rules.title': ['상태창 규칙', 'Status-window rules'],
   'rules.sub': ['block: 시작~끝 사이의 "키: 값" 줄을 읽습니다. entity_line으로 [인물] 줄마다 인물별로 나눕니다 (시뮬봇). regex: key/value 이름 그룹.',
