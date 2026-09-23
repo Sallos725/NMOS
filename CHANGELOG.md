@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.0-beta.7
+
+Plugin fix on top of 0.1.0-beta.6: no schema change (migrations stay at 0010), no sidecar change.
+Upgrading is replacing the plugin file (or PocketRisu's plugin update) and reloading PocketRisu; the
+image is rebuilt only to keep versions in step.
+
 - **Memory works with presets that add instructions after the user's turn.** The plugin used to
   treat a request as the main chat request only if the prompt's **last** user message was the
   user's input. Presets that wrap the input (e.g. `<Current Input>`) and add instruction blocks
@@ -11,6 +17,14 @@
 - The Inspector tab shows the "open in a browser" address only when the browser can reach the
   sidecar itself; a sidecar reached through the PocketRisu server (Docker name, LAN address behind
   HTTPS) is only reachable from that server.
+
+### Known limitations
+
+- Memory is injected only for content that has left the prompt; early in a chat, when everything
+  is still in context, nothing is injected (by design).
+- A `model`-mode auxiliary call whose prompt contains the latest user input is treated as a main
+  generation and may receive a packet (ADR 0001).
+- Otherwise unchanged from 0.1.0-beta.6.
 
 ## 0.1.0-beta.6
 

@@ -4,7 +4,9 @@
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.6` (2026-09-23), public repository and image.** The Inspector opens inside
+**Public beta `v0.1.0-beta.7` (2026-09-23), public repository and image.** Main-generation gating no
+longer assumes a preset layout (ADR 0001 amendment 2): presets that add instructions after the user's
+turn got no memory in beta.6 and earlier. `v0.1.0-beta.6` (2026-09-23): the Inspector opens inside
 the NMOS panel (Status | Inspector | Settings tabs): PocketRisu sandboxes plugins without
 `allow-popups`, so the beta.5 link could not open a tab (ARCHITECTURE H15). One PocketRisu settings
 entry. `v0.1.0-beta.5` (2026-09-23) was a packaging release: multi-arch image (`linux/amd64`,
