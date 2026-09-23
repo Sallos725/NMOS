@@ -125,8 +125,8 @@ export async function registerHooks(
   const open = (tab: Tab) => openPanel(deps, tab);
   // Menu names are fixed at load, in the language chosen then (they follow a change after a reload).
   const lang = langOf(await arg('language'));
-  await risuai.registerSetting(t(lang, 'menu.settings'), () => open('settings'), '⚙️', 'html', 'nmos-settings');
-  await risuai.registerSetting(t(lang, 'menu.status'), () => open('status'), '🧠', 'html', 'nmos-status');
+  // One entry in PocketRisu settings: the panel has status, inspector and settings tabs.
+  await risuai.registerSetting(t(lang, 'menu.panel'), () => open('status'), '🧠', 'html', 'nmos-panel');
   // The ☰ menu left of the chat input.
   await risuai.registerButton({ name: t(lang, 'menu.panel'), icon: '🧠', iconType: 'html', location: 'chat', id: 'nmos-chat' },
     () => open('status'));

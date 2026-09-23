@@ -47,18 +47,20 @@ continues without memory.
    otherwise PocketRisu can hang on the next message (a PocketRisu bug, see ARCHITECTURE H13).
 5. Lower PocketRisu's max context by `reserved_memory_tokens` (default 600) so the packet fits.
 
-That's it: raw recall works with no model configured. Open **http://127.0.0.1:8790/inspector** to see
-what NMOS stored and what it injected.
+That's it: raw recall works with no model configured. The panel's **Inspector** tab shows what NMOS
+stored and what it injected.
 
-## NMOS panel (status and settings)
+## NMOS panel (status, inspector, settings)
 
 Open it from the **☰ menu left of the chat input → NMOS 기억 / NMOS memory**, or from PocketRisu →
-Settings → **NMOS 상태 / NMOS 설정**. Tabs switch between **Status** and **Settings**; the language
-picker (Korean by default, or English) is at the top right. Menu names follow the language after a
-page reload.
+Settings → **NMOS 기억 / NMOS memory**. Tabs switch between **Status**, **Inspector** and **Settings**;
+the language picker (Korean by default, or English) is at the top right. Menu names follow the
+language after a page reload.
 
-- **Status**: sidecar connection, which features are on (status window, facts, semantic recall), what the
-  last request injected, and a link to the Inspector.
+- **Status**: sidecar connection, which features are on (status window, facts, semantic recall), and what the
+  last request injected.
+- **Inspector**: the Inspector, inside the panel (PocketRisu does not let plugins open a browser tab).
+  Click a conversation for its state, facts, recent retrievals and messages.
 - **Settings**: connection (sidecar URL, route, memory budget, deadline, on/off); **fact-extraction LLM**
   and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, any
   OpenAI-compatible endpoint), model list, API key and a **connection test** that makes a real call;
@@ -68,7 +70,8 @@ page reload.
   chats in the background.
 
 The Inspector lists conversations as **bot name · chat name** (after the next message in that chat)
-and is Korean by default; switch to English at the top right.
+and follows the panel language. The same pages are also served by the sidecar for a browser tab at
+**http://127.0.0.1:8790/inspector** (Korean by default, English at the top right).
 
 <p><img src="docs/images/panel-status.png" alt="NMOS panel, Status tab: sidecar connected, semantic recall on, last request injected 835 characters in 90 ms" width="560"></p>
 <p><img src="docs/images/inspector.png" alt="NMOS Inspector: one conversation shown as bot name · chat name, with vector coverage 43/43" width="760"></p>

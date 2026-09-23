@@ -357,8 +357,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         fallback_key = cur.embed_api_key if kind == "embeddings" else cur.llm_api_key
         return runtime.list_models(body.get("url") or "", body.get("api_key") or fallback_key)
 
-    @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
-    def inspector_index(request: Request, token: str | None = None, lang: str | None = None):
+    def inspector_index_html(request: Request, token: str | None, lang: str | None, embed: bool = False) -> str:
         with request.app.state.pool.connection() as conn:
             ex_key = rt["active_extractor"]
             pj_key = rt["projection"].key if rt["projection"] else None
@@ -368,10 +367,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                    # no generation ever active: "—", not a 0 % that reads as unfinished work
                                    extraction.coverage(conn, ex_key) if ex_key else {},
                                    vectors.coverage(conn, pj_key) if pj_key else {},
-                                   lang=inspector.lang_of(lang))
+                                   lang=inspector.lang_of(lang), embed=embed)
 
-    @app.get("/inspector/c/{conv_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
-    def inspector_detail(conv_id: UUID, request: Request, token: str | None = None, lang: str | None = None):
+    def inspector_detail_html(conv_id: UUID, request: Request, token: str | None, lang: str | None,
+                              embed: bool = False) -> str:
         with request.app.state.pool.connection() as conn:
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
@@ -383,7 +382,24 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     readmodel.membership(conn, head, ex_key, pj_key),
                                     readmodel.commits(conn, conv_id), readmodel.traces(conn, conv_id),
                                     fact_versions(conn, head, ex_key)[:300], token, coverage_view(conn, conv_id),
-                                    lang=inspector.lang_of(lang))
+                                    lang=inspector.lang_of(lang), embed=embed)
+
+    @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def inspector_index(request: Request, token: str | None = None, lang: str | None = None):
+        return inspector_index_html(request, token, lang)
+
+    @app.get("/inspector/c/{conv_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def inspector_detail(conv_id: UUID, request: Request, token: str | None = None, lang: str | None = None):
+        return inspector_detail_html(conv_id, request, token, lang)
+
+    # The same pages as body fragments for the plugin panel, which cannot open a browser tab (H15).
+    @app.get("/v1/inspector", dependencies=[Depends(auth)])
+    def inspector_index_embed(request: Request, lang: str | None = None):
+        return {"html": inspector_index_html(request, None, lang, embed=True)}
+
+    @app.get("/v1/inspector/c/{conv_id}", dependencies=[Depends(auth)])
+    def inspector_detail_embed(conv_id: UUID, request: Request, lang: str | None = None):
+        return {"html": inspector_detail_html(conv_id, request, None, lang, embed=True)}
 
     return app
 

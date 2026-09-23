@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 0.1.0-beta.6
+
+Fix release on top of 0.1.0-beta.5: no schema change (migrations stay at 0010), no change to memory
+behavior. Upgrade both parts: `docker compose pull && docker compose up -d` for the sidecar (the
+panel's Inspector tab needs the new `/v1/inspector` endpoints), then replace the plugin file and
+reload PocketRisu.
+
+- **The Inspector opens inside the NMOS panel.** The "Open inspector" link did nothing: PocketRisu runs
+  plugins in a frame sandboxed without `allow-popups`, so the browser blocks every new tab (ARCHITECTURE
+  H15). The panel now has **Status | Inspector | Settings** tabs; the Inspector tab shows the sidecar's
+  own inspector pages (new `GET /v1/inspector`, `GET /v1/inspector/c/{id}`, same auth as the rest of
+  the API) and follows links in place. It works over `route=server` too. `/inspector` still serves
+  the pages for a browser tab.
+- PocketRisu settings list one **NMOS 기억 / NMOS memory** entry instead of separate status and
+  settings entries.
+
+### Known limitations
+
+- A beta.6 plugin against a beta.5 sidecar shows an error in the Inspector tab (HTTP 404) until the
+  sidecar is updated; memory injection is unaffected.
+- Otherwise unchanged from 0.1.0-beta.4 (see below).
+
 ## 0.1.0-beta.5
 
 Packaging release on top of 0.1.0-beta.4: no schema change (migrations stay at 0010), no change to
