@@ -33,7 +33,7 @@ character-POV isolation, threads/causal links, verifier, MCP (Phase 5+; not auth
 knowledge scope (ADR 0007), CORS PUT, large-chat envelope (`docs/perf/scale.md`), release gate, no
 search of unverifiable beta.3 vectors (#17), immediate provider disable (#18), strict config types
 (#19), one NMOS panel (status/settings tabs, chat-menu entry, Korean/English), Inspector labels.
-Known limitations: `CHANGELOG.md` → 0.1.0-beta.4.
+Known issues (current list): `docs/KNOWN-ISSUES.md`.
 
 ## What exists
 
@@ -46,7 +46,8 @@ Known limitations: `CHANGELOG.md` → 0.1.0-beta.4.
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
 | Tests | `apps/sidecar/tests` (157), `adapters/pocketrisu-plugin/test` (46) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` |
-| Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met; released beta: default deadline met up to ≈5k messages, fail open beyond ≈8k. Unreleased: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k (D24) |
+| Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k (D24) |
+| Known issues | `docs/KNOWN-ISSUES.md` | K1–K21 current as of `v0.1.0-beta.10`, each with workaround and tracking (host, owner decision O5, Track B stage); resolved limitations listed |
 | Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B (Phase 5+) is a proposal, not authorized |
 | Decisions | `docs/adr/0001`–`0011` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-4.md` | 0–3 met; 4 soft subset met |
