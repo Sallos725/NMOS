@@ -115,10 +115,12 @@ Swipe churn does not burn extraction calls.
 (single/multi-valued), and epistemic class. Unknown predicates become `pending` candidates
 for review, not facts.
 
-**D7 — Bounded extraction context.** Extraction of revision *n* may read at most the previous
-`K` active messages (config). An edit at position *p* re-extracts only revisions in
-`[p, p+K]`; projections beyond that are replayed deterministically from cached assertions.
-Extraction is keyed by `(revision, context_window_hash, extractor generation)` (D20).
+**D7 — Bounded extraction context, per turn (revised 2026-09-23, ADR 0008).** The unit of
+extraction is the **turn**: a run of user messages plus the run of replies that answers it (comments,
+disabled and pre-`allBefore` messages excluded; the greeting is turn 0). A turn is extracted once,
+when its anchor (last reply) is accepted, with at most the previous `K` turns as context
+(`NMOS_EXTRACT_TURNS`, default 3). An edit inside turn *t* re-extracts only turns `[t, t+K]`.
+Extraction is keyed by `(anchor revision, turn_hash, extractor generation)` (D20).
 
 **D8 — Synchronous invalidation, asynchronous recompilation.** At `beforeRequest`, stale
 derived rows are masked synchronously (no LLM). Re-extraction is queued. Until it finishes,
@@ -153,8 +155,9 @@ ranges are inactive and never recalled.
 **D16 — Deterministic state via parser rules (Phase 1).** JSON rules → `state_observation`
 projection; current state read through head membership (inherits D8 invalidation).
 
-**D17 — Extraction validity is keyed by window (Phase 2, D7).** `active_membership.window_hash` makes
-an extraction valid only while the head shows the same bounded context; jobs run in `nmos-worker`
+**D17 — Extraction validity is keyed by window (Phase 2, D7; ADR 0008).** `active_membership.turn_hash`
+(anchor rows) makes an extraction valid only while the head shows the same turn and bounded context;
+the per-message `window_hash` is kept for generations compiled before turns. Jobs run in `nmos-worker`
 through a SKIP LOCKED queue; single-valued predicates form fact versions.
 
 **D18 — Hybrid recall (Phase 3, ADR 0005).** Exact cosine over head-membership chunk embeddings (pgvector),
@@ -186,6 +189,12 @@ normalized the same way. It is derived: written at ingest, backfilled at startup
 `nmos-rebuild --text`. Raw `source_revision.content` is unchanged. Bounded processing of long messages
 (embedding 8 × 700 chars, extraction 6,000 target / 2,000 context chars) is recorded per revision and
 visible in the Inspector.
+
+**D22 — NMOS never ingests a chat by itself; history and rebuild are explicit (ADR 0008).** A chat
+enters the ledger only when the user generates in it with the plugin on. First sight extracts the
+latest `NMOS_EXTRACT_BACKFILL` turns; the rest of a chat is extracted on request
+(`POST /v1/conversations/{id}/extract-history`). A rebuild (`POST /v1/conversations/{id}/rebuild`)
+marks the chat's active-generation extractions discarded (kept for audit) and re-extracts every turn.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
