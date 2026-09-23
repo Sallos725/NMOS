@@ -43,6 +43,14 @@ REGISTRY: dict[str, Predicate] = {p.name: p for p in (
 )}
 
 
+# Read-side supersession that REGISTRY's own fields do not express (ADR 0011). For these predicates an
+# item has one current holder: the subject of its latest assertion; earlier holders stay in its
+# history. Kept outside REGISTRY on purpose: the extractor generation fingerprints repr(REGISTRY)
+# (D20), and this rule changes only how stored assertions are read, never what is extracted, so it
+# must not force a re-extraction.
+HOLDER_PER_ITEM = frozenset({"possesses"})
+
+
 def registry_prompt() -> str:
     lines = []
     for p in REGISTRY.values():

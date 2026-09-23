@@ -91,3 +91,25 @@ def test_lexical_recall_that_exceeds_its_budget_abstains_instead_of_blocking(mig
         assert trace["latency_ms"]["lexical_mode"] == "timeout" and out["packet"]["text"] == ""
         # The setting does not leak into later statements of the same connection.
         assert "Hana looked out" in recall(c, chat, "Hana looked out the window?", in_context=[])["packet"]["text"]
+
+
+def test_a_query_matching_too_many_messages_abstains_and_says_so(client, monkeypatch):
+    """Track A, A3: past BROAD_LIMIT matches lexical recall stops and abstains (trace `too_broad`)
+    instead of scoring most of the chat; a selective query in the same chat is unaffected."""
+    from nmos_sidecar import retrieval
+
+    monkeypatch.setattr(retrieval, "BROAD_LIMIT", 5)
+    chat = SimChat()
+    for i in range(6):
+        chat.user(f"Hana walks along the shore, day {i}.")
+        chat.reply(f"Hana smiles at the sea, day {i}.")
+    chat.user("The vault password is violet-seven.")
+    chat.reply("Noted.")
+    chat.user("next")
+    sync(client, chat)
+    broad = recall(client, chat, "Hana", in_context=[])
+    trace = client.get(f"/v1/trace/{broad['trace_id']}").json()
+    assert trace["latency_ms"]["lexical_mode"] == "too_broad" and trace["candidates"] == []
+    narrow = recall(client, chat, "what was the vault password?", in_context=[])
+    assert client.get(f"/v1/trace/{narrow['trace_id']}").json()["latency_ms"]["lexical_mode"] == "on"
+    assert "violet-seven" in narrow["packet"]["text"]

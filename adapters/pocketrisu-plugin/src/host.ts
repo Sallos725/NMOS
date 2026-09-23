@@ -4,6 +4,7 @@ import type { HostPort, Settings, StatusInfo } from './core';
 import { langOf, t } from './i18n';
 import type { InjectPosition } from './prompt';
 import type { HostChat } from './types';
+import { DEFAULT_DEADLINE_MS } from './form';
 import { routeFor } from './route';
 import { openPanel, type PanelDeps, type Tab } from './ui';
 
@@ -29,7 +30,6 @@ declare const risuai: {
 
 const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8790';
 const DEFAULT_RESERVED_TOKENS = 600;
-const DEFAULT_DEADLINE_MS = 800;
 
 async function arg(key: string): Promise<string> {
   return String((await risuai.getArgument(key)) ?? '').trim();

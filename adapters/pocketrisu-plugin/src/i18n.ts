@@ -34,6 +34,8 @@ const STRINGS = {
   'status.last': ['마지막 요청', 'Last request'],
   'status.none': ['아직 요청이 없습니다. 채팅에서 메시지를 보내 보세요.', 'No request yet. Send a message in a chat.'],
   'status.ago': ['{n}초 전', '{n}s ago'],
+  'status.deadline_hint': ['제한 시간을 넘겨 이번 요청은 기억 없이 보냈습니다. 긴 채팅이라면 설정 탭의 제한 시간(ms)을 늘리세요.',
+    'This request ran out of time and went without memory. For a long chat, raise Deadline (ms) in the Settings tab.'],
   'outcome.injected': ['기억 {n}자를 넣었습니다', 'Injected {n} characters of memory'],
   'outcome.nothing': ['관련된 기억이 없었습니다', 'Nothing relevant to inject'],
   'outcome.failed': ['건너뜀 (원래 요청은 그대로 보냄)', 'Skipped (the request went out unchanged)'],
@@ -64,6 +66,8 @@ const STRINGS = {
   'conn.deadline': ['제한 시간(ms)', 'Deadline (ms)'],
   'conn.enabled': ['기억 넣기 켜기', 'Memory on'],
   'conn.hint': ['PocketRisu의 최대 컨텍스트를 기억 예산만큼 줄여 두세요.', "Lower PocketRisu's max context by the memory budget."],
+  'conn.deadline_hint': ['제한 시간 안에 기억을 준비하지 못하면 그 요청은 기억 없이 보냅니다. 기본 3000ms. 아주 긴 채팅(1만 개 이상)에서 기억이 자주 빠지면 늘리세요. 늘린 만큼 답장 시작이 늦어질 수 있습니다.',
+    'If memory is not ready within the deadline, that request goes without memory. Default 3000 ms. Raise it if very long chats (10,000+ messages) often miss memory; replies may start that much later.'],
   // settings: models
   'llm.title': ['사실 추출 LLM', 'Fact extraction LLM'],
   'llm.sub': ['확정된 턴(입력과 응답)마다 백그라운드에서 한 번 호출해 인물·장소·약속·관계를 기록합니다. 유료 API는 비용이 듭니다.',

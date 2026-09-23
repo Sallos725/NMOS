@@ -12,7 +12,7 @@ from uuid import UUID
 import psycopg
 from xml.sax.saxutils import escape, quoteattr
 
-from .predicates import REGISTRY
+from .predicates import HOLDER_PER_ITEM, REGISTRY
 
 ACTIVE_ASSERTIONS = """
 WITH m AS (
@@ -41,6 +41,8 @@ def _norm(value: str | None) -> str:
 
 
 def version_key(a: dict[str, Any]) -> tuple:
+    if a["predicate"] in HOLDER_PER_ITEM:  # one current holder per item (ADR 0011)
+        return (a["predicate"], "item", _norm(a["object"]))
     pred = REGISTRY[a["predicate"]]
     if pred.cardinality == "single":
         return (a["predicate"], _norm(a["subject"])) + ((_norm(a["object"]),) if pred.per_object else ())
@@ -60,7 +62,8 @@ def fact_versions(conn: psycopg.Connection, head: UUID, extractor_key: str | Non
     for history in groups.values():
         current = dict(history[-1])
         current["versions"] = len(history)
-        current["history"] = [{"position": h["position"], "turn": h["turn"], "value": h["value"], "object": h["object"]} for h in history]
+        current["history"] = [{"position": h["position"], "turn": h["turn"], "subject": h["subject"], "value": h["value"],
+                               "object": h["object"]} for h in history]
         out.append(current)
     out.sort(key=lambda f: f["position"], reverse=True)
     return out

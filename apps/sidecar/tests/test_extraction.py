@@ -216,3 +216,35 @@ def test_secret_hidden_from_addressed_character_is_selected():
     picked = relevant_facts(facts, "카이토, 혹시 내 정체에 대해 뭐 들은 거 있어?", "", set(), 8)
     assert [f["predicate"] for f in picked][:2] == ["identity", "goal"]
     assert all(f["subject"] != "마을" for f in picked)
+
+
+GIVE = re.compile(r"(?P<who>\w+) (?:has|takes|gets) the (?P<item>\w+)\.")
+
+
+def holder_complete(system: str, user: str) -> tuple[dict, str]:
+    """'X has the Y.' in the TARGET → X possesses Y."""
+    target = user.split("TARGET", 1)[1]
+    return {"assertions": [{"subject": m["who"], "subject_type": "character", "predicate": "possesses",
+                            "object": m["item"], "object_type": "item", "epistemic": "stated", "confidence": 0.9,
+                            "evidence": m.group(0)} for m in GIVE.finditer(target)]}, "{}"
+
+
+def test_an_item_has_one_current_holder_and_keeps_its_history(llm_client, migrated):
+    """ADR 0011: A → B → C. Before, `possesses` accumulated per holder, so all three stayed current."""
+    chat = SimChat()
+    for who in ("Yujin", "Hana", "Kaito"):
+        chat.user(f"{who} has the map.")
+        chat.reply("Noted.")
+    chat.user("Mina has the key.")
+    chat.reply("ok")
+    chat.user("Mina gets the map.")  # a second item for the same holder must not merge with the first
+    chat.reply("ok")
+    chat.user("next")
+    sync(llm_client, chat)
+    drain(migrated, holder_complete)
+    held = {f["object"]: f for f in facts(llm_client, chat) if f["predicate"] == "possesses"}
+    assert held["map"]["subject"] == "Mina" and held["key"]["subject"] == "Mina"
+    assert [h["subject"] for h in held["map"]["history"]] == ["Yujin", "Hana", "Kaito", "Mina"]
+    assert [h["subject"] for h in held["key"]["history"]] == ["Mina"]
+    packet = recall(llm_client, chat, "Who has the map now?")["packet"]["text"]
+    assert "Mina possesses map" in packet and "Kaito possesses map" not in packet

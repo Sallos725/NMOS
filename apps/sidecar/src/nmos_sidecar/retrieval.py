@@ -23,6 +23,10 @@ from .state import current_state
 from .vectors import vector_candidates
 
 CANDIDATE_LIMIT = 50
+# A query that matches more head messages than this is too broad to score (a character's name alone,
+# a phrase every reply repeats): lexical recall abstains for it instead of scoring most of the chat
+# (Track A, A3; docs/perf/scale.md). Vectors, state and facts still run.
+BROAD_LIMIT = 200
 RRF_K = 60
 QWEN3_QUERY_INSTRUCTION = ("Instruct: Given a question or remark from a role-play chat, retrieve the earlier story "
                            "passage that answers or relates to it\nQuery: ")
@@ -69,16 +73,15 @@ def _cut(conn: psycopg.Connection, head: UUID) -> int:
 #  - enable_seqscan / enable_indexscan off: the planner cannot estimate `<%` selectivity and otherwise
 #    filters every head row with word_similarity instead of asking the trigram index (measured with
 #    long messages: 82 ms at 1k and 818 ms at 10k, vs 1 ms / 0.05 ms through the index).
-#  - statement_timeout: a query whose words occur in nearly every message (a character's name alone)
-#    still scores every row (6 s at 10k). The plugin has failed open by then, so the statement is
-#    cancelled instead of holding a pooled connection. See docs/perf/scale.md.
+#  - statement_timeout: a safety net. Broad queries are stopped by BROAD_LIMIT first; before that
+#    limit a query whose words occur in nearly every message scored every row (6 s at 10k).
 _RESTORED = ("enable_seqscan", "enable_indexscan", "statement_timeout")  # the threshold is always set before use
 
 
 def _lexical(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, cut: int,
-             threshold: float, timeout_ms: int) -> list[dict[str, Any]] | None:
-    """Lexical candidates over the normalized projection (#9), or None when the query ran out of time
-    (recall then abstains from lexical candidates for this request)."""
+             threshold: float, timeout_ms: int) -> tuple[list[dict[str, Any]], str]:
+    """Lexical candidates over the normalized projection (#9) and the trace mode: "on", "too_broad"
+    (more than BROAD_LIMIT matches) or "timeout". Recall abstains from lexical candidates in the last two."""
     try:
         with conn.transaction():  # savepoint: a cancelled statement does not abort the request
             previous = conn.execute("SELECT " + ", ".join(f"current_setting('{k}') AS \"{k}\""
@@ -86,11 +89,12 @@ def _lexical(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str,
             wanted = {"pg_trgm.word_similarity_threshold": str(threshold), "enable_seqscan": "off",
                       "enable_indexscan": "off", "statement_timeout": str(timeout_ms)}
             _apply(conn, wanted)
-            rows = _lexical_candidates(conn, head, query, previous_ai, cut)
+            matches = _lexical_matches(conn, head, query, cut, BROAD_LIMIT + 1)
+            rows = _lexical_candidates(conn, head, matches, query, previous_ai) if len(matches) <= BROAD_LIMIT else None
             _apply(conn, dict(previous))
-            return rows
+            return (rows, "on") if rows is not None else ([], "too_broad")
     except psycopg.errors.QueryCanceled:
-        return None
+        return [], "timeout"
 
 
 def _apply(conn: psycopg.Connection, settings: dict[str, str]) -> None:
@@ -98,8 +102,32 @@ def _apply(conn: psycopg.Connection, settings: dict[str, str]) -> None:
                  [x for kv in settings.items() for x in kv])
 
 
-def _lexical_candidates(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str,
-                        cut: int) -> list[dict[str, Any]]:
+def _lexical_matches(conn: psycopg.Connection, head: UUID, query: str, cut: int, limit: int) -> list[UUID]:
+    """Active head revisions the query matches (`<%`), at most `limit`: the statement stops there, so a
+    broad query costs about `limit` similarity checks instead of one per message."""
+    return [r["id"] for r in conn.execute(
+        """
+        SELECT sr.id
+        FROM active_membership am
+        JOIN source_revision sr ON sr.id = am.source_revision_id
+        JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+        WHERE am.commit_id = %(head)s
+          AND sr.lifecycle = 'accepted'
+          AND am.position > %(cut)s
+          AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+          AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
+          AND %(q)s <%% rt.clean_content
+        LIMIT %(limit)s
+        """,
+        {"head": head, "q": query, "cut": cut, "limit": limit, "norm": NORMALIZER_VERSION},
+    ).fetchall()]
+
+
+def _lexical_candidates(conn: psycopg.Connection, head: UUID, ids: list[UUID], query: str,
+                        previous_ai: str) -> list[dict[str, Any]]:
+    """Score the matched revisions: the user's message, with the previous AI turn as a tiebreak."""
+    if not ids:
+        return []
     return conn.execute(
         """
         SELECT sr.id, am.position, so.host_logical_id, rt.clean_content AS clean, sr.metadata->>'role' AS role,
@@ -110,16 +138,11 @@ def _lexical_candidates(conn: psycopg.Connection, head: UUID, query: str, previo
         JOIN source_object so ON so.id = sr.source_object_id
         JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
         CROSS JOIN LATERAL (SELECT word_similarity(%(q)s, rt.clean_content) AS user_score) s
-        WHERE am.commit_id = %(head)s
-          AND sr.lifecycle = 'accepted'
-          AND am.position > %(cut)s
-          AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
-          AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
-          AND %(q)s <%% rt.clean_content
+        WHERE am.commit_id = %(head)s AND sr.id = ANY(%(ids)s)
         ORDER BY score DESC, am.position DESC
         LIMIT %(limit)s
         """,
-        {"head": head, "q": query, "ai": previous_ai, "w": AI_TIEBREAK_WEIGHT, "cut": cut, "limit": CANDIDATE_LIMIT,
+        {"head": head, "ids": ids, "q": query, "ai": previous_ai, "w": AI_TIEBREAK_WEIGHT, "limit": CANDIDATE_LIMIT,
          "norm": NORMALIZER_VERSION},
     ).fetchall()
 
@@ -162,8 +185,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     vector: list[dict[str, Any]] = []
     if fresh and query.strip():
         cut = _cut(conn, head)
-        found = _lexical(conn, head, query, previous_ai, cut, options.threshold, options.lexical_timeout_ms)
-        lexical, lexical_note = (found, "on") if found is not None else ([], "timeout")
+        lexical, lexical_note = _lexical(conn, head, query, previous_ai, cut, options.threshold,
+                                         options.lexical_timeout_ms)
         timings["lexical"] = round((time.perf_counter() - started) * 1000, 2)
         if options.embedder is not None:
             t0 = time.perf_counter()

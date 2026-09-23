@@ -17,6 +17,8 @@ class Settings:
     recall_top_k: int = field(default_factory=lambda: int(os.environ.get("NMOS_RECALL_TOP_K", "5")))
     recall_threshold: float = field(default_factory=lambda: float(os.environ.get("NMOS_RECALL_THRESHOLD", "0.4")))
     large_divergence_ratio: float = field(default_factory=lambda: float(os.environ.get("NMOS_LARGE_DIVERGENCE_RATIO", "0.5")))
+    # Verified append fast path (Track A, A1). "0" forces the full reconciliation path for every sync.
+    append_fast_path: bool = field(default_factory=lambda: os.environ.get("NMOS_APPEND_FAST_PATH", "1") != "0")
     # Phase 2: LLM extraction (off unless NMOS_LLM_URL is set). OpenAI-compatible base URL, e.g.
     # http://host.docker.internal:11434/v1 for Ollama.
     llm_url: str = field(default_factory=lambda: os.environ.get("NMOS_LLM_URL", ""))

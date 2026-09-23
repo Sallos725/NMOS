@@ -4,7 +4,11 @@
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.9` (2026-09-23), public repository and image.** The owner can delete a
+**Public beta `v0.1.0-beta.10` (2026-09-23), public repository and image.** Track A stabilization:
+verified append fast path and incremental plugin manifest (ADR 0010, migration 0013), default request
+deadline 3 s after a real-host check at 5k/10k/15k messages (D24), one current holder per item (ADR
+0011, D25), broad lexical queries stopped at 200 matches, and a deterministic memory evaluation
+(`docs/perf/eval-baseline.md`). Evidence: `docs/perf/scale.md`. `v0.1.0-beta.9` (2026-09-23): the owner can delete a
 conversation from the panel's Inspector, raw messages included (ADR 0009, D23, invariant 1 amended;
 migration 0012). Evidence: `docs/perf/scale.md` (delete timings, sync A/B), real-UI host check in
 ADR 0009. `v0.1.0-beta.8` (2026-09-23): facts are extracted per turn
@@ -38,12 +42,13 @@ Known limitations: `CHANGELOG.md` → 0.1.0-beta.4.
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
 | Architecture | `ARCHITECTURE.md` | H1–H15, D1–D23, O2/O3/O4 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
-| Schema | `migrations/0001`–`0012` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete |
+| Schema | `migrations/0001`–`0013` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (137), `adapters/pocketrisu-plugin/test` (41) | all passing |
-| Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met; default deadline met up to ≈5k messages, fail open beyond ≈8k |
-| Decisions | `docs/adr/0001`–`0009` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete |
+| Tests | `apps/sidecar/tests` (157), `adapters/pocketrisu-plugin/test` (46) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` |
+| Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met; released beta: default deadline met up to ≈5k messages, fail open beyond ≈8k. Unreleased: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k (D24) |
+| Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B (Phase 5+) is a proposal, not authorized |
+| Decisions | `docs/adr/0001`–`0011` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-4.md` | 0–3 met; 4 soft subset met |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 
