@@ -45,7 +45,7 @@ Known limitations: `CHANGELOG.md` → 0.1.0-beta.4.
 | Schema | `migrations/0001`–`0013` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (156), `adapters/pocketrisu-plugin/test` (46) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` |
+| Tests | `apps/sidecar/tests` (157), `adapters/pocketrisu-plugin/test` (46) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met; released beta: default deadline met up to ≈5k messages, fail open beyond ≈8k. Unreleased: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k (D24) |
 | Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B (Phase 5+) is a proposal, not authorized |
 | Decisions | `docs/adr/0001`–`0011` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder |

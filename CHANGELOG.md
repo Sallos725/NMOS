@@ -27,6 +27,8 @@ compose up -d`, then replace the plugin file and reload PocketRisu.
 - **Broad searches stop early.** A question whose words occur in more than 200 messages (a
   character's name alone) no longer scores most of the chat: lexical recall skips it (Inspector trace
   `too_broad`), and vectors, state and facts still answer. 10,000 messages: 852 → 45 ms.
+- The Inspector no longer fails (HTTP 500) on a conversation whose extraction coverage has nothing to
+  count yet, e.g. a chat with only an unanswered message; it shows "—" (#30).
 - **Memory evaluation baseline.** A deterministic evaluation (synthetic cases, stub extractor) checks
   every build for stale, deleted, rerolled or other-branch memory reaching the model, and compares
   recent-context-only, lexical, hybrid and full memory (`docs/perf/eval-baseline.md`).
