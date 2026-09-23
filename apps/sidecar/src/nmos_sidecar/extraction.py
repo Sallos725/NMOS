@@ -340,10 +340,13 @@ ELIGIBLE = """
     )
 """
 
-# Some other generation extracted a member of turn e (any window): history worth restoring (ADR 0006).
+# Another generation extracted a member of turn e (any window), or this one did before a rebuild
+# discarded it: history worth restoring (ADR 0006, D22). A rebuild interrupted before its jobs were
+# queued is completed by the next scheduling run.
 COVERED_BEFORE = """EXISTS (SELECT 1 FROM active_membership t
                    JOIN extraction x ON x.source_revision_id = t.source_revision_id
-                   WHERE t.commit_id = e.head AND t.turn = e.turn AND x.extractor_key IS DISTINCT FROM %(key)s)"""
+                   WHERE t.commit_id = e.head AND t.turn = e.turn
+                     AND (x.extractor_key IS DISTINCT FROM %(key)s OR x.discarded_at IS NOT NULL))"""
 
 
 def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv: UUID | None = None,

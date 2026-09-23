@@ -323,6 +323,42 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                            **vectors.coverage(conn, pj_key, conv_id).get(conv_id, {})},
         }
 
+    # Per-chat actions (D22, ADR 0008). Only for chats NMOS has seen: NMOS never ingests a chat itself.
+    @app.post("/v1/conversations/{conv_id}/extract-history", dependencies=[Depends(auth)])
+    def extract_history(conv_id: UUID, request: Request):
+        """Queue every turn / message of this chat's head that the active generations have not
+        processed, beyond the first-sight backfill, at background priority."""
+        ex, pj, cur = rt["extractor"], rt["projection"], rt["settings"]
+        with request.app.state.pool.connection() as conn:
+            if readmodel.conversation(conn, conv_id) is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            if ex is None and pj is None:
+                raise HTTPException(status_code=409, detail="fact extraction and embeddings are both off")
+            queued = {
+                "extract": extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id, history=True)
+                if ex else 0,
+                "embed": vectors.schedule_projection(conn, pj.key, cur.embed_backfill, conv_id, history=True)
+                if pj else 0,
+            }
+            log.info("extract history conversation=%s queued=%s", conv_id, queued)
+            return {"queued": queued, "coverage": coverage_view(conn, conv_id)}
+
+    @app.post("/v1/conversations/{conv_id}/rebuild", dependencies=[Depends(auth)])
+    def rebuild_memory(conv_id: UUID, request: Request):
+        """Redo this chat's facts: discard its extractions of the active generation (kept for audit)
+        and re-extract every turn, recent ones first. Raw evidence, state and embeddings stay."""
+        ex, cur = rt["extractor"], rt["settings"]
+        with request.app.state.pool.connection() as conn:
+            if readmodel.conversation(conn, conv_id) is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            if ex is None:
+                raise HTTPException(status_code=409, detail="fact extraction is off")
+            with conn.transaction():
+                discarded = extraction.discard(conn, ex.key, conv_id)
+                queued = extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id, history=True)
+            log.info("rebuild conversation=%s discarded=%d queued=%d", conv_id, discarded, queued)
+            return {"discarded": discarded, "queued": {"extract": queued}, "coverage": coverage_view(conn, conv_id)}
+
     @app.get("/v1/config", dependencies=[Depends(auth)])
     def get_config():
         return runtime.public_view(rt["settings"], rt["overrides"], rt["rules"])
