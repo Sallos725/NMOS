@@ -162,7 +162,7 @@ LLM or embedding endpoint that is remote. `docker compose down -v` deletes all N
 Beta. Tested against PocketRisu `a14c911` (v1.12.0) in real UI runs. The behavior described in this
 README is verified on that build only; other PocketRisu versions may differ — please report what you
 see. See `docs/perf/phase0.md` for latency (≈90–200 ms added per message at 500–1,000 messages).
-Known limits:
+The full list with workarounds is [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md). The main limits:
 
 - Upstream RisuAI is untested. PocketRisu is a RisuAI fork and NMOS only uses the shared V3 plugin
   API, so it may work there; reports are welcome.
@@ -176,6 +176,8 @@ Known limits:
 - Changing the LLM or embedding model/endpoint re-processes previously covered history with the new
   model (recent messages first; the Inspector shows coverage as partial until done). Upgrading to
   0.1.0-beta.8 does the same once for facts (extraction became per turn, ADR 0008).
+- Item and character names are free text: "지도" and "해안 지도" are different items, and an item that is
+  lost or destroyed without a new holder still shows its last holder.
 - Recall thresholds are tuned on limited data — please report cases where memory is wrong or missing.
 
 ## Develop

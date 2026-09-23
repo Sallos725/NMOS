@@ -1,6 +1,12 @@
 # Changelog
 
+Each release's "Known limitations" describe that release. The current list, with what was resolved
+later, is `docs/KNOWN-ISSUES.md`.
+
 ## Unreleased
+
+- `docs/KNOWN-ISSUES.md`: one current list of known issues (K1–K21) with workarounds and where each
+  would be fixed; limitations resolved since they were listed are marked there.
 
 ## 0.1.0-beta.10
 
