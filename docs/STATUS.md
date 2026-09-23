@@ -4,8 +4,10 @@
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.4` (2026-09-23), public repository and image.** Stabilization release (issues
-#6–#19) and UI review on top of `v0.1.0-beta.3` (2026-09-22). Phases 1–3 complete. Phase 4 soft
+**Public beta `v0.1.0-beta.5` (2026-09-23), public repository and image.** Packaging release on top of
+`v0.1.0-beta.4`: multi-arch image (`linux/amd64`, `linux/arm64`), `:latest` tag on every release,
+Inspector "—" for never-enabled features, README screenshots. `v0.1.0-beta.4` (2026-09-23) was the
+stabilization release (issues #6–#19) and UI review on top of `v0.1.0-beta.3` (2026-09-22). Phases 1–3 complete. Phase 4 soft
 subset complete (knowledge scope `public` / `limited` / `unknown`, D19, `docs/phases/PHASE-4.md`).
 Plugin settings panel configures providers, embeddings, tuning and parser rules. Validated with a
 real RisuRealm sim bot and a fresh install from release assets. Still outside the beta: hard
