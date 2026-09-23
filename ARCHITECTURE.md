@@ -287,4 +287,7 @@ These must be resolved by the owner, not by an implementing agent.
 - ~~O2 — Postgres vs SQLite~~ — **resolved 2026-09-22: PostgreSQL** (§6).
 - ~~O3 — Main-generation gating heuristic~~ — **resolved 2026-09-22: D13 / ADR 0001.**
 - ~~O4 — Cross-chat branch policy~~ — **resolved 2026-09-22: D14 / ADR 0002.**
-- **O5 — Retention of abandoned worldlines.**
+- **O5 — Retention of abandoned worldlines.** Partly decided 2026-09-23 for superseded projection
+  generations: LLM extractions are kept; embeddings and deterministic projections may be pruned once
+  a newer generation fully covers the chat (`docs/proposals/TRACK-B-PHASE-5-PLUS.md` §4). Abandoned
+  worldlines and observation growth remain open.

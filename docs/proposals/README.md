@@ -19,6 +19,9 @@ The recommended order is:
 
 A1 and A2 of Track A are independently releasable and do not wait for the rest of the track.
 
+Owner decisions for B0 (2026-09-23): Phase 5 = B1 only, B2 next, canon in B4, retention of
+superseded generations, recent-window re-extraction — Track B §4, "Owner decisions".
+
 Revised 2026-09-23 after review against the code and `docs/perf/`: A1 preconditions and
 no-migration head length, end-to-end latency targets including retrieval, A2 cache scope, A3 query
 cost, A4 constraints, A5 evaluation tiers; B1 narrowed (coarse modality, no narrative time,

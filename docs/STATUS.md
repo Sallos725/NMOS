@@ -64,8 +64,12 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 ## Open owner decisions
 
 - O1 — relationship to MIRRA / VEIL.
-- O5 — retention of abandoned worldlines, `host_observation` growth, and superseded projection generations (ADR 0006).
-- Phase 5+ scope.
+- O5 — retention of abandoned worldlines and `host_observation` growth (needed before Track B, B2).
+  Superseded generations: decided 2026-09-23 (keep LLM extractions, prune embeddings and
+  deterministic projections after full coverage; Track B §4); not implemented yet.
+- Phase 5: scope decided 2026-09-23 (B1 entity identity and semantic assertions only; B2 next; canon
+  sources in B4; older history re-extracted on request). Not started: needs an approved
+  `docs/phases/PHASE-5.md` (Track B, B0).
 
 ## Public release checklist (done 2026-09-23)
 

@@ -26,7 +26,7 @@ without a PocketRisu change.
 | K14 | Rare over-injection into an auxiliary call; transformed input gets no memory | Gating | accepted (ADR 0001) |
 | K15 | Thresholds and extraction quality are checked on limited data | Quality | evaluation (A5 baseline) |
 | K16 | NMOS does not notice a chat deleted in PocketRisu | Data | host (H10) |
-| K17 | Storage only grows: old generations, abandoned branches, observations | Data | owner decision O5 |
+| K17 | Storage only grows: old generations, abandoned branches, observations | Data | O5 (generations decided, not implemented) |
 | K18 | Changing a model or endpoint re-processes history at the provider's cost | Data | by design (ADR 0006) |
 | K19 | Plugin and sidecar versions are not checked against each other | Setup | not planned |
 | K20 | Small UI delays: bot name, menu language | UI | not planned |
@@ -128,7 +128,9 @@ undone, and nothing but a sidecar log line records it).
 **K17 — Storage only grows.** Superseded extraction/embedding generations, abandoned worldlines
 (rerolled or edited-away branches) and host observations (≈2.7 KB per generation at 10k) are kept for
 audit; only jobs and traces are pruned. A 10,000-message synthetic chat with embeddings takes
-≈120 MB. Retention is open owner decision O5 (ADR 0006, ADR 0009). *Workaround:* delete conversations
+≈120 MB. Retention is owner decision O5 (ADR 0006, ADR 0009): for superseded generations it was
+decided on 2026-09-23 (keep LLM extractions, prune embeddings and deterministic projections after
+full coverage) but is not implemented; abandoned worldlines and observations are still open. *Workaround:* delete conversations
 you no longer use.
 
 **K18 — Model changes re-process history.** Changing the LLM or embedding model or endpoint, or a
