@@ -227,11 +227,12 @@ Each step is one reviewable change with its tests.
 
 1. **Event cap (Q4, part 1)**: read-time only, no generation change. Useful on its own, and it
    applies to existing data at once.
-2. **Thread fold and packet (Q2, Q5)**: open threads from existing `promised` assertions, the
-   `<Threads>` section, the Note sentence. Read-time only; threads cannot close yet.
+2. **Thread fold and packet (Q2, Q3, Q5)**: open threads from existing `promised` assertions,
+   closing by a negative `promised` (older generations already produce it), matching (item 3), the
+   `<Threads>` section and the Note sentence. Read-time only (ADR 0019).
 3. **`extract-v7` and migration 0016 (Q3, Q4 part 2)**: `fulfilled`, the prompt rules, OPEN PROMISES
    hints, `salience`; stub rules for the deterministic cases.
-4. **Resolution and salience ranking**: matching (item 3), statuses, major-first ranking.
+4. **Salience ranking**: major-first ranking and the lexical bar for minor events.
 5. **Inspector**: threads, unmatched resolutions, event salience.
 6. **Evaluation and release**: real-model tier, measurements, docs, release notes with cost.
 

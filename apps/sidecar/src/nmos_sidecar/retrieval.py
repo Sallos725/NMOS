@@ -13,13 +13,14 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
-from .facts import claim_line, fact_line, memory_view, relevant_facts
+from .facts import claim_line, fact_line, memory_view, relevant_facts, thread_line
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
 from .packet import Excerpt, StateItem, clean_text, compile_packet, excerpt
 from .state import current_state
+from .threads import relevant_threads
 from .vectors import vector_candidates
 
 CANDIDATE_LIMIT = 50
@@ -42,6 +43,7 @@ class RecallOptions:
     rules_version: str = "none"
     facts_limit: int = 8
     events_limit: int = 3  # `event` facts among them (PHASE-7 Q4)
+    threads_limit: int = 3  # open promises (PHASE-7 Q5)
     embedder: Embedder | None = None
     embed_projection: str = ""  # corpus vectors of this projection only (D20)
     extractor_key: str | None = None  # facts of this extractor generation only (D20)
@@ -225,14 +227,20 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         now_text = f"{query} {previous_ai}"
         state_items.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in now_text), reverse=True)
     fact_lines: list[str] = []
-    if fresh and options.facts_limit > 0:
-        view = memory_view(conn, head, options.extractor_key)
+    thread_lines: list[str] = []
+    view = memory_view(conn, head, options.extractor_key) if fresh and (options.facts_limit > 0
+                                                                        or options.threads_limit > 0) else None
+    if view is not None and options.threads_limit > 0:
+        thread_lines = [thread_line(t) for t in relevant_threads(view["threads"], query, previous_ai, in_context,
+                                                                 options.threads_limit)]
+    if view is not None and options.facts_limit > 0:
         facts = relevant_facts(view["facts"], query, previous_ai, in_context, options.facts_limit,
                                options.events_limit)
         # Claims after facts, so the budget serves narration first (ADR 0013).
         claims = relevant_facts(view["claims"], query, previous_ai, in_context, max(1, options.facts_limit // 2))
         fact_lines = [fact_line(f) for f in facts] + [claim_line(c) for c in claims]
-    text, tokens, chosen = compile_packet(ranked, request.budget_tokens, state=state_items, facts=fact_lines)
+    text, tokens, chosen = compile_packet(ranked, request.budget_tokens, state=state_items, facts=fact_lines,
+                                         threads=thread_lines)
     timings["sidecar_total"] = round((time.perf_counter() - started) * 1000, 2)
 
     def brief(c: dict[str, Any]) -> dict[str, Any]:
@@ -251,7 +259,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             Jsonb([{"revision_id": e.revision_id, "turn": e.turn, "score": round(e.score, 5)} for e in chosen]),
             Jsonb([brief(c) for c in excluded]),
             tokens,
-            Jsonb({**timings, "lexical_mode": lexical_note, "vector_mode": vector_note, "state_items": len(state_items), "facts": len(fact_lines),
+            Jsonb({**timings, "lexical_mode": lexical_note, "vector_mode": vector_note, "state_items": len(state_items), "facts": len(fact_lines), "threads": len(thread_lines),
                    "embedding_projection": options.embed_projection[:20] if options.embedder else None,
                    "extractor": (options.extractor_key or "")[:20] or None,
                    **{f"client_{k}": v for k, v in request.client_timings_ms.items()}}),

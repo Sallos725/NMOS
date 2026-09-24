@@ -1,4 +1,4 @@
-# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5 and Phase 6 cases 2026-09-24)
+# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5, 6 and 7 cases 2026-09-24)
 
 Deterministic tier of the RP memory evaluation. It gates CI (`apps/sidecar/tests/test_memory_eval.py`)
 and prints this table (`tools/eval_memory.py`).
@@ -15,7 +15,10 @@ and prints this table (`tools/eval_memory.py`).
   in the Y." —, a hypothetical "If X goes to the Y,", a dream "X dreamed she was in the Y.", narrated
   identity "X is a Y." and a claim 'X says: "I am a Y."'; since Phase 6 an item's place — "The Y is
   on the Z.", "X puts the Y on the Z." — and a holder and place in one sentence "X has the Y in the
-  Z."; an item's end "X burns / eats the Y." → `destroyed`, and no rule for damage); the embedder is a concept bag with weak
+  Z."; an item's end "X burns / eats the Y." → `destroyed`, and no rule for damage; since Phase 7 a
+  promise its maker says 'X says to Y: "I promise to …."', one reported by someone else 'Z says: "X
+  promised Y to …."', a broken one "X breaks the promise to Y to …." and minor events "X did chore
+  N."); the embedder is a concept bag with weak
   hashed words. Results therefore measure
   reconciliation, invalidation, retrieval and packet compilation, not model quality.
 - **Measured on the packet**, never on a generated answer, so no judge model is involved:
@@ -61,17 +64,26 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | damaged, not destroyed | item end | **no** | **no** | **no** | yes |
 | edit removes the end | item end | **no** | **no** | **no** | yes |
 | use after end | conflict | **no** | **no** | **no** | yes |
+| promise recalled | open thread | **no** | **no** | **no** | yes |
+| reported promise | open thread | **no** | **no** | **no** | yes |
+| broken promise | open thread | — | — | — | — |
+| edit removes the break | open thread | **no** | **no** | **no** | yes |
+| delete removes the promise | open thread | — | — | — | — |
+| events leave room | event salience | **no** | **no** | **no** | yes |
 | unrelated question | irrelevant-memory suppression | — | empty | empty | empty |
 
 | Mode | gold reached | cases with stale memory | irrelevant packets | mean packet tokens |
 |---|---:|---:|---:|---:|
-| recent | 0/25 | 0 | — | 0 |
-| lexical | 2/25 | 0 | 0/1 | 120 |
-| hybrid | 3/25 | 0 | 0/1 | 146 |
-| full | 25/25 | 0 | 0/1 | 178 |
+| recent | 0/29 | 0 | — | 0 |
+| lexical | 2/29 | 0 | 0/1 | 110 |
+| hybrid | 3/29 | 0 | 0/1 | 137 |
+| full | 29/29 | 0 | 0/1 | 174 |
 
 Before Phase 6 step 1 (ADR 0016), `full` had stale memory in "put down" (`Hana possesses map`) and
 "picked up" (`map located in table`).
+Before Phase 7 step 1, "events leave room" missed its gold: twelve newer events of Hana took every
+fact slot. Before step 2, "promise recalled" missed its gold: the promise reached the packet only as a
+`<Claim>`, never as an open thread.
 
 "—": the case has no gold (the deleted turn only checks that nothing of it comes back).
 

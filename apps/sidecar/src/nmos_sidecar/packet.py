@@ -18,7 +18,8 @@ PACKET_CLOSE = "</NarrativeMemory>"
 NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly not, or no longer, true."),
                ("<Claim ", " A Claim is what that character said, not established truth."),
                ('disputed="true"', " disputed=\"true\" marks a place where the story contradicts itself; neither"
-                                   " side is certain."))
+                                   " side is certain."),
+               ("<Thread ", " A Thread is a promise made in the story and not yet kept or broken."))
 MAX_EXCERPT_CHARS = 480
 
 # Markup and model reasoning that is not story: style/script blocks and <Thoughts>/<think> sections.
@@ -122,9 +123,9 @@ def state_block(items: list[StateItem]) -> list[str]:
 
 
 def compile_packet(ranked: list[Excerpt], budget_tokens: int, state: list[StateItem] | None = None,
-                   facts: list[str] | None = None) -> tuple[str, int, list[Excerpt]]:
-    """Fill the budget in priority order — state, facts, then excerpts by score — and emit the
-    excerpts chronologically. Returns ("", 0, []) when nothing fits or nothing is relevant."""
+                   facts: list[str] | None = None, threads: list[str] | None = None) -> tuple[str, int, list[Excerpt]]:
+    """Fill the budget in priority order — state, open threads (PHASE-7), facts, then excerpts by score —
+    and emit the excerpts chronologically. Returns ("", 0, []) when nothing fits or nothing is relevant."""
     frame = [PACKET_OPEN, PACKET_NOTE, PACKET_CLOSE]
     used = estimate_tokens("\n".join(frame))
     if used >= budget_tokens:
@@ -136,16 +137,23 @@ def compile_packet(ranked: list[Excerpt], budget_tokens: int, state: list[StateI
         if used + cost <= budget_tokens:
             kept_state.append(item)
             used += cost
-    kept_facts: list[str] = []
     extras: list[str] = []
-    for line in facts or []:
-        cost = estimate_tokens(line + "\n") + (estimate_tokens("  <Facts>\n  </Facts>\n") if not kept_facts else 0)
-        needed = [text for mark, text in NOTE_EXTRAS if mark in line and text not in extras]
-        cost += sum(estimate_tokens(text) for text in needed)
-        if used + cost <= budget_tokens:
-            kept_facts.append(line)
-            extras += needed
-            used += cost
+
+    def section(lines: list[str] | None, tag: str) -> list[str]:
+        nonlocal used
+        kept: list[str] = []
+        for line in lines or []:
+            cost = estimate_tokens(line + "\n") + (estimate_tokens(f"  <{tag}>\n  </{tag}>\n") if not kept else 0)
+            needed = [text for mark, text in NOTE_EXTRAS if mark in line and text not in extras]
+            cost += sum(estimate_tokens(text) for text in needed)
+            if used + cost <= budget_tokens:
+                kept.append(line)
+                extras.extend(needed)
+                used += cost
+        return kept
+
+    kept_threads = section(threads, "Threads")
+    kept_facts = section(facts, "Facts")
     chosen: list[Excerpt] = []
     for item in ranked:
         cost = estimate_tokens(excerpt_line(item) + "\n")
@@ -153,10 +161,12 @@ def compile_packet(ranked: list[Excerpt], budget_tokens: int, state: list[StateI
             continue
         chosen.append(item)
         used += cost
-    if not chosen and not kept_state and not kept_facts:
+    if not chosen and not kept_state and not kept_facts and not kept_threads:
         return "", 0, []
     chosen.sort(key=lambda e: e.turn)
     body = state_block(kept_state)
+    if kept_threads:
+        body += ["  <Threads>", *kept_threads, "  </Threads>"]
     if kept_facts:
         body += ["  <Facts>", *kept_facts, "  </Facts>"]
     body += [excerpt_line(e) for e in chosen]
