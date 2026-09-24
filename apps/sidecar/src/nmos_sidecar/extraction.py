@@ -28,10 +28,11 @@ from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
 
-COMPILER_VERSION = "extract-v7"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
+COMPILER_VERSION = "extract-v8"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
 #                                 v5: polarity, modality, source, also_called (ADR 0012, ADR 0013);
 #                                 v6: destroyed (PHASE-6, ADR 0017);
-#                                 v7: promises actual, fulfilled, OPEN PROMISES, event salience (PHASE-7)
+#                                 v7: promises actual, fulfilled, OPEN PROMISES, event salience (PHASE-7);
+#                                 v8: typed participants `with` (PHASE-8, ADR 0021)
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
 TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
@@ -83,6 +84,12 @@ Rules:
 - `salience`, for `event` only: "major" when the event changes the story (a confession, a betrayal, a
   death, a first meeting, a secret revealed, a decision that changes a relationship or a goal);
   otherwise "minor".
+- `with`, for `event`, `goal`, `knows` and `destroyed` only: the other characters or groups the value
+  is about (who received, who was attacked or helped, who is with the subject, who something is kept
+  from), each as {{"name": "...", "type": "character|group"}}, named as the TARGET turn names them.
+  Never the subject or object again, never a place or item, never someone the TARGET turn does not
+  name. Being there does not mean knowing: `with` says who is involved, not who knows (that is
+  `known_by`). Use [] when nobody else is involved.
 - Prefer few, high-value facts. An empty list is a good answer for small talk.
 - Knowledge (who in the story is aware of the fact):
   `knowledge` is "public" when it is openly known (said to everyone present, common knowledge in the
@@ -96,7 +103,8 @@ Rules:
 Answer with JSON only: {{"assertions": [{{"subject": "...", "subject_type": "...", "predicate": "...",
 "object": "... or null", "object_type": "... or null", "value": "... or null", "polarity": "positive|negative",
 "modality": "actual|hypothetical|dreamed|unknown", "source": "narration|character_claim",
-"asserted_by": "... or null", "salience": "major|minor (event only)", "epistemic": "stated",
+"asserted_by": "... or null", "salience": "major|minor (event only)",
+"with": [{{"name": "...", "type": "character|group"}}], "epistemic": "stated",
 "confidence": 0.0-1.0, "evidence": "...",
 "knowledge": "public|limited|unknown", "known_by": [], "hidden_from": []}}]}}"""
 
