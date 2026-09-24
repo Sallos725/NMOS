@@ -180,6 +180,10 @@ character's routine no longer fills the facts: a packet holds at most three even
 ("major": a confession, a betrayal, a death, a secret revealed) first, and a minor event only when
 your message is about it.
 
+A fact about two people comes back from both sides (Phase 8): `Hana event: betrayed Kaito` is recalled
+when you address Kaito, not only Hana. Extraction lists the other people an event, goal, knowledge fact
+or destroyed item involves; being there is not taken as knowing.
+
 ## Privacy
 
 Chat text is stored in the local Postgres volume. Text leaves your machine only if you configure an

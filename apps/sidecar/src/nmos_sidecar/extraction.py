@@ -20,7 +20,7 @@ from .config import Settings
 from .generations import Generation
 from .ids import uuid7
 from .entities import USER_NAMES, norm, resolve
-from .facts import ACTIVE_ASSERTIONS
+from .facts import served_assertions
 from .predicates import (REGISTRY, alias_evidenced, fill_types, knowledge, participants, registry_prompt, salience,
                          semantics, validate)
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
@@ -268,7 +268,7 @@ def earlier_assertions(conn: psycopg.Connection, ctx: dict[str, Any], key: str) 
     """The head's served assertions before the target turn, read like facts: active sources only, one
     generation per turn."""
     target = ctx["target"]
-    return [r for r in conn.execute(ACTIVE_ASSERTIONS, {"head": target["commit_id"], "key": key}).fetchall()
+    return [r for r in served_assertions(conn, target["commit_id"], key)
             if r["predicate"] in REGISTRY and r["turn"] is not None and r["turn"] < target["turn"]]
 
 

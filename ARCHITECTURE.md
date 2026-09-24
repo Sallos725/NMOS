@@ -119,7 +119,9 @@ Swipe churn does not burn extraction calls.
 (single/multi-valued), and epistemic class. Unknown predicates become `pending` candidates
 for review, not facts. Since `extract-v6` the registry also has `destroyed` (an item that no longer
 exists; D30, ADR 0017), and since `extract-v7` `fulfilled` (a kept promise; D32, ADR 0019). An
-`event` also carries `salience` (`major` / `minor`, migration 0016; D32, ADR 0020).
+`event` also carries `salience` (`major` / `minor`, migration 0016; D32, ADR 0020). Since `extract-v8`
+an `event`, `goal`, `knows` or `destroyed` carries typed participants (`with`, migration 0017; D33,
+ADR 0021); they are outside the registry fingerprint like other read rules, but part of the prompt.
 
 **D7 — Bounded extraction context, per turn (revised 2026-09-23, ADR 0008).** The unit of
 extraction is the **turn**: a run of user messages plus the run of replies that answers it (comments,
@@ -286,6 +288,14 @@ persona) go in a `<Threads>` section before the facts (at most 3). Extraction is
 promises (`extract-v7`). A packet holds at most 3 `event` facts: major before minor or unlabeled, and a
 minor event only when the query is about it. Minor events are never deleted.
 
+**D33 — Typed participants (Phase 8, ADR 0021).** An `event`, `goal`, `knows` or `destroyed` lists the
+other characters or groups its value involves as `{name, type}` (`extract-v8`, migration 0017); nothing
+is inferred from text. Participants are entity mentions under `resolve-v2`, read after every subject,
+object and alias name, so they never change an existing entity or the KNOWN ENTITIES hints (ADR 0012
+amended). A participant named in the user's message counts like the subject for facts and claims; the
+persona never counts. Participation changes no knowledge mark, version key or thread. Older rows have
+no participants and recall as before.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
@@ -345,7 +355,8 @@ consumer needs it; empty future directories are not created in advance.
 | 5 | Entity identity, assertion semantics (Track B, B1) — **done (beta.12)** | Yes |
 | 6 | Item transitions and conflicts (Track B, B2) — **done (beta.13)** | Yes |
 | 7 | Promise threads and event salience (Track B, B3 narrowed) — **done (beta.14)** | Yes |
-| 8+ | Rest of B3 (events, relationships, causal links), canon, hard POV, forensic recall, MCP | Yes |
+| 8 | Typed event participants (Track B, B3 narrowed) — **current** | Yes |
+| 9+ | Rest of B3 (events, relationships, causal links), canon, hard POV, forensic recall, MCP | Yes |
 
 Each phase gets its own `PHASE-N.md` with acceptance criteria before work starts.
 

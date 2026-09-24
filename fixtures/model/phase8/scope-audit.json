@@ -1,7 +1,7 @@
 {
- "about": "Phase 8 scope audit (docs/phases/PHASE-8.md). Every valid event, destroyed, goal, knows and fulfilled assertion in the recorded real-model runs, with the other people its value involves. Participants were identified by reading each distinct value (manual review by the implementing agent, 2026-09-24; not the owner). Synthetic Korean scenes, test data only. Check: python3 tools/check_phase8_scope_audit.py",
+ "about": "Phase 8 scope audit (docs/phases/PHASE-8.md). Every valid event, destroyed, goal, knows and fulfilled assertion in the recorded real-model runs, with the other people its value involves. Participants were identified by reading each distinct value (manual review by the implementing agent, 2026-09-24; not the owner). Synthetic Korean scenes, test data only. Check: python3 tools/check_phase8_scope_audit.py Since the Phase 8 real-model tier, the extract-v8 runs of the Phase 8 scenes are listed too, each with the model's own `with` (model_participants) and whether the manual review agrees.",
  "rules": {
-  "participant": "a character or group other than the subject and object that the value is about: acted on, received, accompanied, addressed, or whose possession the value is about (kind possessor)",
+  "participant": "a character or group other than the subject and object that the value is about: acted on, received, accompanied, addressed, or whose possession the value is about (kind possessor); kind implied: involved in the value's action and named in the TARGET turn, though not in the value (Phase 8 runs only)",
   "usable": "Phase 8 predicate (event, destroyed, goal, knows), route fact or claim, and at least one participant other than the persona"
  },
  "entries": [
@@ -6457,6 +6457,2607 @@
    "value_only": false,
    "usable": false,
    "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 1,
+   "scene": "giving: key",
+   "variant": "v8",
+   "run": 0,
+   "index": 2,
+   "predicate": "event",
+   "subject": "유이",
+   "object": null,
+   "value": "은빛 열쇠를 카이토에게 건네줌",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 2,
+   "scene": "giving: key",
+   "variant": "v8",
+   "run": 1,
+   "index": 2,
+   "predicate": "event",
+   "subject": "유이",
+   "object": null,
+   "value": "은빛 열쇠를 카이토에게 건네주었다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 3,
+   "scene": "giving: key",
+   "variant": "v8",
+   "run": 2,
+   "index": 2,
+   "predicate": "event",
+   "subject": "유이",
+   "object": null,
+   "value": "은빛 열쇠를 카이토에게 주었다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 4,
+   "scene": "giving: letter",
+   "variant": "v8",
+   "run": 0,
+   "index": 2,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "유이에게 편지를 건넸다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 5,
+   "scene": "giving: letter",
+   "variant": "v8",
+   "run": 1,
+   "index": 0,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "봉투에 든 편지를 유이에게 건넸다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 6,
+   "scene": "giving: letter",
+   "variant": "v8",
+   "run": 2,
+   "index": 2,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "유이에게 편지를 건넸다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 7,
+   "scene": "attack",
+   "variant": "v8",
+   "run": 0,
+   "index": 0,
+   "predicate": "event",
+   "subject": "검은 망토의 암살자",
+   "object": null,
+   "value": "어둠 속에서 뛰쳐나와 카이토의 등을 향해 단검을 휘둘렀다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 8,
+   "scene": "attack",
+   "variant": "v8",
+   "run": 1,
+   "index": 0,
+   "predicate": "event",
+   "subject": "검은 망토의 암살자",
+   "object": null,
+   "value": "카이토의 등을 향해 단검을 휘둘렀다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 8,
+   "scene": "attack",
+   "variant": "v8",
+   "run": 1,
+   "index": 4,
+   "predicate": "event",
+   "subject": "{{user}}",
+   "object": null,
+   "value": "카이토에게 뒤를 조심하라고 경고했다",
+   "modality": "actual",
+   "source_class": "character_claim",
+   "route": "claim",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 9,
+   "scene": "attack",
+   "variant": "v8",
+   "run": 2,
+   "index": 0,
+   "predicate": "event",
+   "subject": "검은 망토의 암살자",
+   "object": null,
+   "value": "카이토의 등을 향해 단검을 휘둘렀다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 9,
+   "scene": "attack",
+   "variant": "v8",
+   "run": 2,
+   "index": 2,
+   "predicate": "event",
+   "subject": "{{user}}",
+   "object": null,
+   "value": "카이토에게 뒤를 조심하라고 경고했다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 10,
+   "scene": "confession: kaito",
+   "variant": "v8",
+   "run": 0,
+   "index": 1,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "카이토에게 좋아한다고 고백함",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 11,
+   "scene": "confession: kaito",
+   "variant": "v8",
+   "run": 1,
+   "index": 1,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "카이토에게 좋아한다고 고백함",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 12,
+   "scene": "confession: kaito",
+   "variant": "v8",
+   "run": 2,
+   "index": 1,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "카이토에게 좋아한다고 고백함",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 13,
+   "scene": "confession: yui",
+   "variant": "v8",
+   "run": 0,
+   "index": 0,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "유이에게 오래 숨겨 온 마음을 고백했다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 13,
+   "scene": "confession: yui",
+   "variant": "v8",
+   "run": 0,
+   "index": 2,
+   "predicate": "event",
+   "subject": "유이",
+   "object": null,
+   "value": "아무 말 없이 고개를 끄덕였다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "implied"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 13,
+   "scene": "confession: yui",
+   "variant": "v8",
+   "run": 0,
+   "index": 3,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "유이를 불러냈다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 14,
+   "scene": "confession: yui",
+   "variant": "v8",
+   "run": 1,
+   "index": 0,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "유이에게 오래 숨겨 온 마음을 고백했다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 14,
+   "scene": "confession: yui",
+   "variant": "v8",
+   "run": 1,
+   "index": 2,
+   "predicate": "knows",
+   "subject": "유이",
+   "object": null,
+   "value": "카이토의 오래 숨겨 온 마음",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 15,
+   "scene": "confession: yui",
+   "variant": "v8",
+   "run": 2,
+   "index": 0,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "유이를 불러냈다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 15,
+   "scene": "confession: yui",
+   "variant": "v8",
+   "run": 2,
+   "index": 1,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "유이에게 오래 숨겨 온 마음을 고백했다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 15,
+   "scene": "confession: yui",
+   "variant": "v8",
+   "run": 2,
+   "index": 2,
+   "predicate": "event",
+   "subject": "유이",
+   "object": null,
+   "value": "아무 말 없이 고개를 끄덕였다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "implied"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 15,
+   "scene": "confession: yui",
+   "variant": "v8",
+   "run": 2,
+   "index": 3,
+   "predicate": "knows",
+   "subject": "유이",
+   "object": null,
+   "value": "카이토가 오래 숨겨 온 마음을 고백했다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 16,
+   "scene": "rescue",
+   "variant": "v8",
+   "run": 0,
+   "index": 0,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "강물에 빠져 떠내려갔다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": false,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 16,
+   "scene": "rescue",
+   "variant": "v8",
+   "run": 0,
+   "index": 1,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "망설임 없이 강물에 뛰어들어 하나를 끌어냈다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 17,
+   "scene": "rescue",
+   "variant": "v8",
+   "run": 1,
+   "index": 0,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "강물에 빠졌다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 17,
+   "scene": "rescue",
+   "variant": "v8",
+   "run": 1,
+   "index": 1,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "강물에 뛰어들어 하나를 끌어냈다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 18,
+   "scene": "rescue",
+   "variant": "v8",
+   "run": 2,
+   "index": 0,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "강물에 빠졌다",
+   "modality": "actual",
+   "source_class": "character_claim",
+   "route": "claim",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 18,
+   "scene": "rescue",
+   "variant": "v8",
+   "run": 2,
+   "index": 1,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "강물에 뛰어들어 하나를 끌어냈다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 19,
+   "scene": "group attack",
+   "variant": "v8",
+   "run": 0,
+   "index": 0,
+   "predicate": "event",
+   "subject": "산적들",
+   "object": null,
+   "value": "덤불에서 뛰쳐나와 하나와 카이토를 에워쌌다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "direct"
+    },
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    },
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 20,
+   "scene": "group attack",
+   "variant": "v8",
+   "run": 1,
+   "index": 0,
+   "predicate": "event",
+   "subject": "산적들",
+   "object": null,
+   "value": "덤불에서 뛰쳐나와 여행 중이던 하나와 카이토를 에워쌌다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "direct"
+    },
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    },
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 21,
+   "scene": "group attack",
+   "variant": "v8",
+   "run": 2,
+   "index": 0,
+   "predicate": "event",
+   "subject": "산적들",
+   "object": null,
+   "value": "덤불에서 뛰쳐나와 여행 중이던 하나와 카이토를 에워쌌다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "direct"
+    },
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    },
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 22,
+   "scene": "goal about another",
+   "variant": "v8",
+   "run": 0,
+   "index": 1,
+   "predicate": "goal",
+   "subject": "하나",
+   "object": null,
+   "value": "무슨 일이 있어도 카이토가 이 편지를 읽지 못하게 하는 것",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 22,
+   "scene": "goal about another",
+   "variant": "v8",
+   "run": 0,
+   "index": 2,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "편지를 가슴에 꼭 안고, 카이토가 읽지 못하게 하기로 결심함",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 23,
+   "scene": "goal about another",
+   "variant": "v8",
+   "run": 1,
+   "index": 1,
+   "predicate": "goal",
+   "subject": "하나",
+   "object": null,
+   "value": "무슨 일이 있어도 카이토가 이 편지를 읽지 못하게 하는 것",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 24,
+   "scene": "goal about another",
+   "variant": "v8",
+   "run": 2,
+   "index": 1,
+   "predicate": "goal",
+   "subject": "하나",
+   "object": null,
+   "value": "카이토가 이 편지를 읽지 못하게 하는 것",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 25,
+   "scene": "knows about another",
+   "variant": "v8",
+   "run": 0,
+   "index": 0,
+   "predicate": "knows",
+   "subject": "유이",
+   "object": null,
+   "value": "카이토가 이웃 나라의 왕자라는 것",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 26,
+   "scene": "knows about another",
+   "variant": "v8",
+   "run": 1,
+   "index": 0,
+   "predicate": "knows",
+   "subject": "유이",
+   "object": null,
+   "value": "카이토가 이웃 나라의 왕자라는 것",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 27,
+   "scene": "knows about another",
+   "variant": "v8",
+   "run": 2,
+   "index": 1,
+   "predicate": "knows",
+   "subject": "유이",
+   "object": null,
+   "value": "카이토가 이웃 나라의 왕자라는 사실",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 28,
+   "scene": "destroyed by another",
+   "variant": "v8",
+   "run": 0,
+   "index": 0,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "하나의 일기장을 벽난로에 던져 넣어 불태웠다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "possessor"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 28,
+   "scene": "destroyed by another",
+   "variant": "v8",
+   "run": 0,
+   "index": 1,
+   "predicate": "destroyed",
+   "subject": "일기장",
+   "object": null,
+   "value": "벽난로에 던져져 불길에 휩싸여 재가 되었다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "implied"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 29,
+   "scene": "destroyed by another",
+   "variant": "v8",
+   "run": 1,
+   "index": 0,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "하나의 일기장을 벽난로에 던져 넣었다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "possessor"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 29,
+   "scene": "destroyed by another",
+   "variant": "v8",
+   "run": 1,
+   "index": 1,
+   "predicate": "destroyed",
+   "subject": "일기장",
+   "object": null,
+   "value": "벽난로에서 불에 타 재가 되었다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "implied"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 30,
+   "scene": "destroyed by another",
+   "variant": "v8",
+   "run": 2,
+   "index": 0,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "하나의 일기장을 벽난로에 던져 불태워 재가 되게 함",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "possessor"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 30,
+   "scene": "destroyed by another",
+   "variant": "v8",
+   "run": 2,
+   "index": 1,
+   "predicate": "destroyed",
+   "subject": "일기장",
+   "object": null,
+   "value": "벽난로에 던져져 불길에 휩싸여 재가 됨",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "implied"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 34,
+   "scene": "cooking",
+   "variant": "v8",
+   "run": 0,
+   "index": 1,
+   "predicate": "event",
+   "subject": "유이",
+   "object": null,
+   "value": "부엌에서 감자 수프를 끓이고 빵을 구웠다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 35,
+   "scene": "cooking",
+   "variant": "v8",
+   "run": 1,
+   "index": 1,
+   "predicate": "event",
+   "subject": "유이",
+   "object": null,
+   "value": "부엌에서 감자 수프를 끓이고 빵을 구웠다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 36,
+   "scene": "cooking",
+   "variant": "v8",
+   "run": 2,
+   "index": 1,
+   "predicate": "event",
+   "subject": "유이",
+   "object": null,
+   "value": "감자 수프를 끓이고 빵을 구웠다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 37,
+   "scene": "absent householder",
+   "variant": "v8",
+   "run": 0,
+   "index": 0,
+   "predicate": "goal",
+   "subject": "하나",
+   "object": null,
+   "value": "시장에 가는 것",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 37,
+   "scene": "absent householder",
+   "variant": "v8",
+   "run": 0,
+   "index": 1,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "카이토의 집 앞을 지나갔다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 38,
+   "scene": "absent householder",
+   "variant": "v8",
+   "run": 1,
+   "index": 0,
+   "predicate": "goal",
+   "subject": "하나",
+   "object": null,
+   "value": "시장에 가는 것",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 38,
+   "scene": "absent householder",
+   "variant": "v8",
+   "run": 1,
+   "index": 1,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "카이토의 집 앞을 지나갔다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 39,
+   "scene": "absent householder",
+   "variant": "v8",
+   "run": 2,
+   "index": 0,
+   "predicate": "goal",
+   "subject": "하나",
+   "object": null,
+   "value": "시장에 가다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 39,
+   "scene": "absent householder",
+   "variant": "v8",
+   "run": 2,
+   "index": 1,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "카이토의 집 앞을 지나갔다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 40,
+   "scene": "the word 하나",
+   "variant": "v8",
+   "run": 0,
+   "index": 0,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "낡은 상자를 열었지만 동전이 하나도 없었다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 40,
+   "scene": "the word 하나",
+   "variant": "v8",
+   "run": 0,
+   "index": 2,
+   "predicate": "knows",
+   "subject": "카이토",
+   "object": null,
+   "value": "상자 안에 동전이 하나도 없다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 41,
+   "scene": "the word 하나",
+   "variant": "v8",
+   "run": 1,
+   "index": 0,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "낡은 상자를 열었지만 안에 동전이 하나도 없었다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 42,
+   "scene": "the word 하나",
+   "variant": "v8",
+   "run": 2,
+   "index": 1,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "낡은 상자를 열었지만 동전이 없어 한숨을 쉬고 다시 닫았다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 43,
+   "scene": "secret about a shared event",
+   "variant": "v8",
+   "run": 0,
+   "index": 0,
+   "predicate": "knows",
+   "subject": "하나",
+   "object": null,
+   "value": "예전에 마키 선생님 수업에서 배가 아프다고 하고 일찍 나온 진짜 이유가 너무 불안해서였다는 것",
+   "modality": "actual",
+   "source_class": "character_claim",
+   "route": "claim",
+   "participants": [
+    {
+     "name": "마키 선생님",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": false,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 43,
+   "scene": "secret about a shared event",
+   "variant": "v8",
+   "run": 0,
+   "index": 1,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "예전에 마키 선생님 수업에서 배가 아프다고 하고 일찍 나왔다",
+   "modality": "actual",
+   "source_class": "character_claim",
+   "route": "claim",
+   "participants": [
+    {
+     "name": "마키 선생님",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "마키 선생님",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 43,
+   "scene": "secret about a shared event",
+   "variant": "v8",
+   "run": 0,
+   "index": 2,
+   "predicate": "goal",
+   "subject": "유이",
+   "object": null,
+   "value": "엄마가 볼지도 모르니 이 이야기를 수첩에 적지 않기",
+   "modality": "actual",
+   "source_class": "character_claim",
+   "route": "claim",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "implied"
+    },
+    {
+     "name": "마키 선생님",
+     "type": "character",
+     "kind": "implied"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    }
+   ],
+   "model_agrees": false,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 44,
+   "scene": "secret about a shared event",
+   "variant": "v8",
+   "run": 1,
+   "index": 0,
+   "predicate": "knows",
+   "subject": "하나",
+   "object": null,
+   "value": "예전에 마키 선생님 수업에서 배가 아프다고 하고 일찍 나온 진짜 이유가 불안이었다는 사실",
+   "modality": "actual",
+   "source_class": "character_claim",
+   "route": "claim",
+   "participants": [
+    {
+     "name": "마키 선생님",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": false,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 44,
+   "scene": "secret about a shared event",
+   "variant": "v8",
+   "run": 1,
+   "index": 1,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "마키 선생님 수업에서 배가 아프다고 하고 일찍 나왔다",
+   "modality": "actual",
+   "source_class": "character_claim",
+   "route": "claim",
+   "participants": [
+    {
+     "name": "마키 선생님",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "마키 선생님",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 44,
+   "scene": "secret about a shared event",
+   "variant": "v8",
+   "run": 1,
+   "index": 3,
+   "predicate": "goal",
+   "subject": "유이",
+   "object": null,
+   "value": "하나의 비밀을 수첩에 적지 않는다",
+   "modality": "hypothetical",
+   "source_class": "character_claim",
+   "route": "not_in_packet",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": false,
+   "exclusion": "modality keeps it out of the packet"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 45,
+   "scene": "secret about a shared event",
+   "variant": "v8",
+   "run": 2,
+   "index": 0,
+   "predicate": "knows",
+   "subject": "하나",
+   "object": null,
+   "value": "예전에 마키 선생님 수업에서 배가 아프다고 하고 일찍 나온 진짜 이유가 너무 불안해서였다는 것",
+   "modality": "actual",
+   "source_class": "character_claim",
+   "route": "claim",
+   "participants": [
+    {
+     "name": "마키 선생님",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "마키 선생님",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 45,
+   "scene": "secret about a shared event",
+   "variant": "v8",
+   "run": 2,
+   "index": 1,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "마키 선생님 수업에서 배가 아프다고 하고 일찍 나왔다",
+   "modality": "actual",
+   "source_class": "character_claim",
+   "route": "claim",
+   "participants": [
+    {
+     "name": "마키 선생님",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "마키 선생님",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 45,
+   "scene": "secret about a shared event",
+   "variant": "v8",
+   "run": 2,
+   "index": 2,
+   "predicate": "goal",
+   "subject": "유이",
+   "object": null,
+   "value": "하나의 속삭임을 수첩에 적지 않기",
+   "modality": "actual",
+   "source_class": "character_claim",
+   "route": "claim",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 46,
+   "scene": "relationship: friends to rivals",
+   "variant": "v8",
+   "run": 0,
+   "index": 0,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "카이토와 같은 기사단장 자리를 두고 겨루게 되었다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 46,
+   "scene": "relationship: friends to rivals",
+   "variant": "v8",
+   "run": 0,
+   "index": 4,
+   "predicate": "goal",
+   "subject": "하나",
+   "object": null,
+   "value": "기사단장 자리를 차지하는 것",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 46,
+   "scene": "relationship: friends to rivals",
+   "variant": "v8",
+   "run": 0,
+   "index": 5,
+   "predicate": "goal",
+   "subject": "카이토",
+   "object": null,
+   "value": "기사단장 자리를 차지하는 것",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 47,
+   "scene": "relationship: friends to rivals",
+   "variant": "v8",
+   "run": 1,
+   "index": 3,
+   "predicate": "goal",
+   "subject": "하나",
+   "object": null,
+   "value": "기사단장 자리를 차지하는 것",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "implied"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 47,
+   "scene": "relationship: friends to rivals",
+   "variant": "v8",
+   "run": 1,
+   "index": 4,
+   "predicate": "goal",
+   "subject": "카이토",
+   "object": null,
+   "value": "기사단장 자리를 차지하는 것",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "implied"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 47,
+   "scene": "relationship: friends to rivals",
+   "variant": "v8",
+   "run": 1,
+   "index": 6,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "카이토와 같은 기사단장 자리를 두고 겨루게 되어 서로를 경쟁자로 대하게 된 일",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 48,
+   "scene": "relationship: friends to rivals",
+   "variant": "v8",
+   "run": 2,
+   "index": 2,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "카이토와 같은 기사단장 자리를 두고 겨루게 되었다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "카이토",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "카이토",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 48,
+   "scene": "relationship: friends to rivals",
+   "variant": "v8",
+   "run": 2,
+   "index": 3,
+   "predicate": "goal",
+   "subject": "하나",
+   "object": null,
+   "value": "기사단장 자리를 차지하는 것",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 48,
+   "scene": "relationship: friends to rivals",
+   "variant": "v8",
+   "run": 2,
+   "index": 4,
+   "predicate": "goal",
+   "subject": "카이토",
+   "object": null,
+   "value": "기사단장 자리를 차지하는 것",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [],
+   "model_participants": [],
+   "model_agrees": true,
+   "value_only": false,
+   "usable": false,
+   "exclusion": "no other person in value"
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 49,
+   "scene": "relationship: confession accepted",
+   "variant": "v8",
+   "run": 0,
+   "index": 0,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "유이에게 고백함",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 49,
+   "scene": "relationship: confession accepted",
+   "variant": "v8",
+   "run": 0,
+   "index": 2,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "유이를 불러냄",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 50,
+   "scene": "relationship: confession accepted",
+   "variant": "v8",
+   "run": 1,
+   "index": 0,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "유이에게 고백해 연인이 되었다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 51,
+   "scene": "relationship: confession accepted",
+   "variant": "v8",
+   "run": 2,
+   "index": 0,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "유이에게 고백했다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 51,
+   "scene": "relationship: confession accepted",
+   "variant": "v8",
+   "run": 2,
+   "index": 2,
+   "predicate": "event",
+   "subject": "카이토",
+   "object": null,
+   "value": "유이를 불러냈다",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 52,
+   "scene": "relationship: reconciliation",
+   "variant": "v8",
+   "run": 0,
+   "index": 0,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "유이에게 먼저 진심으로 사과함",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 52,
+   "scene": "relationship: reconciliation",
+   "variant": "v8",
+   "run": 0,
+   "index": 1,
+   "predicate": "event",
+   "subject": "유이",
+   "object": null,
+   "value": "한참 망설이다가 하나를 꼭 안아 줌",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 53,
+   "scene": "relationship: reconciliation",
+   "variant": "v8",
+   "run": 1,
+   "index": 0,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "유이에게 먼저 사과하러 와서 진심으로 사과함",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 53,
+   "scene": "relationship: reconciliation",
+   "variant": "v8",
+   "run": 1,
+   "index": 1,
+   "predicate": "event",
+   "subject": "유이",
+   "object": null,
+   "value": "한참 망설이다가 하나를 꼭 안아줌",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 54,
+   "scene": "relationship: reconciliation",
+   "variant": "v8",
+   "run": 2,
+   "index": 0,
+   "predicate": "event",
+   "subject": "하나",
+   "object": null,
+   "value": "유이에게 먼저 진심으로 사과함",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "유이",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "유이",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
+  },
+  {
+   "source": "fixtures/model/phase8/2026-09-24-deepseek-v4.1-flash/runs.jsonl",
+   "line": 54,
+   "scene": "relationship: reconciliation",
+   "variant": "v8",
+   "run": 2,
+   "index": 1,
+   "predicate": "event",
+   "subject": "유이",
+   "object": null,
+   "value": "하나를 꼭 안아 주며 화해함",
+   "modality": "actual",
+   "source_class": "narration",
+   "route": "fact",
+   "participants": [
+    {
+     "name": "하나",
+     "type": "character",
+     "kind": "direct"
+    }
+   ],
+   "model_participants": [
+    {
+     "name": "하나",
+     "type": "character"
+    }
+   ],
+   "model_agrees": true,
+   "value_only": true,
+   "usable": true,
+   "exclusion": null
   }
  ]
 }

@@ -509,7 +509,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             head = conv["head_commit_id"]
             ex_key = rt["active_extractor"]
             pj_key = rt["projection"].key if rt["projection"] else None
-            view = memory_view(conn, head, ex_key)
+            view = inspector.with_participants(memory_view(conn, head, ex_key))
             return inspector.detail(conv, current_state(conn, head, rt["rules"].version),
                                     readmodel.membership(conn, head, ex_key, pj_key),
                                     readmodel.commits(conn, conv_id), readmodel.traces(conn, conv_id),
@@ -525,7 +525,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            view = memory_view(conn, conv["head_commit_id"], rt["active_extractor"])
+            view = inspector.with_participants(memory_view(conn, conv["head_commit_id"], rt["active_extractor"]))
             return inspector.character(conv, str(entity_id), view, token, active=rt["active_extractor"],
                                        lang=inspector.lang_of(lang), embed=embed)
 

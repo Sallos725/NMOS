@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import quote
 
 from .entities import norm
+from .facts import participant_entities
 
 STYLE = """
 :root{color-scheme:light dark;--bg:#fbfbfa;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e3e0;--chip:#efefec;--accent:#3b5bdb}
@@ -329,11 +330,22 @@ def _turn(a: dict[str, Any]) -> str:
     return _v(a["turn"] if a.get("turn") is not None else a["position"])
 
 
+def with_participants(view: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the participants of the view's facts and claims for display (PHASE-8). Done here, not in
+    every fact read: recall needs only their names."""
+    r = view.get("resolution")
+    if r is not None:
+        for f in (*view["facts"], *view["claims"]):
+            if f.get("participants"):
+                f["participant_entities"] = participant_entities(f, r)
+    return view
+
+
 def _with(f: dict[str, Any], lang: str) -> str:
     """A fact's participants (PHASE-8): the entity's name, or the stored name when it does not resolve;
     groups carry a chip. Empty for facts without participants (older generations included)."""
     out = []
-    for p in f.get("participant_entities") or []:
+    for p in f.get("participant_entities") or []:  # set by with_participants() for the Inspector
         e = p.get("entity") or {}
         name = _v(e.get("name") or p["name"])
         if e.get("status") in ("ambiguous", "unresolved"):
