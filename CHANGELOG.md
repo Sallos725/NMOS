@@ -31,13 +31,21 @@ latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once; older turns keep their 
   earlier in the chat (`NMOS_EXTRACT_HINTS`, `0` = off), newest first, and asks the model to reuse a
   listed name when the turn clearly means that entity. "해안 지도" then stays "해안 지도" instead of becoming
   "지도" a few turns later. Each extraction records the names it was shown. Deleting the turn a name came
-  from does not invalidate extractions that used it. The list adds prompt tokens (measured in Phase 5
-  step 6).
+  from does not invalidate extractions that used it.
+- **Cost per extraction call** (`docs/perf/phase5-extraction.md`, `deepseek-v4.1-flash`): prompt tokens
+  910 → 1,278 for the new fields, 1,626 with a full 40-name hint list; completion tokens (mostly
+  reasoning) ≈2,500 per call, so a call costs roughly 10–20 % more in total.
 - Inspector: an entity list (names, mentions, the turn each alias came from) and ambiguous names.
   API: `GET /v1/conversations/{id}/entities`.
 - The packet Note explains `negated` and `Claim` only in packets that use them.
 - Inspector: facts marked *negated* or *legacy* (`extract-v4` and older), a list of claims, and a list
   of non-actual assertions.
+- **A missing entity type no longer loses the fact.** A model sometimes leaves `object_type` empty on a
+  name it typed elsewhere ("소우타 — relationship — 스즈키 히나타" while 히나타 is a `character` two lines up),
+  and validation parked the fact as pending. When the same reply or the known-entity list gives that
+  name exactly one type, the type is filled and the assertion is noted `object_type inferred`; a type
+  the model gave is never replaced, and conflicting evidence fills nothing. The extraction prompt now
+  also asks for both types and, more firmly, for values in the chat's language (never translated).
 - **Inline images are no longer read as story** (normalizer `clean-v2`). Image plugins write markup
   into the message itself; an illustration insert (`<div><span style="…"><img src="{{raw::…}}">`)
   outgrew the old 500-character tag limit, so the whole `<img …>` tag reached embeddings, extraction

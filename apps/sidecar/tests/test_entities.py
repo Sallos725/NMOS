@@ -140,3 +140,18 @@ def test_inspector_lists_entities_and_the_alias_turn(migrated, db):
     assert {e["name"] for e in api} >= {"하나", "station", "harbor"}
     # Object mentions carry their own type through the fact query (a missing column typed them "?").
     assert {(e["name"], e["type"]) for e in api} >= {("station", "place"), ("harbor", "place")}
+
+
+def test_a_resolver_change_rebuilds_links_without_model_calls_or_jobs(migrated, db, monkeypatch):
+    from nmos_sidecar import entities
+    chat = alias_chat()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        drain(migrated, alias_complete)
+        before = {f["subject_entity"]["id"] for f in facts(c, chat)}
+        monkeypatch.setattr(entities, "RESOLVER_VERSION", "resolve-test")
+        after = facts(c, chat)
+        assert {f["subject_entity"]["id"] for f in after}.isdisjoint(before)  # new ids, same grouping
+        assert [(f["subject"], f["object"]) for f in after if f["predicate"] == "located_in"] == [("Hana", "harbor")]
+    assert db.execute("SELECT count(*) AS n FROM job WHERE status = 'queued'").fetchone()["n"] == 0
+    assert drain(migrated, lambda s, u: (_ for _ in ()).throw(AssertionError("no model call expected"))) == 0

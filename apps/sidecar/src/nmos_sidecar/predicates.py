@@ -85,6 +85,44 @@ def _casefold(text: str | None) -> str:
     return " ".join(str(text or "").casefold().split())
 
 
+def fill_types(items: list[Any], hints: list[dict[str, Any]] | None = None) -> list[tuple[Any, str | None]]:
+    """Each item with a missing subject/object type filled, and a note, when evidence settles the type.
+
+    Models sometimes leave `object_type` empty on a name they typed elsewhere in the same reply
+    (`relationship` to someone who is `character` two lines up); validation would park the fact as
+    pending. A name's type counts when the reply or the KNOWN ENTITIES hints give it exactly one entity
+    type. A given type is never replaced, and conflicting evidence fills nothing.
+    """
+    seen: dict[str, set[str]] = {}
+
+    def add(name: Any, entity_type: Any) -> None:
+        if entity_type in ENTITY_TYPES and _casefold(name):
+            seen.setdefault(_casefold(name), set()).add(entity_type)
+
+    for item in items:
+        if isinstance(item, dict):
+            add(item.get("subject"), item.get("subject_type"))
+            add(item.get("object"), item.get("object_type"))
+    for hint in hints or []:
+        for name in [hint.get("name"), *hint.get("also", [])]:
+            add(name, hint.get("type"))
+
+    out: list[tuple[Any, str | None]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            out.append((item, None))
+            continue
+        filled, notes = item, []
+        for role in ("subject", "object"):
+            key = f"{role}_type"
+            types = seen.get(_casefold(item.get(role)), set())
+            if item.get(key) in (None, "", "null") and len(types) == 1:
+                filled = {**filled, key: next(iter(types))}
+                notes.append(f"{key} inferred")
+        out.append((filled, "; ".join(notes) or None))
+    return out
+
+
 def alias_evidenced(item: dict[str, Any], turn_text: str) -> bool:
     """An `also_called` assertion links two names only if both occur in the turn it comes from (ADR 0012)."""
     names = [_casefold(item.get("subject")), _casefold(item.get("value"))]
