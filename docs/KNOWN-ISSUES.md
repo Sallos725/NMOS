@@ -18,7 +18,7 @@ without a PocketRisu change.
 | K6 | PocketRisu must be opened at `localhost` or HTTPS | Host | browser rule |
 | K7 | Tested on one PocketRisu build only; no group chats | Host | evidence / host (H11) |
 | K8 | Names can still split: a new name with no stated alias is a new entity | Memory | reduced in beta.12 (ADR 0012); owner merge/split: Track B, B7 |
-| K9 | A destroyed or used-up item keeps its last holder unless the story says it is gone | Memory | explicit loss fixed in beta.12 (ADR 0013); other ends: Track B, B2 |
+| K9 | A destroyed or used-up item keeps its last holder unless the story says it is gone | Memory | explicit loss fixed in beta.12 (ADR 0013); other ends fixed, unreleased (Phase 6, ADR 0017) |
 | K10 | An item's holder and its place are separate facts and can disagree | Memory | fixed, unreleased (Phase 6, ADR 0016) |
 | K11 | Character knowledge is a hint, not isolation | Memory | Track B, B5 (hard POV) |
 | K12 | A word in more than 200 messages brings no lexical excerpts | Recall | accepted trade-off (A3) |
@@ -90,7 +90,10 @@ marks (`known_by`, `hidden_from`) stay free text. Owner corrections (merge/split
 **K9 — Destroyed or used-up items keep their last holder.** A new holder ends the previous one (ADR
 0011), and since 0.1.0-beta.12 so does a statement that the holder no longer has it ("lost", "dropped
 into the sea", "gave away"; ADR 0013; 3/3 in the real-model check). An item that is destroyed, eaten or
-used up with no such statement still shows its last holder. Needs transition rules (Track B, B2).
+used up with no such statement still shows its last holder. *Fixed, unreleased:* since Phase 6 step 2
+the extraction records `destroyed` (burned, eaten, used up), which ends the holder and the place (ADR
+0017). This holds only for turns extracted by `extract-v6`. Older turns need "extract all history", and
+real-model accuracy is not measured yet.
 
 **K10 — Holder and place can disagree.** `possesses` and `located_in` are separate facts, so an item
 can show a holder from one turn and a place from another (ADR 0011). *Fixed, unreleased:* since Phase 6

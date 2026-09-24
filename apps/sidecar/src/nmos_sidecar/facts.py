@@ -65,7 +65,7 @@ def _object(a: dict[str, Any], r: Resolution | None) -> str:
     return r.key(a.get("object_type"), a["object"]) if r and a.get("object") else _norm(a["object"])
 
 
-def _item(a: dict[str, Any], r: Resolution | None) -> str:
+def _item(a: dict[str, Any], r: Resolution | None) -> str:  # possesses: the object; located_in, destroyed: the subject
     return _object(a, r) if a["predicate"] in HOLDER_PER_ITEM else _subject(a, r)
 
 
@@ -85,6 +85,8 @@ def relation(a: dict[str, Any], r: Resolution | None = None) -> tuple:
     single-valued predicates. Multi-valued keys already contain everything."""
     if a["predicate"] in HOLDER_PER_ITEM:
         return (a["predicate"], _subject(a, r))
+    if a["predicate"] == "destroyed":
+        return (a["predicate"],)
     if whereabouts(a):
         return (a["predicate"], _object(a, r))
     pred = REGISTRY[a["predicate"]]
@@ -105,9 +107,10 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
     same relation, and is then current itself (rendered negated); otherwise it stands as its own negative
     fact ("not in the harbor" while at home) until a positive assertion of that relation replaces it.
 
-    An item's whereabouts (PHASE-6 Q2) has two slots, holder and place, each folded as above. A new
-    holder or place also closes the other slot unless both come from the same turn ("Hana holds the map
-    in the library"): the newer statement says where the item is now.
+    An item's whereabouts (PHASE-6 Q2, Q3) has three slots, holder, place and end (`destroyed`), each
+    folded as above. A new positive statement also closes the other slots unless they come from the same
+    turn ("Hana holds the map in the library"): the newer statement says where the item is now. An end
+    also closes holder and place of its own turn ("Hana burns the letter she holds").
     """
     slots: dict[str, dict[str, Any] | None] = {}
     negatives: dict[tuple, dict[str, Any]] = {}
@@ -124,6 +127,9 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
                 if other != slot and held is not None and _unit(held) != _unit(a):
                     slots[other] = None
         slots[slot] = a
+    ended = slots.get("destroyed")
+    if ended is not None and ended["polarity"] == "positive":
+        slots["possesses"] = slots["located_in"] = None
     out = []
     for fact in [s for s in slots.values() if s is not None] + list(negatives.values()):
         f = dict(fact)

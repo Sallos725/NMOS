@@ -261,9 +261,10 @@ normalizers go at startup once the current row exists. Superseded LLM extraction
 assertions are never pruned. Vectors of revisions off the head stay until O5's worldline question is
 decided.
 
-**D30 — One whereabouts per item (Phase 6, ADR 0016).** An item's holder (`possesses`) and its place
-(`located_in` of an item) share one version key. The newer positive statement is current and closes
-the other, unless both come from the same turn. Negations end only what they deny (D27). Read-side only.
+**D30 — One whereabouts per item (Phase 6, ADRs 0016, 0017).** An item's holder (`possesses`), its
+place (`located_in` of an item) and its end (`destroyed`, since `extract-v6`) share one version key.
+The newer positive statement is current and closes the others, unless they come from the same turn;
+an end also closes the holder and place of its own turn. Negations end only what they deny (D27).
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

@@ -1,4 +1,4 @@
-"""Phase 6 (docs/phases/PHASE-6.md): an item's holder and place are one whereabouts (Q2)."""
+"""Phase 6 (docs/phases/PHASE-6.md): an item's holder, place and end are one whereabouts (Q2, Q3)."""
 
 from __future__ import annotations
 
@@ -58,3 +58,39 @@ def test_history_names_each_predicate():
     (fact,) = _versions([held(1, "하나", "지도"), item_at(3, "지도", "탁자")])
     assert [(h["predicate"], h["subject"]) for h in fact["history"]] == [("possesses", "하나"), ("located_in", "지도")]
     assert fact["versions"] == 2
+
+
+def ended(pos: int, item: str, how: str, **kw):
+    return row(pos, item, "destroyed", None, how, subject_type="item", **kw)
+
+
+def test_an_end_closes_holder_and_place():
+    assert current([held(1, "하나", "편지"), item_at(1, "편지", "서재"), ended(4, "편지", "불탐")]) == [
+        ("편지", "불탐", "positive")]
+
+
+def test_an_end_closes_the_holder_of_its_own_turn_in_either_order():
+    assert current([held(3, "하나", "편지"), ended(3, "편지", "불탐")]) == [("편지", "불탐", "positive")]
+    assert current([ended(3, "편지", "불탐"), held(3, "하나", "편지")]) == [("편지", "불탐", "positive")]
+
+
+def test_a_denied_end_ends_nothing_else():
+    # "The letter did not burn" is a negative fact; the holder stays.
+    assert current([held(1, "하나", "편지"), ended(2, "편지", "불탐", polarity="negative")]) == [
+        ("하나", "편지", "positive"), ("편지", "불탐", "negative")]
+
+
+def test_destroyed_is_an_item_predicate():
+    from nmos_sidecar.predicates import REGISTRY, validate
+    assert REGISTRY["destroyed"].subject_types == ("item",)
+    assert validate({"predicate": "destroyed", "subject": "편지", "subject_type": "item", "value": "불탐"}) == (
+        "valid", None)
+    assert validate({"predicate": "destroyed", "subject": "하나", "subject_type": "character", "value": "죽음"})[0] == (
+        "pending")
+
+
+def test_prompt_asks_for_destroyed_only_when_the_item_is_gone():
+    from nmos_sidecar.extraction import SYSTEM_PROMPT
+    from nmos_sidecar.predicates import registry_prompt
+    assert "- destroyed (subject: item, value: text)" in registry_prompt()
+    assert "Not when it is only damaged, hidden, dropped or lost" in SYSTEM_PROMPT
