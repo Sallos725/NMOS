@@ -5,7 +5,9 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-Schema: migration 0018 (applied at startup). Upgrade both parts, then replace the plugin file and
+## 0.1.0-beta.16
+
+Bug fix: a named persona is the persona (ADR 0023, D34). Schema: migration 0018 (applied at startup). Upgrade both parts, then replace the plugin file and
 reload PocketRisu.
 
 - **A named persona is the persona** (ADR 0023). The extractor wrote your persona both as `{{user}}`
@@ -21,6 +23,17 @@ reload PocketRisu.
   permission responses**).
 - **Entity ids change once** (`resolve-v3`); Inspector character links saved before the upgrade no
   longer open.
+
+### Known limitations
+
+- A chat's persona joins up at its first sync with the new plugin. Without the database permission
+  (answered No, or an older plugin) nothing changes from 0.1.0-beta.15.
+- NMOS follows the persona PocketRisu uses now. A different persona bound to the chat later takes over
+  the persona role, and facts written under the old name become an ordinary character again.
+- A persona name that is also another character's name merges the two (K8).
+- The extraction prompt still allows either spelling (`{{user}}` or the name); both resolve to one
+  person. Asking the model for one spelling would be a new extractor generation, deferred.
+- Otherwise unchanged from 0.1.0-beta.15; the full list is `docs/KNOWN-ISSUES.md`.
 
 ## 0.1.0-beta.15
 

@@ -1,6 +1,6 @@
 # NMOS Known Issues
 
-Current as of `v0.1.0-beta.15` (2026-09-24). This is the single list of what does not work, or works
+Current as of `v0.1.0-beta.16` (2026-09-24). This is the single list of what does not work, or works
 only partly, in the current release. Each release's "Known limitations" in `CHANGELOG.md` describes
 that release at the time; entries fixed later are listed under [Resolved](#resolved) below.
 
@@ -211,7 +211,7 @@ Not issues, but often reported as one:
 
 | Was listed in | Issue | Resolved in |
 |---|---|---|
-| (not listed; owner-reported 2026-09-24) | A named persona (유우마) and `{{user}}` were two characters: split locations and promises, and the persona's name counted as a mention in every message | unreleased — the host's persona name is the persona (ADR 0023) |
+| (not listed; owner-reported 2026-09-24) | A named persona (유우마) and `{{user}}` were two characters: split locations and promises, and the persona's name counted as a mention in every message | 0.1.0-beta.16 — the host's persona name is the persona (ADR 0023) |
 | 0.1.0-beta.12 (K10) | An item's holder and its place were separate facts and could disagree | 0.1.0-beta.13 — one whereabouts per item (ADR 0016) |
 | 0.1.0-beta.12 (K17, part) | Superseded vectors and full-manifest host observations kept growing | 0.1.0-beta.13 — pruned and compacted (ADRs 0015, 0018); abandoned branches kept by decision |
 | 0.1.0-beta.8 | `possesses` multi-valued: giving an item away did not end the previous holder | 0.1.0-beta.10 — one current holder per item (ADR 0011); rest is K8–K10 |
