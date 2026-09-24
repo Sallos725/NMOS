@@ -16,6 +16,12 @@ Phase 7 (in progress): promise threads and event salience (`docs/phases/PHASE-7.
   the facts, whenever its maker or recipient comes up (at most `NMOS_THREADS_LIMIT`, default 3). Before,
   a spoken promise was only a claim, and half the time labeled hypothetical and never shown. A promise
   the story breaks, withdraws or releases leaves the packet. Applies to existing facts at once.
+- **Extraction `extract-v7`.** A promise that was made is labeled actual; extraction is shown the
+  chat's open promises (OPEN PROMISES, when the prompt names their maker or recipient) and records
+  `fulfilled` when one is kept, or a negative `promised` when it is broken, withdrawn or released. Each
+  `event` gets `salience` (`major` / `minor`). New generation: each chat re-extracts its latest
+  `NMOS_EXTRACT_BACKFILL` turns once; older turns keep their `extract-v6` facts. Schema: migration 0016
+  (`assertion.salience`).
 
 ## 0.1.0-beta.13
 

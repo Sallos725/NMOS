@@ -121,3 +121,22 @@ def test_thread_line_and_packet_section():
     assert text.index("<Threads>") < text.index("<Facts>")
     assert "A Thread is a promise made in the story" in text
     assert "A Thread" not in compile_packet([], 600, facts=['    <Fact kind="x" turn="1">a</Fact>'])[0]
+
+
+def test_salience_is_kept_for_events_only():
+    from nmos_sidecar.extraction import normalize
+    items = [{"subject": "하나", "subject_type": "character", "predicate": "event", "value": "고백했다",
+              "salience": "Major", "modality": "actual"},
+             {"subject": "하나", "subject_type": "character", "predicate": "event", "value": "걸었다",
+              "salience": "huge", "modality": "actual"},
+             {"subject": "하나", "subject_type": "character", "predicate": "identity", "value": "기사",
+              "salience": "major", "modality": "actual"}]
+    assert [a["salience"] for a in normalize(items, "")] == ["major", None, None]
+
+
+def test_fulfilled_is_registered_for_characters_and_groups():
+    from nmos_sidecar.predicates import REGISTRY, validate
+    assert REGISTRY["fulfilled"].subject_types == ("character", "group")
+    assert validate({"subject": "하나", "subject_type": "character", "predicate": "fulfilled", "value": "만나기"}) == (
+        "valid", None)
+    assert validate({"subject": "하나", "subject_type": "character", "predicate": "fulfilled"})[0] == "pending"

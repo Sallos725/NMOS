@@ -44,6 +44,8 @@ REGISTRY: dict[str, Predicate] = {p.name: p for p in (
               "another name for the subject that the TARGET turn itself gives (value: the other name)"),
     Predicate("destroyed", ("item",), None, True, "single", "world",
               "the item no longer exists or can no longer be held or used (value: how, e.g. burned, eaten)"),
+    Predicate("fulfilled", ("character", "group"), None, True, "multi", "world",
+              "the subject kept a promise listed in OPEN PROMISES (value: its text exactly as listed)"),
 )}
 
 
@@ -163,6 +165,18 @@ def semantics(item: dict[str, Any]) -> tuple[str, str, str, str | None, str | No
     if source == "narration":
         return polarity, modality, source, None, None
     return polarity, modality, source, speaker, None if speaker else "character_claim without asserted_by"
+
+
+SALIENCES = ("major", "minor")
+
+
+def salience(item: dict[str, Any]) -> str | None:
+    """`major` / `minor` for an `event` (PHASE-7 Q4, ADR 0020); None for anything else, or when missing or
+    invalid. Unlabeled events rank as before."""
+    if item.get("predicate") != "event":
+        return None
+    value = str(item.get("salience") or "").strip().lower()
+    return value if value in SALIENCES else None
 
 
 KNOWLEDGE_SCOPES = ("public", "limited", "unknown")
