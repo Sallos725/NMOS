@@ -5,6 +5,17 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Inspector: easier to read, and a view per character.** A conversation page opens with contents and
+  counts (a conflict is highlighted) and folds each section; retrievals, commits and messages start
+  folded, and conflicts come before facts. Predicates, lifecycles, commit reasons, freshness, modality
+  and entity types read as words (the raw value is in the tooltip); ids are folded away. A **character**
+  picker (a drop-down in the panel, links in the browser) opens one character's page: profile, what they
+  hold with its timeline, facts about them, what they know and what is kept from them, and claims by or
+  about them (`/inspector/c/<id>/e/<entity>`, read-only; it changes nothing in the packet). In the panel,
+  Refresh keeps the scroll position and open sections, **Back** returns to the previous page where you
+  were, Back and Refresh stay at the top while scrolling, and times show in the viewer's time zone
+  ("3 minutes ago").
+
 - **Burned, eaten, used up** (Phase 6 step 2, ADR 0017). Extraction records `destroyed`, which ends the
   item's holder and place: `<Fact kind="destroyed">letter destroyed: burned</Fact>`. A damaged item is
   not destroyed. New extraction prompt `extract-v6`: with an LLM configured, each chat re-extracts its

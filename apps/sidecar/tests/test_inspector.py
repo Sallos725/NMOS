@@ -133,3 +133,108 @@ def test_detail_lists_turns_and_counts_changes_per_commit(client):
     page = client.get(f"/inspector/c/{cid}?lang=en").text
     assert "delete ×6" in page
     assert "<th>#</th><th>Turn</th>" in page
+
+
+def story_client(migrated, lines):
+    """A client whose chat was extracted by the deterministic stub (tests/memeval.py)."""
+    from memeval import stub_extractor
+    from test_extraction import drain
+    from test_generations import LLM
+
+    c = SimChat()
+    for line in lines:
+        c.user(line)
+        c.reply("Noted.")
+    c.user("next")
+    client = make_client(migrated, **LLM)
+    return client, c, lambda: drain(migrated, stub_extractor)
+
+
+STORY = ("Hana has the letter.", "Hana is in the library.", "Hana keeps a secret from Kaito: the map is fake.",
+         'Kaito says: "I am a knight."', "Hana burns the letter.", "Hana has the letter.")
+
+
+def character_links(page: str, conv: str) -> dict[str, str]:
+    import re
+    return {name: eid for eid, name in re.findall(rf'href="/inspector/c/{conv}/e/([0-9a-f-]{{36}})[^"]*">([^<]+)</a>', page)}
+
+
+def test_detail_has_a_table_of_contents_and_collapsible_sections(migrated):
+    client, c, drain = story_client(migrated, STORY)
+    with client:
+        sync(client, c)
+        drain()
+        conv = client.get("/v1/conversations").json()[0]["id"]
+        page = client.get(f"/inspector/c/{conv}").text
+        # Counts in the contents and the section headings; a conflict is flagged.
+        assert '<p class="toc">' in page and '<a href="#s-conflicts" class="warn">충돌 <span class="n">1</span></a>' in page
+        assert '<details id="s-facts" open><summary><h2>현재 사실 <span class="n">' in page
+        # Conflicts come before the facts they are about; bulky logs start folded.
+        assert page.index('id="s-conflicts"') < page.index('id="s-facts"')
+        for folded in ("members", "commits", "retrievals"):
+            assert f'<details id="s-{folded}"><summary>' in page
+        # Internal ids are behind a fold of their own, not in the heading area.
+        assert '<details class="meta"><summary class="muted">식별자</summary>' in page
+
+
+def test_detail_labels_are_readable_and_keep_the_raw_value(migrated):
+    client, c, drain = story_client(migrated, STORY)
+    with client:
+        sync(client, c)
+        drain()
+        assert client.post("/v1/retrieve", json={"chat_id": c.id, "query": "letter", "budget_tokens": 500}).status_code == 200
+        conv = client.get("/v1/conversations").json()[0]["id"]
+        page = client.get(f"/inspector/c/{conv}").text
+        assert '<span class="chip" title="located_in">위치</span>' in page
+        assert '<span class="chip" title="accepted">확정</span>' in page
+        assert '<span class="chip" title="import">가져오기</span>' in page or 'title="reconciliation">동기화' in page
+        # Timestamps are UTC with the exact instant kept for the panel to show in local time.
+        assert '<span class="ts" title="' in page and ' UTC</span>' in page
+        en = client.get(f"/inspector/c/{conv}?lang=en").text
+        assert '<span class="chip" title="located_in">located in</span>' in en
+
+
+def test_character_view_gathers_what_concerns_one_character(migrated):
+    client, c, drain = story_client(migrated, STORY)
+    with client:
+        sync(client, c)
+        drain()
+        conv = client.get("/v1/conversations").json()[0]["id"]
+        page = client.get(f"/inspector/c/{conv}").text
+        assert '<p class="who"><span class="muted">캐릭터</span> <b>전체</b>' in page
+        who = character_links(page, conv)
+        assert {"Hana", "Kaito"} <= set(who) and "letter" not in who  # characters only
+
+        hana = client.get(f"/inspector/c/{conv}/e/{who['Hana']}").text
+        assert "<h1>Hana</h1>" in hana and "<b>Hana</b>" in hana  # selected in the picker
+        assert f'<a href="/inspector/c/{conv}">전체</a>' in hana
+        assert 'id="s-held"' in hana and "Hana 보유" in hana  # the letter, with its timeline
+        assert 'id="s-conflicts"' in hana  # held after it burned
+        assert 'id="s-about"' in hana and "library" in hana
+        # What Hana knows is listed once, under what she knows, not again among the facts about her.
+        assert '<h2>아는 것 <span class="n">1</span>' in hana and hana.count("the map is fake") == 1
+        assert '<h2>이 인물에 대한 사실 <span class="n">1</span>' in hana
+        assert "id=\"s-members\"" not in hana and "id=\"s-commits\"" not in hana
+        assert "knight" not in hana  # Kaito's claim is about Kaito
+
+        kaito = client.get(f"/inspector/c/{conv}/e/{who['Kaito']}?lang=en").text
+        assert 'id="s-claims"' in kaito and "knight" in kaito
+        assert 'id="s-hidden"' in kaito and "the map is fake" in kaito  # kept from Kaito
+        assert "library" not in kaito and 'id="s-held"' not in kaito
+
+        embedded = client.get(f"/v1/inspector/c/{conv}/e/{who['Kaito']}").json()["html"]
+        assert not embedded.startswith("<!doctype") and "knight" in embedded
+        # A character that no longer resolves (memory rebuilt) is a page, not an error.
+        gone = client.get(f"/inspector/c/{conv}/e/00000000-0000-0000-0000-000000000000")
+        assert gone.status_code == 200 and "이 인물을 찾을 수 없습니다" in gone.text
+        assert client.get(f"/inspector/c/00000000-0000-0000-0000-000000000000/e/{who['Kaito']}").status_code == 404
+
+
+def test_character_view_escapes_names(migrated):
+    client, c, drain = story_client(migrated, ("Hana has the <b>letter</b>.", "X<i> is in the library."))
+    with client:
+        sync(client, c)
+        drain()
+        conv = client.get("/v1/conversations").json()[0]["id"]
+        page = client.get(f"/inspector/c/{conv}").text
+        assert "<i>" not in page and "<b>letter" not in page
