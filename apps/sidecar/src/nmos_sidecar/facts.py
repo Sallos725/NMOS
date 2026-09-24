@@ -119,8 +119,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
 
     - facts: current fact versions from actual narration (legacy rows without a source count as
       narration), each with the characters' claims about the same key;
-    - claims: the latest claim per speaker and version key, whether or not a narrated fact exists; a claim
-      never supersedes narration;
+    - claims: the latest claim per speaker and version key (modality actual or unknown), whether or not
+      a narrated fact exists; a claim never supersedes narration;
     - other: hypothetical, dreamed and unknown assertions, stored and inspectable, never in the packet;
     - entities / ambiguous: the read-time entity resolution those keys use (ADR 0012). `also_called`
       assertions feed it and are not facts themselves.
@@ -138,10 +138,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
         if row["predicate"] == "also_called":
             continue
         _annotate(row, r)
-        if row["modality"] != "actual":
-            other.append(row)
-        elif row["source"] == "character_claim":
+        if row["source"] == "character_claim" and row["modality"] in ("actual", "unknown"):
+            # A claim's truth is unknown by nature; the model may say so (owner decision 2026-09-24).
             claimed[version_key(row, r) + (_norm(row["asserted_by"]),)] = row  # latest wins
+        elif row["modality"] != "actual":
+            other.append(row)
         else:
             narrated.setdefault(version_key(row, r), []).append(row)
     facts = [f for history in narrated.values() for f in _versions(history, r)]

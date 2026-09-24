@@ -16,14 +16,16 @@ latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once; older turns keep their 
   stands as its own negative fact and leaves the current one alone.
 - **Claims are not facts.** What a character says in dialogue is a claim (`asserted_by`). It never
   replaces narrated state, even when newer, and reaches the packet only as `<Claim by="…">` after the
-  facts, when relevant. A lie no longer overwrites the story.
+  facts, when relevant, including claims whose truth the model marks unknown. A lie no longer
+  overwrites the story.
 - **Plans, conditions and dreams are labeled, not facts.** They are stored with their modality
   (`hypothetical`, `dreamed`, `unknown`) and listed in the Inspector, never injected. A missing
   modality counts as unknown, not actual.
 - **One entity, several names** (ADR 0012). When the story itself gives two names for someone or
   something in one turn ("하나(Hana)"), both names become one entity: a fact under "Hana" and one under
   "하나" are versions of the same fact, and recall matches either name. Only the story links names:
-  never spelling similarity, a dream, or a character's claim. A name given to two different entities
+  never spelling similarity, a dream, or a character's claim about someone else. A character who
+  introduces their own nickname ("다들 하루라고 불러 줘") does link it. A name given to two different entities
   (a nickname two people share) stays ambiguous and links neither. The same name for an item and a
   place stays two entities; `{{user}}`, `user` and `유저` are one persona. Nothing is stored: deleting
   the turn that gave the alias splits the entity again at the next request.

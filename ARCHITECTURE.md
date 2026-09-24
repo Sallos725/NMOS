@@ -230,17 +230,18 @@ outside the registry, so it needs no new extractor generation.
 **D26 — Entity identity at read time (Phase 5, ADR 0012).** Each fact read resolves subject and
 object mentions of the head's active assertions to entities of that conversation, without storage
 or model calls: the same entity type and normalized name is one entity, the persona names are one,
-and names are linked only by actual, narrated `also_called` assertions (both names in the source
-turn). A name linked to otherwise unconnected names is ambiguous and links nobody. Fact version keys
-use entity ids where resolved, text otherwise. Ids are `uuid5(conversation, RESOLVER_VERSION, type,
+and names are linked only by actual `also_called` assertions (both names in the source turn) that
+are narrated or that the named character says about their own name (amended 2026-09-24). A name
+linked to otherwise unconnected names is ambiguous and links nobody. Fact version keys use entity ids
+where resolved, text otherwise. Ids are `uuid5(conversation, RESOLVER_VERSION, type,
 name)`; a resolver change takes effect on the next read.
 
 **D27 — Assertion semantics (Phase 5, ADR 0013).** Each assertion has `polarity` (positive /
 negative), `modality` (actual / hypothetical / dreamed / unknown; missing means unknown) and `source`
 (narration / character_claim with `asserted_by`). Facts come only from actual narration; a negation
 ends the current version only if it denies the same relation (same holder for an item, same object
-and value otherwise) and otherwise stands as a negative fact. A character's claim never supersedes
-narration and reaches the packet only as a `<Claim>` after facts. Non-actual assertions are stored and
+and value otherwise) and otherwise stands as a negative fact. A character's claim (modality actual or unknown;
+amended 2026-09-24) never supersedes narration and reaches the packet only as a `<Claim>` after facts. Non-actual assertions are stored and
 inspectable, never injected. Rows from before `extract-v5` read as narration.
 
 **D28 — Optional progress display on the chat screen (owner decision 2026-09-24; not a phase feature).**

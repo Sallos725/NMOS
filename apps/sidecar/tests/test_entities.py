@@ -45,11 +45,24 @@ def test_stated_alias_links_names_and_first_mention_names_the_entity():
     assert entity["aliases"] == [{"name": "Hana", "other": "하나", "turn": 3}]
 
 
-def test_alias_from_a_claim_or_a_dream_links_nothing():
-    rows = [fact(1, "하나", "has_status", value="ok"), {**alias(2, "Hana", "하나"), "source": "character_claim"},
-            {**alias(3, "Hanako", "하나"), "modality": "dreamed"}]
+def test_alias_from_someone_elses_claim_or_a_dream_links_nothing():
+    rows = [fact(1, "하나", "has_status", value="ok"),
+            {**alias(2, "Hana", "하나"), "source": "character_claim", "asserted_by": "카이토"},
+            {**alias(3, "Hanako", "하나"), "source": "character_claim", "asserted_by": None},
+            {**alias(4, "Hanabi", "하나"), "modality": "dreamed"}]
     r = resolve(CONV, rows)
-    assert len({r.key("character", n) for n in ("하나", "Hana", "Hanako")}) == 3
+    assert len({r.key("character", n) for n in ("하나", "Hana", "Hanako", "Hanabi")}) == 4
+
+
+def test_a_self_introduction_links_the_speakers_own_names():
+    """'다들 하루라고 불러 줘' said by 미나토 하루카 herself (owner decision 2026-09-24)."""
+    rows = [fact(1, "미나토 하루카", "identity", value="전학생"),
+            {**alias(2, "미나토 하루카", "하루"), "source": "character_claim", "asserted_by": "미나토 하루카"}]
+    r = resolve(CONV, rows)
+    assert r.key("character", "하루") == r.key("character", "미나토 하루카")
+    # The persona introducing itself counts as the persona.
+    rows = [{**alias(1, "{{user}}", "레이"), "source": "character_claim", "asserted_by": "유저"}]
+    assert resolve(CONV, rows).key("character", "레이") == resolve(CONV, rows).key("character", "{{user}}")
 
 
 def test_a_name_shared_by_two_entities_is_ambiguous():
