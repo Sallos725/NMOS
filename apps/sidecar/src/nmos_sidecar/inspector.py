@@ -5,9 +5,12 @@ with `?lang=en`. `embed=True` returns only the body, without the language switch
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import datetime, timezone
 from html import escape
 from typing import Any
 from urllib.parse import quote
+
+from .entities import norm
 
 STYLE = """
 :root{color-scheme:light dark;--bg:#fbfbfa;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e3e0;--chip:#efefec;--accent:#3b5bdb}
@@ -24,6 +27,12 @@ table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:6px 8px
 th{font-weight:600;color:var(--muted);font-size:12px}
 .chip{display:inline-block;padding:0 6px;border-radius:4px;background:var(--chip);font-size:12px}
 .wrap{overflow-x:auto}
+.warn{color:#e8590c} .n{color:var(--muted);font-weight:400;font-size:12px}
+.toc,.who{font-size:13px;line-height:1.9;margin:8px 0}
+details>summary{cursor:pointer;list-style:none} details>summary::-webkit-details-marker{display:none}
+details>summary h2{display:inline-block} details>summary h2::before{content:"\\25B8  ";color:var(--muted)}
+details[open]>summary h2::before{content:"\\25BE  "}
+details.meta{margin:4px 0 0;font-size:12px} details.meta p{margin:4px 0}
 """
 
 LANGS = ("ko", "en")
@@ -95,6 +104,43 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "full": ("전체", "full"),
     "job.queued": ("대기", "queued"), "job.running": ("실행 중", "running"), "job.done": ("완료", "done"),
     "job.dead": ("실패", "dead"), "job.obsolete": ("폐기", "obsolete"),
+    "ids": ("식별자", "Identifiers"),
+    # contents: short names of the detail sections
+    "toc.state": ("상태", "State"), "toc.coverage": ("처리 현황", "Coverage"), "toc.conflicts": ("충돌", "Conflicts"),
+    "toc.facts": ("사실", "Facts"), "toc.items": ("아이템", "Items"), "toc.entities": ("엔티티", "Entities"),
+    "toc.ambiguous": ("모호한 이름", "Ambiguous"), "toc.claims": ("주장", "Claims"), "toc.other": ("실제 아님", "Not actual"),
+    "toc.retrievals": ("검색", "Retrievals"), "toc.commits": ("커밋", "Commits"), "toc.members": ("메시지", "Messages"),
+    "toc.profile": ("프로필", "Profile"), "toc.held": ("소지품", "Belongings"), "toc.about": ("사실", "Facts"),
+    "toc.knows": ("아는 것", "Knows"), "toc.hidden": ("모르는 것", "Does not know"),
+    # character view
+    "who": ("캐릭터", "Character"), "who.all": ("전체", "All"),
+    "who.gone": ("이 인물을 찾을 수 없습니다. 기억을 다시 만들었거나 이름이 다른 인물과 합쳐졌을 수 있습니다.",
+                 "This character cannot be found. Memory may have been rebuilt, or the name merged with another."),
+    "who.empty": ("이 인물에 대해 추출된 내용이 아직 없습니다.", "Nothing has been extracted about this character yet."),
+    "profile": ("프로필", "Profile"), "held": ("지금 가진 것", "Holding now"),
+    "about": ("이 인물에 대한 사실", "Facts about this character"),
+    "knows": ("아는 것", "What this character knows"), "hidden": ("모르는 것", "Kept from this character"),
+    "knows_note": ("아는 범위는 추출 모델이 붙인 표시라 틀릴 수 있습니다.",
+                   "Knowledge scopes are labels from the extraction model and may be wrong."),
+    "who_claims": ("주장 (이 인물이 했거나 이 인물에 대한)", "Claims (by or about this character)"),
+    "who_other": ("실제가 아닌 단언", "Not actual"),
+    # stored values, shown translated (the raw value stays in the tooltip)
+    "p.located_in": ("위치", "located in"), "p.has_status": ("상태", "status"), "p.identity": ("정체", "identity"),
+    "p.has_trait": ("특징", "trait"), "p.relationship": ("관계", "relationship"), "p.feels_toward": ("감정", "feels toward"),
+    "p.possesses": ("소지", "possesses"), "p.member_of": ("소속", "member of"), "p.knows": ("앎", "knows"),
+    "p.goal": ("목표", "goal"), "p.promised": ("약속", "promised"), "p.event": ("사건", "event"),
+    "p.world_fact": ("세계 설정", "world fact"), "p.also_called": ("별칭", "also called"),
+    "p.destroyed": ("소멸", "destroyed"),
+    "l.provisional": ("임시", "provisional"), "l.accepted": ("확정", "accepted"), "l.retracted": ("철회", "retracted"),
+    "l.superseded": ("대체됨", "superseded"),
+    "r.import": ("가져오기", "import"), "r.branch": ("분기", "branch"), "r.edit": ("수정", "edit"),
+    "r.delete": ("삭제", "delete"), "r.swipe": ("스와이프", "swipe"), "r.reroll": ("다시 생성", "reroll"),
+    "r.disable": ("비활성화", "disable"), "r.reconciliation": ("동기화", "reconciliation"), "r.manual": ("수동", "manual"),
+    "f.fresh": ("최신", "fresh"), "f.stale": ("오래됨", "stale"), "f.unknown_conversation": ("모르는 대화", "unknown chat"),
+    "m.hypothetical": ("가정", "hypothetical"), "m.dreamed": ("꿈", "dreamed"), "m.unknown": ("미상", "unknown"),
+    "m.actual": ("실제", "actual"),
+    "e.character": ("인물", "character"), "e.item": ("아이템", "item"), "e.place": ("장소", "place"),
+    "e.group": ("집단", "group"), "e.concept": ("개념", "concept"),
 }
 
 
@@ -126,6 +172,36 @@ def table(headers: list[str], rows: Iterable[list[str]]) -> str:
     head = "".join(f"<th>{escape(h)}</th>" for h in headers)
     body = "".join("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows)
     return f"<div class=\"wrap\"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
+
+
+def chip(lang: str, prefix: str, value: Any) -> str:
+    """A stored value as a translated chip; the raw value stays in the tooltip."""
+    key = f"{prefix}.{value}"
+    return f"<span class=\"chip\" title=\"{_v(value)}\">{_v(_t(lang, key) if key in T else value)}</span>"
+
+
+def timestamp(value: Any) -> str:
+    """A time in UTC. The exact instant stays in the tooltip: the plugin panel shows it in local time."""
+    if not isinstance(value, datetime):
+        return _v(str(value or "")[:19])
+    utc = value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return f"<span class=\"ts\" title=\"{utc.isoformat(timespec='seconds')}\">{utc:%Y-%m-%d %H:%M} UTC</span>"
+
+
+# (id, title, count or None, body, open by default)
+Section = tuple[str, str, int | None, str, bool]
+
+
+def sections(lang: str, parts: list[Section]) -> str:
+    """Contents with counts, then each section as a fold that the contents links to."""
+    def n(count: int | None) -> str:
+        return "" if count is None else f" <span class=\"n\">{count}</span>"
+    warn = " class=\"warn\""  # a conflict is the one thing that asks for attention
+    toc = " · ".join(f"<a href=\"#s-{sid}\"{warn if sid == 'conflicts' and count else ''}>"
+                     f"{_t(lang, f'toc.{sid}')}{n(count)}</a>" for sid, _, count, _, _ in parts)
+    return f"<p class=\"toc\">{toc}</p>" + "".join(
+        f"<details id=\"s-{sid}\"{' open' if is_open else ''}><summary><h2>{title}{n(count)}</h2></summary>{body}</details>"
+        for sid, title, count, body, is_open in parts)
 
 
 def label(conv: dict[str, Any]) -> str:
@@ -165,7 +241,7 @@ def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str
              + (f"<span class=\"ref\">{_v(c['host_chat_ref'])}</span>" if label(c) != c["host_chat_ref"] else ""),
              _v(c["messages"]), _percent(extraction.get(c["id"]), "compiled", lang),
              _percent(embeddings.get(c["id"]), "embedded", lang), _v(c["commits"]),
-             _v(c["branched_from_host_chat_ref"] or ""), _v(str(c["last_retrieval"] or "")[:19])]
+             _v(c["branched_from_host_chat_ref"] or ""), timestamp(c["last_retrieval"])]
             for c in conversations]
     queue = " · ".join(f"{_t(lang, f'job.{k}') if f'job.{k}' in T else escape(k)} {v}"
                        for k, v in sorted((jobs or {}).items())) or _t(lang, "empty")
@@ -205,9 +281,8 @@ def _coverage_section(cov: dict[str, Any], lang: str) -> str:
                      _v(f"{t('pending')} {emb.get('pending', 0)} · {t('failed')} {emb.get('failed', 0)} · "
                         f"{t('partially_embedded')} {emb.get('partial', 0)}")])
     if not rows:
-        return f"<h2>{t('coverage')}</h2><p class=\"muted\">{t('no_generation')}</p>"
-    return f"<h2>{t('coverage')}</h2>" + table([t("h.projection"), t("h.generation"), t("h.coverage"), t("h.detail")],
-                                                rows)
+        return f"<p class=\"muted\">{t('no_generation')}</p>"
+    return table([t("h.projection"), t("h.generation"), t("h.coverage"), t("h.detail")], rows)
 
 
 def _processed(m: dict[str, Any], lang: str) -> str:
@@ -240,6 +315,67 @@ def _step(h: dict[str, Any], lang: str) -> str:
             f"<span class=\"chip\" title=\"{_v(outcome)}\">{_v(_t(lang, f'o.{outcome}'))}</span>")
 
 
+def _turn(a: dict[str, Any]) -> str:
+    return _v(a["turn"] if a.get("turn") is not None else a["position"])
+
+
+def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> str:
+    t = lambda k: _t(lang, k)
+    # A fact whose turn the active generation has not compiled yet comes from an older one (ADR 0014).
+    older = f" <span class=\"chip\">{t('older_gen')}</span>"
+    return table(
+        [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.knowledge", "h.turn", "h.versions")],
+        [[_v(f["subject"]), chip(lang, "p", f["predicate"]), _v(f.get("object") or f.get("value")), _knowledge(f, lang),
+          _turn(f)
+          + (older if active and f.get("generation") not in (None, active) else "")
+          + (f" <span class=\"chip\">{t('negated')}</span>" if f.get("polarity") == "negative" else "")
+          + (f" <span class=\"chip\">{t('disputed')}</span>" if f.get("disputed_by") else "")
+          + (f" <span class=\"chip\">{t('legacy')}</span>" if f.get("source") is None else ""),
+          _v(f.get("versions", 1))]
+         for f in facts])
+
+
+def _conflicts_table(conflicts: list[dict[str, Any]], lang: str) -> str:
+    return table([_t(lang, k) for k in ("h.fact", "h.turn", "h.against", "h.turn")],
+                 [[_v(c["text"]), _turn(c), _v(fact_line_text(c["against"])), _turn(c["against"])]
+                  for c in conflicts[:100]])
+
+
+def _claims_table(claims: list[dict[str, Any]], lang: str) -> str:
+    return table([_t(lang, k) for k in ("h.by", "h.subject", "h.predicate", "h.object", "h.turn")],
+                 [[_v(c.get("asserted_by")), _v(c["subject"]), chip(lang, "p", c["predicate"]),
+                   _v(c.get("object") or c.get("value")), _turn(c)] for c in claims[:100]])
+
+
+def _other_table(other: list[dict[str, Any]], lang: str) -> str:
+    return table([_t(lang, k) for k in ("h.modality", "h.subject", "h.predicate", "h.object", "h.turn")],
+                 [[chip(lang, "m", a["modality"]), _v(a["subject"]), chip(lang, "p", a["predicate"]),
+                   _v(a.get("object") or a.get("value")), _turn(a)] for a in other[:100]])
+
+
+def _who(conv_id: Any, entities: list[dict[str, Any]], current: str | None, q: str, lang: str) -> str:
+    """Character picker: links here (the panel turns them into a drop-down), the shown one in bold."""
+    chars = [e for e in entities if e["type"] == "character"][:50]
+    chars += [e for e in entities if e["id"] == current and e not in chars]
+    if not chars:
+        return ""
+    base, everyone = f"/inspector/c/{conv_id}", _t(lang, "who.all")
+    links = [f"<b>{everyone}</b>" if current is None else f"<a href=\"{base}{q}\">{everyone}</a>"]
+    links += [f"<b>{_v(e['name'])}</b>" if e["id"] == current else f"<a href=\"{base}/e/{e['id']}{q}\">{_v(e['name'])}</a>"
+              for e in chars]
+    return f"<p class=\"who\"><span class=\"muted\">{_t(lang, 'who')}</span> " + " · ".join(links) + "</p>"
+
+
+def _meta(conv: dict[str, Any], lang: str) -> str:
+    """Internal identifiers, folded away; where a branch came from stays in view."""
+    t = lambda k: _t(lang, k)
+    branched = (f"<p class=\"muted\">{t('branched_from')} {_v(conv['branched_from_host_chat_ref'])} {t('at')} "
+                f"{_v(conv['branched_from_message_ref'])}</p>" if conv.get("branched_from_host_chat_ref") else "")
+    return (branched + f"<details class=\"meta\"><summary class=\"muted\">{t('ids')}</summary>"
+            f"<p class=\"muted mono\">{_v(conv['host_chat_ref'])}<br>{t('conversation')} {_v(conv['id'])} · "
+            f"{t('head')} {_v(conv['head_commit_id'])}</p></details>")
+
+
 def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict[str, Any]],
            commits: list[dict[str, Any]], traces: list[dict[str, Any]], facts: list[dict[str, Any]],
            token: str | None, coverage: dict[str, Any] | None = None, lang: str = "ko", embed: bool = False,
@@ -249,74 +385,125 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
-    parts = [(f"<div class=\"top\"><p><a href=\"/inspector{q}\">{t('back')}</a></p>"
-              f"{'' if embed else _lang_switch(path, token, lang)}</div>"),
-             f"<h1>{_v(name)}</h1>",
-             f"<p class=\"muted\"><span class=\"mono\">{_v(conv['host_chat_ref'])}</span><br>"
-             f"{t('conversation')} {_v(conv['id'])} · {t('head')} {_v(conv['head_commit_id'])}"
-             + (f" · {t('branched_from')} {_v(conv['branched_from_host_chat_ref'])} {t('at')} "
-                f"{_v(conv['branched_from_message_ref'])}" if conv.get("branched_from_host_chat_ref") else "") + "</p>"]
-    parts.append(f"<h2>{t('state')}</h2>" + (table([t("h.key"), t("h.value"), t("h.as_of"), t("h.rule")],
-                 [[_v(s["key"]), _v(s["value"]), _v(s["position"]), _v(s["rule_id"])] for s in state])
-                 if state else f"<p class=\"muted\">{t('no_state')}</p>"))
-    parts.append(_coverage_section(coverage or {}, lang))
-    if facts:
-        # A fact whose turn the active generation has not compiled yet comes from an older one (ADR 0014).
-        active = (((coverage or {}).get("extraction") or {}).get("generation") or {}).get("key")
-        older = f" <span class=\"chip\">{t('older_gen')}</span>"
-        parts.append(f"<h2>{t('facts')}</h2>" + table(
-            [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.knowledge", "h.turn", "h.versions")],
-            [[_v(f["subject"]), f"<span class=\"chip\">{_v(f['predicate'])}</span>",
-              _v(f.get("object") or f.get("value")), _knowledge(f, lang),
-              _v(f["turn"] if f.get("turn") is not None else f["position"])
-              + (older if active and f.get("generation") not in (None, active) else "")
-              + (f" <span class=\"chip\">{t('negated')}</span>" if f.get("polarity") == "negative" else "")
-              + (f" <span class=\"chip\">{t('disputed')}</span>" if f.get("disputed_by") else "")
-              + (f" <span class=\"chip\">{t('legacy')}</span>" if f.get("source") is None else ""),
-              _v(f.get("versions", 1))]
-             for f in facts]))
-
-    def turn_of(a: dict[str, Any]) -> str:
-        return _v(a["turn"] if a.get("turn") is not None else a["position"])
-
+    head = (f"<div class=\"top\"><p><a href=\"/inspector{q}\">{t('back')}</a></p>"
+            f"{'' if embed else _lang_switch(path, token, lang)}</div>"
+            f"<h1>{_v(name)}</h1>" + _meta(conv, lang) + _who(conv["id"], entities or [], None, q, lang))
+    active = (((coverage or {}).get("extraction") or {}).get("generation") or {}).get("key")
+    # What needs a look comes first; logs of the machinery start folded.
+    parts: list[Section] = [
+        ("state", t("state"), None, table([t("h.key"), t("h.value"), t("h.as_of"), t("h.rule")],
+                                          [[_v(s["key"]), _v(s["value"]), _v(s["position"]), _v(s["rule_id"])]
+                                           for s in state])
+         if state else f"<p class=\"muted\">{t('no_state')}</p>", True),
+        ("coverage", t("coverage"), None, _coverage_section(coverage or {}, lang), True)]
     if conflicts:
-        parts.append(f"<h2>{t('conflicts')}</h2>" + table(
-            [t(k) for k in ("h.fact", "h.turn", "h.against", "h.turn")],
-            [[_v(c["text"]), turn_of(c), _v(fact_line_text(c["against"])), turn_of(c["against"])]
-             for c in conflicts[:100]]))
+        parts.append(("conflicts", t("conflicts"), len(conflicts), _conflicts_table(conflicts, lang), True))
+    if facts:
+        parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
     if items:
-        parts.append(f"<h2>{t('items')}</h2>" + table(
+        parts.append(("items", t("items"), len(items), table(
             [t("h.item"), t("h.timeline")],
-            [[_v(i["item"]), " → ".join(_step(h, lang) for h in i["history"])] for i in items[:100]]))
+            [[_v(i["item"]), " → ".join(_step(h, lang) for h in i["history"])] for i in items[:100]]), True))
     if entities:
-        parts.append(f"<h2>{t('entities')}</h2>" + table(
+        parts.append(("entities", t("entities"), len(entities), table(
             [t(k) for k in ("h.type", "h.names", "h.mentions", "h.alias_turns")],
-            [[_v(e["type"]), _v(" · ".join(e["names"])), _v(e["mentions"]),
-              _v(", ".join(str(a["turn"]) for a in e["aliases"]))] for e in entities[:200]]))
+            [[chip(lang, "e", e["type"]), _v(" · ".join(e["names"])), _v(e["mentions"]),
+              _v(", ".join(str(a["turn"]) for a in e["aliases"]))] for e in entities[:200]]), True))
     if ambiguous:
-        parts.append(f"<h2>{t('ambiguous')}</h2>" + table(
+        parts.append(("ambiguous", t("ambiguous"), len(ambiguous), table(
             [t(k) for k in ("h.type", "h.names", "h.candidates")],
-            [[_v(a["type"]), _v(a["name"]), _v(" · ".join(a["candidates"]))] for a in ambiguous]))
+            [[chip(lang, "e", a["type"]), _v(a["name"]), _v(" · ".join(a["candidates"]))] for a in ambiguous]), True))
     if claims:
-        parts.append(f"<h2>{t('claims')}</h2>" + table(
-            [t(k) for k in ("h.by", "h.subject", "h.predicate", "h.object", "h.turn")],
-            [[_v(c.get("asserted_by")), _v(c["subject"]), f"<span class=\"chip\">{_v(c['predicate'])}</span>",
-              _v(c.get("object") or c.get("value")), turn_of(c)] for c in claims[:100]]))
+        parts.append(("claims", t("claims"), len(claims), _claims_table(claims, lang), True))
     if other:
-        parts.append(f"<h2>{t('other')}</h2>" + table(
-            [t(k) for k in ("h.modality", "h.subject", "h.predicate", "h.object", "h.turn")],
-            [[_v(a["modality"]), _v(a["subject"]), f"<span class=\"chip\">{_v(a['predicate'])}</span>",
-              _v(a.get("object") or a.get("value")), turn_of(a)] for a in other[:100]]))
-    parts.append(f"<h2>{t('retrievals')}</h2>" + table(
+        parts.append(("other", t("other"), len(other), _other_table(other, lang), False))
+    parts.append(("retrievals", t("retrievals"), len(traces), table(
         [t(k) for k in ("h.when", "h.query", "h.fresh", "h.cand", "h.sel", "h.in_ctx", "h.tokens")] + ["ms"],
-        [[_v(str(r["created_at"])[:19]), _v(r["query"]), _v(r["freshness"]), _v(r["candidates"]), _v(r["selected"]),
-          _v(r["excluded"]), _v(r["token_estimate"]), _v((r["latency_ms"] or {}).get("sidecar_total"))] for r in traces]))
-    parts.append(f"<h2>{t('h.commits')}</h2>" + table(["#", t("h.reason"), t("h.changes"), t("h.kinds"), t("h.when")],
-                 [[_v(c["seq"]), f"<span class=\"chip\">{_v(c['reason'])}</span>", _v(c["changes"]), _v(c["kinds"]),
-                   _v(str(c["created_at"])[:19])] for c in commits]))
-    parts.append(f"<h2>{t('members')}</h2>" + table(
+        [[timestamp(r["created_at"]), _v(r["query"]), chip(lang, "f", r["freshness"]), _v(r["candidates"]),
+          _v(r["selected"]), _v(r["excluded"]), _v(r["token_estimate"]),
+          _v((r["latency_ms"] or {}).get("sidecar_total"))] for r in traces]), False))
+    parts.append(("commits", t("h.commits"), len(commits), table(
+        ["#", t("h.reason"), t("h.changes"), t("h.kinds"), t("h.when")],
+        [[_v(c["seq"]), chip(lang, "r", c["reason"]), _v(c["changes"]), _v(c["kinds"]), timestamp(c["created_at"])]
+         for c in commits]), False))
+    parts.append(("members", t("members"), len(members), table(
         [t(k) for k in ("h.position", "h.turn", "h.role", "h.lifecycle", "h.disabled", "h.processed", "h.text")],
-        [[_v(m["position"]), _v(m.get("turn")), _v(m["role"]), f"<span class=\"chip\">{_v(m['lifecycle'])}</span>",
+        [[_v(m["position"]), _v(m.get("turn")), _v(m["role"]), chip(lang, "l", m["lifecycle"]),
           _v(m["disabled"] or ""), _processed(m, lang), _v(m["preview"]) + ("…" if m["length"] > 240 else "")]
-         for m in members]))
-    return "".join(parts) if embed else page(f"NMOS · {name}", "".join(parts), lang)
+         for m in members]), False))
+    body = head + sections(lang, parts)
+    return body if embed else page(f"NMOS · {name}", body, lang)
+
+
+def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[str, Any]]], token: str | None,
+              active: str | None = None, lang: str = "ko", embed: bool = False) -> str:
+    """One character's side of the conversation: what is true of them, what they hold, know and claim.
+
+    Read-only regrouping of the same memory view as the detail page; it changes nothing the packet uses.
+    """
+    t = lambda k: _t(lang, k)
+    q = query(token, lang)
+    conv_path = f"/inspector/c/{conv['id']}"
+    entity = next((e for e in view["entities"] if e["id"] == entity_id), None)
+    title = entity["name"] if entity else t("who")
+    head = (f"<div class=\"top\"><p><a href=\"{conv_path}{q}\">← {_v(label(conv))}</a></p>"
+            f"{'' if embed else _lang_switch(f'{conv_path}/e/{entity_id}', token, lang)}</div>"
+            f"<h1>{_v(title)}</h1>" + _who(conv["id"], view["entities"], entity_id, q, lang))
+    if entity is None:
+        body = head + f"<p class=\"muted\">{t('who.gone')}</p>"
+        return body if embed else page(f"NMOS · {title}", body, lang)
+
+    names = {norm(n) for n in entity["names"]}
+
+    def me(ref: dict[str, Any] | None) -> bool:
+        return (ref or {}).get("id") == entity_id
+
+    def involves(a: dict[str, Any]) -> bool:
+        return me(a.get("subject_entity")) or me(a.get("object_entity"))
+
+    def among(people: list[str] | None) -> bool:
+        return any(norm(p) in names for p in people or [])
+
+    facts = view["facts"]
+    mine = [f for f in facts if involves(f)]
+    held = [f for f in mine if f["predicate"] == "possesses" and f.get("polarity") == "positive"
+            and me(f.get("subject_entity"))]
+    knows = [f for f in facts if among(f.get("known_by"))
+             or (f["predicate"] == "knows" and f.get("polarity") == "positive" and me(f.get("subject_entity")))]
+    about = [f for f in mine if f not in held and f not in knows]  # each fact under one heading
+    hidden = [f for f in facts if among(f.get("hidden_from"))]
+    claims = [c for c in view["claims"] if norm(c.get("asserted_by")) in names or involves(c)]
+    other = [a for a in view["other"] if involves(a)]
+    ids = {f["id"] for f in mine}
+    conflicts = [c for c in view["conflicts"] if c["fact"] in ids]
+
+    def knowledge(rows: list[dict[str, Any]]) -> str:
+        return table([t("h.fact"), t("h.knowledge"), t("h.turn")],
+                     [[_v(fact_line_text(f)), _knowledge(f, lang), _turn(f)] for f in rows]) \
+            + f"<p class=\"muted\">{t('knows_note')}</p>"
+
+    parts: list[Section] = [("profile", t("profile"), None, table(
+        [t("h.type"), t("h.names"), t("h.mentions"), t("h.alias_turns")],
+        [[chip(lang, "e", entity["type"]), _v(" · ".join(entity["names"])), _v(entity["mentions"]),
+          _v(", ".join(str(a["turn"]) for a in entity["aliases"]))]]), True)]
+    if conflicts:
+        parts.append(("conflicts", t("conflicts"), len(conflicts), _conflicts_table(conflicts, lang), True))
+    if held:
+        parts.append(("held", t("held"), len(held), table(
+            [t("h.item"), t("h.turn"), t("h.timeline")],
+            [[_v(f["object"]), _turn(f), " → ".join(_step(h, lang) for h in f.get("history") or [])] for f in held]),
+            True))
+    if about:
+        parts.append(("about", t("about"), len(about), _facts_table(about, active, lang), True))
+    if knows:
+        parts.append(("knows", t("knows"), len(knows), knowledge(knows), True))
+    if hidden:
+        parts.append(("hidden", t("hidden"), len(hidden), knowledge(hidden), True))
+    if claims:
+        parts.append(("claims", t("who_claims"), len(claims), _claims_table(claims, lang), True))
+    if other:
+        parts.append(("other", t("who_other"), len(other), _other_table(other, lang), False))
+    body = head + sections(lang, parts)
+    if len(parts) == 1:
+        body += f"<p class=\"muted\">{t('who.empty')}</p>"
+    return body if embed else page(f"NMOS · {title}", body, lang)

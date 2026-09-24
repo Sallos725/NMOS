@@ -572,6 +572,7 @@ ${revisionHash}`;
     "outcome.failed": ["\uAC74\uB108\uB700 (\uC6D0\uB798 \uC694\uCCAD\uC740 \uADF8\uB300\uB85C \uBCF4\uB0C4)", "Skipped (the request went out unchanged)"],
     // inspector view
     "insp.loading": ["\uC778\uC2A4\uD399\uD130\uB97C \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Loading the inspector\u2026"],
+    "insp.back": ["\u2190 \uB4A4\uB85C", "\u2190 Back"],
     "insp.browser": ["\uBE0C\uB77C\uC6B0\uC800\uC5D0\uC11C \uC9C1\uC811 \uC5F4 \uC218\uB3C4 \uC788\uC2B5\uB2C8\uB2E4: {url}", "Also available in a browser: {url}"],
     "act.history": ["\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C", "Extract all history"],
     "act.rebuild": ["\uAE30\uC5B5 \uC7AC\uAD6C\uCD95", "Rebuild memory"],
@@ -582,6 +583,7 @@ ${revisionHash}`;
       "\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C: \uCC98\uC74C \uC5F0\uACB0\uD560 \uB54C \uAC74\uB108\uB6F4 \uC774 \uCC44\uD305\uC758 \uC774\uC804 \uD134\uAE4C\uC9C0 \uC0AC\uC2E4\uC744 \uCD94\uCD9C\uD558\uACE0 \uC784\uBCA0\uB529\uD569\uB2C8\uB2E4. \uAE30\uC5B5 \uC7AC\uAD6C\uCD95: \uC774 \uCC44\uD305\uC758 \uC0AC\uC2E4\uC744 \uBC84\uB9AC\uACE0 \uBAA8\uB4E0 \uD134\uC744 \uB2E4\uC2DC \uCD94\uCD9C\uD569\uB2C8\uB2E4(\uC6D0\uBB38\uC740 \uADF8\uB300\uB85C). \uC720\uB8CC API\uB294 \uD134\uB9C8\uB2E4 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4. \uB300\uD654 \uC0AD\uC81C: NMOS\uC5D0 \uC800\uC7A5\uB41C \uC774 \uCC44\uD305\uC758 \uBAA8\uB4E0 \uAE30\uB85D(\uC6D0\uBB38 \uD3EC\uD568)\uC744 \uC9C0\uC6C1\uB2C8\uB2E4. \uB418\uB3CC\uB9B4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. PocketRisu\uC758 \uCC44\uD305\uC740 \uADF8\uB300\uB85C\uC774\uACE0, \uADF8 \uCC44\uD305\uC5D0\uC11C \uB2E4\uC2DC \uC0DD\uC131\uD558\uBA74 \uC0C8 \uB300\uD654\uB85C \uCC98\uC74C\uBD80\uD130 \uAE30\uB85D\uB429\uB2C8\uB2E4.",
       "Extract all history: extract facts and embeddings for the older turns of this chat that the first sync skipped. Rebuild memory: discard this chat's facts and extract every turn again (raw messages stay). Paid APIs cost money per turn. Delete conversation: delete everything NMOS stored for this chat, raw messages included. This cannot be undone. The chat in PocketRisu stays; generating in it again records it as a new conversation from scratch."
     ],
+    "act.help": ["\uC774 \uBC84\uD2BC\uB4E4\uC740?", "What do these do?"],
     "act.working": ["\uC694\uCCAD \uC911\u2026", "Requesting\u2026"],
     "act.history_done": ["\uD134 {t}\uAC1C \uCD94\uCD9C\uACFC \uBA54\uC2DC\uC9C0 {m}\uAC1C \uC784\uBCA0\uB529\uC744 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0 \uB123\uC5C8\uC2B5\uB2C8\uB2E4.", "Queued {t} turns for extraction and {m} messages for embedding."],
     "act.history_none": ["\uC774\uBBF8 \uC804\uBD80 \uCC98\uB9AC\uB418\uC5C8\uAC70\uB098 \uCC98\uB9AC \uC911\uC785\uB2C8\uB2E4.", "Everything is already processed or queued."],
@@ -1029,14 +1031,51 @@ ${revisionHash}`;
   }
 
   // src/inspector.ts
-  var TAGS = /* @__PURE__ */ new Set(["DIV", "P", "H1", "H2", "SPAN", "B", "BR", "A", "TABLE", "THEAD", "TBODY", "TR", "TH", "TD"]);
+  var TAGS = /* @__PURE__ */ new Set([
+    "DIV",
+    "P",
+    "H1",
+    "H2",
+    "SPAN",
+    "B",
+    "BR",
+    "A",
+    "TABLE",
+    "THEAD",
+    "TBODY",
+    "TR",
+    "TH",
+    "TD",
+    "DETAILS",
+    "SUMMARY"
+  ]);
+  var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+  var SECTION = /^s-[a-z]{1,20}$/;
   function inspectorApiPath(href) {
-    const m = /^\/inspector(\/c\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?(?:[?#]|$)/i.exec(href ?? "");
+    const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID})?)?(?:[?#]|$)`, "i").exec(href ?? "");
     return m ? `/v1/inspector${m[1] ?? ""}` : null;
   }
   function inspectorConversation(path) {
-    const m = /^\/v1\/inspector\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(path);
+    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID})?$`, "i").exec(path);
     return m ? m[1] : null;
+  }
+  function sectionTarget(href) {
+    const id = href?.startsWith("#") ? href.slice(1) : "";
+    return SECTION.test(id) ? id : null;
+  }
+  function keepAttribute(name, value) {
+    switch (name) {
+      case "class":
+      case "title":
+      case "open":
+        return true;
+      case "id":
+        return SECTION.test(value);
+      case "href":
+        return inspectorApiPath(value) !== null || sectionTarget(value) !== null;
+      default:
+        return false;
+    }
   }
   function safeFragment(html) {
     const template = document.createElement("template");
@@ -1050,14 +1089,29 @@ ${revisionHash}`;
         }
         const element = node;
         for (const { name, value } of Array.from(element.attributes)) {
-          const keep = name === "class" || name === "title" || name === "href" && inspectorApiPath(value) !== null;
-          if (!keep) element.removeAttribute(name);
+          if (!keepAttribute(name, value)) element.removeAttribute(name);
         }
         clean(element);
       }
     };
     clean(template.content);
     return template.content;
+  }
+  function localTime(iso, lang, now = /* @__PURE__ */ new Date()) {
+    const then = new Date(iso);
+    if (Number.isNaN(then.getTime())) return null;
+    const locale = lang === "en" ? "en" : "ko";
+    const title = then.toLocaleString(locale);
+    const seconds = Math.round((then.getTime() - now.getTime()) / 1e3);
+    const ago = Math.abs(seconds);
+    if (seconds > 60 || ago >= 7 * 86400) {
+      const date = then.toLocaleDateString(locale, { year: "numeric", month: "2-digit", day: "2-digit" });
+      const time = then.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+      return { text: `${date} ${time}`, title };
+    }
+    const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+    const [value, unit] = ago < 45 ? [0, "second"] : ago < 2700 ? [Math.round(seconds / 60), "minute"] : ago < 79200 ? [Math.round(seconds / 3600), "hour"] : [Math.round(seconds / 86400), "day"];
+    return { text: rtf.format(value, unit), title };
   }
 
   // src/ui.ts
@@ -1133,6 +1187,16 @@ html,body{margin:0;background:#0c0c10}
 .nmos .insp th,.nmos .insp td{text-align:left;padding:6px 8px;border-bottom:1px solid #30323b;vertical-align:top}
 .nmos .insp th{font-weight:600;color:#9a9ca8;font-size:12px;white-space:nowrap}
 .nmos .insp .chip{display:inline-block;padding:0 6px;border-radius:4px;background:#2b2d36;font-size:12px}
+.nmos .inspbar{position:sticky;top:0;z-index:1;background:#0c0c10;padding:8px 0;margin-top:4px}
+.nmos .help{margin:8px 0 0}.nmos .help summary{cursor:pointer}.nmos .help p{margin:6px 0 0}
+.nmos .insp.busy{opacity:.55;transition:opacity .15s}
+.nmos .insp details>summary{cursor:pointer;list-style:none}.nmos .insp details>summary::-webkit-details-marker{display:none}
+.nmos .insp details>summary h2{display:inline-block}
+.nmos .insp details>summary h2::before{content:"\u25B8 ";color:#6b6d78}.nmos .insp details[open]>summary h2::before{content:"\u25BE "}
+.nmos .insp .n{color:#9a9ca8;font-weight:400;font-size:12px}
+.nmos .insp .toc{font-size:13px;line-height:1.9;margin:8px 0}.nmos .insp a.warn{color:#ffd43b}
+.nmos .insp .who{display:flex;align-items:center;gap:8px;margin:10px 0}.nmos .insp .who select{width:auto;min-width:180px;padding:5px 8px}
+.nmos .insp details.meta{font-size:12px;margin-top:2px}.nmos .insp details.meta p{margin:4px 0}
 .nmos .bar{position:sticky;bottom:0;background:#15161b;border-top:1px solid #30323b;padding:10px max(14px,calc((100% - 760px) / 2 + 14px));display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .nmos .bar .text{flex:1;min-width:160px;font-size:13px}
 `;
@@ -1288,7 +1352,11 @@ html,body{margin:0;background:#0c0c10}
       statusView.replaceChildren(...cards, el("div", { class: "btns" }, refresh));
     }
     let inspectorPath = "/v1/inspector";
+    let shownPath = null;
+    let loads = 0;
+    const visited = [];
     const inspectorBody = el("div", { class: "insp" });
+    const inspectorBack = el("button", { text: L("insp.back") });
     const inspectorRefresh = el("button", { text: L("refresh") });
     const inspectorAddress = el("p", { class: "sub mono" });
     const historyButton = el("button", { text: L("act.history") });
@@ -1299,12 +1367,54 @@ html,body{margin:0;background:#0c0c10}
       "div",
       {},
       el("div", { class: "btns" }, historyButton, rebuildButton, deleteButton),
-      el("p", { class: "sub", text: L("act.sub") })
+      el("details", { class: "sub help" }, el("summary", { text: L("act.help") }), el("p", { text: L("act.sub") }))
     );
-    inspectorView.append(el("div", { class: "btns" }, inspectorRefresh), actions, actionMsg, inspectorBody, inspectorAddress);
+    inspectorView.append(
+      el("div", { class: "btns inspbar" }, inspectorBack, inspectorRefresh),
+      actions,
+      actionMsg,
+      inspectorBody,
+      inspectorAddress
+    );
     let actionConversation = null;
-    async function showInspector(path = inspectorPath) {
+    function place() {
+      const open = Array.from(inspectorBody.querySelectorAll("details[id]")).filter((d) => d.open);
+      return { path: inspectorPath, scroll: root.scrollTop, open: open.map((d) => d.id) };
+    }
+    function restore(at) {
+      for (const d of Array.from(inspectorBody.querySelectorAll("details[id]"))) d.open = at.open.includes(d.id);
+      root.scrollTop = at.scroll;
+    }
+    function enhance(page) {
+      for (const span of Array.from(page.querySelectorAll("span.ts[title]"))) {
+        const shown2 = localTime(span.getAttribute("title") ?? "", lang);
+        if (!shown2) continue;
+        span.textContent = shown2.text;
+        span.setAttribute("title", shown2.title);
+      }
+      const who = page.querySelector("p.who");
+      if (!who) return;
+      const name = who.querySelector("span")?.textContent ?? "";
+      const picker = el("select", { "aria-label": name });
+      for (const choice of Array.from(who.querySelectorAll("a, b"))) {
+        const path = choice.tagName === "B" ? inspectorPath : inspectorApiPath(choice.getAttribute("href"));
+        if (path) picker.append(el("option", { value: path, text: choice.textContent ?? "", selected: choice.tagName === "B" }));
+      }
+      picker.addEventListener("change", () => go(picker.value));
+      who.replaceChildren(el("span", { class: "muted", text: name }), picker);
+    }
+    function go(path) {
+      if (path === inspectorPath) return void showInspector();
+      if (shownPath) visited.push(place());
+      if (visited.length > 30) visited.shift();
+      void showInspector(path);
+    }
+    async function showInspector(path = inspectorPath, at) {
+      const load = ++loads;
+      const again = path === shownPath;
+      const keep = at ?? (again ? place() : void 0);
       inspectorPath = path;
+      inspectorBack.style.display = visited.length ? "" : "none";
       const conversation = inspectorConversation(path);
       if (conversation !== actionConversation) {
         actionConversation = conversation;
@@ -1312,24 +1422,50 @@ html,body{margin:0;background:#0c0c10}
         disarm();
       }
       actions.style.display = conversation ? "" : "none";
-      inspectorBody.replaceChildren(el("div", { class: "card muted", text: L("insp.loading") }));
+      if (again) {
+        inspectorBody.classList.add("busy");
+      } else {
+        shownPath = null;
+        inspectorBody.replaceChildren(el("div", { class: "card muted", text: L("insp.loading") }));
+      }
       const base = (await deps.getArg("sidecar_url") || "http://127.0.0.1:8790").replace(/\/+$/, "");
       const direct = routeFor(base, await deps.getArg("route")) === "direct";
       inspectorAddress.textContent = direct ? L("insp.browser", { url: `${base}/inspector${lang === "en" ? "?lang=en" : ""}` }) : "";
       try {
         const r = await deps.api("GET", `${path}${lang === "en" ? "?lang=en" : ""}`, void 0, 15e3);
-        inspectorBody.replaceChildren(safeFragment(r.html));
-        root.scrollTop = 0;
+        if (load !== loads) return;
+        const page = safeFragment(r.html);
+        enhance(page);
+        inspectorBody.replaceChildren(page);
+        shownPath = path;
+        if (keep) restore(keep);
+        else root.scrollTop = 0;
       } catch (error) {
+        if (load !== loads) return;
+        shownPath = null;
         inspectorBody.replaceChildren(el("div", { class: "card err", text: errorText(lang, error) }));
+      } finally {
+        if (load === loads) inspectorBody.classList.remove("busy");
       }
     }
     inspectorBody.addEventListener("click", (event) => {
       const link = event.target instanceof Element ? event.target.closest("a") : null;
       if (!link) return;
       event.preventDefault();
-      const path = inspectorApiPath(link.getAttribute("href"));
-      if (path) void showInspector(path);
+      const href = link.getAttribute("href");
+      const section = sectionTarget(href);
+      const target = section ? inspectorBody.querySelector(`#${section}`) : null;
+      if (target) {
+        if (target instanceof HTMLDetailsElement) target.open = true;
+        target.scrollIntoView({ block: "start", behavior: "smooth" });
+        return;
+      }
+      const path = inspectorApiPath(href);
+      if (path) go(path);
+    });
+    inspectorBack.addEventListener("click", () => {
+      const at = visited.pop();
+      if (at) void showInspector(at.path, at);
     });
     inspectorRefresh.addEventListener("click", () => void showInspector());
     const confirmable = [
@@ -1402,6 +1538,7 @@ html,body{margin:0;background:#0c0c10}
       say(actionMsg, L("act.working"));
       try {
         const r = await deps.api("POST", `/v1/conversations/${conversation}/delete`, {}, 6e4);
+        visited.length = 0;
         await showInspector("/v1/inspector");
         say(actionMsg, L("act.delete_done", { m: r.deleted.messages ?? 0 }), "ok");
       } catch (error) {
@@ -1665,17 +1802,17 @@ html,body{margin:0;background:#0c0c10}
       const saveClose = el("button", { class: "primary", text: L("save_and_close") });
       const discard = el("button", { text: L("discard_and_close") });
       const cancel = el("button", { text: L("cancel") });
-      const restore = () => {
+      const restore2 = () => {
         closing = false;
         bar.replaceChildren(barText, revert, save);
         update();
       };
       saveClose.addEventListener("click", async () => {
         if (await saveAll()) shut();
-        else restore();
+        else restore2();
       });
       discard.addEventListener("click", shut);
-      cancel.addEventListener("click", restore);
+      cancel.addEventListener("click", restore2);
       select("settings");
       bar.replaceChildren(el("span", { class: "text warn", text: L("close_unsaved") }), cancel, discard, saveClose);
     });

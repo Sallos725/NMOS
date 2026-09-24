@@ -5,7 +5,7 @@
 import type { StatusInfo } from './core';
 import { configBody, connArgs, DEFAULT_DEADLINE_MS, dirtySections, MAX_DEADLINE_MS, type FormValues, type Section } from './form';
 import { langOf, t, type Lang, type StringKey } from './i18n';
-import { inspectorApiPath, inspectorConversation, safeFragment } from './inspector';
+import { inspectorApiPath, inspectorConversation, localTime, safeFragment, sectionTarget } from './inspector';
 import { routeFor } from './route';
 
 export type Tab = 'status' | 'inspector' | 'settings';
@@ -115,6 +115,16 @@ html,body{margin:0;background:#0c0c10}
 .nmos .insp th,.nmos .insp td{text-align:left;padding:6px 8px;border-bottom:1px solid #30323b;vertical-align:top}
 .nmos .insp th{font-weight:600;color:#9a9ca8;font-size:12px;white-space:nowrap}
 .nmos .insp .chip{display:inline-block;padding:0 6px;border-radius:4px;background:#2b2d36;font-size:12px}
+.nmos .inspbar{position:sticky;top:0;z-index:1;background:#0c0c10;padding:8px 0;margin-top:4px}
+.nmos .help{margin:8px 0 0}.nmos .help summary{cursor:pointer}.nmos .help p{margin:6px 0 0}
+.nmos .insp.busy{opacity:.55;transition:opacity .15s}
+.nmos .insp details>summary{cursor:pointer;list-style:none}.nmos .insp details>summary::-webkit-details-marker{display:none}
+.nmos .insp details>summary h2{display:inline-block}
+.nmos .insp details>summary h2::before{content:"▸ ";color:#6b6d78}.nmos .insp details[open]>summary h2::before{content:"▾ "}
+.nmos .insp .n{color:#9a9ca8;font-weight:400;font-size:12px}
+.nmos .insp .toc{font-size:13px;line-height:1.9;margin:8px 0}.nmos .insp a.warn{color:#ffd43b}
+.nmos .insp .who{display:flex;align-items:center;gap:8px;margin:10px 0}.nmos .insp .who select{width:auto;min-width:180px;padding:5px 8px}
+.nmos .insp details.meta{font-size:12px;margin-top:2px}.nmos .insp details.meta p{margin:4px 0}
 .nmos .bar{position:sticky;bottom:0;background:#15161b;border-top:1px solid #30323b;padding:10px max(14px,calc((100% - 760px) / 2 + 14px));display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .nmos .bar .text{flex:1;min-width:160px;font-size:13px}
 `;
@@ -259,7 +269,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   // The sidecar's own inspector pages, shown in place: the plugin frame cannot open a tab (H15).
   // Links are handled here; following one would navigate the plugin frame itself.
   let inspectorPath = '/v1/inspector';
+  let shownPath: string | null = null; // the page on screen, once it has loaded
+  let loads = 0; // the latest load wins: an answer to an older one is dropped
+  // Pages read before this one and where the reader was on them, for the Back button.
+  interface Place { path: string; scroll: number; open: string[] }
+  const visited: Place[] = [];
   const inspectorBody = el('div', { class: 'insp' });
+  const inspectorBack = el('button', { text: L('insp.back') });
   const inspectorRefresh = el('button', { text: L('refresh') });
   const inspectorAddress = el('p', { class: 'sub mono' });
   // Per-chat actions (D22, ADR 0009) on a conversation page: they run in the sidecar.
@@ -268,12 +284,51 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const deleteButton = el('button', { text: L('act.delete') });
   const actionMsg = el('div', { class: 'msg' });
   const actions = el('div', {}, el('div', { class: 'btns' }, historyButton, rebuildButton, deleteButton),
-    el('p', { class: 'sub', text: L('act.sub') }));
+    el('details', { class: 'sub help' }, el('summary', { text: L('act.help') }), el('p', { text: L('act.sub') })));
   // The message sits outside the actions so a result stays visible after a delete returns to the list.
-  inspectorView.append(el('div', { class: 'btns' }, inspectorRefresh), actions, actionMsg, inspectorBody, inspectorAddress);
+  // Back and Refresh stay in reach while reading far down a page.
+  inspectorView.append(el('div', { class: 'btns inspbar' }, inspectorBack, inspectorRefresh), actions, actionMsg,
+    inspectorBody, inspectorAddress);
   let actionConversation: string | null = null;
-  async function showInspector(path = inspectorPath): Promise<void> {
+  function place(): Place {
+    const open = Array.from(inspectorBody.querySelectorAll<HTMLDetailsElement>('details[id]')).filter((d) => d.open);
+    return { path: inspectorPath, scroll: root.scrollTop, open: open.map((d) => d.id) };
+  }
+  function restore(at: Place): void {
+    for (const d of Array.from(inspectorBody.querySelectorAll<HTMLDetailsElement>('details[id]'))) d.open = at.open.includes(d.id);
+    root.scrollTop = at.scroll;
+  }
+  /** Adapt a page to the panel: times in the viewer's zone, the character links as a drop-down. */
+  function enhance(page: DocumentFragment): void {
+    for (const span of Array.from(page.querySelectorAll('span.ts[title]'))) {
+      const shown = localTime(span.getAttribute('title') ?? '', lang);
+      if (!shown) continue;
+      span.textContent = shown.text;
+      span.setAttribute('title', shown.title);
+    }
+    const who = page.querySelector('p.who');
+    if (!who) return;
+    const name = who.querySelector('span')?.textContent ?? '';
+    const picker = el('select', { 'aria-label': name });
+    for (const choice of Array.from(who.querySelectorAll('a, b'))) {
+      const path = choice.tagName === 'B' ? inspectorPath : inspectorApiPath(choice.getAttribute('href'));
+      if (path) picker.append(el('option', { value: path, text: choice.textContent ?? '', selected: choice.tagName === 'B' }));
+    }
+    picker.addEventListener('change', () => go(picker.value));
+    who.replaceChildren(el('span', { class: 'muted', text: name }), picker);
+  }
+  function go(path: string): void {
+    if (path === inspectorPath) return void showInspector();
+    if (shownPath) visited.push(place());
+    if (visited.length > 30) visited.shift();
+    void showInspector(path);
+  }
+  async function showInspector(path = inspectorPath, at?: Place): Promise<void> {
+    const load = ++loads;
+    const again = path === shownPath; // a refresh keeps the reader's place and open sections
+    const keep = at ?? (again ? place() : undefined);
     inspectorPath = path;
+    inspectorBack.style.display = visited.length ? '' : 'none';
     const conversation = inspectorConversation(path);
     if (conversation !== actionConversation) {
       actionConversation = conversation;
@@ -281,7 +336,12 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       disarm();
     }
     actions.style.display = conversation ? '' : 'none';
-    inspectorBody.replaceChildren(el('div', { class: 'card muted', text: L('insp.loading') }));
+    if (again) {
+      inspectorBody.classList.add('busy'); // the old page stays until the new one is there
+    } else {
+      shownPath = null;
+      inspectorBody.replaceChildren(el('div', { class: 'card muted', text: L('insp.loading') }));
+    }
     // Only a sidecar the browser reaches itself can be opened in a tab; a server-routed one (Docker
     // name, LAN address behind HTTPS) is reachable from the PocketRisu server only.
     const base = ((await deps.getArg('sidecar_url')) || 'http://127.0.0.1:8790').replace(/\/+$/, '');
@@ -289,18 +349,39 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     inspectorAddress.textContent = direct ? L('insp.browser', { url: `${base}/inspector${lang === 'en' ? '?lang=en' : ''}` }) : '';
     try {
       const r = await deps.api<{ html: string }>('GET', `${path}${lang === 'en' ? '?lang=en' : ''}`, undefined, 15_000);
-      inspectorBody.replaceChildren(safeFragment(r.html));
-      root.scrollTop = 0;
+      if (load !== loads) return;
+      const page = safeFragment(r.html);
+      enhance(page);
+      inspectorBody.replaceChildren(page);
+      shownPath = path;
+      if (keep) restore(keep);
+      else root.scrollTop = 0;
     } catch (error) {
+      if (load !== loads) return;
+      shownPath = null;
       inspectorBody.replaceChildren(el('div', { class: 'card err', text: errorText(lang, error) }));
+    } finally {
+      if (load === loads) inspectorBody.classList.remove('busy');
     }
   }
   inspectorBody.addEventListener('click', (event) => {
     const link = event.target instanceof Element ? event.target.closest('a') : null;
     if (!link) return;
     event.preventDefault();
-    const path = inspectorApiPath(link.getAttribute('href'));
-    if (path) void showInspector(path);
+    const href = link.getAttribute('href');
+    const section = sectionTarget(href);
+    const target = section ? inspectorBody.querySelector<HTMLElement>(`#${section}`) : null;
+    if (target) {
+      if (target instanceof HTMLDetailsElement) target.open = true;
+      target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      return;
+    }
+    const path = inspectorApiPath(href);
+    if (path) go(path);
+  });
+  inspectorBack.addEventListener('click', () => {
+    const at = visited.pop();
+    if (at) void showInspector(at.path, at);
   });
   inspectorRefresh.addEventListener('click', () => void showInspector());
   // Destructive actions take two clicks: the first arms the button for 6 s.
@@ -367,6 +448,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     say(actionMsg, L('act.working'));
     try {
       const r = await deps.api<{ deleted: { messages?: number } }>('POST', `/v1/conversations/${conversation}/delete`, {}, 60_000);
+      visited.length = 0; // the deleted conversation's pages are gone
       await showInspector('/v1/inspector');
       say(actionMsg, L('act.delete_done', { m: r.deleted.messages ?? 0 }), 'ok');
     } catch (error) { say(actionMsg, errorText(lang, error), 'err'); } finally { deleteButton.disabled = false; }

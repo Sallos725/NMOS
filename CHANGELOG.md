@@ -10,7 +10,7 @@ later, is `docs/KNOWN-ISSUES.md`.
 Phase 6: item transitions and conflicts (`docs/phases/PHASE-6.md`, ADRs 0016–0017, D30), and the
 retention decision O5 (ADRs 0015, 0018, D29, D31). Schema: migration 0015 (applied at startup).
 Upgrade both parts: `docker compose pull && docker compose up -d`, then replace the plugin file and
-reload PocketRisu. The plugin itself is unchanged apart from its version.
+reload PocketRisu. The plugin's request path is unchanged; its panel gains the Inspector changes below.
 
 **One-time cost after upgrading.**
 - **LLM extraction:** the prompt is `extract-v6`, a new generation. With an LLM configured, each chat
@@ -34,6 +34,16 @@ reload PocketRisu. The plugin itself is unchanged apart from its version.
 - **Inspector: item timelines and conflicts.** Each item's history is listed oldest first, with what
   became of every statement (current, superseded, ended, conflicting). A conflicts table lists facts
   the story contradicts. Fact history in the API carries the same `outcome`.
+- **Inspector: easier to read, and a view per character** (read-only). A conversation page opens with
+  contents and counts (a conflict is highlighted) and folds each section; retrievals, commits and messages start
+  folded, and conflicts come before facts. Predicates, lifecycles, commit reasons, freshness, modality
+  and entity types read as words (the raw value is in the tooltip); ids are folded away. A **character**
+  picker (a drop-down in the panel, links in the browser) opens one character's page: profile, what they
+  hold with its timeline, facts about them, what they know and what is kept from them, and claims by or
+  about them (`/inspector/c/<id>/e/<entity>`, read-only; it changes nothing in the packet). In the panel,
+  Refresh keeps the scroll position and open sections, **Back** returns to the previous page where you
+  were, Back and Refresh stay at the top while scrolling, and times show in the viewer's time zone
+  ("3 minutes ago").
 - **Edits and rerolls no longer store the whole chat again** (ADR 0018, D31). The record of each
   edit, reroll, swipe or delete used to keep every message row (≈1.1 MB at 10,000 messages). The worker
   now stores it as the rows that changed, and only when they rebuild it exactly. At 10,000 messages,

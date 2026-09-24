@@ -517,6 +517,16 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     other=view["other"], entities=view["entities"], ambiguous=view["ambiguous"],
                                     conflicts=view["conflicts"], items=view["items"])
 
+    def inspector_character_html(conv_id: UUID, entity_id: UUID, request: Request, token: str | None,
+                                 lang: str | None, embed: bool = False) -> str:
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            view = memory_view(conn, conv["head_commit_id"], rt["active_extractor"])
+            return inspector.character(conv, str(entity_id), view, token, active=rt["active_extractor"],
+                                       lang=inspector.lang_of(lang), embed=embed)
+
     @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_index(request: Request, token: str | None = None, lang: str | None = None):
         return inspector_index_html(request, token, lang)
@@ -524,6 +534,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     @app.get("/inspector/c/{conv_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_detail(conv_id: UUID, request: Request, token: str | None = None, lang: str | None = None):
         return inspector_detail_html(conv_id, request, token, lang)
+
+    @app.get("/inspector/c/{conv_id}/e/{entity_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def inspector_character(conv_id: UUID, entity_id: UUID, request: Request, token: str | None = None,
+                            lang: str | None = None):
+        return inspector_character_html(conv_id, entity_id, request, token, lang)
 
     # The same pages as body fragments for the plugin panel, which cannot open a browser tab (H15).
     @app.get("/v1/inspector", dependencies=[Depends(auth)])
@@ -533,6 +548,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     @app.get("/v1/inspector/c/{conv_id}", dependencies=[Depends(auth)])
     def inspector_detail_embed(conv_id: UUID, request: Request, lang: str | None = None):
         return {"html": inspector_detail_html(conv_id, request, None, lang, embed=True)}
+
+    @app.get("/v1/inspector/c/{conv_id}/e/{entity_id}", dependencies=[Depends(auth)])
+    def inspector_character_embed(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None):
+        return {"html": inspector_character_html(conv_id, entity_id, request, None, lang, embed=True)}
 
     return app
 
