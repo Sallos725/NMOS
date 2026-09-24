@@ -2,13 +2,13 @@
 
 ## Current phase
 
-**Phase 6 — Item Transitions and Conflicts: approved 2026-09-24; every acceptance criterion met
-(2026-09-24), not released yet.** Spec
-`docs/phases/PHASE-6.md` (Track B, B2). The owner took the recommended answer to every open question
-(Q1–Q5). Steps 1–4 done (one whereabouts per item, ADR 0016; `destroyed`, `extract-v6`
-and `disputed="true"`, ADR 0017; D30; Inspector item timelines and conflicts). Step 5 evidence:
-`docs/perf/phase6-extraction.md` (real-model tier, fact-read latency, real-host smoke, upgrade).
-The release needs the owner's go-ahead.
+**Phase 6 — Item Transitions and Conflicts: complete (2026-09-24), released in `v0.1.0-beta.13`.**
+Spec `docs/phases/PHASE-6.md` (Track B, B2), approved 2026-09-24 with the recommended answer to every
+question (Q1–Q5). One whereabouts per item (ADR 0016), `destroyed` with `extract-v6` and
+`disputed="true"` (ADR 0017), D30, Inspector item timelines and conflicts. Every acceptance criterion
+met: `docs/perf/phase6-extraction.md` (real-model tier, fact-read latency, real-host smoke, upgrade from
+a `v0.1.0-beta.12` database). No phase is current. Next: Track B, B3 (events, relationships, threads),
+not authorized yet.
 
 **Phase 5 — Entity Identity and Semantic Assertions: complete (2026-09-24), released in
 `v0.1.0-beta.12`.** Spec `docs/phases/PHASE-5.md`, ADRs 0012–0014 (0012/0013 amended by the owner after
@@ -21,7 +21,9 @@ released in `v0.1.0-beta.12`.
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.12` (2026-09-24), public repository and image.** Phase 5 (above), `clean-v2`
+**Public beta `v0.1.0-beta.13` (2026-09-24), public repository and image.** Phase 6 (above) and O5
+resolved: superseded vectors pruned (ADR 0015), full-manifest host observations compacted losslessly
+(ADR 0018); migration 0015. `v0.1.0-beta.12` (2026-09-24): Phase 5 (above), `clean-v2`
 normalizer (inline images no longer read as story), optional progress display (D28); migration 0014.
 `v0.1.0-beta.11` (2026-09-24): Phase 5 step 1: a new LLM
 model re-extracts only each chat's recent window and older turns keep the previous model's facts (ADR
@@ -69,7 +71,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
 | Tests | `apps/sidecar/tests` (228), `adapters/pocketrisu-plugin/test` (46) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k (D24) |
-| Known issues | `docs/KNOWN-ISSUES.md` | K1–K21 current as of `v0.1.0-beta.10`, each with workaround and tracking (host, owner decision O5, Track B stage); resolved limitations listed |
+| Known issues | `docs/KNOWN-ISSUES.md` | K1–K22 (K10 resolved) current as of `v0.1.0-beta.13`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B B1 = Phase 5 (complete); B2–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0018` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-5.md` | 0–3 met; 4 soft subset met; 5 met |

@@ -1,6 +1,6 @@
 # NMOS Known Issues
 
-Current as of `v0.1.0-beta.12` (2026-09-24). This is the single list of what does not work, or works
+Current as of `v0.1.0-beta.13` (2026-09-24). This is the single list of what does not work, or works
 only partly, in the current release. Each release's "Known limitations" in `CHANGELOG.md` describes
 that release at the time; entries fixed later are listed under [Resolved](#resolved) below.
 
@@ -18,15 +18,14 @@ without a PocketRisu change.
 | K6 | PocketRisu must be opened at `localhost` or HTTPS | Host | browser rule |
 | K7 | Tested on one PocketRisu build only; no group chats | Host | evidence / host (H11) |
 | K8 | Names can still split: a new name with no stated alias is a new entity | Memory | reduced in beta.12 (ADR 0012); owner merge/split: Track B, B7 |
-| K9 | A destroyed or used-up item keeps its last holder unless the story says it is gone | Memory | explicit loss fixed in beta.12 (ADR 0013); other ends fixed, unreleased (Phase 6, ADR 0017) |
-| K10 | An item's holder and its place are separate facts and can disagree | Memory | fixed, unreleased (Phase 6, ADR 0016) |
+| K9 | A destroyed or used-up item keeps its last holder in turns not extracted by `extract-v6` | Memory | fixed for new turns in beta.13 (ADR 0017); older turns: "extract all history" |
 | K11 | Character knowledge is a hint, not isolation | Memory | Track B, B5 (hard POV) |
 | K12 | A word in more than 200 messages brings no lexical excerpts | Recall | accepted trade-off (A3) |
 | K13 | Very long messages are only partly embedded and extracted | Recall | accepted limit (#13) |
 | K14 | Rare over-injection into an auxiliary call; transformed input gets no memory | Gating | accepted (ADR 0001) |
 | K15 | Thresholds and extraction quality are checked on limited data | Quality | evaluation (A5 baseline) |
 | K16 | NMOS does not notice a chat deleted in PocketRisu | Data | host (H10) |
-| K17 | Storage grows with abandoned branches and observations | Data | O5 decided: superseded vectors pruned (ADR 0015), observations compacted (ADR 0018); abandoned branches kept |
+| K17 | Storage grows with abandoned branches | Data | O5 decided: superseded vectors pruned (ADR 0015), observations compacted (ADR 0018); abandoned branches kept |
 | K18 | Changing a model or endpoint re-processes history at the provider's cost | Data | LLM: bounded to the recent window since beta.11 (ADR 0014); embeddings: by design |
 | K19 | Plugin and sidecar versions are not checked against each other | Setup | not planned |
 | K20 | Small UI delays: bot name, menu language | UI | not planned |
@@ -90,14 +89,10 @@ marks (`known_by`, `hidden_from`) stay free text. Owner corrections (merge/split
 **K9 — Destroyed or used-up items keep their last holder.** A new holder ends the previous one (ADR
 0011), and since 0.1.0-beta.12 so does a statement that the holder no longer has it ("lost", "dropped
 into the sea", "gave away"; ADR 0013; 3/3 in the real-model check). An item that is destroyed, eaten or
-used up with no such statement still shows its last holder. *Fixed, unreleased:* since Phase 6 step 2
+used up with no such statement still shows its last holder. *Fixed for new turns in 0.1.0-beta.13:*
 the extraction records `destroyed` (burned, eaten, used up), which ends the holder and the place (ADR
 0017). This holds only for turns extracted by `extract-v6`. Older turns need "extract all history", and
 real-model accuracy is not measured yet.
-
-**K10 — Holder and place can disagree.** `possesses` and `located_in` are separate facts, so an item
-can show a holder from one turn and a place from another (ADR 0011). *Fixed, unreleased:* since Phase 6
-step 1 they are one whereabouts per item, and the newer statement decides (ADR 0016).
 
 **K11 — Character knowledge is a hint.** Facts carry `public` / `limited` (`known_by`,
 `hidden_from`) / unknown marks and the packet tells the model how to use them, but one generation
@@ -141,12 +136,12 @@ swipe or branch (H10); NMOS sees changes at the next generation in that chat. A 
 PocketRisu stays in NMOS. *Workaround:* delete it in the panel's Inspector tab (ADR 0009; cannot be
 undone, and nothing but a sidecar log line records it).
 
-**K17 — Storage grows with abandoned branches and observations.** Abandoned worldlines (rerolled or
+**K17 — Storage grows with abandoned branches.** Abandoned worldlines (rerolled or
 edited-away branches, with their vectors) and host observations (≈2.7 KB per generation at 10k) are
 kept for audit, and so are superseded LLM extractions (by decision). A 10,000-message synthetic chat
-with embeddings takes ≈120 MB. Since ADR 0015 (unreleased), superseded vectors are deleted once the
+with embeddings takes ≈120 MB. Since 0.1.0-beta.13 (ADR 0015), superseded vectors are deleted once the
 new embedding projection covers the chat, and older normalized text at startup, so a model change no
-longer leaves a second copy of every vector. Since ADR 0018 (unreleased), an edit, reroll or swipe
+longer leaves a second copy of every vector. Since 0.1.0-beta.13 (ADR 0018), an edit, reroll or swipe
 no longer keeps a full copy of the chat's manifest: the worker stores it losslessly as the rows that
 changed (≈1.1 MB → ≈1.4 KB per action at 10,000 messages). Abandoned branches stay, by decision (O5).
 *Workaround:* delete conversations you no longer use.
@@ -196,6 +191,8 @@ Not issues, but often reported as one:
 
 | Was listed in | Issue | Resolved in |
 |---|---|---|
+| 0.1.0-beta.12 (K10) | An item's holder and its place were separate facts and could disagree | 0.1.0-beta.13 — one whereabouts per item (ADR 0016) |
+| 0.1.0-beta.12 (K17, part) | Superseded vectors and full-manifest host observations kept growing | 0.1.0-beta.13 — pruned and compacted (ADRs 0015, 0018); abandoned branches kept by decision |
 | 0.1.0-beta.8 | `possesses` multi-valued: giving an item away did not end the previous holder | 0.1.0-beta.10 — one current holder per item (ADR 0011); rest is K8–K10 |
 | 0.1.0-beta.4 | Warm sync linear in chat length; 800 ms default reliable only up to ≈5,000 messages | 0.1.0-beta.10 — append fast path, incremental manifest, 3 s default (ADR 0010, D24); rest is K1–K3 |
 | 0.1.0-beta.4 | A query matching nearly every message ran into the 300 ms lexical budget | 0.1.0-beta.10 — stops at 200 matches (`too_broad`); rest is K12 |

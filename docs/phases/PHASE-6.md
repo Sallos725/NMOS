@@ -1,7 +1,7 @@
 # Phase 6 — Item Transitions and Conflicts
 
-> **Status: approved by the owner on 2026-09-24, with the recommended answer to every question
-> (Q1–Q5).** Implementation follows "Implementation order" below. This is Track B
+> **Status: complete (2026-09-24), released in `v0.1.0-beta.13`.** Approved by the owner on 2026-09-24,
+> with the recommended answer to every question (Q1–Q5). This is Track B
 > stage B2 (`docs/proposals/TRACK-B-PHASE-5-PLUS.md` §6), narrowed to what current evidence supports;
 > this document is its B0.
 >
@@ -213,7 +213,7 @@ Each step is one reviewable change with its tests.
    `/v1/conversations/{id}/facts?history=true`); the Inspector shows a conflicts table, one timeline per
    item and a `disputed` chip on facts (`tests/test_transitions.py`).
 5. **Evaluation and release**: real-model tier, measurements, docs, release notes with cost.
-   *Evaluation done 2026-09-24* (`docs/perf/phase6-extraction.md`). Release needs the owner's go-ahead.
+   *Done 2026-09-24* (`docs/perf/phase6-extraction.md`; released in `v0.1.0-beta.13`).
 
 ## Stop conditions
 

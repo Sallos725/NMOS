@@ -165,7 +165,7 @@ says in dialogue is a `<Claim by="…">`, never a fact, and never overrides the 
 conditions and dreams are kept in the Inspector but not injected. The Note explains `negated` and
 `Claim` only when the packet uses them.
 
-An item is in one place at a time (unreleased, Phase 6): its holder and its place are one fact history,
+An item is in one place at a time (since 0.1.0-beta.13, Phase 6): its holder and its place are one fact history,
 so "Hana puts the map on the table" ends Hana's holding. An item the story burns, eats or uses up
 becomes `<Fact kind="destroyed">letter destroyed: burned</Fact>` and has no holder any more. A
 damaged item is not destroyed. If the story uses it again later, the fact is marked `disputed="true"`
