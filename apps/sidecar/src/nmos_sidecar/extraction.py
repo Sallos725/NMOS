@@ -22,7 +22,7 @@ from .ids import uuid7
 from .entities import USER_NAMES, norm, resolve
 from .facts import ACTIVE_ASSERTIONS
 from .predicates import REGISTRY, alias_evidenced, fill_types, knowledge, registry_prompt, salience, semantics, validate
-from .threads import fold as fold_threads
+from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
@@ -299,7 +299,8 @@ def promise_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = 
     if limit <= 0 or not rows:
         return []
     r = resolve(ctx["target"]["conversation_id"], rows)
-    threads = [t for t in fold_threads([dict(row) for row in rows], r)[0] if t["status"] == "open"]
+    threads = [t for t in fold_threads([dict(row) for row in rows if row["predicate"] in THREAD_PREDICATES], r)[0]
+               if t["status"] == "open"]
     shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
     out = []
     for t in threads:

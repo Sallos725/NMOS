@@ -29,10 +29,13 @@ packet slot (PHASE-7, "Evidence").
    of character trigrams (|A∩B| / min(|A|, |B|): a resolution often shortens the promise) must reach
    0.6 and lead the next by 0.15. No match, or a tie, closes nothing, and the resolution is listed as
    unmatched.
-4. **Restating.** A new promise restates an open one only when it is nearly the same text (0.9). Two
-   promises of one maker to one recipient often share words ("등대 앞에서 만나기", "등대 앞에서
-   기다리기"), so the resolution bar would merge them. A restatement is recorded on the thread; after a
-   thread closes, the same words open a new one.
+4. **Restating.** A new promise restates an open one of the same maker and recipient only when one
+   text contains the other (at least 4 characters, and only one such thread): "등대 앞에서 만나기로"
+   restates "비가 그치면 내일 아침 등대 앞에서 만나기로 함". Two promises of one maker often share words
+   ("등대 앞에서 만나기", "등대 앞에서 기다리기"), so the resolution bar would merge them. Similarity would
+   also compare every new promise with every open one of its maker: the first version (0.9 similarity)
+   took ≈85 ms per fold for 500 synthetic promises made by 4 characters. A restatement is recorded on the thread;
+   after a thread closes, the same words open a new one.
 5. **Consumed assertions.** The assertions a thread opened, restated or closed, and unmatched
    resolutions, are not facts, claims or other assertions as well. A promise appears once.
 6. **Packet (Q5).** Open threads whose maker or recipient is mentioned in the user's message
@@ -55,5 +58,8 @@ packet slot (PHASE-7, "Evidence").
   promises.
 - A promise the story forgets stays open. Closing on age would state something the story did not
   (PHASE-7 stop condition). Owner repair is Track B, B7.
+- Cost: the fold runs on every fact read, over the `promised` and `fulfilled` assertions only. Text
+  matching compares a resolution with its maker's open threads, and trigrams are computed only when
+  the text is not equal (`docs/perf/phase7-extraction.md`).
 - The thresholds are set on the deterministic cases. The real-model tier (step 6) checks them on model
   output and may move them; a change is a new entry here.

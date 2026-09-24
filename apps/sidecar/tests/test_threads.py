@@ -85,8 +85,12 @@ def test_who_may_close_a_promise():
 
 
 def test_a_restated_promise_is_one_thread():
-    (t,), _, used = threads([promise(10), promise(30, text=PROMISE + ".")])
+    (t,), _, used = threads([promise(10), promise(30, text="등대 앞에서 만나기로")])
     assert t["turn"] == 10 and [x["turn"] for x in t["restated"]] == [30] and used == {10, 30}
+    # Shared words are not a restatement.
+    assert len(threads([promise(10, text="등대 앞에서 만나기"), promise(11, text="등대 앞에서 기다리기")])[0]) == 2
+    # Nor is the same text to someone else.
+    assert len(threads([promise(10), promise(30, to="카이토")])[0]) == 2
     # After it is kept, the same words make a new promise.
     assert status([promise(10), kept(20), promise(30)]) == [("하나", PROMISE, "open"), ("하나", PROMISE, "kept")]
 

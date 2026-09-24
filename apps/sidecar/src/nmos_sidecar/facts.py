@@ -15,7 +15,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from .entities import Resolution, resolve
 from .predicates import HOLDER_PER_ITEM, REGISTRY, whereabouts
-from .threads import fold as fold_threads
+from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
 # `unit` is the turn (a message without one counts alone). `live` holds every extraction that still
 # matches the head, and `chosen` the one generation that serves its unit: the active one first, then the
@@ -199,10 +199,17 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []
-    rows = [row for row in rows if row["predicate"] != "also_called"]
+    promises: list[dict[str, Any]] = []
+    kept: list[dict[str, Any]] = []
     for row in rows:
+        if row["predicate"] == "also_called":
+            continue
         _annotate(row, r)
-    threads, unmatched, consumed = fold_threads(rows, r)
+        kept.append(row)
+        if row["predicate"] in THREAD_PREDICATES:
+            promises.append(row)
+    rows = kept
+    threads, unmatched, consumed = fold_threads(promises, r)
     for row in rows:
         if row["id"] in consumed:
             continue

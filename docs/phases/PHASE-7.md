@@ -1,7 +1,8 @@
 # Phase 7 — Promise Threads and Event Salience
 
-> **Status: approved by the owner on 2026-09-24, with the recommended answer to every question
-> (Q1–Q5).** Implementation follows "Implementation order" below. This is Track B
+> **Status: every acceptance criterion met (2026-09-24); release pending.** Approved by the owner on
+> 2026-09-24, with the recommended answer to every question (Q1–Q5). Evidence:
+> `docs/perf/phase7-extraction.md`, `docs/perf/eval-baseline.md`, ADRs 0019–0020. This is Track B
 > stage B3 (`docs/proposals/TRACK-B-PHASE-5-PLUS.md` §6, "Event, relationship, and open-thread
 > projections"), narrowed to what current evidence supports; this document is its B0.
 
@@ -143,9 +144,10 @@ relationship's past, events needing participants or places as structure, and cau
 - Migration 0016 adds one nullable column; no backfill.
 - With an LLM configured, `extract-v7` becomes active at startup. Each chat re-extracts its latest
   `NMOS_EXTRACT_BACKFILL` turns (default 100) once. Older turns keep their `extract-v6` facts until
-  "extract all history": their promises open threads (Q2 applies at read time) but cannot close, and
-  their events are unlabeled. The prompt grows by one registry line, three rules and the OPEN PROMISES
-  block: an estimated +5–8 % prompt tokens per turn, to be measured and stated in the release notes.
+  "extract all history": their promises open threads (Q2 applies at read time), a later `extract-v7`
+  turn can keep them, but a keeping turn among them has no `fulfilled`; their events are unlabeled.
+  The prompt grows by one registry line, three rules and the OPEN PROMISES block: estimated at +5–8 %
+  prompt tokens per turn, measured at +16.8 % (≈239 tokens; `docs/perf/phase7-extraction.md`).
 - With extraction off: the event cap and the thread fold apply to existing assertions at once;
   nothing closes a thread and no event is labeled.
 
@@ -200,24 +202,24 @@ not on the request path; its cost per extraction is measured and reported.
 
 ## Acceptance criteria
 
-- [ ] Every deterministic case above passes in CI, and every existing evaluation case still passes.
-- [ ] Promise scenes (dialogue, narration, conditional): a thread opens in at least two of three runs.
-- [ ] Kept, broken and released scenes: the thread closes with the right status in at least two of
+- [x] Every deterministic case above passes in CI, and every existing evaluation case still passes.
+- [x] Promise scenes (dialogue, narration, conditional): a thread opens in at least two of three runs.
+- [x] Kept, broken and released scenes: the thread closes with the right status in at least two of
       three runs.
-- [ ] Control scenes: no `fulfilled` and no negative `promised` for a promise the turn does not keep
+- [x] Control scenes: no `fulfilled` and no negative `promised` for a promise the turn does not keep
       or break, in any run.
-- [ ] Reported-promise controls: no thread in any run.
-- [ ] Major-event scenes labeled `major` and minor-event scenes labeled `minor` in at least two of
+- [x] Reported-promise controls: no thread in any run.
+- [x] Major-event scenes labeled `major` and minor-event scenes labeled `minor` in at least two of
       three runs each.
-- [ ] The Phase 5 and Phase 6 bars still hold on their scenes with `extract-v7` (at most 10 % of
+- [x] The Phase 5 and Phase 6 bars still hold on their scenes with `extract-v7` (at most 10 % of
       actual-event assertions labeled non-actual; `destroyed` bars of `docs/phases/PHASE-6.md`).
-- [ ] Prompt tokens per turn, v6 against v7, measured and in the release notes.
-- [ ] Fact read at 10k: at most +30 ms p50 in the facts tier.
-- [ ] Upgrade from a `v0.1.0-beta.13` database: migration 0016 applies, only the recent window is
+- [x] Prompt tokens per turn, v6 against v7, measured and in the release notes.
+- [x] Fact read at 10k: at most +30 ms p50 in the facts tier.
+- [x] Upgrade from a `v0.1.0-beta.13` database: migration 0016 applies, only the recent window is
       queued, older turns are served by `extract-v6`, and their promises show as open threads at once.
-- [ ] A real-host smoke run (PocketRisu v1.12.0) injects a packet with an open promise from outside
+- [x] A real-host smoke run (PocketRisu v1.12.0) injects a packet with an open promise from outside
       the prompt window. The plugin is unchanged.
-- [ ] `ARCHITECTURE.md` (a new decision for threads and salience; D6 registry note), ADRs for the
+- [x] `ARCHITECTURE.md` (a new decision for threads and salience; D6 registry note), ADRs for the
       thread fold and for event salience, README, the Korean guide, `docs/KNOWN-ISSUES.md` and the
       changelog updated.
 

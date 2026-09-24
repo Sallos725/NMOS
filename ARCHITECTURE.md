@@ -118,7 +118,8 @@ Swipe churn does not burn extraction calls.
 `packages/domain/predicates` with declared subject/object types, cardinality
 (single/multi-valued), and epistemic class. Unknown predicates become `pending` candidates
 for review, not facts. Since `extract-v6` the registry also has `destroyed` (an item that no longer
-exists; D30, ADR 0017).
+exists; D30, ADR 0017), and since `extract-v7` `fulfilled` (a kept promise; D32, ADR 0019). An
+`event` also carries `salience` (`major` / `minor`, migration 0016; D32, ADR 0020).
 
 **D7 — Bounded extraction context, per turn (revised 2026-09-23, ADR 0008).** The unit of
 extraction is the **turn**: a run of user messages plus the run of replies that answers it (comments,
@@ -275,6 +276,16 @@ latest base observation, only when they rebuild it exactly. Bases (a chat's firs
 one differing by more than 25 %) stay full. The worker does it off the request path. Nothing else on
 abandoned worldlines is removed.
 
+**D32 — Promise threads and event salience (Phase 7, ADRs 0019, 0020).** A promise its maker says,
+or the narration states (modality actual or hypothetical), opens a thread; `fulfilled` closes it as
+kept and a negative `promised` as broken, stated by the narration, the maker or the recipient. A
+resolution names its promise by text (equal, else a clear trigram-overlap best), never by id, so a
+re-extraction of the opening turn does not orphan it. Threads are a read-time fold like facts; nothing
+is stored and nothing closes on age. Open threads whose maker or recipient is mentioned (not the
+persona) go in a `<Threads>` section before the facts (at most 3). Extraction is shown the chat's open
+promises (`extract-v7`). A packet holds at most 3 `event` facts: major before minor or unlabeled, and a
+minor event only when the query is about it. Minor events are never deleted.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
@@ -331,7 +342,10 @@ consumer needs it; empty future directories are not created in advance.
 | 2 | Predicate registry (D6), bounded extraction (D7), assertions, fact versions — **done (beta)** | Yes, async |
 | 3 | Hybrid retrieval (SQL + trigram + pgvector), RRF, selector, abstention — **done (beta)** | Embeddings only |
 | 4 | Soft subset — knowledge marks (D19) — **done (beta)**; hard principal modes (D9 `character_pov`) not authorized | Yes |
-| 5+ | Threads, causal links, hierarchy, verifier, forensic recall, MCP | Yes |
+| 5 | Entity identity, assertion semantics (Track B, B1) — **done (beta.12)** | Yes |
+| 6 | Item transitions and conflicts (Track B, B2) — **done (beta.13)** | Yes |
+| 7 | Promise threads and event salience (Track B, B3 narrowed) — **current** | Yes |
+| 8+ | Rest of B3 (events, relationships, causal links), canon, hard POV, forensic recall, MCP | Yes |
 
 Each phase gets its own `PHASE-N.md` with acceptance criteria before work starts.
 
