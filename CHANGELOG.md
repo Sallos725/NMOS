@@ -5,7 +5,19 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-Phase 7 (in progress): promise threads and event salience (`docs/phases/PHASE-7.md`).
+Phase 7: promise threads and event salience (`docs/phases/PHASE-7.md`, ADRs 0019–0020, D32). Schema:
+migration 0016 (applied at startup). The plugin is unchanged.
+
+**One-time cost after upgrading.**
+- **LLM extraction:** the prompt is `extract-v7`, a new generation. With an LLM configured, each chat
+  re-extracts its latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once. Older turns keep their
+  `extract-v6` facts until **Extract all history** on that chat (ADR 0014). The prompt grows by
+  ≈239 tokens per call (+16.8 % on the measured control scenes), plus one line per open promise listed
+  (`docs/perf/phase7-extraction.md`).
+- **Real-model check** (`deepseek-v4.1-flash`, 3 runs per scene): promises opened, kept, broken and
+  released 3/3 in every scene; no false closing in 12 control runs; no thread from a reported promise;
+  major events 3/3, minor events 2/3 to 3/3; the Phase 5 and 6 bars still hold.
+- **Fact read:** +4 ms p50 at 10,000 messages (+10 to +15 ms when four characters hold 500 promises).
 
 - **Events no longer take every fact slot.** At most `NMOS_EVENTS_LIMIT` (default 3; `events_limit` in
   `PUT /v1/config`) of a packet's facts are `event` facts, so a main character's newest events leave

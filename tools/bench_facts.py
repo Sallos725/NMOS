@@ -6,6 +6,11 @@ assertions (a character's place, and an item's holder, place or end cycling over
 
     cd apps/sidecar && uv run python ../../tools/bench_facts.py 1000,5000,10000
     PYTHONPATH=/path/to/other/checkout/apps/sidecar/src uv run python ../../tools/bench_facts.py 10000
+
+With `--phase7` each turn also gets an event (every seventh one major, where the schema has
+`salience`), every tenth turn a promise its maker says (makers spread over 40 characters, or `--makers
+N`), and every thirtieth the fulfilment of the promise made two promises earlier (PHASE-7
+"Performance").
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ from nmos_sidecar.ids import uuid7  # noqa: E402
 from nmos_sidecar.migrate import apply_migrations  # noqa: E402
 
 ITEMS = 60
+PROMISE_MAKERS = 40  # `--makers N` concentrates every promise on N characters (the fold's worst case)
 
 
 def item_row(turn: int) -> tuple:
@@ -45,7 +51,23 @@ def item_row(turn: int) -> tuple:
     return (item, "item", "destroyed", None, None, "부서짐")
 
 
-def run(n: int) -> dict:
+def phase7_rows(turn: int) -> list[tuple]:
+    """(subject, subject_type, predicate, object, object_type, value, source, asserted_by, salience)."""
+    who = f"인물{turn % 40}"
+    out = [(who, "character", "event", None, None, f"일 {turn}", "narration", None,
+            "major" if turn % 7 == 0 else "minor")]
+    if turn % 10 == 0:  # promise k is made by 인물{k % makers}
+        maker = f"인물{(turn // 10) % PROMISE_MAKERS}"
+        out.append((maker, "character", "promised", f"인물{(turn // 10 + 1) % 40}", "character",
+                    f"약속 {turn // 10}번: 다음에 만나면 꼭 {turn // 10}번째 부탁을 들어주기", "character_claim", maker, None))
+    if turn % 30 == 0 and turn >= 20:
+        k = (turn - 20) // 10
+        out.append((f"인물{k % PROMISE_MAKERS}", "character", "fulfilled", None, None,
+                    f"약속 {k}번: 다음에 만나면 꼭 {k}번째 부탁을 들어주기", "narration", None, None))
+    return out
+
+
+def run(n: int, phase7: bool = False) -> dict:
     name = f"nmos_bench_{uuid.uuid4().hex[:10]}"
     with psycopg.connect(scale.ADMIN_URL, autocommit=True) as admin:
         admin.execute(f'CREATE DATABASE "{name}"')
@@ -66,6 +88,9 @@ def run(n: int) -> dict:
                 rows.append((i, a["rid"], f"인물{a['turn'] % 40}", "character", "located_in",
                              scale.PLACES[a["turn"] % len(scale.PLACES)], "place", None))
                 rows.append((i, a["rid"], *item_row(a["turn"])))
+            salience = db.execute("SELECT 1 FROM information_schema.columns WHERE table_name = 'assertion'"
+                                  " AND column_name = 'salience'").fetchone() is not None
+            extra = [(i, a["rid"], *r) for i, a in zip(ids, anchors) for r in phase7_rows(a["turn"])] if phase7 else []
             with db.cursor() as cur:
                 cur.executemany("INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version,"
                                 " extractor_key, model, raw) VALUES (%s, %s, %s, 'bench', %s, 'bench', '{}')",
@@ -73,6 +98,13 @@ def run(n: int) -> dict:
                 cur.executemany("INSERT INTO assertion (extraction_id, source_revision_id, subject, subject_type,"
                                 " predicate, object, object_type, value, status, knowledge)"
                                 " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'valid', 'unknown')", rows)
+                if extra:
+                    cols = "salience, " if salience else ""
+                    cur.executemany("INSERT INTO assertion (extraction_id, source_revision_id, subject, subject_type,"
+                                    f" predicate, object, object_type, value, source, asserted_by, {cols}status,"
+                                    " knowledge) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+                                    + ("%s, " if salience else "") + "'valid', 'unknown')",
+                                    [r if salience else r[:-1] for r in extra])
             db.execute("ANALYZE extraction")
             db.execute("ANALYZE assertion")
             ms = []
@@ -80,7 +112,7 @@ def run(n: int) -> dict:
                 started = time.perf_counter()
                 facts = fact_versions(db, head, gen.key)
                 ms.append((time.perf_counter() - started) * 1000)
-            return {"messages": n, "assertions": len(rows), "facts": len(facts),
+            return {"messages": n, "assertions": len(rows) + len(extra), "facts": len(facts),
                     "fact_read_ms": {"p50": round(scale.p(ms, 0.5), 1), "p95": round(scale.p(ms, 0.95), 1)},
                     "code": str(Path(nmos_sidecar.__file__).resolve().parents[1])}
     finally:
@@ -89,5 +121,13 @@ def run(n: int) -> dict:
 
 
 if __name__ == "__main__":
-    for size in (sys.argv[1] if len(sys.argv) > 1 else "1000,5000,10000").split(","):
-        print(json.dumps(run(int(size)), ensure_ascii=False), flush=True)
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("sizes", nargs="?", default="1000,5000,10000")
+    ap.add_argument("--phase7", action="store_true")
+    ap.add_argument("--makers", type=int, default=PROMISE_MAKERS)
+    opts = ap.parse_args()
+    PROMISE_MAKERS = opts.makers
+    for size in opts.sizes.split(","):
+        print(json.dumps(run(int(size), opts.phase7), ensure_ascii=False), flush=True)

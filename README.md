@@ -171,6 +171,15 @@ becomes `<Fact kind="destroyed">letter destroyed: burned</Fact>` and has no hold
 damaged item is not destroyed. If the story uses it again later, the fact is marked `disputed="true"`
 and names the turn that destroyed it, so the model does not treat either side as certain.
 
+Promises are remembered until the story keeps or breaks them (Phase 7). A promise a character makes,
+in dialogue or narration, becomes an open thread, and it is injected whenever its maker or recipient
+comes up again, however long ago it was made:
+`<Thread kind="promise" by="Hana" to="{{user}}" turn="10">meet at the lighthouse</Thread>`. When the
+story keeps it, breaks it or releases it, it leaves the packet (the Inspector keeps its history). A
+character's routine no longer fills the facts: a packet holds at most three events, important ones
+("major": a confession, a betrayal, a death, a secret revealed) first, and a minor event only when
+your message is about it.
+
 ## Privacy
 
 Chat text is stored in the local Postgres volume. Text leaves your machine only if you configure an
@@ -213,8 +222,10 @@ The full list with workarounds is [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md)
   each chat's recent turns (`NMOS_EXTRACT_BACKFILL`, default 100); older turns keep the previous model's
   facts, marked "older generation" in the Inspector, until you run **Extract all history** on that chat
   (ADR 0014, since 0.1.0-beta.11).
-- Item and character names are free text: "지도" and "해안 지도" are different items, and an item that is
-  lost or destroyed without a new holder still shows its last holder.
+- Item and character names are free text unless the story links them: "지도" and "해안 지도" are
+  different items. An item lost or destroyed in turns extracted before 0.1.0-beta.13 still shows its
+  last holder until **Extract all history**.
+- A promise the story forgets stays open; only the story (a kept, broken or released promise) closes it.
 - Recall thresholds are tuned on limited data — please report cases where memory is wrong or missing.
 
 ## Develop
