@@ -62,6 +62,17 @@ queries addressing 카이토 ("카이토야, 오랜만이야.", "카이토, 괜�
 selected the event. The lexical bar does not help: the name is a small part of the fact's trigrams.
 One of the three was 하나's confession to 카이토. Addressing 카이토 is when that fact matters most.
 
+**Taking part is not knowing.** An owner-reported Inspector row (2026-09-24, a real chat, owner's
+extraction model `gemma4:31b-cloud`; the chat text is not committed) shows why participants must stay
+apart from knowledge marks. In the TARGET turn, A tells B in secret that A once left C's class early
+by telling C "my stomach hurts", when the real cause was anxiety. C was present, heard the excuse and
+nodded; B, C's child, decides not to write it down "because C might see". The stored fact is
+`A event: left C's class early, lying about a stomach ache`, `knowledge=limited`, `known_by={A, B}`,
+no `hidden_from`. C is involved in the event (a participant) but is the one person the fact is kept
+from. Putting C in `known_by` because C was there would tell the model C knows it was a lie. The turn
+also has the shape of the absent-householder control ("C's class") with the opposite answer: here C
+was present. The deterministic and real-model tiers below include this case.
+
 **Relationships are not in the evidence.** No `relationship` assertion appears in the 280 runs (no
 scene was about one), and `feels_toward` appears 3 times. Whether the extractor records relationship
 changes, and whether the packet needs their history, is unknown. Phase 8 measures it (Real-model tier)
@@ -158,6 +169,7 @@ New cases in `apps/sidecar/tests/memeval.py` and unit tests. Every existing case
 | minor event | a minor event with a participant still needs the query to be about it (ADR 0020) |
 | cap | participant mentions do not exceed the event cap |
 | not a version key | otherwise identical events with different participant arrays share one version key; events with different values remain distinct |
+| participant is not a knower | a limited event with `known_by: [Kaito, Hana]`, `hidden_from: [Yui]` and `with: [{name: Yui, type: character}]`: addressing Yui brings it back with exactly the stored marks. The same event without `hidden_from` comes back with `known_by="Kaito, Hana"` only, and no mark names Yui. |
 | typed identity | a character and group with the same normalized name stay distinct; an ambiguous alias links neither |
 | participant-only entity | a typed participant never used as a subject or object still has an entity and character page |
 | predicate boundary | `with` is kept on `event`, `goal`, `knows` and `destroyed`; it is dropped on `fulfilled`, `possesses` and every other predicate |
@@ -179,6 +191,10 @@ Prompts, raw outputs, model and endpoint go under `fixtures/model/phase8/`, and 
 - a goal, a knowledge fact and a destroyed-item fact about another character;
 - controls: solo events (a walk, cooking), an event at someone's house without them ("하나는 카이토의 집
   앞을 지나갔다"), and a scene with "하나도" as a word and no character 하나;
+- **secret about a shared event** (modeled on the owner report under Evidence; the text is new and
+  synthetic): A tells B in secret that A once lied to C, who was present, to leave C's class early, and
+  B promises not to write it down so that C won't see. C is named as "C의 수업", the same shape as the
+  absent-householder control, but C was there;
 - **relationship report (no extraction-rate bar):** a friendship turning into rivalry, a confession
   accepted (becoming lovers), and a reconciliation. Recorded: whether `relationship` or `feels_toward` is
   extracted, whether the new value supersedes the old one (read with the fact fold), and whether the
@@ -207,6 +223,9 @@ against beta.14. Fact read (with participant resolution and mention scoring) add
       in at least two of three runs.
 - [ ] Controls: every solo, absent-householder and "하나도" run has an empty `with`. Separately, every
       participant emitted in a positive scene is named as a character or group in the TARGET turn.
+- [ ] Secret about a shared event: C is in `with` in at least two of three runs, and C is in
+      `known_by` in no run. Whether C is in `hidden_from` is recorded, with no bar: this phase does
+      not change knowledge extraction.
 - [ ] The Phase 5, 6 and 7 bars still hold with `extract-v8`.
 - [ ] Relationship report recorded (numbers, no extraction-rate bar). A result is a later-phase input,
       not a Phase 8 failure unless it exposes an invariant violation or a regression caused by Phase 8.
