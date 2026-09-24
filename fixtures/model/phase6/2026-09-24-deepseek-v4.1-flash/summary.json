@@ -1,0 +1,215 @@
+{
+  "model": "deepseek-v4.1-flash:cloud",
+  "url": "http://127.0.0.1:11434/v1",
+  "runs": 3,
+  "calls": 43,
+  "errors": [],
+  "bars": {
+    "end": {
+      "burned letter": "3/3",
+      "eaten apple": "3/3",
+      "drunk potion": "3/3",
+      "last match": "3/3"
+    },
+    "damaged_intact": {
+      "cracked sword": "3/3",
+      "torn cloak": "3/3"
+    },
+    "whereabouts": {
+      "put down": "3/3",
+      "picked up": "3/3"
+    },
+    "loss_not_end": {
+      "lost map": "2/3"
+    },
+    "destroyed_outside_end_scenes": [
+      [
+        "lost map",
+        0,
+        "해안 지도",
+        "바람에 날려 바다로 떨어져 파도 속으로 사라짐"
+      ]
+    ],
+    "control_mislabel": {
+      "assertions": 35,
+      "non_actual": 0
+    }
+  },
+  "report": {
+    "multi_valued_turns": {
+      "runs": 39,
+      "runs_with_any": 2,
+      "examples": [
+        [
+          "sprained ankle",
+          0,
+          [
+            [
+              [
+                "has_status",
+                "하나"
+              ],
+              [
+                [
+                  "하나",
+                  "",
+                  "오른쪽 발목에 붕대를 감음"
+                ],
+                [
+                  "하나",
+                  "",
+                  "오른쪽 발목을 삐었다"
+                ]
+              ]
+            ]
+          ]
+        ],
+        [
+          "sprained ankle",
+          2,
+          [
+            [
+              [
+                "has_status",
+                "하나"
+              ],
+              [
+                [
+                  "하나",
+                  "",
+                  "오른쪽 발목에 붕대를 감았다"
+                ],
+                [
+                  "하나",
+                  "",
+                  "오른쪽 발목을 삐었다"
+                ]
+              ]
+            ]
+          ]
+        ]
+      ]
+    }
+  },
+  "prompt_tokens_mean_controls": {
+    "v5": 1328.0,
+    "v6": 1424.0
+  },
+  "completion_tokens_mean_v6": 1477.6,
+  "scenes": {
+    "burned letter": {
+      "category": "end",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('편지', 'destroyed', '촛불에 태워져 한 줌의 재가 되어 바닥에 흩어짐', 'positive', '')]",
+        "current=[('편지', 'destroyed', '촛불에 태워져 한 줌의 재가 되어 바닥에 흩어짐', 'positive', '')]",
+        "current=[('편지', 'destroyed', '촛불에 태워져 한 줌의 재가 되어 바닥에 흩어짐', 'positive', '')]"
+      ]
+    },
+    "eaten apple": {
+      "category": "end",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('사과', 'destroyed', '유이가 먹어 치워 없어짐', 'positive', '')]",
+        "current=[('사과', 'destroyed', '유이가 몇 입 만에 다 먹어 치움', 'positive', '')]",
+        "current=[('사과', 'destroyed', '유이가 몇 입 만에 다 먹어 치움', 'positive', '')]"
+      ]
+    },
+    "drunk potion": {
+      "category": "end",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('치유 물약', 'destroyed', '카이토가 단숨에 들이켜 없어짐', 'positive', '')]",
+        "current=[('치유 물약', 'destroyed', '카이토가 단숨에 들이켜 다 마셔버림', 'positive', '')]",
+        "current=[('치유 물약', 'destroyed', '카이토가 마개를 뽑아 단숨에 들이켜 없어졌다', 'positive', '')]"
+      ]
+    },
+    "last match": {
+      "category": "end",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('성냥', 'destroyed', '마지막 한 개비가 그어져 다 타고 불 속에 던져짐', 'positive', '')]",
+        "current=[('성냥', 'destroyed', '마지막 성냥개비가 타서 불 속에 버려짐', 'positive', '')]",
+        "current=[('성냥', 'destroyed', '다 타서 불 속에 던져짐', 'positive', '')]"
+      ]
+    },
+    "cracked sword": {
+      "category": "damaged",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('카이토', 'possesses', '낡은 검', 'positive', '')]",
+        "current=[('카이토', 'possesses', '낡은 검', 'positive', '')]",
+        "current=[('카이토', 'possesses', '낡은 검', 'positive', '')]"
+      ]
+    },
+    "torn cloak": {
+      "category": "damaged",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('유이', 'possesses', '망토', 'positive', '')]",
+        "current=[('유이', 'possesses', '망토', 'positive', '')]",
+        "current=[('유이', 'possesses', '망토', 'positive', '')]"
+      ]
+    },
+    "put down": {
+      "category": "whereabouts",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('지도', 'located_in', '부엌 탁자', 'positive', '')]",
+        "current=[('하나', 'possesses', '지도', 'negative', ''), ('지도', 'located_in', '부엌 탁자', 'positive', '')]",
+        "current=[('하나', 'possesses', '지도', 'negative', ''), ('지도', 'located_in', '부엌 탁자', 'positive', '')]"
+      ]
+    },
+    "picked up": {
+      "category": "whereabouts",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('열쇠', 'located_in', '분수대', 'negative', ''), ('카이토', 'possesses', '열쇠', 'positive', '')]",
+        "current=[('열쇠', 'located_in', '분수대', 'negative', ''), ('카이토', 'possesses', '열쇠', 'positive', '')]",
+        "current=[('열쇠', 'located_in', '분수대', 'negative', ''), ('카이토', 'possesses', '열쇠', 'positive', '')]"
+      ]
+    },
+    "lost map": {
+      "category": "loss",
+      "pass": 2,
+      "runs": 3,
+      "details": [
+        "current=[('해안 지도', 'destroyed', '바람에 날려 바다로 떨어져 파도 속으로 사라짐', 'positive', '')]",
+        "current=[('하나', 'possesses', '해안 지도', 'negative', '')]",
+        "current=[('하나', 'possesses', '해안 지도', 'negative', '')]"
+      ]
+    },
+    "library": {
+      "category": "control",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    },
+    "key handed over": {
+      "category": "control",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    },
+    "sprained ankle": {
+      "category": "control",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    },
+    "promotion": {
+      "category": "control",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    }
+  }
+}

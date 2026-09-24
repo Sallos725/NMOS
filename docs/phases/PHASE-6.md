@@ -164,23 +164,35 @@ fold adds at most 30 ms p50 to the fact read at 10k.
 
 ## Acceptance criteria
 
-- [ ] Every deterministic case above passes in CI, and every existing evaluation case still passes.
-- [ ] Destroyed, eaten or used-up items get a `destroyed` assertion that ends the whereabouts in at
-      least two of three runs per scene.
-- [ ] Damaged-but-intact controls: no `destroyed` in any run.
-- [ ] Control scenes: `destroyed` never appears for an item that still exists, and the Phase 5 bar still
-      holds (at most 10 % of actual-event assertions labeled non-actual).
-- [ ] Put-down and pick-up scenes end with the whereabouts the scene states in at least two of three
-      runs.
-- [ ] Same-turn multi-value turns counted and reported (a number, not a bar).
-- [ ] Prompt tokens per turn, v5 against v6, measured and in the release notes.
-- [ ] Fact read at 10k: at most +30 ms p50 in the facts tier.
-- [ ] Upgrade from a `v0.1.0-beta.12` database queues only the recent window. Older turns are served
+Status 2026-09-24. Evidence: `docs/perf/phase6-extraction.md` (`deepseek-v4.1-flash:cloud`, 13 scenes
+× 3 runs; fact-read latency; real-host smoke; upgrade).
+
+- [x] Every deterministic case above passes in CI, and every existing evaluation case still passes
+      (memory evaluation 25/25 in `full`, `docs/perf/eval-baseline.md`; fold cases in
+      `tests/test_transitions.py`).
+- [x] Destroyed, eaten or used-up items get a `destroyed` assertion that ends the whereabouts in at
+      least two of three runs per scene: 3/3 in all four scenes.
+- [x] Damaged-but-intact controls: no `destroyed` in any run (0 of 6).
+- [x] Control scenes: `destroyed` never appears for an item that still exists (0 of 12 runs), and the
+      Phase 5 bar still holds (0 of 35 actual-event assertions labeled non-actual).
+- [x] Put-down and pick-up scenes end with the whereabouts the scene states in at least two of three
+      runs: 3/3 and 3/3.
+- [x] Same-turn multi-value turns counted and reported: 2 of 39 runs, both compatible `has_status`
+      values in one scene, no item key.
+- [x] Prompt tokens per turn, v5 against v6, measured: 1,328 → 1,424 (+7.2 %; the spec estimated
+      +3–5 %). To be stated in the release notes.
+- [x] Fact read at 10k: at most +30 ms p50 in the facts tier. Measured +23 ms median over five
+      alternating runs (`tools/bench_facts.py`).
+- [x] Upgrade from a `v0.1.0-beta.12` database queues only the recent window. Older turns are served
       by `extract-v5`, and whereabouts apply to them at once.
-- [ ] A real-host smoke run (PocketRisu v1.12.0) injects a packet with a destroyed item and one
+- [x] A real-host smoke run (PocketRisu v1.12.0) injects a packet with a destroyed item and one
       disputed fact. The plugin is unchanged.
-- [ ] `ARCHITECTURE.md` (new decision for transitions; D6 registry note), ADRs for the fold and
-      `destroyed`, README, the Korean guide, `docs/KNOWN-ISSUES.md` (K9, K10) and the changelog updated.
+- [x] `ARCHITECTURE.md` (D30 for transitions; D6 registry note), ADRs 0016 and 0017, README, the Korean
+      guide, `docs/KNOWN-ISSUES.md` (K9, K10) and the changelog updated.
+
+Finding for the owner (not a bar): in 1 of 3 runs of the loss scene (a map blown into the sea), the
+model recorded `destroyed` instead of a lost holding. Hana's holding ends either way; the fact reads
+"destroyed" where "lost" was meant. No prompt change was made.
 
 ## Implementation order
 
@@ -201,6 +213,7 @@ Each step is one reviewable change with its tests.
    `/v1/conversations/{id}/facts?history=true`); the Inspector shows a conflicts table, one timeline per
    item and a `disputed` chip on facts (`tests/test_transitions.py`).
 5. **Evaluation and release**: real-model tier, measurements, docs, release notes with cost.
+   *Evaluation done 2026-09-24* (`docs/perf/phase6-extraction.md`). Release needs the owner's go-ahead.
 
 ## Stop conditions
 
