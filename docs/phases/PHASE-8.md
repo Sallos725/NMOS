@@ -1,7 +1,7 @@
 # Phase 8 — Event Participants
 
-> **Status: implemented (2026-09-24); every acceptance criterion met but one, which awaits the
-> owner's decision (below); not released.** Approved by the owner on 2026-09-24, with the recommended
+> **Status: complete (2026-09-24), released in `v0.1.0-beta.15`.** Every acceptance criterion met; one
+> (the Phase 7 "chores" scene) accepted by the owner as not a regression. Approved by the owner on 2026-09-24, with the recommended
 > answer to every question (Q1–Q5). Evidence: `docs/perf/phase8-extraction.md`, ADR 0021. This is the next
 > slice of Track B stage B3 (`docs/proposals/TRACK-B-PHASE-5-PLUS.md` §6, "Event, relationship, and
 > open-thread projections": "first-class events with participants"), narrowed to what current evidence
@@ -249,10 +249,10 @@ against beta.14. Fact read (with participant resolution and mention scoring) add
 - [x] Secret about a shared event: C is in `with` in at least two of three runs, and C is in
       `known_by` in no run. Whether C is in `hidden_from` is recorded, with no bar: this phase does
       not change knowledge extraction.
-- [ ] The Phase 5, 6 and 7 bars still hold with `extract-v8`. *Not met as written (2026-09-24):* all
-      hold except the Phase 7 minor-event scene "chores", 1/3 (two runs extracted no event). Ten more
-      runs gave `extract-v7` 3/10 and `extract-v8` 4/10 on it, so this is not a regression; no minor
-      scene was labeled major. Awaiting the owner's decision (`docs/perf/phase8-extraction.md`).
+- [x] The Phase 5, 6 and 7 bars still hold with `extract-v8`. All hold except the Phase 7 minor-event
+      scene "chores", 1/3 (two runs extracted no event). Ten more runs gave `extract-v7` 3/10 and
+      `extract-v8` 4/10 on it, so this is not a regression; no minor scene was labeled major. **The owner
+      accepted it as not a regression (2026-09-24)** (`docs/perf/phase8-extraction.md`).
 - [x] Relationship report recorded (numbers, no extraction-rate bar). A result is a later-phase input,
       not a Phase 8 failure unless it exposes an invariant violation or a regression caused by Phase 8.
 - [x] The scope audit check and `test_participant_scope.py` still pass; the audit gains the Phase 8

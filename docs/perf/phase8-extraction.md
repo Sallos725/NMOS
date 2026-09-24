@@ -57,7 +57,7 @@ ran each Phase 7 minor scene ten more times with both prompts:
 
 The chores scene fails mostly by extracting nothing with either prompt; v8 is not worse. The Phase 7
 tier's 2/3 on that scene was a favorable draw. The bar as written ("labeled `minor` in at least two of
-three runs") is not met in this run. This is recorded for the owner's decision and is not marked done.
+three runs") is not met in this run. The owner accepted it as not a regression (2026-09-24).
 
 ### Reported, no bar
 
