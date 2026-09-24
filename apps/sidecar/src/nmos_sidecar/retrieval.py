@@ -230,14 +230,16 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     thread_lines: list[str] = []
     view = memory_view(conn, head, options.extractor_key) if fresh and (options.facts_limit > 0
                                                                         or options.threads_limit > 0) else None
+    persona = view["resolution"].persona_names if view is not None and view["resolution"] else frozenset()
     if view is not None and options.threads_limit > 0:
         thread_lines = [thread_line(t) for t in relevant_threads(view["threads"], query, previous_ai, in_context,
-                                                                 options.threads_limit)]
+                                                                 options.threads_limit, persona)]
     if view is not None and options.facts_limit > 0:
         facts = relevant_facts(view["facts"], query, previous_ai, in_context, options.facts_limit,
-                               options.events_limit)
+                               options.events_limit, persona)
         # Claims after facts, so the budget serves narration first (ADR 0013).
-        claims = relevant_facts(view["claims"], query, previous_ai, in_context, max(1, options.facts_limit // 2))
+        claims = relevant_facts(view["claims"], query, previous_ai, in_context, max(1, options.facts_limit // 2),
+                                persona=persona)
         fact_lines = [fact_line(f) for f in facts] + [claim_line(c) for c in claims]
     text, tokens, chosen = compile_packet(ranked, request.budget_tokens, state=state_items, facts=fact_lines,
                                          threads=thread_lines)

@@ -14,6 +14,10 @@ second pass after every subject, object and alias name. They never link names, a
 every `resolve-v1` name source: an entity that `resolve-v1` knows keeps the representative spelling,
 name order and grouping it had, so extraction hints do not change because of participants. A
 participant never named as a subject or object is an entity of its own.
+
+Since `resolve-v3` (ADR 0023) the persona's name as the host reports it for the conversation (e.g.
+"유우마") is a persona name like `{{user}}`, for characters only. The extractor writes the persona either
+way, so without it one person was two entities.
 """
 
 from __future__ import annotations
@@ -23,7 +27,7 @@ from functools import lru_cache
 from typing import Any
 from uuid import UUID, uuid5
 
-RESOLVER_VERSION = "resolve-v2"
+RESOLVER_VERSION = "resolve-v3"
 USER_NAMES = {"{{user}}", "{user}", "user", "유저"}
 PERSONA = "{{user}}"
 _NS = UUID("6c0c7e55-2f8e-4d0a-9d3b-5a4e1f0b7c21")  # NMOS entity namespace (arbitrary, fixed)
@@ -36,34 +40,39 @@ def norm(name: str | None) -> str:
 
 
 @lru_cache(maxsize=8192)
-def node(entity_type: str | None, name: str | None) -> Node:
-    """(type, normalized name). Pure; cached because every fact read asks for the same few names."""
+def node(entity_type: str | None, name: str | None, persona: frozenset[str] = frozenset()) -> Node:
+    """(type, normalized name). `persona`: the conversation's normalized persona names beyond `USER_NAMES`.
+    Pure; cached because every fact read asks for the same few names."""
     n = norm(name)
-    if entity_type == "character" and n in USER_NAMES:
+    if entity_type == "character" and (n in USER_NAMES or n in persona):
         n = PERSONA
     return (entity_type or "?", n)
 
 
-def mentions(row: dict[str, Any]) -> Iterable[tuple[Node, str]]:
-    yield node(row.get("subject_type"), row.get("subject")), row.get("subject") or ""
+def mentions(row: dict[str, Any], persona: frozenset[str] = frozenset()) -> Iterable[tuple[Node, str]]:
+    yield node(row.get("subject_type"), row.get("subject"), persona), row.get("subject") or ""
     if row.get("object"):
-        yield node(row.get("object_type"), row.get("object")), row["object"]
+        yield node(row.get("object_type"), row.get("object"), persona), row["object"]
 
 
 class Resolution:
-    def __init__(self, conversation: UUID, rows: list[dict[str, Any]]):
+    def __init__(self, conversation: UUID, rows: list[dict[str, Any]], persona: Iterable[str] = ()):
         self.conversation = conversation
+        self.persona = frozenset(n for n in map(norm, persona) if n)
         first: dict[Node, tuple[int, str]] = {}  # node → (order, spelling) of its first mention on the head
         counts: dict[Node, int] = {}
         edges: dict[Node, set[Node]] = {}
         self.alias_rows: list[tuple[Node, Node, dict[str, Any]]] = []
+        hosted: dict[str, str] = {}  # the host's persona names as the story spells them (a node keeps one spelling)
         for row in rows:
-            for n, spelling in mentions(row):
+            for n, spelling in mentions(row, self.persona):
                 first.setdefault(n, (len(first), spelling))
                 counts[n] = counts.get(n, 0) + 1
+                if n[0] == "character" and norm(spelling) in self.persona:
+                    hosted.setdefault(norm(spelling), spelling)
             if (row["predicate"] == "also_called" and row.get("modality", "actual") == "actual"
-                    and norm(row.get("value")) and _own_alias(row)):
-                a, b = node(row.get("subject_type"), row.get("subject")), node(row.get("subject_type"), row["value"])
+                    and norm(row.get("value")) and _own_alias(row, self.persona)):
+                a, b = self.node(row.get("subject_type"), row.get("subject")), self.node(row.get("subject_type"), row["value"])
                 if a != b:
                     first.setdefault(b, (len(first), row["value"]))
                     edges.setdefault(a, set()).add(b)
@@ -71,9 +80,11 @@ class Resolution:
                     self.alias_rows.append((a, b, row))
         for row in rows:  # second pass: participants rank below every resolve-v1 name source
             for p in row.get("participants") or ():  # stored by predicates.participants(): typed, named
-                n = node(p["type"], p["name"])
+                n = self.node(p["type"], p["name"])
                 first.setdefault(n, (len(first), p.get("name")))
                 counts[n] = counts.get(n, 0) + 1
+                if n[0] == "character" and norm(p["name"]) in self.persona:
+                    hosted.setdefault(norm(p["name"]), p["name"])
         self.ambiguous = {n for n in edges if _splits(n, edges)}
         parent: dict[Node, Node] = {n: n for n in first}
 
@@ -99,9 +110,18 @@ class Resolution:
             if e is None:
                 e = self._entities[root] = {
                     "id": str(uuid5(_NS, f"{conversation}:{RESOLVER_VERSION}:{root[0]}:{root[1]}")),
-                    "type": root[0], "name": first[root][1], "names": [], "mentions": 0, "aliases": []}
+                    "type": root[0], "name": first[root][1], "names": [], "mentions": 0, "aliases": [],
+                    "persona": False}
             e["names"].append(first[n][1])
             e["mentions"] += counts.get(n, 0)
+        self._persona_root = self._root.get(("character", PERSONA))
+        if self._persona_root is not None:
+            e = self._entities[self._persona_root]
+            e["persona"] = True
+            e["names"] += [h for h in hosted.values() if h not in e["names"]]
+        # Every name the persona goes by in this conversation: never a mention in recall (ADR 0019, 0021).
+        self.persona_names = frozenset(USER_NAMES | self.persona | (
+            {norm(n) for n in self._entities[self._persona_root]["names"]} if self._persona_root else set()))
         for a, b, row in self.alias_rows:
             if a in self._root and b in self._root:
                 self._entities[self._root[a]]["aliases"].append(
@@ -109,8 +129,14 @@ class Resolution:
 
     # --- lookups --------------------------------------------------------------------------------
 
+    def node(self, entity_type: str | None, name: str | None) -> Node:
+        return node(entity_type, name, self.persona)
+
+    def is_persona(self, entity_type: str | None, name: str | None) -> bool:
+        return self._persona_root is not None and self._root.get(self.node(entity_type, name)) == self._persona_root
+
     def status(self, entity_type: str | None, name: str | None) -> str:
-        n = node(entity_type, name)
+        n = self.node(entity_type, name)
         return "ambiguous" if n in self.ambiguous else ("resolved" if n in self._root else "unresolved")
 
     def entity(self, entity_type: str | None, name: str | None) -> dict[str, Any] | None:
@@ -118,7 +144,7 @@ class Resolution:
         cache = self.__dict__.setdefault("_entity_cache", {})
         k = (entity_type, name)
         if k not in cache:
-            root = self._root.get(node(entity_type, name))
+            root = self._root.get(self.node(entity_type, name))
             cache[k] = self._entities.get(root) if root else None
         return cache[k]
 
@@ -129,7 +155,7 @@ class Resolution:
         return e["id"] if e else "text:" + norm(name)
 
     def candidates(self, entity_type: str | None, name: str | None) -> list[str]:
-        n = node(entity_type, name)
+        n = self.node(entity_type, name)
         out = []
         for other in sorted(self._edges.get(n, ()), key=lambda o: self._first[o]):
             e = self._entities.get(self._root.get(other)) if other in self._root else None
@@ -147,12 +173,12 @@ class Resolution:
                 for n in sorted(self.ambiguous, key=lambda n: self._first[n])]
 
 
-def _own_alias(row: dict[str, Any]) -> bool:
+def _own_alias(row: dict[str, Any], persona: frozenset[str] = frozenset()) -> bool:
     """Narration may name anyone; a character's words link only the speaker's own names."""
     if row.get("source") != "character_claim":
         return True
     speaker = row.get("asserted_by")
-    return bool(speaker) and node(row.get("subject_type"), row.get("subject")) == node("character", speaker)
+    return bool(speaker) and node(row.get("subject_type"), row.get("subject"), persona) == node("character", speaker, persona)
 
 
 def _splits(n: Node, edges: dict[Node, set[Node]]) -> bool:
@@ -172,6 +198,7 @@ def _splits(n: Node, edges: dict[Node, set[Node]]) -> bool:
     return any(m not in seen for m in nbrs[1:])
 
 
-def resolve(conversation: UUID, rows: list[dict[str, Any]]) -> Resolution:
-    """Entities of one conversation's active assertions (rows in position order)."""
-    return Resolution(conversation, rows)
+def resolve(conversation: UUID, rows: list[dict[str, Any]], persona: Iterable[str] = ()) -> Resolution:
+    """Entities of one conversation's active assertions (rows in position order). `persona`: the persona's
+    name as the host reports it for this conversation (ADR 0023), if known."""
+    return Resolution(conversation, rows, persona)

@@ -3,7 +3,7 @@
 import type { HostPort, Settings, StatusInfo } from './core';
 import { langOf, t } from './i18n';
 import type { InjectPosition } from './prompt';
-import type { HostChat } from './types';
+import type { HostChat, HostPersonas } from './types';
 import { DEFAULT_DEADLINE_MS } from './form';
 import { createHud, type HudDocument } from './hud-host';
 import { routeFor } from './route';
@@ -27,6 +27,8 @@ declare const risuai: {
   setArgument(key: string, value: string | number): Promise<void>;
   showContainer(type: 'fullscreen'): Promise<void>;
   hideContainer(): Promise<void>;
+  // Lite database view (ADR 0023): asks the host's "db" permission once; null when refused.
+  getDatabase?(includeOnly: string[]): Promise<{ personas?: unknown; selectedPersona?: unknown } | null>;
   // Main-page access (H16); missing on older builds.
   requestPluginPermission?(permission: 'mainDom'): Promise<boolean>;
   getRootDocument?(): Promise<HudDocument | null>;
@@ -76,6 +78,17 @@ export const risuHost: HostPort = {
     const character = await risuai.getCharacterFromIndex(await risuai.getCurrentCharacterIndex());
     if (!character?.chats?.some((c) => c?.id === chatId)) return null; // switched characters meanwhile
     return typeof character.name === 'string' && character.name.trim() ? character.name.trim() : null;
+  },
+
+  async personas(): Promise<HostPersonas | null> {
+    if (typeof risuai.getDatabase !== 'function') return null;
+    const db = await risuai.getDatabase(['personas', 'selectedPersona']);
+    if (!db || !Array.isArray(db.personas)) return null;
+    const personas = db.personas.map((p) => {
+      const { id, name } = (p ?? {}) as { id?: unknown; name?: unknown };
+      return { id: typeof id === 'string' ? id : undefined, name: typeof name === 'string' ? name : undefined };
+    });
+    return { personas, selected: Number.isInteger(db.selectedPersona) ? Number(db.selectedPersona) : 0 };
   },
 
   async request(method, url, body, headers, timeoutMs, route) {

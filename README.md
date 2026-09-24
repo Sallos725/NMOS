@@ -41,7 +41,9 @@ continues without memory.
    ```
 
 2. In PocketRisu: **Settings → Plugin → Import plugin** → `nmos-pocketrisu.js` from the same release.
-   Allow the "replace content" permission.
+   Allow the "replace content" permission, and the "access the full database" one that follows: NMOS
+   reads only your persona's name with it, so that `{{user}}` and the name are one person in memory
+   (ADR 0023). Without it NMOS still works.
 3. Set the plugin argument `sidecar_url` to `http://127.0.0.1:8790`.
 4. **Reload the PocketRisu page.** Always reload after installing, updating or disabling a plugin —
    otherwise PocketRisu can hang on the next message (a PocketRisu bug, see ARCHITECTURE H13).

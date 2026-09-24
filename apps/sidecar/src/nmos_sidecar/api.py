@@ -240,7 +240,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     def do_reconcile(conn, body: ReconcileRequest) -> ReconcileResponse:
         conv = ledger.lock_conversation(conn, body.host, body.chat_id, body.character_ref, body.character_name,
-                                        body.chat_name)
+                                        body.chat_name, body.persona_name)
         if settings.append_fast_path and conv.head_commit_id is not None:
             fast = append_reconcile(conn, conv, body)
             if fast is not None:

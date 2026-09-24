@@ -22,6 +22,9 @@ import type { PromptMessage } from './types';
     (method, path, body, timeoutMs) => adapter.api(method, path, body, timeoutMs),
     hud,
   );
+  // After the hooks: the host shows its "db" permission dialog (if it has not been answered) after the
+  // replacer one, at load rather than during a request.
+  adapter.warmPersonas();
   console.log('[NMOS] adapter loaded', { version: __NMOS_VERSION__ });
 })().catch((error) => console.error('[NMOS] adapter failed to load', error));
 
