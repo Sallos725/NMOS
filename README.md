@@ -171,7 +171,7 @@ becomes `<Fact kind="destroyed">letter destroyed: burned</Fact>` and has no hold
 damaged item is not destroyed. If the story uses it again later, the fact is marked `disputed="true"`
 and names the turn that destroyed it, so the model does not treat either side as certain.
 
-Promises are remembered until the story keeps or breaks them (Phase 7). A promise a character makes,
+Promises are remembered until the story keeps or breaks them (since 0.1.0-beta.14, Phase 7). A promise a character makes,
 in dialogue or narration, becomes an open thread, and it is injected whenever its maker or recipient
 comes up again, however long ago it was made:
 `<Thread kind="promise" by="Hana" to="{{user}}" turn="10">meet at the lighthouse</Thread>`. When the

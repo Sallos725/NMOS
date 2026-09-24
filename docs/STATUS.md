@@ -2,19 +2,20 @@
 
 ## Current phase
 
-**Phase 7 — Promise Threads and Event Salience: every acceptance criterion met (2026-09-24); release
-pending.** Spec `docs/phases/PHASE-7.md` (Track B, B3 narrowed to promise threads and event salience),
+**Phase 7 — Promise Threads and Event Salience: complete (2026-09-24), released in
+`v0.1.0-beta.14`.** Spec `docs/phases/PHASE-7.md` (Track B, B3 narrowed to promise threads and event salience),
 approved with the recommended answer to every question (Q1–Q5). Promise threads (ADR 0019), event cap
 and salience (ADR 0020), `extract-v7` with `fulfilled` and OPEN PROMISES, migration 0016, D32, Inspector
 promises. Evidence: `docs/perf/phase7-extraction.md` (real-model tier, fact-read latency, real-host
-smoke, upgrade from a `v0.1.0-beta.13` database).
+smoke, upgrade from a `v0.1.0-beta.13` database). No phase is current. Next: the rest of Track B, B3
+(event records, relationships, other thread kinds), not authorized yet.
 
 **Phase 6 — Item Transitions and Conflicts: complete (2026-09-24), released in `v0.1.0-beta.13`.**
 Spec `docs/phases/PHASE-6.md` (Track B, B2), approved 2026-09-24 with the recommended answer to every
 question (Q1–Q5). One whereabouts per item (ADR 0016), `destroyed` with `extract-v6` and
 `disputed="true"` (ADR 0017), D30, Inspector item timelines and conflicts. Every acceptance criterion
 met: `docs/perf/phase6-extraction.md` (real-model tier, fact-read latency, real-host smoke, upgrade from
-a `v0.1.0-beta.12` database). Next: Phase 7 (above).
+a `v0.1.0-beta.12` database).
 
 **Phase 5 — Entity Identity and Semantic Assertions: complete (2026-09-24), released in
 `v0.1.0-beta.12`.** Spec `docs/phases/PHASE-5.md`, ADRs 0012–0014 (0012/0013 amended by the owner after
@@ -27,7 +28,8 @@ released in `v0.1.0-beta.12`.
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.13` (2026-09-24), public repository and image.** Phase 6 (above) and O5
+**Public beta `v0.1.0-beta.14` (2026-09-24), public repository and image.** Phase 7 (above); migration
+0016. `v0.1.0-beta.13` (2026-09-24): Phase 6 (above) and O5
 resolved: superseded vectors pruned (ADR 0015), full-manifest host observations compacted losslessly
 (ADR 0018); migration 0015. `v0.1.0-beta.12` (2026-09-24): Phase 5 (above), `clean-v2`
 normalizer (inline images no longer read as story), optional progress display (D28); migration 0014.
@@ -77,8 +79,8 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
 | Tests | `apps/sidecar/tests` (249), `adapters/pocketrisu-plugin/test` (79) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k (D24) |
-| Known issues | `docs/KNOWN-ISSUES.md` | K1–K23 (K10 resolved) current as of `v0.1.0-beta.13` plus Phase 7, each with workaround and tracking (host, Track B stage); resolved limitations listed |
-| Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7; the rest of B3 and B4–B7 not authorized |
+| Known issues | `docs/KNOWN-ISSUES.md` | K1–K23 (K10 resolved) current as of `v0.1.0-beta.14`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
+| Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0020` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-7.md` | 0–3 met; 4 soft subset met; 5, 6 and 7 met |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
