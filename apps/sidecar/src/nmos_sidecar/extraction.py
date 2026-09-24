@@ -21,19 +21,22 @@ from .generations import Generation
 from .ids import uuid7
 from .entities import USER_NAMES, norm, resolve
 from .facts import ACTIVE_ASSERTIONS
-from .predicates import REGISTRY, alias_evidenced, fill_types, knowledge, registry_prompt, semantics, validate
+from .predicates import REGISTRY, alias_evidenced, fill_types, knowledge, registry_prompt, salience, semantics, validate
+from .threads import fold as fold_threads
 from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
 
-COMPILER_VERSION = "extract-v6"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
+COMPILER_VERSION = "extract-v7"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
 #                                 v5: polarity, modality, source, also_called (ADR 0012, ADR 0013);
-#                                 v6: destroyed (PHASE-6, ADR 0017)
+#                                 v6: destroyed (PHASE-6, ADR 0017);
+#                                 v7: promises actual, fulfilled, OPEN PROMISES, event salience (PHASE-7)
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
 TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
 CONTEXT_CHARS = 2000  # per context message
 RECENT_PRIORITY, HISTORY_PRIORITY = 250, 900  # generation rebuild: recent window first, then history
+OPEN_PROMISES = 8  # open promise threads shown to the model (PHASE-7 Q3)
 
 SYSTEM_PROMPT = """You extract durable story facts for the long-term memory of a role-play chat.
 You are given the recent CONTEXT turns and ONE TARGET turn: the user's message(s) and the reply to
@@ -70,6 +73,15 @@ Rules:
   character's actions; "character_claim" for something a character says or writes in the story, with
   `asserted_by` set to that character. A statement in dialogue is a claim even if it is probably true.
 - `also_called` only when the TARGET turn itself gives both names for the same entity (e.g. "하나(Hana)").
+- `promised` when a character makes a promise. A promise that was made is "actual", although what it
+  promises lies in the future; "hypothetical" only when making the promise is itself only considered.
+- If OPEN PROMISES are listed: `fulfilled` (subject: who made the promise; value: its text exactly as
+  listed) when the TARGET turn carries one out; `promised` with "negative" (subject, object and value as
+  listed) when the TARGET turn breaks or withdraws one, or its recipient releases it. Not when a
+  promise is only mentioned, remembered or still pending.
+- `salience`, for `event` only: "major" when the event changes the story (a confession, a betrayal, a
+  death, a first meeting, a secret revealed, a decision that changes a relationship or a goal);
+  otherwise "minor".
 - Prefer few, high-value facts. An empty list is a good answer for small talk.
 - Knowledge (who in the story is aware of the fact):
   `knowledge` is "public" when it is openly known (said to everyone present, common knowledge in the
@@ -83,7 +95,8 @@ Rules:
 Answer with JSON only: {{"assertions": [{{"subject": "...", "subject_type": "...", "predicate": "...",
 "object": "... or null", "object_type": "... or null", "value": "... or null", "polarity": "positive|negative",
 "modality": "actual|hypothetical|dreamed|unknown", "source": "narration|character_claim",
-"asserted_by": "... or null", "epistemic": "stated", "confidence": 0.0-1.0, "evidence": "...",
+"asserted_by": "... or null", "salience": "major|minor (event only)", "epistemic": "stated",
+"confidence": 0.0-1.0, "evidence": "...",
 "knowledge": "public|limited|unknown", "known_by": [], "hidden_from": []}}]}}"""
 
 
@@ -242,13 +255,21 @@ def _speaker(meta: dict[str, Any]) -> str:
     return meta.get("name") or ("USER" if meta.get("role") == "user" else "CHARACTER")
 
 
-def entity_hints(conn: psycopg.Connection, ctx: dict[str, Any], key: str, limit: int) -> list[dict[str, str]]:
-    """Entities mentioned on the head before the target turn, most recently mentioned first, at most
-    `limit` (ADR 0012, item 5). Read like facts: active sources only, one generation per turn. The
-    persona is left out: the prompt names it already."""
+def earlier_assertions(conn: psycopg.Connection, ctx: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    """The head's served assertions before the target turn, read like facts: active sources only, one
+    generation per turn."""
     target = ctx["target"]
-    rows = [r for r in conn.execute(ACTIVE_ASSERTIONS, {"head": target["commit_id"], "key": key}).fetchall()
+    return [r for r in conn.execute(ACTIVE_ASSERTIONS, {"head": target["commit_id"], "key": key}).fetchall()
             if r["predicate"] in REGISTRY and r["turn"] is not None and r["turn"] < target["turn"]]
+
+
+def entity_hints(conn: psycopg.Connection, ctx: dict[str, Any], key: str, limit: int,
+                 rows: list[dict[str, Any]] | None = None) -> list[dict[str, str]]:
+    """Entities mentioned on the head before the target turn, most recently mentioned first, at most
+    `limit` (ADR 0012, item 5). The persona is left out: the prompt names it already."""
+    target = ctx["target"]
+    if rows is None:
+        rows = earlier_assertions(conn, ctx, key)
     if limit <= 0 or not rows:
         return []
     r = resolve(target["conversation_id"], rows)
@@ -271,6 +292,27 @@ def entity_hints(conn: psycopg.Connection, ctx: dict[str, Any], key: str, limit:
     return out
 
 
+def promise_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = OPEN_PROMISES) -> list[dict[str, Any]]:
+    """Open promise threads before the target turn whose maker or recipient the prompt names (in a
+    message or as its speaker), newest first, at most `limit` (PHASE-7 Q3). The persona is always in the
+    story, so it does not count as named."""
+    if limit <= 0 or not rows:
+        return []
+    r = resolve(ctx["target"]["conversation_id"], rows)
+    threads = [t for t in fold_threads([dict(row) for row in rows], r)[0] if t["status"] == "open"]
+    shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
+    out = []
+    for t in threads:
+        names = set()
+        for kind, name in (("character", t["by"]), ("character", t.get("to"))):
+            e = r.entity(kind, name) if name else None
+            names |= {norm(n) for n in (e["names"] if e else [name] if name else [])}
+        names = {n for n in names - USER_NAMES if len(n) >= 2}
+        if any(n in shown for n in names):
+            out.append({"by": t["by"], "to": t.get("to"), "text": t["text"], "turn": t["turn"]})
+    return out[:limit]
+
+
 def hints_block(hints: list[dict[str, Any]]) -> list[str]:
     if not hints:
         return []
@@ -279,8 +321,18 @@ def hints_block(hints: list[dict[str, Any]]) -> list[str]:
     return lines + [""]
 
 
-def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None) -> str:
-    lines = hints_block(hints or []) + ["CONTEXT:"]
+def promises_block(promises: list[dict[str, Any]]) -> list[str]:
+    if not promises:
+        return []
+    lines = ["OPEN PROMISES (made earlier in this story, not yet kept or broken):"]
+    lines += [f"- {p['by']}" + (f" → {p['to']}" if p.get("to") else "") + f": {p['text']} (turn {p['turn']})"
+              for p in promises]
+    return lines + [""]
+
+
+def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
+                 promises: list[dict[str, Any]] | None = None) -> str:
+    lines = hints_block(hints or []) + promises_block(promises or []) + ["CONTEXT:"]
     for row in ctx["context"]:
         lines.append(f"[turn {row['turn']}] {_speaker(row['metadata'])}: {row['content'][:CONTEXT_CHARS]}")
     if len(lines) == 1:
@@ -300,7 +352,7 @@ def coverage_of(ctx: dict[str, Any]) -> dict[str, int]:
 
 ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic",
                      "confidence", "evidence", "status", "reason", "knowledge", "known_by", "hidden_from",
-                     "polarity", "modality", "source", "asserted_by")
+                     "polarity", "modality", "source", "asserted_by", "salience")
 
 
 def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
@@ -337,7 +389,7 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
                     "epistemic": "implied" if item.get("epistemic") == "implied" else "stated",
                     "confidence": confidence, "evidence": text("evidence"), "status": status, "reason": reason,
                     "knowledge": scope, "known_by": known_by, "hidden_from": hidden_from, "polarity": polarity,
-                    "modality": modality, "source": source, "asserted_by": asserted_by})
+                    "modality": modality, "source": source, "asserted_by": asserted_by, "salience": salience(item)})
     return out
 
 
@@ -355,12 +407,15 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     if ctx["done"]:
         return "done"
     hints: list[dict[str, Any]] | None = None
+    promises: list[dict[str, Any]] = []
     if sum(len(r["content"]) for r in ctx["members"]) < MIN_CONTENT_CHARS:
         parsed, raw = {"assertions": []}, ""
     else:
         limit = gen.spec.get("hints", 0)
-        hints = entity_hints(conn, ctx, gen.key, limit) if limit > 0 else None
-        parsed, raw = complete(SYSTEM_PROMPT.format(registry=registry_prompt()), build_prompt(ctx, hints))
+        earlier = earlier_assertions(conn, ctx, gen.key)
+        hints = entity_hints(conn, ctx, gen.key, limit, earlier) if limit > 0 else None
+        promises = promise_hints(ctx, earlier)
+        parsed, raw = complete(SYSTEM_PROMPT.format(registry=registry_prompt()), build_prompt(ctx, hints, promises))
     items = parsed.get("assertions")
     if not isinstance(items, list):
         items = []
@@ -373,7 +428,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
             " ON CONFLICT DO NOTHING RETURNING id",
             (extraction_id, revision_id, window_hash, COMPILER_VERSION, gen.key, gen.model,
              Jsonb({"reply": raw[:20000]}), Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]],
-             None if hints is None else Jsonb(hints)),
+             None if hints is None and not promises else Jsonb({"entities": hints or [], "promises": promises})),
         ).fetchone()
         if inserted is None:
             return "done"

@@ -17,8 +17,8 @@ and prints this table (`tools/eval_memory.py`).
   on the Z.", "X puts the Y on the Z." — and a holder and place in one sentence "X has the Y in the
   Z."; an item's end "X burns / eats the Y." → `destroyed`, and no rule for damage; since Phase 7 a
   promise its maker says 'X says to Y: "I promise to …."', one reported by someone else 'Z says: "X
-  promised Y to …."', a broken one "X breaks the promise to Y to …." and minor events "X did chore
-  N."); the embedder is a concept bag with weak
+  promised Y to …."', a broken one "X breaks the promise to Y to ….", a kept one "X kept the promise to …." →
+  `fulfilled`, minor events "X did chore N." and a major event "X betrayed Y."); the embedder is a concept bag with weak
   hashed words. Results therefore measure
   reconciliation, invalidation, retrieval and packet compilation, not model quality.
 - **Measured on the packet**, never on a generated answer, so no judge model is involved:
@@ -67,6 +67,7 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | promise recalled | open thread | **no** | **no** | **no** | yes |
 | reported promise | open thread | **no** | **no** | **no** | yes |
 | broken promise | open thread | — | — | — | — |
+| kept promise | open thread | — | — | — | — |
 | edit removes the break | open thread | **no** | **no** | **no** | yes |
 | delete removes the promise | open thread | — | — | — | — |
 | events leave room | event salience | **no** | **no** | **no** | yes |
@@ -75,9 +76,9 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | Mode | gold reached | cases with stale memory | irrelevant packets | mean packet tokens |
 |---|---:|---:|---:|---:|
 | recent | 0/29 | 0 | — | 0 |
-| lexical | 2/29 | 0 | 0/1 | 110 |
-| hybrid | 3/29 | 0 | 0/1 | 137 |
-| full | 29/29 | 0 | 0/1 | 174 |
+| lexical | 2/29 | 0 | 0/1 | 107 |
+| hybrid | 3/29 | 0 | 0/1 | 133 |
+| full | 29/29 | 0 | 0/1 | 169 |
 
 Before Phase 6 step 1 (ADR 0016), `full` had stale memory in "put down" (`Hana possesses map`) and
 "picked up" (`map located in table`).

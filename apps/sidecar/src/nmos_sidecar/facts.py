@@ -45,7 +45,7 @@ live AS (
       AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
 )
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.value, a.epistemic, a.confidence, a.evidence,
-       a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by,
+       a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
        l.position, l.turn, l.host_logical_id, l.extractor_key AS generation
 FROM live l
 JOIN assertion a ON a.extraction_id = l.eid
