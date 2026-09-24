@@ -516,7 +516,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     view["facts"][:300], token, coverage_view(conn, conv_id),
                                     lang=inspector.lang_of(lang), embed=embed, claims=view["claims"],
                                     other=view["other"], entities=view["entities"], ambiguous=view["ambiguous"],
-                                    conflicts=view["conflicts"], items=view["items"])
+                                    conflicts=view["conflicts"], items=view["items"], threads=view["threads"],
+                                    unmatched=view["unmatched"])
 
     def inspector_character_html(conv_id: UUID, entity_id: UUID, request: Request, token: str | None,
                                  lang: str | None, embed: bool = False) -> str:

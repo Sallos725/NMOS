@@ -75,6 +75,10 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "negated": ("부정", "negated"), "legacy": ("이전 형식", "legacy"), "disputed": ("충돌", "disputed"),
     "conflicts": ("충돌 (이야기가 앞뒤가 맞지 않음)", "Conflicts (the story contradicts itself)"),
     "h.fact": ("현재 사실", "Current fact"), "h.against": ("맞지 않는 단언", "Contradicted by"),
+    "threads": ("약속", "Promises"), "h.to": ("받는 인물", "To"), "h.promise": ("약속", "Promise"),
+    "h.status": ("상태", "Status"), "h.closed": ("닫은 단언", "Closed by"), "h.restated": ("다시 말한 턴", "Restated in turn"),
+    "unmatched": ("어느 약속에도 맞지 않은 이행·파기", "Kept or broken, matching no open promise"),
+    "salience": ("중요도", "salience"),
     "items": ("아이템 이력", "Item timelines"), "h.item": ("아이템", "Item"), "h.timeline": ("이력 (오래된 순)", "Timeline (oldest first)"),
     "w.possesses": ("{s} 보유", "held by {s}"), "w.located_in": ("{o}에 있음", "at {o}"),
     "w.destroyed": ("소멸: {v}", "destroyed: {v}"), "w.not": ("아님", "not"),
@@ -107,6 +111,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "ids": ("식별자", "Identifiers"),
     # contents: short names of the detail sections
     "toc.state": ("상태", "State"), "toc.coverage": ("처리 현황", "Coverage"), "toc.conflicts": ("충돌", "Conflicts"),
+    "toc.threads": ("약속", "Promises"), "toc.unmatched": ("맞지 않은 이행·파기", "Unmatched"),
     "toc.facts": ("사실", "Facts"), "toc.items": ("아이템", "Items"), "toc.entities": ("엔티티", "Entities"),
     "toc.ambiguous": ("모호한 이름", "Ambiguous"), "toc.claims": ("주장", "Claims"), "toc.other": ("실제 아님", "Not actual"),
     "toc.retrievals": ("검색", "Retrievals"), "toc.commits": ("커밋", "Commits"), "toc.members": ("메시지", "Messages"),
@@ -139,6 +144,8 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "f.fresh": ("최신", "fresh"), "f.stale": ("오래됨", "stale"), "f.unknown_conversation": ("모르는 대화", "unknown chat"),
     "m.hypothetical": ("가정", "hypothetical"), "m.dreamed": ("꿈", "dreamed"), "m.unknown": ("미상", "unknown"),
     "m.actual": ("실제", "actual"),
+    "t.open": ("열림", "open"), "t.kept": ("지킴", "kept"), "t.broken": ("깨짐", "broken"),
+    "s.major": ("중요", "major"), "s.minor": ("사소", "minor"), "p.fulfilled": ("약속 이행", "fulfilled"),
     "e.character": ("인물", "character"), "e.item": ("아이템", "item"), "e.place": ("장소", "place"),
     "e.group": ("집단", "group"), "e.concept": ("개념", "concept"),
 }
@@ -330,9 +337,39 @@ def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> 
           + (older if active and f.get("generation") not in (None, active) else "")
           + (f" <span class=\"chip\">{t('negated')}</span>" if f.get("polarity") == "negative" else "")
           + (f" <span class=\"chip\">{t('disputed')}</span>" if f.get("disputed_by") else "")
-          + (f" <span class=\"chip\">{t('legacy')}</span>" if f.get("source") is None else ""),
+          + (f" <span class=\"chip\">{t('legacy')}</span>" if f.get("source") is None else "")
+          + _salience(f, lang),
           _v(f.get("versions", 1))]
          for f in facts])
+
+
+def _salience(f: dict[str, Any], lang: str) -> str:
+    """Events show their salience (ADR 0020); an unlabeled one (older generation) shows "—"."""
+    if f.get("predicate") != "event":
+        return ""
+    if not f.get("salience"):
+        return f" <span class=\"muted\" title=\"{_t(lang, 'salience')}\">—</span>"
+    return " " + chip(lang, "s", f["salience"])
+
+
+def _threads_table(threads: list[dict[str, Any]], lang: str) -> str:
+    """Promises with their status and what closed them (PHASE-7, ADR 0019), newest first."""
+    def closed(t: dict[str, Any]) -> str:
+        c = t.get("closed_by")
+        return f"{_turn(c)} · {_v(fact_line_text(c))}" if c else ""
+
+    return table([_t(lang, k) for k in ("h.by", "h.to", "h.promise", "h.turn", "h.status", "h.closed", "h.restated")],
+                 [[_v(t["by"]), _v(t.get("to") or ""), _v(t.get("text")), _turn(t), chip(lang, "t", t["status"]),
+                   closed(t), _v(", ".join(str(r["turn"] if r.get("turn") is not None else r["position"])
+                                          for r in t.get("restated") or []))]
+                  for t in threads[:100]])
+
+
+def _unmatched_table(unmatched: list[dict[str, Any]], lang: str) -> str:
+    return table([_t(lang, k) for k in ("h.subject", "h.predicate", "h.object", "h.turn")],
+                 [[_v(u["subject"]), chip(lang, "p", u["predicate"])
+                   + (f" <span class=\"chip\">{_t(lang, 'negated')}</span>" if u.get("polarity") == "negative" else ""),
+                   _v(u.get("value")), _turn(u)] for u in unmatched[:100]])
 
 
 def _conflicts_table(conflicts: list[dict[str, Any]], lang: str) -> str:
@@ -381,7 +418,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            token: str | None, coverage: dict[str, Any] | None = None, lang: str = "ko", embed: bool = False,
            claims: list[dict[str, Any]] | None = None, other: list[dict[str, Any]] | None = None,
            entities: list[dict[str, Any]] | None = None, ambiguous: list[dict[str, Any]] | None = None,
-           conflicts: list[dict[str, Any]] | None = None, items: list[dict[str, Any]] | None = None) -> str:
+           conflicts: list[dict[str, Any]] | None = None, items: list[dict[str, Any]] | None = None,
+           threads: list[dict[str, Any]] | None = None, unmatched: list[dict[str, Any]] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -398,6 +436,10 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         ("coverage", t("coverage"), None, _coverage_section(coverage or {}, lang), True)]
     if conflicts:
         parts.append(("conflicts", t("conflicts"), len(conflicts), _conflicts_table(conflicts, lang), True))
+    if threads:
+        parts.append(("threads", t("threads"), len(threads), _threads_table(threads, lang), True))
+    if unmatched:
+        parts.append(("unmatched", t("unmatched"), len(unmatched), _unmatched_table(unmatched, lang), True))
     if facts:
         parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
     if items:
@@ -476,6 +518,7 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
     other = [a for a in view["other"] if involves(a)]
     ids = {f["id"] for f in mine}
     conflicts = [c for c in view["conflicts"] if c["fact"] in ids]
+    threads = [th for th in view.get("threads", []) if norm(th["by"]) in names or norm(th.get("to")) in names]
 
     def knowledge(rows: list[dict[str, Any]]) -> str:
         return table([t("h.fact"), t("h.knowledge"), t("h.turn")],
@@ -488,6 +531,8 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
           _v(", ".join(str(a["turn"]) for a in entity["aliases"]))]]), True)]
     if conflicts:
         parts.append(("conflicts", t("conflicts"), len(conflicts), _conflicts_table(conflicts, lang), True))
+    if threads:
+        parts.append(("threads", t("threads"), len(threads), _threads_table(threads, lang), True))
     if held:
         parts.append(("held", t("held"), len(held), table(
             [t("h.item"), t("h.turn"), t("h.timeline")],
