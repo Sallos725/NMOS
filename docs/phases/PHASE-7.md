@@ -1,16 +1,15 @@
 # Phase 7 — Promise Threads and Event Salience
 
-> **Status: DRAFT for owner approval (2026-09-24). Not authorized.** Nothing in this document may be
-> implemented until the owner approves it and answers the open questions below. This is Track B
+> **Status: approved by the owner on 2026-09-24, with the recommended answer to every question
+> (Q1–Q5).** Implementation follows "Implementation order" below. This is Track B
 > stage B3 (`docs/proposals/TRACK-B-PHASE-5-PLUS.md` §6, "Event, relationship, and open-thread
 > projections"), narrowed to what current evidence supports; this document is its B0.
 
-## Open questions for the owner
+## Owner decisions (2026-09-24)
 
-Each question has a recommended answer. The spec below is written for the recommended answers. A
-different answer changes only the parts it names.
+The owner chose the recommended answer to each question. The spec below is written for those answers.
 
-| # | Question | Recommended | Alternatives |
+| # | Question | Decided | Alternatives not taken |
 |---|---|---|---|
 | Q1 | **Phase boundary.** B3 lists events (participants, place, observers, narrative time), versioned relationships, open threads of nine kinds, causal links and event salience. Which part is Phase 7? | **Promise threads and event salience.** These are the two measured gaps (below). First-class event records, relationship history in the packet, other thread kinds, causal links and narrative time wait for their own evidence. | (b) Add goals as threads (see "Evidence": most extracted goals are short plans that would stay open). (c) The whole B3 stage. |
 | Q2 | A promise is almost always **said in dialogue**, so it is extracted as a character claim, and half the time as `hypothetical` (never in the packet). When does a promise open a thread? | A `promised` assertion opens a thread when the one who **makes** it says it (speaker = subject) or the narration states it, with modality `actual` or `hypothetical`. Saying a promise is what makes it (a performative), and its content is always in the future. A promise reported by someone else stays a claim. `extract-v7` also tells the model that a promise that was made is `actual`. | (b) Only narrated `actual` promises (today's fact rule; loses most promises). (c) Any `promised` assertion, whoever reports it. |

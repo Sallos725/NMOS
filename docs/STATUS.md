@@ -2,13 +2,16 @@
 
 ## Current phase
 
+**Phase 7 — Promise Threads and Event Salience: current (approved 2026-09-24).** Spec
+`docs/phases/PHASE-7.md` (Track B, B3 narrowed to promise threads and event salience), approved with
+the recommended answer to every question (Q1–Q5). Implementation follows its "Implementation order".
+
 **Phase 6 — Item Transitions and Conflicts: complete (2026-09-24), released in `v0.1.0-beta.13`.**
 Spec `docs/phases/PHASE-6.md` (Track B, B2), approved 2026-09-24 with the recommended answer to every
 question (Q1–Q5). One whereabouts per item (ADR 0016), `destroyed` with `extract-v6` and
 `disputed="true"` (ADR 0017), D30, Inspector item timelines and conflicts. Every acceptance criterion
 met: `docs/perf/phase6-extraction.md` (real-model tier, fact-read latency, real-host smoke, upgrade from
-a `v0.1.0-beta.12` database). No phase is current. Next: Track B, B3 (events, relationships, threads),
-not authorized yet.
+a `v0.1.0-beta.12` database). Next: Phase 7 (above).
 
 **Phase 5 — Entity Identity and Semantic Assertions: complete (2026-09-24), released in
 `v0.1.0-beta.12`.** Spec `docs/phases/PHASE-5.md`, ADRs 0012–0014 (0012/0013 amended by the owner after
@@ -90,9 +93,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 - O1 — relationship to MIRRA / VEIL.
 - O5 — resolved 2026-09-24: superseded vectors and text pruned (ADR 0015, D29), full-manifest host
   observations compacted losslessly (ADR 0018, D31), everything else on abandoned worldlines kept.
-- Phase 7+ (Track B, B3–B7): not authorized. B3 (events, relationships, threads) is the next stage; its
-  draft specification is `docs/phases/PHASE-7.md` (promise threads and event salience, a narrowed B3),
-  awaiting owner approval and answers to its questions Q1–Q5.
+- Phase 8+ (the rest of B3, Track B, B4–B7): not authorized.
 
 ## Public release checklist (done 2026-09-23)
 
