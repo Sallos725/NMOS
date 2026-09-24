@@ -114,10 +114,19 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
 
     A holder or place from a later turn than the item's end contradicts it (PHASE-6 Q4): the newer
     statement is current, marked `disputed` by the end, until a new end or a denial of the end.
+
+    Each history entry gets an outcome: `current`, `superseded` (replaced or moved on), `ended` (closed
+    by a negation or an end) or `conflicting` (an end that later statements contradict).
     """
     slots: dict[str, dict[str, Any] | None] = {}
     negatives: dict[tuple, dict[str, Any]] = {}
     disputed_by: dict[str, Any] | None = None
+    outcome: dict[int, str] = {}  # id() of a history row -> outcome, for rows that were closed
+
+    def close(row: dict[str, Any] | None, how: str) -> None:
+        if row is not None:
+            outcome.setdefault(id(row), how)
+
     for a in history:
         slot = a["predicate"] if whereabouts(a) else ""
         if slot == "destroyed":
@@ -126,30 +135,39 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
             end = slots.get("destroyed")
             if end is not None and end["polarity"] == "positive" and _unit(end) != _unit(a):
                 disputed_by = end
+                close(end, "conflicting")
         current = slots.get(slot)
         rel = relation(a, r)
         if a["polarity"] == "negative" and current is not None and relation(current, r) != rel:
             negatives[rel] = a
             continue
-        negatives.pop(rel, None)
+        close(negatives.pop(rel, None), "superseded")
         if slot and a["polarity"] == "positive":
             for other, held in list(slots.items()):
                 if other != slot and held is not None and _unit(held) != _unit(a):
+                    close(held, "ended" if slot == "destroyed" else "superseded")
                     slots[other] = None
+        close(current, "ended" if a["polarity"] == "negative" else "superseded")
         slots[slot] = a
     ended = slots.get("destroyed")
     if ended is not None and ended["polarity"] == "positive":
+        close(slots.get("possesses"), "ended")
+        close(slots.get("located_in"), "ended")
         slots["possesses"] = slots["located_in"] = None
+    current_rows = [s for s in slots.values() if s is not None] + list(negatives.values())
+    for row in current_rows:
+        outcome[id(row)] = "current"
+    entries = [{"position": h["position"], "turn": h["turn"], "predicate": h["predicate"], "subject": h["subject"],
+                "value": h["value"], "object": h["object"], "polarity": h["polarity"],
+                "outcome": outcome.get(id(h), "superseded")} for h in history]
     out = []
-    for fact in [s for s in slots.values() if s is not None] + list(negatives.values()):
+    for fact in current_rows:
         f = dict(fact)
         if disputed_by is not None and f["polarity"] == "positive":
             f["disputed_by"] = {k: disputed_by[k] for k in ("id", "position", "turn", "subject", "predicate",
                                                             "object", "value")}
         f["versions"] = len(history)
-        f["history"] = [{"position": h["position"], "turn": h["turn"], "predicate": h["predicate"],
-                         "subject": h["subject"], "value": h["value"], "object": h["object"],
-                         "polarity": h["polarity"]} for h in history]
+        f["history"] = entries
         f["claims"] = []
         out.append(f)
     return out
@@ -165,10 +183,12 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
     - other: hypothetical, dreamed and unknown assertions, stored and inspectable, never in the packet;
     - entities / ambiguous: the read-time entity resolution those keys use (ADR 0012). `also_called`
       assertions feed it and are not facts themselves;
-    - conflicts: current facts the story contradicts (PHASE-6 Q4), each with the assertion against it.
+    - conflicts: current facts the story contradicts (PHASE-6 Q4), each with the assertion against it;
+    - items: each item's whereabouts history with the outcome of every assertion (PHASE-6).
     """
     if extractor_key is None:
-        return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": []}
+        return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
+                "items": []}
     rows = [r for r in conn.execute(ACTIVE_ASSERTIONS, {"head": head, "key": extractor_key}).fetchall()
             if r["predicate"] in REGISTRY]
     conv = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
@@ -198,10 +218,16 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
                                 "object": c["object"], "value": c["value"], "polarity": c["polarity"]})
     facts.sort(key=lambda f: f["position"], reverse=True)
     other.sort(key=lambda a: a["position"], reverse=True)
-    conflicts = [{"fact": f["id"], "turn": f["turn"], "text": fact_text(f), "against": f["disputed_by"]}
-                 for f in facts if f.get("disputed_by")]
+    conflicts = [{"fact": f["id"], "turn": f["turn"], "position": f["position"], "text": fact_text(f),
+                  "against": f["disputed_by"]} for f in facts if f.get("disputed_by")]
+    items: dict[tuple, dict[str, Any]] = {}
+    for f in facts:  # one timeline per item, newest first (facts are sorted by position)
+        if whereabouts(f):
+            items.setdefault(version_key(f, r), {
+                "item": f["object"] if f["predicate"] in HOLDER_PER_ITEM else f["subject"],
+                "position": f["position"], "history": f["history"]})
     return {"facts": facts, "claims": claims, "other": other, "entities": r.entities(),
-            "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts}
+            "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values())}
 
 
 def _annotate(row: dict[str, Any], r: Resolution) -> None:

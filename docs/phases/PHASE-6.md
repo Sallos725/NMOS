@@ -196,7 +196,10 @@ Each step is one reviewable change with its tests.
 3. **Conflicts and packet (Q1, Q4)**: outcome `conflicting`, `disputed="true"`, the packet Note.
    *Done 2026-09-24* (ADR 0017 items 4–5, D30; case "use after end", memory evaluation 25/25 in
    `full`).
-4. **Inspector**: item timelines, the conflicts list, outcome history.
+4. **Inspector**: item timelines, the conflicts list, outcome history. *Done 2026-09-24*: every
+   history entry carries `outcome` (`current` / `superseded` / `ended` / `conflicting`, also in
+   `/v1/conversations/{id}/facts?history=true`); the Inspector shows a conflicts table, one timeline per
+   item and a `disputed` chip on facts (`tests/test_transitions.py`).
 5. **Evaluation and release**: real-model tier, measurements, docs, release notes with cost.
 
 ## Stop conditions
