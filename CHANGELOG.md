@@ -15,6 +15,9 @@ Phase 8 (in progress): event participants (`docs/phases/PHASE-8.md`, ADR 0021).
 - **Extraction `extract-v8`.** Each `event`, `goal`, `knows` and `destroyed` lists the other characters
   or groups it involves (`with`). New generation: each chat re-extracts its latest
   `NMOS_EXTRACT_BACKFILL` turns once; older turns keep their `extract-v7` facts.
+- **Inspector.** The facts table has a "With" column (participants; a chip marks groups). A character's
+  page gains "Takes part in": facts where they are a participant but not the subject or object. A
+  character who is only ever a participant has a page too.
 - **Entity ids change once** (`resolve-v2`): Inspector character links from before the upgrade no longer
   open. KNOWN ENTITIES hints are unchanged.
 

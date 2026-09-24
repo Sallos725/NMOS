@@ -263,3 +263,23 @@ def test_inspector_shows_promises_unmatched_resolutions_and_salience(migrated):
         who = character_links(page, conv)
         yui = client.get(f"/inspector/c/{conv}/e/{who['Yui']}?lang=en").text
         assert 'id="s-threads"' in yui and "return the book" in yui and "lighthouse" not in yui
+
+
+def test_inspector_shows_participants_and_what_a_character_takes_part_in(migrated):
+    """PHASE-8 step 4: a participants column, and "Takes part in" on the character page, including a
+    character who is only ever a participant."""
+    client, c, drain = story_client(migrated, ("Kaito is in the harbor.", "Hana betrayed Kaito.", "Hana betrayed Mina."))
+    with client:
+        sync(client, c)
+        drain()
+        conv = client.get("/v1/conversations").json()[0]["id"]
+        page = client.get(f"/inspector/c/{conv}?lang=en").text
+        assert "<th>With</th>" in page
+        who = character_links(page, conv)
+        assert {"Hana", "Kaito", "Mina"} <= set(who)  # Mina is only a participant
+        kaito = client.get(f"/inspector/c/{conv}/e/{who['Kaito']}?lang=en").text
+        assert 'id="s-takes_part"' in kaito and "betrayed Kaito" in kaito and "betrayed Mina" not in kaito
+        mina = client.get(f"/inspector/c/{conv}/e/{who['Mina']}").text
+        assert 'id="s-takes_part"' in mina and "betrayed Mina" in mina
+        hana = client.get(f"/inspector/c/{conv}/e/{who['Hana']}").text
+        assert 'id="s-takes_part"' not in hana  # her own events are "about" her, not "takes part"
