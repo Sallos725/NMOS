@@ -192,8 +192,10 @@ Each step is one reviewable change with its tests.
    assertion come with the Inspector (step 4).
 2. **`destroyed` and `extract-v6` (Q3)**: registry, prompt, stub rules, cases "destroyed", "eaten",
    "damaged". *Done 2026-09-24* (ADR 0017, D30 amended; memory evaluation 24/24 in `full`, with
-   "edit removes the end" too). Until step 3, a later holder or place closes the end.
+   "edit removes the end" too).
 3. **Conflicts and packet (Q1, Q4)**: outcome `conflicting`, `disputed="true"`, the packet Note.
+   *Done 2026-09-24* (ADR 0017 items 4–5, D30; case "use after end", memory evaluation 25/25 in
+   `full`).
 4. **Inspector**: item timelines, the conflicts list, outcome history.
 5. **Evaluation and release**: real-model tier, measurements, docs, release notes with cost.
 

@@ -10,6 +10,10 @@ later, is `docs/KNOWN-ISSUES.md`.
   not destroyed. New extraction prompt `extract-v6`: with an LLM configured, each chat re-extracts its
   latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once. Older turns keep their `extract-v5` facts
   until **Extract all history** (K9).
+- **Contradictions are shown, not settled** (Phase 6 step 3). If the story uses an item after
+  destroying it, the fact is marked `disputed="true"` and names what it contradicts:
+  `Hana possesses letter; but turn 5: letter destroyed: burned`. The packet Note explains the mark
+  when it is used.
 
 - **An item is in one place** (Phase 6 step 1, ADR 0016, D30). Its holder and its place are one fact
   history: "Hana puts the map on the table" ends Hana's holding, and "Kaito takes the map" ends "on the

@@ -57,8 +57,8 @@ HOLDER_PER_ITEM = frozenset({"possesses"})
 
 def whereabouts(a: dict[str, Any]) -> bool:
     """An item's holder (`possesses`), its place (`located_in` of an item) and its end (`destroyed`) are one
-    whereabouts per item (PHASE-6 Q2, Q3): the newer one is current and closes the others. Read-side only,
-    like HOLDER_PER_ITEM."""
+    whereabouts per item (PHASE-6 Q2, Q3): the newer one is current and closes the others; a holder or
+    place after the end is disputed (Q4). Read-side only, like HOLDER_PER_ITEM."""
     return (a["predicate"] in HOLDER_PER_ITEM or a["predicate"] == "destroyed"
             or (a["predicate"] == "located_in" and a.get("subject_type") == "item"))
 

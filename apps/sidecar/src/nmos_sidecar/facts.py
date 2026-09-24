@@ -111,11 +111,21 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
     folded as above. A new positive statement also closes the other slots unless they come from the same
     turn ("Hana holds the map in the library"): the newer statement says where the item is now. An end
     also closes holder and place of its own turn ("Hana burns the letter she holds").
+
+    A holder or place from a later turn than the item's end contradicts it (PHASE-6 Q4): the newer
+    statement is current, marked `disputed` by the end, until a new end or a denial of the end.
     """
     slots: dict[str, dict[str, Any] | None] = {}
     negatives: dict[tuple, dict[str, Any]] = {}
+    disputed_by: dict[str, Any] | None = None
     for a in history:
         slot = a["predicate"] if whereabouts(a) else ""
+        if slot == "destroyed":
+            disputed_by = None  # a new end, or a denial of the end, settles the item's existence
+        elif slot and a["polarity"] == "positive":
+            end = slots.get("destroyed")
+            if end is not None and end["polarity"] == "positive" and _unit(end) != _unit(a):
+                disputed_by = end
         current = slots.get(slot)
         rel = relation(a, r)
         if a["polarity"] == "negative" and current is not None and relation(current, r) != rel:
@@ -133,6 +143,9 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
     out = []
     for fact in [s for s in slots.values() if s is not None] + list(negatives.values()):
         f = dict(fact)
+        if disputed_by is not None and f["polarity"] == "positive":
+            f["disputed_by"] = {k: disputed_by[k] for k in ("id", "position", "turn", "subject", "predicate",
+                                                            "object", "value")}
         f["versions"] = len(history)
         f["history"] = [{"position": h["position"], "turn": h["turn"], "predicate": h["predicate"],
                          "subject": h["subject"], "value": h["value"], "object": h["object"],
@@ -151,10 +164,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
       a narrated fact exists; a claim never supersedes narration;
     - other: hypothetical, dreamed and unknown assertions, stored and inspectable, never in the packet;
     - entities / ambiguous: the read-time entity resolution those keys use (ADR 0012). `also_called`
-      assertions feed it and are not facts themselves.
+      assertions feed it and are not facts themselves;
+    - conflicts: current facts the story contradicts (PHASE-6 Q4), each with the assertion against it.
     """
     if extractor_key is None:
-        return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": []}
+        return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": []}
     rows = [r for r in conn.execute(ACTIVE_ASSERTIONS, {"head": head, "key": extractor_key}).fetchall()
             if r["predicate"] in REGISTRY]
     conv = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
@@ -184,8 +198,10 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
                                 "object": c["object"], "value": c["value"], "polarity": c["polarity"]})
     facts.sort(key=lambda f: f["position"], reverse=True)
     other.sort(key=lambda a: a["position"], reverse=True)
+    conflicts = [{"fact": f["id"], "turn": f["turn"], "text": fact_text(f), "against": f["disputed_by"]}
+                 for f in facts if f.get("disputed_by")]
     return {"facts": facts, "claims": claims, "other": other, "entities": r.entities(),
-            "ambiguous": r.ambiguous_mentions()}
+            "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts}
 
 
 def _annotate(row: dict[str, Any], r: Resolution) -> None:
@@ -264,11 +280,14 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
 def fact_line(f: dict[str, Any]) -> str:
     """One <Fact> with its knowledge marks exactly as stored (D19): knowledge="public", or known_by /
     hidden_from for limited facts, or no mark at all when who knows is unknown. A negated fact is
-    explicitly not (or no longer) true (ADR 0013)."""
+    explicitly not (or no longer) true (ADR 0013). A disputed fact carries what contradicts it in the same
+    line, and neither side is presented as certain (PHASE-6 Q1)."""
     turn = f["turn"] if f.get("turn") is not None else f["position"]
     attrs = f" kind={quoteattr(f['predicate'])} turn=\"{turn}\""
     if f.get("polarity") == "negative":
         attrs += ' negated="true"'
+    if f.get("disputed_by"):
+        attrs += ' disputed="true"'
     if f.get("epistemic") == "implied":
         attrs += ' certainty="implied"'
     if f.get("knowledge") == "public":
@@ -278,7 +297,11 @@ def fact_line(f: dict[str, Any]) -> str:
             attrs += f" known_by={quoteattr(', '.join(f['known_by']))}"
         if f.get("hidden_from"):
             attrs += f" hidden_from={quoteattr(', '.join(f['hidden_from']))}"
-    return f"    <Fact{attrs}>{escape(fact_text(f))}</Fact>"
+    text = fact_text(f)
+    if against := f.get("disputed_by"):
+        when = against["turn"] if against.get("turn") is not None else against["position"]
+        text += f"; but turn {when}: {fact_text(against)}"
+    return f"    <Fact{attrs}>{escape(text)}</Fact>"
 
 
 def claim_line(c: dict[str, Any]) -> str:

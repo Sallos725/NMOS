@@ -168,7 +168,8 @@ conditions and dreams are kept in the Inspector but not injected. The Note expla
 An item is in one place at a time (unreleased, Phase 6): its holder and its place are one fact history,
 so "Hana puts the map on the table" ends Hana's holding. An item the story burns, eats or uses up
 becomes `<Fact kind="destroyed">letter destroyed: burned</Fact>` and has no holder any more. A
-damaged item is not destroyed.
+damaged item is not destroyed. If the story uses it again later, the fact is marked `disputed="true"`
+and names the turn that destroyed it, so the model does not treat either side as certain.
 
 ## Privacy
 

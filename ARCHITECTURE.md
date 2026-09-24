@@ -264,7 +264,9 @@ decided.
 **D30 — One whereabouts per item (Phase 6, ADRs 0016, 0017).** An item's holder (`possesses`), its
 place (`located_in` of an item) and its end (`destroyed`, since `extract-v6`) share one version key.
 The newer positive statement is current and closes the others, unless they come from the same turn;
-an end also closes the holder and place of its own turn. Negations end only what they deny (D27).
+an end also closes the holder and place of its own turn. A holder or place from a later turn than the
+end is `disputed="true"` against it (the owner's Q4), with both sides in one packet line, until a new end
+or a denial of the end. Negations end only what they deny (D27).
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
