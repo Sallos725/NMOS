@@ -5,8 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+## 0.1.0-beta.14
+
 Phase 7: promise threads and event salience (`docs/phases/PHASE-7.md`, ADRs 0019–0020, D32). Schema:
-migration 0016 (applied at startup). The plugin is unchanged.
+migration 0016 (applied at startup). Upgrade both parts: `docker compose pull && docker compose up -d`,
+then replace the plugin file and reload PocketRisu. The plugin's code is unchanged apart from its version
+number; the Inspector changes below come from the sidecar.
 
 **One-time cost after upgrading.**
 - **LLM extraction:** the prompt is `extract-v7`, a new generation. With an LLM configured, each chat
@@ -42,6 +46,19 @@ migration 0016 (applied at startup). The plugin is unchanged.
   kept, broken), the assertion that closed it and the turns that restated it. Beside it is a list of
   kept or broken statements that matched no open promise. A character's view lists their promises.
   Events show their salience (`—` for older, unlabeled ones).
+
+### Known limitations
+
+- A promise stays open until the story keeps, breaks or releases it; a forgotten promise is never
+  closed for being old, and there is no owner correction yet (K23, Track B, B7).
+- A turn that keeps a promise but was extracted before `extract-v7` has no `fulfilled`: the promise
+  stays open until **Extract all history** or a later turn closes it.
+- A resolution worded very differently from the promise matches nothing and closes nothing (listed in
+  the Inspector). In the real-model check every resolution repeated the listed text exactly.
+- Salience depends on the extraction model (K22). Only one model was measured; 2 of 9 minor-scene runs
+  extracted no event at all.
+- Extraction prompts are ≈17 % longer than with `extract-v6`.
+- Otherwise unchanged from 0.1.0-beta.13; the full list is `docs/KNOWN-ISSUES.md`.
 
 ## 0.1.0-beta.13
 

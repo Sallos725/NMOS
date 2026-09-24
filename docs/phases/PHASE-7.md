@@ -1,6 +1,6 @@
 # Phase 7 — Promise Threads and Event Salience
 
-> **Status: every acceptance criterion met (2026-09-24); release pending.** Approved by the owner on
+> **Status: complete (2026-09-24), released in `v0.1.0-beta.14`.** Approved by the owner on
 > 2026-09-24, with the recommended answer to every question (Q1–Q5). Evidence:
 > `docs/perf/phase7-extraction.md`, `docs/perf/eval-baseline.md`, ADRs 0019–0020. This is Track B
 > stage B3 (`docs/proposals/TRACK-B-PHASE-5-PLUS.md` §6, "Event, relationship, and open-thread

@@ -344,7 +344,7 @@ consumer needs it; empty future directories are not created in advance.
 | 4 | Soft subset — knowledge marks (D19) — **done (beta)**; hard principal modes (D9 `character_pov`) not authorized | Yes |
 | 5 | Entity identity, assertion semantics (Track B, B1) — **done (beta.12)** | Yes |
 | 6 | Item transitions and conflicts (Track B, B2) — **done (beta.13)** | Yes |
-| 7 | Promise threads and event salience (Track B, B3 narrowed) — **current** | Yes |
+| 7 | Promise threads and event salience (Track B, B3 narrowed) — **done (beta.14)** | Yes |
 | 8+ | Rest of B3 (events, relationships, causal links), canon, hard POV, forensic recall, MCP | Yes |
 
 Each phase gets its own `PHASE-N.md` with acceptance criteria before work starts.
