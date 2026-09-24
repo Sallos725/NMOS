@@ -2,11 +2,13 @@
 
 ## Current phase
 
-**Phase 6 — Item Transitions and Conflicts: approved 2026-09-24, in progress.** Spec
+**Phase 6 — Item Transitions and Conflicts: approved 2026-09-24; every acceptance criterion met
+(2026-09-24), not released yet.** Spec
 `docs/phases/PHASE-6.md` (Track B, B2). The owner took the recommended answer to every open question
 (Q1–Q5). Steps 1–4 done (one whereabouts per item, ADR 0016; `destroyed`, `extract-v6`
-and `disputed="true"`, ADR 0017; D30; Inspector item timelines and conflicts). Step 5 (real-model
-tier, measurements, release) is next.
+and `disputed="true"`, ADR 0017; D30; Inspector item timelines and conflicts). Step 5 evidence:
+`docs/perf/phase6-extraction.md` (real-model tier, fact-read latency, real-host smoke, upgrade).
+The release needs the owner's go-ahead.
 
 **Phase 5 — Entity Identity and Semantic Assertions: complete (2026-09-24), released in
 `v0.1.0-beta.12`.** Spec `docs/phases/PHASE-5.md`, ADRs 0012–0014 (0012/0013 amended by the owner after

@@ -117,7 +117,8 @@ Swipe churn does not burn extraction calls.
 **D6 — Closed predicate registry.** The compiler may only emit predicates defined in
 `packages/domain/predicates` with declared subject/object types, cardinality
 (single/multi-valued), and epistemic class. Unknown predicates become `pending` candidates
-for review, not facts.
+for review, not facts. Since `extract-v6` the registry also has `destroyed` (an item that no longer
+exists; D30, ADR 0017).
 
 **D7 — Bounded extraction context, per turn (revised 2026-09-23, ADR 0008).** The unit of
 extraction is the **turn**: a run of user messages plus the run of replies that answers it (comments,

@@ -9,7 +9,8 @@ later, is `docs/KNOWN-ISSUES.md`.
   item's holder and place: `<Fact kind="destroyed">letter destroyed: burned</Fact>`. A damaged item is
   not destroyed. New extraction prompt `extract-v6`: with an LLM configured, each chat re-extracts its
   latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once. Older turns keep their `extract-v5` facts
-  until **Extract all history** (K9).
+  until **Extract all history** (K9). The prompt grows by ≈96 tokens per call (+7.2 % on the measured
+  control scenes, `docs/perf/phase6-extraction.md`).
 - **Contradictions are shown, not settled** (Phase 6 step 3). If the story uses an item after
   destroying it, the fact is marked `disputed="true"` and names what it contradicts:
   `Hana possesses letter; but turn 5: letter destroyed: burned`. The packet Note explains the mark
