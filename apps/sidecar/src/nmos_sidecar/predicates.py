@@ -42,6 +42,8 @@ REGISTRY: dict[str, Predicate] = {p.name: p for p in (
               "a durable fact about the setting"),
     Predicate("also_called", ENTITY_TYPES, None, True, "multi", "world",
               "another name for the subject that the TARGET turn itself gives (value: the other name)"),
+    Predicate("destroyed", ("item",), None, True, "single", "world",
+              "the item no longer exists or can no longer be held or used (value: how, e.g. burned, eaten)"),
 )}
 
 
@@ -54,9 +56,11 @@ HOLDER_PER_ITEM = frozenset({"possesses"})
 
 
 def whereabouts(a: dict[str, Any]) -> bool:
-    """An item's holder (`possesses`) and its place (`located_in` of an item) are one whereabouts per item
-    (PHASE-6 Q2): the newer one is current and closes the other. Read-side only, like HOLDER_PER_ITEM."""
-    return a["predicate"] in HOLDER_PER_ITEM or (a["predicate"] == "located_in" and a.get("subject_type") == "item")
+    """An item's holder (`possesses`), its place (`located_in` of an item) and its end (`destroyed`) are one
+    whereabouts per item (PHASE-6 Q2, Q3): the newer one is current and closes the others. Read-side only,
+    like HOLDER_PER_ITEM."""
+    return (a["predicate"] in HOLDER_PER_ITEM or a["predicate"] == "destroyed"
+            or (a["predicate"] == "located_in" and a.get("subject_type") == "item"))
 
 
 def registry_prompt() -> str:

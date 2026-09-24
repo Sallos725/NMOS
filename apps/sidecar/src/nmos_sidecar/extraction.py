@@ -26,8 +26,9 @@ from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
 
-COMPILER_VERSION = "extract-v5"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
-#                                 v5: polarity, modality, source, also_called (ADR 0012, ADR 0013)
+COMPILER_VERSION = "extract-v6"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
+#                                 v5: polarity, modality, source, also_called (ADR 0012, ADR 0013);
+#                                 v6: destroyed (PHASE-6, ADR 0017)
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
 TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
@@ -58,6 +59,9 @@ Rules:
 - `polarity`: "negative" when the TARGET turn says the relation does not hold or no longer holds (lost,
   gave away, left, is not, did not); otherwise "positive". For a loss, give the relation that ended
   with "negative" (e.g. possesses, negative).
+- `destroyed` only when the TARGET turn ends an item's existence or use: burned, torn to pieces, eaten,
+  drunk, used up, shattered beyond use. Not when it is only damaged, hidden, dropped or lost (a loss is
+  possesses, negative).
 - `modality`: "actual" for what happens or is true in the story; "hypothetical" for plans, intentions,
   conditions, questions and speculation that have not happened; "dreamed" for dreams, visions and
   imagination; "unknown" when the text does not settle it. Label these instead of skipping them when

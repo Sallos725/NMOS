@@ -15,7 +15,7 @@ and prints this table (`tools/eval_memory.py`).
   in the Y." —, a hypothetical "If X goes to the Y,", a dream "X dreamed she was in the Y.", narrated
   identity "X is a Y." and a claim 'X says: "I am a Y."'; since Phase 6 an item's place — "The Y is
   on the Z.", "X puts the Y on the Z." — and a holder and place in one sentence "X has the Y in the
-  Z."); the embedder is a concept bag with weak
+  Z."; an item's end "X burns / eats the Y." → `destroyed`, and no rule for damage); the embedder is a concept bag with weak
   hashed words. Results therefore measure
   reconciliation, invalidation, retrieval and packet compilation, not model quality.
 - **Measured on the packet**, never on a generated answer, so no judge model is involved:
@@ -56,14 +56,18 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | picked up | item whereabouts | **no** | **no** | **no** | yes |
 | holder and place in one turn | item whereabouts | **no** | **no** | **no** | yes |
 | a character's place is not an item's | item whereabouts | **no** | **no** | **no** | yes |
+| destroyed | item end | **no** | **no** | **no** | yes |
+| eaten | item end | **no** | **no** | **no** | yes |
+| damaged, not destroyed | item end | **no** | **no** | **no** | yes |
+| edit removes the end | item end | **no** | **no** | **no** | yes |
 | unrelated question | irrelevant-memory suppression | — | empty | empty | empty |
 
 | Mode | gold reached | cases with stale memory | irrelevant packets | mean packet tokens |
 |---|---:|---:|---:|---:|
-| recent | 0/20 | 0 | — | 0 |
-| lexical | 2/20 | 0 | 0/1 | 114 |
-| hybrid | 3/20 | 0 | 0/1 | 144 |
-| full | 20/20 | 0 | 0/1 | 175 |
+| recent | 0/24 | 0 | — | 0 |
+| lexical | 2/24 | 0 | 0/1 | 120 |
+| hybrid | 3/24 | 0 | 0/1 | 146 |
+| full | 24/24 | 0 | 0/1 | 175 |
 
 Before Phase 6 step 1 (ADR 0016), `full` had stale memory in "put down" (`Hana possesses map`) and
 "picked up" (`map located in table`).

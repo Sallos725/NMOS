@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Burned, eaten, used up** (Phase 6 step 2, ADR 0017). Extraction records `destroyed`, which ends the
+  item's holder and place: `<Fact kind="destroyed">letter destroyed: burned</Fact>`. A damaged item is
+  not destroyed. New extraction prompt `extract-v6`: with an LLM configured, each chat re-extracts its
+  latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once. Older turns keep their `extract-v5` facts
+  until **Extract all history** (K9).
+
 - **An item is in one place** (Phase 6 step 1, ADR 0016, D30). Its holder and its place are one fact
   history: "Hana puts the map on the table" ends Hana's holding, and "Kaito takes the map" ends "on the
   table". Both stated in one turn stay together. Applies to existing facts at once (K10).
