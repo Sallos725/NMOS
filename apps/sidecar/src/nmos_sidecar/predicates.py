@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .entities import node
+
 ENTITY_TYPES = ("character", "place", "item", "group", "concept")
 
 
@@ -165,6 +167,41 @@ def semantics(item: dict[str, Any]) -> tuple[str, str, str, str | None, str | No
     if source == "narration":
         return polarity, modality, source, None, None
     return polarity, modality, source, speaker, None if speaker else "character_claim without asserted_by"
+
+
+# Predicates whose value can involve other people (PHASE-8 Q3: the measured set). Kept outside REGISTRY
+# like HOLDER_PER_ITEM: the extraction prompt states it, and the prompt is part of the generation (D20).
+PARTICIPANT_PREDICATES = frozenset({"event", "goal", "knows", "destroyed"})
+PARTICIPANT_TYPES = ("character", "group")
+MAX_PARTICIPANTS = 6
+
+
+def participants(item: dict[str, Any]) -> list[dict[str, str]] | None:
+    """The typed participants of one raw assertion (PHASE-8 Q2), or None.
+
+    `with` is a list of {"name", "type"} objects, type `character` or `group`. Kept only on the
+    participant predicates; an entry without a name of at most 60 characters or with another type is
+    dropped, and so is the subject, the object and a repeat of the same (type, normalized name). At most
+    MAX_PARTICIPANTS remain. Nothing here is inferred from the value text.
+    """
+    raw = item.get("with")
+    if item.get("predicate") not in PARTICIPANT_PREDICATES or not isinstance(raw, list):
+        return None
+    taken = {node(item.get("subject_type"), item.get("subject"))}
+    if item.get("object"):
+        taken.add(node(item.get("object_type"), item.get("object")))
+    out: list[dict[str, str]] = []
+    for entry in raw:
+        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
+            continue
+        name, kind = entry["name"].strip(), entry.get("type")
+        if not name or len(name) > 60 or kind not in PARTICIPANT_TYPES or node(kind, name) in taken:
+            continue
+        taken.add(node(kind, name))
+        out.append({"name": name, "type": kind})
+        if len(out) == MAX_PARTICIPANTS:
+            break
+    return out or None
 
 
 SALIENCES = ("major", "minor")
