@@ -294,6 +294,49 @@ def coverage_of(ctx: dict[str, Any]) -> dict[str, int]:
             "context_truncated": sum(1 for r in ctx["context"] if len(r["content"]) > CONTEXT_CHARS)}
 
 
+ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic",
+                     "confidence", "evidence", "status", "reason", "knowledge", "known_by", "hidden_from",
+                     "polarity", "modality", "source", "asserted_by")
+
+
+def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Model output → assertion rows (at most 40): missing entity types filled from the reply or the
+    hints (`fill_types`), registry validation (D6), knowledge scope (D19), polarity/modality/source
+    (ADR 0013) and the alias evidence check (ADR 0012). Pure, so the real-model evaluation
+    (`tools/eval_extraction_model.py`) applies exactly what the worker does."""
+    out = []
+    for item, inferred in fill_types(items[:40], hints):
+        if not isinstance(item, dict):
+            continue
+        status, reason = validate(item)
+
+        def text(key: str, limit: int = 300) -> str | None:
+            value = item.get(key)
+            return str(value).strip()[:limit] if value not in (None, "", "null") else None
+
+        try:
+            confidence = float(item.get("confidence")) if item.get("confidence") is not None else None
+        except (TypeError, ValueError):
+            confidence = None
+        scope, known_by, hidden_from, note = knowledge(item)
+        polarity, modality, source, asserted_by, unclaimed = semantics(item)
+        if status == "valid" and item.get("predicate") == "also_called" and not alias_evidenced(item, turn_text):
+            status, reason = "pending", "alias not stated in the turn"
+        if status == "valid" and unclaimed:
+            status, reason = "pending", unclaimed
+        for extra in (note, inferred):
+            if extra:
+                reason = f"{reason}; {extra}" if reason else extra
+        out.append({"subject": text("subject", 120) or "?", "subject_type": text("subject_type", 20),
+                    "predicate": text("predicate", 40) or "?", "object": text("object", 120),
+                    "object_type": text("object_type", 20), "value": text("value"),
+                    "epistemic": "implied" if item.get("epistemic") == "implied" else "stated",
+                    "confidence": confidence, "evidence": text("evidence"), "status": status, "reason": reason,
+                    "knowledge": scope, "known_by": known_by, "hidden_from": hidden_from, "polarity": polarity,
+                    "modality": modality, "source": source, "asserted_by": asserted_by})
+    return out
+
+
 def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[dict, str]],
                     gen: Generation, turns: int) -> str:
     """Returns the final job status."""
@@ -330,41 +373,13 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         ).fetchone()
         if inserted is None:
             return "done"
-        rows = []
-        for item, inferred in fill_types(items[:40], hints):
-            if not isinstance(item, dict):
-                continue
-            status, reason = validate(item)
-
-            def text(key: str, limit: int = 300) -> str | None:
-                value = item.get(key)
-                return str(value).strip()[:limit] if value not in (None, "", "null") else None
-
-            try:
-                confidence = float(item.get("confidence")) if item.get("confidence") is not None else None
-            except (TypeError, ValueError):
-                confidence = None
-            scope, known_by, hidden_from, note = knowledge(item)
-            polarity, modality, source, asserted_by, unclaimed = semantics(item)
-            if status == "valid" and item.get("predicate") == "also_called" and not alias_evidenced(item, turn_text):
-                status, reason = "pending", "alias not stated in the turn"
-            if status == "valid" and unclaimed:
-                status, reason = "pending", unclaimed
-            for extra in (note, inferred):
-                if extra:
-                    reason = f"{reason}; {extra}" if reason else extra
-            rows.append((extraction_id, revision_id, text("subject", 120) or "?", text("subject_type", 20),
-                         text("predicate", 40) or "?", text("object", 120), text("object_type", 20), text("value"),
-                         "implied" if item.get("epistemic") == "implied" else "stated", confidence,
-                         text("evidence"), status, reason, scope, known_by, hidden_from, polarity, modality, source,
-                         asserted_by))
+        rows = [(extraction_id, revision_id, *(a[c] for c in ASSERTION_COLUMNS))
+                for a in normalize(items, turn_text, hints)]
         if rows:
             with conn.cursor() as cur:
                 cur.executemany(
-                    "INSERT INTO assertion (extraction_id, source_revision_id, subject, subject_type, predicate, object,"
-                    " object_type, value, epistemic, confidence, evidence, status, reason, knowledge, known_by,"
-                    " hidden_from, polarity, modality, source, asserted_by)"
-                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    f"INSERT INTO assertion (extraction_id, source_revision_id, {', '.join(ASSERTION_COLUMNS)})"
+                    f" VALUES ({', '.join(['%s'] * (2 + len(ASSERTION_COLUMNS)))})",
                     rows,
                 )
     log.info("extracted turn=%s revision=%s assertions=%d", ctx["target"]["turn"], revision_id, len(rows))

@@ -141,29 +141,45 @@ messages and reports fact-read time with and without entity resolution.
 
 ## Acceptance criteria
 
-- [ ] Every deterministic case above passes in CI, and every existing evaluation case still passes.
-- [ ] Across all real-model runs, no hypothetical, dreamed or claimed content becomes a current fact.
-- [ ] In the control scenes, at most 10 % of actual-event assertions are labeled non-actual
-      (`hypothetical`, `dreamed`, `unknown`).
-- [ ] Negation and loss scenes produce negative assertions that end the right fact in at least two of
-      three runs per scene.
-- [ ] False-merge check: the second item keeps its own name in at least two of three runs. Otherwise
-      hints ship off by default (`NMOS_EXTRACT_HINTS=0`) and this is recorded.
-- [ ] Prompt tokens per turn with and without hints are measured and stated in the release notes.
-- [ ] Entity resolution adds at most 50 ms p50 to the fact read at 10,000 messages in the facts tier.
-      Otherwise the ADR 0012 fallback (persisted per head, same rules) is implemented and measured
-      before release.
-- [ ] Changing the resolver version re-derives every entity link with zero LLM calls and zero queued
-      jobs.
-- [ ] Upgrading a database written by `v0.1.0-beta.10` queues only the recent window, serves older
-      turns from `extract-v4`, and shows that in the Inspector.
-- [ ] With extraction switched off, existing facts read as in `v0.1.0-beta.10` (legacy), except
-      that versions are grouped by entity (e.g. `{{user}}` and `유저` are one persona).
-- [ ] A real-host smoke run (PocketRisu v1.12.0) injects a packet with the new attributes in one chat;
-      the plugin is unchanged.
+Status 2026-09-24. Real-model evidence: `docs/perf/phase5-extraction.md`
+(`deepseek-v4.1-flash:cloud`, 18 scenes × 3 runs).
+
+- [x] Every deterministic case above passes in CI, and every existing evaluation case still passes.
+      Six cases are in the memory evaluation (`docs/perf/eval-baseline.md`, full mode 16/16); alias,
+      hint, generation and rebuild cases are in `test_entities.py`, `test_hints.py`,
+      `test_generations.py` and `test_semantics.py`.
+- [x] Across all real-model runs, no hypothetical, dreamed or claimed content becomes a current fact
+      (0 of 21 runs).
+- [x] In the control scenes, at most 10 % of actual-event assertions are labeled non-actual
+      (`hypothetical`, `dreamed`, `unknown`): 1 of 32 (3.1 %).
+- [x] Negation and loss scenes produce negative assertions that end the right fact in at least two of
+      three runs per scene: 3/3 and 3/3.
+- [x] False-merge check: the second item keeps its own name in at least two of three runs (3/3 and
+      3/3). Hints stay on by default.
+- [x] Prompt tokens per turn with and without hints are measured (v4 910, v5 1,278, v5 with 40 hints
+      1,626 on the control scenes) and stated in the release notes.
+- [x] Entity resolution adds at most 50 ms p50 to the fact read at 10,000 messages in the facts tier:
+      +24 ms, the resolver itself 7 ms (`docs/perf/scale.md`). No persisted fallback.
+- [x] Changing the resolver version re-derives every entity link with zero LLM calls and zero queued
+      jobs (`test_entities.py`).
+- [x] Upgrading a database written by `v0.1.0-beta.10` queues only the recent window, serves older
+      turns from `extract-v4`, and shows that in the Inspector. Checked with the `v0.1.0-beta.10`
+      code writing a 12-turn chat and this code opening it (backfill 4): 4 jobs queued, 12 turns
+      served by the older generation, facts marked *older generation* and *legacy*; after the queue
+      drained, the recent turn's fact came from `extract-v5` and the older one still from `extract-v4`.
+- [x] With extraction switched off, existing facts read as in `v0.1.0-beta.10` (legacy), except
+      that versions are grouped by entity (e.g. `{{user}}` and `유저` are one persona)
+      (`test_semantics.py::test_legacy_rows_read_as_narration`).
+- [x] A real-host smoke run (PocketRisu v1.12.0) injects a packet with the new attributes in one chat;
+      the plugin is unchanged (`docs/perf/phase5-extraction.md`, "Real-host smoke").
 - [ ] `ARCHITECTURE.md` D7 (hints) and D20 (fallback) amended, D26 (entity identity) and D27
       (assertion semantics) added; README, the Korean guide,
-      `docs/KNOWN-ISSUES.md` (K8, K9, K18) and the changelog updated.
+      `docs/KNOWN-ISSUES.md` (K8, K9, K18) and the changelog updated. Done except the release-time
+      updates of the known issues and the changelog version section.
+
+Findings for the owner (not bars): a character introducing their own nickname in dialogue is
+extracted as a claim, so the alias is not linked (0/3); and most boasts and lies are labeled
+`modality=unknown`, so they are stored but not rendered as `<Claim>` (7 of 9).
 
 ## Implementation order
 
@@ -187,6 +203,7 @@ Each step is one reviewable change with its tests.
    2026-09-24* (`tests/test_hints.py`). It also fixed a step 4 defect: the fact query did not select
    `object_type`, so object entities were typed "?" on real reads (regression in `test_entities.py`).
 6. **Evaluation and release**: real-model tier, measurements, docs, release notes with cost.
+   *Evaluation done 2026-09-24* (`docs/perf/phase5-extraction.md`); release pending the owner.
 
 ## Stop conditions
 
