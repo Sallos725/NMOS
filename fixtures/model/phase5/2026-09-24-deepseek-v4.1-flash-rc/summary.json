@@ -1,0 +1,227 @@
+{
+  "model": "deepseek-v4.1-flash:cloud",
+  "url": "http://127.0.0.1:11434/v1",
+  "runs": 3,
+  "calls": 62,
+  "errors": [],
+  "bars": {
+    "no_false_state": {
+      "violations": 0,
+      "per_scene": {
+        "did not go": 0,
+        "plan to meet": 0,
+        "condition": 0,
+        "dream": 0,
+        "daydream": 0,
+        "boast": 0,
+        "lie": 0
+      }
+    },
+    "control_mislabel": {
+      "assertions": 34,
+      "non_actual": 1,
+      "ratio": 0.029,
+      "examples": [
+        [
+          "{{user}}",
+          "goal",
+          "도서관에 가기",
+          "hypothetical"
+        ]
+      ]
+    },
+    "negation": {
+      "lost map": "3/3",
+      "broken sword": "3/3"
+    },
+    "false_merge": {
+      "second map": "3/3",
+      "second key": "3/3"
+    }
+  },
+  "report": {
+    "alias": {
+      "self-introduction": "3/3",
+      "two scripts": "3/3"
+    },
+    "reuse": {
+      "same map again": "3/3"
+    },
+    "claims_in_false_state_scenes": {
+      "total": 32,
+      "rendered_as_claim": 25
+    }
+  },
+  "prompt_tokens_mean_controls": {
+    "v4": 910.0,
+    "v5": 1328.0,
+    "v5_with_40_hints": 1676.0
+  },
+  "completion_tokens_mean_v5": 2819.1,
+  "scenes": {
+    "lost map": {
+      "category": "negation",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "해안 지도: current=[('하나', 'negative')]",
+        "해안 지도: current=[('하나', 'negative')]",
+        "해안 지도: current=[('하나', 'negative')]"
+      ]
+    },
+    "broken sword": {
+      "category": "negation",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "낡은 검: current=[('카이토', 'negative')]",
+        "낡은 검: current=[('카이토', 'negative')]",
+        "낡은 검: current=[('카이토', 'negative')]"
+      ]
+    },
+    "did not go": {
+      "category": "false_state",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    },
+    "plan to meet": {
+      "category": "false_state",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    },
+    "condition": {
+      "category": "false_state",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    },
+    "dream": {
+      "category": "false_state",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    },
+    "daydream": {
+      "category": "false_state",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    },
+    "boast": {
+      "category": "false_state",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    },
+    "lie": {
+      "category": "false_state",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    },
+    "self-introduction": {
+      "category": "alias",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "also_called: [('미나토 하루카', '하루', 'valid', 'character_claim')]",
+        "also_called: [('미나토 하루카', '하루', 'valid', 'character_claim')]",
+        "also_called: [('미나토 하루카', '하루', 'valid', 'character_claim')]"
+      ]
+    },
+    "two scripts": {
+      "category": "alias",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "also_called: [('하나(Hana)', 'Hana', 'valid', 'narration')]",
+        "also_called: [('하나(Hana)', 'Hana', 'valid', 'narration')]",
+        "also_called: [('하나', 'Hana', 'valid', 'narration')]"
+      ]
+    },
+    "second map": {
+      "category": "false_merge",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "objects: [('카이토', 'possesses', '별자리 지도')]",
+        "objects: [('카이토', 'possesses', '별자리 지도')]",
+        "objects: [('카이토', 'possesses', '낡은 별자리 지도')]"
+      ]
+    },
+    "second key": {
+      "category": "false_merge",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "objects: [('유이', 'possesses', '녹슨 청동 열쇠'), ('유이', 'located_in', '분수대')]",
+        "objects: [('유이', 'possesses', '녹슨 청동 열쇠'), ('유이', 'located_in', '분수대')]",
+        "objects: [('유이', 'located_in', '분수대'), ('유이', 'possesses', '녹슨 청동 열쇠')]"
+      ]
+    },
+    "same map again": {
+      "category": "reuse",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "objects: ['해안 지도', '책상']",
+        "objects: ['해안 지도', '책상']",
+        "objects: ['해안 지도']"
+      ]
+    },
+    "library": {
+      "category": "control",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    },
+    "key handed over": {
+      "category": "control",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    },
+    "sprained ankle": {
+      "category": "control",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    },
+    "promotion": {
+      "category": "control",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    }
+  }
+}

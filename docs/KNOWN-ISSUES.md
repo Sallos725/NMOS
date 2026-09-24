@@ -1,6 +1,6 @@
 # NMOS Known Issues
 
-Current as of `v0.1.0-beta.11` (2026-09-24). This is the single list of what does not work, or works
+Current as of `v0.1.0-beta.12` (2026-09-24). This is the single list of what does not work, or works
 only partly, in the current release. Each release's "Known limitations" in `CHANGELOG.md` describes
 that release at the time; entries fixed later are listed under [Resolved](#resolved) below.
 
@@ -17,8 +17,8 @@ without a PocketRisu change.
 | K5 | Every generation hangs after installing, updating or disabling the plugin until reload | Host | host (H13) |
 | K6 | PocketRisu must be opened at `localhost` or HTTPS | Host | browser rule |
 | K7 | Tested on one PocketRisu build only; no group chats | Host | evidence / host (H11) |
-| K8 | Names are free text: one item under two names, or two items under one name | Memory | Phase 5 (unreleased, ADR 0012): stated aliases link names; extraction reuses earlier names |
-| K9 | A lost or destroyed item keeps its last holder | Memory | explicit loss: Phase 5 (unreleased, ADR 0013); other ends: Track B, B2 |
+| K8 | Names can still split: a new name with no stated alias is a new entity | Memory | reduced in beta.12 (ADR 0012); owner merge/split: Track B, B7 |
+| K9 | A destroyed or used-up item keeps its last holder unless the story says it is gone | Memory | explicit loss fixed in beta.12 (ADR 0013); other ends: Track B, B2 |
 | K10 | An item's holder and its place are separate facts and can disagree | Memory | Track B, B2 |
 | K11 | Character knowledge is a hint, not isolation | Memory | Track B, B5 (hard POV) |
 | K12 | A word in more than 200 messages brings no lexical excerpts | Recall | accepted trade-off (A3) |
@@ -31,6 +31,7 @@ without a PocketRisu change.
 | K19 | Plugin and sidecar versions are not checked against each other | Setup | not planned |
 | K20 | Small UI delays: bot name, menu language | UI | not planned |
 | K21 | API keys and the auth token are stored in plain text | Security | host (H12) |
+| K22 | What becomes a fact depends on the extraction model's labels | Memory | measured per model (`docs/perf/phase5-extraction.md`) |
 
 ## Performance
 
@@ -77,14 +78,19 @@ group-chat type (H11), so group-chat scenarios (S13) could not be run.
 
 ## Memory
 
-**K8 — Names are free text.** Facts are keyed by the text the extractor wrote. "지도" and "해안 지도"
-are different items, so a transfer the extractor names differently leaves two holders; two different
-items that share a name in one chat collapse into one. The same applies to every text-keyed fact
-and to character names in knowledge marks. Needs stable entity identity (Track B, B1). ADR 0011.
+**K8 — Names can still split.** Since 0.1.0-beta.12 facts are keyed by entity (ADR 0012): names are
+joined when the story states both in one turn ("하나(Hana)") or a character introduces their own
+nickname, and extraction is shown the chat's earlier names so it reuses them ("해안 지도" stays "해안
+지도" 3/3 in the real-model check). A new name with neither — the model writing "지도" for a hinted
+"해안 지도", or a nickname only others use — is still a separate entity, and two different items with
+the same name and type are still one. A character introducing themself under someone else's name
+merges the two until that turn is edited or deleted (the Inspector shows each alias's turn). Knowledge
+marks (`known_by`, `hidden_from`) stay free text. Owner corrections (merge/split) are Track B, B7.
 
-**K9 — Lost or destroyed items keep their last holder.** Only a new holder ends the previous one
-(ADR 0011). An item that is lost, destroyed or used up still shows who last held it. Needs transition
-semantics (Track B, B2).
+**K9 — Destroyed or used-up items keep their last holder.** A new holder ends the previous one (ADR
+0011), and since 0.1.0-beta.12 so does a statement that the holder no longer has it ("lost", "dropped
+into the sea", "gave away"; ADR 0013; 3/3 in the real-model check). An item that is destroyed, eaten or
+used up with no such statement still shows its last holder. Needs transition rules (Track B, B2).
 
 **K10 — Holder and place can disagree.** `possesses` and `located_in` are separate facts, so an item
 can show a holder from one turn and a place from another (ADR 0011). Track B, B2.
@@ -93,6 +99,12 @@ can show a holder from one turn and a place from another (ADR 0011). Track B, B2
 `hidden_from`) / unknown marks and the packet tells the model how to use them, but one generation
 writes for every character, so a secret can still leak (ADR 0007). Hard per-character isolation
 (D9 `character_pov`) is not authorized (Track B, B5).
+
+**K22 — Facts depend on the model's labels.** Since 0.1.0-beta.12 only what the extraction model labels
+as actual narration becomes a fact (ADR 0013). On the tested model (`deepseek-v4.1-flash`) 1 of 32
+(release candidate: 1 of 34) real events was labeled non-actual, no plan, dream or claim became a fact in 21 runs, and one run
+inferred a negation from a clue the narration did not state (`docs/perf/phase5-extraction.md`). Other
+models were not measured. *Workaround:* check the Inspector's "not actual" list if a fact is missing.
 
 ## Recall and gating
 

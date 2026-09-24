@@ -2,19 +2,20 @@
 
 ## Current phase
 
-**Phase 5 — Entity Identity and Semantic Assertions: current (authorized 2026-09-23).** Spec
-`docs/phases/PHASE-5.md`, ADRs 0012–0014. Step 1 of 6 (generation fallback, ADR 0014) done and released in `v0.1.0-beta.11`, with the fix for
-a stall in fact and state reads after edits in long chats (`docs/perf/scale.md`). Steps 2–3
-(`extract-v5`, migration 0014, fact reading and packet per ADR 0013, D27), step 4 (read-time
-entities, ADR 0012, D26) and step 5 (name hints in extraction, D7 amended) done, unreleased. Step 6's evaluation
-is done (`docs/perf/phase5-extraction.md`: every real-model bar met, real-host smoke passed); the
-release is pending the owner.
+**Phase 5 — Entity Identity and Semantic Assertions: complete (2026-09-24), released in
+`v0.1.0-beta.12`.** Spec `docs/phases/PHASE-5.md`, ADRs 0012–0014 (0012/0013 amended by the owner after
+the real-model tier), D26/D27, D7/D20 amended. Every acceptance criterion met: deterministic cases in
+CI, the real-model tier on the release candidate and a real-host smoke (`docs/perf/phase5-extraction.md`),
+latency (`docs/perf/scale.md`), a real upgrade from a `v0.1.0-beta.10` database. Next: Track B, B2
+(transition verifier), not authorized yet.
 Outside the phase (owner decision 2026-09-24, D28): an optional progress display on the chat screen,
-unreleased.
+released in `v0.1.0-beta.12`.
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.11` (2026-09-24), public repository and image.** Phase 5 step 1: a new LLM
+**Public beta `v0.1.0-beta.12` (2026-09-24), public repository and image.** Phase 5 (above), `clean-v2`
+normalizer (inline images no longer read as story), optional progress display (D28); migration 0014.
+`v0.1.0-beta.11` (2026-09-24): Phase 5 step 1: a new LLM
 model re-extracts only each chat's recent window and older turns keep the previous model's facts (ADR
 0014, D20 amended); fact and state reads no longer stall for seconds after an edit, reroll or swipe in a
 long chat. No schema change. `v0.1.0-beta.10` (2026-09-23): Track A stabilization:
@@ -61,9 +62,9 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Tests | `apps/sidecar/tests` (157), `adapters/pocketrisu-plugin/test` (46) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k (D24) |
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K21 current as of `v0.1.0-beta.10`, each with workaround and tracking (host, owner decision O5, Track B stage); resolved limitations listed |
-| Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B B1 is Phase 5 (current); B2–B7 not authorized |
+| Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B B1 = Phase 5 (complete); B2–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0014` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback |
-| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-5.md` | 0–3 met; 4 soft subset met; 5 current |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-5.md` | 0–3 met; 4 soft subset met; 5 met |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 
 ## Evidence status (Phase 0A)
@@ -80,7 +81,8 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 - O5 — retention of abandoned worldlines and `host_observation` growth (needed before Track B, B2).
   Superseded generations: decided 2026-09-23 (keep LLM extractions, prune embeddings and
   deterministic projections after full coverage; Track B §4); not implemented yet.
-- Phase 6+ (Track B, B2–B7): not authorized. B2 (transition verifier) is the intended next stage.
+- Phase 6+ (Track B, B2–B7): not authorized. B2 (transition verifier) is the intended next stage and needs
+  its own phase specification.
 
 ## Public release checklist (done 2026-09-23)
 

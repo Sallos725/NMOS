@@ -5,10 +5,18 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-Phase 5 (entity identity and semantic assertions, `docs/phases/PHASE-5.md`), steps 2–3. Schema:
-migration 0014. With an LLM configured, extraction becomes `extract-v5`: each chat re-extracts its
-latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once; older turns keep their `extract-v4` facts until
-**Extract all history** (ADR 0014).
+## 0.1.0-beta.12
+
+Phase 5: entity identity and semantic assertions (`docs/phases/PHASE-5.md`, ADRs 0012–0014), plus
+cleaner text and an optional progress display. Schema: migration 0014 (applied at startup). Upgrade
+both parts: `docker compose pull && docker compose up -d`, then replace the plugin file and reload
+PocketRisu.
+
+**One-time cost after upgrading.** The normalizer (`clean-v2`) and the extraction prompt
+(`extract-v5`) are new generations. Every message is re-embedded once (cheap). With an LLM configured,
+each chat re-extracts its latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once; older turns keep
+their `extract-v4` facts, marked *older generation* and *legacy* in the Inspector, until **Extract all
+history** on that chat (ADR 0014). Nothing re-extracts all history by itself.
 
 - **Negation** (ADR 0013). "Hana lost the map" or "Alice did not enter the hall" is stored as a
   negative assertion. It ends the current fact it denies (the same holder of an item, the same place)
@@ -34,9 +42,14 @@ latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once; older turns keep their 
   listed name when the turn clearly means that entity. "해안 지도" then stays "해안 지도" instead of becoming
   "지도" a few turns later. Each extraction records the names it was shown. Deleting the turn a name came
   from does not invalidate extractions that used it.
-- **Cost per extraction call** (`docs/perf/phase5-extraction.md`, `deepseek-v4.1-flash`): prompt tokens
-  910 → 1,278 for the new fields, 1,626 with a full 40-name hint list; completion tokens (mostly
-  reasoning) ≈2,500 per call, so a call costs roughly 10–20 % more in total.
+- **Cost per extraction call** (`docs/perf/phase5-extraction.md`, `deepseek-v4.1-flash`, release
+  candidate): prompt tokens 910 → 1,328 for the new fields and rules, 1,676 with a full 40-name hint
+  list; completion tokens (mostly reasoning) ≈2,800 per call, so a call costs roughly 10–25 % more in
+  total. Fewer known names send a shorter list; `NMOS_EXTRACT_HINTS=0` sends none.
+- **Checked on a real model** (`deepseek-v4.1-flash`, 18 Korean test scenes × 3 runs): no plan, dream
+  or claim became a fact (0 of 21), 1 of 34 plain events was labeled non-actual, losses ended the
+  right holding 3/3, a different item next to a hinted one kept its own name 3/3. On PocketRisu v1.12.0
+  the plugin injected `negated="true"` and `<Claim>` unchanged.
 - Inspector: an entity list (names, mentions, the turn each alias came from) and ambiguous names.
   API: `GET /v1/conversations/{id}/entities`.
 - The packet Note explains `negated` and `Claim` only in packets that use them.
@@ -60,6 +73,21 @@ latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once; older turns keep their 
   embedding progress. Off by default; turn it on in the panel (Settings or Status), which asks for
   PocketRisu's main-document permission. New plugin arg `hud`. Replace the plugin file and reload
   PocketRisu to get it.
+
+### Known limitations
+
+- Older turns keep their `extract-v4` facts (no negation, claims or name hints) until **Extract all
+  history**; the upgrade does not pay for all history by itself.
+- What becomes a fact depends on the extraction model's labels (K22). Only one model was measured; a
+  model that marks real events as plans or dreams loses those facts (see the Inspector's "not actual"
+  list). One run in the evaluation inferred a negation from a clue the narration did not state.
+- A destroyed, eaten or used-up item with no statement that it is gone keeps its holder, and an item's
+  holder and place are separate facts (K9, K10; transition rules are Track B, B2).
+- A name the story never ties to another stays a separate entity; a character introducing themself under
+  someone else's name merges the two until that turn is edited or deleted (K8).
+- The extraction prompt is longer (above). Fact reads at 10,000 messages take ≈95 ms (≈70 ms before;
+  `docs/perf/scale.md`).
+- Otherwise unchanged from 0.1.0-beta.11; the full list is `docs/KNOWN-ISSUES.md`.
 
 ## 0.1.0-beta.11
 
