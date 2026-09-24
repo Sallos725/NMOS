@@ -5,6 +5,10 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **An item is in one place** (Phase 6 step 1, ADR 0016, D30). Its holder and its place are one fact
+  history: "Hana puts the map on the table" ends Hana's holding, and "Kaito takes the map" ends "on the
+  table". Both stated in one turn stay together. Applies to existing facts at once (K10).
+
 - **Old vectors are cleaned up** (ADR 0015, D29; owner decision O5 for generations). After an
   embedding model or endpoint change, the previous vectors are deleted once the new ones cover the
   chat (the worker checks every 10 minutes); normalized text of older normalizers is deleted at

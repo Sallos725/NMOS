@@ -14,7 +14,7 @@ import psycopg
 from xml.sax.saxutils import escape, quoteattr
 
 from .entities import Resolution, resolve
-from .predicates import HOLDER_PER_ITEM, REGISTRY
+from .predicates import HOLDER_PER_ITEM, REGISTRY, whereabouts
 
 # `unit` is the turn (a message without one counts alone). `live` holds every extraction that still
 # matches the head, and `chosen` the one generation that serves its unit: the active one first, then the
@@ -65,10 +65,14 @@ def _object(a: dict[str, Any], r: Resolution | None) -> str:
     return r.key(a.get("object_type"), a["object"]) if r and a.get("object") else _norm(a["object"])
 
 
+def _item(a: dict[str, Any], r: Resolution | None) -> str:
+    return _object(a, r) if a["predicate"] in HOLDER_PER_ITEM else _subject(a, r)
+
+
 def version_key(a: dict[str, Any], r: Resolution | None = None) -> tuple:
     """Subject and object are entity ids where the resolver links them (ADR 0012), text otherwise."""
-    if a["predicate"] in HOLDER_PER_ITEM:  # one current holder per item (ADR 0011)
-        return (a["predicate"], "item", _object(a, r))
+    if whereabouts(a):  # one current holder per item (ADR 0011), one whereabouts with its place (PHASE-6)
+        return ("whereabouts", _item(a, r))
     pred = REGISTRY[a["predicate"]]
     if pred.cardinality == "single":
         return (a["predicate"], _subject(a, r)) + ((_object(a, r),) if pred.per_object else ())
@@ -77,14 +81,21 @@ def version_key(a: dict[str, Any], r: Resolution | None = None) -> tuple:
 
 def relation(a: dict[str, Any], r: Resolution | None = None) -> tuple:
     """What a negation must match, beyond the version key, to end a version (ADR 0013, item 4): the same
-    holder for an item, the same object and value for other single-valued predicates. Multi-valued keys
-    already contain everything."""
+    holder for an item, the same place for an item's place, the same object and value for other
+    single-valued predicates. Multi-valued keys already contain everything."""
     if a["predicate"] in HOLDER_PER_ITEM:
-        return (_subject(a, r),)
+        return (a["predicate"], _subject(a, r))
+    if whereabouts(a):
+        return (a["predicate"], _object(a, r))
     pred = REGISTRY[a["predicate"]]
     if pred.cardinality == "single":
         return ((_norm(a["value"]),) if pred.per_object else (_object(a, r), _norm(a["value"])))
     return ()
+
+
+def _unit(a: dict[str, Any]) -> int:
+    """The turn an assertion comes from (a message without one counts alone), as in ACTIVE_ASSERTIONS."""
+    return a["turn"] if a.get("turn") is not None else -1 - a["position"]
 
 
 def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> list[dict[str, Any]]:
@@ -93,22 +104,33 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
     A positive assertion becomes current. A negative one ends the current version only if it denies the
     same relation, and is then current itself (rendered negated); otherwise it stands as its own negative
     fact ("not in the harbor" while at home) until a positive assertion of that relation replaces it.
+
+    An item's whereabouts (PHASE-6 Q2) has two slots, holder and place, each folded as above. A new
+    holder or place also closes the other slot unless both come from the same turn ("Hana holds the map
+    in the library"): the newer statement says where the item is now.
     """
-    current: dict[str, Any] | None = None
+    slots: dict[str, dict[str, Any] | None] = {}
     negatives: dict[tuple, dict[str, Any]] = {}
     for a in history:
+        slot = a["predicate"] if whereabouts(a) else ""
+        current = slots.get(slot)
         rel = relation(a, r)
         if a["polarity"] == "negative" and current is not None and relation(current, r) != rel:
             negatives[rel] = a
             continue
         negatives.pop(rel, None)
-        current = a
+        if slot and a["polarity"] == "positive":
+            for other, held in list(slots.items()):
+                if other != slot and held is not None and _unit(held) != _unit(a):
+                    slots[other] = None
+        slots[slot] = a
     out = []
-    for fact in ([current] if current else []) + list(negatives.values()):
+    for fact in [s for s in slots.values() if s is not None] + list(negatives.values()):
         f = dict(fact)
         f["versions"] = len(history)
-        f["history"] = [{"position": h["position"], "turn": h["turn"], "subject": h["subject"], "value": h["value"],
-                         "object": h["object"], "polarity": h["polarity"]} for h in history]
+        f["history"] = [{"position": h["position"], "turn": h["turn"], "predicate": h["predicate"],
+                         "subject": h["subject"], "value": h["value"], "object": h["object"],
+                         "polarity": h["polarity"]} for h in history]
         f["claims"] = []
         out.append(f)
     return out

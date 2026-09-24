@@ -136,7 +136,7 @@ passing.
 | transfer | A holds → B holds: B current; history keeps A (ADR 0011, unchanged) |
 | put down | Hana holds the map → the map is on the table (later turn): whereabouts "on the table"; Hana no longer holds it |
 | picked up | the map is on the table → Kaito picks it up: whereabouts "held by Kaito"; the place is closed |
-| same turn | "Hana holds the map in the library" (one turn): held by Hana, at the library, one fact |
+| same turn | "Hana holds the map in the library" (one turn): held by Hana and at the library, both current in one whereabouts |
 | destroyed | Hana holds the letter → she burns it: no holder, no place; `destroyed: burned` is current |
 | eaten | the apple is eaten: no holder; the fact says eaten |
 | damaged, not destroyed | "the sword cracked" does not end its holder (stub rule mirrors the prompt rule) |
@@ -187,7 +187,9 @@ fold adds at most 30 ms p50 to the fact read at 10k.
 Each step is one reviewable change with its tests.
 
 1. **Fold and whereabouts (Q2)**: read-time only, with no generation change. Useful on its own for
-   K10, and it applies to existing data at once.
+   K10, and it applies to existing data at once. *Done 2026-09-24* (ADR 0016, D30;
+   `tests/test_transitions.py`, memory evaluation 20/20 in `full`). Outcome labels for every
+   assertion come with the Inspector (step 4).
 2. **`destroyed` and `extract-v6` (Q3)**: registry, prompt, stub rules, cases "destroyed", "eaten",
    "damaged".
 3. **Conflicts and packet (Q1, Q4)**: outcome `conflicting`, `disputed="true"`, the packet Note.
