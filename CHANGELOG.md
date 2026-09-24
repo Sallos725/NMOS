@@ -5,8 +5,37 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-- **Inspector: easier to read, and a view per character.** A conversation page opens with contents and
-  counts (a conflict is highlighted) and folds each section; retrievals, commits and messages start
+## 0.1.0-beta.13
+
+Phase 6: item transitions and conflicts (`docs/phases/PHASE-6.md`, ADRs 0016–0017, D30), and the
+retention decision O5 (ADRs 0015, 0018, D29, D31). Schema: migration 0015 (applied at startup).
+Upgrade both parts: `docker compose pull && docker compose up -d`, then replace the plugin file and
+reload PocketRisu. The plugin's request path is unchanged; its panel gains the Inspector changes below.
+
+**One-time cost after upgrading.**
+- **LLM extraction:** the prompt is `extract-v6`, a new generation. With an LLM configured, each chat
+  re-extracts its latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once. Older turns keep their
+  `extract-v5` facts until **Extract all history** on that chat (ADR 0014). The prompt grows by
+  ≈96 tokens per call (+7.2 % on the measured control scenes, `docs/perf/phase6-extraction.md`).
+- **Worker:** the worker compacts the host observations already stored (above) in its first
+  maintenance passes. Nothing is re-embedded.
+
+- **An item is in one place** (ADR 0016, D30). An item's holder and its place are one fact history.
+  "Hana puts the map on the table" ends Hana's holding, and "Kaito takes the map" ends "on the table".
+  Both stated in one turn stay together. This applies to existing facts at once (K10).
+- **Burned, eaten, used up** (ADR 0017). Extraction records `destroyed`, which ends the item's holder
+  and place: `<Fact kind="destroyed">letter destroyed: burned</Fact>`. A damaged item is not
+  destroyed (K9). In the real-model check, 4 of 4 scenes gave 3/3; damaged items and the control
+  scenes gave no `destroyed` in any run.
+- **Contradictions are shown, not settled.** If the story uses an item after destroying it, the fact
+  is marked `disputed="true"` and names what it contradicts:
+  `Hana possesses letter; but turn 5: letter destroyed: burned`. The packet Note explains the mark
+  only when it is used.
+- **Inspector: item timelines and conflicts.** Each item's history is listed oldest first, with what
+  became of every statement (current, superseded, ended, conflicting). A conflicts table lists facts
+  the story contradicts. Fact history in the API carries the same `outcome`.
+- **Inspector: easier to read, and a view per character** (read-only). A conversation page opens with
+  contents and counts (a conflict is highlighted) and folds each section; retrievals, commits and messages start
   folded, and conflicts come before facts. Predicates, lifecycles, commit reasons, freshness, modality
   and entity types read as words (the raw value is in the tooltip); ids are folded away. A **character**
   picker (a drop-down in the panel, links in the browser) opens one character's page: profile, what they
@@ -15,34 +44,27 @@ later, is `docs/KNOWN-ISSUES.md`.
   Refresh keeps the scroll position and open sections, **Back** returns to the previous page where you
   were, Back and Refresh stay at the top while scrolling, and times show in the viewer's time zone
   ("3 minutes ago").
-- **Edits and rerolls no longer store the whole chat again** (ADR 0018, D31; owner decision O5). The
-  record of each edit, reroll, swipe or delete kept every message row (≈1.1 MB at 10,000 messages). The
-  worker now stores it as the rows that changed, and only when they rebuild it exactly. Existing
-  databases are compacted too. Migration 0015.
+- **Edits and rerolls no longer store the whole chat again** (ADR 0018, D31). The record of each
+  edit, reroll, swipe or delete used to keep every message row (≈1.1 MB at 10,000 messages). The worker
+  now stores it as the rows that changed, and only when they rebuild it exactly. At 10,000 messages,
+  20 such actions went from 23.3 MB to 1.1 MB. Existing databases are compacted too.
+- **Old vectors are cleaned up** (ADR 0015, D29). After an embedding model or endpoint change, the
+  previous vectors are deleted once the new ones cover the chat (the worker checks every 10 minutes).
+  Normalized text of older normalizers is deleted at startup. Superseded LLM extractions are kept.
+  Switching back to a pruned embedding model re-embeds that chat.
 
-- **Burned, eaten, used up** (Phase 6 step 2, ADR 0017). Extraction records `destroyed`, which ends the
-  item's holder and place: `<Fact kind="destroyed">letter destroyed: burned</Fact>`. A damaged item is
-  not destroyed. New extraction prompt `extract-v6`: with an LLM configured, each chat re-extracts its
-  latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once. Older turns keep their `extract-v5` facts
-  until **Extract all history** (K9). The prompt grows by ≈96 tokens per call (+7.2 % on the measured
-  control scenes, `docs/perf/phase6-extraction.md`).
-- **Contradictions are shown, not settled** (Phase 6 step 3). If the story uses an item after
-  destroying it, the fact is marked `disputed="true"` and names what it contradicts:
-  `Hana possesses letter; but turn 5: letter destroyed: burned`. The packet Note explains the mark
-  when it is used.
-- **Inspector: item timelines and conflicts.** Each item's history reads oldest first with what became
-  of every statement (current, superseded, ended, conflicting), and a conflicts table lists facts the
-  story contradicts. Fact history in the API carries the same `outcome`.
+### Known limitations
 
-- **An item is in one place** (Phase 6 step 1, ADR 0016, D30). Its holder and its place are one fact
-  history: "Hana puts the map on the table" ends Hana's holding, and "Kaito takes the map" ends "on the
-  table". Both stated in one turn stay together. Applies to existing facts at once (K10).
-
-- **Old vectors are cleaned up** (ADR 0015, D29; owner decision O5 for generations). After an
-  embedding model or endpoint change, the previous vectors are deleted once the new ones cover the
-  chat (the worker checks every 10 minutes); normalized text of older normalizers is deleted at
-  startup. Superseded LLM extractions are kept. Switching back to a pruned embedding model re-embeds
-  that chat. No schema change.
+- Older turns keep their `extract-v5` facts, and so no `destroyed`, until **Extract all history**. An
+  item that older turns left with a holder keeps it until a v6 turn ends it.
+- `destroyed` depends on the extraction model (K22). Only one model was measured. In 1 of 3 runs of a
+  scene where a map was lost at sea, it was recorded as destroyed rather than lost; the holding ended
+  either way.
+- Conflicts are detected only for an item used after it was destroyed. Contradictions in other facts
+  still resolve to the newer statement, and there is no owner correction yet (Track B, B7).
+- Fact reads at 10,000 messages with item facts take ≈23 ms longer (`docs/perf/phase6-extraction.md`).
+- Abandoned branches and their vectors and extractions are kept, by decision (K17).
+- Otherwise unchanged from 0.1.0-beta.12; the full list is `docs/KNOWN-ISSUES.md`.
 
 ## 0.1.0-beta.12
 

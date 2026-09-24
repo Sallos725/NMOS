@@ -13,9 +13,9 @@ Continue the **current phase** as far as possible without violating any stop con
 
 The current phase is always the one named in `docs/STATUS.md`. As of 2026-09-24:
 
-> **Phase 6 — Item Transitions and Conflicts (`docs/phases/PHASE-6.md`, Track B, B2) is current**
-> (approved 2026-09-24). Phases 0–3, the Phase 4 soft subset and Phase 5 (`v0.1.0-beta.12`) are
-> complete. Public beta. Hard POV isolation (D9 `character_pov`) and Track B, B3–B7 are not
+> **Phase 6 — Item Transitions and Conflicts (`docs/phases/PHASE-6.md`, Track B, B2) is complete**
+> (2026-09-24, `v0.1.0-beta.13`). Phases 0–3, the Phase 4 soft subset and Phase 5 are complete.
+> Public beta. No phase is current: hard POV isolation (D9 `character_pov`) and Track B, B3–B7 are not
 > authorized. Bug fixes, correctness, docs and CI work stay allowed.
 
 Do not start a phase without its phase document and without the evidence it requires. Work that is
@@ -33,7 +33,7 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-6.md` is the current one;
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-6.md` is the latest;
    `PHASE-0.md`…`PHASE-5.md` still define the behavior they introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
 6. Relevant ADRs in `docs/adr/`.
@@ -67,7 +67,7 @@ If two normative documents appear to conflict:
 | 4 — character knowledge, soft subset | complete (beta) | `PHASE-4.md` |
 | 4 — hard POV isolation (`character_pov`) | **not authorized** | — |
 | 5 — entity identity and semantic assertions (Track B, B1) | complete (2026-09-24, beta.12) | `PHASE-5.md`, ADRs 0012–0014 |
-| 6 — item transitions and conflicts (Track B, B2) | **current** (approved 2026-09-24) | `PHASE-6.md` |
+| 6 — item transitions and conflicts (Track B, B2) | complete (2026-09-24, beta.13) | `PHASE-6.md`, ADRs 0016–0017 |
 | 7+ (Track B, B3–B7) | **not authorized** | `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,

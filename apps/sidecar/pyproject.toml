@@ -1,6 +1,6 @@
 [project]
 name = "nmos-sidecar"
-version = "0.1.0b12"
+version = "0.1.0b13"
 description = "NMOS sidecar and worker: source ledger, reconciliation, state, extraction, hybrid recall"
 requires-python = ">=3.12,<3.13"
 dependencies = [
