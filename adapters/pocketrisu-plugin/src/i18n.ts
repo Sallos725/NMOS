@@ -41,6 +41,7 @@ const STRINGS = {
   'outcome.failed': ['건너뜀 (원래 요청은 그대로 보냄)', 'Skipped (the request went out unchanged)'],
   // inspector view
   'insp.loading': ['인스펙터를 불러오는 중…', 'Loading the inspector…'],
+  'insp.back': ['← 뒤로', '← Back'],
   'insp.browser': ['브라우저에서 직접 열 수도 있습니다: {url}', 'Also available in a browser: {url}'],
   'act.history': ['과거 전체 추출', 'Extract all history'],
   'act.rebuild': ['기억 재구축', 'Rebuild memory'],
@@ -49,6 +50,7 @@ const STRINGS = {
   'act.delete_confirm': ['한 번 더 누르면 영구 삭제합니다', 'Click again to delete for good'],
   'act.sub': ['과거 전체 추출: 처음 연결할 때 건너뛴 이 채팅의 이전 턴까지 사실을 추출하고 임베딩합니다. 기억 재구축: 이 채팅의 사실을 버리고 모든 턴을 다시 추출합니다(원문은 그대로). 유료 API는 턴마다 비용이 듭니다. 대화 삭제: NMOS에 저장된 이 채팅의 모든 기록(원문 포함)을 지웁니다. 되돌릴 수 없습니다. PocketRisu의 채팅은 그대로이고, 그 채팅에서 다시 생성하면 새 대화로 처음부터 기록됩니다.',
     'Extract all history: extract facts and embeddings for the older turns of this chat that the first sync skipped. Rebuild memory: discard this chat\'s facts and extract every turn again (raw messages stay). Paid APIs cost money per turn. Delete conversation: delete everything NMOS stored for this chat, raw messages included. This cannot be undone. The chat in PocketRisu stays; generating in it again records it as a new conversation from scratch.'],
+  'act.help': ['이 버튼들은?', 'What do these do?'],
   'act.working': ['요청 중…', 'Requesting…'],
   'act.history_done': ['턴 {t}개 추출과 메시지 {m}개 임베딩을 백그라운드에 넣었습니다.', 'Queued {t} turns for extraction and {m} messages for embedding.'],
   'act.history_none': ['이미 전부 처리되었거나 처리 중입니다.', 'Everything is already processed or queued.'],

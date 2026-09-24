@@ -5,6 +5,16 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Inspector: easier to read, and a view per character.** A conversation page opens with contents and
+  counts (a conflict is highlighted) and folds each section; retrievals, commits and messages start
+  folded, and conflicts come before facts. Predicates, lifecycles, commit reasons, freshness, modality
+  and entity types read as words (the raw value is in the tooltip); ids are folded away. A **character**
+  picker (a drop-down in the panel, links in the browser) opens one character's page: profile, what they
+  hold with its timeline, facts about them, what they know and what is kept from them, and claims by or
+  about them (`/inspector/c/<id>/e/<entity>`, read-only; it changes nothing in the packet). In the panel,
+  Refresh keeps the scroll position and open sections, **Back** returns to the previous page where you
+  were, Back and Refresh stay at the top while scrolling, and times show in the viewer's time zone
+  ("3 minutes ago").
 - **Edits and rerolls no longer store the whole chat again** (ADR 0018, D31; owner decision O5). The
   record of each edit, reroll, swipe or delete kept every message row (≈1.1 MB at 10,000 messages). The
   worker now stores it as the rows that changed, and only when they rebuild it exactly. Existing
