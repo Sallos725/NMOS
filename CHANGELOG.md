@@ -5,34 +5,55 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-Phase 8 (in progress): event participants (`docs/phases/PHASE-8.md`, ADR 0021).
+## 0.1.0-beta.15
 
-- **Schema:** migration 0017 (`assertion.participants`, typed `{name, type}` JSON on `event`, `goal`,
-  `knows` and `destroyed`).
-- **The person an event happened to brings it back** (ADR 0021). A participant named in your message
-  counts like the event's subject, for facts and character claims; the persona never does. Needs turns
-  extracted with participants (`extract-v8`, next step); older turns recall as before.
-- **Extraction `extract-v8`.** Each `event`, `goal`, `knows` and `destroyed` lists the other characters
-  or groups it involves (`with`). New generation: each chat re-extracts its latest
-  `NMOS_EXTRACT_BACKFILL` turns once; older turns keep their `extract-v7` facts.
-- **Inspector.** The facts table has a "With" column (participants; a chip marks groups). A character's
-  page gains "Takes part in": facts where they are a participant but not the subject or object. A
-  character who is only ever a participant has a page too.
-- **Cost:** the extraction prompt grows by ≈161 tokens per call (+9.7 % over `extract-v7` on the
-  measured control scenes). Real-model check (`deepseek-v4.1-flash`, 3 runs per scene): participants
-  3/3 in all ten scenes, no participant in any of 12 control runs, the owner-reported "present but not
-  told" case never put the person in `known_by` (`docs/perf/phase8-extraction.md`).
-- **Entity ids change once** (`resolve-v2`): Inspector character links from before the upgrade no longer
-  open. KNOWN ENTITIES hints are unchanged.
-- **Inspector state example.** Current state, when nothing has been parsed yet, now shows a sample status
-  window matching `config/parsers.example.json`'s rules, so a first-time user can see the expected format
-  instead of just "no parser state." The guide and README show the same example.
+Phase 8: typed event participants (`docs/phases/PHASE-8.md`, ADR 0021, D33), plus Google Vertex AI
+keys for extraction (ADR 0022) and an Inspector status-window example. Schema: migration 0017 (applied
+at startup). New sidecar dependency: `google-auth`. Upgrade both parts: `docker compose pull && docker
+compose up -d`, then replace the plugin file and reload PocketRisu. The plugin's request path is
+unchanged; its settings panel gains the Vertex AI preset.
 
-**Google Vertex AI for fact extraction** (ADR 0022). The LLM API key field also takes a Google
-service-account JSON key: the sidecar exchanges it for access tokens and renews them every hour. A new
-**Google Vertex AI** provider preset fills the endpoint's project from the pasted key. LLM only; a JSON
-key for embeddings is rejected. New sidecar dependency: `google-auth`. Checked with a mocked token
-endpoint, not yet against real Vertex.
+**One-time cost after upgrading.**
+- **LLM extraction:** the prompt is `extract-v8`, a new generation. With an LLM configured, each chat
+  re-extracts its latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once. Older turns keep their
+  `extract-v7` facts, without participants, until **Extract all history** on that chat (ADR 0014). The
+  prompt grows by ≈161 tokens per call (+9.7 % on the measured control scenes,
+  `docs/perf/phase8-extraction.md`).
+- **Entity ids change once** (`resolve-v2`). Inspector character links saved before the upgrade no
+  longer open; the entities themselves and the KNOWN ENTITIES hints are unchanged.
+
+- **The person an event happened to brings it back** (ADR 0021). Extraction lists the other characters
+  or groups an `event`, `goal`, `knows` or `destroyed` fact involves (`with`). A participant named in
+  your message counts like the fact's subject, for facts and character claims: `Hana event: betrayed
+  Kaito` comes back when you address Kaito. The persona never counts, and being there is never read as
+  knowing (`known_by` / `hidden_from` are unchanged). Real-model check (`deepseek-v4.1-flash`, 3 runs
+  per scene): participants 3/3 in all ten scenes, none in 12 control runs, and the owner-reported
+  "present but not told" case never put the person in `known_by`. Fact reads at 10,000 messages take
+  ≈5 ms longer.
+- **Inspector.** The facts table has a "With" column (a chip marks groups). A character's page gains
+  "Takes part in": facts where they are a participant but not the subject or object. A character who is
+  only ever a participant has a page too.
+- **Inspector state example.** When nothing has been parsed yet, Current state shows a sample status
+  window matching `config/parsers.example.json`'s rules, so a first-time user sees the expected format.
+  The guide and README show the same example.
+- **Google Vertex AI for fact extraction** (ADR 0022). The LLM API key field also takes a Google
+  service-account JSON key: the sidecar exchanges it for access tokens and renews them every hour. A new
+  **Google Vertex AI** provider preset fills the endpoint's project from the pasted key. LLM only; a JSON
+  key for embeddings is rejected. Checked with a mocked token endpoint, not yet against real Vertex.
+
+### Known limitations
+
+- Older turns have no participants until **Extract all history**; they recall through their subject and
+  object only.
+- Participants depend on the extraction model (K22). On one model they agreed with a manual review in
+  83 of 87 assertions: one extra person on a fall into a river, three missed (two `knows`, one goal).
+- A relationship change can leave the earlier relationship or feeling current (K24; 2 of 9 runs in the
+  Phase 8 relationship report).
+- The Phase 7 minor-event scene "chores" passed 1 of 3 runs with `extract-v8`, because two runs
+  extracted no event at all. Ten more runs gave `extract-v7` 3/10 and `extract-v8` 4/10, so this is not
+  a regression; the owner accepted it (2026-09-24). No minor scene was labeled major.
+- Vertex AI is untested against the real service (JSON mode and model listing unverified).
+- Otherwise unchanged from 0.1.0-beta.14; the full list is `docs/KNOWN-ISSUES.md`.
 
 ## 0.1.0-beta.14
 
