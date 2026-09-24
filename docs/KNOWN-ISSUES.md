@@ -26,7 +26,7 @@ without a PocketRisu change.
 | K14 | Rare over-injection into an auxiliary call; transformed input gets no memory | Gating | accepted (ADR 0001) |
 | K15 | Thresholds and extraction quality are checked on limited data | Quality | evaluation (A5 baseline) |
 | K16 | NMOS does not notice a chat deleted in PocketRisu | Data | host (H10) |
-| K17 | Storage grows with abandoned branches and observations | Data | O5 (superseded vectors and text pruned since ADR 0015; worldlines open) |
+| K17 | Storage grows with abandoned branches and observations | Data | O5 decided: superseded vectors pruned (ADR 0015), observations compacted (ADR 0018); abandoned branches kept |
 | K18 | Changing a model or endpoint re-processes history at the provider's cost | Data | LLM: bounded to the recent window since beta.11 (ADR 0014); embeddings: by design |
 | K19 | Plugin and sidecar versions are not checked against each other | Setup | not planned |
 | K20 | Small UI delays: bot name, menu language | UI | not planned |
@@ -146,8 +146,10 @@ edited-away branches, with their vectors) and host observations (≈2.7 KB per g
 kept for audit, and so are superseded LLM extractions (by decision). A 10,000-message synthetic chat
 with embeddings takes ≈120 MB. Since ADR 0015 (unreleased), superseded vectors are deleted once the
 new embedding projection covers the chat, and older normalized text at startup, so a model change no
-longer leaves a second copy of every vector. Retention of abandoned worldlines and observations is
-still owner decision O5. *Workaround:* delete conversations you no longer use.
+longer leaves a second copy of every vector. Since ADR 0018 (unreleased), an edit, reroll or swipe
+no longer keeps a full copy of the chat's manifest: the worker stores it losslessly as the rows that
+changed (≈1.1 MB → ≈1.4 KB per action at 10,000 messages). Abandoned branches stay, by decision (O5).
+*Workaround:* delete conversations you no longer use.
 
 **K18 — Model changes re-process history.** Changing the LLM or embedding model or endpoint, or a
 release that changes the extraction generation (as 0.1.0-beta.8 did), re-derives all previously

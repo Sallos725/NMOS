@@ -16,6 +16,7 @@ from test_vectors import FakeEmbedder, drain_embeddings
 TABLES = {
     "conversation": "SELECT count(*) FROM conversation WHERE id = %(c)s",
     "host_observation": "SELECT count(*) FROM host_observation WHERE conversation_id = %(c)s",
+    "observation_base": "SELECT count(*) FROM observation_base WHERE conversation_id = %(c)s",
     "source_object": "SELECT count(*) FROM source_object WHERE conversation_id = %(c)s",
     "source_revision": "SELECT count(*) FROM source_revision sr JOIN source_object so ON so.id = sr.source_object_id"
                        " WHERE so.conversation_id = %(c)s",
