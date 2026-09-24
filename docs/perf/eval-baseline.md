@@ -1,4 +1,4 @@
-# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5, 6 and 7 cases 2026-09-24)
+# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5–8 cases 2026-09-24)
 
 Deterministic tier of the RP memory evaluation. It gates CI (`apps/sidecar/tests/test_memory_eval.py`)
 and prints this table (`tools/eval_memory.py`).
@@ -18,7 +18,8 @@ and prints this table (`tools/eval_memory.py`).
   Z."; an item's end "X burns / eats the Y." → `destroyed`, and no rule for damage; since Phase 7 a
   promise its maker says 'X says to Y: "I promise to …."', one reported by someone else 'Z says: "X
   promised Y to …."', a broken one "X breaks the promise to Y to ….", a kept one "X kept the promise to …." →
-  `fulfilled`, minor events "X did chore N." and a major event "X betrayed Y."); the embedder is a concept bag with weak
+  `fulfilled`, minor events "X did chore N." and a major event "X betrayed Y." (since Phase 8 with Y as
+  its participant)); the embedder is a concept bag with weak
   hashed words. Results therefore measure
   reconciliation, invalidation, retrieval and packet compilation, not model quality.
 - **Measured on the packet**, never on a generated answer, so no judge model is involved:
@@ -72,14 +73,15 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | delete removes the promise | open thread | — | — | — | — |
 | events leave room | event salience | **no** | **no** | **no** | yes |
 | major event first | event salience | **no** | **no** | **no** | yes |
+| addressed participant | event participants | **no** | **no** | **no** | yes |
 | unrelated question | irrelevant-memory suppression | — | empty | empty | empty |
 
 | Mode | gold reached | cases with stale memory | irrelevant packets | mean packet tokens |
 |---|---:|---:|---:|---:|
-| recent | 0/30 | 0 | — | 0 |
-| lexical | 2/30 | 0 | 0/1 | 110 |
-| hybrid | 3/30 | 0 | 0/1 | 135 |
-| full | 30/30 | 0 | 0/1 | 168 |
+| recent | 0/31 | 0 | — | 0 |
+| lexical | 2/31 | 0 | 0/1 | 107 |
+| hybrid | 3/31 | 0 | 0/1 | 131 |
+| full | 31/31 | 0 | 0/1 | 167 |
 
 Before Phase 6 step 1 (ADR 0016), `full` had stale memory in "put down" (`Hana possesses map`) and
 "picked up" (`map located in table`).
@@ -88,6 +90,8 @@ fact slot. Before step 2, "promise recalled" missed its gold: the promise reache
 `<Claim>`, never as an open thread.
 Before step 4, "major event first" missed its gold: its minor events, newer and all naming Hana, took the
 three event slots.
+Before Phase 8 step 2, "addressed participant" missed its gold in every mode: the event names Kaito only
+in its value, and recall counted only subjects and objects as mentions.
 
 "—": the case has no gold (the deleted turn only checks that nothing of it comes back).
 

@@ -13,7 +13,7 @@ from uuid import UUID
 import psycopg
 from xml.sax.saxutils import escape, quoteattr
 
-from .entities import Resolution, resolve
+from .entities import PERSONA, Resolution, node, resolve
 from .predicates import HOLDER_PER_ITEM, REGISTRY, whereabouts
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
@@ -46,6 +46,7 @@ live AS (
 )
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.value, a.epistemic, a.confidence, a.evidence,
        a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
+       a.participants,
        l.position, l.turn, l.host_logical_id, l.extractor_key AS generation
 FROM live l
 JOIN assertion a ON a.extraction_id = l.eid
@@ -245,7 +246,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
 
 
 def _annotate(row: dict[str, Any], r: Resolution) -> None:
-    """Entity of subject and object, and every name they go by (recall matches any of them)."""
+    """Entity of subject and object, and every name they go by (recall matches any of them).
+
+    Typed participants (PHASE-8) resolve the same way and add their names too, except the persona: it is
+    in every chat, so it is never a mention (Q4). They change no knowledge mark and no version key.
+    """
     names: list[str] = []
     for role, kind, name in (("subject", row.get("subject_type"), row["subject"]),
                              ("object", row.get("object_type"), row.get("object"))):
@@ -258,6 +263,16 @@ def _annotate(row: dict[str, Any], r: Resolution) -> None:
         else:
             row[f"{role}_entity"] = {"status": r.status(kind, name), "candidates": r.candidates(kind, name)}
             names.append(name)
+    resolved = []
+    for p in row.get("participants") or ():
+        e = r.entity(p["type"], p["name"])
+        resolved.append({**p, "entity": {"id": e["id"], "name": e["name"]} if e else
+                         {"status": r.status(p["type"], p["name"]), "candidates": r.candidates(p["type"], p["name"])}})
+        if node(p["type"], p["name"])[1] == PERSONA:
+            continue
+        names += e["names"] if e else [p["name"]]
+    if resolved:
+        row["participant_entities"] = resolved
     row["names"] = names
 
 

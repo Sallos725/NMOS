@@ -74,6 +74,14 @@ narration-only rule never linked a self-introduction. A claim about someone else
 still links nothing. An impostor who introduces themself under another's name can therefore merge two
 entities until that turn is edited or deleted; the Inspector shows the turn each alias came from.
 
+## Amendment (2026-09-24, Phase 8, ADR 0021)
+
+Typed participants of an assertion (`event`, `goal`, `knows`, `destroyed`) are mentions too, under
+`resolve-v2`. The resolver reads them in a second pass, after every subject, object and evidenced alias
+name, so they never change an existing entity's representative spelling, name order, aliases or
+grouping. They never create alias edges. KNOWN ENTITIES candidates still come from subject and object
+mentions only (item 5), and the serialized hint block is unchanged by participants.
+
 ## Consequences
 
 - K8 is reduced where the model reuses hinted names or the story states an alias. It is not
