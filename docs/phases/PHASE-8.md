@@ -15,10 +15,10 @@ different answer changes only the parts it names.
 | # | Question | Recommended | Alternatives |
 |---|---|---|---|
 | Q1 | **Phase boundary.** What remains of B3: event participants, place, observers, narrative time, relationship history, other thread kinds, causal links. Which part is Phase 8? | **Participants only**: the other characters an event (or another fact told in its value) involves. It is the one measured gap (below). Relationships are measured in this phase's real-model tier, as report-only evidence for a later decision. | (b) Participants and relationship history in the packet ("used to be rivals until turn 40"). No relationship was ever extracted in the recorded runs, so this would be built without evidence. (c) First-class event records (participants, place, observers, narrative time). |
-| Q2 | **How are participants recorded?** | By the extractor: a new field `with` (the other characters or groups the value involves, as named in the turn), stored in `assertion.participants` (migration 0017) under a new generation `extract-v8`. Names are resolved to entities at read time like subjects and objects (ADR 0012). | (b) At read time, by finding known entity names in the value text. No new generation, but a name can be an ordinary word: "하나" is also "one", and the Phase 6 scene text has "성냥은 하나도 없었다" ("not a single match left"). (c) Allow one `object` on `event` (one participant only; still a new generation). |
-| Q3 | **Which assertions carry participants?** | Every assertion with a value text (`event`, `goal`, `knows`, `destroyed`, `fulfilled`, `has_status`, `identity`, `world_fact`, `has_trait`). The gap shows in five of them (below); one rule is simpler for the model than a list. | (b) `event` only (51 of the 85 measured cases). |
+| Q2 | **How are participants recorded?** | By the extractor: a new field `with`, a list of `{name, type}` objects for the other characters or groups the value involves, as named in the turn. It is stored in `assertion.participants` as JSON (migration 0017) under a new generation `extract-v8`. A stored type is required because ADR 0012 keys identity by `(type, name)`; an untyped name must not silently prefer a character over a same-named group. | (b) Store names only and resolve `character`, then `group`. This guesses when both types have the same name. (c) At read time, find known entity names in the value text. No new generation, but a name can be an ordinary word: "하나" is also "one", and the Phase 6 scene text has "성냥은 하나도 없었다" ("not a single match left"). (d) Allow one `object` on `event` (one participant only; still a new generation). |
+| Q3 | **Which assertions carry participants?** | Only the predicates where the recorded runs show the gap: `event`, `goal`, `knows`, and `destroyed`. `fulfilled` is excluded even though two values name another character: ADR 0019 consumes every resolution in the thread fold, so it has no fact-recall or character-page consumer in this phase. | (b) `event` only (51 of the 83 measured, usable cases). (c) Every value-bearing predicate except aliases and thread resolutions; this would include predicates for which no participant behavior has been measured. |
 | Q4 | **How does a participant count for recall?** | Like the subject: a participant named in the user's message scores as a mention (2.0), in the previous reply 1.0. The persona's names never count, as for threads (ADR 0019). The event cap and salience (ADR 0020) and knowledge marks (D19) are unchanged. | (b) Weaker than the subject (e.g. 1.5), so facts about the addressed character come first. (c) Only in the Inspector. |
-| Q5 | **Turns extracted before `extract-v8`** have no participants. | Nothing at read time: they recall as today until **Extract all history**. A second, text-based rule for older turns would give two answers to the same question depending on the generation. | (b) Q2 (b) as a fallback for older generations only. |
+| Q5 | **Turns extracted before `extract-v8`** have no participants. | Nothing at read time: they recall as today until **Extract all history**. A second, text-based rule for older turns would give two answers to the same question depending on the generation. | (b) Q2 (c) as a fallback for older generations only. |
 
 ## Goal
 
@@ -50,6 +50,11 @@ The same happens in other value-carrying predicates:
 | `knows` | 10 of 19 |
 | `fulfilled` | 2 of 6 |
 
+The `fulfilled` cases establish that names can occur in resolution text, but they do not justify a
+Phase 8 field: ADR 0019 consumes matched and unmatched resolutions before fact recall. Making a third
+party affect thread recall would change thread semantics, which is out of scope. The usable measured
+scope is therefore 83 cases across `event`, `destroyed`, `goal` and `knows`.
+
 **Mention-based recall ignores them.** `relevant_facts` counts a mention only for the subject and
 object entities (`names`). A deterministic check (2026-09-24; the function as released in beta.14):
 three events whose second participant is 카이토, each labeled major and then unlabeled, against three
@@ -66,18 +71,28 @@ and builds nothing for it.
 
 ## In scope
 
-1. **Participants field (Q2, Q3).** Extraction item field `with`: a list of names of other characters or
-   groups the value involves, as the TARGET turn names them, at most 6. Validation keeps names only
-   (strings, ≤ 60 characters, not the subject or object, no duplicates) and only on assertions that
-   have a value. Migration 0017: `assertion.participants text[]`, NULL for every existing row.
+1. **Participants field (Q2, Q3).** Extraction item field `with`: a list of objects
+   `{name: string, type: "character" | "group"}` for other characters or groups the value involves,
+   as the TARGET turn names them, at most 6. Validation keeps entries with a name of at most 60
+   characters and one of those two types; drops the subject, object and duplicates by normalized
+   `(type, name)`; and keeps the field only on `event`, `goal`, `knows` and `destroyed`. Migration
+   0017: `assertion.participants jsonb`, NULL for every existing row. The column contains a JSON array,
+   never another shape.
 2. **Extraction `extract-v8`.** Registry unchanged; the prompt gains one rule: `with` lists the other
    characters or groups the value is about (who received, who was attacked, who is kept from
-   something). It lists only names in the TARGET turn, never the subject or object again, and never a
-   place or item. New generation: recent window only, older turns served by `extract-v7` (ADR 0014).
-3. **Resolution.** Participant names resolve like subjects and objects (type `character`, then `group`;
-   ADR 0012), and are shown as entities or as unresolved text. They join the fact's `names`, so aliases
-   work. They are not part of any version key: a participant never makes two facts different or the
-   same.
+   something), with each one's type. It is emitted only for the four predicates in item 1, lists only
+   entities named in the TARGET turn, never repeats the subject or object, and never lists a place or
+   item. New generation: recent window only, older turns served by `extract-v7` (ADR 0014).
+3. **Resolution.** A participant is a typed mention and resolves exactly like a subject or object of
+   that type (ADR 0012); it is shown as an entity or as unresolved/ambiguous text. Participants join
+   the resolver's mention set under a new `RESOLVER_VERSION`, so a character first seen only as an
+   event's participant can have an Inspector page. Different types never merge, and an ambiguous
+   alias links nobody. A resolved participant and all of its aliases join the fact's `names`. A
+   participant is not part of any version key: it never makes two facts different or the same.
+   Participants are not KNOWN ENTITIES hint candidates (ADR 0012, item 5): `entity_hints` keeps
+   ordering candidates from subject and object mentions only, so a character seen only as a
+   participant is not listed, and the extraction prompt's input does not change because of
+   participants.
 4. **Recall (Q4).** A participant is a mention like the subject: 2.0 in the user's message, 1.0 in the
    previous reply. Persona names excluded. Event cap, salience and minor-event lexical bar unchanged.
 5. **Packet.** The fact line is unchanged (the value already names the participant). No new attribute,
@@ -95,9 +110,14 @@ and builds nothing for it.
   are, and observers are not knowledge.
 - Narrative time, event links and causal links.
 - Thread kinds other than promises (Phase 7 Q1).
-- Deriving participants from text at read time for any generation (Q2 b, Q5 b).
-- Participants on assertions without a value (`possesses`, `located_in`, `member_of`,
-  `relationship`, `feels_toward`, `promised`: their object already names the other party).
+- Deriving participants from text at read time for any generation (Q2 c, Q5 b).
+- Participants on predicates outside the measured set. This includes assertions without a value
+  (`possesses`, `located_in`, `member_of`), object relations (`relationship`, `feels_toward`,
+  `promised`), aliases (`also_called`), thread resolutions (`fulfilled`), and the currently unmeasured
+  value predicates (`has_status`, `identity`, `world_fact`, `has_trait`).
+- Participants as KNOWN ENTITIES hint candidates. Adding them would change the extraction input: 40
+  hints cost ≈350 prompt tokens (`docs/perf/phase5-extraction.md`), and the larger risk is that they push
+  existing hints out of a full list. That needs its own token, crowd-out and false-merge evaluation.
 - Knowledge inference from participation ("카이토 took part, so 카이토 knows"). That is Track B, B5.
 - Canon sources (B4), principal-aware knowledge and hard POV (B5), MCP and forensic recall (B6), owner
   repair (B7).
@@ -108,12 +128,20 @@ and builds nothing for it.
 - Migration 0017 adds one nullable column; no backfill.
 - With an LLM configured, `extract-v8` becomes active at startup. Each chat re-extracts its latest
   `NMOS_EXTRACT_BACKFILL` turns (default 100) once. That is the second such re-extraction in two
-  releases, after beta.14's `extract-v7`. Older turns keep their `extract-v7` facts, without participants, until "extract all
-  history".
+  releases, after beta.14's `extract-v7`. Older turns keep their `extract-v7` facts, without
+  participants, until "extract all history".
+- The resolver becomes `resolve-v2` because typed participants join its mention set. Entity ids and
+  Inspector entity URLs are recomputed on the next read, as ADR 0012 specifies for a resolver change;
+  no stored source or assertion row is rewritten. Existing aliases and subject/object identity rules
+  are otherwise unchanged. KNOWN ENTITIES hints are unchanged: participants are not hint candidates
+  (item 3). An entity first mentioned as a participant may show that mention's spelling of the same
+  normalized name.
 - The prompt grows by one field in the answer schema and one rule: an estimated +2–4 % prompt tokens,
   and a few completion tokens per assertion with participants. Both measured and stated in the release
   notes.
-- With extraction off: nothing changes.
+- With extraction off, no participant data is produced and recall behavior is unchanged. The
+  `resolve-v2` id recomputation above still occurs because resolver identity is a code version, not an
+  extraction setting.
 
 ## Evaluation
 
@@ -123,14 +151,18 @@ New cases in `apps/sidecar/tests/memeval.py` and unit tests. Every existing case
 
 | Case | Must hold |
 |---|---|
-| addressed participant | "Hana confesses to Kaito." (event with `with: [Kaito]`), 12 turns later "Kaito, long time no see.": the event is in the packet |
+| addressed participant | "Hana confesses to Kaito." (major event with `with: [{name: Kaito, type: character}]`), 12 turns later "Kaito, long time no see.": the event is in the packet |
 | subject still counts | the same event comes back when Hana is addressed, as before |
 | alias | the participant is named by an alias ("하나(Hana)" established earlier): still a mention |
-| persona participant | an event with `with: [{{user}}]` does not come back for a query naming only the persona |
+| persona participant | an event with `with: [{name: {{user}}, type: character}]` does not come back for a query naming only the persona |
 | minor event | a minor event with a participant still needs the query to be about it (ADR 0020) |
 | cap | participant mentions do not exceed the event cap |
-| not a version key | two events differing only in participants stay two facts only if their values differ; a participant never merges or splits facts |
-| validation | `with` on `possesses` is dropped; the subject or object repeated in `with` is dropped; non-string entries are dropped |
+| not a version key | otherwise identical events with different participant arrays share one version key; events with different values remain distinct |
+| typed identity | a character and group with the same normalized name stay distinct; an ambiguous alias links neither |
+| participant-only entity | a typed participant never used as a subject or object still has an entity and character page |
+| predicate boundary | `with` is kept on `event`, `goal`, `knows` and `destroyed`; it is dropped on `fulfilled`, `possesses` and every other predicate |
+| validation | the subject or object repeated in `with` is dropped; malformed entries, unknown types and normalized duplicates are dropped |
+| hints unchanged | a character named only as a participant is not in KNOWN ENTITIES; the hint list for a chat with participants equals the one without them |
 | older generation | a v7 row has no participants and recalls as before |
 | Inspector | the character page lists "Takes part in" facts; the facts table shows participants |
 | edit | editing the turn away removes the fact and its participants on the next read |
@@ -144,15 +176,21 @@ Prompts, raw outputs, model and endpoint go under `fixtures/model/phase8/`, and 
 - two-person events: giving, attacking, confessing, rescuing (at least two each for giving and
   confessing);
 - a group event (bandits attack two travelers);
-- a goal and a knowledge fact about another character;
+- a goal, a knowledge fact and a destroyed-item fact about another character;
 - controls: solo events (a walk, cooking), an event at someone's house without them ("하나는 카이토의 집
   앞을 지나갔다"), and a scene with "하나도" as a word and no character 하나;
-- **relationship report (no bar):** a friendship turning into rivalry, a confession accepted
-  (becoming lovers), and a reconciliation. Recorded: whether `relationship` or `feels_toward` is
+- **relationship report (no extraction-rate bar):** a friendship turning into rivalry, a confession
+  accepted (becoming lovers), and a reconciliation. Recorded: whether `relationship` or `feels_toward` is
   extracted, whether the new value supersedes the old one (read with the fact fold), and whether the
   history would answer "what were they before".
 
 The Phase 5, 6 and 7 scenes are re-run with `extract-v8`.
+
+The scope audit behind this phase is committed beside the result as
+`fixtures/model/phase8/scope-audit.json`: each counted assertion records its source fixture/run,
+predicate, subject, value and manually identified participant names. The deterministic 0-of-18
+beta.14 recall check is committed as a test or runnable script. The summary is derived from those
+artifacts rather than copied only into this document.
 
 ### Performance
 
@@ -165,17 +203,22 @@ against beta.14. Fact read (with participant resolution and mention scoring) add
 - [ ] Every deterministic case above passes in CI, and every existing evaluation case still passes.
 - [ ] Two-person and group scenes: the other participant(s) are in `with` in at least two of three
       runs per scene.
-- [ ] Goal and knowledge scenes: the other character is in `with` in at least two of three runs.
-- [ ] Controls: no participant in any run that the TARGET turn does not name as a person, and none in
-      the "하나도" scene.
+- [ ] Goal, knowledge and destroyed-item scenes: the other character is in `with` with the right type
+      in at least two of three runs.
+- [ ] Controls: every solo, absent-householder and "하나도" run has an empty `with`. Separately, every
+      participant emitted in a positive scene is named as a character or group in the TARGET turn.
 - [ ] The Phase 5, 6 and 7 bars still hold with `extract-v8`.
-- [ ] Relationship report recorded (numbers, no bar).
+- [ ] Relationship report recorded (numbers, no extraction-rate bar). A result is a later-phase input,
+      not a Phase 8 failure unless it exposes an invariant violation or a regression caused by Phase 8.
+- [ ] The participant scope audit and the beta.14 0-of-18 recall check are committed and reproducible.
 - [ ] Prompt and completion tokens per turn, v7 against v8, measured and in the release notes.
 - [ ] Fact read at 10k: at most +15 ms p50 against beta.14.
 - [ ] Upgrade from a `v0.1.0-beta.14` database: migration 0017 applies, only the recent window is
-      queued, older turns are served by `extract-v7` and recall as before.
-- [ ] A real-host smoke run (PocketRisu v1.12.0) injects an event by addressing its participant, not
-      its subject. The plugin is unchanged.
+      queued, older turns are served by `extract-v7` and recall as before; `resolve-v2` recomputes
+      entity ids without rewriting source or assertion rows.
+- [ ] A real-host smoke run (PocketRisu v1.12.0) injects a major event from outside the prompt window
+      by addressing its participant, not its subject, with no lexical overlap beyond the participant's
+      name. The plugin is unchanged.
 - [ ] `ARCHITECTURE.md` (a new decision for participants), an ADR for participants, README, the Korean
       guide, `docs/KNOWN-ISSUES.md` and the changelog updated.
 
@@ -185,8 +228,9 @@ Each step is one reviewable change with its tests.
 
 1. **Schema and validation**: migration 0017, `with` normalization, stored participants; nothing reads
    them yet.
-2. **Resolution and recall (Q4)**: participants in `names`, mention scoring, persona exclusion; works on
-   rows written by stub extractors in tests.
+2. **Resolution and recall (Q4)**: typed participants in the resolver's mention set (`resolve-v2`),
+   in `names`, mention scoring, persona exclusion, hints unchanged; works on rows written by stub
+   extractors in tests.
 3. **`extract-v8`**: the prompt rule and answer field; stub rules for the deterministic cases.
 4. **Inspector**: participants column, "Takes part in".
 5. **Evaluation and release**: real-model tier with the relationship report, measurements, docs,
@@ -201,7 +245,8 @@ Stop and ask the owner when:
 - participant recall pulls in facts about a character that the turn only mentions in passing often
   enough to crowd the packet (the event cap should prevent this; if it does not, the rule is wrong);
 - a participant would need to change a version key, a knowledge mark or a thread;
-- the relationship report shows a current-state error that users would hit (a later phase needs the
-  owner's decision; this phase does not fix it);
+- the relationship report exposes an architecture-invariant violation, or Phase 8 changes relationship
+  behavior; an existing non-invariant relationship limitation is recorded for a later owner decision
+  and does not by itself fail this phase;
 - a second migration, a stored projection or a new runtime dependency seems necessary;
 - a change would overwrite old assertions or extractions instead of adding a generation.
