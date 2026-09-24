@@ -22,6 +22,10 @@ Phase 7 (in progress): promise threads and event salience (`docs/phases/PHASE-7.
   `event` gets `salience` (`major` / `minor`). New generation: each chat re-extracts its latest
   `NMOS_EXTRACT_BACKFILL` turns once; older turns keep their `extract-v6` facts. Schema: migration 0016
   (`assertion.salience`).
+- **Important events first** (ADR 0020). Among the events that fit the cap, `major` ones come before
+  minor and unlabeled ones, and a `minor` event reaches the packet only when the user's message is
+  about it, not merely when its subject is named. Events of older turns are unlabeled and rank as
+  before.
 
 ## 0.1.0-beta.13
 
