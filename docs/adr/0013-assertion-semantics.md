@@ -69,6 +69,14 @@ The owner put authored canon in B4.
    extracted with their modality when they are durable story content, so they can later feed threads
    (Track B, B3). Small talk still yields an empty list.
 
+## Amendment (2026-09-24, owner, after the real-model tier)
+
+A claim with `modality=unknown` is a claim too. The model marks most boasts and lies as unknown (7 of
+9, `docs/perf/phase5-extraction.md`): a claim's truth is unknown by nature. Claims are therefore
+`source=character_claim` with modality `actual` or `unknown`; they still never supersede narration and
+still reach the packet only as `<Claim>`. A claim about a plan or a dream (`hypothetical`, `dreamed`)
+stays out of the packet, like any other non-actual assertion.
+
 ## Consequences
 
 - K9 is fixed for explicit loss and giving-up statements the extractor labels as negative. Implicit

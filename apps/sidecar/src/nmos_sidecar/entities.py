@@ -1,9 +1,10 @@
 """Entity identity at read time (Phase 5, ADR 0012, D26). Pure: no database, no model.
 
 A mention is (entity type, normalized name). Within one conversation the same type and name is one
-entity, the persona names are one entity, and names are linked only by `also_called` assertions that
-the story narrates as actual (extraction already required both names in the turn, so an alias lives
-exactly as long as that turn is active). A name linked to names that are otherwise unconnected (a
+entity, the persona names are one entity, and names are linked only by actual `also_called` assertions
+that the story narrates, or that a character says about their own name (a self-introduction, owner
+decision 2026-09-24; extraction already required both names in the turn, so an alias lives exactly as
+long as that turn is active). A name linked to names that are otherwise unconnected (a
 nickname shared by two people) is ambiguous: its mentions keep their text key and link to nobody.
 Transliteration or similarity never links names. Nothing is stored: a resolver change is a new
 `RESOLVER_VERSION`, and the next read is the rebuild.
@@ -52,7 +53,7 @@ class Resolution:
                 first.setdefault(n, (len(first), spelling))
                 counts[n] = counts.get(n, 0) + 1
             if (row["predicate"] == "also_called" and row.get("modality", "actual") == "actual"
-                    and row.get("source") != "character_claim" and norm(row.get("value"))):
+                    and norm(row.get("value")) and _own_alias(row)):
                 a, b = node(row.get("subject_type"), row.get("subject")), node(row.get("subject_type"), row["value"])
                 if a != b:
                     first.setdefault(b, (len(first), row["value"]))
@@ -130,6 +131,14 @@ class Resolution:
     def ambiguous_mentions(self) -> list[dict[str, Any]]:
         return [{"type": n[0], "name": self._first[n][1], "candidates": self.candidates(*n)}
                 for n in sorted(self.ambiguous, key=lambda n: self._first[n])]
+
+
+def _own_alias(row: dict[str, Any]) -> bool:
+    """Narration may name anyone; a character's words link only the speaker's own names."""
+    if row.get("source") != "character_claim":
+        return True
+    speaker = row.get("asserted_by")
+    return bool(speaker) and node(row.get("subject_type"), row.get("subject")) == node("character", speaker)
 
 
 def _splits(n: Node, edges: dict[Node, set[Node]]) -> bool:

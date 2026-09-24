@@ -179,7 +179,9 @@ Status 2026-09-24. Real-model evidence: `docs/perf/phase5-extraction.md`
 
 Findings for the owner (not bars): a character introducing their own nickname in dialogue is
 extracted as a claim, so the alias is not linked (0/3); and most boasts and lies are labeled
-`modality=unknown`, so they are stored but not rendered as `<Claim>` (7 of 9).
+`modality=unknown`, so they are stored but not rendered as `<Claim>` (7 of 9). Owner decision
+2026-09-24: link a character's claim about their own name, and render unknown-modality claims (ADR 0012
+and ADR 0013 amendments). The real-model tier is re-run on the release candidate.
 
 ## Implementation order
 

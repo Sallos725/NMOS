@@ -65,6 +65,15 @@ invalidation on every edit, delete and reroll.
    per item entity, so "해안 지도" held by A and later by B (with "지도" reused through hints or
    linked by `also_called`) has one current holder.
 
+## Amendment (2026-09-24, owner, after the real-model tier)
+
+A character's `also_called` about **their own** name links it: the claim's speaker (`asserted_by`)
+resolves to the claim's subject, e.g. a transfer student saying "다들 하루라고 불러 줘" links 미나토 하루카
+and 하루. The model labeled that alias a claim in 3 of 3 runs (`docs/perf/phase5-extraction.md`), so the
+narration-only rule never linked a self-introduction. A claim about someone else's name ("쟤는 하나야")
+still links nothing. An impostor who introduces themself under another's name can therefore merge two
+entities until that turn is edited or deleted; the Inspector shows the turn each alias came from.
+
 ## Consequences
 
 - K8 is reduced where the model reuses hinted names or the story states an alias. It is not

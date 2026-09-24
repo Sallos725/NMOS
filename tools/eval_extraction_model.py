@@ -103,8 +103,10 @@ def ends_prior(item_word: str, holder: str):
 def alias_between(*names: str, need: int = 2):
     def check(items, scene):
         links = [a for a in items if a["predicate"] == "also_called"]
+        # What the resolver links (ADR 0012, amended 2026-09-24): narration, or the speaker's own name.
         good = [a for a in links if a["status"] == "valid" and a["modality"] == "actual"
-                and a["source"] == "narration" and sum(said(a, n) for n in names) >= need]
+                and (a["source"] == "narration" or norm(a["asserted_by"]) == norm(a["subject"]))
+                and sum(said(a, n) for n in names) >= need]
         return bool(good), f"also_called: {[(a['subject'], a['value'], a['status'], a['source']) for a in links]}"
     return check
 
@@ -332,6 +334,9 @@ def summarize(records: list[dict[str, Any]], args) -> dict[str, Any]:
         return round(sum(vals) / len(vals), 1) if vals else None
 
     completion = [r["usage"].get("completion_tokens") for r in v5 if r["usage"].get("completion_tokens")]
+    claims = [a for r in v5 if r["category"] == "false_state" for a in r.get("assertions", [])
+              if a["status"] == "valid" and a["source"] == "character_claim"]
+    shown = [a for a in claims if a["modality"] in ("actual", "unknown")]
     return {
         "model": args.model, "url": args.url, "runs": args.runs, "calls": len(records), "errors": errors,
         "bars": {
@@ -347,6 +352,7 @@ def summarize(records: list[dict[str, Any]], args) -> dict[str, Any]:
         "report": {
             "alias": {n: f"{s['pass']}/{s['runs']}" for n, s in by_scene.items() if s["category"] == "alias"},
             "reuse": {n: f"{s['pass']}/{s['runs']}" for n, s in by_scene.items() if s["category"] == "reuse"},
+            "claims_in_false_state_scenes": {"total": len(claims), "rendered_as_claim": len(shown)},
         },
         "prompt_tokens_mean_controls": {"v4": tokens("v4"), "v5": round(sum(
             r["usage"]["prompt_tokens"] for r in v5 if r["category"] == "control" and r["usage"].get("prompt_tokens")
