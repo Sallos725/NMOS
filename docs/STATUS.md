@@ -32,7 +32,7 @@ latency (`docs/perf/scale.md`), a real upgrade from a `v0.1.0-beta.10` database.
 (transition verifier), not authorized yet.
 Outside the phase (owner decision 2026-09-24, D28): an optional progress display on the chat screen,
 released in `v0.1.0-beta.12`.
-Outside the phase (owner-reported bug 2026-09-24, ADR 0023, D34, unreleased): the persona's name as
+Outside the phase (owner-reported bug 2026-09-24, ADR 0023, D34, released in `v0.1.0-beta.16`): the persona's name as
 the host reports it is the persona, so `{{user}}` and a named persona (유우마) are one entity; the plugin
 reads it with the host's "db" permission, asked at load (real-host check: `docs/HOST-FACTS.md`, "Persona
 name"). Migration 0018, `resolve-v3`.
@@ -42,7 +42,9 @@ owner-supplied service-account key).
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.15` (2026-09-24), public repository and image.** Phase 8 (above), Google
+**Public beta `v0.1.0-beta.16` (2026-09-24), public repository and image.** Bug fix: a named persona is
+the persona (ADR 0023, above); migration 0018.
+`v0.1.0-beta.15` (2026-09-24): Phase 8 (above), Google
 Vertex AI keys for extraction (ADR 0022), an Inspector status-window example; migration 0017.
 `v0.1.0-beta.14` (2026-09-24): Phase 7 (above); migration
 0016. `v0.1.0-beta.13` (2026-09-24): Phase 6 (above) and O5
@@ -95,7 +97,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
 | Tests | `apps/sidecar/tests` (287), `adapters/pocketrisu-plugin/test` (85) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k (D24) |
-| Known issues | `docs/KNOWN-ISSUES.md` | K1–K24 (K10 resolved) current as of `v0.1.0-beta.15`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
+| Known issues | `docs/KNOWN-ISSUES.md` | K1–K24 (K10 resolved) current as of `v0.1.0-beta.16`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0023` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-7.md` | 0–3 met; 4 soft subset met; 5, 6 and 7 met |
