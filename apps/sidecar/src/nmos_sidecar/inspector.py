@@ -63,7 +63,14 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "older_gen": ("이전 세대", "older generation"), "truncated": ("대상 잘림", "target truncated"),
     "partially_embedded": ("일부만 임베딩", "partially embedded"),
     "facts": ("현재 사실", "Current facts"),
-    "negated": ("부정", "negated"), "legacy": ("이전 형식", "legacy"),
+    "negated": ("부정", "negated"), "legacy": ("이전 형식", "legacy"), "disputed": ("충돌", "disputed"),
+    "conflicts": ("충돌 (이야기가 앞뒤가 맞지 않음)", "Conflicts (the story contradicts itself)"),
+    "h.fact": ("현재 사실", "Current fact"), "h.against": ("맞지 않는 단언", "Contradicted by"),
+    "items": ("아이템 이력", "Item timelines"), "h.item": ("아이템", "Item"), "h.timeline": ("이력 (오래된 순)", "Timeline (oldest first)"),
+    "w.possesses": ("{s} 보유", "held by {s}"), "w.located_in": ("{o}에 있음", "at {o}"),
+    "w.destroyed": ("소멸: {v}", "destroyed: {v}"), "w.not": ("아님", "not"),
+    "o.current": ("현재", "current"), "o.superseded": ("대체됨", "superseded"), "o.ended": ("끝남", "ended"),
+    "o.conflicting": ("충돌", "conflicting"),
     "claims": ("인물의 주장", "Claims by characters"), "h.by": ("말한 인물", "Said by"),
     "other": ("실제가 아닌 단언 (가정·꿈·미상)", "Not actual (hypothetical, dreamed, unknown)"),
     "h.modality": ("양태", "Modality"),
@@ -217,11 +224,28 @@ def _processed(m: dict[str, Any], lang: str) -> str:
     return (f"<span class=\"chip\">{_t(lang, 'partial')}</span> " if partial else "") + _v(" · ".join(parts))
 
 
+def fact_line_text(a: dict[str, Any]) -> str:
+    text = f"{a['subject']} {a['predicate'].replace('_', ' ')}" + (f" {a['object']}" if a.get("object") else "")
+    return f"{text}: {a['value']}" if a.get("value") else text
+
+
+def _step(h: dict[str, Any], lang: str) -> str:
+    """One whereabouts history entry: turn, what it said, and what became of it (PHASE-6)."""
+    said = _t(lang, f"w.{h['predicate']}").format(s=h["subject"], o=h.get("object") or "", v=h.get("value") or "")
+    if h.get("polarity") == "negative":
+        said = f"{_t(lang, 'w.not')} {said}" if lang == "en" else f"{said} {_t(lang, 'w.not')}"
+    turn = h["turn"] if h.get("turn") is not None else h["position"]
+    outcome = h.get("outcome", "superseded")
+    return (f"<span class=\"muted\">{_v(turn)}</span> {_v(said)} "
+            f"<span class=\"chip\" title=\"{_v(outcome)}\">{_v(_t(lang, f'o.{outcome}'))}</span>")
+
+
 def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict[str, Any]],
            commits: list[dict[str, Any]], traces: list[dict[str, Any]], facts: list[dict[str, Any]],
            token: str | None, coverage: dict[str, Any] | None = None, lang: str = "ko", embed: bool = False,
            claims: list[dict[str, Any]] | None = None, other: list[dict[str, Any]] | None = None,
-           entities: list[dict[str, Any]] | None = None, ambiguous: list[dict[str, Any]] | None = None) -> str:
+           entities: list[dict[str, Any]] | None = None, ambiguous: list[dict[str, Any]] | None = None,
+           conflicts: list[dict[str, Any]] | None = None, items: list[dict[str, Any]] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -247,6 +271,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
               _v(f["turn"] if f.get("turn") is not None else f["position"])
               + (older if active and f.get("generation") not in (None, active) else "")
               + (f" <span class=\"chip\">{t('negated')}</span>" if f.get("polarity") == "negative" else "")
+              + (f" <span class=\"chip\">{t('disputed')}</span>" if f.get("disputed_by") else "")
               + (f" <span class=\"chip\">{t('legacy')}</span>" if f.get("source") is None else ""),
               _v(f.get("versions", 1))]
              for f in facts]))
@@ -254,6 +279,15 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     def turn_of(a: dict[str, Any]) -> str:
         return _v(a["turn"] if a.get("turn") is not None else a["position"])
 
+    if conflicts:
+        parts.append(f"<h2>{t('conflicts')}</h2>" + table(
+            [t(k) for k in ("h.fact", "h.turn", "h.against", "h.turn")],
+            [[_v(c["text"]), turn_of(c), _v(fact_line_text(c["against"])), turn_of(c["against"])]
+             for c in conflicts[:100]]))
+    if items:
+        parts.append(f"<h2>{t('items')}</h2>" + table(
+            [t("h.item"), t("h.timeline")],
+            [[_v(i["item"]), " → ".join(_step(h, lang) for h in i["history"])] for i in items[:100]]))
     if entities:
         parts.append(f"<h2>{t('entities')}</h2>" + table(
             [t(k) for k in ("h.type", "h.names", "h.mentions", "h.alias_turns")],

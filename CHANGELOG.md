@@ -14,6 +14,9 @@ later, is `docs/KNOWN-ISSUES.md`.
   destroying it, the fact is marked `disputed="true"` and names what it contradicts:
   `Hana possesses letter; but turn 5: letter destroyed: burned`. The packet Note explains the mark
   when it is used.
+- **Inspector: item timelines and conflicts.** Each item's history reads oldest first with what became
+  of every statement (current, superseded, ended, conflicting), and a conflicts table lists facts the
+  story contradicts. Fact history in the API carries the same `outcome`.
 
 - **An item is in one place** (Phase 6 step 1, ADR 0016, D30). Its holder and its place are one fact
   history: "Hana puts the map on the table" ends Hana's holding, and "Kaito takes the map" ends "on the
