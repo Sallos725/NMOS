@@ -20,6 +20,9 @@ Phase 8 (in progress): event participants (`docs/phases/PHASE-8.md`, ADR 0021).
   character who is only ever a participant has a page too.
 - **Entity ids change once** (`resolve-v2`): Inspector character links from before the upgrade no longer
   open. KNOWN ENTITIES hints are unchanged.
+- **Inspector state example.** Current state, when nothing has been parsed yet, now shows a sample status
+  window matching `config/parsers.example.json`'s rules, so a first-time user can see the expected format
+  instead of just "no parser state." The guide and README show the same example.
 
 ## 0.1.0-beta.14
 

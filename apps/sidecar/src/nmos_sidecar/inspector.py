@@ -20,6 +20,7 @@ main{max-width:1100px;margin:0 auto;padding:24px 16px}
 h1{font-size:20px;margin:0 0 4px} h2{font-size:15px;margin:28px 0 8px}
 a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
 .muted{color:var(--muted)} .mono{font-family:ui-monospace,monospace;font-size:12px}
+pre.mono{white-space:pre-wrap;background:var(--chip);padding:8px 10px;border-radius:6px;margin:4px 0 0}
 .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
 .lang{font-size:13px;white-space:nowrap}
 .ref{display:block;font-family:ui-monospace,monospace;font-size:11px;color:var(--muted)}
@@ -62,6 +63,8 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "state": ("현재 상태", "Current state"),
     "h.key": ("키", "Key"), "h.value": ("값", "Value"), "h.as_of": ("기준 턴", "As of turn"), "h.rule": ("규칙", "Rule"),
     "no_state": ("상태창 규칙으로 읽은 값이 없습니다.", "No parser state."),
+    "no_state_hint": ("예: 봇 응답이 아래처럼 쓰여 있으면 규칙이 값을 읽습니다 (규칙 예시는 config/parsers.example.json 참고).",
+                      "Example: rules read values when the bot's reply looks like this (see config/parsers.example.json for matching rules)."),
     "coverage": ("의미 처리 현황", "Semantic coverage"),
     "no_generation": ("활성화된 사실 추출·임베딩이 없습니다.", "No extractor or embedding generation is active."),
     "h.projection": ("종류", "Projection"), "h.generation": ("세대", "Generation"),
@@ -182,6 +185,14 @@ def table(headers: list[str], rows: Iterable[list[str]]) -> str:
     head = "".join(f"<th>{escape(h)}</th>" for h in headers)
     body = "".join("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows)
     return f"<div class=\"wrap\"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
+
+
+# Matches the "status-block" and "hp" rules in config/parsers.example.json.
+NO_STATE_EXAMPLE = "```status\nHP: 80/100\nMP: 30/30\nLocation: Cafe\n```"
+
+
+def _no_state_example(lang: str) -> str:
+    return f"<p class=\"muted\">{_t(lang, 'no_state_hint')}</p><pre class=\"mono\">{_v(NO_STATE_EXAMPLE)}</pre>"
 
 
 def chip(lang: str, prefix: str, value: Any) -> str:
@@ -449,7 +460,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         ("state", t("state"), None, table([t("h.key"), t("h.value"), t("h.as_of"), t("h.rule")],
                                           [[_v(s["key"]), _v(s["value"]), _v(s["position"]), _v(s["rule_id"])]
                                            for s in state])
-         if state else f"<p class=\"muted\">{t('no_state')}</p>", True),
+         if state else f"<p class=\"muted\">{t('no_state')}</p>{_no_state_example(lang)}", True),
         ("coverage", t("coverage"), None, _coverage_section(coverage or {}, lang), True)]
     if conflicts:
         parts.append(("conflicts", t("conflicts"), len(conflicts), _conflicts_table(conflicts, lang), True))
