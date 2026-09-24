@@ -269,6 +269,12 @@ an end also closes the holder and place of its own turn. A holder or place from 
 end is `disputed="true"` against it (the owner's Q4), with both sides in one packet line, until a new end
 or a denial of the end. Negations end only what they deny (D27).
 
+**D31 — Full-manifest observations are compacted losslessly (O5, ADR 0018).** A host observation of a
+whole manifest (edit, reroll, swipe, delete) may be stored as the rows that differ from the chat's
+latest base observation, only when they rebuild it exactly. Bases (a chat's first full observation, or
+one differing by more than 25 %) stay full. The worker does it off the request path. Nothing else on
+abandoned worldlines is removed.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
@@ -339,9 +345,10 @@ These must be resolved by the owner, not by an implementing agent.
 - ~~O2 — Postgres vs SQLite~~ — **resolved 2026-09-22: PostgreSQL** (§6).
 - ~~O3 — Main-generation gating heuristic~~ — **resolved 2026-09-22: D13 / ADR 0001.**
 - ~~O4 — Cross-chat branch policy~~ — **resolved 2026-09-22: D14 / ADR 0002.**
-- **O5 — Retention of abandoned worldlines.** Partly decided 2026-09-23 for superseded projection
+- ~~O5 — Retention of abandoned worldlines~~ — **resolved 2026-09-24 (D29, D31).** Decided 2026-09-23 for superseded projection
   generations: LLM extractions are kept; embeddings and deterministic projections may be pruned once
   a newer generation fully covers the chat (`docs/proposals/TRACK-B-PHASE-5-PLUS.md` §4; implemented
   as D29, ADR 0015). Decided 2026-09-24 for host observations (`docs/phases/PHASE-6.md` Q5):
   full-manifest observations are compacted losslessly (only rows changed against the previous
-  observation, as appends already are); everything else on abandoned worldlines is kept.
+  observation, as appends already are); everything else on abandoned worldlines is kept (implemented
+  as D31, ADR 0018).

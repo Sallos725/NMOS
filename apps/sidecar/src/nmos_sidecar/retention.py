@@ -1,4 +1,5 @@
-"""Retention of superseded projections (O5, owner decision 2026-09-23; ADR 0015).
+"""Retention (O5): superseded projections (owner decision 2026-09-23; ADR 0015) and full-manifest host
+observations (owner decision 2026-09-24; ADR 0018).
 
 Keep what is costly to recreate, prune what is cheap. Superseded LLM extractions and their assertions
 are kept for audit and rollback and are never touched here. Superseded embeddings and older
@@ -11,12 +12,21 @@ projection has replaced them:
 - `revision_text` rows of other normalizers, for revisions that have a current-normalizer row.
 
 Only rows the active projection replaced go. Vectors of revisions it did not embed (abandoned branches,
-old edits, disabled messages) stay: retention of abandoned worldlines is still open (O5).
+old edits, disabled messages) stay; everything else on abandoned worldlines is kept (O5, 2026-09-24).
+
+Host observations are evidence and are never dropped. An edit, reroll, swipe or delete observes the whole
+manifest (every row); `compact_observations` rewrites such an observation losslessly as the rows that
+differ from the chat's previous full observation, and only after checking that they rebuild it exactly.
 """
 
 from __future__ import annotations
 
 import psycopg
+
+from typing import Any
+from uuid import UUID
+
+from psycopg.types.json import Jsonb
 
 from . import generations, normtext
 from .extraction import ELIGIBLE
@@ -105,3 +115,84 @@ def prune_text(conn: psycopg.Connection, batch: int = BATCH) -> int:
         total += n
         if n < batch:
             return total
+
+
+# --- host observations (ADR 0018) -------------------------------------------------------------------
+
+CHECKPOINT_RATIO = 0.25  # an observation differing from its base in more rows than this stays full
+
+
+def diff_rows(base: list[Any], rows: list[Any]) -> list[list[Any]]:
+    """[index, row] for every row of `rows` that is not the same row at that index of `base`."""
+    return [[i, row] for i, row in enumerate(rows) if i >= len(base) or base[i] != row]
+
+
+def apply_diff(base: list[Any], length: int, changed: list[list[Any]]) -> list[Any]:
+    rows = list(base[:length]) + [None] * max(0, length - len(base))
+    for i, row in changed:
+        rows[i] = row
+    return rows
+
+
+def observed_rows(conn: psycopg.Connection, observation_id: UUID) -> tuple[list[str], list[Any]] | None:
+    """(columns, rows) of a full or compacted manifest observation; None for an appended tail (its rows
+    are the observation named by `base_manifest_hash` plus `appended`) or an unknown id."""
+    row = conn.execute("SELECT raw_manifest FROM host_observation WHERE id = %s", (observation_id,)).fetchone()
+    if row is None:
+        return None
+    raw = row["raw_manifest"]
+    if "entries" in raw:
+        return raw["columns"], raw["entries"]
+    if "base_observation" in raw:
+        base = conn.execute("SELECT raw_manifest FROM host_observation WHERE id = %s",
+                            (raw["base_observation"],)).fetchone()["raw_manifest"]
+        return raw["columns"], apply_diff(base["entries"], raw["length"], raw["changed"])
+    return None
+
+
+def compact_observations(conn: psycopg.Connection, limit: int = 200) -> int:
+    """Rewrite full-manifest observations as differences from the chat's base observation. Returns how
+    many were rewritten (at most `limit` per call).
+
+    Per chat, in id order, every full observation not yet decided is either kept full as the chat's next
+    base (`observation_base`) or rewritten as `{base_observation, length, changed}` against the latest
+    base before it. It stays full when it is the chat's first, when its columns differ from the base's,
+    when more than CHECKPOINT_RATIO of its rows differ, or when the difference does not rebuild it
+    exactly. A base is never rewritten, so rebuilding any observation reads at most two rows.
+    """
+    done = 0
+    pending = conn.execute(
+        "SELECT o.conversation_id AS conv, o.id FROM host_observation o"
+        " WHERE o.kind = 'manifest' AND o.raw_manifest ? 'entries'"
+        " AND NOT EXISTS (SELECT 1 FROM observation_base b WHERE b.observation_id = o.id)"
+        " ORDER BY o.conversation_id, o.id").fetchall()
+    base_id, base = None, None
+    for row in pending:
+        if done >= limit:
+            break
+        with conn.transaction():
+            prior = conn.execute(
+                "SELECT observation_id FROM observation_base WHERE conversation_id = %s AND observation_id < %s"
+                " ORDER BY observation_id DESC LIMIT 1", (row["conv"], row["id"])).fetchone()
+            raw = conn.execute("SELECT raw_manifest FROM host_observation WHERE id = %s FOR UPDATE",
+                               (row["id"],)).fetchone()["raw_manifest"]
+            if prior is None:
+                keep = True
+            else:
+                if base_id != prior["observation_id"]:
+                    base_id = prior["observation_id"]
+                    base = conn.execute("SELECT raw_manifest FROM host_observation WHERE id = %s",
+                                        (base_id,)).fetchone()["raw_manifest"]
+                rows = raw["entries"]
+                changed = diff_rows(base["entries"], rows)
+                keep = (raw["columns"] != base["columns"] or len(changed) > CHECKPOINT_RATIO * max(1, len(rows))
+                        or apply_diff(base["entries"], len(rows), changed) != rows)
+            if keep:
+                conn.execute("INSERT INTO observation_base (observation_id, conversation_id) VALUES (%s, %s)",
+                             (row["id"], row["conv"]))
+                continue
+            compact = {k: v for k, v in raw.items() if k != "entries"}
+            compact.update(base_observation=str(base_id), length=len(rows), changed=changed)
+            conn.execute("UPDATE host_observation SET raw_manifest = %s WHERE id = %s", (Jsonb(compact), row["id"]))
+            done += 1
+    return done
