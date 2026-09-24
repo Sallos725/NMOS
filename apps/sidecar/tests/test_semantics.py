@@ -87,7 +87,7 @@ def test_extraction_stores_polarity_modality_source_and_checks_aliases(migrated,
     with make_client(migrated, **LLM) as c:
         sync(c, chat)
         drain(migrated, semantic_complete)
-    assert active_generation(db, "extract").spec["compiler"] == "extract-v7"
+    assert active_generation(db, "extract").spec["compiler"] == "extract-v8"
     rows = db.execute("SELECT predicate, value, polarity, modality, source, asserted_by, status, reason"
                       " FROM assertion ORDER BY id").fetchall()
     # The worker takes the newest turn first, so compare regardless of insertion order.
