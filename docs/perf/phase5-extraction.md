@@ -77,3 +77,23 @@ Kaito. The stub model received this packet (test data only):
 ```
 
 Every generation added 32–42 ms in the plugin. No plugin change was needed.
+
+## Release candidate re-run (2026-09-24)
+
+Same runner, model and scenes on `main` at `3a78e33`: after the `extract-v5` prompt gained the entity
+type and language rules (#41) and the owner's two decisions (#44: a character's own nickname links;
+claims with `modality=unknown` render). Record: `fixtures/model/phase5/2026-09-24-deepseek-v4.1-flash-rc/`.
+
+| Bar | First run | Release candidate |
+|---|---|---|
+| Hypothetical, dreamed or claimed content becoming a fact | 0 of 21 | 0 of 21 |
+| Control assertions labeled non-actual | 1 of 32 (3.1 %) | 1 of 34 (2.9 %) |
+| Negation ends the right fact | 3/3, 3/3 | 3/3, 3/3 |
+| A different item keeps its own name while another is hinted | 3/3, 3/3 | 3/3, 3/3 |
+| Hinted name reused (report) | 3/3 | 3/3 |
+| Stated alias in narration / self-introduction (report) | 3/3 / 0/3 | 3/3 / 3/3 |
+| Claims in the false-state scenes rendered as `<Claim>` (report) | 2 of 9 in boast/lie | 25 of 32 (the rest are hypothetical or dreamed) |
+| Mean prompt tokens: v4 / v5 / v5 with 40 hints | 910 / 1,278 / 1,626 | 910 / 1,328 / 1,676 |
+| Mean completion tokens per v5 call | 2,494 | 2,819 |
+
+Every bar is met on the release candidate.

@@ -1,6 +1,7 @@
 # Phase 5 — Entity Identity and Semantic Assertions
 
-> **Status: current. Approved by the owner on 2026-09-23** (PR #34), with ADRs 0012–0014.
+> **Status: complete (2026-09-24), released in `v0.1.0-beta.12`.** Approved by the owner on 2026-09-23
+> (PR #34), with ADRs 0012–0014.
 >
 > Scope comes from the owner's decisions of 2026-09-23: Track B §4 "Owner decisions"
 > (`docs/proposals/TRACK-B-PHASE-5-PLUS.md`) and three design questions answered the same day (name
@@ -172,10 +173,11 @@ Status 2026-09-24. Real-model evidence: `docs/perf/phase5-extraction.md`
       (`test_semantics.py::test_legacy_rows_read_as_narration`).
 - [x] A real-host smoke run (PocketRisu v1.12.0) injects a packet with the new attributes in one chat;
       the plugin is unchanged (`docs/perf/phase5-extraction.md`, "Real-host smoke").
-- [ ] `ARCHITECTURE.md` D7 (hints) and D20 (fallback) amended, D26 (entity identity) and D27
+- [x] `ARCHITECTURE.md` D7 (hints) and D20 (fallback) amended, D26 (entity identity) and D27
       (assertion semantics) added; README, the Korean guide,
-      `docs/KNOWN-ISSUES.md` (K8, K9, K18) and the changelog updated. Done except the release-time
-      updates of the known issues and the changelog version section.
+      `docs/KNOWN-ISSUES.md` (K8, K9, K18, new K22) and the changelog (0.1.0-beta.12) updated.
+- [x] Release candidate re-run of the real-model tier after the late prompt change and the owner's
+      amendments: every bar met again (`docs/perf/phase5-extraction.md`, "Release candidate re-run").
 
 Findings for the owner (not bars): a character introducing their own nickname in dialogue is
 extracted as a claim, so the alias is not linked (0/3); and most boasts and lies are labeled
@@ -205,7 +207,7 @@ Each step is one reviewable change with its tests.
    2026-09-24* (`tests/test_hints.py`). It also fixed a step 4 defect: the fact query did not select
    `object_type`, so object entities were typed "?" on real reads (regression in `test_entities.py`).
 6. **Evaluation and release**: real-model tier, measurements, docs, release notes with cost.
-   *Evaluation done 2026-09-24* (`docs/perf/phase5-extraction.md`); release pending the owner.
+   *Done 2026-09-24*: evaluation, release candidate re-run, `v0.1.0-beta.12`.
 
 ## Stop conditions
 
