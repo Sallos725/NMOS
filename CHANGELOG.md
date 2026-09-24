@@ -5,6 +5,16 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+Phase 8 (in progress): event participants (`docs/phases/PHASE-8.md`, ADR 0021).
+
+- **Schema:** migration 0017 (`assertion.participants`, typed `{name, type}` JSON on `event`, `goal`,
+  `knows` and `destroyed`).
+- **The person an event happened to brings it back** (ADR 0021). A participant named in your message
+  counts like the event's subject, for facts and character claims; the persona never does. Needs turns
+  extracted with participants (`extract-v8`, next step); older turns recall as before.
+- **Entity ids change once** (`resolve-v2`): Inspector character links from before the upgrade no longer
+  open. KNOWN ENTITIES hints are unchanged.
+
 ## 0.1.0-beta.14
 
 Phase 7: promise threads and event salience (`docs/phases/PHASE-7.md`, ADRs 0019–0020, D32). Schema:
