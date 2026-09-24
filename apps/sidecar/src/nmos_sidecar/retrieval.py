@@ -41,6 +41,7 @@ class RecallOptions:
     threshold: float = 0.4
     rules_version: str = "none"
     facts_limit: int = 8
+    events_limit: int = 3  # `event` facts among them (PHASE-7 Q4)
     embedder: Embedder | None = None
     embed_projection: str = ""  # corpus vectors of this projection only (D20)
     extractor_key: str | None = None  # facts of this extractor generation only (D20)
@@ -226,7 +227,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     fact_lines: list[str] = []
     if fresh and options.facts_limit > 0:
         view = memory_view(conn, head, options.extractor_key)
-        facts = relevant_facts(view["facts"], query, previous_ai, in_context, options.facts_limit)
+        facts = relevant_facts(view["facts"], query, previous_ai, in_context, options.facts_limit,
+                               options.events_limit)
         # Claims after facts, so the budget serves narration first (ADR 0013).
         claims = relevant_facts(view["claims"], query, previous_ai, in_context, max(1, options.facts_limit // 2))
         fact_lines = [fact_line(f) for f in facts] + [claim_line(c) for c in claims]

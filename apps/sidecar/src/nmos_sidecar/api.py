@@ -86,7 +86,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         rt.update(settings=cur, rules=rules, overrides=overrides, extractor=extraction.extractor(cur), projection=pj,
                   recall=RecallOptions(
             top_k=cur.recall_top_k, threshold=cur.recall_threshold, rules_version=rules.version,
-            facts_limit=cur.facts_limit, embedder=emb if pj else None, embed_projection=pj.key if pj else "",
+            facts_limit=cur.facts_limit, events_limit=cur.events_limit, embedder=emb if pj else None, embed_projection=pj.key if pj else "",
             extractor_key=rt.get("active_extractor"), embed_timeout_ms=cur.embed_timeout_ms,
             lexical_timeout_ms=cur.lexical_timeout_ms,
             vector_min_sim=cur.vector_min_sim, query_prefix=query_prefix(cur.embed_model, cur.embed_query_instruction),

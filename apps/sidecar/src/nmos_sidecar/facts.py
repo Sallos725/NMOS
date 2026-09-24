@@ -270,11 +270,14 @@ USER_NAMES = {"{{user}}", "{user}", "user", "유저"}
 
 
 def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],
-                   limit: int) -> list[dict[str, Any]]:
+                   limit: int, events_limit: int | None = None) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     Knowledge marks count as mentions: a fact hidden from a character who is being addressed is the one
     the model most needs to see (so it does not leak), and "내/my" questions concern the user's facts.
+
+    At most `events_limit` of them are `event` facts (PHASE-7 Q4): events are the most frequent predicate
+    and all stay current, so a main character's newest events would otherwise take every slot.
     """
     q = _norm(query)
     ai = _norm(previous_ai)
@@ -300,7 +303,17 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         if mention or lexical >= 0.35:
             scored.append((score, f["position"], f))
     scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
-    return [f for _, _, f in scored[:limit]]
+    out: list[dict[str, Any]] = []
+    events = 0
+    for _, _, f in scored:
+        if len(out) >= limit:
+            break
+        if f["predicate"] == "event":
+            if events_limit is not None and events >= events_limit:
+                continue
+            events += 1
+        out.append(f)
+    return out
 
 
 def fact_line(f: dict[str, Any]) -> str:

@@ -219,6 +219,23 @@ def test_secret_hidden_from_addressed_character_is_selected():
     assert all(f["subject"] != "마을" for f in picked)
 
 
+def test_events_do_not_take_every_fact_slot():
+    """PHASE-7 Q4 (evidence case): a main character's newest events filled all 8 slots, so an older fact
+    about them came back only when the query repeated its words."""
+    from nmos_sidecar.facts import relevant_facts
+    base = {"object": None, "host_logical_id": "x", "known_by": None, "hidden_from": None}
+    facts = [{**base, "subject": "하나", "predicate": "promised", "object": "{{user}}",
+              "value": "비가 그치면 등대 앞에서 만나기", "position": 20}]
+    facts += [{**base, "subject": "하나", "predicate": "event", "value": f"사소한 일 {i}", "position": i}
+              for i in range(30, 400, 2)]
+    uncapped = relevant_facts(facts, "하나야, 오랜만이야.", "", set(), 8)
+    assert [f["predicate"] for f in uncapped] == ["event"] * 8
+    picked = relevant_facts(facts, "하나야, 오랜만이야.", "", set(), 8, events_limit=3)
+    assert [f["predicate"] for f in picked] == ["event"] * 3 + ["promised"]
+    assert [f["position"] for f in picked[:3]] == [398, 396, 394]  # still the newest events
+    assert [f["predicate"] for f in relevant_facts(facts, "하나야", "", set(), 8, events_limit=0)] == ["promised"]
+
+
 GIVE = re.compile(r"(?P<who>\w+) (?:has|takes|gets) the (?P<item>\w+)\.")
 
 

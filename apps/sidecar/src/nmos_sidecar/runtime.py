@@ -22,11 +22,12 @@ EDITABLE: dict[str, type] = {
     "llm_url": str, "llm_model": str, "llm_api_key": str, "llm_json_mode": bool,
     "embed_url": str, "embed_model": str, "embed_api_key": str, "embed_query_instruction": str,
     "recall_threshold": float, "vector_min_sim": float, "recall_top_k": int, "facts_limit": int,
+    "events_limit": int,
     "extract_backfill": int,
 }
 SECRET = {"llm_api_key", "embed_api_key"}
 RANGES = {"recall_threshold": (0.05, 1.0), "vector_min_sim": (0.0, 1.0), "recall_top_k": (0, 20),
-          "facts_limit": (0, 30), "extract_backfill": (0, 5000)}
+          "facts_limit": (0, 30), "events_limit": (0, 30), "extract_backfill": (0, 5000)}
 PARSERS_KEY = "parsers"
 
 
@@ -125,7 +126,8 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
                        "api_key_set": bool(settings.embed_api_key),
                        "query_instruction": settings.embed_query_instruction},
         "recall": {"threshold": settings.recall_threshold, "vector_min_sim": settings.vector_min_sim,
-                   "top_k": settings.recall_top_k, "facts_limit": settings.facts_limit},
+                   "top_k": settings.recall_top_k, "facts_limit": settings.facts_limit,
+                   "events_limit": settings.events_limit},
         "extraction": {"backfill": settings.extract_backfill},
         "parsers": {"rules": overrides.get(PARSERS_KEY) if PARSERS_KEY in overrides else None,
                     "source": "ui" if PARSERS_KEY in overrides else ("file" if settings.parsers_file else "none"),
