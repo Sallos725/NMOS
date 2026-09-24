@@ -81,8 +81,9 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 - O5 — retention of abandoned worldlines and `host_observation` growth (needed before Track B, B2).
   Superseded generations: decided 2026-09-23 (keep LLM extractions, prune embeddings and
   deterministic projections after full coverage; Track B §4); not implemented yet.
-- Phase 6+ (Track B, B2–B7): not authorized. B2 (transition verifier) is the intended next stage and needs
-  its own phase specification.
+- Phase 6+ (Track B, B2–B7): not authorized. B2 (transition verifier) is the intended next stage; its
+  draft specification is `docs/phases/PHASE-6.md` (item transitions and conflicts), awaiting owner
+  approval and answers to its questions Q1–Q5 (Q5 is the rest of O5).
 
 ## Public release checklist (done 2026-09-23)
 
