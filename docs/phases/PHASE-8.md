@@ -1,18 +1,24 @@
 # Phase 8 — Event Participants
 
-> **Status: DRAFT for owner approval (2026-09-24). Not authorized.** Nothing in this document may be
-> implemented until the owner approves it and answers the open questions below. This is the next
+> **Status: approved by the owner on 2026-09-24, with the recommended answer to every question
+> (Q1–Q5); implementation explicitly authorized.** Implementation follows "Implementation order"
+> below. This is the next
 > slice of Track B stage B3 (`docs/proposals/TRACK-B-PHASE-5-PLUS.md` §6, "Event, relationship, and
 > open-thread projections": "first-class events with participants"), narrowed to what current evidence
 > supports; this document is its B0. Phase 7 (`v0.1.0-beta.14`) took promise threads and event
 > salience from the same stage.
 
-## Open questions for the owner
+## Owner decisions (2026-09-24)
 
-Each question has a recommended answer. The spec below is written for the recommended answers. A
-different answer changes only the parts it names.
+The owner chose the recommended answer to each question. The spec below is written for those answers.
+In the owner's words: participants only (Q1); typed `with: [{name, type}]` from the extractor, stored as
+JSON, no read-time text inference (Q2); only `event`, `goal`, `knows`, `destroyed` (Q3); a participant
+counts like the subject for facts and character claims, the persona never counts, and participation
+never infers or changes a knowledge mark (Q4); no read-time fallback before `extract-v8` (Q5). KNOWN
+ENTITIES must not change because of participants; the ADR 0012 amendment and the acceptance criteria
+apply as written.
 
-| # | Question | Recommended | Alternatives |
+| # | Question | Decided | Alternatives not taken |
 |---|---|---|---|
 | Q1 | **Phase boundary.** What remains of B3: event participants, place, observers, narrative time, relationship history, other thread kinds, causal links. Which part is Phase 8? | **Participants only**: the other characters an event (or another fact told in its value) involves. It is the one measured gap (below). Relationships are measured in this phase's real-model tier, as report-only evidence for a later decision. | (b) Participants and relationship history in the packet ("used to be rivals until turn 40"). No relationship was ever extracted in the recorded runs, so this would be built without evidence. (c) First-class event records (participants, place, observers, narrative time). |
 | Q2 | **How are participants recorded?** | By the extractor: a new field `with`, a list of `{name, type}` objects for the other characters or groups the value involves, as named in the turn. It is stored in `assertion.participants` as JSON (migration 0017) under a new generation `extract-v8`. A stored type is required because ADR 0012 keys identity by `(type, name)`; an untyped name must not silently prefer a character over a same-named group. | (b) Store names only and resolve `character`, then `group`. This guesses when both types have the same name. (c) At read time, find known entity names in the value text. No new generation, but a name can be an ordinary word: "하나" is also "one", and the Phase 6 scene text has "성냥은 하나도 없었다" ("not a single match left"). (d) Allow one `object` on `event` (one participant only; still a new generation). |
