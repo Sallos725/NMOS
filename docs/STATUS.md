@@ -6,8 +6,9 @@
 `docs/phases/PHASE-5.md`, ADRs 0012–0014. Step 1 of 6 (generation fallback, ADR 0014) done and released in `v0.1.0-beta.11`, with the fix for
 a stall in fact and state reads after edits in long chats (`docs/perf/scale.md`). Steps 2–3
 (`extract-v5`, migration 0014, fact reading and packet per ADR 0013, D27), step 4 (read-time
-entities, ADR 0012, D26) and step 5 (name hints in extraction, D7 amended) done, unreleased. Next: step 6
-(real-model evaluation tier, measurements, release).
+entities, ADR 0012, D26) and step 5 (name hints in extraction, D7 amended) done, unreleased. Step 6's evaluation
+is done (`docs/perf/phase5-extraction.md`: every real-model bar met, real-host smoke passed); the
+release is pending the owner.
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
