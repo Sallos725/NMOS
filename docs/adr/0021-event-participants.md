@@ -44,4 +44,11 @@ assertions in 18 scenes (`fixtures/model/phase8/scope-audit.json`, `tools/check_
   memory evaluation "addressed participant"; `tests/test_participant_scope.py` keeps the no-participant
   rule).
 - The `resolve-v2` bump changes every Inspector entity URL once, as any resolver change does.
+- Cost:
+  - participants are fetched as text, and each distinct stored list is parsed once and cached (the
+    driver's jsonb decoding of every row cost ≈10 ms at 10,000 messages);
+  - `entities.node()` is cached, and only rows with participants are processed;
+  - the Inspector alone resolves participants for display.
+
+  Fact read at 10,000 messages: +7 ms median (`docs/perf/phase8-extraction.md`).
 - Entity mention counts in the Inspector include participant mentions.

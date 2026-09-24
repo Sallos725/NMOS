@@ -10,7 +10,8 @@ assertions (a character's place, and an item's holder, place or end cycling over
 With `--phase7` each turn also gets an event (every seventh one major, where the schema has
 `salience`), every tenth turn a promise its maker says (makers spread over 40 characters, or `--makers
 N`), and every thirtieth the fulfilment of the promise made two promises earlier (PHASE-7
-"Performance").
+"Performance"). Where the schema has `participants` (PHASE-8), half of those events also name another
+character as a typed participant.
 """
 
 from __future__ import annotations
@@ -105,6 +106,13 @@ def run(n: int, phase7: bool = False) -> dict:
                                     " knowledge) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
                                     + ("%s, " if salience else "") + "'valid', 'unknown')",
                                     [r if salience else r[:-1] for r in extra])
+                if extra and db.execute("SELECT 1 FROM information_schema.columns WHERE table_name = 'assertion'"
+                                        " AND column_name = 'participants'").fetchone():
+                    # PHASE-8: half of the events name another character as a typed participant.
+                    cur.execute("UPDATE assertion SET participants = jsonb_build_array(jsonb_build_object("
+                                "'name', '인물' || (id % 40), 'type', 'character'))"
+                                " WHERE predicate = 'event' AND id % 2 = 0")
+                    cur.execute("VACUUM assertion")  # the UPDATE left dead rows a real insert would not
             db.execute("ANALYZE extraction")
             db.execute("ANALYZE assertion")
             ms = []

@@ -19,6 +19,7 @@ participant never named as a subject or object is an entity of its own.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from functools import lru_cache
 from typing import Any
 from uuid import UUID, uuid5
 
@@ -34,18 +35,13 @@ def norm(name: str | None) -> str:
     return " ".join(str(name or "").casefold().split())
 
 
+@lru_cache(maxsize=8192)
 def node(entity_type: str | None, name: str | None) -> Node:
+    """(type, normalized name). Pure; cached because every fact read asks for the same few names."""
     n = norm(name)
     if entity_type == "character" and n in USER_NAMES:
         n = PERSONA
     return (entity_type or "?", n)
-
-
-def participant_mentions(row: dict[str, Any]) -> Iterable[tuple[Node, str]]:
-    """Typed participants (PHASE-8), as stored: a list of {"name", "type"} or NULL."""
-    for p in row.get("participants") or ():
-        if isinstance(p, dict) and p.get("name"):
-            yield node(p.get("type"), p["name"]), p["name"]
 
 
 def mentions(row: dict[str, Any]) -> Iterable[tuple[Node, str]]:
@@ -74,8 +70,9 @@ class Resolution:
                     edges.setdefault(b, set()).add(a)
                     self.alias_rows.append((a, b, row))
         for row in rows:  # second pass: participants rank below every resolve-v1 name source
-            for n, spelling in participant_mentions(row):
-                first.setdefault(n, (len(first), spelling))
+            for p in row.get("participants") or ():  # stored by predicates.participants(): typed, named
+                n = node(p["type"], p["name"])
+                first.setdefault(n, (len(first), p.get("name")))
                 counts[n] = counts.get(n, 0) + 1
         self.ambiguous = {n for n in edges if _splits(n, edges)}
         parent: dict[Node, Node] = {n: n for n in first}

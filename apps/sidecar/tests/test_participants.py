@@ -90,7 +90,7 @@ import uuid  # noqa: E402
 
 from nmos_sidecar.entities import resolve  # noqa: E402
 from nmos_sidecar.extraction import entity_hints, hints_block  # noqa: E402
-from nmos_sidecar.facts import _annotate, fact_line, relevant_facts, version_key  # noqa: E402
+from nmos_sidecar.facts import _annotate, fact_line, participant_entities, relevant_facts, version_key  # noqa: E402
 
 CONV = uuid.uuid4()
 
@@ -144,7 +144,7 @@ def test_typed_identity_and_ambiguous_aliases():
     assert r.status("character", "꼬마") == "ambiguous"
     a = dict(amb[2])
     _annotate(a, r)
-    assert a["participant_entities"][0]["entity"]["status"] == "ambiguous"
+    assert participant_entities(a, r)[0]["entity"]["status"] == "ambiguous"
     assert "하나" not in a["names"] and "유이" not in a["names"]
 
 

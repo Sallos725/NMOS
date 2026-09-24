@@ -18,6 +18,10 @@ Phase 8 (in progress): event participants (`docs/phases/PHASE-8.md`, ADR 0021).
 - **Inspector.** The facts table has a "With" column (participants; a chip marks groups). A character's
   page gains "Takes part in": facts where they are a participant but not the subject or object. A
   character who is only ever a participant has a page too.
+- **Cost:** the extraction prompt grows by ≈161 tokens per call (+9.7 % over `extract-v7` on the
+  measured control scenes). Real-model check (`deepseek-v4.1-flash`, 3 runs per scene): participants
+  3/3 in all ten scenes, no participant in any of 12 control runs, the owner-reported "present but not
+  told" case never put the person in `known_by` (`docs/perf/phase8-extraction.md`).
 - **Entity ids change once** (`resolve-v2`): Inspector character links from before the upgrade no longer
   open. KNOWN ENTITIES hints are unchanged.
 
