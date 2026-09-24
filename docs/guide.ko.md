@@ -129,9 +129,22 @@ NMOS_LLM_MODEL=원하는-모델-이름
 
 ## 상태창 읽기
 
-설정 창의 **상태창 규칙**에 적는 것이 가장 쉽습니다("예시 넣기" 버튼). 파일로 관리하려면
-`config/parsers.json`에 적고 `.env`에 `NMOS_PARSERS_FILE=/config/parsers.json`을 넣으세요.
-예시는 [config/parsers.example.json](../config/parsers.example.json).
+봇 응답이 아래처럼 끝난다고 하면:
+
+````
+```status
+HP: 80/100
+MP: 30/30
+장소: 카페
+```
+````
+
+[config/parsers.example.json](../config/parsers.example.json)의 `status-block` 규칙(위 코드블록의 시작·끝 사이
+`키: 값` 줄을 읽음)과 `hp` 규칙(`HP: 80/100` 형태를 정규식으로 읽음)이 이 부분을 읽어 `HP`, `MP`, `장소`를 현재
+상태로 기록합니다. 인스펙터의 **현재 상태**에 아직 아무 값도 없으면 같은 예시가 그 자리에 그대로 표시됩니다.
+
+이런 규칙을 만드는 가장 쉬운 방법은 설정 창의 **상태창 규칙**에 적는 것입니다("예시 넣기" 버튼). 파일로
+관리하려면 `config/parsers.json`에 적고 `.env`에 `NMOS_PARSERS_FILE=/config/parsers.json`을 넣으세요.
 
 - 시뮬봇(한 카드에 여러 인물): `block` 규칙에 `entity_line`(예: `\[(?P<entity>[^\]]+)\]`)을 주면
   `[하나]`, `[카이토]` 줄마다 인물별로 `하나.HP`, `카이토.HP`처럼 따로 기록합니다.

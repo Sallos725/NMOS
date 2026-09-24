@@ -24,6 +24,9 @@ Phase 8 (in progress): event participants (`docs/phases/PHASE-8.md`, ADR 0021).
   told" case never put the person in `known_by` (`docs/perf/phase8-extraction.md`).
 - **Entity ids change once** (`resolve-v2`): Inspector character links from before the upgrade no longer
   open. KNOWN ENTITIES hints are unchanged.
+- **Inspector state example.** Current state, when nothing has been parsed yet, now shows a sample status
+  window matching `config/parsers.example.json`'s rules, so a first-time user can see the expected format
+  instead of just "no parser state." The guide and README show the same example.
 
 **Google Vertex AI for fact extraction** (ADR 0022). The LLM API key field also takes a Google
 service-account JSON key: the sidecar exchanges it for access tokens and renews them every hour. A new

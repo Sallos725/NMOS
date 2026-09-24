@@ -68,6 +68,15 @@ def test_coverage_of_a_feature_that_was_never_on_is_not_shown_as_partial(client)
     assert "일부" not in page and "0.0%" not in page
 
 
+def test_no_parsed_state_shows_an_example_status_window(client):
+    sync_named(client, chat(), character_name="하나", chat_name="첫 대화")  # no parser rules configured
+    conv_id = client.get("/v1/conversations").json()[0]["id"]
+    ko = client.get(f"/inspector/c/{conv_id}").text
+    assert "상태창 규칙으로 읽은 값이 없습니다." in ko and "HP: 80/100" in ko
+    en = client.get(f"/inspector/c/{conv_id}", params={"lang": "en"}).text
+    assert "No parser state." in en and "HP: 80/100" in en
+
+
 def test_inspector_handles_active_extractor_without_eligible_turns(migrated):
     with make_client(migrated, llm_url="http://fake-llm/v1", llm_model="fake") as client:
         pending = SimChat()

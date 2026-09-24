@@ -141,10 +141,23 @@ never scans other chats by itself.
 
 ### State parsers
 
-Status windows become state with rules in `config/parsers.json` — see
-[config/parsers.example.json](config/parsers.example.json). `block` rules read `key: value` lines between a
-start and end pattern; `regex` rules use named groups `key`/`value`. Changing rules re-parses history at
-the next sidecar start.
+If a bot's reply ends with something like:
+
+````
+```status
+HP: 80/100
+MP: 30/30
+Location: Cafe
+```
+````
+
+rules in `config/parsers.json` turn that into current state — see
+[config/parsers.example.json](config/parsers.example.json), whose `status-block` rule (`key: value` lines
+between the start and end of a code block) and `hp` rule (a `HP: 80/100`-shaped regex) match this example.
+The inspector's Current state section shows this same example while no state has been parsed yet.
+
+`block` rules read `key: value` lines between a start and end pattern; `regex` rules use named groups
+`key`/`value`. Changing rules re-parses history at the next sidecar start.
 
 ## What gets injected
 
