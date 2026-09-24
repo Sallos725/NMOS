@@ -28,6 +28,9 @@ latency (`docs/perf/scale.md`), a real upgrade from a `v0.1.0-beta.10` database.
 (transition verifier), not authorized yet.
 Outside the phase (owner decision 2026-09-24, D28): an optional progress display on the chat screen,
 released in `v0.1.0-beta.12`.
+Outside the phase (owner request 2026-09-24, ADR 0021): Google Vertex AI service-account keys for the
+extraction LLM, unreleased. Mocked token exchange in CI; not yet run against real Vertex (needs an
+owner-supplied service-account key).
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 

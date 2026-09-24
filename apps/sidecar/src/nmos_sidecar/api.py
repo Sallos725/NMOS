@@ -486,7 +486,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         cur = rt["settings"]
         kind = body.get("kind", "llm")
         fallback_key = cur.embed_api_key if kind == "embeddings" else cur.llm_api_key
-        return runtime.list_models(body.get("url") or "", body.get("api_key") or fallback_key)
+        return runtime.list_models(body.get("url") or "", body.get("api_key") or fallback_key, kind)
 
     def inspector_index_html(request: Request, token: str | None, lang: str | None, embed: bool = False) -> str:
         with request.app.state.pool.connection() as conn:

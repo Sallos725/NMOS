@@ -9,6 +9,8 @@ from typing import Any
 
 import httpx
 
+from . import vertex
+
 
 class LLMError(RuntimeError):
     pass
@@ -16,6 +18,15 @@ class LLMError(RuntimeError):
 
 def _headers(api_key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+
+def chat_headers(api_key: str) -> dict[str, str]:
+    """Headers for the extraction LLM: a service-account JSON key becomes a Vertex access token (ADR 0021)."""
+    try:
+        info = vertex.service_account_info(api_key)
+        return _headers(vertex.access_token(info) if info is not None else api_key)
+    except vertex.VertexAuthError as exc:
+        raise LLMError(str(exc)) from None
 
 
 def parse_json_object(text: str) -> dict[str, Any]:
@@ -54,7 +65,7 @@ class ChatModel:
         if self.json_mode:
             body["response_format"] = {"type": "json_object"}
         try:
-            res = httpx.post(f"{self.url}/chat/completions", json=body, headers=_headers(self.api_key),
+            res = httpx.post(f"{self.url}/chat/completions", json=body, headers=chat_headers(self.api_key),
                              timeout=self.timeout_s)
         except httpx.HTTPError as exc:
             raise LLMError(f"request failed: {exc}") from exc

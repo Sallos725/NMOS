@@ -70,9 +70,12 @@ language after a page reload.
   undone. Use it after deleting the chat in PocketRisu. The PocketRisu chat itself is never touched;
   generating in it again starts a new NMOS conversation.
 - **Settings**: connection (sidecar URL, route, memory budget, deadline, on/off); **fact-extraction LLM**
-  and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, any
+  and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, Google Vertex AI, any
   OpenAI-compatible endpoint), model list, API key and a **connection test** that makes a real call;
   recall tuning; status-window parser rules (validated before saving).
+  For **Google Vertex AI**, paste the whole service-account JSON key file into the LLM's API key field;
+  the sidecar renews the access token itself (ADR 0021). Use a dedicated service account with only
+  the Vertex AI User role.
 - One **Save** button at the bottom saves every changed section together. Unsaved changes are listed
   there, and closing asks whether to save them. Saving applies immediately and processes existing
   chats in the background.

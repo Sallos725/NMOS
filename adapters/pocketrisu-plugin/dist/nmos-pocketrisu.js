@@ -631,6 +631,10 @@ ${revisionHash}`;
     "model.key": ["API \uD0A4", "API key"],
     "model.key_placeholder": ["\uD544\uC694\uD560 \uB54C\uB9CC \uC785\uB825", "only if needed"],
     "model.key_saved": ["\uC800\uC7A5\uB428 \u2014 \uBC14\uAFC0 \uB54C\uB9CC \uC785\uB825", "saved \u2014 type only to change"],
+    "model.vertex_hint": [
+      "\uC11C\uBE44\uC2A4 \uACC4\uC815 JSON \uD0A4 \uD30C\uC77C \uB0B4\uC6A9\uC744 API \uD0A4 \uCE78\uC5D0 \uD1B5\uC9F8\uB85C \uBD99\uC5EC \uB123\uC73C\uC138\uC694. \uC8FC\uC18C\uC758 \uD504\uB85C\uC81D\uD2B8\uB294 \uD0A4\uC5D0\uC11C \uCC44\uC6CC\uC9C0\uACE0, \uD1A0\uD070\uC740 \uC0AC\uC774\uB4DC\uCE74\uAC00 1\uC2DC\uAC04\uB9C8\uB2E4 \uAC31\uC2E0\uD569\uB2C8\uB2E4. Vertex AI User \uC5ED\uD560\uB9CC \uC900 \uC804\uC6A9 \uC11C\uBE44\uC2A4 \uACC4\uC815\uC744 \uC4F0\uC138\uC694.",
+      "Paste the whole service-account JSON key file into the API key field. The project in the endpoint is filled from the key, and the sidecar renews the token every hour. Use a dedicated service account with only the Vertex AI User role."
+    ],
     "model.load": ["\uBAA8\uB378 \uBAA9\uB85D", "Load models"],
     "model.test": ["\uC5F0\uACB0 \uD14C\uC2A4\uD2B8", "Test"],
     "model.loading": ["\uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Loading\u2026"],
@@ -723,6 +727,26 @@ ${revisionHash}`;
   var DEFAULT_DEADLINE_MS = 3e3;
   var MAX_DEADLINE_MS = 3e4;
   var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
+  var VERTEX_URL = "https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi";
+  function serviceAccountProject(key) {
+    const text = key.trim();
+    if (!text.startsWith("{")) return null;
+    try {
+      const info = JSON.parse(text);
+      return info.type === "service_account" && typeof info.project_id === "string" && info.project_id ? info.project_id : null;
+    } catch {
+      return null;
+    }
+  }
+  function fillProject(url, key) {
+    const project = serviceAccountProject(key);
+    return project && url.includes("{project}") ? url.replace("{project}", encodeURIComponent(project)) : url;
+  }
+  function presetMatches(presetUrl, url) {
+    if (!presetUrl.includes("{project}")) return presetUrl === url;
+    const [head, tail] = presetUrl.split("{project}");
+    return url.startsWith(head) && url.endsWith(tail) && url.length > head.length + tail.length && !url.slice(head.length, url.length - tail.length).includes("/");
+  }
   function dirtySections(baseline, current2) {
     return SECTIONS.filter((s) => JSON.stringify(baseline[s]) !== JSON.stringify(current2[s]));
   }
@@ -1121,6 +1145,7 @@ ${revisionHash}`;
     { label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
     { label: "OpenAI", url: "https://api.openai.com/v1", model: "gpt-4o-mini" },
     { label: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.5-flash" },
+    { label: "Google Vertex AI", url: VERTEX_URL, model: "google/gemini-2.5-flash" },
     { label: "preset.custom", url: "custom" }
   ];
   var EMBED_PRESETS = [
@@ -1220,7 +1245,7 @@ html,body{margin:0;background:#0c0c10}
   }
   function presetIndex(presets, url) {
     if (!url) return 0;
-    const i = presets.findIndex((p) => p.url === url);
+    const i = presets.findIndex((p) => presetMatches(p.url, url));
     return i >= 0 ? i : presets.length - 1;
   }
   function errorText(lang, error) {
@@ -1604,10 +1629,14 @@ html,body{margin:0;background:#0c0c10}
       const test = el("button", { text: L("model.test") });
       preset.addEventListener("change", () => {
         const p = presets[Number(preset.value)];
-        if (p.url !== "custom") endpoint.value = p.url;
+        if (p.url !== "custom") endpoint.value = fillProject(p.url, key.value);
         if (p.model) model.value = p.model;
         if (!p.url) model.value = "";
+        say(msg, p.url.includes("{project}") ? L("model.vertex_hint") : "");
         update();
+      });
+      key.addEventListener("input", () => {
+        endpoint.value = fillProject(endpoint.value, key.value);
       });
       list.addEventListener("change", () => {
         model.value = list.value;

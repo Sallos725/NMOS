@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { configBody, connArgs, dirtySections, type FormValues } from '../src/form';
+import { configBody, connArgs, dirtySections, fillProject, presetMatches, serviceAccountProject, VERTEX_URL,
+  type FormValues } from '../src/form';
 import { STRING_KEYS, langOf, t } from '../src/i18n';
 
 const base: FormValues = {
@@ -67,5 +68,32 @@ describe('ui language', () => {
     }
     expect(t('ko', 'outcome.injected', { n: 12 })).toBe('기억 12자를 넣었습니다');
     expect(t('en', 'unsaved', { s: 'Connection' })).toBe('Unsaved changes: Connection');
+  });
+});
+
+describe('Vertex AI service-account key (ADR 0021)', () => {
+  const key = JSON.stringify({ type: 'service_account', project_id: 'my-proj', private_key: 'x', client_email: 'a@b' }, null, 2);
+
+  it('reads the project from a pasted key only', () => {
+    expect(serviceAccountProject(key)).toBe('my-proj');
+    expect(serviceAccountProject(key.replace(/\n/g, ''))).toBe('my-proj'); // a password field drops line breaks
+    expect(serviceAccountProject('sk-abc')).toBeNull();
+    expect(serviceAccountProject('{"type":"authorized_user","project_id":"p"}')).toBeNull();
+    expect(serviceAccountProject('{broken')).toBeNull();
+  });
+
+  it('fills {project} once and leaves other endpoints alone', () => {
+    const filled = fillProject(VERTEX_URL, key);
+    expect(filled).toBe('https://aiplatform.googleapis.com/v1/projects/my-proj/locations/global/endpoints/openapi');
+    expect(fillProject(filled, key)).toBe(filled);
+    expect(fillProject(VERTEX_URL, 'sk-abc')).toBe(VERTEX_URL);
+    expect(fillProject('http://llm/v1', key)).toBe('http://llm/v1');
+  });
+
+  it('recognizes a saved Vertex endpoint as the Vertex preset', () => {
+    expect(presetMatches(VERTEX_URL, fillProject(VERTEX_URL, key))).toBe(true);
+    expect(presetMatches(VERTEX_URL, VERTEX_URL.replace('{project}', 'a/b'))).toBe(false);
+    expect(presetMatches(VERTEX_URL, 'https://aiplatform.googleapis.com/v1/projects/p/locations/us-central1/endpoints/openapi')).toBe(false);
+    expect(presetMatches('http://llm/v1', 'http://llm/v1')).toBe(true);
   });
 });
