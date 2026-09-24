@@ -90,8 +90,9 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 - O1 — relationship to MIRRA / VEIL.
 - O5 — resolved 2026-09-24: superseded vectors and text pruned (ADR 0015, D29), full-manifest host
   observations compacted losslessly (ADR 0018, D31), everything else on abandoned worldlines kept.
-- Phase 7+ (Track B, B3–B7): not authorized. B3 (events, relationships, threads) is the next stage in
-  the proposal and needs its own phase specification.
+- Phase 7+ (Track B, B3–B7): not authorized. B3 (events, relationships, threads) is the next stage; its
+  draft specification is `docs/phases/PHASE-7.md` (promise threads and event salience, a narrowed B3),
+  awaiting owner approval and answers to its questions Q1–Q5.
 
 ## Public release checklist (done 2026-09-23)
 

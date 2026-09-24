@@ -68,7 +68,8 @@ If two normative documents appear to conflict:
 | 4 — hard POV isolation (`character_pov`) | **not authorized** | — |
 | 5 — entity identity and semantic assertions (Track B, B1) | complete (2026-09-24, beta.12) | `PHASE-5.md`, ADRs 0012–0014 |
 | 6 — item transitions and conflicts (Track B, B2) | complete (2026-09-24, beta.13) | `PHASE-6.md`, ADRs 0016–0017 |
-| 7+ (Track B, B3–B7) | **not authorized** | `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
+| 7 — promise threads and event salience (Track B, B3) | **draft, not authorized** | `PHASE-7.md` (draft) |
+| 8+ (Track B, B3 remainder, B4–B7) | **not authorized** | `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
 ADR 0006/0007, `docs/perf/scale.md`).
