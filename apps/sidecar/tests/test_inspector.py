@@ -238,3 +238,28 @@ def test_character_view_escapes_names(migrated):
         conv = client.get("/v1/conversations").json()[0]["id"]
         page = client.get(f"/inspector/c/{conv}").text
         assert "<i>" not in page and "<b>letter" not in page
+
+
+PROMISES = ('Hana says to Kaito: "I promise to meet you at the lighthouse."',
+            'Hana says to Yui: "I promise to return the book."', "Hana kept the promise to return the book.",
+            "Ren kept the promise to feed the cat.", "Hana betrayed Kaito.", "Hana did chore 1.")
+
+
+def test_inspector_shows_promises_unmatched_resolutions_and_salience(migrated):
+    """PHASE-7 step 5: threads with status, resolutions that closed nothing, event salience."""
+    client, c, drain = story_client(migrated, PROMISES)
+    with client:
+        sync(client, c)
+        drain()
+        conv = client.get("/v1/conversations").json()[0]["id"]
+        page = client.get(f"/inspector/c/{conv}").text
+        assert '<a href="#s-threads">약속 <span class="n">2</span></a>' in page
+        assert page.index('id="s-threads"') < page.index('id="s-facts"')
+        assert '<span class="chip" title="open">열림</span>' in page and '<span class="chip" title="kept">지킴</span>' in page
+        assert "Hana fulfilled: return the book" in page  # what closed it
+        assert 'id="s-unmatched"' in page and "feed the cat" in page  # Ren has no such promise
+        assert '<span class="chip" title="major">중요</span>' in page
+        assert '<span class="chip" title="minor">사소</span>' in page
+        who = character_links(page, conv)
+        yui = client.get(f"/inspector/c/{conv}/e/{who['Yui']}?lang=en").text
+        assert 'id="s-threads"' in yui and "return the book" in yui and "lighthouse" not in yui

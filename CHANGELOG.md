@@ -26,6 +26,10 @@ Phase 7 (in progress): promise threads and event salience (`docs/phases/PHASE-7.
   minor and unlabeled ones, and a `minor` event reaches the packet only when the user's message is
   about it, not merely when its subject is named. Events of older turns are unlabeled and rank as
   before.
+- **Inspector.** A Promises section lists every promise with maker, recipient, turn, status (open,
+  kept, broken), the assertion that closed it and the turns that restated it. Beside it is a list of
+  kept or broken statements that matched no open promise. A character's view lists their promises.
+  Events show their salience (`—` for older, unlabeled ones).
 
 ## 0.1.0-beta.13
 
