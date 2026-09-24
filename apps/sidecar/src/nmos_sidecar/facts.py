@@ -15,6 +15,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from .entities import Resolution, resolve
 from .predicates import HOLDER_PER_ITEM, REGISTRY, whereabouts
+from .threads import fold as fold_threads
 
 # `unit` is the turn (a message without one counts alone). `live` holds every extraction that still
 # matches the head, and `chosen` the one generation that serves its unit: the active one first, then the
@@ -184,11 +185,13 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
     - entities / ambiguous: the read-time entity resolution those keys use (ADR 0012). `also_called`
       assertions feed it and are not facts themselves;
     - conflicts: current facts the story contradicts (PHASE-6 Q4), each with the assertion against it;
-    - items: each item's whereabouts history with the outcome of every assertion (PHASE-6).
+    - items: each item's whereabouts history with the outcome of every assertion (PHASE-6);
+    - threads / unmatched: promises with their status, and resolutions that closed none (PHASE-7). The
+      assertions a thread consumed are not facts, claims or other assertions as well.
     """
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
-                "items": []}
+                "items": [], "threads": [], "unmatched": []}
     rows = [r for r in conn.execute(ACTIVE_ASSERTIONS, {"head": head, "key": extractor_key}).fetchall()
             if r["predicate"] in REGISTRY]
     conv = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
@@ -196,10 +199,13 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []
+    rows = [row for row in rows if row["predicate"] != "also_called"]
     for row in rows:
-        if row["predicate"] == "also_called":
-            continue
         _annotate(row, r)
+    threads, unmatched, consumed = fold_threads(rows, r)
+    for row in rows:
+        if row["id"] in consumed:
+            continue
         if row["source"] == "character_claim" and row["modality"] in ("actual", "unknown"):
             # A claim's truth is unknown by nature; the model may say so (owner decision 2026-09-24).
             claimed[version_key(row, r) + (_norm(row["asserted_by"]),)] = row  # latest wins
@@ -227,7 +233,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
                 "item": f["object"] if f["predicate"] in HOLDER_PER_ITEM else f["subject"],
                 "position": f["position"], "history": f["history"]})
     return {"facts": facts, "claims": claims, "other": other, "entities": r.entities(),
-            "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values())}
+            "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
+            "threads": threads, "unmatched": unmatched}
 
 
 def _annotate(row: dict[str, Any], r: Resolution) -> None:
@@ -329,18 +336,34 @@ def fact_line(f: dict[str, Any]) -> str:
         attrs += ' disputed="true"'
     if f.get("epistemic") == "implied":
         attrs += ' certainty="implied"'
-    if f.get("knowledge") == "public":
-        attrs += ' knowledge="public"'
-    elif f.get("knowledge") == "limited":
-        if f.get("known_by"):
-            attrs += f" known_by={quoteattr(', '.join(f['known_by']))}"
-        if f.get("hidden_from"):
-            attrs += f" hidden_from={quoteattr(', '.join(f['hidden_from']))}"
+    attrs += _knowledge_attrs(f)
     text = fact_text(f)
     if against := f.get("disputed_by"):
         when = against["turn"] if against.get("turn") is not None else against["position"]
         text += f"; but turn {when}: {fact_text(against)}"
     return f"    <Fact{attrs}>{escape(text)}</Fact>"
+
+
+def _knowledge_attrs(f: dict[str, Any]) -> str:
+    if f.get("knowledge") == "public":
+        return ' knowledge="public"'
+    attrs = ""
+    if f.get("knowledge") == "limited":
+        if f.get("known_by"):
+            attrs += f" known_by={quoteattr(', '.join(f['known_by']))}"
+        if f.get("hidden_from"):
+            attrs += f" hidden_from={quoteattr(', '.join(f['hidden_from']))}"
+    return attrs
+
+
+def thread_line(t: dict[str, Any]) -> str:
+    """An open promise (PHASE-7 Q5), with the knowledge marks of the turn that made it."""
+    turn = t["turn"] if t.get("turn") is not None else t["position"]
+    attrs = f" kind={quoteattr(t['kind'])} by={quoteattr(t['by'])}"
+    if t.get("to"):
+        attrs += f" to={quoteattr(t['to'])}"
+    attrs += f" turn=\"{turn}\"" + _knowledge_attrs(t)
+    return f"    <Thread{attrs}>{escape(t.get('text') or '')}</Thread>"
 
 
 def claim_line(c: dict[str, Any]) -> str:

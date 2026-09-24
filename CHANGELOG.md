@@ -10,6 +10,12 @@ Phase 7 (in progress): promise threads and event salience (`docs/phases/PHASE-7.
 - **Events no longer take every fact slot.** At most `NMOS_EVENTS_LIMIT` (default 3; `events_limit` in
   `PUT /v1/config`) of a packet's facts are `event` facts, so a main character's newest events leave
   room for older facts about them. Applies to existing facts at once.
+- **Promises are remembered until kept or broken** (ADR 0019). A promise a character makes, in
+  dialogue or narration, is an open thread:
+  `<Thread kind="promise" by="하나" to="{{user}}" turn="10">…</Thread>`, in a `<Threads>` section before
+  the facts, whenever its maker or recipient comes up (at most `NMOS_THREADS_LIMIT`, default 3). Before,
+  a spoken promise was only a claim, and half the time labeled hypothetical and never shown. A promise
+  the story breaks, withdraws or releases leaves the packet. Applies to existing facts at once.
 
 ## 0.1.0-beta.13
 

@@ -40,6 +40,8 @@ class Settings:
     facts_limit: int = field(default_factory=lambda: int(os.environ.get("NMOS_FACTS_LIMIT", "8")))
     # `event` facts among them (PHASE-7 Q4): the newest events of a main character would take every slot.
     events_limit: int = field(default_factory=lambda: int(os.environ.get("NMOS_EVENTS_LIMIT", "3")))
+    # Open promises in the packet (PHASE-7 Q5); 0 turns the section off.
+    threads_limit: int = field(default_factory=lambda: int(os.environ.get("NMOS_THREADS_LIMIT", "3")))
     # Phase 3: embeddings (off unless NMOS_EMBED_URL is set).
     embed_url: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_URL", ""))
     embed_model: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_MODEL", ""))
