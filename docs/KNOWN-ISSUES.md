@@ -19,7 +19,7 @@ without a PocketRisu change.
 | K7 | Tested on one PocketRisu build only; no group chats | Host | evidence / host (H11) |
 | K8 | Names can still split: a new name with no stated alias is a new entity | Memory | reduced in beta.12 (ADR 0012); owner merge/split: Track B, B7 |
 | K9 | A destroyed or used-up item keeps its last holder unless the story says it is gone | Memory | explicit loss fixed in beta.12 (ADR 0013); other ends: Track B, B2 |
-| K10 | An item's holder and its place are separate facts and can disagree | Memory | Track B, B2 |
+| K10 | An item's holder and its place are separate facts and can disagree | Memory | fixed, unreleased (Phase 6, ADR 0016) |
 | K11 | Character knowledge is a hint, not isolation | Memory | Track B, B5 (hard POV) |
 | K12 | A word in more than 200 messages brings no lexical excerpts | Recall | accepted trade-off (A3) |
 | K13 | Very long messages are only partly embedded and extracted | Recall | accepted limit (#13) |
@@ -93,7 +93,8 @@ into the sea", "gave away"; ADR 0013; 3/3 in the real-model check). An item that
 used up with no such statement still shows its last holder. Needs transition rules (Track B, B2).
 
 **K10 — Holder and place can disagree.** `possesses` and `located_in` are separate facts, so an item
-can show a holder from one turn and a place from another (ADR 0011). Track B, B2.
+can show a holder from one turn and a place from another (ADR 0011). *Fixed, unreleased:* since Phase 6
+step 1 they are one whereabouts per item, and the newer statement decides (ADR 0016).
 
 **K11 — Character knowledge is a hint.** Facts carry `public` / `limited` (`known_by`,
 `hidden_from`) / unknown marks and the packet tells the model how to use them, but one generation

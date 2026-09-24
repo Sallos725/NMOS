@@ -4,7 +4,8 @@
 
 **Phase 6 — Item Transitions and Conflicts: approved 2026-09-24, in progress.** Spec
 `docs/phases/PHASE-6.md` (Track B, B2). The owner took the recommended answer to every open question
-(Q1–Q5). Step 1 (read-time item whereabouts) is next.
+(Q1–Q5). Step 1 (one whereabouts per item, ADR 0016, D30) done; step 2 (`destroyed`,
+`extract-v6`) is next.
 
 **Phase 5 — Entity Identity and Semantic Assertions: complete (2026-09-24), released in
 `v0.1.0-beta.12`.** Spec `docs/phases/PHASE-5.md`, ADRs 0012–0014 (0012/0013 amended by the owner after
@@ -58,16 +59,16 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H16, D1–D29, O2/O3/O4 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H16, D1–D30, O2/O3/O4 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
 | Schema | `migrations/0001`–`0014` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (205), `adapters/pocketrisu-plugin/test` (46) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` |
+| Tests | `apps/sidecar/tests` (212), `adapters/pocketrisu-plugin/test` (46) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k (D24) |
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K21 current as of `v0.1.0-beta.10`, each with workaround and tracking (host, owner decision O5, Track B stage); resolved limitations listed |
 | Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B B1 = Phase 5 (complete); B2–B7 not authorized |
-| Decisions | `docs/adr/0001`–`0015` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention |
+| Decisions | `docs/adr/0001`–`0016` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-5.md` | 0–3 met; 4 soft subset met; 5 met |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 

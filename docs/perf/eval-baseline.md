@@ -1,4 +1,4 @@
-# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5 cases 2026-09-24)
+# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5 and Phase 6 cases 2026-09-24)
 
 Deterministic tier of the RP memory evaluation. It gates CI (`apps/sidecar/tests/test_memory_eval.py`)
 and prints this table (`tools/eval_memory.py`).
@@ -13,7 +13,9 @@ and prints this table (`tools/eval_memory.py`).
   `located_in`, "X has the Y." → `possesses`, "X keeps a secret from Y: …" → `knows` with
   `hidden_from`; since Phase 5 also negation — "X lost / does not have the Y.", "X did not enter / is not
   in the Y." —, a hypothetical "If X goes to the Y,", a dream "X dreamed she was in the Y.", narrated
-  identity "X is a Y." and a claim 'X says: "I am a Y."'); the embedder is a concept bag with weak
+  identity "X is a Y." and a claim 'X says: "I am a Y."'; since Phase 6 an item's place — "The Y is
+  on the Z.", "X puts the Y on the Z." — and a holder and place in one sentence "X has the Y in the
+  Z."); the embedder is a concept bag with weak
   hashed words. Results therefore measure
   reconciliation, invalidation, retrieval and packet compilation, not model quality.
 - **Measured on the packet**, never on a generated answer, so no judge model is involved:
@@ -50,14 +52,21 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | denial by a non-holder | negation | **no** | **no** | **no** | yes |
 | hypothetical and dream | modality | **no** | **no** | **no** | yes |
 | lie in dialogue | source | **no** | **no** | **no** | yes |
+| put down | item whereabouts | **no** | **no** | **no** | yes |
+| picked up | item whereabouts | **no** | **no** | **no** | yes |
+| holder and place in one turn | item whereabouts | **no** | **no** | **no** | yes |
+| a character's place is not an item's | item whereabouts | **no** | **no** | **no** | yes |
 | unrelated question | irrelevant-memory suppression | — | empty | empty | empty |
 
 | Mode | gold reached | cases with stale memory | irrelevant packets | mean packet tokens |
 |---|---:|---:|---:|---:|
-| recent | 0/16 | 0 | — | 0 |
-| lexical | 2/16 | 0 | 0/1 | 123 |
-| hybrid | 3/16 | 0 | 0/1 | 143 |
-| full | 16/16 | 0 | 0/1 | 172 |
+| recent | 0/20 | 0 | — | 0 |
+| lexical | 2/20 | 0 | 0/1 | 114 |
+| hybrid | 3/20 | 0 | 0/1 | 144 |
+| full | 20/20 | 0 | 0/1 | 175 |
+
+Before Phase 6 step 1 (ADR 0016), `full` had stale memory in "put down" (`Hana possesses map`) and
+"picked up" (`map located in table`).
 
 "—": the case has no gold (the deleted turn only checks that nothing of it comes back).
 

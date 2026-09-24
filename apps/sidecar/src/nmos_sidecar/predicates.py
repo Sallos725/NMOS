@@ -53,6 +53,12 @@ REGISTRY: dict[str, Predicate] = {p.name: p for p in (
 HOLDER_PER_ITEM = frozenset({"possesses"})
 
 
+def whereabouts(a: dict[str, Any]) -> bool:
+    """An item's holder (`possesses`) and its place (`located_in` of an item) are one whereabouts per item
+    (PHASE-6 Q2): the newer one is current and closes the other. Read-side only, like HOLDER_PER_ITEM."""
+    return a["predicate"] in HOLDER_PER_ITEM or (a["predicate"] == "located_in" and a.get("subject_type") == "item")
+
+
 def registry_prompt() -> str:
     lines = []
     for p in REGISTRY.values():
