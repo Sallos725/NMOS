@@ -33,7 +33,8 @@ class ConversationState:
 
 
 def lock_conversation(conn: psycopg.Connection, host: str, chat_ref: str, character_ref: str | None,
-                      character_name: str | None = None, chat_name: str | None = None) -> Conversation:
+                      character_name: str | None = None, chat_name: str | None = None,
+                      persona_name: str | None = None) -> Conversation:
     """Get-or-create the conversation row and lock it for the rest of the transaction."""
     conn.execute(
         "INSERT INTO conversation (id, host, host_chat_ref, host_character_ref) VALUES (%s, %s, %s, %s)"
@@ -50,8 +51,8 @@ def lock_conversation(conn: psycopg.Connection, host: str, chat_ref: str, charac
             "UPDATE conversation SET host_character_ref = %s WHERE id = %s AND host_character_ref IS NULL",
             (character_ref, row["id"]),
         )
-    names = {k: v.strip() for k, v in (("host_character_name", character_name), ("host_chat_name", chat_name))
-             if v and v.strip()}
+    names = {k: v.strip() for k, v in (("host_character_name", character_name), ("host_chat_name", chat_name),
+                                       ("host_persona_name", persona_name)) if v and v.strip()}
     if names:  # labels follow renames in the host; written only when they changed
         sets = ", ".join(f"{k} = %({k})s" for k in names)
         changed = " OR ".join(f"{k} IS DISTINCT FROM %({k})s" for k in names)

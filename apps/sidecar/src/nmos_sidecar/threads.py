@@ -172,16 +172,17 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None) -> tuple[list[
 
 
 def relevant_threads(threads: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],
-                     limit: int) -> list[dict[str, Any]]:
+                     limit: int, persona: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
     """Open threads whose maker or recipient is mentioned now (Q5): in the user's message first, then in
     the previous reply; newest first within each. The persona does not count as a mention (it is in
-    every chat), and a thread whose opening message is still in the prompt is left out (D3)."""
+    every chat; `persona` adds the names the host reported for it, ADR 0023), and a thread whose opening
+    message is still in the prompt is left out (D3)."""
     q, ai = norm(query), norm(previous_ai)
     scored = []
     for t in threads:
         if t["status"] != "open" or t.get("host_logical_id") in in_context:
             continue
-        names = {norm(n) for n in t["names"] if n} - USER_NAMES
+        names = {norm(n) for n in t["names"] if n} - USER_NAMES - persona
         names = {n for n in names if len(n) >= 2}
         mention = 2 if any(n in q for n in names) else (1 if any(n in ai for n in names) else 0)
         if mention:

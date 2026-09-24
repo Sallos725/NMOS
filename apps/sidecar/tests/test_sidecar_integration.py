@@ -14,9 +14,10 @@ from nmos_sidecar.rebuild import rebuild_all
 from simchat import SimChat
 
 
-def sync(client, chat: SimChat) -> dict:
-    """Plugin flow: reconcile; if bodies are needed, post them with then_reconcile."""
-    manifest = chat.manifest()
+def sync(client, chat: SimChat, **labels) -> dict:
+    """Plugin flow: reconcile; if bodies are needed, post them with then_reconcile. `labels` adds
+    host-reported fields such as `persona_name`."""
+    manifest = {**chat.manifest(), **labels}
     res = client.post("/v1/sync/reconcile", json=manifest)
     assert res.status_code == 200, res.text
     out = res.json()

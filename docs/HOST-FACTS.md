@@ -303,6 +303,40 @@ probe plugins (`hud_spike`, `hud_deny`) that draw a pill from a settings entry. 
    `/coverage` request after the switch. Re-importing a plugin with the same name asks *"Duplicate plugin
    found. do you want to update the existing plugin?"*; without Yes the old script keeps running.
 
+## Persona name (2026-09-24, ADR 0023)
+
+Observed on `ghcr.io/pocketrisu/pocketrisu:latest` (v1.12.0, image `13fc7c7f7e06`), isolated container on
+`http://localhost:6123` with an empty save dir, headless Chromium 1223 at 1280×800, the plugin built from
+this branch, its sidecar and worker on a scratch database, the stub chat model and a deterministic
+extraction stub ("X는 Y로 간다." → X located_in Y). **Source reading:** tag `v1.12.0` of
+`github.com/PocketRisu/PocketRisu`: `src/ts/plugins/apiV3/v3.svelte.ts` (`getDatabase`),
+`src/ts/plugins/plugins.svelte.ts` (`allowedDbKeys`), `src/ts/util.ts` (`getUserName`,
+`checkPersonaBinded`), `src/ts/persona.ts`. The owner's instance was not touched.
+
+1. **No user-name call (ARCHITECTURE H17).** The lite database's allowed keys include `personas` and
+   `selectedPersona`, not `username`. `getUserName()` returns the chat's bound persona's name
+   (`chat.bindedPersona` is a persona `id`), else `db.username`; `changeUserPersona` and
+   `saveUserPersona` keep `db.username` equal to `personas[selectedPersona].name`.
+2. **Permission.** The first `getDatabase(...)` shows *"Plugin nmos_memory is requesting to access the
+   full database, which may expose sensitive information. Do you want to allow this?"* (Korean: *"플러그인
+   nmos_memory 이(가) 전체 데이터베이스에 접근하려고 합니다. 민감한 정보가 노출될 수 있습니다.
+   허용하시겠습니까?"*). With the call made right after the hooks are registered, a load after "Reset
+   permission responses" showed the replacer dialog first, then this one. Yes → `{"personas": [{…,
+   "name": "User", "id": "9280a9b8-…"}], "selectedPersona": 0}` and no dialog on later loads. No →
+   `null`, with no dialog on later loads, and generation went on (the stub replied, NMOS injected).
+3. **Rename.** Typing 유우마 in Settings → Persona and leaving the page → `personas[0].name` = 유우마.
+4. **Selection and binding.** A second persona created and renamed 레이 became the selected one
+   (`selectedPersona: 1`); the next sync reported 레이. Binding the chat to 유우마 from the chat's
+   Persona Binding button ("Persona is successfully binded") put `bindedPersona: "9280a9b8-…"` in the
+   `getChatFromIndex` snapshot, and the next sync reported 유우마 while 레이 stayed selected.
+5. **`{{user}}` in a user message.** The message typed as `{{user}}는 거실로 간다.` was stored and synced
+   as `유우마는 거실로 간다.`: the host replaces the macro before storing the message (its send path runs
+   `processScript(…, 'editinput')`).
+6. **End to end.** After "{{user}}는 거실로 간다." and "유우마는 주방으로 간다.": `host_persona_name` =
+   유우마; one `located_in` fact with 2 versions under the persona entity (`persona: true`); the
+   extraction of the second turn got KNOWN ENTITIES `거실 (place)` only, the third `주방 (place) |
+   거실 (place)`. A new chat opened after the denial had no persona name.
+
 ## Scenario evidence index
 
 | Scenario | Before fixture | After fixture | Other logs | Done |

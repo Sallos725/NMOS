@@ -5,6 +5,23 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+Schema: migration 0018 (applied at startup). Upgrade both parts, then replace the plugin file and
+reload PocketRisu.
+
+- **A named persona is the persona** (ADR 0023). The extractor wrote your persona both as `{{user}}`
+  and by its name (e.g. 유우마), and NMOS kept them as two characters: two current locations, split
+  promises, and every fact naming 유우마 counted as mentioned in every message you narrate by name.
+  The plugin now reads the persona's name from PocketRisu (the chat's bound persona, else the selected
+  one) and sends it with each sync; both spellings are one entity, the persona's names never count as a
+  mention, and KNOWN ENTITIES leaves it out. Facts already extracted join up at the next read, with no
+  re-extraction.
+- **A second permission dialog at load.** PocketRisu asks *"Plugin nmos_memory is requesting to access
+  the full database, which may expose sensitive information."* NMOS reads only persona names with it.
+  Answering No leaves the behavior as before (reset: Settings → Plugin → NMOS row menu → **Reset
+  permission responses**).
+- **Entity ids change once** (`resolve-v3`); Inspector character links saved before the upgrade no
+  longer open.
+
 ## 0.1.0-beta.15
 
 Phase 8: typed event participants (`docs/phases/PHASE-8.md`, ADR 0021, D33), plus Google Vertex AI

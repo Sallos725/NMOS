@@ -6,7 +6,7 @@ import type { Lang } from './i18n';
 import { bodyKey, createManifestBuilder, hashPayload, type Bodies } from './manifest';
 import type { ActivityEvent } from './hud';
 import { hasPacket, inContextIds, injectPacket, queryTexts, userTurnIndex, type InjectPosition } from './prompt';
-import type { HostChat, HostMessage, PromptMessage, ReconcileRequest } from './types';
+import type { HostChat, HostMessage, HostPersonas, PromptMessage, ReconcileRequest } from './types';
 
 export interface Settings {
   sidecarUrl: string;
@@ -30,6 +30,11 @@ export interface HostPort {
   currentChat(): Promise<HostChat | null>;
   /** Name of the bot that owns chat `chatId` (a display label only). May be slow: never awaited on the request path. */
   characterName?(chatId: string): Promise<string | null>;
+  /**
+   * The host's personas (ADR 0023), or null when the host refuses. The first call may show the host's
+   * permission dialog, so it is made at load (`warmPersonas`) and never awaited on the request path.
+   */
+  personas?(): Promise<HostPersonas | null>;
   request(method: 'GET' | 'POST' | 'PUT', url: string, body: unknown, headers: Record<string, string>,
           timeoutMs: number, route: Settings['route']): Promise<HttpResult>;
   warn(...args: unknown[]): void;
@@ -77,12 +82,22 @@ export interface StatusInfo {
 }
 
 const NAME_TTL_MS = 10 * 60_000;
+const PERSONA_TTL_MS = 30_000; // a persona switch reaches the sidecar within this (it is re-read in the background)
+
+/** The persona the host uses for `{{user}}` in this chat: the chat-bound one, else the selected one. */
+export function personaOf(chat: HostChat, host: HostPersonas): string | null {
+  const list = Array.isArray(host.personas) ? host.personas : [];
+  const bound = chat.bindedPersona ? list.find((p) => p?.id === chat.bindedPersona) : undefined;
+  const name = (bound ?? list[host.selected])?.name;
+  return typeof name === 'string' && name.trim() ? name.trim() : null;
+}
 
 /** `onActivity` feeds the progress display (D28): called synchronously, never awaited, errors ignored. */
 export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent) => void) {
   const cache = new Map<string, CacheEntry>();
   const conversations = new Map<string, string>(); // host chat id → sidecar conversation id
   const names = new Map<string, { name: string | null; at: number }>();
+  let personas: { value: HostPersonas | null; at: number } | null = null;
   const buildManifest = createManifestBuilder();
   let last: LastRequest | null = null;
 
@@ -104,6 +119,21 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         .catch(() => {});
     }
     return hit?.name ?? null;
+  }
+
+  /** Reads the host's personas in the background; a refusal or failure leaves the name unknown. */
+  function warmPersonas(): void {
+    if (!host.personas) return;
+    personas = { value: personas?.value ?? null, at: host.now() };
+    host.personas()
+      .then((value) => { personas = { value, at: host.now() }; })
+      .catch(() => { personas = { value: null, at: host.now() }; });
+  }
+
+  /** The persona name for this chat as last read; a stale or missing read is refreshed in the background. */
+  function personaName(chat: HostChat): string | null {
+    if (!personas || host.now() - personas.at > PERSONA_TTL_MS) warmPersonas();
+    return personas?.value ? personaOf(chat, personas.value) : null;
   }
 
   function remember(key: string, packet: string, ttl: number): void {
@@ -187,7 +217,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // survives an edit anywhere in the chat.
       const t0 = host.now();
       const { request, bodies } = await buildManifest(chat, firstSaying(messages),
-        { characterName: characterName(chat.id) });
+        { characterName: characterName(chat.id), personaName: personaName(chat) });
       const manifestMs = host.now() - t0;
       // Internal key only (not a cross-language hash): plain JSON keeps it linear and cheap.
       key = await sha256Hex(JSON.stringify([
@@ -286,7 +316,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     return out;
   }
 
-  return { beforeRequest, onOutput, status, api };
+  return { beforeRequest, onOutput, status, api, warmPersonas };
 }
 
 function firstSaying(messages: HostMessage[]): string | null {

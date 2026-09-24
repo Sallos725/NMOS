@@ -87,6 +87,7 @@ Evidence for every runtime claim is in `docs/HOST-FACTS.md`.
 | H14 | On reroll the host removes the tail AI message *before* `beforeRequest` runs (S2 beforeRequest saw 7 of 8 messages; confirmed in 0B live runs). The regenerated reply appears only in the next request's snapshot. | Live reroll reconciles as "head minus tail" → retract; lineage to the new reply is not observable in the same request. |
 | H15 | The V3 plugin iframe is sandboxed with only `allow-scripts allow-modals allow-downloads` and `allow="screen-wake-lock"`. Runtime (v1.12.0): a `target="_blank"` link is blocked ("sandboxed frame whose 'allow-popups' permission is not set"), and `navigator.clipboard.writeText` is refused by permissions policy. The V3 API has no call that opens a URL. | The plugin cannot open a browser tab. The Inspector is shown inside the panel from `/v1/inspector*`, and links in it must be handled by the panel (following one would navigate the plugin frame). |
 | H16 | With the `mainDom` permission (host confirm, persisted; a denial is permanent until reset) a V3 plugin gets the page through an async `SafeElement` proxy (text is escaped, `setInnerHTML` is sanitised). Element listeners are registered on the whole document. A plugin re-import leaves drawn elements behind until reload. | The progress HUD (D28) is opt-in from the panel, hit-tests clicks against its rect, and removes a leftover `.nmos-hud` before drawing. |
+| H17 | The V3 API has no user-name call. `getDatabase(['personas', 'selectedPersona'])` returns the personas (`id`, `name`, …) and the selected index behind the host's "db" permission, asked once (a denial returns `null` and is permanent until reset). The host names the user after the chat's `bindedPersona` (in the `getChatFromIndex` snapshot), else the selected persona. A typed `{{user}}` is stored with the name in place. | The plugin reads the persona name at load and in the background, never on the request path; the sidecar resolves it as the persona (ADR 0023, D34). |
 
 ## 5. Key decisions
 
@@ -238,7 +239,8 @@ and names are linked only by actual `also_called` assertions (both names in the 
 are narrated or that the named character says about their own name (amended 2026-09-24). A name
 linked to otherwise unconnected names is ambiguous and links nobody. Fact version keys use entity ids
 where resolved, text otherwise. Ids are `uuid5(conversation, RESOLVER_VERSION, type,
-name)`; a resolver change takes effect on the next read.
+name)`; a resolver change takes effect on the next read. **Amended 2026-09-24 (ADR 0023):** the
+persona's name as the host reports it is a persona name for characters (`resolve-v3`).
 
 **D27 — Assertion semantics (Phase 5, ADR 0013).** Each assertion has `polarity` (positive /
 negative), `modality` (actual / hypothetical / dreamed / unknown; missing means unknown) and `source`
@@ -295,6 +297,14 @@ object and alias name, so they never change an existing entity or the KNOWN ENTI
 amended). A participant named in the user's message counts like the subject for facts and claims; the
 persona never counts. Participation changes no knowledge mark, version key or thread. Older rows have
 no participants and recall as before.
+
+**D34 — The host's persona name is the persona (ADR 0023; owner-reported bug, not a phase feature).** The
+plugin reads the personas from the host (H17) at load and every 30 s in the background, picks the chat's
+bound persona or else the selected one, and sends its name with each sync. The sidecar keeps the latest
+(`conversation.host_persona_name`, migration 0018). The resolver treats it like `{{user}}` for
+characters, so both spellings are one entity; recall never counts any of the persona's names as a
+mention, and KNOWN ENTITIES leaves the persona out. No name (refused permission, older plugin) means
+the behavior before.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

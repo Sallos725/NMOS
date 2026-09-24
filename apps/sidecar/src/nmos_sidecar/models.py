@@ -35,6 +35,8 @@ class ReconcileRequest(BaseModel):
     # Display labels (the host's bot and chat names), refreshed on every sync; never identity.
     character_name: str | None = Field(default=None, max_length=200)
     chat_name: str | None = Field(default=None, max_length=200)
+    # The user's persona name in this chat (ADR 0023): resolved as the persona, refreshed like the labels.
+    persona_name: str | None = Field(default=None, max_length=200)
     hash_version: Literal[1] = 1
     messages: list[ManifestMessage] = Field(max_length=MAX_MANIFEST_MESSAGES)
 

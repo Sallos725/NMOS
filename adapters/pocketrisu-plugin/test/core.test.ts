@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createAdapter, type HostPort, type HttpResult, type Settings } from '../src/core';
+import { createAdapter, personaOf, type HostPort, type HttpResult, type Settings } from '../src/core';
 import type { ActivityEvent } from '../src/hud';
 import { hasPacket } from '../src/prompt';
 import type { HostChat, PromptMessage } from '../src/types';
@@ -217,6 +217,58 @@ describe('conversation labels', () => {
     await adapter.beforeRequest([...prompt, { role: 'user', content: 'Where did we hide the lantern?' }], 'model');
     expect(reconciles.at(-1)).toMatchObject({ character_name: '하나', chat_name: '벨로나 등대' });
     expect(lookups).toEqual(['chat-1']); // cached, not looked up per request
+  });
+});
+
+describe('persona name (ADR 0023)', () => {
+  const personas = { personas: [{ id: 'p0', name: 'User' }, { id: 'p1', name: ' 유우마 ' }, { id: 'p2', name: '레이' }], selected: 1 };
+
+  it('picks the chat-bound persona, else the selected one, as the host does', () => {
+    expect(personaOf({ ...chat }, personas)).toBe('유우마');
+    expect(personaOf({ ...chat, bindedPersona: 'p2' }, personas)).toBe('레이');
+    expect(personaOf({ ...chat, bindedPersona: 'gone' }, personas)).toBe('유우마'); // host falls back too
+    expect(personaOf({ ...chat }, { personas: [], selected: 0 })).toBeNull();
+    expect(personaOf({ ...chat }, { personas: [{ name: '  ' }], selected: 0 })).toBeNull();
+  });
+
+  it('sends the persona name once read in the background, and never waits for it', async () => {
+    const reconciles: any[] = [];
+    const { host } = fakeHost((path, body) => {
+      if (path === '/v1/sync/reconcile') reconciles.push(body);
+      return happy(path, body);
+    });
+    let resolve!: (value: typeof personas | null) => void;
+    let reads = 0;
+    host.personas = () => { reads++; return new Promise((r) => { resolve = r; }); };
+    const adapter = createAdapter(host);
+    adapter.warmPersonas(); // at load: the host asks for its permission then, not during a request
+    await adapter.beforeRequest(prompt, 'model');
+    expect(reconciles[0].persona_name).toBeUndefined();
+    resolve(personas);
+    await new Promise((r) => setTimeout(r, 0));
+    await adapter.beforeRequest([...prompt, { role: 'user', content: 'Where did we hide the lantern?' }], 'model');
+    expect(reconciles.at(-1)).toMatchObject({ persona_name: '유우마' });
+    expect(reads).toBe(1); // cached, not read per request
+  });
+
+  it('sends none when the host refuses or the read fails', async () => {
+    const reconciles: any[] = [];
+    const { host } = fakeHost((path, body) => {
+      if (path === '/v1/sync/reconcile') reconciles.push(body);
+      return happy(path, body);
+    });
+    host.personas = async () => { throw new Error('no getDatabase'); };
+    const adapter = createAdapter(host);
+    adapter.warmPersonas();
+    await new Promise((r) => setTimeout(r, 0));
+    await adapter.beforeRequest(prompt, 'model');
+    expect(reconciles[0].persona_name).toBeUndefined();
+    host.personas = async () => null; // permission refused
+    const refused = createAdapter(host);
+    refused.warmPersonas();
+    await new Promise((r) => setTimeout(r, 0));
+    await refused.beforeRequest([...prompt, { role: 'user', content: 'again' }], 'model');
+    expect(reconciles.at(-1).persona_name).toBeUndefined();
   });
 });
 

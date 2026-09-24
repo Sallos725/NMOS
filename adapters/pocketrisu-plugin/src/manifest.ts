@@ -64,6 +64,7 @@ export const bodyKey = (logicalId: string, revisionHash: string): string => `${l
 
 export interface Labels {
   characterName?: string | null;
+  personaName?: string | null;
 }
 
 const LABEL_MAX = 200;
@@ -133,7 +134,8 @@ function finish(chat: HostChat, messages: HostMessage[], entries: ManifestMessag
   return {
     request: {
       host: 'pocketrisu', chat_id: String(chat.id ?? ''), character_ref: characterRef,
-      character_name: labelOf(labels.characterName), chat_name: labelOf(chat.name), hash_version: 1, messages: entries,
+      character_name: labelOf(labels.characterName), chat_name: labelOf(chat.name),
+      persona_name: labelOf(labels.personaName), hash_version: 1, messages: entries,
     },
     bodies,
     hashed,

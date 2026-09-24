@@ -15,7 +15,7 @@ from uuid import UUID
 import psycopg
 from xml.sax.saxutils import escape, quoteattr
 
-from .entities import PERSONA, Resolution, node, resolve
+from .entities import USER_NAMES, Resolution, resolve
 from .predicates import HOLDER_PER_ITEM, REGISTRY, whereabouts
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
@@ -214,8 +214,9 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
                 "items": [], "threads": [], "unmatched": [], "resolution": None}
     rows = [r for r in served_assertions(conn, head, extractor_key) if r["predicate"] in REGISTRY]
-    conv = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
-    r = resolve(conv["conversation_id"], rows)
+    conv = conn.execute("SELECT w.conversation_id, c.host_persona_name FROM worldline_commit w"
+                        " JOIN conversation c ON c.id = w.conversation_id WHERE w.id = %s", (head,)).fetchone()
+    r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]))
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []
@@ -264,6 +265,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
             "threads": threads, "unmatched": unmatched, "resolution": r}
 
 
+def persona_of(host_persona_name: str | None) -> list[str]:
+    """The persona names the host reported for a conversation (ADR 0023): none, or its current one."""
+    return [host_persona_name] if host_persona_name else []
+
+
 def _annotate(row: dict[str, Any], r: Resolution) -> None:
     """Entity of subject and object, and every name they go by (recall matches any of them).
 
@@ -284,7 +290,7 @@ def _annotate(row: dict[str, Any], r: Resolution) -> None:
             names.append(name)
     row["names"] = names
     for p in row.get("participants") or ():
-        if p["type"] == "character" and node("character", p["name"])[1] == PERSONA:
+        if r.is_persona(p["type"], p["name"]):
             continue
         e = r.entity(p["type"], p["name"])
         names += e["names"] if e else [p["name"]]
@@ -320,14 +326,12 @@ def fact_text(f: dict[str, Any]) -> str:
 
 
 FIRST_PERSON = re.compile(r"(^|\s)(내|나는|나를|나한테|나에게|나의|저는|제가|저를|제|i|my|me|mine)(\s|$|[?,.!])", re.IGNORECASE)
-USER_NAMES = {"{{user}}", "{user}", "user", "유저"}
-
-
 LEXICAL_BAR = 0.35  # trigram overlap with the query that makes an unmentioned fact relevant
 
 
 def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],
-                   limit: int, events_limit: int | None = None) -> list[dict[str, Any]]:
+                   limit: int, events_limit: int | None = None,
+                   persona: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     Knowledge marks count as mentions: a fact hidden from a character who is being addressed is the one
@@ -338,24 +342,30 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     events a `major` one comes before any `minor` or unlabeled one with the same mention score, and a
     `minor` one needs the lexical bar: a name mention alone does not bring it (ADR 0020). Unlabeled
     events (older generations) rank as before.
+
+    The persona's names (`USER_NAMES` and `persona`, the resolver's `persona_names`; ADR 0023) are never
+    a mention: the persona is in every chat, and a user who narrates it by name writes that name in every
+    message. A first-person question still brings the persona's own facts.
     """
     q = _norm(query)
     ai = _norm(previous_ai)
     q_grams = _grams(query)
     first_person = bool(FIRST_PERSON.search(query))
+    user = USER_NAMES | persona
     scored = []
     for f in facts:
         if f["host_logical_id"] in in_context:
             continue
-        names = [n for n in {_norm(x) for x in (f.get("names") or [f["subject"], f.get("object")])} if len(n) >= 2]
+        names = [n for n in {_norm(x) for x in (f.get("names") or [f["subject"], f.get("object")])}
+                 if len(n) >= 2 and n not in user]
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
-        hidden = [_norm(n) for n in f.get("hidden_from") or [] if len(_norm(n)) >= 2]
-        known = [_norm(n) for n in f.get("known_by") or [] if len(_norm(n)) >= 2 and _norm(n) not in USER_NAMES]
+        hidden = [_norm(n) for n in f.get("hidden_from") or [] if len(_norm(n)) >= 2 and _norm(n) not in user]
+        known = [_norm(n) for n in f.get("known_by") or [] if len(_norm(n)) >= 2 and _norm(n) not in user]
         if any(n in q for n in hidden):
             mention += 2.5
         elif any(n in q for n in known):
             mention += 1.0
-        if first_person and (_norm(f["subject"]) in USER_NAMES or _norm(f.get("value")).startswith(tuple(USER_NAMES))):
+        if first_person and (_norm(f["subject"]) in user or _norm(f.get("value")).startswith(tuple(user))):
             mention += 1.0
         grams = _grams(fact_text(f))
         lexical = len(grams & q_grams) / max(1, len(q_grams))

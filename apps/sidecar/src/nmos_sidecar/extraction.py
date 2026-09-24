@@ -19,8 +19,8 @@ from . import generations, normtext
 from .config import Settings
 from .generations import Generation
 from .ids import uuid7
-from .entities import USER_NAMES, norm, resolve
-from .facts import served_assertions
+from .entities import norm, resolve
+from .facts import persona_of, served_assertions
 from .predicates import (REGISTRY, alias_evidenced, fill_types, knowledge, participants, registry_prompt, salience,
                          semantics, validate)
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
@@ -228,7 +228,8 @@ def load_context(conn: psycopg.Connection, revision_id: UUID, turn_hash: str, tu
     with conn.transaction():
         target = conn.execute(
             """
-            SELECT am.commit_id, am.position, am.turn, sr.id, sr.metadata, so.conversation_id
+            SELECT am.commit_id, am.position, am.turn, sr.id, sr.metadata, so.conversation_id,
+                   c.host_persona_name
             FROM active_membership am
             JOIN conversation c ON c.head_commit_id = am.commit_id
             JOIN source_revision sr ON sr.id = am.source_revision_id
@@ -275,19 +276,20 @@ def earlier_assertions(conn: psycopg.Connection, ctx: dict[str, Any], key: str) 
 def entity_hints(conn: psycopg.Connection, ctx: dict[str, Any], key: str, limit: int,
                  rows: list[dict[str, Any]] | None = None) -> list[dict[str, str]]:
     """Entities mentioned on the head before the target turn, most recently mentioned first, at most
-    `limit` (ADR 0012, item 5). The persona is left out: the prompt names it already."""
+    `limit` (ADR 0012, item 5). The persona is left out under any of its names (ADR 0023): the prompt names
+    it already."""
     target = ctx["target"]
     if rows is None:
         rows = earlier_assertions(conn, ctx, key)
     if limit <= 0 or not rows:
         return []
-    r = resolve(target["conversation_id"], rows)
+    r = resolve(target["conversation_id"], rows, persona_of(target.get("host_persona_name")))
     last: dict[str, int] = {}
     seq = 0
     for row in rows:  # position order: a later mention, or the object after the subject, is more recent
         for kind, name in ((row.get("subject_type"), row["subject"]), (row.get("object_type"), row.get("object"))):
             e = r.entity(kind, name) if name else None
-            if e and not any(norm(n) in USER_NAMES for n in e["names"]):
+            if e and not e["persona"]:
                 seq += 1
                 last[e["id"]] = seq
     by_id = {e["id"]: e for e in r.entities()}
@@ -307,7 +309,7 @@ def promise_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = 
     story, so it does not count as named."""
     if limit <= 0 or not rows:
         return []
-    r = resolve(ctx["target"]["conversation_id"], rows)
+    r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")))
     threads = [t for t in fold_threads([dict(row) for row in rows if row["predicate"] in THREAD_PREDICATES], r)[0]
                if t["status"] == "open"]
     shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
@@ -317,7 +319,7 @@ def promise_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = 
         for kind, name in (("character", t["by"]), ("character", t.get("to"))):
             e = r.entity(kind, name) if name else None
             names |= {norm(n) for n in (e["names"] if e else [name] if name else [])}
-        names = {n for n in names - USER_NAMES if len(n) >= 2}
+        names = {n for n in names - r.persona_names if len(n) >= 2}
         if any(n in shown for n in names):
             out.append({"by": t["by"], "to": t.get("to"), "text": t["text"], "turn": t["turn"]})
     return out[:limit]

@@ -17,7 +17,15 @@ export interface HostMessage {
 export interface HostChat {
   id?: string;
   name?: string;
+  /** Id of the persona bound to this chat, if any (the host then uses it instead of the selected one). */
+  bindedPersona?: string;
   message: HostMessage[];
+}
+
+/** The host's personas and the selected one (`getDatabase(['personas', 'selectedPersona'])`). */
+export interface HostPersonas {
+  personas: { id?: string; name?: string }[];
+  selected: number;
 }
 
 export interface PromptMessage {
@@ -53,6 +61,8 @@ export interface ReconcileRequest {
   /** Display labels for the inspector (bot and chat names); never identity. */
   character_name?: string;
   chat_name?: string;
+  /** The user's persona name in this chat (ADR 0023): the sidecar resolves it as `{{user}}`. */
+  persona_name?: string;
   hash_version: 1;
   messages: ManifestMessage[];
 }

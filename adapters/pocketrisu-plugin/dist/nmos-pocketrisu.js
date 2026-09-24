@@ -152,6 +152,7 @@ ${revisionHash}`;
         character_ref: characterRef,
         character_name: labelOf(labels.characterName),
         chat_name: labelOf(chat.name),
+        persona_name: labelOf(labels.personaName),
         hash_version: 1,
         messages: entries
       },
@@ -307,10 +308,18 @@ ${revisionHash}`;
   var CACHE_LIMIT = 64;
   var BODY_CHUNK = 250;
   var NAME_TTL_MS = 10 * 6e4;
+  var PERSONA_TTL_MS = 3e4;
+  function personaOf(chat, host) {
+    const list = Array.isArray(host.personas) ? host.personas : [];
+    const bound = chat.bindedPersona ? list.find((p) => p?.id === chat.bindedPersona) : void 0;
+    const name = (bound ?? list[host.selected])?.name;
+    return typeof name === "string" && name.trim() ? name.trim() : null;
+  }
   function createAdapter(host, onActivity) {
     const cache = /* @__PURE__ */ new Map();
     const conversations = /* @__PURE__ */ new Map();
     const names = /* @__PURE__ */ new Map();
+    let personas = null;
     const buildManifest = createManifestBuilder();
     let last = null;
     function emit(event) {
@@ -329,6 +338,19 @@ ${revisionHash}`;
         });
       }
       return hit?.name ?? null;
+    }
+    function warmPersonas() {
+      if (!host.personas) return;
+      personas = { value: personas?.value ?? null, at: host.now() };
+      host.personas().then((value) => {
+        personas = { value, at: host.now() };
+      }).catch(() => {
+        personas = { value: null, at: host.now() };
+      });
+    }
+    function personaName(chat) {
+      if (!personas || host.now() - personas.at > PERSONA_TTL_MS) warmPersonas();
+      return personas?.value ? personaOf(chat, personas.value) : null;
     }
     function remember(key, packet, ttl) {
       cache.set(key, { packet, expires: host.now() + ttl });
@@ -404,7 +426,7 @@ ${revisionHash}`;
         const { request, bodies } = await buildManifest(
           chat,
           firstSaying(messages),
-          { characterName: characterName(chat.id) }
+          { characterName: characterName(chat.id), personaName: personaName(chat) }
         );
         const manifestMs = host.now() - t0;
         key = await sha256Hex(JSON.stringify([
@@ -522,7 +544,7 @@ ${revisionHash}`;
       if (method !== "GET") cache.clear();
       return out;
     }
-    return { beforeRequest, onOutput, status, api };
+    return { beforeRequest, onOutput, status, api, warmPersonas };
   }
   function firstSaying(messages) {
     for (const m of messages) if (m.role === "char" && m.saying) return m.saying;
@@ -1920,6 +1942,16 @@ html,body{margin:0;background:#0c0c10}
       if (!character?.chats?.some((c) => c?.id === chatId)) return null;
       return typeof character.name === "string" && character.name.trim() ? character.name.trim() : null;
     },
+    async personas() {
+      if (typeof risuai.getDatabase !== "function") return null;
+      const db = await risuai.getDatabase(["personas", "selectedPersona"]);
+      if (!db || !Array.isArray(db.personas)) return null;
+      const personas = db.personas.map((p) => {
+        const { id, name } = p ?? {};
+        return { id: typeof id === "string" ? id : void 0, name: typeof name === "string" ? name : void 0 };
+      });
+      return { personas, selected: Number.isInteger(db.selectedPersona) ? Number(db.selectedPersona) : 0 };
+    },
     async request(method, url, body, headers, timeoutMs, route) {
       const res = await risuai.nativeFetch(url, {
         method,
@@ -2023,6 +2055,7 @@ html,body{margin:0;background:#0c0c10}
       (method, path, body, timeoutMs) => adapter.api(method, path, body, timeoutMs),
       hud
     );
+    adapter.warmPersonas();
     console.log("[NMOS] adapter loaded", { version: "0.1.0-beta.15" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));
 })();
