@@ -29,5 +29,9 @@ cost, A4 constraints, A5 evaluation tiers; B1 narrowed (coarse modality, no narr
 resolution as its own projection), re-extraction cost, MCP host-evidence precondition, owner
 decisions split by stage.
 
+Phase 8 draft review (PR #64): the review handoff
+[`PHASE-8-PR64-REVIEW-HANDOFF.md`](PHASE-8-PR64-REVIEW-HANDOFF.md) and the response
+[`PHASE-8-PR64-REVIEW-RESPONSE.md`](PHASE-8-PR64-REVIEW-RESPONSE.md). Neither authorizes Phase 8.
+
 The two tracks are complementary. Track A makes the existing beta faster and easier to evaluate;
 Track B expands what NMOS can represent.

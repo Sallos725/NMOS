@@ -16,8 +16,8 @@ different answer changes only the parts it names.
 |---|---|---|---|
 | Q1 | **Phase boundary.** What remains of B3: event participants, place, observers, narrative time, relationship history, other thread kinds, causal links. Which part is Phase 8? | **Participants only**: the other characters an event (or another fact told in its value) involves. It is the one measured gap (below). Relationships are measured in this phase's real-model tier, as report-only evidence for a later decision. | (b) Participants and relationship history in the packet ("used to be rivals until turn 40"). No relationship was ever extracted in the recorded runs, so this would be built without evidence. (c) First-class event records (participants, place, observers, narrative time). |
 | Q2 | **How are participants recorded?** | By the extractor: a new field `with`, a list of `{name, type}` objects for the other characters or groups the value involves, as named in the turn. It is stored in `assertion.participants` as JSON (migration 0017) under a new generation `extract-v8`. A stored type is required because ADR 0012 keys identity by `(type, name)`; an untyped name must not silently prefer a character over a same-named group. | (b) Store names only and resolve `character`, then `group`. This guesses when both types have the same name. (c) At read time, find known entity names in the value text. No new generation, but a name can be an ordinary word: "하나" is also "one", and the Phase 6 scene text has "성냥은 하나도 없었다" ("not a single match left"). (d) Allow one `object` on `event` (one participant only; still a new generation). |
-| Q3 | **Which assertions carry participants?** | Only the predicates where the recorded runs show the gap: `event`, `goal`, `knows`, and `destroyed`. `fulfilled` is excluded even though two values name another character: ADR 0019 consumes every resolution in the thread fold, so it has no fact-recall or character-page consumer in this phase. | (b) `event` only (51 of the 83 measured, usable cases). (c) Every value-bearing predicate except aliases and thread resolutions; this would include predicates for which no participant behavior has been measured. |
-| Q4 | **How does a participant count for recall?** | Like the subject: a participant named in the user's message scores as a mention (2.0), in the previous reply 1.0. The persona's names never count, as for threads (ADR 0019). The event cap and salience (ADR 0020) and knowledge marks (D19) are unchanged. | (b) Weaker than the subject (e.g. 1.5), so facts about the addressed character come first. (c) Only in the Inspector. |
+| Q3 | **Which assertions carry participants?** | Only the predicates where the recorded runs show the gap: `event`, `goal`, `knows`, and `destroyed` (78 usable assertions in 18 scenes; below). `event` carries most of it (51 in 15 scenes); `destroyed` (12 in 2), `knows` (10 in 3) and `goal` (5 in 2) rest on few scenes, and the real-model tier adds one scene for each. `fulfilled` is excluded even though two values name another character: ADR 0019 consumes every resolution in the thread fold, so it has no fact-recall or character-page consumer in this phase. | (b) `event` only (51 of the 78 usable assertions, 15 of the 18 scenes). (c) Every value-bearing predicate except aliases and thread resolutions; this would include predicates for which no participant behavior has been measured. |
+| Q4 | **How does a participant count for recall?** | Like the subject: a participant named in the user's message scores as a mention (2.0), in the previous reply 1.0, for facts and for character claims alike (claims are selected by the same function; 14 of the 78 usable assertions are claims). The persona's names never count, as for threads (ADR 0019). The event cap and salience (ADR 0020) and knowledge marks (D19) are unchanged. | (b) Weaker than the subject (e.g. 1.5), so facts about the addressed character come first. (c) Only in the Inspector. |
 | Q5 | **Turns extracted before `extract-v8`** have no participants. | Nothing at read time: they recall as today until **Extract all history**. A second, text-based rule for older turns would give two answers to the same question depending on the generation. | (b) Q2 (c) as a fallback for older generations only. |
 
 ## Goal
@@ -25,42 +25,54 @@ different answer changes only the parts it names.
 A fact about two people is remembered from both sides. After Phase 8:
 
 - when the user talks to or about a character, the events that happened *to* them (not only *by*
-  them) can reach the packet: 하나's confession to 카이토 comes back when 카이토 is addressed;
+  them) can reach the packet: `카이토 event: 유이를 경비병들에게 넘겨주었다` (카이토 handed 유이 over to the
+  guards) comes back when 유이 is addressed;
 - a character's page in the Inspector lists the events and facts they take part in;
 - nothing about who took part is guessed from text matching; the extractor names participants and the
   resolver links them, as it does for subjects and objects.
 
 ## Evidence behind the scope
 
-**A quarter of events name a second character that recall never sees.** In the 280 recorded
-real-model runs (`fixtures/model/phase5/`, `phase6/`, `phase7/`; Korean synthetic scenes,
-`deepseek-v4.1-flash`), 51 of 223 valid `event` assertions name another character only inside `value`:
+**A quarter of events name another person that recall never sees.** The scope audit
+[`fixtures/model/phase8/scope-audit.json`](../../fixtures/model/phase8/scope-audit.json) lists every
+valid `event`, `destroyed`, `goal`, `knows` and `fulfilled` assertion of the 280 recorded real-model
+runs (`fixtures/model/phase5/`, `phase6/`, `phase7/`; Korean synthetic scenes, `deepseek-v4.1-flash`):
+308 assertions. For each, the other people its value involves were identified by reading the value
+(a manual review by the implementing agent, not the owner; the rules are in the file). A participant is
+a character or group other than the subject and object that the value acts on, gives to, accompanies
+or addresses, or whose possession it is about (`kind: possessor`, e.g. `카이토 knows: 하나의 비밀`).
+`python3 tools/check_phase8_scope_audit.py` checks every entry against its run file, fails on a
+missing, duplicate or stale entry, and prints the counts below;
+`apps/sidecar/tests/test_participant_scope.py` runs it in CI.
 
-- `유이 event: 카이토에게 은빛 열쇠를 건넸다` (gave 카이토 the silver key);
-- `산적들 event: 다리 위에서 카이토를 덮쳐 왔다` (bandits attacked 카이토 on the bridge);
-- `늙은 선장 event: 폭풍 속에서 하나의 품에서 숨을 거두었다` (the captain died in 하나's arms).
+| Predicate | Valid | Name another person | Usable | Usable scenes | Not usable |
+|---|---:|---:|---:|---:|---|
+| `event` | 223 | 62 | 51 (47 facts, 4 claims) | 15 | 11 persona only |
+| `destroyed` | 25 | 12 | 12 (facts) | 2 | — |
+| `goal` | 35 | 9 | 5 (2 facts, 3 claims) | 2 | 4 hypothetical (never in the packet) |
+| `knows` | 19 | 11 | 10 (3 facts, 7 claims) | 3 | 1 persona only |
+| `fulfilled` | 6 | 2 | 0 | 0 | 2 thread resolutions (ADR 0019) |
 
-The same happens in other value-carrying predicates:
+Usable means a Phase 8 predicate, a fact or claim that can reach the packet, and at least one
+participant other than the persona: 78 assertions in 18 distinct scenes. The counts come from repeated
+runs (three per scene, and the Phase 5 scenes twice, in two fixture directories), so the scene count is
+the stronger measure. Examples: `유이 event: 카이토에게 은빛 열쇠를 건넸다`, `산적들 event: 다리 위에서
+카이토를 덮쳐 왔다`, `카이토 event: 유이를 경비병들에게 넘겨주었다` (two participants, one a group),
+`늙은 선장 event: 폭풍 속에서 하나의 품에서 숨을 거두었다`.
 
-| Predicate | Assertions naming another character only in `value` |
-|---|---:|
-| `event` | 51 of 223 |
-| `destroyed` | 12 of 25 |
-| `goal` | 10 of 35 |
-| `knows` | 10 of 19 |
-| `fulfilled` | 2 of 6 |
-
-The `fulfilled` cases establish that names can occur in resolution text, but they do not justify a
-Phase 8 field: ADR 0019 consumes matched and unmatched resolutions before fact recall. Making a third
-party affect thread recall would change thread semantics, which is out of scope. The usable measured
-scope is therefore 83 cases across `event`, `destroyed`, `goal` and `knows`.
+The first draft counted with a fixed name list (85 cases). The review found it wrong both ways. It
+counted 12 assertions whose only other person is the persona (a confession, a walk and a meal with
+`{{user}}`), which recall never treats as a mention, and one self-alias (`미나토 하루카 goal: 하루라고
+불리기`). It missed groups (산적들, 경비병들, 선배 기사들) and people outside the list (왕, 부단장, 보건실
+선생님). The fixed-list numbers are withdrawn.
 
 **Mention-based recall ignores them.** `relevant_facts` counts a mention only for the subject and
-object entities (`names`). A deterministic check (2026-09-24; the function as released in beta.14):
-three events whose second participant is 카이토, each labeled major and then unlabeled, against three
-queries addressing 카이토 ("카이토야, 오랜만이야.", "카이토, 괜찮아?", "카이토는 어디 있어?"). 0 of 18
-selected the event. The lexical bar does not help: the name is a small part of the fact's trigrams.
-One of the three was 하나's confession to 카이토. Addressing 카이토 is when that fact matters most.
+object entities (`names`). `apps/sidecar/tests/test_participant_scope.py` takes three recorded events
+(`유이 → 카이토`, `산적들 → 카이토`, `카이토 → 유이`), each labeled major and then unlabeled, against three
+queries addressing only the second person ("…야, 오랜만이야.", "…, 괜찮아?", "…는 어디 있어?"): 0 of 18
+select the event, while addressing the subject does. The lexical bar does not help: the name is a small
+part of the fact's trigrams. The test states the rule for facts without participant data, so it keeps
+holding after Phase 8 for turns of older generations (Q5).
 
 **Taking part is not knowing.** An owner-reported Inspector row (2026-09-24, a real chat, owner's
 extraction model `gemma4:31b-cloud`; the chat text is not committed) shows why participants must stay
@@ -100,10 +112,15 @@ and builds nothing for it.
    event's participant can have an Inspector page. Different types never merge, and an ambiguous
    alias links nobody. A resolved participant and all of its aliases join the fact's `names`. A
    participant is not part of any version key: it never makes two facts different or the same.
-   Participants are not KNOWN ENTITIES hint candidates (ADR 0012, item 5): `entity_hints` keeps
-   ordering candidates from subject and object mentions only, so a character seen only as a
-   participant is not listed, and the extraction prompt's input does not change because of
-   participants.
+   Participants never change extraction input. They are not KNOWN ENTITIES hint candidates (ADR 0012,
+   item 5): `entity_hints` keeps ordering candidates from subject and object mentions only. And they
+   rank below every name source of `resolve-v1` (subjects, objects and evidenced alias names) when the
+   resolver picks an entity's representative spelling and name order, whatever their transcript
+   position: the resolver reads participant mentions in a second pass, after all `resolve-v1`
+   sources. A participant-only entity takes its participant spelling (for its Inspector page). An
+   entity that `resolve-v1` also knows keeps exactly the name, alias order and grouping it had, so the
+   serialized KNOWN ENTITIES block is byte-for-byte the one without participants. This is an amendment
+   to ADR 0012, recorded in the Phase 8 ADR.
 4. **Recall (Q4).** A participant is a mention like the subject: 2.0 in the user's message, 1.0 in the
    previous reply. Persona names excluded. Event cap, salience and minor-event lexical bar unchanged.
 5. **Packet.** The fact line is unchanged (the value already names the participant). No new attribute,
@@ -144,9 +161,10 @@ and builds nothing for it.
 - The resolver becomes `resolve-v2` because typed participants join its mention set. Entity ids and
   Inspector entity URLs are recomputed on the next read, as ADR 0012 specifies for a resolver change;
   no stored source or assertion row is rewritten. Existing aliases and subject/object identity rules
-  are otherwise unchanged. KNOWN ENTITIES hints are unchanged: participants are not hint candidates
-  (item 3). An entity first mentioned as a participant may show that mention's spelling of the same
-  normalized name.
+  are otherwise unchanged. KNOWN ENTITIES hints are byte-for-byte unchanged (item 3). Because the
+  second pass leaves every `resolve-v1` root in place, only the version string changes existing
+  entity ids; the bump still changes every Inspector entity URL once, which is the cost of following
+  ADR 0012's rule that a resolver change is a new version.
 - The prompt grows by one field in the answer schema and one rule: an estimated +2–4 % prompt tokens,
   and a few completion tokens per assertion with participants. Both measured and stated in the release
   notes.
@@ -174,7 +192,7 @@ New cases in `apps/sidecar/tests/memeval.py` and unit tests. Every existing case
 | participant-only entity | a typed participant never used as a subject or object still has an entity and character page |
 | predicate boundary | `with` is kept on `event`, `goal`, `knows` and `destroyed`; it is dropped on `fulfilled`, `possesses` and every other predicate |
 | validation | the subject or object repeated in `with` is dropped; malformed entries, unknown types and normalized duplicates are dropped |
-| hints unchanged | a character named only as a participant is not in KNOWN ENTITIES; the hint list for a chat with participants equals the one without them |
+| hints unchanged | a character named only as a participant is not in KNOWN ENTITIES, and the serialized KNOWN ENTITIES block is byte-for-byte the one without participants, including the hard case: a participant spelling of an entity occurs before its first subject/object mention and before the `also_called` that joins its aliases |
 | older generation | a v7 row has no participants and recalls as before |
 | Inspector | the character page lists "Takes part in" facts; the facts table shows participants |
 | edit | editing the turn away removes the fact and its participants on the next read |
@@ -202,11 +220,10 @@ Prompts, raw outputs, model and endpoint go under `fixtures/model/phase8/`, and 
 
 The Phase 5, 6 and 7 scenes are re-run with `extract-v8`.
 
-The scope audit behind this phase is committed beside the result as
-`fixtures/model/phase8/scope-audit.json`: each counted assertion records its source fixture/run,
-predicate, subject, value and manually identified participant names. The deterministic 0-of-18
-beta.14 recall check is committed as a test or runnable script. The summary is derived from those
-artifacts rather than copied only into this document.
+The scope evidence is committed with this draft: `fixtures/model/phase8/scope-audit.json`, checked by
+`python3 tools/check_phase8_scope_audit.py`, and the 0-of-18 recall check in
+`apps/sidecar/tests/test_participant_scope.py` (both in CI). The Phase 8 summary adds the new scenes
+to the same audit format.
 
 ### Performance
 
@@ -229,7 +246,8 @@ against beta.14. Fact read (with participant resolution and mention scoring) add
 - [ ] The Phase 5, 6 and 7 bars still hold with `extract-v8`.
 - [ ] Relationship report recorded (numbers, no extraction-rate bar). A result is a later-phase input,
       not a Phase 8 failure unless it exposes an invariant violation or a regression caused by Phase 8.
-- [ ] The participant scope audit and the beta.14 0-of-18 recall check are committed and reproducible.
+- [ ] The scope audit check and `test_participant_scope.py` still pass; the audit gains the Phase 8
+      scenes.
 - [ ] Prompt and completion tokens per turn, v7 against v8, measured and in the release notes.
 - [ ] Fact read at 10k: at most +15 ms p50 against beta.14.
 - [ ] Upgrade from a `v0.1.0-beta.14` database: migration 0017 applies, only the recent window is
@@ -238,7 +256,8 @@ against beta.14. Fact read (with participant resolution and mention scoring) add
 - [ ] A real-host smoke run (PocketRisu v1.12.0) injects a major event from outside the prompt window
       by addressing its participant, not its subject, with no lexical overlap beyond the participant's
       name. The plugin is unchanged.
-- [ ] `ARCHITECTURE.md` (a new decision for participants), an ADR for participants, README, the Korean
+- [ ] `ARCHITECTURE.md` (a new decision for participants), an ADR for participants that amends ADR 0012
+      (participant mentions, the second pass, hints unchanged), README, the Korean
       guide, `docs/KNOWN-ISSUES.md` and the changelog updated.
 
 ## Implementation order
