@@ -16,7 +16,9 @@ PACKET_NOTE = ("  <Note>Memory from earlier in this conversation (state, facts, 
 PACKET_CLOSE = "</NarrativeMemory>"
 # Added to the Note only when a kept line uses the mark (ADR 0013), so other packets stay as they were.
 NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly not, or no longer, true."),
-               ("<Claim ", " A Claim is what that character said, not established truth."))
+               ("<Claim ", " A Claim is what that character said, not established truth."),
+               ('disputed="true"', " disputed=\"true\" marks a place where the story contradicts itself; neither"
+                                   " side is certain."))
 MAX_EXCERPT_CHARS = 480
 
 # Markup and model reasoning that is not story: style/script blocks and <Thoughts>/<think> sections.

@@ -60,14 +60,15 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | eaten | item end | **no** | **no** | **no** | yes |
 | damaged, not destroyed | item end | **no** | **no** | **no** | yes |
 | edit removes the end | item end | **no** | **no** | **no** | yes |
+| use after end | conflict | **no** | **no** | **no** | yes |
 | unrelated question | irrelevant-memory suppression | — | empty | empty | empty |
 
 | Mode | gold reached | cases with stale memory | irrelevant packets | mean packet tokens |
 |---|---:|---:|---:|---:|
-| recent | 0/24 | 0 | — | 0 |
-| lexical | 2/24 | 0 | 0/1 | 120 |
-| hybrid | 3/24 | 0 | 0/1 | 146 |
-| full | 24/24 | 0 | 0/1 | 175 |
+| recent | 0/25 | 0 | — | 0 |
+| lexical | 2/25 | 0 | 0/1 | 120 |
+| hybrid | 3/25 | 0 | 0/1 | 146 |
+| full | 25/25 | 0 | 0/1 | 178 |
 
 Before Phase 6 step 1 (ADR 0016), `full` had stale memory in "put down" (`Hana possesses map`) and
 "picked up" (`map located in table`).

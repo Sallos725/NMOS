@@ -1,4 +1,5 @@
-"""Phase 6 (docs/phases/PHASE-6.md): an item's holder, place and end are one whereabouts (Q2, Q3)."""
+"""Phase 6 (docs/phases/PHASE-6.md): an item's holder, place and end are one whereabouts (Q2, Q3), and
+using an item after its end is a conflict (Q1, Q4)."""
 
 from __future__ import annotations
 
@@ -94,3 +95,40 @@ def test_prompt_asks_for_destroyed_only_when_the_item_is_gone():
     from nmos_sidecar.predicates import registry_prompt
     assert "- destroyed (subject: item, value: text)" in registry_prompt()
     assert "Not when it is only damaged, hidden, dropped or lost" in SYSTEM_PROMPT
+
+
+def disputes(history):
+    from nmos_sidecar.facts import _versions
+    return [(f["subject"], (f.get("disputed_by") or {}).get("value")) for f in _versions(history)]
+
+
+def test_holding_an_item_after_its_end_is_disputed():
+    assert disputes([held(1, "하나", "편지"), ended(3, "편지", "불탐"), held(5, "하나", "편지")]) == [("하나", "불탐")]
+    # The dispute follows the item while it keeps being used, in holder and place alike.
+    assert disputes([ended(3, "편지", "불탐"), held(5, "하나", "편지"), item_at(7, "편지", "서재")]) == [
+        ("편지", "불탐")]
+
+
+def test_a_new_end_or_a_denied_end_settles_the_dispute():
+    used = [ended(3, "편지", "불탐"), held(5, "하나", "편지")]
+    assert disputes(used + [ended(7, "편지", "찢김")]) == [("편지", None)]
+    # "It did not burn after all": the holder stands, undisputed, next to the denied end.
+    assert sorted(disputes(used + [ended(7, "편지", "불탐", polarity="negative")])) == [("편지", None), ("하나", None)]
+
+
+def test_the_same_turn_is_not_a_dispute():
+    assert disputes([ended(3, "편지", "불탐"), held(3, "하나", "편지")]) == [("편지", None)]
+
+
+def test_disputed_fact_line_shows_both_sides():
+    from nmos_sidecar.facts import _versions, fact_line
+    (fact,) = _versions([ended(3, "편지", "불탐"), held(5, "하나", "편지")])
+    assert fact_line(fact) == ('    <Fact kind="possesses" turn="5" disputed="true">'
+                               "하나 possesses 편지; but turn 3: 편지 destroyed: 불탐</Fact>")
+
+
+def test_packet_note_explains_disputed_only_when_used():
+    from nmos_sidecar.packet import compile_packet
+    plain, _, _ = compile_packet([], 400, facts=['    <Fact kind="possesses" turn="1">a possesses b</Fact>'])
+    marked, _, _ = compile_packet([], 400, facts=['    <Fact kind="possesses" turn="1" disputed="true">a</Fact>'])
+    assert "contradicts itself" not in plain and "contradicts itself" in marked
