@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+Phase 7 (in progress): promise threads and event salience (`docs/phases/PHASE-7.md`).
+
+- **Events no longer take every fact slot.** At most `NMOS_EVENTS_LIMIT` (default 3; `events_limit` in
+  `PUT /v1/config`) of a packet's facts are `event` facts, so a main character's newest events leave
+  room for older facts about them. Applies to existing facts at once.
+
 ## 0.1.0-beta.13
 
 Phase 6: item transitions and conflicts (`docs/phases/PHASE-6.md`, ADRs 0016–0017, D30), and the

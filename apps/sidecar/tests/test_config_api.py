@@ -51,9 +51,10 @@ def test_runtime_config_null_still_resets_to_environment_default(migrated):
 
 def test_config_persists_across_restarts(migrated):
     with make_client(migrated) as c:
-        c.put("/v1/config", json={"facts_limit": 3})
+        c.put("/v1/config", json={"facts_limit": 3, "events_limit": 1})
     with make_client(migrated) as c:
-        assert c.get("/v1/config").json()["recall"]["facts_limit"] == 3
+        recall = c.get("/v1/config").json()["recall"]
+        assert recall["facts_limit"] == 3 and recall["events_limit"] == 1
 
 
 def test_parsers_from_ui_rebuild_state(client):

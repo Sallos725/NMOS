@@ -38,6 +38,8 @@ class Settings:
     embed_backfill: int = field(default_factory=lambda: int(os.environ.get("NMOS_EMBED_BACKFILL", "2000")))
     worker_concurrency: int = field(default_factory=lambda: int(os.environ.get("NMOS_WORKER_CONCURRENCY", "2")))
     facts_limit: int = field(default_factory=lambda: int(os.environ.get("NMOS_FACTS_LIMIT", "8")))
+    # `event` facts among them (PHASE-7 Q4): the newest events of a main character would take every slot.
+    events_limit: int = field(default_factory=lambda: int(os.environ.get("NMOS_EVENTS_LIMIT", "3")))
     # Phase 3: embeddings (off unless NMOS_EMBED_URL is set).
     embed_url: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_URL", ""))
     embed_model: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_MODEL", ""))
