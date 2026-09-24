@@ -62,11 +62,14 @@ def run_once(conn: psycopg.Connection, jobs: Handlers) -> bool:
 
 def prune(conn: psycopg.Connection, trace_days: int) -> None:
     """Derived data only: finished jobs after 7 days, retrieval traces after `trace_days`, and superseded
-    embeddings the active projection replaced (O5, ADR 0015)."""
+    embeddings the active projection replaced (O5, ADR 0015); full-manifest host observations are compacted
+    losslessly (O5, ADR 0018)."""
     conn.execute("DELETE FROM job WHERE status IN ('done', 'obsolete') AND updated_at < now() - interval '7 days'")
     conn.execute("DELETE FROM retrieval_trace WHERE created_at < now() - make_interval(days => %s)", (trace_days,))
     if pruned := retention.prune_embeddings(conn):
         log.info("superseded embeddings pruned: %d rows", pruned)
+    if compacted := retention.compact_observations(conn):
+        log.info("host observations compacted: %d", compacted)
 
 
 def maintenance(settings: Settings, stop: threading.Event, holder: dict[str, Any]) -> None:

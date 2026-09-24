@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Edits and rerolls no longer store the whole chat again** (ADR 0018, D31; owner decision O5). The
+  record of each edit, reroll, swipe or delete kept every message row (≈1.1 MB at 10,000 messages). The
+  worker now stores it as the rows that changed, and only when they rebuild it exactly. Existing
+  databases are compacted too. Migration 0015.
+
 - **Burned, eaten, used up** (Phase 6 step 2, ADR 0017). Extraction records `destroyed`, which ends the
   item's holder and place: `<Fact kind="destroyed">letter destroyed: burned</Fact>`. A damaged item is
   not destroyed. New extraction prompt `extract-v6`: with an LLM configured, each chat re-extracts its
