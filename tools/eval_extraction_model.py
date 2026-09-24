@@ -295,7 +295,7 @@ def main() -> None:
             parsed = parse_json_object(reply["text"]) if reply["text"] else {}
             items = parsed.get("assertions") if isinstance(parsed.get("assertions"), list) else []
             turn_text = "\n".join(x for _, _, x in scene.target)
-            record["assertions"] = normalize(items, turn_text)
+            record["assertions"] = normalize(items, turn_text, scene.hints)
             if scene.check:
                 ok, detail = scene.check(record["assertions"], scene)
                 record["check"] = {"pass": ok, "detail": detail}

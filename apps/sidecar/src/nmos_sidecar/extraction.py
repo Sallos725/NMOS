@@ -21,7 +21,7 @@ from .generations import Generation
 from .ids import uuid7
 from .entities import USER_NAMES, norm, resolve
 from .facts import ACTIVE_ASSERTIONS
-from .predicates import REGISTRY, alias_evidenced, knowledge, registry_prompt, semantics, validate
+from .predicates import REGISTRY, alias_evidenced, fill_types, knowledge, registry_prompt, semantics, validate
 from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
@@ -49,7 +49,10 @@ Rules:
   and a new name when it may be a different one.
 - Name entities exactly as the story does (keep the chat's language). The user's persona is "{{{{user}}}}"
   only if no name is given.
-- `value` is a short phrase in the chat's language. `evidence` is a short quote from the TARGET turn.
+- `value` is a short phrase in the chat's language: write it in the TARGET turn's language even when
+  these instructions are in English, and never translate names. `evidence` is a short quote from the
+  TARGET turn.
+- Give `subject_type`, and `object_type` whenever `object` is set, from the entity types above.
 - `epistemic`: "stated" if explicit, "implied" if strongly implied. Skip jokes, OOC text, UI/status
   boilerplate, and anything that only restates earlier facts.
 - `polarity`: "negative" when the TARGET turn says the relation does not hold or no longer holds (lost,
@@ -296,12 +299,13 @@ ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_t
                      "polarity", "modality", "source", "asserted_by")
 
 
-def normalize(items: list[Any], turn_text: str) -> list[dict[str, Any]]:
-    """Model output → assertion rows (at most 40): registry validation (D6), knowledge scope (D19),
-    polarity/modality/source (ADR 0013) and the alias evidence check (ADR 0012). Pure, so the
-    real-model evaluation (`tools/eval_extraction_model.py`) applies exactly what the worker does."""
+def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Model output → assertion rows (at most 40): missing entity types filled from the reply or the
+    hints (`fill_types`), registry validation (D6), knowledge scope (D19), polarity/modality/source
+    (ADR 0013) and the alias evidence check (ADR 0012). Pure, so the real-model evaluation
+    (`tools/eval_extraction_model.py`) applies exactly what the worker does."""
     out = []
-    for item in items[:40]:
+    for item, inferred in fill_types(items[:40], hints):
         if not isinstance(item, dict):
             continue
         status, reason = validate(item)
@@ -320,8 +324,9 @@ def normalize(items: list[Any], turn_text: str) -> list[dict[str, Any]]:
             status, reason = "pending", "alias not stated in the turn"
         if status == "valid" and unclaimed:
             status, reason = "pending", unclaimed
-        if note:
-            reason = f"{reason}; {note}" if reason else note
+        for extra in (note, inferred):
+            if extra:
+                reason = f"{reason}; {extra}" if reason else extra
         out.append({"subject": text("subject", 120) or "?", "subject_type": text("subject_type", 20),
                     "predicate": text("predicate", 40) or "?", "object": text("object", 120),
                     "object_type": text("object_type", 20), "value": text("value"),
@@ -368,7 +373,8 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         ).fetchone()
         if inserted is None:
             return "done"
-        rows = [(extraction_id, revision_id, *(a[c] for c in ASSERTION_COLUMNS)) for a in normalize(items, turn_text)]
+        rows = [(extraction_id, revision_id, *(a[c] for c in ASSERTION_COLUMNS))
+                for a in normalize(items, turn_text, hints)]
         if rows:
             with conn.cursor() as cur:
                 cur.executemany(
