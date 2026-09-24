@@ -2,9 +2,13 @@
 
 ## Current phase
 
-**Phase 8 — Event Participants: current (approved 2026-09-24).** Spec `docs/phases/PHASE-8.md`
-(Track B, B3 narrowed to typed participants of `event`, `goal`, `knows`, `destroyed`), approved with
-the recommended answer to every question (Q1–Q5). Implementation follows its "Implementation order".
+**Phase 8 — Event Participants: current; implemented (2026-09-24), not released.** Spec
+`docs/phases/PHASE-8.md` (Track B, B3 narrowed to typed participants of `event`, `goal`, `knows`,
+`destroyed`), approved with the recommended answer to every question (Q1–Q5). Typed participants
+(ADR 0021, D33), `extract-v8`, migration 0017, `resolve-v2`, Inspector "With" and "Takes part in".
+Evidence: `docs/perf/phase8-extraction.md`. Every acceptance criterion is met except one, which awaits the
+owner: the Phase 7 minor-event scene "chores" passed 1/3 with `extract-v8` (no event extracted). Ten
+more runs gave v7 3/10 and v8 4/10, so it is not a regression.
 
 **Phase 7 — Promise Threads and Event Salience: complete (2026-09-24), released in
 `v0.1.0-beta.14`.** Spec `docs/phases/PHASE-7.md` (Track B, B3 narrowed to promise threads and event salience),
@@ -28,7 +32,7 @@ latency (`docs/perf/scale.md`), a real upgrade from a `v0.1.0-beta.10` database.
 (transition verifier), not authorized yet.
 Outside the phase (owner decision 2026-09-24, D28): an optional progress display on the chat screen,
 released in `v0.1.0-beta.12`.
-Outside the phase (owner request 2026-09-24, ADR 0021): Google Vertex AI service-account keys for the
+Outside the phase (owner request 2026-09-24, ADR 0022): Google Vertex AI service-account keys for the
 extraction LLM, unreleased. Mocked token exchange in CI; not yet run against real Vertex (needs an
 owner-supplied service-account key).
 
@@ -78,16 +82,16 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H16, D1–D32, O2/O3/O4/O5 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H16, D1–D33, O2/O3/O4/O5 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
-| Schema | `migrations/0001`–`0016` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience |
+| Schema | `migrations/0001`–`0017` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (249), `adapters/pocketrisu-plugin/test` (79) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` |
+| Tests | `apps/sidecar/tests` (270), `adapters/pocketrisu-plugin/test` (79) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k (D24) |
-| Known issues | `docs/KNOWN-ISSUES.md` | K1–K23 (K10 resolved) current as of `v0.1.0-beta.14`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
+| Known issues | `docs/KNOWN-ISSUES.md` | K1–K24 (K10 resolved) current as of `v0.1.0-beta.14` plus Phase 8, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
-| Decisions | `docs/adr/0001`–`0020` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience |
+| Decisions | `docs/adr/0001`–`0022` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-7.md` | 0–3 met; 4 soft subset met; 5, 6 and 7 met |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 

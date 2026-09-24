@@ -8,15 +8,22 @@ long as that turn is active). A name linked to names that are otherwise unconnec
 nickname shared by two people) is ambiguous: its mentions keep their text key and link to nobody.
 Transliteration or similarity never links names. Nothing is stored: a resolver change is a new
 `RESOLVER_VERSION`, and the next read is the rebuild.
+
+Since `resolve-v2` (Phase 8, ADR 0021) an assertion's typed participants are mentions too, read in a
+second pass after every subject, object and alias name. They never link names, and they rank below
+every `resolve-v1` name source: an entity that `resolve-v1` knows keeps the representative spelling,
+name order and grouping it had, so extraction hints do not change because of participants. A
+participant never named as a subject or object is an entity of its own.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
+from functools import lru_cache
 from typing import Any
 from uuid import UUID, uuid5
 
-RESOLVER_VERSION = "resolve-v1"
+RESOLVER_VERSION = "resolve-v2"
 USER_NAMES = {"{{user}}", "{user}", "user", "유저"}
 PERSONA = "{{user}}"
 _NS = UUID("6c0c7e55-2f8e-4d0a-9d3b-5a4e1f0b7c21")  # NMOS entity namespace (arbitrary, fixed)
@@ -28,7 +35,9 @@ def norm(name: str | None) -> str:
     return " ".join(str(name or "").casefold().split())
 
 
+@lru_cache(maxsize=8192)
 def node(entity_type: str | None, name: str | None) -> Node:
+    """(type, normalized name). Pure; cached because every fact read asks for the same few names."""
     n = norm(name)
     if entity_type == "character" and n in USER_NAMES:
         n = PERSONA
@@ -60,6 +69,11 @@ class Resolution:
                     edges.setdefault(a, set()).add(b)
                     edges.setdefault(b, set()).add(a)
                     self.alias_rows.append((a, b, row))
+        for row in rows:  # second pass: participants rank below every resolve-v1 name source
+            for p in row.get("participants") or ():  # stored by predicates.participants(): typed, named
+                n = node(p["type"], p["name"])
+                first.setdefault(n, (len(first), p.get("name")))
+                counts[n] = counts.get(n, 0) + 1
         self.ambiguous = {n for n in edges if _splits(n, edges)}
         parent: dict[Node, Node] = {n: n for n in first}
 

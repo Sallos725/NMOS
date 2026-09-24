@@ -6,14 +6,16 @@ anchor's turn hash, a per-message one (older generations) the message window has
 
 from __future__ import annotations
 
+import json
 import re
+from functools import lru_cache
 from typing import Any
 from uuid import UUID
 
 import psycopg
 from xml.sax.saxutils import escape, quoteattr
 
-from .entities import Resolution, resolve
+from .entities import PERSONA, Resolution, node, resolve
 from .predicates import HOLDER_PER_ITEM, REGISTRY, whereabouts
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
@@ -46,12 +48,31 @@ live AS (
 )
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.value, a.epistemic, a.confidence, a.evidence,
        a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
+       a.participants::text AS participants,
        l.position, l.turn, l.host_logical_id, l.extractor_key AS generation
 FROM live l
 JOIN assertion a ON a.extraction_id = l.eid
 WHERE l.extractor_key = l.chosen AND a.status = 'valid'
 ORDER BY l.position, a.id
 """
+
+
+def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str) -> list[dict[str, Any]]:
+    """ACTIVE_ASSERTIONS with participants parsed. They are fetched as text and parsed only where present:
+    decoding every jsonb value through the driver cost ≈10 ms per fact read at 10,000 messages
+    (docs/perf/phase8-extraction.md)."""
+    rows = conn.execute(ACTIVE_ASSERTIONS, {"head": head, "key": extractor_key}).fetchall()
+    for r in rows:
+        if r["participants"] is not None:
+            r["participants"] = _parse_participants(r["participants"])
+    return rows
+
+
+@lru_cache(maxsize=65536)
+def _parse_participants(text: str) -> tuple[dict[str, str], ...]:
+    """A stored participant list (rows never change, so every read after the first hits the cache).
+    Shared between reads: read-only."""
+    return tuple(json.loads(text))
 
 
 def _norm(value: str | None) -> str:
@@ -191,9 +212,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
     """
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
-                "items": [], "threads": [], "unmatched": []}
-    rows = [r for r in conn.execute(ACTIVE_ASSERTIONS, {"head": head, "key": extractor_key}).fetchall()
-            if r["predicate"] in REGISTRY]
+                "items": [], "threads": [], "unmatched": [], "resolution": None}
+    rows = [r for r in served_assertions(conn, head, extractor_key) if r["predicate"] in REGISTRY]
     conv = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
     r = resolve(conv["conversation_id"], rows)
     narrated: dict[tuple, list[dict[str, Any]]] = {}
@@ -241,11 +261,15 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
                 "position": f["position"], "history": f["history"]})
     return {"facts": facts, "claims": claims, "other": other, "entities": r.entities(),
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
-            "threads": threads, "unmatched": unmatched}
+            "threads": threads, "unmatched": unmatched, "resolution": r}
 
 
 def _annotate(row: dict[str, Any], r: Resolution) -> None:
-    """Entity of subject and object, and every name they go by (recall matches any of them)."""
+    """Entity of subject and object, and every name they go by (recall matches any of them).
+
+    Typed participants (PHASE-8) resolve the same way and add their names too, except the persona: it is
+    in every chat, so it is never a mention (Q4). They change no knowledge mark and no version key.
+    """
     names: list[str] = []
     for role, kind, name in (("subject", row.get("subject_type"), row["subject"]),
                              ("object", row.get("object_type"), row.get("object"))):
@@ -259,6 +283,22 @@ def _annotate(row: dict[str, Any], r: Resolution) -> None:
             row[f"{role}_entity"] = {"status": r.status(kind, name), "candidates": r.candidates(kind, name)}
             names.append(name)
     row["names"] = names
+    for p in row.get("participants") or ():
+        if p["type"] == "character" and node("character", p["name"])[1] == PERSONA:
+            continue
+        e = r.entity(p["type"], p["name"])
+        names += e["names"] if e else [p["name"]]
+
+
+def participant_entities(row: dict[str, Any], r: Resolution) -> list[dict[str, Any]]:
+    """Each participant with its entity, or its resolution status when it has none (the Inspector's
+    view; recall only needs the names `_annotate` adds)."""
+    out = []
+    for p in row.get("participants") or ():
+        e = r.entity(p["type"], p["name"])
+        out.append({**p, "entity": {"id": e["id"], "name": e["name"]} if e else
+                    {"status": r.status(p["type"], p["name"]), "candidates": r.candidates(p["type"], p["name"])}})
+    return out
 
 
 def fact_versions(conn: psycopg.Connection, head: UUID, extractor_key: str | None) -> list[dict[str, Any]]:

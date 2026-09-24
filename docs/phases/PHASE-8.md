@@ -1,8 +1,8 @@
 # Phase 8 — Event Participants
 
-> **Status: approved by the owner on 2026-09-24, with the recommended answer to every question
-> (Q1–Q5); implementation explicitly authorized.** Implementation follows "Implementation order"
-> below. This is the next
+> **Status: implemented (2026-09-24); every acceptance criterion met but one, which awaits the
+> owner's decision (below); not released.** Approved by the owner on 2026-09-24, with the recommended
+> answer to every question (Q1–Q5). Evidence: `docs/perf/phase8-extraction.md`, ADR 0021. This is the next
 > slice of Track B stage B3 (`docs/proposals/TRACK-B-PHASE-5-PLUS.md` §6, "Event, relationship, and
 > open-thread projections": "first-class events with participants"), narrowed to what current evidence
 > supports; this document is its B0. Phase 7 (`v0.1.0-beta.14`) took promise threads and event
@@ -239,30 +239,33 @@ against beta.14. Fact read (with participant resolution and mention scoring) add
 
 ## Acceptance criteria
 
-- [ ] Every deterministic case above passes in CI, and every existing evaluation case still passes.
-- [ ] Two-person and group scenes: the other participant(s) are in `with` in at least two of three
+- [x] Every deterministic case above passes in CI, and every existing evaluation case still passes.
+- [x] Two-person and group scenes: the other participant(s) are in `with` in at least two of three
       runs per scene.
-- [ ] Goal, knowledge and destroyed-item scenes: the other character is in `with` with the right type
+- [x] Goal, knowledge and destroyed-item scenes: the other character is in `with` with the right type
       in at least two of three runs.
-- [ ] Controls: every solo, absent-householder and "하나도" run has an empty `with`. Separately, every
+- [x] Controls: every solo, absent-householder and "하나도" run has an empty `with`. Separately, every
       participant emitted in a positive scene is named as a character or group in the TARGET turn.
-- [ ] Secret about a shared event: C is in `with` in at least two of three runs, and C is in
+- [x] Secret about a shared event: C is in `with` in at least two of three runs, and C is in
       `known_by` in no run. Whether C is in `hidden_from` is recorded, with no bar: this phase does
       not change knowledge extraction.
-- [ ] The Phase 5, 6 and 7 bars still hold with `extract-v8`.
-- [ ] Relationship report recorded (numbers, no extraction-rate bar). A result is a later-phase input,
+- [ ] The Phase 5, 6 and 7 bars still hold with `extract-v8`. *Not met as written (2026-09-24):* all
+      hold except the Phase 7 minor-event scene "chores", 1/3 (two runs extracted no event). Ten more
+      runs gave `extract-v7` 3/10 and `extract-v8` 4/10 on it, so this is not a regression; no minor
+      scene was labeled major. Awaiting the owner's decision (`docs/perf/phase8-extraction.md`).
+- [x] Relationship report recorded (numbers, no extraction-rate bar). A result is a later-phase input,
       not a Phase 8 failure unless it exposes an invariant violation or a regression caused by Phase 8.
-- [ ] The scope audit check and `test_participant_scope.py` still pass; the audit gains the Phase 8
+- [x] The scope audit check and `test_participant_scope.py` still pass; the audit gains the Phase 8
       scenes.
-- [ ] Prompt and completion tokens per turn, v7 against v8, measured and in the release notes.
-- [ ] Fact read at 10k: at most +15 ms p50 against beta.14.
-- [ ] Upgrade from a `v0.1.0-beta.14` database: migration 0017 applies, only the recent window is
+- [x] Prompt and completion tokens per turn, v7 against v8, measured and in the release notes.
+- [x] Fact read at 10k: at most +15 ms p50 against beta.14.
+- [x] Upgrade from a `v0.1.0-beta.14` database: migration 0017 applies, only the recent window is
       queued, older turns are served by `extract-v7` and recall as before; `resolve-v2` recomputes
       entity ids without rewriting source or assertion rows.
-- [ ] A real-host smoke run (PocketRisu v1.12.0) injects a major event from outside the prompt window
+- [x] A real-host smoke run (PocketRisu v1.12.0) injects a major event from outside the prompt window
       by addressing its participant, not its subject, with no lexical overlap beyond the participant's
       name. The plugin is unchanged.
-- [ ] `ARCHITECTURE.md` (a new decision for participants), an ADR for participants that amends ADR 0012
+- [x] `ARCHITECTURE.md` (a new decision for participants), an ADR for participants that amends ADR 0012
       (participant mentions, the second pass, hints unchanged), README, the Korean
       guide, `docs/KNOWN-ISSUES.md` and the changelog updated.
 

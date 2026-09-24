@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import quote
 
 from .entities import norm
+from .facts import participant_entities
 
 STYLE = """
 :root{color-scheme:light dark;--bg:#fbfbfa;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e3e0;--chip:#efefec;--accent:#3b5bdb}
@@ -92,6 +93,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "ambiguous": ("모호한 이름 (연결 안 함)", "Ambiguous names (not linked)"), "h.candidates": ("후보", "Candidates"),
     "h.subject": ("주어", "Subject"), "h.predicate": ("술어", "Predicate"), "h.object": ("대상 / 값", "Object / value"),
     "h.knowledge": ("아는 범위", "Knowledge"), "h.turn": ("턴", "Turn"), "h.versions": ("버전", "Versions"),
+    "h.with": ("함께한 인물", "With"),
     "h.position": ("#", "#"),
     "known_by": ("아는 인물", "known by"), "hidden_from": ("모르는 인물", "hidden from"),
     "k.public": ("공개", "public"), "k.limited": ("일부만 앎", "limited"), "k.unknown": ("미상", "unknown"),
@@ -116,6 +118,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "toc.ambiguous": ("모호한 이름", "Ambiguous"), "toc.claims": ("주장", "Claims"), "toc.other": ("실제 아님", "Not actual"),
     "toc.retrievals": ("검색", "Retrievals"), "toc.commits": ("커밋", "Commits"), "toc.members": ("메시지", "Messages"),
     "toc.profile": ("프로필", "Profile"), "toc.held": ("소지품", "Belongings"), "toc.about": ("사실", "Facts"),
+    "toc.takes_part": ("참여", "Takes part in"),
     "toc.knows": ("아는 것", "Knows"), "toc.hidden": ("모르는 것", "Does not know"),
     # character view
     "who": ("캐릭터", "Character"), "who.all": ("전체", "All"),
@@ -124,6 +127,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "who.empty": ("이 인물에 대해 추출된 내용이 아직 없습니다.", "Nothing has been extracted about this character yet."),
     "profile": ("프로필", "Profile"), "held": ("지금 가진 것", "Holding now"),
     "about": ("이 인물에 대한 사실", "Facts about this character"),
+    "takes_part": ("참여한 일 (주어나 대상이 아닌 사실)", "Takes part in (facts where they are neither subject nor object)"),
     "knows": ("아는 것", "What this character knows"), "hidden": ("모르는 것", "Kept from this character"),
     "knows_note": ("아는 범위는 추출 모델이 붙인 표시라 틀릴 수 있습니다.",
                    "Knowledge scopes are labels from the extraction model and may be wrong."),
@@ -326,13 +330,38 @@ def _turn(a: dict[str, Any]) -> str:
     return _v(a["turn"] if a.get("turn") is not None else a["position"])
 
 
+def with_participants(view: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the participants of the view's facts and claims for display (PHASE-8). Done here, not in
+    every fact read: recall needs only their names."""
+    r = view.get("resolution")
+    if r is not None:
+        for f in (*view["facts"], *view["claims"]):
+            if f.get("participants"):
+                f["participant_entities"] = participant_entities(f, r)
+    return view
+
+
+def _with(f: dict[str, Any], lang: str) -> str:
+    """A fact's participants (PHASE-8): the entity's name, or the stored name when it does not resolve;
+    groups carry a chip. Empty for facts without participants (older generations included)."""
+    out = []
+    for p in f.get("participant_entities") or []:  # set by with_participants() for the Inspector
+        e = p.get("entity") or {}
+        name = _v(e.get("name") or p["name"])
+        if e.get("status") in ("ambiguous", "unresolved"):
+            name = f"<span class=\"muted\" title=\"{_v(e['status'])}\">{name}</span>"
+        out.append(name + (" " + chip(lang, "e", "group") if p["type"] == "group" else ""))
+    return ", ".join(out)
+
+
 def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> str:
     t = lambda k: _t(lang, k)
     # A fact whose turn the active generation has not compiled yet comes from an older one (ADR 0014).
     older = f" <span class=\"chip\">{t('older_gen')}</span>"
     return table(
-        [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.knowledge", "h.turn", "h.versions")],
-        [[_v(f["subject"]), chip(lang, "p", f["predicate"]), _v(f.get("object") or f.get("value")), _knowledge(f, lang),
+        [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.with", "h.knowledge", "h.turn", "h.versions")],
+        [[_v(f["subject"]), chip(lang, "p", f["predicate"]), _v(f.get("object") or f.get("value")), _with(f, lang),
+          _knowledge(f, lang),
           _turn(f)
           + (older if active and f.get("generation") not in (None, active) else "")
           + (f" <span class=\"chip\">{t('negated')}</span>" if f.get("polarity") == "negative" else "")
@@ -513,6 +542,8 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
     knows = [f for f in facts if among(f.get("known_by"))
              or (f["predicate"] == "knows" and f.get("polarity") == "positive" and me(f.get("subject_entity")))]
     about = [f for f in mine if f not in held and f not in knows]  # each fact under one heading
+    takes_part = [f for f in facts if not involves(f) and f not in knows
+                  and any(me(p.get("entity")) for p in f.get("participant_entities") or [])]
     hidden = [f for f in facts if among(f.get("hidden_from"))]
     claims = [c for c in view["claims"] if norm(c.get("asserted_by")) in names or involves(c)]
     other = [a for a in view["other"] if involves(a)]
@@ -540,6 +571,8 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
             True))
     if about:
         parts.append(("about", t("about"), len(about), _facts_table(about, active, lang), True))
+    if takes_part:
+        parts.append(("takes_part", t("takes_part"), len(takes_part), _facts_table(takes_part, active, lang), True))
     if knows:
         parts.append(("knows", t("knows"), len(knows), knowledge(knows), True))
     if hidden:

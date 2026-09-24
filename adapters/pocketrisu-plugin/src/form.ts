@@ -8,7 +8,7 @@ export const DEFAULT_DEADLINE_MS = 3000;
 export const MAX_DEADLINE_MS = 30_000;
 export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune', 'rules'];
 
-/** Google Vertex AI's OpenAI-compatible endpoint; `{project}` comes from the pasted key (ADR 0021). */
+/** Google Vertex AI's OpenAI-compatible endpoint; `{project}` comes from the pasted key (ADR 0022). */
 export const VERTEX_URL = 'https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi';
 
 /** The project of a pasted Google service-account JSON key, or null for anything else. */

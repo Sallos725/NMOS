@@ -5,7 +5,27 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-**Google Vertex AI for fact extraction** (ADR 0021). The LLM API key field also takes a Google
+Phase 8 (in progress): event participants (`docs/phases/PHASE-8.md`, ADR 0021).
+
+- **Schema:** migration 0017 (`assertion.participants`, typed `{name, type}` JSON on `event`, `goal`,
+  `knows` and `destroyed`).
+- **The person an event happened to brings it back** (ADR 0021). A participant named in your message
+  counts like the event's subject, for facts and character claims; the persona never does. Needs turns
+  extracted with participants (`extract-v8`, next step); older turns recall as before.
+- **Extraction `extract-v8`.** Each `event`, `goal`, `knows` and `destroyed` lists the other characters
+  or groups it involves (`with`). New generation: each chat re-extracts its latest
+  `NMOS_EXTRACT_BACKFILL` turns once; older turns keep their `extract-v7` facts.
+- **Inspector.** The facts table has a "With" column (participants; a chip marks groups). A character's
+  page gains "Takes part in": facts where they are a participant but not the subject or object. A
+  character who is only ever a participant has a page too.
+- **Cost:** the extraction prompt grows by ≈161 tokens per call (+9.7 % over `extract-v7` on the
+  measured control scenes). Real-model check (`deepseek-v4.1-flash`, 3 runs per scene): participants
+  3/3 in all ten scenes, no participant in any of 12 control runs, the owner-reported "present but not
+  told" case never put the person in `known_by` (`docs/perf/phase8-extraction.md`).
+- **Entity ids change once** (`resolve-v2`): Inspector character links from before the upgrade no longer
+  open. KNOWN ENTITIES hints are unchanged.
+
+**Google Vertex AI for fact extraction** (ADR 0022). The LLM API key field also takes a Google
 service-account JSON key: the sidecar exchanges it for access tokens and renews them every hour. A new
 **Google Vertex AI** provider preset fills the endpoint's project from the pasted key. LLM only; a JSON
 key for embeddings is rejected. New sidecar dependency: `google-auth`. Checked with a mocked token

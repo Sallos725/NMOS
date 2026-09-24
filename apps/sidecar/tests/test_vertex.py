@@ -1,4 +1,4 @@
-"""Vertex AI service-account keys for the extraction LLM (ADR 0021). The token endpoint is mocked; a
+"""Vertex AI service-account keys for the extraction LLM (ADR 0022). The token endpoint is mocked; a
 real Vertex call needs an owner-supplied key."""
 
 from __future__ import annotations

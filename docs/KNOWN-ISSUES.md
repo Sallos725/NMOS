@@ -30,8 +30,9 @@ without a PocketRisu change.
 | K19 | Plugin and sidecar versions are not checked against each other | Setup | not planned |
 | K20 | Small UI delays: bot name, menu language | UI | not planned |
 | K21 | API keys and the auth token are stored in plain text | Security | host (H12) |
-| K22 | What becomes a fact depends on the extraction model's labels | Memory | measured per model (`docs/perf/phase5-extraction.md`, `docs/perf/phase7-extraction.md`) |
+| K22 | What becomes a fact depends on the extraction model's labels | Memory | measured per model (`docs/perf/phase5-extraction.md`, `phase7-extraction.md`, `phase8-extraction.md`) |
 | K23 | A promise stays open until the story keeps or breaks it in words extraction recognizes | Memory | beta.14 (ADR 0019); owner repair: Track B, B7 |
+| K24 | A relationship change can leave the earlier relationship or feeling current | Memory | measured in Phase 8 (report only); a later Track B decision |
 
 ## Performance
 
@@ -104,7 +105,7 @@ writes for every character, so a secret can still leak (ADR 0007). Hard per-char
 as actual narration becomes a fact (ADR 0013). On the tested model (`deepseek-v4.1-flash`) 1 of 32
 (release candidate: 1 of 34) real events was labeled non-actual, no plan, dream or claim became a fact in 21 runs, and one run
 inferred a negation from a clue the narration did not state (`docs/perf/phase5-extraction.md`). Other
-models were not measured. *Workaround:* check the Inspector's "not actual" list if a fact is missing. Since Phase 7 each event is also labeled major or minor, which decides whether a mention alone brings it into the packet (4 of 4 major scenes 3/3; minor scenes never labeled major; `docs/perf/phase7-extraction.md`).
+models were not measured. *Workaround:* check the Inspector's "not actual" list if a fact is missing. Since Phase 8 extraction also lists who else an event, goal, knowledge fact or destroyed item involves; in the Phase 8 check it agreed with a manual review in 83 of 87 assertions (`docs/perf/phase8-extraction.md`). Since Phase 7 each event is also labeled major or minor, which decides whether a mention alone brings it into the packet (4 of 4 major scenes 3/3; minor scenes never labeled major; `docs/perf/phase7-extraction.md`).
 
 **K23 — Promises stay open until the story closes them.** Since 0.1.0-beta.14 (ADR 0019) a
 promise is an open thread until a turn keeps it (`fulfilled`) or breaks, withdraws or releases it.
@@ -114,6 +115,15 @@ closing turn words the promise so differently that it matches no open promise, o
 Inspector lists it under "matching no open promise"). An open promise reaches the packet only when
 its maker or recipient is mentioned, at most three at a time. *Workaround:* "Extract all history" for
 older turns; owner repair (close a promise by hand) is Track B, B7.
+
+**K24 — A relationship change can leave the old one current.** `relationship` and `feels_toward` are
+versioned per direction (subject → object) and per predicate. When the story changes a relationship
+but extraction records the new one in the other direction ("카이토 → 유이: 연인" after "유이 → 카이토:
+같은 반 친구") or under the other predicate (a reconciliation recorded as `relationship` while the
+earlier anger was `feels_toward`), the earlier fact stays current beside the new one. The Phase 8
+relationship report measured it in 2 of 9 runs; the change itself was extracted in 9 of 9
+(`docs/perf/phase8-extraction.md`). There is no inverse or symmetry rule and no link between the two
+predicates. *Workaround:* none automatic; the Inspector shows both facts with their turns.
 
 ## Recall and gating
 

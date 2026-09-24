@@ -21,7 +21,7 @@ def _headers(api_key: str) -> dict[str, str]:
 
 
 def chat_headers(api_key: str) -> dict[str, str]:
-    """Headers for the extraction LLM: a service-account JSON key becomes a Vertex access token (ADR 0021)."""
+    """Headers for the extraction LLM: a service-account JSON key becomes a Vertex access token (ADR 0022)."""
     try:
         info = vertex.service_account_info(api_key)
         return _headers(vertex.access_token(info) if info is not None else api_key)

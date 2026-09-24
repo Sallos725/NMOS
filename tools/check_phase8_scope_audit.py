@@ -19,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 AUDIT = ROOT / "fixtures/model/phase8/scope-audit.json"
 RUNS = ("fixtures/model/phase5", "fixtures/model/phase6", "fixtures/model/phase7")
+PHASE8_RUNS = "fixtures/model/phase8"  # the extract-v8 runs of the Phase 8 scenes (variant v8), with model_participants
 PREDICATES = ("event", "destroyed", "goal", "knows", "fulfilled")
 PHASE8 = ("event", "destroyed", "goal", "knows")
 PERSONA = "{{user}}"
@@ -74,27 +75,44 @@ def check() -> tuple[list[str], dict]:
         for p in e["participants"]:
             if p["name"] in (e["subject"], e["object"]) or p["type"] not in ("character", "group"):
                 problems.append(f"{key}: participant {p} is the subject/object or has a bad type")
+            elif p["kind"] == "implied":
+                if not e["source"].startswith(PHASE8_RUNS) or p["name"] not in record["user"].split("TARGET", 1)[1]:
+                    problems.append(f"{key}: implied participant {p['name']} is not named in the TARGET turn")
             elif p["name"] != PERSONA and p["name"] not in (e["value"] or "") and p["kind"] != "possessor":
                 problems.append(f"{key}: participant {p['name']} does not occur in the value")
+        if e["source"].startswith(PHASE8_RUNS):
+            model = sorted((p["name"], p["type"]) for p in a.get("participants") or [])
+            if [dict(name=n, type=t) for n, t in model] != sorted(e["model_participants"], key=lambda p: (p["name"], p["type"])):
+                problems.append(f"{key}: model_participants differ from the run file")
+            if e["model_agrees"] != (sorted((p["name"], p["type"]) for p in e["participants"]) == model):
+                problems.append(f"{key}: model_agrees is wrong")
         if e["value_only"] != bool(e["participants"]):
             problems.append(f"{key}: value_only disagrees with participants")
         want = exclusion(e)
         if e["usable"] != (want is None) or (want is not None and e["exclusion"] != want):
             problems.append(f"{key}: usable/exclusion should be {want is None}/{want}")
-    for directory in RUNS:  # completeness: every candidate assertion is in the audit
+    for directory in (*RUNS, PHASE8_RUNS):  # completeness: every candidate assertion is in the audit
         for path in sorted((ROOT / directory).glob("*/runs.jsonl")):
             source = str(path.relative_to(ROOT))
             for n, line in enumerate(path.read_text().splitlines(), 1):
-                for i, a in enumerate(json.loads(line).get("assertions") or []):
+                record = json.loads(line)
+                if directory == PHASE8_RUNS and record["variant"] != "v8":
+                    continue
+                for i, a in enumerate(record.get("assertions") or []):
                     if a.get("status") == "valid" and a["predicate"] in PREDICATES and (source, n, i) not in seen:
                         problems.append(f"not in the audit: {(source, n, i)}")
     return problems, audit
 
 
-def counts(audit: dict) -> dict:
+def counts(audit: dict, phase8: bool = False) -> dict:
+    """Per-predicate counts of the Phase 5–7 runs (the scope evidence), or of the Phase 8 runs."""
     per: dict[str, Counter] = defaultdict(Counter)
     scenes: dict[str, set] = defaultdict(set)
     for e in audit["entries"]:
+        if e["source"].startswith(PHASE8_RUNS) != phase8:
+            continue
+        if phase8:
+            per[e["predicate"]]["model_agrees"] += e["model_agrees"]
         c = per[e["predicate"]]
         c["valid"] += 1
         c["names_another_person"] += e["value_only"]
@@ -114,6 +132,10 @@ if __name__ == "__main__":
     table = counts(audit)
     print(json.dumps(table, ensure_ascii=False, indent=1))
     usable = sum(t.get("usable", 0) for t in table.values())
-    scenes = {e["scene"] for e in audit["entries"] if e["usable"]}
-    print(f"usable: {usable} assertions in {len(scenes)} scenes")
+    scenes = {e["scene"] for e in audit["entries"] if e["usable"] and not e["source"].startswith(PHASE8_RUNS)}
+    print(f"usable (Phase 5–7 runs): {usable} assertions in {len(scenes)} scenes")
+    p8 = [e for e in audit["entries"] if e["source"].startswith(PHASE8_RUNS)]
+    print("Phase 8 runs:", json.dumps(counts(audit, phase8=True), ensure_ascii=False))
+    print(f"Phase 8 runs: the model's `with` agrees with the manual review in {sum(e['model_agrees'] for e in p8)}"
+          f" of {len(p8)} assertions")
     sys.exit(1 if problems else 0)

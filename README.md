@@ -74,7 +74,7 @@ language after a page reload.
   OpenAI-compatible endpoint), model list, API key and a **connection test** that makes a real call;
   recall tuning; status-window parser rules (validated before saving).
   For **Google Vertex AI**, paste the whole service-account JSON key file into the LLM's API key field;
-  the sidecar renews the access token itself (ADR 0021). Use a dedicated service account with only
+  the sidecar renews the access token itself (ADR 0022). Use a dedicated service account with only
   the Vertex AI User role.
 - One **Save** button at the bottom saves every changed section together. Unsaved changes are listed
   there, and closing asks whether to save them. Saving applies immediately and processes existing
@@ -182,6 +182,10 @@ story keeps it, breaks it or releases it, it leaves the packet (the Inspector ke
 character's routine no longer fills the facts: a packet holds at most three events, important ones
 ("major": a confession, a betrayal, a death, a secret revealed) first, and a minor event only when
 your message is about it.
+
+A fact about two people comes back from both sides (Phase 8): `Hana event: betrayed Kaito` is recalled
+when you address Kaito, not only Hana. Extraction lists the other people an event, goal, knowledge fact
+or destroyed item involves; being there is not taken as knowing.
 
 ## Privacy
 

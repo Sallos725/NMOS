@@ -1,4 +1,4 @@
-"""Google Vertex AI service-account keys for the extraction LLM (ADR 0021).
+"""Google Vertex AI service-account keys for the extraction LLM (ADR 0022).
 
 Vertex's OpenAI-compatible endpoint takes a Bearer OAuth access token that expires after an hour, not
 a fixed API key. When the configured LLM key is a service-account JSON key, the sidecar exchanges it

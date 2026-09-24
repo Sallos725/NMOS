@@ -1,4 +1,4 @@
-# 0021 — Google Vertex AI service-account keys for the extraction LLM
+# 0022 — Google Vertex AI service-account keys for the extraction LLM
 
 Status: accepted, 2026-09-24. Owner request outside the phases (not a Track B feature). New runtime
 dependency `google-auth` approved by the owner the same day.
