@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from psycopg_pool import ConnectionPool
 
-from . import __version__, extraction, generations, inspector, ledger, normtext, readmodel, runtime, vectors
+from . import __version__, extraction, generations, inspector, ledger, normtext, readmodel, retention, runtime, vectors
 from .config import Settings
 from .db import make_pool
 from .extraction import enqueue_after_apply, job_counts
@@ -131,6 +131,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             normalized = normtext.backfill(conn)
             if normalized:
                 log.info("normalized text written for %d revisions (%s)", normalized, normtext.NORMALIZER_VERSION)
+            if pruned := retention.prune_text(conn):
+                log.info("normalized text of older normalizers pruned: %d rows (ADR 0015)", pruned)
             if turned := ledger.refresh_turns(conn, settings.extract_turns):
                 log.info("turn data written for %d head members (K=%d)", turned, settings.extract_turns)
             backfilled = sync_rules(conn, rt["rules"])

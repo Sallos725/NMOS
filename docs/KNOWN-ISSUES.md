@@ -26,7 +26,7 @@ without a PocketRisu change.
 | K14 | Rare over-injection into an auxiliary call; transformed input gets no memory | Gating | accepted (ADR 0001) |
 | K15 | Thresholds and extraction quality are checked on limited data | Quality | evaluation (A5 baseline) |
 | K16 | NMOS does not notice a chat deleted in PocketRisu | Data | host (H10) |
-| K17 | Storage only grows: old generations, abandoned branches, observations | Data | O5 (generations decided, not implemented) |
+| K17 | Storage grows with abandoned branches and observations | Data | O5 (superseded vectors and text pruned since ADR 0015; worldlines open) |
 | K18 | Changing a model or endpoint re-processes history at the provider's cost | Data | LLM: bounded to the recent window since beta.11 (ADR 0014); embeddings: by design |
 | K19 | Plugin and sidecar versions are not checked against each other | Setup | not planned |
 | K20 | Small UI delays: bot name, menu language | UI | not planned |
@@ -137,13 +137,13 @@ swipe or branch (H10); NMOS sees changes at the next generation in that chat. A 
 PocketRisu stays in NMOS. *Workaround:* delete it in the panel's Inspector tab (ADR 0009; cannot be
 undone, and nothing but a sidecar log line records it).
 
-**K17 — Storage only grows.** Superseded extraction/embedding generations, abandoned worldlines
-(rerolled or edited-away branches) and host observations (≈2.7 KB per generation at 10k) are kept for
-audit; only jobs and traces are pruned. A 10,000-message synthetic chat with embeddings takes
-≈120 MB. Retention is owner decision O5 (ADR 0006, ADR 0009): for superseded generations it was
-decided on 2026-09-23 (keep LLM extractions, prune embeddings and deterministic projections after
-full coverage) but is not implemented; abandoned worldlines and observations are still open. *Workaround:* delete conversations
-you no longer use.
+**K17 — Storage grows with abandoned branches and observations.** Abandoned worldlines (rerolled or
+edited-away branches, with their vectors) and host observations (≈2.7 KB per generation at 10k) are
+kept for audit, and so are superseded LLM extractions (by decision). A 10,000-message synthetic chat
+with embeddings takes ≈120 MB. Since ADR 0015 (unreleased), superseded vectors are deleted once the
+new embedding projection covers the chat, and older normalized text at startup, so a model change no
+longer leaves a second copy of every vector. Retention of abandoned worldlines and observations is
+still owner decision O5. *Workaround:* delete conversations you no longer use.
 
 **K18 — Model changes re-process history.** Changing the LLM or embedding model or endpoint, or a
 release that changes the extraction generation (as 0.1.0-beta.8 did), re-derives all previously

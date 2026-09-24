@@ -12,7 +12,7 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
-from . import generations
+from . import generations, retention
 from .config import Settings
 from .extraction import claim, extractor, fail, finish, process_extract
 from .llm import ChatModel, Embedder, LLMError
@@ -61,13 +61,16 @@ def run_once(conn: psycopg.Connection, jobs: Handlers) -> bool:
 
 
 def prune(conn: psycopg.Connection, trace_days: int) -> None:
-    """Derived bookkeeping only: finished jobs after 7 days, retrieval traces after `trace_days`."""
+    """Derived data only: finished jobs after 7 days, retrieval traces after `trace_days`, and superseded
+    embeddings the active projection replaced (O5, ADR 0015)."""
     conn.execute("DELETE FROM job WHERE status IN ('done', 'obsolete') AND updated_at < now() - interval '7 days'")
     conn.execute("DELETE FROM retrieval_trace WHERE created_at < now() - make_interval(days => %s)", (trace_days,))
+    if pruned := retention.prune_embeddings(conn):
+        log.info("superseded embeddings pruned: %d rows", pruned)
 
 
 def maintenance(settings: Settings, stop: threading.Event, holder: dict[str, Any]) -> None:
-    """Reload settings saved from the plugin UI every 30 s; prune bookkeeping every 10 min."""
+    """Reload settings saved from the plugin UI every 30 s; prune derived data every 10 min."""
     last_prune = 0.0
     signature = None
     while not stop.is_set():

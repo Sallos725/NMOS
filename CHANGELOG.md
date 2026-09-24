@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Old vectors are cleaned up** (ADR 0015, D29; owner decision O5 for generations). After an
+  embedding model or endpoint change, the previous vectors are deleted once the new ones cover the
+  chat (the worker checks every 10 minutes); normalized text of older normalizers is deleted at
+  startup. Superseded LLM extractions are kept. Switching back to a pruned embedding model re-embeds
+  that chat. No schema change.
+
 ## 0.1.0-beta.12
 
 Phase 5: entity identity and semantic assertions (`docs/phases/PHASE-5.md`, ADRs 0012–0014), plus

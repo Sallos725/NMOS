@@ -73,3 +73,4 @@ Up to beta.3 the configuration part was not part of any identity:
 - Keys hash a fingerprint of the prompt and the registry, so editing either creates a new generation
   even without a manual compiler bump. Validation-logic changes still need a `COMPILER_VERSION` bump.
 - Old generations accumulate. Pruning them is part of the open retention decision (O5).
+  Superseded vectors and normalized text are pruned since ADR 0015; extractions are kept.
