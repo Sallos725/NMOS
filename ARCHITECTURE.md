@@ -253,6 +253,14 @@ path only emits fire-and-forget events: the display cannot delay, change or fail
 polled every 3 s only while work is pending for the chat the user is on, at most once per second for
 bursts. Any drawing error stops the display for the session. No sidecar or schema change.
 
+**D29 — Superseded projections are pruned once replaced (O5 for generations, ADR 0015).** Vectors of
+an embedding projection other than the active one (`legacy:*` included) are deleted for revisions the
+active projection has embedded, once it covers everything older projections had covered in that chat
+and has no job pending there; the worker does it every 10 minutes. `revision_text` rows of older
+normalizers go at startup once the current row exists. Superseded LLM extractions and their
+assertions are never pruned. Vectors of revisions off the head stay until O5's worldline question is
+decided.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
@@ -325,5 +333,5 @@ These must be resolved by the owner, not by an implementing agent.
 - ~~O4 — Cross-chat branch policy~~ — **resolved 2026-09-22: D14 / ADR 0002.**
 - **O5 — Retention of abandoned worldlines.** Partly decided 2026-09-23 for superseded projection
   generations: LLM extractions are kept; embeddings and deterministic projections may be pruned once
-  a newer generation fully covers the chat (`docs/proposals/TRACK-B-PHASE-5-PLUS.md` §4). Abandoned
-  worldlines and observation growth remain open.
+  a newer generation fully covers the chat (`docs/proposals/TRACK-B-PHASE-5-PLUS.md` §4; implemented
+  as D29, ADR 0015). Abandoned worldlines and observation growth remain open.
