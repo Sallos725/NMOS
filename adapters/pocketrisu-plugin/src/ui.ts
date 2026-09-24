@@ -3,7 +3,8 @@
 // the sidecar and are saved together with one request.
 
 import type { StatusInfo } from './core';
-import { configBody, connArgs, DEFAULT_DEADLINE_MS, dirtySections, MAX_DEADLINE_MS, type FormValues, type Section } from './form';
+import { configBody, connArgs, DEFAULT_DEADLINE_MS, dirtySections, fillProject, MAX_DEADLINE_MS, presetMatches, VERTEX_URL,
+  type FormValues, type Section } from './form';
 import { langOf, t, type Lang, type StringKey } from './i18n';
 import { inspectorApiPath, inspectorConversation, localTime, safeFragment, sectionTarget } from './inspector';
 import { routeFor } from './route';
@@ -48,6 +49,7 @@ const LLM_PRESETS: Preset[] = [
   { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
   { label: 'OpenAI', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
   { label: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
+  { label: 'Google Vertex AI', url: VERTEX_URL, model: 'google/gemini-2.5-flash' },
   { label: 'preset.custom', url: 'custom' },
 ];
 
@@ -154,7 +156,7 @@ function field(labelText: string, input: HTMLElement): HTMLElement {
 
 function presetIndex(presets: Preset[], url: string): number {
   if (!url) return 0;
-  const i = presets.findIndex((p) => p.url === url);
+  const i = presets.findIndex((p) => presetMatches(p.url, url));
   return i >= 0 ? i : presets.length - 1;
 }
 
@@ -503,11 +505,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const test = el('button', { text: L('model.test') });
     preset.addEventListener('change', () => {
       const p = presets[Number(preset.value)] as Preset;
-      if (p.url !== 'custom') endpoint.value = p.url;
+      if (p.url !== 'custom') endpoint.value = fillProject(p.url, key.value);
       if (p.model) model.value = p.model;
       if (!p.url) model.value = '';
+      say(msg, p.url.includes('{project}') ? L('model.vertex_hint') : '');
       update();
     });
+    key.addEventListener('input', () => { endpoint.value = fillProject(endpoint.value, key.value); });
     list.addEventListener('change', () => { model.value = list.value; update(); });
     load.addEventListener('click', async () => {
       say(msg, L('model.loading'));

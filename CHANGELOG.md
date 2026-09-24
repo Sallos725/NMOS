@@ -25,6 +25,12 @@ Phase 8 (in progress): event participants (`docs/phases/PHASE-8.md`, ADR 0021).
 - **Entity ids change once** (`resolve-v2`): Inspector character links from before the upgrade no longer
   open. KNOWN ENTITIES hints are unchanged.
 
+**Google Vertex AI for fact extraction** (ADR 0022). The LLM API key field also takes a Google
+service-account JSON key: the sidecar exchanges it for access tokens and renews them every hour. A new
+**Google Vertex AI** provider preset fills the endpoint's project from the pasted key. LLM only; a JSON
+key for embeddings is rejected. New sidecar dependency: `google-auth`. Checked with a mocked token
+endpoint, not yet against real Vertex.
+
 ## 0.1.0-beta.14
 
 Phase 7: promise threads and event salience (`docs/phases/PHASE-7.md`, ADRs 0019–0020, D32). Schema:

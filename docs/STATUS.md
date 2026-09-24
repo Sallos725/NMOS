@@ -32,6 +32,9 @@ latency (`docs/perf/scale.md`), a real upgrade from a `v0.1.0-beta.10` database.
 (transition verifier), not authorized yet.
 Outside the phase (owner decision 2026-09-24, D28): an optional progress display on the chat screen,
 released in `v0.1.0-beta.12`.
+Outside the phase (owner request 2026-09-24, ADR 0022): Google Vertex AI service-account keys for the
+extraction LLM, unreleased. Mocked token exchange in CI; not yet run against real Vertex (needs an
+owner-supplied service-account key).
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
@@ -88,7 +91,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k (D24) |
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K24 (K10 resolved) current as of `v0.1.0-beta.14` plus Phase 8, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
-| Decisions | `docs/adr/0001`–`0021` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants |
+| Decisions | `docs/adr/0001`–`0022` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-7.md` | 0–3 met; 4 soft subset met; 5, 6 and 7 met |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 

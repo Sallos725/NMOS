@@ -88,6 +88,8 @@ const STRINGS = {
   'model.key': ['API 키', 'API key'],
   'model.key_placeholder': ['필요할 때만 입력', 'only if needed'],
   'model.key_saved': ['저장됨 — 바꿀 때만 입력', 'saved — type only to change'],
+  'model.vertex_hint': ['서비스 계정 JSON 키 파일 내용을 API 키 칸에 통째로 붙여 넣으세요. 주소의 프로젝트는 키에서 채워지고, 토큰은 사이드카가 1시간마다 갱신합니다. Vertex AI User 역할만 준 전용 서비스 계정을 쓰세요.',
+    "Paste the whole service-account JSON key file into the API key field. The project in the endpoint is filled from the key, and the sidecar renews the token every hour. Use a dedicated service account with only the Vertex AI User role."],
   'model.load': ['모델 목록', 'Load models'],
   'model.test': ['연결 테스트', 'Test'],
   'model.loading': ['불러오는 중…', 'Loading…'],

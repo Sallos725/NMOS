@@ -8,6 +8,34 @@ export const DEFAULT_DEADLINE_MS = 3000;
 export const MAX_DEADLINE_MS = 30_000;
 export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune', 'rules'];
 
+/** Google Vertex AI's OpenAI-compatible endpoint; `{project}` comes from the pasted key (ADR 0022). */
+export const VERTEX_URL = 'https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi';
+
+/** The project of a pasted Google service-account JSON key, or null for anything else. */
+export function serviceAccountProject(key: string): string | null {
+  const text = key.trim();
+  if (!text.startsWith('{')) return null;
+  try {
+    const info = JSON.parse(text) as { type?: unknown; project_id?: unknown };
+    return info.type === 'service_account' && typeof info.project_id === 'string' && info.project_id
+      ? info.project_id : null;
+  } catch { return null; }
+}
+
+/** The endpoint with `{project}` filled from a pasted service-account key; unchanged otherwise. */
+export function fillProject(url: string, key: string): string {
+  const project = serviceAccountProject(key);
+  return project && url.includes('{project}') ? url.replace('{project}', encodeURIComponent(project)) : url;
+}
+
+/** A preset URL matches a saved one exactly, or with any project in place of `{project}`. */
+export function presetMatches(presetUrl: string, url: string): boolean {
+  if (!presetUrl.includes('{project}')) return presetUrl === url;
+  const [head, tail] = presetUrl.split('{project}') as [string, string];
+  return url.startsWith(head) && url.endsWith(tail) && url.length > head.length + tail.length
+    && !url.slice(head.length, url.length - tail.length).includes('/');
+}
+
 export interface ModelValues { url: string; model: string; key: string }
 
 export interface FormValues {

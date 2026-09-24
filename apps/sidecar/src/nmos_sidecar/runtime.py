@@ -15,7 +15,8 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from .config import Settings
-from .llm import ChatModel, Embedder, LLMError
+from . import vertex
+from .llm import ChatModel, Embedder, LLMError, chat_headers
 from .parsers import RuleSet, compile_rules, load_rules
 
 EDITABLE: dict[str, type] = {
@@ -101,6 +102,18 @@ def validate_update(update: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         if key.endswith("_url") and coerced and not coerced.startswith(("http://", "https://")):
             errors.append(f"{key}: must start with http:// or https://")
             continue
+        if key.endswith("_url") and "{project}" in coerced:
+            errors.append(f"{key}: replace {{project}} with your Google Cloud project ID")
+            continue
+        if key == "llm_api_key":
+            try:
+                vertex.check_key(coerced)
+            except vertex.VertexAuthError as exc:
+                errors.append(f"{key}: {exc}")
+                continue
+        if key == "embed_api_key" and coerced.strip().startswith("{"):
+            errors.append(f"{key}: service-account JSON keys are supported for the extraction LLM only")
+            continue
         clean[key] = coerced.strip() if isinstance(coerced, str) else coerced
     return clean, errors
 
@@ -156,14 +169,16 @@ def test_embeddings(url: str, model: str, api_key: str) -> dict[str, Any]:
         return {"ok": False, "ms": round((time.perf_counter() - started) * 1000), "error": str(exc)}
 
 
-def list_models(url: str, api_key: str) -> dict[str, Any]:
+def list_models(url: str, api_key: str, kind: str = "llm") -> dict[str, Any]:
     import httpx
 
     try:
-        res = httpx.get(f"{url.rstrip('/')}/models", headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
-                        timeout=15)
+        headers = chat_headers(api_key) if kind == "llm" else ({"Authorization": f"Bearer {api_key}"} if api_key else {})
+        res = httpx.get(f"{url.rstrip('/')}/models", headers=headers, timeout=15)
         res.raise_for_status()
         ids = sorted({str(m.get("id")) for m in res.json().get("data", []) if m.get("id")})
         return {"ok": True, "models": ids[:500]}
+    except LLMError as exc:
+        return {"ok": False, "error": str(exc)[:300], "models": []}
     except (httpx.HTTPError, ValueError, AttributeError) as exc:
         return {"ok": False, "error": str(exc)[:300], "models": []}
