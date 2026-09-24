@@ -53,6 +53,11 @@ latest `NMOS_EXTRACT_BACKFILL` turns (default 100) once; older turns keep their 
   (`{{inlay::…}}`, `{{raw::…}}`, …), markdown images and `data:` URIs, lets HTML tags span lines with
   attributes of any length, and no longer eats prose such as `HP < 30 … 3 > 2` as a tag. Upgrading
   re-embeds every revision once and folds into the same one-time re-extraction as `extract-v5`.
+- **Progress display** (plugin, D28; outside Phase 5, owner decision). An optional pill at the top right
+  of the chat screen shows each request's memory outcome and the open chat's background extraction and
+  embedding progress. Off by default; turn it on in the panel (Settings or Status), which asks for
+  PocketRisu's main-document permission. New plugin arg `hud`. Replace the plugin file and reload
+  PocketRisu to get it.
 
 ## 0.1.0-beta.11
 

@@ -1,10 +1,15 @@
 import { createAdapter } from './core';
-import { registerHooks, risuHost } from './host';
+import { createRisuHud, registerHooks, risuHost } from './host';
 import type { PromptMessage } from './types';
 
 (async () => {
-  const adapter = createAdapter(risuHost);
-  await registerHooks(
+  let openStatus = (): void => {};
+  const hud = createRisuHud({
+    coverage: (conversationId) => adapter.api('GET', `/v1/conversations/${conversationId}/coverage`, undefined, 5000),
+    openPanel: () => openStatus(),
+  });
+  const adapter = createAdapter(risuHost, (event) => hud.event(event));
+  openStatus = await registerHooks(
     async (prompt, mode) => {
       try {
         return await adapter.beforeRequest(prompt as PromptMessage[], mode);
@@ -15,6 +20,7 @@ import type { PromptMessage } from './types';
     (arg) => adapter.onOutput(arg as Parameters<typeof adapter.onOutput>[0]),
     () => adapter.status(),
     (method, path, body, timeoutMs) => adapter.api(method, path, body, timeoutMs),
+    hud,
   );
   console.log('[NMOS] adapter loaded', { version: __NMOS_VERSION__ });
 })().catch((error) => console.error('[NMOS] adapter failed to load', error));

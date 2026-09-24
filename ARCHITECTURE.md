@@ -86,6 +86,7 @@ Evidence for every runtime claim is in `docs/HOST-FACTS.md`.
 | H13 | V3 `addRisuReplacer` registers no unload callback (`loadPlugins` clears only `chatOutput`). After a V3 plugin is disabled, updated or re-imported, its old `beforeRequest` replacer stays registered against a dead iframe and **every generation hangs** until the page is reloaded. | Always reload PocketRisu after installing/updating/disabling the NMOS plugin (documented in README). The plugin cannot guard against this. |
 | H14 | On reroll the host removes the tail AI message *before* `beforeRequest` runs (S2 beforeRequest saw 7 of 8 messages; confirmed in 0B live runs). The regenerated reply appears only in the next request's snapshot. | Live reroll reconciles as "head minus tail" → retract; lineage to the new reply is not observable in the same request. |
 | H15 | The V3 plugin iframe is sandboxed with only `allow-scripts allow-modals allow-downloads` and `allow="screen-wake-lock"`. Runtime (v1.12.0): a `target="_blank"` link is blocked ("sandboxed frame whose 'allow-popups' permission is not set"), and `navigator.clipboard.writeText` is refused by permissions policy. The V3 API has no call that opens a URL. | The plugin cannot open a browser tab. The Inspector is shown inside the panel from `/v1/inspector*`, and links in it must be handled by the panel (following one would navigate the plugin frame). |
+| H16 | With the `mainDom` permission (host confirm, persisted; a denial is permanent until reset) a V3 plugin gets the page through an async `SafeElement` proxy (text is escaped, `setInnerHTML` is sanitised). Element listeners are registered on the whole document. A plugin re-import leaves drawn elements behind until reload. | The progress HUD (D28) is opt-in from the panel, hit-tests clicks against its rect, and removes a leftover `.nmos-hud` before drawing. |
 
 ## 5. Key decisions
 
@@ -241,6 +242,15 @@ ends the current version only if it denies the same relation (same holder for an
 and value otherwise) and otherwise stands as a negative fact. A character's claim never supersedes
 narration and reaches the packet only as a `<Claim>` after facts. Non-actual assertions are stored and
 inspectable, never injected. Rows from before `extract-v5` read as narration.
+
+**D28 — Optional progress display on the chat screen (owner decision 2026-09-24; not a phase feature).**
+A small pill at the top right of the PocketRisu page shows each main request's outcome (memory
+injected / nothing relevant / skipped and why) and the open chat's background extraction and embedding
+progress from `GET /v1/conversations/{id}/coverage`. Off by default (plugin arg `hud`); turning it on
+in the panel asks for the host's `mainDom` permission (H16), and a denial leaves it off. The request
+path only emits fire-and-forget events: the display cannot delay, change or fail a request. Coverage is
+polled every 3 s only while work is pending for the chat the user is on, at most once per second for
+bursts. Any drawing error stops the display for the session. No sidecar or schema change.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

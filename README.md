@@ -77,6 +77,27 @@ language after a page reload.
   there, and closing asks whether to save them. Saving applies immediately and processes existing
   chats in the background.
 
+### Progress display (optional)
+
+A small pill at the top right of the chat screen shows whether memory went into each reply and how far
+background processing of the open chat has got. It is **off by default**. Turn it on in the panel
+(**Settings → Progress display**, or **Turn on progress display** on the Status tab). PocketRisu then
+asks *"Plugin nmos_memory is requesting to access the main Document, which may expose sensitive
+information."*: NMOS needs that access only to draw the pill and reads nothing on the page. If you answer
+No, PocketRisu remembers it; to ask again, use Settings → Plugin → the NMOS row menu → **Reset permission
+responses**.
+
+| Pill | Meaning |
+|---|---|
+| `🧠 기억 불러오는 중…` | NMOS is preparing memory for this request |
+| `✓ 기억 주입 (N자)` / `– 관련 기억 없음` | memory went in / nothing relevant (shown 4 s) |
+| `⚠ 건너뜀: 제한 시간 초과` | the request went without memory (deadline or sidecar error) |
+| `추출 2/5 · 임베딩 5/5` + bar | background extraction/embedding of this chat; `⚠ 실패 N` if some failed |
+| `✓ 처리 완료` | that work finished (shown 3 s) |
+
+Tap the pill to open the panel. The text follows the panel language (English: `🧠 Recalling memory…`,
+`✓ Memory injected (N chars)`, `Facts 2/5 · Embeddings 5/5`, …).
+
 The Inspector lists conversations as **bot name · chat name** (after the next message in that chat)
 and follows the panel language. The same pages are also served by the sidecar for a browser tab at
 **http://127.0.0.1:8790/inspector** (Korean by default, English at the top right).

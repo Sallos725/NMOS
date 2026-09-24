@@ -9,6 +9,8 @@ a stall in fact and state reads after edits in long chats (`docs/perf/scale.md`)
 entities, ADR 0012, D26) and step 5 (name hints in extraction, D7 amended) done, unreleased. Step 6's evaluation
 is done (`docs/perf/phase5-extraction.md`: every real-model bar met, real-host smoke passed); the
 release is pending the owner.
+Outside the phase (owner decision 2026-09-24, D28): an optional progress display on the chat screen,
+unreleased.
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
@@ -51,7 +53,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H15, D1–D23, O2/O3/O4 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H16, D1–D28, O2/O3/O4 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
 | Schema | `migrations/0001`–`0014` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createAdapter, type HostPort, type HttpResult, type Settings } from '../src/core';
+import type { ActivityEvent } from '../src/hud';
 import { hasPacket } from '../src/prompt';
 import type { HostChat, PromptMessage } from '../src/types';
 
@@ -246,5 +247,65 @@ describe('route selection', () => {
     await createAdapter(host).api('PUT', '/v1/config', { facts_limit: 3 });
     expect(seen).toEqual([{ method: 'PUT', url: 'http://localhost:8790/v1/config', route: 'direct',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer t' } }]);
+  });
+});
+
+describe('activity events (progress display)', () => {
+  const withConversation = (path: string, body: any): HttpResult => {
+    const res = happy(path, body);
+    if (path === '/v1/sync/bodies') (res.json as any).reconcile.conversation_id = 'conv-1';
+    return res;
+  };
+
+  it('announces a main request and its outcome with the conversation', async () => {
+    const { host } = fakeHost(withConversation);
+    const events: ActivityEvent[] = [];
+    await createAdapter(host, (e) => events.push(e)).beforeRequest(prompt, 'model');
+    expect(events).toEqual([{ type: 'request-start' },
+      { type: 'request-end', outcome: 'injected', chars: PACKET.length, conversationId: 'conv-1' }]);
+  });
+
+  it('says nothing for auxiliary requests or when memory is off', async () => {
+    const events: ActivityEvent[] = [];
+    await createAdapter(fakeHost(happy).host, (e) => events.push(e)).beforeRequest(prompt, 'submodel');
+    await createAdapter(fakeHost(happy, { enabled: false }).host, (e) => events.push(e)).beforeRequest(prompt, 'model');
+    expect(events).toEqual([]);
+  });
+
+  it('reports a failed request', async () => {
+    const { host } = fakeHost(() => ({ status: 500, json: null }));
+    const events: ActivityEvent[] = [];
+    await createAdapter(host, (e) => events.push(e)).beforeRequest(prompt, 'model');
+    expect(events[1]).toMatchObject({ type: 'request-end', outcome: 'failed', chars: 0, conversationId: null });
+    expect((events[1] as { error: string }).error).toMatch(/HTTP 500/);
+  });
+
+  it('a throwing listener changes nothing', async () => {
+    const { host } = fakeHost(happy);
+    const out = await createAdapter(host, () => { throw new Error('boom'); }).beforeRequest(prompt, 'model');
+    expect(hasPacket(out)).toBe(true);
+  });
+
+  it('announces a cached reuse too, and a prompt without a user turn is abandoned', async () => {
+    const { host } = fakeHost(withConversation);
+    const events: ActivityEvent[] = [];
+    const adapter = createAdapter(host, (e) => events.push(e));
+    await adapter.beforeRequest(prompt, 'model');
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(events.slice(2)).toEqual([{ type: 'request-start' },
+      { type: 'request-end', outcome: 'injected', chars: PACKET.length, conversationId: 'conv-1' }]);
+    events.length = 0;
+    await adapter.beforeRequest([{ role: 'system', content: 'narrator' }, { role: 'user', content: 'unrelated text' }], 'model');
+    expect(events).toEqual([{ type: 'request-start' }, { type: 'request-abandon' }]);
+  });
+
+  it('announces background work after a reply, for the conversation it knows', async () => {
+    const { host } = fakeHost(withConversation);
+    const events: ActivityEvent[] = [];
+    const adapter = createAdapter(host, (e) => events.push(e));
+    await adapter.beforeRequest(prompt, 'model');
+    events.length = 0;
+    adapter.onOutput({ chat, messageIndex: 1 });
+    await vi.waitFor(() => expect(events).toEqual([{ type: 'background', conversationId: 'conv-1' }]));
   });
 });

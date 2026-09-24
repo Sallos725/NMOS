@@ -4,6 +4,7 @@ import { canonicalJson } from './canonical';
 import { sha256Hex } from './hash';
 import type { Lang } from './i18n';
 import { bodyKey, createManifestBuilder, hashPayload, type Bodies } from './manifest';
+import type { ActivityEvent } from './hud';
 import { hasPacket, inContextIds, injectPacket, queryTexts, userTurnIndex, type InjectPosition } from './prompt';
 import type { HostChat, HostMessage, PromptMessage, ReconcileRequest } from './types';
 
@@ -39,6 +40,7 @@ export interface HostPort {
 class DeadlineError extends Error {}
 
 interface ReconcileResult {
+  conversation_id?: string;
   status: 'noop' | 'applied' | 'needs_bodies';
   active_commit: string | null;
   manifest_hash: string;
@@ -76,11 +78,21 @@ export interface StatusInfo {
 
 const NAME_TTL_MS = 10 * 60_000;
 
-export function createAdapter(host: HostPort) {
+/** `onActivity` feeds the progress display (D28): called synchronously, never awaited, errors ignored. */
+export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent) => void) {
   const cache = new Map<string, CacheEntry>();
+  const conversations = new Map<string, string>(); // host chat id → sidecar conversation id
   const names = new Map<string, { name: string | null; at: number }>();
   const buildManifest = createManifestBuilder();
   let last: LastRequest | null = null;
+
+  function emit(event: ActivityEvent): void {
+    try {
+      onActivity?.(event);
+    } catch {
+      // the display must never affect a request
+    }
+  }
 
   /** The bot name for this chat as last resolved; a stale or missing entry is refreshed in the background. */
   function characterName(chatId: string): string | null {
@@ -151,16 +163,24 @@ export function createAdapter(host: HostPort) {
     const started = host.now();
     let settings: Settings | null = null;
     let key: string | null = null;
+    let chatId: string | null = null;
+    let announced = false;
     try {
       if (mode !== 'model' || hasPacket(prompt)) return prompt; // aux request, or retry of an injected prompt (H2)
       settings = await host.settings();
       if (!settings.enabled || !settings.sidecarUrl) return prompt;
       const deadline = started + settings.deadlineMs;
+      emit({ type: 'request-start' });
+      announced = true;
 
       const chat = await host.currentChat();
       const messages: HostMessage[] = Array.isArray(chat?.message) ? chat!.message : [];
       const turn = userTurnIndex(prompt, messages); // D13: the chat's latest user turn is in this prompt
-      if (!chat?.id || turn < 0) return prompt;
+      if (!chat?.id || turn < 0) {
+        emit({ type: 'request-abandon' });
+        return prompt;
+      }
+      chatId = chat.id;
 
       // Cache key = exact chat state (every message id + revision hash) + prompt shape, so a cached
       // packet is reused only for the same state (host retries, reroll of an unchanged chat) and never
@@ -174,11 +194,20 @@ export function createAdapter(host: HostPort) {
         chat.id, mode, prompt.length, request.messages.map((m) => [m.host_logical_id, m.revision_hash]),
       ]));
       const cached = cache.get(key);
-      if (cached && cached.expires > host.now()) return injectPacket(prompt, cached.packet, settings.injectPosition, turn);
+      if (cached && cached.expires > host.now()) {
+        emit({ type: 'request-end', outcome: cached.packet ? 'injected' : 'nothing-relevant', chars: cached.packet.length,
+          conversationId: conversations.get(chat.id) ?? null });
+        return injectPacket(prompt, cached.packet, settings.injectPosition, turn);
+      }
 
       const t1 = host.now();
       const synced = await sync(settings, request, bodies, deadline);
       const syncMs = host.now() - t1;
+      if (synced.conversation_id) {
+        conversations.delete(chat.id);
+        conversations.set(chat.id, synced.conversation_id);
+        while (conversations.size > CACHE_LIMIT) conversations.delete(conversations.keys().next().value as string);
+      }
 
       const { query, previousAi } = queryTexts(messages);
       const t2 = host.now();
@@ -197,14 +226,17 @@ export function createAdapter(host: HostPort) {
       remember(key, packet, SUCCESS_TTL_MS);
       host.debug('[NMOS] request done', { ms: Math.round(host.now() - started), manifestMs: Math.round(manifestMs),
         syncMs: Math.round(syncMs), retrieveMs: Math.round(host.now() - t2), packetChars: packet.length });
-      last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length,
-        outcome: packet ? 'injected' : 'nothing-relevant' };
+      const outcome = packet ? 'injected' : 'nothing-relevant';
+      last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, outcome };
+      emit({ type: 'request-end', outcome, chars: packet.length, conversationId: synced.conversation_id ?? null });
       return injectPacket(prompt, packet, settings.injectPosition, turn);
     } catch (error) {
       // Cache the miss briefly so host retries of this request (H2) do not wait out the deadline again.
       if (key) remember(key, '', FAILURE_TTL_MS);
       last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: 0, outcome: 'failed',
         error: error instanceof Error ? error.message : String(error) };
+      if (announced) emit({ type: 'request-end', outcome: 'failed', chars: 0, error: last.error,
+        conversationId: (chatId && conversations.get(chatId)) || null });
       host.warn('[NMOS] memory skipped for this request (fail open):', error instanceof Error ? error.message : error);
       return prompt;
     }
@@ -215,6 +247,7 @@ export function createAdapter(host: HostPort) {
     void (async () => {
       const settings = await host.settings();
       if (!settings.enabled || !settings.sidecarUrl || !arg?.chat?.id) return;
+      emit({ type: 'background', conversationId: conversations.get(arg.chat.id) ?? null });
       const index = arg.messageIndex ?? -1;
       const message = index >= 0 ? arg.chat.message?.[index] : undefined;
       await call(settings, '/v1/output', {
