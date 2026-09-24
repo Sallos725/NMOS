@@ -1,19 +1,18 @@
 # Phase 6 — Item Transitions and Conflicts
 
-> **Status: DRAFT for owner approval (2026-09-24). Not authorized.** Nothing in this document may be
-> implemented until the owner approves it and answers the open questions below. This is Track B
+> **Status: approved by the owner on 2026-09-24, with the recommended answer to every question
+> (Q1–Q5).** Implementation follows "Implementation order" below. This is Track B
 > stage B2 (`docs/proposals/TRACK-B-PHASE-5-PLUS.md` §6), narrowed to what current evidence supports;
 > this document is its B0.
 >
 > The roadmap amendment of 2026-09-23 (Track B §4, owner decision 2) put B2 directly after B1 because
 > K9 and K10 are measured current-state errors.
 
-## Open questions for the owner
+## Owner decisions (2026-09-24)
 
-Each question has a recommended answer. The spec below is written for the recommended answers. A
-different answer changes only the parts it names.
+The owner chose the recommended answer to each question. The spec below is written for those answers.
 
-| # | Question | Recommended | Alternatives |
+| # | Question | Decided | Alternatives not taken |
 |---|---|---|---|
 | Q1 | How does the packet show a **conflict** (two incompatible current states for one key)? | Show the latest value marked `disputed="true"`, with the other value in the same line. The model sees both and is told neither is certain. | (b) Leave the key out of the packet (Inspector only). (c) Latest wins, conflict only in the Inspector (today's behavior, plus visibility). |
 | Q2 | An item's **holder** (`possesses`) and **place** (`located_in`) can disagree (K10). How is that resolved? | One item **whereabouts**: the newer of "held by X" and "at place P" is current and closes the other. Both from the same turn stay together ("held by Hana, at the library"). | (b) Keep them as two facts and flag a disagreement as a conflict (Q1). (c) Leave as is (K10 stays). |

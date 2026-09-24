@@ -289,4 +289,5 @@ Reproduce:
 docker compose up -d postgres
 cd apps/sidecar && uv run python ../../tools/bench_scale.py 1000,5000,10000,25000
 cd adapters/pocketrisu-plugin && node scripts/bench-manifest.mjs 1000,5000,10000,25000
+cd apps/sidecar && uv run python ../../tools/bench_prune.py 1000,10000  # ADR 0015 pruning pass
 ```
