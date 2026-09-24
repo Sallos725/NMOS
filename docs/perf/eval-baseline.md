@@ -71,20 +71,23 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | edit removes the break | open thread | **no** | **no** | **no** | yes |
 | delete removes the promise | open thread | — | — | — | — |
 | events leave room | event salience | **no** | **no** | **no** | yes |
+| major event first | event salience | **no** | **no** | **no** | yes |
 | unrelated question | irrelevant-memory suppression | — | empty | empty | empty |
 
 | Mode | gold reached | cases with stale memory | irrelevant packets | mean packet tokens |
 |---|---:|---:|---:|---:|
-| recent | 0/29 | 0 | — | 0 |
-| lexical | 2/29 | 0 | 0/1 | 107 |
-| hybrid | 3/29 | 0 | 0/1 | 133 |
-| full | 29/29 | 0 | 0/1 | 169 |
+| recent | 0/30 | 0 | — | 0 |
+| lexical | 2/30 | 0 | 0/1 | 110 |
+| hybrid | 3/30 | 0 | 0/1 | 135 |
+| full | 30/30 | 0 | 0/1 | 168 |
 
 Before Phase 6 step 1 (ADR 0016), `full` had stale memory in "put down" (`Hana possesses map`) and
 "picked up" (`map located in table`).
 Before Phase 7 step 1, "events leave room" missed its gold: twelve newer events of Hana took every
 fact slot. Before step 2, "promise recalled" missed its gold: the promise reached the packet only as a
 `<Claim>`, never as an open thread.
+Before step 4, "major event first" missed its gold: its minor events, newer and all naming Hana, took the
+three event slots.
 
 "—": the case has no gold (the deleted turn only checks that nothing of it comes back).
 

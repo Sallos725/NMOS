@@ -276,6 +276,9 @@ FIRST_PERSON = re.compile(r"(^|\s)(내|나는|나를|나한테|나에게|나의|
 USER_NAMES = {"{{user}}", "{user}", "user", "유저"}
 
 
+LEXICAL_BAR = 0.35  # trigram overlap with the query that makes an unmentioned fact relevant
+
+
 def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],
                    limit: int, events_limit: int | None = None) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
@@ -284,7 +287,10 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     the model most needs to see (so it does not leak), and "내/my" questions concern the user's facts.
 
     At most `events_limit` of them are `event` facts (PHASE-7 Q4): events are the most frequent predicate
-    and all stay current, so a main character's newest events would otherwise take every slot.
+    and all stay current, so a main character's newest events would otherwise take every slot. Among
+    events a `major` one comes before any `minor` or unlabeled one with the same mention score, and a
+    `minor` one needs the lexical bar: a name mention alone does not bring it (ADR 0020). Unlabeled
+    events (older generations) rank as before.
     """
     q = _norm(query)
     ai = _norm(previous_ai)
@@ -307,18 +313,21 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         grams = _grams(fact_text(f))
         lexical = len(grams & q_grams) / max(1, len(q_grams))
         score = mention + lexical
-        if mention or lexical >= 0.35:
-            scored.append((score, f["position"], f))
+        if f["predicate"] == "event" and f.get("salience") == "minor" and (
+                len(_grams(f.get("value") or "") & q_grams) / max(1, len(q_grams)) < LEXICAL_BAR):
+            continue  # the query must be about the event itself, not just name its subject
+        if mention or lexical >= LEXICAL_BAR:
+            scored.append((score, f["position"], f, mention))
     scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    events = sorted((x for x in scored if x[2]["predicate"] == "event"),
+                    key=lambda x: (x[3], x[2].get("salience") == "major", x[0], x[1]), reverse=True)
+    kept_events = {id(x[2]) for x in events[:events_limit]} if events_limit is not None else None
     out: list[dict[str, Any]] = []
-    events = 0
-    for _, _, f in scored:
+    for _, _, f, _ in scored:
         if len(out) >= limit:
             break
-        if f["predicate"] == "event":
-            if events_limit is not None and events >= events_limit:
-                continue
-            events += 1
+        if f["predicate"] == "event" and kept_events is not None and id(f) not in kept_events:
+            continue
         out.append(f)
     return out
 

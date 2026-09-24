@@ -236,6 +236,22 @@ def test_events_do_not_take_every_fact_slot():
     assert [f["predicate"] for f in relevant_facts(facts, "하나야", "", set(), 8, events_limit=0)] == ["promised"]
 
 
+def test_major_events_first_and_minor_events_need_the_query():
+    """PHASE-7 Q4, ADR 0020."""
+    from nmos_sidecar.facts import relevant_facts
+    base = {"object": None, "host_logical_id": "x", "known_by": None, "hidden_from": None, "subject": "하나",
+            "predicate": "event"}
+    major = {**base, "value": "카이토를 배신했다", "position": 20, "salience": "major"}
+    minors = [{**base, "value": f"사소한 일 {i}", "position": i, "salience": "minor"} for i in range(30, 60, 2)]
+    unlabeled = [{**base, "value": f"옛날 일 {i}", "position": i} for i in (5, 7)]
+    picked = relevant_facts([major, *minors, *unlabeled], "하나야, 오랜만이야.", "", set(), 8, events_limit=3)
+    # The major event first; minor ones only by mention do not come; unlabeled ones rank as before.
+    assert [f["value"] for f in picked] == ["카이토를 배신했다", "옛날 일 7", "옛날 일 5"]
+    # A minor event the query is about still comes.
+    picked = relevant_facts([major, *minors], "하나, 사소한 일 40 기억나?", "", set(), 8, events_limit=3)
+    assert "사소한 일 40" in [f["value"] for f in picked]
+
+
 GIVE = re.compile(r"(?P<who>\w+) (?:has|takes|gets) the (?P<item>\w+)\.")
 
 
