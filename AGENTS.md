@@ -13,10 +13,10 @@ Continue the **current phase** as far as possible without violating any stop con
 
 The current phase is always the one named in `docs/STATUS.md`. As of 2026-09-24:
 
-> **Phase 7 — Promise Threads and Event Salience (`docs/phases/PHASE-7.md`, Track B, B3 narrowed) is
-> complete** (2026-09-24, `v0.1.0-beta.14`). Phases 0–3, the Phase 4 soft subset, Phase 5 and Phase 6
-> are complete. Public beta. No phase is current: hard POV isolation (D9 `character_pov`), the rest of
-> B3 and Track B, B4–B7 are not authorized. Bug fixes, correctness, docs and CI work stay allowed.
+> **Phase 8 — Event Participants (`docs/phases/PHASE-8.md`, Track B, B3 narrowed) is current**
+> (approved 2026-09-24). Phases 0–3, the Phase 4 soft subset and Phases 5–7 (`v0.1.0-beta.14`) are
+> complete. Public beta. Hard POV isolation (D9 `character_pov`), the rest of B3 and Track B, B4–B7 are
+> not authorized. Bug fixes, correctness, docs and CI work stay allowed.
 
 Do not start a phase without its phase document and without the evidence it requires. Work that is
 not a phase feature (bug fixes, correctness, docs, CI) is allowed at any time. It must still keep the
@@ -33,8 +33,8 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-7.md` is the latest;
-   `PHASE-0.md`…`PHASE-6.md` still define the behavior they introduced).
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-8.md` is the latest;
+   `PHASE-0.md`…`PHASE-7.md` still define the behavior they introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
 6. Relevant ADRs in `docs/adr/`.
 
@@ -69,7 +69,8 @@ If two normative documents appear to conflict:
 | 5 — entity identity and semantic assertions (Track B, B1) | complete (2026-09-24, beta.12) | `PHASE-5.md`, ADRs 0012–0014 |
 | 6 — item transitions and conflicts (Track B, B2) | complete (2026-09-24, beta.13) | `PHASE-6.md`, ADRs 0016–0017 |
 | 7 — promise threads and event salience (Track B, B3) | complete (2026-09-24, beta.14) | `PHASE-7.md`, ADRs 0019–0020 |
-| 8+ (Track B, B3 remainder, B4–B7) | **not authorized** | `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
+| 8 — event participants (Track B, B3) | **current** (approved 2026-09-24) | `PHASE-8.md` |
+| 9+ (Track B, B3 remainder, B4–B7) | **not authorized** | `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
 ADR 0006/0007, `docs/perf/scale.md`).
