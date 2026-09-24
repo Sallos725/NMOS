@@ -2,6 +2,10 @@
 
 ## Current phase
 
+**Phase 6 — Item Transitions and Conflicts: approved 2026-09-24, in progress.** Spec
+`docs/phases/PHASE-6.md` (Track B, B2). The owner took the recommended answer to every open question
+(Q1–Q5). Step 1 (read-time item whereabouts) is next.
+
 **Phase 5 — Entity Identity and Semantic Assertions: complete (2026-09-24), released in
 `v0.1.0-beta.12`.** Spec `docs/phases/PHASE-5.md`, ADRs 0012–0014 (0012/0013 amended by the owner after
 the real-model tier), D26/D27, D7/D20 amended. Every acceptance criterion met: deterministic cases in
@@ -78,11 +82,11 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 ## Open owner decisions
 
 - O1 — relationship to MIRRA / VEIL.
-- O5 — retention of abandoned worldlines and `host_observation` growth (needed before Track B, B2).
-  Superseded generations: decided 2026-09-23 (keep LLM extractions, prune embeddings and
-  deterministic projections after full coverage; Track B §4); implemented (ADR 0015, D29; unreleased).
-- Phase 6+ (Track B, B2–B7): not authorized. B2 (transition verifier) is the intended next stage and needs
-  its own phase specification.
+- O5 — retention of abandoned worldlines and `host_observation` growth. Superseded generations:
+  decided 2026-09-23 (keep LLM extractions, prune embeddings and deterministic projections after full
+  coverage; Track B §4); implemented (ADR 0015, D29; unreleased). Host observations: decided 2026-09-24
+  (PHASE-6 Q5): lossless compaction of full-manifest observations, everything else kept; not
+  implemented yet. Abandoned worldlines otherwise stay kept.
 
 ## Public release checklist (done 2026-09-23)
 

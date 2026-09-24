@@ -334,4 +334,6 @@ These must be resolved by the owner, not by an implementing agent.
 - **O5 — Retention of abandoned worldlines.** Partly decided 2026-09-23 for superseded projection
   generations: LLM extractions are kept; embeddings and deterministic projections may be pruned once
   a newer generation fully covers the chat (`docs/proposals/TRACK-B-PHASE-5-PLUS.md` §4; implemented
-  as D29, ADR 0015). Abandoned worldlines and observation growth remain open.
+  as D29, ADR 0015). Decided 2026-09-24 for host observations (`docs/phases/PHASE-6.md` Q5):
+  full-manifest observations are compacted losslessly (only rows changed against the previous
+  observation, as appends already are); everything else on abandoned worldlines is kept.
