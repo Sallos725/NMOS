@@ -31,6 +31,13 @@ never as a reason to delete the rest.
 4. **Nothing is deleted or down-sampled.** Minor events stay stored, current and visible in the
    Inspector. Excerpt ranking is unchanged.
 
+## Amendment (2026-09-25, ADR 0024)
+
+`extract-v9` defines `major` by what an event changes, in action or only in words, and names the
+categories (admissions and confessions, changes in how characters treat or address each other, a
+relationship allowed, a power first shown, an incident others must deal with). Routine scene business is
+`minor`. Items 1, 3 and 4 are unchanged.
+
 ## Consequences
 
 - A main character's routine does not crowd out older facts, promises (ADR 0019) or major events

@@ -70,7 +70,9 @@ language after a page reload.
   messages alone, run in the background and cost one LLM call per turn. **Delete conversation**
   (click twice) deletes everything NMOS stored for that chat, raw messages included, and cannot be
   undone. Use it after deleting the chat in PocketRisu. The PocketRisu chat itself is never touched;
-  generating in it again starts a new NMOS conversation.
+  generating in it again starts a new NMOS conversation. On an entity's page, **Same as another entity**
+  joins it with another entity of the same type when the story never linked the two names (e.g. someone
+  shown without a name and named later); **Undo** takes a join back. Joins survive a rebuild.
 - **Settings**: connection (sidecar URL, route, memory budget, deadline, on/off); **fact-extraction LLM**
   and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, Google Vertex AI, any
   OpenAI-compatible endpoint), model list, API key and a **connection test** that makes a real call;
@@ -196,7 +198,10 @@ comes up again, however long ago it was made:
 story keeps it, breaks it or releases it, it leaves the packet (the Inspector keeps its history). A
 character's routine no longer fills the facts: a packet holds at most three events, important ones
 ("major": a confession, a betrayal, a death, a secret revealed) first, and a minor event only when
-your message is about it.
+your message is about it. Since `extract-v9` an event is major by what it changes, also when it happens
+only in words: an admission, a change from formal to informal speech or a new form of address, a
+relationship someone allows, or an incident everyone must deal with. Someone shown without a name is
+written as a `?` description (`?검은 망토의 남자`) and joined to their name when a later turn reveals it.
 
 A fact about two people comes back from both sides (since 0.1.0-beta.15, Phase 8): `Hana event: betrayed Kaito` is recalled
 when you address Kaito, not only Hana. Extraction lists the other people an event, goal, knowledge fact

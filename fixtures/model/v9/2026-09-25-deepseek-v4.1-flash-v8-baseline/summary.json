@@ -1,0 +1,743 @@
+{
+  "model": "deepseek-v4.1-flash:cloud",
+  "url": "http://127.0.0.1:11434/v1",
+  "runs": 3,
+  "calls": 195,
+  "errors": [],
+  "prompt": "v8",
+  "bars": {
+    "major": {
+      "major: admission": "1/3",
+      "major: speech level": "1/3",
+      "major: form of address": "0/3",
+      "major: relationship allowed": "1/3",
+      "major: device explodes": "3/3"
+    },
+    "routine": {
+      "routine: dinner": "3/3",
+      "routine: chores": "3/3",
+      "routine: walk to market": "3/3"
+    },
+    "unnamed": {
+      "unnamed: first sight": "0/3"
+    },
+    "reveal": {
+      "unnamed: reveal": "0/3"
+    },
+    "no reveal": {
+      "unnamed: another person arrives": "3/3",
+      "unnamed: unrelated scene": "3/3"
+    }
+  },
+  "v8_same_scenes": null,
+  "phase6": {
+    "end": {
+      "burned letter": "3/3",
+      "eaten apple": "3/3",
+      "drunk potion": "3/3",
+      "last match": "3/3"
+    },
+    "damaged": {
+      "cracked sword": "3/3",
+      "torn cloak": "3/3"
+    },
+    "whereabouts": {
+      "put down": "3/3",
+      "picked up": "3/3"
+    },
+    "loss": {
+      "lost map": "1/3"
+    }
+  },
+  "phase7": {
+    "open": {
+      "promise in dialogue": "3/3",
+      "promise in narration": "3/3",
+      "conditional promise": "3/3"
+    },
+    "kept": {
+      "kept: lighthouse": "3/3",
+      "kept: hometown": "3/3"
+    },
+    "broken": {
+      "broken: secret told": "3/3",
+      "broken: withdrawn": "3/3"
+    },
+    "released": {
+      "released: letter": "3/3",
+      "released: daily letters": "3/3"
+    },
+    "control": {
+      "unrelated: dinner": "3/3",
+      "unrelated: forge": "3/3",
+      "discussed: lighthouse": "3/3",
+      "discussed: hometown": "3/3"
+    },
+    "reported": {
+      "reported: rumor": "3/3",
+      "reported: oath": "3/3"
+    },
+    "major": {
+      "major: confession": "3/3",
+      "major: betrayal": "3/3",
+      "major: secret revealed": "3/3",
+      "major: death": "3/3"
+    },
+    "minor": {
+      "minor: walk": "2/3",
+      "minor: meal": "3/3",
+      "minor: chores": "2/3"
+    }
+  },
+  "phase8": {
+    "participants": {
+      "giving: key": "3/3",
+      "giving: letter": "3/3",
+      "attack": "3/3",
+      "confession: kaito": "3/3",
+      "confession: yui": "3/3",
+      "rescue": "3/3",
+      "group attack": "3/3",
+      "goal about another": "3/3",
+      "knows about another": "3/3",
+      "destroyed by another": "2/3"
+    },
+    "control": {
+      "solo walk": "3/3",
+      "cooking": "3/3",
+      "absent householder": "3/3",
+      "the word 하나": "3/3"
+    },
+    "secret": {
+      "secret about a shared event": "2/3"
+    }
+  },
+  "prompt_tokens_mean_controls": {
+    "v8": null,
+    "v9": null
+  },
+  "scenes": {
+    "v8 major: admission": {
+      "category": "major",
+      "pass": 1,
+      "runs": 3,
+      "details": [
+        "events=[]",
+        "events=[('서연', '결계석을 건드렸다고 고백함', 'major')]",
+        "events=[]"
+      ]
+    },
+    "v8 major: speech level": {
+      "category": "major",
+      "pass": 1,
+      "runs": 3,
+      "details": [
+        "events=[('유이', '카이토와 서로 말을 놓기로 함', 'major')]",
+        "events=[]",
+        "events=[]"
+      ]
+    },
+    "v8 major: form of address": {
+      "category": "major",
+      "pass": 0,
+      "runs": 3,
+      "details": [
+        "events=[('하나', '레온의 소매를 잡았다', 'minor'), ('레온', '하나의 머리를 쓰다듬었다', 'minor')]",
+        "events=[('레온', '하나를 보며 웃었다', 'minor'), ('하나', \"레온의 소매를 잡고 '오빠'라고 불러도 되는지 물었다\", 'minor'), ('레온', '대답 대신 하나의 머리를 쓰다듬었다', 'minor')]",
+        "events=[('하나', '레온의 소매를 잡고 오빠라고 불러도 되는지 물었다', 'minor'), ('레온', '하나의 머리를 쓰다듬었다', 'minor')]"
+      ]
+    },
+    "v8 major: relationship allowed": {
+      "category": "major",
+      "pass": 1,
+      "runs": 3,
+      "details": [
+        "events=[]",
+        "events=[]",
+        "events=[('카이토의 아버지', '카이토와 미나의 교제를 반대하지 않기로 함', 'major')]"
+      ]
+    },
+    "v8 major: device explodes": {
+      "category": "major",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "events=[('감독관', \"기록지에 '측정 불가, 등급 판정 보류'라고 적었다\", 'major')]",
+        "events=[('민호', '측정 수정구에 손을 얹자 수정구가 산산조각 났다', 'major'), ('감독관', \"기록지에 '측정 불가, 등급 판정 보류'라고 적었다\", 'minor')]",
+        "events=[('감독관', \"측정 수정구가 깨진 뒤 기록지에 '측정 불가, 등급 판정 보류'라고 적었다\", 'minor'), ('민호', '측정 수정구에 손을 얹자 수정구가 산산조각 났다', 'major')]"
+      ]
+    },
+    "v8 routine: dinner": {
+      "category": "routine",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('유이', '카이토와 저녁으로 감자 스튜를 나눠 먹음', 'minor'), ('카이토', '유이에게 빵을 한 조각 더 건넸다', 'minor')]",
+        "[('유이', '카이토와 함께 감자 스튜를 먹었다', 'minor')]",
+        "[]"
+      ]
+    },
+    "v8 routine: chores": {
+      "category": "routine",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('하나', '그릇을 헹구다', 'minor'), ('레온', '빨래를 걷어 개다', 'minor')]",
+        "[('하나', '그릇을 헹구다', 'minor'), ('레온', '빨래를 걷어 개다', 'minor')]",
+        "[('하나', '그릇을 헹구다', 'minor'), ('레온', '빨래를 걷어 개다', 'minor')]"
+      ]
+    },
+    "v8 routine: walk to market": {
+      "category": "routine",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('서연', '촌장과 함께 시장에 갔다', 'minor'), ('서연', '가는 길에 사과를 샀다', 'minor')]",
+        "[('서연', '촌장과 함께 시장에 갔다', 'minor'), ('서연', '가는 길에 사과를 샀다', 'minor')]",
+        "[('서연', '촌장과 함께 시장에 갔다', 'minor')]"
+      ]
+    },
+    "v8 unnamed: first sight": {
+      "category": "unnamed",
+      "pass": 0,
+      "runs": 3,
+      "details": [
+        "['안개 낀 다리', '은빛 가면을 쓴 누군가', '카이토']",
+        "['안개 낀 다리', '은빛 가면을 쓴 인물', '카이토']",
+        "['안개 낀 다리', '은빛 가면을 쓴 인물', '카이토']"
+      ]
+    },
+    "v8 unnamed: reveal": {
+      "category": "reveal",
+      "pass": 0,
+      "runs": 3,
+      "details": [
+        "[('세라', '은빛 가면의 인물', 'pending')]",
+        "[('세라', '은빛 가면의 인물', 'pending')]",
+        "[('세라', '은빛 가면의 인물', 'pending')]"
+      ]
+    },
+    "v8 unnamed: another person arrives": {
+      "category": "no reveal",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[]",
+        "[]",
+        "[]"
+      ]
+    },
+    "v8 unnamed: unrelated scene": {
+      "category": "no reveal",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[]",
+        "[]",
+        "[]"
+      ]
+    },
+    "phase6 burned letter": {
+      "category": "end",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('편지', 'destroyed', '촛불에 타서 재가 됨', 'positive', '')]",
+        "current=[('편지', 'destroyed', '촛불에 태워져 한 줌의 재가 되어 바닥에 흩어졌다', 'positive', '')]",
+        "current=[('편지', 'destroyed', '촛불에 태워져 한 줌의 재가 되어 바닥에 흩어짐', 'positive', '')]"
+      ]
+    },
+    "phase6 eaten apple": {
+      "category": "end",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('사과', 'destroyed', '유이가 다 먹어 치움', 'positive', '')]",
+        "current=[('사과', 'destroyed', '유이가 다 먹어 치움', 'positive', '')]",
+        "current=[('사과', 'destroyed', '유이가 몇 입 만에 다 먹어 치움', 'positive', '')]"
+      ]
+    },
+    "phase6 drunk potion": {
+      "category": "end",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('치유 물약', 'destroyed', '카이토가 마개를 뽑아 단숨에 들이켜 다 마셨다', 'positive', '')]",
+        "current=[('치유 물약', 'destroyed', '카이토가 마개를 뽑아 단숨에 들이켜 다 마셔버림', 'positive', '')]",
+        "current=[('치유 물약', 'destroyed', '카이토가 단숨에 들이켜 다 마셔버림', 'positive', '')]"
+      ]
+    },
+    "phase6 last match": {
+      "category": "end",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('성냥', 'destroyed', '마지막 한 개비가 그어져 다 타고 불 속에 버려짐', 'positive', '')]",
+        "current=[('성냥', 'destroyed', '마지막 한 개비가 그어져 다 타고 모닥불 속에 버려짐', 'positive', '')]",
+        "current=[('성냥', 'destroyed', '마지막 한 개비가 그어져 다 타고 불 속에 버려짐', 'positive', '')]"
+      ]
+    },
+    "phase6 cracked sword": {
+      "category": "damaged",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('카이토', 'possesses', '낡은 검', 'positive', '')]",
+        "current=[('카이토', 'possesses', '낡은 검', 'positive', '')]",
+        "current=[('카이토', 'possesses', '낡은 검', 'positive', '')]"
+      ]
+    },
+    "phase6 torn cloak": {
+      "category": "damaged",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('유이', 'possesses', '망토', 'positive', '')]",
+        "current=[('유이', 'possesses', '망토', 'positive', '')]",
+        "current=[('유이', 'possesses', '망토', 'positive', '')]"
+      ]
+    },
+    "phase6 put down": {
+      "category": "whereabouts",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('지도', 'located_in', '부엌 탁자', 'positive', '')]",
+        "current=[('하나', 'possesses', '지도', 'negative', ''), ('지도', 'located_in', '부엌 탁자', 'positive', '')]",
+        "current=[('하나', 'possesses', '지도', 'negative', ''), ('지도', 'located_in', '부엌 탁자', 'positive', '')]"
+      ]
+    },
+    "phase6 picked up": {
+      "category": "whereabouts",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "current=[('열쇠', 'located_in', '분수대', 'negative', ''), ('카이토', 'possesses', '열쇠', 'positive', '')]",
+        "current=[('열쇠', 'located_in', '분수대', 'negative', ''), ('카이토', 'possesses', '열쇠', 'positive', '')]",
+        "current=[('열쇠', 'located_in', '분수대', 'negative', ''), ('카이토', 'possesses', '열쇠', 'positive', '')]"
+      ]
+    },
+    "phase6 lost map": {
+      "category": "loss",
+      "pass": 1,
+      "runs": 3,
+      "details": [
+        "current=[('해안 지도', 'destroyed', '바람에 날려 바다로 떨어져 파도 속으로 사라짐', 'positive', '')]",
+        "current=[('해안 지도', 'destroyed', '바람에 바다로 날아가 파도 속으로 사라짐', 'positive', '')]",
+        "current=[('하나', 'possesses', '해안 지도', 'negative', '')]"
+      ]
+    },
+    "phase6 library": {
+      "category": "control",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    },
+    "phase6 key handed over": {
+      "category": "control",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    },
+    "phase6 sprained ankle": {
+      "category": "control",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    },
+    "phase6 promotion": {
+      "category": "control",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    },
+    "phase7 promise in dialogue": {
+      "category": "open",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[('하나', '{{user}}', '비가 그치면 내일 아침에 등대 앞에서 만나', 'open')] unmatched=[]",
+        "threads=[('하나', '{{user}}', '비가 그치면 내일 아침에 등대 앞에서 만나', 'open')] unmatched=[]",
+        "threads=[('하나', '{{user}}', '비가 그치면 내일 아침에 등대 앞에서 만나', 'open')] unmatched=[]"
+      ]
+    },
+    "phase7 promise in narration": {
+      "category": "open",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[('카이토', '유이', '무슨 일이 있어도 유이를 고향 마을까지 무사히 데려다주겠다', 'open')] unmatched=[]",
+        "threads=[('카이토', '유이', '무슨 일이 있어도 유이를 고향 마을까지 무사히 데려다주겠다', 'open')] unmatched=[]",
+        "threads=[('카이토', '유이', '무슨 일이 있어도 유이를 고향 마을까지 무사히 데려다주겠다', 'open')] unmatched=[]"
+      ]
+    },
+    "phase7 conditional promise": {
+      "category": "open",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[('카이토', '{{user}}', '내일 시험을 통과하면 이 검을 주겠다', 'open')] unmatched=[]",
+        "threads=[('카이토', '{{user}}', '내일 시험을 통과하면 이 검을 주겠다', 'open')] unmatched=[]",
+        "threads=[('카이토', '{{user}}', '내일 시험을 통과하면 이 검을 주겠다', 'open')] unmatched=[]"
+      ]
+    },
+    "phase7 kept: lighthouse": {
+      "category": "kept",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[('하나', '{{user}}', '비가 그치면 내일 아침 등대 앞에서 만나기로 함', 'kept')] unmatched=[]",
+        "threads=[('하나', '{{user}}', '비가 그치면 내일 아침 등대 앞에서 만나기로 함', 'kept')] unmatched=[]",
+        "threads=[('하나', '{{user}}', '비가 그치면 내일 아침 등대 앞에서 만나기로 함', 'kept')] unmatched=[]"
+      ]
+    },
+    "phase7 kept: hometown": {
+      "category": "kept",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[('카이토', '유이', '유이를 고향 마을까지 데려다주기', 'kept')] unmatched=[]",
+        "threads=[('카이토', '유이', '유이를 고향 마을까지 데려다주기', 'kept')] unmatched=[]",
+        "threads=[('카이토', '유이', '유이를 고향 마을까지 데려다주기', 'kept')] unmatched=[]"
+      ]
+    },
+    "phase7 broken: secret told": {
+      "category": "broken",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[('하나', '{{user}}', '그 비밀을 아무에게도 말하지 않기', 'broken')] unmatched=[]",
+        "threads=[('하나', '{{user}}', '그 비밀을 아무에게도 말하지 않기', 'broken')] unmatched=[]",
+        "threads=[('하나', '{{user}}', '그 비밀을 아무에게도 말하지 않기', 'broken')] unmatched=[]"
+      ]
+    },
+    "phase7 broken: withdrawn": {
+      "category": "broken",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[('카이토', '유이', '해가 지기 전에 돌아오기', 'broken')] unmatched=[]",
+        "threads=[('카이토', '유이', '해가 지기 전에 돌아오기', 'broken')] unmatched=[]",
+        "threads=[('카이토', '유이', '해가 지기 전에 돌아오기', 'broken')] unmatched=[]"
+      ]
+    },
+    "phase7 released: letter": {
+      "category": "released",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[('유이', '하나', '하나의 편지를 대신 전해 주기', 'broken')] unmatched=[]",
+        "threads=[('유이', '하나', '하나의 편지를 대신 전해 주기', 'broken')] unmatched=[]",
+        "threads=[('유이', '하나', '하나의 편지를 대신 전해 주기', 'broken')] unmatched=[]"
+      ]
+    },
+    "phase7 released: daily letters": {
+      "category": "released",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[('{{user}}', '하나', '매일 밤 편지 쓰기', 'broken')] unmatched=[]",
+        "threads=[('{{user}}', '하나', '매일 밤 편지 쓰기', 'broken')] unmatched=[]",
+        "threads=[('{{user}}', '하나', '매일 밤 편지 쓰기', 'broken')] unmatched=[]"
+      ]
+    },
+    "phase7 unrelated: dinner": {
+      "category": "control",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[('하나', '{{user}}', '비가 그치면 내일 아침 등대 앞에서 만나기로 함', 'open')] unmatched=[] resolutions=[]",
+        "threads=[('하나', '{{user}}', '비가 그치면 내일 아침 등대 앞에서 만나기로 함', 'open')] unmatched=[] resolutions=[]",
+        "threads=[('하나', '{{user}}', '비가 그치면 내일 아침 등대 앞에서 만나기로 함', 'open')] unmatched=[] resolutions=[]"
+      ]
+    },
+    "phase7 unrelated: forge": {
+      "category": "control",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[('카이토', '유이', '유이를 고향 마을까지 데려다주기', 'open')] unmatched=[] resolutions=[]",
+        "threads=[('카이토', '유이', '유이를 고향 마을까지 데려다주기', 'open')] unmatched=[] resolutions=[]",
+        "threads=[('카이토', '유이', '유이를 고향 마을까지 데려다주기', 'open')] unmatched=[] resolutions=[]"
+      ]
+    },
+    "phase7 discussed: lighthouse": {
+      "category": "control",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[('하나', '{{user}}', '비가 그치면 내일 아침 등대 앞에서 만나기로 함', 'open')] unmatched=[] resolutions=[]",
+        "threads=[('하나', '{{user}}', '비가 그치면 내일 아침 등대 앞에서 만나기로 함', 'open')] unmatched=[] resolutions=[]",
+        "threads=[('하나', '{{user}}', '비가 그치면 내일 아침 등대 앞에서 만나기로 함', 'open')] unmatched=[] resolutions=[]"
+      ]
+    },
+    "phase7 discussed: hometown": {
+      "category": "control",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[('카이토', '유이', '유이를 고향 마을까지 데려다주기', 'open')] unmatched=[] resolutions=[]",
+        "threads=[('카이토', '유이', '유이를 고향 마을까지 데려다주기', 'open')] unmatched=[] resolutions=[]",
+        "threads=[('카이토', '유이', '유이를 고향 마을까지 데려다주기', 'open')] unmatched=[] resolutions=[]"
+      ]
+    },
+    "phase7 reported: rumor": {
+      "category": "reported",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[] unmatched=[]",
+        "threads=[] unmatched=[]",
+        "threads=[] unmatched=[]"
+      ]
+    },
+    "phase7 reported: oath": {
+      "category": "reported",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "threads=[] unmatched=[]",
+        "threads=[] unmatched=[]",
+        "threads=[] unmatched=[]"
+      ]
+    },
+    "phase7 major: confession": {
+      "category": "major",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "events=[('하나', '{{user}}에게 좋아한다고 고백함', 'major')]",
+        "events=[('하나', '{{user}}에게 좋아한다고 고백함', 'major')]",
+        "events=[('하나', '{{user}}에게 좋아한다고 고백함', 'major')]"
+      ]
+    },
+    "phase7 major: betrayal": {
+      "category": "major",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "events=[('카이토', '유이를 경비병들에게 넘겨주었다', 'major')]",
+        "events=[('카이토', '유이를 경비병들에게 넘겨주었다', 'major')]",
+        "events=[('카이토', '칼을 거두고 유이를 경비병들에게 넘겨주었다', 'major')]"
+      ]
+    },
+    "phase7 major: secret revealed": {
+      "category": "major",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "events=[('유이', '자신이 십 년 전 사라진 왕녀임을 밝혔다', 'major')]",
+        "events=[('유이', '십 년 전 사라진 왕녀라고 밝힘', 'major')]",
+        "events=[('유이', '자신이 십 년 전 사라진 왕녀라고 밝혔다', 'major')]"
+      ]
+    },
+    "phase7 major: death": {
+      "category": "major",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "events=[('늙은 선장', '폭풍 속에서 하나의 품에서 숨을 거두었다', 'major')]",
+        "events=[('선장', '폭풍 속에서 숨을 거두었다', 'major')]",
+        "events=[('늙은 선장', '폭풍 속에서 하나의 품에서 숨을 거두었다', 'major')]"
+      ]
+    },
+    "phase7 minor: walk": {
+      "category": "minor",
+      "pass": 2,
+      "runs": 3,
+      "details": [
+        "events=[]",
+        "events=[('하나', '강가를 따라 산책했다', 'minor')]",
+        "events=[('하나', '강가를 따라 {{user}}와 산책함', 'minor')]"
+      ]
+    },
+    "phase7 minor: meal": {
+      "category": "minor",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "events=[('유이', '빵을 굽고 차를 끓여 {{user}}와 함께 아침을 먹었다', 'minor')]",
+        "events=[('유이', '{{user}}와 함께 창가에서 아침을 먹었다', 'minor')]",
+        "events=[('유이', '아침을 먹었다', 'minor')]"
+      ]
+    },
+    "phase7 minor: chores": {
+      "category": "minor",
+      "pass": 2,
+      "runs": 3,
+      "details": [
+        "events=[('카이토', '마구간을 청소하고 말에게 여물을 주고 부러진 울타리를 고쳤다', 'minor')]",
+        "events=[('카이토', '마구간을 청소하고 말에게 여물을 주고 부러진 울타리를 고쳤다', 'minor')]",
+        "events=[]"
+      ]
+    },
+    "phase8 giving: key": {
+      "category": "participants",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('카이토', 'possesses', '은빛 열쇠', None, [], ['유이', '카이토'], None), ('유이', 'possesses', '은빛 열쇠', None, [], ['유이', '카이토'], None), ('유이', 'event', None, '은빛 열쇠를 카이토에게 건네주었다', [('카이토', 'character')], ['유이', '카이토'], None)]",
+        "[('유이', 'possesses', '은빛 열쇠', None, [], None, None), ('카이토', 'possesses', '은빛 열쇠', None, [], None, None), ('유이', 'event', None, '은빛 열쇠를 카이토에게 건네주었다', [('카이토', 'character')], None, None)]",
+        "[('유이', 'possesses', '은빛 열쇠', None, [], None, None), ('카이토', 'possesses', '은빛 열쇠', None, [], None, None), ('유이', 'event', None, '은빛 열쇠를 카이토에게 건네주었다', [('카이토', 'character')], None, None)]"
+      ]
+    },
+    "phase8 giving: letter": {
+      "category": "participants",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('하나', 'event', None, '유이에게 봉투에 든 편지를 건넸다', [('유이', 'character')], ['하나', '유이'], None), ('유이', 'possesses', '편지', None, [], ['하나', '유이'], None), ('하나', 'possesses', '편지', None, [], ['하나', '유이'], None)]",
+        "[('유이', 'possesses', '편지', None, [], None, None), ('하나', 'possesses', '편지', None, [], None, None), ('하나', 'event', None, '유이에게 편지를 건넸다', [('유이', 'character')], None, None)]",
+        "[('유이', 'possesses', '편지', None, [], ['하나', '유이'], None), ('하나', 'possesses', '편지', None, [], ['하나', '유이'], None), ('하나', 'event', None, '유이에게 편지를 건넸다', [('유이', 'character')], ['하나', '유이'], None)]"
+      ]
+    },
+    "phase8 attack": {
+      "category": "participants",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('카이토', 'event', None, '검은 망토의 암살자가 어둠 속에서 뛰쳐나와 등 뒤로 단검을 휘두름', [('검은 망토의 암살자', 'character')], ['{{user}}', '카이토'], None), ('검은 망토의 암살자', 'possesses', '단검', None, [], None, None), ('{{user}}', 'knows', None, '카이토의 뒤에 암살자가 있다', [('카이토', 'character')], ['{{user}}'], None)]",
+        "[('검은 망토의 암살자', 'event', None, '어둠 속에서 뛰쳐나와 카이토의 등을 향해 단검을 휘둘렀다', [('카이토', 'character')], ['{{user}}'], None), ('검은 망토의 암살자', 'identity', None, '암살자', [], None, None), ('검은 망토의 암살자', 'possesses', '단검', '단검', [], None, None), ('{{user}}', 'knows', None, '카이토의 뒤에 위협이 있다', [('카이토', 'character')], ['{{user}}'], None)]",
+        "[('검은 망토의 암살자', 'event', None, '어둠 속에서 뛰쳐나와 카이토의 등을 향해 단검을 휘둘렀다', [('카이토', 'character')], ['{{user}}', '카이토', '검은 망토의 암살자'], None), ('검은 망토의 암살자', 'possesses', '단검', None, [], ['{{user}}', '카이토', '검은 망토의 암살자'], None), ('검은 망토의 암살자', 'identity', None, '암살자', [], None, None), ('검은 망토의 암살자', 'has_trait', None, '검은 망토를 입음', [], ['{{user}}', '카이토', '검은 망토의 암살자'], None), ('{{user}}', 'event', None, '카이토에게 뒤를 조심하라고 경고했다', [('카이토', 'character')], ['{{user}}', '카이토'], None)]"
+      ]
+    },
+    "phase8 confession: kaito": {
+      "category": "participants",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('하나', 'feels_toward', '카이토', '좋아함', [], ['하나', '카이토'], None), ('하나', 'event', None, '카이토에게 좋아한다고 고백함', [('카이토', 'character')], ['하나', '카이토'], None), ('카이토', 'has_status', None, '얼굴이 붉어짐', [], ['하나', '카이토'], None)]",
+        "[('하나', 'feels_toward', '카이토', '좋아함', [], ['하나', '카이토'], None), ('하나', 'event', None, '카이토에게 좋아한다고 고백함', [('카이토', 'character')], ['하나', '카이토'], None), ('카이토', 'has_status', None, '얼굴이 붉어짐', [], None, None)]",
+        "[('하나', 'feels_toward', '카이토', '좋아함', [], ['카이토'], None), ('하나', 'event', None, '카이토에게 고백함', [('카이토', 'character')], ['카이토'], None), ('카이토', 'has_status', None, '얼굴이 붉어짐', [], ['하나'], None)]"
+      ]
+    },
+    "phase8 confession: yui": {
+      "category": "participants",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('카이토', 'event', None, '유이에게 오래 숨겨 온 마음을 고백했다', [('유이', 'character')], ['카이토', '유이'], None), ('카이토', 'feels_toward', '유이', '오래 숨겨 온 마음', [], ['카이토', '유이'], None), ('유이', 'event', None, '아무 말 없이 고개를 끄덕였다', [('카이토', 'character')], ['카이토', '유이'], None), ('카이토', 'event', None, '유이를 불러냈다', [('유이', 'character')], None, None)]",
+        "[('카이토', 'event', None, '유이에게 오래 숨겨 온 마음을 고백했다', [('유이', 'character')], ['카이토', '유이'], None), ('유이', 'event', None, '아무 말 없이 고개를 끄덕였다', [('카이토', 'character')], ['카이토', '유이'], None), ('카이토', 'feels_toward', '유이', '오래 숨겨 온 마음', [], ['카이토', '유이'], None), ('유이', 'knows', None, '카이토가 자신에게 오래 숨겨 온 마음을 고백했다', [('카이토', 'character')], ['유이', '카이토'], None), ('카이토', 'event', None, '유이를 불러냈다', [('유이', 'character')], None, None)]",
+        "[('카이토', 'event', None, '유이에게 오래 숨겨 온 마음을 고백했다', [('유이', 'character')], ['카이토', '유이'], None), ('카이토', 'feels_toward', '유이', '오래 숨겨 온 마음', [], ['카이토', '유이'], None), ('유이', 'knows', None, '카이토의 오래 숨겨 온 마음', [('카이토', 'character')], ['유이', '카이토'], None)]"
+      ]
+    },
+    "phase8 rescue": {
+      "category": "participants",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('하나', 'event', None, '강물에 빠졌다', [], ['{{user}}', '하나', '카이토'], None), ('카이토', 'event', None, '강물에 뛰어들어 하나를 끌어냈다', [('하나', 'character')], ['{{user}}', '하나', '카이토'], None), ('하나', 'has_status', None, '기침을 하며 숨을 몰아쉬는 상태', [], ['{{user}}', '하나', '카이토'], None)]",
+        "[('하나', 'event', None, '강물에 빠졌다', [], None, None), ('카이토', 'event', None, '강물에 뛰어들어 하나를 끌어냈다', [('하나', 'character')], None, None), ('하나', 'has_status', None, '기침을 하며 숨을 몰아쉬는 상태', [], None, None)]",
+        "[('하나', 'event', None, '강물에 빠졌다', [], None, None), ('카이토', 'event', None, '강물에 뛰어들어 하나를 끌어냈다', [('하나', 'character')], None, None), ('하나', 'has_status', None, '기침을 하며 숨을 몰아쉬는 상태', [], None, None)]"
+      ]
+    },
+    "phase8 group attack": {
+      "category": "participants",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('산적들', 'event', None, '덤불에서 뛰쳐나와 여행 중이던 하나와 카이토를 에워쌌다', [('하나', 'character'), ('카이토', 'character')], None, None)]",
+        "[('산적들', 'event', None, '숲길에서 하나와 카이토를 에워쌈', [('하나', 'character'), ('카이토', 'character')], ['하나', '카이토'], None)]",
+        "[('산적들', 'event', None, '덤불에서 뛰쳐나와 하나와 카이토를 에워쌌다', [('하나', 'character'), ('카이토', 'character')], ['하나', '카이토'], None), ('하나', 'located_in', '숲길', None, [], None, None), ('카이토', 'located_in', '숲길', None, [], None, None)]"
+      ]
+    },
+    "phase8 goal about another": {
+      "category": "participants",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('하나', 'possesses', '편지', '편지를 가슴에 안고 있음', [], None, None), ('하나', 'goal', None, '무슨 일이 있어도 카이토가 이 편지를 읽지 못하게 하는 것', [('카이토', 'character')], ['하나'], ['카이토'])]",
+        "[('하나', 'possesses', '편지', '편지를 가슴에 꼭 안고 있음', [], None, None), ('하나', 'goal', None, '무슨 일이 있어도 카이토가 이 편지를 읽지 못하게 하는 것', [('카이토', 'character')], ['하나'], ['카이토'])]",
+        "[('하나', 'possesses', '편지', None, [], ['하나', '{{user}}'], None), ('하나', 'goal', None, '카이토가 이 편지를 읽지 못하게 하는 것', [('카이토', 'character')], ['하나'], ['카이토'])]"
+      ]
+    },
+    "phase8 knows about another": {
+      "category": "participants",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('유이', 'knows', None, '카이토가 이웃 나라의 왕자라는 사실', [('카이토', 'character')], ['유이'], ['카이토']), ('카이토', 'identity', None, '이웃 나라의 왕자', [], ['유이'], None)]",
+        "[('유이', 'knows', None, '카이토가 이웃 나라의 왕자라는 것', [('카이토', 'character')], ['유이'], ['카이토']), ('카이토', 'identity', None, '이웃 나라의 왕자', [], ['유이'], None)]",
+        "[('카이토', 'identity', None, '이웃 나라의 왕자', [], ['유이'], ['{{user}}']), ('유이', 'knows', None, '카이토가 이웃 나라의 왕자라는 것', [('카이토', 'character')], ['유이'], ['카이토', '{{user}}'])]"
+      ]
+    },
+    "phase8 destroyed by another": {
+      "category": "participants",
+      "pass": 2,
+      "runs": 3,
+      "details": [
+        "[('일기장', 'destroyed', None, '벽난로에 던져져 불길에 휩싸여 재가 되었다', [('하나', 'character')], ['카이토', '{{user}}'], None), ('카이토', 'event', None, '하나의 일기장을 벽난로에 던져 넣어 태웠다', [('하나', 'character')], ['카이토', '{{user}}'], None)]",
+        "[('카이토', 'event', None, '하나의 일기장을 벽난로에 던져 넣어 태웠다', [('하나', 'character')], ['카이토', '{{user}}'], None), ('일기장', 'destroyed', None, '벽난로에 던져져 불길에 휩싸여 재가 되었다', [('카이토', 'character')], ['카이토', '{{user}}'], None), ('하나', 'possesses', '일기장', '일기장을 잃음(불에 타 재가 됨)', [], ['카이토', '{{user}}'], None)]",
+        "[('일기장', 'destroyed', None, '벽난로에 던져져 불에 타 재가 됨', [('카이토', 'character')], ['카이토', '{{user}}'], None), ('카이토', 'event', None, '하나의 일기장을 벽난로에 던져 태워 버림', [('하나', 'character')], ['카이토', '{{user}}'], None)]"
+      ]
+    },
+    "phase8 solo walk": {
+      "category": "control",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('하나', 'located_in', '강가', None, [], None, None), ('하나', 'has_status', None, '생각에 잠김', [], None, None)]",
+        "[('하나', 'located_in', '강가', None, [], None, None), ('하나', 'has_status', None, '생각에 잠김', [], None, None)]",
+        "[('하나', 'located_in', '강가', None, [], None, None), ('하나', 'has_status', None, '생각에 잠김', [], None, None)]"
+      ]
+    },
+    "phase8 cooking": {
+      "category": "control",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('유이', 'located_in', '부엌', None, [], None, None), ('유이', 'event', None, '감자 수프를 끓이고 빵을 구웠다', [], None, None)]",
+        "[('유이', 'located_in', '부엌', None, [], ['유이', '{{user}}'], None), ('유이', 'event', None, '감자 수프를 끓이고 빵을 구웠다', [], ['유이', '{{user}}'], None)]",
+        "[('유이', 'located_in', '부엌', None, [], None, None), ('유이', 'event', None, '감자 수프를 끓이고 빵을 구웠다', [], None, None)]"
+      ]
+    },
+    "phase8 absent householder": {
+      "category": "control",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('하나', 'goal', None, '시장에 가는 것', [], None, None), ('하나', 'event', None, '카이토의 집 앞을 지나갔다', [], None, None)]",
+        "[('하나', 'goal', None, '시장에 가다', [], None, None), ('하나', 'event', None, '카이토의 집 앞을 지나갔다', [], None, None), ('카이토의 집', 'world_fact', None, '창문이 모두 닫혀 있었다', [], None, None)]",
+        "[('하나', 'goal', None, '시장에 가다', [], None, None), ('하나', 'event', None, '시장에 가는 길에 카이토의 집 앞을 지나갔다', [], None, None)]"
+      ]
+    },
+    "phase8 the word 하나": {
+      "category": "control",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('카이토', 'event', None, '낡은 상자를 열었지만 안에 동전이 하나도 없었다', [], None, None), ('낡은 상자', 'world_fact', None, '안에 동전이 하나도 들어 있지 않다', [], None, None)]",
+        "[('카이토', 'event', None, '낡은 상자를 열었지만 동전이 없어 한숨을 쉬고 닫았다', [], None, None), ('낡은 상자', 'world_fact', None, '안에 동전이 하나도 없다', [], None, None)]",
+        "[('카이토', 'event', None, '낡은 상자를 열었지만 안에 동전이 하나도 없었다', [], None, None), ('상자', 'world_fact', None, '낡은 상자 안에는 동전이 하나도 없다', [], None, None)]"
+      ]
+    },
+    "phase8 secret about a shared event": {
+      "category": "secret",
+      "pass": 2,
+      "runs": 3,
+      "details": [
+        "[('하나', 'knows', None, '예전에 마키 선생님 수업에서 배가 아프다고 하고 일찍 나왔고, 진짜 이유는 너무 불안해서였다', [('유이', 'character')], ['하나', '유이'], ['마키 선생님']), ('유이', 'knows', None, '하나가 예전에 마키 선생님 수업에서 배가 아프다고 하고 일찍 나왔고, 진짜 이유는 불안 때문이었다', [('하나', 'character')], ['하나', '유이'], ['마키 선생님']), ('하나', 'event', None, '마키 선생님 수업에서 배가 아프다고 하고 일찍 나온 일', [('마키 선생님', 'character')], ['하나', '유이'], ['마키 선생님']), ('유이', 'goal', None, '하나의 속삭임을 수첩에 적지 않기 (엄마가 볼지도 모르기 때문)', [('하나', 'character')], ['하나', '유이'], ['마키 선생님'])]",
+        "[('하나', 'knows', None, '예전에 마키 선생님 수업에서 배가 아프다고 하고 일찍 나온 진짜 이유는 너무 불안해서였다는 것', [('유이', 'character'), ('마키 선생님', 'character')], ['하나', '유이'], ['마키 선생님']), ('유이', 'goal', None, '하나의 비밀을 수첩에 적지 않기 (엄마가 볼지도 모르기 때문)', [('하나', 'character'), ('마키 선생님', 'character')], ['하나', '유이'], ['마키 선생님']), ('하나', 'event', None, '유이에게 과거 마키 선생님 수업에서 일찍 나온 진짜 이유를 속삭여 알려줌', [('유이', 'character')], ['하나', '유이'], ['마키 선생님'])]",
+        "[('하나', 'knows', None, '예전에 마키 선생님 수업에서 배가 아프다고 하고 일찍 나온 진짜 이유는 너무 불안해서였다는 것', [('유이', 'character')], ['하나', '유이'], ['마키 선생님']), ('하나', 'event', None, '마키 선생님 수업에서 배가 아프다고 하고 일찍 나왔다', [('마키 선생님', 'character')], ['하나', '유이'], ['마키 선생님']), ('유이', 'goal', None, '하나의 비밀을 수첩에 적지 않기 (엄마가 볼지도 모르므로)', [('하나', 'character')], ['하나', '유이'], None)]"
+      ]
+    },
+    "phase8 relationship: friends to rivals": {
+      "category": "relationship",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    },
+    "phase8 relationship: confession accepted": {
+      "category": "relationship",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    },
+    "phase8 relationship: reconciliation": {
+      "category": "relationship",
+      "pass": 0,
+      "runs": 3,
+      "details": []
+    }
+  }
+}

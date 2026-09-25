@@ -88,6 +88,15 @@ The persona's name as the host reports it for the conversation (e.g. 유우마) 
 characters, like `{{user}}` (`resolve-v3`). The extractor writes a named persona either way, so without
 it one person was two entities. The persona entity is left out of KNOWN ENTITIES under any name.
 
+## Amendment (2026-09-25, ADRs 0024, 0025)
+
+An `also_called` is also valid when one name occurs in the turn and the other is exactly a name of the
+same type the extraction was shown in its hints: a turn revealing who a character listed as unnamed
+(`?` description, `extract-v9`) is. The owner's links (`entity_link`) join two mentioned names
+(`resolve-v4`); a linked name is never ambiguous. Item 4 is amended for merges only: an owner merge is
+owner input, stored and reversible; there is still no owner split. An entity is named after its first
+name that is not a `?` description.
+
 ## Consequences
 
 - K8 is reduced where the model reuses hinted names or the story states an alias. It is not
