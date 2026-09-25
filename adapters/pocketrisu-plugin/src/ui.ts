@@ -5,6 +5,7 @@
 import type { StatusInfo } from './core';
 import { configBody, connArgs, DEFAULT_DEADLINE_MS, dirtySections, fillProject, MAX_DEADLINE_MS, presetMatches, VERTEX_URL,
   type FormValues, type Section } from './form';
+import { placementOf, PLACEMENTS } from './hud-host';
 import { langOf, t, type Lang, type StringKey } from './i18n';
 import { inspectorApiPath, inspectorConversation, localTime, safeFragment, sectionTarget } from './inspector';
 import { routeFor } from './route';
@@ -476,9 +477,17 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       hudBox.disabled = false;
     }
   });
+  const hudPlace = el('select', {}, ...PLACEMENTS.map((p) => el('option', { value: p, text: L(`hud.place.${p}`) })));
+  hudPlace.addEventListener('change', async () => {
+    try {
+      await deps.setArg('hud_position', placementOf(hudPlace.value));
+      say(hudMsg, L('hud.placed'), 'ok');
+    } catch (error) { say(hudMsg, errorText(lang, error), 'err'); }
+  });
   settingsView.append(el('div', { class: 'card' },
     el('h2', { text: L('hud.title') }), el('p', { class: 'sub', text: L('hud.sub') }),
-    el('div', { class: 'check' }, hudBox, el('span', { text: L('hud.toggle') })), hudMsg));
+    el('div', { class: 'check' }, hudBox, el('span', { text: L('hud.toggle') })),
+    field(L('hud.place'), hudPlace), hudMsg));
 
   // --- settings tab: fields ---------------------------------------------------------------------
   const url = el('input', { spellcheck: 'false' });
@@ -608,6 +617,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     reserved.value = String(Number(await deps.getArg('reserved_memory_tokens')) || 600);
     deadline.value = String(Number(await deps.getArg('deadline_ms')) || DEFAULT_DEADLINE_MS);
     hudBox.checked = Number(await deps.getArg('hud')) === 1;
+    hudPlace.value = placementOf(await deps.getArg('hud_position'));
   }
 
   function fillServer(cfg: ServerConfig): void {

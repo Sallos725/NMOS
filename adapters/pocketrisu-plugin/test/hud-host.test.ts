@@ -1,20 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DONE_MS } from '../src/hud';
-import { createHud, MAX_POLL_ERRORS, MIN_POLL_GAP_MS, POLL_MS, type HudDeps, type HudDocument, type HudElement } from '../src/hud-host';
+import { createHud, MAX_POLL_ERRORS, MIN_POLL_GAP_MS, placementOf, POLL_MS, type HudDeps, type HudDocument, type HudElement,
+  type HudPlacement } from '../src/hud-host';
 
-interface FakeElement extends HudElement { tag: string; text: string; styles: Record<string, string>; children: FakeElement[];
-  removed: boolean; classes: string[] }
+interface FakeElement extends HudElement { tag: string; text: string; style: string; styles: Record<string, string>;
+  children: FakeElement[]; removed: boolean; classes: string[] }
 
 function fakePage(existing = false) {
   const log: string[] = [];
   const listeners = new Map<string, (e: { clientX: number; clientY: number }) => void>();
   const make = (tag: string): FakeElement => {
     const node: FakeElement = {
-      tag, text: '', styles: {}, children: [], removed: false, classes: [],
+      tag, text: '', style: '', styles: {}, children: [], removed: false, classes: [],
       async remove() { node.removed = true; log.push(`remove ${tag}${node.classes.map((c) => '.' + c).join('')}`); },
       async appendChild(child) { node.children.push(child as FakeElement); },
       async addClass(name) { node.classes.push(name); },
-      async setStyleAttribute() {},
+      async setStyleAttribute(value) { node.style = value; },
       async setStyle(property, value) { node.styles[property] = value; },
       async setTextContent(value) { node.text = value; log.push(`text ${value}`); },
       async getBoundingClientRect() { return { left: 900, top: 8, right: 1100, bottom: 40 }; },
@@ -43,6 +44,7 @@ function setup(opts: { enabled?: boolean; coverage?: (id: string) => Promise<unk
   position?: () => string } = {}) {
   const page = fakePage();
   let now = 0;
+  let placement: HudPlacement = 'right-center';
   let enabled = opts.enabled ?? true;
   const timers: { at: number; fn: () => void; id: number }[] = [];
   let seq = 0;
@@ -52,6 +54,7 @@ function setup(opts: { enabled?: boolean; coverage?: (id: string) => Promise<unk
   const deps: HudDeps = {
     enabled: async () => enabled,
     lang: async () => 'ko',
+    placement: async () => placement,
     rootDocument,
     position: async () => (opts.position ? opts.position() : '0:0'),
     coverage,
@@ -77,7 +80,8 @@ function setup(opts: { enabled?: boolean; coverage?: (id: string) => Promise<unk
     }
     now = end;
   }
-  return { hud, page, deps, advance, openPanel, coverage, rootDocument, timers, setEnabled: (v: boolean) => { enabled = v; } };
+  return { hud, page, deps, advance, openPanel, coverage, rootDocument, timers, setEnabled: (v: boolean) => { enabled = v; },
+    setPlacement: (p: HudPlacement) => { placement = p; } };
 }
 
 const cov = (pendingExtract: number, done = 0, total = 4) => ({
@@ -249,5 +253,28 @@ describe('createHud', () => {
     await advance(POLL_MS * 2);
     expect(page.pill()).toBeNull();
     expect(page.listeners.size).toBe(0);
+  });
+
+  it('sits at the right middle by default and moves when the position changes', async () => {
+    const { hud, page, advance, setPlacement } = setup();
+    hud.event({ type: 'request-start' });
+    await advance(0);
+    expect(page.pill()?.style).toContain('top:50%;right:calc(8px + env(safe-area-inset-right));transform:translateY(-50%)');
+    setPlacement('bottom-left');
+    hud.event({ type: 'request-end', outcome: 'injected', chars: 10, conversationId: 'conv-1' });
+    await advance(0);
+    expect(page.body.children).toHaveLength(1); // restyled in place, not redrawn
+    expect(page.pill()?.style).toContain('bottom:calc(96px + env(safe-area-inset-bottom));left:calc(64px');
+    expect(page.pill()?.style).not.toContain('top:');
+  });
+});
+
+describe('placementOf', () => {
+  it('accepts the known positions and falls back to the right middle', () => {
+    expect(placementOf('top-right')).toBe('top-right');
+    expect(placementOf('bottom-right')).toBe('bottom-right');
+    expect(placementOf('')).toBe('right-center');
+    expect(placementOf('center')).toBe('right-center');
+    expect(placementOf(undefined)).toBe('right-center');
   });
 });

@@ -251,7 +251,8 @@ amended 2026-09-24) never supersedes narration and reaches the packet only as a 
 inspectable, never injected. Rows from before `extract-v5` read as narration.
 
 **D28 — Optional progress display on the chat screen (owner decision 2026-09-24; not a phase feature).**
-A small pill at the top right of the PocketRisu page shows each main request's outcome (memory
+A small pill on the PocketRisu page (right edge, middle by default; plugin arg `hud_position` picks a
+corner instead) shows each main request's outcome (memory
 injected / nothing relevant / skipped and why) and the open chat's background extraction and embedding
 progress from `GET /v1/conversations/{id}/coverage`. Off by default (plugin arg `hud`); turning it on
 in the panel asks for the host's `mainDom` permission (H16), and a denial leaves it off. The request

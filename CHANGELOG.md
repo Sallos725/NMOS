@@ -5,6 +5,10 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **The progress display moved to the middle of the right edge.** At the top right, PocketRisu's own
+  request status toasts ("요청 중…") and plugin buttons stack over it. A **Position** setting under the
+  toggle (Settings → Progress display) puts it in a corner instead. Plugin file only.
+
 ## 0.1.0-beta.16
 
 Bug fix: a named persona is the persona (ADR 0023, D34). Schema: migration 0018 (applied at startup). Upgrade both parts, then replace the plugin file and

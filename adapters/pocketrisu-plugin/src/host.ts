@@ -5,7 +5,7 @@ import { langOf, t } from './i18n';
 import type { InjectPosition } from './prompt';
 import type { HostChat, HostPersonas } from './types';
 import { DEFAULT_DEADLINE_MS } from './form';
-import { createHud, type HudDocument } from './hud-host';
+import { createHud, placementOf, type HudDocument } from './hud-host';
 import { routeFor } from './route';
 import { openPanel, type HudControl, type PanelDeps, type Tab } from './ui';
 
@@ -118,6 +118,7 @@ export function createRisuHud(link: { coverage(conversationId: string): Promise<
   const hud = createHud({
     enabled: async () => Number(await arg('hud')) === 1,
     lang: async () => langOf(await arg('language')),
+    placement: async () => placementOf(await arg('hud_position')),
     rootDocument: async () => (typeof risuai.getRootDocument === 'function' ? risuai.getRootDocument() : null),
     position: async () => `${await risuai.getCurrentCharacterIndex()}:${await risuai.getCurrentChatIndex()}`,
     coverage: (conversationId) => link.coverage(conversationId),

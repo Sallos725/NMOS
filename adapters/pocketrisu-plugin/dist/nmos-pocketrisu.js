@@ -13,6 +13,7 @@
 //@arg route string auto (default) / direct / server — how to reach the sidecar
 //@arg language string Panel language: ko (default) or en
 //@arg hud int 1 = progress display on the chat screen (turn it on from the NMOS panel)
+//@arg hud_position string Progress display position: right-center (default), top-right, top-left, bottom-right, bottom-left
 "use strict";
 (() => {
   // src/canonical.ts
@@ -716,9 +717,16 @@ ${revisionHash}`;
     // progress display: panel
     "hud.title": ["\uC9C4\uD589 \uD45C\uC2DC", "Progress display"],
     "hud.sub": [
-      '\uCC44\uD305 \uD654\uBA74 \uC624\uB978\uCABD \uC704\uC5D0 \uAE30\uC5B5\uC774 \uB4E4\uC5B4\uAC14\uB294\uC9C0\uC640 \uBC31\uADF8\uB77C\uC6B4\uB4DC \uCC98\uB9AC \uC9C4\uD589\uC744 \uC791\uAC8C \uB744\uC6C1\uB2C8\uB2E4. \uCF1C\uBA74 PocketRisu\uAC00 "\uBA54\uC778 Document \uC811\uADFC" \uAD8C\uD55C\uC744 \uBB3B\uC2B5\uB2C8\uB2E4. NMOS\uB294 \uC774 \uAD8C\uD55C\uC73C\uB85C \uD45C\uC2DC \uD558\uB098\uB9CC \uADF8\uB9AC\uACE0 \uD654\uBA74 \uB0B4\uC6A9\uC740 \uC77D\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uB204\uB974\uBA74 \uC774 \uD328\uB110\uC774 \uC5F4\uB9BD\uB2C8\uB2E4.',
-      'Shows a small pill at the top right of the chat screen: whether memory went in, and background processing progress. Turning it on makes PocketRisu ask for "main Document" access. NMOS only draws the pill with it and reads nothing on the page. Tap the pill to open this panel.'
+      '\uCC44\uD305 \uD654\uBA74\uC5D0 \uAE30\uC5B5\uC774 \uB4E4\uC5B4\uAC14\uB294\uC9C0\uC640 \uBC31\uADF8\uB77C\uC6B4\uB4DC \uCC98\uB9AC \uC9C4\uD589\uC744 \uC791\uAC8C \uB744\uC6C1\uB2C8\uB2E4. \uCF1C\uBA74 PocketRisu\uAC00 "\uBA54\uC778 Document \uC811\uADFC" \uAD8C\uD55C\uC744 \uBB3B\uC2B5\uB2C8\uB2E4. NMOS\uB294 \uC774 \uAD8C\uD55C\uC73C\uB85C \uD45C\uC2DC \uD558\uB098\uB9CC \uADF8\uB9AC\uACE0 \uD654\uBA74 \uB0B4\uC6A9\uC740 \uC77D\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uB204\uB974\uBA74 \uC774 \uD328\uB110\uC774 \uC5F4\uB9BD\uB2C8\uB2E4.',
+      'Shows a small pill on the chat screen: whether memory went in, and background processing progress. Turning it on makes PocketRisu ask for "main Document" access. NMOS only draws the pill with it and reads nothing on the page. Tap the pill to open this panel.'
     ],
+    "hud.place": ["\uC704\uCE58", "Position"],
+    "hud.place.right-center": ["\uC624\uB978\uCABD \uAC00\uC6B4\uB370", "Right, middle"],
+    "hud.place.top-right": ["\uC624\uB978\uCABD \uC704", "Top right"],
+    "hud.place.top-left": ["\uC67C\uCABD \uC704", "Top left"],
+    "hud.place.bottom-right": ["\uC624\uB978\uCABD \uC544\uB798 (\uC785\uB825\uCC3D \uC704)", "Bottom right (above the input)"],
+    "hud.place.bottom-left": ["\uC67C\uCABD \uC544\uB798 (\uC785\uB825\uCC3D \uC704)", "Bottom left (above the input)"],
+    "hud.placed": ["\uC704\uCE58\uB97C \uBC14\uAFE8\uC2B5\uB2C8\uB2E4. \uB2E4\uC74C \uD45C\uC2DC\uBD80\uD130 \uC801\uC6A9\uB429\uB2C8\uB2E4.", "Position changed. It applies from the next update."],
     "hud.toggle": ["\uCC44\uD305 \uD654\uBA74\uC5D0 \uC9C4\uD589 \uD45C\uC2DC \uB744\uC6B0\uAE30", "Show the progress display on the chat screen"],
     "hud.enable": ["\uC9C4\uD589 \uD45C\uC2DC \uCF1C\uAE30", "Turn on progress display"],
     "hud.hint": [
@@ -888,7 +896,25 @@ ${revisionHash}`;
   var MAX_POLL_ERRORS = 5;
   var MIN_POLL_GAP_MS = 1e3;
   var CLASS = "nmos-hud";
-  var ROOT_STYLE = 'position:fixed;top:calc(8px + env(safe-area-inset-top));right:calc(8px + env(safe-area-inset-right));z-index:900;min-width:140px;max-width:min(320px,calc(100vw - 72px));background:#1d1e24;border:1px solid #30323b;border-radius:12px;padding:6px 12px;font:13px/1.4 system-ui,-apple-system,"Noto Sans KR",sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.35);cursor:pointer;user-select:none';
+  var PLACEMENTS = ["right-center", "top-right", "top-left", "bottom-right", "bottom-left"];
+  var DEFAULT_PLACEMENT = "right-center";
+  function placementOf(value) {
+    return PLACEMENTS.includes(value) ? value : DEFAULT_PLACEMENT;
+  }
+  var RIGHT = "right:calc(8px + env(safe-area-inset-right))";
+  var TOP = "top:calc(8px + env(safe-area-inset-top))";
+  var LEFT = "left:calc(64px + env(safe-area-inset-left))";
+  var BOTTOM = "bottom:calc(96px + env(safe-area-inset-bottom))";
+  var PLACE = {
+    "right-center": `top:50%;${RIGHT};transform:translateY(-50%)`,
+    "top-right": `${TOP};${RIGHT}`,
+    "top-left": `${TOP};${LEFT}`,
+    "bottom-right": `${BOTTOM};${RIGHT}`,
+    "bottom-left": `${BOTTOM};${LEFT}`
+  };
+  function rootStyle(placement) {
+    return `position:fixed;${PLACE[placement]};z-index:900;min-width:140px;max-width:min(320px,calc(100vw - 72px));background:#1d1e24;border:1px solid #30323b;border-radius:12px;padding:6px 12px;font:13px/1.4 system-ui,-apple-system,"Noto Sans KR",sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.35);cursor:pointer;user-select:none`;
+  }
   var TEXT_STYLE = "display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e8e8ec";
   var TRACK_STYLE = "display:none;height:3px;margin-top:4px;background:#30323b;border-radius:2px;overflow:hidden";
   var FILL_STYLE = "height:3px;width:0;background:#4c6ef5;border-radius:2px;transition:width .3s";
@@ -937,7 +963,8 @@ ${revisionHash}`;
       if (!body) throw new Error("the PocketRisu page has no body");
       const root = await doc.createElement("div");
       await root.addClass(CLASS);
-      await root.setStyleAttribute(ROOT_STYLE);
+      const placement = await deps.placement();
+      await root.setStyleAttribute(rootStyle(placement));
       const text = await doc.createElement("span");
       await text.setStyleAttribute(TEXT_STYLE);
       const track = await doc.createElement("div");
@@ -951,7 +978,7 @@ ${revisionHash}`;
       const listener = await root.addEventListener("click", (event) => {
         void hit(event);
       });
-      return { root, text, track, fill, listener, last: "" };
+      return { root, text, track, fill, listener, last: "", placement };
     }
     async function hit(event) {
       try {
@@ -973,6 +1000,11 @@ ${revisionHash}`;
       if (!v) return erase();
       drawn ??= await draw();
       const d = drawn;
+      const placement = await deps.placement();
+      if (d.placement !== placement) {
+        d.placement = placement;
+        await d.root.setStyleAttribute(rootStyle(placement));
+      }
       const key = JSON.stringify(v);
       if (d.last !== key) {
         d.last = key;
@@ -1613,12 +1645,22 @@ html,body{margin:0;background:#0c0c10}
         hudBox.disabled = false;
       }
     });
+    const hudPlace = el("select", {}, ...PLACEMENTS.map((p) => el("option", { value: p, text: L(`hud.place.${p}`) })));
+    hudPlace.addEventListener("change", async () => {
+      try {
+        await deps.setArg("hud_position", placementOf(hudPlace.value));
+        say(hudMsg, L("hud.placed"), "ok");
+      } catch (error) {
+        say(hudMsg, errorText(lang, error), "err");
+      }
+    });
     settingsView.append(el(
       "div",
       { class: "card" },
       el("h2", { text: L("hud.title") }),
       el("p", { class: "sub", text: L("hud.sub") }),
       el("div", { class: "check" }, hudBox, el("span", { text: L("hud.toggle") })),
+      field(L("hud.place"), hudPlace),
       hudMsg
     ));
     const url = el("input", { spellcheck: "false" });
@@ -1786,6 +1828,7 @@ html,body{margin:0;background:#0c0c10}
       reserved.value = String(Number(await deps.getArg("reserved_memory_tokens")) || 600);
       deadline.value = String(Number(await deps.getArg("deadline_ms")) || DEFAULT_DEADLINE_MS);
       hudBox.checked = Number(await deps.getArg("hud")) === 1;
+      hudPlace.value = placementOf(await deps.getArg("hud_position"));
     }
     function fillServer(cfg) {
       llm.fill(cfg.llm);
@@ -1976,6 +2019,7 @@ html,body{margin:0;background:#0c0c10}
     const hud = createHud({
       enabled: async () => Number(await arg("hud")) === 1,
       lang: async () => langOf(await arg("language")),
+      placement: async () => placementOf(await arg("hud_position")),
       rootDocument: async () => typeof risuai.getRootDocument === "function" ? risuai.getRootDocument() : null,
       position: async () => `${await risuai.getCurrentCharacterIndex()}:${await risuai.getCurrentChatIndex()}`,
       coverage: (conversationId) => link.coverage(conversationId),

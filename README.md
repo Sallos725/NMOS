@@ -84,13 +84,14 @@ language after a page reload.
 
 ### Progress display (optional)
 
-A small pill at the top right of the chat screen shows whether memory went into each reply and how far
+A small pill at the middle of the right edge of the chat screen shows whether memory went into each reply and how far
 background processing of the open chat has got. It is **off by default**. Turn it on in the panel
 (**Settings → Progress display**, or **Turn on progress display** on the Status tab). PocketRisu then
 asks *"Plugin nmos_memory is requesting to access the main Document, which may expose sensitive
 information."*: NMOS needs that access only to draw the pill and reads nothing on the page. If you answer
 No, PocketRisu remembers it; to ask again, use Settings → Plugin → the NMOS row menu → **Reset permission
-responses**.
+responses**. **Position** under the toggle moves the pill to a corner instead (top right is where PocketRisu's
+own request toasts and plugin buttons stack, so it can be covered there).
 
 | Pill | Meaning |
 |---|---|

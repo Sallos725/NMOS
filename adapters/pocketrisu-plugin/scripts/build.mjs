@@ -19,6 +19,7 @@ const header = [
   '//@arg route string auto (default) / direct / server — how to reach the sidecar',
   '//@arg language string Panel language: ko (default) or en',
   '//@arg hud int 1 = progress display on the chat screen (turn it on from the NMOS panel)',
+  '//@arg hud_position string Progress display position: right-center (default), top-right, top-left, bottom-right, bottom-left',
   '',
 ].join('\n');
 

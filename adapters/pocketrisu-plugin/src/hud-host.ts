@@ -27,6 +27,8 @@ export interface HudDocument {
 export interface HudDeps {
   enabled(): Promise<boolean>;
   lang(): Promise<Lang>;
+  /** Where on the page the pill sits (plugin arg `hud_position`). */
+  placement(): Promise<HudPlacement>;
   /** The host page, or null without the `mainDom` permission. */
   rootDocument(): Promise<HudDocument | null>;
   /** Where the user is; changes when they open another character or chat. Must be cheap. */
@@ -45,17 +47,42 @@ export const MAX_POLL_ERRORS = 5;
 export const MIN_POLL_GAP_MS = 1000;
 
 const CLASS = 'nmos-hud';
+
+export const PLACEMENTS = ['right-center', 'top-right', 'top-left', 'bottom-right', 'bottom-left'] as const;
+export type HudPlacement = (typeof PLACEMENTS)[number];
+/** Right center by default: PocketRisu's own top-right overlays (HypaV3 progress, plugin buttons) cover the corner. */
+export const DEFAULT_PLACEMENT: HudPlacement = 'right-center';
+
+export function placementOf(value: unknown): HudPlacement {
+  return (PLACEMENTS as readonly unknown[]).includes(value) ? (value as HudPlacement) : DEFAULT_PLACEMENT;
+}
+
+const RIGHT = 'right:calc(8px + env(safe-area-inset-right))';
+const TOP = 'top:calc(8px + env(safe-area-inset-top))';
+// Left: clear of PocketRisu's sidebar button on phones (48 px). Bottom: above the chat input.
+const LEFT = 'left:calc(64px + env(safe-area-inset-left))';
+const BOTTOM = 'bottom:calc(96px + env(safe-area-inset-bottom))';
+const PLACE: Record<HudPlacement, string> = {
+  'right-center': `top:50%;${RIGHT};transform:translateY(-50%)`,
+  'top-right': `${TOP};${RIGHT}`,
+  'top-left': `${TOP};${LEFT}`,
+  'bottom-right': `${BOTTOM};${RIGHT}`,
+  'bottom-left': `${BOTTOM};${LEFT}`,
+};
 // Under the panel frame (z-index 1000) so the open panel covers it.
-const ROOT_STYLE = 'position:fixed;top:calc(8px + env(safe-area-inset-top));right:calc(8px + env(safe-area-inset-right));'
-  + 'z-index:900;min-width:140px;max-width:min(320px,calc(100vw - 72px));background:#1d1e24;border:1px solid #30323b;border-radius:12px;'
-  + 'padding:6px 12px;font:13px/1.4 system-ui,-apple-system,"Noto Sans KR",sans-serif;'
-  + 'box-shadow:0 2px 10px rgba(0,0,0,.35);cursor:pointer;user-select:none';
+export function rootStyle(placement: HudPlacement): string {
+  return `position:fixed;${PLACE[placement]};`
+    + 'z-index:900;min-width:140px;max-width:min(320px,calc(100vw - 72px));background:#1d1e24;border:1px solid #30323b;border-radius:12px;'
+    + 'padding:6px 12px;font:13px/1.4 system-ui,-apple-system,"Noto Sans KR",sans-serif;'
+    + 'box-shadow:0 2px 10px rgba(0,0,0,.35);cursor:pointer;user-select:none';
+}
 const TEXT_STYLE = 'display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e8e8ec';
 const TRACK_STYLE = 'display:none;height:3px;margin-top:4px;background:#30323b;border-radius:2px;overflow:hidden';
 const FILL_STYLE = 'height:3px;width:0;background:#4c6ef5;border-radius:2px;transition:width .3s';
 const COLORS: Record<HudView['kind'], string> = { busy: '#e8e8ec', ok: '#8ce99a', muted: '#9a9ca8', warn: '#ffd43b' };
 
-interface Drawn { root: HudElement; text: HudElement; track: HudElement; fill: HudElement; listener: string; last: string }
+interface Drawn { root: HudElement; text: HudElement; track: HudElement; fill: HudElement; listener: string; last: string;
+  placement: HudPlacement }
 
 export function createHud(deps: HudDeps) {
   let state: HudState = EMPTY;
@@ -107,7 +134,8 @@ export function createHud(deps: HudDeps) {
     if (!body) throw new Error('the PocketRisu page has no body');
     const root = await doc.createElement('div');
     await root.addClass(CLASS);
-    await root.setStyleAttribute(ROOT_STYLE);
+    const placement = await deps.placement();
+    await root.setStyleAttribute(rootStyle(placement));
     const text = await doc.createElement('span');
     await text.setStyleAttribute(TEXT_STYLE);
     const track = await doc.createElement('div');
@@ -119,7 +147,7 @@ export function createHud(deps: HudDeps) {
     await root.appendChild(track);
     await body.appendChild(root);
     const listener = await root.addEventListener('click', (event) => { void hit(event); });
-    return { root, text, track, fill, listener, last: '' };
+    return { root, text, track, fill, listener, last: '', placement };
   }
 
   // The host listens on the whole document: act only on clicks inside the pill.
@@ -144,6 +172,11 @@ export function createHud(deps: HudDeps) {
     if (!v) return erase();
     drawn ??= await draw();
     const d = drawn;
+    const placement = await deps.placement();
+    if (d.placement !== placement) {
+      d.placement = placement;
+      await d.root.setStyleAttribute(rootStyle(placement));
+    }
     const key = JSON.stringify(v);
     if (d.last !== key) {
       d.last = key;
