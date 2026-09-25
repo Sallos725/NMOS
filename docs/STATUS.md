@@ -44,6 +44,9 @@ it when a later turn reveals the name; the owner can join two names of a chat by
 Outside the phase (owner request 2026-09-24, ADR 0022): Google Vertex AI service-account keys for the
 extraction LLM, released in `v0.1.0-beta.15`. Mocked token exchange in CI; not yet run against real Vertex (needs an
 owner-supplied service-account key).
+Outside the phase (owner request 2026-09-25, unreleased): the Status tab shows the exact text the last request
+injected ("Show the injected memory"), held in the plugin's memory only. Real-host check on
+`ghcr.io/pocketrisu/pocketrisu:latest` at 1280 px and 390 px; the text matched what the stub model received.
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 

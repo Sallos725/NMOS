@@ -60,7 +60,8 @@ the language picker (Korean by default, or English) is at the top right. Menu na
 language after a page reload.
 
 - **Status**: sidecar connection, which features are on (status window, facts, semantic recall), and what the
-  last request injected.
+  last request injected. **Show the injected memory** opens the exact text that went into that request
+  (kept only until the page reloads).
 - **Inspector**: the Inspector, inside the panel (PocketRisu does not let plugins open a browser tab).
   Click a conversation for its state, facts, entities (names that refer to the same one), recent
   retrievals, commits (with what each sync changed, e.g. `delete ×12`) and messages. On a conversation page three buttons act on that chat:

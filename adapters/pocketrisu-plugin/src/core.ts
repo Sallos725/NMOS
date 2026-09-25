@@ -55,6 +55,7 @@ interface ReconcileResult {
 interface CacheEntry {
   packet: string;
   expires: number;
+  failed?: boolean;
 }
 
 const SUCCESS_TTL_MS = 10 * 60_000;
@@ -66,6 +67,8 @@ export interface LastRequest {
   at: number;
   ms: number;
   packetChars: number;
+  /** The memory text this request carried, for the status tab; kept in memory only. */
+  packet: string;
   outcome: 'injected' | 'nothing-relevant' | 'failed';
   error?: string;
 }
@@ -136,8 +139,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     return personas?.value ? personaOf(chat, personas.value) : null;
   }
 
-  function remember(key: string, packet: string, ttl: number): void {
-    cache.set(key, { packet, expires: host.now() + ttl });
+  function remember(key: string, packet: string, ttl: number, failed = false): void {
+    cache.set(key, { packet, expires: host.now() + ttl, failed });
     while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
   }
 
@@ -225,7 +228,11 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       ]));
       const cached = cache.get(key);
       if (cached && cached.expires > host.now()) {
-        emit({ type: 'request-end', outcome: cached.packet ? 'injected' : 'nothing-relevant', chars: cached.packet.length,
+        const outcome = cached.packet ? 'injected' : 'nothing-relevant';
+        // A retry served from the miss cache keeps the failure on the status tab.
+        if (!cached.failed) last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: cached.packet.length,
+          packet: cached.packet, outcome };
+        emit({ type: 'request-end', outcome, chars: cached.packet.length,
           conversationId: conversations.get(chat.id) ?? null });
         return injectPacket(prompt, cached.packet, settings.injectPosition, turn);
       }
@@ -257,13 +264,13 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       host.debug('[NMOS] request done', { ms: Math.round(host.now() - started), manifestMs: Math.round(manifestMs),
         syncMs: Math.round(syncMs), retrieveMs: Math.round(host.now() - t2), packetChars: packet.length });
       const outcome = packet ? 'injected' : 'nothing-relevant';
-      last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, outcome };
+      last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, packet, outcome };
       emit({ type: 'request-end', outcome, chars: packet.length, conversationId: synced.conversation_id ?? null });
       return injectPacket(prompt, packet, settings.injectPosition, turn);
     } catch (error) {
       // Cache the miss briefly so host retries of this request (H2) do not wait out the deadline again.
-      if (key) remember(key, '', FAILURE_TTL_MS);
-      last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: 0, outcome: 'failed',
+      if (key) remember(key, '', FAILURE_TTL_MS, true);
+      last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: 0, packet: '', outcome: 'failed',
         error: error instanceof Error ? error.message : String(error) };
       if (announced) emit({ type: 'request-end', outcome: 'failed', chars: 0, error: last.error,
         conversationId: (chatId && conversations.get(chatId)) || null });
