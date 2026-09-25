@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { inspectorApiPath, inspectorConversation, keepAttribute, localTime, sectionTarget } from '../src/inspector';
+import { entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, keepAttribute, linkChoices, localTime,
+  sectionTarget } from '../src/inspector';
+import type { EntityRow } from '../src/inspector';
 
 const id = '0190f3a4-1b2c-7d3e-8f40-123456789abc';
 const who = '5c6d7e8f-9a0b-5c2d-8e3f-0123456789ab';
@@ -58,5 +60,33 @@ describe('localTime', () => {
     expect(localTime('2026-09-01T12:00:00+00:00', 'en', now)?.text).toMatch(/2026/);
     expect(localTime('2026-09-24T12:30:00+00:00', 'en', now)?.text).toMatch(/2026/); // a clock ahead of ours
     expect(localTime('not a time', 'ko', now)).toBeNull();
+  });
+});
+
+describe('owner links on an entity page (ADR 0025)', () => {
+  const conv = '0199a3b2-1c2d-7e3f-8a4b-5c6d7e8f9a0b';
+  const row = (id: string, name: string, mentions: number, type = 'character', extra: Partial<EntityRow> = {}): EntityRow =>
+    ({ id, type, name, names: [name], mentions, links: [], ...extra });
+
+  it('finds the entity of a character page only', () => {
+    expect(inspectorEntity(`/v1/inspector/c/${conv}/e/${who}`)).toEqual({ conversation: conv, entity: who });
+    expect(inspectorEntity(`/v1/inspector/c/${conv}`)).toBeNull();
+    expect(inspectorEntity(`/v1/inspector/c/${conv}/e/x`)).toBeNull();
+  });
+
+  it('offers the other entities of the same type, most mentioned first', () => {
+    const rabbit = row('a', '?흰 토끼 귀의 여자', 2);
+    const entities = [rabbit, row('b', '블랑', 40), row('c', '라디아', 25), row('d', '온실', 9, 'place')];
+    const choices = linkChoices(entities, 'a');
+    expect(choices?.self).toBe(rabbit);
+    expect(choices?.others.map((e) => e.name)).toEqual(['블랑', '라디아']);
+    expect(linkChoices(entities, 'zz')).toBeNull(); // the entity is gone
+    expect(linkChoices(entities.map(({ links, ...e }) => e), 'a')).toBeNull(); // an older sidecar: no owner links
+  });
+
+  it('follows a name to the entity that holds it after a join or an undo', () => {
+    const joined = [row('c', '라디아', 27, 'character', { names: ['라디아', '?흰 토끼 귀의 여자'] })];
+    expect(entityNamed(joined, 'character', '?흰 토끼 귀의 여자')?.id).toBe('c');
+    expect(entityNamed(joined, 'item', '라디아')).toBeNull();
   });
 });

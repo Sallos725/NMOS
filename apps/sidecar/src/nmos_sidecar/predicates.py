@@ -43,7 +43,8 @@ REGISTRY: dict[str, Predicate] = {p.name: p for p in (
     Predicate("world_fact", ("place", "group", "concept", "item"), None, True, "multi", "world",
               "a durable fact about the setting"),
     Predicate("also_called", ENTITY_TYPES, None, True, "multi", "world",
-              "another name for the subject that the TARGET turn itself gives (value: the other name)"),
+              "another name for the subject that the TARGET turn itself gives, or the listed description of a"
+              " character the TARGET turn names (value: the other name)"),
     Predicate("destroyed", ("item",), None, True, "single", "world",
               "the item no longer exists or can no longer be held or used (value: how, e.g. burned, eaten)"),
     Predicate("fulfilled", ("character", "group"), None, True, "multi", "world",
@@ -137,11 +138,17 @@ def fill_types(items: list[Any], hints: list[dict[str, Any]] | None = None) -> l
     return out
 
 
-def alias_evidenced(item: dict[str, Any], turn_text: str) -> bool:
-    """An `also_called` assertion links two names only if both occur in the turn it comes from (ADR 0012)."""
-    names = [_casefold(item.get("subject")), _casefold(item.get("value"))]
+def alias_evidenced(item: dict[str, Any], turn_text: str, hints: list[dict[str, Any]] | None = None) -> bool:
+    """An `also_called` assertion links two names only if both occur in the turn it comes from (ADR 0012),
+    or if one does and the other is, exactly, a name of the same type that the extraction was shown in
+    KNOWN ENTITIES: a turn revealing who a described character is (ADR 0024)."""
+    a, b = _casefold(item.get("subject")), _casefold(item.get("value"))
+    if not a or not b or a == b:
+        return False
     text = _casefold(turn_text)
-    return all(names) and names[0] != names[1] and all(n in text for n in names)
+    listed = {_casefold(n) for h in hints or () if h.get("type") == item.get("subject_type")
+              for n in [h.get("name"), *h.get("also", [])]}
+    return (a in text and (b in text or b in listed)) or (b in text and a in listed)
 
 
 POLARITIES = ("positive", "negative")

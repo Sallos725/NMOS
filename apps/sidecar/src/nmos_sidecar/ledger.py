@@ -432,6 +432,7 @@ def delete_conversation(conn: psycopg.Connection, conv_id: UUID) -> dict[str, in
             ("embeddings", f"DELETE FROM revision_embedding WHERE source_revision_id IN ({revs})"),
             ("texts", f"DELETE FROM revision_text WHERE source_revision_id IN ({revs})"),
             ("state", "DELETE FROM state_observation WHERE conversation_id = %(c)s"),
+            ("entity_links", "DELETE FROM entity_link WHERE conversation_id = %(c)s"),
             ("head", "UPDATE conversation SET head_commit_id = NULL WHERE id = %(c)s"),
             ("membership", "DELETE FROM active_membership WHERE commit_id IN"
                            " (SELECT id FROM worldline_commit WHERE conversation_id = %(c)s)"),

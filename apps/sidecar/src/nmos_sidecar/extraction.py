@@ -7,6 +7,7 @@ generation its handler implements, and facts only come from the active generatio
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -19,8 +20,8 @@ from . import generations, normtext
 from .config import Settings
 from .generations import Generation
 from .ids import uuid7
-from .entities import norm, resolve
-from .facts import persona_of, served_assertions
+from .entities import UNNAMED, norm, resolve
+from .facts import fact_text, links_of, persona_of, served_assertions
 from .predicates import (REGISTRY, alias_evidenced, fill_types, knowledge, participants, registry_prompt, salience,
                          semantics, validate)
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
@@ -28,11 +29,12 @@ from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
 
-COMPILER_VERSION = "extract-v8"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
+COMPILER_VERSION = "extract-v9"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
 #                                 v5: polarity, modality, source, also_called (ADR 0012, ADR 0013);
 #                                 v6: destroyed (PHASE-6, ADR 0017);
 #                                 v7: promises actual, fulfilled, OPEN PROMISES, event salience (PHASE-7);
-#                                 v8: typed participants `with` (PHASE-8, ADR 0021)
+#                                 v8: typed participants `with` (PHASE-8, ADR 0021);
+#                                 v9: salience by what an event changes, revealed names (ADR 0024)
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
 TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
@@ -74,16 +76,34 @@ Rules:
 - `source`: "narration" for the story's own narration, including the user's description of their
   character's actions; "character_claim" for something a character says or writes in the story, with
   `asserted_by` set to that character. A statement in dialogue is a claim even if it is probably true.
-- `also_called` only when the TARGET turn itself gives both names for the same entity (e.g. "하나(Hana)").
+- Unnamed characters: a character the TARGET turn shows without a name is named by a short description
+  in the chat's language that starts with "?" (e.g. "?검은 망토의 남자"). If UNNAMED CHARACTERS are listed
+  and the TARGET turn, read with CONTEXT, shows that one of them is a character it names, add
+  `also_called`: the name as subject, the listed description exactly as listed as value.
+- `also_called` only when the TARGET turn itself gives both names for the same entity (e.g. "하나(Hana)"),
+  or for an unnamed character it reveals (above).
 - `promised` when a character makes a promise. A promise that was made is "actual", although what it
   promises lies in the future; "hypothetical" only when making the promise is itself only considered.
 - If OPEN PROMISES are listed: `fulfilled` (subject: who made the promise; value: its text exactly as
   listed) when the TARGET turn carries one out; `promised` with "negative" (subject, object and value as
   listed) when the TARGET turn breaks or withdraws one, or its recipient releases it. Not when a
   promise is only mentioned, remembered or still pending.
-- `salience`, for `event` only: "major" when the event changes the story (a confession, a betrayal, a
-  death, a first meeting, a secret revealed, a decision that changes a relationship or a goal);
-  otherwise "minor".
+- `salience`, for `event` only. "major" when the event changes the story from then on, whether it
+  happens in action or only in words:
+  a confession, an admission of guilt or responsibility, a secret or a hidden identity revealed (when a
+  character confesses or admits something, the confession itself is a narrated event of the TARGET turn,
+  besides any fact about the past act it tells of);
+  a betrayal, a death, a first meeting;
+  a change in how two characters treat or address each other (formal to informal speech, a new form of
+  address, a first kiss or embrace, a relationship accepted or allowed);
+  a decision that changes a relationship, a goal or a plan;
+  a power, ability or nature shown for the first time, or an incident others must now deal with (an
+  accident, an explosion, an important object destroyed, a result that changes someone's status or
+  plans); record such an incident itself as an event, with whoever caused it or is most affected as
+  subject.
+  "minor" for routine and scene business: meals, chores, travel, small talk, repeated gestures, the
+  next step of an activity already under way. Judge by what the event changes, not by how physical or
+  dramatic it looks.
 - `with`, for `event`, `goal`, `knows` and `destroyed` only: the other characters or groups the value
   is about (who received, who was attacked or helped, who is with the subject, who something is kept
   from), each as {{"name": "...", "type": "character|group"}}, named as the TARGET turn names them.
@@ -240,6 +260,7 @@ def load_context(conn: psycopg.Connection, revision_id: UUID, turn_hash: str, tu
         ).fetchone()
         if target is None:
             return None
+        target["links"] = links_of(conn, target["conversation_id"])  # the owner's (ADR 0025): hints use them
         rows = conn.execute(
             """
             SELECT am.position, am.turn, sr.id, sr.metadata FROM active_membership am
@@ -277,21 +298,26 @@ def entity_hints(conn: psycopg.Connection, ctx: dict[str, Any], key: str, limit:
                  rows: list[dict[str, Any]] | None = None) -> list[dict[str, str]]:
     """Entities mentioned on the head before the target turn, most recently mentioned first, at most
     `limit` (ADR 0012, item 5). The persona is left out under any of its names (ADR 0023): the prompt names
-    it already."""
+    it already. Since `extract-v9` a typed participant is a mention too (ADR 0024): a character first shown
+    without a name is often only a participant, and a later turn can reveal its name only if it is listed."""
     target = ctx["target"]
     if rows is None:
         rows = earlier_assertions(conn, ctx, key)
     if limit <= 0 or not rows:
         return []
-    r = resolve(target["conversation_id"], rows, persona_of(target.get("host_persona_name")))
+    r = resolve(target["conversation_id"], rows, persona_of(target.get("host_persona_name")), target.get("links") or ())
     last: dict[str, int] = {}
+    seen: dict[str, list[dict[str, Any]]] = {}  # entity id → the rows that mention it, in order
     seq = 0
     for row in rows:  # position order: a later mention, or the object after the subject, is more recent
-        for kind, name in ((row.get("subject_type"), row["subject"]), (row.get("object_type"), row.get("object"))):
+        named = [(row.get("subject_type"), row["subject"]), (row.get("object_type"), row.get("object"))]
+        named += [(p["type"], p["name"]) for p in row.get("participants") or ()]
+        for kind, name in named:
             e = r.entity(kind, name) if name else None
             if e and not e["persona"]:
                 seq += 1
                 last[e["id"]] = seq
+                seen.setdefault(e["id"], []).append(row)
     by_id = {e["id"]: e for e in r.entities()}
     out = []
     for eid in sorted(last, key=last.__getitem__, reverse=True)[:limit]:
@@ -299,6 +325,9 @@ def entity_hints(conn: psycopg.Connection, ctx: dict[str, Any], key: str, limit:
         hint = {"name": e["name"], "type": e["type"]}
         if others := [n for n in e["names"] if n != e["name"]]:
             hint["also"] = others
+        if unnamed(hint):  # what it looked like: the context window may have cut that turn (ADR 0024)
+            hint["seen"] = [{"turn": row.get("turn"), "fact": fact_text(row)[:120],
+                             "evidence": str(row.get("evidence") or "")[:160]} for row in described(seen[eid])]
         out.append(hint)
     return out
 
@@ -309,7 +338,8 @@ def promise_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = 
     story, so it does not count as named."""
     if limit <= 0 or not rows:
         return []
-    r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")))
+    r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")),
+                ctx["target"].get("links") or ())
     threads = [t for t in fold_threads([dict(row) for row in rows if row["predicate"] in THREAD_PREDICATES], r)[0]
                if t["status"] == "open"]
     shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
@@ -325,12 +355,39 @@ def promise_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = 
     return out[:limit]
 
 
+DESCRIBING = ("has_trait", "identity", "has_status")
+
+
+def described(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """At most two rows about an unnamed character for its hint: the latest that describes it (trait,
+    identity, status), then the latest of any kind."""
+    picked = [r for r in reversed(rows) if r["predicate"] in DESCRIBING][:1]
+    if rows[-1] not in picked:
+        picked.append(rows[-1])
+    return picked
+
+
+def unnamed(hint: dict[str, Any]) -> bool:
+    """A character known only by descriptions so far: every name it goes by starts with "?"."""
+    return hint["type"] == "character" and all(n.startswith(UNNAMED) for n in [hint["name"], *hint.get("also", [])])
+
+
 def hints_block(hints: list[dict[str, Any]]) -> list[str]:
-    if not hints:
-        return []
-    lines = ["KNOWN ENTITIES (names already used in this story):"]
-    lines += [f"- {' / '.join([h['name'], *h.get('also', [])])} ({h['type']})" for h in hints]
-    return lines + [""]
+    """KNOWN ENTITIES, and apart from them the characters shown so far without a name, so the model
+    checks each one against the target turn (ADR 0024)."""
+    lines = []
+    if named := [h for h in hints if not unnamed(h)]:
+        lines += ["KNOWN ENTITIES (names already used in this story):"]
+        lines += [f"- {' / '.join([h['name'], *h.get('also', [])])} ({h['type']})" for h in named] + [""]
+    if nameless := [h for h in hints if unnamed(h)]:
+        lines += ["UNNAMED CHARACTERS (shown earlier without a name; say who one is if the TARGET turn reveals it):"]
+        for h in nameless:
+            lines.append(f"- {' / '.join([h['name'], *h.get('also', [])])}")
+            for seen in h.get("seen") or ():
+                lines.append(f"  seen in turn {seen['turn']}: {seen['fact']}"
+                             + (f' ("{seen["evidence"]}")' if seen.get("evidence") else ""))
+        lines.append("")
+    return lines
 
 
 def promises_block(promises: list[dict[str, Any]]) -> list[str]:
@@ -351,6 +408,10 @@ def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
         lines.append("(none)")
     lines += ["", f"TARGET turn {ctx['target']['turn']}:"]
     lines += [f"{_speaker(row['metadata'])}: {row['content'][:TARGET_CHARS]}" for row in ctx["members"]]
+    if nameless := [h["name"] for h in hints or [] if unnamed(h)]:
+        lines += ["", "Before answering, check each UNNAMED CHARACTER: " + ", ".join(nameless) + ". If the TARGET"
+                  " turn shows that one is a character it names, add {\"subject\": \"<that name>\","
+                  " \"predicate\": \"also_called\", \"value\": \"<the description as listed>\"}."]
     return "\n".join(lines)
 
 
@@ -370,7 +431,7 @@ ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_t
 def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Model output → assertion rows (at most 40): missing entity types filled from the reply or the
     hints (`fill_types`), registry validation (D6), knowledge scope (D19), polarity/modality/source
-    (ADR 0013) and the alias evidence check (ADR 0012). Pure, so the real-model evaluation
+    (ADR 0013) and the alias evidence check (ADR 0012, ADR 0024). Pure, so the real-model evaluation
     (`tools/eval_extraction_model.py`) applies exactly what the worker does."""
     out = []
     for item, inferred in fill_types(items[:40], hints):
@@ -388,7 +449,7 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
             confidence = None
         scope, known_by, hidden_from, note = knowledge(item)
         polarity, modality, source, asserted_by, unclaimed = semantics(item)
-        if status == "valid" and item.get("predicate") == "also_called" and not alias_evidenced(item, turn_text):
+        if status == "valid" and item.get("predicate") == "also_called" and not alias_evidenced(item, turn_text, hints):
             status, reason = "pending", "alias not stated in the turn"
         if status == "valid" and unclaimed:
             status, reason = "pending", unclaimed

@@ -18,6 +18,12 @@ participant never named as a subject or object is an entity of its own.
 Since `resolve-v3` (ADR 0023) the persona's name as the host reports it for the conversation (e.g.
 "유우마") is a persona name like `{{user}}`, for characters only. The extractor writes the persona either
 way, so without it one person was two entities.
+
+Since `resolve-v4` (ADR 0025) the owner's links (`entity_link`) join two names of one type whenever both
+are mentioned on the head. The owner outranks the story's aliases: a name the owner links is never
+ambiguous, and when the story's aliases made it ambiguous, only the owner's link joins it. An entity is
+named after its first mentioned name that is not the description of an unnamed character ("?…",
+`extract-v9`, ADR 0024), so a revealed character takes its name even if the description came first.
 """
 
 from __future__ import annotations
@@ -27,9 +33,10 @@ from functools import lru_cache
 from typing import Any
 from uuid import UUID, uuid5
 
-RESOLVER_VERSION = "resolve-v3"
+RESOLVER_VERSION = "resolve-v4"
 USER_NAMES = {"{{user}}", "{user}", "user", "유저"}
 PERSONA = "{{user}}"
+UNNAMED = "?"  # the extractor names a character shown without a name by a description starting with it (ADR 0024)
 _NS = UUID("6c0c7e55-2f8e-4d0a-9d3b-5a4e1f0b7c21")  # NMOS entity namespace (arbitrary, fixed)
 
 Node = tuple[str, str]  # (type, normalized name)
@@ -56,7 +63,8 @@ def mentions(row: dict[str, Any], persona: frozenset[str] = frozenset()) -> Iter
 
 
 class Resolution:
-    def __init__(self, conversation: UUID, rows: list[dict[str, Any]], persona: Iterable[str] = ()):
+    def __init__(self, conversation: UUID, rows: list[dict[str, Any]], persona: Iterable[str] = (),
+                 links: Iterable[dict[str, Any]] = ()):
         self.conversation = conversation
         self.persona = frozenset(n for n in map(norm, persona) if n)
         first: dict[Node, tuple[int, str]] = {}  # node → (order, spelling) of its first mention on the head
@@ -85,7 +93,15 @@ class Resolution:
                 counts[n] = counts.get(n, 0) + 1
                 if n[0] == "character" and norm(p["name"]) in self.persona:
                     hosted.setdefault(norm(p["name"]), p["name"])
-        self.ambiguous = {n for n in edges if _splits(n, edges)}
+        # The owner's links between names the head mentions (ADR 0025); the others wait for a mention.
+        self.links: list[tuple[Node, Node, dict[str, Any]]] = []
+        for link in links:
+            a, b = self.node(link["entity_type"], link["name"]), self.node(link["entity_type"], link["same_as"])
+            if a != b and a in first and b in first:
+                self.links.append((a, b, link))
+        linked = {n for a, b, _ in self.links for n in (a, b)}
+        overruled = {n for n in linked if _splits(n, edges)}  # the owner settles what the story left ambiguous
+        self.ambiguous = {n for n in edges if _splits(n, edges)} - linked
         parent: dict[Node, Node] = {n: n for n in first}
 
         def find(n: Node) -> Node:
@@ -94,12 +110,20 @@ class Resolution:
                 n = parent[n]
             return n
 
+        def rank(n: Node) -> tuple[bool, int]:  # a name before a description of someone unnamed (ADR 0024)
+            return first[n][1].startswith(UNNAMED), first[n][0]
+
+        def union(a: Node, b: Node) -> None:
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[max(ra, rb, key=rank)] = min(ra, rb, key=rank)
+
         for a, nbrs in edges.items():
             for b in nbrs:
-                if a not in self.ambiguous and b not in self.ambiguous:
-                    ra, rb = find(a), find(b)
-                    if ra != rb:
-                        parent[max(ra, rb, key=lambda r: first[r])] = min(ra, rb, key=lambda r: first[r])
+                if not {a, b} & (self.ambiguous | overruled):
+                    union(a, b)
+        for a, b, _ in self.links:
+            union(a, b)
         self._root = {n: find(n) for n in first if n not in self.ambiguous}
         self._edges = edges
         self._first = first
@@ -111,7 +135,7 @@ class Resolution:
                 e = self._entities[root] = {
                     "id": str(uuid5(_NS, f"{conversation}:{RESOLVER_VERSION}:{root[0]}:{root[1]}")),
                     "type": root[0], "name": first[root][1], "names": [], "mentions": 0, "aliases": [],
-                    "persona": False}
+                    "links": [], "persona": False}
             e["names"].append(first[n][1])
             e["mentions"] += counts.get(n, 0)
         self._persona_root = self._root.get(("character", PERSONA))
@@ -126,6 +150,9 @@ class Resolution:
             if a in self._root and b in self._root:
                 self._entities[self._root[a]]["aliases"].append(
                     {"name": row["subject"], "other": row["value"], "turn": row.get("turn")})
+        for a, _, link in self.links:
+            self._entities[self._root[a]]["links"].append(
+                {"id": str(link["id"]), "name": link["name"], "same_as": link["same_as"]})
 
     # --- lookups --------------------------------------------------------------------------------
 
@@ -198,7 +225,9 @@ def _splits(n: Node, edges: dict[Node, set[Node]]) -> bool:
     return any(m not in seen for m in nbrs[1:])
 
 
-def resolve(conversation: UUID, rows: list[dict[str, Any]], persona: Iterable[str] = ()) -> Resolution:
+def resolve(conversation: UUID, rows: list[dict[str, Any]], persona: Iterable[str] = (),
+            links: Iterable[dict[str, Any]] = ()) -> Resolution:
     """Entities of one conversation's active assertions (rows in position order). `persona`: the persona's
-    name as the host reports it for this conversation (ADR 0023), if known."""
-    return Resolution(conversation, rows, persona)
+    name as the host reports it for this conversation (ADR 0023), if known. `links`: the owner's current
+    links of this conversation (`entity_type`, `name`, `same_as`, `id`; ADR 0025)."""
+    return Resolution(conversation, rows, persona, links)

@@ -614,6 +614,17 @@ ${revisionHash}`;
       "Discarded {d} extractions; {t} turns are extracted again. Facts of this chat may be missing until then."
     ],
     "act.delete_done": ["\uB300\uD654\uB97C \uC0AD\uC81C\uD588\uC2B5\uB2C8\uB2E4 (\uBA54\uC2DC\uC9C0 {m}\uAC1C\uC758 \uAE30\uB85D).", "Conversation deleted (records of {m} messages)."],
+    "link.title": ["\uAC19\uC740 \uB300\uC0C1\uC73C\uB85C \uD569\uCE58\uAE30", "Same as another entity"],
+    "link.sub": [
+      "\uC774\uC57C\uAE30\uAC00 \uC2A4\uC2A4\uB85C \uC787\uC9C0 \uBABB\uD55C \uC774\uB984\uC744 \uC9C1\uC811 \uD569\uCE69\uB2C8\uB2E4(\uC608: \uC774\uB984 \uC5C6\uC774 \uBA3C\uC800 \uB098\uC628 \uC778\uBB3C\uACFC \uB098\uC911\uC5D0 \uC774\uB984\uC774 \uBC1D\uD600\uC9C4 \uC778\uBB3C). \uAE30\uC5B5 \uC7AC\uAD6C\uCD95\uC744 \uD574\uB3C4 \uC720\uC9C0\uB418\uACE0, \uC5B8\uC81C\uB4E0 \uD574\uC81C\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+      "Join names the story did not link on its own (e.g. someone shown without a name and named later). Kept across rebuilds; you can undo it at any time."
+    ],
+    "link.pick": ["\uAC19\uC740 \uB300\uC0C1", "Same as"],
+    "link.join": ["\uD569\uCE58\uAE30", "Join"],
+    "link.remove": ["\uD574\uC81C", "Undo"],
+    "link.none": ["\uD569\uCE60 \uC218 \uC788\uB294 \uAC19\uC740 \uC885\uB958\uC758 \uB300\uC0C1\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No other entity of this type."],
+    "link.done": ['"{a}"\uC640(\uACFC) "{b}"\uB97C \uD569\uCCE4\uC2B5\uB2C8\uB2E4.', 'Joined "{a}" and "{b}".'],
+    "link.removed": ["\uC5F0\uACB0\uC744 \uD574\uC81C\uD588\uC2B5\uB2C8\uB2E4.", "Link undone."],
     "act.off": ["\uC0AC\uC2E4 \uCD94\uCD9C(\uB610\uB294 \uC784\uBCA0\uB529)\uC774 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED\uC5D0\uC11C \uCF1C\uC138\uC694.", "Fact extraction (or embeddings) is off. Turn it on in Settings."],
     // settings: connection
     "conn.title": ["\uC5F0\uACB0", "Connection"],
@@ -1105,6 +1116,19 @@ ${revisionHash}`;
     const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID})?$`, "i").exec(path);
     return m ? m[1] : null;
   }
+  function inspectorEntity(path) {
+    const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path);
+    return m ? { conversation: m[1], entity: m[2] } : null;
+  }
+  function linkChoices(entities, id) {
+    const self = entities.find((e) => e.id === id);
+    if (!self || !Array.isArray(self.links)) return null;
+    const others = entities.filter((e) => e.id !== id && e.type === self.type).sort((a, b) => b.mentions - a.mentions);
+    return { self, others };
+  }
+  function entityNamed(entities, type, name) {
+    return entities.find((e) => e.type === type && e.names.includes(name)) ?? null;
+  }
   function sectionTarget(href) {
     const id = href?.startsWith("#") ? href.slice(1) : "";
     return SECTION.test(id) ? id : null;
@@ -1416,10 +1440,12 @@ html,body{margin:0;background:#0c0c10}
       el("div", { class: "btns" }, historyButton, rebuildButton, deleteButton),
       el("details", { class: "sub help" }, el("summary", { text: L("act.help") }), el("p", { text: L("act.sub") }))
     );
+    const linkCard = el("div", { class: "card", style: "display:none" });
     inspectorView.append(
       el("div", { class: "btns inspbar" }, inspectorBack, inspectorRefresh),
       actions,
       actionMsg,
+      linkCard,
       inspectorBody,
       inspectorAddress
     );
@@ -1469,6 +1495,8 @@ html,body{margin:0;background:#0c0c10}
         disarm();
       }
       actions.style.display = conversation ? "" : "none";
+      const shownEntity = inspectorEntity(path);
+      if (!shownEntity) linkCard.style.display = "none";
       if (again) {
         inspectorBody.classList.add("busy");
       } else {
@@ -1487,6 +1515,7 @@ html,body{margin:0;background:#0c0c10}
         shownPath = path;
         if (keep) restore(keep);
         else root.scrollTop = 0;
+        if (shownEntity) void showLinks(shownEntity.conversation, shownEntity.entity, load);
       } catch (error) {
         if (load !== loads) return;
         shownPath = null;
@@ -1494,6 +1523,72 @@ html,body{margin:0;background:#0c0c10}
       } finally {
         if (load === loads) inspectorBody.classList.remove("busy");
       }
+    }
+    async function showLinks(conversation, entity, load) {
+      let entities;
+      try {
+        entities = await deps.api("GET", `/v1/conversations/${conversation}/entities`, void 0, 15e3);
+      } catch {
+        entities = [];
+      }
+      if (load !== loads) return;
+      const choices = linkChoices(entities, entity);
+      if (!choices) {
+        linkCard.style.display = "none";
+        return;
+      }
+      const { self, others } = choices;
+      const msg = el("div", { class: "msg" });
+      const rows = [];
+      for (const link of self.links ?? []) {
+        const undo = el("button", { text: L("link.remove") });
+        undo.addEventListener("click", async () => {
+          undo.disabled = true;
+          try {
+            await deps.api("POST", `/v1/conversations/${conversation}/entity-links/${link.id}/remove`, {}, 15e3);
+            const now = await deps.api("GET", `/v1/conversations/${conversation}/entities`, void 0, 15e3);
+            const next = entityNamed(now, self.type, self.name);
+            say(actionMsg, L("link.removed"), "ok");
+            if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+            else await showInspector();
+          } catch (error) {
+            say(msg, errorText(lang, error), "err");
+            undo.disabled = false;
+          }
+        });
+        rows.push(el("div", { class: "btns" }, el("span", { text: `${link.name} = ${link.same_as}` }), undo));
+      }
+      const card = [el("h2", { text: L("link.title") }), el("p", { class: "sub", text: L("link.sub") }), ...rows];
+      if (others.length) {
+        const pick = el(
+          "select",
+          { "aria-label": L("link.pick") },
+          ...others.map((e) => el("option", { value: e.name, text: `${e.name} (${e.mentions})` }))
+        );
+        const join = el("button", { text: L("link.join") });
+        join.addEventListener("click", async () => {
+          join.disabled = true;
+          try {
+            const r = await deps.api(
+              "POST",
+              `/v1/conversations/${conversation}/entity-links`,
+              { entity_type: self.type, name: self.name, same_as: pick.value },
+              15e3
+            );
+            say(actionMsg, L("link.done", { a: self.name, b: pick.value }), "ok");
+            if (r.entity && r.entity.id !== entity) go(`/v1/inspector/c/${conversation}/e/${r.entity.id}`);
+            else await showInspector();
+          } catch (error) {
+            say(msg, errorText(lang, error), "err");
+            join.disabled = false;
+          }
+        });
+        card.push(el("div", { class: "row" }, field(L("link.pick"), pick), el("div", { class: "btns" }, join)));
+      } else {
+        card.push(el("div", { class: "muted", text: L("link.none") }));
+      }
+      linkCard.replaceChildren(...card, msg);
+      linkCard.style.display = "";
     }
     inspectorBody.addEventListener("click", (event) => {
       const link = event.target instanceof Element ? event.target.closest("a") : null;
