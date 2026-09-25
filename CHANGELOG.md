@@ -5,6 +5,8 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+## 0.1.0-beta.17
+
 Salience by what an event changes, names revealed later, and owner links between names (ADRs 0024,
 0025, D35, D36). Schema: migration 0019 (applied at startup). New extractor generation `extract-v9`.
 
@@ -24,6 +26,21 @@ Salience by what an event changes, names revealed later, and owner links between
 - **Entity ids change once** (`resolve-v4`); Inspector links saved before the upgrade no longer open.
 - Switching to `extract-v9` re-extracts each chat's recent window (`NMOS_EXTRACT_BACKFILL` turns). Older
   turns keep their `extract-v8` labels and names until "Extract all history".
+
+Upgrade both parts (migration 0019 is applied at startup), then replace the plugin file and reload
+PocketRisu.
+
+### Known limitations
+
+- An admission is still often recorded as the past act it tells of and labeled minor (2 of 3 runs
+  major on the owner's chat). On `gemma4:31b` short dialogue scenes sometimes yield no event at all, so
+  no label (`docs/perf/extract-v9.md`).
+- A name the model links to the wrong listed description stays linked until its turn is edited or
+  deleted; there is no owner split. Names written by `extract-v8` have no `?` and are joined only by
+  hand.
+- More major events means a character with many of them fills the 3-event cap with major ones.
+- Each extraction prompt is about 350 tokens (≈19 %) longer.
+- Otherwise unchanged from 0.1.0-beta.16; the full list is `docs/KNOWN-ISSUES.md`.
 
 ## 0.1.0-beta.16
 

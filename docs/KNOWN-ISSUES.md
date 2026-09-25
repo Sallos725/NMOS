@@ -1,6 +1,6 @@
 # NMOS Known Issues
 
-Current as of `v0.1.0-beta.16` (2026-09-24). This is the single list of what does not work, or works
+Current as of `v0.1.0-beta.17` (2026-09-25). This is the single list of what does not work, or works
 only partly, in the current release. Each release's "Known limitations" in `CHANGELOG.md` describes
 that release at the time; entries fixed later are listed under [Resolved](#resolved) below.
 
@@ -86,7 +86,7 @@ nickname, and extraction is shown the chat's earlier names so it reuses them ("�
 "해안 지도", or a nickname only others use — is still a separate entity, and two different items with
 the same name and type are still one. A character introducing themself under someone else's name
 merges the two until that turn is edited or deleted (the Inspector shows each alias's turn). Knowledge
-marks (`known_by`, `hidden_from`) stay free text. *Since `extract-v9` (unreleased):* a character first
+marks (`known_by`, `hidden_from`) stay free text. *Since 0.1.0-beta.17 (`extract-v9`):* a character first
 shown without a name is written as a `?` description and joined to its name when a later turn reveals it
 (3/3 on the owner's reveal turn; ADR 0024), and the owner can join any two names of a chat in the panel
 (entity page → "Same as another entity"; ADR 0025). There is still no owner split of a wrong automatic
@@ -215,6 +215,7 @@ Not issues, but often reported as one:
 
 | Was listed in | Issue | Resolved in |
 |---|---|---|
+| (not listed; owner-reported 2026-09-25) | Turning points told only in words (speech-level and address changes, a relationship allowed, an admission) and an incident everyone had to deal with were minor events; a character shown without a name never joined their later name | 0.1.0-beta.17 — salience by change and revealed names (ADR 0024), owner links (ADR 0025); partly, see K8 and K22 |
 | (not listed; owner-reported 2026-09-24) | A named persona (유우마) and `{{user}}` were two characters: split locations and promises, and the persona's name counted as a mention in every message | 0.1.0-beta.16 — the host's persona name is the persona (ADR 0023) |
 | 0.1.0-beta.12 (K10) | An item's holder and its place were separate facts and could disagree | 0.1.0-beta.13 — one whereabouts per item (ADR 0016) |
 | 0.1.0-beta.12 (K17, part) | Superseded vectors and full-manifest host observations kept growing | 0.1.0-beta.13 — pruned and compacted (ADRs 0015, 0018); abandoned branches kept by decision |
