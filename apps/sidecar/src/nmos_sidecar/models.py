@@ -108,3 +108,10 @@ class OutputRequest(BaseModel):
     generation_id: str | None = None
     revision_hash: str | None = None
     message_index: int | None = None
+
+
+class EntityLinkRequest(BaseModel):
+    """The owner says two names of one conversation are the same entity (ADR 0025)."""
+    entity_type: Literal["character", "place", "item", "group", "concept"]
+    name: str = Field(min_length=1, max_length=120)
+    same_as: str = Field(min_length=1, max_length=120)

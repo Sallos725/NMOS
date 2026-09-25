@@ -114,7 +114,8 @@ def hints(rows, turn=99, limit=40):
 
 def test_participants_never_change_known_entities_hard_case():
     """PHASE-8 In scope 3: a participant spelling comes before the entity's first subject/object mention
-    and before the also_called that joins its aliases; the KNOWN ENTITIES block is byte-for-byte the same."""
+    and before the also_called that joins its aliases; the known entities keep their spelling and names.
+    Since extract-v9 (ADR 0024) participant-only entities are listed too, so a revealed name can be linked."""
     base = [row(1, "카이토", "event", "HANA와 산책", participants=None),
             row(2, "hana", "located_in", obj="도서관", object_type="place"),
             row(3, "hana", "also_called", "하나"),
@@ -122,8 +123,9 @@ def test_participants_never_change_known_entities_hard_case():
     early = [dict(r) for r in base]
     early[0]["participants"] = with_(("HANA", "character"), ("하나", "character"), ("경비병들", "group"),
                                      ("미나", "character"))
-    assert hints(early) == hints(base)
-    assert "미나" not in hints(early) and "경비병들" not in hints(early)  # participant-only: no hint
+    extra = set(hints(early).splitlines()) - set(hints(base).splitlines())
+    assert set(hints(base).splitlines()) <= set(hints(early).splitlines())
+    assert extra == {"- 미나 (character)", "- 경비병들 (group)"}  # participant-only entities, listed since v9
     # The resolver still knows the participant-only entities (Inspector, recall).
     names = {e["name"] for e in resolve(CONV, early).entities()}
     assert {"미나", "경비병들"} <= names
@@ -224,7 +226,7 @@ def test_extract_v8_asks_for_typed_participants():
     from nmos_sidecar.extraction import COMPILER_VERSION, SYSTEM_PROMPT
     from nmos_sidecar.predicates import registry_prompt
     prompt = SYSTEM_PROMPT.format(registry=registry_prompt())
-    assert COMPILER_VERSION == "extract-v8"
+    assert COMPILER_VERSION == "extract-v9"
     assert "`with`, for `event`, `goal`, `knows` and `destroyed` only" in prompt
     assert '"with": [{"name": "...", "type": "character|group"}]' in prompt
     assert "Being there does not mean knowing" in prompt  # PHASE-8: a participant is not a knower

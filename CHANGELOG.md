@@ -5,6 +5,26 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+Salience by what an event changes, names revealed later, and owner links between names (ADRs 0024,
+0025, D35, D36). Schema: migration 0019 (applied at startup). New extractor generation `extract-v9`.
+
+- **Important events are judged by what they change** (ADR 0024). The extractor labeled turning points
+  told only in words `minor`: a change from formal to informal speech, a new form of address, a
+  relationship someone allowed, an admission of responsibility; and an incident everyone had to deal with
+  (a measuring device bursting) as well. A minor event comes back only when you ask about it, not when
+  you name the people involved. `extract-v9` names these categories; routine business (meals, chores,
+  travel) stays minor.
+- **Someone shown without a name joins their name later** (ADR 0024). The extractor writes such a
+  character as a `?` description (e.g. `?검은 망토의 남자`), lists them to later turns, and records the
+  name when a turn reveals it. Until then the `?` in the packet tells the response model the identity is
+  unknown.
+- **Join two names by hand** (ADR 0025). On an entity's page in the Inspector tab, "Same as another
+  entity" joins it with another entity of the same type; "Undo" takes it back. Joins survive "Rebuild
+  memory" and need no re-extraction.
+- **Entity ids change once** (`resolve-v4`); Inspector links saved before the upgrade no longer open.
+- Switching to `extract-v9` re-extracts each chat's recent window (`NMOS_EXTRACT_BACKFILL` turns). Older
+  turns keep their `extract-v8` labels and names until "Extract all history".
+
 ## 0.1.0-beta.16
 
 Bug fix: a named persona is the persona (ADR 0023, D34). Schema: migration 0018 (applied at startup). Upgrade both parts, then replace the plugin file and

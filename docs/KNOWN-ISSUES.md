@@ -86,7 +86,11 @@ nickname, and extraction is shown the chat's earlier names so it reuses them ("�
 "해안 지도", or a nickname only others use — is still a separate entity, and two different items with
 the same name and type are still one. A character introducing themself under someone else's name
 merges the two until that turn is edited or deleted (the Inspector shows each alias's turn). Knowledge
-marks (`known_by`, `hidden_from`) stay free text. Owner corrections (merge/split) are Track B, B7.
+marks (`known_by`, `hidden_from`) stay free text. *Since `extract-v9` (unreleased):* a character first
+shown without a name is written as a `?` description and joined to its name when a later turn reveals it
+(3/3 on the owner's reveal turn; ADR 0024), and the owner can join any two names of a chat in the panel
+(entity page → "Same as another entity"; ADR 0025). There is still no owner split of a wrong automatic
+alias.
 
 **K9 — Destroyed or used-up items keep their last holder.** A new holder ends the previous one (ADR
 0011), and since 0.1.0-beta.12 so does a statement that the holder no longer has it ("lost", "dropped
@@ -105,7 +109,7 @@ writes for every character, so a secret can still leak (ADR 0007). Hard per-char
 as actual narration becomes a fact (ADR 0013). On the tested model (`deepseek-v4.1-flash`) 1 of 32
 (release candidate: 1 of 34) real events was labeled non-actual, no plan, dream or claim became a fact in 21 runs, and one run
 inferred a negation from a clue the narration did not state (`docs/perf/phase5-extraction.md`). Other
-models were not measured. *Workaround:* check the Inspector's "not actual" list if a fact is missing. Since Phase 8 extraction also lists who else an event, goal, knowledge fact or destroyed item involves; in the Phase 8 check it agreed with a manual review in 83 of 87 assertions (`docs/perf/phase8-extraction.md`). Since Phase 7 each event is also labeled major or minor, which decides whether a mention alone brings it into the packet (4 of 4 major scenes 3/3; minor scenes never labeled major; `docs/perf/phase7-extraction.md`).
+models were not measured. *Workaround:* check the Inspector's "not actual" list if a fact is missing. Since Phase 8 extraction also lists who else an event, goal, knowledge fact or destroyed item involves; in the Phase 8 check it agreed with a manual review in 83 of 87 assertions (`docs/perf/phase8-extraction.md`). Since Phase 7 each event is also labeled major or minor, which decides whether a mention alone brings it into the packet (4 of 4 major scenes 3/3; minor scenes never labeled major; `docs/perf/phase7-extraction.md`). With `extract-v8` turning points told only in words (a change of speech level or form of address, an admission) were labeled minor on the owner's chats; `extract-v9` names these categories (ADR 0024, `docs/perf/extract-v9.md`). An admission is still often recorded as the past act and labeled minor. Turns extracted before `extract-v9` keep their labels until "Extract all history".
 
 **K23 — Promises stay open until the story closes them.** Since 0.1.0-beta.14 (ADR 0019) a
 promise is an open thread until a turn keeps it (`fulfilled`) or breaks, withdraws or releases it.

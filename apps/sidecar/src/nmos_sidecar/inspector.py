@@ -93,6 +93,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "h.modality": ("양태", "Modality"),
     "entities": ("엔티티", "Entities"), "h.type": ("종류", "Type"), "h.names": ("이름", "Names"),
     "h.mentions": ("언급", "Mentions"), "h.alias_turns": ("별칭이 나온 턴", "Alias stated in turn"),
+    "h.owner_links": ("소유자가 합친 이름", "Joined by the owner"),
     "ambiguous": ("모호한 이름 (연결 안 함)", "Ambiguous names (not linked)"), "h.candidates": ("후보", "Candidates"),
     "h.subject": ("주어", "Subject"), "h.predicate": ("술어", "Predicate"), "h.object": ("대상 / 값", "Object / value"),
     "h.knowledge": ("아는 범위", "Knowledge"), "h.turn": ("턴", "Turn"), "h.versions": ("버전", "Versions"),
@@ -488,9 +489,9 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
             [[_v(i["item"]), " → ".join(_step(h, lang) for h in i["history"])] for i in items[:100]]), True))
     if entities:
         parts.append(("entities", t("entities"), len(entities), table(
-            [t(k) for k in ("h.type", "h.names", "h.mentions", "h.alias_turns")],
+            [t(k) for k in ("h.type", "h.names", "h.mentions", "h.alias_turns", "h.owner_links")],
             [[chip(lang, "e", e["type"]), _v(" · ".join(e["names"])), _v(e["mentions"]),
-              _v(", ".join(str(a["turn"]) for a in e["aliases"]))] for e in entities[:200]]), True))
+              _v(", ".join(str(a["turn"]) for a in e["aliases"])), _owner_links(e)] for e in entities[:200]]), True))
     if ambiguous:
         parts.append(("ambiguous", t("ambiguous"), len(ambiguous), table(
             [t(k) for k in ("h.type", "h.names", "h.candidates")],
@@ -515,6 +516,11 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
          for m in members]), False))
     body = head + sections(lang, parts)
     return body if embed else page(f"NMOS · {name}", body, lang)
+
+
+def _owner_links(entity: dict[str, Any]) -> str:
+    """The owner's links that joined this entity's names (ADR 0025), as "name = same as"."""
+    return _v(", ".join(f"{link['name']} = {link['same_as']}" for link in entity.get("links") or []))
 
 
 def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[str, Any]]], token: str | None,
@@ -568,9 +574,9 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
             + f"<p class=\"muted\">{t('knows_note')}</p>"
 
     parts: list[Section] = [("profile", t("profile"), None, table(
-        [t("h.type"), t("h.names"), t("h.mentions"), t("h.alias_turns")],
+        [t("h.type"), t("h.names"), t("h.mentions"), t("h.alias_turns"), t("h.owner_links")],
         [[chip(lang, "e", entity["type"]), _v(" · ".join(entity["names"])), _v(entity["mentions"]),
-          _v(", ".join(str(a["turn"]) for a in entity["aliases"]))]]), True)]
+          _v(", ".join(str(a["turn"]) for a in entity["aliases"])), _owner_links(entity)]]), True)]
     if conflicts:
         parts.append(("conflicts", t("conflicts"), len(conflicts), _conflicts_table(conflicts, lang), True))
     if threads:

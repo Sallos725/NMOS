@@ -24,6 +24,7 @@ from .ids import uuid7
 from .models import (
     BodiesRequest,
     BodiesResponse,
+    EntityLinkRequest,
     OutputRequest,
     Packet,
     ReconcileRequest,
@@ -376,6 +377,42 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             view = (memory_view(conn, conv["head_commit_id"], rt["active_extractor"])
                     if conv["head_commit_id"] else {"entities": []})
         return view["entities"]
+
+    @app.post("/v1/conversations/{conv_id}/entity-links", dependencies=[Depends(auth)])
+    def add_entity_link(conv_id: UUID, body: EntityLinkRequest, request: Request):
+        """The owner says two names of this chat are one entity (ADR 0025). Both must be mentioned on the
+        head now, with that type. The link joins them on every read until the owner removes it."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            r = memory_view(conn, conv["head_commit_id"], rt["active_extractor"])["resolution"]
+            if r is None or any(r.status(body.entity_type, n) == "unresolved" for n in (body.name, body.same_as)):
+                raise HTTPException(status_code=422, detail="both names must be mentioned in this chat")
+            if r.node(body.entity_type, body.name) == r.node(body.entity_type, body.same_as):
+                raise HTTPException(status_code=422, detail="the two names are the same")
+            with conn.transaction():
+                link = conn.execute(
+                    "INSERT INTO entity_link (id, conversation_id, entity_type, name, same_as) VALUES (%s, %s, %s, %s, %s)"
+                    " RETURNING id, entity_type, name, same_as, created_at",
+                    (uuid7(), conv_id, body.entity_type, body.name.strip(), body.same_as.strip())).fetchone()
+            log.info("entity link conversation=%s link=%s", conv_id, link["id"])
+            entity = memory_view(conn, conv["head_commit_id"], rt["active_extractor"])["resolution"].entity(
+                body.entity_type, body.name)
+            return {"link": link, "entity": entity}
+
+    @app.post("/v1/conversations/{conv_id}/entity-links/{link_id}/remove", dependencies=[Depends(auth)])
+    def remove_entity_link(conv_id: UUID, link_id: UUID, request: Request):
+        """The owner takes a link back (ADR 0025): the next read resolves the names as the story alone
+        does. The row stays with `removed_at` for audit."""
+        with request.app.state.pool.connection() as conn:
+            with conn.transaction():
+                n = conn.execute("UPDATE entity_link SET removed_at = now() WHERE id = %s AND conversation_id = %s"
+                                 " AND removed_at IS NULL", (link_id, conv_id)).rowcount
+        if not n:
+            raise HTTPException(status_code=404, detail="link not found")
+        log.info("entity link removed conversation=%s link=%s", conv_id, link_id)
+        return {"removed": str(link_id)}
 
     @app.get("/v1/conversations/{conv_id}/coverage", dependencies=[Depends(auth)])
     def conversation_coverage(conv_id: UUID, request: Request):

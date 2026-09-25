@@ -216,7 +216,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
     rows = [r for r in served_assertions(conn, head, extractor_key) if r["predicate"] in REGISTRY]
     conv = conn.execute("SELECT w.conversation_id, c.host_persona_name FROM worldline_commit w"
                         " JOIN conversation c ON c.id = w.conversation_id WHERE w.id = %s", (head,)).fetchone()
-    r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]))
+    r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]),
+                links_of(conn, conv["conversation_id"]))
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []
@@ -263,6 +264,13 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
     return {"facts": facts, "claims": claims, "other": other, "entities": r.entities(),
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
             "threads": threads, "unmatched": unmatched, "resolution": r}
+
+
+def links_of(conn: psycopg.Connection, conversation: UUID) -> list[dict[str, Any]]:
+    """The owner's current entity links of a conversation, oldest first (ADR 0025)."""
+    return conn.execute("SELECT id, entity_type, name, same_as, created_at FROM entity_link"
+                        " WHERE conversation_id = %s AND removed_at IS NULL ORDER BY created_at, id",
+                        (conversation,)).fetchall()
 
 
 def persona_of(host_persona_name: str | None) -> list[str]:

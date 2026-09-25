@@ -21,6 +21,38 @@ export function inspectorConversation(path: string): string | null {
   return m ? (m[1] as string) : null;
 }
 
+/** The conversation and entity of an inspector character API path, or null. */
+export function inspectorEntity(path: string): { conversation: string; entity: string } | null {
+  const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, 'i').exec(path);
+  return m ? { conversation: m[1] as string, entity: m[2] as string } : null;
+}
+
+/** An entity as `GET /v1/conversations/<id>/entities` lists it; `links` only from sidecars with ADR 0025. */
+export interface EntityRow {
+  id: string;
+  type: string;
+  name: string;
+  names: string[];
+  mentions: number;
+  persona?: boolean;
+  links?: { id: string; name: string; same_as: string }[];
+}
+
+/** What the panel offers on an entity's page (ADR 0025): the entity, the others of its type it can be
+ * joined with (most mentioned first), and the owner's links it has. Null when the entity is gone or the
+ * sidecar has no owner links. */
+export function linkChoices(entities: EntityRow[], id: string): { self: EntityRow; others: EntityRow[] } | null {
+  const self = entities.find((e) => e.id === id);
+  if (!self || !Array.isArray(self.links)) return null;
+  const others = entities.filter((e) => e.id !== id && e.type === self.type).sort((a, b) => b.mentions - a.mentions);
+  return { self, others };
+}
+
+/** The entity that now holds a name, after a link was added or removed (its id may have changed). */
+export function entityNamed(entities: EntityRow[], type: string, name: string): EntityRow | null {
+  return entities.find((e) => e.type === type && e.names.includes(name)) ?? null;
+}
+
 /** The section a contents link points to (`#s-facts` → `s-facts`), or null. */
 export function sectionTarget(href: string | null): string | null {
   const id = href?.startsWith('#') ? href.slice(1) : '';

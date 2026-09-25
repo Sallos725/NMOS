@@ -6,7 +6,9 @@ import type { StatusInfo } from './core';
 import { configBody, connArgs, DEFAULT_DEADLINE_MS, dirtySections, fillProject, MAX_DEADLINE_MS, presetMatches, VERTEX_URL,
   type FormValues, type Section } from './form';
 import { langOf, t, type Lang, type StringKey } from './i18n';
-import { inspectorApiPath, inspectorConversation, localTime, safeFragment, sectionTarget } from './inspector';
+import { entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices, localTime, safeFragment,
+  sectionTarget } from './inspector';
+import type { EntityRow } from './inspector';
 import { routeFor } from './route';
 
 export type Tab = 'status' | 'inspector' | 'settings';
@@ -289,8 +291,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     el('details', { class: 'sub help' }, el('summary', { text: L('act.help') }), el('p', { text: L('act.sub') })));
   // The message sits outside the actions so a result stays visible after a delete returns to the list.
   // Back and Refresh stay in reach while reading far down a page.
+  // On an entity's page: the owner joins it with another entity of its type, or undoes a join (ADR 0025).
+  const linkCard = el('div', { class: 'card', style: 'display:none' });
   inspectorView.append(el('div', { class: 'btns inspbar' }, inspectorBack, inspectorRefresh), actions, actionMsg,
-    inspectorBody, inspectorAddress);
+    linkCard, inspectorBody, inspectorAddress);
   let actionConversation: string | null = null;
   function place(): Place {
     const open = Array.from(inspectorBody.querySelectorAll<HTMLDetailsElement>('details[id]')).filter((d) => d.open);
@@ -338,6 +342,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       disarm();
     }
     actions.style.display = conversation ? '' : 'none';
+    const shownEntity = inspectorEntity(path);
+    if (!shownEntity) linkCard.style.display = 'none';
     if (again) {
       inspectorBody.classList.add('busy'); // the old page stays until the new one is there
     } else {
@@ -358,6 +364,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       shownPath = path;
       if (keep) restore(keep);
       else root.scrollTop = 0;
+      if (shownEntity) void showLinks(shownEntity.conversation, shownEntity.entity, load);
     } catch (error) {
       if (load !== loads) return;
       shownPath = null;
@@ -365,6 +372,59 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     } finally {
       if (load === loads) inspectorBody.classList.remove('busy');
     }
+  }
+  async function showLinks(conversation: string, entity: string, load: number): Promise<void> {
+    let entities: EntityRow[];
+    try {
+      entities = await deps.api<EntityRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
+    } catch {
+      entities = []; // the page itself already reports a failing sidecar
+    }
+    if (load !== loads) return;
+    const choices = linkChoices(entities, entity);
+    if (!choices) {
+      linkCard.style.display = 'none';
+      return;
+    }
+    const { self, others } = choices;
+    const msg = el('div', { class: 'msg' });
+    const rows: HTMLElement[] = [];
+    for (const link of self.links ?? []) {
+      const undo = el('button', { text: L('link.remove') });
+      undo.addEventListener('click', async () => {
+        undo.disabled = true;
+        try {
+          await deps.api('POST', `/v1/conversations/${conversation}/entity-links/${link.id}/remove`, {}, 15_000);
+          const now = await deps.api<EntityRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
+          const next = entityNamed(now, self.type, self.name);
+          say(actionMsg, L('link.removed'), 'ok');
+          if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+          else await showInspector();
+        } catch (error) { say(msg, errorText(lang, error), 'err'); undo.disabled = false; }
+      });
+      rows.push(el('div', { class: 'btns' }, el('span', { text: `${link.name} = ${link.same_as}` }), undo));
+    }
+    const card: (Node | string)[] = [el('h2', { text: L('link.title') }), el('p', { class: 'sub', text: L('link.sub') }), ...rows];
+    if (others.length) {
+      const pick = el('select', { 'aria-label': L('link.pick') },
+        ...others.map((e) => el('option', { value: e.name, text: `${e.name} (${e.mentions})` })));
+      const join = el('button', { text: L('link.join') });
+      join.addEventListener('click', async () => {
+        join.disabled = true;
+        try {
+          const r = await deps.api<{ entity: EntityRow | null }>('POST', `/v1/conversations/${conversation}/entity-links`,
+            { entity_type: self.type, name: self.name, same_as: pick.value }, 15_000);
+          say(actionMsg, L('link.done', { a: self.name, b: pick.value }), 'ok');
+          if (r.entity && r.entity.id !== entity) go(`/v1/inspector/c/${conversation}/e/${r.entity.id}`);
+          else await showInspector();
+        } catch (error) { say(msg, errorText(lang, error), 'err'); join.disabled = false; }
+      });
+      card.push(el('div', { class: 'row' }, field(L('link.pick'), pick), el('div', { class: 'btns' }, join)));
+    } else {
+      card.push(el('div', { class: 'muted', text: L('link.none') }));
+    }
+    linkCard.replaceChildren(...card, msg);
+    linkCard.style.display = '';
   }
   inspectorBody.addEventListener('click', (event) => {
     const link = event.target instanceof Element ? event.target.closest('a') : null;

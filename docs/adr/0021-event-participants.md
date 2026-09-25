@@ -38,6 +38,13 @@ assertions in 18 scenes (`fixtures/model/phase8/scope-audit.json`, `tools/check_
 5. **Older generations (Q5).** Rows without participants recall through subject and object only, as
    before, until they are re-extracted.
 
+## Amendment (2026-09-25, ADR 0024)
+
+Since `extract-v9` KNOWN ENTITIES (and the new UNNAMED CHARACTERS list) take typed participants as
+mentions, after the subject and object of the same row: a character first shown without a name is often
+only a participant, and a later turn can link its name only if it is listed. Participants still never
+create alias edges or change an entity that subjects and objects define.
+
 ## Consequences
 
 - An event reaches the packet when the person it happened to is addressed (`tests/test_participants.py`;

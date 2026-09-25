@@ -123,6 +123,8 @@ exists; D30, ADR 0017), and since `extract-v7` `fulfilled` (a kept promise; D32,
 `event` also carries `salience` (`major` / `minor`, migration 0016; D32, ADR 0020). Since `extract-v8`
 an `event`, `goal`, `knows` or `destroyed` carries typed participants (`with`, migration 0017; D33,
 ADR 0021); they are outside the registry fingerprint like other read rules, but part of the prompt.
+Since `extract-v9` `also_called` also records the name the target turn reveals for a character listed
+as unnamed (D35, ADR 0024).
 
 **D7 — Bounded extraction context, per turn (revised 2026-09-23, ADR 0008).** The unit of
 extraction is the **turn**: a run of user messages plus the run of replies that answers it (comments,
@@ -240,7 +242,10 @@ are narrated or that the named character says about their own name (amended 2026
 linked to otherwise unconnected names is ambiguous and links nobody. Fact version keys use entity ids
 where resolved, text otherwise. Ids are `uuid5(conversation, RESOLVER_VERSION, type,
 name)`; a resolver change takes effect on the next read. **Amended 2026-09-24 (ADR 0023):** the
-persona's name as the host reports it is a persona name for characters (`resolve-v3`).
+persona's name as the host reports it is a persona name for characters (`resolve-v3`). **Amended 2026-09-25
+(ADRs 0024, 0025):** a reveal of a description the extraction was shown also links (`extract-v9`), the
+owner's links join names (`resolve-v4`, D36), and an entity is named after its first name that is not
+an unnamed character's `?` description.
 
 **D27 — Assertion semantics (Phase 5, ADR 0013).** Each assertion has `polarity` (positive /
 negative), `modality` (actual / hypothetical / dreamed / unknown; missing means unknown) and `source`
@@ -288,7 +293,8 @@ re-extraction of the opening turn does not orphan it. Threads are a read-time fo
 is stored and nothing closes on age. Open threads whose maker or recipient is mentioned (not the
 persona) go in a `<Threads>` section before the facts (at most 3). Extraction is shown the chat's open
 promises (`extract-v7`). A packet holds at most 3 `event` facts: major before minor or unlabeled, and a
-minor event only when the query is about it. Minor events are never deleted.
+minor event only when the query is about it. Minor events are never deleted. Since `extract-v9` an event
+is major by what it changes, in action or in words (D35, ADR 0024).
 
 **D33 — Typed participants (Phase 8, ADR 0021).** An `event`, `goal`, `knows` or `destroyed` lists the
 other characters or groups its value involves as `{name, type}` (`extract-v8`, migration 0017); nothing
@@ -296,7 +302,8 @@ is inferred from text. Participants are entity mentions under `resolve-v2`, read
 object and alias name, so they never change an existing entity or the KNOWN ENTITIES hints (ADR 0012
 amended). A participant named in the user's message counts like the subject for facts and claims; the
 persona never counts. Participation changes no knowledge mark, version key or thread. Older rows have
-no participants and recall as before.
+no participants and recall as before. Since `extract-v9` participants are listed in KNOWN ENTITIES too
+(D35, ADR 0024).
 
 **D34 — The host's persona name is the persona (ADR 0023; owner-reported bug, not a phase feature).** The
 plugin reads the personas from the host (H17) at load and every 30 s in the background, picks the chat's
@@ -305,6 +312,21 @@ bound persona or else the selected one, and sends its name with each sync. The s
 characters, so both spellings are one entity; recall never counts any of the persona's names as a
 mention, and KNOWN ENTITIES leaves the persona out. No name (refused permission, older plugin) means
 the behavior before.
+
+**D35 — Salience by change; names revealed later (ADR 0024; owner-reported, not a phase feature).**
+`extract-v9` labels an event `major` when it changes the story, in action or only in words: a
+confession or admission (the confession itself is an event), a secret revealed, a betrayal, a death, a
+first meeting, a change in how two characters treat or address each other, a decision that changes a
+relationship, goal or plan, a power first shown, or an incident others must deal with; routine scene
+business is `minor`. A character shown without a name is named by a `?` description; the prompt lists
+such characters as UNNAMED CHARACTERS and asks each turn whether it reveals one, and an `also_called`
+from a listed description to a name in the turn is valid. KNOWN ENTITIES includes typed participants.
+
+**D36 — The owner joins names (ADR 0025; owner request, not a phase feature).** `entity_link`
+(migration 0019) records that two names of one conversation and type are the same entity. It is owner
+input, kept by rebuilds and deleted with the conversation. Resolution (`resolve-v4`) joins the two
+names whenever the head mentions both; a linked name is never ambiguous. The panel adds and removes
+links on an entity's Inspector page; removal keeps the row (`removed_at`). There is no owner split.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

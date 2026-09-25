@@ -36,6 +36,11 @@ Outside the phase (owner-reported bug 2026-09-24, ADR 0023, D34, released in `v0
 the host reports it is the persona, so `{{user}}` and a named persona (유우마) are one entity; the plugin
 reads it with the host's "db" permission, asked at load (real-host check: `docs/HOST-FACTS.md`, "Persona
 name"). Migration 0018, `resolve-v3`.
+Outside the phase (owner report 2026-09-25, ADRs 0024 and 0025, D35 and D36, unreleased): `extract-v9` labels an
+event major by what it changes, in action or in words (admissions, speech-level and address changes, a relationship
+allowed, an incident others must deal with), names a character shown without a name by a `?` description and links
+it when a later turn reveals the name; the owner can join two names of a chat by hand in the panel (migration 0019,
+`resolve-v4`). Evidence: `docs/perf/extract-v9.md`.
 Outside the phase (owner request 2026-09-24, ADR 0022): Google Vertex AI service-account keys for the
 extraction LLM, released in `v0.1.0-beta.15`. Mocked token exchange in CI; not yet run against real Vertex (needs an
 owner-supplied service-account key).
@@ -90,16 +95,16 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H17, D1–D34, O2/O3/O4/O5 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H17, D1–D36, O2/O3/O4/O5 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
-| Schema | `migrations/0001`–`0018` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona |
+| Schema | `migrations/0001`–`0019` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
 | Tests | `apps/sidecar/tests` (287), `adapters/pocketrisu-plugin/test` (85) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k (D24) |
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K24 (K10 resolved) current as of `v0.1.0-beta.16`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
-| Decisions | `docs/adr/0001`–`0023` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name |
+| Decisions | `docs/adr/0001`–`0025` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-7.md` | 0–3 met; 4 soft subset met; 5, 6 and 7 met |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 
