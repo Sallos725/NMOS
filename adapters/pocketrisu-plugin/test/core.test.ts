@@ -89,6 +89,7 @@ describe('beforeRequest', () => {
     expect(await adapter.beforeRequest(prompt, 'model')).toBe(prompt);
     expect(await adapter.beforeRequest(prompt, 'model')).toBe(prompt);  // retry: served from the miss cache
     expect(warn).toHaveBeenCalledTimes(1);
+    expect((await adapter.status()).last).toMatchObject({ outcome: 'failed', error: expect.stringContaining('Failed to fetch') });
   });
 
   it('gives up at the deadline and returns the prompt unchanged', async () => {
@@ -186,7 +187,18 @@ describe('status', () => {
     const s = await adapter.status();
     expect(s).toMatchObject({ connected: true, version: '0.1.0b1', enabled: true, language: 'ko',
       features: { extraction: true, vectors: true, state: false } });
-    expect(s.last).toMatchObject({ outcome: 'injected', packetChars: PACKET.length });
+    expect(s.last).toMatchObject({ outcome: 'injected', packetChars: PACKET.length, packet: PACKET });
+  });
+
+  it('shows the packet a cached reuse sent as the last request', async () => {
+    const { host } = fakeHost(happy);
+    const adapter = createAdapter(host);
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    const first = (await adapter.status()).last!;
+    await adapter.beforeRequest(structuredClone(prompt), 'model');  // same state: cached
+    const again = (await adapter.status()).last!;
+    expect(again).not.toBe(first);
+    expect(again).toMatchObject({ outcome: 'injected', packet: PACKET });
   });
 
   it('reports an unreachable sidecar with the error', async () => {

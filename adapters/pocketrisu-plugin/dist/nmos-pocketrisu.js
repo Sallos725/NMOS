@@ -352,8 +352,8 @@ ${revisionHash}`;
       if (!personas || host.now() - personas.at > PERSONA_TTL_MS) warmPersonas();
       return personas?.value ? personaOf(chat, personas.value) : null;
     }
-    function remember(key, packet, ttl) {
-      cache.set(key, { packet, expires: host.now() + ttl });
+    function remember(key, packet, ttl, failed = false) {
+      cache.set(key, { packet, expires: host.now() + ttl, failed });
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
     }
     async function call(settings, path, body, deadline, method) {
@@ -437,9 +437,17 @@ ${revisionHash}`;
         ]));
         const cached = cache.get(key);
         if (cached && cached.expires > host.now()) {
+          const outcome2 = cached.packet ? "injected" : "nothing-relevant";
+          if (!cached.failed) last = {
+            at: Date.now(),
+            ms: Math.round(host.now() - started),
+            packetChars: cached.packet.length,
+            packet: cached.packet,
+            outcome: outcome2
+          };
           emit({
             type: "request-end",
-            outcome: cached.packet ? "injected" : "nothing-relevant",
+            outcome: outcome2,
             chars: cached.packet.length,
             conversationId: conversations.get(chat.id) ?? null
           });
@@ -476,15 +484,16 @@ ${revisionHash}`;
           packetChars: packet.length
         });
         const outcome = packet ? "injected" : "nothing-relevant";
-        last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, outcome };
+        last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, packet, outcome };
         emit({ type: "request-end", outcome, chars: packet.length, conversationId: synced.conversation_id ?? null });
         return injectPacket(prompt, packet, settings.injectPosition, turn);
       } catch (error) {
-        if (key) remember(key, "", FAILURE_TTL_MS);
+        if (key) remember(key, "", FAILURE_TTL_MS, true);
         last = {
           at: Date.now(),
           ms: Math.round(host.now() - started),
           packetChars: 0,
+          packet: "",
           outcome: "failed",
           error: error instanceof Error ? error.message : String(error)
         };
@@ -585,6 +594,7 @@ ${revisionHash}`;
     "status.last": ["\uB9C8\uC9C0\uB9C9 \uC694\uCCAD", "Last request"],
     "status.none": ["\uC544\uC9C1 \uC694\uCCAD\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uCC44\uD305\uC5D0\uC11C \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4 \uBCF4\uC138\uC694.", "No request yet. Send a message in a chat."],
     "status.ago": ["{n}\uCD08 \uC804", "{n}s ago"],
+    "status.packet": ["\uB123\uC740 \uAE30\uC5B5 \uBCF4\uAE30", "Show the injected memory"],
     "status.deadline_hint": [
       "\uC81C\uD55C \uC2DC\uAC04\uC744 \uB118\uACA8 \uC774\uBC88 \uC694\uCCAD\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4. \uAE34 \uCC44\uD305\uC774\uB77C\uBA74 \uC124\uC815 \uD0ED\uC758 \uC81C\uD55C \uC2DC\uAC04(ms)\uC744 \uB298\uB9AC\uC138\uC694.",
       "This request ran out of time and went without memory. For a long chat, raise Deadline (ms) in the Settings tab."
@@ -1260,6 +1270,7 @@ html,body{margin:0;background:#0c0c10}
 .nmos .insp .chip{display:inline-block;padding:0 6px;border-radius:4px;background:#2b2d36;font-size:12px}
 .nmos .inspbar{position:sticky;top:0;z-index:1;background:#0c0c10;padding:8px 0;margin-top:4px}
 .nmos .help{margin:8px 0 0}.nmos .help summary{cursor:pointer}.nmos .help p{margin:6px 0 0}
+.nmos .packet{margin:8px 0 0;max-height:420px;overflow:auto;background:#15161b;border:1px solid #30323b;border-radius:6px;padding:10px;font-family:ui-monospace,monospace;font-size:12.5px;white-space:pre-wrap;word-break:break-word}
 .nmos .insp.busy{opacity:.55;transition:opacity .15s}
 .nmos .insp details>summary{cursor:pointer;list-style:none}.nmos .insp details>summary::-webkit-details-marker{display:none}
 .nmos .insp details>summary h2{display:inline-block}
@@ -1383,6 +1394,12 @@ html,body{margin:0;background:#0c0c10}
           el("div", { class: "line" }, el("span", { class: `dot ${kind}` }), el("span", { text: what })),
           el("div", { class: "muted", text: `${L("status.ago", { n: Math.round((Date.now() - s.last.at) / 1e3) })} \xB7 ${s.last.ms}ms` })
         );
+        if (s.last.packet) lastCard.append(el(
+          "details",
+          { class: "help" },
+          el("summary", { text: L("status.packet") }),
+          el("pre", { class: "packet", text: s.last.packet })
+        ));
         if (s.last.error) lastCard.append(el("div", { class: "mono muted", text: s.last.error }));
         if (s.last.outcome === "failed" && s.last.error?.startsWith("deadline")) {
           lastCard.append(el("p", { class: "sub", text: L("status.deadline_hint") }));

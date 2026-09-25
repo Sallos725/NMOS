@@ -121,6 +121,7 @@ html,body{margin:0;background:#0c0c10}
 .nmos .insp .chip{display:inline-block;padding:0 6px;border-radius:4px;background:#2b2d36;font-size:12px}
 .nmos .inspbar{position:sticky;top:0;z-index:1;background:#0c0c10;padding:8px 0;margin-top:4px}
 .nmos .help{margin:8px 0 0}.nmos .help summary{cursor:pointer}.nmos .help p{margin:6px 0 0}
+.nmos .packet{margin:8px 0 0;max-height:420px;overflow:auto;background:#15161b;border:1px solid #30323b;border-radius:6px;padding:10px;font-family:ui-monospace,monospace;font-size:12.5px;white-space:pre-wrap;word-break:break-word}
 .nmos .insp.busy{opacity:.55;transition:opacity .15s}
 .nmos .insp details>summary{cursor:pointer;list-style:none}.nmos .insp details>summary::-webkit-details-marker{display:none}
 .nmos .insp details>summary h2{display:inline-block}
@@ -237,6 +238,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         : s.last.outcome === 'nothing-relevant' ? L('outcome.nothing') : L('outcome.failed');
       lastCard.append(el('div', { class: 'line' }, el('span', { class: `dot ${kind}` }), el('span', { text: what })),
         el('div', { class: 'muted', text: `${L('status.ago', { n: Math.round((Date.now() - s.last.at) / 1000) })} · ${s.last.ms}ms` }));
+      if (s.last.packet) lastCard.append(el('details', { class: 'help' },
+        el('summary', { text: L('status.packet') }), el('pre', { class: 'packet', text: s.last.packet })));
       if (s.last.error) lastCard.append(el('div', { class: 'mono muted', text: s.last.error }));
       // A long chat that runs out of time gets no memory at all (fail open), silently: say what helps.
       if (s.last.outcome === 'failed' && s.last.error?.startsWith('deadline')) {

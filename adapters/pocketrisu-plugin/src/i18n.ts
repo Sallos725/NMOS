@@ -34,6 +34,7 @@ const STRINGS = {
   'status.last': ['마지막 요청', 'Last request'],
   'status.none': ['아직 요청이 없습니다. 채팅에서 메시지를 보내 보세요.', 'No request yet. Send a message in a chat.'],
   'status.ago': ['{n}초 전', '{n}s ago'],
+  'status.packet': ['넣은 기억 보기', 'Show the injected memory'],
   'status.deadline_hint': ['제한 시간을 넘겨 이번 요청은 기억 없이 보냈습니다. 긴 채팅이라면 설정 탭의 제한 시간(ms)을 늘리세요.',
     'This request ran out of time and went without memory. For a long chat, raise Deadline (ms) in the Settings tab.'],
   'outcome.injected': ['기억 {n}자를 넣었습니다', 'Injected {n} characters of memory'],

@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **See what memory went in.** The Status tab's "Last request" card has **Show the injected memory**,
+  which opens the exact text the last request carried. The progress display only gave its length. The
+  text stays in the plugin's memory until the page reloads; nothing new is stored. A reroll served from
+  the plugin's cache now updates the card too.
+
 ## 0.1.0-beta.17
 
 Salience by what an event changes, names revealed later, and owner links between names (ADRs 0024,
