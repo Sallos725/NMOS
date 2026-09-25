@@ -5,10 +5,23 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+## 0.1.0-beta.18
+
+Plugin only: the Status tab shows the memory the last request injected. No schema change; the sidecar
+is unchanged apart from its version.
+
 - **See what memory went in.** The Status tab's "Last request" card has **Show the injected memory**,
   which opens the exact text the last request carried. The progress display only gave its length. The
   text stays in the plugin's memory until the page reloads; nothing new is stored. A reroll served from
   the plugin's cache now updates the card too.
+
+Replace the plugin file and reload PocketRisu. Updating the sidecar image is optional.
+
+### Known limitations
+
+- Only the last request's memory is shown, and only until the page reloads. Earlier requests keep only
+  counts (Inspector → conversation → Retrievals).
+- Otherwise unchanged from 0.1.0-beta.17; the full list is `docs/KNOWN-ISSUES.md`.
 
 ## 0.1.0-beta.17
 

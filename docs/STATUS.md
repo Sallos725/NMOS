@@ -44,13 +44,15 @@ it when a later turn reveals the name; the owner can join two names of a chat by
 Outside the phase (owner request 2026-09-24, ADR 0022): Google Vertex AI service-account keys for the
 extraction LLM, released in `v0.1.0-beta.15`. Mocked token exchange in CI; not yet run against real Vertex (needs an
 owner-supplied service-account key).
-Outside the phase (owner request 2026-09-25, unreleased): the Status tab shows the exact text the last request
+Outside the phase (owner request 2026-09-25, released in `v0.1.0-beta.18`): the Status tab shows the exact text the last request
 injected ("Show the injected memory"), held in the plugin's memory only. Real-host check on
 `ghcr.io/pocketrisu/pocketrisu:latest` at 1280 px and 390 px; the text matched what the stub model received.
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.17` (2026-09-25), public repository and image.** `extract-v9` (salience by
+**Public beta `v0.1.0-beta.18` (2026-09-25), public repository and image.** The Status tab shows the
+memory the last request injected (plugin only).
+`v0.1.0-beta.17` (2026-09-25): `extract-v9` (salience by
 what an event changes, unnamed characters and revealed names, ADR 0024) and owner entity links (ADR
 0025); migration 0019.
 `v0.1.0-beta.16` (2026-09-24): Bug fix: a named persona is
