@@ -36,7 +36,7 @@ Outside the phase (owner-reported bug 2026-09-24, ADR 0023, D34, released in `v0
 the host reports it is the persona, so `{{user}}` and a named persona (유우마) are one entity; the plugin
 reads it with the host's "db" permission, asked at load (real-host check: `docs/HOST-FACTS.md`, "Persona
 name"). Migration 0018, `resolve-v3`.
-Outside the phase (owner report 2026-09-25, ADRs 0024 and 0025, D35 and D36, unreleased): `extract-v9` labels an
+Outside the phase (owner report 2026-09-25, ADRs 0024 and 0025, D35 and D36, released in `v0.1.0-beta.17`): `extract-v9` labels an
 event major by what it changes, in action or in words (admissions, speech-level and address changes, a relationship
 allowed, an incident others must deal with), names a character shown without a name by a `?` description and links
 it when a later turn reveals the name; the owner can join two names of a chat by hand in the panel (migration 0019,
@@ -47,7 +47,10 @@ owner-supplied service-account key).
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.16` (2026-09-24), public repository and image.** Bug fix: a named persona is
+**Public beta `v0.1.0-beta.17` (2026-09-25), public repository and image.** `extract-v9` (salience by
+what an event changes, unnamed characters and revealed names, ADR 0024) and owner entity links (ADR
+0025); migration 0019.
+`v0.1.0-beta.16` (2026-09-24): Bug fix: a named persona is
 the persona (ADR 0023, above); migration 0018.
 `v0.1.0-beta.15` (2026-09-24): Phase 8 (above), Google
 Vertex AI keys for extraction (ADR 0022), an Inspector status-window example; migration 0017.
