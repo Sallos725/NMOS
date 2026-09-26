@@ -115,7 +115,7 @@ The remaining items were owner decisions. The owner chose:
 |---|---|---|
 | A-05 security default | A: host allow list, set from the compose environment | done: ADR 0030, D41, `NMOS_ALLOWED_HOSTS` |
 | A-06 invariant 9 wording | A: "PostgreSQL only; replacing it is not a goal" | done: ARCHITECTURE §2, AGENTS §3 |
-| A-10 Vertex AI keys | B: verify once against real Vertex with the owner's service-account key | waiting for the key |
+| A-10 Vertex AI keys | B: verify once against real Vertex with the owner's service-account key | done: works with `google/gemini-3.8-flash` (ADR 0022 "Verification"); a key without `roles/aiplatform.user` gets 403, and the connection test now names the role |
 | A-12 memory poisoning | A: add the case to the model evaluation now; add the prompt line with the next extractor generation | measured: an OOC note and fake `<Fact>` markup in a reply became facts 3/3 (`docs/perf/memory-poisoning.md`, K27); prompt line queued in STATUS |
 | A-14 `Predicate.epistemic` | A: remove with the next extractor generation | queued in STATUS; marked in `predicates.py` |
 | A-15 per-message `window_hash` path | A: remove, with an ADR (the owner's DB has no per-message extraction) | done: ADR 0031; `NMOS_EXTRACT_WINDOW` removed |

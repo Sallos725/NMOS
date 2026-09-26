@@ -109,7 +109,9 @@ language after a page reload.
   recall tuning; status-window parser rules (validated before saving).
   For **Google Vertex AI**, paste the whole service-account JSON key file into the LLM's API key field;
   the sidecar renews the access token itself (ADR 0022). Use a dedicated service account with only
-  the Vertex AI User role.
+  the Vertex AI User role (`roles/aiplatform.user`). Enabling the APIs is not enough: a key without the
+  role gets HTTP 403 on `aiplatform.endpoints.predict`, and the connection test says so. Checked against
+  real Vertex with `google/gemini-3.8-flash`.
 - One **Save** button at the bottom saves every changed section together. Unsaved changes are listed
   there, and closing asks whether to save them. Saving applies immediately and processes existing
   chats in the background.

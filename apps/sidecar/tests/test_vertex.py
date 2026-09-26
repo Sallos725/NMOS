@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from google.auth import jwt
 
-from nmos_sidecar import llm, vertex
+from nmos_sidecar import llm, runtime, vertex
 
 _KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 _PEM = _KEY.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
@@ -126,3 +126,18 @@ def test_config_rejects_bad_json_keys_placeholders_and_embedding_json(client):
     assert bad.status_code == 422 and len(detail) == 3
     assert any("{project}" in d for d in detail) and any("embed_api_key" in d for d in detail)
     assert client.get("/v1/config").json()["llm"]["api_key_set"] is False  # nothing was saved
+
+
+def test_a_vertex_permission_refusal_says_which_role_is_missing(monkeypatch):
+    """Real Vertex (2026-09-26): a key whose service account lacks the role gets 403 IAM_PERMISSION_DENIED on
+    `aiplatform.endpoints.predict`, even with the APIs enabled. The panel's test says what to grant."""
+    monkeypatch.setattr(vertex, "access_token", lambda info, client=None: "ya29.token")
+    body = [{"error": {"code": 403, "status": "PERMISSION_DENIED",
+                       "message": "Permission 'aiplatform.endpoints.predict' denied on resource '//aiplatform.googleapis.com/"
+                                  "projects/p1/locations/global/endpoints/openapi' (or it may not exist)."}}]
+    monkeypatch.setattr(llm.httpx, "post", lambda url, json, headers, timeout: httpx.Response(403, json=body))
+    base = "https://aiplatform.googleapis.com/v1/projects/p1/locations/global/endpoints/openapi"
+    out = runtime.test_llm(base, "google/gemini-3.8-flash", sa_key("p1"), True)
+    assert out["ok"] is False
+    assert out["error"].startswith("Vertex refused") and "roles/aiplatform.user" in out["error"]
+    assert "aiplatform.endpoints.predict" in out["error"]  # the original message follows
