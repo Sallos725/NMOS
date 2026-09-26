@@ -109,7 +109,8 @@ image.
 
 ## Owner decisions (2026-09-26)
 
-The remaining items were owner decisions. The owner chose:
+The remaining items were owner decisions. The owner chose (all released in `v0.1.0-beta.21` except the two
+items queued for the next extractor generation):
 
 | Item | Choice | State |
 |---|---|---|
