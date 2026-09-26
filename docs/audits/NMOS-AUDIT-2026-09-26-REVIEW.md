@@ -113,11 +113,10 @@ Recommended order after this PR:
 
 | Order | ID | What | Needs |
 |---|---|---|---|
-| 1 | A-07 | Fix the doc drifts; extend `tools/check_release.py` to cross-check the H/D/K maxima and the phase file list | — |
-| 2 | A-09 | Re-measure K1's 10k margin with extraction and embeddings on, or narrow the wording | real-host session |
-| 3 | A-16 | Schema-transition test (0013 → 0020 with rows) and a `pg_dump` backup/rollback note | — |
-| 4 | A-08 | Commit startup steps one by one | — |
-| — | A-05, A-06, A-10, A-12, A-14, A-15 | As in the audit's owner-decision table | owner decision |
+| 1 | A-09 | Re-measure K1's 10k margin with extraction and embeddings on (the wording is narrowed, see A-07) | real-host session |
+| 2 | A-16 | Schema-transition test (0013 → 0020 with rows) and a `pg_dump` backup/rollback note | — |
+| 3 | A-08 | Commit startup steps one by one | — |
+| — | A-05, A-06 (invariant 9 wording, the one drift left), A-10, A-12, A-14, A-15 | As in the audit's owner-decision table | owner decision |
 
 A-01, A-02 and A-04 were released in `v0.1.0-beta.20` and are listed under `docs/KNOWN-ISSUES.md` →
 Resolved.
@@ -132,3 +131,27 @@ Resolved.
 Tests: `test_compose_env.py` checks that sidecar and worker share one environment and that every variable
 documented in README or `.env.example` reaches it (it failed for both files before the change).
 `test_generations.py::test_a_worker_whose_settings_give_another_key_sees_the_jobs_it_cannot_serve`.
+
+**A-07 — fixed after beta.20** (branch `audit-a07-doc-drift`). Of the thirteen rows in the audit's
+"문서–코드 불일치" table:
+
+| # | State |
+|---|---|
+| 1 README `H1–H14` | fixed: `H1–H17` |
+| 2 README, guide.ko "unreleased / 다음 릴리스" `extract-v10` | fixed: "since 0.1.0-beta.19" / "0.1.0-beta.19부터" |
+| 3 AGENTS "`PHASE-8.md` is the latest" | fixed |
+| 4 ARCHITECTURE §6 `saveSecretHeader` | fixed: plugin arg `auth_token` (ADR 0003, H12) |
+| 5 ARCHITECTURE §7 layout | fixed: phases to 9, `deploy/`, `perf/`, `audits/`, `proposals/`, the worker, current tools |
+| 6 STATUS `D1–D38`, `PHASE-0.md`–`PHASE-7.md` | fixed (D range earlier in #84) |
+| 7 Invariant 9 "storage is replaceable" | **open**: an invariant changes only by owner decision (A-06) |
+| 8 D9 `character_pov` | fixed: marked not implemented and not authorized |
+| 9 README plugin arguments | fixed: `route`, `language`, `hud` added |
+| 10, 11 `NMOS_EXTRACT_HINTS`, dev `NMOS_LLM_JSON_MODE` | fixed by A-03 |
+| 12 K1 / README 10k margin | wording narrowed in K1, README and guide.ko: measured with no facts or vectors; the rest is A-09 |
+| 13 AGENTS §0 duplicating STATUS | fixed: §0 points to STATUS and keeps only the standing rule |
+
+The release check now covers these. `tools/check_release.py:drift` compares the ranges in STATUS and
+README (`H1–Hn`, `D1–Dn`, `K1–Kn`), STATUS's ADR and phase-spec ranges, and AGENTS's "latest" phase with
+the lists they stand for. `apps/sidecar/tests/test_docs_consistency.py` runs it in CI on every change.
+Run against the audited commit `3fee5a8`, it reports rows 1, 3 and 6. At tag time, `check()` also refuses
+"(unreleased" or "(다음 릴리스" in README and guide.ko.

@@ -11,14 +11,10 @@ This file is the operating contract for Codex and other implementation agents.
 
 Continue the **current phase** as far as possible without violating any stop condition.
 
-The current phase is always the one named in `docs/STATUS.md`. As of 2026-09-24:
-
-> **Phase 8 — Event Participants (`docs/phases/PHASE-8.md`, Track B, B3 narrowed) is complete**
-> (2026-09-24, `v0.1.0-beta.15`). Phases 0–3, the Phase 4 soft subset and Phases 5–7 are complete.
-> Public beta. No phase is current on `main`: hard POV isolation (D9 `character_pov`), the rest of B3
-> and Track B, B4–B7 are not authorized. Bug fixes, correctness, docs and CI work stay allowed.
-> **Phase 9 — Accountable Packets** (`docs/phases/PHASE-9.md`, ADR 0027) is complete (2026-09-26), done
-> at the owner's request and merged after review; released in `v0.1.0-beta.19`.
+The current phase, the latest release and what is complete are in `docs/STATUS.md` ("Current phase");
+read them there, not here. Unless STATUS names a current phase, none is: hard POV isolation (D9
+`character_pov`), the rest of Track B B3 and B4–B7 are not authorized. Bug fixes, correctness, docs and
+CI work stay allowed.
 
 Do not start a phase without its phase document and without the evidence it requires. Work that is
 not a phase feature (bug fixes, correctness, docs, CI) is allowed at any time. It must still keep the
@@ -35,8 +31,8 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-8.md` is the latest;
-   `PHASE-0.md`…`PHASE-7.md` still define the behavior they introduced).
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-9.md` is the latest;
+   `PHASE-0.md`…`PHASE-8.md` still define the behavior they introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
 6. Relevant ADRs in `docs/adr/`.
 

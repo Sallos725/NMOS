@@ -12,6 +12,10 @@ later, is `docs/KNOWN-ISSUES.md`.
   environment, and `NMOS_EXTRACT_HINTS` (documented, but never passed to the containers) is included. The
   worker also logs a warning when queued jobs of the active generation match none of its handlers. A test
   checks that every documented variable reaches both services.
+- **Docs follow the code again** (audit A-07). The README lists every plugin argument (`route`, `language`,
+  `hud` were missing) and no longer calls `extract-v10` unreleased. K1's 10,000-message margin is stated
+  for what was measured: chats with no facts or vectors; extraction and embeddings add to it. CI now fails
+  when a summary's host-fact, decision, known-issue, ADR or phase range falls behind.
 
 ## 0.1.0-beta.20
 

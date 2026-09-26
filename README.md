@@ -143,7 +143,9 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_SIDECAR_BIND` / `NMOS_SIDECAR_PORT` | `127.0.0.1` / `8790` | Where the sidecar listens |
 
 Plugin arguments: `sidecar_url`, `auth_token`, `disabled` (1 = off), `reserved_memory_tokens`
-(0 = 600), `deadline_ms` (0 = 3000), `inject_position` (`before_last_user` or `end`).
+(0 = 600), `deadline_ms` (0 = 3000), `inject_position` (`before_last_user` or `end`), `route` (`auto`,
+`direct` or `server`: how the plugin reaches the sidecar), `language` (`ko` or `en`), `hud` (1 = progress
+display on the chat screen).
 
 **Cost note:** with an LLM configured, every turn (your message plus the reply) is one extraction
 call once you continue from it, plus up to `NMOS_EXTRACT_BACKFILL` calls when a long chat is first seen.
@@ -210,7 +212,7 @@ only in words: an admission, a change from formal to informal speech or a new fo
 relationship someone allows, or an incident everyone must deal with. Someone shown without a name is
 written as a `?` description (`?검은 망토의 남자`) and joined to their name when a later turn reveals it.
 
-How characters speak to and call each other is remembered as its own fact (unreleased, `extract-v10`): an
+How characters speak to and call each other is remembered as its own fact (since 0.1.0-beta.19, `extract-v10`): an
 agreement to drop formal speech, a form of address someone asks for, or a decided change back becomes
 `<Fact kind="addresses">Radia addresses {{user}}: informal speech, calls them 'Yuuma'</Fact>`, one per
 direction; a newer one replaces the older. A reply that only slips into another speech level is not
@@ -257,8 +259,9 @@ The full list with workarounds is [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md)
   rather than hard-isolated.
 - Very long chats: on PocketRisu v1.12.0 NMOS adds about 1.5 s before the reply starts at 5,000
   messages, 2.7 s at 10,000 and 4.1 s at 15,000 (the host pauses after handing NMOS the chat). The
-  default 3 s deadline covers up to about 10,000 messages; for longer chats raise Deadline (ms) in the
-  panel's Settings tab, or those requests go without memory. See `docs/perf/scale.md`.
+  default 3 s deadline covers up to about 10,000 messages as measured, with no facts or vectors in the
+  chat; extraction and embeddings add to that (not measured on the host). For longer chats, or if long
+  chats go without memory, raise Deadline (ms) in the panel's Settings tab. See `docs/perf/scale.md`.
 - Changing the embedding model/endpoint re-embeds previously covered history (recent messages first;
   the Inspector shows coverage as partial until done). Changing the LLM model/endpoint re-extracts only
   each chat's recent turns (`NMOS_EXTRACT_BACKFILL`, default 100); older turns keep the previous model's
@@ -278,7 +281,7 @@ cd apps/sidecar && uv sync && uv run pytest               # needs the compose Po
 cd adapters/pocketrisu-plugin && npm ci && npm test && npm run typecheck && npm run build
 ```
 
-Design: `ARCHITECTURE.md` (invariants, host facts H1–H14, decisions), `docs/phases/`, `docs/adr/`,
+Design: `ARCHITECTURE.md` (invariants, host facts H1–H17, decisions), `docs/phases/`, `docs/adr/`,
 `docs/HOST-FACTS.md`. Agent contract: `AGENTS.md`.
 
 ## License
