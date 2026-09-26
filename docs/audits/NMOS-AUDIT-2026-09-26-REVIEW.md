@@ -211,3 +211,25 @@ before the change), and the next start completes it.
 - K1, README, guide.ko and `docs/perf/scale.md` now give the measured numbers, and the workaround
   deadline (≈4,000 ms at 10,000 messages with extraction on). The default deadline (D24) is unchanged.
   Changing it, or making fact reads cheaper at this size, is a separate decision (below).
+
+## Items left without a state (after beta.21)
+
+Five findings had no decision above and no entry in STATUS or KNOWN-ISSUES. None needs an owner decision:
+each is a bug fix, a test fix or a known issue (branch `audit-leftovers`).
+
+- **A-11 — fixed.** `api.py:RedactToken`, installed by `app_factory` on the `uvicorn.access` logger, masks
+  `token=` in each logged request line. On a real `uvicorn … --factory` process, a request for
+  `/inspector?token=s3cret&lang=en` logged `GET /inspector?token=***&lang=en`, and the secret appeared 0
+  times in the log. The browser history still keeps the link; K21 and the README say so. Moving the
+  standalone Inspector to a cookie was not done: it would make cookie-authenticated POSTs (the owner's
+  entity links) a CSRF surface. Test: `test_inspector.py`.
+- **A-13 — documented as K28.** Reasoned from the code, as the audit did: no loss and no stale injection,
+  but commits and facts churn. Not reproduced on the host.
+- **A-17 — no change.** A caution about sample size, not a defect; K15 and each `docs/perf` file already
+  report their counts as small samples.
+- **A-18 — documented in K21.** README and guide.ko already explain the permission at install time.
+- **A-19 — fixed.** The deadline test ran on the wall clock (`< 300 ms` for a 50 ms deadline). It now runs
+  on vitest's fake clock and checks that the request is still pending at 49 ms and returns at 50 ms, so it
+  also catches a deadline that fires early; a deadline shortened by 10 ms fails it, as it did not before.
+  The 10,000-message manifest test (≈1.7 s idle, against vitest's 5 s default) has a 30 s limit. The other
+  timing tests only wait for timers they are ordered after, so load cannot fail them.

@@ -5,6 +5,18 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+The audit items the 2026-09-26 review left without a state (A-11, A-13, A-17, A-18, A-19). Sidecar only; no
+schema change and no new extractor or embedding generation.
+
+- **The sidecar's access log no longer shows the auth token** (audit A-11). The Inspector opened in a browser
+  tab passes the token as `?token=` on every link, and uvicorn logged each request line with it. The log now
+  shows `token=***`. The token still stays in that browser's history (K21); the panel's Inspector tab sends
+  it in a header.
+- Known issues: K28, two tabs or devices taking turns in one chat (audit A-13); K21 now covers the token in
+  Inspector links and the plugin's "full database" permission (audit A-18).
+- Plugin tests no longer depend on how busy the machine is (audit A-19): the deadline test runs on a fake
+  clock, and the 10,000-message manifest test has its own time limit.
+
 ## 0.1.0-beta.21
 
 The rest of the 2026-09-26 audit (`docs/audits/NMOS-AUDIT-2026-09-26.md` and its review): the owner's
