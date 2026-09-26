@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any
 from uuid import UUID
@@ -16,6 +17,7 @@ import psycopg
 from xml.sax.saxutils import escape, quoteattr
 
 from .entities import USER_NAMES, Resolution, resolve
+from .packet import Line
 from .predicates import HOLDER_PER_ITEM, REGISTRY, whereabouts
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
@@ -26,14 +28,14 @@ from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 # The allBefore cut is an uncorrelated scalar subquery, so it runs once (InitPlan). As a joined CTE, a
 # head commit without fresh statistics (every edit makes one) let the planner re-run it per row: ≈7 s
 # at 10k messages instead of ≈60 ms.
-ACTIVE_ASSERTIONS = """
+ACTIVE_ASSERTIONS_TEMPLATE = """
 WITH m AS (
     SELECT am.position, am.turn, coalesce(am.turn, -1 - am.position) AS unit, am.source_revision_id AS rid,
            am.window_hash, am.turn_hash, sr.lifecycle, sr.metadata, so.host_logical_id
     FROM active_membership am
     JOIN source_revision sr ON sr.id = am.source_revision_id
     JOIN source_object so ON so.id = sr.source_object_id
-    WHERE am.commit_id = %(head)s
+    WHERE am.commit_id = %(head)s{upto}
 ),
 live AS (
     SELECT e.id AS eid, e.extractor_key, m.position, m.turn, m.host_logical_id,
@@ -42,7 +44,7 @@ live AS (
     FROM extraction e
     JOIN projection_generation g ON g.key = e.extractor_key
     JOIN m ON m.rid = e.source_revision_id AND e.window_hash IN (m.turn_hash, m.window_hash)
-    WHERE e.discarded_at IS NULL AND m.lifecycle = 'accepted'
+    WHERE {known} AND m.lifecycle = 'accepted'
       AND m.position > (SELECT coalesce(max(position), -1) FROM m WHERE metadata->>'disabled' = 'allBefore')
       AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
 )
@@ -57,11 +59,26 @@ ORDER BY l.position, a.id
 """
 
 
-def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str) -> list[dict[str, Any]]:
+ACTIVE_ASSERTIONS = ACTIVE_ASSERTIONS_TEMPLATE.format(upto="", known="e.discarded_at IS NULL")
+# The same read "as of" an earlier request (ADR 0027): the head up to a position, and only what NMOS had
+# extracted by a time (an extraction discarded later still served then). A separate statement, so the
+# request path keeps its plan.
+ACTIVE_ASSERTIONS_AS_OF = ACTIVE_ASSERTIONS_TEMPLATE.format(
+    upto=" AND am.position <= %(upto)s",
+    known="e.created_at <= %(known_at)s AND (e.discarded_at IS NULL OR e.discarded_at > %(known_at)s)")
+
+
+def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str, upto: int | None = None,
+                      known_at: datetime | None = None) -> list[dict[str, Any]]:
     """ACTIVE_ASSERTIONS with participants parsed. They are fetched as text and parsed only where present:
     decoding every jsonb value through the driver cost ≈10 ms per fact read at 10,000 messages
-    (docs/perf/phase8-extraction.md)."""
-    rows = conn.execute(ACTIVE_ASSERTIONS, {"head": head, "key": extractor_key}).fetchall()
+    (docs/perf/phase8-extraction.md). With `upto` or `known_at`, the read as of an earlier request."""
+    if upto is None and known_at is None:
+        rows = conn.execute(ACTIVE_ASSERTIONS, {"head": head, "key": extractor_key}).fetchall()
+    else:
+        rows = conn.execute(ACTIVE_ASSERTIONS_AS_OF, {
+            "head": head, "key": extractor_key, "upto": upto if upto is not None else 2**31 - 1,
+            "known_at": known_at or datetime.now(timezone.utc)}).fetchall()
     for r in rows:
         if r["participants"] is not None:
             r["participants"] = _parse_participants(r["participants"])
@@ -195,7 +212,8 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
     return out
 
 
-def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None) -> dict[str, list[dict[str, Any]]]:
+def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None, upto: int | None = None,
+                known_at: datetime | None = None) -> dict[str, list[dict[str, Any]]]:
     """The head's assertions by what they may do (ADR 0013).
 
     - facts: current fact versions from actual narration (legacy rows without a source count as
@@ -209,15 +227,18 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
     - items: each item's whereabouts history with the outcome of every assertion (PHASE-6);
     - threads / unmatched: promises with their status, and resolutions that closed none (PHASE-7). The
       assertions a thread consumed are not facts, claims or other assertions as well.
+
+    `upto` and `known_at` read it as of an earlier request (ADR 0027): the head up to that position, the
+    extractions and owner links NMOS had by that time.
     """
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
                 "items": [], "threads": [], "unmatched": [], "resolution": None}
-    rows = [r for r in served_assertions(conn, head, extractor_key) if r["predicate"] in REGISTRY]
+    rows = [r for r in served_assertions(conn, head, extractor_key, upto, known_at) if r["predicate"] in REGISTRY]
     conv = conn.execute("SELECT w.conversation_id, c.host_persona_name FROM worldline_commit w"
                         " JOIN conversation c ON c.id = w.conversation_id WHERE w.id = %s", (head,)).fetchone()
     r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]),
-                links_of(conn, conv["conversation_id"]))
+                links_of(conn, conv["conversation_id"], known_at))
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []
@@ -266,11 +287,16 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None)
             "threads": threads, "unmatched": unmatched, "resolution": r}
 
 
-def links_of(conn: psycopg.Connection, conversation: UUID) -> list[dict[str, Any]]:
-    """The owner's current entity links of a conversation, oldest first (ADR 0025)."""
+def links_of(conn: psycopg.Connection, conversation: UUID, known_at: datetime | None = None) -> list[dict[str, Any]]:
+    """The owner's current entity links of a conversation, oldest first (ADR 0025); with `known_at`, the
+    links in force at that time (ADR 0027)."""
+    if known_at is None:
+        return conn.execute("SELECT id, entity_type, name, same_as, created_at FROM entity_link"
+                            " WHERE conversation_id = %s AND removed_at IS NULL ORDER BY created_at, id",
+                            (conversation,)).fetchall()
     return conn.execute("SELECT id, entity_type, name, same_as, created_at FROM entity_link"
-                        " WHERE conversation_id = %s AND removed_at IS NULL ORDER BY created_at, id",
-                        (conversation,)).fetchall()
+                        " WHERE conversation_id = %s AND created_at <= %s AND (removed_at IS NULL OR removed_at > %s)"
+                        " ORDER BY created_at, id", (conversation, known_at, known_at)).fetchall()
 
 
 def persona_of(host_persona_name: str | None) -> list[str]:
@@ -462,3 +488,26 @@ def claim_line(c: dict[str, Any]) -> str:
     if c.get("polarity") == "negative":
         attrs += ' negated="true"'
     return f"    <Claim{attrs}>{escape(fact_text(c))}</Claim>"
+
+
+def _marks(f: dict[str, Any]) -> dict[str, Any]:
+    """Knowledge marks worth keeping on a ledger line: who a placed secret is kept from (an echo of it in
+    the reply may be a leak, K11)."""
+    return {"hidden_from": list(f["hidden_from"])} if f.get("knowledge") == "limited" and f.get("hidden_from") else {}
+
+
+def fact_entry(f: dict[str, Any]) -> Line:
+    """A fact as a packet line with its provenance (ADR 0027): the assertion, and the words a reply can
+    echo (its value, else its object)."""
+    return Line("fact", fact_line(f), {"assertion": f["id"]}, f.get("turn"), fact_text(f),
+                f.get("value") or f.get("object") or "", _marks(f))
+
+
+def claim_entry(c: dict[str, Any]) -> Line:
+    return Line("claim", claim_line(c), {"assertion": c["id"]}, c.get("turn"), fact_text(c),
+                c.get("value") or c.get("object") or "", {"by": c.get("asserted_by")} if c.get("asserted_by") else {})
+
+
+def thread_entry(t: dict[str, Any]) -> Line:
+    return Line("thread", thread_line(t), {"assertion": t["id"]}, t.get("turn"),
+                f"{t['by']} → {t.get('to') or '?'}: {t.get('text') or ''}", t.get("text") or "", _marks(t))

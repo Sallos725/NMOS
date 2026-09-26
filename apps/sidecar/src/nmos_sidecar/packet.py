@@ -5,8 +5,11 @@ from __future__ import annotations
 import html
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 from xml.sax.saxutils import escape, quoteattr
+
+from . import spans
 
 PACKET_OPEN = '<NarrativeMemory version="0" source="nmos">'
 PACKET_NOTE = ("  <Note>Memory from earlier in this conversation (state, facts, excerpts). "
@@ -93,6 +96,20 @@ def excerpt(content: str, query: str, window: int = 2) -> str:
     return f"{prefix}{text}{suffix}"
 
 
+# Packet compilers (ADR 0027). A trace records which one built its packet, and a replay can compile the
+# same inputs with another. packet-v0 fills the budget strictly in section order (state, threads, facts,
+# excerpts): on the owner's chats it spent the whole default reserve on fact lines and placed an excerpt
+# in 7 of 168 requests. packet-v1 reserves room for the best excerpt and caps parser state.
+POLICIES = ("packet-v0", "packet-v1")
+DEFAULT_POLICY = "packet-v1"
+EXCERPT_SHARE = 0.3  # packet-v1: room kept for the best excerpt, as a share of the budget inside the frame
+STATE_SHARE = 0.4  # packet-v1: parser state may take at most this share (sim bots track many values)
+MIN_EXCERPT_CHARS = 24  # an excerpt cut shorter than this says too little to keep
+# packet-v1: an excerpt that mostly restates a fact, claim or promise line already offered adds nothing and
+# takes room (a trait message next to the trait; seen in the answer probe, docs/perf/phase9-packets.md).
+REPEATS = 0.5  # share of the excerpt's spans found in one offered line
+
+
 @dataclass(frozen=True)
 class Excerpt:
     turn: int
@@ -100,10 +117,12 @@ class Excerpt:
     text: str
     score: float
     revision_id: str
+    short: str = ""  # one-sentence form, used by packet-v1 when the full excerpt does not fit
 
 
-def excerpt_line(item: Excerpt) -> str:
-    return f"  <Excerpt turn=\"{item.turn}\" speaker={quoteattr(item.speaker)}>{escape(item.text)}</Excerpt>"
+def excerpt_line(item: Excerpt, text: str | None = None) -> str:
+    return (f"  <Excerpt turn=\"{item.turn}\" speaker={quoteattr(item.speaker)}>"
+            f"{escape(item.text if text is None else text)}</Excerpt>")
 
 
 @dataclass(frozen=True)
@@ -122,62 +141,197 @@ def state_block(items: list[StateItem]) -> list[str]:
     return lines
 
 
-def compile_packet(ranked: list[Excerpt], budget_tokens: int, state: list[StateItem] | None = None,
-                   facts: list[str] | None = None, threads: list[str] | None = None,
-                   lead_facts: list[str] | None = None) -> tuple[str, int, list[Excerpt], dict[str, int]]:
-    """Fill the budget in priority order — state, lead facts (how the cast stand with each other, ADR
-    0026), open threads (PHASE-7), facts, then excerpts by score — and emit the excerpts chronologically.
-    Lead facts open the Facts section. Returns the text, its token estimate, the chosen excerpts and how
-    many state items, threads and fact lines were kept; ("", 0, [], …) when nothing fits or nothing is
-    relevant."""
+@dataclass(frozen=True)
+class Line:
+    """A line offered to the <Threads> or <Facts> section, with where it came from (ADR 0027).
+
+    `kind` is what the ledger calls it (thread, fact, claim), `ref` its provenance (the assertion id),
+    `text` what the Inspector shows, and `content` the words it adds beyond the names it is about: the
+    part a reply can echo (`audit.echo`)."""
+    kind: str
+    xml: str
+    ref: dict[str, Any]
+    turn: int | None
+    text: str
+    content: str = ""
+    marks: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class Compiled:
+    text: str
+    tokens: int
+    excerpts: list[Excerpt]
+    ledger: list[dict[str, Any]]  # one entry per offered line, in offer order
+
+
+def _entry(kind: str, ref: dict[str, Any], turn: int | None, text: str, content: str = "",
+           marks: dict[str, Any] | None = None) -> dict[str, Any]:
+    out = {"kind": kind, "ref": ref, "turn": turn, "text": text[:400], "tok": 0, "placed": False, "why": "budget"}
+    if content and content != text:
+        out["content"] = content[:400]
+    if marks:
+        out["marks"] = marks
+    return out
+
+
+def _restates(item: Excerpt, lines: list[Line]) -> Line | None:
+    """The first offered line whose content (what it says beyond names) holds REPEATS of the excerpt's
+    spans, if any. Names are left out: "Hinata is in the chapel" does not repeat "Hinata located in
+    harbor"."""
+    for line in lines:
+        if line.content and spans.reuse(item.text, line.content) >= REPEATS:
+            return line
+    return None
+
+
+def _fit_excerpt(item: Excerpt, room: int) -> tuple[str, str] | None:
+    """The longest form of `item` whose line costs at most `room` tokens: the full excerpt, its best
+    sentence, or that sentence cut short. None when not even MIN_EXCERPT_CHARS fit."""
+    for form, text in (("full", item.text), ("short", item.short)):
+        if text and estimate_tokens(excerpt_line(item, text) + "\n") <= room:
+            return form, text
+    base = item.short or item.text
+    lo, hi = MIN_EXCERPT_CHARS, len(base) - 1
+    best = None
+    while lo <= hi:  # longest prefix that fits
+        mid = (lo + hi) // 2
+        cut = base[:mid].rstrip() + "…"
+        if estimate_tokens(excerpt_line(item, cut) + "\n") <= room:
+            best, lo = cut, mid + 1
+        else:
+            hi = mid - 1
+    return ("cut", best) if best else None
+
+
+def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateItem] | None = None,
+                  threads: list[Line] | None = None, facts: list[Line] | None = None,
+                  policy: str = DEFAULT_POLICY, lead: list[Line] | None = None) -> Compiled:
+    """Fill the budget and record every offered line in a ledger (ADR 0027).
+
+    Budget order is fixed: state, lead facts (how the cast stand with each other, ADR 0026), open threads
+    (PHASE-7), facts and claims, excerpts. Lead facts open the Facts section, which the output keeps after
+    Threads; excerpts are emitted in chronological order. packet-v0 fills them strictly in that order. packet-v1 skips excerpts that
+    mostly restate an offered thread, fact or claim line (REPEATS), keeps room for the best-ranked
+    remaining excerpt (EXCERPT_SHARE of the budget inside the frame; the excerpt is shortened to its best
+    sentence, or cut, to fit) and caps parser state at STATE_SHARE. Returns an empty text when
+    nothing fits or nothing is relevant; the ledger still lists what was offered."""
+    if policy not in POLICIES:
+        raise ValueError(f"unknown packet policy: {policy}")
+    state, threads, facts, lead = state or [], threads or [], facts or [], lead or []
+    ledger = ([_entry("state", {"key": i.key}, i.turn, f"{i.key}: {i.value}", i.value) for i in state]
+              + [_entry(l.kind, l.ref, l.turn, l.text, l.content, l.marks) for l in lead + threads + facts]
+              + [_entry("excerpt", {"revision": e.revision_id}, e.turn, e.text, e.text) for e in ranked])
     frame = [PACKET_OPEN, PACKET_NOTE, PACKET_CLOSE]
     used = estimate_tokens("\n".join(frame))
-    nothing = {"state": 0, "threads": 0, "facts": 0}
     if used >= budget_tokens:
-        return "", 0, [], nothing
+        return Compiled("", 0, [], ledger)
+    inner = budget_tokens - used
+    repeats: dict[int, Line] = {}
+    if policy == "packet-v1":
+        for n, item in enumerate(ranked):
+            if (same := _restates(item, lead + threads + facts)) is not None:
+                repeats[n] = same
+    first = next((n for n in range(len(ranked)) if n not in repeats), None)
+    reserved: tuple[str, str] | None = None
+    if policy == "packet-v1" and first is not None:
+        reserved = _fit_excerpt(ranked[first], int(inner * EXCERPT_SHARE))
+    reserve = estimate_tokens(excerpt_line(ranked[first], reserved[1]) + "\n") if reserved else 0
+    limit = budget_tokens - reserve  # what state, threads and facts may use
+    state_cap = used + int(inner * STATE_SHARE) if policy == "packet-v1" else budget_tokens
+
     kept_state: list[StateItem] = []
-    for item in state or []:
+    for n, item in enumerate(state):
         extra = state_block(kept_state + [item])
         cost = estimate_tokens("\n".join(extra)) - estimate_tokens("\n".join(state_block(kept_state)))
-        if used + cost <= budget_tokens:
-            kept_state.append(item)
-            used += cost
+        entry = ledger[n]
+        entry["tok"] = cost
+        if used + cost > min(limit, state_cap):
+            entry["why"] = "state_cap" if used + cost <= limit else "budget"
+            continue
+        kept_state.append(item)
+        used += cost
+        entry["placed"], entry["why"] = True, "placed"
     extras: list[str] = []
+    offset = len(state)
 
-    def section(lines: list[str] | None, tag: str, opened: bool = False) -> list[str]:
-        nonlocal used
+    def section(lines: list[Line], tag: str, opened: bool = False) -> list[str]:
+        nonlocal used, offset
         kept: list[str] = []
-        for line in lines or []:
-            cost = estimate_tokens(line + "\n") + (estimate_tokens(f"  <{tag}>\n  </{tag}>\n")
-                                                   if not kept and not opened else 0)
-            needed = [text for mark, text in NOTE_EXTRAS if mark in line and text not in extras]
+        for line in lines:
+            entry = ledger[offset]
+            offset += 1
+            cost = estimate_tokens(line.xml + "\n") + (estimate_tokens(f"  <{tag}>\n  </{tag}>\n")
+                                                     if not kept and not opened else 0)
+            needed = [text for mark, text in NOTE_EXTRAS if mark in line.xml and text not in extras]
             cost += sum(estimate_tokens(text) for text in needed)
-            if used + cost <= budget_tokens:
-                kept.append(line)
+            entry["tok"] = cost
+            if used + cost <= limit:
+                kept.append(line.xml)
                 extras.extend(needed)
                 used += cost
+                entry["placed"], entry["why"] = True, "placed"
         return kept
 
-    kept_lead = section(lead_facts, "Facts")
+    kept_lead = section(lead, "Facts")
     kept_threads = section(threads, "Threads")
     kept_facts = kept_lead + section(facts, "Facts", opened=bool(kept_lead))
-    chosen: list[Excerpt] = []
-    for item in ranked:
-        cost = estimate_tokens(excerpt_line(item) + "\n")
+    chosen: list[tuple[Excerpt, str]] = []
+    for n, item in enumerate(ranked):
+        entry = ledger[offset + n]
+        room = budget_tokens - used
+        if n in repeats:
+            entry["why"], entry["repeats"] = "repeats", repeats[n].ref
+            continue
+        if policy == "packet-v1":
+            # The best excerpt had room kept for it; what the other sections left may fit more of it.
+            fitted = _fit_excerpt(item, room)
+            if fitted is None or (fitted[0] == "cut" and not (n == first and reserved)):  # only it is ever cut
+                entry["tok"] = estimate_tokens(excerpt_line(item) + "\n")
+                continue
+            form, text = fitted
+        else:
+            form, text = "full", item.text
+        cost = estimate_tokens(excerpt_line(item, text) + "\n")
+        entry["tok"] = cost
         if used + cost > budget_tokens:
             continue
-        chosen.append(item)
+        chosen.append((item, text))
         used += cost
+        entry["placed"], entry["why"] = True, "placed"
+        if form != "full":
+            entry["form"], entry["text"] = form, text[:400]
     if not chosen and not kept_state and not kept_facts and not kept_threads:
-        return "", 0, [], nothing
-    chosen.sort(key=lambda e: e.turn)
+        return Compiled("", 0, [], ledger)
+    chosen.sort(key=lambda c: c[0].turn)
     body = state_block(kept_state)
     if kept_threads:
         body += ["  <Threads>", *kept_threads, "  </Threads>"]
     if kept_facts:
         body += ["  <Facts>", *kept_facts, "  </Facts>"]
-    body += [excerpt_line(e) for e in chosen]
+    body += [excerpt_line(e, t) for e, t in chosen]
     note = PACKET_NOTE.removesuffix("</Note>") + "".join(extras) + "</Note>"
     text = "\n".join([PACKET_OPEN, note, *body, PACKET_CLOSE])
-    return text, estimate_tokens(text), chosen, {"state": len(kept_state), "threads": len(kept_threads),
-                                                  "facts": len(kept_facts)}
+    return Compiled(text, estimate_tokens(text), [e for e, _ in chosen], ledger)
+
+
+def kept_counts(ledger: list[dict[str, Any]]) -> dict[str, int]:
+    """How many state items, threads and fact lines (facts and claims) a packet kept (ADR 0026's trace
+    fields), from its ledger."""
+    placed = [e["kind"] for e in ledger if e["placed"]]
+    return {"state": placed.count("state"), "threads": placed.count("thread"),
+            "facts": placed.count("fact") + placed.count("claim")}
+
+
+def compile_packet(ranked: list[Excerpt], budget_tokens: int, state: list[StateItem] | None = None,
+                   facts: list[str] | None = None, threads: list[str] | None = None,
+                   lead_facts: list[str] | None = None,
+                   policy: str = "packet-v0") -> tuple[str, int, list[Excerpt], dict[str, int]]:
+    """`compile_lines` for plain XML lines without provenance: (text, tokens, chosen excerpts, kept
+    counts)."""
+    def plain(kind: str, lines: list[str] | None) -> list[Line]:
+        return [Line(kind, x, {}, None, x) for x in lines or []]
+
+    out = compile_lines(ranked, budget_tokens, state, plain("thread", threads), plain("fact", facts), policy,
+                        plain("fact", lead_facts))
+    return out.text, out.tokens, out.excerpts, kept_counts(out.ledger)

@@ -343,6 +343,21 @@ speaks to and calls the object, when the target turn settles it (an agreement, a
 first use taken up, a decided change back). It is narration although the evidence is dialogue; a reply that
 only uses a speech level is not a change. `addresses` is in `STANDING` (D37).
 
+**D39 — Accountable packets (Phase 9, ADR 0027).** Every request
+records a ledger of the lines it offered its packet (state, thread, fact, claim, excerpt), each with its
+provenance (assertion, revision or state key), cost, whether it was placed and why not, and the request's
+inputs (query, previous reply, the ids already in the prompt, budget, recall options, generations, the
+head position). Migration 0020. The packet compiler is a named policy: `packet-v1` (default,
+`NMOS_PACKET_POLICY`) skips excerpts that only restate an offered fact, keeps 30 % of the budget inside
+the frame for the best remaining excerpt, shortened to its best sentence or cut to fit, and caps parser
+state at 40 %; `packet-v0` is the earlier compiler. A
+recorded request replays **as of** its time: the head cut at its position, and only extractions, vectors
+(`revision_embedding.created_at`) and owner links NMOS had by then. It reproduces the recorded ledger while
+the story up to that position is unchanged, and compiles the same inputs under another policy for an
+offline A/B (`tools/replay_packets.py`). Echo, report only: a placed line is echoed when the next reply
+reuses a span of its content that the request did not contain. An echoed secret (`hidden_from`) is flagged.
+Echo never ranks anything. Inspector "Last packet"; `GET /v1/trace/{id}/audit`, `/replay`.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
@@ -403,7 +418,8 @@ consumer needs it; empty future directories are not created in advance.
 | 6 | Item transitions and conflicts (Track B, B2) — **done (beta.13)** | Yes |
 | 7 | Promise threads and event salience (Track B, B3 narrowed) — **done (beta.14)** | Yes |
 | 8 | Typed event participants (Track B, B3 narrowed) — **done (beta.15)** | Yes |
-| 9+ | Rest of B3 (events, relationships, causal links), canon, hard POV, forensic recall, MCP | Yes |
+| 9 | Accountable packets: ledger, excerpt room, echo, as-of replay (Track B, B6 narrowed) — **done (unreleased)** | No (the answer probe uses one) |
+| 10+ | Rest of B3 (events, relationships, causal links), canon, hard POV, forensic recall, MCP | Yes |
 
 Each phase gets its own `PHASE-N.md` with acceptance criteria before work starts.
 

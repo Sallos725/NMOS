@@ -110,6 +110,11 @@ The Inspector lists conversations as **bot name · chat name** (after the next m
 and follows the panel language. The same pages are also served by the sidecar for a browser tab at
 **http://127.0.0.1:8790/inspector** (Korean by default, English at the top right).
 
+A conversation's page starts with what matters now (state, conflicts, promises, facts) and has a **Last
+packet** section: every line the latest request offered its memory packet, where it came from, whether it
+went in or why not (no budget, state cap), and, once the reply is in the chat, which lines the reply
+reused. A hidden fact the reply repeated is marked (ADR 0027).
+
 <p><img src="docs/images/panel-status.png" alt="NMOS panel, Status tab: sidecar connected, semantic recall on, last request injected 835 characters in 90 ms" width="560"></p>
 <p><img src="docs/images/inspector.png" alt="NMOS Inspector: one conversation shown as bot name · chat name, with vector coverage 43/43" width="760"></p>
 
@@ -132,7 +137,8 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_RECALL_THRESHOLD` | `0.4` | Minimum trigram match for lexical recall |
 | `NMOS_VECTOR_MIN_SIM` | `0.42` | Minimum cosine similarity for semantic recall (model-dependent) |
 | `NMOS_EMBED_QUERY_INSTRUCTION` | `auto` | Query instruction for instruction-tuned embedders (`auto` = Qwen3 format for `qwen3-embedding`; `none`; or your text) |
-| `NMOS_TRACE_RETENTION_DAYS` | `30` | How long retrieval traces are kept |
+| `NMOS_TRACE_RETENTION_DAYS` | `30` | How long retrieval traces (with each packet's ledger) are kept |
+| `NMOS_PACKET_POLICY` | `packet-v1` | Packet compiler (ADR 0027): `packet-v1` keeps room for the best excerpt; `packet-v0` is the earlier one |
 | `NMOS_AUTH_TOKEN` | off | Required if you expose the sidecar beyond loopback (`NMOS_SIDECAR_BIND`); set the plugin's `auth_token` too. See [Security](#security) |
 | `NMOS_SIDECAR_BIND` / `NMOS_SIDECAR_PORT` | `127.0.0.1` / `8790` | Where the sidecar listens |
 

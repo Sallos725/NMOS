@@ -59,3 +59,13 @@ def test_memory_modes_beat_recent_context(results):
     recent = by_case(results["recent"])
     assert all(r.gold_hit is not True for r in recent.values())
     assert sum(r.gold_hit is True for r in results["full"]) == sum(1 for c in CASES if c.gold)
+
+
+def test_budget_pressure_needs_the_excerpt_room_of_packet_v1(results):
+    """Phase 9 (ADR 0027): with fact lines filling the budget, packet-v0 drops the one excerpt that
+    answers, packet-v1 keeps room for it. Every other case answers the same under both."""
+    pressure = {c.name for c in CASES if c.category == "budget pressure"}
+    v0, v1 = by_case(results["full-v0"]), by_case(results["full"])
+    assert {name for name in pressure if v0[name].gold_hit is False} == pressure
+    assert all(v1[name].gold_hit for name in pressure)
+    assert {n for n, r in v0.items() if r.gold_hit is False} == pressure

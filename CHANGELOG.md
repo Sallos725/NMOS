@@ -22,6 +22,36 @@ later, is `docs/KNOWN-ISSUES.md`.
   If most facts do not fit, raise **기억 예산(토큰) / Memory budget (tokens)** in the panel (and lower the host's max
   context by the same amount).
 
+**Phase 9 — Accountable Packets** (ADR 0027, D39). Schema: migration 0020 (applied at startup). No new
+extractor generation of its own, no plugin change.
+
+- **Raw words get room again.** On real chats the facts filled the whole memory budget, and an excerpt
+  (a password, the words of a promise, a line of dialogue) reached the model in 7 of 168 requests. The
+  new packet compiler (`packet-v1`) keeps room for the best excerpt, shortening it to its best sentence
+  when needed, and caps status-window state. In an answer probe with a real response model, questions whose
+  answer was only in a message's words were answered in 6 of 6 runs with `packet-v1` when recall found
+  the message, and in none with the earlier compiler, which never placed it
+  (`docs/perf/phase9-packets.md`). `NMOS_PACKET_POLICY=packet-v0` restores the earlier compiler.
+- **Every line of the packet is accounted for.** Each request records every line it offered: the fact,
+  claim, promise, excerpt or state value and the assertion or message it came from, its cost, and whether
+  it went in or why not. The Inspector shows this as **Last packet**, and the retrievals table shows what
+  each packet held.
+- **What the reply used.** Once the reply to a request is in the chat, the Inspector shows which placed
+  lines the reply reused, and flags a hidden fact the reply repeated (a possible leak). This is a report
+  only.
+- **Replay.** A recorded request can be compiled again exactly as it was, as of its own time, or with
+  another packet compiler: `GET /v1/trace/{id}/replay`, and `tools/replay_packets.py` for an offline
+  comparison over many requests (read-only).
+- **Fix: your own message is no longer recalled as memory.** A short message (under 16 characters) as
+  the first of a chat was not recognized as already in the prompt and came back as an excerpt of itself.
+  The latest message is now always treated as in the prompt.
+
+### Known limitations (Phase 9)
+
+- Traces recorded before migration 0020 cannot be replayed.
+- The token estimate still over-counts Korean (K26).
+- Echo is a surface measure: a secret the reply rightly keeps is used without being echoed.
+
 ## 0.1.0-beta.18
 
 Plugin only: the Status tab shows the memory the last request injected. No schema change; the sidecar

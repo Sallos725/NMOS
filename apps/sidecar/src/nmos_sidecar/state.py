@@ -47,8 +47,10 @@ def rebuild_state(conn: psycopg.Connection, ruleset: RuleSet) -> int:
     return total
 
 
-def current_state(conn: psycopg.Connection, head_commit_id: UUID, rules_version: str) -> list[dict[str, Any]]:
-    """Latest value per key from accepted, active, visible revisions of the head (D8: via membership)."""
+def current_state(conn: psycopg.Connection, head_commit_id: UUID, rules_version: str,
+                  upto: int | None = None) -> list[dict[str, Any]]:
+    """Latest value per key from accepted, active, visible revisions of the head (D8: via membership);
+    with `upto`, of the head up to that position (a replay, ADR 0027)."""
     return conn.execute(
         """
         WITH m AS (
@@ -56,7 +58,7 @@ def current_state(conn: psycopg.Connection, head_commit_id: UUID, rules_version:
             FROM active_membership am
             JOIN source_revision sr ON sr.id = am.source_revision_id
             JOIN source_object so ON so.id = sr.source_object_id
-            WHERE am.commit_id = %(head)s
+            WHERE am.commit_id = %(head)s AND am.position <= %(upto)s
         )
         SELECT DISTINCT ON (st.key) st.key, st.value, m.position, m.host_logical_id, st.rule_id
         FROM state_observation st
@@ -68,5 +70,5 @@ def current_state(conn: psycopg.Connection, head_commit_id: UUID, rules_version:
           AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
         ORDER BY st.key, m.position DESC
         """,
-        {"head": head_commit_id, "version": rules_version},
+        {"head": head_commit_id, "version": rules_version, "upto": 2**31 - 1 if upto is None else upto},
     ).fetchall()
