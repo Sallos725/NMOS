@@ -75,6 +75,19 @@ describe('beforeRequest', () => {
     expect(calls.filter((c) => c === '/v1/retrieve')).toHaveLength(1);
   });
 
+  it('still syncs and injects when a reply in the prompt quotes the packet tag', async () => {
+    const { host, calls } = fakeHost(happy);
+    const quoted: PromptMessage[] = [
+      prompt[0]!,
+      { role: 'assistant', content: `${PACKET.split('\n')[0]} was in my notes.` },
+      prompt[1]!,
+    ];
+    const out = await createAdapter(host).beforeRequest(quoted, 'model');
+    expect(calls).toEqual(['/v1/sync/reconcile', '/v1/sync/bodies', '/v1/retrieve']);
+    expect(out).toHaveLength(quoted.length + 1);
+    expect(out.filter((m) => m.content === PACKET)).toHaveLength(1);
+  });
+
   it('passes auxiliary requests through without any call (S11)', async () => {
     const { host, calls } = fakeHost(happy);
     const adapter = createAdapter(host);

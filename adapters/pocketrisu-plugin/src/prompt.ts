@@ -51,8 +51,10 @@ export function isMainGeneration(prompt: PromptMessage[], mode: unknown, hostMes
   return mode === 'model' && userTurnIndex(prompt, hostMessages) >= 0;
 }
 
+/** Only a system message can be our packet: a reply or user message quoting the tag must not stop memory. */
 export function hasPacket(prompt: PromptMessage[]): boolean {
-  return Array.isArray(prompt) && prompt.some((m) => contentText(m?.content).includes(PACKET_TAG));
+  return Array.isArray(prompt)
+    && prompt.some((m) => m?.role === 'system' && contentText(m.content).includes(PACKET_TAG));
 }
 
 /** Visible text only: host regex scripts and status HTML often reshape what is sent to the model. */
