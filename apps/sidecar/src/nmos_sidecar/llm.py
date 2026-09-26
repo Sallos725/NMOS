@@ -73,8 +73,10 @@ class ChatModel:
             raise LLMError(f"HTTP {res.status_code}: {res.text[:300]}")
         try:
             text = res.json()["choices"][0]["message"]["content"] or ""
-        except (KeyError, IndexError, ValueError) as exc:
+        except (KeyError, IndexError, TypeError, ValueError) as exc:  # TypeError: a null message or choices
             raise LLMError(f"unexpected response shape: {exc}") from exc
+        if not isinstance(text, str):
+            raise LLMError(f"unexpected response shape: content is {type(text).__name__}, not text")
         return parse_json_object(text), text
 
 

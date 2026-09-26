@@ -282,3 +282,26 @@ def test_an_item_has_one_current_holder_and_keeps_its_history(llm_client, migrat
     assert [h["subject"] for h in held["key"]["history"]] == ["Mina"]
     packet = recall(llm_client, chat, "Who has the map now?")["packet"]["text"]
     assert "Mina possesses map" in packet and "Kaito possesses map" not in packet
+
+
+def test_an_unexpected_job_error_fails_the_job_and_the_worker_goes_on(llm_client, migrated, db):
+    """A handler bug or odd provider reply (e.g. TypeError) used to escape `run_once` and end the worker
+    thread while the process lived on (audit A-04). It must fail that job and leave the rest claimable."""
+    chat = SimChat()
+    chat.user("Hinata is in the old chapel.")
+    chat.reply("ok")
+    filler(chat, 2)
+    sync(llm_client, chat)
+    total = chat.complete_turns()
+    calls = {"n": 0}
+
+    def flaky(system: str, user: str) -> tuple[dict, str]:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise TypeError("'NoneType' object is not subscriptable")
+        return fake_complete(system, user)
+
+    assert drain(migrated, flaky) == total  # every job was handled, none stopped the loop
+    rows = db.execute("SELECT status, last_error FROM job ORDER BY last_error NULLS LAST").fetchall()
+    assert rows[0]["status"] == "queued" and "TypeError" in rows[0]["last_error"]  # retried later (backoff)
+    assert [r["status"] for r in rows[1:]] == ["done"] * (total - 1)
