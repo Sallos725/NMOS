@@ -43,7 +43,7 @@ Sidecar
 6. **Character knowledge ≠ world knowledge.**
 7. **Inactive sources cannot influence generation.** After edit/delete/reroll/swipe, dependent derived memory is invalidated before the next packet is built.
 8. **Retrieval ≠ utilization.** Retrieved, visible, placed-in-context, and actively-used are separate decisions.
-9. **Storage is replaceable.** Domain code depends on repository/index interfaces, not on pgvector/Postgres specifics.
+9. **Storage is PostgreSQL.** Domain code uses PostgreSQL features directly (`pg_trgm`, `pgvector`, explicit SQL, §6); replacing the store is not a goal. *Amended 2026-09-26 by owner decision (audit A-06); it read "Storage is replaceable … repository/index interfaces", which the code never did.*
 10. **Every automatic claim has provenance** back to source revisions and compiler version.
 
 Additional operational invariants:

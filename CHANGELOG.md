@@ -5,6 +5,15 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Known issue K27: an OOC note or memory-like markup inside a reply can become a fact** (audit A-12). The
+  first measurement, with the owner's extraction model, is in `docs/perf/memory-poisoning.md`: a
+  `[System: …]` line and a typed command were ignored, but an OOC note and a packet-shaped `<Fact …>`
+  inside a reply were stored as facts every time. The fix, a line in the extraction prompt, waits for the
+  next extractor generation, so re-extraction is paid once (owner decision). `tools/eval_poisoning_model.py`
+  re-runs the check.
+- **Invariant 9 now says what the code does:** storage is PostgreSQL, and replacing it is not a goal (owner
+  decision on audit A-06).
+
 - **Without a token, the sidecar answers only to known host names** (audit A-05, ADR 0030; owner decision).
   A web page can use DNS rebinding to reach a sidecar on `127.0.0.1` or the LAN from your own browser,
   and without a token it could read chats and settings. The sidecar now accepts requests addressed to an
