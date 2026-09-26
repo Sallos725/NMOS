@@ -12,7 +12,7 @@ without a PocketRisu change.
 |---|---|---|---|
 | K1 | Long chats wait before the reply; beyond ≈10,000 messages (or near it with extraction and embeddings on) memory needs a higher deadline | Performance | host |
 | K2 | The first generations in a long chat NMOS has not seen yet go without memory | Performance | by design (chunked first sync) |
-| K3 | After an edit, reroll or swipe, a long chat takes the slow sync path | Performance | protocol change (not planned) |
+| K3 | After an edit or deletion of an older message, a long chat takes the slow sync path | Performance | protocol change (not planned) |
 | K4 | Phones were not measured | Performance | evidence |
 | K5 | Every generation hangs after installing, updating or disabling the plugin until reload | Host | host (H13) |
 | K6 | PocketRisu must be opened at `localhost` or HTTPS | Host | browser rule |
@@ -62,13 +62,20 @@ several generations; those generations fail open. *Workaround:* none needed; mem
 upload completes. A temporarily higher deadline finishes it in one generation.
 Evidence: `docs/perf/scale.md`.
 
-**K3 — Edits, rerolls and swipes take the slow sync path.** Only a pure append is proven and
-reconciled from the tail (ADR 0010). Anything else — an edit, a deleted message, a swipe, and every
-reroll (the host removes the old reply before the plugin runs, H14) — takes the full path: ≈0.9 s at
-10,000 messages in the sidecar benchmark instead of ≈0.16 s. **Not measured on the real host**: added
-to K1's ≈2.7 s, a reroll near 10,000 messages is likely to exceed the 3 s default and go without memory.
-Removing the remaining full-manifest parsing needs a plugin–sidecar protocol change (ADR 0010).
-Evidence: `docs/perf/scale.md` (bench table, "Edit near head").
+**K3 — An edit or deletion of an older message takes the slow sync path.** Only a pure append is
+proven and reconciled from the tail (ADR 0010). A change to a message NMOS already holds — an edit, a
+deleted message, a swipe change of an older reply — takes the full path. Measured on the real host
+(PocketRisu v1.12.0, extraction and embeddings off): an edit about 30 messages back, then a message, took
+3.6–3.8 s at 10,000 messages, over the 3 s default, so that request goes without memory. It took 2.1–2.2 s
+at 5,000. **Rerolls and swipes of the last reply are not affected.** The reply they replace was never
+synced (a reply joins memory with the next request), so a reroll reuses the plugin's packet (within 10
+minutes on the same page) or finds nothing changed. A swipe change of the last reply followed by a message
+syncs as an append. Both stayed at or under an append's time (2.3–2.9 s at 10,000). With extraction and
+embeddings on, recall adds 0.4–0.7 s (K1).
+*Workaround:* the deadline K1 recommends for the chat's length covers it too; an edit near 10,000
+messages needs ≈4,000 ms without extraction. Removing the remaining full-manifest parsing needs a
+plugin–sidecar protocol change (ADR 0010).
+Evidence: `docs/perf/scale.md` ("Rerolls, swipes and edits on the real host").
 
 **K4 — Phones were not measured.** All latency numbers are desktop. A phone browser's copy of a
 long chat is likely slower; the real envelope there is unknown.

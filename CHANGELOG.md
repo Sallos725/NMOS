@@ -14,6 +14,9 @@ decision on K26. Sidecar only; no schema change and no new extractor or embeddin
   it in a header.
 - Known issues: K28, two tabs or devices taking turns in one chat (audit A-13); K21 now covers the token in
   Inspector links and the plugin's "full database" permission (audit A-18).
+- Known issues: K3 measured on the real host. A reroll or a swipe change of the last reply never takes the
+  slow sync path, because the reply it replaces was never synced. An edit of an older message does: 3.6–3.8 s
+  at 10,000 messages, over the 3 s default (`docs/perf/scale.md`).
 - Plugin tests no longer depend on how busy the machine is (audit A-19): the deadline test runs on a fake
   clock, and the 10,000-message manifest test has its own time limit.
 - **Korean memory packets hold more** (K26, ADR 0032; owner decision). The packet's budget is filled against
