@@ -14,7 +14,8 @@ Continue the **current phase** as far as possible without violating any stop con
 The current phase, the latest release and what is complete are in `docs/STATUS.md` ("Current phase");
 read them there, not here. Unless STATUS names a current phase, none is: hard POV isolation (D9
 `character_pov`), the rest of Track B B3 and B4–B7 are not authorized. Bug fixes, correctness, docs and
-CI work stay allowed.
+CI work stay allowed. The planned order of future work is `docs/ROADMAP-1.0.md` (a draft; each stage still
+needs its phase document and owner approval).
 
 Do not start a phase without its phase document and without the evidence it requires. Work that is
 not a phase feature (bug fixes, correctness, docs, CI) is allowed at any time. It must still keep the
@@ -69,7 +70,7 @@ If two normative documents appear to conflict:
 | 7 — promise threads and event salience (Track B, B3) | complete (2026-09-24, beta.14) | `PHASE-7.md`, ADRs 0019–0020 |
 | 8 — event participants (Track B, B3) | complete (2026-09-24, beta.15) | `PHASE-8.md`, ADR 0021 |
 | 9 — accountable packets (Track B, B6 narrowed) | complete (2026-09-26, beta.19) | `PHASE-9.md`, ADR 0027 |
-| 10+ (Track B, B3 remainder, B4–B7) | **not authorized** | `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
+| 10+ (Track B, B3 remainder, B4–B7) | **not authorized**; planned as stages 4–8 of `docs/ROADMAP-1.0.md` (draft) | `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
 ADR 0006/0007, `docs/perf/scale.md`).
@@ -344,20 +345,23 @@ evidence-bearing acceptance criteria were actually met.
 
 ## 13. Release cadence
 
-Owner decision, 2026-09-26. `main` takes merges as before; a release tag follows these rules.
+Owner decisions, 2026-09-26 and 2026-09-27. The road to 1.0 is `docs/ROADMAP-1.0.md`. `main` takes merges
+as before; tags follow these rules.
 
-| Kind | Examples | Tag |
+| Kind | Examples | Release |
 |---|---|---|
-| Urgent | memory lost for every request, a security fix, data loss or corruption | a release right away, whatever the interval |
-| Heavy | a new extractor generation, a migration, anything the user must act on (re-extract, change a setting) | bundled: collect the changes and ship them together |
-| Light | UI, performance, docs, tests, a changed default | no tag of its own; rides with the next release |
+| Urgent | memory lost for every request, a security fix, data loss or corruption | a patch release (`0.N.x`) right away |
+| Milestone | a roadmap stage meets its done criteria | the next minor version (`0.2.0` … `0.6.0`, then `1.0.0`) |
+| Everything else | features of the stage in progress, UI, performance, docs, tests, defaults | no tag; ships with the next milestone |
 
-- **At least 3 days between releases**, counted from the previous tag. Only an urgent fix may break it.
-- **Extractor changes wait for the next generation.** Each generation costs the user a paid
-  "Extract all history". An extractor prompt or schema change that is not urgent goes on the
-  "Queued for the next extractor generation" list in `docs/STATUS.md` instead of starting a
-  generation. A generation is cut when that list has grown enough to be worth a re-extraction, or a
-  quality problem cannot wait.
-- A phase being complete does not by itself call for a tag; it ships with the next release under these
-  rules.
-- When unsure which kind a change is, treat it as light and ask the owner before tagging early.
+- **Every `main` merge publishes `ghcr.io/sallos725/nmos-sidecar:edge`** (and `:edge-<commit sha>`) after
+  CI passes, with no tag and no GitHub release. The owner runs it to try work in progress; the plugin
+  for the same commit is `adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js`. A migration on `main`
+  reaches an `:edge` database before any release, so back up before switching production to `:edge`.
+- **A patch release must not ship half a stage.** If `main` holds user-visible work of an unfinished
+  stage, branch `release/0.N` from the last tag, cherry-pick the fix, and tag there.
+- **At most one extractor generation per milestone.** An extractor prompt or registry change goes on the
+  "Queued for the next extractor generation" list in `docs/STATUS.md` and ships with the stage.
+- **A bug fix that needs a migration, a new predicate, a new extractor generation, a new UI feature or a
+  new ADR is feature work**: it joins the current stage's plan, or ask the owner. Keep other fixes small.
+- Every release before `1.0.0` is a GitHub pre-release (`release.yml`).

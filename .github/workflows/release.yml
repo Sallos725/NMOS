@@ -37,11 +37,12 @@ jobs:
       - id: meta
         run: |
           # Every release moves :latest (newest published build); prereleases also move :beta.
+          # Before 1.0.0 every release is a prerelease (docs/ROADMAP-1.0.md).
           image=ghcr.io/sallos725/nmos-sidecar
           {
             echo "tags<<EOF"
             echo "$image:${GITHUB_REF_NAME#v}"
-            if [[ "$GITHUB_REF_NAME" == *-* ]]; then echo "$image:beta"; fi
+            if [[ "$GITHUB_REF_NAME" == *-* || "$GITHUB_REF_NAME" == v0.* ]]; then echo "$image:beta"; fi
             echo "$image:latest"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -61,7 +62,7 @@ jobs:
         run: |
           cp adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js nmos-pocketrisu.js
           cp deploy/docker-compose.yml nmos-docker-compose.yml
-          flags=""; [[ "$GITHUB_REF_NAME" == *-* ]] && flags="--prerelease"
+          flags=""; [[ "$GITHUB_REF_NAME" == *-* || "$GITHUB_REF_NAME" == v0.* ]] && flags="--prerelease"
           notes=$(awk -v v="## ${GITHUB_REF_NAME#v}" '$0==v{f=1;next} /^## /{f=0} f' CHANGELOG.md)
           gh release create "$GITHUB_REF_NAME" nmos-pocketrisu.js nmos-docker-compose.yml \
             --title "NMOS $GITHUB_REF_NAME" --notes "$notes" $flags
