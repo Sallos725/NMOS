@@ -284,6 +284,13 @@ docker compose exec sidecar nmos-rebuild                        # rebuild active
 docker compose exec sidecar nmos-rebuild --text                 # rewrite the normalized-text projection
 ```
 
+Upgrade fixtures (audit A-16; a database written by an earlier release, restored and upgraded by
+`tests/test_upgrade.py`). Needs the compose Postgres; runs that release's code from a temporary worktree:
+
+```bash
+cd apps/sidecar && uv run python ../../tools/make_upgrade_fixture.py v0.1.0-beta.16   # → fixtures/upgrade/
+```
+
 Scale benchmarks (#12, results in `docs/perf/scale.md`):
 
 ```bash

@@ -52,6 +52,35 @@ continues without memory.
 That's it: raw recall works with no model configured. The panel's **Inspector** tab shows what NMOS
 stored and what it injected.
 
+## Upgrade, backup and rollback
+
+Back up before upgrading. Run these next to your `docker-compose.yml`:
+
+```bash
+docker compose exec -T postgres pg_dump -U nmos -d nmos -Fc > nmos-backup.dump
+```
+
+Upgrade: replace `docker-compose.yml` with the new release's `nmos-docker-compose.yml`, then run
+`docker compose pull && docker compose up -d`. The sidecar applies database migrations when it starts.
+Replace the plugin file too and reload PocketRisu. Each release's CHANGELOG entry says what the upgrade
+re-processes, for example a new extractor generation. CI restores databases written by earlier releases
+(0.1.0-beta.7 and 0.1.0-beta.16) and upgrades them (`apps/sidecar/tests/test_upgrade.py`).
+
+Rollback: migrations only go forward, and an older image on a newer database is not tested. To go back,
+restore the backup you took before upgrading, then start the older release:
+
+```bash
+docker compose stop sidecar worker
+docker compose exec -T postgres dropdb -U nmos nmos
+docker compose exec -T postgres createdb -U nmos nmos
+docker compose exec -T postgres pg_restore -U nmos -d nmos < nmos-backup.dump
+NMOS_VERSION=0.1.0-beta.19 docker compose up -d   # the release you are going back to
+```
+
+Put the older plugin file back and reload PocketRisu. Your chats themselves live in PocketRisu. The next
+generation in each chat syncs what changed since the backup, and the worker extracts it again at the
+provider's cost.
+
 ## NMOS panel (status, inspector, settings)
 
 Open it from the **☰ menu left of the chat input → NMOS 기억 / NMOS memory**, or from PocketRisu →

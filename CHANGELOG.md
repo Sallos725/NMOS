@@ -12,6 +12,11 @@ later, is `docs/KNOWN-ISSUES.md`.
   environment, and `NMOS_EXTRACT_HINTS` (documented, but never passed to the containers) is included. The
   worker also logs a warning when queued jobs of the active generation match none of its handlers. A test
   checks that every documented variable reaches both services.
+- **Upgrades from earlier releases are tested, and backup and rollback are documented** (audit A-16). CI
+  restores databases that 0.1.0-beta.7 and 0.1.0-beta.16 wrote, with their own code, and upgrades them. It
+  checks that the chats stay in sync, the earlier facts stay served, the story goes on, and the worker,
+  delete and rebuild work. The README and the Korean guide give the backup, upgrade and rollback commands.
+  The rollback restores a backup; migrations only go forward.
 - **Docs follow the code again** (audit A-07). The README lists every plugin argument (`route`, `language`,
   `hud` were missing) and no longer calls `extract-v10` unreleased. K1's 10,000-message margin is stated
   for what was measured: chats with no facts or vectors; extraction and embeddings add to it. CI now fails

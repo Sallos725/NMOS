@@ -46,6 +46,33 @@ NMOS가 꺼져 있거나 느려도 채팅은 그대로 진행됩니다.
 여기까지만 해도 기본 기억(글자 일치 검색)이 동작합니다. NMOS 화면의 **인스펙터** 탭에서
 NMOS가 무엇을 저장했고 무엇을 넣었는지 볼 수 있습니다.
 
+## 업데이트 · 백업 · 되돌리기
+
+업데이트 전에 백업하세요. `docker-compose.yml`이 있는 폴더에서 실행합니다.
+
+```bash
+docker compose exec -T postgres pg_dump -U nmos -d nmos -Fc > nmos-backup.dump
+```
+
+업데이트는 새 릴리스의 `nmos-docker-compose.yml`로 `docker-compose.yml`을 바꾼 뒤
+`docker compose pull && docker compose up -d`로 합니다. DB 변경은 사이드카가 시작할 때 자동으로 적용됩니다.
+플러그인 파일도 바꾸고 PocketRisu를 새로고침하세요. 업데이트 때 무엇을 다시 처리하는지(예: 새 추출 세대)는
+릴리스마다 CHANGELOG에 적혀 있습니다.
+
+되돌리기: DB 변경은 앞으로만 적용되고, 새 DB에서 옛 이미지를 돌리는 것은 검증하지 않았습니다. 되돌리려면
+업데이트 전에 받은 백업을 복원한 뒤 옛 릴리스를 실행하세요.
+
+```bash
+docker compose stop sidecar worker
+docker compose exec -T postgres dropdb -U nmos nmos
+docker compose exec -T postgres createdb -U nmos nmos
+docker compose exec -T postgres pg_restore -U nmos -d nmos < nmos-backup.dump
+NMOS_VERSION=0.1.0-beta.19 docker compose up -d   # 되돌아갈 릴리스
+```
+
+옛 플러그인 파일도 다시 넣고 새로고침하세요. 대화 자체는 PocketRisu에 있으므로, 각 채팅의 다음 생성에서
+백업 이후 바뀐 내용이 다시 동기화되고 worker가 그만큼 다시 추출합니다(제공자 비용).
+
 ## NMOS 화면 (상태 · 인스펙터 · 설정)
 
 채팅 입력창 왼쪽의 **☰ 메뉴 → NMOS 기억**, 또는 PocketRisu → 설정 → **NMOS 기억**을 누르면
