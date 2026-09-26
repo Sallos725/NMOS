@@ -120,7 +120,7 @@ def test_thread_line_and_packet_section():
     line = thread_line(t)
     assert line == (f'    <Thread kind="promise" by="하나" to="{{{{user}}}}" turn="10" known_by="하나, {{{{user}}}}">'
                     f"{PROMISE}</Thread>")
-    text, _, _ = compile_packet([], 600, facts=['    <Fact kind="identity" turn="3">하나 identity: 기사</Fact>'],
+    text, _, _, _ = compile_packet([], 600, facts=['    <Fact kind="identity" turn="3">하나 identity: 기사</Fact>'],
                                 threads=[line])
     assert text.index("<Threads>") < text.index("<Facts>")
     assert "A Thread is a promise made in the story" in text

@@ -129,8 +129,8 @@ def test_disputed_fact_line_shows_both_sides():
 
 def test_packet_note_explains_disputed_only_when_used():
     from nmos_sidecar.packet import compile_packet
-    plain, _, _ = compile_packet([], 400, facts=['    <Fact kind="possesses" turn="1">a possesses b</Fact>'])
-    marked, _, _ = compile_packet([], 400, facts=['    <Fact kind="possesses" turn="1" disputed="true">a</Fact>'])
+    plain, _, _, _ = compile_packet([], 400, facts=['    <Fact kind="possesses" turn="1">a possesses b</Fact>'])
+    marked, _, _, _ = compile_packet([], 400, facts=['    <Fact kind="possesses" turn="1" disputed="true">a</Fact>'])
     assert "contradicts itself" not in plain and "contradicts itself" in marked
 
 

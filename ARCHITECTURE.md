@@ -187,7 +187,8 @@ names characters shown to know it (`known_by`) and/or characters it is kept from
 "does not know"; the packet Note says exactly this. A name in both lists is contradictory evidence and
 is dropped from both (noted on the assertion). Names are free text in this soft phase. A fact hidden
 from a character addressed right now is ranked first. Hard POV isolation stays out of scope: a sim bot
-writes every character in one generation (D9).
+writes every character in one generation (D9). **Amended 2026-09-26 (ADR 0026, D37):** a name in
+`known_by` no longer counts toward ranking.
 
 **D20 — Derived projections are bound to a generation (ADR 0006).** An extractor generation hashes
 compiler version, prompt and predicate-registry fingerprints, normalizer version, endpoint identity,
@@ -327,6 +328,13 @@ from a listed description to a name in the turn is valid. KNOWN ENTITIES include
 input, kept by rebuilds and deleted with the conversation. Resolution (`resolve-v4`) joins the two
 names whenever the head mentions both; a linked name is never ambiguous. The panel adds and removes
 links on an entity's Inspector page; removal keeps the row (`removed_at`). There is no owner split.
+
+**D37 — How the cast stand with each other comes first (ADR 0026; owner report, not a phase feature).**
+Fact ranking gives a mentioned fact a prior among equal mentions: `+0.5` for `relationship` and
+`feels_toward` (`STANDING`, read side, outside the registry), `+0.3` for a `major` event; a `known_by`
+name adds nothing. `STANDING` facts take the packet budget after state and before threads, and open the
+`<Facts>` section. The retrieval trace records how many state items, threads and facts fit, and the
+Inspector shows facts as kept/offered.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

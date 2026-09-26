@@ -104,7 +104,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "retrievals": ("최근 검색", "Recent retrievals"),
     "h.when": ("시각", "When"), "h.query": ("질의", "Query"), "h.fresh": ("최신 여부", "Fresh"),
     "h.cand": ("후보", "Cand."), "h.sel": ("선택", "Sel."), "h.in_ctx": ("이미 문맥", "In-ctx"),
-    "h.tokens": ("토큰", "Tokens"),
+    "h.tokens": ("토큰", "Tokens"), "h.facts_kept": ("사실 (넣음/후보)", "Facts (kept/offered)"),
     "h.reason": ("사유", "Reason"), "h.changes": ("변경", "Changes"), "h.kinds": ("종류", "Kinds"),
     "members": ("현재 메시지 (최신순)", "Head membership (newest first)"),
     "h.role": ("역할", "Role"), "h.lifecycle": ("상태", "Lifecycle"), "h.disabled": ("비활성", "Disabled"),
@@ -181,6 +181,13 @@ def page(title: str, body: str, lang: str = "ko") -> str:
 
 def _v(value: Any) -> str:
     return escape("" if value is None else str(value))
+
+
+def _facts_kept(timings: dict[str, Any]) -> str | None:
+    """Fact lines that fit the budget out of those offered (ADR 0026); traces before it only offered."""
+    if "facts" not in timings:
+        return None
+    return f"{timings['kept_facts']}/{timings['facts']}" if "kept_facts" in timings else f"?/{timings['facts']}"
 
 
 def table(headers: list[str], rows: Iterable[list[str]]) -> str:
@@ -501,9 +508,10 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     if other:
         parts.append(("other", t("other"), len(other), _other_table(other, lang), False))
     parts.append(("retrievals", t("retrievals"), len(traces), table(
-        [t(k) for k in ("h.when", "h.query", "h.fresh", "h.cand", "h.sel", "h.in_ctx", "h.tokens")] + ["ms"],
+        [t(k) for k in ("h.when", "h.query", "h.fresh", "h.cand", "h.sel", "h.in_ctx", "h.facts_kept", "h.tokens")]
+        + ["ms"],
         [[timestamp(r["created_at"]), _v(r["query"]), chip(lang, "f", r["freshness"]), _v(r["candidates"]),
-          _v(r["selected"]), _v(r["excluded"]), _v(r["token_estimate"]),
+          _v(r["selected"]), _v(r["excluded"]), _v(_facts_kept(r["latency_ms"] or {})), _v(r["token_estimate"]),
           _v((r["latency_ms"] or {}).get("sidecar_total"))] for r in traces]), False))
     parts.append(("commits", t("h.commits"), len(commits), table(
         ["#", t("h.reason"), t("h.changes"), t("h.kinds"), t("h.when")],

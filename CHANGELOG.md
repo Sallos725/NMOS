@@ -5,6 +5,16 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Settled relationships stay in the packet in crowded scenes** (ADR 0026). When a message names
+  several characters, every fact about them scored the same, and a fact's list of who knows it decided
+  the order, so trivia ("엘피 knows: 계란 껍질 …") took the few slots a 600-token packet has. A character's
+  agreement to speak 반말 ranked 23rd and was forgotten. Now, among facts of equal mention, how two
+  characters stand (`relationship`, `feels_toward`) comes first, then major events, and standing facts
+  get the budget before promise threads. A name in a fact's "known by" list no longer ranks it.
+- **See how much memory fit.** Inspector → conversation → Retrievals shows facts as kept/offered.
+  If most facts do not fit, raise **기억 예산(토큰) / Memory budget (tokens)** in the panel (and lower the host's max
+  context by the same amount).
+
 ## 0.1.0-beta.18
 
 Plugin only: the Status tab shows the memory the last request injected. No schema change; the sidecar

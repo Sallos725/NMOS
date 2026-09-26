@@ -173,9 +173,9 @@ def test_negation_without_a_current_version_is_a_negative_fact():
 
 def test_packet_note_explains_marks_only_when_used():
     from nmos_sidecar.packet import PACKET_NOTE, compile_packet
-    plain, _, _ = compile_packet([], 600, facts=['    <Fact kind="located_in" turn="1">A located in B</Fact>'])
+    plain, _, _, _ = compile_packet([], 600, facts=['    <Fact kind="located_in" turn="1">A located in B</Fact>'])
     assert PACKET_NOTE in plain and "negated" not in plain.split("<Facts>")[0]
-    marked, _, _ = compile_packet([], 600, facts=[
+    marked, _, _, _ = compile_packet([], 600, facts=[
         '    <Fact kind="located_in" turn="1" negated="true">A located in B</Fact>',
         '    <Claim by="C" kind="identity" turn="2">C identity: knight</Claim>'])
     note = marked.split("<Facts>")[0]
