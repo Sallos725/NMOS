@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createAdapter, personaOf, type HostPort, type HttpResult, type Settings } from '../src/core';
+import { deadlineAdvice } from '../src/deadline';
 import type { ActivityEvent } from '../src/hud';
 import { hasPacket } from '../src/prompt';
 import type { HostChat, PromptMessage } from '../src/types';
@@ -54,6 +55,12 @@ const happy = (path: string, body: any): HttpResult => {
   }
   return { status: 404, json: null };
 };
+
+/** Sync answers at once; recall answers after `ms`. */
+const slowRecall = (ms: number) => (path: string): Promise<HttpResult> | HttpResult =>
+  path === '/v1/retrieve'
+    ? new Promise((resolve) => setTimeout(() => resolve({ status: 200, json: { freshness: 'fresh', packet: { text: PACKET } } }), ms))
+    : { status: 200, json: { status: 'noop', active_commit: 'c', manifest_hash: 'm', conversation_id: 'conv-1' } };
 
 describe('beforeRequest', () => {
   it('reconciles, uploads bodies, retrieves once and injects', async () => {
@@ -111,6 +118,41 @@ describe('beforeRequest', () => {
     expect(await createAdapter(host).beforeRequest(prompt, 'model')).toBe(prompt);
     expect(performance.now() - started).toBeLessThan(300);
     expect(String(warn.mock.calls[0]?.[1])).toContain('deadline');
+  });
+
+  it('records the deadline, and how long the request took when recall answers late', async () => {
+    const { host } = fakeHost(slowRecall(150), { deadlineMs: 100 });
+    const adapter = createAdapter(host);
+    expect(await adapter.beforeRequest(prompt, 'model')).toBe(prompt);
+    await new Promise((r) => setTimeout(r, 120));
+    const { last } = await adapter.status();
+    expect(last).toMatchObject({ outcome: 'failed', deadlineMs: 100 });
+    expect(last!.neededMs).toBeGreaterThanOrEqual(140);
+    expect(deadlineAdvice(last)).toMatchObject({ level: 'over', deadlineMs: 100 });
+  });
+
+  it('after a reply that went without memory for the deadline, pops up once per page', async () => {
+    const { host } = fakeHost(slowRecall(150), { deadlineMs: 100 });
+    const alert = vi.fn();
+    const adapter = createAdapter({ ...host, alert });
+    for (let i = 0; i < 2; i++) {
+      await adapter.beforeRequest(structuredClone(prompt), 'model');
+      await new Promise((r) => setTimeout(r, 120));
+      adapter.onOutput({ chat, messageIndex: 1 });
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(String(alert.mock.calls[0]?.[0])).toMatch(/100ms.*설정 탭/s);
+  });
+
+  it('does not pop up after a request that made it', async () => {
+    const { host } = fakeHost(happy);
+    const alert = vi.fn();
+    const adapter = createAdapter({ ...host, alert });
+    await adapter.beforeRequest(prompt, 'model');
+    adapter.onOutput({ chat, messageIndex: 1 });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(alert).not.toHaveBeenCalled();
   });
 
   it('does not inject stale or empty packets', async () => {

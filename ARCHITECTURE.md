@@ -88,6 +88,7 @@ Evidence for every runtime claim is in `docs/HOST-FACTS.md`.
 | H15 | The V3 plugin iframe is sandboxed with only `allow-scripts allow-modals allow-downloads` and `allow="screen-wake-lock"`. Runtime (v1.12.0): a `target="_blank"` link is blocked ("sandboxed frame whose 'allow-popups' permission is not set"), and `navigator.clipboard.writeText` is refused by permissions policy. The V3 API has no call that opens a URL. | The plugin cannot open a browser tab. The Inspector is shown inside the panel from `/v1/inspector*`, and links in it must be handled by the panel (following one would navigate the plugin frame). |
 | H16 | With the `mainDom` permission (host confirm, persisted; a denial is permanent until reset) a V3 plugin gets the page through an async `SafeElement` proxy (text is escaped, `setInnerHTML` is sanitised). Element listeners are registered on the whole document. A plugin re-import leaves drawn elements behind until reload. | The progress HUD (D28) is opt-in from the panel, hit-tests clicks against its rect, and removes a leftover `.nmos-hud` before drawing. |
 | H17 | The V3 API has no user-name call. `getDatabase(['personas', 'selectedPersona'])` returns the personas (`id`, `name`, …) and the selected index behind the host's "db" permission, asked once (a denial returns `null` and is permanent until reset). The host names the user after the chat's `bindedPersona` (in the `getChatFromIndex` snapshot), else the selected persona. A typed `{{user}}` is stored with the name in place. | The plugin reads the persona name at load and in the background, never on the request path; the sidecar resolves it as the persona (ADR 0023, D34). |
+| H18 | The V3 `alert(message)` is PocketRisu's `alertNormal`: it sets the one global alert store (a later alert replaces the one on screen) and shows a modal with a Confirm button. Shown after a reply it appears over the chat and leaves the reply as it is. | The plugin alerts only from the output listener, after a reply, at most once per page (deadline advice, audit A-09); never on the request path. |
 
 ## 5. Key decisions
 
@@ -233,6 +234,10 @@ PocketRisu v1.12.0 the host stalls after `getChatFromIndex` hands the plugin a c
 plugin keeps reading the whole chat (D1, no bridge); the default `deadline_ms` is 3,000 (was 800) and
 the settings panel accepts 200 ms–30 s. The deadline is a cap: short chats still finish in ≈0.2 s,
 and fail open is unchanged. Chats beyond the default's reach get memory only with a higher deadline.
+**Amended 2026-09-26 (owner decision on audit A-09):** the default stays 3 s. The plugin warns instead.
+The status tab shows a card when the last request used 80 % of the deadline or more, or missed it, with
+the value to set: 1.25× what it took, rounded up to 500 ms. After a reply that went without memory for the
+deadline, the host's alert says the same, once per page (H18).
 
 **D25 — One current holder per item (ADR 0011).** `possesses` facts are versioned per item, not per
 holder: an item's latest assertion is current, earlier holders are its history. A read-side rule

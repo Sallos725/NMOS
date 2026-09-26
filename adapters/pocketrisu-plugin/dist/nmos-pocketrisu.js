@@ -41,6 +41,308 @@
     return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
   }
 
+  // src/form.ts
+  var DEFAULT_DEADLINE_MS = 3e3;
+  var MAX_DEADLINE_MS = 3e4;
+  var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
+  var VERTEX_URL = "https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi";
+  function serviceAccountProject(key) {
+    const text = key.trim();
+    if (!text.startsWith("{")) return null;
+    try {
+      const info = JSON.parse(text);
+      return info.type === "service_account" && typeof info.project_id === "string" && info.project_id ? info.project_id : null;
+    } catch {
+      return null;
+    }
+  }
+  function fillProject(url, key) {
+    const project = serviceAccountProject(key);
+    return project && url.includes("{project}") ? url.replace("{project}", encodeURIComponent(project)) : url;
+  }
+  function presetMatches(presetUrl, url) {
+    if (!presetUrl.includes("{project}")) return presetUrl === url;
+    const [head, tail] = presetUrl.split("{project}");
+    return url.startsWith(head) && url.endsWith(tail) && url.length > head.length + tail.length && !url.slice(head.length, url.length - tail.length).includes("/");
+  }
+  function dirtySections(baseline, current2) {
+    return SECTIONS.filter((s) => JSON.stringify(baseline[s]) !== JSON.stringify(current2[s]));
+  }
+  function num(value) {
+    const n = Number(value.trim());
+    return value.trim() !== "" && Number.isFinite(n) ? n : value;
+  }
+  function configBody(dirty, v) {
+    const body = {};
+    for (const [section, prefix] of [["llm", "llm"], ["emb", "embed"]]) {
+      if (!dirty.includes(section)) continue;
+      body[`${prefix}_url`] = v[section].url.trim();
+      body[`${prefix}_model`] = v[section].model.trim();
+      if (v[section].key.trim()) body[`${prefix}_api_key`] = v[section].key.trim();
+    }
+    if (dirty.includes("tune")) {
+      Object.assign(body, {
+        recall_threshold: num(v.tune.threshold),
+        vector_min_sim: num(v.tune.minSim),
+        recall_top_k: num(v.tune.topK),
+        facts_limit: num(v.tune.facts),
+        extract_backfill: num(v.tune.backfill)
+      });
+    }
+    if (dirty.includes("rules")) body.parsers = v.rules.trim() ? v.rules : null;
+    return body;
+  }
+  function connArgs(v) {
+    return {
+      sidecar_url: v.url.trim(),
+      route: v.route,
+      disabled: v.enabled ? 0 : 1,
+      reserved_memory_tokens: Number(v.reserved) || 600,
+      deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS))
+    };
+  }
+
+  // src/deadline.ts
+  var NEAR_FRACTION = 0.8;
+  function deadlineAdvice(r) {
+    if (!r || !(r.deadlineMs > 0)) return null;
+    let level;
+    let tookMs;
+    if (r.outcome === "failed") {
+      if (!r.error?.startsWith("deadline")) return null;
+      level = "over";
+      tookMs = r.neededMs ?? null;
+    } else {
+      if (r.ms < NEAR_FRACTION * r.deadlineMs) return null;
+      level = "near";
+      tookMs = r.ms;
+    }
+    const base = level === "over" ? Math.max(tookMs ?? 0, r.deadlineMs) : r.ms;
+    const suggestMs = Math.min(MAX_DEADLINE_MS, Math.max(r.deadlineMs + 500, Math.ceil(base * 1.25 / 500) * 500));
+    return { level, deadlineMs: r.deadlineMs, tookMs, suggestMs };
+  }
+  function formatMs(ms) {
+    return Math.round(ms).toLocaleString("en-US");
+  }
+
+  // src/i18n.ts
+  function langOf(value) {
+    return value === "en" ? "en" : "ko";
+  }
+  var STRINGS = {
+    // menus (registered once at load, in the language chosen then)
+    "menu.panel": ["NMOS \uAE30\uC5B5", "NMOS memory"],
+    // frame
+    "title": ["NMOS \uAE30\uC5B5", "NMOS memory"],
+    "tab.status": ["\uC0C1\uD0DC", "Status"],
+    "tab.inspector": ["\uC778\uC2A4\uD399\uD130", "Inspector"],
+    "tab.settings": ["\uC124\uC815", "Settings"],
+    "close": ["\uB2EB\uAE30", "Close"],
+    "refresh": ["\uC0C8\uB85C \uACE0\uCE68", "Refresh"],
+    "language": ["\uC5B8\uC5B4", "Language"],
+    // status view
+    "status.sidecar": ["\uC0AC\uC774\uB4DC\uCE74", "Sidecar"],
+    "status.checking": ["\uC0AC\uC774\uB4DC\uCE74 \uD655\uC778 \uC911\u2026", "Checking the sidecar\u2026"],
+    "status.connected": ["\uC5F0\uACB0\uB428", "Connected"],
+    "status.unreachable": ["\uC5F0\uACB0\uD560 \uC218 \uC5C6\uC74C", "Cannot reach"],
+    "status.fix": [
+      "\uD655\uC778: docker compose up -d \xB7 \uC8FC\uC18C \xB7 NMOS_CORS_ORIGINS\uC5D0 \uC774 PocketRisu \uC8FC\uC18C \uD3EC\uD568 \xB7 localhost \uB610\uB294 HTTPS\uB85C \uC811\uC18D",
+      "Check: docker compose up -d \xB7 the address \xB7 NMOS_CORS_ORIGINS includes this PocketRisu address \xB7 open via localhost or HTTPS"
+    ],
+    "status.memory_off": ["\uAE30\uC5B5 \uB123\uAE30\uAC00 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED\uC5D0\uC11C \uCF24 \uC218 \uC788\uC2B5\uB2C8\uB2E4.", "Memory is switched off. Turn it on in Settings."],
+    "status.features": ["\uAE30\uB2A5", "Features"],
+    "feature.state": ["\uC0C1\uD0DC\uCC3D", "Status window"],
+    "feature.extraction": ["\uC0AC\uC2E4 \uCD94\uCD9C", "Fact extraction"],
+    "feature.vectors": ["\uC758\uBBF8 \uAC80\uC0C9", "Semantic recall"],
+    "on": ["\uCF1C\uC9D0", "on"],
+    "off": ["\uAEBC\uC9D0", "off"],
+    "status.last": ["\uB9C8\uC9C0\uB9C9 \uC694\uCCAD", "Last request"],
+    "status.none": ["\uC544\uC9C1 \uC694\uCCAD\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uCC44\uD305\uC5D0\uC11C \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4 \uBCF4\uC138\uC694.", "No request yet. Send a message in a chat."],
+    "status.ago": ["{n}\uCD08 \uC804", "{n}s ago"],
+    "status.packet": ["\uB123\uC740 \uAE30\uC5B5 \uBCF4\uAE30", "Show the injected memory"],
+    "deadline.over.title": ["\u26A0 \uAE30\uC5B5\uC774 \uC81C\uD55C \uC2DC\uAC04\uC5D0 \uAC78\uB838\uC2B5\uB2C8\uB2E4", "\u26A0 Memory missed the deadline"],
+    "deadline.over": [
+      "\uB9C8\uC9C0\uB9C9 \uC694\uCCAD\uC740 \uAE30\uC5B5\uC744 \uC900\uBE44\uD558\uB294 \uB370 \uC81C\uD55C \uC2DC\uAC04 {d}ms\uB97C \uB118\uACA8{took} \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED\uC5D0\uC11C \uC81C\uD55C \uC2DC\uAC04(ms)\uC744 {s} \uC815\uB3C4\uB85C \uC62C\uB824 \uBCF4\uC138\uC694. \uB298\uB9B0 \uB9CC\uD07C \uB2F5\uC7A5 \uC2DC\uC791\uC774 \uB2A6\uC5B4\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+      "The last request needed more than its {d} ms deadline to prepare memory{took} and went without it. Raise Deadline (ms) in the Settings tab to about {s}. Replies may start that much later."
+    ],
+    "deadline.near.title": ["\uC81C\uD55C \uC2DC\uAC04\uC5D0 \uAC00\uAE5D\uC2B5\uB2C8\uB2E4", "Close to the deadline"],
+    "deadline.near": [
+      "\uB9C8\uC9C0\uB9C9 \uC694\uCCAD\uC740 \uC81C\uD55C \uC2DC\uAC04 {d}ms \uC911 {n}ms\uB97C \uC37C\uC2B5\uB2C8\uB2E4. \uCC44\uD305\uC774 \uB354 \uAE38\uC5B4\uC9C0\uBA74 \uAE30\uC5B5\uC774 \uBE60\uC9C8 \uC218 \uC788\uC73C\uB2C8, \uC124\uC815 \uD0ED\uC5D0\uC11C \uC81C\uD55C \uC2DC\uAC04(ms)\uC744 {s} \uC815\uB3C4\uB85C \uC62C\uB824 \uB450\uC138\uC694.",
+      "The last request used {n} ms of its {d} ms deadline. As the chat grows, memory may start to miss it: raise Deadline (ms) in the Settings tab to about {s}."
+    ],
+    "deadline.took": [" (\uC2E4\uC81C\uB85C\uB294 \uC57D {n}ms \uAC78\uB9BC)", " (it took about {n} ms)"],
+    "deadline.open_settings": ["\uC124\uC815 \uD0ED \uC5F4\uAE30", "Open Settings"],
+    "deadline.alert": [
+      "NMOS: \uC774\uBC88 \uB2F5\uC7A5\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4. \uAE30\uC5B5 \uC900\uBE44\uAC00 \uC81C\uD55C \uC2DC\uAC04 {d}ms\uB97C \uB118\uACBC\uC2B5\uB2C8\uB2E4{took}. NMOS \uD328\uB110 \u2192 \uC124\uC815 \uD0ED \u2192 \uC81C\uD55C \uC2DC\uAC04(ms)\uC744 {s} \uC815\uB3C4\uB85C \uC62C\uB824 \uBCF4\uC138\uC694. (\uC774 \uC54C\uB9BC\uC740 \uD398\uC774\uC9C0\uB97C \uC0C8\uB85C \uC5F4 \uB54C\uAE4C\uC9C0 \uB2E4\uC2DC \uB728\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.)",
+      "NMOS: this reply went without memory: preparing it took longer than the {d} ms deadline{took}. In the NMOS panel, Settings tab, raise Deadline (ms) to about {s}. (This notice does not show again until the page is reloaded.)"
+    ],
+    "outcome.injected": ["\uAE30\uC5B5 {n}\uC790\uB97C \uB123\uC5C8\uC2B5\uB2C8\uB2E4", "Injected {n} characters of memory"],
+    "outcome.nothing": ["\uAD00\uB828\uB41C \uAE30\uC5B5\uC774 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4", "Nothing relevant to inject"],
+    "outcome.failed": ["\uAC74\uB108\uB700 (\uC6D0\uB798 \uC694\uCCAD\uC740 \uADF8\uB300\uB85C \uBCF4\uB0C4)", "Skipped (the request went out unchanged)"],
+    // inspector view
+    "insp.loading": ["\uC778\uC2A4\uD399\uD130\uB97C \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Loading the inspector\u2026"],
+    "insp.back": ["\u2190 \uB4A4\uB85C", "\u2190 Back"],
+    "insp.browser": ["\uBE0C\uB77C\uC6B0\uC800\uC5D0\uC11C \uC9C1\uC811 \uC5F4 \uC218\uB3C4 \uC788\uC2B5\uB2C8\uB2E4: {url}", "Also available in a browser: {url}"],
+    "act.history": ["\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C", "Extract all history"],
+    "act.rebuild": ["\uAE30\uC5B5 \uC7AC\uAD6C\uCD95", "Rebuild memory"],
+    "act.rebuild_confirm": ["\uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC7AC\uAD6C\uCD95\uD569\uB2C8\uB2E4", "Click again to rebuild"],
+    "act.delete": ["\uB300\uD654 \uC0AD\uC81C", "Delete conversation"],
+    "act.delete_confirm": ["\uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC601\uAD6C \uC0AD\uC81C\uD569\uB2C8\uB2E4", "Click again to delete for good"],
+    "act.sub": [
+      "\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C: \uCC98\uC74C \uC5F0\uACB0\uD560 \uB54C \uAC74\uB108\uB6F4 \uC774 \uCC44\uD305\uC758 \uC774\uC804 \uD134\uAE4C\uC9C0 \uC0AC\uC2E4\uC744 \uCD94\uCD9C\uD558\uACE0 \uC784\uBCA0\uB529\uD569\uB2C8\uB2E4. \uAE30\uC5B5 \uC7AC\uAD6C\uCD95: \uC774 \uCC44\uD305\uC758 \uC0AC\uC2E4\uC744 \uBC84\uB9AC\uACE0 \uBAA8\uB4E0 \uD134\uC744 \uB2E4\uC2DC \uCD94\uCD9C\uD569\uB2C8\uB2E4(\uC6D0\uBB38\uC740 \uADF8\uB300\uB85C). \uC720\uB8CC API\uB294 \uD134\uB9C8\uB2E4 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4. \uB300\uD654 \uC0AD\uC81C: NMOS\uC5D0 \uC800\uC7A5\uB41C \uC774 \uCC44\uD305\uC758 \uBAA8\uB4E0 \uAE30\uB85D(\uC6D0\uBB38 \uD3EC\uD568)\uC744 \uC9C0\uC6C1\uB2C8\uB2E4. \uB418\uB3CC\uB9B4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. PocketRisu\uC758 \uCC44\uD305\uC740 \uADF8\uB300\uB85C\uC774\uACE0, \uADF8 \uCC44\uD305\uC5D0\uC11C \uB2E4\uC2DC \uC0DD\uC131\uD558\uBA74 \uC0C8 \uB300\uD654\uB85C \uCC98\uC74C\uBD80\uD130 \uAE30\uB85D\uB429\uB2C8\uB2E4.",
+      "Extract all history: extract facts and embeddings for the older turns of this chat that the first sync skipped. Rebuild memory: discard this chat's facts and extract every turn again (raw messages stay). Paid APIs cost money per turn. Delete conversation: delete everything NMOS stored for this chat, raw messages included. This cannot be undone. The chat in PocketRisu stays; generating in it again records it as a new conversation from scratch."
+    ],
+    "act.help": ["\uC774 \uBC84\uD2BC\uB4E4\uC740?", "What do these do?"],
+    "act.working": ["\uC694\uCCAD \uC911\u2026", "Requesting\u2026"],
+    "act.history_done": ["\uD134 {t}\uAC1C \uCD94\uCD9C\uACFC \uBA54\uC2DC\uC9C0 {m}\uAC1C \uC784\uBCA0\uB529\uC744 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0 \uB123\uC5C8\uC2B5\uB2C8\uB2E4.", "Queued {t} turns for extraction and {m} messages for embedding."],
+    "act.history_none": ["\uC774\uBBF8 \uC804\uBD80 \uCC98\uB9AC\uB418\uC5C8\uAC70\uB098 \uCC98\uB9AC \uC911\uC785\uB2C8\uB2E4.", "Everything is already processed or queued."],
+    "act.rebuild_done": [
+      "\uCD94\uCD9C {d}\uAC74\uC744 \uBC84\uB9AC\uACE0 \uD134 {t}\uAC1C\uB97C \uB2E4\uC2DC \uCD94\uCD9C\uD569\uB2C8\uB2E4. \uB05D\uB0A0 \uB54C\uAE4C\uC9C0 \uC774 \uCC44\uD305\uC758 \uC0AC\uC2E4\uC774 \uBE44\uC5B4 \uC788\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+      "Discarded {d} extractions; {t} turns are extracted again. Facts of this chat may be missing until then."
+    ],
+    "act.delete_done": ["\uB300\uD654\uB97C \uC0AD\uC81C\uD588\uC2B5\uB2C8\uB2E4 (\uBA54\uC2DC\uC9C0 {m}\uAC1C\uC758 \uAE30\uB85D).", "Conversation deleted (records of {m} messages)."],
+    "link.title": ["\uAC19\uC740 \uB300\uC0C1\uC73C\uB85C \uD569\uCE58\uAE30", "Same as another entity"],
+    "link.sub": [
+      "\uC774\uC57C\uAE30\uAC00 \uC2A4\uC2A4\uB85C \uC787\uC9C0 \uBABB\uD55C \uC774\uB984\uC744 \uC9C1\uC811 \uD569\uCE69\uB2C8\uB2E4(\uC608: \uC774\uB984 \uC5C6\uC774 \uBA3C\uC800 \uB098\uC628 \uC778\uBB3C\uACFC \uB098\uC911\uC5D0 \uC774\uB984\uC774 \uBC1D\uD600\uC9C4 \uC778\uBB3C). \uAE30\uC5B5 \uC7AC\uAD6C\uCD95\uC744 \uD574\uB3C4 \uC720\uC9C0\uB418\uACE0, \uC5B8\uC81C\uB4E0 \uD574\uC81C\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+      "Join names the story did not link on its own (e.g. someone shown without a name and named later). Kept across rebuilds; you can undo it at any time."
+    ],
+    "link.pick": ["\uAC19\uC740 \uB300\uC0C1", "Same as"],
+    "link.join": ["\uD569\uCE58\uAE30", "Join"],
+    "link.remove": ["\uD574\uC81C", "Undo"],
+    "link.none": ["\uD569\uCE60 \uC218 \uC788\uB294 \uAC19\uC740 \uC885\uB958\uC758 \uB300\uC0C1\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No other entity of this type."],
+    "link.done": ['"{a}"\uC640(\uACFC) "{b}"\uB97C \uD569\uCCE4\uC2B5\uB2C8\uB2E4.', 'Joined "{a}" and "{b}".'],
+    "link.removed": ["\uC5F0\uACB0\uC744 \uD574\uC81C\uD588\uC2B5\uB2C8\uB2E4.", "Link undone."],
+    "act.off": ["\uC0AC\uC2E4 \uCD94\uCD9C(\uB610\uB294 \uC784\uBCA0\uB529)\uC774 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED\uC5D0\uC11C \uCF1C\uC138\uC694.", "Fact extraction (or embeddings) is off. Turn it on in Settings."],
+    // settings: connection
+    "conn.title": ["\uC5F0\uACB0", "Connection"],
+    "conn.sub": [
+      "\uC774 \uBE0C\uB77C\uC6B0\uC800\uC758 PocketRisu \uD50C\uB7EC\uADF8\uC778 \uC124\uC815\uC785\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uAC00 \uB2E4\uB978 \uAE30\uAE30\uC5D0 \uC788\uC73C\uBA74 route=server\uAC00 \uC790\uB3D9\uC73C\uB85C \uC4F0\uC785\uB2C8\uB2E4.",
+      "This browser's PocketRisu plugin settings. If the sidecar runs on another device, route=server is used automatically."
+    ],
+    "conn.url": ["\uC0AC\uC774\uB4DC\uCE74 \uC8FC\uC18C", "Sidecar URL"],
+    "conn.route": ["\uACBD\uB85C", "Route"],
+    "conn.budget": ["\uAE30\uC5B5 \uC608\uC0B0(\uD1A0\uD070)", "Memory budget (tokens)"],
+    "conn.deadline": ["\uC81C\uD55C \uC2DC\uAC04(ms)", "Deadline (ms)"],
+    "conn.enabled": ["\uAE30\uC5B5 \uB123\uAE30 \uCF1C\uAE30", "Memory on"],
+    "conn.hint": ["PocketRisu\uC758 \uCD5C\uB300 \uCEE8\uD14D\uC2A4\uD2B8\uB97C \uAE30\uC5B5 \uC608\uC0B0\uB9CC\uD07C \uC904\uC5EC \uB450\uC138\uC694.", "Lower PocketRisu's max context by the memory budget."],
+    "conn.deadline_hint": [
+      "\uC81C\uD55C \uC2DC\uAC04 \uC548\uC5D0 \uAE30\uC5B5\uC744 \uC900\uBE44\uD558\uC9C0 \uBABB\uD558\uBA74 \uADF8 \uC694\uCCAD\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C5\uB2C8\uB2E4. \uAE30\uBCF8 3000ms. \uC544\uC8FC \uAE34 \uCC44\uD305(1\uB9CC \uAC1C \uC774\uC0C1)\uC5D0\uC11C \uAE30\uC5B5\uC774 \uC790\uC8FC \uBE60\uC9C0\uBA74 \uB298\uB9AC\uC138\uC694. \uB298\uB9B0 \uB9CC\uD07C \uB2F5\uC7A5 \uC2DC\uC791\uC774 \uB2A6\uC5B4\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+      "If memory is not ready within the deadline, that request goes without memory. Default 3000 ms. Raise it if very long chats (10,000+ messages) often miss memory; replies may start that much later."
+    ],
+    // settings: models
+    "llm.title": ["\uC0AC\uC2E4 \uCD94\uCD9C LLM", "Fact extraction LLM"],
+    "llm.sub": [
+      "\uD655\uC815\uB41C \uD134(\uC785\uB825\uACFC \uC751\uB2F5)\uB9C8\uB2E4 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uD55C \uBC88 \uD638\uCD9C\uD574 \uC778\uBB3C\xB7\uC7A5\uC18C\xB7\uC57D\uC18D\xB7\uAD00\uACC4\uB97C \uAE30\uB85D\uD569\uB2C8\uB2E4. \uC720\uB8CC API\uB294 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4.",
+      "Called once per settled turn (input and reply) in the background to record people, places, promises and relationships. Paid APIs cost money."
+    ],
+    "emb.title": ["\uC758\uBBF8 \uAC80\uC0C9 \uC784\uBCA0\uB529", "Semantic recall embeddings"],
+    "emb.sub": [
+      "\uB2E4\uB978 \uB9D0\uB85C \uBB3C\uC5B4\uB3C4 \uC608\uC804 \uC7A5\uBA74\uC744 \uCC3E\uC2B5\uB2C8\uB2E4. Ollama\uC758 qwen3-embedding:0.6b\uB97C \uCD94\uCC9C\uD569\uB2C8\uB2E4.",
+      "Finds earlier scenes even when asked in other words. Ollama qwen3-embedding:0.6b is recommended."
+    ],
+    "preset.off": ["\uC0AC\uC6A9 \uC548 \uD568", "Off"],
+    "preset.ollama": ["Ollama (\uC774 PC)", "Ollama (this PC)"],
+    "preset.custom": ["\uC9C1\uC811 \uC785\uB825 (OpenAI \uD638\uD658)", "Custom (OpenAI-compatible)"],
+    "model.provider": ["\uC81C\uACF5\uC790", "Provider"],
+    "model.endpoint": ["\uC8FC\uC18C (OpenAI \uD638\uD658 /v1)", "Endpoint (OpenAI-compatible /v1)"],
+    "model.model": ["\uBAA8\uB378", "Model"],
+    "model.llm_placeholder": ["\uBAA8\uB378 \uC774\uB984", "model name"],
+    "model.emb_placeholder": ["\uC784\uBCA0\uB529 \uBAA8\uB378", "embedding model"],
+    "model.key": ["API \uD0A4", "API key"],
+    "model.key_placeholder": ["\uD544\uC694\uD560 \uB54C\uB9CC \uC785\uB825", "only if needed"],
+    "model.key_saved": ["\uC800\uC7A5\uB428 \u2014 \uBC14\uAFC0 \uB54C\uB9CC \uC785\uB825", "saved \u2014 type only to change"],
+    "model.vertex_hint": [
+      "\uC11C\uBE44\uC2A4 \uACC4\uC815 JSON \uD0A4 \uD30C\uC77C \uB0B4\uC6A9\uC744 API \uD0A4 \uCE78\uC5D0 \uD1B5\uC9F8\uB85C \uBD99\uC5EC \uB123\uC73C\uC138\uC694. \uC8FC\uC18C\uC758 \uD504\uB85C\uC81D\uD2B8\uB294 \uD0A4\uC5D0\uC11C \uCC44\uC6CC\uC9C0\uACE0, \uD1A0\uD070\uC740 \uC0AC\uC774\uB4DC\uCE74\uAC00 1\uC2DC\uAC04\uB9C8\uB2E4 \uAC31\uC2E0\uD569\uB2C8\uB2E4. Vertex AI User \uC5ED\uD560\uB9CC \uC900 \uC804\uC6A9 \uC11C\uBE44\uC2A4 \uACC4\uC815\uC744 \uC4F0\uC138\uC694.",
+      "Paste the whole service-account JSON key file into the API key field. The project in the endpoint is filled from the key, and the sidecar renews the token every hour. Use a dedicated service account with only the Vertex AI User role."
+    ],
+    "model.load": ["\uBAA8\uB378 \uBAA9\uB85D", "Load models"],
+    "model.test": ["\uC5F0\uACB0 \uD14C\uC2A4\uD2B8", "Test"],
+    "model.loading": ["\uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Loading\u2026"],
+    "model.list_failed": ["\uBAA9\uB85D\uC744 \uAC00\uC838\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: {e}", "Could not list models: {e}"],
+    "model.pick": ["\u2014 \uBAA8\uB378 {n}\uAC1C \uC911 \uC120\uD0DD \u2014", "\u2014 pick one of {n} models \u2014"],
+    "model.found": ["\uBAA8\uB378 {n}\uAC1C\uB97C \uCC3E\uC558\uC2B5\uB2C8\uB2E4.", "Found {n} models."],
+    "model.testing": ["\uC2E4\uC81C \uD638\uCD9C\uB85C \uD655\uC778 \uC911\u2026", "Calling the model\u2026"],
+    "model.test_ok": ["\uC131\uACF5 {ms}ms", "OK {ms}ms"],
+    "model.dims": [" \xB7 {n}\uCC28\uC6D0", " \xB7 {n} dimensions"],
+    "model.test_failed": ["\uC2E4\uD328: {e}", "Failed: {e}"],
+    // settings: tuning
+    "tune.title": ["\uAC80\uC0C9 \uC870\uC815", "Recall tuning"],
+    "tune.sub": [
+      "\uC5C9\uB6B1\uD55C \uBC1C\uCDCC\uAC00 \uB4E4\uC5B4\uAC00\uBA74 \uAE30\uC900\uAC12\uC744 \uC62C\uB9AC\uACE0, \uAE30\uC5B5\uC774 \uB108\uBB34 \uC548 \uB4E4\uC5B4\uAC00\uBA74 \uB0B4\uB9AC\uC138\uC694.",
+      "Raise the thresholds if unrelated excerpts get in; lower them if too little memory is injected."
+    ],
+    "tune.threshold": ["\uAE00\uC790 \uC77C\uCE58 \uAE30\uC900", "Lexical threshold"],
+    "tune.min_sim": ["\uC758\uBBF8 \uC720\uC0AC\uB3C4 \uAE30\uC900", "Vector min similarity"],
+    "tune.top_k": ["\uBC1C\uCDCC \uC218", "Excerpts"],
+    "tune.facts": ["\uC0AC\uC2E4 \uC218", "Facts"],
+    "tune.backfill": ["\uCC98\uC74C \uC5F0\uACB0 \uC2DC \uCD94\uCD9C\uD560 \uD134 \uC218", "Turns extracted on first sync"],
+    // settings: parser rules
+    "rules.title": ["\uC0C1\uD0DC\uCC3D \uADDC\uCE59", "Status-window rules"],
+    "rules.sub": [
+      'block: \uC2DC\uC791~\uB05D \uC0AC\uC774\uC758 "\uD0A4: \uAC12" \uC904\uC744 \uC77D\uC2B5\uB2C8\uB2E4. entity_line\uC73C\uB85C [\uC778\uBB3C] \uC904\uB9C8\uB2E4 \uC778\uBB3C\uBCC4\uB85C \uB098\uB215\uB2C8\uB2E4 (\uC2DC\uBBAC\uBD07). regex: key/value \uC774\uB984 \uADF8\uB8F9.',
+      'block: reads "key: value" lines between start and end; entity_line splits them per [character] line (sim bots). regex: named groups key/value.'
+    ],
+    "rules.example": ["\uC608\uC2DC \uB123\uAE30", "Insert example"],
+    "rules.none": ['\uADDC\uCE59 \uC5C6\uC74C \u2014 "\uC608\uC2DC \uB123\uAE30"\uB85C \uC2DC\uC791\uD558\uC138\uC694', 'No rules \u2014 start with "Insert example"'],
+    "rules.from_file": ["\uD30C\uC77C\uC5D0\uC11C \uADDC\uCE59 {n}\uAC1C\uB97C \uC77D\uB294 \uC911 (\uC5EC\uAE30\uC5D0 \uC800\uC7A5\uD558\uBA74 \uB300\uCCB4\uB429\uB2C8\uB2E4)", "Reading {n} rules from a file (saving here replaces them)"],
+    // save bar
+    "save": ["\uC800\uC7A5", "Save"],
+    "revert": ["\uB418\uB3CC\uB9AC\uAE30", "Revert"],
+    "saving": ["\uC800\uC7A5 \uC911\u2026", "Saving\u2026"],
+    "saved": ["\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4.", "Saved."],
+    "saved_queued": ["\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. \uAE30\uC874 \uCC44\uD305 {n}\uAC74\uC744 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uCC98\uB9AC\uD569\uB2C8\uB2E4.", "Saved. {n} existing items are processed in the background."],
+    "saved_rules": ["\uADDC\uCE59 {n}\uAC1C\uB97C \uC801\uC6A9\uD558\uACE0 \uAE30\uC874 \uBA54\uC2DC\uC9C0\uB97C \uB2E4\uC2DC \uC77D\uC5C8\uC2B5\uB2C8\uB2E4.", "{n} rules applied; existing messages were re-read."],
+    "no_changes": ["\uBC14\uB010 \uB0B4\uC6A9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No changes."],
+    "unsaved": ["\uC800\uC7A5\uD558\uC9C0 \uC54A\uC740 \uBCC0\uACBD: {s}", "Unsaved changes: {s}"],
+    "close_unsaved": ["\uC800\uC7A5\uD558\uC9C0 \uC54A\uC740 \uBCC0\uACBD\uC774 \uC788\uC2B5\uB2C8\uB2E4.", "You have unsaved changes."],
+    "save_and_close": ["\uC800\uC7A5\uD558\uACE0 \uB2EB\uAE30", "Save and close"],
+    "discard_and_close": ["\uBC84\uB9AC\uACE0 \uB2EB\uAE30", "Discard and close"],
+    "cancel": ["\uCDE8\uC18C", "Cancel"],
+    "lang_unsaved": ["\uC5B8\uC5B4\uB97C \uBC14\uAFB8\uAE30 \uC804\uC5D0 \uBCC0\uACBD\uC744 \uC800\uC7A5\uD558\uAC70\uB098 \uB418\uB3CC\uB9AC\uC138\uC694.", "Save or revert your changes before switching the language."],
+    "conn_saved_server_failed": ["\uC5F0\uACB0 \uC124\uC815\uC740 \uC800\uC7A5\uD588\uC9C0\uB9CC \uC11C\uBC84 \uC124\uC815\uC740 \uC800\uC7A5\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: {e}", "Connection saved, but the server settings were not: {e}"],
+    // progress display (HUD) on the chat screen
+    "hud.recalling": ["\u{1F9E0} \uAE30\uC5B5 \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "\u{1F9E0} Recalling memory\u2026"],
+    "hud.injected": ["\u2713 \uAE30\uC5B5 \uC8FC\uC785 ({n}\uC790)", "\u2713 Memory injected ({n} chars)"],
+    "hud.nothing": ["\u2013 \uAD00\uB828 \uAE30\uC5B5 \uC5C6\uC74C", "\u2013 Nothing relevant"],
+    "hud.skipped": ["\u26A0 \uAC74\uB108\uB700: {r}", "\u26A0 Skipped: {r}"],
+    "hud.reason.deadline": ["\uC81C\uD55C \uC2DC\uAC04 {s}\uCD08 \uCD08\uACFC \xB7 \uB20C\uB7EC\uC11C \uB298\uB9AC\uAE30", "over the {s} s deadline \xB7 tap to raise"],
+    "hud.reason.error": ["\uC0AC\uC774\uB4DC\uCE74 \uC624\uB958", "sidecar error"],
+    "hud.extract": ["\uCD94\uCD9C {d}/{n}", "Facts {d}/{n}"],
+    "hud.embed": ["\uC784\uBCA0\uB529 {d}/{n}", "Embeddings {d}/{n}"],
+    "hud.failed": ["\u26A0 \uC2E4\uD328 {n}", "\u26A0 {n} failed"],
+    "hud.done": ["\u2713 \uCC98\uB9AC \uC644\uB8CC", "\u2713 Processing done"],
+    // progress display: panel
+    "hud.title": ["\uC9C4\uD589 \uD45C\uC2DC", "Progress display"],
+    "hud.sub": [
+      '\uCC44\uD305 \uD654\uBA74 \uC624\uB978\uCABD \uC704\uC5D0 \uAE30\uC5B5\uC774 \uB4E4\uC5B4\uAC14\uB294\uC9C0\uC640 \uBC31\uADF8\uB77C\uC6B4\uB4DC \uCC98\uB9AC \uC9C4\uD589\uC744 \uC791\uAC8C \uB744\uC6C1\uB2C8\uB2E4. \uCF1C\uBA74 PocketRisu\uAC00 "\uBA54\uC778 Document \uC811\uADFC" \uAD8C\uD55C\uC744 \uBB3B\uC2B5\uB2C8\uB2E4. NMOS\uB294 \uC774 \uAD8C\uD55C\uC73C\uB85C \uD45C\uC2DC \uD558\uB098\uB9CC \uADF8\uB9AC\uACE0 \uD654\uBA74 \uB0B4\uC6A9\uC740 \uC77D\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uB204\uB974\uBA74 \uC774 \uD328\uB110\uC774 \uC5F4\uB9BD\uB2C8\uB2E4.',
+      'Shows a small pill at the top right of the chat screen: whether memory went in, and background processing progress. Turning it on makes PocketRisu ask for "main Document" access. NMOS only draws the pill with it and reads nothing on the page. Tap the pill to open this panel.'
+    ],
+    "hud.toggle": ["\uCC44\uD305 \uD654\uBA74\uC5D0 \uC9C4\uD589 \uD45C\uC2DC \uB744\uC6B0\uAE30", "Show the progress display on the chat screen"],
+    "hud.enable": ["\uC9C4\uD589 \uD45C\uC2DC \uCF1C\uAE30", "Turn on progress display"],
+    "hud.hint": [
+      "\uC9C4\uD589 \uD45C\uC2DC\uAC00 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uCF1C\uBA74 \uAE30\uC5B5\uC774 \uB4E4\uC5B4\uAC14\uB294\uC9C0 \uCC44\uD305 \uD654\uBA74\uC5D0\uC11C \uBC14\uB85C \uBCF4\uC785\uB2C8\uB2E4.",
+      "The progress display is off. Turn it on to see on the chat screen whether memory went in."
+    ],
+    "hud.on": ["\uCF30\uC2B5\uB2C8\uB2E4. \uB2E4\uC74C \uBA54\uC2DC\uC9C0\uBD80\uD130 \uD45C\uC2DC\uB429\uB2C8\uB2E4.", "On. It shows from the next message."],
+    "hud.off": ["\uAED0\uC2B5\uB2C8\uB2E4.", "Off."],
+    "hud.denied": [
+      '\uAD8C\uD55C\uC774 \uAC70\uBD80\uB418\uC5B4 \uCF1C\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. PocketRisu\uB294 \uAC70\uBD80\uB97C \uAE30\uC5B5\uD569\uB2C8\uB2E4. \uC124\uC815 \u2192 \uD50C\uB7EC\uADF8\uC778 \u2192 NMOS \uC904\uC758 \uBA54\uB274 \u2192 "\uAD8C\uD55C \uC751\uB2F5 \uCD08\uAE30\uD654" \uD6C4 \uB2E4\uC2DC \uCF1C\uC138\uC694.',
+      "Permission was denied, so it stays off. PocketRisu remembers a denial: Settings \u2192 Plugin \u2192 the NMOS row menu \u2192 reset permission responses, then turn it on again."
+    ],
+    "hud.unsupported": [
+      "\uC774 PocketRisu \uBC84\uC804\uC740 \uD50C\uB7EC\uADF8\uC778\uC774 \uCC44\uD305 \uD654\uBA74\uC5D0 \uD45C\uC2DC\uB97C \uADF8\uB9AC\uB294 \uAE30\uB2A5\uC744 \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "This PocketRisu version does not let plugins draw on the chat screen."
+    ],
+    "hud.broken": ["\uC9C4\uD589 \uD45C\uC2DC\uB97C \uADF8\uB9AC\uC9C0 \uBABB\uD574 \uC774\uBC88 \uC138\uC158\uC5D0\uC11C\uB294 \uBA48\uCDC4\uC2B5\uB2C8\uB2E4: {e}", "The progress display stopped for this session: {e}"],
+    "invalid": ["\uC785\uB825 \uC624\uB958: ", "Invalid: "],
+    "sidecar_error": ["\uC0AC\uC774\uB4DC\uCE74 \uC624\uB958: ", "Sidecar error: "]
+  };
+  function t(lang, key, vars = {}) {
+    const text = STRINGS[key][lang === "en" ? 1 : 0];
+    return text.replace(/\{(\w+)\}/g, (m, name) => name in vars ? String(vars[name]) : m);
+  }
+  var STRING_KEYS = Object.keys(STRINGS);
+
   // src/manifest.ts
   var HASH_FORMAT_VERSION = 1;
   var SPECIAL_COMMENT = /\{\{specialcomment::[^]*?::\}\}/g;
@@ -356,7 +658,7 @@ ${revisionHash}`;
       cache.set(key, { packet, expires: host.now() + ttl, failed });
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
     }
-    async function call(settings, path, body, deadline, method) {
+    async function call(settings, path, body, deadline, method, onLate) {
       const remaining = deadline - host.now();
       if (remaining <= 0) throw new DeadlineError(`deadline before ${path}`);
       const url = settings.sidecarUrl.replace(/\/+$/, "") + path;
@@ -366,14 +668,19 @@ ${revisionHash}`;
       const timeout = new Promise((_, reject) => {
         timer = setTimeout(() => reject(new DeadlineError(`deadline during ${path}`)), remaining);
       });
+      const verb = method ?? (body === void 0 ? "GET" : "POST");
+      const pending2 = host.request(verb, url, body, headers, remaining, settings.route);
       try {
-        const verb = method ?? (body === void 0 ? "GET" : "POST");
-        const res = await Promise.race([host.request(verb, url, body, headers, remaining, settings.route), timeout]);
+        const res = await Promise.race([pending2, timeout]);
         if (res.status < 200 || res.status >= 300) {
           const detail = res.json?.detail;
           throw new Error(`${path} -> HTTP ${res.status}${detail ? `: ${Array.isArray(detail) ? detail.join("; ") : String(detail)}` : ""}`);
         }
         return res.json;
+      } catch (error) {
+        if (error instanceof DeadlineError && onLate) pending2.then(() => onLate(host.now()), () => {
+        });
+        throw error;
       } finally {
         clearTimeout(timer);
       }
@@ -407,6 +714,12 @@ ${revisionHash}`;
       let key = null;
       let chatId = null;
       let announced = false;
+      let failure = null;
+      let lateAt = null;
+      const late = (at) => {
+        lateAt = at;
+        if (failure) failure.neededMs = Math.round(at - started);
+      };
       try {
         if (mode !== "model" || hasPacket(prompt)) return prompt;
         settings = await host.settings();
@@ -443,7 +756,8 @@ ${revisionHash}`;
             ms: Math.round(host.now() - started),
             packetChars: cached.packet.length,
             packet: cached.packet,
-            outcome: outcome2
+            outcome: outcome2,
+            deadlineMs: settings.deadlineMs
           };
           emit({
             type: "request-end",
@@ -473,7 +787,7 @@ ${revisionHash}`;
           in_context_ids: inContextIds(prompt, messages),
           budget_tokens: settings.reservedMemoryTokens,
           client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started }
-        }, deadline);
+        }, deadline, void 0, late);
         const packet = retrieved.freshness === "fresh" ? retrieved.packet.text : "";
         remember(key, packet, SUCCESS_TTL_MS);
         host.debug("[NMOS] request done", {
@@ -484,24 +798,34 @@ ${revisionHash}`;
           packetChars: packet.length
         });
         const outcome = packet ? "injected" : "nothing-relevant";
-        last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, packet, outcome };
+        last = {
+          at: Date.now(),
+          ms: Math.round(host.now() - started),
+          packetChars: packet.length,
+          packet,
+          outcome,
+          deadlineMs: settings.deadlineMs
+        };
         emit({ type: "request-end", outcome, chars: packet.length, conversationId: synced.conversation_id ?? null });
         return injectPacket(prompt, packet, settings.injectPosition, turn);
       } catch (error) {
         if (key) remember(key, "", FAILURE_TTL_MS, true);
-        last = {
+        last = failure = {
           at: Date.now(),
           ms: Math.round(host.now() - started),
           packetChars: 0,
           packet: "",
           outcome: "failed",
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
+          deadlineMs: settings?.deadlineMs ?? 0
         };
+        if (lateAt !== null) failure.neededMs = Math.round(lateAt - started);
         if (announced) emit({
           type: "request-end",
           outcome: "failed",
           chars: 0,
           error: last.error,
+          deadlineMs: last.deadlineMs,
           conversationId: chatId && conversations.get(chatId) || null
         });
         host.warn("[NMOS] memory skipped for this request (fail open):", error instanceof Error ? error.message : error);
@@ -512,6 +836,7 @@ ${revisionHash}`;
       void (async () => {
         const settings = await host.settings();
         if (!settings.enabled || !settings.sidecarUrl || !arg2?.chat?.id) return;
+        adviseOnce(settings.language);
         emit({ type: "background", conversationId: conversations.get(arg2.chat.id) ?? null });
         const index = arg2.messageIndex ?? -1;
         const message = index >= 0 ? arg2.chat.message?.[index] : void 0;
@@ -524,6 +849,14 @@ ${revisionHash}`;
           message_index: index
         }, host.now() + settings.deadlineMs);
       })().catch((error) => host.debug("[NMOS] output notification failed:", error instanceof Error ? error.message : error));
+    }
+    let alerted = false;
+    function adviseOnce(lang) {
+      const advice = deadlineAdvice(last);
+      if (alerted || !host.alert || advice?.level !== "over") return;
+      alerted = true;
+      const took = advice.tookMs === null ? "" : t(lang, "deadline.took", { n: formatMs(advice.tookMs) });
+      host.alert(t(lang, "deadline.alert", { d: formatMs(advice.deadlineMs), took, s: formatMs(advice.suggestMs) }));
     }
     async function status() {
       const settings = await host.settings();
@@ -560,273 +893,6 @@ ${revisionHash}`;
     return null;
   }
 
-  // src/i18n.ts
-  function langOf(value) {
-    return value === "en" ? "en" : "ko";
-  }
-  var STRINGS = {
-    // menus (registered once at load, in the language chosen then)
-    "menu.panel": ["NMOS \uAE30\uC5B5", "NMOS memory"],
-    // frame
-    "title": ["NMOS \uAE30\uC5B5", "NMOS memory"],
-    "tab.status": ["\uC0C1\uD0DC", "Status"],
-    "tab.inspector": ["\uC778\uC2A4\uD399\uD130", "Inspector"],
-    "tab.settings": ["\uC124\uC815", "Settings"],
-    "close": ["\uB2EB\uAE30", "Close"],
-    "refresh": ["\uC0C8\uB85C \uACE0\uCE68", "Refresh"],
-    "language": ["\uC5B8\uC5B4", "Language"],
-    // status view
-    "status.sidecar": ["\uC0AC\uC774\uB4DC\uCE74", "Sidecar"],
-    "status.checking": ["\uC0AC\uC774\uB4DC\uCE74 \uD655\uC778 \uC911\u2026", "Checking the sidecar\u2026"],
-    "status.connected": ["\uC5F0\uACB0\uB428", "Connected"],
-    "status.unreachable": ["\uC5F0\uACB0\uD560 \uC218 \uC5C6\uC74C", "Cannot reach"],
-    "status.fix": [
-      "\uD655\uC778: docker compose up -d \xB7 \uC8FC\uC18C \xB7 NMOS_CORS_ORIGINS\uC5D0 \uC774 PocketRisu \uC8FC\uC18C \uD3EC\uD568 \xB7 localhost \uB610\uB294 HTTPS\uB85C \uC811\uC18D",
-      "Check: docker compose up -d \xB7 the address \xB7 NMOS_CORS_ORIGINS includes this PocketRisu address \xB7 open via localhost or HTTPS"
-    ],
-    "status.memory_off": ["\uAE30\uC5B5 \uB123\uAE30\uAC00 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED\uC5D0\uC11C \uCF24 \uC218 \uC788\uC2B5\uB2C8\uB2E4.", "Memory is switched off. Turn it on in Settings."],
-    "status.features": ["\uAE30\uB2A5", "Features"],
-    "feature.state": ["\uC0C1\uD0DC\uCC3D", "Status window"],
-    "feature.extraction": ["\uC0AC\uC2E4 \uCD94\uCD9C", "Fact extraction"],
-    "feature.vectors": ["\uC758\uBBF8 \uAC80\uC0C9", "Semantic recall"],
-    "on": ["\uCF1C\uC9D0", "on"],
-    "off": ["\uAEBC\uC9D0", "off"],
-    "status.last": ["\uB9C8\uC9C0\uB9C9 \uC694\uCCAD", "Last request"],
-    "status.none": ["\uC544\uC9C1 \uC694\uCCAD\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uCC44\uD305\uC5D0\uC11C \uBA54\uC2DC\uC9C0\uB97C \uBCF4\uB0B4 \uBCF4\uC138\uC694.", "No request yet. Send a message in a chat."],
-    "status.ago": ["{n}\uCD08 \uC804", "{n}s ago"],
-    "status.packet": ["\uB123\uC740 \uAE30\uC5B5 \uBCF4\uAE30", "Show the injected memory"],
-    "status.deadline_hint": [
-      "\uC81C\uD55C \uC2DC\uAC04\uC744 \uB118\uACA8 \uC774\uBC88 \uC694\uCCAD\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4. \uAE34 \uCC44\uD305\uC774\uB77C\uBA74 \uC124\uC815 \uD0ED\uC758 \uC81C\uD55C \uC2DC\uAC04(ms)\uC744 \uB298\uB9AC\uC138\uC694.",
-      "This request ran out of time and went without memory. For a long chat, raise Deadline (ms) in the Settings tab."
-    ],
-    "outcome.injected": ["\uAE30\uC5B5 {n}\uC790\uB97C \uB123\uC5C8\uC2B5\uB2C8\uB2E4", "Injected {n} characters of memory"],
-    "outcome.nothing": ["\uAD00\uB828\uB41C \uAE30\uC5B5\uC774 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4", "Nothing relevant to inject"],
-    "outcome.failed": ["\uAC74\uB108\uB700 (\uC6D0\uB798 \uC694\uCCAD\uC740 \uADF8\uB300\uB85C \uBCF4\uB0C4)", "Skipped (the request went out unchanged)"],
-    // inspector view
-    "insp.loading": ["\uC778\uC2A4\uD399\uD130\uB97C \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Loading the inspector\u2026"],
-    "insp.back": ["\u2190 \uB4A4\uB85C", "\u2190 Back"],
-    "insp.browser": ["\uBE0C\uB77C\uC6B0\uC800\uC5D0\uC11C \uC9C1\uC811 \uC5F4 \uC218\uB3C4 \uC788\uC2B5\uB2C8\uB2E4: {url}", "Also available in a browser: {url}"],
-    "act.history": ["\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C", "Extract all history"],
-    "act.rebuild": ["\uAE30\uC5B5 \uC7AC\uAD6C\uCD95", "Rebuild memory"],
-    "act.rebuild_confirm": ["\uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC7AC\uAD6C\uCD95\uD569\uB2C8\uB2E4", "Click again to rebuild"],
-    "act.delete": ["\uB300\uD654 \uC0AD\uC81C", "Delete conversation"],
-    "act.delete_confirm": ["\uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC601\uAD6C \uC0AD\uC81C\uD569\uB2C8\uB2E4", "Click again to delete for good"],
-    "act.sub": [
-      "\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C: \uCC98\uC74C \uC5F0\uACB0\uD560 \uB54C \uAC74\uB108\uB6F4 \uC774 \uCC44\uD305\uC758 \uC774\uC804 \uD134\uAE4C\uC9C0 \uC0AC\uC2E4\uC744 \uCD94\uCD9C\uD558\uACE0 \uC784\uBCA0\uB529\uD569\uB2C8\uB2E4. \uAE30\uC5B5 \uC7AC\uAD6C\uCD95: \uC774 \uCC44\uD305\uC758 \uC0AC\uC2E4\uC744 \uBC84\uB9AC\uACE0 \uBAA8\uB4E0 \uD134\uC744 \uB2E4\uC2DC \uCD94\uCD9C\uD569\uB2C8\uB2E4(\uC6D0\uBB38\uC740 \uADF8\uB300\uB85C). \uC720\uB8CC API\uB294 \uD134\uB9C8\uB2E4 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4. \uB300\uD654 \uC0AD\uC81C: NMOS\uC5D0 \uC800\uC7A5\uB41C \uC774 \uCC44\uD305\uC758 \uBAA8\uB4E0 \uAE30\uB85D(\uC6D0\uBB38 \uD3EC\uD568)\uC744 \uC9C0\uC6C1\uB2C8\uB2E4. \uB418\uB3CC\uB9B4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. PocketRisu\uC758 \uCC44\uD305\uC740 \uADF8\uB300\uB85C\uC774\uACE0, \uADF8 \uCC44\uD305\uC5D0\uC11C \uB2E4\uC2DC \uC0DD\uC131\uD558\uBA74 \uC0C8 \uB300\uD654\uB85C \uCC98\uC74C\uBD80\uD130 \uAE30\uB85D\uB429\uB2C8\uB2E4.",
-      "Extract all history: extract facts and embeddings for the older turns of this chat that the first sync skipped. Rebuild memory: discard this chat's facts and extract every turn again (raw messages stay). Paid APIs cost money per turn. Delete conversation: delete everything NMOS stored for this chat, raw messages included. This cannot be undone. The chat in PocketRisu stays; generating in it again records it as a new conversation from scratch."
-    ],
-    "act.help": ["\uC774 \uBC84\uD2BC\uB4E4\uC740?", "What do these do?"],
-    "act.working": ["\uC694\uCCAD \uC911\u2026", "Requesting\u2026"],
-    "act.history_done": ["\uD134 {t}\uAC1C \uCD94\uCD9C\uACFC \uBA54\uC2DC\uC9C0 {m}\uAC1C \uC784\uBCA0\uB529\uC744 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0 \uB123\uC5C8\uC2B5\uB2C8\uB2E4.", "Queued {t} turns for extraction and {m} messages for embedding."],
-    "act.history_none": ["\uC774\uBBF8 \uC804\uBD80 \uCC98\uB9AC\uB418\uC5C8\uAC70\uB098 \uCC98\uB9AC \uC911\uC785\uB2C8\uB2E4.", "Everything is already processed or queued."],
-    "act.rebuild_done": [
-      "\uCD94\uCD9C {d}\uAC74\uC744 \uBC84\uB9AC\uACE0 \uD134 {t}\uAC1C\uB97C \uB2E4\uC2DC \uCD94\uCD9C\uD569\uB2C8\uB2E4. \uB05D\uB0A0 \uB54C\uAE4C\uC9C0 \uC774 \uCC44\uD305\uC758 \uC0AC\uC2E4\uC774 \uBE44\uC5B4 \uC788\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
-      "Discarded {d} extractions; {t} turns are extracted again. Facts of this chat may be missing until then."
-    ],
-    "act.delete_done": ["\uB300\uD654\uB97C \uC0AD\uC81C\uD588\uC2B5\uB2C8\uB2E4 (\uBA54\uC2DC\uC9C0 {m}\uAC1C\uC758 \uAE30\uB85D).", "Conversation deleted (records of {m} messages)."],
-    "link.title": ["\uAC19\uC740 \uB300\uC0C1\uC73C\uB85C \uD569\uCE58\uAE30", "Same as another entity"],
-    "link.sub": [
-      "\uC774\uC57C\uAE30\uAC00 \uC2A4\uC2A4\uB85C \uC787\uC9C0 \uBABB\uD55C \uC774\uB984\uC744 \uC9C1\uC811 \uD569\uCE69\uB2C8\uB2E4(\uC608: \uC774\uB984 \uC5C6\uC774 \uBA3C\uC800 \uB098\uC628 \uC778\uBB3C\uACFC \uB098\uC911\uC5D0 \uC774\uB984\uC774 \uBC1D\uD600\uC9C4 \uC778\uBB3C). \uAE30\uC5B5 \uC7AC\uAD6C\uCD95\uC744 \uD574\uB3C4 \uC720\uC9C0\uB418\uACE0, \uC5B8\uC81C\uB4E0 \uD574\uC81C\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
-      "Join names the story did not link on its own (e.g. someone shown without a name and named later). Kept across rebuilds; you can undo it at any time."
-    ],
-    "link.pick": ["\uAC19\uC740 \uB300\uC0C1", "Same as"],
-    "link.join": ["\uD569\uCE58\uAE30", "Join"],
-    "link.remove": ["\uD574\uC81C", "Undo"],
-    "link.none": ["\uD569\uCE60 \uC218 \uC788\uB294 \uAC19\uC740 \uC885\uB958\uC758 \uB300\uC0C1\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No other entity of this type."],
-    "link.done": ['"{a}"\uC640(\uACFC) "{b}"\uB97C \uD569\uCCE4\uC2B5\uB2C8\uB2E4.', 'Joined "{a}" and "{b}".'],
-    "link.removed": ["\uC5F0\uACB0\uC744 \uD574\uC81C\uD588\uC2B5\uB2C8\uB2E4.", "Link undone."],
-    "act.off": ["\uC0AC\uC2E4 \uCD94\uCD9C(\uB610\uB294 \uC784\uBCA0\uB529)\uC774 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED\uC5D0\uC11C \uCF1C\uC138\uC694.", "Fact extraction (or embeddings) is off. Turn it on in Settings."],
-    // settings: connection
-    "conn.title": ["\uC5F0\uACB0", "Connection"],
-    "conn.sub": [
-      "\uC774 \uBE0C\uB77C\uC6B0\uC800\uC758 PocketRisu \uD50C\uB7EC\uADF8\uC778 \uC124\uC815\uC785\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uAC00 \uB2E4\uB978 \uAE30\uAE30\uC5D0 \uC788\uC73C\uBA74 route=server\uAC00 \uC790\uB3D9\uC73C\uB85C \uC4F0\uC785\uB2C8\uB2E4.",
-      "This browser's PocketRisu plugin settings. If the sidecar runs on another device, route=server is used automatically."
-    ],
-    "conn.url": ["\uC0AC\uC774\uB4DC\uCE74 \uC8FC\uC18C", "Sidecar URL"],
-    "conn.route": ["\uACBD\uB85C", "Route"],
-    "conn.budget": ["\uAE30\uC5B5 \uC608\uC0B0(\uD1A0\uD070)", "Memory budget (tokens)"],
-    "conn.deadline": ["\uC81C\uD55C \uC2DC\uAC04(ms)", "Deadline (ms)"],
-    "conn.enabled": ["\uAE30\uC5B5 \uB123\uAE30 \uCF1C\uAE30", "Memory on"],
-    "conn.hint": ["PocketRisu\uC758 \uCD5C\uB300 \uCEE8\uD14D\uC2A4\uD2B8\uB97C \uAE30\uC5B5 \uC608\uC0B0\uB9CC\uD07C \uC904\uC5EC \uB450\uC138\uC694.", "Lower PocketRisu's max context by the memory budget."],
-    "conn.deadline_hint": [
-      "\uC81C\uD55C \uC2DC\uAC04 \uC548\uC5D0 \uAE30\uC5B5\uC744 \uC900\uBE44\uD558\uC9C0 \uBABB\uD558\uBA74 \uADF8 \uC694\uCCAD\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C5\uB2C8\uB2E4. \uAE30\uBCF8 3000ms. \uC544\uC8FC \uAE34 \uCC44\uD305(1\uB9CC \uAC1C \uC774\uC0C1)\uC5D0\uC11C \uAE30\uC5B5\uC774 \uC790\uC8FC \uBE60\uC9C0\uBA74 \uB298\uB9AC\uC138\uC694. \uB298\uB9B0 \uB9CC\uD07C \uB2F5\uC7A5 \uC2DC\uC791\uC774 \uB2A6\uC5B4\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
-      "If memory is not ready within the deadline, that request goes without memory. Default 3000 ms. Raise it if very long chats (10,000+ messages) often miss memory; replies may start that much later."
-    ],
-    // settings: models
-    "llm.title": ["\uC0AC\uC2E4 \uCD94\uCD9C LLM", "Fact extraction LLM"],
-    "llm.sub": [
-      "\uD655\uC815\uB41C \uD134(\uC785\uB825\uACFC \uC751\uB2F5)\uB9C8\uB2E4 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uD55C \uBC88 \uD638\uCD9C\uD574 \uC778\uBB3C\xB7\uC7A5\uC18C\xB7\uC57D\uC18D\xB7\uAD00\uACC4\uB97C \uAE30\uB85D\uD569\uB2C8\uB2E4. \uC720\uB8CC API\uB294 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4.",
-      "Called once per settled turn (input and reply) in the background to record people, places, promises and relationships. Paid APIs cost money."
-    ],
-    "emb.title": ["\uC758\uBBF8 \uAC80\uC0C9 \uC784\uBCA0\uB529", "Semantic recall embeddings"],
-    "emb.sub": [
-      "\uB2E4\uB978 \uB9D0\uB85C \uBB3C\uC5B4\uB3C4 \uC608\uC804 \uC7A5\uBA74\uC744 \uCC3E\uC2B5\uB2C8\uB2E4. Ollama\uC758 qwen3-embedding:0.6b\uB97C \uCD94\uCC9C\uD569\uB2C8\uB2E4.",
-      "Finds earlier scenes even when asked in other words. Ollama qwen3-embedding:0.6b is recommended."
-    ],
-    "preset.off": ["\uC0AC\uC6A9 \uC548 \uD568", "Off"],
-    "preset.ollama": ["Ollama (\uC774 PC)", "Ollama (this PC)"],
-    "preset.custom": ["\uC9C1\uC811 \uC785\uB825 (OpenAI \uD638\uD658)", "Custom (OpenAI-compatible)"],
-    "model.provider": ["\uC81C\uACF5\uC790", "Provider"],
-    "model.endpoint": ["\uC8FC\uC18C (OpenAI \uD638\uD658 /v1)", "Endpoint (OpenAI-compatible /v1)"],
-    "model.model": ["\uBAA8\uB378", "Model"],
-    "model.llm_placeholder": ["\uBAA8\uB378 \uC774\uB984", "model name"],
-    "model.emb_placeholder": ["\uC784\uBCA0\uB529 \uBAA8\uB378", "embedding model"],
-    "model.key": ["API \uD0A4", "API key"],
-    "model.key_placeholder": ["\uD544\uC694\uD560 \uB54C\uB9CC \uC785\uB825", "only if needed"],
-    "model.key_saved": ["\uC800\uC7A5\uB428 \u2014 \uBC14\uAFC0 \uB54C\uB9CC \uC785\uB825", "saved \u2014 type only to change"],
-    "model.vertex_hint": [
-      "\uC11C\uBE44\uC2A4 \uACC4\uC815 JSON \uD0A4 \uD30C\uC77C \uB0B4\uC6A9\uC744 API \uD0A4 \uCE78\uC5D0 \uD1B5\uC9F8\uB85C \uBD99\uC5EC \uB123\uC73C\uC138\uC694. \uC8FC\uC18C\uC758 \uD504\uB85C\uC81D\uD2B8\uB294 \uD0A4\uC5D0\uC11C \uCC44\uC6CC\uC9C0\uACE0, \uD1A0\uD070\uC740 \uC0AC\uC774\uB4DC\uCE74\uAC00 1\uC2DC\uAC04\uB9C8\uB2E4 \uAC31\uC2E0\uD569\uB2C8\uB2E4. Vertex AI User \uC5ED\uD560\uB9CC \uC900 \uC804\uC6A9 \uC11C\uBE44\uC2A4 \uACC4\uC815\uC744 \uC4F0\uC138\uC694.",
-      "Paste the whole service-account JSON key file into the API key field. The project in the endpoint is filled from the key, and the sidecar renews the token every hour. Use a dedicated service account with only the Vertex AI User role."
-    ],
-    "model.load": ["\uBAA8\uB378 \uBAA9\uB85D", "Load models"],
-    "model.test": ["\uC5F0\uACB0 \uD14C\uC2A4\uD2B8", "Test"],
-    "model.loading": ["\uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Loading\u2026"],
-    "model.list_failed": ["\uBAA9\uB85D\uC744 \uAC00\uC838\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: {e}", "Could not list models: {e}"],
-    "model.pick": ["\u2014 \uBAA8\uB378 {n}\uAC1C \uC911 \uC120\uD0DD \u2014", "\u2014 pick one of {n} models \u2014"],
-    "model.found": ["\uBAA8\uB378 {n}\uAC1C\uB97C \uCC3E\uC558\uC2B5\uB2C8\uB2E4.", "Found {n} models."],
-    "model.testing": ["\uC2E4\uC81C \uD638\uCD9C\uB85C \uD655\uC778 \uC911\u2026", "Calling the model\u2026"],
-    "model.test_ok": ["\uC131\uACF5 {ms}ms", "OK {ms}ms"],
-    "model.dims": [" \xB7 {n}\uCC28\uC6D0", " \xB7 {n} dimensions"],
-    "model.test_failed": ["\uC2E4\uD328: {e}", "Failed: {e}"],
-    // settings: tuning
-    "tune.title": ["\uAC80\uC0C9 \uC870\uC815", "Recall tuning"],
-    "tune.sub": [
-      "\uC5C9\uB6B1\uD55C \uBC1C\uCDCC\uAC00 \uB4E4\uC5B4\uAC00\uBA74 \uAE30\uC900\uAC12\uC744 \uC62C\uB9AC\uACE0, \uAE30\uC5B5\uC774 \uB108\uBB34 \uC548 \uB4E4\uC5B4\uAC00\uBA74 \uB0B4\uB9AC\uC138\uC694.",
-      "Raise the thresholds if unrelated excerpts get in; lower them if too little memory is injected."
-    ],
-    "tune.threshold": ["\uAE00\uC790 \uC77C\uCE58 \uAE30\uC900", "Lexical threshold"],
-    "tune.min_sim": ["\uC758\uBBF8 \uC720\uC0AC\uB3C4 \uAE30\uC900", "Vector min similarity"],
-    "tune.top_k": ["\uBC1C\uCDCC \uC218", "Excerpts"],
-    "tune.facts": ["\uC0AC\uC2E4 \uC218", "Facts"],
-    "tune.backfill": ["\uCC98\uC74C \uC5F0\uACB0 \uC2DC \uCD94\uCD9C\uD560 \uD134 \uC218", "Turns extracted on first sync"],
-    // settings: parser rules
-    "rules.title": ["\uC0C1\uD0DC\uCC3D \uADDC\uCE59", "Status-window rules"],
-    "rules.sub": [
-      'block: \uC2DC\uC791~\uB05D \uC0AC\uC774\uC758 "\uD0A4: \uAC12" \uC904\uC744 \uC77D\uC2B5\uB2C8\uB2E4. entity_line\uC73C\uB85C [\uC778\uBB3C] \uC904\uB9C8\uB2E4 \uC778\uBB3C\uBCC4\uB85C \uB098\uB215\uB2C8\uB2E4 (\uC2DC\uBBAC\uBD07). regex: key/value \uC774\uB984 \uADF8\uB8F9.',
-      'block: reads "key: value" lines between start and end; entity_line splits them per [character] line (sim bots). regex: named groups key/value.'
-    ],
-    "rules.example": ["\uC608\uC2DC \uB123\uAE30", "Insert example"],
-    "rules.none": ['\uADDC\uCE59 \uC5C6\uC74C \u2014 "\uC608\uC2DC \uB123\uAE30"\uB85C \uC2DC\uC791\uD558\uC138\uC694', 'No rules \u2014 start with "Insert example"'],
-    "rules.from_file": ["\uD30C\uC77C\uC5D0\uC11C \uADDC\uCE59 {n}\uAC1C\uB97C \uC77D\uB294 \uC911 (\uC5EC\uAE30\uC5D0 \uC800\uC7A5\uD558\uBA74 \uB300\uCCB4\uB429\uB2C8\uB2E4)", "Reading {n} rules from a file (saving here replaces them)"],
-    // save bar
-    "save": ["\uC800\uC7A5", "Save"],
-    "revert": ["\uB418\uB3CC\uB9AC\uAE30", "Revert"],
-    "saving": ["\uC800\uC7A5 \uC911\u2026", "Saving\u2026"],
-    "saved": ["\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4.", "Saved."],
-    "saved_queued": ["\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. \uAE30\uC874 \uCC44\uD305 {n}\uAC74\uC744 \uBC31\uADF8\uB77C\uC6B4\uB4DC\uC5D0\uC11C \uCC98\uB9AC\uD569\uB2C8\uB2E4.", "Saved. {n} existing items are processed in the background."],
-    "saved_rules": ["\uADDC\uCE59 {n}\uAC1C\uB97C \uC801\uC6A9\uD558\uACE0 \uAE30\uC874 \uBA54\uC2DC\uC9C0\uB97C \uB2E4\uC2DC \uC77D\uC5C8\uC2B5\uB2C8\uB2E4.", "{n} rules applied; existing messages were re-read."],
-    "no_changes": ["\uBC14\uB010 \uB0B4\uC6A9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No changes."],
-    "unsaved": ["\uC800\uC7A5\uD558\uC9C0 \uC54A\uC740 \uBCC0\uACBD: {s}", "Unsaved changes: {s}"],
-    "close_unsaved": ["\uC800\uC7A5\uD558\uC9C0 \uC54A\uC740 \uBCC0\uACBD\uC774 \uC788\uC2B5\uB2C8\uB2E4.", "You have unsaved changes."],
-    "save_and_close": ["\uC800\uC7A5\uD558\uACE0 \uB2EB\uAE30", "Save and close"],
-    "discard_and_close": ["\uBC84\uB9AC\uACE0 \uB2EB\uAE30", "Discard and close"],
-    "cancel": ["\uCDE8\uC18C", "Cancel"],
-    "lang_unsaved": ["\uC5B8\uC5B4\uB97C \uBC14\uAFB8\uAE30 \uC804\uC5D0 \uBCC0\uACBD\uC744 \uC800\uC7A5\uD558\uAC70\uB098 \uB418\uB3CC\uB9AC\uC138\uC694.", "Save or revert your changes before switching the language."],
-    "conn_saved_server_failed": ["\uC5F0\uACB0 \uC124\uC815\uC740 \uC800\uC7A5\uD588\uC9C0\uB9CC \uC11C\uBC84 \uC124\uC815\uC740 \uC800\uC7A5\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: {e}", "Connection saved, but the server settings were not: {e}"],
-    // progress display (HUD) on the chat screen
-    "hud.recalling": ["\u{1F9E0} \uAE30\uC5B5 \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "\u{1F9E0} Recalling memory\u2026"],
-    "hud.injected": ["\u2713 \uAE30\uC5B5 \uC8FC\uC785 ({n}\uC790)", "\u2713 Memory injected ({n} chars)"],
-    "hud.nothing": ["\u2013 \uAD00\uB828 \uAE30\uC5B5 \uC5C6\uC74C", "\u2013 Nothing relevant"],
-    "hud.skipped": ["\u26A0 \uAC74\uB108\uB700: {r}", "\u26A0 Skipped: {r}"],
-    "hud.reason.deadline": ["\uC81C\uD55C \uC2DC\uAC04 \uCD08\uACFC", "deadline"],
-    "hud.reason.error": ["\uC0AC\uC774\uB4DC\uCE74 \uC624\uB958", "sidecar error"],
-    "hud.extract": ["\uCD94\uCD9C {d}/{n}", "Facts {d}/{n}"],
-    "hud.embed": ["\uC784\uBCA0\uB529 {d}/{n}", "Embeddings {d}/{n}"],
-    "hud.failed": ["\u26A0 \uC2E4\uD328 {n}", "\u26A0 {n} failed"],
-    "hud.done": ["\u2713 \uCC98\uB9AC \uC644\uB8CC", "\u2713 Processing done"],
-    // progress display: panel
-    "hud.title": ["\uC9C4\uD589 \uD45C\uC2DC", "Progress display"],
-    "hud.sub": [
-      '\uCC44\uD305 \uD654\uBA74 \uC624\uB978\uCABD \uC704\uC5D0 \uAE30\uC5B5\uC774 \uB4E4\uC5B4\uAC14\uB294\uC9C0\uC640 \uBC31\uADF8\uB77C\uC6B4\uB4DC \uCC98\uB9AC \uC9C4\uD589\uC744 \uC791\uAC8C \uB744\uC6C1\uB2C8\uB2E4. \uCF1C\uBA74 PocketRisu\uAC00 "\uBA54\uC778 Document \uC811\uADFC" \uAD8C\uD55C\uC744 \uBB3B\uC2B5\uB2C8\uB2E4. NMOS\uB294 \uC774 \uAD8C\uD55C\uC73C\uB85C \uD45C\uC2DC \uD558\uB098\uB9CC \uADF8\uB9AC\uACE0 \uD654\uBA74 \uB0B4\uC6A9\uC740 \uC77D\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uB204\uB974\uBA74 \uC774 \uD328\uB110\uC774 \uC5F4\uB9BD\uB2C8\uB2E4.',
-      'Shows a small pill at the top right of the chat screen: whether memory went in, and background processing progress. Turning it on makes PocketRisu ask for "main Document" access. NMOS only draws the pill with it and reads nothing on the page. Tap the pill to open this panel.'
-    ],
-    "hud.toggle": ["\uCC44\uD305 \uD654\uBA74\uC5D0 \uC9C4\uD589 \uD45C\uC2DC \uB744\uC6B0\uAE30", "Show the progress display on the chat screen"],
-    "hud.enable": ["\uC9C4\uD589 \uD45C\uC2DC \uCF1C\uAE30", "Turn on progress display"],
-    "hud.hint": [
-      "\uC9C4\uD589 \uD45C\uC2DC\uAC00 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uCF1C\uBA74 \uAE30\uC5B5\uC774 \uB4E4\uC5B4\uAC14\uB294\uC9C0 \uCC44\uD305 \uD654\uBA74\uC5D0\uC11C \uBC14\uB85C \uBCF4\uC785\uB2C8\uB2E4.",
-      "The progress display is off. Turn it on to see on the chat screen whether memory went in."
-    ],
-    "hud.on": ["\uCF30\uC2B5\uB2C8\uB2E4. \uB2E4\uC74C \uBA54\uC2DC\uC9C0\uBD80\uD130 \uD45C\uC2DC\uB429\uB2C8\uB2E4.", "On. It shows from the next message."],
-    "hud.off": ["\uAED0\uC2B5\uB2C8\uB2E4.", "Off."],
-    "hud.denied": [
-      '\uAD8C\uD55C\uC774 \uAC70\uBD80\uB418\uC5B4 \uCF1C\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. PocketRisu\uB294 \uAC70\uBD80\uB97C \uAE30\uC5B5\uD569\uB2C8\uB2E4. \uC124\uC815 \u2192 \uD50C\uB7EC\uADF8\uC778 \u2192 NMOS \uC904\uC758 \uBA54\uB274 \u2192 "\uAD8C\uD55C \uC751\uB2F5 \uCD08\uAE30\uD654" \uD6C4 \uB2E4\uC2DC \uCF1C\uC138\uC694.',
-      "Permission was denied, so it stays off. PocketRisu remembers a denial: Settings \u2192 Plugin \u2192 the NMOS row menu \u2192 reset permission responses, then turn it on again."
-    ],
-    "hud.unsupported": [
-      "\uC774 PocketRisu \uBC84\uC804\uC740 \uD50C\uB7EC\uADF8\uC778\uC774 \uCC44\uD305 \uD654\uBA74\uC5D0 \uD45C\uC2DC\uB97C \uADF8\uB9AC\uB294 \uAE30\uB2A5\uC744 \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
-      "This PocketRisu version does not let plugins draw on the chat screen."
-    ],
-    "hud.broken": ["\uC9C4\uD589 \uD45C\uC2DC\uB97C \uADF8\uB9AC\uC9C0 \uBABB\uD574 \uC774\uBC88 \uC138\uC158\uC5D0\uC11C\uB294 \uBA48\uCDC4\uC2B5\uB2C8\uB2E4: {e}", "The progress display stopped for this session: {e}"],
-    "invalid": ["\uC785\uB825 \uC624\uB958: ", "Invalid: "],
-    "sidecar_error": ["\uC0AC\uC774\uB4DC\uCE74 \uC624\uB958: ", "Sidecar error: "]
-  };
-  function t(lang, key, vars = {}) {
-    const text = STRINGS[key][lang === "en" ? 1 : 0];
-    return text.replace(/\{(\w+)\}/g, (m, name) => name in vars ? String(vars[name]) : m);
-  }
-  var STRING_KEYS = Object.keys(STRINGS);
-
-  // src/form.ts
-  var DEFAULT_DEADLINE_MS = 3e3;
-  var MAX_DEADLINE_MS = 3e4;
-  var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
-  var VERTEX_URL = "https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi";
-  function serviceAccountProject(key) {
-    const text = key.trim();
-    if (!text.startsWith("{")) return null;
-    try {
-      const info = JSON.parse(text);
-      return info.type === "service_account" && typeof info.project_id === "string" && info.project_id ? info.project_id : null;
-    } catch {
-      return null;
-    }
-  }
-  function fillProject(url, key) {
-    const project = serviceAccountProject(key);
-    return project && url.includes("{project}") ? url.replace("{project}", encodeURIComponent(project)) : url;
-  }
-  function presetMatches(presetUrl, url) {
-    if (!presetUrl.includes("{project}")) return presetUrl === url;
-    const [head, tail] = presetUrl.split("{project}");
-    return url.startsWith(head) && url.endsWith(tail) && url.length > head.length + tail.length && !url.slice(head.length, url.length - tail.length).includes("/");
-  }
-  function dirtySections(baseline, current2) {
-    return SECTIONS.filter((s) => JSON.stringify(baseline[s]) !== JSON.stringify(current2[s]));
-  }
-  function num(value) {
-    const n = Number(value.trim());
-    return value.trim() !== "" && Number.isFinite(n) ? n : value;
-  }
-  function configBody(dirty, v) {
-    const body = {};
-    for (const [section, prefix] of [["llm", "llm"], ["emb", "embed"]]) {
-      if (!dirty.includes(section)) continue;
-      body[`${prefix}_url`] = v[section].url.trim();
-      body[`${prefix}_model`] = v[section].model.trim();
-      if (v[section].key.trim()) body[`${prefix}_api_key`] = v[section].key.trim();
-    }
-    if (dirty.includes("tune")) {
-      Object.assign(body, {
-        recall_threshold: num(v.tune.threshold),
-        vector_min_sim: num(v.tune.minSim),
-        recall_top_k: num(v.tune.topK),
-        facts_limit: num(v.tune.facts),
-        extract_backfill: num(v.tune.backfill)
-      });
-    }
-    if (dirty.includes("rules")) body.parsers = v.rules.trim() ? v.rules : null;
-    return body;
-  }
-  function connArgs(v) {
-    return {
-      sidecar_url: v.url.trim(),
-      route: v.route,
-      disabled: v.enabled ? 0 : 1,
-      reserved_memory_tokens: Number(v.reserved) || 600,
-      deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS))
-    };
-  }
-
   // src/hud.ts
   var OUTCOME_MS = 4e3;
   var DONE_MS = 3e3;
@@ -846,6 +912,7 @@ ${revisionHash}`;
           outcome: event.outcome,
           chars: event.chars,
           error: event.error,
+          deadlineMs: event.deadlineMs,
           until: now + OUTCOME_MS
         } };
       case "coverage":
@@ -863,7 +930,7 @@ ${revisionHash}`;
     if (r?.phase === "done" && now < r.until) {
       if (r.outcome === "injected") return { kind: "ok", text: t(lang, "hud.injected", { n: r.chars }), fraction: null };
       if (r.outcome === "nothing-relevant") return { kind: "muted", text: t(lang, "hud.nothing"), fraction: null };
-      const reason = t(lang, r.error?.startsWith("deadline") ? "hud.reason.deadline" : "hud.reason.error");
+      const reason = r.error?.startsWith("deadline") ? t(lang, "hud.reason.deadline", { s: Math.round((r.deadlineMs ?? 0) / 100) / 10 }) : t(lang, "hud.reason.error");
       return { kind: "warn", text: t(lang, "hud.skipped", { r: reason }), fraction: null };
     }
     const p = state.progress;
@@ -1401,13 +1468,24 @@ html,body{margin:0;background:#0c0c10}
           el("pre", { class: "packet", text: s.last.packet })
         ));
         if (s.last.error) lastCard.append(el("div", { class: "mono muted", text: s.last.error }));
-        if (s.last.outcome === "failed" && s.last.error?.startsWith("deadline")) {
-          lastCard.append(el("p", { class: "sub", text: L("status.deadline_hint") }));
-        }
       } else {
         lastCard.append(el("div", { class: "muted", text: L("status.none") }));
       }
       const cards = [conn, features, lastCard];
+      const advice = deadlineAdvice(s.last);
+      if (advice) {
+        const open = el("button", { text: L("deadline.open_settings") });
+        open.addEventListener("click", () => select("settings"));
+        const took = advice.tookMs === null ? "" : L("deadline.took", { n: formatMs(advice.tookMs) });
+        const text = advice.level === "over" ? L("deadline.over", { d: formatMs(advice.deadlineMs), took, s: formatMs(advice.suggestMs) }) : L("deadline.near", { d: formatMs(advice.deadlineMs), n: formatMs(advice.tookMs ?? 0), s: formatMs(advice.suggestMs) });
+        cards.unshift(el(
+          "div",
+          { class: "card" },
+          el("h2", { class: advice.level === "over" ? "err" : "warn", text: L(`deadline.${advice.level}.title`) }),
+          el("p", { class: "sub", text }),
+          el("div", { class: "btns" }, open)
+        ));
+      }
       const problem = deps.hud.problem();
       if (Number(await deps.getArg("hud")) !== 1) {
         const turnOn = el("button", { text: L("hud.enable") });
@@ -2082,7 +2160,12 @@ html,body{margin:0;background:#0c0c10}
     },
     warn: (...args) => console.warn(...args),
     debug: (...args) => console.debug(...args),
-    now: () => performance.now()
+    now: () => performance.now(),
+    // PocketRisu's alertNormal: one global dialog, so core.ts calls it only after a reply (audit A-09).
+    alert: (message) => {
+      risuai.alert(message).catch(() => {
+      });
+    }
   };
   function createRisuHud(link) {
     const hud = createHud({

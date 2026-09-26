@@ -17,13 +17,14 @@ export interface Coverage { extract: Counts | null; embed: Counts | null }
 export type ActivityEvent =
   | { type: 'request-start' }
   | { type: 'request-abandon' }
-  | { type: 'request-end'; outcome: Outcome; chars: number; error?: string; conversationId: string | null }
+  | { type: 'request-end'; outcome: Outcome; chars: number; error?: string; deadlineMs?: number; conversationId: string | null }
   | { type: 'background'; conversationId: string | null };
 
 export type HudEvent = ActivityEvent | { type: 'coverage'; coverage: Coverage } | { type: 'reset' };
 
 export interface HudState {
-  request: null | { phase: 'running' } | { phase: 'done'; outcome: Outcome; chars: number; error?: string; until: number };
+  request: null | { phase: 'running' }
+    | { phase: 'done'; outcome: Outcome; chars: number; error?: string; deadlineMs?: number; until: number };
   progress: null | { coverage: Coverage } | { finishedUntil: number };
 }
 
@@ -43,7 +44,7 @@ export function reduce(state: HudState, event: HudEvent, now: number): HudState 
       return state.request?.phase === 'running' ? { ...state, request: null } : state;
     case 'request-end':
       return { ...state, request: { phase: 'done', outcome: event.outcome, chars: event.chars, error: event.error,
-        until: now + OUTCOME_MS } };
+        deadlineMs: event.deadlineMs, until: now + OUTCOME_MS } };
     case 'coverage':
       if (pending(event.coverage) > 0) return { ...state, progress: { coverage: event.coverage } };
       // Work that was on screen has finished: say so briefly. Nothing was pending: stay hidden.
@@ -62,7 +63,9 @@ export function view(state: HudState, now: number, lang: Lang): HudView | null {
   if (r?.phase === 'done' && now < r.until) {
     if (r.outcome === 'injected') return { kind: 'ok', text: t(lang, 'hud.injected', { n: r.chars }), fraction: null };
     if (r.outcome === 'nothing-relevant') return { kind: 'muted', text: t(lang, 'hud.nothing'), fraction: null };
-    const reason = t(lang, r.error?.startsWith('deadline') ? 'hud.reason.deadline' : 'hud.reason.error');
+    const reason = r.error?.startsWith('deadline')
+      ? t(lang, 'hud.reason.deadline', { s: Math.round((r.deadlineMs ?? 0) / 100) / 10 })
+      : t(lang, 'hud.reason.error');
     return { kind: 'warn', text: t(lang, 'hud.skipped', { r: reason }), fraction: null };
   }
   const p = state.progress;

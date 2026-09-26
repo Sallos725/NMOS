@@ -343,6 +343,23 @@ extraction stub ("X는 Y로 간다." → X located_in Y). **Source reading:** ta
    extraction of the second turn got KNOWN ENTITIES `거실 (place)` only, the third `주방 (place) |
    거실 (place)`. A new chat opened after the denial had no persona name.
 
+## Plugin alert dialog (2026-09-26, audit A-09)
+
+**Source reading** (`ghcr.io/pocketrisu/pocketrisu:latest`, v1.12.0, source maps in the image):
+`src/ts/plugins/apiV3/v3.svelte.ts` exposes `alert: (msg) => alertNormal(msg)`. `src/ts/alert.ts`
+`alertNormal` sets the global `alertStore` to `{type: 'normal', msg}`. There is one store for the whole page,
+so a later alert replaces the one on screen. The host's own comment on permission dialogs says the same
+about plugins overwriting each other's dialogs.
+
+**Runtime** (isolated v1.12.0, headless Chromium, the 5,000-message synthetic chat, stub model):
+- A plugin `alert` issued from the output listener, right after a reply, showed as a modal over the chat
+  with a **Confirm** button. The reply was already on screen and unchanged.
+- A second request that missed the deadline in the same page showed no second alert, as the plugin
+  intends; a reloaded page showed it again.
+
+Conclusion: H18. A plugin alert during a request could replace a host dialog, so NMOS alerts only after a
+reply, at most once per page.
+
 ## Scenario evidence index
 
 | Scenario | Before fixture | After fixture | Other logs | Done |

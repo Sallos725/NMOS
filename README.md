@@ -298,7 +298,9 @@ The full list with workarounds is [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md)
   default 3 s deadline covers up to about 10,000 messages without extraction and embeddings. With both on,
   recall adds about 0.4–0.7 s, and at 10,000 messages the 3 s default is no longer enough (3.1–3.3 s
   measured). For long chats, raise Deadline (ms) in the panel's Settings tab: about 4,000 at 10,000
-  messages with extraction on, 5,000 at 15,000. See `docs/perf/scale.md`.
+  messages with extraction on, 5,000 at 15,000. The panel's Status tab tells you when a request used 80 %
+  of the deadline or missed it, with the value to set. A PocketRisu notice follows the first reply on a page
+  that went without memory for it. See `docs/perf/scale.md`.
 - Changing the embedding model/endpoint re-embeds previously covered history (recent messages first;
   the Inspector shows coverage as partial until done). Changing the LLM model/endpoint re-extracts only
   each chat's recent turns (`NMOS_EXTRACT_BACKFILL`, default 100); older turns keep the previous model's
@@ -318,7 +320,7 @@ cd apps/sidecar && uv sync && uv run pytest               # needs the compose Po
 cd adapters/pocketrisu-plugin && npm ci && npm test && npm run typecheck && npm run build
 ```
 
-Design: `ARCHITECTURE.md` (invariants, host facts H1–H17, decisions), `docs/phases/`, `docs/adr/`,
+Design: `ARCHITECTURE.md` (invariants, host facts H1–H18, decisions), `docs/phases/`, `docs/adr/`,
 `docs/HOST-FACTS.md`. Agent contract: `AGENTS.md`.
 
 ## License

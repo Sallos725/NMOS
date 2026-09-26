@@ -3,6 +3,7 @@
 // the sidecar and are saved together with one request.
 
 import type { StatusInfo } from './core';
+import { deadlineAdvice, formatMs } from './deadline';
 import { configBody, connArgs, DEFAULT_DEADLINE_MS, dirtySections, fillProject, MAX_DEADLINE_MS, presetMatches, VERTEX_URL,
   type FormValues, type Section } from './form';
 import { langOf, t, type Lang, type StringKey } from './i18n';
@@ -241,15 +242,25 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (s.last.packet) lastCard.append(el('details', { class: 'help' },
         el('summary', { text: L('status.packet') }), el('pre', { class: 'packet', text: s.last.packet })));
       if (s.last.error) lastCard.append(el('div', { class: 'mono muted', text: s.last.error }));
-      // A long chat that runs out of time gets no memory at all (fail open), silently: say what helps.
-      if (s.last.outcome === 'failed' && s.last.error?.startsWith('deadline')) {
-        lastCard.append(el('p', { class: 'sub', text: L('status.deadline_hint') }));
-      }
     } else {
       lastCard.append(el('div', { class: 'muted', text: L('status.none') }));
     }
 
     const cards: HTMLElement[] = [conn, features, lastCard];
+    // A long chat that runs out of time gets no memory at all (fail open), silently: say it first, with
+    // the value to set, and warn before it happens (owner decision on audit A-09).
+    const advice = deadlineAdvice(s.last);
+    if (advice) {
+      const open = el('button', { text: L('deadline.open_settings') });
+      open.addEventListener('click', () => select('settings'));
+      const took = advice.tookMs === null ? '' : L('deadline.took', { n: formatMs(advice.tookMs) });
+      const text = advice.level === 'over'
+        ? L('deadline.over', { d: formatMs(advice.deadlineMs), took, s: formatMs(advice.suggestMs) })
+        : L('deadline.near', { d: formatMs(advice.deadlineMs), n: formatMs(advice.tookMs ?? 0), s: formatMs(advice.suggestMs) });
+      cards.unshift(el('div', { class: 'card' },
+        el('h2', { class: advice.level === 'over' ? 'err' : 'warn', text: L(`deadline.${advice.level}.title`) }),
+        el('p', { class: 'sub', text }), el('div', { class: 'btns' }, open)));
+    }
     const problem = deps.hud.problem();
     if (Number(await deps.getArg('hud')) !== 1) {
       const turnOn = el('button', { text: L('hud.enable') });

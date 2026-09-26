@@ -17,11 +17,14 @@ describe('request outcome', () => {
   });
 
   it('shows each outcome, then hides it', () => {
-    const end = (outcome: 'injected' | 'nothing-relevant' | 'failed', error?: string) =>
-      run([[{ type: 'request-start' }, 0], [{ type: 'request-end', outcome, chars: 1234, error, conversationId: 'c' }, 100]]);
+    const end = (outcome: 'injected' | 'nothing-relevant' | 'failed', error?: string, deadlineMs = 3000) =>
+      run([[{ type: 'request-start' }, 0], [{ type: 'request-end', outcome, chars: 1234, error, deadlineMs, conversationId: 'c' }, 100]]);
     expect(view(end('injected'), 100, 'ko')).toMatchObject({ kind: 'ok', text: '✓ 기억 주입 (1234자)' });
     expect(view(end('nothing-relevant'), 100, 'ko')).toMatchObject({ kind: 'muted', text: '– 관련 기억 없음' });
-    expect(view(end('failed', 'deadline during /v1/retrieve'), 100, 'ko')).toMatchObject({ kind: 'warn', text: '⚠ 건너뜀: 제한 시간 초과' });
+    expect(view(end('failed', 'deadline during /v1/retrieve'), 100, 'ko'))
+      .toMatchObject({ kind: 'warn', text: '⚠ 건너뜀: 제한 시간 3초 초과 · 눌러서 늘리기' });
+    expect(view(end('failed', 'deadline during /v1/retrieve', 2500), 100, 'en'))
+      .toMatchObject({ kind: 'warn', text: '⚠ Skipped: over the 2.5 s deadline · tap to raise' });
     expect(view(end('failed', '/v1/retrieve -> HTTP 500'), 100, 'ko')).toMatchObject({ kind: 'warn', text: '⚠ 건너뜀: 사이드카 오류' });
     expect(view(end('injected'), 100 + OUTCOME_MS, 'ko')).toBeNull();
   });
