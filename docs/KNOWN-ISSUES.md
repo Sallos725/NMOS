@@ -35,6 +35,7 @@ without a PocketRisu change.
 | K24 | A relationship change can leave the earlier relationship or feeling current | Memory | measured in Phase 8 (report only); a later Track B decision |
 | K25 | A speech level or form of address can still be missed or cut | Memory | ranking (ADR 0026) and `addresses` (ADR 0028); turns before `extract-v10`: "Extract all history" |
 | K26 | The packet's token estimate over-counts Korean, so the reserve is under-used | Recall | measured in Phase 9 (report only); an owner decision |
+| K27 | A message holding a broken emoji half (a lone UTF-16 surrogate) stops that chat's sync | Data | audit A-01; fix needs an owner decision |
 
 ## Performance
 
@@ -207,6 +208,13 @@ window (`NMOS_EXTRACT_BACKFILL`); older turns keep the previous model's facts un
 history". Embedding changes still re-embed everything covered. With a reasoning model,
 per-turn extraction produces ≈19 % more completion tokens than per-message did (≈9 % fewer tokens
 overall; ADR 0008).
+
+**K27 — A broken emoji half stops a chat's sync.** A message whose text holds half of a character outside
+the Basic Multilingual Plane (a lone UTF-16 surrogate, e.g. an emoji cut in two by a script or a
+truncating tool) hashes the same in the plugin and the sidecar, but PostgreSQL cannot store it, so
+`/v1/sync/bodies` fails with HTTP 500 on every request. The chat goes on without new memory (fail open)
+until that message changes. Found by the 2026-09-26 audit (A-01, `docs/audits/`), not seen in a real chat
+yet. *Workaround:* edit the message and remove or retype the broken character.
 
 ## Setup and UI
 

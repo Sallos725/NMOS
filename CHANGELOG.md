@@ -5,6 +5,19 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+Two fixes from the 2026-09-26 audit (`docs/audits/NMOS-AUDIT-2026-09-26.md`, review
+`docs/audits/NMOS-AUDIT-2026-09-26-REVIEW.md`). No schema or generation change.
+
+- **A reply quoting the memory tag no longer turns memory off** (audit A-02, plugin). The plugin took any
+  message containing `<NarrativeMemory version="0" source="nmos">` for its own injected packet and
+  skipped the request as a host retry (H2). Once a reply (or your own message) quoted that tag, the chat
+  silently got no sync and no memory until the message left the prompt. Only a system message now counts.
+- **One bad job no longer stops the worker** (audit A-04, worker). An error other than the expected
+  provider, database and validation errors (for example a provider reply with `"message": null`) ended
+  the worker thread while the process kept running, so extraction and embedding stopped with jobs left
+  pending. Such an error now fails that job (retried with backoff, then `dead`) and the worker goes on;
+  malformed chat replies are reported as provider errors.
+
 ## 0.1.0-beta.19
 
 Phase 9 — Accountable Packets (ADR 0027, D39), plus two owner-reported fixes to what the packet keeps:
