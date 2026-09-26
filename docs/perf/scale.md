@@ -259,6 +259,63 @@ here (not run with that deadline); a denser chat can need more. Where the defaul
 (5,000 messages had ≈1.5 s without it). Faster fact reads at this size would need a new mechanism,
 since today every request folds every head assertion; not changed here.
 
+### Rerolls, swipes and edits on the real host (2026-09-27, K3)
+
+K3 said every edit, reroll and swipe takes the full sync path (≈0.9 s at 10,000 messages in the bench) and
+that a reroll near 10,000 messages would likely exceed the 3 s default. This measures it.
+
+Setup:
+- Isolated `ghcr.io/pocketrisu/pocketrisu:latest` (v1.12.0), headless Chromium, the synthetic 5,000- and
+  10,000-message chats from the checks above.
+- The `v0.1.0-beta.21` plugin, and the sidecar from `main` after it, on a fresh database.
+- Extraction and embeddings off; a stub chat model whose log carries a timestamp for every request.
+- `deadline_ms` 10,000, so no request was cut.
+- Per action, "to model" is the time from the click to the model request (the host's own work plus the
+  plugin's). "Plugin" is the plugin's `[NMOS] request done` total. "NMOS off" is the same action with the
+  plugin switched off (`disabled` = 1).
+
+Actions:
+- append: send a message.
+- reroll: the last reply's ⟳, then "Yes" in the host's "Generate a new message and add it to the list?".
+- reroll after reload: the same after a page reload, which empties the plugin's packet cache.
+- swipe: make a second swipe of the last reply, go back to the first one (no generation), then send.
+- edit: edit a message about 30 back, which the sidecar already holds, then send.
+
+| 10,000 messages | n | To model, NMOS off | To model, NMOS on | Plugin total | Sidecar path |
+|---|---:|---:|---:|---:|---|
+| append | 5 | 6.23–6.30 s | 9.00–9.08 s | 2,821–2,864 ms | append (reconcile ≈75 ms, bodies ≈80 ms) |
+| reroll | 5 | 8.10–8.47 s | 6.37–8.28 s | — | none: packet cache |
+| reroll after reload | 5 | — | 9.06–9.15 s | 2,295–2,361 ms | no change (reconcile ≈86 ms) |
+| swipe, then send | 5 | 7.05–8.17 s | 9.72–9.89 s | 2,804–2,861 ms | append |
+| edit, then send | 4 | 6.28–7.10 s (3) | 10.55–10.82 s | **3,571–3,754 ms** | edit (reconcile ≈330 ms, bodies ≈620 ms) |
+
+| 5,000 messages | n | Plugin total |
+|---|---:|---:|
+| append | 4 | 1,726–1,831 ms |
+| edit, then send | 3 | 2,066–2,199 ms |
+
+The first edit of each run was not saved before its message was sent. It synced as an append (2,847 ms
+at 10k, 1,823 ms at 5k), so it is left out.
+
+Findings:
+- **A reroll never takes the slow path on this host.** The host removes the old reply before the plugin
+  runs (H14). The reply was never synced either, because `/v1/output` only records an observation and a
+  reply joins the ledger with the next request. So a reroll's chat equals the one its original request
+  synced:
+  - within 10 minutes on the same page, the plugin reuses its packet and does not call the sidecar;
+  - after a reload, the sidecar finds nothing changed. The reroll costs less than an append (no bodies)
+    and stays under the 3 s default at 10,000 messages.
+- **A swipe change of the last reply is an append** for the same reason: that reply had not been synced.
+- **An edit of an older message is the slow case.** At 10,000 messages it took 3.6–3.8 s, so with the 3 s
+  default those requests go without memory. The sidecar's part (≈0.95 s) matches the bench's 0.9 s. At
+  5,000 messages it took 2.1–2.2 s, within the default. A deletion or a swipe change of an older reply
+  goes the same way (not measured).
+- **Not measured with extraction and embeddings on.** Recall adds 0.4–0.7 s at 10,000 messages (A-09
+  above), so a reroll after a reload would come near 3 s and an edit to ≈4.0–4.5 s (estimate).
+- The host's own time before the model request (6–8 s at 10,000 messages, NMOS off) is larger than NMOS's
+  share. The reroll timings with NMOS on and off overlap, so the difference there is within the host's
+  variance.
+
 ### Estimated added `beforeRequest` latency (warm path)
 
 Plugin copy + manifest + sidecar append + selective retrieve; network and host snapshot overhead
