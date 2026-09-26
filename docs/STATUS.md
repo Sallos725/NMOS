@@ -168,6 +168,8 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 - Phase 10+ (the rest of B3, Track B, B4–B7): not authorized.
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600.
+- Release cadence — decided 2026-09-26: at least 3 days between tags except urgent fixes; heavy changes
+  (extractor generation, migration, user action) bundled; light changes ride along (`AGENTS.md` §13).
 
 ## Queued for the next extractor generation
 

@@ -339,3 +339,25 @@ A change is done only when:
 
 "Code complete" and "phase complete" are different states: a phase is complete only when its
 evidence-bearing acceptance criteria were actually met.
+
+---
+
+## 13. Release cadence
+
+Owner decision, 2026-09-26. `main` takes merges as before; a release tag follows these rules.
+
+| Kind | Examples | Tag |
+|---|---|---|
+| Urgent | memory lost for every request, a security fix, data loss or corruption | a release right away, whatever the interval |
+| Heavy | a new extractor generation, a migration, anything the user must act on (re-extract, change a setting) | bundled: collect the changes and ship them together |
+| Light | UI, performance, docs, tests, a changed default | no tag of its own; rides with the next release |
+
+- **At least 3 days between releases**, counted from the previous tag. Only an urgent fix may break it.
+- **Extractor changes wait for the next generation.** Each generation costs the user a paid
+  "Extract all history". An extractor prompt or schema change that is not urgent goes on the
+  "Queued for the next extractor generation" list in `docs/STATUS.md` instead of starting a
+  generation. A generation is cut when that list has grown enough to be worth a re-extraction, or a
+  quality problem cannot wait.
+- A phase being complete does not by itself call for a tag; it ships with the next release under these
+  rules.
+- When unsure which kind a change is, treat it as light and ask the owner before tagging early.
