@@ -5,8 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+## 0.1.0-beta.20
+
 Three fixes from the 2026-09-26 audit (`docs/audits/NMOS-AUDIT-2026-09-26.md`, review
-`docs/audits/NMOS-AUDIT-2026-09-26-REVIEW.md`). No schema, generation or hash change.
+`docs/audits/NMOS-AUDIT-2026-09-26-REVIEW.md`). No schema, generation or hash change: nothing is
+re-extracted or re-embedded.
 
 - **A broken emoji no longer stops a chat's sync** (audit A-01, ADR 0029, sidecar). A message holding half
   of an emoji (a lone UTF-16 surrogate, e.g. cut by a script) made every sync of that chat fail with HTTP
@@ -23,6 +26,17 @@ Three fixes from the 2026-09-26 audit (`docs/audits/NMOS-AUDIT-2026-09-26.md`, r
   the worker thread while the process kept running, so extraction and embedding stopped with jobs left
   pending. Such an error now fails that job (retried with backoff, then `dead`) and the worker goes on;
   malformed chat replies are reported as provider errors.
+
+Pull the new sidecar image (sidecar and worker) and restart. Replace the plugin file and reload PocketRisu.
+Each fix works on its own: an older plugin with this sidecar gets the A-01 and A-04 fixes.
+
+### Known limitations
+
+- A message whose text holds half an emoji is stored with U+FFFD in its place (ADR 0029); recall and the
+  Inspector show that character. A host message id holding one is refused (HTTP 422); it has not been seen.
+- A bot whose Lua `request` trigger rewrites the injected system message into another role can get the
+  memory twice when the host retries a failed request (H2, H3).
+- Otherwise unchanged from 0.1.0-beta.19; the full list is `docs/KNOWN-ISSUES.md`.
 
 ## 0.1.0-beta.19
 
