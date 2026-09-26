@@ -1,6 +1,6 @@
 # NMOS Known Issues
 
-Current as of `v0.1.0-beta.18` (2026-09-25; K25 2026-09-26). This is the single list of what does not work, or works
+Current as of `v0.1.0-beta.18` (2026-09-25; K25, K26 and the Phase 9 notes on K11 and K15 2026-09-26). This is the single list of what does not work, or works
 only partly, in the current release. Each release's "Known limitations" in `CHANGELOG.md` describes
 that release at the time; entries fixed later are listed under [Resolved](#resolved) below.
 
@@ -34,6 +34,7 @@ without a PocketRisu change.
 | K23 | A promise stays open until the story keeps or breaks it in words extraction recognizes | Memory | beta.14 (ADR 0019); owner repair: Track B, B7 |
 | K24 | A relationship change can leave the earlier relationship or feeling current | Memory | measured in Phase 8 (report only); a later Track B decision |
 | K25 | A speech level or form of address can still be missed or cut | Memory | ranking (ADR 0026) and `addresses` (ADR 0028); turns before `extract-v10`: "Extract all history" |
+| K26 | The packet's token estimate over-counts Korean, so the reserve is under-used | Recall | measured in Phase 9 (report only); an owner decision |
 
 ## Performance
 
@@ -104,7 +105,9 @@ real-model accuracy is not measured yet.
 **K11 — Character knowledge is a hint.** Facts carry `public` / `limited` (`known_by`,
 `hidden_from`) / unknown marks and the packet tells the model how to use them, but one generation
 writes for every character, so a secret can still leak (ADR 0007). Hard per-character isolation
-(D9 `character_pov`) is not authorized (Track B, B5).
+(D9 `character_pov`) is not authorized (Track B, B5). *Since Phase 9:* the Inspector's "Last
+packet" flags a placed secret that the next reply reuses (a possible leak). It is a report, not a
+guard.
 
 **K22 — Facts depend on the model's labels.** Since 0.1.0-beta.12 only what the extraction model labels
 as actual narration becomes a fact (ADR 0013). On the tested model (`deepseek-v4.1-flash`) 1 of 32
@@ -142,6 +145,16 @@ facts not fitting (kept/offered). Evidence: `docs/perf/extract-v10.md`.
 
 ## Recall and gating
 
+**K26 — The token estimate over-counts Korean.** The packet budget is filled against a conservative
+estimate: 1 token per 3.5 ASCII characters and 1.5 per other character, so a Korean packet never
+overflows the reserve. On synthetic Korean fixture text, three tokenizers counted 0.74–0.98 tokens per
+Korean character: gemma4 (a Gemini-family tokenizer), deepseek-v4.1-flash and qwen3-embedding. Korean
+prose was over-counted 1.42–1.75× and packet fact lines 1.14–1.19× (`docs/perf/phase9-packets.md`). About
+15–40 % of a Korean packet's reserve therefore goes unused (less for fact lines, more for excerpts). A lower
+estimate could overflow the reserve for tokenizers that were not measured, so it is not changed.
+*Workaround:* raise **기억 예산(토큰) / Memory budget (tokens)** in the panel, and lower PocketRisu's
+max context by the same amount (D2).
+
 **K12 — Broad words bring no lexical excerpts.** If a query's words occur in more than 200 messages
 (a main character's name, a recurring place), lexical recall abstains for that request (Inspector
 trace `too_broad`) instead of scoring most of the chat. Vectors, state and facts still answer; with
@@ -163,6 +176,11 @@ evaluation baseline uses synthetic cases and a stub extractor (`docs/perf/eval-b
 checks correctness (stale, deleted, rerolled, other-branch memory), not extraction quality.
 Extraction quality depends on the model: a weak model may still record a refused action as done
 (`docs/perf/turn-extraction.md`). Reports of wrong or missing memory are the main input here.
+*Since Phase 9 (ADR 0027):* the baseline has budget-pressure cases. Every request records what
+its packet held, and `tools/replay_packets.py` replays recorded requests under another packet policy.
+Real requests can therefore be compared offline once a release with migration 0020 has recorded them.
+`tools/eval_packet_answers.py` scores answers from a response model on synthetic probes. Both remain
+small samples.
 
 ## Data and lifecycle
 

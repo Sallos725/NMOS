@@ -1,0 +1,170 @@
+{
+  "model": "deepseek-v4.1-flash:cloud",
+  "url": "http://127.0.0.1:11434/v1",
+  "runs": 3,
+  "synthetic": true,
+  "by_probe": {
+    "password": {
+      "packet-v1": {
+        "answered": 3,
+        "runs": 3,
+        "in_packet": 3,
+        "placed": 21,
+        "echoed": 3
+      },
+      "packet-v0": {
+        "answered": 0,
+        "runs": 3,
+        "in_packet": 0,
+        "placed": 21,
+        "echoed": 0
+      }
+    },
+    "meeting": {
+      "packet-v1": {
+        "answered": 0,
+        "runs": 3,
+        "in_packet": 0,
+        "placed": 21,
+        "echoed": 0
+      },
+      "packet-v0": {
+        "answered": 0,
+        "runs": 3,
+        "in_packet": 0,
+        "placed": 21,
+        "echoed": 0
+      }
+    },
+    "ship": {
+      "packet-v1": {
+        "answered": 3,
+        "runs": 3,
+        "in_packet": 3,
+        "placed": 21,
+        "echoed": 3
+      },
+      "packet-v0": {
+        "answered": 0,
+        "runs": 3,
+        "in_packet": 0,
+        "placed": 21,
+        "echoed": 1
+      }
+    },
+    "last words": {
+      "packet-v1": {
+        "answered": 0,
+        "runs": 3,
+        "in_packet": 0,
+        "placed": 21,
+        "echoed": 0
+      },
+      "packet-v0": {
+        "answered": 0,
+        "runs": 3,
+        "in_packet": 0,
+        "placed": 21,
+        "echoed": 1
+      }
+    },
+    "lie tell": {
+      "packet-v1": {
+        "answered": 3,
+        "runs": 3,
+        "in_packet": 3,
+        "placed": 21,
+        "echoed": 3
+      },
+      "packet-v0": {
+        "answered": 2,
+        "runs": 3,
+        "in_packet": 3,
+        "placed": 21,
+        "echoed": 3
+      }
+    },
+    "hidden sweets": {
+      "packet-v1": {
+        "answered": 0,
+        "runs": 3,
+        "in_packet": 3,
+        "placed": 21,
+        "echoed": 0
+      },
+      "packet-v0": {
+        "answered": 0,
+        "runs": 3,
+        "in_packet": 3,
+        "placed": 21,
+        "echoed": 0
+      }
+    },
+    "old wound": {
+      "packet-v1": {
+        "answered": 0,
+        "runs": 3,
+        "in_packet": 3,
+        "placed": 21,
+        "echoed": 3
+      },
+      "packet-v0": {
+        "answered": 0,
+        "runs": 3,
+        "in_packet": 3,
+        "placed": 21,
+        "echoed": 3
+      }
+    },
+    "father's chart": {
+      "packet-v1": {
+        "answered": 0,
+        "runs": 3,
+        "in_packet": 3,
+        "placed": 21,
+        "echoed": 0
+      },
+      "packet-v0": {
+        "answered": 0,
+        "runs": 3,
+        "in_packet": 3,
+        "placed": 21,
+        "echoed": 0
+      }
+    }
+  },
+  "by_kind": {
+    "quote": {
+      "packet-v1": {
+        "answered": 6,
+        "runs": 12,
+        "in_packet": 6,
+        "placed": 84,
+        "echoed": 6
+      },
+      "packet-v0": {
+        "answered": 0,
+        "runs": 12,
+        "in_packet": 0,
+        "placed": 84,
+        "echoed": 2
+      }
+    },
+    "fact": {
+      "packet-v1": {
+        "answered": 3,
+        "runs": 12,
+        "in_packet": 12,
+        "placed": 84,
+        "echoed": 6
+      },
+      "packet-v0": {
+        "answered": 2,
+        "runs": 12,
+        "in_packet": 12,
+        "placed": 84,
+        "echoed": 6
+      }
+    }
+  }
+}

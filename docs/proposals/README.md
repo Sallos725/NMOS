@@ -34,5 +34,9 @@ Phase 8 draft review (PR #64): the review handoff
 [`PHASE-8-PR64-REVIEW-HANDOFF.md`](PHASE-8-PR64-REVIEW-HANDOFF.md) and the response
 [`PHASE-8-PR64-REVIEW-RESPONSE.md`](PHASE-8-PR64-REVIEW-RESPONSE.md). Neither authorizes Phase 8.
 
+Position paper (2026-09-26, with Phase 9): [Accountable memory](ACCOUNTABLE-MEMORY.md) —
+what NMOS contributes to long-term memory for LLMs in general, what is measured, and the next
+experiments. It does not authorize work.
+
 The two tracks are complementary. Track A makes the existing beta faster and easier to evaluate;
 Track B expands what NMOS can represent.

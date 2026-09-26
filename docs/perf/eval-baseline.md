@@ -1,4 +1,4 @@
-# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5–8 cases 2026-09-24)
+# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5–8 cases 2026-09-24; Phase 9 2026-09-26)
 
 Deterministic tier of the RP memory evaluation. It gates CI (`apps/sidecar/tests/test_memory_eval.py`)
 and prints this table (`tools/eval_memory.py`).
@@ -30,58 +30,70 @@ and prints this table (`tools/eval_memory.py`).
 - **Modes.** `recent`: no memory, only the last 6 messages the host prompt still holds (the question
   itself excluded). `lexical`: raw lexical recall (no extractor, no embeddings). `hybrid`: lexical +
   vectors. `full`: hybrid + facts. The last 6 messages are sent as `in_context_ids`, so memory must
-  bring what is older.
+  bring what is older. `full-v0` (since Phase 9): `full` compiled by `packet-v0`, the packet compiler
+  before ADR 0027; `full` uses `packet-v1`.
 
 Gold for the state cases is a fact line (e.g. `Hinata located in harbor`), which only `full` can
 produce; `lexical` and `hybrid` can still bring the original sentence as an excerpt.
 
 ## Results
 
-| Case | Category | recent | lexical | hybrid | full |
-|---|---|---|---|---|---|
-| current state after moves | current state | **no** | **no** | **no** | yes |
-| history of a move | historical state | **no** | yes | yes | yes |
-| item changes hands | current state | **no** | **no** | **no** | yes |
-| edited message | edit invalidation | **no** | **no** | **no** | yes |
-| deleted turn | delete invalidation | — | — | — | — |
-| rerolled reply | reroll invalidation | **no** | **no** | **no** | yes |
-| swipe back | swipe invalidation | **no** | **no** | **no** | yes |
-| branch does not see the origin's later story | branch isolation | **no** | **no** | **no** | yes |
-| exact quote | exact quote | **no** | yes | yes | yes |
-| Korean paraphrase | paraphrase recall | **no** | **no** | yes | yes |
-| secret kept from someone | soft knowledge | **no** | **no** | **no** | yes |
-| lost item | negation | **no** | **no** | **no** | yes |
-| negated entry | negation | **no** | **no** | **no** | yes |
-| negation of another place | negation | **no** | **no** | **no** | yes |
-| denial by a non-holder | negation | **no** | **no** | **no** | yes |
-| hypothetical and dream | modality | **no** | **no** | **no** | yes |
-| lie in dialogue | source | **no** | **no** | **no** | yes |
-| put down | item whereabouts | **no** | **no** | **no** | yes |
-| picked up | item whereabouts | **no** | **no** | **no** | yes |
-| holder and place in one turn | item whereabouts | **no** | **no** | **no** | yes |
-| a character's place is not an item's | item whereabouts | **no** | **no** | **no** | yes |
-| destroyed | item end | **no** | **no** | **no** | yes |
-| eaten | item end | **no** | **no** | **no** | yes |
-| damaged, not destroyed | item end | **no** | **no** | **no** | yes |
-| edit removes the end | item end | **no** | **no** | **no** | yes |
-| use after end | conflict | **no** | **no** | **no** | yes |
-| promise recalled | open thread | **no** | **no** | **no** | yes |
-| reported promise | open thread | **no** | **no** | **no** | yes |
-| broken promise | open thread | — | — | — | — |
-| kept promise | open thread | — | — | — | — |
-| edit removes the break | open thread | **no** | **no** | **no** | yes |
-| delete removes the promise | open thread | — | — | — | — |
-| events leave room | event salience | **no** | **no** | **no** | yes |
-| major event first | event salience | **no** | **no** | **no** | yes |
-| addressed participant | event participants | **no** | **no** | **no** | yes |
-| unrelated question | irrelevant-memory suppression | — | empty | empty | empty |
+| Case | Category | recent | lexical | hybrid | full-v0 | full |
+|---|---|---|---|---|---|---|
+| current state after moves | current state | **no** | **no** | **no** | yes | yes |
+| history of a move | historical state | **no** | yes | yes | yes | yes |
+| item changes hands | current state | **no** | **no** | **no** | yes | yes |
+| edited message | edit invalidation | **no** | **no** | **no** | yes | yes |
+| deleted turn | delete invalidation | — | — | — | — | — |
+| rerolled reply | reroll invalidation | **no** | **no** | **no** | yes | yes |
+| swipe back | swipe invalidation | **no** | **no** | **no** | yes | yes |
+| branch does not see the origin's later story | branch isolation | **no** | **no** | **no** | yes | yes |
+| exact quote | exact quote | **no** | yes | yes | yes | yes |
+| Korean paraphrase | paraphrase recall | **no** | **no** | yes | yes | yes |
+| secret kept from someone | soft knowledge | **no** | **no** | **no** | yes | yes |
+| lost item | negation | **no** | **no** | **no** | yes | yes |
+| negated entry | negation | **no** | **no** | **no** | yes | yes |
+| negation of another place | negation | **no** | **no** | **no** | yes | yes |
+| denial by a non-holder | negation | **no** | **no** | **no** | yes | yes |
+| hypothetical and dream | modality | **no** | **no** | **no** | yes | yes |
+| lie in dialogue | source | **no** | **no** | **no** | yes | yes |
+| put down | item whereabouts | **no** | **no** | **no** | yes | yes |
+| picked up | item whereabouts | **no** | **no** | **no** | yes | yes |
+| holder and place in one turn | item whereabouts | **no** | **no** | **no** | yes | yes |
+| a character's place is not an item's | item whereabouts | **no** | **no** | **no** | yes | yes |
+| destroyed | item end | **no** | **no** | **no** | yes | yes |
+| eaten | item end | **no** | **no** | **no** | yes | yes |
+| damaged, not destroyed | item end | **no** | **no** | **no** | yes | yes |
+| edit removes the end | item end | **no** | **no** | **no** | yes | yes |
+| use after end | conflict | **no** | **no** | **no** | yes | yes |
+| promise recalled | open thread | **no** | **no** | **no** | yes | yes |
+| reported promise | open thread | **no** | **no** | **no** | yes | yes |
+| broken promise | open thread | — | — | — | — | — |
+| kept promise | open thread | — | — | — | — | — |
+| edit removes the break | open thread | **no** | **no** | **no** | yes | yes |
+| delete removes the promise | open thread | — | — | — | — | — |
+| events leave room | event salience | **no** | **no** | **no** | yes | yes |
+| major event first | event salience | **no** | **no** | **no** | yes | yes |
+| addressed participant | event participants | **no** | **no** | **no** | yes | yes |
+| speech level in a crowded scene | standing facts | **no** | **no** | **no** | yes | yes |
+| speech level changed back | standing facts | **no** | **no** | **no** | yes | yes |
+| quote under a full budget | budget pressure | **no** | **no** | **no** | **no** | yes |
+| one line of a long message | budget pressure | **no** | **no** | **no** | **no** | yes |
+| unrelated question | irrelevant-memory suppression | — | empty | empty | empty | empty |
 
 | Mode | gold reached | cases with stale memory | irrelevant packets | mean packet tokens |
 |---|---:|---:|---:|---:|
-| recent | 0/31 | 0 | — | 0 |
-| lexical | 2/31 | 0 | 0/1 | 107 |
-| hybrid | 3/31 | 0 | 0/1 | 131 |
-| full | 31/31 | 0 | 0/1 | 167 |
+| recent | 0/35 | 0 | — | 0 |
+| lexical | 2/35 | 0 | 0/1 | 112 |
+| hybrid | 3/35 | 0 | 0/1 | 137 |
+| full-v0 | 33/35 | 0 | 0/1 | 197 |
+| full | 35/35 | 0 | 0/1 | 190 |
+
+Phase 9 (ADR 0027) added two budget-pressure cases: ten long Korean traits and two claims of 하나 fill the
+600-token budget, and the answer is only in a message's words (a whole short message, or one sentence of
+a long one). `packet-v0` spends the budget on the fact lines and drops the excerpt; `packet-v1` keeps
+room for it. CI checks that `full-v0` misses exactly these
+two and `full` answers every case.
 
 Before Phase 6 step 1 (ADR 0016), `full` had stale memory in "put down" (`Hana possesses map`) and
 "picked up" (`map located in table`).
@@ -101,6 +113,7 @@ in its value, and recall counted only subjects and objects as mentions.
 - `full` reaches every gold.
 - Irrelevant questions get an empty packet in every memory mode.
 - `recent` reaches none of the gold (the cases really need memory).
+- `full-v0` misses exactly the budget-pressure cases, so they keep testing the budget (Phase 9).
 
 ## Not covered here
 
