@@ -114,8 +114,7 @@ Recommended order after this PR:
 | Order | ID | What | Needs |
 |---|---|---|---|
 | 1 | A-09 | Re-measure K1's 10k margin with extraction and embeddings on (the wording is narrowed, see A-07) | real-host session |
-| 2 | A-16 | Schema-transition test (0013 → 0020 with rows) and a `pg_dump` backup/rollback note | — |
-| 3 | A-08 | Commit startup steps one by one | — |
+| 2 | A-08 | Commit startup steps one by one | — |
 | — | A-05, A-06 (invariant 9 wording, the one drift left), A-10, A-12, A-14, A-15 | As in the audit's owner-decision table | owner decision |
 
 A-01, A-02 and A-04 were released in `v0.1.0-beta.20` and are listed under `docs/KNOWN-ISSUES.md` →
@@ -155,3 +154,27 @@ README (`H1–Hn`, `D1–Dn`, `K1–Kn`), STATUS's ADR and phase-spec ranges, an
 the lists they stand for. `apps/sidecar/tests/test_docs_consistency.py` runs it in CI on every change.
 Run against the audited commit `3fee5a8`, it reports rows 1, 3 and 6. At tag time, `check()` also refuses
 "(unreleased" or "(다음 릴리스" in README and guide.ko.
+
+**A-16 — fixed after beta.20** (branch `audit-a16-upgrade-path`). The audit asked for a schema-transition
+test with rows. This goes one step further: the rows come from the earlier releases' own code.
+- `tools/make_upgrade_fixture.py <tag>` checks the release out in a temporary worktree and runs its sidecar
+  and worker as processes, with a deterministic stub model and embedder. A scripted chat goes through them
+  (facts, an edit, a live reroll, a swipe back, a disabled message, a branch, recalls). The tool
+  `pg_dump`s the database to `fixtures/upgrade/<tag>.sql`, with the host's view of the chats in
+  `<tag>.chat.json`. It is committed, so the upgrade evidence no longer lives in scratch code.
+- Fixtures: `v0.1.0-beta.7` (migration 0010, per-message extraction: crosses 0011–0020 and the pre-turn
+  `window_hash` path, A-15) and `v0.1.0-beta.16` (0018, where the owner's database was; has
+  `worldline_append` and `observation_base` rows).
+- `apps/sidecar/tests/test_upgrade.py` restores each dump, applies the current migrations and starts the
+  current sidecar. It checks:
+  - re-syncing the recorded chats is a no-op;
+  - facts the earlier release extracted are still served;
+  - the earlier traces are kept;
+  - an append, an edit and a recall work, and the recall replays as recorded;
+  - the current worker re-extracts and re-embeds without a failed job;
+  - an edited-away fact is masked;
+  - delete and `nmos-rebuild` work.
+- README and guide.ko document backup (`pg_dump -Fc`), upgrade and rollback (restore the backup, then start
+  the older image; migrations only go forward). The backup and restore commands were run against the
+  compose Postgres on a restored beta.16 database: row counts and the source-revision guard triggers came
+  back, and the current migrations applied on top.
