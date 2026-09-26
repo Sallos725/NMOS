@@ -2,6 +2,7 @@
 # (see https://github.com/Sallos725/NMOS#configuration), then: docker compose up -d
 name: nmos
 
+# Sidecar and worker share these: both derive generation keys from them.
 x-nmos-env: &nmos-env
   NMOS_DATABASE_URL: postgresql://nmos:${NMOS_DB_PASSWORD:-nmos}@postgres:5432/nmos
   NMOS_AUTH_TOKEN: ${NMOS_AUTH_TOKEN:-}
@@ -14,6 +15,7 @@ x-nmos-env: &nmos-env
   NMOS_LLM_JSON_MODE: ${NMOS_LLM_JSON_MODE:-1}
   NMOS_EXTRACT_WINDOW: ${NMOS_EXTRACT_WINDOW:-6}
   NMOS_EXTRACT_TURNS: ${NMOS_EXTRACT_TURNS:-3}
+  NMOS_EXTRACT_HINTS: ${NMOS_EXTRACT_HINTS:-40}
   NMOS_EXTRACT_BACKFILL: ${NMOS_EXTRACT_BACKFILL:-100}
   NMOS_EMBED_BACKFILL: ${NMOS_EMBED_BACKFILL:-2000}
   NMOS_WORKER_CONCURRENCY: ${NMOS_WORKER_CONCURRENCY:-2}

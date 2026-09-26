@@ -74,10 +74,29 @@ def prune(conn: psycopg.Connection, trace_days: int) -> None:
         log.info("host observations compacted: %d", compacted)
 
 
+def unserved(conn: psycopg.Connection, jobs: Handlers) -> dict[str, int]:
+    """Queued jobs of each kind's active generation that none of `jobs` implements, by `kind|key`.
+
+    The sidecar activates generations from its settings, the worker builds handlers from its own. When
+    their environments differ in a setting that is part of the key (audit A-03), these jobs wait forever."""
+    rows = conn.execute(
+        """
+        SELECT j.kind, j.payload->>'generation' AS key, count(*) AS n FROM job j
+        WHERE j.status = 'queued' AND j.payload->>'generation' = (
+            SELECT g.key FROM projection_generation g WHERE g.kind = j.kind ORDER BY g.activated_at DESC, g.key LIMIT 1)
+        GROUP BY 1, 2
+        """
+    ).fetchall()
+    handled = {f"{kind}|{key}" for kind, (key, _) in jobs.items()}
+    return {f"{r['kind']}|{r['key']}": r["n"] for r in rows if f"{r['kind']}|{r['key']}" not in handled}
+
+
 def maintenance(settings: Settings, stop: threading.Event, holder: dict[str, Any]) -> None:
     """Reload settings saved from the plugin UI every 30 s; prune derived data every 10 min."""
     last_prune = 0.0
     signature = None
+    seen: dict[str, int] = {}  # unserved jobs at the previous check
+    warned: set[str] = set()
     while not stop.is_set():
         try:
             with psycopg.connect(settings.database_url, row_factory=dict_row, autocommit=True) as conn:
@@ -93,6 +112,15 @@ def maintenance(settings: Settings, stop: threading.Event, holder: dict[str, Any
                     signature = new_signature
                     log.info("job generations now: %s", {k: key[:20] for k, (key, _) in jobs.items()}
                              or "none (no LLM/embedding configured)")
+                # Twice in a row, so a settings change the worker has not reloaded yet is not reported.
+                waiting = unserved(conn, jobs)
+                for gen in waiting.keys() & seen.keys() - warned:
+                    log.warning("%d queued %s jobs of the active generation %s match no handler of this worker:"
+                                " sidecar and worker settings differ (same environment for both?)",
+                                waiting[gen], *gen.split("|", 1))
+                warned &= waiting.keys()
+                warned |= waiting.keys() & seen.keys()
+                seen = waiting
                 if time.monotonic() - last_prune > 600:
                     prune(conn, settings.trace_retention_days)
                     last_prune = time.monotonic()

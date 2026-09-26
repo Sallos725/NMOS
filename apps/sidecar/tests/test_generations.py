@@ -11,7 +11,7 @@ from nmos_sidecar import extraction
 from nmos_sidecar.config import Settings
 from nmos_sidecar.generations import endpoint_identity
 from nmos_sidecar.vectors import vector_literal
-from nmos_sidecar.worker import handlers, run_once
+from nmos_sidecar.worker import handlers, run_once, unserved
 from simchat import SimChat
 from test_extraction import drain, facts, fake_complete, filler, jobs_for
 from test_sidecar_integration import recall, sync
@@ -460,3 +460,19 @@ def test_reenable_schedules_missing_generation_work(migrated, db):
         drain(migrated)
         assert db.execute("SELECT count(*) AS n FROM extraction").fetchone()["n"] == eligible  # done one reused
         assert [f["object"] for f in facts(c, chat)] == ["old chapel"]
+
+
+def test_a_worker_whose_settings_give_another_key_sees_the_jobs_it_cannot_serve(migrated, db):
+    """Sidecar and worker compute the generation key from their own settings; `NMOS_LLM_JSON_MODE` set for
+    one only (audit A-03) made the worker never claim a job, and nothing said so."""
+    with make_client(migrated, **LLM) as c:
+        chat = fact_chat()
+        sync(c, chat)
+    pending = queued(db, "extract")
+    active = active_generation(db, "extract").key
+    with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+        assert unserved(conn, handlers(Settings(database_url=migrated, **LLM))) == {}
+        other = handlers(Settings(database_url=migrated, llm_json_mode=False, **LLM))
+        assert other["extract"][0] != active
+        assert unserved(conn, other) == {f"extract|{active}": pending}
+        assert unserved(conn, {}) == {f"extract|{active}": pending}  # no LLM configured for the worker at all
