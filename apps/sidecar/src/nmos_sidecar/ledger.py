@@ -10,7 +10,7 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
-from .canonical import normalize_text, revision_hash
+from .canonical import normalize_text, revision_hash, storable
 from .ids import uuid7
 from .reconcile import Entry, Lifecycle, Plan, RevKey, apply_ops, turn_layout, window_hashes
 
@@ -134,6 +134,7 @@ def store_bodies(
         if meta.get("chatId") != body["host_logical_id"] or revision_hash(meta, content) != body["revision_hash"]:
             rejected.append((body["host_logical_id"], body["revision_hash"]))
             continue
+        content = storable(content)  # verified as sent, stored as PostgreSQL can hold it (ADR 0029)
         conn.execute(
             "INSERT INTO source_object (id, conversation_id, host_logical_id) VALUES (%s, %s, %s)"
             " ON CONFLICT (conversation_id, host_logical_id) DO NOTHING",
@@ -147,6 +148,7 @@ def store_bodies(
         stored_meta = {k: meta.get(k) for k in META_KEYS}
         stored_meta["swipeCount"] = meta.get("swipeCount") or 0
         stored_meta["specialComments"] = list(meta.get("specialComments") or [])
+        stored_meta = storable(stored_meta)
         initial = "accepted" if meta.get("role") == "user" or meta.get("isComment") else "provisional"
         row = conn.execute(
             "INSERT INTO source_revision (id, source_object_id, revision_hash, content, metadata, lifecycle)"

@@ -94,6 +94,18 @@ describe('injection (H2 idempotency)', () => {
     expect(out).toHaveLength(presetPrompt.length + 1);
   });
 
+  it('does not mistake a message quoting the packet tag for an injected packet', () => {
+    const quoted: PromptMessage[] = [
+      ...mainPrompt.slice(0, 3),
+      { role: 'assistant', content: `As the notes say: ${PACKET_TAG} …` },
+      { role: 'user', content: `What is ${PACKET_TAG}?` },
+    ];
+    expect(hasPacket(quoted)).toBe(false);
+    const out = injectPacket(quoted, packet);
+    expect(out).toHaveLength(quoted.length + 1);
+    expect(hasPacket(out)).toBe(true);
+  });
+
   it('supports end placement and empty packets', () => {
     expect(injectPacket(mainPrompt, packet, 'end').at(-1)?.content).toBe(packet);
     expect(injectPacket(mainPrompt, '')).toBe(mainPrompt);

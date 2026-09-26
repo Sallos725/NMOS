@@ -42,6 +42,25 @@ def canonical_json(value: Any) -> str:
     return _LONE_SURROGATE.sub(lambda m: f"\\u{ord(m.group()):04x}", text)
 
 
+def storable(value: Any) -> Any:
+    """`value` with each lone surrogate replaced by U+FFFD, which PostgreSQL text and jsonb can hold (ADR 0029).
+
+    Only for storing: hashes are computed on the text as received."""
+    if isinstance(value, str):
+        return _LONE_SURROGATE.sub("�", value)
+    if isinstance(value, list):
+        return [storable(v) for v in value]
+    if isinstance(value, dict):
+        return {storable(k): storable(v) for k, v in value.items()}
+    return value
+
+
+def storable_json(value: Any) -> str:
+    """psycopg's jsonb serializer (set in `nmos_sidecar/__init__.py`): JSON text with lone surrogates as
+    U+FFFD. Without `ensure_ascii` a surrogate is a single character in the output, never half of a pair."""
+    return _LONE_SURROGATE.sub("�", json.dumps(value, ensure_ascii=False))
+
+
 def sha256_hex(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 

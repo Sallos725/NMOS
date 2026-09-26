@@ -232,7 +232,7 @@ ${revisionHash}`;
     return -1;
   }
   function hasPacket(prompt) {
-    return Array.isArray(prompt) && prompt.some((m) => contentText(m?.content).includes(PACKET_TAG));
+    return Array.isArray(prompt) && prompt.some((m) => m?.role === "system" && contentText(m.content).includes(PACKET_TAG));
   }
   function cleanText(value) {
     return normalizeText(value).replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ").replace(/<[^>\n]{1,500}>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();

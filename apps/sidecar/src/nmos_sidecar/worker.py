@@ -52,11 +52,13 @@ def run_once(conn: psycopg.Connection, jobs: Handlers) -> bool:
     try:
         status = jobs[job["kind"]][1](conn, job)
         finish(conn, job["id"], status)
-    except (LLMError, psycopg.Error, ValueError, KeyError) as exc:
+    except Exception as exc:  # any job error fails that job only; it must not end the worker thread
         if conn.info.transaction_status != psycopg.pq.TransactionStatus.IDLE:
             conn.rollback()
-        log.warning("job %s (%s) failed attempt %s: %s", job["id"], job["kind"], job["attempts"], exc)
-        fail(conn, job, str(exc))
+        expected = isinstance(exc, (LLMError, psycopg.Error, ValueError, KeyError))
+        log.warning("job %s (%s) failed attempt %s: %s", job["id"], job["kind"], job["attempts"], exc,
+                    exc_info=not expected)
+        fail(conn, job, str(exc) if expected else f"{type(exc).__name__}: {exc}")
     return True
 
 
@@ -109,6 +111,9 @@ def loop(settings: Settings, stop: threading.Event, holder: dict[str, Any]) -> N
                         stop.wait(1.0)
         except psycopg.OperationalError as exc:
             log.warning("database unavailable (%s); retrying", exc)
+            stop.wait(5.0)
+        except Exception:  # e.g. failing to record a job failure: reconnect rather than lose this thread
+            log.exception("worker loop error; reconnecting")
             stop.wait(5.0)
 
 
