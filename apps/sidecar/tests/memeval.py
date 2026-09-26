@@ -10,7 +10,8 @@ on a model. Measured on the packet the model would receive, never on a generated
 - irrelevant: a packet for a query nothing in the chat relates to should be empty.
 
 Modes: `recent` (no memory: only the last RECENT messages), `lexical` (raw recall only), `hybrid`
-(lexical + vectors), `full` (hybrid + facts from the stub extractor).
+(lexical + vectors), `full` (hybrid + facts from the stub extractor), `full-v0` (`full` compiled by
+packet-v0, the packet compiler before Phase 9).
 
     uv run python ../../tools/eval_memory.py        # prints the table in docs/perf/eval-baseline.md
 """
@@ -34,7 +35,8 @@ from nmos_sidecar.worker import run_once
 from simchat import SimChat
 
 RECENT = 6  # messages the host prompt still holds (in_context_ids); older ones need memory
-MODES = ("recent", "lexical", "hybrid", "full")
+# `full-v0` is `full` with the packet compiler before Phase 9 (ADR 0027), kept for the comparison.
+MODES = ("recent", "lexical", "hybrid", "full-v0", "full")
 
 # --- deterministic stand-ins ---------------------------------------------------------------------
 
@@ -109,6 +111,12 @@ RULES: list[tuple[re.Pattern[str], Callable[[re.Match[str]], dict[str, Any]]]] =
     (re.compile(r"(?P<who>\w+) knows, with (?P<a>\w+) and (?P<b>\w+), that (?P<what>[^.]+)\."),
      lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "knows", "value": m["what"],
                 "knowledge": "limited", "known_by": [m["a"], m["b"]]}),
+    # Phase 9: long Korean traits and claims, to fill the packet budget the way real facts do.
+    (re.compile(r"(?P<who>[가-힣]+)의 특징: (?P<what>[^.]+)\."),
+     lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "has_trait", "value": m["what"]}),
+    (re.compile(r"(?P<who>[가-힣]+)의 주장: (?P<what>[^.]+)\."),
+     lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "has_trait", "value": m["what"],
+                "source": "character_claim", "asserted_by": m["who"]}),
     (re.compile(r'(?P<who>\w+) says: "I am a (?P<what>\w+)\."'),
      lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "identity", "value": m["what"],
                 "source": "character_claim", "asserted_by": m["who"]}),
@@ -187,6 +195,23 @@ def branch_at(index: int) -> Step:
     def step(chats: dict[str, SimChat]) -> None:
         chats["branch"] = chats["main"].branch(index)
     return step
+
+
+# Ten long traits of 하나 and two of her claims: as on real chats, fact lines alone fill a 600-token budget.
+TRAITS: list[Step] = [turn(f"하나의 특징: {t}.") for t in (
+    "비 오는 밤마다 등대 꼭대기에 올라가 바다를 오래 바라보는 버릇이 있다",
+    "어릴 적 잃어버린 동생의 이름을 수첩 첫 장에 적어 두고 매일 한 번씩 읽는다",
+    "거짓말을 할 때마다 왼손 약지에 낀 은반지를 무의식적으로 돌리는 습관이 있다",
+    "항구 마을 사람들 사이에서는 폭풍을 미리 알아보는 사람으로 알려져 있다",
+    "낯선 사람 앞에서는 존댓말을 쓰지만 화가 나면 곧바로 반말로 바뀐다",
+    "검술보다 활을 더 잘 다루며 오른쪽 어깨에 오래된 화살 상처가 남아 있다",
+    "매일 아침 해가 뜨기 전에 등대의 램프를 닦고 기름을 채워 넣는다",
+    "단 음식을 싫어한다고 말하지만 몰래 꿀과자를 주머니에 넣고 다닌다",
+    "아버지가 남긴 낡은 해도를 누구에게도 보여 주지 않고 침대 밑에 숨겨 두었다",
+    "밤에 잠들지 못하면 부둣가를 따라 끝까지 걸어갔다가 돌아오는 버릇이 있다")] + [
+    turn(f"하나의 주장: {t}.") for t in (
+        "자신은 한 번도 등대 밖으로 나가 본 적이 없는 평범한 등대지기일 뿐이다",
+        "바다 건너 왕국의 기사단에서 일한 적은 결코 없다고 여러 번 말했다")]
 
 
 CASES: list[Case] = [
@@ -324,6 +349,14 @@ CASES: list[Case] = [
           pad()],
          "Hana, how do you talk to Ren?", gold=["Hana addresses Ren: formal speech</Fact>"],
          stale=["Hana addresses Ren: informal speech"]),
+    Case("quote under a full budget", "budget pressure",
+         [turn("하나가 주위를 살피더니 속삭였다. 금고 비밀번호는 보라일곱이야."), *TRAITS, pad()],
+         "하나야, 금고 비밀번호가 뭐였지?", gold=["보라일곱", "하나 has trait:"]),
+    Case("one line of a long message", "budget pressure",
+         [turn("하나는 창가에 앉아 오래 말이 없었다. 바람이 커튼을 흔들었다. 찻잔은 이미 식어 있었다. "
+               "한참 뒤에야 하나가 입을 열었다. 금고 비밀번호는 보라일곱이야. 그러고는 다시 창밖만 바라보았다. "
+               "멀리서 종소리가 울렸다. 둘 다 그 소리를 세지 않았다."), *TRAITS, pad()],
+         "하나야, 금고 비밀번호가 뭐였지?", gold=["보라일곱", "하나 has trait:"]),
     Case("unrelated question", "irrelevant-memory suppression",
          [turn("Hinata is in the chapel."), pad()],
          "Tell me a joke about bananas.", irrelevant=True),
@@ -358,6 +391,7 @@ def _sync(client, chat: SimChat) -> None:
 def _drain(url: str, mode: str) -> None:
     from conftest import active_generation
 
+    mode = kind(mode)
     with psycopg.connect(url, row_factory=dict_row, autocommit=True) as conn:
         jobs = {}
         if mode in ("hybrid", "full"):
@@ -371,8 +405,15 @@ def _drain(url: str, mode: str) -> None:
             pass
 
 
+def kind(mode: str) -> str:
+    """The recall setup of a mode: `full-v0` gathers like `full` and differs only in the packet compiler."""
+    return "full" if mode.startswith("full") else mode
+
+
 def settings_for(mode: str) -> dict[str, Any]:
-    out: dict[str, Any] = {"extract_backfill": 1000, "embed_backfill": 1000}
+    out: dict[str, Any] = {"extract_backfill": 1000, "embed_backfill": 1000,
+                           "packet_policy": "packet-v0" if mode == "full-v0" else "packet-v1"}
+    mode = kind(mode)
     if mode in ("hybrid", "full"):
         out.update(embed_url="http://stub-embed/v1", embed_model="stub-embed")
     if mode == "full":
@@ -413,7 +454,7 @@ def run_case(case: Case, mode: str, client, url: str) -> Result:
 
 def run_mode(mode: str, make_client: Callable[..., Any], url: str) -> list[Result]:
     """All cases in one migrated database (each case has its own chats)."""
-    embedder = StubEmbedder() if mode in ("hybrid", "full") else None
+    embedder = StubEmbedder() if kind(mode) in ("hybrid", "full") else None
     with make_client(url, embedder=embedder, **settings_for(mode)) as client:
         return [run_case(case, mode, client, url) for case in CASES]
 

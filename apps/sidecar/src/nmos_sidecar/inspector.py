@@ -122,7 +122,23 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "toc.ambiguous": ("모호한 이름", "Ambiguous"), "toc.claims": ("주장", "Claims"), "toc.other": ("실제 아님", "Not actual"),
     "toc.retrievals": ("검색", "Retrievals"), "toc.commits": ("커밋", "Commits"), "toc.members": ("메시지", "Messages"),
     "toc.profile": ("프로필", "Profile"), "toc.held": ("소지품", "Belongings"), "toc.about": ("사실", "Facts"),
-    "toc.takes_part": ("참여", "Takes part in"),
+    "toc.takes_part": ("참여", "Takes part in"), "toc.packet": ("패킷", "Packet"),
+    # Phase 9 (ADR 0027): the packet ledger of the latest request
+    "packet": ("마지막 패킷: 들어간 줄과 빠진 이유", "Last packet: what went in, and why the rest did not"),
+    "packet_intro": ("{when} 요청 · 정책 {policy} · {tokens}/{budget} 토큰 · 다음 응답: {reply}",
+                     "Request at {when} · policy {policy} · {tokens}/{budget} tokens · next reply: {reply}"),
+    "packet_echo": ("응답 반영 = 이 줄의 내용이 다음 응답에 다시 나온 정도(표면 비교, 사용 여부의 근사).",
+                    "Echo = how much of the line's content reappears in the next reply (a surface measure of use)."),
+    "h.kind": ("종류", "Kind"), "h.outcome": ("결과", "Outcome"), "h.echo": ("응답 반영", "Echo"),
+    "h.placed": ("배치", "Placed"),
+    "lk.state": ("상태", "state"), "lk.thread": ("약속", "thread"), "lk.fact": ("사실", "fact"),
+    "lk.claim": ("주장", "claim"), "lk.excerpt": ("원문", "excerpt"),
+    "pk.placed": ("들어감", "placed"), "pk.budget": ("예산 부족", "no budget"), "pk.state_cap": ("상태 상한", "state cap"),
+    "pk.repeats": ("사실과 중복", "repeats a fact"),
+    "pk.short": ("한 문장으로 줄임", "shortened to one sentence"), "pk.cut": ("잘라서 넣음", "cut to fit"),
+    "rp.ok": ("있음", "present"), "rp.pending": ("아직 없음", "not yet"), "rp.changed": ("이후 앞부분이 바뀜", "story changed since"),
+    "rp.not_a_reply": ("응답 아님", "not a reply"), "rp.not_recorded": ("원장 이전 기록", "recorded before the ledger"),
+    "leak": ("숨긴 사실이 응답에 나옴", "a hidden fact reappears"),
     "toc.knows": ("아는 것", "Knows"), "toc.hidden": ("모르는 것", "Does not know"),
     # character view
     "who": ("캐릭터", "Character"), "who.all": ("전체", "All"),
@@ -468,7 +484,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            claims: list[dict[str, Any]] | None = None, other: list[dict[str, Any]] | None = None,
            entities: list[dict[str, Any]] | None = None, ambiguous: list[dict[str, Any]] | None = None,
            conflicts: list[dict[str, Any]] | None = None, items: list[dict[str, Any]] | None = None,
-           threads: list[dict[str, Any]] | None = None, unmatched: list[dict[str, Any]] | None = None) -> str:
+           threads: list[dict[str, Any]] | None = None, unmatched: list[dict[str, Any]] | None = None,
+           packet: dict[str, Any] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -508,11 +525,15 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         parts.append(("claims", t("claims"), len(claims), _claims_table(claims, lang), True))
     if other:
         parts.append(("other", t("other"), len(other), _other_table(other, lang), False))
+    if packet and packet.get("lines"):
+        parts.append(("packet", t("packet"), sum(e["placed"] for e in packet["lines"]),
+                      _packet_section(packet, traces[0] if traces else {}, lang), True))
     parts.append(("retrievals", t("retrievals"), len(traces), table(
-        [t(k) for k in ("h.when", "h.query", "h.fresh", "h.cand", "h.sel", "h.in_ctx", "h.facts_kept", "h.tokens")]
-        + ["ms"],
+        [t(k) for k in ("h.when", "h.query", "h.fresh", "h.cand", "h.sel", "h.in_ctx", "h.facts_kept", "h.placed",
+                        "h.tokens")] + ["ms"],
         [[timestamp(r["created_at"]), _v(r["query"]), chip(lang, "f", r["freshness"]), _v(r["candidates"]),
-          _v(r["selected"]), _v(r["excluded"]), _v(_facts_kept(r["latency_ms"] or {})), _v(r["token_estimate"]),
+          _v(r["selected"]), _v(r["excluded"]), _v(_facts_kept(r["latency_ms"] or {})), _placed(r, lang),
+          _v(r["token_estimate"]),
           _v((r["latency_ms"] or {}).get("sidecar_total"))] for r in traces]), False))
     parts.append(("commits", t("h.commits"), len(commits), table(
         ["#", t("h.reason"), t("h.changes"), t("h.kinds"), t("h.when")],
@@ -525,6 +546,33 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
          for m in members]), False))
     body = head + sections(lang, parts)
     return body if embed else page(f"NMOS · {name}", body, lang)
+
+
+def _placed(trace: dict[str, Any], lang: str) -> str:
+    """What a request's packet held by kind (ADR 0027), e.g. "사실 6 · 원문 1"; empty before the ledger."""
+    placed = (trace.get("latency_ms") or {}).get("placed") or {}
+    return _v(" · ".join(f"{_t(lang, f'lk.{k}')} {n}" for k, n in placed.items() if n))
+
+
+def _packet_section(packet: dict[str, Any], trace: dict[str, Any], lang: str) -> str:
+    """The latest request's ledger: every offered line with its outcome, cost and echo (ADR 0027)."""
+    t = lambda k: _t(lang, k)
+    summary = packet["summary"]
+    intro = t("packet_intro").format(when=timestamp(trace.get("created_at")), policy=_v(packet.get("policy")),
+                                     tokens=_v(packet.get("tokens")), budget=_v(packet.get("budget_tokens")),
+                                     reply=_v(t(f"rp.{summary['reply']}")))
+    rows = []
+    for e in packet["lines"]:
+        outcome = chip(lang, "pk", e["why"])
+        if e.get("form"):
+            outcome += " " + chip(lang, "pk", e["form"])
+        echo = "" if "echo" not in e else f"{round(e['echo'] * 100)}%"
+        if e.get("possible_leak"):
+            echo += f" <span class=\"warn\">{_v(t('leak'))}</span>"
+        rows.append([chip(lang, "lk", e["kind"]), _v(e.get("turn")), _v(e.get("text")), outcome, _v(e.get("tok")), echo])
+    return (f"<p class=\"muted\">{intro}</p>"
+            + table([t(k) for k in ("h.kind", "h.turn", "h.text", "h.outcome", "h.tokens", "h.echo")], rows)
+            + f"<p class=\"muted\">{_v(t('packet_echo'))}</p>")
 
 
 def _owner_links(entity: dict[str, Any]) -> str:

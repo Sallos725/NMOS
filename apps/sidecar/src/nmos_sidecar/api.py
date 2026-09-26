@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from psycopg_pool import ConnectionPool
 
-from . import __version__, extraction, generations, inspector, ledger, normtext, readmodel, retention, runtime, vectors
+from . import __version__, audit, extraction, generations, inspector, ledger, normtext, readmodel, retention, runtime, vectors
 from .config import Settings
 from .db import make_pool
 from .extraction import enqueue_after_apply, job_counts
@@ -36,6 +36,7 @@ from .models import (
 from .canonical import manifest_hash, manifest_hashes
 from .reconcile import Entry, plan, plan_append
 from .llm import Embedder
+from .packet import DEFAULT_POLICY, POLICIES
 from .retrieval import RecallOptions, query_prefix, retrieve
 from .state import current_state, rebuild_state, sync_rules, write_state
 
@@ -92,6 +93,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             extractor_key=rt.get("active_extractor"), embed_timeout_ms=cur.embed_timeout_ms,
             lexical_timeout_ms=cur.lexical_timeout_ms,
             vector_min_sim=cur.vector_min_sim, query_prefix=query_prefix(cur.embed_model, cur.embed_query_instruction),
+            policy=cur.packet_policy if cur.packet_policy in POLICIES else DEFAULT_POLICY,
         ))
 
     def activate(conn, before_extractor: str | None, before_projection: str | None) -> int:
@@ -339,6 +341,26 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             raise HTTPException(status_code=404, detail="trace not found")
         return row
 
+    @app.get("/v1/trace/{trace_id}/audit", dependencies=[Depends(auth)])
+    def trace_audit(trace_id: UUID, request: Request):
+        """The packet ledger of a request with each line's echo in the reply that followed (ADR 0027)."""
+        with request.app.state.pool.connection() as conn:
+            out = audit.audit(conn, trace_id)
+        if out is None:
+            raise HTTPException(status_code=404, detail="trace not found")
+        return out
+
+    @app.get("/v1/trace/{trace_id}/replay", dependencies=[Depends(auth)])
+    def trace_replay(trace_id: UUID, request: Request, policy: str | None = None):
+        """The request compiled again as of its time, by its own or another packet policy. Read-only."""
+        if policy is not None and policy not in POLICIES:
+            raise HTTPException(status_code=422, detail=f"policy must be one of {', '.join(POLICIES)}")
+        with request.app.state.pool.connection() as conn:
+            out = audit.replay(conn, trace_id, rt["recall"], policy)
+        if out is None:
+            raise HTTPException(status_code=404, detail="trace not found")
+        return out
+
     @app.get("/v1/conversations", dependencies=[Depends(auth)])
     def conversations(request: Request):
         with request.app.state.pool.connection() as conn:
@@ -547,14 +569,16 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             ex_key = rt["active_extractor"]
             pj_key = rt["projection"].key if rt["projection"] else None
             view = inspector.with_participants(memory_view(conn, head, ex_key))
+            traces = readmodel.traces(conn, conv_id)
             return inspector.detail(conv, current_state(conn, head, rt["rules"].version),
                                     readmodel.membership(conn, head, ex_key, pj_key),
-                                    readmodel.commits(conn, conv_id), readmodel.traces(conn, conv_id),
+                                    readmodel.commits(conn, conv_id), traces,
                                     view["facts"][:300], token, coverage_view(conn, conv_id),
                                     lang=inspector.lang_of(lang), embed=embed, claims=view["claims"],
                                     other=view["other"], entities=view["entities"], ambiguous=view["ambiguous"],
                                     conflicts=view["conflicts"], items=view["items"], threads=view["threads"],
-                                    unmatched=view["unmatched"])
+                                    unmatched=view["unmatched"],
+                                    packet=audit.audit(conn, traces[0]["id"]) if traces else None)
 
     def inspector_character_html(conv_id: UUID, entity_id: UUID, request: Request, token: str | None,
                                  lang: str | None, embed: bool = False) -> str:
