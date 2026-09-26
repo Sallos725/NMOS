@@ -278,15 +278,6 @@ def _ops(old: list[RevKey], new: list[RevKey], full: bool) -> list[dict]:
     return ops
 
 
-def window_hashes(members: list[RevKey], k: int) -> list[str]:
-    """Per position: hash of the revision and the previous k members (D7 bounded context)."""
-    out = []
-    for i in range(len(members)):
-        window = [rev_hash for _, rev_hash in members[max(0, i - k): i + 1]]
-        out.append(hashlib.sha256("\n".join(window).encode()).hexdigest()[:32])
-    return out
-
-
 def apply_ops(members: list[RevKey], ops: list[dict]) -> list[RevKey]:
     """Replay delta ops (used for commit verification and membership rebuild)."""
     out = list(members)

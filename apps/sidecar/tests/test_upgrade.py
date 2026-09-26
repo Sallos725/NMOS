@@ -48,6 +48,10 @@ def objects(client, chat: SimChat, subject: str, predicate: str) -> set[str]:
 @pytest.mark.parametrize("dump", FIXTURES, ids=[p.stem for p in FIXTURES])
 def test_a_database_of_an_earlier_release_upgrades_and_keeps_working(dump, database_url):
     main, branch = restore(database_url, dump)
+    with psycopg.connect(database_url) as conn:  # extracted per message: before extract-v4 (ADR 0008)
+        per_message = conn.execute(
+            "SELECT EXISTS (SELECT 1 FROM extraction e JOIN projection_generation g ON g.key = e.extractor_key"
+            " WHERE coalesce(g.spec->>'unit', 'message') = 'message')").fetchone()[0]
     applied = apply_migrations(database_url)
     assert applied and applied[-1] == LATEST
 
@@ -59,8 +63,9 @@ def test_a_database_of_an_earlier_release_upgrades_and_keeps_working(dump, datab
         # The host still shows what the earlier release recorded: nothing to sync.
         assert sync(c, main)["status"] == "noop"
         assert sync(c, branch)["status"] == "noop"
-        # Facts that release extracted are served until the current extractor covers their turns (ADR 0014).
-        assert "bell tower" in objects(c, main, "Mina", "located_in")
+        # Facts that release extracted per turn are served until the current extractor covers their turns
+        # (ADR 0014); per-message extractions are not (ADR 0031) and come back once re-extracted.
+        assert ("bell tower" in objects(c, main, "Mina", "located_in")) is not per_message
         old_trace = c.get(f"/v1/conversations/{convs[main.id]}/traces").json()
         assert old_trace, "the earlier release's recall traces are kept"
 

@@ -1,7 +1,7 @@
 """Verified append fast path (Track A, A1): same ledger as the full path, or the full path itself.
 
 Two sidecars, one with `append_fast_path` off, receive the same host actions in lockstep; after every
-sync their logical ledgers, window/turn data, jobs and observations must be equal.
+sync their logical ledgers, turn data, jobs and observations must be equal.
 """
 
 from __future__ import annotations
@@ -43,8 +43,8 @@ def full_path_calls(monkeypatch) -> list[int]:
 def logical(url: str) -> dict:
     out = ledger_state(url)
     with psycopg.connect(url, row_factory=dict_row) as conn:
-        out["windows"] = conn.execute(
-            "SELECT am.position, am.window_hash FROM active_membership am ORDER BY am.commit_id, am.position"
+        out["turns"] = conn.execute(
+            "SELECT am.position, am.turn, am.turn_hash FROM active_membership am ORDER BY am.commit_id, am.position"
         ).fetchall()
         out["jobs"] = conn.execute(
             "SELECT j.kind, j.priority, j.status, j.payload->>'window_hash' AS turn_hash, so.host_logical_id,"
@@ -85,16 +85,16 @@ ACTIONS = {
 }
 
 
-@pytest.mark.parametrize("seed,turns,window", [(1, 3, 6), (2, 1, 2), (3, 2, 1), (4, 3, 6)])
-def test_fast_path_ledger_equals_the_full_path(database_url_factory, monkeypatch, seed, turns, window):
+@pytest.mark.parametrize("seed,turns", [(1, 3), (2, 1), (3, 2), (4, 3)])
+def test_fast_path_ledger_equals_the_full_path(database_url_factory, monkeypatch, seed, turns):
     fast_url, full_url = database_url_factory(), database_url_factory()
     rnd = random.Random(seed)
     names = list(ACTIONS)
     weights = [ACTIONS[n][0] for n in names]
     calls = full_path_calls(monkeypatch)
     fast_steps = 0
-    with make_client(fast_url, extract_turns=turns, extract_window=window, **LLM) as fast, \
-            make_client(full_url, extract_turns=turns, extract_window=window, append_fast_path=False, **LLM) as full:
+    with make_client(fast_url, extract_turns=turns, **LLM) as fast, \
+            make_client(full_url, extract_turns=turns, append_fast_path=False, **LLM) as full:
         chat = SimChat()
         chat.reply("greeting")
         for _ in range(3):
@@ -114,7 +114,7 @@ def test_fast_path_ledger_equals_the_full_path(database_url_factory, monkeypatch
     before = logical(fast_url)
     with psycopg.connect(fast_url, row_factory=dict_row) as conn:
         conv = conn.execute("SELECT id FROM conversation").fetchone()["id"]
-        ledger.rebuild_membership(conn, conv, window, turns)
+        ledger.rebuild_membership(conn, conv, turns)
     assert logical(fast_url) == before
 
 

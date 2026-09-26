@@ -175,7 +175,8 @@ projection; current state read through head membership (inherits D8 invalidation
 
 **D17 — Extraction validity is keyed by window (Phase 2, D7; ADR 0008).** `active_membership.turn_hash`
 (anchor rows) makes an extraction valid only while the head shows the same turn and bounded context;
-the per-message `window_hash` is kept for generations compiled before turns. Jobs run in `nmos-worker`
+the per-message `window_hash` was kept for generations compiled before turns until ADR 0031 retired it
+(2026-09-26): extractions match on `turn_hash` only. Jobs run in `nmos-worker`
 through a SKIP LOCKED queue; single-valued predicates form fact versions.
 
 **D18 — Hybrid recall (Phase 3, ADR 0005).** Exact cosine over head-membership chunk embeddings (pgvector),

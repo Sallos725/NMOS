@@ -44,14 +44,10 @@ def membership(conn: psycopg.Connection, head: UUID, extractor_key: str | None =
                rt.clean_chars,
                (SELECT max(re.text_end) FROM revision_embedding re
                 WHERE re.source_revision_id = sr.id AND re.projection = %(pj)s) AS embedded_chars,
-               coalesce(
-                   (SELECT least(rt.clean_chars, %(target)s) FROM active_membership a
-                    JOIN extraction x ON x.source_revision_id = a.source_revision_id AND x.window_hash = a.turn_hash
-                     AND x.extractor_key = %(ex)s AND x.discarded_at IS NULL
-                    WHERE a.commit_id = am.commit_id AND a.turn = am.turn AND a.turn_hash IS NOT NULL),
-                   (SELECT (x.coverage->>'target_used')::int FROM extraction x
-                    WHERE x.source_revision_id = sr.id AND x.window_hash = am.window_hash
-                      AND x.extractor_key = %(ex)s AND x.discarded_at IS NULL)) AS extracted_chars
+               (SELECT least(rt.clean_chars, %(target)s) FROM active_membership a
+                JOIN extraction x ON x.source_revision_id = a.source_revision_id AND x.window_hash = a.turn_hash
+                 AND x.extractor_key = %(ex)s AND x.discarded_at IS NULL
+                WHERE a.commit_id = am.commit_id AND a.turn = am.turn AND a.turn_hash IS NOT NULL) AS extracted_chars
         FROM active_membership am
         JOIN source_revision sr ON sr.id = am.source_revision_id
         JOIN source_object so ON so.id = sr.source_object_id

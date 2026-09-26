@@ -1,6 +1,7 @@
 # 0008 — Extraction per turn, history backfill and memory rebuild
 
-Status: accepted, 2026-09-23 (owner). Revises D7 and D17; adds D22.
+Status: accepted, 2026-09-23 (owner). Revises D7 and D17; adds D22. **Amended 2026-09-26 by ADR 0031:** the
+per-message `window_hash` and `NMOS_EXTRACT_WINDOW` are retired; extractions match on `turn_hash` only.
 
 ## Context
 

@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **The per-message extraction window is retired** (audit A-15, ADR 0031; owner decision). Extractions made
+  before 0.1.0-beta.8 (per message, `extract-v3` and earlier) no longer serve facts. If your database still
+  relies on them, those turns show no facts until they are extracted again: the recent turns at the next
+  sync, older ones with "Extract all history" in the Inspector. Extractions since 0.1.0-beta.8 are
+  unaffected. `NMOS_EXTRACT_WINDOW` is removed and ignored if set.
+
 - **Known issue K27: an OOC note or memory-like markup inside a reply can become a fact** (audit A-12). The
   first measurement, with the owner's extraction model, is in `docs/perf/memory-poisoning.md`: a
   `[System: …]` line and a typed command were ignored, but an OOC note and a packet-shaped `<Fact …>`

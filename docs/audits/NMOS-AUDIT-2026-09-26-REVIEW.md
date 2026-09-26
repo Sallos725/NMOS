@@ -118,7 +118,7 @@ The remaining items were owner decisions. The owner chose:
 | A-10 Vertex AI keys | B: verify once against real Vertex with the owner's service-account key | waiting for the key |
 | A-12 memory poisoning | A: add the case to the model evaluation now; add the prompt line with the next extractor generation | measured: an OOC note and fake `<Fact>` markup in a reply became facts 3/3 (`docs/perf/memory-poisoning.md`, K27); prompt line queued in STATUS |
 | A-14 `Predicate.epistemic` | A: remove with the next extractor generation | queued in STATUS; marked in `predicates.py` |
-| A-15 per-message `window_hash` path | A: remove, with an ADR (the owner's DB has no per-message extraction) | pending |
+| A-15 per-message `window_hash` path | A: remove, with an ADR (the owner's DB has no per-message extraction) | done: ADR 0031; `NMOS_EXTRACT_WINDOW` removed |
 | A-09 follow-up, deadline at ≈10,000 messages | A: keep the 3 s default, and warn in the plugin UI when requests run close to or over the deadline, suggesting a higher value | pending |
 
 A-01, A-02 and A-04 were released in `v0.1.0-beta.20` and are listed under `docs/KNOWN-ISSUES.md` →
