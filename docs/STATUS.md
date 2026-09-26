@@ -69,7 +69,11 @@ injected ("Show the injected memory"), held in the plugin's memory only. Real-ho
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.20` (2026-09-26), public repository and image.** Three fixes from the
+**Public beta `v0.1.0-beta.21` (2026-09-26), public repository and image.** The rest of the 2026-09-26
+audit: deadline warnings in the plugin, a host check without a token (ADR 0030), the per-message extraction
+window retired (ADR 0031), startup backfills committed step by step, one environment for sidecar and worker,
+upgrade tests from beta.7/beta.16 databases, Vertex AI verified; no schema or generation change.
+`v0.1.0-beta.20` (2026-09-26): Three fixes from the
 2026-09-26 audit: a broken emoji no longer stops a chat's sync (A-01, ADR 0029), a reply quoting the
 memory tag no longer turns memory off (A-02), and one bad job no longer stops the worker (A-04).
 `v0.1.0-beta.19` (2026-09-26): Phase 9 (accountable
@@ -135,12 +139,12 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
 | Tests | `apps/sidecar/tests` (365), `adapters/pocketrisu-plugin/test` (99) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k without extraction and embeddings (D24); with both on (15k facts, 15k vectors) 10k takes ≈3.2 s (A-09) |
-| Known issues | `docs/KNOWN-ISSUES.md` | K1–K27 (K10 resolved) current as of `v0.1.0-beta.20`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
+| Known issues | `docs/KNOWN-ISSUES.md` | K1–K27 (K10 resolved) current as of `v0.1.0-beta.21`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0031` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-9.md` | 0–3 met; 4 soft subset met; 5–9 met |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
-| Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-07, A-08, A-16 fixed and A-09 measured (unreleased); the rest are owner decisions, listed in the review |
+| Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; A-12's prompt line and A-14 wait for the next extractor generation |
 
 ## Evidence status (Phase 0A)
 

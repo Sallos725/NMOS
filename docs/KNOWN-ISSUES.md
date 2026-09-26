@@ -1,6 +1,6 @@
 # NMOS Known Issues
 
-Current as of `v0.1.0-beta.20` (2026-09-26). This is the single list of what does not work, or works
+Current as of `v0.1.0-beta.21` (2026-09-26). This is the single list of what does not work, or works
 only partly, in the current release. Each release's "Known limitations" in `CHANGELOG.md` describes
 that release at the time; entries fixed later are listed under [Resolved](#resolved) below.
 
@@ -261,6 +261,8 @@ Not issues, but often reported as one:
 
 | Was listed in | Issue | Resolved in |
 |---|---|---|
+| (not listed; audit 2026-09-26, A-03) | The development compose passed `NMOS_LLM_JSON_MODE` to the worker only; with it set to 0 the worker never claimed the sidecar's extraction jobs. `NMOS_EXTRACT_HINTS` reached neither service | 0.1.0-beta.21 — one environment for both services; the worker warns about jobs it cannot serve |
+| (not listed; audit 2026-09-26, A-08) | A restart during a long startup backfill threw away the batches already written | 0.1.0-beta.21 — startup steps commit one by one |
 | (not listed; audit 2026-09-26, A-01) | A message, persona, chat or character name holding half an emoji (a lone surrogate) failed every sync of that chat with HTTP 500 | 0.1.0-beta.20 — verified as sent, stored with U+FFFD (ADR 0029) |
 | (not listed; audit 2026-09-26, A-02) | A reply or message quoting the memory tag stopped sync and memory for that chat until it left the prompt | 0.1.0-beta.20 — only a system message counts as the injected packet |
 | (not listed; audit 2026-09-26, A-04) | An unexpected job error (e.g. a provider reply with `"message": null`) ended the worker thread; extraction stopped with jobs pending | 0.1.0-beta.20 — the job fails and the worker goes on |

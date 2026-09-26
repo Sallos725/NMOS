@@ -5,11 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-- **Google Vertex AI is verified against the real service** (audit A-10; owner decision). A key's token
-  exchange, the connection test, extraction and recall work with `google/gemini-3.8-flash` (ADR 0022).
-  One pitfall showed up: a key whose service account lacks the **Vertex AI User** role
-  (`roles/aiplatform.user`) gets HTTP 403, even with the APIs enabled. The connection test now says which
-  role to grant.
+## 0.1.0-beta.21
+
+The rest of the 2026-09-26 audit (`docs/audits/NMOS-AUDIT-2026-09-26.md` and its review): the owner's
+decisions and the remaining fixes. No schema change and no new extractor or embedding generation: nothing
+is re-extracted or re-embedded (the generation keys are the same as in 0.1.0-beta.20). The plugin warns
+when memory runs out of time; the sidecar checks host names when it has no token.
 
 - **The plugin warns when memory runs out of time** (owner decision on audit A-09, plugin). A long chat that
   needs more than the deadline (3 s by default) used to go without memory silently. Now:
@@ -20,22 +21,6 @@ later, is `docs/KNOWN-ISSUES.md`.
   - the progress display says "over the N s deadline · tap to raise".
 
   The default deadline stays 3 s. Checked on an isolated PocketRisu v1.12.0.
-
-- **The per-message extraction window is retired** (audit A-15, ADR 0031; owner decision). Extractions made
-  before 0.1.0-beta.8 (per message, `extract-v3` and earlier) no longer serve facts. If your database still
-  relies on them, those turns show no facts until they are extracted again: the recent turns at the next
-  sync, older ones with "Extract all history" in the Inspector. Extractions since 0.1.0-beta.8 are
-  unaffected. `NMOS_EXTRACT_WINDOW` is removed and ignored if set.
-
-- **Known issue K27: an OOC note or memory-like markup inside a reply can become a fact** (audit A-12). The
-  first measurement, with the owner's extraction model, is in `docs/perf/memory-poisoning.md`: a
-  `[System: …]` line and a typed command were ignored, but an OOC note and a packet-shaped `<Fact …>`
-  inside a reply were stored as facts every time. The fix, a line in the extraction prompt, waits for the
-  next extractor generation, so re-extraction is paid once (owner decision). `tools/eval_poisoning_model.py`
-  re-runs the check.
-- **Invariant 9 now says what the code does:** storage is PostgreSQL, and replacing it is not a goal (owner
-  decision on audit A-06).
-
 - **Without a token, the sidecar answers only to known host names** (audit A-05, ADR 0030; owner decision).
   A web page can use DNS rebinding to reach a sidecar on `127.0.0.1` or the LAN from your own browser,
   and without a token it could read chats and settings. The sidecar now accepts requests addressed to an
@@ -43,7 +28,17 @@ later, is `docs/KNOWN-ISSUES.md`.
   If you reach the sidecar by a domain name (a reverse proxy, a tailnet name), add it to
   `NMOS_ALLOWED_HOSTS` in `.env` (for example `risu.example.com,*.ts.net`) or set a token. With a token
   nothing changes.
-
+- **Google Vertex AI is verified against the real service** (audit A-10; owner decision). A key's token
+  exchange, the connection test, extraction and recall work with `google/gemini-3.8-flash` (ADR 0022).
+  One pitfall showed up: a key whose service account lacks the **Vertex AI User** role
+  (`roles/aiplatform.user`) gets HTTP 403, even with the APIs enabled. The connection test now says which
+  role to grant.
+- **A restart during a long startup backfill resumes it** (audit A-08). The sidecar's startup work
+  (normalized text after a normalizer change, turn data, parser state, missing jobs) ran as one
+  transaction. A restart before it finished discarded every batch already written, and the next start
+  began again. Each step now commits on its own, the batched backfills batch by batch. Parser-state
+  backfill and generation activation stay atomic. A startup that fails no longer leaves an open
+  connection pool behind.
 - **Sidecar and worker always get the same settings** (audit A-03). The development `docker-compose.yml`
   passed `NMOS_LLM_JSON_MODE` to the worker only. Both processes build the extraction generation from their
   settings, so with `NMOS_LLM_JSON_MODE=0` (and no value saved in the panel) the worker never picked up the
@@ -51,16 +46,21 @@ later, is `docs/KNOWN-ISSUES.md`.
   environment, and `NMOS_EXTRACT_HINTS` (documented, but never passed to the containers) is included. The
   worker also logs a warning when queued jobs of the active generation match none of its handlers. A test
   checks that every documented variable reaches both services.
+- **The per-message extraction window is retired** (audit A-15, ADR 0031; owner decision). Extractions made
+  before 0.1.0-beta.8 (per message, `extract-v3` and earlier) no longer serve facts. If your database still
+  relies on them, those turns show no facts until they are extracted again: the recent turns at the next
+  sync, older ones with "Extract all history" in the Inspector. Extractions since 0.1.0-beta.8 are
+  unaffected. `NMOS_EXTRACT_WINDOW` is removed and ignored if set.
+- **Known issue K27: an OOC note or memory-like markup inside a reply can become a fact** (audit A-12). The
+  first measurement, with the owner's extraction model, is in `docs/perf/memory-poisoning.md`: a
+  `[System: …]` line and a typed command were ignored, but an OOC note and a packet-shaped `<Fact …>`
+  inside a reply were stored as facts every time. The fix, a line in the extraction prompt, waits for the
+  next extractor generation, so re-extraction is paid once (owner decision). `tools/eval_poisoning_model.py`
+  re-runs the check.
 - **Long chats with extraction and embeddings on need a higher deadline, measured** (audit A-09, docs). On
   PocketRisu v1.12.0 with 10,000 messages, 15,000 facts and 15,000 vectors, recall adds 0.4–0.7 s. A warm
   generation then takes 3.1–3.3 s, over the 3 s default, so those requests go without memory. Raise
   Deadline (ms) to about 4,000 for such chats. K1 and the README give the numbers.
-- **A restart during a long startup backfill resumes it** (audit A-08). The sidecar's startup work
-  (normalized text after a normalizer change, turn data, parser state, missing jobs) ran as one
-  transaction. A restart before it finished discarded every batch already written, and the next start
-  began again. Each step now commits on its own, the batched backfills batch by batch. Parser-state
-  backfill and generation activation stay atomic. A startup that fails no longer leaves an open
-  connection pool behind.
 - **Upgrades from earlier releases are tested, and backup and rollback are documented** (audit A-16). CI
   restores databases that 0.1.0-beta.7 and 0.1.0-beta.16 wrote, with their own code, and upgrades them. It
   checks that the chats stay in sync, the earlier facts stay served, the story goes on, and the worker,
@@ -70,6 +70,26 @@ later, is `docs/KNOWN-ISSUES.md`.
   `hud` were missing) and no longer calls `extract-v10` unreleased. K1's 10,000-message margin is stated
   for what was measured: chats with no facts or vectors; extraction and embeddings add to it. CI now fails
   when a summary's host-fact, decision, known-issue, ADR or phase range falls behind.
+- **Invariant 9 now says what the code does:** storage is PostgreSQL, and replacing it is not a goal (owner
+  decision on audit A-06).
+
+**Before upgrading:** back up the database (README, "Upgrade, backup and rollback"). If you reach a
+tokenless sidecar by a **domain name**, add that name to `NMOS_ALLOWED_HOSTS` in `.env` first, or requests
+will get HTTP 400. This covers a reverse proxy that keeps the browser's host, or a tailnet name. Addresses,
+`localhost` and Docker names such as `nmos` need nothing. Then pull the new sidecar image and restart both
+services, replace the plugin file, and reload PocketRisu.
+
+### Known limitations
+
+- An OOC note or packet-shaped markup inside a reply can become a fact (K27). The prompt fix waits for the
+  next extractor generation.
+- With extraction and embeddings on, a chat of about 10,000 messages needs a deadline above the 3 s
+  default (K1). The plugin now says so and suggests a value.
+- A bot whose Lua `request` trigger rewrites the injected system message into another role can get the
+  memory twice when the host retries a failed request (H2, H3).
+- Databases from before 0.1.0-beta.8 lose their per-message facts until those turns are extracted again
+  (ADR 0031).
+- Otherwise unchanged from 0.1.0-beta.20; the full list is `docs/KNOWN-ISSUES.md`.
 
 ## 0.1.0-beta.20
 
