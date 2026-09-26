@@ -1,4 +1,4 @@
-"""Phase 9 (ADR 0027): the packet ledger, packet-v1 budgets, echo and replay."""
+"""Phase 9 (ADR 0027): the packet ledger, packet-v1 budgets, echo and replay; packet-v2's estimate (ADR 0032)."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from memeval import RECENT, StubEmbedder, _drain, _sync, settings_for, stub_extr
 from nmos_sidecar.extraction import process_extract
 from nmos_sidecar.worker import run_once
 from nmos_sidecar import audit
-from nmos_sidecar.packet import (EXCERPT_SHARE, PACKET_CLOSE, PACKET_NOTE, PACKET_OPEN, STATE_SHARE, Excerpt, Line,
-                                 StateItem, compile_lines, compile_packet, estimate_tokens)
+from nmos_sidecar.packet import (EXCERPT_SHARE, NON_ASCII, PACKET_CLOSE, PACKET_NOTE, PACKET_OPEN, STATE_SHARE, Excerpt,
+                                 Line, StateItem, compile_lines, compile_packet, estimate_tokens)
 from simchat import SimChat
 
 
@@ -27,7 +27,11 @@ def fact(n: int, words: str = "등대 꼭대기에서 바다를 오래 바라보
 
 QUOTE = Excerpt(turn=3, speaker="하나", text="…한참 뒤에야 하나가 입을 열었다. 금고 비밀번호는 보라일곱이야.", score=0.03,
                 revision_id="r-quote", short="금고 비밀번호는 보라일곱이야.")
-FRAME = estimate_tokens("\n".join([PACKET_OPEN, PACKET_NOTE, PACKET_CLOSE]))
+RESERVING = pytest.mark.parametrize("policy", ["packet-v1", "packet-v2"])  # packet-v2 is packet-v1 with a lower estimate
+
+
+def frame(policy: str) -> int:
+    return estimate_tokens("\n".join([PACKET_OPEN, PACKET_NOTE, PACKET_CLOSE]), NON_ASCII[policy])
 
 
 def test_packet_v0_spends_the_budget_on_facts_and_drops_the_quote():
@@ -38,9 +42,10 @@ def test_packet_v0_spends_the_budget_on_facts_and_drops_the_quote():
     assert out.tokens <= 600
 
 
-def test_packet_v1_keeps_room_for_the_best_excerpt():
+@RESERVING
+def test_packet_v1_keeps_room_for_the_best_excerpt(policy):
     facts = [fact(i) for i in range(12)]
-    out = compile_lines([QUOTE], 600, facts=facts, policy="packet-v1")
+    out = compile_lines([QUOTE], 600, facts=facts, policy=policy)
     assert "보라일곱" in out.text and out.tokens <= 600
     placed = [e for e in out.ledger if e["placed"]]
     assert [e["kind"] for e in placed].count("excerpt") == 1
@@ -51,45 +56,69 @@ def test_packet_v1_keeps_room_for_the_best_excerpt():
     assert {e["why"] for e in out.ledger if not e["placed"]} == {"budget"}
 
 
-def test_packet_v1_shortens_an_excerpt_rather_than_dropping_it():
+@RESERVING
+def test_packet_v1_shortens_an_excerpt_rather_than_dropping_it(policy):
     long = Excerpt(turn=3, speaker="하나", text="바람이 커튼을 흔들었다. " * 20 + "금고 비밀번호는 보라일곱이야.", score=0.03,
                    revision_id="r-long", short="금고 비밀번호는 보라일곱이야.")
-    out = compile_lines([long], 600, facts=[fact(i) for i in range(12)], policy="packet-v1")
+    out = compile_lines([long], 600, facts=[fact(i) for i in range(12)], policy=policy)
     entry = next(e for e in out.ledger if e["kind"] == "excerpt")
     assert entry["placed"] and entry["form"] == "short" and entry["text"] == "금고 비밀번호는 보라일곱이야."
     assert "보라일곱" in out.text and "커튼" not in out.text
-    reserve = int((600 - FRAME) * EXCERPT_SHARE)
+    reserve = int((600 - frame(policy)) * EXCERPT_SHARE)
     assert entry["tok"] <= reserve
 
 
-def test_packet_v1_uses_the_whole_budget_when_nothing_competes():
+@RESERVING
+def test_packet_v1_uses_the_whole_budget_when_nothing_competes(policy):
     long = Excerpt(turn=3, speaker="하나", text="바람이 커튼을 흔들었다. 금고 비밀번호는 보라일곱이야.", score=0.03,
                    revision_id="r-long", short="금고 비밀번호는 보라일곱이야.")
-    out = compile_lines([long], 600, policy="packet-v1")
+    out = compile_lines([long], 600, policy=policy)
     entry = out.ledger[0]
     assert entry["placed"] and "form" not in entry  # the full excerpt: no reason to shorten it
 
 
-def test_packet_v1_caps_parser_state():
+@RESERVING
+def test_packet_v1_caps_parser_state(policy):
     state = [StateItem(key=f"npc{i}.hp", value=f"{i * 7} / 100, 상처 입음, 붕대를 감고 휴식 중", turn=i) for i in range(40)]
-    out = compile_lines([QUOTE], 600, state=state, facts=[fact(1)], policy="packet-v1")
+    out = compile_lines([QUOTE], 600, state=state, facts=[fact(1)], policy=policy)
     kept = [e for e in out.ledger if e["kind"] == "state" and e["placed"]]
-    assert sum(e["tok"] for e in kept) <= int((600 - FRAME) * STATE_SHARE)
+    assert sum(e["tok"] for e in kept) <= int((600 - frame(policy)) * STATE_SHARE)
     assert {e["why"] for e in out.ledger if e["kind"] == "state" and not e["placed"]} == {"state_cap"}
     assert "보라일곱" in out.text and "has trait" in out.text
     v0 = compile_lines([QUOTE], 600, state=state, facts=[fact(1)], policy="packet-v0")
     assert "보라일곱" not in v0.text and "has trait" not in v0.text  # state took everything
 
 
-def test_packet_v1_skips_an_excerpt_that_restates_a_fact():
+@RESERVING
+def test_packet_v1_skips_an_excerpt_that_restates_a_fact(policy):
     same = Excerpt(turn=9, speaker="user", text="하나의 특징: 등대 꼭대기에서 바다를 오래 바라보는 버릇이 있다 1.", score=0.05,
                    revision_id="r-trait", short="하나의 특징: 등대 꼭대기에서 바다를 오래 바라보는 버릇이 있다 1.")
-    out = compile_lines([same, QUOTE], 600, facts=[fact(i) for i in range(12)], policy="packet-v1")
+    out = compile_lines([same, QUOTE], 600, facts=[fact(i) for i in range(12)], policy=policy)
     trait, quote = [e for e in out.ledger if e["kind"] == "excerpt"]
     assert not trait["placed"] and trait["why"] == "repeats" and "assertion" in trait["repeats"]
     assert quote["placed"] and "보라일곱" in out.text  # the room went to the next excerpt
     v0 = compile_lines([same, QUOTE], 600, facts=[fact(i) for i in range(12)], policy="packet-v0")
     assert not any(e["why"] == "repeats" for e in v0.ledger)
+
+
+def test_packet_v2_counts_non_ascii_at_1_2_tokens_a_character():
+    """K26: three tokenizers counted 0.74-0.98 tokens per Korean character; v0 and v1 estimate 1.5."""
+    assert NON_ASCII == {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2}
+    assert estimate_tokens("가" * 100) == 150 and estimate_tokens("가" * 100, 1.2) == 120
+    assert estimate_tokens("a" * 35, 1.2) == estimate_tokens("a" * 35) == 10  # ASCII unchanged
+
+
+def test_packet_v2_fits_more_korean_in_the_same_budget():
+    facts = [fact(i) for i in range(12)]
+    v1 = compile_lines([QUOTE], 600, facts=facts, policy="packet-v1")
+    v2 = compile_lines([QUOTE], 600, facts=facts, policy="packet-v2")
+
+    def placed(out) -> int:
+        return sum(e["placed"] for e in out.ledger if e["kind"] == "fact")
+    assert placed(v2) > placed(v1) and "보라일곱" in v2.text
+    assert v2.tokens <= 600 and v2.tokens == estimate_tokens(v2.text, 1.2)
+    # the ledger's costs are the policy's: the same fact line costs less under v2
+    assert v2.ledger[1]["tok"] < v1.ledger[1]["tok"]
 
 
 def test_nothing_placed_still_lists_what_was_offered():
@@ -174,7 +203,7 @@ def test_a_trace_records_every_offered_line_with_provenance(full):
     chat = story(client, url)
     out = ask(client, chat, "Kaito, what do you know about the letter?")
     trace = client.get(f"/v1/trace/{out['trace_id']}").json()
-    assert trace["policy"] == "packet-v1" and trace["budget_tokens"] == 600
+    assert trace["policy"] == "packet-v2" and trace["budget_tokens"] == 600
     assert trace["upto_position"] == len(chat.messages) - 1 and trace["previous_ai"] == ""
     assert trace["recall_options"]["facts_limit"] == 8
     facts = [e for e in trace["lines"] if e["kind"] == "fact"]
@@ -210,6 +239,20 @@ def test_replay_reproduces_the_packet_as_of_its_request(full):
     other = client.get(f"/v1/trace/{first['trace_id']}/replay", params={"policy": "packet-v0"}).json()
     assert other["status"] == "ok" and "reproduced" not in other and other["policy"] == "packet-v0"
     assert client.get(f"/v1/trace/{first['trace_id']}/replay", params={"policy": "x"}).status_code == 422
+
+
+def test_a_packet_v1_trace_still_replays_as_packet_v1(migrated):
+    """ADR 0032: packet-v1 keeps its 1.5 estimate, so a request recorded before the upgrade compiles again
+    exactly."""
+    settings = {k: v for k, v in settings_for("full").items() if not k.startswith("embed_")}
+    with make_client(migrated, **(settings | {"embed_backfill": 0, "packet_policy": "packet-v1"})) as client:
+        chat = story(client, migrated)
+        chat.reply("Noted.")
+        chat.user("하나는 지도를 어디에 숨겼지? 등대 꼭대기였나, 아니면 예배당이었나?")  # Korean in the query and excerpts
+        out = ask(client, chat, "Hana, what about the map?")
+        again = client.get(f"/v1/trace/{out['trace_id']}/replay").json()
+        assert again["policy"] == "packet-v1" and again["reproduced"] is True
+        assert again["text"] == out["packet"]["text"]
 
 
 def test_replay_refuses_when_the_story_before_the_request_changed(full):
@@ -264,11 +307,12 @@ def test_compare_policies_over_traces(full):
     with db(url) as conn:
         report = audit.compare(conn, ids, RecallOptions())
     assert report["traces"] == 2 and report["skipped"] == {}
-    v0, v1 = report["policies"]["packet-v0"], report["policies"]["packet-v1"]
-    assert v1["packets"] == v0["packets"] == 2 and v1["replayed_same_policy"] == v1["reproduced"] == 2
-    assert v0["replayed_same_policy"] == 0
-    # the first request's reply ("Hana has the map.") echoed the map fact, and both policies keep it
-    assert v1["echoed_recorded"] >= 1 and v1["echo_kept"] == v1["echoed_recorded"] == v0["echo_kept"]
+    v0, v1, v2 = (report["policies"][p] for p in ("packet-v0", "packet-v1", "packet-v2"))
+    assert v2["packets"] == v1["packets"] == v0["packets"] == 2
+    assert v2["replayed_same_policy"] == v2["reproduced"] == 2  # recorded by the default, packet-v2
+    assert v0["replayed_same_policy"] == v1["replayed_same_policy"] == 0
+    # the first request's reply ("Hana has the map.") echoed the map fact, and every policy keeps it
+    assert v2["echoed_recorded"] >= 1 and v2["echo_kept"] == v2["echoed_recorded"] == v1["echo_kept"] == v0["echo_kept"]
 
 
 def test_traces_from_before_the_ledger_are_not_replayed(full):
@@ -312,7 +356,7 @@ def test_inspector_shows_the_last_packet_ledger(full):
     _sync(client, chat)
     conv = client.get("/v1/conversations").json()[0]["id"]
     page = client.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
-    assert "Last packet: what went in" in page and "policy packet-v1" in page and "next reply: present" in page
+    assert "Last packet: what went in" in page and "policy packet-v2" in page and "next reply: present" in page
     assert "a hidden fact reappears" in page and "the letter is forged" in page
     assert "fact 2" in page or "fact 1" in page  # the retrievals table counts what each packet held
     ko = client.get(f"/inspector/c/{conv}").text

@@ -1,5 +1,5 @@
-"""Answer-level probe of packet policies (Phase 9, ADR 0027): does the response model answer better with a
-packet-v1 packet than with the packet-v0 packet for the same request?
+"""Answer-level probe of packet policies (Phase 9, ADR 0027; ADR 0032): does the response model answer
+better with one policy's packet than with another's for the same request?
 
 Korean synthetic scenes (labeled as such), each a chat whose facts about 하나 fill the budget, with one
 question. Two kinds of probe:
@@ -8,14 +8,16 @@ question. Two kinds of probe:
   excerpt carries it;
 - `fact`: the answer is in one of the fact lines (a trait), which packet-v1 may displace for an excerpt.
 
-Per probe, the sidecar answers the request once (packet-v1, recorded as a trace) and replays it as
-packet-v0: two packets for identical inputs. The response model then gets a role-play prompt with the
-packet placed before the last user message (as the plugin does), the last six messages and the question,
-and is scored on whether its reply contains the answer. The first packet-v1 reply of each probe is also
-appended to the chat and audited, to record echo on a real reply.
+Per probe, the sidecar answers the request once (the default policy, recorded as a trace) and replays it
+under each other policy in `--policies`: several packets for identical inputs. The response model then
+gets a role-play prompt with the packet placed before the last user message (as the plugin does), the
+last six messages and the question, and is scored on whether its reply contains the answer. The first
+reply to the recorded packet of each probe is also appended to the chat and audited, to record echo on a
+real reply.
 
     cd apps/sidecar && uv run python ../../tools/eval_packet_answers.py --model deepseek-v4.1-flash:cloud \
-        [--url http://127.0.0.1:11434/v1] [--runs 3] [--out ../../fixtures/model/phase9/<dir>]
+        [--url http://127.0.0.1:11434/v1] [--runs 3] [--policies packet-v2,packet-v1,packet-v0] \
+        [--out ../../fixtures/model/phase9/<dir>]
 """
 
 from __future__ import annotations
@@ -156,6 +158,7 @@ def main() -> None:
     ap.add_argument("--url", default="http://127.0.0.1:11434/v1")
     ap.add_argument("--key", default=os.environ.get("EVAL_API_KEY", ""))
     ap.add_argument("--runs", type=int, default=3)
+    ap.add_argument("--policies", default="packet-v1,packet-v0", help="compared with the recorded (default) policy")
     ap.add_argument("--out")
     ap.add_argument("--embed-url", default="http://127.0.0.1:11434/v1")
     ap.add_argument("--embed-model", default="qwen3-embedding:0.6b")
@@ -179,11 +182,15 @@ def main() -> None:
                                                         "in_context_ids": [m["chatId"] for m in recent],
                                                         "budget_tokens": 600}).json()
                 trace = out["trace_id"]
-                v0 = client.get(f"/v1/trace/{trace}/replay", params={"policy": "packet-v0"}).json()
-                packets = {"packet-v1": out["packet"]["text"], "packet-v0": v0["text"]}
-                ledgers = {"packet-v1": client.get(f"/v1/trace/{trace}").json()["lines"], "packet-v0": v0["lines"]}
+                recorded = client.get(f"/v1/trace/{trace}").json()
+                packets = {recorded["policy"]: out["packet"]["text"]}
+                ledgers = {recorded["policy"]: recorded["lines"]}
+                for other in args.policies.split(","):
+                    if other not in packets:
+                        again = client.get(f"/v1/trace/{trace}/replay", params={"policy": other}).json()
+                        packets[other], ledgers[other] = again["text"], again["lines"]
                 request = (probe.question, asked[-2]["data"])
-                first_v1 = None
+                first = None
                 for policy, packet in packets.items():
                     for run in range(args.runs):
                         started = time.perf_counter()
@@ -194,17 +201,17 @@ def main() -> None:
                                "placed": sum(e["placed"] for e in ledgers[policy]),
                                "echoed": [e["text"] for e in ledgers[policy]
                                           if e["placed"] and audit.echoed(e.get("content") or e["text"], reply, request)]}
-                        if policy == "packet-v1" and run == 0:
-                            first_v1 = row
+                        if policy == recorded["policy"] and run == 0:
+                            first = row
                         rows.append(row)
                         print(json.dumps({k: row[k] for k in ("probe", "policy", "run", "answer_in_packet", "answered")},
                                          ensure_ascii=False), flush=True)
-                if first_v1 is not None:  # the first packet-v1 reply follows the recorded request: audit its echo
-                    chat.reply(first_v1["reply"])
+                if first is not None:  # the first reply to the recorded packet follows the request: audit its echo
+                    chat.reply(first["reply"])
                     chat.user("…")
                     _sync(client, chat)
                     report = client.get(f"/v1/trace/{trace}/audit").json()
-                    first_v1["echo"] = {"summary": report["summary"],
+                    first["echo"] = {"summary": report["summary"],
                                         "placed_echoed": [e["text"] for e in report["lines"] if e["placed"] and e.get("echoed")]}
                 with psycopg.connect(db) as conn:
                     size = conn.execute("SELECT octet_length(lines::text) + octet_length(in_context::text)"

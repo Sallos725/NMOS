@@ -357,7 +357,7 @@ inputs (query, previous reply, the ids already in the prompt, budget, recall opt
 head position). Migration 0020. The packet compiler is a named policy: `packet-v1` (default,
 `NMOS_PACKET_POLICY`) skips excerpts that only restate an offered fact, keeps 30 % of the budget inside
 the frame for the best remaining excerpt, shortened to its best sentence or cut to fit, and caps parser
-state at 40 %; `packet-v0` is the earlier compiler. A
+state at 40 %; `packet-v0` is the earlier compiler. Since D42 the default is `packet-v2`. A
 recorded request replays **as of** its time: the head cut at its position, and only extractions, vectors
 (`revision_embedding.created_at`) and owner links NMOS had by then. It reproduces the recorded ledger while
 the story up to that position is unchanged, and compiles the same inputs under another policy for an
@@ -373,6 +373,11 @@ too. Host ids holding one are refused with 422. Hash format v1 and the plugin ar
 **D41 — Host check without a token (ADR 0030; owner decision on audit A-05).** A sidecar with no
 `NMOS_AUTH_TOKEN` answers only requests addressed to an IP address, `localhost`, a single-label name or a
 name in `NMOS_ALLOWED_HOSTS`; others get 400. With a token, the token decides.
+
+**D42 — Korean token estimate (ADR 0032; owner decision on K26).** The default packet policy is
+`packet-v2`: `packet-v1` with non-ASCII characters estimated at 1.2 tokens instead of 1.5 (ASCII stays 3.5
+characters a token). Each policy keeps its own rate, so a recorded request replays exactly. The default
+reserve (600) is unchanged.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

@@ -10,7 +10,7 @@ on a model. Measured on the packet the model would receive, never on a generated
 - irrelevant: a packet for a query nothing in the chat relates to should be empty.
 
 Modes: `recent` (no memory: only the last RECENT messages), `lexical` (raw recall only), `hybrid`
-(lexical + vectors), `full` (hybrid + facts from the stub extractor), `full-v0` (`full` compiled by
+(lexical + vectors), `full` (hybrid + facts from the stub extractor, default packet policy), `full-v0` (`full` compiled by
 packet-v0, the packet compiler before Phase 9).
 
     uv run python ../../tools/eval_memory.py        # prints the table in docs/perf/eval-baseline.md
@@ -30,6 +30,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from nmos_sidecar.extraction import process_extract
+from nmos_sidecar.packet import DEFAULT_POLICY
 from nmos_sidecar.vectors import process_embed
 from nmos_sidecar.worker import run_once
 from simchat import SimChat
@@ -412,7 +413,7 @@ def kind(mode: str) -> str:
 
 def settings_for(mode: str) -> dict[str, Any]:
     out: dict[str, Any] = {"extract_backfill": 1000, "embed_backfill": 1000,
-                           "packet_policy": "packet-v0" if mode == "full-v0" else "packet-v1"}
+                           "packet_policy": "packet-v0" if mode == "full-v0" else DEFAULT_POLICY}
     mode = kind(mode)
     if mode in ("hybrid", "full"):
         out.update(embed_url="http://stub-embed/v1", embed_model="stub-embed")

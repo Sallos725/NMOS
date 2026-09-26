@@ -7,7 +7,7 @@ including how many of the lines the real reply echoed each policy keeps. The ses
 it is safe on a production database; point it at a copy anyway if you can.
 
     cd apps/sidecar && uv run python ../../tools/replay_packets.py --url postgresql://… [--limit 200]
-        [--conversation <uuid>] [--policies packet-v0,packet-v1] [--no-vectors]
+        [--conversation <uuid>] [--policies packet-v1,packet-v2] [--no-vectors]
 
 Vectors are searched only when the configured embedding projection (environment plus the settings saved
 from the panel) is the one a trace used; otherwise that trace is replayed lexical-only and cannot count
