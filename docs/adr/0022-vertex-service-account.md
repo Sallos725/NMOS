@@ -43,5 +43,27 @@ not use NMOS extraction without running their own token proxy.
   a dedicated service account with only the Vertex AI User role.
 - The model list (`GET …/models`) is not expected to work on Vertex; the preset fills a model name.
 - Verified with a mocked token endpoint (`tests/test_vertex.py`: signed assertion, caching, refresh,
-  failure, config validation). A call against real Vertex needs an owner-supplied key and has not been
-  run.
+  failure, config validation), and against real Vertex on 2026-09-26 (below).
+
+## Verification against real Vertex (2026-09-26, audit A-10)
+
+The owner chose to verify once with their own service-account key (audit A-10, option B). Run through the
+sidecar's own code: `vertex.access_token`, `runtime.test_llm` (the panel's connection test), and a
+temporary database driven through `/v1/config/test`, sync, the worker's extraction handler and `/v1/retrieve`.
+No key or token was printed or stored outside the key file.
+
+- **Token exchange** worked for both keys tried (≈0.3–0.5 s).
+- **Model list** (`GET …/openapi/models`): 404, as expected above.
+- **First key:** the project's default Compute Engine service account, with the Gemini, Compute Engine
+  and Vertex AI ("Agent Platform") APIs enabled. Every call got 403 `IAM_PERMISSION_DENIED` on
+  `aiplatform.endpoints.predict`, for ≈25 minutes of retries. Enabling an API does not grant the service
+  account the Vertex AI User role (`roles/aiplatform.user`).
+- **Second key:** a dedicated service account. `google/gemini-3.8-flash` with JSON mode:
+  - connection test ok in ≈2.6 s;
+  - a four-message Korean chat synced;
+  - both turns extracted (`extract-v10`, 1 attempt each), giving 3 valid facts: two places and a
+    relationship;
+  - the next recall's packet carried the fact the question asked for;
+  - one promise in the chat was not extracted in this single run (a model-quality observation; n = 1).
+- Follow-up: when Vertex refuses on `aiplatform.endpoints.predict`, the connection test now puts the
+  missing role first in its message.

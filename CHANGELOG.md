@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Google Vertex AI is verified against the real service** (audit A-10; owner decision). A key's token
+  exchange, the connection test, extraction and recall work with `google/gemini-3.8-flash` (ADR 0022).
+  One pitfall showed up: a key whose service account lacks the **Vertex AI User** role
+  (`roles/aiplatform.user`) gets HTTP 403, even with the APIs enabled. The connection test now says which
+  role to grant.
+
 - **The plugin warns when memory runs out of time** (owner decision on audit A-09, plugin). A long chat that
   needs more than the deadline (3 s by default) used to go without memory silently. Now:
   - the NMOS panel's Status tab opens with a card when the last request missed the deadline, or used 80 %

@@ -51,8 +51,8 @@ allowed, an incident others must deal with), names a character shown without a n
 it when a later turn reveals the name; the owner can join two names of a chat by hand in the panel (migration 0019,
 `resolve-v4`). Evidence: `docs/perf/extract-v9.md`.
 Outside the phase (owner request 2026-09-24, ADR 0022): Google Vertex AI service-account keys for the
-extraction LLM, released in `v0.1.0-beta.15`. Mocked token exchange in CI; not yet run against real Vertex (needs an
-owner-supplied service-account key).
+extraction LLM, released in `v0.1.0-beta.15`. Mocked token exchange in CI; verified against real Vertex on
+2026-09-26 with the owner's key (`google/gemini-3.8-flash`: connection test, extraction, recall; ADR 0022).
 Outside the phase (owner report 2026-09-26, ADR 0026, D37, released in `v0.1.0-beta.19`): characters forgot settled things (a 반말 agreement
 went back to 존댓말). Reproduced read-only on the owner's database: in a crowded scene the fact ranking was decided by
 `known_by` lists, so trivia took the four facts a 600-token packet holds. Now how the cast stand with each other
@@ -133,7 +133,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Schema | `migrations/0001`–`0020` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (364), `adapters/pocketrisu-plugin/test` (99) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
+| Tests | `apps/sidecar/tests` (365), `adapters/pocketrisu-plugin/test` (99) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k without extraction and embeddings (D24); with both on (15k facts, 15k vectors) 10k takes ≈3.2 s (A-09) |
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K27 (K10 resolved) current as of `v0.1.0-beta.20`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |

@@ -157,7 +157,11 @@ def test_llm(url: str, model: str, api_key: str, json_mode: bool) -> dict[str, A
             "Reply with JSON only.", 'Return exactly {"ok": true, "language": "<the language of: 안녕하세요>"}')
         return {"ok": bool(parsed.get("ok")), "ms": round((time.perf_counter() - started) * 1000), "reply": parsed}
     except LLMError as exc:
-        return {"ok": False, "ms": round((time.perf_counter() - started) * 1000), "error": str(exc)}
+        error = str(exc)
+        if "aiplatform.endpoints.predict" in error:  # Vertex: enabling the APIs does not grant this (ADR 0022)
+            error = ("Vertex refused: the service account in this key needs the Vertex AI User role "
+                     "(roles/aiplatform.user) on its project; enabling the APIs is not enough. " + error)
+        return {"ok": False, "ms": round((time.perf_counter() - started) * 1000), "error": error}
 
 
 def test_embeddings(url: str, model: str, api_key: str) -> dict[str, Any]:
