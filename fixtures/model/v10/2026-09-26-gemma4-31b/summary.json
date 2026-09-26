@@ -1,0 +1,220 @@
+{
+  "model": "gemma4:31b-cloud",
+  "url": "http://127.0.0.1:11434/v1",
+  "runs": 3,
+  "calls": 57,
+  "errors": [],
+  "bars": {
+    "v10 settled: agree informally (유이 → 카이토)": "3/3",
+    "v10 settled: agree informally (카이토 → 유이)": "3/3",
+    "v10 settled: form of address accepted": "3/3",
+    "v10 settled: change back decided": "3/3",
+    "v10 control: slip into formal speech": "3/3",
+    "v10 control: speech settled earlier continues": "3/3",
+    "v10 control: routine": "3/3",
+    "v10-v9scenes major: admission": "0/3",
+    "v10-v9scenes major: speech level": "3/3",
+    "v10-v9scenes major: form of address": "3/3",
+    "v10-v9scenes major: relationship allowed": "0/3",
+    "v10-v9scenes major: device explodes": "3/3",
+    "v10-v9scenes routine: dinner": "3/3",
+    "v10-v9scenes routine: chores": "3/3",
+    "v10-v9scenes routine: walk to market": "3/3",
+    "v10-v9scenes unnamed: first sight": "3/3",
+    "v10-v9scenes unnamed: reveal": "3/3",
+    "v10-v9scenes unnamed: another person arrives": "3/3",
+    "v10-v9scenes unnamed: unrelated scene": "3/3"
+  },
+  "scenes": {
+    "v10 settled: agree informally (유이 → 카이토)": {
+      "category": "settled",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('유이', '카이토', '반말', 'valid', 'narration', 'actual'), ('카이토', '유이', '반말', 'valid', 'narration', 'actual')]",
+        "[('유이', '카이토', '반말', 'valid', 'narration', 'actual'), ('카이토', '유이', '반말', 'valid', 'narration', 'actual')]",
+        "[('유이', '카이토', '반말', 'valid', 'narration', 'actual'), ('카이토', '유이', '반말', 'valid', 'narration', 'actual')]"
+      ]
+    },
+    "v10 settled: agree informally (카이토 → 유이)": {
+      "category": "settled",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('유이', '카이토', '반말', 'valid', 'narration', 'actual'), ('카이토', '유이', '반말', 'valid', 'narration', 'actual')]",
+        "[('유이', '카이토', \"반말, '카이토'라고 부름\", 'valid', 'narration', 'actual'), ('카이토', '유이', \"반말, '유이'라고 부름\", 'valid', 'narration', 'actual')]",
+        "[('유이', '카이토', '반말', 'valid', 'narration', 'actual'), ('카이토', '유이', '반말', 'valid', 'narration', 'actual')]"
+      ]
+    },
+    "v10 settled: form of address accepted": {
+      "category": "settled",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('하나', '레온', \"반말, '오빠'라고 부름\", 'valid', 'narration', 'actual')]",
+        "[('하나', '레온', \"반말, '오빠'라고 부름\", 'valid', 'narration', 'actual')]",
+        "[('하나', '레온', \"반말, '오빠'라고 부름\", 'valid', 'narration', 'actual')]"
+      ]
+    },
+    "v10 settled: change back decided": {
+      "category": "settled",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('유이', '카이토', \"존댓말, '카이토 씨'라고 부름\", 'valid', 'narration', 'actual')]",
+        "[('유이', '카이토', \"존댓말, '카이토 씨'라고 부름\", 'valid', 'narration', 'actual')]",
+        "[('유이', '카이토', \"존댓말, '카이토 씨'라고 부름\", 'valid', 'narration', 'actual')]"
+      ]
+    },
+    "v10 control: slip into formal speech": {
+      "category": "control",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[]",
+        "[]",
+        "[]"
+      ]
+    },
+    "v10 control: speech settled earlier continues": {
+      "category": "control",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[]",
+        "[]",
+        "[]"
+      ]
+    },
+    "v10 control: routine": {
+      "category": "control",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[]",
+        "[]",
+        "[]"
+      ]
+    },
+    "v10-v9scenes major: admission": {
+      "category": "major",
+      "pass": 0,
+      "runs": 3,
+      "details": [
+        "events=[]",
+        "events=[]",
+        "events=[]"
+      ]
+    },
+    "v10-v9scenes major: speech level": {
+      "category": "major",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "events=[('유이', '카이토와 서로 말을 놓기로 함', 'major')]",
+        "events=[('유이', '카이토와 서로 말을 놓기로 함', 'major')]",
+        "events=[('유이', '카이토와 서로 말을 놓기로 함', 'major')]"
+      ]
+    },
+    "v10-v9scenes major: form of address": {
+      "category": "major",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "events=[('하나', \"레온을 '오빠'라고 부르기 시작함\", 'major')]",
+        "events=[('하나', \"레온을 '오빠'라고 부르기 시작함\", 'major')]",
+        "events=[('하나', \"레온을 '오빠'라고 부르기 시작함\", 'major')]"
+      ]
+    },
+    "v10-v9scenes major: relationship allowed": {
+      "category": "major",
+      "pass": 0,
+      "runs": 3,
+      "details": [
+        "events=[]",
+        "events=[]",
+        "events=[]"
+      ]
+    },
+    "v10-v9scenes major: device explodes": {
+      "category": "major",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "events=[('민호', '측정 수정구를 파괴하고 등급 판정 보류 처분을 받음', 'major')]",
+        "events=[('민호', '측정 불가, 등급 판정 보류 판정을 받음', 'major')]",
+        "events=[('민호', '측정 불가, 등급 판정 보류 판정을 받음', 'major')]"
+      ]
+    },
+    "v10-v9scenes routine: dinner": {
+      "category": "routine",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('유이', '카이토와 함께 감자 스튜를 나눠 먹음', 'minor')]",
+        "[('유이', '카이토와 함께 감자 스튜를 나눠 먹음', 'minor')]",
+        "[('유이', '카이토와 함께 감자 스튜를 나눠 먹음', 'minor')]"
+      ]
+    },
+    "v10-v9scenes routine: chores": {
+      "category": "routine",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('하나', '그릇을 헹굼', 'minor'), ('레온', '빨래를 걷어 개었음', 'minor')]",
+        "[('하나', '그릇을 헹굼', 'minor'), ('레온', '빨래를 걷어 개었음', 'minor')]",
+        "[('하나', '그릇을 헹굼', 'minor'), ('레온', '빨래를 걷어 개었음', 'minor')]"
+      ]
+    },
+    "v10-v9scenes routine: walk to market": {
+      "category": "routine",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('서연', '사과를 몇 알 샀다', 'minor')]",
+        "[('서연', '촌장과 함께 시장에 감', 'minor')]",
+        "[('서연', '촌장과 함께 시장에 감', 'minor')]"
+      ]
+    },
+    "v10-v9scenes unnamed: first sight": {
+      "category": "unnamed",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "['?은빛 가면을 쓴 누군가', '안개 낀 다리', '카이토']",
+        "['?은빛 가면을 쓴 누군가', '안개 낀 다리', '카이토']",
+        "['?은빛 가면을 쓴 누군가', '안개 낀 다리', '카이토']"
+      ]
+    },
+    "v10-v9scenes unnamed: reveal": {
+      "category": "reveal",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[('세라', '?은빛 가면의 인물', 'valid')]",
+        "[('세라', '?은빛 가면의 인물', 'valid')]",
+        "[('세라', '?은빛 가면의 인물', 'valid')]"
+      ]
+    },
+    "v10-v9scenes unnamed: another person arrives": {
+      "category": "no reveal",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[]",
+        "[]",
+        "[]"
+      ]
+    },
+    "v10-v9scenes unnamed: unrelated scene": {
+      "category": "no reveal",
+      "pass": 3,
+      "runs": 3,
+      "details": [
+        "[]",
+        "[]",
+        "[]"
+      ]
+    }
+  }
+}

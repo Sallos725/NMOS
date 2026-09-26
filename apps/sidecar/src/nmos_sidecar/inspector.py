@@ -140,6 +140,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     # stored values, shown translated (the raw value stays in the tooltip)
     "p.located_in": ("위치", "located in"), "p.has_status": ("상태", "status"), "p.identity": ("정체", "identity"),
     "p.has_trait": ("특징", "trait"), "p.relationship": ("관계", "relationship"), "p.feels_toward": ("감정", "feels toward"),
+    "p.addresses": ("말투·호칭", "addresses"),
     "p.possesses": ("소지", "possesses"), "p.member_of": ("소속", "member of"), "p.knows": ("앎", "knows"),
     "p.goal": ("목표", "goal"), "p.promised": ("약속", "promised"), "p.event": ("사건", "event"),
     "p.world_fact": ("세계 설정", "world fact"), "p.also_called": ("별칭", "also called"),

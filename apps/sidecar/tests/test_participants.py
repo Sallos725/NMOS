@@ -226,7 +226,7 @@ def test_extract_v8_asks_for_typed_participants():
     from nmos_sidecar.extraction import COMPILER_VERSION, SYSTEM_PROMPT
     from nmos_sidecar.predicates import registry_prompt
     prompt = SYSTEM_PROMPT.format(registry=registry_prompt())
-    assert COMPILER_VERSION == "extract-v9"
+    assert COMPILER_VERSION == "extract-v10"
     assert "`with`, for `event`, `goal`, `knows` and `destroyed` only" in prompt
     assert '"with": [{"name": "...", "type": "character|group"}]' in prompt
     assert "Being there does not mean knowing" in prompt  # PHASE-8: a participant is not a knower

@@ -29,12 +29,13 @@ from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
 
-COMPILER_VERSION = "extract-v9"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
+COMPILER_VERSION = "extract-v10"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
 #                                 v5: polarity, modality, source, also_called (ADR 0012, ADR 0013);
 #                                 v6: destroyed (PHASE-6, ADR 0017);
 #                                 v7: promises actual, fulfilled, OPEN PROMISES, event salience (PHASE-7);
 #                                 v8: typed participants `with` (PHASE-8, ADR 0021);
-#                                 v9: salience by what an event changes, revealed names (ADR 0024)
+#                                 v9: salience by what an event changes, revealed names (ADR 0024);
+#                                 v10: addresses, speech level and form of address (ADR 0028)
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
 TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
@@ -88,6 +89,14 @@ Rules:
   listed) when the TARGET turn carries one out; `promised` with "negative" (subject, object and value as
   listed) when the TARGET turn breaks or withdraws one, or its recipient releases it. Not when a
   promise is only mentioned, remembered or still pending.
+- `addresses` when the TARGET turn settles how one character speaks to or calls another from now on:
+  they agree or decide to speak informally or formally, someone asks for or allows a form of address,
+  or a new form of address is used for the first time and taken up. `value`: the speech level and the
+  form of address in the chat's language (e.g. "반말, '유우마'라고 부름", "존댓말(해요체), '유우마 씨'라고
+  부름"). One assertion per direction (A to B and B to A are separate). It is narration when the TARGET
+  turn shows it, although the evidence is dialogue. Not for a reply that merely uses some speech level
+  without anyone deciding, asking or remarking on it: a slip is not a change. A change back is a new
+  `addresses` with the new value. Record the turning point as an `event` as well.
 - `salience`, for `event` only. "major" when the event changes the story from then on, whether it
   happens in action or only in words:
   a confession, an admission of guilt or responsibility, a secret or a hidden identity revealed (when a

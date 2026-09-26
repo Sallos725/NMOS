@@ -124,7 +124,8 @@ exists; D30, ADR 0017), and since `extract-v7` `fulfilled` (a kept promise; D32,
 an `event`, `goal`, `knows` or `destroyed` carries typed participants (`with`, migration 0017; D33,
 ADR 0021); they are outside the registry fingerprint like other read rules, but part of the prompt.
 Since `extract-v9` `also_called` also records the name the target turn reveals for a character listed
-as unnamed (D35, ADR 0024).
+as unnamed (D35, ADR 0024). Since `extract-v10` the registry has `addresses` (how one character speaks to
+and calls another, single per direction; D38, ADR 0028).
 
 **D7 — Bounded extraction context, per turn (revised 2026-09-23, ADR 0008).** The unit of
 extraction is the **turn**: a run of user messages plus the run of replies that answers it (comments,
@@ -335,6 +336,12 @@ Fact ranking gives a mentioned fact a prior among equal mentions: `+0.5` for `re
 name adds nothing. `STANDING` facts take the packet budget after state and before threads, and open the
 `<Facts>` section. The retrieval trace records how many state items, threads and facts fit, and the
 Inspector shows facts as kept/offered.
+
+**D38 — Speech level and form of address (ADR 0028; owner report, not a phase feature).** `extract-v10`
+adds `addresses` (character → character, value text, single per (subject, object)): how the subject now
+speaks to and calls the object, when the target turn settles it (an agreement, a request or permission, a
+first use taken up, a decided change back). It is narration although the evidence is dialogue; a reply that
+only uses a speech level is not a change. `addresses` is in `STANDING` (D37).
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

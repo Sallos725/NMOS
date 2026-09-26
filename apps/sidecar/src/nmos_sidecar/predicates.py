@@ -34,6 +34,9 @@ REGISTRY: dict[str, Predicate] = {p.name: p for p in (
               "relationship of subject to object (sibling, rival, lovers…)", per_object=True),
     Predicate("feels_toward", ("character",), ("character",), True, "single", "belief",
               "subject's current feeling toward object", per_object=True),
+    Predicate("addresses", ("character",), ("character",), True, "single", "world",
+              "how the subject now speaks to and calls the object, as the story settles it: speech level and form"
+              " of address (value e.g. informal speech, calls them 'Yuuma')", per_object=True),
     Predicate("possesses", ("character", "group"), ("item",), False, "multi", "world", "subject owns/carries object"),
     Predicate("member_of", ("character",), ("group",), False, "multi", "world", "subject belongs to group"),
     Predicate("knows", ("character",), None, True, "multi", "belief", "a fact/secret the subject knows"),

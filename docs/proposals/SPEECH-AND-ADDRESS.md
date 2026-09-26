@@ -1,7 +1,7 @@
 # Proposal — Speech level and forms of address as their own fact
 
-> Status: proposal, 2026-09-26. Needs an owner decision: it changes the extraction prompt and registry,
-> so it is a new extractor generation (D20). Follows ADR 0026, which fixed only the read side.
+> Status: decided 2026-09-26: the owner chose the recommended answer to every question (Q1 a, Q2 a, Q3 a,
+> Q4 a). Implemented as ADR 0028, `extract-v10`; evidence `docs/perf/extract-v10.md`.
 
 ## Problem
 

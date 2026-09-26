@@ -11,6 +11,13 @@ later, is `docs/KNOWN-ISSUES.md`.
   agreement to speak 반말 ranked 23rd and was forgotten. Now, among facts of equal mention, how two
   characters stand (`relationship`, `feels_toward`) comes first, then major events, and standing facts
   get the budget before promise threads. A name in a fact's "known by" list no longer ranks it.
+- **Speech level and forms of address are remembered** (ADR 0028). New extractor generation `extract-v10`
+  with the fact `addresses`: how one character speaks to and calls another, one per direction, e.g.
+  "라디아 addresses {{user}}: 반말, '유우마'라고 부름". It is recorded when the story settles it (an
+  agreement, a requested form of address, a decided change back), not when a reply merely slips into
+  another speech level, and a newer one replaces the older. It ranks with relationships. On upgrade each
+  chat's recent turns are re-extracted once at the provider's cost; run "Extract all history" in the
+  Inspector for older turns.
 - **See how much memory fit.** Inspector → conversation → Retrievals shows facts as kept/offered.
   If most facts do not fit, raise **기억 예산(토큰) / Memory budget (tokens)** in the panel (and lower the host's max
   context by the same amount).

@@ -65,7 +65,7 @@ case of the same shape):
 - At the default budget, a speech-level change that is stored only as an event can still be cut in a
   crowded scene. The budget is the user's setting (D2). A dedicated predicate for speech level and forms of
   address, which would join `STANDING`, needs a new extractor generation and an owner decision
-  (`docs/proposals/SPEECH-AND-ADDRESS.md`).
+  (`docs/proposals/SPEECH-AND-ADDRESS.md`; decided and implemented as ADR 0028).
 - A stale relationship (K24) is now more likely to reach the packet, because standing facts come first.
 - Threads fit less often at small budgets. They still come before other facts and excerpts.
 - No stored row changes. The effect starts at the next request after the sidecar update.
