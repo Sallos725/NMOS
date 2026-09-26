@@ -292,3 +292,19 @@ def test_inspector_shows_participants_and_what_a_character_takes_part_in(migrate
         assert 'id="s-takes_part"' in mina and "betrayed Mina" in mina
         hana = client.get(f"/inspector/c/{conv}/e/{who['Hana']}").text
         assert 'id="s-takes_part"' not in hana  # her own events are "about" her, not "takes part"
+
+
+def test_access_log_masks_the_token_in_inspector_links():
+    """Audit A-11: a standalone inspector link carries `?token=`; uvicorn's access log must not keep it."""
+    import logging
+
+    from nmos_sidecar.api import RedactToken
+
+    record = logging.LogRecord("uvicorn.access", logging.INFO, __file__, 0, '%s - "%s %s HTTP/%s" %d',
+                               ("127.0.0.1:5000", "GET", "/inspector/c/x?token=s3cr%2Bt&lang=en", "1.1", 200), None)
+    assert RedactToken().filter(record)
+    assert record.args[2] == "/inspector/c/x?token=***&lang=en"
+    assert "s3cr" not in record.getMessage()
+    other = logging.LogRecord("uvicorn.access", logging.INFO, __file__, 0, '%s - "%s %s HTTP/%s" %d',
+                              ("127.0.0.1:5000", "GET", "/v1/health?atoken=1", "1.1", 200), None)
+    assert RedactToken().filter(other) and other.args[2] == "/v1/health?atoken=1"

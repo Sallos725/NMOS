@@ -113,11 +113,24 @@ describe('beforeRequest', () => {
   });
 
   it('gives up at the deadline and returns the prompt unchanged', async () => {
-    const { host, warn } = fakeHost(() => new Promise<HttpResult>(() => {}), { deadlineMs: 50 });
-    const started = performance.now();
-    expect(await createAdapter(host).beforeRequest(prompt, 'model')).toBe(prompt);
-    expect(performance.now() - started).toBeLessThan(300);
-    expect(String(warn.mock.calls[0]?.[1])).toContain('deadline');
+    // Fake clock (audit A-19): the assertion is about the deadline, not about how busy the test machine is.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    try {
+      let reached!: () => void;
+      const called = new Promise<void>((r) => { reached = r; });
+      const { host, warn } = fakeHost(() => { reached(); return new Promise<HttpResult>(() => {}); }, { deadlineMs: 50 });
+      let settled = false;
+      const out = createAdapter(host).beforeRequest(prompt, 'model').finally(() => { settled = true; });
+      await called;
+      await vi.advanceTimersByTimeAsync(49);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(settled).toBe(true);
+      expect(await out).toBe(prompt);
+      expect(String(warn.mock.calls[0]?.[1])).toContain('deadline');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('records the deadline, and how long the request took when recall answers late', async () => {

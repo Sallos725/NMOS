@@ -48,7 +48,7 @@ describe('createManifestBuilder', () => {
     const after = await check(build, chat);
     expect(after.hashed).toBe(1);
     expect(after.request.messages[42]!.revision_hash).not.toBe(before[42]!.revision_hash);
-  });
+  }, 30_000);  // ≈1.7 s idle; a correctness check at real scale, not a timing one (audit A-19)
 
   it('sees every hash and entry input change', async () => {
     const build = createManifestBuilder();

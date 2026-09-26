@@ -282,6 +282,9 @@ LLM or embedding endpoint that is remote. `docker compose down -v` deletes all N
   `NMOS_ALLOWED_HOSTS=risu.example.com,*.ts.net`, or set a token. With a token the token decides.
 - The plugin's `auth_token` is kept in PocketRisu's plugin settings and is readable by anyone who can
   open them (see [ADR 0003](docs/adr/0003-sidecar-token-without-secret-header.md)).
+- The Inspector in a browser tab (`/inspector?token=…`) keeps the token in its links, and so in that
+  browser's history. The sidecar's access log masks it (`token=***`). The panel's Inspector tab sends it
+  in a header instead.
 
 ## Status and limits
 

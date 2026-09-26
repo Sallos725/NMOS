@@ -7,6 +7,7 @@ import logging
 import time
 import dataclasses
 import ipaddress
+import re
 from contextlib import asynccontextmanager
 from typing import Any
 from uuid import UUID
@@ -75,6 +76,19 @@ def _compact_observation(body: ReconcileRequest, result, base_hash: str | None, 
     if appended:
         return {"chat_id": body.chat_id, "columns": columns, "base_manifest_hash": base_hash, "appended": rows}
     return {"chat_id": body.chat_id, "columns": columns, "entries": rows}
+
+
+_TOKEN_QUERY = re.compile(r"([?&]token=)[^&#]*")
+
+
+class RedactToken(logging.Filter):
+    """Masks `token=` in uvicorn's access log (audit A-11): a standalone inspector link carries it."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) == 5 and isinstance(args[2], str):
+            record.args = (*args[:2], _TOKEN_QUERY.sub(r"\1***", args[2]), *args[3:])
+        return True
 
 
 def host_allowed(header: str, allowed: tuple[str, ...]) -> bool:
@@ -667,4 +681,5 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
 def app_factory() -> FastAPI:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    logging.getLogger("uvicorn.access").addFilter(RedactToken())
     return create_app()

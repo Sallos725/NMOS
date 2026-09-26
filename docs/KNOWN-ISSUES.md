@@ -1,6 +1,6 @@
 # NMOS Known Issues
 
-Current as of `v0.1.0-beta.21` (2026-09-26). This is the single list of what does not work, or works
+Current as of `v0.1.0-beta.21` (2026-09-26), with changes since then noted. This is the single list of what does not work, or works
 only partly, in the current release. Each release's "Known limitations" in `CHANGELOG.md` describes
 that release at the time; entries fixed later are listed under [Resolved](#resolved) below.
 
@@ -36,6 +36,7 @@ without a PocketRisu change.
 | K25 | A speech level or form of address can still be missed or cut | Memory | ranking (ADR 0026) and `addresses` (ADR 0028); turns before `extract-v10`: "Extract all history" |
 | K26 | The packet's token estimate over-counts Korean, so the reserve is under-used | Recall | measured in Phase 9 (report only); an owner decision |
 | K27 | An OOC note or memory-like markup inside a reply can become a fact | Memory | next extractor generation (audit A-12, owner decision) |
+| K28 | Taking turns in one chat from two tabs or devices makes memory of the messages one of them lacks drop out and come back | Data | host (H10); not planned (audit A-13) |
 
 ## Performance
 
@@ -216,6 +217,14 @@ no longer keeps a full copy of the chat's manifest: the worker stores it lossles
 changed (≈1.1 MB → ≈1.4 KB per action at 10,000 messages). Abandoned branches stay, by decision (O5).
 *Workaround:* delete conversations you no longer use.
 
+**K28 — Two tabs or devices on one chat.** NMOS takes each generation's copy of the chat as the chat
+(invariant 7). If a second tab or device has not reloaded the chat, its copy lacks the newest messages,
+and generating there records them as deleted; generating in the up-to-date tab adds them back. Each
+switch is a commit in the Inspector (`delete`, `reroll`), their facts drop out and return, and extraction
+may run again for those turns. Nothing is lost and no memory of a message missing from the prompt is
+injected: a request whose copy is behind gets memory for its own copy only (audit A-13, reasoned from the
+code, not observed). *Workaround:* reload the chat in the other tab or device before generating there.
+
 **K18 — Model changes re-process history.** Changing the LLM or embedding model or endpoint, or a
 release that changes the extraction generation (as 0.1.0-beta.8 did), re-derives all previously
 covered history with the new model, recent turns first, at the provider's cost. Until done, the
@@ -244,6 +253,11 @@ argument, readable by anyone who can open PocketRisu's plugin settings, because 
 an unimplemented stub on the tested build (H12, ADR 0003). The token is off by default.
 *Workaround:* never expose the sidecar or database to the internet; set a token when binding to a LAN
 or Tailscale address (README "Security").
+With a token, the Inspector opened in a browser tab (`/inspector?token=…`) carries the token in every
+link, so it stays in that browser's history (audit A-11). The sidecar's access log shows it as
+`token=***` (since the release after 0.1.0-beta.21). The panel's Inspector tab sends it in a header.
+The plugin asks for PocketRisu's "full database" permission but reads only the persona's name: the host
+grants no narrower one (H17, ADR 0023, audit A-18).
 
 ## Behavior by design
 
