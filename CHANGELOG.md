@@ -12,6 +12,10 @@ later, is `docs/KNOWN-ISSUES.md`.
   environment, and `NMOS_EXTRACT_HINTS` (documented, but never passed to the containers) is included. The
   worker also logs a warning when queued jobs of the active generation match none of its handlers. A test
   checks that every documented variable reaches both services.
+- **Long chats with extraction and embeddings on need a higher deadline, measured** (audit A-09, docs). On
+  PocketRisu v1.12.0 with 10,000 messages, 15,000 facts and 15,000 vectors, recall adds 0.4–0.7 s. A warm
+  generation then takes 3.1–3.3 s, over the 3 s default, so those requests go without memory. Raise
+  Deadline (ms) to about 4,000 for such chats. K1 and the README give the numbers.
 - **A restart during a long startup backfill resumes it** (audit A-08). The sidecar's startup work
   (normalized text after a normalizer change, turn data, parser state, missing jobs) ran as one
   transaction. A restart before it finished discarded every batch already written, and the next start

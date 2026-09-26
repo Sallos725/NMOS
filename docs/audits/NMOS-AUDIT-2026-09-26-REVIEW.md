@@ -113,8 +113,8 @@ Still open (the fixes below are in order of landing):
 
 | Order | ID | What | Needs |
 |---|---|---|---|
-| 1 | A-09 | Re-measure K1's 10k margin with extraction and embeddings on (the wording is narrowed, see A-07) | real-host session |
 | — | A-05, A-06 (invariant 9 wording, the one drift left), A-10, A-12, A-14, A-15 | As in the audit's owner-decision table | owner decision |
+| — | From A-09: the 3 s default deadline (D24) at ≈10,000 messages with extraction on; fact reads (≈280 ms for 15,000 facts, every request) | Raise the default, or make fact reads incremental, or keep the workaround | owner decision |
 
 A-01, A-02 and A-04 were released in `v0.1.0-beta.20` and are listed under `docs/KNOWN-ISSUES.md` →
 Resolved.
@@ -190,3 +190,18 @@ test with rows. This goes one step further: the rows come from the earlier relea
 - The connection pool is created after the startup steps, so a failed startup leaves no pool open.
 Test: `test_startup.py`. An interrupted normalized-text backfill keeps the batches it finished (0 kept
 before the change), and the next start completes it.
+
+**A-09 — measured after beta.20** (branch `audit-a09-k1-remeasure`). The audit was right.
+- Setup: an isolated PocketRisu v1.12.0 with the synthetic 10,000-message chat, the beta.20 plugin and
+  sidecar, and stub extraction and embedding. Before measuring: 15,000 facts and 15,101 vectors after
+  "Extract all history".
+- With both off: warm generations took 2.73–2.79 s, reproducing K1.
+- With both on: 3.14–3.29 s over 10 requests, all over the 3 s default, so every one would have gone
+  without memory.
+- Recall added 0.4–0.7 s. In the sidecar, ≈280 ms is the read-time fold of every head assertion and
+  ≈115 ms the vector search.
+- The owner's chat has ≈9.7 facts per turn (aggregate count), more than the 3 used here, so a real chat
+  of that length reads more.
+- K1, README, guide.ko and `docs/perf/scale.md` now give the measured numbers, and the workaround
+  deadline (≈4,000 ms at 10,000 messages with extraction on). The default deadline (D24) is unchanged.
+  Changing it, or making fact reads cheaper at this size, is a separate decision (below).

@@ -288,9 +288,10 @@ The full list with workarounds is [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md)
   rather than hard-isolated.
 - Very long chats: on PocketRisu v1.12.0 NMOS adds about 1.5 s before the reply starts at 5,000
   messages, 2.7 s at 10,000 and 4.1 s at 15,000 (the host pauses after handing NMOS the chat). The
-  default 3 s deadline covers up to about 10,000 messages as measured, with no facts or vectors in the
-  chat; extraction and embeddings add to that (not measured on the host). For longer chats, or if long
-  chats go without memory, raise Deadline (ms) in the panel's Settings tab. See `docs/perf/scale.md`.
+  default 3 s deadline covers up to about 10,000 messages without extraction and embeddings. With both on,
+  recall adds about 0.4–0.7 s, and at 10,000 messages the 3 s default is no longer enough (3.1–3.3 s
+  measured). For long chats, raise Deadline (ms) in the panel's Settings tab: about 4,000 at 10,000
+  messages with extraction on, 5,000 at 15,000. See `docs/perf/scale.md`.
 - Changing the embedding model/endpoint re-embeds previously covered history (recent messages first;
   the Inspector shows coverage as partial until done). Changing the LLM model/endpoint re-extracts only
   each chat's recent turns (`NMOS_EXTRACT_BACKFILL`, default 100); older turns keep the previous model's
