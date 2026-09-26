@@ -42,7 +42,11 @@ without a PocketRisu change.
 adds ≈1.5 s at 5,000 messages, ≈2.7 s at 10,000 and ≈4.1 s at 15,000 per warm generation. Most of it
 is the host: after `getChatFromIndex` hands the plugin a deep copy of the whole chat, the page stalls
 (≈1.7 s at 10k); the sidecar's own processing at 10k is ≈135–165 ms. The V3 API has no call that
-returns part of a chat. The 3 s default deadline covers up to ≈10,000 messages with ≈0.25 s margin.
+returns part of a chat. The 3 s default deadline covers up to ≈10,000 messages with ≈0.25 s margin,
+as measured: a stub chat model and synthetic chats with no facts or vectors. With extraction and
+embeddings on, the request also reads facts and searches vectors (each ≈100 ms at 10,000 messages in the
+sidecar benchmark, more with many facts) and embeds the query, so the margin is smaller or gone; this was
+not measured on the host (audit A-09).
 *Workaround:* raise **제한 시간(ms) / Deadline (ms)** in the panel's Settings tab (≈5,000 at 15,000
 messages). Otherwise those requests go without memory; the chat itself is unaffected.
 Evidence: `docs/perf/scale.md` (real-host check), D24.

@@ -66,7 +66,7 @@ Additional operational invariants:
 
 These were checked in source and **override** assumptions in the reference document.
 H1–H7 were re-checked and extended by the Phase 0A runtime spike; H8–H14 are new runtime facts
-(H13–H14 found while running Phase 0B against the real host).
+(H13–H14 found while running Phase 0B against the real host); H15–H17 were added later with their ADRs.
 Evidence for every runtime claim is in `docs/HOST-FACTS.md`.
 
 | # | Fact | Consequence |
@@ -144,7 +144,8 @@ retrieval uses raw evidence for the affected range.
 
 **D9 — Principal modes.** `omniscient_narrator` (default for single-call bots): world truth
 available, character knowledge boundaries attached as annotations.
-`character_pov`: hard epistemic ACL; hidden values are never placed in context.
+`character_pov`: hard epistemic ACL; hidden values are never placed in context. **Not implemented
+and not authorized** (Phase 4 shipped the soft subset only, D19; Track B, B5).
 Hard isolation across simultaneously generated characters is out of scope (reference §30).
 
 **D10 — Deterministic structure first.** Status windows, HTML/regex display blocks, and other
@@ -376,38 +377,43 @@ and bound server-side to `(conversation, worldline, principal)` via a scope toke
 | Worker | same codebase, separate process, Postgres-backed job table (`SKIP LOCKED`) |
 | Plugin | TypeScript → single bundled `.js` (esbuild) in PocketRisu V3 plugin format |
 | Tests | pytest (sidecar), vitest (plugin pure functions) |
-| Deploy | Docker Compose on homelab; token auth via `saveSecretHeader`; TLS if crossing hosts |
+| Deploy | Docker Compose on homelab; optional token in the plugin arg `auth_token` (ADR 0003, H12); TLS if crossing hosts |
 
 ## 7. Repository layout
 
 ```text
 nmos/
 ├── AGENTS.md / CLAUDE.md / ARCHITECTURE.md
-├── docker-compose.yml         # postgres + sidecar (Phase 0B)
+├── README.md / CHANGELOG.md
+├── docker-compose.yml         # development: postgres + sidecar + worker, built from source
+├── deploy/docker-compose.yml  # release: published images (attached to each GitHub release)
 ├── .env.example
 ├── docs/
-│   ├── HOST-FACTS.md          # runtime host evidence (Phase 0A, extended in 0B)
-│   ├── STATUS.md
-│   ├── phases/PHASE-0.md … PHASE-4.md (+ PHASE-0-RETRO.md)
-│   ├── perf/phase0.md, perf/scale.md
+│   ├── HOST-FACTS.md          # runtime host evidence (Phase 0A, extended since)
+│   ├── STATUS.md / KNOWN-ISSUES.md / guide.ko.md
+│   ├── phases/PHASE-0.md … PHASE-9.md (+ PHASE-0-RETRO.md)
+│   ├── perf/                  # measurements and model evaluations per phase
 │   ├── adr/
+│   ├── audits/                # external audits and their reviews
+│   ├── proposals/             # Track A/B and feature proposals (not authorized until decided)
 │   └── reference/             # long-form design doc (non-normative)
 ├── adapters/
 │   ├── pocketrisu-spike/      # Phase 0A observation plugin (throwaway)
 │   └── pocketrisu-plugin/     # Phase 0B thin adapter (TypeScript → dist/nmos-pocketrisu.js)
 ├── apps/
 │   └── sidecar/               # Python package nmos_sidecar:
-│                              #   canonical, reconcile (pure), ledger, retrieval, packet, api, migrate, rebuild
+│                              #   canonical, reconcile (pure), ledger, retrieval, packet, api,
+│                              #   extraction, facts, entities, threads, vectors, worker, inspector, …
 ├── migrations/                # numbered SQL, applied by nmos-migrate
 ├── fixtures/
 │   ├── host/                  # recorded PocketRisu observations
 │   └── unit/                  # cross-language hash vectors
-├── tools/                     # Phase 0A spike tooling (collector, stub model, report, synthetic chat)
+├── tools/                     # release check, benchmarks, evaluations, replay; Phase 0A spike tooling
 └── docker/
 ```
 
-Later phases add `apps/worker/` (Phase 2) and split domain code into packages only when a second
-consumer needs it; empty future directories are not created in advance.
+The worker (`nmos-worker`) lives in the same package. Domain code is split into packages only when a
+second consumer needs it; empty future directories are not created in advance.
 
 ## 8. Roadmap (summary)
 

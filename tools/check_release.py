@@ -1,6 +1,9 @@
-"""Release consistency check (#14): the tag, package versions, changelog, status and migration list agree.
+"""Release consistency check (#14): the tag, package versions, changelog, status and migration list agree,
+and the docs' counts and "latest" pointers follow the lists they summarize (audit A-07).
 
     python tools/check_release.py v0.1.0-beta.4
+
+`drift()` alone also runs in CI on every change (`apps/sidecar/tests/test_docs_consistency.py`).
 """
 
 from __future__ import annotations
@@ -35,6 +38,44 @@ def check(tag: str) -> list[str]:
     latest = max(p.name[:4] for p in (ROOT / "migrations").glob("[0-9][0-9][0-9][0-9]_*.sql"))
     if not re.search(rf"migrations/0001`?–`?{latest}", status):
         errors.append(f"docs/STATUS.md schema row does not end at migration {latest}")
+    errors += drift()
+    for doc in USER_DOCS:
+        if found := re.search(r"\(unreleased|\(다음 릴리스", (ROOT / doc).read_text()):
+            errors.append(f"{doc} still says '{found[0]}' for something this release ships")
+    return errors
+
+
+USER_DOCS = ("README.md", "docs/guide.ko.md")
+
+
+def _highest(pattern: str, text: str) -> int:
+    return max(int(n) for n in re.findall(pattern, text, re.M))
+
+
+def drift(root: Path = ROOT) -> list[str]:
+    """Ranges and "latest" pointers in the docs against the lists they stand for: host facts and
+    decisions (ARCHITECTURE), known issues, ADR files and phase specs."""
+    def read(path: str) -> str:
+        return (root / path).read_text()
+
+    status, readme, agents = read("docs/STATUS.md"), read("README.md"), read("AGENTS.md")
+    highest = {"H": _highest(r"^\| H(\d+) \|", read("ARCHITECTURE.md")),
+               "D": _highest(r"^\*\*D(\d+) —", read("ARCHITECTURE.md")),
+               "K": _highest(r"^\| K(\d+) \|", read("docs/KNOWN-ISSUES.md"))}
+    adr = max(p.name[:4] for p in (root / "docs/adr").glob("[0-9][0-9][0-9][0-9]-*.md"))
+    phase = max(int(m[1]) for p in (root / "docs/phases").iterdir() if (m := re.fullmatch(r"PHASE-(\d+)\.md", p.name)))
+    errors = []
+    for doc, text, letters in (("docs/STATUS.md", status, "HDK"), ("README.md", readme, "H")):
+        for letter in letters:
+            ranges = {int(n) for n in re.findall(rf"\b{letter}1–{letter}(\d+)\b", text)}
+            if doc == "docs/STATUS.md" and not ranges:
+                errors.append(f"{doc} names no {letter}1–{letter}{highest[letter]} range")
+            for n in sorted(ranges - {highest[letter]}):
+                errors.append(f"{doc} says {letter}1–{letter}{n}; the last is {letter}{highest[letter]}")
+    wanted = [("docs/STATUS.md", status, f"adr/0001`–`{adr}"),
+              ("docs/STATUS.md", status, f"PHASE-0.md`–`PHASE-{phase}.md"),
+              ("AGENTS.md", agents, f"`PHASE-{phase}.md` is the latest")]
+    errors += [f"{doc} does not say {text!r}" for doc, body, text in wanted if text not in body]
     return errors
 
 
