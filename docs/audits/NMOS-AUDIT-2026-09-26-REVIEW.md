@@ -109,12 +109,11 @@ image.
 
 ## Open items
 
-Recommended order after this PR:
+Still open (the fixes below are in order of landing):
 
 | Order | ID | What | Needs |
 |---|---|---|---|
 | 1 | A-09 | Re-measure K1's 10k margin with extraction and embeddings on (the wording is narrowed, see A-07) | real-host session |
-| 2 | A-08 | Commit startup steps one by one | — |
 | — | A-05, A-06 (invariant 9 wording, the one drift left), A-10, A-12, A-14, A-15 | As in the audit's owner-decision table | owner decision |
 
 A-01, A-02 and A-04 were released in `v0.1.0-beta.20` and are listed under `docs/KNOWN-ISSUES.md` →
@@ -178,3 +177,16 @@ test with rows. This goes one step further: the rows come from the earlier relea
   the older image; migrations only go forward). The backup and restore commands were run against the
   compose Postgres on a restored beta.16 database: row counts and the source-revision guard triggers came
   back, and the current migrations applied on top.
+
+**A-08 — fixed after beta.20** (branch `audit-a08-startup-steps`).
+- The lifespan runs its startup steps on their own autocommit connection, not a pooled one, so:
+  - `normtext.backfill` and `retention.prune_text` commit batch by batch;
+  - `ledger.refresh_turns` commits head by head.
+- Two steps stay one transaction each:
+  - `sync_rules` deletes other rule versions and backfills. A partial backfill would look complete to its
+    "any rows?" check, so this must not be committed halfway.
+  - `activate` makes a generation active together with the jobs it is missing (and holds its advisory
+    lock only there).
+- The connection pool is created after the startup steps, so a failed startup leaves no pool open.
+Test: `test_startup.py`. An interrupted normalized-text backfill keeps the batches it finished (0 kept
+before the change), and the next start completes it.

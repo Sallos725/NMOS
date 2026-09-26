@@ -12,6 +12,12 @@ later, is `docs/KNOWN-ISSUES.md`.
   environment, and `NMOS_EXTRACT_HINTS` (documented, but never passed to the containers) is included. The
   worker also logs a warning when queued jobs of the active generation match none of its handlers. A test
   checks that every documented variable reaches both services.
+- **A restart during a long startup backfill resumes it** (audit A-08). The sidecar's startup work
+  (normalized text after a normalizer change, turn data, parser state, missing jobs) ran as one
+  transaction. A restart before it finished discarded every batch already written, and the next start
+  began again. Each step now commits on its own, the batched backfills batch by batch. Parser-state
+  backfill and generation activation stay atomic. A startup that fails no longer leaves an open
+  connection pool behind.
 - **Upgrades from earlier releases are tested, and backup and rollback are documented** (audit A-16). CI
   restores databases that 0.1.0-beta.7 and 0.1.0-beta.16 wrote, with their own code, and upgrades them. It
   checks that the chats stay in sync, the earlier facts stay served, the story goes on, and the worker,
