@@ -5,8 +5,14 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-Two fixes from the 2026-09-26 audit (`docs/audits/NMOS-AUDIT-2026-09-26.md`, review
-`docs/audits/NMOS-AUDIT-2026-09-26-REVIEW.md`). No schema or generation change.
+Three fixes from the 2026-09-26 audit (`docs/audits/NMOS-AUDIT-2026-09-26.md`, review
+`docs/audits/NMOS-AUDIT-2026-09-26-REVIEW.md`). No schema, generation or hash change.
+
+- **A broken emoji no longer stops a chat's sync** (audit A-01, ADR 0029, sidecar). A message holding half
+  of an emoji (a lone UTF-16 surrogate, e.g. cut by a script) made every sync of that chat fail with HTTP
+  500, so the chat went on without memory. A persona, chat or character name with one failed every sync
+  the same way. The sidecar now checks the message as sent and stores U+FFFD in place of the broken half.
+  The same applies to names, the recall query, extraction replies and stored JSON. The plugin is unchanged.
 
 - **A reply quoting the memory tag no longer turns memory off** (audit A-02, plugin). The plugin took any
   message containing `<NarrativeMemory version="0" source="nmos">` for its own injected packet and

@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from . import vertex
+from .canonical import storable
 
 
 class LLMError(RuntimeError):
@@ -77,7 +78,8 @@ class ChatModel:
             raise LLMError(f"unexpected response shape: {exc}") from exc
         if not isinstance(text, str):
             raise LLMError(f"unexpected response shape: content is {type(text).__name__}, not text")
-        return parse_json_object(text), text
+        text = storable(text)
+        return storable(parse_json_object(text)), text  # a model can escape half an emoji (ADR 0029)
 
 
 class Embedder:

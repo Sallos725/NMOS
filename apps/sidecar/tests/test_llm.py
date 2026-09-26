@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 
@@ -27,3 +29,12 @@ def test_empty_content_is_no_json_object(monkeypatch):
     monkeypatch.setattr(llm.httpx, "post", lambda url, json, headers, timeout: httpx.Response(200, json=reply))
     with pytest.raises(llm.LLMError, match="no JSON object"):
         llm.ChatModel("http://fake-llm/v1", "fake").complete_json("s", "u")
+
+
+def test_a_lone_surrogate_in_a_reply_becomes_storable(monkeypatch):
+    content = '{"assertions": [{"evidence": "a \\ud800 b"}]}'  # the model escaped half an emoji
+    reply = json.dumps({"choices": [{"message": {"content": content + " \ud83d"}}]})  # and cut another
+    monkeypatch.setattr(llm.httpx, "post", lambda url, json, headers, timeout: httpx.Response(200, content=reply))
+    parsed, text = llm.ChatModel("http://fake-llm/v1", "fake").complete_json("s", "u")
+    assert parsed == {"assertions": [{"evidence": "a � b"}]}
+    assert text == content + " �"

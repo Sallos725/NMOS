@@ -358,6 +358,11 @@ offline A/B (`tools/replay_packets.py`). Echo, report only: a placed line is ech
 reuses a span of its content that the request did not contain. An echoed secret (`hidden_from`) is flagged.
 Echo never ranks anything. Inspector "Last packet"; `GET /v1/trace/{id}/audit`, `/replay`.
 
+**D40 — Text PostgreSQL cannot store (ADR 0029; audit A-01, not a phase feature).** A lone UTF-16 surrogate
+(half an emoji) is verified in a message body's hash as sent, then stored as U+FFFD with the revision keeping
+the host's hash. Other request text is made storable before validation, and every jsonb value written is
+too. Host ids holding one are refused with 422. Hash format v1 and the plugin are unchanged.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

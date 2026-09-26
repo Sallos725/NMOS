@@ -11,6 +11,8 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from psycopg_pool import ConnectionPool
@@ -33,7 +35,7 @@ from .models import (
     RetrieveResponse,
     RevisionRef,
 )
-from .canonical import manifest_hash, manifest_hashes
+from .canonical import manifest_hash, manifest_hashes, storable
 from .reconcile import Entry, plan, plan_append
 from .llm import Embedder
 from .packet import DEFAULT_POLICY, POLICIES
@@ -160,6 +162,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             allow_headers=["Authorization", "Content-Type"],
             max_age=600,
         )
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # As FastAPI's default, but an echoed lone surrogate would make the 422 itself a 500 (ADR 0029).
+        return JSONResponse(status_code=422, content={"detail": storable(jsonable_encoder(exc.errors()))})
 
     def auth(authorization: str | None = Header(default=None), token: str | None = None) -> None:
         if not settings.auth_token:
