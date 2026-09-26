@@ -70,9 +70,9 @@ def test_second_reply_moves_the_anchor_and_the_turn_is_extracted_as_a_whole(migr
         assert sorted(f["subject"] for f in facts(c, chat)) == ["Hinata", "Mina"]
 
 
-def test_facts_of_a_per_message_generation_stay_readable(migrated, db):
-    """A generation compiled before turns (message window hash) keeps its facts while it is active, e.g.
-    with extraction switched off after the upgrade."""
+def test_facts_of_a_per_message_generation_are_no_longer_served(migrated, db):
+    """Extractions keyed by the retired per-message window hash (generations before turns, `extract-v3` and
+    earlier) no longer match the head; their turns are served again once re-extracted (ADR 0031)."""
     with make_client(migrated) as c:
         chat = SimChat()
         chat.user("Hinata is in the old chapel.")
@@ -80,17 +80,17 @@ def test_facts_of_a_per_message_generation_stay_readable(migrated, db):
         filler(chat, 2)
         chat.user("last")
         sync(c, chat)
-    member = db.execute("SELECT am.commit_id, am.source_revision_id, am.window_hash FROM active_membership am"
+    member = db.execute("SELECT am.commit_id, am.source_revision_id FROM active_membership am"
                         " WHERE am.position = 0").fetchone()
     db.execute("INSERT INTO projection_generation (key, kind, model, endpoint, spec)"
                " VALUES ('extract-legacy', 'extract', 'm', 'http://x', '{}')")
     db.execute("INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model, raw)"
-               " VALUES (gen_random_uuid(), %s, %s, 'extract-v3', 'extract-legacy', 'm', '{}')",
-               (member["source_revision_id"], member["window_hash"]))
+               " VALUES (gen_random_uuid(), %s, 'per-message-window', 'extract-v3', 'extract-legacy', 'm', '{}')",
+               (member["source_revision_id"],))
     db.execute("INSERT INTO assertion (extraction_id, source_revision_id, subject, predicate, object, status)"
                " SELECT id, source_revision_id, 'Hinata', 'located_in', 'old chapel', 'valid' FROM extraction")
-    current = fact_versions(db, member["commit_id"], "extract-legacy")
-    assert [(f["object"], f["position"], f["turn"]) for f in current] == [("old chapel", 0, 0)]
+    assert fact_versions(db, member["commit_id"], "extract-legacy") == []
+    assert db.execute("SELECT count(*) AS n FROM active_membership WHERE window_hash IS NOT NULL").fetchone()["n"] == 0
 
 
 def test_first_sight_backfill_counts_turns(migrated, db):

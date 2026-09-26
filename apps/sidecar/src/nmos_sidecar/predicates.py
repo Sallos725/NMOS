@@ -17,7 +17,7 @@ class Predicate:
     object_types: tuple[str, ...] | None  # None: no object entity
     needs_value: bool
     cardinality: str  # "single": newer supersedes older per (subject[, object]); "multi": accumulates
-    epistemic: str  # "world" | "belief"
+    epistemic: str  # "world" | "belief"; read nowhere. Remove with the next extractor generation (audit A-14).
     description: str
     per_object: bool = False  # single-valued per (subject, object) instead of per subject
 

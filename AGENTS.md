@@ -99,7 +99,7 @@ Treat `ARCHITECTURE.md §2` as binding. In particular:
 - Character knowledge is not world knowledge.
 - Inactive sources may not influence the next generated packet.
 - Retrieval and utilization are separate decisions.
-- Storage implementations are replaceable.
+- Storage is PostgreSQL; replacing it is not a goal (invariant 9, amended 2026-09-26).
 - Every automatic semantic claim has provenance.
 - The system fails open when the sidecar is unavailable or slow.
 - Never knowingly inject stale semantic state.

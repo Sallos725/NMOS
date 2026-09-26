@@ -31,7 +31,7 @@ from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 ACTIVE_ASSERTIONS_TEMPLATE = """
 WITH m AS (
     SELECT am.position, am.turn, coalesce(am.turn, -1 - am.position) AS unit, am.source_revision_id AS rid,
-           am.window_hash, am.turn_hash, sr.lifecycle, sr.metadata, so.host_logical_id
+           am.turn_hash, sr.lifecycle, sr.metadata, so.host_logical_id
     FROM active_membership am
     JOIN source_revision sr ON sr.id = am.source_revision_id
     JOIN source_object so ON so.id = sr.source_object_id
@@ -43,7 +43,7 @@ live AS (
                ORDER BY e.extractor_key = %(key)s DESC, g.activated_at DESC, g.key) AS chosen
     FROM extraction e
     JOIN projection_generation g ON g.key = e.extractor_key
-    JOIN m ON m.rid = e.source_revision_id AND e.window_hash IN (m.turn_hash, m.window_hash)
+    JOIN m ON m.rid = e.source_revision_id AND e.window_hash = m.turn_hash  -- the turn hash (ADR 0008, 0031)
     WHERE {known} AND m.lifecycle = 'accepted'
       AND m.position > (SELECT coalesce(max(position), -1) FROM m WHERE metadata->>'disabled' = 'allBefore')
       AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')

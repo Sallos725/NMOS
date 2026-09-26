@@ -268,7 +268,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 conversation_id=conv.id, status="needs_bodies", active_commit=None, manifest_hash=full_hash,
                 needed_bodies=[RevisionRef(host_logical_id=k[0], revision_hash=k[1]) for k in needed],
             )
-        tail = ledger.load_tail(conn, conv, length, settings.extract_window, settings.extract_turns)
+        tail = ledger.load_tail(conn, conv, length, settings.extract_turns)
         if tail is None:
             return None
         entries = _entries(body, tail.start)
@@ -280,7 +280,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             f"{conv.id}:{full_hash}:manifest",
         )
         head = ledger.apply_append(conn, conv, tail, result, observation, entries, revision_ids,
-                                   settings.extract_window, settings.extract_turns)
+                                   settings.extract_turns)
         # From the tail's first turn on is enough: lifecycle and turn hashes change only there.
         offset = tail.turn_start - tail.start
         enqueue(conn, conv.id, tail.entries[offset:], lifecycle, entries[offset:], {**lifecycle, **result.lifecycle},
@@ -312,8 +312,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             _compact_observation(body, result, conv.head_manifest_hash, len(state.head or [])),
             f"{conv.id}:{result.manifest_hash}:manifest",
         )
-        head = ledger.apply_plan(conn, conv, state, result, observation, manifest, settings.extract_window,
-                                settings.extract_turns)
+        head = ledger.apply_plan(conn, conv, state, result, observation, manifest, settings.extract_turns)
         enqueue(conn, conv.id, state.head, state.lifecycle, manifest, {**state.lifecycle, **result.lifecycle},
                 state.revision_ids)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,

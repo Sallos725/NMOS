@@ -12,7 +12,7 @@ from psycopg.types.json import Jsonb
 
 from .canonical import normalize_text, revision_hash, storable
 from .ids import uuid7
-from .reconcile import Entry, Lifecycle, Plan, RevKey, apply_ops, turn_layout, window_hashes
+from .reconcile import Entry, Lifecycle, Plan, RevKey, apply_ops, turn_layout
 
 META_KEYS = ("chatId", "role", "saying", "name", "otherUser", "isComment", "disabled", "swipeId", "generationId")
 
@@ -163,12 +163,10 @@ def store_bodies(
 
 
 def _membership_rows(conn: psycopg.Connection, commit_id: UUID, members: list[Entry], ids: dict[RevKey, UUID],
-                     window: int, turns: int, start: int = 0, previous: list[Entry] | None = None) -> None:
-    """Insert head membership rows for positions >= start, with their D7 window hashes and turn data
-    (ADR 0008). An append can change the last turn of the rows before `start` (a second reply moves
+                     turns: int, start: int = 0, previous: list[Entry] | None = None) -> None:
+    """Insert head membership rows for positions >= start, with their turn data (ADR 0008). An append can change the last turn of the rows before `start` (a second reply moves
     the anchor): those rows, whose layout differs from the one `previous` gave them, are rewritten."""
     keys = [m.key for m in members]
-    windows = window_hashes(keys, window)
     layout = turn_layout(members, turns)
     with conn.cursor() as cur:
         if start and previous is not None:
@@ -178,9 +176,9 @@ def _membership_rows(conn: psycopg.Connection, commit_id: UUID, members: list[En
                 cur.executemany("UPDATE active_membership SET turn = %s, turn_hash = %s"
                                 " WHERE commit_id = %s AND position = %s", changed)
         cur.executemany(
-            "INSERT INTO active_membership (commit_id, position, source_revision_id, window_hash, turn, turn_hash)"
-            " VALUES (%s, %s, %s, %s, %s, %s)",
-            [(commit_id, i, ids[keys[i]], windows[i], *layout[i]) for i in range(start, len(members))],
+            "INSERT INTO active_membership (commit_id, position, source_revision_id, turn, turn_hash)"
+            " VALUES (%s, %s, %s, %s, %s)",
+            [(commit_id, i, ids[keys[i]], *layout[i]) for i in range(start, len(members))],
         )
 
 
@@ -192,7 +190,7 @@ def _record_append(conn: psycopg.Connection, commit_id: UUID, ops: list[dict], c
 
 def apply_plan(
     conn: psycopg.Connection, conv: Conversation, state: ConversationState, result: Plan, observation_id: UUID,
-    manifest: list[Entry], window: int = 6, turns: int = 3,
+    manifest: list[Entry], turns: int = 3,
 ) -> UUID:
     """Write lifecycle/lineage changes, the commit (if any) and head membership. Returns head commit id.
     `manifest` is the host manifest the plan was made from; its keys are the new membership."""
@@ -215,7 +213,7 @@ def apply_plan(
         # D4: append-only — no new commit; the head commit gains an append row (migration 0013).
         assert conv.head_commit_id is not None and state.head is not None
         _record_append(conn, conv.head_commit_id, result.ops, changes, observation_id)
-        _membership_rows(conn, conv.head_commit_id, manifest, ids, window, turns, start=len(state.head),
+        _membership_rows(conn, conv.head_commit_id, manifest, ids, turns, start=len(state.head),
                          previous=state.head)
         head_id = conv.head_commit_id
     else:
@@ -229,7 +227,7 @@ def apply_plan(
         )
         if conv.head_commit_id:
             conn.execute("DELETE FROM active_membership WHERE commit_id = %s", (conv.head_commit_id,))
-        _membership_rows(conn, head_id, manifest, ids, window, turns)
+        _membership_rows(conn, head_id, manifest, ids, turns)
 
     branch = result.branch
     if branch:
@@ -287,8 +285,8 @@ def revisions_of(conn: psycopg.Connection, conv: Conversation, logical_ids: list
             any(r["member"] for r in rows))
 
 
-def load_tail(conn: psycopg.Connection, conv: Conversation, length: int, window: int, turns: int) -> HeadTail | None:
-    """Load the head from the start of turn `last - 2K` (and at least the last `window` members).
+def load_tail(conn: psycopg.Connection, conv: Conversation, length: int, turns: int) -> HeadTail | None:
+    """Load the head from the start of turn `last - 2K`.
 
     None when the stored head does not support an append: no turns yet, a member that is not
     accepted before the exact region, or stored turn data that differs from what the tail computes
@@ -309,7 +307,7 @@ def load_tail(conn: psycopg.Connection, conv: Conversation, length: int, window:
     exact_start = turn_position(exact_turn) if exact_turn != first_turn else turn_start
     if turn_start is None or exact_start is None:
         return None
-    start = max(0, min(turn_start, length - window))
+    start = turn_start
     if conn.execute(
         "SELECT EXISTS (SELECT 1 FROM active_membership am JOIN source_revision sr ON sr.id = am.source_revision_id"
         " WHERE am.commit_id = %s AND am.position < %s AND sr.lifecycle <> 'accepted') AS found",
@@ -344,7 +342,7 @@ def _absolute(layout: list[tuple[int | None, str | None]], first_turn: int) -> l
 
 def apply_append(
     conn: psycopg.Connection, conv: Conversation, tail: HeadTail, result: Plan, observation_id: UUID,
-    entries: list[Entry], ids: dict[RevKey, UUID], window: int = 6, turns: int = 3,
+    entries: list[Entry], ids: dict[RevKey, UUID], turns: int = 3,
 ) -> UUID:
     """`apply_plan` for a `plan_append` result: the same rows, written from the tail only. `entries`
     are the request's messages from position `tail.start` on."""
@@ -357,7 +355,6 @@ def apply_append(
     length, offset = tail.start + len(tail.entries), tail.turn_start - tail.start
     old = _absolute(turn_layout(tail.entries[offset:], turns), tail.first_turn)
     new = _absolute(turn_layout(entries[offset:], turns), tail.first_turn)
-    windows = window_hashes([e.key for e in entries], window)
     with conn.cursor() as cur:
         changed = [(*new[i], conv.head_commit_id, tail.turn_start + i) for i in range(length - tail.turn_start)
                    if new[i] != old[i]]
@@ -365,17 +362,16 @@ def apply_append(
             cur.executemany("UPDATE active_membership SET turn = %s, turn_hash = %s"
                             " WHERE commit_id = %s AND position = %s", changed)
         cur.executemany(
-            "INSERT INTO active_membership (commit_id, position, source_revision_id, window_hash, turn, turn_hash)"
-            " VALUES (%s, %s, %s, %s, %s, %s)",
-            [(conv.head_commit_id, tail.start + j, ids[entries[j].key], windows[j], *new[j - offset])
+            "INSERT INTO active_membership (commit_id, position, source_revision_id, turn, turn_hash)"
+            " VALUES (%s, %s, %s, %s, %s)",
+            [(conv.head_commit_id, tail.start + j, ids[entries[j].key], *new[j - offset])
              for j in range(len(tail.entries), len(entries))],
         )
     conn.execute("UPDATE conversation SET head_manifest_hash = %s WHERE id = %s", (result.manifest_hash, conv.id))
     return conv.head_commit_id
 
 
-def rebuild_membership(conn: psycopg.Connection, conv_id: UUID, window: int = 6,
-                       turns: int = 3) -> tuple[UUID | None, int]:
+def rebuild_membership(conn: psycopg.Connection, conv_id: UUID, turns: int = 3) -> tuple[UUID | None, int]:
     """Reconstruct the head's active_membership purely from worldline_commit deltas and their appends."""
     commits = conn.execute(
         "SELECT id, delta FROM worldline_commit WHERE conversation_id = %s ORDER BY seq", (conv_id,)
@@ -403,7 +399,7 @@ def rebuild_membership(conn: psycopg.Connection, conv_id: UUID, window: int = 6,
         "DELETE FROM active_membership WHERE commit_id IN (SELECT id FROM worldline_commit WHERE conversation_id = %s)",
         (conv_id,),
     )
-    _membership_rows(conn, head_id, [entry_from_metadata(k[0], k[1], meta[k]) for k in members], ids, window, turns)
+    _membership_rows(conn, head_id, [entry_from_metadata(k[0], k[1], meta[k]) for k in members], ids, turns)
     conn.execute("UPDATE conversation SET head_commit_id = %s WHERE id = %s", (head_id, conv_id))
     return head_id, len(members)
 

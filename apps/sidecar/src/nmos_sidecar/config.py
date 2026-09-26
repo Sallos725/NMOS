@@ -31,8 +31,6 @@ class Settings:
     llm_api_key: str = field(default_factory=lambda: os.environ.get("NMOS_LLM_API_KEY", ""))
     llm_json_mode: bool = field(default_factory=lambda: os.environ.get("NMOS_LLM_JSON_MODE", "1") != "0")
     llm_timeout_s: float = field(default_factory=lambda: float(os.environ.get("NMOS_LLM_TIMEOUT_S", "120")))
-    # Per-message window hash, read only by generations compiled before turns (ADR 0008).
-    extract_window: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_WINDOW", "6")))
     # Previous turns an extraction sees as context (ADR 0008); part of the extractor generation.
     extract_turns: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_TURNS", "3")))
     # Known entity names shown to extraction (ADR 0012); 0 turns hints off. Part of the extractor generation.

@@ -559,11 +559,11 @@ ELIGIBLE = """
         WHERE c.head_commit_id IS NOT NULL AND (%(conv)s::uuid IS NULL OR c.id = %(conv)s::uuid)
     ),
     elig AS (
-        SELECT h.conv, h.head, h.n, h.turns, am.position, am.turn, am.turn_hash, sr.id AS rid, am.window_hash
+        SELECT h.conv, h.head, h.n, h.turns, am.position, am.turn, am.turn_hash, sr.id AS rid
         FROM heads h
         JOIN active_membership am ON am.commit_id = h.head
         JOIN source_revision sr ON sr.id = am.source_revision_id
-        WHERE sr.lifecycle = 'accepted' AND am.window_hash IS NOT NULL
+        WHERE sr.lifecycle = 'accepted'
           AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
           AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
     )
@@ -572,7 +572,7 @@ ELIGIBLE = """
 # An earlier generation still serves turn e: one of its extractions matches the head (ADR 0014).
 OLDER_SERVES = """EXISTS (SELECT 1 FROM active_membership t
                    JOIN extraction x ON x.source_revision_id = t.source_revision_id
-                                    AND x.window_hash IN (t.turn_hash, t.window_hash)
+                                    AND x.window_hash = t.turn_hash
                    JOIN projection_generation g ON g.key = x.extractor_key
                    WHERE t.commit_id = e.head AND t.turn = e.turn AND x.discarded_at IS NULL
                      AND x.extractor_key <> %(key)s)"""

@@ -25,8 +25,8 @@ exactly this for every user with an LLM configured.
    all history" (`POST /v1/conversations/{id}/extract-history`), unchanged.
 2. **Older turns are read from the newest generation that has them.** Per turn, the fact read uses
    the active generation's extraction when one exists, otherwise the extraction of the most recently
-   active earlier generation that still matches the head (same anchor revision and `turn_hash` or
-   window hash, not discarded). Exactly one generation serves a turn; within a turn, generations are
+   active earlier generation that still matches the head (same anchor revision and `turn_hash`, not
+   discarded; the per-message window hash was also accepted until ADR 0031). Exactly one generation serves a turn; within a turn, generations are
    never mixed.
 3. **Coverage shows both.** Per chat: turns compiled by the active generation, turns served by an
    older generation (named), and turns with no extraction. "Extract all history" moves the second
