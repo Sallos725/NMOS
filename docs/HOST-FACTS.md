@@ -49,6 +49,12 @@ Normal: 1 call per send, reroll or continue (`callCountForActionKey = 1` in S1, 
 
 Retry: S12 forced two HTTP 500 responses, then a success. The replacer ran **3 times** for one user action, 7–8 ms apart (`msSincePreviousCall` 8, 7). All three received an identical prompt (`formatedHash 94f5d11c…`, `callCountForFormatedHash` 1 → 2 → 3). The stub saw 3 main requests (#11–#13). HTTP 500 from Custom API did not trigger the 1 s `failByServerError` back-off.
 
+Between retries (source reading, v1.12.0, 2026-09-26): the provider request works on a copy
+(`requestChatDataMain`: `targ.formated = safeStructuredClone(arg.formated)`, then `reformater` and the
+provider conversion, e.g. Gemini folding a system message into the previous user turn as `system:`). The
+next retry's replacer therefore gets the prompt as the replacers (and a request trigger, Q7) left it: an
+injected system message is still a system message. Audit A-02 relies on this.
+
 Fallback: not measured (no fallback model configured). **Source reading:** `formated` is re-cloned from the original per fallback model (`request.ts`, `arg.formated = safeStructuredClone(originalFormated)` at the top of each fallback iteration), so each fallback starts from the unmodified prompt and the replacer runs again.
 
 Additional: once Auto Suggest is on, every completed reply triggers one extra `submodel` replacer call right after `output` (S12, S14-1000-send).

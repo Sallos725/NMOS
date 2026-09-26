@@ -1,6 +1,6 @@
 # NMOS Known Issues
 
-Current as of `v0.1.0-beta.19` (2026-09-26). This is the single list of what does not work, or works
+Current as of `v0.1.0-beta.20` (2026-09-26). This is the single list of what does not work, or works
 only partly, in the current release. Each release's "Known limitations" in `CHANGELOG.md` describes
 that release at the time; entries fixed later are listed under [Resolved](#resolved) below.
 
@@ -244,6 +244,9 @@ Not issues, but often reported as one:
 
 | Was listed in | Issue | Resolved in |
 |---|---|---|
+| (not listed; audit 2026-09-26, A-01) | A message, persona, chat or character name holding half an emoji (a lone surrogate) failed every sync of that chat with HTTP 500 | 0.1.0-beta.20 — verified as sent, stored with U+FFFD (ADR 0029) |
+| (not listed; audit 2026-09-26, A-02) | A reply or message quoting the memory tag stopped sync and memory for that chat until it left the prompt | 0.1.0-beta.20 — only a system message counts as the injected packet |
+| (not listed; audit 2026-09-26, A-04) | An unexpected job error (e.g. a provider reply with `"message": null`) ended the worker thread; extraction stopped with jobs pending | 0.1.0-beta.20 — the job fails and the worker goes on |
 | (not listed; owner-reported 2026-09-25) | Turning points told only in words (speech-level and address changes, a relationship allowed, an admission) and an incident everyone had to deal with were minor events; a character shown without a name never joined their later name | 0.1.0-beta.17 — salience by change and revealed names (ADR 0024), owner links (ADR 0025); partly, see K8 and K22 |
 | (not listed; owner-reported 2026-09-24) | A named persona (유우마) and `{{user}}` were two characters: split locations and promises, and the persona's name counted as a mention in every message | 0.1.0-beta.16 — the host's persona name is the persona (ADR 0023) |
 | 0.1.0-beta.12 (K10) | An item's holder and its place were separate facts and could disagree | 0.1.0-beta.13 — one whereabouts per item (ADR 0016) |

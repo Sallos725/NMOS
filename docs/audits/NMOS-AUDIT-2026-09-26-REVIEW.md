@@ -68,7 +68,10 @@ validation, and it has to cover the other request text too. See ADR 0029 and "Fi
 `hasPacket` now requires `role === 'system'` in addition to the tag. The plugin only ever injects the
 packet as a system message, so H2 retries of an injected prompt are still recognised. The audit suggested
 `startsWith`; `includes` was kept so that a host trimming or prefixing the system message cannot cause a
-double injection.
+double injection. The host keeps the injected message a system message across retries: provider conversion
+(e.g. Gemini's `system:` folding) works on a copy (HOST-FACTS Q2, source reading). Only a Lua `request`
+trigger that rewrites it into another role (H3) could make a retry inject twice; that is a known limitation
+of 0.1.0-beta.20.
 Tests: `prompt.test.ts` "does not mistake a message quoting the packet tag…", `core.test.ts` "still syncs
 and injects when a reply in the prompt quotes the packet tag". Both failed before the change.
 
@@ -117,5 +120,5 @@ Recommended order after this PR:
 | 5 | A-08 | Commit startup steps one by one | — |
 | — | A-05, A-06, A-10, A-12, A-14, A-15 | As in the audit's owner-decision table | owner decision |
 
-At release preparation, add A-01, A-02 and A-04 to `docs/KNOWN-ISSUES.md` → Resolved as "(not listed;
-audit 2026-09-26)".
+A-01, A-02 and A-04 were released in `v0.1.0-beta.20` and are listed under `docs/KNOWN-ISSUES.md` →
+Resolved.
