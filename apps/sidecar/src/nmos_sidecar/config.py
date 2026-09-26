@@ -11,6 +11,11 @@ class Settings:
     database_url: str = field(default_factory=lambda: os.environ.get("NMOS_DATABASE_URL", "postgresql://nmos:nmos@127.0.0.1:5436/nmos"))
     # Optional. Empty = no auth; set it only when the sidecar is reachable beyond loopback.
     auth_token: str = field(default_factory=lambda: os.environ.get("NMOS_AUTH_TOKEN", ""))
+    # Without a token, the sidecar answers only to IP addresses, `localhost`, single-label names (`nmos`)
+    # and these names (`*.example.com` covers subdomains; `*` turns the check off). ADR 0030.
+    allowed_hosts: tuple[str, ...] = field(
+        default_factory=lambda: tuple(h.strip().lower() for h in os.environ.get("NMOS_ALLOWED_HOSTS", "").split(",") if h.strip())
+    )
     cors_origins: tuple[str, ...] = field(
         default_factory=lambda: tuple(o.strip() for o in os.environ.get("NMOS_CORS_ORIGINS", "").split(",") if o.strip())
     )
