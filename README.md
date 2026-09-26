@@ -204,6 +204,14 @@ only in words: an admission, a change from formal to informal speech or a new fo
 relationship someone allows, or an incident everyone must deal with. Someone shown without a name is
 written as a `?` description (`?검은 망토의 남자`) and joined to their name when a later turn reveals it.
 
+How characters speak to and call each other is remembered as its own fact (unreleased, `extract-v10`): an
+agreement to drop formal speech, a form of address someone asks for, or a decided change back becomes
+`<Fact kind="addresses">Radia addresses {{user}}: informal speech, calls them 'Yuuma'</Fact>`, one per
+direction; a newer one replaces the older. A reply that only slips into another speech level is not
+recorded. How the characters in the scene stand with each other (relationship, feelings, speech) comes
+before other facts and before promises. If Inspector → Retrievals shows many facts not fitting
+(kept/offered), raise the memory budget.
+
 A fact about two people comes back from both sides (since 0.1.0-beta.15, Phase 8): `Hana event: betrayed Kaito` is recalled
 when you address Kaito, not only Hana. Extraction lists the other people an event, goal, knowledge fact
 or destroyed item involves; being there is not taken as knowing.
