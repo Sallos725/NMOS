@@ -212,6 +212,53 @@ generations per chat after one first sync:
 First sync of a chat NMOS has not seen yet: 7.4 s (5k), 15.2 s (10k), 22.4 s (15k) of sidecar and
 transfer time. With the default it completes over several generations (chunked bodies upload).
 
+### Real-host check with extraction and embeddings on (2026-09-26, audit A-09)
+
+The check above ran with no extraction model and no embedder, so the chats had no facts and no vectors.
+This one repeats it with both on.
+
+Setup:
+- Isolated `ghcr.io/pocketrisu/pocketrisu:latest` (v1.12.0), headless Chromium, same 16-core machine
+  (load ≈1.5).
+- The synthetic 10,000-message chat from the check above, and the `v0.1.0-beta.20` plugin and sidecar.
+- A stub chat model, and an OpenAI-compatible stub for extraction and embeddings:
+  - extraction writes three valid facts per turn (a place, a status, an event);
+  - embeddings are 1,024-dimensional and answer in ≈1 ms.
+- "Extract all history" and the embed backfill ran first: 5,050 extractions and 15,000 facts; 10,101 embed
+  jobs and 15,101 vectors; no failed job.
+- Same sidecar database for both runs; only the provider settings differ.
+- Timings are the plugin's `[NMOS] request done` lines. `deadline_ms` was 10,000, so no request was cut
+  and each total is the full time.
+
+| 10,000 messages, warm generation | Extraction and embeddings off | On (15,000 facts, 15,101 vectors) |
+|---|---:|---:|
+| Requests | 6 | 10 |
+| Total added `beforeRequest` time, ms | 2,729–2,794 | 3,137–3,292 (median ≈3,200) |
+| Sync (reconcile + bodies), plugin view | 2,510–2,543 | 2,254–2,591 |
+| Retrieve, plugin view | 25–35 | 423–706 |
+| Retrieve, sidecar (`sidecar_total`) | 8–11 | 412–475 |
+| Within the 3 s default (D24) | 6 of 6 (≈0.2 s margin) | **0 of 10** |
+
+Where the sidecar's ≈420 ms goes (trace timings):
+- lexical: ≈8 ms;
+- query embedding: ≈16 ms (stub);
+- vector search over 15,101 vectors: 110–123 ms;
+- the rest, ≈280 ms, is reading facts: the read-time fold of 15,000 assertions (entities, versions,
+  threads). It is paid whether or not a fact is placed. None was placed here: the queries named no
+  character.
+
+A real embedder adds its own time per request: local Ollama took ≈20 ms per warm query embedding (`docs/perf/phase0.md`).
+
+Density: the owner's chat has ≈9.7 facts per turn under its current generation (667 facts over 69 turns,
+aggregate read-only count). That is more than the three per turn here, so a real 10,000-message chat
+would read more facts, and the ≈280 ms is a lower bound for it.
+
+Conclusion: with extraction and embeddings on, the 3 s default does not cover 10,000 messages. Requests
+there go without memory unless the deadline is raised. ≈4,000 ms leaves ≈0.7 s over the slowest request
+here (not run with that deadline); a denser chat can need more. Where the default stops being enough with extraction on was not measured
+(5,000 messages had ≈1.5 s without it). Faster fact reads at this size would need a new mechanism,
+since today every request folds every head assertion; not changed here.
+
 ### Estimated added `beforeRequest` latency (warm path)
 
 Plugin copy + manifest + sidecar append + selective retrieve; network and host snapshot overhead
