@@ -18,7 +18,7 @@ The current phase is always the one named in `docs/STATUS.md`. As of 2026-09-24:
 > Public beta. No phase is current on `main`: hard POV isolation (D9 `character_pov`), the rest of B3
 > and Track B, B4–B7 are not authorized. Bug fixes, correctness, docs and CI work stay allowed.
 > **Phase 9 — Accountable Packets** (`docs/phases/PHASE-9.md`, ADR 0027) is complete (2026-09-26), done
-> at the owner's request and merged after review; not yet released.
+> at the owner's request and merged after review; released in `v0.1.0-beta.19`.
 
 Do not start a phase without its phase document and without the evidence it requires. Work that is
 not a phase feature (bug fixes, correctness, docs, CI) is allowed at any time. It must still keep the
@@ -72,7 +72,7 @@ If two normative documents appear to conflict:
 | 6 — item transitions and conflicts (Track B, B2) | complete (2026-09-24, beta.13) | `PHASE-6.md`, ADRs 0016–0017 |
 | 7 — promise threads and event salience (Track B, B3) | complete (2026-09-24, beta.14) | `PHASE-7.md`, ADRs 0019–0020 |
 | 8 — event participants (Track B, B3) | complete (2026-09-24, beta.15) | `PHASE-8.md`, ADR 0021 |
-| 9 — accountable packets (Track B, B6 narrowed) | complete (2026-09-26), unreleased | `PHASE-9.md`, ADR 0027 |
+| 9 — accountable packets (Track B, B6 narrowed) | complete (2026-09-26, beta.19) | `PHASE-9.md`, ADR 0027 |
 | 10+ (Track B, B3 remainder, B4–B7) | **not authorized** | `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,

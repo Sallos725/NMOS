@@ -5,6 +5,13 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+## 0.1.0-beta.19
+
+Phase 9 — Accountable Packets (ADR 0027, D39), plus two owner-reported fixes to what the packet keeps:
+standing facts first (ADR 0026, D37) and speech level and forms of address (ADR 0028, D38). Schema:
+migration 0020 (applied at startup). New extractor generation `extract-v10`. The plugin code is unchanged
+apart from its version.
+
 - **Settled relationships stay in the packet in crowded scenes** (ADR 0026). When a message names
   several characters, every fact about them scored the same, and a fact's list of who knows it decided
   the order, so trivia ("엘피 knows: 계란 껍질 …") took the few slots a 600-token packet has. A character's
@@ -21,9 +28,6 @@ later, is `docs/KNOWN-ISSUES.md`.
 - **See how much memory fit.** Inspector → conversation → Retrievals shows facts as kept/offered.
   If most facts do not fit, raise **기억 예산(토큰) / Memory budget (tokens)** in the panel (and lower the host's max
   context by the same amount).
-
-**Phase 9 — Accountable Packets** (ADR 0027, D39). Schema: migration 0020 (applied at startup). No new
-extractor generation of its own, no plugin change.
 
 - **Raw words get room again.** On real chats the facts filled the whole memory budget, and an excerpt
   (a password, the words of a promise, a line of dialogue) reached the model in 7 of 168 requests. The
@@ -46,11 +50,21 @@ extractor generation of its own, no plugin change.
   the first of a chat was not recognized as already in the prompt and came back as an excerpt of itself.
   The latest message is now always treated as in the prompt.
 
-### Known limitations (Phase 9)
+**Upgrading.** Pull the new sidecar image and restart it. Migration 0020 is applied at startup; it adds
+nullable columns and needs no backfill. With an LLM configured, `extract-v10` becomes active, and each
+chat's latest `NMOS_EXTRACT_BACKFILL` turns (default 100) are re-extracted once at the provider's cost.
+Older turns keep their earlier facts until **Extract all history**. Replacing the plugin file is optional
+(its code is unchanged). If you replace it, reload PocketRisu.
 
-- Traces recorded before migration 0020 cannot be replayed.
-- The token estimate still over-counts Korean (K26).
+### Known limitations
+
+- A speech level or form of address can still be missed or cut (K25), and turns before `extract-v10`
+  have none until "Extract all history".
+- Traces recorded before this release cannot be replayed or audited. Real-chat comparisons of packet
+  policies need traces recorded from now on.
+- The packet's token estimate still over-counts Korean, so part of the reserve goes unused (K26).
 - Echo is a surface measure: a secret the reply rightly keeps is used without being echoed.
+- Otherwise unchanged from 0.1.0-beta.18; the full list is `docs/KNOWN-ISSUES.md`.
 
 ## 0.1.0-beta.18
 
