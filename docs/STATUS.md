@@ -140,7 +140,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Decisions | `docs/adr/0001`–`0029` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-7.md` | 0–3 met; 4 soft subset met; 5, 6 and 7 met |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
-| Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; the rest open, ordered in the review |
+| Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03 fixed (unreleased); the rest open, ordered in the review |
 
 ## Evidence status (Phase 0A)
 

@@ -5,6 +5,14 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Sidecar and worker always get the same settings** (audit A-03). The development `docker-compose.yml`
+  passed `NMOS_LLM_JSON_MODE` to the worker only. Both processes build the extraction generation from their
+  settings, so with `NMOS_LLM_JSON_MODE=0` (and no value saved in the panel) the worker never picked up the
+  sidecar's jobs and extraction stayed pending. Both compose files now give the two services one shared
+  environment, and `NMOS_EXTRACT_HINTS` (documented, but never passed to the containers) is included. The
+  worker also logs a warning when queued jobs of the active generation match none of its handlers. A test
+  checks that every documented variable reaches both services.
+
 ## 0.1.0-beta.20
 
 Three fixes from the 2026-09-26 audit (`docs/audits/NMOS-AUDIT-2026-09-26.md`, review

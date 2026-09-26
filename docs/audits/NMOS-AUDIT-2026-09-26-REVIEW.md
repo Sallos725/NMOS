@@ -113,12 +113,22 @@ Recommended order after this PR:
 
 | Order | ID | What | Needs |
 |---|---|---|---|
-| 1 | A-03 | Pass `NMOS_LLM_JSON_MODE`, `NMOS_EXTRACT_HINTS` and `NMOS_LLM_API_KEY` to both dev services and `NMOS_EXTRACT_HINTS` to the release compose; warn in `worker.maintenance` when a handler key differs from the active generation | — |
-| 2 | A-07 | Fix the doc drifts; extend `tools/check_release.py` to cross-check the H/D/K maxima and the phase file list | — |
-| 3 | A-09 | Re-measure K1's 10k margin with extraction and embeddings on, or narrow the wording | real-host session |
-| 4 | A-16 | Schema-transition test (0013 → 0020 with rows) and a `pg_dump` backup/rollback note | — |
-| 5 | A-08 | Commit startup steps one by one | — |
+| 1 | A-07 | Fix the doc drifts; extend `tools/check_release.py` to cross-check the H/D/K maxima and the phase file list | — |
+| 2 | A-09 | Re-measure K1's 10k margin with extraction and embeddings on, or narrow the wording | real-host session |
+| 3 | A-16 | Schema-transition test (0013 → 0020 with rows) and a `pg_dump` backup/rollback note | — |
+| 4 | A-08 | Commit startup steps one by one | — |
 | — | A-05, A-06, A-10, A-12, A-14, A-15 | As in the audit's owner-decision table | owner decision |
 
 A-01, A-02 and A-04 were released in `v0.1.0-beta.20` and are listed under `docs/KNOWN-ISSUES.md` →
 Resolved.
+
+**A-03 — fixed after beta.20** (branch `audit-a03-compose-env`).
+- The development `docker-compose.yml` now uses one `x-nmos-env` anchor for both services, as the release
+  compose does. The union of the old blocks adds `NMOS_LLM_JSON_MODE`, `NMOS_LLM_API_KEY` and the recall
+  settings to the sidecar, and the rest to the worker.
+- Both compose files pass `NMOS_EXTRACT_HINTS`.
+- `worker.unserved` finds queued jobs of each kind's active generation that no handler of the worker
+  implements. `worker.maintenance` logs a warning when the same ones are still there 30 s later.
+Tests: `test_compose_env.py` checks that sidecar and worker share one environment and that every variable
+documented in README or `.env.example` reaches it (it failed for both files before the change).
+`test_generations.py::test_a_worker_whose_settings_give_another_key_sees_the_jobs_it_cannot_serve`.
