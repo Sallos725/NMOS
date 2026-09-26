@@ -13,7 +13,7 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
-from .facts import claim_line, fact_line, memory_view, relevant_facts, thread_line
+from .facts import STANDING, claim_line, fact_line, memory_view, relevant_facts, thread_line
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
@@ -226,6 +226,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         # Sim bots track many characters: state of characters mentioned right now gets the budget first.
         now_text = f"{query} {previous_ai}"
         state_items.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in now_text), reverse=True)
+    lead_lines: list[str] = []
     fact_lines: list[str] = []
     thread_lines: list[str] = []
     view = memory_view(conn, head, options.extractor_key) if fresh and (options.facts_limit > 0
@@ -240,9 +241,11 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         # Claims after facts, so the budget serves narration first (ADR 0013).
         claims = relevant_facts(view["claims"], query, previous_ai, in_context, max(1, options.facts_limit // 2),
                                 persona=persona)
-        fact_lines = [fact_line(f) for f in facts] + [claim_line(c) for c in claims]
-    text, tokens, chosen = compile_packet(ranked, request.budget_tokens, state=state_items, facts=fact_lines,
-                                         threads=thread_lines)
+        # How the cast stand with each other takes the budget before threads (ADR 0026).
+        lead_lines = [fact_line(f) for f in facts if f["predicate"] in STANDING]
+        fact_lines = [fact_line(f) for f in facts if f["predicate"] not in STANDING] + [claim_line(c) for c in claims]
+    text, tokens, chosen, kept = compile_packet(ranked, request.budget_tokens, state=state_items, facts=fact_lines,
+                                               threads=thread_lines, lead_facts=lead_lines)
     timings["sidecar_total"] = round((time.perf_counter() - started) * 1000, 2)
 
     def brief(c: dict[str, Any]) -> dict[str, Any]:
@@ -261,7 +264,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             Jsonb([{"revision_id": e.revision_id, "turn": e.turn, "score": round(e.score, 5)} for e in chosen]),
             Jsonb([brief(c) for c in excluded]),
             tokens,
-            Jsonb({**timings, "lexical_mode": lexical_note, "vector_mode": vector_note, "state_items": len(state_items), "facts": len(fact_lines), "threads": len(thread_lines),
+            Jsonb({**timings, "lexical_mode": lexical_note, "vector_mode": vector_note, "state_items": len(state_items), "facts": len(lead_lines) + len(fact_lines), "threads": len(thread_lines),
+                   "kept_state": kept["state"], "kept_facts": kept["facts"], "kept_threads": kept["threads"],
                    "embedding_projection": options.embed_projection[:20] if options.embedder else None,
                    "extractor": (options.extractor_key or "")[:20] or None,
                    **{f"client_{k}": v for k, v in request.client_timings_ms.items()}}),

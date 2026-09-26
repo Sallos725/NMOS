@@ -335,6 +335,22 @@ def fact_text(f: dict[str, Any]) -> str:
 
 FIRST_PERSON = re.compile(r"(^|\s)(내|나는|나를|나한테|나에게|나의|저는|제가|저를|제|i|my|me|mine)(\s|$|[?,.!])", re.IGNORECASE)
 LEXICAL_BAR = 0.35  # trigram overlap with the query that makes an unmentioned fact relevant
+# How two characters stand with each other (ADR 0026): one current value per pair, so a scene's cast has
+# few of them, and the reply goes wrong without them (a speech level or a form of address forgotten). Read
+# side only, like HOLDER_PER_ITEM: outside REGISTRY, so no new extractor generation.
+STANDING = frozenset({"relationship", "feels_toward"})
+# Added to the score of a mentioned fact (ADR 0026). Below the gap between a mention in the user's message
+# and one in the previous reply (1.0), so they order facts of equal mention only.
+PRIOR_STANDING = 0.5
+PRIOR_MAJOR_EVENT = 0.3
+
+
+def prior(f: dict[str, Any]) -> float:
+    if f["predicate"] in STANDING:
+        return PRIOR_STANDING
+    if f["predicate"] == "event" and f.get("salience") == "major":
+        return PRIOR_MAJOR_EVENT
+    return 0.0
 
 
 def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],
@@ -342,8 +358,10 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                    persona: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
-    Knowledge marks count as mentions: a fact hidden from a character who is being addressed is the one
-    the model most needs to see (so it does not leak), and "내/my" questions concern the user's facts.
+    A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
+    model most needs to see (so it does not leak), and "내/my" questions concern the user's facts. Among
+    facts of equal mention, how two characters stand (`STANDING`) comes first, then major events (ADR
+    0026). Being in `known_by` adds nothing: a long list named most of a scene's cast and put trivia first.
 
     At most `events_limit` of them are `event` facts (PHASE-7 Q4): events are the most frequent predicate
     and all stay current, so a main character's newest events would otherwise take every slot. Among
@@ -368,16 +386,13 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                  if len(n) >= 2 and n not in user]
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
         hidden = [_norm(n) for n in f.get("hidden_from") or [] if len(_norm(n)) >= 2 and _norm(n) not in user]
-        known = [_norm(n) for n in f.get("known_by") or [] if len(_norm(n)) >= 2 and _norm(n) not in user]
         if any(n in q for n in hidden):
             mention += 2.5
-        elif any(n in q for n in known):
-            mention += 1.0
         if first_person and (_norm(f["subject"]) in user or _norm(f.get("value")).startswith(tuple(user))):
             mention += 1.0
         grams = _grams(fact_text(f))
         lexical = len(grams & q_grams) / max(1, len(q_grams))
-        score = mention + lexical
+        score = mention + lexical + (prior(f) if mention else 0.0)
         if f["predicate"] == "event" and f.get("salience") == "minor" and (
                 len(_grams(f.get("value") or "") & q_grams) / max(1, len(q_grams)) < LEXICAL_BAR):
             continue  # the query must be about the event itself, not just name its subject

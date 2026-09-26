@@ -1,6 +1,6 @@
 # NMOS Known Issues
 
-Current as of `v0.1.0-beta.18` (2026-09-25). This is the single list of what does not work, or works
+Current as of `v0.1.0-beta.18` (2026-09-25; K25 2026-09-26). This is the single list of what does not work, or works
 only partly, in the current release. Each release's "Known limitations" in `CHANGELOG.md` describes
 that release at the time; entries fixed later are listed under [Resolved](#resolved) below.
 
@@ -33,6 +33,7 @@ without a PocketRisu change.
 | K22 | What becomes a fact depends on the extraction model's labels | Memory | measured per model (`docs/perf/phase5-extraction.md`, `phase7-extraction.md`, `phase8-extraction.md`) |
 | K23 | A promise stays open until the story keeps or breaks it in words extraction recognizes | Memory | beta.14 (ADR 0019); owner repair: Track B, B7 |
 | K24 | A relationship change can leave the earlier relationship or feeling current | Memory | measured in Phase 8 (report only); a later Track B decision |
+| K25 | A speech level or form of address stored only as an event can miss the packet at the default budget | Memory | ranking fixed (ADR 0026); dedicated predicate: proposal |
 
 ## Performance
 
@@ -128,6 +129,15 @@ earlier anger was `feels_toward`), the earlier fact stays current beside the new
 relationship report measured it in 2 of 9 runs; the change itself was extracted in 9 of 9
 (`docs/perf/phase8-extraction.md`). There is no inverse or symmetry rule and no link between the two
 predicates. *Workaround:* none automatic; the Inspector shows both facts with their turns.
+
+**K25 — Speech level can miss the packet.** Extraction records a change in speech level or form of
+address ("말을 놓기 시작함", "'누나'라고 부르기 시작함") as a `major` event, or sometimes as a
+`relationship` value that a later relationship replaces. Since ADR 0026, relationships and major events of
+the characters in the scene rank first, but in a crowded scene the default 600-token budget holds about
+six facts, and the event can be cut (reproduced on a real chat: it fit at 1,200). K24 applies too: with
+standing facts first, a stale relationship reaches the packet more often. *Workaround:* raise
+**기억 예산(토큰) / Memory budget (tokens)** (and lower the host's max context by the same amount); Inspector → Retrievals
+shows facts kept/offered. A dedicated predicate is proposed in `docs/proposals/SPEECH-AND-ADDRESS.md`.
 
 ## Recall and gating
 
