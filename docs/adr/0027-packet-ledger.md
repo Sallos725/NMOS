@@ -1,6 +1,6 @@
 # 0027 — Packet ledger, excerpt room, echo and as-of replay
 
-Status: accepted, 2026-09-26 (`docs/phases/PHASE-9.md`). The owner asked for this work on a new branch
+Status: accepted, 2026-09-26 (`docs/phases/PHASE-9.md`). Amended by ADR 0032 (`packet-v2`, the default since). The owner asked for this work on a new branch
 ("새 브랜치 만들어서 하고싶은대로 해봐") and approved merging it after review. Invariants 8 and 10 are implemented at packet level. No invariant changes.
 
 ## Context

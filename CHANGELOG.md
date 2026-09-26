@@ -5,8 +5,8 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-The audit items the 2026-09-26 review left without a state (A-11, A-13, A-17, A-18, A-19). Sidecar only; no
-schema change and no new extractor or embedding generation.
+The audit items the 2026-09-26 review left without a state (A-11, A-13, A-17, A-18, A-19), and the owner's
+decision on K26. Sidecar only; no schema change and no new extractor or embedding generation.
 
 - **The sidecar's access log no longer shows the auth token** (audit A-11). The Inspector opened in a browser
   tab passes the token as `?token=` on every link, and uvicorn logged each request line with it. The log now
@@ -16,6 +16,12 @@ schema change and no new extractor or embedding generation.
   Inspector links and the plugin's "full database" permission (audit A-18).
 - Plugin tests no longer depend on how busy the machine is (audit A-19): the deadline test runs on a fake
   clock, and the 10,000-message manifest test has its own time limit.
+- **Korean memory packets hold more** (K26, ADR 0032; owner decision). The packet's budget is filled against
+  a token estimate that counted every Korean character as 1.5 tokens; real tokenizers count 0.74–0.98, so a
+  full Korean packet used only 68–75 % of the memory budget. The new default packet policy `packet-v2`
+  counts 1.2. A full Korean packet holds about 1.5 more lines and uses 76–85 % of the budget
+  (`docs/perf/token-estimate.md`). English packets are unchanged. Nothing is re-extracted. To keep the old
+  estimate, set `NMOS_PACKET_POLICY=packet-v1`.
 
 ## 0.1.0-beta.21
 

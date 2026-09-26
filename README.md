@@ -169,7 +169,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_VECTOR_MIN_SIM` | `0.42` | Minimum cosine similarity for semantic recall (model-dependent) |
 | `NMOS_EMBED_QUERY_INSTRUCTION` | `auto` | Query instruction for instruction-tuned embedders (`auto` = Qwen3 format for `qwen3-embedding`; `none`; or your text) |
 | `NMOS_TRACE_RETENTION_DAYS` | `30` | How long retrieval traces (with each packet's ledger) are kept |
-| `NMOS_PACKET_POLICY` | `packet-v1` | Packet compiler (ADR 0027): `packet-v1` keeps room for the best excerpt; `packet-v0` is the earlier one |
+| `NMOS_PACKET_POLICY` | `packet-v2` | Packet compiler (ADR 0027, 0032): `packet-v2` keeps room for the best excerpt and counts Korean at 1.2 tokens a character; `packet-v1` is the same at 1.5, `packet-v0` the one before |
 | `NMOS_AUTH_TOKEN` | off | Required if you expose the sidecar beyond loopback (`NMOS_SIDECAR_BIND`); set the plugin's `auth_token` too. See [Security](#security) |
 | `NMOS_ALLOWED_HOSTS` | (empty) | Without a token, domain names the sidecar answers to besides IP addresses, `localhost` and single-label names such as `nmos`: e.g. `risu.example.com,*.ts.net`; `*` turns the check off. See [Security](#security) |
 | `NMOS_SIDECAR_BIND` / `NMOS_SIDECAR_PORT` | `127.0.0.1` / `8790` | Where the sidecar listens |

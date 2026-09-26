@@ -1,4 +1,4 @@
-# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5–8 cases 2026-09-24; Phase 9 2026-09-26)
+# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5–8 cases 2026-09-24; Phase 9 2026-09-26; `packet-v2` 2026-09-26)
 
 Deterministic tier of the RP memory evaluation. It gates CI (`apps/sidecar/tests/test_memory_eval.py`)
 and prints this table (`tools/eval_memory.py`).
@@ -31,7 +31,8 @@ and prints this table (`tools/eval_memory.py`).
   itself excluded). `lexical`: raw lexical recall (no extractor, no embeddings). `hybrid`: lexical +
   vectors. `full`: hybrid + facts. The last 6 messages are sent as `in_context_ids`, so memory must
   bring what is older. `full-v0` (since Phase 9): `full` compiled by `packet-v0`, the packet compiler
-  before ADR 0027; `full` uses `packet-v1`.
+  before ADR 0027; `full` uses the default, `packet-v2` since ADR 0032 (`packet-v1` before; the table is
+  the same under both).
 
 Gold for the state cases is a fact line (e.g. `Hinata located in harbor`), which only `full` can
 produce; `lexical` and `hybrid` can still bring the original sentence as an excerpt.

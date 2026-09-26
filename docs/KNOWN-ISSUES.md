@@ -34,7 +34,7 @@ without a PocketRisu change.
 | K23 | A promise stays open until the story keeps or breaks it in words extraction recognizes | Memory | beta.14 (ADR 0019); owner repair: Track B, B7 |
 | K24 | A relationship change can leave the earlier relationship or feeling current | Memory | measured in Phase 8 (report only); a later Track B decision |
 | K25 | A speech level or form of address can still be missed or cut | Memory | ranking (ADR 0026) and `addresses` (ADR 0028); turns before `extract-v10`: "Extract all history" |
-| K26 | The packet's token estimate over-counts Korean, so the reserve is under-used | Recall | measured in Phase 9 (report only); an owner decision |
+| K26 | The packet's token estimate over-counts Korean, so the reserve is under-used | Recall | reduced by `packet-v2` (ADR 0032, owner decision); still conservative by design |
 | K27 | An OOC note or memory-like markup inside a reply can become a fact | Memory | next extractor generation (audit A-12, owner decision) |
 | K28 | Taking turns in one chat from two tabs or devices makes memory of the messages one of them lacks drop out and come back | Data | host (H10); not planned (audit A-13) |
 
@@ -164,14 +164,16 @@ facts not fitting (kept/offered). Evidence: `docs/perf/extract-v10.md`.
 ## Recall and gating
 
 **K26 — The token estimate over-counts Korean.** The packet budget is filled against a conservative
-estimate: 1 token per 3.5 ASCII characters and 1.5 per other character, so a Korean packet never
-overflows the reserve. On synthetic Korean fixture text, three tokenizers counted 0.74–0.98 tokens per
-Korean character: gemma4 (a Gemini-family tokenizer), deepseek-v4.1-flash and qwen3-embedding. Korean
-prose was over-counted 1.42–1.75× and packet fact lines 1.14–1.19× (`docs/perf/phase9-packets.md`). About
-15–40 % of a Korean packet's reserve therefore goes unused (less for fact lines, more for excerpts). A lower
-estimate could overflow the reserve for tokenizers that were not measured, so it is not changed.
+estimate, not a tokenizer. Phase 9 measured three tokenizers (gemma4, a Gemini-family tokenizer;
+deepseek-v4.1-flash; qwen3-embedding) at 0.74–0.98 tokens per Korean character, against an estimate of
+1.5. A full Korean packet used 68–75 % of the reserve in real tokens (`docs/perf/phase9-packets.md`).
+*Since the release after 0.1.0-beta.21 (ADR 0032):* the default policy `packet-v2` estimates 1.2. A full
+Korean packet now uses 76–85 % (largest measured: 523 of 600), and no whole packet was under-counted on
+those tokenizers (`docs/perf/token-estimate.md`). It stays conservative on purpose: a tokenizer that was
+not measured may count Korean higher.
 *Workaround:* raise **기억 예산(토큰) / Memory budget (tokens)** in the panel, and lower PocketRisu's
-max context by the same amount (D2).
+max context by the same amount (D2). If your response model's tokenizer counts Korean above 1.2 a
+character, `NMOS_PACKET_POLICY=packet-v1` restores the old estimate.
 
 **K12 — Broad words bring no lexical excerpts.** If a query's words occur in more than 200 messages
 (a main character's name, a recurring place), lexical recall abstains for that request (Inspector
