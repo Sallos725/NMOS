@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Phase 9 — Accountable Packets: complete (2026-09-26), merged, not yet released.** The owner asked for
+**Phase 9 — Accountable Packets: complete (2026-09-26), released in `v0.1.0-beta.19`.** The owner asked for
 the work on a new branch and approved the merge after review. Spec `docs/phases/PHASE-9.md` (Track B, B6
 narrowed to recording and budgeting what the packet holds), ADR 0027, D39, migration 0020. Every request
 records a ledger of what its packet offered and held, with provenance. `packet-v1` keeps room for the
@@ -53,13 +53,13 @@ it when a later turn reveals the name; the owner can join two names of a chat by
 Outside the phase (owner request 2026-09-24, ADR 0022): Google Vertex AI service-account keys for the
 extraction LLM, released in `v0.1.0-beta.15`. Mocked token exchange in CI; not yet run against real Vertex (needs an
 owner-supplied service-account key).
-Outside the phase (owner report 2026-09-26, ADR 0026, D37, unreleased): characters forgot settled things (a 반말 agreement
+Outside the phase (owner report 2026-09-26, ADR 0026, D37, released in `v0.1.0-beta.19`): characters forgot settled things (a 반말 agreement
 went back to 존댓말). Reproduced read-only on the owner's database: in a crowded scene the fact ranking was decided by
 `known_by` lists, so trivia took the four facts a 600-token packet holds. Now how the cast stand with each other
 (`relationship`, `feels_toward`) and major events come first among equal mentions, standing facts take the budget before
 threads, and the trace and Inspector show how many facts fit. Read side only.
 Outside the phase (owner decision 2026-09-26 on `docs/proposals/SPEECH-AND-ADDRESS.md`, recommended answers; ADR 0028,
-D38, unreleased): `extract-v10` adds `addresses`, how one character speaks to and calls another, per direction, only when
+D38, released in `v0.1.0-beta.19`): `extract-v10` adds `addresses`, how one character speaks to and calls another, per direction, only when
 the story settles it (a slip is not recorded); it ranks with relationships. Evidence: `docs/perf/extract-v10.md`
 (owner's model on the owner's chat: 18/18 settled turns, 0/3 on the slip, 0/12 routine; synthetic 21/21 on two models;
 isolated real host).
@@ -69,7 +69,10 @@ injected ("Show the injected memory"), held in the plugin's memory only. Real-ho
 
 **Phase 0 — complete (2026-09-22).** Phase 0A exit criteria and all Phase 0B acceptance criteria are met.
 
-**Public beta `v0.1.0-beta.18` (2026-09-25), public repository and image.** The Status tab shows the
+**Public beta `v0.1.0-beta.19` (2026-09-26), public repository and image.** Phase 9 (accountable
+packets: packet ledger, `packet-v1`, echo, as-of replay), standing facts first (ADR 0026) and speech
+level and forms of address (`extract-v10`, ADR 0028); migration 0020.
+`v0.1.0-beta.18` (2026-09-25): The Status tab shows the
 memory the last request injected (plugin only).
 `v0.1.0-beta.17` (2026-09-25): `extract-v9` (salience by
 what an event changes, unnamed characters and revealed names, ADR 0024) and owner entity links (ADR
@@ -129,7 +132,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
 | Tests | `apps/sidecar/tests` (327), `adapters/pocketrisu-plugin/test` (89) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k (D24) |
-| Known issues | `docs/KNOWN-ISSUES.md` | K1–K26 (K10 resolved) current as of `v0.1.0-beta.18`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
+| Known issues | `docs/KNOWN-ISSUES.md` | K1–K26 (K10 resolved) current as of `v0.1.0-beta.19`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/proposals/` | Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0028` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-7.md` | 0–3 met; 4 soft subset met; 5, 6 and 7 met |
@@ -148,7 +151,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 - O1 — relationship to MIRRA / VEIL.
 - O5 — resolved 2026-09-24: superseded vectors and text pruned (ADR 0015, D29), full-manifest host
   observations compacted losslessly (ADR 0018, D31), everything else on abandoned worldlines kept.
-- Phase 9 (accountable packets): complete, not yet released; a release is the owner's decision.
+- Phase 9 (accountable packets): complete, released in `v0.1.0-beta.19`.
 - Phase 10+ (the rest of B3, Track B, B4–B7): not authorized.
 - K26 (the token estimate over-counts Korean): whether to change the estimate or the default reserve.
 

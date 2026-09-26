@@ -1,6 +1,6 @@
 # Phase 9 — Accountable Packets: Ledger, Excerpt Room, Echo, Replay
 
-> **Status: complete (2026-09-26), merged to `main`, not yet released.** On
+> **Status: complete (2026-09-26), released in `v0.1.0-beta.19`.** On
 > 2026-09-26 the owner asked for this work on a new branch ("새 브랜치 만들어서 하고싶은대로 해봐"),
 > after a written review recommended it as the next step. It is Track B, B6 ("strategic selection"),
 > narrowed to recording and budgeting what the packet holds. The questions below were answered with the

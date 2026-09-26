@@ -4,6 +4,6 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
-node_modules/
+node_modules
 fixtures/host/incoming/*.json
 config/parsers.json
