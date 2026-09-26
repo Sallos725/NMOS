@@ -107,14 +107,19 @@ No schema, generation or hash-format change. At the next release, the plugin fix
 `dist/nmos-pocketrisu.js` installed and the page reloaded (H13); the A-01 fix needs only the new sidecar
 image.
 
-## Open items
+## Owner decisions (2026-09-26)
 
-Still open (the fixes below are in order of landing):
+The remaining items were owner decisions. The owner chose:
 
-| Order | ID | What | Needs |
-|---|---|---|---|
-| — | A-05, A-06 (invariant 9 wording, the one drift left), A-10, A-12, A-14, A-15 | As in the audit's owner-decision table | owner decision |
-| — | From A-09: the 3 s default deadline (D24) at ≈10,000 messages with extraction on; fact reads (≈280 ms for 15,000 facts, every request) | Raise the default, or make fact reads incremental, or keep the workaround | owner decision |
+| Item | Choice | State |
+|---|---|---|
+| A-05 security default | A: host allow list, set from the compose environment | done: ADR 0030, D41, `NMOS_ALLOWED_HOSTS` |
+| A-06 invariant 9 wording | A: "PostgreSQL only; replacing it is not a goal" | pending |
+| A-10 Vertex AI keys | B: verify once against real Vertex with the owner's service-account key | waiting for the key |
+| A-12 memory poisoning | A: add the case to the model evaluation now; add the prompt line with the next extractor generation | pending |
+| A-14 `Predicate.epistemic` | A: remove with the next extractor generation | pending |
+| A-15 per-message `window_hash` path | A: remove, with an ADR (the owner's DB has no per-message extraction) | pending |
+| A-09 follow-up, deadline at ≈10,000 messages | A: keep the 3 s default, and warn in the plugin UI when requests run close to or over the deadline, suggesting a higher value | pending |
 
 A-01, A-02 and A-04 were released in `v0.1.0-beta.20` and are listed under `docs/KNOWN-ISSUES.md` →
 Resolved.

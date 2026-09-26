@@ -5,6 +5,14 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Without a token, the sidecar answers only to known host names** (audit A-05, ADR 0030; owner decision).
+  A web page can use DNS rebinding to reach a sidecar on `127.0.0.1` or the LAN from your own browser,
+  and without a token it could read chats and settings. The sidecar now accepts requests addressed to an
+  IP address, `localhost` or a single-label name (`nmos`, `sidecar`), and refuses other names with HTTP 400.
+  If you reach the sidecar by a domain name (a reverse proxy, a tailnet name), add it to
+  `NMOS_ALLOWED_HOSTS` in `.env` (for example `risu.example.com,*.ts.net`) or set a token. With a token
+  nothing changes.
+
 - **Sidecar and worker always get the same settings** (audit A-03). The development `docker-compose.yml`
   passed `NMOS_LLM_JSON_MODE` to the worker only. Both processes build the extraction generation from their
   settings, so with `NMOS_LLM_JSON_MODE=0` (and no value saved in the panel) the worker never picked up the

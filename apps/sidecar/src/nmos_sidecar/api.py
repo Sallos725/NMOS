@@ -6,6 +6,7 @@ import hmac
 import logging
 import time
 import dataclasses
+import ipaddress
 from contextlib import asynccontextmanager
 from typing import Any
 from uuid import UUID
@@ -74,6 +75,25 @@ def _compact_observation(body: ReconcileRequest, result, base_hash: str | None, 
     if appended:
         return {"chat_id": body.chat_id, "columns": columns, "base_manifest_hash": base_hash, "appended": rows}
     return {"chat_id": body.chat_id, "columns": columns, "entries": rows}
+
+
+def host_allowed(header: str, allowed: tuple[str, ...]) -> bool:
+    """Whether a tokenless sidecar answers a request for this Host (ADR 0030). A DNS-rebinding page can
+    only send its own domain name, so addresses, `localhost` and single-label names are safe."""
+    host = header.strip().lower()
+    if host.startswith("["):  # IPv6 literal, with or without a port
+        return host.find("]") > 1
+    host = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+    if not host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    if host == "localhost" or "." not in host or "*" in allowed:
+        return True
+    return any(host == a or (a.startswith("*.") and host.endswith(a[1:])) for a in allowed)
 
 
 def create_app(settings: Settings | None = None, pool: ConnectionPool | None = None,
@@ -173,6 +193,20 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
         # As FastAPI's default, but an echoed lone surrogate would make the 422 itself a 500 (ADR 0029).
         return JSONResponse(status_code=422, content={"detail": storable(jsonable_encoder(exc.errors()))})
+
+    if not settings.auth_token:
+        refused: set[str] = set()
+
+        @app.middleware("http")
+        async def check_host(request: Request, call_next):
+            host = request.headers.get("host", "")
+            if host_allowed(host, settings.allowed_hosts):
+                return await call_next(request)
+            if host not in refused:
+                refused.add(host)
+                log.warning("refused a request for host %r: add it to NMOS_ALLOWED_HOSTS or set NMOS_AUTH_TOKEN", host)
+            return JSONResponse(status_code=400, content={
+                "detail": f"host {host!r} not allowed without a token: add it to NMOS_ALLOWED_HOSTS or set NMOS_AUTH_TOKEN"})
 
     def auth(authorization: str | None = Header(default=None), token: str | None = None) -> None:
         if not settings.auth_token:

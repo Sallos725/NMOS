@@ -169,6 +169,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_TRACE_RETENTION_DAYS` | `30` | How long retrieval traces (with each packet's ledger) are kept |
 | `NMOS_PACKET_POLICY` | `packet-v1` | Packet compiler (ADR 0027): `packet-v1` keeps room for the best excerpt; `packet-v0` is the earlier one |
 | `NMOS_AUTH_TOKEN` | off | Required if you expose the sidecar beyond loopback (`NMOS_SIDECAR_BIND`); set the plugin's `auth_token` too. See [Security](#security) |
+| `NMOS_ALLOWED_HOSTS` | (empty) | Without a token, domain names the sidecar answers to besides IP addresses, `localhost` and single-label names such as `nmos`: e.g. `risu.example.com,*.ts.net`; `*` turns the check off. See [Security](#security) |
 | `NMOS_SIDECAR_BIND` / `NMOS_SIDECAR_PORT` | `127.0.0.1` / `8790` | Where the sidecar listens |
 
 Plugin arguments: `sidecar_url`, `auth_token`, `disabled` (1 = off), `reserved_memory_tokens`
@@ -271,6 +272,12 @@ LLM or embedding endpoint that is remote. `docker compose down -v` deletes all N
   address, also set `NMOS_AUTH_TOKEN` and the plugin's `auth_token`. Without a token, anyone who
   can reach the port can read your stored chats and change settings — including pointing the LLM
   endpoint at their own server, which would then receive your stored API key.
+- **Without a token, the sidecar answers only to known host names** (ADR 0030). It accepts requests
+  addressed to an IP address, `localhost` or a single-label name such as `nmos` or `sidecar`. Anything
+  else gets HTTP 400: a web page using DNS rebinding reaches the sidecar only under its own domain name,
+  so it cannot read your chats or settings. If you reach the sidecar by a domain name (a reverse proxy,
+  a tailnet name), add it to `NMOS_ALLOWED_HOSTS` in `.env`, for example
+  `NMOS_ALLOWED_HOSTS=risu.example.com,*.ts.net`, or set a token. With a token the token decides.
 - The plugin's `auth_token` is kept in PocketRisu's plugin settings and is readable by anyone who can
   open them (see [ADR 0003](docs/adr/0003-sidecar-token-without-secret-header.md)).
 

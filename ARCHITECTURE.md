@@ -364,6 +364,10 @@ Echo never ranks anything. Inspector "Last packet"; `GET /v1/trace/{id}/audit`, 
 the host's hash. Other request text is made storable before validation, and every jsonb value written is
 too. Host ids holding one are refused with 422. Hash format v1 and the plugin are unchanged.
 
+**D41 — Host check without a token (ADR 0030; owner decision on audit A-05).** A sidecar with no
+`NMOS_AUTH_TOKEN` answers only requests addressed to an IP address, `localhost`, a single-label name or a
+name in `NMOS_ALLOWED_HOSTS`; others get 400. With a token, the token decides.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
