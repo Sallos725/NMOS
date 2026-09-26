@@ -5,6 +5,16 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **The plugin warns when memory runs out of time** (owner decision on audit A-09, plugin). A long chat that
+  needs more than the deadline (3 s by default) used to go without memory silently. Now:
+  - the NMOS panel's Status tab opens with a card when the last request missed the deadline, or used 80 %
+    of it or more. The card says how long it took and the value to set, with a button to the Settings tab;
+  - after a reply that went without memory for the deadline, PocketRisu shows one notice saying the same,
+    once per page;
+  - the progress display says "over the N s deadline · tap to raise".
+
+  The default deadline stays 3 s. Checked on an isolated PocketRisu v1.12.0.
+
 - **The per-message extraction window is retired** (audit A-15, ADR 0031; owner decision). Extractions made
   before 0.1.0-beta.8 (per message, `extract-v3` and earlier) no longer serve facts. If your database still
   relies on them, those turns show no facts until they are extracted again: the recent turns at the next

@@ -111,6 +111,8 @@ export const risuHost: HostPort = {
   warn: (...args) => console.warn(...args),
   debug: (...args) => console.debug(...args),
   now: () => performance.now(),
+  // PocketRisu's alertNormal: one global dialog, so core.ts calls it only after a reply (audit A-09).
+  alert: (message) => { risuai.alert(message).catch(() => {}); },
 };
 
 /** The progress display (D28) on the PocketRisu page, and its toggle for the panel. */

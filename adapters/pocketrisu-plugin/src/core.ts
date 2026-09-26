@@ -2,7 +2,8 @@
 
 import { canonicalJson } from './canonical';
 import { sha256Hex } from './hash';
-import type { Lang } from './i18n';
+import { deadlineAdvice, formatMs } from './deadline';
+import { t, type Lang } from './i18n';
 import { bodyKey, createManifestBuilder, hashPayload, type Bodies } from './manifest';
 import type { ActivityEvent } from './hud';
 import { hasPacket, inContextIds, injectPacket, queryTexts, userTurnIndex, type InjectPosition } from './prompt';
@@ -40,6 +41,8 @@ export interface HostPort {
   warn(...args: unknown[]): void;
   debug(...args: unknown[]): void;
   now(): number;
+  /** The host's alert dialog (one global dialog: shown only after a reply, never during a request). */
+  alert?(message: string): void;
 }
 
 class DeadlineError extends Error {}
@@ -71,6 +74,10 @@ export interface LastRequest {
   packet: string;
   outcome: 'injected' | 'nothing-relevant' | 'failed';
   error?: string;
+  /** The deadline this request had. */
+  deadlineMs: number;
+  /** Cut at the deadline, but recall answered later: how long the whole request took (audit A-09). */
+  neededMs?: number;
 }
 
 export interface StatusInfo {
@@ -144,8 +151,9 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
   }
 
+  /** `onLate`: when this call is cut at the deadline, called with the time its answer arrives anyway. */
   async function call<T>(settings: Settings, path: string, body: unknown, deadline: number,
-                         method?: 'GET' | 'POST' | 'PUT'): Promise<T> {
+                         method?: 'GET' | 'POST' | 'PUT', onLate?: (at: number) => void): Promise<T> {
     const remaining = deadline - host.now();
     if (remaining <= 0) throw new DeadlineError(`deadline before ${path}`);
     const url = settings.sidecarUrl.replace(/\/+$/, '') + path;
@@ -155,14 +163,18 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new DeadlineError(`deadline during ${path}`)), remaining);
     });
+    const verb = method ?? (body === undefined ? 'GET' : 'POST');
+    const pending = host.request(verb, url, body, headers, remaining, settings.route);
     try {
-      const verb = method ?? (body === undefined ? 'GET' : 'POST');
-      const res = await Promise.race([host.request(verb, url, body, headers, remaining, settings.route), timeout]);
+      const res = await Promise.race([pending, timeout]);
       if (res.status < 200 || res.status >= 300) {
         const detail = (res.json as { detail?: unknown } | null)?.detail;
         throw new Error(`${path} -> HTTP ${res.status}${detail ? `: ${Array.isArray(detail) ? detail.join('; ') : String(detail)}` : ''}`);
       }
       return res.json as T;
+    } catch (error) {
+      if (error instanceof DeadlineError && onLate) pending.then(() => onLate(host.now()), () => {});
+      throw error;
     } finally {
       clearTimeout(timer);
     }
@@ -198,6 +210,12 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     let key: string | null = null;
     let chatId: string | null = null;
     let announced = false;
+    let failure: LastRequest | null = null;
+    let lateAt: number | null = null;
+    const late = (at: number) => {
+      lateAt = at;
+      if (failure) failure.neededMs = Math.round(at - started);
+    };
     try {
       if (mode !== 'model' || hasPacket(prompt)) return prompt; // aux request, or retry of an injected prompt (H2)
       settings = await host.settings();
@@ -231,7 +249,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         const outcome = cached.packet ? 'injected' : 'nothing-relevant';
         // A retry served from the miss cache keeps the failure on the status tab.
         if (!cached.failed) last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: cached.packet.length,
-          packet: cached.packet, outcome };
+          packet: cached.packet, outcome, deadlineMs: settings.deadlineMs };
         emit({ type: 'request-end', outcome, chars: cached.packet.length,
           conversationId: conversations.get(chat.id) ?? null });
         return injectPacket(prompt, cached.packet, settings.injectPosition, turn);
@@ -258,22 +276,24 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         in_context_ids: inContextIds(prompt, messages),
         budget_tokens: settings.reservedMemoryTokens,
         client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started },
-      }, deadline);
+      }, deadline, undefined, late);
       const packet = retrieved.freshness === 'fresh' ? retrieved.packet.text : '';
       remember(key, packet, SUCCESS_TTL_MS);
       host.debug('[NMOS] request done', { ms: Math.round(host.now() - started), manifestMs: Math.round(manifestMs),
         syncMs: Math.round(syncMs), retrieveMs: Math.round(host.now() - t2), packetChars: packet.length });
       const outcome = packet ? 'injected' : 'nothing-relevant';
-      last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, packet, outcome };
+      last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, packet, outcome,
+        deadlineMs: settings.deadlineMs };
       emit({ type: 'request-end', outcome, chars: packet.length, conversationId: synced.conversation_id ?? null });
       return injectPacket(prompt, packet, settings.injectPosition, turn);
     } catch (error) {
       // Cache the miss briefly so host retries of this request (H2) do not wait out the deadline again.
       if (key) remember(key, '', FAILURE_TTL_MS, true);
-      last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: 0, packet: '', outcome: 'failed',
-        error: error instanceof Error ? error.message : String(error) };
+      last = failure = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: 0, packet: '', outcome: 'failed',
+        error: error instanceof Error ? error.message : String(error), deadlineMs: settings?.deadlineMs ?? 0 };
+      if (lateAt !== null) failure.neededMs = Math.round(lateAt - started);
       if (announced) emit({ type: 'request-end', outcome: 'failed', chars: 0, error: last.error,
-        conversationId: (chatId && conversations.get(chatId)) || null });
+        deadlineMs: last.deadlineMs, conversationId: (chatId && conversations.get(chatId)) || null });
       host.warn('[NMOS] memory skipped for this request (fail open):', error instanceof Error ? error.message : error);
       return prompt;
     }
@@ -284,6 +304,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     void (async () => {
       const settings = await host.settings();
       if (!settings.enabled || !settings.sidecarUrl || !arg?.chat?.id) return;
+      adviseOnce(settings.language);
       emit({ type: 'background', conversationId: conversations.get(arg.chat.id) ?? null });
       const index = arg.messageIndex ?? -1;
       const message = index >= 0 ? arg.chat.message?.[index] : undefined;
@@ -296,6 +317,19 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         message_index: index,
       }, host.now() + settings.deadlineMs);
     })().catch((error) => host.debug('[NMOS] output notification failed:', error instanceof Error ? error.message : error));
+  }
+
+  /**
+   * Once per page, after a reply that went without memory because recall missed the deadline, say so in
+   * the host's dialog with the value to set (owner decision on audit A-09). The panel keeps the advice.
+   */
+  let alerted = false;
+  function adviseOnce(lang: Lang): void {
+    const advice = deadlineAdvice(last);
+    if (alerted || !host.alert || advice?.level !== 'over') return;
+    alerted = true;
+    const took = advice.tookMs === null ? '' : t(lang, 'deadline.took', { n: formatMs(advice.tookMs) });
+    host.alert(t(lang, 'deadline.alert', { d: formatMs(advice.deadlineMs), took, s: formatMs(advice.suggestMs) }));
   }
 
   /** Human-readable status for the settings menu (Korean first, English second). */

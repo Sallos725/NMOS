@@ -50,7 +50,9 @@ and 15,101 vectors, a warm generation took 3.14–3.29 s, because recall adds �
 (`docs/perf/scale.md`, "with extraction and embeddings on"; audit A-09). A chat with more facts per turn
 reads more.
 *Workaround:* raise **제한 시간(ms) / Deadline (ms)** in the panel's Settings tab (≈4,000 at 10,000
-messages with extraction and embeddings on; ≈5,000 at 15,000 messages). Otherwise those requests go without memory; the chat itself is unaffected.
+messages with extraction and embeddings on; ≈5,000 at 15,000 messages). The plugin tells you when: the
+Status tab shows the time taken and the value to set once a request uses 80 % of the deadline or misses it,
+and a notice follows the first reply that missed it on a page. Otherwise those requests go without memory; the chat itself is unaffected.
 Evidence: `docs/perf/scale.md` (real-host check), D24.
 
 **K2 — First generations in an unseen long chat go without memory.** The first sync of a chat NMOS
