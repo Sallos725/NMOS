@@ -35,7 +35,7 @@ from uuid import UUID
 import psycopg
 
 from . import spans
-from .packet import POLICIES, compile_lines
+from .packet import POLICIES, clean_text, compile_lines
 from .retrieval import RECORDED, RecallOptions, gather
 
 echo, echoed = spans.reuse, spans.reused
@@ -115,9 +115,11 @@ def _same(a: list[dict[str, Any]], b: list[dict[str, Any]]) -> bool:
 
 
 def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, policy: str | None = None,
-           known_at: datetime | None = None, **overrides: Any) -> dict[str, Any] | None:
+           known_at: datetime | None = None, query: str | None = None, budget: int | None = None,
+           **overrides: Any) -> dict[str, Any] | None:
     """Compile a recorded request again, as of its time, with its own recall options, generations and
-    budget; `policy` and `overrides` (RecallOptions fields) change what is being tested. `options` gives
+    budget; `policy`, `query` (a probe in place of the request's user message, as the request would have sent
+    it), `budget` (tokens) and `overrides` (RecallOptions fields) change what is being tested. `options` gives
     the embedder: vectors are searched only when it serves the trace's projection. Read-only."""
     t = _trace(conn, trace_id)
     if t is None:
@@ -142,12 +144,17 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     if overrides:
         opts = dataclasses.replace(opts, **overrides)
         notes.append("options changed: " + ", ".join(sorted(overrides)))
-    g = gather(conn, t["head_commit_id"], t["query"], t["previous_ai"] or "", set(t["in_context"] or []), opts,
-               upto=t["upto_position"], known_at=known_at or t["created_at"])
+    if query is not None:
+        query = clean_text(query)  # as the live request normalizes it
+        notes.append("query replaced")
+    g = gather(conn, t["head_commit_id"], t["query"] if query is None else query, t["previous_ai"] or "",
+               set(t["in_context"] or []), opts, upto=t["upto_position"], known_at=known_at or t["created_at"])
     if opts.embedder is not None and g.vector_note != "on":
         notes.append(f"vectors {g.vector_note}")  # an embedder that failed now cannot reproduce the request
-    c = compile_lines(g.ranked, t["budget_tokens"], state=g.state, threads=g.threads, facts=g.facts, policy=policy,
-                      lead=g.lead, note=g.note)
+    if budget is not None:
+        notes.append("budget changed")
+    c = compile_lines(g.ranked, t["budget_tokens"] if budget is None else budget, state=g.state, threads=g.threads,
+                      facts=g.facts, policy=policy, lead=g.lead, note=g.note)
     out = {"trace": str(t["id"]), "status": "ok", "policy": policy, "recorded_policy": t["policy"],
            "text": c.text, "tokens": c.tokens, "lines": c.ledger, "notes": notes}
     if policy == t["policy"] and not notes:
