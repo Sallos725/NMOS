@@ -13,8 +13,8 @@ matches and whose content is equal or reaches the thread match (trigram overlap 
 secret is often extracted again in later turns. A head is compared apart from the content because a shared
 head alone ("엘피 goal:") made two secrets of one character look alike. No match ends nothing and is reported
 as unmatched. Rule 1 holds only while the listed turn reads as it did when the reveal was extracted (the
-row's `turn_changed`, ADR 0033 amendment 2): an edit of that turn can make it a different secret, which the
-reveal did not report; only rule 2 can still match it.
+reveal's `listed_hash` against the secret's `turn_hash`, ADR 0033 amendment 2): an edit of that turn can make
+it a different secret, which the reveal did not report; only rule 2 can still match it.
 
 Nothing is stored: secrets follow head membership, the served extractions and entity resolution, so an edit
 or delete of the revealing turn restores the secret on the next read (invariant 7).
@@ -71,14 +71,14 @@ def matches(secret: str, reveal: str | None) -> bool:
     return _heads(sh, rh) and bool(rb) and (rb == sb or similarity(rb, sb) >= MATCH_MIN)
 
 
-def _hits(pool: list[dict[str, Any]], reveal: str | None, turn_changed: bool | None = None) -> list[dict[str, Any]]:
-    """Open secrets a reveal ends: the closest of its listed turn with the same head (rule 1), unless that turn
-    reads differently now than when the reveal was extracted, and every one the content rule matches (rule 2)."""
+def _hits(pool: list[dict[str, Any]], reveal: str | None, listed_hash: str | None = None) -> list[dict[str, Any]]:
+    """Open secrets a reveal ends: the closest of its listed turn with the same head (rule 1), while that turn
+    reads as it did when the reveal was extracted (`listed_hash`; None: not recorded), and every one the content
+    rule matches (rule 2)."""
     turn, rh, rb = _split(reveal)
     hits = [s for s in pool if matches(s["text"], reveal)]
-    if turn_changed:
-        return hits
-    same = [s for s in pool if turn is not None and s["turn"] == turn and rh is not None and _heads(_split(s["text"])[1], rh)]
+    same = [s for s in pool if turn is not None and s["turn"] == turn and rh is not None and _heads(_split(s["text"])[1], rh)
+            and (listed_hash is None or s.get("turn_hash") in (None, listed_hash))]
     if same:
         scored = [(similarity(_split(s["text"])[2], rb), s) for s in same]
         best = max(score for score, _ in scored)
@@ -120,13 +120,14 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None) -> tuple[list[
             kept = {}
             for name in a["hidden_from"]:
                 kept.setdefault(_who(r, name), name)
-            secrets.append({"id": a["id"], "text": secret_text(a), "turn": a.get("turn"), "position": a["position"],
+            secrets.append({"id": a["id"], "text": secret_text(a), "turn": a.get("turn"), "turn_hash": a.get("turn_hash"),
+                            "position": a["position"],
                             "host_logical_id": a.get("host_logical_id"), "holders": list(a.get("known_by") or []),
                             "kept_from": list(kept.values()), "ended": {}, "_kept": kept})
         elif reveals(a):
             used.add(a["id"])
             who = _who(r, a["subject"])
-            hit = _hits([s for s in secrets if who in s["_kept"]], a.get("value"), a.get("turn_changed"))
+            hit = _hits([s for s in secrets if who in s["_kept"]], a.get("value"), a.get("listed_hash"))
             if not hit:
                 unmatched.append(_ref(a))
             for s in hit:  # a secret this character already found out stays ended by the first reveal

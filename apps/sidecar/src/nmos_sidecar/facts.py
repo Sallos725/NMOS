@@ -39,7 +39,7 @@ WITH m AS (
     WHERE am.commit_id = %(head)s{upto}
 ),
 live AS (
-    SELECT e.id AS eid, e.extractor_key, m.position, m.turn, m.host_logical_id,
+    SELECT e.id AS eid, e.extractor_key, m.position, m.turn, m.host_logical_id, m.turn_hash,
            first_value(e.extractor_key) OVER (PARTITION BY m.unit
                ORDER BY e.extractor_key = %(key)s DESC, g.activated_at DESC, g.key) AS chosen
     FROM extraction e
@@ -53,13 +53,12 @@ SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.
        a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
        a.participants::text AS participants,
        l.position, l.turn, l.host_logical_id, l.extractor_key AS generation,
-       -- a reveal whose listed turn reads differently now (ADR 0033 amendment 2); NULL: not recorded
+       -- ADR 0033 amendment 2: a possible secret's turn hash, and the hash a reveal's listed turn had
+       CASE WHEN a.knowledge = 'limited' THEN l.turn_hash END AS turn_hash,
        CASE WHEN a.predicate = 'learned' THEN (
-           SELECT h->>'turn_hash' <> (SELECT t.turn_hash FROM m t WHERE t.turn = (h->>'turn')::int
-                                         AND t.turn_hash IS NOT NULL LIMIT 1)
-           FROM extraction x, jsonb_array_elements(x.hints->'secrets') h
+           SELECT h->>'turn_hash' FROM extraction x, jsonb_array_elements(x.hints->'secrets') h
            WHERE x.id = l.eid AND '[turn ' || (h->>'turn') || '] ' || (h->>'text') = a.value
-           LIMIT 1) END AS turn_changed
+           LIMIT 1) END AS listed_hash
 FROM live l
 JOIN assertion a ON a.extraction_id = l.eid
 WHERE l.extractor_key = l.chosen AND a.status = 'valid'

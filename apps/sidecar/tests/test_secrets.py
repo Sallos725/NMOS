@@ -66,14 +66,15 @@ def test_a_reveal_of_a_listed_turn_survives_that_turn_being_extracted_again_in_o
 
 
 def test_a_reveal_whose_listed_turn_was_edited_matches_by_content_only():
-    """ADR 0033 amendment 2: the turn reads differently than when the reveal was extracted (`turn_changed`)."""
+    """ADR 0033 amendment 2: the listed turn's hash when the reveal was extracted, against the turn's now."""
     listed = f"[turn 7] 엘피 goal: {PLAN}"
-    other = secret(7, value="다이아몬드 훔치기")
-    (s,), unmatched, _ = secrets([other, learned(21, text=listed, turn_changed=True)])
+    other = secret(7, value="다이아몬드 훔치기", turn_hash="h2")
+    (s,), unmatched, _ = secrets([other, learned(21, text=listed, listed_hash="h1")])
     assert s["open"] == ["블랑"] and [u["value"] for u in unmatched] == [listed]
-    (s,), unmatched, _ = secrets([other, learned(21, text=listed, turn_changed=False)])  # unchanged: rule 1
-    assert s["open"] == [] and unmatched == []
-    (s,), unmatched, _ = secrets([secret(7), learned(21, text=listed, turn_changed=True)])  # same secret: rule 2
+    for unchanged in ("h2", None):  # the same turn, or a reveal extracted before hashes were recorded: rule 1
+        (s,), unmatched, _ = secrets([other, learned(21, text=listed, listed_hash=unchanged)])
+        assert s["open"] == [] and unmatched == []
+    (s,), unmatched, _ = secrets([secret(7, turn_hash="h2"), learned(21, text=listed, listed_hash="h1")])  # rule 2
     assert s["open"] == [] and unmatched == []
 
 
@@ -113,7 +114,7 @@ def test_open_secrets_are_listed_for_named_people_and_leave_when_found_out():
     assert extraction.secret_hints(ctx, rows) == []  # nobody it concerns is named
     ctx["members"][0]["content"] = "블랑이 커피를 마셨다."
     assert extraction.secret_hints(ctx, rows) == [
-        {"text": f"엘피 goal: {PLAN}", "holders": ["엘피", "{{user}}"], "kept_from": ["블랑"], "turn": 7}]
+        {"text": f"엘피 goal: {PLAN}", "holders": ["엘피", "{{user}}"], "kept_from": ["블랑"], "turn": 7, "turn_hash": None}]
     assert extraction.secret_hints(ctx, [secret(7), learned(21)]) == []  # found out: no longer open
 
 
@@ -233,9 +234,17 @@ def goal_of(c, chat) -> dict:
     return next(f for f in facts(c, chat) if f["predicate"] == "goal")
 
 
-def reveal_rows(db) -> list[dict]:
+def served(db) -> list[dict]:
     head = db.execute("SELECT head_commit_id FROM conversation").fetchone()["head_commit_id"]
-    return [r for r in served_assertions(db, head, active_generation(db, "extract").key) if r["predicate"] == "learned"]
+    return served_assertions(db, head, active_generation(db, "extract").key)
+
+
+def reveal_rows(db) -> list[dict]:
+    return [r for r in served(db) if r["predicate"] == "learned"]
+
+
+def goal_row(db) -> dict:
+    return next(r for r in served(db) if r["predicate"] == "goal")
 
 
 def test_a_reveal_does_not_carry_over_to_a_different_secret_after_its_turn_is_edited(migrated, db):
@@ -249,7 +258,8 @@ def test_a_reveal_does_not_carry_over_to_a_different_secret_after_its_turn_is_ed
         step(c, migrated, chat, model, "Blanc found out: Elpi goal: watch the lecture.")
         step(c, migrated, chat, model, "next")
         assert [r["to"] for r in goal_of(c, chat)["revealed"]] == ["Blanc"]
-        assert [r["turn_changed"] for r in reveal_rows(db)] == [False]
+        (listed,) = [r["listed_hash"] for r in reveal_rows(db)]
+        assert listed is not None
         conv = next(x for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)["id"]
         assert c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["extract"] == 0  # in order
         chat.edit(0, "Elpi secretly plans to steal the diamond, hidden from Blanc.")
@@ -258,7 +268,7 @@ def test_a_reveal_does_not_carry_over_to_a_different_secret_after_its_turn_is_ed
         goal = goal_of(c, chat)
         assert goal["value"] == "steal the diamond"
         assert goal["hidden_from"] == ["Blanc"] and not goal.get("revealed")  # Blanc learned of the lecture only
-        assert [r["turn_changed"] for r in reveal_rows(db)] == [True]
+        assert [r["listed_hash"] for r in reveal_rows(db)] == [listed] and goal_row(db)["turn_hash"] != listed
         page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
         assert "Reveals that matched no open secret" in page
 

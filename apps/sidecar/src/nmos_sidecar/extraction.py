@@ -410,21 +410,11 @@ def secret_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = O
             names |= {norm(n) for n in (e["names"] if e else [name])}
         names = {n for n in names - r.persona_names if len(n) >= 2}
         if any(n in shown for n in names):
-            out.append({"text": s["text"], "holders": s["holders"], "kept_from": s["open"], "turn": s["turn"]})
+            # turn_hash: not shown to the model; stored with the hints, it tells the read side which content of that
+            # turn a reveal was about (ADR 0033 amendment 2)
+            out.append({"text": s["text"], "holders": s["holders"], "kept_from": s["open"], "turn": s["turn"],
+                        "turn_hash": s["turn_hash"]})
     return out[:limit]
-
-
-def with_turn_hashes(conn: psycopg.Connection, ctx: dict[str, Any], listed: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Each listed secret with the hash of its turn on the head the prompt was built from. Not shown to the model:
-    stored with the hints, it tells the read side which content of that turn a reveal was about (ADR 0033
-    amendment 2)."""
-    if not listed:
-        return listed
-    rows = conn.execute("SELECT DISTINCT turn, turn_hash FROM active_membership WHERE commit_id = %s"
-                        " AND turn = ANY(%s) AND turn_hash IS NOT NULL",
-                        (ctx["target"]["commit_id"], [s["turn"] for s in listed])).fetchall()
-    hashes = {r["turn"]: r["turn_hash"] for r in rows}
-    return [{**s, "turn_hash": hashes.get(s["turn"])} for s in listed]
 
 
 DESCRIBING = ("has_trait", "identity", "has_status")
@@ -605,7 +595,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         earlier = earlier_assertions(conn, ctx, gen.key)
         hints = entity_hints(conn, ctx, gen.key, limit, earlier) if limit > 0 else None
         promises = promise_hints(ctx, earlier)
-        secrets = with_turn_hashes(conn, ctx, secret_hints(ctx, earlier))
+        secrets = secret_hints(ctx, earlier)
         parsed, raw = complete(SYSTEM_PROMPT.format(registry=registry_prompt()),
                                build_prompt(ctx, hints, promises, secrets))
     items = parsed.get("assertions")
