@@ -11,6 +11,7 @@ This directory splits the recommended next work into two tracks.
 | B | [Phase 5+ semantic and narrative roadmap](TRACK-B-PHASE-5-PLUS.md) | Requires explicit owner authorization and a normative phase specification before implementation |
 | — | [Speech level and forms of address](SPEECH-AND-ADDRESS.md) (2026-09-26) | Decided (recommended answers); ADR 0028 |
 | — | [Stage 4: who knows what](STAGE-4-KNOWLEDGE.md) (2026-09-27) | Decided (recommended answers); `docs/phases/PHASE-10.md` |
+| — | [Original vision → stable: audit and proposal](ORIGINAL-VISION-TO-STABLE-2026-09-27.md) (2026-09-27, Korean) | Review only: capability gaps, reproduced correctness findings, proposed priorities and release gates; no phase or release authorization |
 
 The recommended order is:
 
