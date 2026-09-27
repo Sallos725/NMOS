@@ -214,7 +214,10 @@ conversation and partial coverage is shown as partial.
 **D21 — One normalized-text projection (ADR 0006).** `revision_text(revision, normalizer)` stores
 `clean_text()` output. Lexical recall, embedding, extraction and excerpting read it, and query text is
 normalized the same way. It is derived: written at ingest, backfilled at startup, rebuildable with
-`nmos-rebuild --text`. Raw `source_revision.content` is unchanged. Bounded processing of long messages
+`nmos-rebuild --text`. Raw `source_revision.content` is unchanged. Since `clean-v3` NMOS's own memory markup
+(the packet, or a line shaped like one of its `<Fact>`, `<Claim>`, `<Thread>`, `<Excerpt>`, keyed `<Item>` lines,
+spelled as the packet writes it) is dropped with its content, so a reply that echoes memory is not read as
+story (K27). Bounded processing of long messages
 (embedding 8 × 700 chars, extraction 6,000 target / 2,000 context chars) is recorded per revision and
 visible in the Inspector.
 

@@ -32,7 +32,8 @@ tag as its evidence (`하나 identity: 왕국의 공주`). The worker sends the 
 it sees `하나가 편지를 펼쳤다. 하나 identity: 왕국의 공주 편지에는 …`. The eval feeds the scene raw, with the
 tag, and a sharper rule that named `<Fact …>…</Fact>` "even in the middle of the narration" still gave 0/3
 (scratch run, not kept). Dropping memory-shaped markup with its content has to happen in the normalizer: a new
-`clean-v3` changes both the extractor and the embedding generation. Not done here (K27).
+`clean-v3` changes both the extractor and the embedding generation. Not done in `extract-v11`; the owner
+chose it afterwards, see `docs/perf/memory-poisoning.md`, "`clean-v3`" (K27).
 
 ## 2. Regression bars
 
