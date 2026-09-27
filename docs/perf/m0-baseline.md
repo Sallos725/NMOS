@@ -52,3 +52,26 @@ cd apps/sidecar && uv run python ../../tools/eval_rp.py <cases> --db <restored c
   voiced, a claim (ADR 0013), which does not replace the narrated feeling and was not placed. Step 6 (`because`).
 - **A secret a late turn marks is not placed** when the question does not share its words; the budget went to the
   stale promises above. Re-measured after step 3.
+
+## After step 3 (ADR 0038)
+
+Read side only (`resolve-v5`, one relationship history per pair, `packet-v5`), the same data, cases and extractor
+generation; `--policy packet-v5`. Forbidden phrases count only as current: the earlier version a `packet-v5` line
+names after "; before, turn N:" is past (the scorer's rule since this step; the baseline had no such lines).
+
+| Category | cases | passed | gold held | forbidden placed | mean tokens |
+|---|---:|---:|---:|---:|---:|
+| address | 2 | 2 | 2/2 | 0/2 | 770 |
+| goal | 1 | 0 | 0/2 | 0/5 | 787 |
+| irrelevant | 1 | 1 | — | 0/2 | 758 |
+| past | 1 | 1 | 1/1 | — | 774 |
+| promise | 1 | 1 | 1/1 | — | 759 |
+| relationship | 2 | 2 | 2/2 | — | 788 |
+| secret | 1 | 0 | 0/1 | — | 769 |
+| state | 2 | 0 | 0/2 | — | 776 |
+| why | 1 | 0 | 0/1 | — | 787 |
+| **all** | **12** | **7** | **6/12** | **0/9** | **775** |
+
+No category is worse than the baseline. Under `packet-v4` with the new fold "past" fell to 0 of 1: the baseline's
+pass came from the stale speech level, and the correct fold left no earlier version in the packet; `packet-v5` answers
+it from the version the current one replaced. Goals, the secret, identity and the "why" case are for later steps.

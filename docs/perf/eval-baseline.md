@@ -1,4 +1,4 @@
-# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5–8 cases 2026-09-24; Phase 9 2026-09-26; `packet-v2` 2026-09-26; Phase 10 2026-09-27)
+# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5–8 cases 2026-09-24; Phase 9 2026-09-26; `packet-v2` 2026-09-26; Phase 10 2026-09-27; Phase 11 2026-09-28)
 
 Deterministic tier of the RP memory evaluation. It gates CI (`apps/sidecar/tests/test_memory_eval.py`)
 and prints this table (`tools/eval_memory.py`).
@@ -31,7 +31,7 @@ and prints this table (`tools/eval_memory.py`).
   itself excluded). `lexical`: raw lexical recall (no extractor, no embeddings). `hybrid`: lexical +
   vectors. `full`: hybrid + facts. The last 6 messages are sent as `in_context_ids`, so memory must
   bring what is older. `full-v0` (since Phase 9): `full` compiled by `packet-v0`, the packet compiler
-  before ADR 0027; `full` uses the default, `packet-v4` since ADR 0036 (`packet-v1`, `-v2`, `-v3` before; the
+  before ADR 0027; `full` uses the default, `packet-v5` since ADR 0038 (`packet-v1` to `-v4` before; the
   table's first 35 cases are the same under each).
 
 Gold for the state cases is a fact line (e.g. `Hinata located in harbor`), which only `full` can
@@ -78,6 +78,8 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | addressed participant | event participants | **no** | **no** | **no** | yes | yes |
 | speech level in a crowded scene | standing facts | **no** | **no** | **no** | yes | yes |
 | speech level changed back | standing facts | **no** | **no** | **no** | yes | yes |
+| relationship changed the other way | standing facts | **no** | **no** | **no** | yes | yes |
+| what a relationship was before | standing facts | **no** | **no** | **no** | **no** | yes |
 | quote under a full budget | budget pressure | **no** | **no** | **no** | **no** | yes |
 | one line of a long message | budget pressure | **no** | **no** | **no** | **no** | yes |
 | a secret in front of the one it is kept from | secrets | n/a | n/a | n/a | **no** | yes |
@@ -91,11 +93,18 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 
 | Mode | gold reached | cases with stale memory | irrelevant packets | mean packet tokens |
 |---|---:|---:|---:|---:|
-| recent | 0/35 | 0 | — | 0 |
-| lexical | 2/35 | 0 | 0/1 | 112 |
-| hybrid | 3/35 | 0 | 0/1 | 137 |
-| full-v0 | 39/42 | 0 | 0/1 | 198 |
-| full | 42/42 | 0 | 0/1 | 197 |
+| recent | 0/37 | 0 | — | 0 |
+| lexical | 2/37 | 0 | 0/1 | 110 |
+| hybrid | 3/37 | 0 | 0/1 | 134 |
+| full-v0 | 40/44 | 0 | 0/1 | 197 |
+| full | 44/44 | 0 | 0/1 | 196 |
+
+Phase 11 step 3 (ADR 0038) added two relationship cases: the story makes a pair lovers and extraction records it
+in the other direction than their earlier relationship (K24). Before step 3 both were current, and the earlier
+one was stale. `packet-v5` names the relationship a standing fact replaced, so "what were they before" is
+answered in `full` and not by `packet-v0` (`full-v0`), which CI checks along with the budget-pressure and Private
+cases. "speech level changed back" checks the line's own statement, since `packet-v5` names the replaced speech
+level after it.
 
 Phase 10 (ADR 0033–0035) added seven secret cases. They need facts, so they run in `full` and `full-v0` only
 ("n/a" elsewhere): a secret with the one it is kept from in the scene goes to the Private section (`packet-v3`

@@ -23,6 +23,18 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     again the turns extracted before an earlier turn's secret, oldest first. Before, it skipped them.
   - A model answer without an `assertions` list fails the job (retried, then counted failed) instead of
     counting as a turn with nothing to extract (G3; in every release since `v0.1.0-beta.1`).
+- **Phase 11 (Stage 5, part 1) is in progress** (`docs/phases/PHASE-11.md`, approved 2026-09-28; no release decided):
+  - M0, an evaluation on a restored copy of the owner's chats (`tools/eval_rp.py`, numbers only in
+    `docs/perf/m0-baseline.md`): 5 of 12 on the Phase 10 code, 7 of 12 after step 3.
+  - **A relationship has one history per pair** (ADR 0038, K24). A change the extraction records in the other
+    direction ("카이토 → 유이: 연인" after "유이 → 카이토: 같은 반 친구") replaces the old one when either is symmetric
+    (friends, lovers, classmates…); a directed pair ("엄마", "자녀") keeps both. Feelings and speech levels stay per
+    direction.
+  - **The persona's full name is the persona** (`resolve-v5`): "미즈키 유우마" for the persona "유우마". One chat was two
+    people, so old speech levels stayed current and promises made to both never closed.
+  - **`packet-v5` (new default) names what a relationship, feeling or speech level replaced**, with its turn
+    ("…: 연인; before, turn 1: …: 같은 반 친구"), so "how did they stand before" has an answer. `NMOS_PACKET_POLICY`
+    keeps the earlier policies.
 - **A saved API key is sent only to the host it was saved for** (review of an external analysis, 2026-09-27).
   `/v1/config/test` and `/v1/config/models` sent the saved key to whatever URL the request named, and saving an
   endpoint on another host kept the key for it, so anyone who could reach the settings API could have the key sent

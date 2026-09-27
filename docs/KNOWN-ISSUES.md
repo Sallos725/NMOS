@@ -32,7 +32,7 @@ without a PocketRisu change.
 | K21 | API keys and the auth token are stored in plain text | Security | host (H12) |
 | K22 | What becomes a fact depends on the extraction model's labels | Memory | measured per model (`docs/perf/phase5-extraction.md`, `phase7-extraction.md`, `phase8-extraction.md`) |
 | K23 | A promise stays open until the story keeps or breaks it in words extraction recognizes | Memory | beta.14 (ADR 0019); owner repair: Track B, B7 |
-| K24 | A relationship change can leave the earlier relationship or feeling current | Memory | measured in Phase 8 (report only); a later Track B decision |
+| K24 | A relationship change recorded under the other predicate leaves both lines current | Memory | the direction case closed on `main` (ADR 0038, unreleased); the predicate case shown with turns by design |
 | K25 | A speech level or form of address can still be missed or cut | Memory | ranking (ADR 0026) and `addresses` (ADR 0028); turns before `extract-v10`: "Extract all history" |
 | K26 | The packet's token estimate over-counts Korean, so the reserve is under-used | Recall | reduced by `packet-v2` (ADR 0032, owner decision); still conservative by design |
 | K27 | Before `extract-v11` / `clean-v3`: an OOC note or memory-like markup inside a reply could become a fact | Memory | fixed on `main`, unreleased (audit A-12); older turns: "Extract all history" |
@@ -158,14 +158,14 @@ Inspector lists it under "matching no open promise"). An open promise reaches th
 its maker or recipient is mentioned, at most three at a time. *Workaround:* "Extract all history" for
 older turns; owner repair (close a promise by hand) is Track B, B7.
 
-**K24 — A relationship change can leave the old one current.** `relationship` and `feels_toward` are
-versioned per direction (subject → object) and per predicate. When the story changes a relationship
-but extraction records the new one in the other direction ("카이토 → 유이: 연인" after "유이 → 카이토:
-같은 반 친구") or under the other predicate (a reconciliation recorded as `relationship` while the
-earlier anger was `feels_toward`), the earlier fact stays current beside the new one. The Phase 8
-relationship report measured it in 2 of 9 runs; the change itself was extracted in 9 of 9
-(`docs/perf/phase8-extraction.md`). There is no inverse or symmetry rule and no link between the two
-predicates. *Workaround:* none automatic; the Inspector shows both facts with their turns.
+**K24 — A relationship change recorded under the other predicate leaves both lines current.** Since ADR 0038
+(Phase 11, on `main`, unreleased) a `relationship` has one history per pair: a change recorded in the other
+direction ("카이토 → 유이: 연인" after "유이 → 카이토: 같은 반 친구") replaces the old one when either is symmetric
+(friends, lovers, classmates…), and the packet names the replaced one with its turn (`packet-v5`). Before it, both stayed
+current (Phase 8: 2 of 9 runs, `docs/perf/phase8-extraction.md`). What remains is by design: a reconciliation
+recorded as `relationship` while the earlier anger was `feels_toward` leaves both lines, each with its turn, because a
+feeling can outlive a relationship change (PHASE-11 Q5). A directed pair ("엄마" and "자녀") keeps both directions.
+*Workaround:* none needed for the direction case; the Inspector shows both lines and their turns.
 
 **K25 — Speech level can still be missed or cut.** Since `extract-v10` (ADR 0028) a settled speech level
 or form of address is its own fact (`addresses`, one per direction) and ranks with relationships (ADR 0026).

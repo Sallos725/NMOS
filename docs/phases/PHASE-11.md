@@ -104,9 +104,11 @@ generation):
 
 ## Steps (one pull request each)
 
-1. This document, approved.
-2. M0: the evaluation tool, the public synthetic categories, the baseline.
-3. Relationship history per pair and the persona's full name (ADR, read side).
+1. This document, approved. **Done** (#122).
+2. M0: the evaluation tool, the public synthetic categories, the baseline. **Done** (#124).
+3. Relationship history per pair and the persona's full name (ADR, read side). **Done** (ADR 0038): `resolve-v5`,
+   and `packet-v5` (default), which names what a standing fact replaced: without it, fixing the fold removed the
+   only answer to M0's "past" case. M0 5 → 7 of 12.
 4. `extract-v13`: OPEN THREADS, `resolved`, the new predicates, `because` (ADR).
 5. Threads at read time and the packet's thread section.
 6. Explicit links at read time, packet and Inspector.
