@@ -86,7 +86,7 @@ generation):
 - [ ] Every existing test and memory-evaluation case passes; no stale memory in any mode; `packet-v4` traces
       still replay.
 - [x] M0 exists, with its baseline on `main` recorded before step 3 (numbers only in the repository):
-      `docs/perf/m0-baseline.md`, 5 of 12 owner-confirmed cases.
+      `docs/perf/m0-baseline.md`: 13 of 28 owner-confirmed cases (5 of the first 12).
 - [ ] Synthetic cases in CI for each thread type (opened, resolved, deleted, edited back), a "why" question
       answered from a stated cause, a relationship changed in the other direction (K24), and an irrelevant old
       event kept out.
@@ -108,7 +108,7 @@ generation):
 2. M0: the evaluation tool, the public synthetic categories, the baseline. **Done** (#124).
 3. Relationship history per pair and the persona's full name (ADR, read side). **Done** (ADR 0038): `resolve-v5`,
    and `packet-v5` (default), which names what a standing fact replaced: without it, fixing the fold removed the
-   only answer to M0's "past" case. M0 5 → 7 of 12.
+   only answer to M0's "past" case. M0 5 → 7 of 12; 13 → 15 of the 28 owner-confirmed cases.
 4. `extract-v13`: OPEN THREADS, `resolved`, the new predicates, `because` (ADR).
 5. Threads at read time and the packet's thread section.
 6. Explicit links at read time, packet and Inspector.

@@ -41,14 +41,17 @@ Closes K24's direction case.
 5. **`packet-v5` (default): what a standing fact replaced.** `packet-v4` plus, on a relationship, feeling or speech
    level line, the latest earlier statement of the same predicate with another value (for a relationship, either
    direction), with its turn: `카이토 relationship 유이: 연인; before, turn 1: 유이 relationship 카이토: 같은 반 친구`.
-   A denial is not named as what it was. `packet-v4` and earlier render their lines as before.
+   When the earliest earlier value differs from that one, the line names it too ("; first, turn N: …"): "what did
+   he call her at first" needs it. A denial is not named as what it was. `packet-v4` and earlier render their lines
+   as before.
 
 ## Consequences
 
 - K24's direction case is closed. Its predicate case (a reconciliation recorded as `relationship` while the anger
   was `feels_toward`) is not merged by design: both lines show their turns, and the newer relationship names the
   older one.
-- M0 on the restored backup (read side only, the current extractor generation): 5 → 7 of 12; both speech-level cases
+- M0 on the restored backup (read side only, the current extractor generation): 5 → 7 of the first 12 cases, 13 → 15 of
+  the 28 the owner confirmed later; both speech-level cases
   pass and no forbidden phrase is placed as current (`docs/perf/m0-baseline.md`, step 3). The M0 scorer and the
   memory evaluation count a phrase named after "; before, turn N:" as past, not as current or stale.
 - A line with a replaced version costs more tokens; M0's mean packet stayed at 775 of 800.
