@@ -665,7 +665,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     lang=inspector.lang_of(lang), embed=embed, claims=view["claims"],
                                     other=view["other"], entities=view["entities"], ambiguous=view["ambiguous"],
                                     conflicts=view["conflicts"], items=view["items"], threads=view["threads"],
-                                    unmatched=view["unmatched"],
+                                    unmatched=view["unmatched"], secrets=view["secrets"],
+                                    unrevealed=view["unrevealed"],
                                     packet=audit.audit(conn, traces[0]["id"]) if traces else None)
 
     def inspector_character_html(conv_id: UUID, entity_id: UUID, request: Request, token: str | None,

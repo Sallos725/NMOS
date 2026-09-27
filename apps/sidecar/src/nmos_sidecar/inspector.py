@@ -135,7 +135,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "lk.claim": ("주장", "claim"), "lk.excerpt": ("원문", "excerpt"),
     "pk.placed": ("들어감", "placed"), "pk.budget": ("예산 부족", "no budget"), "pk.state_cap": ("상태 상한", "state cap"),
     "pk.repeats": ("사실과 중복", "repeats a fact"), "pk.restates": ("앞 줄과 같은 내용", "says an earlier line again"),
-    "lk.secret": ("비밀", "secret"), "fits_at": ("예산 {n}이면 모두", "all at {n}"),
+    "fits_at": ("예산 {n}이면 모두", "all at {n}"),
     "pk.short": ("한 문장으로 줄임", "shortened to one sentence"), "pk.cut": ("잘라서 넣음", "cut to fit"),
     "rp.ok": ("있음", "present"), "rp.pending": ("아직 없음", "not yet"), "rp.changed": ("이후 앞부분이 바뀜", "story changed since"),
     "rp.not_a_reply": ("응답 아님", "not a reply"), "rp.not_recorded": ("원장 이전 기록", "recorded before the ledger"),
@@ -154,6 +154,28 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
                    "Knowledge scopes are labels from the extraction model and may be wrong."),
     "who_claims": ("주장 (이 인물이 했거나 이 인물에 대한)", "Claims (by or about this character)"),
     "who_other": ("실제가 아닌 단언", "Not actual"),
+    # secrets (PHASE-10 step 6, ADR 0033)
+    "toc.secrets": ("비밀", "Secrets"), "toc.unrevealed": ("맞는 비밀 없는 발견", "Unmatched reveals"),
+    "toc.found_out": ("알게 된 비밀", "Found out"),
+    "secrets": ("비밀 (누구에게 숨기는지, 누가 언제 알게 됐는지)", "Secrets (kept from whom, who found out and when)"),
+    "unrevealed": ("알게 됐다는 보고 중 맞는 비밀이 없는 것", "Reveals that matched no open secret"),
+    "found_out": ("이 인물이 알게 된 비밀", "Secrets this character found out"),
+    "h.secret": ("비밀", "Secret"), "h.holders": ("아는 인물", "Known by"), "h.kept_from": ("숨기는 상대", "Kept from"),
+    "h.who": ("인물", "Who"), "h.listed": ("보고된 비밀", "Reported secret"), "h.evidence": ("근거", "Evidence"),
+    "h.found": ("알게 된 턴", "Found out in turn"),
+    "sec.open": ("아직 모름", "does not know yet"), "sec.ended": ("{turn}턴에 알게 됨", "found out in turn {turn}"),
+    "sec.note": ("추출 모델이 붙인 표시라 틀릴 수 있습니다. 같은 비밀이 여러 턴에 다시 기록되면 줄도 여러 개입니다. 알게 된 턴을 "
+                 "지우거나 고치면 비밀이 다시 열립니다.",
+                 "Marks from the extraction model may be wrong. A secret extracted again in later turns has a line for "
+                 "each. Deleting or editing the turn that revealed it opens it again."),
+    "unrevealed_note": ("추출 모델이 누군가 비밀을 알게 됐다고 보고했지만, 그 인물에게 숨긴 열린 비밀 중 맞는 것이 없었습니다. "
+                        "아무 비밀도 끝내지 않았습니다.",
+                        "The extraction model reported someone finding out a secret, but no open secret kept from them "
+                        "matched. Nothing was ended."),
+    "scene": ("장면 인물: {cast} · 기억 모드: {mode}", "Scene: {cast} · memory mode: {mode}"),
+    "mode.default": ("기본", "default"), "mode.strict": ("엄격", "strict"), "mode.narrator": ("1인칭 화자 {n}", "narrator {n}"),
+    "mode.withheld": ("모드로 빠지거나 바뀐 줄 {n}", "{n} withheld by the mode"),
+    "lk.secret": ("비밀", "secret"),
     # stored values, shown translated (the raw value stays in the tooltip)
     "p.located_in": ("위치", "located in"), "p.has_status": ("상태", "status"), "p.identity": ("정체", "identity"),
     "p.has_trait": ("특징", "trait"), "p.relationship": ("관계", "relationship"), "p.feels_toward": ("감정", "feels toward"),
@@ -440,6 +462,36 @@ def _unmatched_table(unmatched: list[dict[str, Any]], lang: str) -> str:
                    _v(u.get("value")), _turn(u)] for u in unmatched[:100]])
 
 
+def _secret_status(s: dict[str, Any], lang: str) -> str:
+    """Per character it is kept from: still kept, or found out (turn; the evidence in the tooltip)."""
+    out = []
+    for name in s["kept_from"]:
+        ended = s["ended"].get(name)
+        if ended is None:
+            out.append(f"{_v(name)}: <span class=\"warn\">{_v(_t(lang, 'sec.open'))}</span>")
+        else:
+            turn = ended["turn"] if ended.get("turn") is not None else ended.get("position")
+            out.append(f"<span title=\"{_v(ended.get('evidence') or '')}\">{_v(name)}: "
+                       f"{_v(_t(lang, 'sec.ended').format(turn=turn))}</span>")
+    return "<br>".join(out)
+
+
+def _secrets_table(secrets: list[dict[str, Any]], lang: str) -> str:
+    """A chat's secrets, newest first (PHASE-10 step 6, ADR 0033): holders, whom it is kept from, the turn that
+    made it, and per character whether and when they found out."""
+    return (table([_t(lang, k) for k in ("h.secret", "h.holders", "h.kept_from", "h.turn", "h.status")],
+                  [[_v(s["text"]), _v(", ".join(s["holders"])), _v(", ".join(s["kept_from"])), _turn(s),
+                    _secret_status(s, lang)] for s in secrets[:100]])
+            + f"<p class=\"muted\">{_v(_t(lang, 'sec.note'))}</p>")
+
+
+def _unrevealed_table(unrevealed: list[dict[str, Any]], lang: str) -> str:
+    return (table([_t(lang, k) for k in ("h.who", "h.listed", "h.turn", "h.evidence")],
+                  [[_v(u["subject"]), _v(u.get("value")), _turn(u), _v(u.get("evidence") or "")]
+                   for u in unrevealed[:100]])
+            + f"<p class=\"muted\">{_v(_t(lang, 'unrevealed_note'))}</p>")
+
+
 def _conflicts_table(conflicts: list[dict[str, Any]], lang: str) -> str:
     return table([_t(lang, k) for k in ("h.fact", "h.turn", "h.against", "h.turn")],
                  [[_v(c["text"]), _turn(c), _v(fact_line_text(c["against"])), _turn(c["against"])]
@@ -488,7 +540,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            entities: list[dict[str, Any]] | None = None, ambiguous: list[dict[str, Any]] | None = None,
            conflicts: list[dict[str, Any]] | None = None, items: list[dict[str, Any]] | None = None,
            threads: list[dict[str, Any]] | None = None, unmatched: list[dict[str, Any]] | None = None,
-           packet: dict[str, Any] | None = None) -> str:
+           packet: dict[str, Any] | None = None, secrets: list[dict[str, Any]] | None = None,
+           unrevealed: list[dict[str, Any]] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -509,6 +562,10 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         parts.append(("threads", t("threads"), len(threads), _threads_table(threads, lang), True))
     if unmatched:
         parts.append(("unmatched", t("unmatched"), len(unmatched), _unmatched_table(unmatched, lang), True))
+    if secrets:
+        parts.append(("secrets", t("secrets"), len(secrets), _secrets_table(secrets, lang), True))
+    if unrevealed:
+        parts.append(("unrevealed", t("unrevealed"), len(unrevealed), _unrevealed_table(unrevealed, lang), True))
     if facts:
         parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
     if items:
@@ -573,7 +630,16 @@ def _packet_section(packet: dict[str, Any], trace: dict[str, Any], lang: str) ->
         if e.get("possible_leak"):
             echo += f" <span class=\"warn\">{_v(t('leak'))}</span>"
         rows.append([chip(lang, "lk", e["kind"]), _v(e.get("turn")), _v(e.get("text")), outcome, _v(e.get("tok")), echo])
-    return (f"<p class=\"muted\">{intro}</p>"
+    timings, options = trace.get("latency_ms") or {}, trace.get("recall_options") or {}
+    scene = ""
+    if "scene_cast" in timings:  # recorded since packet-v3 (ADR 0034) and the memory mode (ADR 0035)
+        mode = [t("mode.strict")] if options.get("strict") else []
+        mode += [t("mode.narrator").format(n=options["narrator"])] if options.get("narrator") else []
+        if timings.get("memory_mode_withheld"):
+            mode.append(t("mode.withheld").format(n=timings["memory_mode_withheld"]))
+        scene = (f"<p class=\"muted\">{_v(t('scene').format(cast=', '.join(timings['scene_cast']) or '—',
+                                                          mode=' · '.join(mode) or t('mode.default')))}</p>")
+    return (f"<p class=\"muted\">{intro}</p>" + scene
             + table([t(k) for k in ("h.kind", "h.turn", "h.text", "h.outcome", "h.tokens", "h.echo")], rows)
             + f"<p class=\"muted\">{_v(t('packet_echo'))}</p>")
 
@@ -622,6 +688,7 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
     takes_part = [f for f in facts if not involves(f) and f not in knows
                   and any(me(p.get("entity")) for p in f.get("participant_entities") or [])]
     hidden = [f for f in facts if among(f.get("hidden_from"))]
+    found = [s for s in view.get("secrets", []) if among(list(s["ended"]))]
     claims = [c for c in view["claims"] if norm(c.get("asserted_by")) in names or involves(c)]
     other = [a for a in view["other"] if involves(a)]
     ids = {f["id"] for f in mine}
@@ -654,6 +721,13 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
         parts.append(("knows", t("knows"), len(knows), knowledge(knows), True))
     if hidden:
         parts.append(("hidden", t("hidden"), len(hidden), knowledge(hidden), True))
+    if found:
+        def when(s: dict[str, Any]) -> dict[str, Any]:
+            return next(e for n, e in s["ended"].items() if norm(n) in names)
+        parts.append(("found_out", t("found_out"), len(found), table(
+            [t(k) for k in ("h.secret", "h.holders", "h.turn", "h.found", "h.evidence")],
+            [[_v(s["text"]), _v(", ".join(s["holders"])), _turn(s), _turn(when(s)), _v(when(s).get("evidence") or "")]
+             for s in found[:100]]), True))
     if claims:
         parts.append(("claims", t("who_claims"), len(claims), _claims_table(claims, lang), True))
     if other:

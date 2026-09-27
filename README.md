@@ -104,6 +104,8 @@ language after a page reload.
   generating in it again starts a new NMOS conversation. On an entity's page, **Same as another entity**
   joins it with another entity of the same type when the story never linked the two names (e.g. someone
   shown without a name and named later); **Undo** takes a join back. Joins survive a rebuild.
+  A conversation page lists the chat's **Secrets** (who knows, kept from whom, who found out and when), and the
+  last packet's section names the scene's characters and memory mode.
   A conversation page also has a **Memory mode** card for that chat (ADR 0035): **Strict** gives only what
   everyone in the scene knows (a secret becomes "something known to A, not known to B"; fewer leaks, but its
   holder forgets it too), and **First-person narrator** leaves out what the narrator is not shown to know.
