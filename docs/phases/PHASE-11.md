@@ -1,24 +1,26 @@
-# Phase 11 — Narrative Engine (Stage 5)
+# Phase 11 — Narrative Engine, part 1 (Stage 5)
 
-> **Status: draft, awaiting owner approval. Not authorized for implementation.** Stage 5 of `docs/ROADMAP-1.0.md`
-> (original §24–26, §31–37; Track B, B3 remainder). The owner chose Stage 5 next, with the M0 evaluation first,
-> once G1–G3 were fixed (2026-09-28, R1). Nothing below is built until the owner answers the questions.
+> **Status: approved 2026-09-28 (owner), in progress.** Stage 5 of `docs/ROADMAP-1.0.md` (original §24–26,
+> §31–37; Track B, B3 remainder), part 1 of 2. The owner chose Stage 5 next, with the M0 evaluation first, once
+> G1–G3 were fixed (R1), and answered every question below with the recommended answer, except Q0's release:
+> none is planned yet.
 
-## Questions (recommended answers first)
+## Questions and answers
 
-| # | Question | Recommended answer | Alternatives |
+| # | Question | Answer | Alternatives not taken |
 |---|---|---|---|
-| Q0 | One phase or two? | **Two phases, one milestone (`0.3.0`).** Phase 11: M0, relationships, threads, explicit links (one extractor generation). Phase 12: summaries and character state (a summary projection, no extractor change). Each is reviewable and measured on its own. | One phase for all of Stage 5. |
-| Q1 | M0: where do the real-chat questions come from? | **A restored copy of one of the owner's `pg_dump` backups** (`nmos-backups/`), in the test Postgres, read-only; the questions and gold answers are written with the owner and stay outside the repository, like the Phase 10 cases; reports carry numbers only. | Only synthetic cases; questions drafted from aggregates without chat text. |
-| Q2 | Which open threads (R3)? | **A first subset: goal, question (a mystery or an unanswered question), threat, debt**, beside the existing promise. Meeting stays a promise with a time; a missing item stays item whereabouts (Phase 6). | All nine types of §34. |
-| Q3 | How does a thread end? | **Like a promise (ADR 0019):** the prompt lists OPEN THREADS; a new `resolved` predicate names one by its text with an outcome (achieved, abandoned, failed, answered, averted, paid). Text matching, restatement and "matching nothing" as in ADR 0019. Promise handling does not change. | A thread closes by age; by hand only (Stage 6). |
-| Q4 | Which links between events? | **Only explicit ones:** a resolution links the resolving turn to the opening turn (fulfills, resolves, breaks, reveals); a stated cause (`because`, the cause as the text gives it) on `event`, `feels_toward`, `relationship`, `has_status` and `goal`, resolved at read time to the most similar earlier event of the same participants, else kept as text. No inferred causality. | Also model-inferred links (pending until Stage 6's verifier). |
-| Q5 | Relationships (K24)? | **Read side, no extractor change:** one history per pair; a declared set of symmetric relationships (friends, lovers, siblings, classmates, rivals, colleagues, partners…) ends the older one in both directions; `feels_toward` stays per direction and is shown with its turn next to the pair's newer relationship, never silently closed. ADR with the symmetric table. | Close an older `feels_toward` when the pair's relationship changes (a feeling can outlive a relationship change: rejected by default). |
+| Q0 | One phase or two? | **Two phases.** Phase 11: M0, relationships, threads, explicit links (one extractor generation). Phase 12: summaries and character state (a summary projection, no extractor change; its own spec). **No release decided** (owner: on hold). | One phase for all of Stage 5; `0.3.0` after both. |
+| Q1 | M0: where do the real-chat questions come from? | **A restored copy of one of the owner's `pg_dump` backups** (`nmos-backups/`), in the test Postgres, read-only. Questions and gold answers are written with the owner and stay outside the repository, like the Phase 10 cases; reports carry numbers only. | Only synthetic cases. |
+| Q2 | Which open threads (R3)? | **Goal, question (a mystery or an unanswered question), threat, debt**, beside the existing promise. A meeting stays a promise with a time; a missing item stays item whereabouts (Phase 6). | All nine types of §34; goals only. |
+| Q3 | How does a thread end? | **Like a promise (ADR 0019):** the prompt lists OPEN THREADS; a new `resolved` predicate names one by its text with an outcome (achieved, abandoned, failed, answered, averted, paid). Text matching, restatement and "matching nothing" as in ADR 0019; promise handling does not change. (Recommended; the owner raised no objection.) | By age; by hand only (Stage 6). |
+| Q4 | Which links between events? | **Only explicit ones:** a resolution links the resolving turn to the opening turn (fulfills, resolves, breaks, reveals); a stated cause (`because`, as the text gives it) on `event`, `feels_toward`, `relationship`, `has_status` and `goal`, resolved at read time to the most similar earlier event of the same participants, else kept as text. No inferred causality. | Model-inferred links marked as estimates. |
+| Q5 | Relationships (K24)? | **Read side, no extractor change:** one history per pair; a declared set of symmetric relationships (friends, lovers, siblings, classmates, rivals, colleagues, partners…) ends the older one in both directions; `feels_toward` stays per direction and is shown with its turn next to the pair's newer relationship, never silently closed. ADR with the symmetric table. | A relationship change also ends the pair's earlier feelings. |
 | Q6 | Story time (R4)? | **After 1.0.** Turns stay the time axis; "three days later" is text. | In this stage. |
-| Q7 | Which extraction models measure it? | **The owner's `gemma4:31b-cloud` and `deepseek-v4.1-flash`** (the two used since Phase 5), 3 runs per synthetic Korean scene; any paid run's budget agreed first. | One model. |
-| Q8 | Summaries (Phase 12, decided now so Phase 11 leaves room) | **Scene summaries** of fixed windows (8 turns once complete) and a rolling "story so far" rebuilt from them, by the worker with the extraction model, stored as a projection keyed by its own generation (rebuildable, like embeddings), in a `<Story>` section with its own share of the budget. Arcs and episodes after 1.0. | Episodes and arcs too; no summaries. |
+| Q7 | Which extraction models measure it? | **`gemma4:31b-cloud` (the owner's) and `deepseek-v4.1-flash`**, both through the local Ollama, 3 runs per synthetic Korean scene, 2 workers (429s). | `gemma4` only. |
+| Q8 | Summaries (Phase 12) | **Direction accepted with Q0:** scene summaries of fixed windows and a rolling "story so far", as a rebuildable projection with its own generation, in a `<Story>` section with its own budget share. Detailed in `PHASE-12.md`. | Episodes and arcs too. |
+| — | Rolling out `extract-v13` | **The owner is told the re-extraction's size before step 4 merges** and pulls `:edge` themselves; the backup is taken first. | Hold every step off production until the end. |
 
-Release: `0.3.0` when Stage 5's done criteria are met (AGENTS.md §13); none at the end of Phase 11 alone.
+Release: none decided (owner, 2026-09-28).
 
 ## Goal
 
@@ -74,7 +76,7 @@ generation):
 - Inferred causality, a causal graph store, graph queries.
 - Story time (Q6, R4); style and procedural memory (after 1.0).
 - Owner repair of threads or links by hand (Stage 6).
-- Any release.
+- Any release (none decided, Q0).
 
 ## Acceptance criteria
 
@@ -108,7 +110,7 @@ generation):
 8. Evaluation tiers (each paid run approved first), real-host smoke, upgrade, documentation.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13). Step 4 re-extracts each chat's recent window
-when production pulls it: the owner is told before it merges.
+when production pulls it: the owner is told its size before it merges, and pulls it themselves after a backup.
 
 ## Stop conditions
 
