@@ -75,12 +75,41 @@ working through an append, a recall that replays as recorded and an edit; its re
 error under their own policy; an upgraded chat has the default memory mode and takes another; a recall
 reports what the budget left out.
 
-## 6. Response-model tier (pending the owner's runs)
+## 6. Response-model tier (the owner's runs, 2026-09-27)
 
-`tools/eval_secrets.py` takes a case directory outside the repository (the owner's real requests, the
-secrets to watch), compiles each request's packet again per condition (a policy, strict mode or a narrator),
-sends each to an OpenAI-compatible endpoint or to Gemini on Vertex AI with hard limits on calls, reported
-spend and prompt tokens, and reports numbers only: replies, watched secrets echoed, and the reviewer's labels
-(leak, slip, recall, kept). Checked without paid calls: packets rebuilt for the pilot's turn-52 scene on the
-restored copy (`packet-v2`, `packet-v4`, strict), a Gemini request body's packet replaced, and two calls to a
-local model that stopped at the call limit.
+The pilot's scenes (`docs/perf/stage4-leak-pilot.md`), rebuilt with `tools/eval_secrets.py` from the restored copy
+with `extract-v12` facts and an 800-token budget. The requests are the pilot's own (Opus: the host's logged
+requests; Gemini: host-rendered 누렁이Gemini prompts), with only the packet replaced. C2: the mother asks what the
+daughter and the user whispered about (the plan to watch her lecture, kept from her). D1: the user asks the
+daughter to go and hug her mother (a promise to hug her, kept from her; in the Opus request it is in the packet
+only, in Gemini's also in the transcript). The owner ran every call with their own keys; one reader judged the
+replies by the pilot's definitions (a leak is words or actions that tell a character it is kept from; omniscient
+narration of thoughts is not; a holder's own slip is reported apart, Q4).
+
+Leak / slip or near miss / the holder shows they remember it, per scene and condition:
+
+| Model, scene | `packet-v2` | `packet-v4` (default) | `packet-v4` strict |
+|---|---|---|---|
+| Opus 5.5, C2 ×3 | 0 / 1 / 3 | 0 / 2 / 3 | 0 / 0 / 3 |
+| Opus 5.5, D1 ×3 | 0 / 2 / 2 | 0 / 2 / 3 | 0 / 0 / **0** |
+| Gemini 3.1 Pro, C2 third person ×3 | 0 / 0 / 1 | 0 / 1 / 2 | 0 / 1 / 1 |
+| Gemini 3.1 Pro, D1 third person ×3 | 0 / 0 / 1 | 0 / 0 / **0** | 0 / 0 / 0 |
+| Gemini 3.1 Pro, D1 user first person ×3 | — | 0 / 0 / 1 | — |
+
+- **No leak in 39 replies**, in any condition. The pilot's `packet-v2` had one Opus leak in D1 (3 runs) when the
+  promise had no `hidden_from`; `extract-v12` now marks it, and neither `packet-v2` nor `packet-v4` leaked.
+- **Slips are the daughter's**: in D1 she tells the user, loudly in the hallway, that this is their plan; in C2 she
+  starts to say the lecture's day or that "it's a secret" and stops. None was the content told to the mother.
+  Under `packet-v4` Opus slipped about as often as under `packet-v2` (4 and 3 of 6).
+- **Opus remembers under `packet-v4`**: 6 of 6, as the pilot's best condition (A′, 3 of 3 in D1).
+- **Strict mode forgets what only the packet held**: Opus D1 0 of 3, as the pilot's B′. C2's plan is in the
+  host's own transcript, so the holders recall it anyway (3 of 3).
+- **Gemini narrated the holder's memory less than in the pilot**: D1 third person 1 of 3 under `packet-v2` and 0
+  of 3 under `packet-v4`, where the pilot saw 2 of 2 under both of its packets; C2 1 and 2 of 3 (pilot 2 of 2).
+  Gemini shows memory only in narration, and in D1 the daughter hugs her mother either way; three runs cannot
+  tell a packet effect from the model's variance.
+- Not run: Gemini D1 first person with the narrator mode (3 calls): the token cap was reached first, the D1
+  prompts being 158,600 tokens instead of the 125,000 estimated.
+
+Cost: Opus 5.5, 18 calls, $3.04 as reported by the gateway (repeat calls cached). Gemini 3.1 Pro (Vertex, global),
+21 calls, 3,028,863 prompt and 49,206 output tokens.
