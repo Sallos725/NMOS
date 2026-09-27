@@ -24,8 +24,9 @@ ADR 0033 (the OPEN list pattern).
    either way); a threat from anyone's words (the one who threatens says it), a debt from either side's. A new one
    restates an open one of the same kind and owner when one text contains the other, or, unlike promises, when they
    are as similar as a resolution must be to match: a turn often states the same aim twice in other words (M0 data).
-3. **OPEN THREADS and `resolved` (Q3).** The prompt lists open goals, questions, threats and debts (at most 8: those
-   whose owner or counterpart the prompt names, then the persona's own), as it lists OPEN PROMISES. `resolved`
+3. **OPEN THREADS and `resolved` (Q3).** The prompt lists open goals, questions, threats and debts, at most 8: those the
+   target turn's words are about first (a thread can only be ended while it is listed, and an old goal the story comes
+   back to must be), then those whose owner or counterpart the prompt names, then the persona's own. `resolved`
    (subject: the owner; value: the text as listed; `outcome`) ends one: achieved, abandoned or failed for a goal;
    answered for a question; averted or failed for a threat; paid, or abandoned, for a debt. Matching is ADR 0019's:
    owner, then equal text or clearly the most similar; no match or a tie ends nothing and is listed as unmatched.
@@ -47,6 +48,8 @@ ADR 0033 (the OPEN list pattern).
 
 - Production re-extracts each chat's recent window once (about 124 turns on 2026-09-28, the owner's model through
   Ollama); the owner pulls it after a backup.
-- Threads compete with facts for the packet: `threads_limit` (3) is unchanged, and step 5's M0 run decides whether it
-  should move.
+- Threads compete with facts for the packet: `threads_limit` (3) is unchanged; on M0 a limit of 5 or 8 held one of two
+  old open goals, not both, so it stays.
+- M0 on 28 owner-confirmed cases: 13 before Phase 11, 15 after step 3, 17 with `extract-v13`; no category worse
+  (`docs/perf/extract-v13.md`).
 - K23 now covers every kind: a thread stays open until the story ends it (nothing ends one because it is old).

@@ -35,7 +35,8 @@ as a question. Every scene was run again with the final prompt (the table).
 ## The owner's chat (M0 copy re-extracted)
 
 The restored backup (PHASE-11 Q1), with `extract-v13` activated on a second copy and the owner's model re-extracting
-the M0 chat's 73 turns through the local Ollama (no errors). Counts only.
+the M0 chat's 73 turns through the local Ollama (no errors). Counts only. This table is the first re-extraction, with
+OPEN THREADS listing the newest named threads; the second, with the listing below, is summarised after it.
 
 | | before (`extract-v12`) | `extract-v13` |
 |---|---|---|
