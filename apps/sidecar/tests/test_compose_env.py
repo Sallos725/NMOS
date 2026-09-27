@@ -43,3 +43,10 @@ def test_sidecar_and_worker_share_one_environment(path):
     assert env["sidecar"] == env["worker"] == "*nmos-env"
     missing = documented() - anchor_vars(text)
     assert not missing, f"{path} does not pass {sorted(missing)}"
+
+
+@pytest.mark.parametrize("path", ["docker-compose.yml", "deploy/docker-compose.yml"])
+def test_the_packet_policy_defaults_to_the_images(path):
+    """The compose files pinned packet-v4 through two new defaults (packet-v5, packet-v6); empty means the
+    sidecar's own default (`packet.DEFAULT_POLICY`)."""
+    assert re.search(r"^  NMOS_PACKET_POLICY: \$\{NMOS_PACKET_POLICY:-\}", (ROOT / path).read_text(), re.M)
