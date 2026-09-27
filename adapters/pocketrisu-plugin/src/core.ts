@@ -1,6 +1,7 @@
 // Request-path orchestration. Host access comes in through `HostPort`; everything fails open.
 
 import type { MemoryFit } from './budget';
+import { PLUGIN_BUILD } from './build';
 import { canonicalJson } from './canonical';
 import { sha256Hex } from './hash';
 import { deadlineAdvice, formatMs } from './deadline';
@@ -94,6 +95,8 @@ export interface StatusInfo {
   features?: Record<string, boolean>;
   error?: string;
   last: LastRequest | null;
+  /** The plugin build the sidecar ships (ADR 0037); null when it does not know one. */
+  pluginExpected?: string | null;
 }
 
 const NAME_TTL_MS = 10 * 60_000;
@@ -185,7 +188,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     }
   }
 
-  async function sync(settings: Settings, request: ReconcileRequest, bodies: Bodies, deadline: number) {
+  async function sync(settings: Settings, manifest: ReconcileRequest, bodies: Bodies, deadline: number) {
+    const request = { ...manifest, plugin_build: PLUGIN_BUILD };  // the sidecar tells an outdated plugin (ADR 0037)
     let result = await call<ReconcileResult>(settings, '/v1/sync/reconcile', request, deadline);
     if (result.status === 'needs_bodies') {
       const needed = (result.needed_bodies ?? []).map((n) => bodies.get(bodyKey(n.host_logical_id, n.revision_hash)));
@@ -345,9 +349,10 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     const info: StatusInfo = { enabled: settings.enabled, sidecarUrl: settings.sidecarUrl, language: settings.language,
       connected: false, last };
     try {
-      const res = await call<{ version: string; features: Record<string, boolean> }>(
+      const res = await call<{ version: string; features: Record<string, boolean>; plugin?: { expected: string | null } }>(
         settings, '/v1/health', undefined, host.now() + 3000);
-      Object.assign(info, { connected: true, version: res.version, features: res.features ?? {} });
+      Object.assign(info, { connected: true, version: res.version, features: res.features ?? {},
+        pluginExpected: res.plugin?.expected ?? null });
     } catch (error) {
       info.error = error instanceof Error ? error.message : String(error);
     }

@@ -16,12 +16,12 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-from . import __version__, audit, extraction, generations, inspector, ledger, normtext, readmodel, retention, runtime, vectors
+from . import __version__, audit, extraction, generations, inspector, ledger, normtext, plugin, readmodel, retention, runtime, vectors
 from .config import Settings
 from .db import make_pool
 from .extraction import enqueue_after_apply, job_counts
@@ -194,6 +194,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 app.state.pool.close()
 
     app = FastAPI(title="NMOS sidecar", version=__version__, lifespan=lifespan)
+    plugins = plugin.Seen()  # plugin builds that synced lately (ADR 0037)
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -303,6 +304,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                  manifest_hash=full_hash, changes_summary=result.summary, commit_reason=None)
 
     def do_reconcile(conn, body: ReconcileRequest) -> ReconcileResponse:
+        plugins.saw(body.plugin_build)
         conv = ledger.lock_conversation(conn, body.host, body.chat_id, body.character_ref, body.character_name,
                                         body.chat_name, body.persona_name)
         if settings.append_fast_path and conv.head_commit_id is not None:
@@ -342,7 +344,16 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                              "extraction": bool(rt["settings"].llm_url and rt["settings"].llm_model),
                              "vectors": rt["recall"].embedder is not None},
                 "generations": {"extract": rt["active_extractor"],
-                                "embed": rt["projection"].key if rt["projection"] else None}}
+                                "embed": rt["projection"].key if rt["projection"] else None},
+                "plugin": {"expected": plugin.expected(), "seen": plugins.recent()}}
+
+    @app.get(f"/v1/plugin/{plugin.FILENAME}", dependencies=[Depends(auth)])
+    def plugin_download():
+        """The plugin file of this sidecar's build (ADR 0037), to install when the one in use differs."""
+        path = plugin.plugin_file()
+        if path is None:
+            raise HTTPException(status_code=404, detail="this sidecar ships no plugin file")
+        return FileResponse(path, media_type="application/javascript", filename=plugin.FILENAME)
 
     @app.post("/v1/sync/reconcile", response_model=ReconcileResponse, dependencies=[Depends(auth)])
     def reconcile(body: ReconcileRequest, request: Request):
@@ -645,7 +656,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                    # no generation ever active: "—", not a 0 % that reads as unfinished work
                                    extraction.coverage(conn, ex_key) if ex_key else {},
                                    vectors.coverage(conn, pj_key) if pj_key else {},
-                                   lang=inspector.lang_of(lang), embed=embed)
+                                   lang=inspector.lang_of(lang), embed=embed,
+                                   plugin={"expected": plugin.expected(), "seen": plugins.recent()})
 
     def inspector_detail_html(conv_id: UUID, request: Request, token: str | None, lang: str | None,
                               embed: bool = False) -> str:

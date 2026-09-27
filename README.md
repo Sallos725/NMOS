@@ -62,8 +62,9 @@ docker compose exec -T postgres pg_dump -U nmos -d nmos -Fc > nmos-backup.dump
 
 Upgrade: replace `docker-compose.yml` with the new release's `nmos-docker-compose.yml`, then run
 `docker compose pull && docker compose up -d`. The sidecar applies database migrations when it starts.
-Replace the plugin file too and reload PocketRisu. Each release's CHANGELOG entry says what the upgrade
-re-processes, for example a new extractor generation. CI restores databases written by earlier releases
+Replace the plugin file too and reload PocketRisu: the Inspector's first page then says whether the plugin
+in use is the sidecar's build, and links the matching file (`/v1/plugin/nmos-pocketrisu.js` on the sidecar;
+ADR 0037). Each release's CHANGELOG entry says what the upgrade re-processes, for example a new extractor generation. CI restores databases written by earlier releases
 (0.1.0-beta.7 and 0.1.0-beta.16) and upgrades them (`apps/sidecar/tests/test_upgrade.py`).
 
 Rollback: migrations only go forward, and an older image on a newer database is not tested. To go back,

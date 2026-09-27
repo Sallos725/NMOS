@@ -85,6 +85,17 @@ describe('beforeRequest', () => {
     expect((await adapter.status()).last).toMatchObject({ budgetTokens: 600, memory });
   });
 
+  it('tells the sidecar its build with every sync (ADR 0037)', async () => {
+    const builds: unknown[] = [];
+    const { host } = fakeHost((path, body) => {
+      if (path === '/v1/sync/reconcile') builds.push(body.plugin_build);
+      if (path === '/v1/sync/bodies') builds.push(body.then_reconcile?.plugin_build);
+      return happy(path, body);
+    });
+    await createAdapter(host).beforeRequest(prompt, 'model');
+    expect(builds).toEqual(['dev', 'dev']);  // "dev" outside a build; the built file carries its hash
+  });
+
   it('host retries of the injected prompt make no further calls (H2)', async () => {
     const { host, calls } = fakeHost(happy);
     const adapter = createAdapter(host);
