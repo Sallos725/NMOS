@@ -21,7 +21,7 @@ from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
-from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, DEFAULT_POLICY, MEMORY_KINDS, REPEATS, Compiled, Excerpt, Line, StateItem, clean_text,
+from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAUSE_POLICIES, DEFAULT_POLICY, MEMORY_KINDS, REPEATS, Compiled, Excerpt, Line, StateItem, clean_text,
                      compile_lines, cut_lines, excerpt, fits_at, kept_counts, secret_line, secret_text)
 from .state import current_state
 from .threads import relevant_threads
@@ -265,18 +265,21 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                                  options.threads_limit, persona,
                                                  about=options.policy in ABOUT_POLICIES)], view["threads"], g, r, options)
         if options.facts_limit > 0:
+            causes = options.policy in CAUSE_POLICIES
             facts = relevant_facts(view["facts"], query, previous_ai, in_context, options.facts_limit,
-                                   options.events_limit, persona, scene.names(g.cast, r))
+                                   options.events_limit, persona, scene.names(g.cast, r), causes=causes)
             # Claims after facts, so the budget serves narration first (ADR 0013).
             claims = relevant_facts(view["claims"], query, previous_ai, in_context, max(1, options.facts_limit // 2),
-                                    persona=persona)
+                                    persona=persona, causes=causes)
             # How the cast stand with each other takes the budget before threads (ADR 0026).
-            before = options.policy in BEFORE_POLICIES
-            g.lead = _moded([fact_entry(f, scene.private(f, g.cast, r), before) for f in facts if f["predicate"] in STANDING],
+            before, cause = options.policy in BEFORE_POLICIES, causes
+            g.lead = _moded([fact_entry(f, scene.private(f, g.cast, r), before, cause) for f in facts
+                             if f["predicate"] in STANDING],
                             facts, g, r, options)
-            g.facts = _moded([fact_entry(f, scene.private(f, g.cast, r), before) for f in facts
+            g.facts = _moded([fact_entry(f, scene.private(f, g.cast, r), before, cause) for f in facts
                               if f["predicate"] not in STANDING]
-                             + [claim_entry(c, scene.private(c, g.cast, r)) for c in claims], facts + claims, g, r, options)
+                             + [claim_entry(c, scene.private(c, g.cast, r), cause) for c in claims], facts + claims, g, r,
+                             options)
         if g.withheld_lines:
             # An excerpt that says what the mode withheld would give it back word for word.
             kept = [e for e in g.ranked

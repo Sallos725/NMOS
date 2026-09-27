@@ -211,6 +211,46 @@ def _pair_versions(history: list[dict[str, Any]], r: Resolution | None = None) -
     return [{**row, "versions": len(history), "history": entries, "claims": []} for row in current_rows]
 
 
+CAUSE_MIN = 0.35  # trigram overlap of a stated cause with the event it names, names left out (ADR 0040)
+CAUSE_MARGIN = 0.1
+CAUSE_TURNS = 5  # how far back the event may be: the same scene (on M0 a link 29 turns back named the wrong one)
+
+
+def _unnamed(text: str, names: set[str]) -> str:
+    out = _norm(text)
+    for name in sorted((_norm(n) for n in names if n and len(_norm(n)) >= 2), key=len, reverse=True):
+        out = out.replace(name, " ")
+    return out
+
+
+def cause_links(rows: list[dict[str, Any]], events: list[dict[str, Any]], r: Resolution | None = None) -> None:
+    """For each row with a stated cause, the earlier event it names, when one clearly does (ADR 0040): an event of the
+    same subject or object (or with either as a participant), at most CAUSE_TURNS turns before the row, whose value the
+    cause repeats (CAUSE_MIN, leading the next by CAUSE_MARGIN). Sets `cause_event` {turn, text}; nothing is stored,
+    and no cause is inferred: without a match the stated text stands alone."""
+    for row in rows:
+        if not row.get("because"):
+            continue
+        who = {_subject(row, r)} | ({_object(row, r)} if row.get("object") else set())
+        names = set(row.get("names") or [row["subject"], row.get("object") or ""])
+        scored = []
+        for e in events:
+            if e["position"] > row["position"] or _unit(row) - _unit(e) > CAUSE_TURNS:
+                continue
+            around = {_subject(e, r)} | {(r.key(p["type"], p["name"]) if r else _norm(p["name"]))
+                                          for p in e.get("participants") or ()}
+            if not who & around:
+                continue
+            # names say who, not what happened: they would make any two sentences about the same people look alike
+            drop = names | set(e.get("names") or [e["subject"]])
+            grams, named = _grams(_unnamed(row["because"], drop)), _grams(_unnamed(e.get("value") or "", drop))
+            scored.append((len(grams & named) / max(1, min(len(grams), len(named))), e))
+        scored.sort(key=lambda x: (-x[0], -x[1]["position"]))
+        if scored and scored[0][0] >= CAUSE_MIN and (len(scored) == 1 or scored[0][0] - scored[1][0] >= CAUSE_MARGIN):
+            e = scored[0][1]
+            row["cause_event"] = {"turn": e.get("turn"), "position": e["position"], "text": fact_text(e)}
+
+
 def _unit(a: dict[str, Any]) -> int:
     """The turn an assertion comes from (a message without one counts alone), as in ACTIVE_ASSERTIONS."""
     return a["turn"] if a.get("turn") is not None else -1 - a["position"]
@@ -367,6 +407,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                                 "object": c["object"], "value": c["value"], "polarity": c["polarity"]})
     facts.sort(key=lambda f: f["position"], reverse=True)
     other.sort(key=lambda a: a["position"], reverse=True)
+    cause_links(facts + claims, [f for f in facts if f["predicate"] == "event" and f.get("polarity") != "negative"], r)
     conflicts = [{"fact": f["id"], "turn": f["turn"], "position": f["position"], "text": fact_text(f),
                   "against": f["disputed_by"]} for f in facts if f.get("disputed_by")]
     items: dict[tuple, dict[str, Any]] = {}
@@ -475,9 +516,14 @@ def prior(f: dict[str, Any]) -> float:
     return 0.0
 
 
+WHY = re.compile(r"(왜|어째서|무슨 이유|이유가|이유는|\bwhy\b|how come)", re.IGNORECASE)
+PRIOR_CAUSE = 1.0  # packet-v6: a fact with a stated cause, when the message asks why (ADR 0040)
+
+
 def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],
                    limit: int, events_limit: int | None = None,
-                   persona: frozenset[str] = frozenset(), present: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
+                   persona: frozenset[str] = frozenset(), present: frozenset[str] = frozenset(),
+                   causes: bool = False) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
@@ -496,11 +542,15 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     The persona's names (`USER_NAMES` and `persona`, the resolver's `persona_names`; ADR 0023) are never
     a mention: the persona is in every chat, and a user who narrates it by name writes that name in every
     message. A first-person question still brings the persona's own facts.
+
+    With `causes` (packet-v6, ADR 0040) a stated cause counts as part of the fact's words, and when the message asks
+    why, a fact that has one gains PRIOR_CAUSE.
     """
     q = _norm(query)
     ai = _norm(previous_ai)
     q_grams = _grams(query)
     first_person = bool(FIRST_PERSON.search(query))
+    why = causes and bool(WHY.search(query))
     user = USER_NAMES | persona
     scored = []
     for f in facts:
@@ -516,9 +566,9 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
             mention += PRIOR_HIDDEN_PRESENT
         if first_person and (_norm(f["subject"]) in user or _norm(f.get("value")).startswith(tuple(user))):
             mention += 1.0
-        grams = _grams(fact_text(f))
+        grams = _grams(fact_text(f) + (f" {f['because']}" if causes and f.get("because") else ""))
         lexical = len(grams & q_grams) / max(1, len(q_grams))
-        score = mention + lexical + (prior(f) if mention else 0.0)
+        score = mention + lexical + (prior(f) if mention else 0.0) + (PRIOR_CAUSE if why and f.get("because") else 0.0)
         if f["predicate"] == "event" and f.get("salience") == "minor" and (
                 len(_grams(f.get("value") or "") & q_grams) / max(1, len(q_grams)) < LEXICAL_BAR):
             continue  # the query must be about the event itself, not just name its subject
@@ -560,12 +610,12 @@ def first(f: dict[str, Any]) -> dict[str, Any] | None:
     return prior[0] if len(prior) > 1 and _norm(prior[0]["value"]) != _norm(prior[-1]["value"]) else None
 
 
-def fact_line(f: dict[str, Any], before: bool = False) -> str:
+def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False) -> str:
     """One <Fact> with its knowledge marks exactly as stored (D19): knowledge="public", or known_by /
     hidden_from for limited facts, or no mark at all when who knows is unknown. A negated fact is
     explicitly not (or no longer) true (ADR 0013). A disputed fact carries what contradicts it in the same
     line, and neither side is presented as certain (PHASE-6 Q1). With `before` (packet-v5), a standing fact that
-    replaced another names it and its turn (ADR 0038)."""
+    replaced another names it and its turn (ADR 0038); with `cause` (packet-v6), the cause the story states (ADR 0040)."""
     turn = f["turn"] if f.get("turn") is not None else f["position"]
     attrs = f" kind={quoteattr(f['predicate'])} turn=\"{turn}\""
     if f.get("polarity") == "negative":
@@ -579,6 +629,8 @@ def fact_line(f: dict[str, Any], before: bool = False) -> str:
     if against := f.get("disputed_by"):
         when = against["turn"] if against.get("turn") is not None else against["position"]
         text += f"; but turn {when}: {fact_text(against)}"
+    if cause and f.get("because"):
+        text += f"; because: {f['because']}"
     if before and (was := earlier(f)):
         when = was["turn"] if was.get("turn") is not None else was["position"]
         text += f"; before, turn {when}: {fact_text(was)}"
@@ -610,16 +662,17 @@ def thread_line(t: dict[str, Any]) -> str:
     return f"    <Thread{attrs}>{escape(t.get('text') or '')}</Thread>"
 
 
-def claim_line(c: dict[str, Any], marked: bool = False) -> str:
+def claim_line(c: dict[str, Any], marked: bool = False, cause: bool = False) -> str:
     """What a character said (ADR 0013): never a fact, whatever the narration says. `marked` adds who
-    knows it (the Private section, ADR 0035)."""
+    knows it (the Private section, ADR 0035); `cause` the cause they give (packet-v6, ADR 0040)."""
     turn = c["turn"] if c.get("turn") is not None else c["position"]
     attrs = f" by={quoteattr(c.get('asserted_by') or '?')} kind={quoteattr(c['predicate'])} turn=\"{turn}\""
     if c.get("polarity") == "negative":
         attrs += ' negated="true"'
     if marked:
         attrs += _knowledge_attrs(c)
-    return f"    <Claim{attrs}>{escape(fact_text(c))}</Claim>"
+    text = fact_text(c) + (f"; because: {c['because']}" if cause and c.get("because") else "")
+    return f"    <Claim{attrs}>{escape(text)}</Claim>"
 
 
 def _marks(f: dict[str, Any]) -> dict[str, Any]:
@@ -628,21 +681,21 @@ def _marks(f: dict[str, Any]) -> dict[str, Any]:
     return {"hidden_from": list(f["hidden_from"])} if f.get("knowledge") == "limited" and f.get("hidden_from") else {}
 
 
-def fact_entry(f: dict[str, Any], private: bool = False, before: bool = False) -> Line:
+def fact_entry(f: dict[str, Any], private: bool = False, before: bool = False, cause: bool = False) -> Line:
     """A fact as a packet line with its provenance (ADR 0027): the assertion, and the words a reply can
     echo (its value, else its object). `private`: only some characters in the scene know it (ADR 0034).
-    `before`: name the version a standing fact replaced (packet-v5, ADR 0038)."""
-    return Line("fact", fact_line(f, before), {"assertion": f["id"]}, f.get("turn"), fact_text(f),
+    `before`: name the version a standing fact replaced (packet-v5, ADR 0038); `cause`: the stated cause (ADR 0040)."""
+    return Line("fact", fact_line(f, before, cause), {"assertion": f["id"]}, f.get("turn"), fact_text(f),
                 f.get("value") or f.get("object") or "", _marks(f), private)
 
 
-def claim_entry(c: dict[str, Any], private: bool = False) -> Line:
+def claim_entry(c: dict[str, Any], private: bool = False, cause: bool = False) -> Line:
     """A claim as a packet line. It shows no knowledge marks (ADR 0013), except in the Private section
-    (packet-v3), where who knows it is the point (ADR 0035)."""
+    (packet-v3), where who knows it is the point (ADR 0035). `cause`: the cause they give (packet-v6, ADR 0040)."""
     marks = {"by": c["asserted_by"]} if c.get("asserted_by") else {}
-    return Line("claim", claim_line(c), {"assertion": c["id"]}, c.get("turn"), fact_text(c),
+    return Line("claim", claim_line(c, cause=cause), {"assertion": c["id"]}, c.get("turn"), fact_text(c),
                 c.get("value") or c.get("object") or "", {**marks, **_marks(c)}, private,
-                claim_line(c, marked=True) if private else "")
+                claim_line(c, marked=True, cause=cause) if private else "")
 
 
 def thread_entry(t: dict[str, Any], private: bool = False) -> Line:

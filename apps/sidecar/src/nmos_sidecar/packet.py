@@ -129,14 +129,16 @@ def excerpt(content: str, query: str, window: int = 2) -> str:
 # a character's claim of what the narration already states (ADR 0036).
 # packet-v5 is packet-v4 with how the cast stood before: a relationship, feeling or speech level that replaced an
 # earlier one names it, with its turn (PHASE-11 step 3, ADR 0038).
-POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5")
-DEFAULT_POLICY = "packet-v5"
+# packet-v6 is packet-v5 with the cause the story states on a fact or claim ("; because: …", PHASE-11 step 6, ADR 0040).
+POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6")
+DEFAULT_POLICY = "packet-v6"
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2,
-             "packet-v4": 1.2, "packet-v5": 1.2}  # estimated tokens per non-ASCII char
-PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5"})
-FOLD_POLICIES = frozenset({"packet-v4", "packet-v5"})
-ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5"})  # promises the user's message is about first (ADR 0019 amendment 1)
-BEFORE_POLICIES = frozenset({"packet-v5"})  # standing facts name what they replaced (ADR 0038)
+             "packet-v4": 1.2, "packet-v5": 1.2, "packet-v6": 1.2}  # estimated tokens per non-ASCII char
+PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6"})
+FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6"})
+ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6"})  # promises the message is about first (ADR 0019 am. 1)
+BEFORE_POLICIES = frozenset({"packet-v5", "packet-v6"})  # standing facts name what they replaced (ADR 0038)
+CAUSE_POLICIES = frozenset({"packet-v6"})  # facts and claims carry the cause the story states (ADR 0040)
 RESTATES = 0.6  # packet-v4: a claim this close to a fact of the same head says it again (ADR 0019's match)
 # What the memory budget is for, and how far a suggested budget may go (ADR 0036).
 MEMORY_KINDS = frozenset({"state", "thread", "fact", "claim", "secret"})

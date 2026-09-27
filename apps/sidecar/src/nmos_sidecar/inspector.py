@@ -90,6 +90,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "o.current": ("현재", "current"), "o.superseded": ("대체됨", "superseded"), "o.ended": ("끝남", "ended"),
     "o.conflicting": ("충돌", "conflicting"),
     "claims": ("인물의 주장", "Claims by characters"), "h.by": ("말한 인물", "Said by"),
+    "because": ("원인", "because"), "cause_event": ("그 사건", "that event"),
     "other": ("실제가 아닌 단언 (가정·꿈·미상)", "Not actual (hypothetical, dreamed, unknown)"),
     "h.modality": ("양태", "Modality"),
     "entities": ("엔티티", "Entities"), "h.type": ("종류", "Type"), "h.names": ("이름", "Names"),
@@ -459,13 +460,25 @@ def _with(f: dict[str, Any], lang: str) -> str:
     return ", ".join(out)
 
 
+def _cause(f: dict[str, Any], lang: str) -> str:
+    """The cause the story states (extract-v13), and the event it names when one clearly does (ADR 0040)."""
+    if not f.get("because"):
+        return ""
+    out = f"<br><span class=\"muted\">{_t(lang, 'because')}: {_v(f['because'])}"
+    if e := f.get("cause_event"):
+        when = e["turn"] if e.get("turn") is not None else e["position"]
+        out += f" · {_t(lang, 'cause_event')} {_v(when)}: {_v(e['text'])}"
+    return out + "</span>"
+
+
 def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> str:
     t = lambda k: _t(lang, k)
     # A fact whose turn the active generation has not compiled yet comes from an older one (ADR 0014).
     older = f" <span class=\"chip\">{t('older_gen')}</span>"
     return table(
         [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.with", "h.knowledge", "h.turn", "h.versions")],
-        [[_v(f["subject"]), chip(lang, "p", f["predicate"]), _v(f.get("object") or f.get("value")), _with(f, lang),
+        [[_v(f["subject"]), chip(lang, "p", f["predicate"]), _v(f.get("object") or f.get("value")) + _cause(f, lang),
+          _with(f, lang),
           _knowledge(f, lang),
           _turn(f)
           + (older if active and f.get("generation") not in (None, active) else "")
@@ -547,7 +560,7 @@ def _conflicts_table(conflicts: list[dict[str, Any]], lang: str) -> str:
 def _claims_table(claims: list[dict[str, Any]], lang: str) -> str:
     return table([_t(lang, k) for k in ("h.by", "h.subject", "h.predicate", "h.object", "h.turn")],
                  [[_v(c.get("asserted_by")), _v(c["subject"]), chip(lang, "p", c["predicate"]),
-                   _v(c.get("object") or c.get("value")), _turn(c)] for c in claims[:100]])
+                   _v(c.get("object") or c.get("value")) + _cause(c, lang), _turn(c)] for c in claims[:100]])
 
 
 def _other_table(other: list[dict[str, Any]], lang: str) -> str:
