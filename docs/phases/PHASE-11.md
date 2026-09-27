@@ -115,7 +115,8 @@ generation):
    re-extracted with it. It stopped once at a stop condition on the first 12 cases (one wording moved a category).
 5. Threads at read time and the packet's thread section. **Done** with step 4.
 6. Explicit links at read time, packet and Inspector. **Done** (ADR 0040, `packet-v6`).
-7. Inspector views.
+7. Inspector views. **Done**: threads by kind with outcomes (steps 4–5), causes (step 6), and a Relationships
+   section per pair on the chat and character pages.
 8. Evaluation tiers (each paid run approved first), real-host smoke, upgrade, documentation.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13). Step 4 re-extracts each chat's recent window

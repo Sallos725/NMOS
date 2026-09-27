@@ -308,3 +308,27 @@ def test_access_log_masks_the_token_in_inspector_links():
     other = logging.LogRecord("uvicorn.access", logging.INFO, __file__, 0, '%s - "%s %s HTTP/%s" %d',
                               ("127.0.0.1:5000", "GET", "/v1/health?atoken=1", "1.1", 200), None)
     assert RedactToken().filter(other) and other.args[2] == "/v1/health?atoken=1"
+
+
+PAIRS = ("Yui is Kaito's classmate.", "Yui is angry at Kaito because he forgot the festival.",
+         "Kaito and Yui start dating.", "Yui and Kaito agree to speak informally.", "Hana and Ren agree to speak informally.")
+
+
+def test_inspector_shows_each_pair_on_one_row(migrated):
+    """PHASE-11 step 7 (ADR 0038): a pair's relationship with what it replaced, and each direction's feeling and
+    speech; the character page shows the pairs it is in."""
+    client, c, drain = story_client(migrated, PAIRS)
+    with client:
+        sync(client, c)
+        drain()
+        conv = client.get("/v1/conversations").json()[0]["id"]
+        page = client.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
+        assert '<a href="#s-pairs">Relationships <span class="n">2</span></a>' in page
+        section = page[page.index('id="s-pairs"'):page.index("</details>", page.index('id="s-pairs"'))]
+        assert "Kaito ↔ Yui" in section and "Hana ↔ Ren" in section
+        assert "lovers" in section and "before: classmate" in section  # the other way round, replaced
+        assert "Yui → Kaito: angry" in section and "because: he forgot the festival" in section
+        assert section.count("informal speech") == 4  # both directions of both pairs
+        who = character_links(page, conv)
+        hana = client.get(f"/inspector/c/{conv}/e/{who['Hana']}", params={"lang": "en"}).text
+        assert 'id="s-pairs"' in hana and "Hana ↔ Ren" in hana and "Kaito ↔ Yui" not in hana

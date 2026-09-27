@@ -150,10 +150,13 @@ The Inspector lists conversations as **bot name · chat name** (after the next m
 and follows the panel language. The same pages are also served by the sidecar for a browser tab at
 **http://127.0.0.1:8790/inspector** (Korean by default, English at the top right).
 
-A conversation's page starts with what matters now (state, conflicts, promises, facts) and has a **Last
+A conversation's page starts with what matters now (state, conflicts, threads by kind, secrets, relationships
+per pair, facts) and has a **Last
 packet** section: every line the latest request offered its memory packet, where it came from, whether it
 went in or why not (no budget, state cap), and, once the reply is in the chat, which lines the reply
-reused. A hidden fact the reply repeated is marked (ADR 0027).
+reused. A hidden fact the reply repeated is marked (ADR 0027). **Relationships** shows each pair on one row: the
+relationship, and each direction's feeling and speech level with its cause, what it replaced and how it started
+(Phase 11); a fact's stated cause also shows under it in **Facts**, with the event it names when one nearby matches.
 
 <p><img src="docs/images/panel-status.png" alt="NMOS panel, Status tab: sidecar connected, semantic recall on, last request injected 835 characters in 90 ms" width="560"></p>
 <p><img src="docs/images/inspector.png" alt="NMOS Inspector: one conversation shown as bot name · chat name, with vector coverage 43/43" width="760"></p>

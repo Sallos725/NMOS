@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import quote
 
 from .entities import norm
-from .facts import participant_entities
+from .facts import STANDING, earlier, first, participant_entities
 
 STYLE = """
 :root{color-scheme:light dark;--bg:#fbfbfa;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e3e0;--chip:#efefec;--accent:#3b5bdb}
@@ -91,6 +91,9 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "o.conflicting": ("충돌", "conflicting"),
     "claims": ("인물의 주장", "Claims by characters"), "h.by": ("말한 인물", "Said by"),
     "because": ("원인", "because"), "cause_event": ("그 사건", "that event"),
+    "pairs": ("관계 (인물 쌍마다)", "Relationships"), "toc.pairs": ("관계", "Relationships"),
+    "h.pair": ("두 인물", "Pair"), "h.relationship": ("관계", "Relationship"), "h.feelings": ("감정", "Feelings"),
+    "h.speech": ("말투·호칭", "Speech"), "before": ("이전", "before"), "first": ("처음", "first"),
     "other": ("실제가 아닌 단언 (가정·꿈·미상)", "Not actual (hypothetical, dreamed, unknown)"),
     "h.modality": ("양태", "Modality"),
     "entities": ("엔티티", "Entities"), "h.type": ("종류", "Type"), "h.names": ("이름", "Names"),
@@ -471,6 +474,45 @@ def _cause(f: dict[str, Any], lang: str) -> str:
     return out + "</span>"
 
 
+def pairs(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """How two characters stand, one entry per pair (PHASE-11 step 7, ADR 0038): the current relationship (one
+    history for both directions), and each direction's current feeling and speech level. Newest pair first."""
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    for f in facts:
+        if f["predicate"] not in STANDING or not f.get("object"):
+            continue
+        ends = []
+        for role in ("subject", "object"):
+            e = f.get(f"{role}_entity") or {}
+            ends.append((e.get("id") or norm(f[role]), e.get("name") or f[role]))
+        key = tuple(sorted(i for i, _ in ends))
+        p = out.setdefault(key, {"ids": key, "names": {}, "relationship": [], "feels": [], "speech": [], "position": -1})
+        p["names"].update(dict(ends))
+        p["position"] = max(p["position"], f["position"])
+        p[{"relationship": "relationship", "feels_toward": "feels", "addresses": "speech"}[f["predicate"]]].append(f)
+    return sorted(out.values(), key=lambda p: p["position"], reverse=True)
+
+
+def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
+    def said(f: dict[str, Any], directed: bool) -> str:
+        who = f"{f['subject']} → {f['object']}: " if directed else ""
+        text = _v(who + (f.get("value") or "")) + f" <span class=\"muted\">{_turn(f)}</span>"
+        if f.get("polarity") == "negative":
+            text += f" <span class=\"chip\">{_t(lang, 'negated')}</span>"
+        if f.get("because"):
+            text += f" <span class=\"muted\">· {_t(lang, 'because')}: {_v(f['because'])}</span>"
+        for key, was in (("before", earlier(f)), ("first", first(f))):
+            if was:
+                text += f" <span class=\"muted\">· {_t(lang, key)}: {_v(was.get('value'))} ({_turn(was)})</span>"
+        return text
+
+    return table([_t(lang, k) for k in ("h.pair", "h.relationship", "h.feelings", "h.speech")],
+                 [[_v(" ↔ ".join(sorted(p["names"].values()))),
+                   "<br>".join(said(f, len(p["relationship"]) > 1) for f in p["relationship"]),
+                   "<br>".join(said(f, True) for f in p["feels"]),
+                   "<br>".join(said(f, True) for f in p["speech"])] for p in entries[:100]])
+
+
 def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> str:
     t = lambda k: _t(lang, k)
     # A fact whose turn the active generation has not compiled yet comes from an older one (ADR 0014).
@@ -505,8 +547,15 @@ def _threads_table(threads: list[dict[str, Any]], lang: str) -> str:
         c = t.get("closed_by")
         return f"{_turn(c)} · {_v(fact_line_text(c))}" if c else ""
 
-    return table([_t(lang, k) for k in ("h.kind", "h.by", "h.to", "h.promise", "h.turn", "h.status", "h.closed",
-                                        "h.restated")],
+    counts: dict[str, int] = {}
+    for th in threads:
+        if th["status"] == "open":
+            counts[th.get("kind", "promise")] = counts.get(th.get("kind", "promise"), 0) + 1
+    summary = (f"<p class=\"muted\">{_t(lang, 't.open')}: "
+               + " · ".join(f"{_t(lang, f'k.{k}')} {n}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+               + "</p>") if counts else ""
+    return summary + table([_t(lang, k) for k in ("h.kind", "h.by", "h.to", "h.promise", "h.turn", "h.status", "h.closed",
+                                                  "h.restated")],
                  [[chip(lang, "k", t.get("kind", "promise")), _v(t["by"]), _v(t.get("to") or ""), _v(t.get("text")),
                    _turn(t), chip(lang, "t", t["status"]),
                    closed(t), _v(", ".join(str(r["turn"] if r.get("turn") is not None else r["position"])
@@ -625,6 +674,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         parts.append(("secrets", t("secrets"), len(secrets), _secrets_table(secrets, lang), True))
     if unrevealed:
         parts.append(("unrevealed", t("unrevealed"), len(unrevealed), _unrevealed_table(unrevealed, lang), True))
+    if both := pairs(facts):
+        parts.append(("pairs", t("pairs"), len(both), _pairs_table(both, lang), True))
     if facts:
         parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
     if items:
@@ -767,6 +818,8 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
         parts.append(("conflicts", t("conflicts"), len(conflicts), _conflicts_table(conflicts, lang), True))
     if threads:
         parts.append(("threads", t("threads"), len(threads), _threads_table(threads, lang), True))
+    if mine_pairs := [p for p in pairs(facts) if entity_id in p["ids"]]:
+        parts.append(("pairs", t("pairs"), len(mine_pairs), _pairs_table(mine_pairs, lang), True))
     if held:
         parts.append(("held", t("held"), len(held), table(
             [t("h.item"), t("h.turn"), t("h.timeline")],
