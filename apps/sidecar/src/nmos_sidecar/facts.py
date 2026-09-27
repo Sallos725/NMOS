@@ -18,7 +18,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
-from .predicates import HOLDER_PER_ITEM, REGISTRY, whereabouts
+from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
 # `unit` is the turn (a message without one counts alone). `live` holds every extraction that still
@@ -72,7 +72,8 @@ def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str, 
                       known_at: datetime | None = None) -> list[dict[str, Any]]:
     """ACTIVE_ASSERTIONS with participants parsed. They are fetched as text and parsed only where present:
     decoding every jsonb value through the driver cost ≈10 ms per fact read at 10,000 messages
-    (docs/perf/phase8-extraction.md). With `upto` or `known_at`, the read as of an earlier request."""
+    (docs/perf/phase8-extraction.md). Knowledge marks stored as a {"name", …} repr read as the name
+    (stored_knowledge). With `upto` or `known_at`, the read as of an earlier request."""
     if upto is None and known_at is None:
         rows = conn.execute(ACTIVE_ASSERTIONS, {"head": head, "key": extractor_key}).fetchall()
     else:
@@ -82,6 +83,8 @@ def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str, 
     for r in rows:
         if r["participants"] is not None:
             r["participants"] = _parse_participants(r["participants"])
+        if r["known_by"] or r["hidden_from"]:
+            stored_knowledge(r)
     return rows
 
 

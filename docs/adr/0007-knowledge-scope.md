@@ -19,7 +19,11 @@ world knowledge.
     characters it is explicitly kept from. Anyone not listed is **unknown**, not unaware.
   - `unknown`: the evidence does not show who knows. This is the default for a missing or empty answer.
 - Validation normalizes model output: `public` + `hidden_from` → `limited` ("public except X");
-  `limited` with nobody named → `unknown`; names in `known_by` without a scope → `limited`.
+  `limited` with nobody named → `unknown`; names in `known_by` without a scope → `limited`. A list
+  entry given as an object with a `name` (the participants shape, PHASE-8) keeps only that name
+  (2026-09-27). Rows stored earlier kept such an object as its repr string
+  (`{'name': '유우마', 'type': 'character'}`); the fact read corrects them to the name and leaves the
+  row as written.
 - **Contradictory evidence:** a name in both lists is removed from both, so that character's awareness
   is unknown, and `assertion.reason` records `contradictory knowledge for: <names>`. Contradictions
   *across* assertions (a later fact says the secret leaked) are ordinary fact versions: the newest
