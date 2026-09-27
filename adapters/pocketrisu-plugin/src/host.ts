@@ -4,7 +4,7 @@ import type { HostPort, Settings, StatusInfo } from './core';
 import { langOf, t } from './i18n';
 import type { InjectPosition } from './prompt';
 import type { HostChat, HostPersonas } from './types';
-import { DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS } from './form';
+import { DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, MAX_DEADLINE_MS, MAX_RESERVED_TOKENS } from './form';
 import { createHud, type HudDocument } from './hud-host';
 import { routeFor } from './route';
 import { openPanel, type HudControl, type PanelDeps, type Tab } from './ui';
@@ -44,10 +44,11 @@ function fetchOptions(route: 'direct' | 'server'): Record<string, unknown> {
   return route === 'server' ? { networkRoute: 'local_network' } : {};
 }
 
-// PocketRisu initialises int args to 0, so 0 means "use the default".
-function positiveInt(value: string, fallback: number): number {
+// PocketRisu initialises int args to 0, so 0 means "use the default". The host's own argument field has no
+// upper limit, unlike the panel, so a value past it is capped here.
+function positiveInt(value: string, fallback: number, max: number): number {
   const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+  return Number.isFinite(n) && n > 0 ? Math.min(max, Math.floor(n)) : fallback;
 }
 
 export const risuHost: HostPort = {
@@ -59,8 +60,8 @@ export const risuHost: HostPort = {
       route: routeFor(sidecarUrl, await arg('route')),
       authToken: await arg('auth_token'),
       enabled: Number(await arg('disabled')) !== 1,
-      reservedMemoryTokens: positiveInt(await arg('reserved_memory_tokens'), DEFAULT_RESERVED_TOKENS),
-      deadlineMs: positiveInt(await arg('deadline_ms'), DEFAULT_DEADLINE_MS),
+      reservedMemoryTokens: positiveInt(await arg('reserved_memory_tokens'), DEFAULT_RESERVED_TOKENS, MAX_RESERVED_TOKENS),
+      deadlineMs: positiveInt(await arg('deadline_ms'), DEFAULT_DEADLINE_MS, MAX_DEADLINE_MS),
       injectPosition: (position === 'end' ? 'end' : 'before_last_user') as InjectPosition,
       language: langOf(await arg('language')),
     };

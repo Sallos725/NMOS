@@ -16,7 +16,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:84f4a7f48891".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:a785e95676e4".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -48,6 +48,7 @@
   var DEFAULT_DEADLINE_MS = 3e3;
   var MAX_DEADLINE_MS = 3e4;
   var DEFAULT_RESERVED_TOKENS = 800;
+  var MAX_RESERVED_TOKENS = 2e4;
   var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
   var VERTEX_URL = "https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi";
   function serviceAccountProject(key) {
@@ -101,7 +102,7 @@
       sidecar_url: v.url.trim(),
       route: v.route,
       disabled: v.enabled ? 0 : 1,
-      reserved_memory_tokens: Number(v.reserved) || DEFAULT_RESERVED_TOKENS,
+      reserved_memory_tokens: Math.min(MAX_RESERVED_TOKENS, Math.floor(Number(v.reserved)) > 0 ? Math.floor(Number(v.reserved)) : DEFAULT_RESERVED_TOKENS),
       deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS))
     };
   }
@@ -702,20 +703,29 @@ ${revisionHash}`;
       cache.set(key, { packet, expires: host.now() + ttl, failed, memory });
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
     }
+    async function within(work, deadline, what) {
+      const remaining = deadline - host.now();
+      if (remaining <= 0) throw new DeadlineError(`deadline before ${what}`);
+      let timer;
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new DeadlineError(`deadline during ${what}`)), remaining);
+      });
+      try {
+        return await Promise.race([work, timeout]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
     async function call(settings, path, body, deadline, method, onLate) {
       const remaining = deadline - host.now();
       if (remaining <= 0) throw new DeadlineError(`deadline before ${path}`);
       const url = settings.sidecarUrl.replace(/\/+$/, "") + path;
       const headers = { "Content-Type": "application/json" };
       if (settings.authToken) headers.Authorization = `Bearer ${settings.authToken}`;
-      let timer;
-      const timeout = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new DeadlineError(`deadline during ${path}`)), remaining);
-      });
       const verb = method ?? (body === void 0 ? "GET" : "POST");
       const pending2 = host.request(verb, url, body, headers, remaining, settings.route);
       try {
-        const res = await Promise.race([pending2, timeout]);
+        const res = await within(pending2, deadline, path);
         if (res.status < 200 || res.status >= 300) {
           const detail = res.json?.detail;
           throw new Error(`${path} -> HTTP ${res.status}${detail ? `: ${Array.isArray(detail) ? detail.join("; ") : String(detail)}` : ""}`);
@@ -725,8 +735,6 @@ ${revisionHash}`;
         if (error instanceof DeadlineError && onLate) pending2.then(() => onLate(host.now()), () => {
         });
         throw error;
-      } finally {
-        clearTimeout(timer);
       }
     }
     async function sync(settings, manifest, bodies, deadline) {
@@ -767,12 +775,12 @@ ${revisionHash}`;
       };
       try {
         if (mode !== "model" || hasPacket(prompt)) return prompt;
-        settings = await host.settings();
+        settings = await within(host.settings(), started + DEFAULT_DEADLINE_MS, "the plugin settings");
         if (!settings.enabled || !settings.sidecarUrl) return prompt;
         const deadline = started + settings.deadlineMs;
         emit({ type: "request-start" });
         announced = true;
-        const chat = await host.currentChat();
+        const chat = await within(host.currentChat(), deadline, "the host chat read");
         const messages = Array.isArray(chat?.message) ? chat.message : [];
         const turn = userTurnIndex(prompt, messages);
         if (!chat?.id || turn < 0) {
@@ -781,18 +789,18 @@ ${revisionHash}`;
         }
         chatId = chat.id;
         const t0 = host.now();
-        const { request, bodies } = await buildManifest(
+        const { request, bodies } = await within(buildManifest(
           chat,
           firstSaying(messages),
           { characterName: characterName(chat.id), personaName: personaName(chat) }
-        );
+        ), deadline, "the manifest");
         const manifestMs = host.now() - t0;
-        key = await sha256Hex(JSON.stringify([
+        key = await within(sha256Hex(JSON.stringify([
           chat.id,
           mode,
           prompt.length,
           request.messages.map((m) => [m.host_logical_id, m.revision_hash])
-        ]));
+        ])), deadline, "the cache key");
         const cached = cache.get(key);
         if (cached && cached.expires > host.now()) {
           const outcome2 = cached.packet ? "injected" : "nothing-relevant";
@@ -2265,9 +2273,9 @@ html,body{margin:0;background:#0c0c10}
   function fetchOptions(route) {
     return route === "server" ? { networkRoute: "local_network" } : {};
   }
-  function positiveInt(value, fallback) {
+  function positiveInt(value, fallback, max) {
     const n = Number(value);
-    return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+    return Number.isFinite(n) && n > 0 ? Math.min(max, Math.floor(n)) : fallback;
   }
   var risuHost = {
     async settings() {
@@ -2278,8 +2286,8 @@ html,body{margin:0;background:#0c0c10}
         route: routeFor(sidecarUrl, await arg("route")),
         authToken: await arg("auth_token"),
         enabled: Number(await arg("disabled")) !== 1,
-        reservedMemoryTokens: positiveInt(await arg("reserved_memory_tokens"), DEFAULT_RESERVED_TOKENS),
-        deadlineMs: positiveInt(await arg("deadline_ms"), DEFAULT_DEADLINE_MS),
+        reservedMemoryTokens: positiveInt(await arg("reserved_memory_tokens"), DEFAULT_RESERVED_TOKENS, MAX_RESERVED_TOKENS),
+        deadlineMs: positiveInt(await arg("deadline_ms"), DEFAULT_DEADLINE_MS, MAX_DEADLINE_MS),
         injectPosition: position === "end" ? "end" : "before_last_user",
         language: langOf(await arg("language"))
       };

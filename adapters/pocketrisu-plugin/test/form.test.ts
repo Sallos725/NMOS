@@ -50,6 +50,12 @@ describe('batch save', () => {
       reserved_memory_tokens: 800, deadline_ms: 1200 });
   });
 
+  it('keeps the memory budget within what the sidecar accepts', () => {
+    const reserved = (value: string) => connArgs({ ...base.conn, reserved: value }).reserved_memory_tokens;
+    expect([reserved(''), reserved('abc'), reserved('-5'), reserved('1200.6'), reserved('99999')])
+      .toEqual([800, 800, 800, 1200, 20000]);
+  });
+
   it('defaults the deadline to 3 s and keeps it between 200 ms and 30 s', () => {
     const deadline = (value: string) => connArgs({ ...base.conn, deadline: value }).deadline_ms;
     expect([deadline(''), deadline('abc'), deadline('50'), deadline('4500.7'), deadline('99999')])

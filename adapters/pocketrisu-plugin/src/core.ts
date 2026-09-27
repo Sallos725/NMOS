@@ -5,6 +5,7 @@ import { PLUGIN_BUILD } from './build';
 import { canonicalJson } from './canonical';
 import { sha256Hex } from './hash';
 import { deadlineAdvice, formatMs } from './deadline';
+import { DEFAULT_DEADLINE_MS } from './form';
 import { t, type Lang } from './i18n';
 import { bodyKey, createManifestBuilder, hashPayload, type Bodies } from './manifest';
 import type { ActivityEvent } from './hud';
@@ -159,6 +160,22 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
   }
 
+  /** Host work on the request path, cut at the deadline like a sidecar call: a host call that never answers
+   *  must not hold the generation (fail open). The host call itself cannot be cancelled. */
+  async function within<T>(work: Promise<T>, deadline: number, what: string): Promise<T> {
+    const remaining = deadline - host.now();
+    if (remaining <= 0) throw new DeadlineError(`deadline before ${what}`);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new DeadlineError(`deadline during ${what}`)), remaining);
+    });
+    try {
+      return await Promise.race([work, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /** `onLate`: when this call is cut at the deadline, called with the time its answer arrives anyway. */
   async function call<T>(settings: Settings, path: string, body: unknown, deadline: number,
                          method?: 'GET' | 'POST' | 'PUT', onLate?: (at: number) => void): Promise<T> {
@@ -167,14 +184,10 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     const url = settings.sidecarUrl.replace(/\/+$/, '') + path;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (settings.authToken) headers.Authorization = `Bearer ${settings.authToken}`;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new DeadlineError(`deadline during ${path}`)), remaining);
-    });
     const verb = method ?? (body === undefined ? 'GET' : 'POST');
     const pending = host.request(verb, url, body, headers, remaining, settings.route);
     try {
-      const res = await Promise.race([pending, timeout]);
+      const res = await within(pending, deadline, path);
       if (res.status < 200 || res.status >= 300) {
         const detail = (res.json as { detail?: unknown } | null)?.detail;
         throw new Error(`${path} -> HTTP ${res.status}${detail ? `: ${Array.isArray(detail) ? detail.join('; ') : String(detail)}` : ''}`);
@@ -183,8 +196,6 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     } catch (error) {
       if (error instanceof DeadlineError && onLate) pending.then(() => onLate(host.now()), () => {});
       throw error;
-    } finally {
-      clearTimeout(timer);
     }
   }
 
@@ -227,13 +238,14 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     };
     try {
       if (mode !== 'model' || hasPacket(prompt)) return prompt; // aux request, or retry of an injected prompt (H2)
-      settings = await host.settings();
+      // The deadline is in the settings, so reading them has the default one.
+      settings = await within(host.settings(), started + DEFAULT_DEADLINE_MS, 'the plugin settings');
       if (!settings.enabled || !settings.sidecarUrl) return prompt;
       const deadline = started + settings.deadlineMs;
       emit({ type: 'request-start' });
       announced = true;
 
-      const chat = await host.currentChat();
+      const chat = await within(host.currentChat(), deadline, 'the host chat read');
       const messages: HostMessage[] = Array.isArray(chat?.message) ? chat!.message : [];
       const turn = userTurnIndex(prompt, messages); // D13: the chat's latest user turn is in this prompt
       if (!chat?.id || turn < 0) {
@@ -246,13 +258,13 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // packet is reused only for the same state (host retries, reroll of an unchanged chat) and never
       // survives an edit anywhere in the chat.
       const t0 = host.now();
-      const { request, bodies } = await buildManifest(chat, firstSaying(messages),
-        { characterName: characterName(chat.id), personaName: personaName(chat) });
+      const { request, bodies } = await within(buildManifest(chat, firstSaying(messages),
+        { characterName: characterName(chat.id), personaName: personaName(chat) }), deadline, 'the manifest');
       const manifestMs = host.now() - t0;
       // Internal key only (not a cross-language hash): plain JSON keeps it linear and cheap.
-      key = await sha256Hex(JSON.stringify([
+      key = await within(sha256Hex(JSON.stringify([
         chat.id, mode, prompt.length, request.messages.map((m) => [m.host_logical_id, m.revision_hash]),
-      ]));
+      ])), deadline, 'the cache key');
       const cached = cache.get(key);
       if (cached && cached.expires > host.now()) {
         const outcome = cached.packet ? 'injected' : 'nothing-relevant';
