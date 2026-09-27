@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -241,7 +243,7 @@ def knowledge(item: dict[str, Any]) -> tuple[str, list[str] | None, list[str] | 
             return []
         out: list[str] = []
         for v in value:
-            name = str(v or "").strip()[:60]
+            name = mark_name(v)
             if name and name.casefold() not in {o.casefold() for o in out}:
                 out.append(name)
         return out[:12]
@@ -263,3 +265,33 @@ def knowledge(item: dict[str, Any]) -> tuple[str, list[str] | None, list[str] | 
     else:
         scope = "unknown"  # includes "limited" with nobody named
     return scope, known or None, hidden or None, note
+
+
+# How a {"name": …} entry was stored before mark_name() read the name out of it: str() of the dict, e.g.
+# "{'name': '유우마', 'type': 'character'}". The placeholder "{{user}}" does not match.
+_NAME_REPR = re.compile(r"""\{(?:'[a-z_]+': (?:'[^']*'|"[^"]*"), )*'name': ('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")""")
+
+
+def mark_name(entry: Any) -> str:
+    """One known_by / hidden_from entry as a name of at most 60 characters ("" when there is none).
+
+    The model sometimes lists {"name", "type"} objects, the shape of participants (PHASE-8): only the name is
+    kept. So is the name inside such an object's stored repr (see stored_knowledge).
+    """
+    if isinstance(entry, dict):
+        name = entry.get("name")
+        return name.strip()[:60] if isinstance(name, str) else ""
+    text = str(entry or "").strip()
+    m = _NAME_REPR.match(text)
+    if m:
+        text = str(ast.literal_eval(m.group(1))).strip()
+    return text[:60]
+
+
+def stored_knowledge(row: dict[str, Any]) -> None:
+    """Correct, in place, the knowledge marks of a stored assertion that kept {"name", …} objects as their
+    repr: the marks are read again through knowledge(), as validation now reads them. The stored row stays
+    as written. Rows without such an entry are left untouched."""
+    if any(isinstance(n, str) and _NAME_REPR.match(n)
+           for key in ("known_by", "hidden_from") for n in row.get(key) or ()):
+        row["knowledge"], row["known_by"], row["hidden_from"], _ = knowledge(row)

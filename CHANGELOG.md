@@ -17,6 +17,14 @@ decision on K26. Sidecar only; no schema change and no new extractor or embeddin
 - Known issues: K3 measured on the real host. A reroll or a swipe change of the last reply never takes the
   slow sync path, because the reply it replaces was never synced. An edit of an older message does: 3.6–3.8 s
   at 10,000 messages, over the 3 s default (`docs/perf/scale.md`).
+- **Knowledge marks given as objects are names again** (ADR 0007). The extraction model sometimes lists
+  `known_by` / `hidden_from` entries as `{"name": "유우마", "type": "character"}`, the participants shape;
+  validation stored the object's repr (`{'name': '유우마', 'type': 'character'}`) as the name. Such a mark
+  matched no character: the packet's knowledge marks and the ledger's `hidden_from` showed the repr, a
+  question naming a character the fact is hidden from did not rank it up, and the Inspector did not list it
+  under that character. Validation now keeps the name, and rows stored earlier read as the name without
+  re-extraction; the stored rows are unchanged. Ledgers already recorded keep what they recorded. On the
+  owner's database this affected 4 assertions, 1 of them still served.
 - Plugin tests no longer depend on how busy the machine is (audit A-19): the deadline test runs on a fake
   clock, and the 10,000-message manifest test has its own time limit.
 - **Korean memory packets hold more** (K26, ADR 0032; owner decision). The packet's budget is filled against
