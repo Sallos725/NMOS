@@ -18,6 +18,7 @@
 | Q6 | Story time (R4)? | **After 1.0.** Turns stay the time axis; "three days later" is text. | In this stage. |
 | Q7 | Which extraction models measure it? | **`gemma4:31b-cloud` (the owner's) and `deepseek-v4.1-flash`**, both through the local Ollama, 3 runs per synthetic Korean scene, 2 workers (429s). | `gemma4` only. |
 | Q8 | Summaries (Phase 12) | **Direction accepted with Q0:** scene summaries of fixed windows and a rolling "story so far", as a rebuildable projection with its own generation, in a `<Story>` section with its own budget share. Detailed in `PHASE-12.md`. | Episodes and arcs too. |
+| — | The persona's full name (found by M0) | **Both:** the owner joins the names by hand in production now (ADR 0025), and step 3 adds a resolver rule: a character name that ends with the persona's name, as a separate word, is the persona. Read side (`resolve-v5`), no re-extraction. | By hand only; the rule only. |
 | — | Rolling out `extract-v13` | **The owner is told the re-extraction's size before step 4 merges** and pulls `:edge` themselves; the backup is taken first. | Hold every step off production until the end. |
 
 Release: none decided (owner, 2026-09-28).
@@ -51,9 +52,11 @@ generation):
    relationships now and before, speech level, secrets, "why" questions, irrelevant old events kept out. Numbers
    for `main` before any Phase 11 change are the baseline. Public synthetic cases for each new category join the
    deterministic memory evaluation in CI.
-2. **Relationship history per pair (Q5, read side).** ADR with the symmetric table; the Inspector and the packet
+2. **Relationship history per pair (Q5, read side), and the persona's full name.** ADR with the symmetric table; the Inspector and the packet
    show one block per pair with the current relationship, feelings per direction with their turns, and the
-   earlier relationship. Closes K24's direction case; the predicate case is shown with turns and measured.
+   earlier relationship. Closes K24's direction case; the predicate case is shown with turns and measured. A
+   character name ending with the persona's name as a separate word resolves to the persona (`resolve-v5`; M0 found
+   the owner's chat split in two, `docs/perf/m0-baseline.md`).
 3. **`extract-v13` (one generation).** OPEN THREADS (goal, question, threat, debt) listed like OPEN PROMISES;
    `resolved` (value: the listed text; outcome); new predicates `question`, `threat`, `owes` (subject, object,
    value); an optional `because` on the predicates of Q4. The registry, prompt and generation change once; the
@@ -82,7 +85,8 @@ generation):
 
 - [ ] Every existing test and memory-evaluation case passes; no stale memory in any mode; `packet-v4` traces
       still replay.
-- [ ] M0 exists, with its baseline on `main` recorded before step 2 (numbers only in the repository).
+- [x] M0 exists, with its baseline on `main` recorded before step 3 (numbers only in the repository):
+      `docs/perf/m0-baseline.md`, 5 of 12 owner-confirmed cases.
 - [ ] Synthetic cases in CI for each thread type (opened, resolved, deleted, edited back), a "why" question
       answered from a stated cause, a relationship changed in the other direction (K24), and an irrelevant old
       event kept out.
@@ -102,7 +106,7 @@ generation):
 
 1. This document, approved.
 2. M0: the evaluation tool, the public synthetic categories, the baseline.
-3. Relationship history per pair (ADR, read side).
+3. Relationship history per pair and the persona's full name (ADR, read side).
 4. `extract-v13`: OPEN THREADS, `resolved`, the new predicates, `because` (ADR).
 5. Threads at read time and the packet's thread section.
 6. Explicit links at read time, packet and Inspector.
