@@ -1,13 +1,13 @@
 # Phase 12 — Narrative Engine, part 2 (Stage 5)
 
-> **Status: draft, 2026-09-28, for the owner's approval.** Stage 5 of `docs/ROADMAP-1.0.md` (original §26, §32,
-> §36–37), part 2 of 2. It follows PHASE-11 Q0 and Q8: summaries and character state, with a summary projection and
-> no extractor change. The owner asked for this draft after accepting Phase 11 (2026-09-28). Nothing here is built
-> before the owner approves it (`AGENTS.md` §2). Every answer below is a **proposal**.
+> **Status: approved 2026-09-28 (owner), in progress.** Stage 5 of `docs/ROADMAP-1.0.md` (original §26, §32,
+> §36–37), part 2 of 2, after PHASE-11 Q0 and Q8: summaries and character state, with a summary projection and no
+> extractor change. The owner asked for this spec after accepting Phase 11 and answered every question below with the
+> recommended answer (2026-09-28).
 
-## Questions and proposed answers
+## Questions and answers
 
-| # | Question | Proposed answer | Alternatives |
+| # | Question | Answer | Alternatives not taken |
 |---|---|---|---|
 | Q1 | What is summarized, in what units? | **Scenes of a fixed window of 8 turns** (about 25,000 characters on the owner's chats), summarized once each, in the order of the story. A window is summarized when it is complete and older than the prompt's own last messages. | 4 or 16 turns; scenes detected by the model; episodes and arcs (§36) too. |
 | Q2 | How does the packet speak for the whole chat? | **A "story so far"**: one call over every current scene summary, redone when a window completes or a scene summary changes. It is one level above scenes, order-independent, and rebuilt from them. | An incremental chain (each window updates the last "so far"); scene summaries only. |
@@ -98,7 +98,7 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
 
 ## Steps (one pull request each)
 
-1. This document, approved.
+1. This document, approved. **Done** (2026-09-28).
 2. M0: the new cases with the owner, and their baseline on `main`.
 3. The summary projection: schema, generation, jobs, invalidation, the Inspector list (ADR). Off in the packet.
 4. The summary prompt and secrets, measured on both models (the real-model tier), before anything reaches a packet.
