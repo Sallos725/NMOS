@@ -1,6 +1,7 @@
 # Phase 10 — Knowledge and Secrets (Stage 4)
 
-> **Status: approved 2026-09-27 (the owner merged #107); in progress. Steps 2–6 done (ADR 0033, 0034, 0035, 0036).** Stage 4 of
+> **Status: complete (2026-09-27), not released (owner). Every step and acceptance criterion done (ADR 0033–0037;
+> evidence `docs/perf/secrets-eval.md`).** Stage 4 of
 > `docs/ROADMAP-1.0.md` (original §27–30; Track B, B5 narrowed). The owner chose the recommended answer to every
 > question (R1, Q1–Q5) on 2026-09-27 and asked for no release yet. Design: `docs/proposals/STAGE-4-KNOWLEDGE.md`.
 > Evidence behind it: `docs/perf/stage4-leak-pilot.md`.
@@ -81,7 +82,7 @@ in front of those it is kept from. A chat can choose a strict packet or a first-
 
 ## Acceptance criteria
 
-- [ ] Every existing test and memory-evaluation case passes; no stale memory in any mode; `packet-v2` still
+- [x] Every existing test and memory-evaluation case passes; no stale memory in any mode; `packet-v2` still
       reproduces its recorded traces.
 - [x] The new synthetic cases pass deterministically in CI, including a secret restored after its revealing
       turn is edited, and replay of a Phase 9 trace under `packet-v3`.
@@ -92,19 +93,20 @@ in front of those it is kept from. A chat can choose a strict packet or a first-
 - [x] On a copy of the owner's database re-extracted with `extract-v12` (read-only against production), the
       revealed secret of the pilot is no longer placed as hidden after its reveal, and the trivia marked
       hidden in the pilot are not marked hidden.
-- [ ] Response-model tier on the owner's real-chat cases (outside the repository), Opus 5.5 and Gemini 3.1 Pro,
+- [x] Response-model tier on the owner's real-chat cases (outside the repository), Opus 5.5 and Gemini 3.1 Pro,
       budget agreed first: no leak in any case whose fact marks whom it is kept from; the holder remembers the
       secret whenever the scene calls for it (never below the pilot's `packet-v2` rate); slips reported
       separately (Q4). **Run 2026-09-27** (`docs/perf/secrets-eval.md` §6): no leak in 39 replies; Opus recalls
       6 of 6 under `packet-v4`; Gemini's narration showed the holder's memory in D1 0 of 3 under `packet-v4`
       (pilot 2 of 2): below the pilot's rate for that model and scene. Cause: the promise was left out of the
-      packet by the thread limit; fixed for `packet-v4` (ADR 0019 amendment 1); D1 to be run again.
+      packet by the thread limit; fixed for `packet-v4` (ADR 0019 amendment 1). Run again: Gemini 3 of 3, its
+      first-person narrator 3 of 3, Opus 3 of 3, no leak (48 replies in all).
 - [x] Retrieve latency at 10,000 messages within +5 ms p50 of `v0.1.0-beta.21` (+0.5–0.7 ms,
       `docs/perf/secrets-eval.md`).
 - [x] Real-host smoke on an isolated PocketRisu: per-chat mode set in the panel reaches the sidecar and the
       trace; a `<Private>` section reaches the model's prompt (`docs/perf/secrets-eval.md` §4).
 - [x] Upgrade from a `v0.1.0-beta.21` database (`tests/test_upgrade.py`).
-- [ ] `ARCHITECTURE.md` (decisions from D43), ADRs, README, the Korean guide, KNOWN-ISSUES (K11 rewritten to what
+- [x] `ARCHITECTURE.md` (decisions from D43), ADRs, README, the Korean guide, KNOWN-ISSUES (K11 rewritten to what
       remains), CHANGELOG (Unreleased).
 
 ## Steps (one pull request each)
@@ -122,11 +124,9 @@ in front of those it is kept from. A chat can choose a strict packet or a first-
 6. Inspector. **Done**: the chat page's Secrets section (holders, kept from, the turn, and per character
    whether and when they found out), reveals that matched nothing, the last request's scene cast and memory
    mode in the packet section, and "Found out" on a character's page. Sidecar only; no plugin change.
-7. Evaluation: synthetic cases, `tools/eval_secrets.py`, the model tiers (each paid run approved first). **In
-   progress**: synthetic cases, the tool, the extraction tier and latency done (`docs/perf/secrets-eval.md`; two
-   faults found and fixed, ADR 0033 amendment 1 and K29); the response-model tier waits for the owner's budget.
-8. Documentation, real-host smoke, upgrade check. **In progress**: smoke and upgrade done; the final
-   documentation follows the response-model tier.
+7. Evaluation: synthetic cases, `tools/eval_secrets.py`, the model tiers (each paid run approved first). **Done**
+   (`docs/perf/secrets-eval.md`; faults found and fixed: ADR 0033 amendment 1, ADR 0019 amendment 1, K29).
+8. Documentation, real-host smoke, upgrade check. **Done.**
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).
 

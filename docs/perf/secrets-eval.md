@@ -115,6 +115,23 @@ Leak / slip or near miss / the holder shows they remember it, per scene and cond
 - Not run: Gemini D1 first person with the narrator mode (3 calls): the token cap was reached first, the D1
   prompts being 158,600 tokens instead of the 125,000 estimated.
 
+### D1 again, after the fix (the owner's runs, 2026-09-27)
+
+`packet-v4` with the promise in the Private section (ADR 0019 amendment 1), and the Gemini first-person condition
+the token cap had cut:
+
+| Model, scene | `packet-v4` | `packet-v4`, narrator the user |
+|---|---|---|
+| Opus 5.5, D1 ×3 | 0 / 1 / 3 | — |
+| Gemini 3.1 Pro, D1 third person ×3 | 0 / 0 / **3** | — |
+| Gemini 3.1 Pro, D1 user first person ×3 | — | 0 / 0 / 3 |
+
+Gemini now recalls the promise every time (in narration, as the pilot saw), and the narrator mode keeps the
+user's own knowledge. Opus: one slip (the girl half-shouting the plan in the hallway), no leak. Cost: Opus 3
+calls, $0.47; Gemini 6 calls, 951,858 prompt tokens.
+
+**Step 7 in all:** 48 replies, no leak. Opus 5.5 21 calls, $3.51; Gemini 3.1 Pro 27 calls, 3,980,721 prompt tokens.
+
 An earlier reading of this run blamed the eval tool (the request's own turn, extracted later with its reply,
 seemed to close the promise); the promise was open, and the tool's rebuild now stops at the message before the
 request anyway, which changed none of these packets.
