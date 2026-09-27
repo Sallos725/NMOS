@@ -27,7 +27,7 @@ without a PocketRisu change.
 | K16 | NMOS does not notice a chat deleted in PocketRisu | Data | host (H10) |
 | K17 | Storage grows with abandoned branches | Data | O5 decided: superseded vectors pruned (ADR 0015), observations compacted (ADR 0018); abandoned branches kept |
 | K18 | Changing a model or endpoint re-processes history at the provider's cost | Data | LLM: bounded to the recent window since beta.11 (ADR 0014); embeddings: by design |
-| K19 | Plugin and sidecar versions are not checked against each other | Setup | not planned |
+| K19 | Plugin and sidecar versions are not checked against each other | Setup | shown, not enforced, on `main` (ADR 0037) |
 | K20 | Small UI delays: bot name, menu language | UI | not planned |
 | K21 | API keys and the auth token are stored in plain text | Security | host (H12) |
 | K22 | What becomes a fact depends on the extraction model's labels | Memory | measured per model (`docs/perf/phase5-extraction.md`, `phase7-extraction.md`, `phase8-extraction.md`) |
@@ -255,7 +255,10 @@ overall; ADR 0008).
 **K19 — No version check between plugin and sidecar.** A plugin newer than the sidecar shows HTTP
 errors in features the sidecar lacks (e.g. a 0.1.0-beta.6 plugin's Inspector tab against a beta.5
 sidecar: 404). Memory injection keeps working or fails open. *Workaround:* upgrade both parts
-together, as each release note says.
+together, as each release note says. *On `main` (ADR 0037):* the plugin sends its build id with every sync and
+the sidecar compares it with the plugin file it ships: the Inspector's first page says whether the plugin in
+use is the sidecar's build, warns about another tab or device on another build, and links the matching file.
+Nothing is refused.
 
 **K20 — Small UI delays.** After an upgrade, the Inspector shows a conversation's bot name from its
 second message (the plugin reads it in the background). Plugin menu names switch language only after

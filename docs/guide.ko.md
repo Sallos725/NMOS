@@ -56,7 +56,8 @@ docker compose exec -T postgres pg_dump -U nmos -d nmos -Fc > nmos-backup.dump
 
 업데이트는 새 릴리스의 `nmos-docker-compose.yml`로 `docker-compose.yml`을 바꾼 뒤
 `docker compose pull && docker compose up -d`로 합니다. DB 변경은 사이드카가 시작할 때 자동으로 적용됩니다.
-플러그인 파일도 바꾸고 PocketRisu를 새로고침하세요. 업데이트 때 무엇을 다시 처리하는지(예: 새 추출 세대)는
+플러그인 파일도 바꾸고 PocketRisu를 새로고침하세요. 인스펙터 첫 화면에 지금 쓰는 플러그인이 사이드카와 같은 빌드인지 나오고,
+다르면 맞는 파일 링크(사이드카의 `/v1/plugin/nmos-pocketrisu.js`)를 보여 줍니다. 다른 탭이나 기기가 아직 예전 플러그인이면 그것도 알려 줍니다. 업데이트 때 무엇을 다시 처리하는지(예: 새 추출 세대)는
 릴리스마다 CHANGELOG에 적혀 있습니다.
 
 되돌리기: DB 변경은 앞으로만 적용되고, 새 DB에서 옛 이미지를 돌리는 것은 검증하지 않았습니다. 되돌리려면

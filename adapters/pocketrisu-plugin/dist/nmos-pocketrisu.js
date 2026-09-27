@@ -15,6 +15,9 @@
 //@arg hud int 1 = progress display on the chat screen (turn it on from the NMOS panel)
 "use strict";
 (() => {
+  // src/build.ts
+  var PLUGIN_BUILD = true ? "nmos-build:84f4a7f48891".replace("nmos-build:", "") : "dev";
+
   // src/canonical.ts
   function normalizeText(value) {
     return String(value ?? "").normalize("NFC").replace(/\r\n/g, "\n");
@@ -172,6 +175,11 @@
       "The last request used {n} ms of its {d} ms deadline. As the chat grows, memory may start to miss it: raise Deadline (ms) in the Settings tab to about {s}."
     ],
     "deadline.took": [" (\uC2E4\uC81C\uB85C\uB294 \uC57D {n}ms \uAC78\uB9BC)", " (it took about {n} ms)"],
+    "status.plugin_mismatch": [
+      "\uC774 \uD50C\uB7EC\uADF8\uC778(\uBE4C\uB4DC {mine})\uC774 \uC0AC\uC774\uB4DC\uCE74\uC758 \uD50C\uB7EC\uADF8\uC778(\uBE4C\uB4DC {theirs})\uACFC \uB2E4\uB985\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uC640 \uAC19\uC740 \uBC84\uC804\uC758 \uD50C\uB7EC\uADF8\uC778 \uD30C\uC77C\uB85C \uAD50\uCCB4\uD558\uACE0 \uC0C8\uB85C \uACE0\uCE68\uD558\uC138\uC694. \uC778\uC2A4\uD399\uD130 \uCCAB \uD654\uBA74\uC5D0\uC11C \uB9DE\uB294 \uD30C\uC77C\uC744 \uBC1B\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+      "This plugin (build {mine}) differs from the sidecar's (build {theirs}). Replace it with the plugin file of the sidecar's version and reload. The Inspector's first page links the matching file."
+    ],
+    "status.plugin_ok": ["\uD50C\uB7EC\uADF8\uC778 \uBE4C\uB4DC {b} \xB7 \uC0AC\uC774\uB4DC\uCE74\uC640 \uAC19\uC74C", "Plugin build {b} \xB7 matches the sidecar"],
     "budget.title": ["\uAE30\uC5B5 {c}\uC904\uC774 \uC790\uB9AC\uAC00 \uC5C6\uC5B4 \uBE60\uC84C\uC2B5\uB2C8\uB2E4", "{c} memory lines did not fit"],
     "budget.text": [
       "\uB9C8\uC9C0\uB9C9 \uC751\uB2F5\uC5D0\uC11C \uCC3E\uC740 \uAE30\uC5B5 {m}\uC904 \uC911 {c}\uC904\uC774 \uAE30\uC5B5 \uC608\uC0B0({b}\uD1A0\uD070)\uC5D0 \uB4E4\uC5B4\uAC00\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC608\uC0B0\uC744 {s}\uC73C\uB85C \uC62C\uB9AC\uBA74 \uBAA8\uB450 \uB4E4\uC5B4\uAC11\uB2C8\uB2E4. \uC62C\uB9B0 \uB9CC\uD07C({d}\uD1A0\uD070) PocketRisu\uC758 \uCD5C\uB300 \uCEE8\uD14D\uC2A4\uD2B8\uB3C4 \uC904\uC5EC \uC8FC\uC138\uC694.",
@@ -721,7 +729,8 @@ ${revisionHash}`;
         clearTimeout(timer);
       }
     }
-    async function sync(settings, request, bodies, deadline) {
+    async function sync(settings, manifest, bodies, deadline) {
+      const request = { ...manifest, plugin_build: PLUGIN_BUILD };
       let result = await call(settings, "/v1/sync/reconcile", request, deadline);
       if (result.status === "needs_bodies") {
         const needed = (result.needed_bodies ?? []).map((n) => bodies.get(bodyKey(n.host_logical_id, n.revision_hash)));
@@ -915,7 +924,12 @@ ${revisionHash}`;
           void 0,
           host.now() + 3e3
         );
-        Object.assign(info, { connected: true, version: res.version, features: res.features ?? {} });
+        Object.assign(info, {
+          connected: true,
+          version: res.version,
+          features: res.features ?? {},
+          pluginExpected: res.plugin?.expected ?? null
+        });
       } catch (error) {
         info.error = error instanceof Error ? error.message : String(error);
       }
@@ -1479,6 +1493,16 @@ html,body{margin:0;background:#0c0c10}
           ),
           el("div", { class: "mono muted", text: base })
         );
+        if (s.pluginExpected && s.pluginExpected !== PLUGIN_BUILD) {
+          conn.append(el(
+            "div",
+            { class: "line warn" },
+            el("span", { class: "dot warn" }),
+            el("span", { text: L("status.plugin_mismatch", { mine: PLUGIN_BUILD, theirs: s.pluginExpected }) })
+          ));
+        } else if (s.pluginExpected) {
+          conn.append(el("div", { class: "muted", text: L("status.plugin_ok", { b: PLUGIN_BUILD }) }));
+        }
       } else {
         conn.append(
           el(

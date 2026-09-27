@@ -56,6 +56,8 @@ class ReconcileRequest(BaseModel):
     chat_name: Text | None = Field(default=None, max_length=200)
     # The user's persona name in this chat (ADR 0023): resolved as the persona, refreshed like the labels.
     persona_name: Text | None = Field(default=None, max_length=200)
+    # The plugin's build id (ADR 0037): tells an outdated plugin. Older plugins send none.
+    plugin_build: str | None = Field(default=None, max_length=40)
     hash_version: Literal[1] = 1
     messages: list[ManifestMessage] = Field(max_length=MAX_MANIFEST_MESSAGES)
 

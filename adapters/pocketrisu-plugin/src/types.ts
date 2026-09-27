@@ -63,6 +63,8 @@ export interface ReconcileRequest {
   chat_name?: string;
   /** The user's persona name in this chat (ADR 0023): the sidecar resolves it as `{{user}}`. */
   persona_name?: string;
+  /** This plugin's build id (ADR 0037); older sidecars ignore it. */
+  plugin_build?: string;
   hash_version: 1;
   messages: ManifestMessage[];
 }

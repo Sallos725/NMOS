@@ -154,6 +154,16 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
                    "Knowledge scopes are labels from the extraction model and may be wrong."),
     "who_claims": ("주장 (이 인물이 했거나 이 인물에 대한)", "Claims (by or about this character)"),
     "who_other": ("실제가 아닌 단언", "Not actual"),
+    # the plugin build (ADR 0037)
+    "plugin.none": ("플러그인: 이 사이드카가 시작된 뒤 아직 동기화한 플러그인이 없습니다. 다음 생성 뒤에 확인됩니다 (맞는 빌드 {want}).",
+                    "Plugin: none has synced since this sidecar started; the next generation shows it (matching build {want})."),
+    "plugin.ok": ("플러그인: 사이드카와 같은 빌드 {build} ({when})", "Plugin: the sidecar's build {build} ({when})"),
+    "plugin.old": ("⚠ 플러그인이 이 사이드카와 다른 빌드입니다: 사용 중 {build} ({when}), 맞는 빌드 {want}. 플러그인 파일을 교체하고 PocketRisu를 새로 고침하세요.",
+                   "⚠ The plugin is not this sidecar's build: in use {build} ({when}), matching build {want}. Replace the plugin file and reload PocketRisu."),
+    "plugin.get": ("맞는 파일: {link}", "Matching file: {link}"),
+    "plugin.other": ("⚠ 다른 탭이나 기기에서 예전 플러그인({builds})이 동기화했습니다 ({when}). 그 화면을 새로 고침하세요.",
+                     "⚠ An older plugin ({builds}) synced from another tab or device ({when}). Reload that screen."),
+    "plugin.no_build": ("빌드 정보 없음(예전 플러그인)", "no build id (an older plugin)"),
     # secrets (PHASE-10 step 6, ADR 0033)
     "toc.secrets": ("비밀", "Secrets"), "toc.unrevealed": ("맞는 비밀 없는 발견", "Unmatched reveals"),
     "toc.found_out": ("알게 된 비밀", "Found out"),
@@ -306,7 +316,8 @@ def _percent(stats: dict[str, Any] | None, done_key: str, lang: str) -> str:
 
 def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str, int] | None = None,
           gens: dict[str, dict[str, Any] | None] | None = None, extraction: dict | None = None,
-          embeddings: dict | None = None, lang: str = "ko", embed: bool = False) -> str:
+          embeddings: dict | None = None, lang: str = "ko", embed: bool = False,
+          plugin: dict[str, Any] | None = None) -> str:
     extraction, embeddings, gens = extraction or {}, embeddings or {}, gens or {}
     q = query(token, lang)
     rows = [[f"<a href=\"/inspector/c/{c['id']}{q}\">{_v(label(c))}</a>"
@@ -324,8 +335,34 @@ def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str
     body = (f"<div class=\"top\"><h1>{_t(lang, 'title')}</h1>{switch}</div>"
             f"<p class=\"muted\">{_t(lang, 'intro')} {queue}</p>"
             f"<p>{_t(lang, 'extractor')}: {_generation(gens.get('extraction'), lang)}<br>"
-            f"{_t(lang, 'projection')}: {_generation(gens.get('embeddings'), lang)}</p>" + listing)
+            f"{_t(lang, 'projection')}: {_generation(gens.get('embeddings'), lang)}</p>"
+            + _plugin_status(plugin or {}, q, lang, embed) + listing)
     return body if embed else page(_t(lang, "title"), body, lang)
+
+
+def _plugin_status(plugin: dict[str, Any], q: str, lang: str, embed: bool) -> str:
+    """Whether the plugin that synced last is this sidecar's build (ADR 0037); other builds seen lately (a
+    tab or device not reloaded since the plugin was replaced) are named too."""
+    want, seen = plugin.get("expected"), plugin.get("seen") or []
+    if not want:
+        return ""
+    t = lambda k: _t(lang, k)
+    path = "/v1/plugin/nmos-pocketrisu.js"
+    get = (f"<span class=\"mono\">{path}</span>" if embed else f"<a href=\"{path}{q}\" download>{path}</a>")
+    if not seen:
+        return f"<p class=\"muted\">{t('plugin.none').format(want=want)}</p>"
+    name = lambda s: s["build"] or t("plugin.no_build")
+    at = lambda s: timestamp(datetime.fromisoformat(s["at"]))
+    latest, others = seen[0], [s for s in seen[1:] if not s["matches"]]
+    if latest["matches"]:
+        out = f"<p>{t('plugin.ok').format(build=want, when=at(latest))}</p>"
+    else:
+        out = (f"<p class=\"warn\">{t('plugin.old').format(build=_v(name(latest)), want=want, when=at(latest))}"
+               f" {t('plugin.get').format(link=get)}</p>")
+    if latest["matches"] and others:
+        builds = ", ".join(_v(name(s)) for s in others)
+        out += f"<p class=\"warn\">{t('plugin.other').format(builds=builds, when=at(others[0]))}</p>"
+    return out
 
 
 def _knowledge(f: dict[str, Any], lang: str) -> str:

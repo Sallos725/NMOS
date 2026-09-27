@@ -411,7 +411,12 @@ outside the Private section. Excerpts that say a withheld line's content are lef
 budget and the smallest budget (100s, up to 2000) that holds them all; the panel's Status tab shows it with a
 button that sets the plugin's budget, and reminds the user to lower the host's max context by as much (D2).
 The default policy `packet-v4` leaves out a line that says an earlier line again (same head and content, or a
-claim restating a fact of the same head); the ledger keeps it as `restates`. Claims are marked private like facts and show their knowledge marks only in the
+claim restating a fact of the same head); the ledger keeps it as `restates`.
+
+**D47 — Plugin build check (ADR 0037, K19).** The plugin file carries a build id (a hash of the file) and sends
+it with every sync. The sidecar image ships the plugin file of its commit and reads its id; `/v1/health` and the
+Inspector's first page say whether the plugin in use is that build, and `GET /v1/plugin/nmos-pocketrisu.js`
+serves the matching file. Shown, never enforced. Claims are marked private like facts and show their knowledge marks only in the
 Private section.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only

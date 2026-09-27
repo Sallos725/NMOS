@@ -4,6 +4,7 @@
 
 import type { StatusInfo } from './core';
 import { budgetAdvice } from './budget';
+import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
 import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, fillProject, MAX_DEADLINE_MS, presetMatches, VERTEX_URL,
   type FormValues, type Section } from './form';
@@ -219,6 +220,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       conn.append(el('div', { class: 'line' }, el('span', { class: 'dot ok' }),
         el('span', { text: `${L('status.connected')} · NMOS ${s.version ?? ''}` })),
       el('div', { class: 'mono muted', text: base }));
+      // A plugin from another build than the sidecar's (ADR 0037): features on one side are missing on the other.
+      if (s.pluginExpected && s.pluginExpected !== PLUGIN_BUILD) {
+        conn.append(el('div', { class: 'line warn' }, el('span', { class: 'dot warn' }),
+          el('span', { text: L('status.plugin_mismatch', { mine: PLUGIN_BUILD, theirs: s.pluginExpected }) })));
+      } else if (s.pluginExpected) {
+        conn.append(el('div', { class: 'muted', text: L('status.plugin_ok', { b: PLUGIN_BUILD }) }));
+      }
     } else {
       conn.append(el('div', { class: 'line' }, el('span', { class: 'dot err' }),
         el('span', { class: 'err', text: `${L('status.unreachable')}: ${base}` })),

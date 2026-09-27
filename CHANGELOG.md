@@ -81,6 +81,12 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
   600-token packet placed 66% of the memory lines retrieval found, 800 places 89%, and 1000 all of them
   (`docs/perf/memory-mode.md`). If you left **기억 예산(토큰) / Memory budget (tokens)** empty, lower PocketRisu's
   max context by 200 more.
+- **The sidecar says whether your plugin is the right one** (ADR 0037, K19). The plugin sends its build id with
+  every sync, and the sidecar compares it with the plugin file of its own version. The Inspector's first page
+  says "the sidecar's build", or warns that the plugin in use differs (an older plugin shows as "no build id"),
+  or that another tab or device still runs an older one and needs a reload. It links the matching plugin file,
+  which the sidecar serves at `/v1/plugin/nmos-pocketrisu.js`. The Status tab of a plugin with the check says
+  the same. `/v1/health` reports it too.
 - **The Inspector shows a chat's secrets** (Phase 10 step 6). A chat's page has a **비밀 / Secrets** section: each
   fact kept from someone, who knows it, whom it is kept from, the turn, and for each of them whether and when
   they found out. Reports of someone finding out that matched no secret are listed apart, and a character's

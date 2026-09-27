@@ -11,6 +11,9 @@ RUN uv sync --frozen --no-dev
 
 COPY migrations /app/migrations
 ENV NMOS_MIGRATIONS_DIR=/app/migrations
+# The plugin of the same commit (ADR 0037): the sidecar tells whether the plugin in use is this build.
+COPY adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js /app/plugin/nmos-pocketrisu.js
+ENV NMOS_PLUGIN_FILE=/app/plugin/nmos-pocketrisu.js
 
 RUN useradd --system --uid 10001 nmos
 USER nmos
