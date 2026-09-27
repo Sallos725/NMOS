@@ -26,7 +26,7 @@ from .facts import fact_text, links_of, persona_of, served_assertions
 from .predicates import (DERIVED, REGISTRY, alias_evidenced, because, fill_types, knowledge, outcome, participants,
                          registry_prompt, salience, semantics, validate)
 from .secrets import NOT_SECRETS, fold as fold_secrets, reveal_value
-from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads, similarity
+from .threads import ABOUT_MIN, PREDICATES as THREAD_PREDICATES, _grams as thread_grams, fold as fold_threads, similarity
 from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
@@ -412,9 +412,10 @@ def promise_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = 
 
 
 def thread_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = OPEN_THREADS) -> list[dict[str, Any]]:
-    """Open goals, questions, threats and debts before the target turn (PHASE-11, ADR 0039), newest first: those whose
-    owner or counterpart the prompt names first, then the persona's own (the persona is in every scene, so naming
-    it says nothing), at most `limit`."""
+    """Open goals, questions, threats and debts before the target turn (PHASE-11, ADR 0039), newest first within each
+    group: those the target turn's words are about (ABOUT_MIN of the thread's trigrams), then those whose owner or
+    counterpart the prompt names, then the persona's own (the persona is in every scene, so naming it says nothing),
+    at most `limit`. A thread can only be ended while it is listed: an old one the story comes back to must be."""
     if limit <= 0 or not rows:
         return []
     r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")),
@@ -422,18 +423,22 @@ def thread_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = O
     threads = [t for t in fold_threads([dict(row) for row in rows if row["predicate"] in THREAD_PREDICATES], r)[0]
                if t["status"] == "open" and t["kind"] != "promise"]
     shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
-    named, persona = [], []
+    target = thread_grams(" ".join(row["content"] for row in ctx["members"]))
+    about, named, persona = [], [], []
     for t in threads:
+        words = thread_grams(t["text"])
         names = set()
         for name in (t["by"], t.get("to")):
             e = r.entity("character", name) if name else None
             names |= {norm(n) for n in (e["names"] if e else [name] if name else [])}
-        if any(n in shown for n in {n for n in names - r.persona_names if len(n) >= 2}):
+        if words and len(words & target) / len(words) >= ABOUT_MIN:
+            about.append(t)
+        elif any(n in shown for n in {n for n in names - r.persona_names if len(n) >= 2}):
             named.append(t)
         elif r.is_persona("character", t["by"]):
             persona.append(t)
     return [{"kind": t["kind"], "by": t["by"], "to": t.get("to"), "text": t["text"], "turn": t["turn"]}
-            for t in named + persona][:limit]
+            for t in about + named + persona][:limit]
 
 
 def secret_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = OPEN_SECRETS) -> list[dict[str, Any]]:

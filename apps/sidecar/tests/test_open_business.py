@@ -110,3 +110,20 @@ def test_models_fill_in_an_object_or_say_fulfilled_and_the_goal_still_ends():
     # goals are one owner's: the same aim with a stray object is a restatement
     stray = row(27, "엘피", "goal", "블랑", GOAL, **C, object_type="character")
     assert len(status([goal(26), stray])) == 1
+
+
+def test_the_extractor_sees_an_old_thread_the_target_turn_is_about():
+    """OPEN THREADS lists what the target turn is about before the newest named threads: an old goal the story comes
+    back to can only be ended while it is listed (M0: most of the owner's goals were never listed again)."""
+    from nmos_sidecar import extraction
+
+    rows = [goal(i, text=f"하나의 {i}번째 소원 이루기 {'가나다라마바사'[i % 7] * 3}") for i in range(12)]
+    rows.append(goal(13, text="목요일마다 블랑에게 도시락을 챙겨주는 것"))
+    rows += [goal(20 + i, text=f"새로운 계획 {i} {'아자차카타파하'[i] * 3}") for i in range(7)]
+    ctx = {"target": {"conversation_id": uuid.uuid4(), "turn": 40},
+           "context": [{"turn": 39, "metadata": {"role": "user"}, "content": "엘피가 부엌에 있다."}],
+           "members": [{"turn": 40, "metadata": {"role": "char"},
+                        "content": "엘피는 목요일 아침, 블랑에게 도시락을 챙겨주는 것을 잊지 않았다."}]}
+    listed = extraction.thread_hints(ctx, rows)
+    assert listed[0]["text"] == "목요일마다 블랑에게 도시락을 챙겨주는 것"
+    assert len(listed) == 8 and listed[1]["turn"] == 26  # then the newest named ones
