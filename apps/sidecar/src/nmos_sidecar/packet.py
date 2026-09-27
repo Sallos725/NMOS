@@ -128,6 +128,7 @@ NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 
              "packet-v4": 1.2}  # estimated tokens per non-ASCII char
 PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4"})
 FOLD_POLICIES = frozenset({"packet-v4"})
+ABOUT_POLICIES = frozenset({"packet-v4"})  # promises the user's message is about first (ADR 0019 amendment 1)
 RESTATES = 0.6  # packet-v4: a claim this close to a fact of the same head says it again (ADR 0019's match)
 # What the memory budget is for, and how far a suggested budget may go (ADR 0036).
 MEMORY_KINDS = frozenset({"state", "thread", "fact", "claim", "secret"})

@@ -81,8 +81,8 @@ The pilot's scenes (`docs/perf/stage4-leak-pilot.md`), rebuilt with `tools/eval_
 with `extract-v12` facts and an 800-token budget. The requests are the pilot's own (Opus: the host's logged
 requests; Gemini: host-rendered 누렁이Gemini prompts), with only the packet replaced. C2: the mother asks what the
 daughter and the user whispered about (the plan to watch her lecture, kept from her). D1: the user asks the
-daughter to go and hug her mother (a promise to hug her, kept from her; in the Opus request it is in the packet
-only, in Gemini's also in the transcript). The owner ran every call with their own keys; one reader judged the
+daughter to go and hug her mother (a promise to hug her, kept from her). In both requests the promise's turn (9)
+is older than the transcript the host sent (Opus: turns 46–52; Gemini: turns 30–52), so only the packet holds it. The owner ran every call with their own keys; one reader judged the
 replies by the pilot's definitions (a leak is words or actions that tell a character it is kept from; omniscient
 narration of thoughts is not; a holder's own slip is reported apart, Q4).
 
@@ -106,10 +106,18 @@ Leak / slip or near miss / the holder shows they remember it, per scene and cond
   host's own transcript, so the holders recall it anyway (3 of 3).
 - **Gemini narrated the holder's memory less than in the pilot**: D1 third person 1 of 3 under `packet-v2` and 0
   of 3 under `packet-v4`, where the pilot saw 2 of 2 under both of its packets; C2 1 and 2 of 3 (pilot 2 of 2).
-  Gemini shows memory only in narration, and in D1 the daughter hugs her mother either way; three runs cannot
-  tell a packet effect from the model's variance.
+- **Why, in D1: the promise was not in the packet.** The pilot's packet had it as a promise line ("…, let's hug
+  her tight"). With `extract-v12` the girl has more open promises (one extracted in both directions), the three
+  newest filled the thread limit, and the packet held only a long conditional goal fact about the hug. Opus
+  recalled from that fact; Gemini did not. Under `packet-v4` the promise the user's message is about now comes
+  first (ADR 0019 amendment 1), and the rebuilt D1 packet holds it in the Private section; C2's packets are
+  unchanged. D1 under `packet-v4` is to be run again.
 - Not run: Gemini D1 first person with the narrator mode (3 calls): the token cap was reached first, the D1
   prompts being 158,600 tokens instead of the 125,000 estimated.
+
+An earlier reading of this run blamed the eval tool (the request's own turn, extracted later with its reply,
+seemed to close the promise); the promise was open, and the tool's rebuild now stops at the message before the
+request anyway, which changed none of these packets.
 
 Cost: Opus 5.5, 18 calls, $3.04 as reported by the gateway (repeat calls cached). Gemini 3.1 Pro (Vertex, global),
 21 calls, 3,028,863 prompt and 49,206 output tokens.

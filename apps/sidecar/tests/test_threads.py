@@ -112,6 +112,19 @@ def test_relevant_threads_need_a_mention_other_than_the_persona():
     assert relevant_threads([t], "하나야", "", set(), 3) == []
 
 
+def test_packet_v4_puts_the_promise_the_message_is_about_first():
+    """ADR 0019 amendment 1: newest first filled the limit with newer promises of the same girl."""
+    old = {"status": "open", "names": ["엘피", "{{user}}"], "position": 18, "text": "다음에 엄마가 또 그러면, 꼬옥 안아주자"}
+    newer = [{"status": "open", "names": ["엘피", "{{user}}"], "position": 50 + i, "text": text}
+             for i, text in enumerate(("뛰지 말 것", "라디아를 살살 깨워줄 것", "손 씻고 오기"))]
+    query = "엄마가 새벽에 추웠대. 꼬옥 안아주면 따뜻하지? 엘피도 가서 안아줄래?"
+    assert old not in relevant_threads([old, *newer], query, "", set(), 3)  # packet-v3 and earlier
+    assert relevant_threads([old, *newer], query, "", set(), 3, about=True)[0] is old
+    unnamed = {**old, "names": ["{{user}}"]}  # about it without naming anyone
+    assert relevant_threads([unnamed], query, "", set(), 3, about=True) == [unnamed]
+    assert relevant_threads([unnamed], "좋은 아침.", "", set(), 3, about=True) == []
+
+
 def test_thread_line_and_packet_section():
     from nmos_sidecar.facts import thread_line
     from nmos_sidecar.packet import compile_packet

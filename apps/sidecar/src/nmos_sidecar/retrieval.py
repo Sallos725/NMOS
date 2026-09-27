@@ -21,7 +21,7 @@ from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
-from .packet import (DEFAULT_POLICY, MEMORY_KINDS, REPEATS, Compiled, Excerpt, Line, StateItem, clean_text,
+from .packet import (ABOUT_POLICIES, DEFAULT_POLICY, MEMORY_KINDS, REPEATS, Compiled, Excerpt, Line, StateItem, clean_text,
                      compile_lines, cut_lines, excerpt, fits_at, kept_counts, secret_line, secret_text)
 from .state import current_state
 from .threads import relevant_threads
@@ -262,7 +262,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         if options.threads_limit > 0:
             g.threads = _moded([thread_entry(t, scene.private(t, g.cast, r)) for t in
                                 relevant_threads(view["threads"], query, previous_ai, in_context,
-                                                 options.threads_limit, persona)], view["threads"], g, r, options)
+                                                 options.threads_limit, persona,
+                                                 about=options.policy in ABOUT_POLICIES)], view["threads"], g, r, options)
         if options.facts_limit > 0:
             facts = relevant_facts(view["facts"], query, previous_ai, in_context, options.facts_limit,
                                    options.events_limit, persona, scene.names(g.cast, r))
