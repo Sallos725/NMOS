@@ -58,9 +58,9 @@ class Settings:
     embed_query_instruction: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_QUERY_INSTRUCTION", "auto"))
     trace_retention_days: int = field(default_factory=lambda: int(os.environ.get("NMOS_TRACE_RETENTION_DAYS", "30")))
     # Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0041). Empty or unknown: `packet.DEFAULT_POLICY`
-    # (packet-v6: room kept for the best excerpt, Korean estimate 1.2, a <Private> section, no line that says an
-    # earlier line again, what standing facts replaced, stated causes). packet-v7 numbers excerpts and state by turn;
-    # v5 … v0 are earlier. The compose files pass it empty, so a pinned value cannot outlive a new default.
+    # (packet-v7: room kept for the best excerpt, Korean estimate 1.2, a <Private> section, no line that says an
+    # earlier line again, what standing facts replaced, stated causes, excerpts and state numbered by turn);
+    # v6 … v0 are earlier. The compose files pass it empty, so a pinned value cannot outlive a new default.
     packet_policy: str = field(default_factory=lambda: os.environ.get("NMOS_PACKET_POLICY", ""))
     parsers_file: str = field(default_factory=lambda: os.environ.get("NMOS_PARSERS_FILE", ""))
     # Test hook for the "sidecar slower than deadlineMs" acceptance check. Never set in production.

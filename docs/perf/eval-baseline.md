@@ -31,8 +31,10 @@ and prints this table (`tools/eval_memory.py`).
   itself excluded). `lexical`: raw lexical recall (no extractor, no embeddings). `hybrid`: lexical +
   vectors. `full`: hybrid + facts. The last 6 messages are sent as `in_context_ids`, so memory must
   bring what is older. `full-v0` (since Phase 9): `full` compiled by `packet-v0`, the packet compiler
-  before ADR 0027; `full` uses the default, `packet-v6` since ADR 0040 (`packet-v1` to `-v5` before; the
-  table's first 35 cases are the same under each).
+  before ADR 0027; `full` uses the default, `packet-v7` since ADR 0041 (`packet-v1` to `-v6` before; the
+  table's first 35 cases are the same under each). `packet-v7` gives every case of every mode the same outcome as
+  `packet-v6`: no gold or stale string depends on an excerpt's turn number (the mean `full` packet is 1 token smaller,
+  190 → 189: a turn index has fewer digits than a position).
 
 Gold for the state cases is a fact line (e.g. `Hinata located in harbor`), which only `full` can
 produce; `lexical` and `hybrid` can still bring the original sentence as an excerpt.
@@ -104,7 +106,7 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | lexical | 2/41 | 0 | 0/1 | 103 |
 | hybrid | 3/41 | 0 | 0/1 | 127 |
 | full-v0 | 43/48 | 0 | 0/1 | 190 |
-| full | 48/48 | 0 | 0/1 | 190 |
+| full | 48/48 | 0 | 0/1 | 189 |
 
 Phase 11 step 6 (ADR 0040) added "why someone is angry": a feeling with the cause the story states, asked about with
 "why" after a speech-level fact of the same pair. `packet-v6` places the feeling with its cause; `full-v0` does not.

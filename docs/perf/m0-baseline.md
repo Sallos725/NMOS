@@ -115,7 +115,11 @@ Of the 28 cases, 19 have every answer in the last turns; **9 need memory**.
 | step 3, 7c1e740 (`packet-v5`) | 25 | 7 | 1 |
 | steps 4–5, 7709f23 (`packet-v5`, `extract-v13` re-extraction) | 26 | 7 | 0 |
 | step 6 (`packet-v6`) | 26 | 7 | 0 |
+| `packet-v7`, the new default (ADR 0041; same copy and facts as step 6) | 26 | 7 | 0 |
 
 The two memory cases still failing are the goal case (an old open goal loses to newer ones, K23) and a "why" about a
 status later statuses replaced (current facts do not reach it). Measuring memory needs cases whose answers lie outside
 the prompt window; this chat's recorded requests are all at its last turns.
+
+`packet-v7` renumbers the 16 excerpt lines of these 28 packets (their positions were 22 to 68 above the turns of their
+messages) and changes nothing else in them.

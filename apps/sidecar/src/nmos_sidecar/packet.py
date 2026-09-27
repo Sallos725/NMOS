@@ -131,9 +131,10 @@ def excerpt(content: str, query: str, window: int = 2) -> str:
 # earlier one names it, with its turn (PHASE-11 step 3, ADR 0038).
 # packet-v6 is packet-v5 with the cause the story states on a fact or claim ("; because: …", PHASE-11 step 6, ADR 0040).
 # packet-v7 is packet-v6 with one numbering for `turn`: an excerpt and a state item carry the turn index of their
-# message, as facts, claims and threads do (ADR 0008); before, they carried its head position (ADR 0041).
+# message, as facts, claims and threads do (ADR 0008); before, they carried its head position (ADR 0041; default
+# since the owner's approval, 2026-09-28).
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7")
-DEFAULT_POLICY = "packet-v6"
+DEFAULT_POLICY = "packet-v7"
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2,
              "packet-v4": 1.2, "packet-v5": 1.2, "packet-v6": 1.2, "packet-v7": 1.2}  # estimated tokens per non-ASCII char
 PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7"})

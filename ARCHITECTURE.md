@@ -436,6 +436,12 @@ applied before threads are folded, so a revealed goal or promise is revealed as 
 time a cause links to the event it names only when one of the same people, at most 5 turns back, clearly matches with
 names left out; links show in the Inspector, never in the packet. No cause is inferred.
 
+**D51 — One numbering for `turn` (ADR 0041; found in the Phase 11 real-host smoke).** `packet-v7` gives an excerpt's `turn`
+and a state item's `as_of_turn` the turn index of their message, the number facts, claims, threads and secrets show
+(ADR 0008); earlier policies show the message's position there, and their traces replay so. A message without a turn gets
+no turn attribute, and excerpts stay in story order. The Inspector's state table shows the turn index. `packet-v7` is
+the default (owner, 2026-09-28).
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

@@ -204,7 +204,7 @@ def test_a_trace_records_every_offered_line_with_provenance(full):
     chat = story(client, url)
     out = ask(client, chat, "Kaito, what do you know about the letter?")
     trace = client.get(f"/v1/trace/{out['trace_id']}").json()
-    assert trace["policy"] == "packet-v6" and trace["budget_tokens"] == 600
+    assert trace["policy"] == "packet-v7" and trace["budget_tokens"] == 600
     assert trace["upto_position"] == len(chat.messages) - 1 and trace["previous_ai"] == ""
     assert trace["recall_options"]["facts_limit"] == 8
     facts = [e for e in trace["lines"] if e["kind"] == "fact"]
@@ -313,10 +313,10 @@ def test_compare_policies_over_traces(full):
     assert v7["packets"] == v6["packets"] == v5["packets"] == v4["packets"] == v3["packets"] == v2["packets"] \
         == v1["packets"] == 2
     assert v0["packets"] == 2
-    assert v6["replayed_same_policy"] == v6["reproduced"] == 2  # recorded by the default, packet-v6
+    assert v7["replayed_same_policy"] == v7["reproduced"] == 2  # recorded by the default, packet-v7
     assert v0["replayed_same_policy"] == v1["replayed_same_policy"] == v2["replayed_same_policy"] == 0
     assert v3["replayed_same_policy"] == v4["replayed_same_policy"] == v5["replayed_same_policy"] \
-        == v7["replayed_same_policy"] == 0
+        == v6["replayed_same_policy"] == 0
     # the first request's reply ("Hana has the map.") echoed the map fact, and every policy keeps it
     assert v3["echoed_recorded"] >= 1 and v3["echo_kept"] == v3["echoed_recorded"] == v2["echo_kept"] == v1["echo_kept"] \
         == v0["echo_kept"]
@@ -363,7 +363,7 @@ def test_inspector_shows_the_last_packet_ledger(full):
     _sync(client, chat)
     conv = client.get("/v1/conversations").json()[0]["id"]
     page = client.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
-    assert "Last packet: what went in" in page and "policy packet-v6" in page and "next reply: present" in page
+    assert "Last packet: what went in" in page and "policy packet-v7" in page and "next reply: present" in page
     assert "a hidden fact reappears" in page and "the letter is forged" in page
     assert "fact 2" in page or "fact 1" in page  # the retrievals table counts what each packet held
     ko = client.get(f"/inspector/c/{conv}").text
