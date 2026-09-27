@@ -119,3 +119,25 @@ Of the 28 cases, 19 have every answer in the last turns; **9 need memory**.
 The two memory cases still failing are the goal case (an old open goal loses to newer ones, K23) and a "why" about a
 status later statuses replaced (current facts do not reach it). Measuring memory needs cases whose answers lie outside
 the prompt window; this chat's recorded requests are all at its last turns.
+
+## Phase 12 cases: answers outside the prompt window (Phase 12 step 2)
+
+PHASE-12 Q8: 12 new cases at the same request (turn 73), each with every answer only in turns 0–66, outside the
+request's prompt window (checked against its `in_context` messages). Drafted from the chat and confirmed by the owner
+(2026-09-28, all 12 as drafted). They stay outside the repository with the others. Categories: an early event (6), why
+something early was so (1), what has happened so far (2), and a character's lasting state (3).
+
+The baseline is `main` after Phase 11: the copy whose longest chat was re-extracted with `extract-v13`, `packet-v6`,
+budget 800 and lexical recall only, as above.
+
+| Category | cases | passed on `main` (Phase 11) | gold phrases held |
+|---|---:|---:|---:|
+| early event | 6 | 1 | 1 of 6 |
+| why | 1 | 0 | 0 of 1 |
+| story so far | 2 | 0 | 0 of 5 |
+| lasting state | 3 | 1 | 1 of 3 |
+| **all** | **12** | **2** | **2 of 15** |
+
+Every one needs memory. The two that pass have their answer in a fact line the question's words reach: the events
+of the gift (`엘피 event: 엄마에게 귀 모양 쿠키를 선물함`) and a possession (`라디아 possesses 초록색 담요`). The rest
+were said once, early, and no line the packet chooses carries them. The packets used 737–789 of 800 tokens.

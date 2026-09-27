@@ -7,7 +7,8 @@
 projection written by the extraction model; secrets left out and checked, no `<Story>` in narrator mode; a `<Cast>`
 block of each scene character's state from facts; `packet-v7` with `<Story>` in at most 30% of the budget; new M0
 cases whose answers lie outside the prompt window. The owner answered every question with the recommended answer;
-no release is decided. Done: step 1 (spec). Next: step 2 (M0 cases with the owner, baseline on `main`).
+no release is decided. Done: step 1 (spec); step 2, 12 owner-confirmed M0 cases whose answers lie outside the
+prompt window, 2 of 12 on `main` (`docs/perf/m0-baseline.md`). Next: step 3 (the summary projection).
 
 **Phase 11 — Narrative Engine, part 1 (Stage 5): complete (2026-09-28), not released.** Spec
 `docs/phases/PHASE-11.md`: the M0 evaluation on real chats (a restored backup, read-only), relationship history
