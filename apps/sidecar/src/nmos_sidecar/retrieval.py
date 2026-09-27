@@ -21,7 +21,7 @@ from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
-from .packet import (ABOUT_POLICIES, DEFAULT_POLICY, MEMORY_KINDS, REPEATS, Compiled, Excerpt, Line, StateItem, clean_text,
+from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, DEFAULT_POLICY, MEMORY_KINDS, REPEATS, Compiled, Excerpt, Line, StateItem, clean_text,
                      compile_lines, cut_lines, excerpt, fits_at, kept_counts, secret_line, secret_text)
 from .state import current_state
 from .threads import relevant_threads
@@ -271,9 +271,10 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             claims = relevant_facts(view["claims"], query, previous_ai, in_context, max(1, options.facts_limit // 2),
                                     persona=persona)
             # How the cast stand with each other takes the budget before threads (ADR 0026).
-            g.lead = _moded([fact_entry(f, scene.private(f, g.cast, r)) for f in facts if f["predicate"] in STANDING],
+            before = options.policy in BEFORE_POLICIES
+            g.lead = _moded([fact_entry(f, scene.private(f, g.cast, r), before) for f in facts if f["predicate"] in STANDING],
                             facts, g, r, options)
-            g.facts = _moded([fact_entry(f, scene.private(f, g.cast, r)) for f in facts
+            g.facts = _moded([fact_entry(f, scene.private(f, g.cast, r), before) for f in facts
                               if f["predicate"] not in STANDING]
                              + [claim_entry(c, scene.private(c, g.cast, r)) for c in claims], facts + claims, g, r, options)
         if g.withheld_lines:

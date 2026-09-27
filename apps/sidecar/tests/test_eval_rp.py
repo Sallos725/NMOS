@@ -24,6 +24,10 @@ def test_a_case_passes_on_every_gold_phrase_in_any_wording_and_no_forbidden_one(
     assert eval_rp.score({"gold": ["forged", "dragon"]}, packet)["passed"] is False
     assert eval_rp.score({"gold": ["forged"], "forbidden": ["clouds"]}, packet) == {
         "gold": 1, "held": 1, "forbidden": 1, "placed": 1, "passed": False}
+    # packet-v5 names what a standing fact replaced: past, not current (ADR 0038)
+    v5 = '<Fact kind="addresses" turn="35">블랑 addresses 유우마: 반말; before, turn 16: 블랑 addresses 유우마: 존댓말</Fact>'
+    assert eval_rp.score({"gold": ["존댓말"], "forbidden": ["존댓말"]}, v5) == {
+        "gold": 1, "held": 1, "forbidden": 1, "placed": 0, "passed": True}
 
 
 def test_a_probe_replaces_the_requests_message_as_the_live_request_would_send_it(full):
