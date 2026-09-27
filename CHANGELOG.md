@@ -7,8 +7,8 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 The audit items the 2026-09-26 review left without a state (A-11, A-13, A-17, A-18, A-19), the owner's
 decision on K26, extractor generations `extract-v11` (A-12, A-14) and `extract-v12` (Phase 10, secrets), the
-packet policy `packet-v3` (Phase 10, Private section), per-chat memory modes (Phase 10), the default memory
-budget 800, and a new text normalizer `clean-v3` (K27). Schema: migration 0021 (applied at startup).
+packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no restatements), per-chat memory modes
+(Phase 10), the default memory budget 800 and a notice when memory did not fit, and a new text normalizer `clean-v3` (K27). Schema: migration 0021 (applied at startup).
 
 - **The sidecar's access log no longer shows the auth token** (audit A-11). The Inspector opened in a browser
   tab passes the token as `?token=` on every link, and uvicorn logged each request line with it. The log now
@@ -81,13 +81,21 @@ budget 800, and a new text normalizer `clean-v3` (K27). Schema: migration 0021 (
   600-token packet placed 66% of the memory lines retrieval found, 800 places 89%, and 1000 all of them
   (`docs/perf/memory-mode.md`). If you left **기억 예산(토큰) / Memory budget (tokens)** empty, lower PocketRisu's
   max context by 200 more.
+- **The Status tab says when memory did not fit** (ADR 0036). When the last reply's memory budget left memory
+  out, a card says how many lines of how many, and the budget that holds them all (in steps of 100, up to 2000),
+  with a button that sets it. Lower PocketRisu's max context by the same amount. Inspector → Retrievals shows it
+  too ("all at N"). With the facts `extract-v12` writes, the owner's chat needs 1000–1100 (`docs/perf/budget.md`).
+- **A line that says an earlier line again is left out** (ADR 0036). The new default packet policy `packet-v4`
+  keeps one of two lines with the same subject, relation and content (a fact extracted twice, a character's
+  claim of what the narration already says), which frees room for others. `NMOS_PACKET_POLICY=packet-v3` keeps
+  the previous layout; both compose files now default to `packet-v4`.
 
 **Upgrading.** Pull the new sidecar image and restart it. At startup the normalized text is rewritten
 (`clean-v3`). With an LLM configured, `extract-v12` on `clean-v3` becomes active, and each chat's latest
 `NMOS_EXTRACT_BACKFILL` turns (default 100) are re-extracted once at the provider's cost. With embeddings on,
 every message is embedded again with the embedding model. Older turns keep their earlier facts until
 **Extract all history**. Migration 0021 adds each chat's memory mode. **Replace the plugin file** (the memory
-mode card and the new default budget are in it) and reload PocketRisu; with the old plugin memory still works,
+mode card, the budget notice and the new default budget are in it) and reload PocketRisu; with the old plugin memory still works,
 but the mode cannot be set and the default budget stays 600.
 
 ## 0.1.0-beta.21

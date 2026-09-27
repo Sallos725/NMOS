@@ -71,6 +71,20 @@ describe('beforeRequest', () => {
     expect(out[1]?.role).toBe('system');
   });
 
+  it('keeps what the budget left out for the status tab, also for a cached packet (ADR 0036)', async () => {
+    const memory = { offered: 15, cut: 4, fits_at: 1100 };
+    const { host, calls } = fakeHost((path, body) => {
+      const res = happy(path, body);
+      return path === '/v1/retrieve' ? { status: 200, json: { ...(res.json as object), memory } } : res;
+    });
+    const adapter = createAdapter(host);
+    await adapter.beforeRequest(prompt, 'model');
+    expect((await adapter.status()).last).toMatchObject({ budgetTokens: 600, memory });
+    await adapter.beforeRequest(structuredClone(prompt), 'model');  // a reroll of the same chat state: cached
+    expect(calls.filter((c) => c === '/v1/retrieve')).toHaveLength(1);
+    expect((await adapter.status()).last).toMatchObject({ budgetTokens: 600, memory });
+  });
+
   it('host retries of the injected prompt make no further calls (H2)', async () => {
     const { host, calls } = fakeHost(happy);
     const adapter = createAdapter(host);

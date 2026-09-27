@@ -1,5 +1,6 @@
 // Request-path orchestration. Host access comes in through `HostPort`; everything fails open.
 
+import type { MemoryFit } from './budget';
 import { canonicalJson } from './canonical';
 import { sha256Hex } from './hash';
 import { deadlineAdvice, formatMs } from './deadline';
@@ -59,6 +60,7 @@ interface CacheEntry {
   packet: string;
   expires: number;
   failed?: boolean;
+  memory?: MemoryFit | null;
 }
 
 const SUCCESS_TTL_MS = 10 * 60_000;
@@ -78,6 +80,9 @@ export interface LastRequest {
   deadlineMs: number;
   /** Cut at the deadline, but recall answered later: how long the whole request took (audit A-09). */
   neededMs?: number;
+  /** The memory budget this request had, and what it left out (ADR 0036). */
+  budgetTokens?: number;
+  memory?: MemoryFit | null;
 }
 
 export interface StatusInfo {
@@ -146,8 +151,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     return personas?.value ? personaOf(chat, personas.value) : null;
   }
 
-  function remember(key: string, packet: string, ttl: number, failed = false): void {
-    cache.set(key, { packet, expires: host.now() + ttl, failed });
+  function remember(key: string, packet: string, ttl: number, failed = false, memory: MemoryFit | null = null): void {
+    cache.set(key, { packet, expires: host.now() + ttl, failed, memory });
     while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
   }
 
@@ -249,7 +254,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         const outcome = cached.packet ? 'injected' : 'nothing-relevant';
         // A retry served from the miss cache keeps the failure on the status tab.
         if (!cached.failed) last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: cached.packet.length,
-          packet: cached.packet, outcome, deadlineMs: settings.deadlineMs };
+          packet: cached.packet, outcome, deadlineMs: settings.deadlineMs, budgetTokens: settings.reservedMemoryTokens,
+          memory: cached.memory ?? null };
         emit({ type: 'request-end', outcome, chars: cached.packet.length,
           conversationId: conversations.get(chat.id) ?? null });
         return injectPacket(prompt, cached.packet, settings.injectPosition, turn);
@@ -266,7 +272,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
 
       const { query, previousAi } = queryTexts(messages);
       const t2 = host.now();
-      const retrieved = await call<{ freshness: string; packet: { text: string } }>(settings, '/v1/retrieve', {
+      const retrieved = await call<{ freshness: string; packet: { text: string }; memory?: MemoryFit | null }>(settings, '/v1/retrieve', {
         host: 'pocketrisu',
         chat_id: chat.id,
         active_commit: synced.active_commit,
@@ -278,12 +284,13 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started },
       }, deadline, undefined, late);
       const packet = retrieved.freshness === 'fresh' ? retrieved.packet.text : '';
-      remember(key, packet, SUCCESS_TTL_MS);
+      const memory = retrieved.freshness === 'fresh' ? retrieved.memory ?? null : null; // older sidecars send none
+      remember(key, packet, SUCCESS_TTL_MS, false, memory);
       host.debug('[NMOS] request done', { ms: Math.round(host.now() - started), manifestMs: Math.round(manifestMs),
         syncMs: Math.round(syncMs), retrieveMs: Math.round(host.now() - t2), packetChars: packet.length });
       const outcome = packet ? 'injected' : 'nothing-relevant';
       last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, packet, outcome,
-        deadlineMs: settings.deadlineMs };
+        deadlineMs: settings.deadlineMs, budgetTokens: settings.reservedMemoryTokens, memory };
       emit({ type: 'request-end', outcome, chars: packet.length, conversationId: synced.conversation_id ?? null });
       return injectPacket(prompt, packet, settings.injectPosition, turn);
     } catch (error) {

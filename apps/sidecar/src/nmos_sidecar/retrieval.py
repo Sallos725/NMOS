@@ -21,8 +21,8 @@ from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
-from .packet import (DEFAULT_POLICY, REPEATS, Excerpt, Line, StateItem, clean_text, compile_lines, excerpt,
-                     kept_counts, secret_line, secret_text)
+from .packet import (DEFAULT_POLICY, MEMORY_KINDS, REPEATS, Compiled, Excerpt, Line, StateItem, clean_text,
+                     compile_lines, cut_lines, excerpt, fits_at, kept_counts, secret_line, secret_text)
 from .state import current_state
 from .threads import relevant_threads
 from .vectors import vector_candidates
@@ -357,10 +357,20 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator)
     in_context = set(request.in_context_ids)
     g = gather(conn, head, query, previous_ai, in_context, options) if fresh else Gathered()
-    compiled = compile_lines(g.ranked, request.budget_tokens, state=g.state, threads=g.threads, facts=g.facts,
+    def compile_at(budget: int) -> Compiled:
+        return compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts,
                              policy=options.policy, lead=g.lead, note=g.note)
+
+    compiled = compile_at(request.budget_tokens)
     kept = kept_counts(compiled.ledger)
-    timings = {**g.timings, "sidecar_total": round((time.perf_counter() - started) * 1000, 2)}
+    # Memory the budget left out, and the budget that would hold it all: the panel suggests it (ADR 0036).
+    fit_started = time.perf_counter()
+    cut = cut_lines(compiled.ledger)
+    fit = fits_at(compile_at, request.budget_tokens) if cut else None
+    memory = {"offered": sum(1 for e in compiled.ledger if e["kind"] in MEMORY_KINDS and e["why"] != "restates"),
+              "cut": cut, "fits_at": fit}
+    timings = {**g.timings, "fit": round((time.perf_counter() - fit_started) * 1000, 2),
+               "sidecar_total": round((time.perf_counter() - started) * 1000, 2)}
 
     def brief(c: dict[str, Any]) -> dict[str, Any]:
         return {"revision_id": str(c["id"]), "position": c["position"], "host_logical_id": c["host_logical_id"],
@@ -387,6 +397,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                    "placed": {k: sum(1 for e in placed if e["kind"] == k)
                               for k in ("state", "thread", "fact", "claim", "secret", "excerpt")},
                    "scene_cast": sorted(g.cast.values()), "memory_mode_withheld": g.withheld,
+                   "memory_cut": cut, "fits_at": fit,
                    "embedding_projection": options.embed_projection[:20] if options.embedder else None,
                    "extractor": (options.extractor_key or "")[:20] or None,
                    **{f"client_{k}": v for k, v in request.client_timings_ms.items()}}),
@@ -398,4 +409,4 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         ),
     )
     return {"freshness": "fresh" if fresh else "stale", "trace_id": trace_id, "text": compiled.text,
-            "tokens": compiled.tokens, "count": len(compiled.excerpts)}
+            "tokens": compiled.tokens, "count": len(compiled.excerpts), "memory": memory}

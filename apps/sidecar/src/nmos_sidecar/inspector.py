@@ -134,7 +134,8 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "lk.state": ("상태", "state"), "lk.thread": ("약속", "thread"), "lk.fact": ("사실", "fact"),
     "lk.claim": ("주장", "claim"), "lk.excerpt": ("원문", "excerpt"),
     "pk.placed": ("들어감", "placed"), "pk.budget": ("예산 부족", "no budget"), "pk.state_cap": ("상태 상한", "state cap"),
-    "pk.repeats": ("사실과 중복", "repeats a fact"),
+    "pk.repeats": ("사실과 중복", "repeats a fact"), "pk.restates": ("앞 줄과 같은 내용", "says an earlier line again"),
+    "lk.secret": ("비밀", "secret"), "fits_at": ("예산 {n}이면 모두", "all at {n}"),
     "pk.short": ("한 문장으로 줄임", "shortened to one sentence"), "pk.cut": ("잘라서 넣음", "cut to fit"),
     "rp.ok": ("있음", "present"), "rp.pending": ("아직 없음", "not yet"), "rp.changed": ("이후 앞부분이 바뀜", "story changed since"),
     "rp.not_a_reply": ("응답 아님", "not a reply"), "rp.not_recorded": ("원장 이전 기록", "recorded before the ledger"),
@@ -200,11 +201,13 @@ def _v(value: Any) -> str:
     return escape("" if value is None else str(value))
 
 
-def _facts_kept(timings: dict[str, Any]) -> str | None:
-    """Fact lines that fit the budget out of those offered (ADR 0026); traces before it only offered."""
+def _facts_kept(timings: dict[str, Any], lang: str = "en") -> str | None:
+    """Fact lines that fit the budget out of those offered (ADR 0026); traces before it only offered. When
+    memory was left out, the budget that would hold it all (ADR 0036)."""
     if "facts" not in timings:
         return None
-    return f"{timings['kept_facts']}/{timings['facts']}" if "kept_facts" in timings else f"?/{timings['facts']}"
+    kept = f"{timings['kept_facts']}/{timings['facts']}" if "kept_facts" in timings else f"?/{timings['facts']}"
+    return kept + (f" ({_t(lang, 'fits_at').format(n=timings['fits_at'])})" if timings.get("fits_at") else "")
 
 
 def table(headers: list[str], rows: Iterable[list[str]]) -> str:
@@ -532,7 +535,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         [t(k) for k in ("h.when", "h.query", "h.fresh", "h.cand", "h.sel", "h.in_ctx", "h.facts_kept", "h.placed",
                         "h.tokens")] + ["ms"],
         [[timestamp(r["created_at"]), _v(r["query"]), chip(lang, "f", r["freshness"]), _v(r["candidates"]),
-          _v(r["selected"]), _v(r["excluded"]), _v(_facts_kept(r["latency_ms"] or {})), _placed(r, lang),
+          _v(r["selected"]), _v(r["excluded"]), _v(_facts_kept(r["latency_ms"] or {}, lang)), _placed(r, lang),
           _v(r["token_estimate"]),
           _v((r["latency_ms"] or {}).get("sidecar_total"))] for r in traces]), False))
     parts.append(("commits", t("h.commits"), len(commits), table(

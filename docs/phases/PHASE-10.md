@@ -112,6 +112,9 @@ in front of those it is kept from. A chat can choose a strict packet or a first-
 5. Per-chat memory mode: migration 0021, API, panel (ADR for the mode). **Done** (ADR 0035, `docs/perf/memory-mode.md`;
    the card is on the Inspector's chat page, with the chat's other actions; claims are marked private too; the
    owner raised the default reserve to 800).
+   - **Budget pressure** (owner request 2026-09-27, options B and C of four): the Status tab says what the last
+     request left out and the budget that holds it, and `packet-v4` drops restatements. **Done** (ADR 0036,
+     `docs/perf/budget.md`). A compact line format (option D) waits for step 7.
 6. Inspector.
 7. Evaluation: synthetic cases, `tools/eval_secrets.py`, the model tiers (each paid run approved first).
 8. Documentation, real-host smoke, upgrade check.

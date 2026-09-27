@@ -405,7 +405,13 @@ with a rule in the Note (only holders know it; others do not act on it; holders 
 `memory_narrator` (migration 0021), set from the Inspector's chat page and recorded in every trace's recall
 options. A narrator keeps only public, unmarked and narrator-known lines (and a Note line saying so). Strict
 replaces each private line with a content-free `<Secret holders=… not_known_by=…>` line, one per pair of sets,
-outside the Private section. Excerpts that say a withheld line's content are left out. Claims are marked private like facts and show their knowledge marks only in the
+outside the Private section. Excerpts that say a withheld line's content are left out.
+
+**D46 — Budget pressure (Phase 10, ADR 0036).** A request reports the memory lines its packet left out for the
+budget and the smallest budget (100s, up to 2000) that holds them all; the panel's Status tab shows it with a
+button that sets the plugin's budget, and reminds the user to lower the host's max context by as much (D2).
+The default policy `packet-v4` leaves out a line that says an earlier line again (same head and content, or a
+claim restating a fact of the same head); the ledger keeps it as `restates`. Claims are marked private like facts and show their knowledge marks only in the
 Private section.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only

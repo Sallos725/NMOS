@@ -46,8 +46,8 @@ were compiled again at other budgets, with their own options and extractor, as o
 
 `packet-v3` places the same within one line. Where the room goes, on the owner's 9 requests at 1200 (every line
 placed, 856 estimated tokens on average): the Note 183 (the rules for marks, claims, threads and Private), and of
-about 700 in memory lines, 354 in tags and attributes. Placed lines repeat content 24 times (the same value from
-two lines, such as a fact and a claim).
+about 700 in memory lines, 354 in tags and attributes. Placed lines repeat a value 24 times, mostly different
+facts with the same value (both directions of a feeling); real restatements are fewer (`docs/perf/budget.md`).
 
 The owner raised the default from 600 to 800 (D2 still applies: lower the host's max context by the reserve).
 A chat as dense as the owner's places everything at 1000.
