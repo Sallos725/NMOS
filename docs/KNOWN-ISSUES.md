@@ -172,7 +172,8 @@ not recorded; the value is free text, so its phrasing varies; and in a crowded s
 budget held about six facts (the default is 800 on `main`, ADR 0035). With standing facts first, a stale relationship (K24) reaches the packet more
 often. *Workaround:* "Extract all history" once after upgrading; raise **기억 예산(토큰) / Memory budget
 (tokens)** (and lower the host's max context by the same amount) when Inspector → Retrievals shows many
-facts not fitting (kept/offered). Evidence: `docs/perf/extract-v10.md`.
+facts not fitting (kept/offered); on `main` the Status tab says so and offers the budget that holds them
+(ADR 0036). Evidence: `docs/perf/extract-v10.md`.
 
 ## Recall and gating
 

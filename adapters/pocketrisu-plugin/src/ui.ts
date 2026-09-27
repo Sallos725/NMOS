@@ -3,6 +3,7 @@
 // the sidecar and are saved together with one request.
 
 import type { StatusInfo } from './core';
+import { budgetAdvice } from './budget';
 import { deadlineAdvice, formatMs } from './deadline';
 import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, fillProject, MAX_DEADLINE_MS, presetMatches, VERTEX_URL,
   type FormValues, type Section } from './form';
@@ -262,6 +263,24 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       cards.unshift(el('div', { class: 'card' },
         el('h2', { class: advice.level === 'over' ? 'err' : 'warn', text: L(`deadline.${advice.level}.title`) }),
         el('p', { class: 'sub', text }), el('div', { class: 'btns' }, open)));
+    }
+    // Memory the budget left out (ADR 0036): say how much, and offer the budget that holds it all.
+    const current = Number(await deps.getArg('reserved_memory_tokens')) || DEFAULT_RESERVED_TOKENS;
+    const budget = budgetAdvice(s.last, current);
+    if (budget) {
+      const apply = el('button', { class: 'primary', text: L('budget.apply', { n: budget.suggest }) });
+      const msg = el('div', { class: 'msg' });
+      apply.addEventListener('click', async () => {
+        apply.disabled = true;
+        try {
+          await deps.setArg('reserved_memory_tokens', budget.suggest);
+          say(msg, L('budget.applied', { n: budget.suggest, d: budget.suggest - current }), 'ok');
+        } catch (error) { apply.disabled = false; say(msg, errorText(lang, error), 'err'); }
+      });
+      const text = L(budget.all ? 'budget.text' : 'budget.text_more', { m: budget.offered, c: budget.cut, b: budget.budget,
+        s: budget.suggest, d: budget.suggest - current });
+      cards.splice(1, 0, el('div', { class: 'card' }, el('h2', { class: 'warn', text: L('budget.title', { c: budget.cut }) }),
+        el('p', { class: 'sub', text }), el('div', { class: 'btns' }, apply), msg));
     }
     const problem = deps.hud.problem();
     if (Number(await deps.getArg('hud')) !== 1) {

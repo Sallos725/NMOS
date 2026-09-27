@@ -378,6 +378,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             trace_id=out["trace_id"] or uuid7(),
             freshness=out["freshness"],
             packet=Packet(text=out["text"], token_estimate=out["tokens"], excerpt_count=out["count"]),
+            memory=out.get("memory"),
         )
 
     @app.post("/v1/output", status_code=202, dependencies=[Depends(auth)])

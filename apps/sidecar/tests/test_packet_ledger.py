@@ -27,7 +27,7 @@ def fact(n: int, words: str = "등대 꼭대기에서 바다를 오래 바라보
 
 QUOTE = Excerpt(turn=3, speaker="하나", text="…한참 뒤에야 하나가 입을 열었다. 금고 비밀번호는 보라일곱이야.", score=0.03,
                 revision_id="r-quote", short="금고 비밀번호는 보라일곱이야.")
-RESERVING = pytest.mark.parametrize("policy", ["packet-v1", "packet-v2", "packet-v3"])  # v2: v1 with a lower estimate; v3: v2 with Private
+RESERVING = pytest.mark.parametrize("policy", ["packet-v1", "packet-v2", "packet-v3", "packet-v4"])  # v2: v1 with a lower estimate; v3: v2 with Private; v4: v3 without restatements
 
 
 def frame(policy: str) -> int:
@@ -103,7 +103,7 @@ def test_packet_v1_skips_an_excerpt_that_restates_a_fact(policy):
 
 def test_packet_v2_counts_non_ascii_at_1_2_tokens_a_character():
     """K26: three tokenizers counted 0.74-0.98 tokens per Korean character; v0 and v1 estimate 1.5."""
-    assert NON_ASCII == {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2}
+    assert NON_ASCII == {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2}
     assert estimate_tokens("가" * 100) == 150 and estimate_tokens("가" * 100, 1.2) == 120
     assert estimate_tokens("a" * 35, 1.2) == estimate_tokens("a" * 35) == 10  # ASCII unchanged
 
@@ -203,7 +203,7 @@ def test_a_trace_records_every_offered_line_with_provenance(full):
     chat = story(client, url)
     out = ask(client, chat, "Kaito, what do you know about the letter?")
     trace = client.get(f"/v1/trace/{out['trace_id']}").json()
-    assert trace["policy"] == "packet-v3" and trace["budget_tokens"] == 600
+    assert trace["policy"] == "packet-v4" and trace["budget_tokens"] == 600
     assert trace["upto_position"] == len(chat.messages) - 1 and trace["previous_ai"] == ""
     assert trace["recall_options"]["facts_limit"] == 8
     facts = [e for e in trace["lines"] if e["kind"] == "fact"]
@@ -307,10 +307,11 @@ def test_compare_policies_over_traces(full):
     with db(url) as conn:
         report = audit.compare(conn, ids, RecallOptions())
     assert report["traces"] == 2 and report["skipped"] == {}
-    v0, v1, v2, v3 = (report["policies"][p] for p in ("packet-v0", "packet-v1", "packet-v2", "packet-v3"))
-    assert v3["packets"] == v2["packets"] == v1["packets"] == v0["packets"] == 2
-    assert v3["replayed_same_policy"] == v3["reproduced"] == 2  # recorded by the default, packet-v3
+    v0, v1, v2, v3, v4 = (report["policies"][p] for p in ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4"))
+    assert v4["packets"] == v3["packets"] == v2["packets"] == v1["packets"] == v0["packets"] == 2
+    assert v4["replayed_same_policy"] == v4["reproduced"] == 2  # recorded by the default, packet-v4
     assert v0["replayed_same_policy"] == v1["replayed_same_policy"] == v2["replayed_same_policy"] == 0
+    assert v3["replayed_same_policy"] == 0
     # the first request's reply ("Hana has the map.") echoed the map fact, and every policy keeps it
     assert v3["echoed_recorded"] >= 1 and v3["echo_kept"] == v3["echoed_recorded"] == v2["echo_kept"] == v1["echo_kept"] \
         == v0["echo_kept"]
@@ -357,7 +358,7 @@ def test_inspector_shows_the_last_packet_ledger(full):
     _sync(client, chat)
     conv = client.get("/v1/conversations").json()[0]["id"]
     page = client.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
-    assert "Last packet: what went in" in page and "policy packet-v3" in page and "next reply: present" in page
+    assert "Last packet: what went in" in page and "policy packet-v4" in page and "next reply: present" in page
     assert "a hidden fact reappears" in page and "the letter is forged" in page
     assert "fact 2" in page or "fact 1" in page  # the retrievals table counts what each packet held
     ko = client.get(f"/inspector/c/{conv}").text

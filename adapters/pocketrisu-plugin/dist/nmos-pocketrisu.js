@@ -172,6 +172,20 @@
       "The last request used {n} ms of its {d} ms deadline. As the chat grows, memory may start to miss it: raise Deadline (ms) in the Settings tab to about {s}."
     ],
     "deadline.took": [" (\uC2E4\uC81C\uB85C\uB294 \uC57D {n}ms \uAC78\uB9BC)", " (it took about {n} ms)"],
+    "budget.title": ["\uAE30\uC5B5 {c}\uC904\uC774 \uC790\uB9AC\uAC00 \uC5C6\uC5B4 \uBE60\uC84C\uC2B5\uB2C8\uB2E4", "{c} memory lines did not fit"],
+    "budget.text": [
+      "\uB9C8\uC9C0\uB9C9 \uC751\uB2F5\uC5D0\uC11C \uCC3E\uC740 \uAE30\uC5B5 {m}\uC904 \uC911 {c}\uC904\uC774 \uAE30\uC5B5 \uC608\uC0B0({b}\uD1A0\uD070)\uC5D0 \uB4E4\uC5B4\uAC00\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC608\uC0B0\uC744 {s}\uC73C\uB85C \uC62C\uB9AC\uBA74 \uBAA8\uB450 \uB4E4\uC5B4\uAC11\uB2C8\uB2E4. \uC62C\uB9B0 \uB9CC\uD07C({d}\uD1A0\uD070) PocketRisu\uC758 \uCD5C\uB300 \uCEE8\uD14D\uC2A4\uD2B8\uB3C4 \uC904\uC5EC \uC8FC\uC138\uC694.",
+      "The last reply found {m} memory lines and {c} did not fit the memory budget ({b} tokens). A budget of {s} holds them all. Lower PocketRisu's max context by the same amount ({d} tokens)."
+    ],
+    "budget.text_more": [
+      "\uB9C8\uC9C0\uB9C9 \uC751\uB2F5\uC5D0\uC11C \uCC3E\uC740 \uAE30\uC5B5 {m}\uC904 \uC911 {c}\uC904\uC774 \uAE30\uC5B5 \uC608\uC0B0({b}\uD1A0\uD070)\uC5D0 \uB4E4\uC5B4\uAC00\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. {s}\uC73C\uB85C \uC62C\uB9AC\uBA74 \uB354 \uB4E4\uC5B4\uAC00\uC9C0\uB9CC \uC804\uBD80\uB294 \uC544\uB2D9\uB2C8\uB2E4. \uC62C\uB9B0 \uB9CC\uD07C({d}\uD1A0\uD070) PocketRisu\uC758 \uCD5C\uB300 \uCEE8\uD14D\uC2A4\uD2B8\uB3C4 \uC904\uC5EC \uC8FC\uC138\uC694.",
+      "The last reply found {m} memory lines and {c} did not fit the memory budget ({b} tokens). {s} holds more of them, not all. Lower PocketRisu's max context by the same amount ({d} tokens)."
+    ],
+    "budget.apply": ["\uC608\uC0B0\uC744 {n}\uC73C\uB85C \uC62C\uB9AC\uAE30", "Raise the budget to {n}"],
+    "budget.applied": [
+      "\uAE30\uC5B5 \uC608\uC0B0\uC744 {n}\uC73C\uB85C \uBC14\uAFE8\uC2B5\uB2C8\uB2E4. \uB2E4\uC74C \uC751\uB2F5\uBD80\uD130 \uC801\uC6A9\uB429\uB2C8\uB2E4. PocketRisu \uC124\uC815\uC5D0\uC11C \uCD5C\uB300 \uCEE8\uD14D\uC2A4\uD2B8\uB97C {d}\uB9CC\uD07C \uC904\uC5EC \uC8FC\uC138\uC694.",
+      "The memory budget is now {n}, from the next reply. Lower the max context in PocketRisu's settings by {d}."
+    ],
     "deadline.open_settings": ["\uC124\uC815 \uD0ED \uC5F4\uAE30", "Open Settings"],
     "deadline.alert": [
       "NMOS: \uC774\uBC88 \uB2F5\uC7A5\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4. \uAE30\uC5B5 \uC900\uBE44\uAC00 \uC81C\uD55C \uC2DC\uAC04 {d}ms\uB97C \uB118\uACBC\uC2B5\uB2C8\uB2E4{took}. NMOS \uD328\uB110 \u2192 \uC124\uC815 \uD0ED \u2192 \uC81C\uD55C \uC2DC\uAC04(ms)\uC744 {s} \uC815\uB3C4\uB85C \uC62C\uB824 \uBCF4\uC138\uC694. (\uC774 \uC54C\uB9BC\uC740 \uD398\uC774\uC9C0\uB97C \uC0C8\uB85C \uC5F4 \uB54C\uAE4C\uC9C0 \uB2E4\uC2DC \uB728\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.)",
@@ -676,8 +690,8 @@ ${revisionHash}`;
       if (!personas || host.now() - personas.at > PERSONA_TTL_MS) warmPersonas();
       return personas?.value ? personaOf(chat, personas.value) : null;
     }
-    function remember(key, packet, ttl, failed = false) {
-      cache.set(key, { packet, expires: host.now() + ttl, failed });
+    function remember(key, packet, ttl, failed = false, memory = null) {
+      cache.set(key, { packet, expires: host.now() + ttl, failed, memory });
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
     }
     async function call(settings, path, body, deadline, method, onLate) {
@@ -779,7 +793,9 @@ ${revisionHash}`;
             packetChars: cached.packet.length,
             packet: cached.packet,
             outcome: outcome2,
-            deadlineMs: settings.deadlineMs
+            deadlineMs: settings.deadlineMs,
+            budgetTokens: settings.reservedMemoryTokens,
+            memory: cached.memory ?? null
           };
           emit({
             type: "request-end",
@@ -811,7 +827,8 @@ ${revisionHash}`;
           client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started }
         }, deadline, void 0, late);
         const packet = retrieved.freshness === "fresh" ? retrieved.packet.text : "";
-        remember(key, packet, SUCCESS_TTL_MS);
+        const memory = retrieved.freshness === "fresh" ? retrieved.memory ?? null : null;
+        remember(key, packet, SUCCESS_TTL_MS, false, memory);
         host.debug("[NMOS] request done", {
           ms: Math.round(host.now() - started),
           manifestMs: Math.round(manifestMs),
@@ -826,7 +843,9 @@ ${revisionHash}`;
           packetChars: packet.length,
           packet,
           outcome,
-          deadlineMs: settings.deadlineMs
+          deadlineMs: settings.deadlineMs,
+          budgetTokens: settings.reservedMemoryTokens,
+          memory
         };
         emit({ type: "request-end", outcome, chars: packet.length, conversationId: synced.conversation_id ?? null });
         return injectPacket(prompt, packet, settings.injectPosition, turn);
@@ -1186,6 +1205,16 @@ ${revisionHash}`;
     }
   }
 
+  // src/budget.ts
+  var FIT_CAP = 2e3;
+  function budgetAdvice(r, current2) {
+    if (!r || r.outcome === "failed" || !r.memory || !(r.memory.cut > 0) || !(r.budgetTokens && r.budgetTokens > 0)) return null;
+    const all = typeof r.memory.fits_at === "number";
+    const suggest = all ? r.memory.fits_at : FIT_CAP;
+    if (suggest <= r.budgetTokens || current2 !== void 0 && current2 >= suggest) return null;
+    return { cut: r.memory.cut, offered: r.memory.offered, budget: r.budgetTokens, suggest, all };
+  }
+
   // src/inspector.ts
   var TAGS = /* @__PURE__ */ new Set([
     "DIV",
@@ -1506,6 +1535,37 @@ html,body{margin:0;background:#0c0c10}
           el("h2", { class: advice.level === "over" ? "err" : "warn", text: L(`deadline.${advice.level}.title`) }),
           el("p", { class: "sub", text }),
           el("div", { class: "btns" }, open)
+        ));
+      }
+      const current2 = Number(await deps.getArg("reserved_memory_tokens")) || DEFAULT_RESERVED_TOKENS;
+      const budget = budgetAdvice(s.last, current2);
+      if (budget) {
+        const apply = el("button", { class: "primary", text: L("budget.apply", { n: budget.suggest }) });
+        const msg = el("div", { class: "msg" });
+        apply.addEventListener("click", async () => {
+          apply.disabled = true;
+          try {
+            await deps.setArg("reserved_memory_tokens", budget.suggest);
+            say(msg, L("budget.applied", { n: budget.suggest, d: budget.suggest - current2 }), "ok");
+          } catch (error) {
+            apply.disabled = false;
+            say(msg, errorText(lang, error), "err");
+          }
+        });
+        const text = L(budget.all ? "budget.text" : "budget.text_more", {
+          m: budget.offered,
+          c: budget.cut,
+          b: budget.budget,
+          s: budget.suggest,
+          d: budget.suggest - current2
+        });
+        cards.splice(1, 0, el(
+          "div",
+          { class: "card" },
+          el("h2", { class: "warn", text: L("budget.title", { c: budget.cut }) }),
+          el("p", { class: "sub", text }),
+          el("div", { class: "btns" }, apply),
+          msg
         ));
       }
       const problem = deps.hud.problem();

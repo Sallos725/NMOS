@@ -11,6 +11,7 @@ from typing import Any, Callable
 from xml.sax.saxutils import escape, quoteattr
 
 from . import spans
+from .threads import similarity
 
 PACKET_OPEN = '<NarrativeMemory version="0" source="nmos">'
 PACKET_NOTE = ("  <Note>Memory from earlier in this conversation (state, facts, excerpts). "
@@ -119,10 +120,18 @@ def excerpt(content: str, query: str, window: int = 2) -> str:
 # packet-v3 is packet-v2 with facts and promises that only some characters in the scene know moved to a
 # <Private> section with a rule for them (PHASE-10, ADR 0034): the Stage 4 pilot kept a secret unsaid, and its
 # holder still remembered it, once the fact said whom it was kept from (docs/perf/stage4-leak-pilot.md).
-POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3")
-DEFAULT_POLICY = "packet-v3"
-NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2}  # estimated tokens per non-ASCII char
-PRIVATE_POLICIES = frozenset({"packet-v3"})
+# packet-v4 is packet-v3 without lines that say again what an earlier line says: the same head and content, or
+# a character's claim of what the narration already states (ADR 0036).
+POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4")
+DEFAULT_POLICY = "packet-v4"
+NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2,
+             "packet-v4": 1.2}  # estimated tokens per non-ASCII char
+PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4"})
+FOLD_POLICIES = frozenset({"packet-v4"})
+RESTATES = 0.6  # packet-v4: a claim this close to a fact of the same head says it again (ADR 0019's match)
+# What the memory budget is for, and how far a suggested budget may go (ADR 0036).
+MEMORY_KINDS = frozenset({"state", "thread", "fact", "claim", "secret"})
+FIT_STEP, FIT_CAP = 100, 2000
 # The pilot's rule, shortened to fit a 600-token Korean packet (47 estimated tokens instead of 88).
 PRIVATE_NOTE = (" Private: only its holders (known_by) know it. Others must not mention, hint at or act on it; holders"
                 " keep it from those in hidden_from unless the story reveals it.")
@@ -230,6 +239,50 @@ def _fit_excerpt(item: Excerpt, room: int, estimate: Callable[[str], int] = esti
     return ("cut", best) if best else None
 
 
+def _head(line: Line) -> str:
+    """What a line is about: its text before the value ("Hana feels toward Kaito")."""
+    return line.text.split(": ", 1)[0] if ": " in line.text else line.text
+
+
+def restated(lines: list[Line]) -> dict[int, Line]:
+    """packet-v4 (ADR 0036): {index: the earlier line} for each line that says it again, in offer order: the
+    same head and content (a fact extracted twice, a claim of the same words), or a claim whose head a fact
+    has with content this close (RESTATES); the narration's line stays (ADR 0013)."""
+    out: dict[int, Line] = {}
+    kept: list[Line] = []
+    for n, line in enumerate(lines):
+        head = _head(line)
+        same = next((k for k in kept if _head(k) == head and (
+            k.content == line.content
+            or (line.kind == "claim" and k.kind == "fact" and similarity(k.content, line.content) >= RESTATES))), None)
+        if same is None:
+            kept.append(line)
+        else:
+            out[n] = same
+    return out
+
+
+def cut_lines(ledger: list[dict[str, Any]]) -> int:
+    """Memory lines (state, promises, facts, claims) a packet left out for its budget."""
+    return sum(1 for e in ledger if e["kind"] in MEMORY_KINDS and e["why"] == "budget")
+
+
+def fits_at(compile_at: Callable[[int], Compiled], budget: int) -> int | None:
+    """The smallest budget above `budget`, in FIT_STEP steps up to FIT_CAP, at which no memory line is left
+    out for the budget; None when even FIT_CAP leaves some out (ADR 0036). More room never places fewer
+    lines, so this bisects."""
+    lo, hi = budget // FIT_STEP + 1, FIT_CAP // FIT_STEP
+    if lo > hi or cut_lines(compile_at(hi * FIT_STEP).ledger):
+        return None
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if cut_lines(compile_at(mid * FIT_STEP).ledger):
+            lo = mid + 1
+        else:
+            hi = mid
+    return hi * FIT_STEP
+
+
 def secret_text(holders: list[str], missing: list[str]) -> str:
     return f"Something known to {', '.join(holders) or 'someone'}, not known to {', '.join(missing)}."
 
@@ -247,7 +300,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
 
     Budget order is fixed: state, lead facts (how the cast stand with each other, ADR 0026), open threads
     (PHASE-7), facts and claims, excerpts. packet-v3 emits the kept threads and facts marked private in a
-    <Private> section after Facts, and adds PRIVATE_NOTE (ADR 0034); earlier policies ignore the mark. `note`
+    <Private> section after Facts, and adds PRIVATE_NOTE (ADR 0034); earlier policies ignore the mark. packet-v4
+    leaves out lines that say again what an earlier one says (`restated`, ADR 0036). `note`
     is added to the Note (a first-person narrator, ADR 0035) and counts as part of the frame. Lead facts open the Facts section, which the output keeps after
     Threads; excerpts are emitted in chronological order. packet-v0 fills them strictly in that order. packet-v1 and later skip excerpts that
     mostly restate an offered thread, fact or claim line (REPEATS), keeps room for the best-ranked
@@ -296,6 +350,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     offset = len(state)
     privacy = policy in PRIVATE_POLICIES
     kept_private: list[str] = []
+    folded = restated(lead + threads + facts) if policy in FOLD_POLICIES else {}
 
     def section(lines: list[Line], tag: str, opened: bool = False) -> list[str]:
         nonlocal used, offset
@@ -303,6 +358,9 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         for line in lines:
             entry = ledger[offset]
             offset += 1
+            if (same := folded.get(offset - 1 - len(state))) is not None:
+                entry["why"], entry["restates"] = "restates", same.ref
+                continue
             hidden = privacy and line.private
             if hidden:
                 header = est("  <Private>\n  </Private>\n") if not kept_private else 0

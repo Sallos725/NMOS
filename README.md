@@ -90,7 +90,8 @@ language after a page reload.
 
 - **Status**: sidecar connection, which features are on (status window, facts, semantic recall), and what the
   last request injected. **Show the injected memory** opens the exact text that went into that request
-  (kept only until the page reloads).
+  (kept only until the page reloads). When memory did not fit the budget, a card says how much and offers the
+  budget that holds it all; after raising it, lower PocketRisu's max context by as much.
 - **Inspector**: the Inspector, inside the panel (PocketRisu does not let plugins open a browser tab).
   Click a conversation for its state, facts, entities (names that refer to the same one), recent
   retrievals, commits (with what each sync changed, e.g. `delete ×12`) and messages. On a conversation page three buttons act on that chat:
@@ -173,7 +174,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_VECTOR_MIN_SIM` | `0.42` | Minimum cosine similarity for semantic recall (model-dependent) |
 | `NMOS_EMBED_QUERY_INSTRUCTION` | `auto` | Query instruction for instruction-tuned embedders (`auto` = Qwen3 format for `qwen3-embedding`; `none`; or your text) |
 | `NMOS_TRACE_RETENTION_DAYS` | `30` | How long retrieval traces (with each packet's ledger) are kept |
-| `NMOS_PACKET_POLICY` | `packet-v3` | Packet compiler (ADR 0027, 0032, 0034): `packet-v3` puts facts only some characters in the scene know in a `<Private>` section with a rule for them; `packet-v2` is the same without it (room kept for the best excerpt, Korean counted at 1.2 tokens a character); `packet-v1` counts 1.5, `packet-v0` the one before |
+| `NMOS_PACKET_POLICY` | `packet-v4` | Packet compiler (ADR 0027, 0032, 0034, 0036): `packet-v4` leaves out lines that say an earlier line again (a fact extracted twice, a character's claim of what the narration states); `packet-v3` puts facts only some characters in the scene know in a `<Private>` section with a rule for them; `packet-v2` is the same without it (room kept for the best excerpt, Korean counted at 1.2 tokens a character); `packet-v1` counts 1.5, `packet-v0` the one before |
 | `NMOS_AUTH_TOKEN` | off | Required if you expose the sidecar beyond loopback (`NMOS_SIDECAR_BIND`); set the plugin's `auth_token` too. See [Security](#security) |
 | `NMOS_ALLOWED_HOSTS` | (empty) | Without a token, domain names the sidecar answers to besides IP addresses, `localhost` and single-label names such as `nmos`: e.g. `risu.example.com,*.ts.net`; `*` turns the check off. See [Security](#security) |
 | `NMOS_SIDECAR_BIND` / `NMOS_SIDECAR_PORT` | `127.0.0.1` / `8790` | Where the sidecar listens |

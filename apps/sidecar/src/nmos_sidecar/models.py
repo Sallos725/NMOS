@@ -114,10 +114,20 @@ class Packet(BaseModel):
     excerpt_count: int
 
 
+class MemoryFit(BaseModel):
+    """How much memory the budget held (ADR 0036): memory lines offered (state, promises, facts, claims),
+    those left out for the budget, and the smallest budget in 100s up to 2000 that holds them all (None:
+    nothing left out, or more than 2000 needed)."""
+    offered: int
+    cut: int
+    fits_at: int | None = None
+
+
 class RetrieveResponse(BaseModel):
     trace_id: UUID
     freshness: Literal["fresh", "stale", "unknown_conversation"]
     packet: Packet
+    memory: MemoryFit | None = None
 
 
 class OutputRequest(BaseModel):
