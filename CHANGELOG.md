@@ -41,6 +41,10 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     paid). A craving or the next thing someone is about to do is not a goal. A cause the story states is kept
     (`because`). Re-extracts each chat's recent window. A promise or goal kept from someone who then finds it out is
     no longer shown hidden from them as a thread.
+  - **`packet-v6` (new default): the cause the story states** ("…: 화남; because: 약속을 잊어서"), on facts and claims,
+    and facts with a cause come first when the message asks why (ADR 0040). The Inspector shows each cause and the
+    event it names when one nearby clearly matches.
+  - M0 counts answers the prompt's own last messages hold: of 28 cases, 9 need memory; 5 of them before Phase 11, 7 now.
 - **A saved API key is sent only to the host it was saved for** (review of an external analysis, 2026-09-27).
   `/v1/config/test` and `/v1/config/models` sent the saved key to whatever URL the request named, and saving an
   endpoint on another host kept the key for it, so anyone who could reach the settings API could have the key sent

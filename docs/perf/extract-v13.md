@@ -79,3 +79,7 @@ story came back to was never listed again. The copy was re-extracted with it (73
 No category is worse than the baseline. The goal case still fails: the owner's two open goals were stated once and
 never mentioned again, and newer goals outrank them for three thread slots; 37 goals stay open without a turn saying
 they ended (K23). The "why" cases wait for step 6, which reads `because`.
+
+These counts hold a gold answer only when the packet does. With the scoring corrected in step 6 (answers the prompt's
+own last messages hold count too, `docs/perf/m0-baseline.md`), the same runs give 23 of 28 before Phase 11 and 26 with
+`extract-v13`; of the 9 cases that need memory, 5 and 7.

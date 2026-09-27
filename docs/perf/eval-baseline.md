@@ -31,7 +31,7 @@ and prints this table (`tools/eval_memory.py`).
   itself excluded). `lexical`: raw lexical recall (no extractor, no embeddings). `hybrid`: lexical +
   vectors. `full`: hybrid + facts. The last 6 messages are sent as `in_context_ids`, so memory must
   bring what is older. `full-v0` (since Phase 9): `full` compiled by `packet-v0`, the packet compiler
-  before ADR 0027; `full` uses the default, `packet-v5` since ADR 0038 (`packet-v1` to `-v4` before; the
+  before ADR 0027; `full` uses the default, `packet-v6` since ADR 0040 (`packet-v1` to `-v5` before; the
   table's first 35 cases are the same under each).
 
 Gold for the state cases is a fact line (e.g. `Hinata located in harbor`), which only `full` can
@@ -86,6 +86,7 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | answered question | open business | — | — | — | — | — |
 | threat hangs over someone | open business | **no** | **no** | **no** | yes | yes |
 | paid debt | open business | — | — | — | — | — |
+| why someone is angry | causes | **no** | **no** | **no** | **no** | yes |
 | quote under a full budget | budget pressure | **no** | **no** | **no** | **no** | yes |
 | one line of a long message | budget pressure | **no** | **no** | **no** | **no** | yes |
 | a secret in front of the one it is kept from | secrets | n/a | n/a | n/a | **no** | yes |
@@ -99,11 +100,14 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 
 | Mode | gold reached | cases with stale memory | irrelevant packets | mean packet tokens |
 |---|---:|---:|---:|---:|
-| recent | 0/40 | 0 | — | 0 |
-| lexical | 2/40 | 0 | 0/1 | 105 |
-| hybrid | 3/40 | 0 | 0/1 | 129 |
-| full-v0 | 43/47 | 0 | 0/1 | 191 |
-| full | 47/47 | 0 | 0/1 | 189 |
+| recent | 0/41 | 0 | — | 0 |
+| lexical | 2/41 | 0 | 0/1 | 103 |
+| hybrid | 3/41 | 0 | 0/1 | 127 |
+| full-v0 | 43/48 | 0 | 0/1 | 190 |
+| full | 48/48 | 0 | 0/1 | 190 |
+
+Phase 11 step 6 (ADR 0040) added "why someone is angry": a feeling with the cause the story states, asked about with
+"why" after a speech-level fact of the same pair. `packet-v6` places the feeling with its cause; `full-v0` does not.
 
 Phase 11 steps 4–5 (ADR 0039, `extract-v13`) added six open-business cases: a goal and a threat recalled as threads
 after twelve newer events, an achieved goal, an answered question and a paid debt no longer in the packet, and an
