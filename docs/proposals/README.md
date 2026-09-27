@@ -10,6 +10,7 @@ This directory splits the recommended next work into two tracks.
 | A | [Current-scope stabilization](TRACK-A-STABILIZATION.md) | May proceed as performance, correctness, test, and documentation work, subject to the decision gates inside the proposal |
 | B | [Phase 5+ semantic and narrative roadmap](TRACK-B-PHASE-5-PLUS.md) | Requires explicit owner authorization and a normative phase specification before implementation |
 | — | [Speech level and forms of address](SPEECH-AND-ADDRESS.md) (2026-09-26) | Decided (recommended answers); ADR 0028 |
+| — | [Stage 4: who knows what](STAGE-4-KNOWLEDGE.md) (2026-09-27) | Draft; Q1–Q5 open (`docs/ROADMAP-1.0.md`, Stage 4) |
 
 The recommended order is:
 

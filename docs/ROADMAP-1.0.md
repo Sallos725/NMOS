@@ -3,7 +3,7 @@
 > Owner decision, 2026-09-27: NMOS is not called stable until stages 4–8 of the original roadmap
 > (`docs/reference/ultimate_narrative_memory_architecture.md` §84) are done. Each stage is one release;
 > 1.0.0 follows the last one. **This document is a draft**: the order and each stage's done criteria
-> wait for the owner decisions marked **R1…**, and stage 4 is under discussion. A stage still needs its
+> wait for the owner decisions marked **R1…**; stage 4 has a draft design (`docs/proposals/STAGE-4-KNOWLEDGE.md`). A stage still needs its
 > own `docs/phases/PHASE-N.md`, approved by the owner, before implementation (`AGENTS.md` §2).
 
 ## Where NMOS stands
@@ -105,15 +105,33 @@ Done when:
 - export, restore into a fresh install and replay give the same packets;
 - each canon source has recorded host evidence and a conflict fixture.
 
-## Stage 4 — Epistemic engine (under discussion)
+## Stage 4 — Epistemic engine
 
 *Original §27–30; Track B, B5.* Has: `public` / `limited` / unknown marks with free-text `known_by`
 and `hidden_from` (ADR 0007), the packet telling the model how to use them, the Phase 9 leak report.
 
-The fixed limit (§30, K11): one generation writes every character, so a secret the packet holds can
-reach any of them. Track B's hard stop names four answers: separate model calls per character,
-intersection-only context, omniscient narrator, or documented soft isolation. The owner and the agent
-are discussing what "done" means for this stage; its scope and criteria are written here once decided.
+The fixed limit (§30, K11): one generation writes every character, so a secret the packet holds can reach any
+of them. A pilot on the owner's chat with two response models (`docs/perf/stage4-leak-pilot.md`) found the
+limit matters less than the data: once a fact says whom it is kept from, the packet keeps it unsaid and the
+holder still remembers it; withholding content stops leaks only by making the holder forget. Draft design:
+`docs/proposals/STAGE-4-KNOWLEDGE.md` (questions Q1–Q5 open).
+
+Scope (draft):
+- the extraction separates *present* from *kept from*, and a secret ends when the story shows the hidden
+  character learning it (next extractor generation);
+- the packet marks private facts with their holders and whom they are kept from (the pilot's A), by default;
+- a strict mode per chat (intersection: only what everyone present knows), off by default;
+- first-person chats keep only what the narrator knows (a per-chat setting).
+
+Done when (draft):
+- on a case set from real chats, replayed offline with the owner's response models, no leak where a fact marks
+  whom it is kept from, and the holder remembers the secret whenever the scene calls for it;
+- a secret the story reveals is no longer marked hidden in later packets;
+- strict mode and first person have cases of their own;
+- K11 is rewritten to what remains (host-sent text, one generation for every character).
+
+Tentative owner decision (2026-09-27): a holder's own slip, such as a child blurting a secret, is direction,
+not a failure.
 
 ## Stage 7 — Forensic recall
 
