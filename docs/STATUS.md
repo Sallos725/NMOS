@@ -2,6 +2,9 @@
 
 ## Current phase
 
+**Phase 10 — Knowledge and Secrets (Stage 4): spec drafted 2026-09-27, awaiting the owner's approval.**
+`docs/phases/PHASE-10.md`. No implementation before approval.
+
 **Phase 9 — Accountable Packets: complete (2026-09-26), released in `v0.1.0-beta.19`.** The owner asked for
 the work on a new branch and approved the merge after review. Spec `docs/phases/PHASE-9.md` (Track B, B6
 narrowed to recording and budgeting what the packet holds), ADR 0027, D39, migration 0020. Every request
@@ -154,7 +157,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K28 (K10 resolved) current as of `v0.1.0-beta.21`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–8 of the original roadmap, one release each (draft, R1–R6 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0032` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate |
-| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-9.md` | 0–3 met; 4 soft subset met; 5–9 met |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-10.md` | 0–3 met; 4 soft subset met; 5–9 met; 10 draft |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 | Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11`, and A-12's markup half in `clean-v3` (both unreleased) |
 
@@ -172,15 +175,15 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 - O5 — resolved 2026-09-24: superseded vectors and text pruned (ADR 0015, D29), full-manifest host
   observations compacted losslessly (ADR 0018, D31), everything else on abandoned worldlines kept.
 - Phase 9 (accountable packets): complete, released in `v0.1.0-beta.19`.
-- Phase 10+ (the rest of B3, Track B, B4–B7): not authorized.
+- Phase 11+ (Stages 5–8 of `docs/ROADMAP-1.0.md`): not authorized.
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600.
 - Release cadence — decided 2026-09-26, revised 2026-09-27: one release per roadmap stage, urgent patches
   only in between, `:edge` built from every `main` merge (`AGENTS.md` §13).
 - Roadmap to 1.0 — decided 2026-09-27: not stable until stages 4–8 of the original roadmap are done
   (`docs/ROADMAP-1.0.md`). Open: R1 order, R2 public benchmark, R3–R6 stage scope.
-- Stage 4 — draft design 2026-09-27 after a leak pilot (`docs/proposals/STAGE-4-KNOWLEDGE.md`,
-  `docs/perf/stage4-leak-pilot.md`); Q1–Q5 open. Tentative: a holder's own slip is direction, not a leak.
+- Stage 4 — decided 2026-09-27: first milestone (R1); recommended answers to Q1–Q5; no release yet. Spec
+  `docs/phases/PHASE-10.md` (draft, awaiting approval). Tentative: a holder's own slip is direction, not a leak.
 
 ## Queued for the next extractor generation
 

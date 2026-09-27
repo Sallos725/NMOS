@@ -32,8 +32,8 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-9.md` is the latest;
-   `PHASE-0.md`…`PHASE-8.md` still define the behavior they introduced).
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-10.md` is the latest;
+   `PHASE-0.md`…`PHASE-9.md` still define the behavior they introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
 6. Relevant ADRs in `docs/adr/`.
 
@@ -70,7 +70,8 @@ If two normative documents appear to conflict:
 | 7 — promise threads and event salience (Track B, B3) | complete (2026-09-24, beta.14) | `PHASE-7.md`, ADRs 0019–0020 |
 | 8 — event participants (Track B, B3) | complete (2026-09-24, beta.15) | `PHASE-8.md`, ADR 0021 |
 | 9 — accountable packets (Track B, B6 narrowed) | complete (2026-09-26, beta.19) | `PHASE-9.md`, ADR 0027 |
-| 10+ (Track B, B3 remainder, B4–B7) | **not authorized**; planned as stages 4–8 of `docs/ROADMAP-1.0.md` (draft) | `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
+| 10 — knowledge and secrets (Stage 4; Track B, B5 narrowed) | **draft, awaiting owner approval** | `PHASE-10.md` |
+| 11+ (Stages 5–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
 ADR 0006/0007, `docs/perf/scale.md`).
