@@ -36,6 +36,11 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     ("…: 연인; before, turn 1: …: 같은 반 친구"), and how it started when that differs, so "how did they stand before"
     has an answer. `NMOS_PACKET_POLICY`
     keeps the earlier policies.
+  - **`extract-v13`: goals, questions, threats and debts end** (ADR 0039, migration 0022). They are threads like
+    promises; the prompt lists the open ones and `resolved` ends one (achieved, abandoned, failed, answered, averted,
+    paid). A craving or the next thing someone is about to do is not a goal. A cause the story states is kept
+    (`because`). Re-extracts each chat's recent window. A promise or goal kept from someone who then finds it out is
+    no longer shown hidden from them as a thread.
 - **A saved API key is sent only to the host it was saved for** (review of an external analysis, 2026-09-27).
   `/v1/config/test` and `/v1/config/models` sent the saved key to whatever URL the request named, and saving an
   endpoint on another host kept the key for it, so anyone who could reach the settings API could have the key sent

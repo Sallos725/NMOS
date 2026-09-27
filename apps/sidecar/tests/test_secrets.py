@@ -7,7 +7,7 @@ import uuid
 from nmos_sidecar import extraction
 from nmos_sidecar.entities import resolve
 from nmos_sidecar.predicates import REGISTRY, registry_prompt, validate
-from nmos_sidecar.facts import served_assertions
+from nmos_sidecar.facts import memory_view, served_assertions
 from nmos_sidecar.secrets import fold, is_secret, secret_text
 from test_semantics import row
 
@@ -131,7 +131,7 @@ def test_the_prompt_lists_open_secrets_and_the_rules():
     assert "Someone who was simply not there is not `hidden_from`" in system
     assert "report in `secrets` each one" in system and '"secrets": [{"secret": "S1"' in system
     assert "- learned" not in system  # filled from `secrets`, never asked for directly
-    assert extraction.COMPILER_VERSION == "extract-v12"
+    assert extraction.COMPILER_VERSION == "extract-v13"
 
 
 def test_the_secrets_check_becomes_learned_only_with_a_kept_name_and_quoted_evidence():
@@ -207,7 +207,7 @@ def test_a_reveal_ends_the_secret_until_its_turn_is_deleted(migrated, db):
                             " ON am.source_revision_id = e.source_revision_id WHERE am.turn = 1 LIMIT 1").fetchone()
         assert stored["hints"]["secrets"][0]["kept_from"] == ["Blanc"]
         view = facts(c, chat)
-        goal = next(f for f in view if f["predicate"] == "goal")
+        goal = goal_of(db)
         assert not goal.get("hidden_from") and goal["known_by"] == ["Elpi", "{{user}}", "Blanc"]  # amendment 1
         assert [r["to"] for r in goal["revealed"]] == ["Blanc"]
         assert not [f for f in view if f["predicate"] == "learned"]  # a reveal is not a fact itself
@@ -221,7 +221,7 @@ def test_a_reveal_ends_the_secret_until_its_turn_is_deleted(migrated, db):
                                                           params={"lang": "en"}).text
         chat.delete(4)  # the revealing turn's user message (turns are user + reply)
         step(c, migrated, chat, model, "again")
-        goal = next(f for f in facts(c, chat) if f["predicate"] == "goal")
+        goal = goal_of(db)
         assert goal["hidden_from"] == ["Blanc"] and not goal.get("revealed") and goal["known_by"] == ["Elpi", "{{user}}"]
         page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
         assert "Blanc: <span class=\"warn\">does not know yet</span>" in page
@@ -230,8 +230,11 @@ def test_a_reveal_ends_the_secret_until_its_turn_is_deleted(migrated, db):
 # --- findings of the 2026-09-27 audit (docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md) ----------------------
 
 
-def goal_of(c, chat) -> dict:
-    return next(f for f in facts(c, chat) if f["predicate"] == "goal")
+def goal_of(db) -> dict:
+    """The secret goal. A thread since extract-v13 (ADR 0039), with the marks of the row that opened it."""
+    head = db.execute("SELECT head_commit_id FROM conversation").fetchone()["head_commit_id"]
+    t = next(t for t in memory_view(db, head, active_generation(db, "extract").key)["threads"] if t["kind"] == "goal")
+    return {**t, "value": t["text"]}
 
 
 def served(db) -> list[dict]:
@@ -257,7 +260,7 @@ def test_a_reveal_does_not_carry_over_to_a_different_secret_after_its_turn_is_ed
             step(c, migrated, chat, model, f"Blanc reads chapter {i}.")
         step(c, migrated, chat, model, "Blanc found out: Elpi goal: watch the lecture.")
         step(c, migrated, chat, model, "next")
-        assert [r["to"] for r in goal_of(c, chat)["revealed"]] == ["Blanc"]
+        assert [r["to"] for r in goal_of(db)["revealed"]] == ["Blanc"]
         (listed,) = [r["listed_hash"] for r in reveal_rows(db)]
         assert listed is not None
         conv = next(x for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)["id"]
@@ -265,7 +268,7 @@ def test_a_reveal_does_not_carry_over_to_a_different_secret_after_its_turn_is_ed
         chat.edit(0, "Elpi secretly plans to steal the diamond, hidden from Blanc.")
         sync(c, chat)
         drain(migrated, model)
-        goal = goal_of(c, chat)
+        goal = goal_of(db)
         assert goal["value"] == "steal the diamond"
         assert goal["hidden_from"] == ["Blanc"] and not goal.get("revealed")  # Blanc learned of the lecture only
         assert [r["listed_hash"] for r in reveal_rows(db)] == [listed] and goal_row(db)["turn_hash"] != listed
@@ -277,7 +280,7 @@ FIRST_IMPORT = ("Elpi secretly plans to watch the lecture, hidden from Blanc.", 
                 "Blanc found out: Elpi goal: watch the lecture.", "Blanc smiles.")
 
 
-def first_import(c, migrated, model) -> tuple[SimChat, str]:
+def first_import(c, migrated, model, db) -> tuple[SimChat, str]:
     """K29: four complete turns seen at once; the reveal is extracted before the secret and matches nothing."""
     chat = SimChat()
     for line in FIRST_IMPORT:
@@ -285,7 +288,7 @@ def first_import(c, migrated, model) -> tuple[SimChat, str]:
         chat.reply("Noted.")
     sync(c, chat)
     drain(migrated, model)
-    assert goal_of(c, chat)["hidden_from"] == ["Blanc"]
+    assert goal_of(db)["hidden_from"] == ["Blanc"]
     conv = next(x for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)["id"]
     return chat, conv
 
@@ -295,11 +298,11 @@ def test_extract_all_history_recovers_a_reveal_missed_on_first_import(migrated, 
     extracts again the turns extracted before an earlier turn's secret, oldest first, and only those."""
     model = SecretRecorder()
     with make_client(migrated, **LLM) as c:
-        chat, conv = first_import(c, migrated, model)
+        chat, conv = first_import(c, migrated, model, db)
         out = c.post(f"/v1/conversations/{conv}/extract-history").json()
         assert out["queued"]["extract"] == 2  # turns 1 and 2; turn 0 holds the secret
         drain(migrated, model)
-        goal = goal_of(c, chat)
+        goal = goal_of(db)
         assert not goal.get("hidden_from") and [r["to"] for r in goal["revealed"]] == ["Blanc"]
         assert c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["extract"] == 0  # settled
 
@@ -308,9 +311,9 @@ def test_rebuild_recovers_a_reveal_missed_on_first_import(migrated, db):
     """K29's workaround: Rebuild re-extracts every turn, and one worker takes them oldest first."""
     model = SecretRecorder()
     with make_client(migrated, **LLM) as c:
-        chat, conv = first_import(c, migrated, model)
+        chat, conv = first_import(c, migrated, model, db)
         out = c.post(f"/v1/conversations/{conv}/rebuild").json()
         assert out["discarded"] == out["queued"]["extract"] > 0
         drain(migrated, model)
-        goal = goal_of(c, chat)
+        goal = goal_of(db)
         assert not goal.get("hidden_from") and [r["to"] for r in goal["revealed"]] == ["Blanc"]

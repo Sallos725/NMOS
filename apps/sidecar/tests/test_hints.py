@@ -55,7 +55,7 @@ def test_hints_list_earlier_entities_most_recent_first_capped(migrated, db):
     assert hints_of(last) == ["silver key (item)", "Yui (character)"]
     stored = db.execute("SELECT hints FROM extraction ORDER BY created_at DESC LIMIT 1").fetchone()["hints"]
     assert stored == {"entities": [{"name": "silver key", "type": "item"}, {"name": "Yui", "type": "character"}],
-                      "promises": [], "secrets": []}
+                      "promises": [], "secrets": [], "threads": []}
     # The first turn had nothing before it: no section, an empty list recorded.
     assert hints_of(model.prompts[0]) == []
     assert active_generation(db, "extract").spec["hints"] == 2
@@ -164,3 +164,64 @@ def test_promise_hints_need_a_named_person():
     assert extraction.promise_hints(ctx, rows) == []
     ctx["members"][0]["metadata"]["name"] = "Hana"  # the speaker label names her
     assert extraction.promise_hints(ctx, rows) == [{"by": "Hana", "to": "{{user}}", "text": "wait", "turn": 0}]
+
+
+GOAL_RE = re.compile(r"(?P<who>[A-Z]\w+) wants to (?P<what>[^.]+)\.")
+DONE_RE = re.compile(r"(?P<who>[A-Z]\w+) has (?P<how>achieved|abandoned) the goal to (?P<what>[^.]+)\.")
+
+
+class ThreadRecorder(Recorder):
+    """Also (PHASE-11, extract-v13): 'X wants to Y.' → goal, 'X has achieved the goal to Y.' → resolved."""
+
+    def __call__(self, system: str, user: str) -> tuple[dict, str]:
+        out, raw = super().__call__(system, user)
+        target = user.split("TARGET", 1)[1]
+        out["assertions"] += [{"subject": m["who"], "subject_type": "character", "predicate": "goal", "value": m["what"],
+                               "modality": "actual", "because": "she misses him"} for m in GOAL_RE.finditer(target)]
+        out["assertions"] += [{"subject": m["who"], "subject_type": "character", "predicate": "resolved",
+                               "value": m["what"], "outcome": m["how"], "modality": "actual"} for m in DONE_RE.finditer(target)]
+        return out, raw
+
+
+def threads_of(prompt: str) -> list[str]:
+    if "OPEN THREADS" not in prompt:
+        return []
+    block = prompt.split("OPEN THREADS", 1)[1].split("\n\n", 1)[0]
+    return [line[2:] for line in block.splitlines() if line.startswith("- ")]
+
+
+def test_open_threads_are_shown_until_resolved_and_stored_with_the_extraction(migrated, db):
+    """PHASE-11 (ADR 0039): the extractor sees the goals it may end; `resolved` ends one with its outcome."""
+    model, chat = ThreadRecorder(), SimChat()
+    with make_client(migrated, **LLM) as c:
+        step(c, migrated, chat, model, "Hana wants to find the lighthouse keeper.")
+        step(c, migrated, chat, model, "Hana walks along the shore.")
+        step(c, migrated, chat, model, "Hana has achieved the goal to find the lighthouse keeper.")
+        step(c, migrated, chat, model, "Hana rests.")
+        step(c, migrated, chat, model, "next")
+        conv = c.get("/v1/conversations").json()[0]["id"]
+        view = c.get(f"/v1/conversations/{conv}/facts", params={"history": True}).json()
+    listed = "[goal] Hana: find the lighthouse keeper (turn 0)"
+    assert threads_of(model.prompts[0]) == []
+    assert threads_of(model.prompts[1]) == [listed] and threads_of(model.prompts[2]) == [listed]
+    assert threads_of(model.prompts[3]) == []  # achieved in turn 2
+    stored = db.execute("SELECT hints FROM extraction e JOIN active_membership am"
+                        " ON am.source_revision_id = e.source_revision_id WHERE am.turn = 2 LIMIT 1").fetchone()["hints"]
+    assert stored["threads"] == [{"kind": "goal", "by": "Hana", "to": None, "text": "find the lighthouse keeper",
+                                  "turn": 0}]
+    rows = db.execute("SELECT predicate, outcome, because FROM assertion WHERE predicate IN ('goal', 'resolved')"
+                      " ORDER BY predicate").fetchall()
+    assert [(r["predicate"], r["outcome"], r["because"]) for r in rows] == [
+        ("goal", None, "she misses him"), ("resolved", "achieved", None)]
+    assert all(f["predicate"] not in ("goal", "resolved") for f in view)  # a thread, not a fact
+
+
+def test_the_prompt_asks_for_open_business_its_end_and_stated_causes():
+    prompt = extraction.SYSTEM_PROMPT.format(registry=__import__("nmos_sidecar.predicates").predicates.registry_prompt())
+    for phrase in ("`question` for\n  something a character wants to know", "A craving, a mood or the next thing someone",
+                   "wanting to find something\n  out is a `question`, not a goal", "`threat` for a danger",
+                   "`owes`\n  for a debt", "If OPEN THREADS are listed: `resolved`", '"answered" for a question',
+                   "`because`, for `event`, `feels_toward`, `relationship`, `has_status` and `goal` only",
+                   "Never guess a cause.", '"outcome": "achieved|abandoned|failed|answered|averted|paid (resolved only)"'):
+        assert phrase in prompt, phrase
+    assert extraction.COMPILER_VERSION == "extract-v13"

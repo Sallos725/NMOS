@@ -39,7 +39,7 @@ WITH m AS (
     WHERE am.commit_id = %(head)s{upto}
 ),
 live AS (
-    SELECT e.id AS eid, e.extractor_key, m.position, m.turn, m.host_logical_id, m.turn_hash,
+    SELECT e.id AS eid, e.extractor_key, e.compiler_version, m.position, m.turn, m.host_logical_id, m.turn_hash,
            first_value(e.extractor_key) OVER (PARTITION BY m.unit
                ORDER BY e.extractor_key = %(key)s DESC, g.activated_at DESC, g.key) AS chosen
     FROM extraction e
@@ -51,8 +51,8 @@ live AS (
 )
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.value, a.epistemic, a.confidence, a.evidence,
        a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
-       a.participants::text AS participants,
-       l.position, l.turn, l.host_logical_id, l.extractor_key AS generation,
+       a.participants::text AS participants, a.outcome, a.because,
+       l.position, l.turn, l.host_logical_id, l.extractor_key AS generation, l.compiler_version AS compiler,
        -- ADR 0033 amendment 2: a possible secret's turn hash, and the hash a reveal's listed turn had
        CASE WHEN a.knowledge = 'limited' THEN l.turn_hash END AS turn_hash,
        CASE WHEN a.predicate = 'learned' THEN (
@@ -333,18 +333,19 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         if row["predicate"] in THREAD_PREDICATES:
             promises.append(row)
     rows = kept
-    threads, unmatched, consumed = fold_threads(promises, r)
     # Secrets (PHASE-10, ADR 0033): a reveal ends a secret for the character who found it out, from its
     # turn on: its hidden_from drops that name and its known_by gains it (amendment 1: the scene, strict mode
-    # and a narrator must count them as knowing it). `learned` is not a fact itself.
+    # and a narrator must count them as knowing it). `learned` is not a fact itself. Before the threads, which copy
+    # the marks of the row that opens them: a revealed goal or promise is revealed as a thread too (ADR 0039).
     secrets, unrevealed, reveals = fold_secrets(rows, r)
-    consumed |= reveals
     ended = {s["id"]: set(s["ended"]) for s in secrets if s["ended"]}
     for row in rows:
         if row["id"] in ended:
             row["hidden_from"] = [n for n in row["hidden_from"] if n not in ended[row["id"]]] or None
             row["known_by"] = list(row.get("known_by") or []) + sorted(ended[row["id"]] - set(row.get("known_by") or []))
             row["revealed"] = [{"to": n, **s["ended"][n]} for s in secrets if s["id"] == row["id"] for n in s["ended"]]
+    threads, unmatched, consumed = fold_threads(promises, r)
+    consumed |= reveals
     for row in rows:
         if row["id"] in consumed:
             continue

@@ -14,6 +14,12 @@ opening a second thread.
 
 Nothing is stored: threads follow head membership, the served extractions and entity resolution, so an
 edit or delete changes the next read.
+
+Since `extract-v13` (PHASE-11, ADR 0039) goals, questions, threats and debts (`goal`, `question`, `threat`, `owes`)
+are threads too, and `resolved` ends one with an outcome, matched by owner and text as promises are. Only rows of
+`extract-v13` or later open them: earlier generations never report an end, so their goals stay facts. A new one
+restates an open one of the same kind and owner when one text contains the other or they are as similar as a
+resolution must be to match.
 """
 
 from __future__ import annotations
@@ -22,8 +28,10 @@ from typing import Any
 
 from .entities import USER_NAMES, Resolution, norm
 
-PREDICATES = frozenset({"promised", "fulfilled"})  # the only assertions a thread opens, restates or closes
+KINDS = {"promised": "promise", "goal": "goal", "question": "question", "threat": "threat", "owes": "debt"}
+PREDICATES = frozenset(KINDS) | {"fulfilled", "resolved"}  # the only assertions a thread opens, restates or closes
 OPENING_MODALITIES = ("actual", "hypothetical")
+SINCE = 13  # extract-v13: the first generation that reports how goals, questions, threats and debts end
 # Overlap coefficient of character trigrams (|A∩B| / min(|A|, |B|)): a resolution often shortens the
 # promise ("등대 앞에서 만나기" for "비가 그치면 내일 아침 등대 앞에서 만나기로 함"). The best match must
 # reach MATCH_MIN and lead the next open thread of that maker by MATCH_MARGIN (ADR 0019).
@@ -72,20 +80,41 @@ def _recipient(a: dict[str, Any], r: Resolution | None) -> str | None:
     return _who(r, a.get("object_type"), a["object"]) if a.get("object") else None
 
 
+def _reports_ends(a: dict[str, Any]) -> bool:
+    """Whether the generation that extracted `a` reports how its non-promise threads end (extract-v13 and later).
+    A row without a compiler version (built in tests) counts as current."""
+    compiler = a.get("compiler")
+    if not compiler:
+        return True
+    number = str(compiler).rsplit("-v", 1)[-1]
+    return number.isdigit() and int(number) >= SINCE
+
+
 def opens(a: dict[str, Any], r: Resolution | None = None) -> bool:
-    """Whether a `promised` assertion opens (or restates) a thread (Q2)."""
-    if a["predicate"] != "promised" or a.get("polarity") == "negative":
+    """Whether an assertion opens (or restates) a thread: a `promised` (Q2), or since extract-v13 a `goal`, `question`,
+    `threat` or `owes`. Narrated, or said by its owner; a threat by anyone (the one who threatens says it); a debt by
+    either side."""
+    if a["predicate"] not in KINDS or a.get("polarity") == "negative":
         return False
     if a.get("modality", "actual") not in OPENING_MODALITIES:
         return False
+    if a["predicate"] != "promised" and not _reports_ends(a):
+        return False
     speaker = _speaker(a, r)
+    if a["predicate"] == "threat":
+        return True
+    if a["predicate"] == "owes":
+        return speaker is None or speaker in (_maker(a, r), _recipient(a, r))
     return speaker is None or speaker == _maker(a, r)
 
 
 def resolves(a: dict[str, Any], r: Resolution | None = None) -> bool:
-    """Whether an assertion may close a thread (Q3): `fulfilled`, or a negative `promised`, actual, from
-    the narration, or said by the maker or the promise's recipient."""
-    if not (a["predicate"] == "fulfilled" or (a["predicate"] == "promised" and a.get("polarity") == "negative")):
+    """Whether an assertion may close a thread (Q3): `fulfilled`, a negative `promised`, or (extract-v13) a `resolved`
+    with an outcome, actual, from the narration, or said by the owner or the thread's counterpart."""
+    if a["predicate"] == "resolved":
+        if not a.get("outcome"):
+            return False
+    elif not (a["predicate"] == "fulfilled" or (a["predicate"] == "promised" and a.get("polarity") == "negative")):
         return False
     if a.get("modality", "actual") != "actual":
         return False
@@ -100,11 +129,15 @@ def _grams_of(t: dict[str, Any]) -> set[str]:
     return t["_grams"]
 
 
-def _match(a: dict[str, Any], open_by_maker: dict[str, list[dict[str, Any]]], r: Resolution | None) -> dict[str, Any] | None:
-    """The one open thread `a` names, if exactly one: equal text first, else clearly the most similar."""
-    recipient = _recipient(a, r)
+def _match(a: dict[str, Any], open_by_maker: dict[str, list[dict[str, Any]]], r: Resolution | None,
+           promise: bool = True) -> dict[str, Any] | None:
+    """The one open thread `a` names, if exactly one: equal text first, else clearly the most similar. `promise`:
+    among promises (`fulfilled`, a negative `promised`), with the recipient when it names one; otherwise among goals,
+    questions, threats and debts, by owner and text only (a `resolved` has no object, though models fill one in)."""
+    recipient = _recipient(a, r) if promise else None
     pool = [t for t in open_by_maker.get(_maker(a, r), ())
-            if t["status"] == "open" and (recipient is None or t["_recipient"] == recipient)]
+            if t["status"] == "open" and (t["kind"] == "promise") == promise
+            and (recipient is None or t["_recipient"] == recipient)]
     if not pool:
         return None
     text = norm(a.get("value"))
@@ -119,20 +152,26 @@ def _match(a: dict[str, Any], open_by_maker: dict[str, list[dict[str, Any]]], r:
 
 
 def _restated(a: dict[str, Any], open_by_maker: dict[str, list[dict[str, Any]]], r: Resolution | None) -> dict[str, Any] | None:
-    """The one open thread of the same maker and recipient whose text contains, or is contained in, the new
-    promise's text; None when there is none or more than one."""
+    """The one open thread of the same kind, maker and recipient whose text contains, or is contained in, the new
+    one's text; for goals, questions, threats and debts also one as similar as a resolution must be (MATCH_MIN),
+    since a turn often states the same aim twice in other words. None when there is none or more than one."""
     text = norm(a.get("value"))
     if len(text) < RESTATE_MIN_CHARS:
         return None
-    recipient = _recipient(a, r)
-    found = [t for t in open_by_maker.get(_maker(a, r), ()) if t["status"] == "open" and t["_recipient"] == recipient
-             and len(t["_norm"]) >= RESTATE_MIN_CHARS and (text in t["_norm"] or t["_norm"] in text)]
+    kind = KINDS[a["predicate"]]
+    recipient = _recipient(a, r) if kind in ("promise", "debt") else None  # others are one owner's
+    pool = [t for t in open_by_maker.get(_maker(a, r), ()) if t["status"] == "open" and t["kind"] == kind
+            and (recipient is None or t["_recipient"] == recipient) and len(t["_norm"]) >= RESTATE_MIN_CHARS]
+    found = [t for t in pool if text in t["_norm"] or t["_norm"] in text]
+    if not found and kind != "promise":
+        grams = _grams(text)
+        found = [t for t in pool if _overlap(_grams_of(t), grams) >= MATCH_MIN]
     return found[0] if len(found) == 1 else None
 
 
 def _ref(a: dict[str, Any]) -> dict[str, Any]:
     return {k: a.get(k) for k in ("id", "position", "turn", "predicate", "subject", "object", "value", "polarity",
-                                  "source", "asserted_by", "evidence")}
+                                  "source", "asserted_by", "evidence", "outcome")}
 
 
 def fold(rows: list[dict[str, Any]], r: Resolution | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[int]]:
@@ -150,10 +189,11 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None) -> tuple[list[
             if same is not None:
                 same["restated"].append({"turn": a.get("turn"), "position": a["position"]})
             else:
-                t = {"id": a["id"], "kind": "promise", "by": a["subject"], "to": a.get("object"), "text": a.get("value"),
+                t = {"id": a["id"], "kind": KINDS[a["predicate"]], "by": a["subject"], "to": a.get("object"), "text": a.get("value"),
                      "turn": a.get("turn"), "position": a["position"], "host_logical_id": a.get("host_logical_id"),
                      "source": a.get("source"), "modality": a.get("modality"), "evidence": a.get("evidence"),
                      "knowledge": a.get("knowledge"), "known_by": a.get("known_by"), "hidden_from": a.get("hidden_from"),
+                     "revealed": a.get("revealed"),
                      "names": a.get("names") or [a["subject"], *([a["object"]] if a.get("object") else [])],
                      "status": "open", "closed_by": None, "restated": [],
                      "_maker": _maker(a, r), "_recipient": _recipient(a, r), "_norm": norm(a.get("value"))}
@@ -161,11 +201,16 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None) -> tuple[list[
                 open_by_maker.setdefault(t["_maker"], []).append(t)
             used.add(a["id"])
         elif resolves(a, r):
-            target = _match(a, open_by_maker, r)
+            target = _match(a, open_by_maker, r, promise=a["predicate"] != "resolved")
+            if target is None and a["predicate"] == "fulfilled":
+                target = _match(a, open_by_maker, r, promise=False)  # a goal "fulfilled": models use either word
             if target is None:
                 unmatched.append(_ref(a))
-            else:
+            elif target["kind"] == "promise":
                 target["status"] = "kept" if a["predicate"] == "fulfilled" else "broken"
+                target["closed_by"] = _ref(a)
+            else:
+                target["status"] = a["outcome"] if a["predicate"] == "resolved" else "achieved"
                 target["closed_by"] = _ref(a)
             used.add(a["id"])
     for t in threads:

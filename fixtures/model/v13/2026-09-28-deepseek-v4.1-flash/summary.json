@@ -1,0 +1,135 @@
+{
+  "model": "deepseek-v4.1-flash:cloud",
+  "url": "http://127.0.0.1:11434/v1",
+  "runs": 3,
+  "prompt_fingerprint": "a0de52e41b72df2c",
+  "errors": [],
+  "scenes": {
+    "opens | goal: a lasting aim": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('하나', 'goal', None, '앞으로 목요일마다 도시락을 싸 주기', None, None), ('카이토', 'has_trait', None, '점심을 자주 거르는 편', None, None)]",
+        "[('하나', 'goal', None, '앞으로 목요일마다 카이토에게 도시락을 싸 주기로 함', None, None), ('하나', 'event', None, '카이토에게 목요일마다 도시락을 싸주기로 결심함', None, None), ('카이토', 'has_trait', None, '점심을 자주 거름', None, None)]",
+        "[('하나', 'goal', None, '앞으로 목요일마다 카이토에게 도시락을 싸 주기', None, '카이토가 점심을 자주 거른다'), ('하나', 'event', None, '카이토에게 앞으로 목요일마다 도시락을 싸 주기로 마음먹었다', None, '카이토가 점심을 자주 거른다'), ('하나', 'knows', None, '카이토가 점심을 자주 거른다', None, None), ('카이토', 'has_trait', None, '점심을 자주 거른다', None, None)]"
+      ]
+    },
+    "opens | question: a mystery": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('종', 'event', None, '자정에 세 번 울렸다', None, None), ('종탑 열쇠', 'world_fact', None, '신부님만 갖고 있다', None, None), ('유이', 'question', None, '누가 종을 울렸는지', None, None)]",
+        "[('종', 'event', None, '자정에 세 번 울렸다', None, None), ('유이', 'question', None, '자정에 종을 세 번 울린 사람이 누구인지', None, None), ('유이', 'goal', None, '종을 울린 사람을 알아내는 것', None, None), ('신부님', 'possesses', '종탑 열쇠', None, None, None), ('유이', 'possesses', '수첩', None, None, None)]",
+        "[('종', 'event', None, '자정에 세 번 울렸다', None, None), ('종탑 열쇠', 'world_fact', None, '신부님만 갖고 있다', None, None), ('유이', 'question', None, '누가 종을 울렸는지', None, None)]"
+      ]
+    },
+    "opens | threat: a threat made": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('레온', 'event', None, '과수원 앞에서 하나를 막아서고 땅을 넘기지 않으면 과수원에 불을 지르겠다고 협박했다', None, None), ('하나', 'threat', None, '레온이 이번 달 안에 땅을 넘기지 않으면 과수원에 불을 지르겠다고 위협', None, None), ('레온', 'goal', None, '이번 달 안에 하나의 땅을 넘겨받는 것', None, None), ('하나', 'feels_toward', '레온', '두려움', None, '레온이 과수원에 불을 지르겠다고 협박해서')]",
+        "[('레온', 'located_in', '과수원 앞', None, None, None), ('하나', 'located_in', '과수원 앞', None, None, None), ('하나', 'threat', None, '레온이 이번 달 안에 땅을 넘기지 않으면 과수원에 불을 지르겠다고 위협함', None, None), ('레온', 'goal', None, '이번 달 안에 하나의 땅을 넘겨받는 것', None, None), ('레온', 'event', None, '하나를 과수원 앞에서 막아서고 땅을 넘기지 않으면 과수원에 불을 지르겠다고 협박한 뒤 돌아섰다', None, None), ('하나', 'has_status', None, '두려움에 떨고 있음', None, '레온이 과수원에 불을 지르겠다고 협박해서'), ('하나', 'feels_toward', '레온', '두려움', None, '레온의 협박 때문에')]",
+        "[('레온', 'event', None, '과수원 앞에서 하나를 막아서고, 이번 달 안에 땅을 넘기지 않으면 과수원에 불을 지르겠다고 협박했다', None, None), ('하나', 'threat', None, '레온이 이번 달 안에 땅을 넘기지 않으면 과수원에 불을 지르겠다고 함', None, None), ('레온', 'goal', None, '이번 달 안에 하나의 땅을 넘겨받는 것', None, None), ('레온', 'located_in', '과수원 앞', None, None, None), ('하나', 'located_in', '과수원 앞', None, None, None)]"
+      ]
+    },
+    "opens | debt: money borrowed": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('카이토', 'event', None, '하나에게 은화 세 닢을 빌렸다', None, None), ('카이토', 'promised', '하나', '은화 세 닢을 빌리고 다음 장날에 갚겠다', None, None), ('카이토', 'owes', '하나', '은화 세 닢', None, None), ('카이토', 'has_status', None, '난처함', None, None), ('카이토', 'possesses', '은화 세 닢', None, None, None), ('하나', 'possesses', '은화 세 닢', None, None, None)]",
+        "[('카이토', 'has_status', None, '난처한 얼굴', None, None), ('카이토', 'owes', '하나', '은화 세 닢', None, None), ('카이토', 'promised', '하나', '은화 세 닢을 다음 장날에 꼭 갚겠다', None, None), ('카이토', 'event', None, '하나에게 은화 세 닢을 빌렸다', None, None)]",
+        "[('카이토', 'promised', '하나', '은화 세 닢을 다음 장날에 갚겠다', None, None), ('카이토', 'owes', '하나', '은화 세 닢', None, None), ('하나', 'possesses', '은화 세 닢', None, None, None), ('카이토', 'possesses', '은화 세 닢', None, None, None), ('카이토', 'event', None, '하나에게 은화 세 닢을 빌렸다', None, None)]"
+      ]
+    },
+    "wish | wish: hungry": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('하나', 'located_in', '부엌', None, None, None), ('{{user}}', 'located_in', '부엌', None, None, None)]",
+        "[('하나', 'event', None, '부엌으로 향함', None, None)]",
+        "[]"
+      ]
+    },
+    "wish | wish: next step": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('하나', 'event', None, '빨래를 다 개고 나서 쉬기로 함', None, None)]",
+        "[]",
+        "[('하나', 'event', None, '빨래를 다 개고 나서 쉬기로 함', None, None)]"
+      ]
+    },
+    "resolve | resolve: goal achieved": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('하나', 'resolved', None, '카이토의 생일 선물로 목도리 떠 주기', 'achieved', None), ('카이토', 'possesses', '푸른 목도리', None, None, None), ('하나', 'event', None, '카이토의 생일 선물로 푸른 목도리를 주었다', None, None)] unmatched=0",
+        "[('하나', 'resolved', None, '카이토의 생일 선물로 목도리 떠 주기', 'achieved', None), ('하나', 'event', None, '카이토의 생일 아침에 한 달 내내 뜬 푸른 목도리를 선물로 건넸다', None, '카이토의 생일'), ('카이토', 'possesses', '푸른 목도리', None, None, None)] unmatched=0",
+        "[('하나', 'resolved', None, '카이토의 생일 선물로 목도리 떠 주기', 'achieved', None), ('하나', 'event', None, '카이토의 생일 선물로 푸른 목도리를 주었다', None, None), ('카이토', 'possesses', '푸른 목도리', None, None, None)] unmatched=0"
+      ]
+    },
+    "resolve | resolve: question answered": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('유이', 'resolved', None, '한밤중에 누가 종을 울렸는지', 'answered', None), ('?종지기의 아들', 'event', None, '몰래 복사한 열쇠로 한밤중에 종을 울린 장난을 고백한 일', None, None), ('유이', 'knows', None, '한밤중의 종을 울린 사람이 종지기의 아들이라는 것', None, None), ('?종지기의 아들', 'possesses', '복사한 열쇠', None, None, None)] unmatched=0",
+        "[('유이', 'resolved', None, '한밤중에 누가 종을 울렸는지', 'answered', None), ('?종지기의 아들', 'event', None, '몰래 복사한 열쇠로 장난삼아 한밤중에 종을 울린 것을 유이에게 실토함', None, None), ('유이', 'knows', None, '한밤중의 종소리는 종지기의 아들이 장난으로 울린 것', None, None), ('?종지기의 아들', 'possesses', '복사한 종탑 열쇠', None, None, None)] unmatched=0",
+        "[('유이', 'resolved', None, '한밤중에 누가 종을 울렸는지', 'answered', None), ('?종지기의 아들', 'event', None, '몰래 복사한 열쇠로 장난삼아 한밤중에 종을 울린 것을 유이에게 실토했다', None, None), ('유이', 'knows', None, '한밤중의 종을 울린 사람이 종지기의 아들이라는 것', None, None), ('?종지기의 아들', 'identity', None, '종지기의 아들', None, None)] unmatched=0"
+      ]
+    },
+    "resolve | resolve: threat averted": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('레온', 'event', None, '방화 계획이 들통나 경비대에 체포됨', None, '방화 계획이 들통나'), ('레온', 'has_status', None, '경비대에 체포됨', None, '방화 계획이 들통나'), ('하나', 'resolved', None, '레온이 과수원에 불을 지르겠다고 한 것', 'averted', None), ('과수원', 'event', None, '레온의 방화 시도에도 무사함', None, None)] unmatched=0",
+        "[('레온', 'event', None, '방화 계획이 들통나 경비대에 체포되었다', None, '방화 계획이 들통나'), ('레온', 'has_status', None, '경비대에 체포됨', None, '방화 계획이 들통나'), ('하나', 'resolved', None, '레온이 과수원에 불을 지르겠다고 한 것', 'averted', None)] unmatched=0",
+        "[('레온', 'event', None, '방화 계획이 들통나 경비대에 체포됨', None, '방화 계획이 들통나'), ('레온', 'has_status', None, '경비대에 체포됨', None, '방화 계획이 들통나'), ('하나', 'resolved', None, '레온이 과수원에 불을 지르겠다고 한 것', 'averted', None), ('과수원', 'world_fact', None, '불이 나지 않고 무사함', None, None)] unmatched=0"
+      ]
+    },
+    "resolve | resolve: debt paid": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('카이토', 'resolved', '하나', '빌린 은화 세 닢', 'paid', None), ('카이토', 'event', None, '하나에게 빌린 은화 세 닢을 갚음', None, None), ('하나', 'possesses', '은화 세 닢', None, None, None), ('카이토', 'has_status', None, '홀가분함', None, '빚을 갚아서')] unmatched=0",
+        "[('카이토', 'resolved', None, '빌린 은화 세 닢', 'paid', None), ('카이토', 'event', None, '하나에게 빌린 은화 세 닢을 갚았다', None, None), ('하나', 'possesses', '은화 세 닢', None, None, None)] unmatched=0",
+        "[('카이토', 'resolved', None, '빌린 은화 세 닢', 'paid', None), ('카이토', 'event', None, '하나에게 빌린 은화 세 닢을 갚았다', None, None), ('하나', 'possesses', '은화 세 닢', None, None, None)] unmatched=0"
+      ]
+    },
+    "control | control: goal worked on": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('하나', 'event', None, '밤늦게까지 목도리를 뜨다가 코를 하나 빠뜨린 것을 발견하고 한숨을 쉬었다', None, None), ('카이토의 생일', 'world_fact', None, '아직 일주일 남아 있다', None, None)]",
+        "[('하나', 'event', None, '밤늦게까지 목도리를 뜨다가 코를 하나 빠뜨려 한숨을 쉼', None, None)]",
+        "[('하나', 'event', None, '밤늦게까지 목도리를 뜨다가 코를 하나 빠뜨림', None, None)]"
+      ]
+    },
+    "control | control: debt mentioned": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[]",
+        "[]",
+        "[('카이토', 'event', None, '지갑을 뒤졌으나 텅 비어 있었고, 하나에게 빌린 은화를 장날까지 갚아야 한다며 한숨을 쉬었다', None, None)]"
+      ]
+    },
+    "cause | cause: stated": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('유이', 'feels_toward', '카이토', '단단히 화가 나 있음', None, '카이토가 유이와의 약속을 까맣게 잊고 하나와 장터에 갔기 때문'), ('유이', 'event', None, '카이토에게 등을 돌림', None, '카이토가 유이와의 약속을 까맣게 잊고 하나와 장터에 갔기 때문'), ('카이토', 'event', None, '유이와의 약속을 잊고 하나와 장터에 감', None, None)]",
+        "[('유이', 'feels_toward', '카이토', '단단히 화가 나 있음', None, '카이토가 유이와의 약속을 까맣게 잊고 하나와 장터에 갔기 때문'), ('유이', 'event', None, '카이토에게 등을 돌렸다', None, '카이토가 유이와의 약속을 까맣게 잊고 하나와 장터에 갔기 때문'), ('카이토', 'event', None, '유이와의 약속을 까맣게 잊고 하나와 장터에 갔다', None, None)]",
+        "[('유이', 'feels_toward', '카이토', '단단히 화가 남', None, '카이토가 유이와의 약속을 까맣게 잊고 하나와 장터에 갔기 때문'), ('유이', 'event', None, '카이토에게 등을 돌림', None, '카이토가 유이와의 약속을 까맣게 잊고 하나와 장터에 갔기 때문'), ('카이토', 'event', None, '유이와의 약속을 까맣게 잊고 하나와 장터에 갔다', None, None), ('유이', 'knows', None, '카이토가 유이와의 약속을 잊고 하나와 장터에 갔음', None, None)]"
+      ]
+    },
+    "cause | cause: not stated": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('유이', 'feels_toward', '카이토', '싸늘한 감정', None, None), ('유이', 'event', None, '카이토에게 싸늘한 눈빛을 보내고 아무 말 없이 자리를 떠났다', None, None)]",
+        "[('유이', 'feels_toward', '카이토', '싸늘한 감정', None, None), ('유이', 'event', None, '카이토에게 싸늘한 눈빛을 보내고 한마디 없이 자리를 떠남', None, None)]",
+        "[('유이', 'feels_toward', '카이토', '싸늘한 감정', None, None), ('유이', 'event', None, '카이토에게 싸늘한 눈빛을 보내고 한마디도 없이 자리를 떠났다', None, None)]"
+      ]
+    }
+  }
+}

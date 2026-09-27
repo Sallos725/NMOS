@@ -109,8 +109,11 @@ generation):
 3. Relationship history per pair and the persona's full name (ADR, read side). **Done** (ADR 0038): `resolve-v5`,
    and `packet-v5` (default), which names what a standing fact replaced: without it, fixing the fold removed the
    only answer to M0's "past" case. M0 5 → 7 of 12; 13 → 15 of the 28 owner-confirmed cases.
-4. `extract-v13`: OPEN THREADS, `resolved`, the new predicates, `because` (ADR).
-5. Threads at read time and the packet's thread section.
+4. `extract-v13`: OPEN THREADS, `resolved`, the new predicates, `because` (ADR). With step 5 in one pull request: the
+   prompt's OPEN THREADS need the read-side fold, and `resolved` rows without it would read as facts. **Done** (ADR
+   0039, `docs/perf/extract-v13.md`): synthetic tier `gemma4` 41/42, `deepseek` 42/42; M0 17 of 28 on the copy
+   re-extracted with it. It stopped once at a stop condition on the first 12 cases (one wording moved a category).
+5. Threads at read time and the packet's thread section. **Done** with step 4.
 6. Explicit links at read time, packet and Inspector.
 7. Inspector views.
 8. Evaluation tiers (each paid run approved first), real-host smoke, upgrade, documentation.

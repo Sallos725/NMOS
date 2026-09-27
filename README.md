@@ -245,7 +245,12 @@ Promises are remembered until the story keeps or breaks them (since 0.1.0-beta.1
 in dialogue or narration, becomes an open thread, and it is injected whenever its maker or recipient
 comes up again, however long ago it was made:
 `<Thread kind="promise" by="Hana" to="{{user}}" turn="10">meet at the lighthouse</Thread>`. When the
-story keeps it, breaks it or releases it, it leaves the packet (the Inspector keeps its history). A
+story keeps it, breaks it or releases it, it leaves the packet (the Inspector keeps its history). Since
+`extract-v13` (Phase 11, ADR 0039) goals, questions, threats and debts are threads too: an aim a character is set
+on, something they want to know, a danger over them, or what they owe someone stays open until the story ends it
+(achieved or given up, answered, averted, paid), and only open ones reach the packet
+(`<Thread kind="goal" by="Hana" turn="26">…</Thread>`); a craving or the next thing someone is about to do is not a
+goal. A cause the story states (why someone is angry) is kept with the fact. A
 character's routine no longer fills the facts: a packet holds at most three events, important ones
 ("major": a confession, a betrayal, a death, a secret revealed) first, and a minor event only when
 your message is about it. Since `extract-v9` an event is major by what it changes, also when it happens
@@ -258,7 +263,9 @@ agreement to drop formal speech, a form of address someone asks for, or a decide
 `<Fact kind="addresses">Radia addresses {{user}}: informal speech, calls them 'Yuuma'</Fact>`, one per
 direction; a newer one replaces the older. A reply that only slips into another speech level is not
 recorded. How the characters in the scene stand with each other (relationship, feelings, speech) comes
-before other facts and before promises. If Inspector → Retrievals shows many facts not fitting
+before other facts and before promises. A relationship has one history per pair (Phase 11, ADR 0038): lovers
+recorded the other way round replace "classmates", and the line names what it replaced
+(`…: lovers; before, turn 3: …: classmates`). If Inspector → Retrievals shows many facts not fitting
 (kept/offered), raise the memory budget.
 
 A fact about two people comes back from both sides (since 0.1.0-beta.15, Phase 8): `Hana event: betrayed Kaito` is recalled
