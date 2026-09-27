@@ -66,6 +66,9 @@ def test_a_database_of_an_earlier_release_upgrades_and_keeps_working(dump, datab
         # Facts that release extracted per turn are served until the current extractor covers their turns
         # (ADR 0014); per-message extractions are not (ADR 0031) and come back once re-extracted.
         assert ("bell tower" in objects(c, main, "Mina", "located_in")) is not per_message
+        if not per_message:  # Phase 11: its promise reads as an open thread, its relationship as one pair
+            page = c.get(f"/inspector/c/{convs[main.id]}", params={"lang": "en"}).text
+            assert "return before the bell rings" in page and "Mina ↔ Rin" in page
         old_trace = c.get(f"/v1/conversations/{convs[main.id]}/traces").json()
         assert old_trace, "the earlier release's recall traces are kept"
         # Packets an earlier release recorded (since the ledger, beta.19) replay under their own policy; one

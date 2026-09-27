@@ -83,24 +83,32 @@ generation):
 
 ## Acceptance criteria
 
-- [ ] Every existing test and memory-evaluation case passes; no stale memory in any mode; `packet-v4` traces
-      still replay.
+- [x] Every existing test and memory-evaluation case passes; no stale memory in any mode; `packet-v4` traces
+      still replay (53 of 53 memory cases in `full`; a Phase 10 database's `packet-v4` traces replay under their
+      own policy after the upgrade).
 - [x] M0 exists, with its baseline on `main` recorded before step 3 (numbers only in the repository):
       `docs/perf/m0-baseline.md`: 13 of 28 owner-confirmed cases (5 of the first 12).
-- [ ] Synthetic cases in CI for each thread type (opened, resolved, deleted, edited back), a "why" question
+- [x] Synthetic cases in CI for each thread type (opened, resolved, deleted, edited back), a "why" question
       answered from a stated cause, a relationship changed in the other direction (K24), and an irrelevant old
-      event kept out.
-- [ ] Extraction tier, both models (Q7), 3 runs per scene: threads opened for stated goals, questions, threats
+      event kept out (`docs/perf/eval-baseline.md`: 22 thread cases, "why someone is angry", "relationship changed
+      the other way", "major event first" and "unrelated question").
+- [x] Extraction tier, both models (Q7), 3 runs per scene: threads opened for stated goals, questions, threats
       and debts and not for passing wishes; resolutions matched to their listed thread; causes quoted only when
       the text states them. Every miss listed; any scene below 2 of 3 shown to the owner before the phase closes.
+      `gemma4` 41/42, `deepseek` 42/42, no scene below 2 of 3 (`docs/perf/extract-v13.md`).
 - [ ] M0 on a restored backup re-extracted with `extract-v13`: no category worse than the baseline; goals no
       longer pile up (the character with 40 current goals has only open ones); K24 cases in the owner's chats read
-      as one history.
-- [ ] Retrieve latency at 10,000 messages within +10 ms p50 of Phase 10 `main`.
-- [ ] Real-host smoke on an isolated PocketRisu: a thread opened and resolved in play reaches the packet and the
-      Inspector.
-- [ ] Upgrade from a `v0.1.0-beta.21` database and from Phase 10 `main` (`tests/test_upgrade.py`).
-- [ ] `ARCHITECTURE.md` (decisions), ADRs, README, the Korean guide, KNOWN-ISSUES (K23, K24 rewritten), CHANGELOG.
+      as one history. **Partly met** (`docs/perf/extract-v13.md`, step 8): no category worse (13 → 17 of 28);
+      no pair with two current relationships; goals end (9 of 48 achieved) but 37 stay open, 43 current lines
+      before; one character 9 → 15 where the owner counts 2 (K23). The owner decides.
+- [x] Retrieve latency at 10,000 messages within +10 ms p50 of Phase 10 `main` (+1.2 to +4.7 ms over three pairs,
+      `docs/perf/extract-v13.md`).
+- [x] Real-host smoke on an isolated PocketRisu: a thread opened and resolved in play reaches the packet and the
+      Inspector (PocketRisu v1.13.0; the goal and a stated cause, `docs/perf/extract-v13.md`).
+- [x] Upgrade from a `v0.1.0-beta.21` database and from Phase 10 `main` (`tests/test_upgrade.py`,
+      `fixtures/upgrade/main-phase10.sql` from 8c790b2): an earlier promise reads as an open thread and a
+      relationship as one pair.
+- [x] `ARCHITECTURE.md` (decisions), ADRs, README, the Korean guide, KNOWN-ISSUES (K23, K24 rewritten), CHANGELOG.
 
 ## Steps (one pull request each)
 
@@ -117,7 +125,9 @@ generation):
 6. Explicit links at read time, packet and Inspector. **Done** (ADR 0040, `packet-v6`).
 7. Inspector views. **Done**: threads by kind with outcomes (steps 4–5), causes (step 6), and a Relationships
    section per pair on the chat and character pages.
-8. Evaluation tiers (each paid run approved first), real-host smoke, upgrade, documentation.
+8. Evaluation tiers (each paid run approved first), real-host smoke, upgrade, documentation. **Done**, with one
+   criterion partly met (goals still pile up) for the owner to decide. No paid run was needed: both models ran
+   through the local Ollama.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13). Step 4 re-extracts each chat's recent window
 when production pulls it: the owner is told its size before it merges, and pulls it themselves after a backup.
