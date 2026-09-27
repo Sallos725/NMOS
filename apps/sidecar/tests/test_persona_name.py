@@ -40,6 +40,24 @@ def test_the_persona_name_is_the_persona_entity():
     assert not plain.entity("character", "유우마")["persona"]
 
 
+def test_a_full_name_ending_with_the_persona_name_is_the_persona():
+    """resolve-v5 (PHASE-11 step 3, ADR 0038): the story writes the persona's full name as well; M0 found one chat
+    split in two by it (docs/perf/m0-baseline.md)."""
+    rows = [row(1, "미즈키 유우마", "located_in", "주방", **C, object_type="place"),
+            row(2, "유우마", "located_in", "거실", **C, object_type="place"),
+            row(3, "유우마마", "has_trait", None, "x", **C),
+            row(4, "유우마 선배", "has_trait", None, "y", **C),
+            row(5, "라디아", "possesses", "미즈키 유우마", **C, object_type="item")]
+    r = resolve(CONV, rows, persona=["유우마"])
+    me = r.key("character", "{{user}}")
+    assert r.key("character", "미즈키 유우마") == r.key("character", " 미즈키   유우마 ") == me
+    assert r.key("character", "유우마마") != me  # not a separate word
+    assert r.key("character", "유우마 선배") != me  # the name must end it
+    assert r.key("item", "미즈키 유우마") != me  # characters only
+    assert "미즈키 유우마" in r.entity("character", "{{user}}")["names"]
+    assert resolve(CONV, rows).key("character", "미즈키 유우마") != resolve(CONV, rows).key("character", "{{user}}")
+
+
 def test_persona_names_include_the_personas_story_aliases():
     rows = [row(1, "유우마", "has_trait", None, "커피를 진하게 마심", **C), row(2, "유우마", "also_called", None, "유우", **C)]
     r = resolve(CONV, rows, persona=["유우마"])

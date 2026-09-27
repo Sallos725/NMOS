@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from conftest import make_client
 from nmos_sidecar.extraction import SYSTEM_PROMPT
 from nmos_sidecar.facts import STANDING
@@ -64,5 +66,7 @@ def test_a_change_back_replaces_one_direction_only(migrated):
     assert current == {("라디아", "존댓말(해요체), '유우마 씨'라고 부름"), ("{{user}}", "반말, '누나'라고 부름")}
     radia = next(f for f in rows if f["subject"] == "라디아")
     assert radia["versions"] == 2  # the earlier 반말 stays as history
-    assert "라디아 addresses {{user}}: 존댓말(해요체), '유우마 씨'라고 부름" in packet
-    assert "반말, '유우마'라고 부름" not in packet
+    # packet-v5 (ADR 0038) names the speech level it replaced, as earlier, never as current
+    assert ("라디아 addresses {{user}}: 존댓말(해요체), '유우마 씨'라고 부름; before, turn 0: 라디아 addresses {{user}}:"
+            " 반말, '유우마'라고 부름</Fact>") in packet
+    assert "반말, '유우마'라고 부름" not in re.sub(r"; before, turn -?\d+: [^<]*", "", packet)

@@ -15,7 +15,8 @@ DIR/cases.json:
       "forbidden": ["<a phrase it must not hold: stale, irrelevant, kept from the one asking>"]}]
 
 A case passes when the packet holds every gold phrase (any wording of it) and no forbidden one; phrases match
-case- and space-insensitively. Categories are free text; PHASE-11 uses state, past, promise, goal, question,
+case- and space-insensitively. A forbidden phrase is what must not be presented as current: the earlier version a
+packet-v5 line names ("; before, turn N: …", ADR 0038) does not count against it. Categories are free text; PHASE-11 uses state, past, promise, goal, question,
 threat, debt, relationship, address, secret, why and irrelevant. The request is compiled again as of its own
 time (ADR 0027 replay); `--extractor` names a newer extractor generation, and the request is then compiled as
 of now with that generation's facts, as `eval_secrets.py build` does; `--policy` and `--budget` replace the
@@ -28,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -48,13 +50,16 @@ def norm(text: str) -> str:
     return " ".join(text.casefold().split())
 
 
+BEFORE = re.compile(r"; before, turn -?\d+: [^<]*")  # packet-v5: what a standing fact replaced, and how it started
+
+
 def score(case: dict[str, Any], text: str) -> dict[str, Any]:
-    """How a packet's text answers one case: gold phrases held, forbidden ones placed, pass."""
-    held, packet = [], norm(text)
+    """How a packet's text answers one case: gold phrases held, forbidden ones placed as current, pass."""
+    held, packet, current = [], norm(text), norm(BEFORE.sub("", text))
     for phrase in case.get("gold") or []:
         wordings = [phrase] if isinstance(phrase, str) else list(phrase)
         held.append(any(norm(w) in packet for w in wordings if w.strip()))
-    placed = [norm(p) in packet for p in case.get("forbidden") or [] if p.strip()]
+    placed = [norm(p) in current for p in case.get("forbidden") or [] if p.strip()]
     return {"gold": len(held), "held": sum(held), "forbidden": len(placed), "placed": sum(placed),
             "passed": all(held) and not any(placed)}
 

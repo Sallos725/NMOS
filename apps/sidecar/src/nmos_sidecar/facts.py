@@ -120,6 +120,8 @@ def _item(a: dict[str, Any], r: Resolution | None) -> str:  # possesses: the obj
 
 def version_key(a: dict[str, Any], r: Resolution | None = None) -> tuple:
     """Subject and object are entity ids where the resolver links them (ADR 0012), text otherwise."""
+    if a["predicate"] == "relationship":  # one history per pair, both directions (ADR 0038)
+        return ("relationship",) + tuple(sorted((_subject(a, r), _object(a, r))))
     if whereabouts(a):  # one current holder per item (ADR 0011), one whereabouts with its place (PHASE-6)
         return ("whereabouts", _item(a, r))
     pred = REGISTRY[a["predicate"]]
@@ -142,6 +144,71 @@ def relation(a: dict[str, Any], r: Resolution | None = None) -> tuple:
     if pred.cardinality == "single":
         return ((_norm(a["value"]),) if pred.per_object else (_object(a, r), _norm(a["value"])))
     return ()
+
+
+# Relationships that hold the same both ways (ADR 0038): the head noun of the value, in Korean last, possibly followed
+# by 관계/사이; in English any word of it, unless "of" makes it someone else's ("friend of her brother").
+SYMMETRIC_KO = ("친구", "연인", "애인", "커플", "부부", "배우자", "형제", "자매", "남매", "쌍둥이", "동급생", "동기",
+                "동창", "동료", "라이벌", "경쟁자", "원수", "적", "파트너", "동반자", "룸메이트", "이웃", "약혼자", "사촌",
+                "동맹", "팀원", "짝꿍", "단짝", "소꿉친구", "동지")
+SYMMETRIC_EN = frozenset({"friend", "friends", "lover", "lovers", "couple", "spouse", "spouses", "married", "sibling",
+                          "siblings", "twin", "twins", "classmate", "classmates", "colleague", "colleagues", "coworker",
+                          "coworkers", "rival", "rivals", "enemy", "enemies", "partner", "partners", "roommate",
+                          "roommates", "neighbor", "neighbors", "cousin", "cousins", "fiance", "fiancee", "engaged",
+                          "allies", "ally", "teammate", "teammates"})
+_ASIDE = re.compile(r"\([^)]*\)")
+
+
+def symmetric(value: str | None) -> bool:
+    """Whether a relationship value holds the same both ways (ADR 0038)."""
+    text = _ASIDE.sub(" ", str(value or "")).strip().casefold()
+    words = re.findall(r"[a-z]+", text)
+    if words and not re.search(r"[가-힣]", text):
+        return "of" not in words and any(w in SYMMETRIC_EN for w in words)
+    head = re.sub(r"\s*(관계|사이)$", "", text).strip()
+    return bool(head) and "의 " not in head and head.endswith(SYMMETRIC_KO)
+
+
+def _pair_versions(history: list[dict[str, Any]], r: Resolution | None = None) -> list[dict[str, Any]]:
+    """One pair's relationships in position order (ADR 0038). Each direction keeps its latest, as before. A symmetric
+    relationship, stated either way, also replaces the other direction's, and a newer one of the other direction
+    replaces it. A denial ends the relationship it denies in its direction, or either way when it is symmetric, and
+    is current itself (rendered negated); a denial of anything else stands beside, as for every predicate."""
+    slots: dict[str, dict[str, Any] | None] = {}  # direction (the subject's key) -> its current row
+    negatives: dict[tuple, dict[str, Any]] = {}
+    outcome: dict[int, str] = {}
+
+    def close(row: dict[str, Any] | None, how: str) -> None:
+        if row is not None:
+            outcome.setdefault(id(row), how)
+
+    for a in history:
+        d, v = _subject(a, r), _norm(a["value"])
+        if a["polarity"] == "negative":
+            target = d if slots.get(d) is not None and _norm(slots[d]["value"]) == v else next(
+                (o for o, held in slots.items() if o != d and held is not None and _norm(held["value"]) == v
+                 and symmetric(held["value"])), None)
+            if target is None:
+                negatives[(d, v)] = a
+                continue
+            close(slots[target], "ended")
+            slots[target] = a
+            continue
+        for key in [k for k in negatives if k[1] == v and (k[0] == d or symmetric(a["value"]))]:
+            close(negatives.pop(key), "superseded")
+        close(slots.get(d), "superseded")
+        slots[d] = a
+        for o, held in slots.items():
+            if o != d and held is not None and (symmetric(a["value"]) or symmetric(held["value"])):
+                close(held, "superseded")
+                slots[o] = None
+    current_rows = [s for s in slots.values() if s is not None] + list(negatives.values())
+    for row in current_rows:
+        outcome[id(row)] = "current"
+    entries = [{"position": h["position"], "turn": h["turn"], "predicate": h["predicate"], "subject": h["subject"],
+                "value": h["value"], "object": h["object"], "polarity": h["polarity"],
+                "outcome": outcome.get(id(h), "superseded")} for h in history]
+    return [{**row, "versions": len(history), "history": entries, "claims": []} for row in current_rows]
 
 
 def _unit(a: dict[str, Any]) -> int:
@@ -167,6 +234,8 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
     Each history entry gets an outcome: `current`, `superseded` (replaced or moved on), `ended` (closed
     by a negation or an end) or `conflicting` (an end that later statements contradict).
     """
+    if history and history[0]["predicate"] == "relationship":
+        return _pair_versions(history, r)
     slots: dict[str, dict[str, Any] | None] = {}
     negatives: dict[tuple, dict[str, Any]] = {}
     disputed_by: dict[str, Any] | None = None
@@ -468,11 +537,34 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     return out
 
 
-def fact_line(f: dict[str, Any]) -> str:
+def _prior(f: dict[str, Any]) -> list[dict[str, Any]]:
+    """A standing fact's earlier statements of the same predicate with another value, not denials, oldest first."""
+    if f["predicate"] not in STANDING:
+        return []
+    return [h for h in f.get("history") or () if h["position"] < f["position"] and h["predicate"] == f["predicate"]
+            and h["polarity"] == "positive" and _norm(h["value"]) != _norm(f.get("value"))]
+
+
+def earlier(f: dict[str, Any]) -> dict[str, Any] | None:
+    """The version a standing fact replaced (ADR 0038): the latest earlier statement in its history, of the same
+    predicate, with another value and not a denial. For a relationship that may be the other direction."""
+    prior = _prior(f)
+    return prior[-1] if prior else None
+
+
+def first(f: dict[str, Any]) -> dict[str, Any] | None:
+    """How it started, when that differs from what it replaced: the earliest such statement (ADR 0038). "What did she
+    call him at first" was answered only by accident before the fold was fixed (M0)."""
+    prior = _prior(f)
+    return prior[0] if len(prior) > 1 and _norm(prior[0]["value"]) != _norm(prior[-1]["value"]) else None
+
+
+def fact_line(f: dict[str, Any], before: bool = False) -> str:
     """One <Fact> with its knowledge marks exactly as stored (D19): knowledge="public", or known_by /
     hidden_from for limited facts, or no mark at all when who knows is unknown. A negated fact is
     explicitly not (or no longer) true (ADR 0013). A disputed fact carries what contradicts it in the same
-    line, and neither side is presented as certain (PHASE-6 Q1)."""
+    line, and neither side is presented as certain (PHASE-6 Q1). With `before` (packet-v5), a standing fact that
+    replaced another names it and its turn (ADR 0038)."""
     turn = f["turn"] if f.get("turn") is not None else f["position"]
     attrs = f" kind={quoteattr(f['predicate'])} turn=\"{turn}\""
     if f.get("polarity") == "negative":
@@ -486,6 +578,12 @@ def fact_line(f: dict[str, Any]) -> str:
     if against := f.get("disputed_by"):
         when = against["turn"] if against.get("turn") is not None else against["position"]
         text += f"; but turn {when}: {fact_text(against)}"
+    if before and (was := earlier(f)):
+        when = was["turn"] if was.get("turn") is not None else was["position"]
+        text += f"; before, turn {when}: {fact_text(was)}"
+        if start := first(f):
+            when = start["turn"] if start.get("turn") is not None else start["position"]
+            text += f"; first, turn {when}: {fact_text(start)}"
     return f"    <Fact{attrs}>{escape(text)}</Fact>"
 
 
@@ -529,10 +627,11 @@ def _marks(f: dict[str, Any]) -> dict[str, Any]:
     return {"hidden_from": list(f["hidden_from"])} if f.get("knowledge") == "limited" and f.get("hidden_from") else {}
 
 
-def fact_entry(f: dict[str, Any], private: bool = False) -> Line:
+def fact_entry(f: dict[str, Any], private: bool = False, before: bool = False) -> Line:
     """A fact as a packet line with its provenance (ADR 0027): the assertion, and the words a reply can
-    echo (its value, else its object). `private`: only some characters in the scene know it (ADR 0034)."""
-    return Line("fact", fact_line(f), {"assertion": f["id"]}, f.get("turn"), fact_text(f),
+    echo (its value, else its object). `private`: only some characters in the scene know it (ADR 0034).
+    `before`: name the version a standing fact replaced (packet-v5, ADR 0038)."""
+    return Line("fact", fact_line(f, before), {"assertion": f["id"]}, f.get("turn"), fact_text(f),
                 f.get("value") or f.get("object") or "", _marks(f), private)
 
 

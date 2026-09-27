@@ -19,6 +19,10 @@ Since `resolve-v3` (ADR 0023) the persona's name as the host reports it for the 
 "유우마") is a persona name like `{{user}}`, for characters only. The extractor writes the persona either
 way, so without it one person was two entities.
 
+Since `resolve-v5` (ADR 0038) a character name of two or more words whose last word is a persona name ("미즈키 유우마"
+for the persona "유우마") is the persona too: the story writes the persona's full name as well, and one chat was
+split in two by it (Phase 11 M0).
+
 Since `resolve-v4` (ADR 0025) the owner's links (`entity_link`) join two names of one type whenever both
 are mentioned on the head. The owner outranks the story's aliases: a name the owner links is never
 ambiguous, and when the story's aliases made it ambiguous, only the owner's link joins it. An entity is
@@ -33,7 +37,7 @@ from functools import lru_cache
 from typing import Any
 from uuid import UUID, uuid5
 
-RESOLVER_VERSION = "resolve-v4"
+RESOLVER_VERSION = "resolve-v5"
 USER_NAMES = {"{{user}}", "{user}", "user", "유저"}
 PERSONA = "{{user}}"
 UNNAMED = "?"  # the extractor names a character shown without a name by a description starting with it (ADR 0024)
@@ -46,12 +50,19 @@ def norm(name: str | None) -> str:
     return " ".join(str(name or "").casefold().split())
 
 
+def _persona_name(n: str, persona: frozenset[str]) -> bool:
+    """A normalized character name that is the persona: a persona name, or a full name ending with one as its
+    own word (resolve-v5)."""
+    head, _, last = n.rpartition(" ")
+    return n in persona or (bool(head) and last in persona)
+
+
 @lru_cache(maxsize=8192)
 def node(entity_type: str | None, name: str | None, persona: frozenset[str] = frozenset()) -> Node:
     """(type, normalized name). `persona`: the conversation's normalized persona names beyond `USER_NAMES`.
     Pure; cached because every fact read asks for the same few names."""
     n = norm(name)
-    if entity_type == "character" and (n in USER_NAMES or n in persona):
+    if entity_type == "character" and (n in USER_NAMES or _persona_name(n, persona)):
         n = PERSONA
     return (entity_type or "?", n)
 
@@ -76,7 +87,7 @@ class Resolution:
             for n, spelling in mentions(row, self.persona):
                 first.setdefault(n, (len(first), spelling))
                 counts[n] = counts.get(n, 0) + 1
-                if n[0] == "character" and norm(spelling) in self.persona:
+                if n[0] == "character" and _persona_name(norm(spelling), self.persona):
                     hosted.setdefault(norm(spelling), spelling)
             if (row["predicate"] == "also_called" and row.get("modality", "actual") == "actual"
                     and norm(row.get("value")) and _own_alias(row, self.persona)):
@@ -91,7 +102,7 @@ class Resolution:
                 n = self.node(p["type"], p["name"])
                 first.setdefault(n, (len(first), p.get("name")))
                 counts[n] = counts.get(n, 0) + 1
-                if n[0] == "character" and norm(p["name"]) in self.persona:
+                if n[0] == "character" and _persona_name(norm(p["name"]), self.persona):
                     hosted.setdefault(norm(p["name"]), p["name"])
         # The owner's links between names the head mentions (ADR 0025); the others wait for a mention.
         self.links: list[tuple[Node, Node, dict[str, Any]]] = []

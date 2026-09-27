@@ -410,7 +410,7 @@ outside the Private section. Excerpts that say a withheld line's content are lef
 **D46 — Budget pressure (Phase 10, ADR 0036).** A request reports the memory lines its packet left out for the
 budget and the smallest budget (100s, up to 2000) that holds them all; the panel's Status tab shows it with a
 button that sets the plugin's budget, and reminds the user to lower the host's max context by as much (D2).
-The default policy `packet-v4` leaves out a line that says an earlier line again (same head and content, or a
+`packet-v4` (and `packet-v5`, D48) leave out a line that says an earlier line again (same head and content, or a
 claim restating a fact of the same head); the ledger keeps it as `restates`.
 
 **D47 — Plugin build check (ADR 0037, K19).** The plugin file carries a build id (a hash of the file) and sends
@@ -418,6 +418,13 @@ it with every sync. The sidecar image ships the plugin file of its commit and re
 Inspector's first page say whether the plugin in use is that build, and `GET /v1/plugin/nmos-pocketrisu.js`
 serves the matching file. Shown, never enforced. Claims are marked private like facts and show their knowledge marks only in the
 Private section.
+
+**D48 — Relationship pairs, the persona's full name, what a standing fact replaced (Phase 11, ADR 0038).** A
+`relationship` is versioned per pair, not per direction: each direction keeps its latest, and a symmetric one (a table
+of head nouns: friends, lovers, siblings, classmates, rivals, colleagues…) replaces the other direction's either way
+(K24). Feelings and speech levels stay per direction. `resolve-v5`: a character name ending with a persona name as its
+own word is the persona. The default policy `packet-v5` names, on a standing fact's line, the earlier value it
+replaced and its turn.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

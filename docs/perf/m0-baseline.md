@@ -52,3 +52,49 @@ cd apps/sidecar && uv run python ../../tools/eval_rp.py <cases> --db <restored c
   voiced, a claim (ADR 0013), which does not replace the narrated feeling and was not placed. Step 6 (`because`).
 - **A secret a late turn marks is not placed** when the question does not share its words; the budget went to the
   stale promises above. Re-measured after step 3.
+
+## After step 3 (ADR 0038)
+
+Read side only (`resolve-v5`, one relationship history per pair, `packet-v5`), the same data, cases and extractor
+generation; `--policy packet-v5`. Forbidden phrases count only as current: the earlier version a `packet-v5` line
+names after "; before, turn N:" is past (the scorer's rule since this step; the baseline had no such lines).
+
+| Category | cases | passed | gold held | forbidden placed | mean tokens |
+|---|---:|---:|---:|---:|---:|
+| address | 2 | 2 | 2/2 | 0/2 | 770 |
+| goal | 1 | 0 | 0/2 | 0/5 | 787 |
+| irrelevant | 1 | 1 | — | 0/2 | 758 |
+| past | 1 | 1 | 1/1 | — | 774 |
+| promise | 1 | 1 | 1/1 | — | 759 |
+| relationship | 2 | 2 | 2/2 | — | 788 |
+| secret | 1 | 0 | 0/1 | — | 769 |
+| state | 2 | 0 | 0/2 | — | 776 |
+| why | 1 | 0 | 0/1 | — | 787 |
+| **all** | **12** | **7** | **6/12** | **0/9** | **775** |
+
+No category is worse than the baseline. Under `packet-v4` with the new fold "past" fell to 0 of 1: the baseline's
+pass came from the stale speech level, and the correct fold left no earlier version in the packet; `packet-v5` answers
+it from the version the current one replaced. Goals, the secret, identity and the "why" case are for later steps.
+
+## Expanded M0 (28 cases)
+
+Twelve cases leave one or two per category, so one wording changes a category (see `docs/perf/extract-v13.md`). At the
+owner's request (2026-09-28) the set grew to 28 at the same request (turn 73): 16 new questions, and gold that accepts
+wordings of the same answer (for "how do they stand now": 좋아함, 역도 참, 설렘, 호감, 애정). The owner confirmed every
+answer. The earlier numbers above are for the first 12 cases.
+
+| Category | cases | `main` 075baf8, `packet-v4` | after step 3, `packet-v5` |
+|---|---:|---:|---:|
+| address | 5 | 2 | 4 |
+| goal | 1 | 0 | 0 |
+| irrelevant | 3 | 3 | 3 |
+| past | 3 | 3 | 3 |
+| promise | 3 | 2 | 2 |
+| relationship | 4 | 3 | 3 |
+| secret | 2 | 0 | 0 |
+| state | 5 | 0 | 0 |
+| why | 2 | 0 | 0 |
+| **all** | **28** | **13** (forbidden placed as current 3/16) | **15** (1/16) |
+
+The first run of step 3 on these cases had "past" at 2: `packet-v5` named only the version a standing fact replaced,
+and "what did he call her at first" needs the earliest. `packet-v5` now names that too when it differs (ADR 0038).
