@@ -98,3 +98,24 @@ answer. The earlier numbers above are for the first 12 cases.
 
 The first run of step 3 on these cases had "past" at 2: `packet-v5` named only the version a standing fact replaced,
 and "what did he call her at first" needs the earliest. `packet-v5` now names that too when it differs (ADR 0038).
+
+## Scoring corrected: what the prompt already holds (step 6)
+
+Every number above counts a gold answer only when the packet holds it. But memory leaves out what the request's prompt
+already carries (D3, the recorded `in_context` window: 11 messages, the last five or six turns, for these requests), so
+an answer there is not missing, and a case whose answers are all there does not test memory. `tools/eval_rp.py` now
+counts a gold phrase found in those messages as held, says how many were, and reports the cases that need memory (a
+gold phrase in no wording in the window) apart. Forbidden phrases still count in the packet only.
+
+Of the 28 cases, 19 have every answer in the last turns; **9 need memory**.
+
+| | cases passed (28) | needing memory, passed (9) | forbidden placed as current (16) |
+|---|---:|---:|---:|
+| `main` 075baf8, before Phase 11 (`packet-v4`, `extract-v12` facts) | 23 | 5 | 3 |
+| step 3, 7c1e740 (`packet-v5`) | 25 | 7 | 1 |
+| steps 4–5, 7709f23 (`packet-v5`, `extract-v13` re-extraction) | 26 | 7 | 0 |
+| step 6 (`packet-v6`) | 26 | 7 | 0 |
+
+The two memory cases still failing are the goal case (an old open goal loses to newer ones, K23) and a "why" about a
+status later statuses replaced (current facts do not reach it). Measuring memory needs cases whose answers lie outside
+the prompt window; this chat's recorded requests are all at its last turns.

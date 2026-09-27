@@ -129,6 +129,10 @@ RULES: list[tuple[re.Pattern[str], Callable[[re.Match[str]], dict[str, Any]]]] =
                 r"(?P<what>[^.]+)\."),
      lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "resolved", "value": m["what"],
                 "outcome": m["how"]}),
+    # Phase 11 step 6 (ADR 0040): a feeling with the cause the story states.
+    (re.compile(r"(?P<who>\w+) is angry at (?P<at>\w+) because (?P<why>[^.]+)\."),
+     lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "feels_toward", "object": m["at"],
+                "object_type": "character", "value": "angry", "because": m["why"]}),
     # Phase 11 (ADR 0038, K24): a relationship the story changes, recorded the other way round.
     (re.compile(r"(?P<a>\w+) is (?P<b>\w+)'s classmate\."),
      lambda m: {"subject": m["a"], "subject_type": "character", "predicate": "relationship", "object": m["b"],
@@ -420,6 +424,10 @@ CASES: list[Case] = [
          [turn("Kaito owes Hana three silver coins."), pad(2), turn("Kaito's debt is paid: three silver coins."),
           pad()],
          "Kaito, what about Hana?", stale=["<Thread"]),
+    Case("why someone is angry", "causes",
+         [turn("Yui is angry at Kaito because he forgot the festival."), *[turn(f"Yui did chore {i}.") for i in range(6)],
+          turn("Yui and Kaito agree to speak informally."), pad()],
+         "Why is Yui like that with Kaito?", gold=["Yui feels toward Kaito: angry; because: he forgot the festival"]),
     Case("quote under a full budget", "budget pressure",
          [turn("하나가 주위를 살피더니 속삭였다. 금고 비밀번호는 보라일곱이야."), *TRAITS, pad()],
          "하나야, 금고 비밀번호가 뭐였지?", gold=["보라일곱", "하나 has trait:"]),

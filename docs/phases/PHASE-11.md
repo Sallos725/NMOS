@@ -114,7 +114,7 @@ generation):
    0039, `docs/perf/extract-v13.md`): synthetic tier `gemma4` 41/42, `deepseek` 42/42; M0 17 of 28 on the copy
    re-extracted with it. It stopped once at a stop condition on the first 12 cases (one wording moved a category).
 5. Threads at read time and the packet's thread section. **Done** with step 4.
-6. Explicit links at read time, packet and Inspector.
+6. Explicit links at read time, packet and Inspector. **Done** (ADR 0040, `packet-v6`).
 7. Inspector views.
 8. Evaluation tiers (each paid run approved first), real-host smoke, upgrade, documentation.
 

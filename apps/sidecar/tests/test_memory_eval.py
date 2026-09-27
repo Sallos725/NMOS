@@ -66,7 +66,7 @@ def test_budget_pressure_needs_the_excerpt_room_of_packet_v1(results):
     answers, packet-v1 keeps room for it. Every other case answers the same under both."""
     pressure = {c.name for c in CASES if c.category == "budget pressure"}
     private = {c.name for c in CASES if any("<Private>" in g for g in c.gold)}  # packet-v3 and later (ADR 0034)
-    before = {c.name for c in CASES if any("before, turn" in g for g in c.gold)}  # packet-v5 and later (ADR 0038)
+    before = {c.name for c in CASES if any("before, turn" in g or "; because:" in g for g in c.gold)}  # v5, v6 lines
     v0, v1 = by_case(results["full-v0"]), by_case(results["full"])
     assert {name for name in pressure if v0[name].gold_hit is False} == pressure
     assert all(v1[name].gold_hit for name in pressure)
