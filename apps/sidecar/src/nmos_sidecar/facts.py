@@ -52,7 +52,14 @@ live AS (
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.value, a.epistemic, a.confidence, a.evidence,
        a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
        a.participants::text AS participants,
-       l.position, l.turn, l.host_logical_id, l.extractor_key AS generation
+       l.position, l.turn, l.host_logical_id, l.extractor_key AS generation,
+       -- a reveal whose listed turn reads differently now (ADR 0033 amendment 2); NULL: not recorded
+       CASE WHEN a.predicate = 'learned' THEN (
+           SELECT h->>'turn_hash' <> (SELECT t.turn_hash FROM m t WHERE t.turn = (h->>'turn')::int
+                                         AND t.turn_hash IS NOT NULL LIMIT 1)
+           FROM extraction x, jsonb_array_elements(x.hints->'secrets') h
+           WHERE x.id = l.eid AND '[turn ' || (h->>'turn') || '] ' || (h->>'text') = a.value
+           LIMIT 1) END AS turn_changed
 FROM live l
 JOIN assertion a ON a.extraction_id = l.eid
 WHERE l.extractor_key = l.chosen AND a.status = 'valid'

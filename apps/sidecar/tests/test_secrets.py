@@ -7,6 +7,7 @@ import uuid
 from nmos_sidecar import extraction
 from nmos_sidecar.entities import resolve
 from nmos_sidecar.predicates import REGISTRY, registry_prompt, validate
+from nmos_sidecar.facts import served_assertions
 from nmos_sidecar.secrets import fold, is_secret, secret_text
 from test_semantics import row
 
@@ -62,6 +63,18 @@ def test_a_reveal_of_a_listed_turn_survives_that_turn_being_extracted_again_in_o
     got, _, _ = secrets([reworded, other, secret(9, value="쿠키 굽기"), learned(21, text=f"[turn 7] 엘피 goal: {PLAN}")])
     assert {s["text"][9:]: s["open"] for s in got} == {"블랑 모르게 강의 듣기": [], "쿠키를 서랍에 숨기기": ["블랑"],
                                                        "쿠키 굽기": ["블랑"]}
+
+
+def test_a_reveal_whose_listed_turn_was_edited_matches_by_content_only():
+    """ADR 0033 amendment 2: the turn reads differently than when the reveal was extracted (`turn_changed`)."""
+    listed = f"[turn 7] 엘피 goal: {PLAN}"
+    other = secret(7, value="다이아몬드 훔치기")
+    (s,), unmatched, _ = secrets([other, learned(21, text=listed, turn_changed=True)])
+    assert s["open"] == ["블랑"] and [u["value"] for u in unmatched] == [listed]
+    (s,), unmatched, _ = secrets([other, learned(21, text=listed, turn_changed=False)])  # unchanged: rule 1
+    assert s["open"] == [] and unmatched == []
+    (s,), unmatched, _ = secrets([secret(7), learned(21, text=listed, turn_changed=True)])  # same secret: rule 2
+    assert s["open"] == [] and unmatched == []
 
 
 def test_a_second_reveal_of_the_same_secret_is_no_mismatch():
@@ -144,7 +157,7 @@ import re  # noqa: E402
 
 import pytest  # noqa: E402
 
-from conftest import make_client  # noqa: E402
+from conftest import active_generation, make_client  # noqa: E402
 from simchat import SimChat  # noqa: E402
 from test_extraction import drain, facts  # noqa: E402
 from test_generations import LLM  # noqa: E402
@@ -213,20 +226,21 @@ def test_a_reveal_ends_the_secret_until_its_turn_is_deleted(migrated, db):
         assert "Blanc: <span class=\"warn\">does not know yet</span>" in page
 
 
-# --- open findings of the 2026-09-27 audit (docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md) -----------------
-# strict xfail: each fails today at its last assertion; a fix turns it into XPASS, which fails the run until the
-# marker is removed.
-
-AUDIT = "docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md"
+# --- findings of the 2026-09-27 audit (docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md) ----------------------
 
 
 def goal_of(c, chat) -> dict:
     return next(f for f in facts(c, chat) if f["predicate"] == "goal")
 
 
-@pytest.mark.xfail(strict=True, reason=f"audit G1 ({AUDIT}): a reveal is linked by turn and head, "
-                   "so it carries over to a different secret after the secret's own turn is edited")
+def reveal_rows(db) -> list[dict]:
+    head = db.execute("SELECT head_commit_id FROM conversation").fetchone()["head_commit_id"]
+    return [r for r in served_assertions(db, head, active_generation(db, "extract").key) if r["predicate"] == "learned"]
+
+
 def test_a_reveal_does_not_carry_over_to_a_different_secret_after_its_turn_is_edited(migrated, db):
+    """Audit G1: linked by turn and head, a reveal used to end whatever secret its listed turn held after an
+    edit. It ends one there only while that turn reads as it did (ADR 0033 amendment 2)."""
     model, chat = SecretRecorder(), SimChat()
     with make_client(migrated, **LLM) as c:
         step(c, migrated, chat, model, "Elpi secretly plans to watch the lecture, hidden from Blanc.")
@@ -235,12 +249,18 @@ def test_a_reveal_does_not_carry_over_to_a_different_secret_after_its_turn_is_ed
         step(c, migrated, chat, model, "Blanc found out: Elpi goal: watch the lecture.")
         step(c, migrated, chat, model, "next")
         assert [r["to"] for r in goal_of(c, chat)["revealed"]] == ["Blanc"]
+        assert [r["turn_changed"] for r in reveal_rows(db)] == [False]
+        conv = next(x for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)["id"]
+        assert c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["extract"] == 0  # in order
         chat.edit(0, "Elpi secretly plans to steal the diamond, hidden from Blanc.")
         sync(c, chat)
         drain(migrated, model)
         goal = goal_of(c, chat)
         assert goal["value"] == "steal the diamond"
         assert goal["hidden_from"] == ["Blanc"] and not goal.get("revealed")  # Blanc learned of the lecture only
+        assert [r["turn_changed"] for r in reveal_rows(db)] == [True]
+        page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
+        assert "Reveals that matched no open secret" in page
 
 
 FIRST_IMPORT = ("Elpi secretly plans to watch the lecture, hidden from Blanc.", "Blanc drinks coffee.",
@@ -260,15 +280,18 @@ def first_import(c, migrated, model) -> tuple[SimChat, str]:
     return chat, conv
 
 
-@pytest.mark.xfail(strict=True, reason=f"audit G2 ({AUDIT}): Extract all history skips turns already "
-                   "compiled, so the K29 workaround re-extracts nothing")
 def test_extract_all_history_recovers_a_reveal_missed_on_first_import(migrated, db):
+    """Audit G2: Extract all history used to skip every compiled turn, so K29's workaround did nothing. It now
+    extracts again the turns extracted before an earlier turn's secret, oldest first, and only those."""
     model = SecretRecorder()
     with make_client(migrated, **LLM) as c:
         chat, conv = first_import(c, migrated, model)
-        c.post(f"/v1/conversations/{conv}/extract-history")
+        out = c.post(f"/v1/conversations/{conv}/extract-history").json()
+        assert out["queued"]["extract"] == 2  # turns 1 and 2; turn 0 holds the secret
         drain(migrated, model)
-        assert [r["to"] for r in (goal_of(c, chat).get("revealed") or [])] == ["Blanc"]
+        goal = goal_of(c, chat)
+        assert not goal.get("hidden_from") and [r["to"] for r in goal["revealed"]] == ["Blanc"]
+        assert c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["extract"] == 0  # settled
 
 
 def test_rebuild_recovers_a_reveal_missed_on_first_import(migrated, db):

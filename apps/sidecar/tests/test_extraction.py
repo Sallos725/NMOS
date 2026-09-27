@@ -307,9 +307,9 @@ def test_an_unexpected_job_error_fails_the_job_and_the_worker_goes_on(llm_client
     assert [r["status"] for r in rows[1:]] == ["done"] * (total - 1)
 
 
-@pytest.mark.xfail(strict=True, reason="audit G3 (docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md): "
-                   "a non-list `assertions` becomes [] and the turn counts as compiled")
 def test_a_malformed_assertions_field_is_not_a_compiled_turn(llm_client, migrated, db):
+    """Audit G3 (docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md): a non-list `assertions` used to become []
+    and the turn counted as compiled, like an answer with nothing to extract. It fails the job instead."""
     chat = SimChat()
     chat.user("Hinata is in the old chapel.")
     chat.reply("ok")
@@ -320,3 +320,6 @@ def test_a_malformed_assertions_field_is_not_a_compiled_turn(llm_client, migrate
     cov = llm_client.get(f"/v1/conversations/{conv}/coverage").json()["extraction"]
     assert cov["eligible"] == 1
     assert cov["compiled"] == 0  # an invalid answer is not an empty one
+    job = db.execute("SELECT status, last_error FROM job WHERE kind = 'extract'").fetchone()
+    assert job["status"] == "queued" and "no `assertions` list" in job["last_error"]  # retried later (backoff)
+    assert db.execute("SELECT count(*) AS n FROM extraction").fetchone()["n"] == 0
