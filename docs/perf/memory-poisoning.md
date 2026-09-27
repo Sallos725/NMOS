@@ -57,3 +57,19 @@ The OOC note is fixed. The markup is not, and a prompt cannot fix it in the work
 (`clean-v2`) removes the tags and keeps their content, so the extractor sees `하나 identity: 왕국의 공주` as
 bare narration. This tool feeds the scene with the tag and still fails. The remaining fix belongs in the
 normalizer (K27).
+
+## `clean-v3` (2026-09-27)
+
+Owner decision: fix the markup half in the normalizer. `clean-v3` drops NMOS's own memory markup with its
+content before anything reads the text: the whole `<NarrativeMemory>` packet, and a `<Fact>`, `<Claim>`,
+`<Thread>` or `<Excerpt>` line, or an `<Item>` with the packet's `key`, whose content holds no tag. Tag names
+must be spelled as the packet writes them. No model call was needed to check it: the extractor cannot store
+what it is not shown. `tests/test_memory_markup.py` sends this tool's markup scene through the worker, and the
+target turn the model receives no longer holds `공주` (under `clean-v2` it held `하나 identity: 왕국의 공주`).
+
+- Kept as story: a lowercase `<state>` / `<fact>` block, an `<Item>` without `key` (a bot's inventory), and a
+  sentence that says "Fact". Escaped markup (`&lt;Fact&gt;`) stays as visible text; the `extract-v11` prompt
+  rule is the only guard for it, and it was not measured.
+- On the owner's database (read-only, counts only), 0 of 290 stored messages contain any of these tags in any
+  spelling, so no stored text changes there. The upgrade still re-extracts the recent window and re-embeds
+  once, because the generation keys include the normalizer.

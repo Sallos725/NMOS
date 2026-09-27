@@ -28,6 +28,13 @@ MAX_EXCERPT_CHARS = 480
 
 # Markup and model reasoning that is not story: style/script blocks and <Thoughts>/<think> sections.
 _DROP_BLOCKS = re.compile(r"<(style|script|thoughts|think|thinking)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+# NMOS's own memory markup, spelled as the packet writes it (case-sensitive), is not story either: a reply
+# that echoes the packet, or text shaped like its lines, would otherwise reach the extractor as narration
+# once the tags are stripped (K27, audit A-12). Dropped with its content: the whole packet, and one line
+# whose content holds no tag. An <Item> counts only with the packet's `key`, so a bot's inventory stays.
+_MEMORY_MARKUP = re.compile(r"<NarrativeMemory\b[^>]*>.*?</NarrativeMemory\s*>"
+                            r"|<(Fact|Claim|Thread|Excerpt)\b[^<>]*>[^<]*</\1\s*>"
+                            r"|<Item\s[^<>]*\bkey=[^<>]*>[^<]*</Item\s*>", re.DOTALL)
 # Inline media is not story either: RisuAI inlay/asset tokens (the names PocketRisu expands), markdown
 # images and bare data: URIs that image plugins write into the message itself.
 _MEDIA_TOKEN = re.compile(r"\{\{(?:inlay|inlayed|inlayeddata|img|image|asset|emotion|raw|path|bg|bgm|video|video-img|"
@@ -50,8 +57,10 @@ _BLANK_LINES = re.compile(r"\n\s*\n+")
 
 def clean_text(content: str) -> str:
     """Readable text for recall/embedding/extraction: bots (especially sim bots) wrap replies in
-    status HTML. Keeps visible text, drops markup and style/script blocks. Raw evidence is untouched."""
+    status HTML. Keeps visible text, drops markup, style/script blocks and NMOS's own memory markup. Raw
+    evidence is untouched."""
     text = _DROP_BLOCKS.sub(" ", content)
+    text = _MEMORY_MARKUP.sub(" ", text)
     text = _MEDIA_TOKEN.sub("", text)
     text = _BLOCK_TAG.sub("\n", text)
     text = _TAG.sub("", _HTML_TAG.sub("", text))

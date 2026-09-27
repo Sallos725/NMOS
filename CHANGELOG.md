@@ -6,8 +6,8 @@ later, is `docs/KNOWN-ISSUES.md`.
 ## Unreleased
 
 The audit items the 2026-09-26 review left without a state (A-11, A-13, A-17, A-18, A-19), the owner's
-decision on K26, and a new extractor generation `extract-v11` with the two audit items queued for it (A-12,
-A-14). Sidecar only; no schema change and no new embedding generation.
+decision on K26, a new extractor generation `extract-v11` with the two audit items queued for it (A-12,
+A-14), and a new text normalizer `clean-v3` (K27). Sidecar only; no schema change.
 
 - **The sidecar's access log no longer shows the auth token** (audit A-11). The Inspector opened in a browser
   tab passes the token as `?token=` on every link, and uvicorn logged each request line with it. The log now
@@ -42,11 +42,19 @@ A-14). Sidecar only; no schema change and no new embedding generation.
   (`<Fact …>…</Fact>`) still becomes a fact, because the text normalizer removes the tag before extraction
   (K27). The registry drops `Predicate.epistemic`, which nothing read (audit A-14). Other bars are unchanged or
   within the model's run-to-run variance (`docs/perf/extract-v11.md`).
+- **Memory markup in a reply is no longer read as story** (K27; owner decision). New text normalizer
+  `clean-v3`: NMOS's own memory markup inside a message (a whole packet a reply echoes, or a line shaped like
+  `<Fact …>…</Fact>`, `<Claim>`, `<Thread>`, `<Excerpt>` or a keyed `<Item>`) is dropped together with its
+  content. `clean-v2` removed the tag and kept the text, so the extractor read the claim as narration and stored
+  it (3 of 3 with `gemma4:31b-cloud`), and recall could offer it as an excerpt. Only the tag names the packet
+  writes, spelled the same way, count: a bot's `<state>` block or `<Item>` inventory line stays story text.
 
-**Upgrading.** Pull the new sidecar image and restart it. With an LLM configured, `extract-v11` becomes
-active, and each chat's latest `NMOS_EXTRACT_BACKFILL` turns (default 100) are re-extracted once at the
-provider's cost. Older turns keep their `extract-v10` facts until **Extract all history**. Replacing the
-plugin file is optional (its code is unchanged). If you replace it, reload PocketRisu.
+**Upgrading.** Pull the new sidecar image and restart it. At startup the normalized text is rewritten
+(`clean-v3`). With an LLM configured, `extract-v11` on `clean-v3` becomes active, and each chat's latest
+`NMOS_EXTRACT_BACKFILL` turns (default 100) are re-extracted once at the provider's cost. With embeddings on,
+every message is embedded again with the embedding model. Older turns keep their earlier facts until
+**Extract all history**. Replacing the plugin file is optional (its code is unchanged). If you replace it,
+reload PocketRisu.
 
 ## 0.1.0-beta.21
 
