@@ -1,0 +1,84 @@
+"""M0, the RP evaluation (PHASE-11 step 2): a case replays a recorded request, scores what its packet holds and
+keeps out, and the report carries numbers only (the owner's cases stay outside the repository)."""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+from uuid import UUID
+
+from nmos_sidecar import audit
+from nmos_sidecar.retrieval import RecallOptions
+from test_packet_ledger import ask, db, full, story  # noqa: F401  (`full` is a fixture)
+
+TOOL = Path(__file__).resolve().parents[3] / "tools/eval_rp.py"
+_spec = importlib.util.spec_from_file_location("eval_rp", TOOL)
+eval_rp = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(eval_rp)
+
+
+def test_a_case_passes_on_every_gold_phrase_in_any_wording_and_no_forbidden_one():
+    packet = "<Fact>Hana knows: the letter is FORGED</Fact>\n<Excerpt>Idle   chatter about clouds.</Excerpt>"
+    both = {"gold": ["letter is forged", ["위조", "idle chatter"]], "forbidden": ["dragon", "  "]}
+    assert eval_rp.score(both, packet) == {"gold": 2, "held": 2, "forbidden": 1, "placed": 0, "passed": True}
+    assert eval_rp.score({"gold": ["forged", "dragon"]}, packet)["passed"] is False
+    assert eval_rp.score({"gold": ["forged"], "forbidden": ["clouds"]}, packet) == {
+        "gold": 1, "held": 1, "forbidden": 1, "placed": 1, "passed": False}
+
+
+def test_a_probe_replaces_the_requests_message_as_the_live_request_would_send_it(full):
+    client, url = full
+    chat = story(client, url)
+    out = ask(client, chat, "Kaito, what do you know about the letter?")
+    with db(url) as conn:
+        recorded = audit.replay(conn, UUID(out["trace_id"]), RecallOptions())
+        probe = audit.replay(conn, UUID(out["trace_id"]), RecallOptions(), query="What about the clouds?")
+    assert recorded["reproduced"] is True and "forged" in recorded["text"] and "clouds" not in recorded["text"]
+    assert probe["notes"] == ["query replaced"] and "reproduced" not in probe
+    assert "Idle chatter 0 about clouds." in probe["text"] and "forged" not in probe["text"]
+
+
+def test_cases_replay_their_request_and_the_report_holds_numbers_only(full):
+    client, url = full
+    chat = story(client, url)
+    trace = ask(client, chat, "Kaito, what do you know about the letter?")["trace_id"]
+    cases = [
+        {"name": "kept", "category": "secret", "trace": trace, "gold": ["the letter is forged"],
+         "forbidden": ["about clouds"]},
+        {"name": "missing-fact", "category": "state", "trace": trace, "gold": ["dragon"]},
+        {"name": "probe", "category": "irrelevant", "trace": trace, "query": "What about the clouds?",
+         "gold": ["chatter 0"], "forbidden": ["forged"]},
+        {"name": "gone", "category": "state", "trace": "0190f3a4-1b2c-7d3e-8f40-123456789abc", "gold": ["x"]},
+    ]
+    with db(url) as conn:
+        report = eval_rp.evaluate(conn, cases, RecallOptions())
+    by = {r["name"]: r for r in report["cases"]}
+    assert by["kept"]["passed"] and by["probe"]["passed"] and not by["missing-fact"]["passed"]
+    assert by["gone"]["status"] == "missing"
+    assert report["summary"]["all"] | {"tokens_mean": None} == {
+        "cases": 4, "skipped": 1, "passed": 2, "gold": 3, "held": 2, "forbidden": 2, "placed": 0, "tokens_mean": None}
+    assert report["summary"]["state"]["passed"] == 0 and report["summary"]["secret"]["passed"] == 1
+    text = eval_rp.table(report)
+    assert text.splitlines()[-1].startswith("| all | 4 | 2 | 2/3 | 0/2 | 1 |")
+    for phrase in ("forged", "dragon", "chatter", "clouds"):
+        assert phrase not in text
+
+
+def test_a_newer_extractor_generation_is_read_as_of_now(monkeypatch):
+    """`--extractor`: the request is compiled with that generation's facts as extracted by now, not as of the request
+    (which predates the generation), like `eval_secrets.py build`."""
+    from datetime import datetime, timezone
+
+    seen: list[dict] = []
+
+    def replay(conn, trace_id, options, policy=None, known_at=None, query=None, budget=None, **overrides):
+        seen.append({"known_at": known_at, "query": query, "budget": budget, **overrides})
+        return {"status": "ok", "text": "", "tokens": 0, "policy": policy or "packet-v4"}
+
+    monkeypatch.setattr(eval_rp.audit, "replay", replay)
+    case = [{"name": "c", "trace": "0190f3a4-1b2c-7d3e-8f40-123456789abc", "query": "probe"}]
+    eval_rp.evaluate(None, case, RecallOptions())
+    eval_rp.evaluate(None, case, RecallOptions(), extractor="extract-new", budget=800)
+    assert seen[0] == {"known_at": None, "query": "probe", "budget": None}
+    assert seen[1]["extractor_key"] == "extract-new" and seen[1]["query"] == "probe" and seen[1]["budget"] == 800
+    assert abs((datetime.now(timezone.utc) - seen[1]["known_at"]).total_seconds()) < 60
