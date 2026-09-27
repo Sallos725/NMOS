@@ -68,6 +68,13 @@ def test_a_database_of_an_earlier_release_upgrades_and_keeps_working(dump, datab
         assert ("bell tower" in objects(c, main, "Mina", "located_in")) is not per_message
         old_trace = c.get(f"/v1/conversations/{convs[main.id]}/traces").json()
         assert old_trace, "the earlier release's recall traces are kept"
+        # Packets an earlier release recorded (since the ledger, beta.19) replay under their own policy; one
+        # whose story is unchanged and needs no vectors of another embedder compiles the same (Phase 9).
+        for t in old_trace:
+            replayed = c.get(f"/v1/trace/{t['id']}/replay").json()
+            assert replayed["status"] in ("ok", "not_recorded", "changed"), replayed
+            if replayed["status"] == "ok" and not replayed["notes"]:
+                assert replayed["reproduced"] is True, (dump.stem, replayed["policy"])
 
         # The story goes on: an append, a recall that replays as recorded, an edit.
         main.reply("Mina is in the garden.")
@@ -79,6 +86,11 @@ def test_a_database_of_an_earlier_release_upgrades_and_keeps_working(dump, datab
         main.edit(1, "Mina is in the crypt. Mina has the brass key.")
         assert sync(c, main)["status"] == "applied"
         assert c.get(f"/inspector/c/{convs[main.id]}").status_code == 200
+        # Phase 10: an upgraded chat has the default memory mode (migration 0021) and takes another.
+        mode = c.get(f"/v1/conversations/{convs[main.id]}/memory-mode").json()
+        assert (mode["strict"], mode["narrator"]) == (False, None)
+        assert c.put(f"/v1/conversations/{convs[main.id]}/memory-mode", json={"strict": True}).json()["strict"]
+        assert set(recall(c, main, "Where is Mina?")["memory"]) == {"offered", "cut", "fits_at"}  # ADR 0036
 
     # The current worker re-derives with the current generations, without a failed job.
     drain(database_url)

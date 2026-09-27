@@ -55,7 +55,27 @@ missed reveal (turn 52) are listed there.
 (1.77 ms over 15,000 facts, `docs/perf/packet-v3.md`) or the budget search (about 1 ms when memory was left
 out, `docs/perf/budget.md`).
 
-## 4. Response-model tier (pending the owner's budget)
+## 4. Real host (isolated PocketRisu v1.12.0, stub models; step 8)
+
+The plugin of `main` (build `84f4a7f48891`) against the sidecar of `main`:
+
+- A secret kept from a character, with that character named in the user's message: the packet the model
+  received (the stub's log) had the `<Private>` section with both facts kept from them, their `known_by` and
+  `hidden_from`; the trace recorded the cast of three, `packet-v4` and the default budget 800 (the budget
+  argument empty).
+- The memory mode set on the Inspector's chat page reached the sidecar and the next trace (step 5,
+  `docs/perf/memory-mode.md` §4); the budget notice and its button (`docs/perf/budget.md` §4).
+- The Inspector's first page: "플러그인: 사이드카와 같은 빌드 84f4a7f48891 (지금)"; the Status tab: "사이드카와 같음".
+
+## 5. Upgrade (step 8)
+
+`tests/test_upgrade.py` now also restores a database written by `v0.1.0-beta.21` (recorded with
+`tools/make_upgrade_fixture.py`), besides beta.7 and beta.16. Each upgrades (migrations to 0021), keeps
+working through an append, a recall that replays as recorded and an edit; its recorded packets replay without
+error under their own policy; an upgraded chat has the default memory mode and takes another; a recall
+reports what the budget left out.
+
+## 6. Response-model tier (pending the owner's runs)
 
 `tools/eval_secrets.py` takes a case directory outside the repository (the owner's real requests, the
 secrets to watch), compiles each request's packet again per condition (a policy, strict mode or a narrator),

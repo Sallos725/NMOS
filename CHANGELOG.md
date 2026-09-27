@@ -85,6 +85,8 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
   the scene the fact still went to the Private section with its rule telling them not to act on it, strict
   mode withheld it from them, and as a first-person narrator they were not given it. Found by the Phase 10
   evaluation, which adds seven synthetic secret cases to CI (`docs/perf/eval-baseline.md`).
+- CI also upgrades a database that 0.1.0-beta.21 wrote, and checks that an upgraded chat has the default
+  memory mode.
 - Known issues: K29, a reveal among the turns first extracted together (connecting an existing chat) can be
   missed; run **Extract all history** once after connecting a chat with secrets.
 - **The sidecar says whether your plugin is the right one** (ADR 0037, K19). The plugin sends its build id with
