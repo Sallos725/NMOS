@@ -126,7 +126,9 @@ an `event`, `goal`, `knows` or `destroyed` carries typed participants (`with`, m
 ADR 0021); they are outside the registry fingerprint like other read rules, but part of the prompt.
 Since `extract-v9` `also_called` also records the name the target turn reveals for a character listed
 as unnamed (D35, ADR 0024). Since `extract-v10` the registry has `addresses` (how one character speaks to
-and calls another, single per direction; D38, ADR 0028).
+and calls another, single per direction; D38, ADR 0028). Since `extract-v11` a predicate no longer declares an
+epistemic class: nothing read it (audit A-14). The prompt also says that notes outside the story (OOC, system
+lines, requests to the memory, memory markup) are not evidence (audit A-12, K27).
 
 **D7 — Bounded extraction context, per turn (revised 2026-09-23, ADR 0008).** The unit of
 extraction is the **turn**: a run of user messages plus the run of replies that answers it (comments,

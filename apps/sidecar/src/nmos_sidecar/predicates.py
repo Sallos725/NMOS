@@ -19,40 +19,39 @@ class Predicate:
     object_types: tuple[str, ...] | None  # None: no object entity
     needs_value: bool
     cardinality: str  # "single": newer supersedes older per (subject[, object]); "multi": accumulates
-    epistemic: str  # "world" | "belief"; read nowhere. Remove with the next extractor generation (audit A-14).
     description: str
     per_object: bool = False  # single-valued per (subject, object) instead of per subject
 
 
 REGISTRY: dict[str, Predicate] = {p.name: p for p in (
-    Predicate("located_in", ("character", "item", "group"), ("place",), False, "single", "world",
+    Predicate("located_in", ("character", "item", "group"), ("place",), False, "single",
               "where the subject currently is"),
-    Predicate("has_status", ("character",), None, True, "single", "world",
+    Predicate("has_status", ("character",), None, True, "single",
               "current physical/mental condition (injured, asleep, disguised…)"),
-    Predicate("identity", ("character",), None, True, "single", "world",
+    Predicate("identity", ("character",), None, True, "single",
               "role, occupation, title or true identity"),
-    Predicate("has_trait", ("character",), None, True, "multi", "world", "lasting trait, habit, appearance"),
-    Predicate("relationship", ("character",), ("character",), True, "single", "world",
+    Predicate("has_trait", ("character",), None, True, "multi", "lasting trait, habit, appearance"),
+    Predicate("relationship", ("character",), ("character",), True, "single",
               "relationship of subject to object (sibling, rival, lovers…)", per_object=True),
-    Predicate("feels_toward", ("character",), ("character",), True, "single", "belief",
+    Predicate("feels_toward", ("character",), ("character",), True, "single",
               "subject's current feeling toward object", per_object=True),
-    Predicate("addresses", ("character",), ("character",), True, "single", "world",
+    Predicate("addresses", ("character",), ("character",), True, "single",
               "how the subject now speaks to and calls the object, as the story settles it: speech level and form"
               " of address (value e.g. informal speech, calls them 'Yuuma')", per_object=True),
-    Predicate("possesses", ("character", "group"), ("item",), False, "multi", "world", "subject owns/carries object"),
-    Predicate("member_of", ("character",), ("group",), False, "multi", "world", "subject belongs to group"),
-    Predicate("knows", ("character",), None, True, "multi", "belief", "a fact/secret the subject knows"),
-    Predicate("goal", ("character", "group"), None, True, "multi", "belief", "what the subject wants or plans"),
-    Predicate("promised", ("character",), ("character",), True, "multi", "world", "a promise subject made to object"),
-    Predicate("event", ENTITY_TYPES, None, True, "multi", "world", "a notable event involving the subject"),
-    Predicate("world_fact", ("place", "group", "concept", "item"), None, True, "multi", "world",
+    Predicate("possesses", ("character", "group"), ("item",), False, "multi", "subject owns/carries object"),
+    Predicate("member_of", ("character",), ("group",), False, "multi", "subject belongs to group"),
+    Predicate("knows", ("character",), None, True, "multi", "a fact/secret the subject knows"),
+    Predicate("goal", ("character", "group"), None, True, "multi", "what the subject wants or plans"),
+    Predicate("promised", ("character",), ("character",), True, "multi", "a promise subject made to object"),
+    Predicate("event", ENTITY_TYPES, None, True, "multi", "a notable event involving the subject"),
+    Predicate("world_fact", ("place", "group", "concept", "item"), None, True, "multi",
               "a durable fact about the setting"),
-    Predicate("also_called", ENTITY_TYPES, None, True, "multi", "world",
+    Predicate("also_called", ENTITY_TYPES, None, True, "multi",
               "another name for the subject that the TARGET turn itself gives, or the listed description of a"
               " character the TARGET turn names (value: the other name)"),
-    Predicate("destroyed", ("item",), None, True, "single", "world",
+    Predicate("destroyed", ("item",), None, True, "single",
               "the item no longer exists or can no longer be held or used (value: how, e.g. burned, eaten)"),
-    Predicate("fulfilled", ("character", "group"), None, True, "multi", "world",
+    Predicate("fulfilled", ("character", "group"), None, True, "multi",
               "the subject kept a promise listed in OPEN PROMISES (value: its text exactly as listed)"),
 )}
 
