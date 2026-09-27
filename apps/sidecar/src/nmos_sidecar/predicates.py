@@ -41,7 +41,14 @@ REGISTRY: dict[str, Predicate] = {p.name: p for p in (
     Predicate("possesses", ("character", "group"), ("item",), False, "multi", "subject owns/carries object"),
     Predicate("member_of", ("character",), ("group",), False, "multi", "subject belongs to group"),
     Predicate("knows", ("character",), None, True, "multi", "a fact/secret the subject knows"),
-    Predicate("goal", ("character", "group"), None, True, "multi", "what the subject wants or plans"),
+    Predicate("goal", ("character", "group"), None, True, "multi",
+              "an aim, plan or task the subject is set on, lasting beyond the moment (not a passing wish)"),
+    Predicate("question", ("character", "group"), None, True, "multi",
+              "something the subject wants to know that the story leaves unanswered, or a mystery"),
+    Predicate("threat", ("character", "group", "place"), None, True, "multi",
+              "a danger that now hangs over the subject and has not played out (value: what threatens)"),
+    Predicate("owes", ("character", "group"), ("character", "group"), True, "multi",
+              "a debt, favor or return the subject owes the object (value: what)"),
     Predicate("promised", ("character",), ("character",), True, "multi", "a promise subject made to object"),
     Predicate("event", ENTITY_TYPES, None, True, "multi", "a notable event involving the subject"),
     Predicate("world_fact", ("place", "group", "concept", "item"), None, True, "multi",
@@ -55,6 +62,9 @@ REGISTRY: dict[str, Predicate] = {p.name: p for p in (
               "the subject kept a promise listed in OPEN PROMISES (value: its text exactly as listed)"),
     Predicate("learned", ("character",), None, True, "multi",
               "the subject found out a listed secret (value: its text as listed); filled from `secrets`"),
+    Predicate("resolved", ("character", "group", "place"), None, True, "multi",
+              "the TARGET turn ends a thread listed in OPEN THREADS (subject: its owner as listed; value: its text"
+              " exactly as listed; with `outcome`)"),
 )}
 
 # Predicates the worker fills from other parts of the model's answer, never asked for directly (PHASE-10:
@@ -190,7 +200,7 @@ def semantics(item: dict[str, Any]) -> tuple[str, str, str, str | None, str | No
 
 # Predicates whose value can involve other people (PHASE-8 Q3: the measured set). Kept outside REGISTRY
 # like HOLDER_PER_ITEM: the extraction prompt states it, and the prompt is part of the generation (D20).
-PARTICIPANT_PREDICATES = frozenset({"event", "goal", "knows", "destroyed"})
+PARTICIPANT_PREDICATES = frozenset({"event", "goal", "knows", "destroyed", "threat"})  # threat: who threatens (v13)
 PARTICIPANT_TYPES = ("character", "group")
 MAX_PARTICIPANTS = 6
 
@@ -221,6 +231,27 @@ def participants(item: dict[str, Any]) -> list[dict[str, str]] | None:
         if len(out) == MAX_PARTICIPANTS:
             break
     return out or None
+
+
+# extract-v13 (PHASE-11, ADR 0039): how a `resolved` ends its thread, and on which predicates a stated cause is kept.
+OUTCOMES = ("achieved", "abandoned", "failed", "answered", "averted", "paid")
+CAUSED = frozenset({"event", "feels_toward", "relationship", "has_status", "goal"})
+
+
+def outcome(item: dict[str, Any]) -> str | None:
+    """The outcome of a `resolved` (one of OUTCOMES); None for anything else, or when missing or invalid."""
+    if item.get("predicate") != "resolved":
+        return None
+    value = str(item.get("outcome") or "").strip().lower()
+    return value if value in OUTCOMES else None
+
+
+def because(item: dict[str, Any]) -> str | None:
+    """The cause the model quoted, on CAUSED predicates only, at most 200 characters; never inferred here."""
+    if item.get("predicate") not in CAUSED:
+        return None
+    value = str(item.get("because") or "").strip()
+    return value[:200] if value and value.casefold() not in ("null", "none", "-") else None
 
 
 SALIENCES = ("major", "minor")

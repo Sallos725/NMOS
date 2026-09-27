@@ -23,15 +23,15 @@ from .ids import uuid7
 from .llm import LLMError
 from .entities import UNNAMED, norm, resolve
 from .facts import fact_text, links_of, persona_of, served_assertions
-from .predicates import (DERIVED, REGISTRY, alias_evidenced, fill_types, knowledge, participants, registry_prompt,
-                         salience, semantics, validate)
+from .predicates import (DERIVED, REGISTRY, alias_evidenced, because, fill_types, knowledge, outcome, participants,
+                         registry_prompt, salience, semantics, validate)
 from .secrets import NOT_SECRETS, fold as fold_secrets, reveal_value
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads, similarity
 from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
 
-COMPILER_VERSION = "extract-v12"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
+COMPILER_VERSION = "extract-v13"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
 #                                 v5: polarity, modality, source, also_called (ADR 0012, ADR 0013);
 #                                 v6: destroyed (PHASE-6, ADR 0017);
 #                                 v7: promises actual, fulfilled, OPEN PROMISES, event salience (PHASE-7);
@@ -41,7 +41,9 @@ COMPILER_VERSION = "extract-v12"  # v2: known_by / hidden_from; v3: knowledge sc
 #                                 v11: instructions and notes outside the story are not evidence (A-12),
 #                                 no Predicate.epistemic (A-14);
 #                                 v12: hidden_from only for what is kept from someone, OPEN SECRETS and
-#                                 `learned` (PHASE-10, ADR 0033)
+#                                 `learned` (PHASE-10, ADR 0033);
+#                                 v13: goal, question, threat and owes as open business, OPEN THREADS and
+#                                 `resolved` with an outcome, `because` (PHASE-11, ADR 0039)
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
 TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
@@ -49,6 +51,7 @@ CONTEXT_CHARS = 2000  # per context message
 RECENT_PRIORITY, HISTORY_PRIORITY = 250, 900  # generation rebuild: recent window first, then history
 OPEN_PROMISES = 8  # open promise threads shown to the model (PHASE-7 Q3)
 OPEN_SECRETS = 8  # open secrets shown to the model (PHASE-10)
+OPEN_THREADS = 8  # open goals, questions, threats and debts shown to the model (PHASE-11)
 
 SYSTEM_PROMPT = """You extract durable story facts for the long-term memory of a role-play chat.
 You are given the recent CONTEXT turns and ONE TARGET turn: the user's message(s) and the reply to
@@ -101,6 +104,22 @@ Rules:
   listed) when the TARGET turn carries one out; `promised` with "negative" (subject, object and value as
   listed) when the TARGET turn breaks or withdraws one, or its recipient releases it. Not when a
   promise is only mentioned, remembered or still pending.
+- Open business, once, when the TARGET turn establishes it and it lasts beyond the scene: `goal` for an aim,
+  plan or task a character is set on and will still be pursuing later. A craving, a mood or the next thing someone
+  is about to do in the scene is not a goal ("달달한 게 먹고 싶다", "이것만 끝내고 차 마셔야지"). `question` for
+  something a character wants to know that the story leaves unanswered, or a mystery; wanting to find something
+  out is a `question`, not a goal;
+  `threat` for a danger that now hangs over the subject and has not played out (`with`: who threatens); `owes`
+  for a debt, favor or return the subject owes the object. Not for what the TARGET turn itself already settles,
+  and not again for business already listed in OPEN THREADS or OPEN PROMISES.
+- If OPEN THREADS are listed: `resolved` (subject: the owner as listed; value: the text exactly as listed;
+  `outcome`) when the TARGET turn ends one. `outcome`: "achieved", "abandoned" or "failed" for a goal;
+  "answered" for a question; "averted" for a threat that passes, "failed" for one that strikes; "paid" for a
+  debt, "abandoned" when it is forgiven or dropped. Not when a thread is only mentioned, remembered, worked on or
+  still under way.
+- `because`, for `event`, `feels_toward`, `relationship`, `has_status` and `goal` only: the cause, when the
+  TARGET turn or CONTEXT states it (e.g. "블랑에게만 손등에 입맞춤해서"), as a short phrase in the chat's language;
+  null otherwise. Never guess a cause.
 - If OPEN SECRETS are listed (S1, S2, …), report in `secrets` each one that a character it is kept from finds
   out in the TARGET turn: told it, overhearing it, seeing it happen, catching the holders at it, or plainly
   working it out. `found_out_by` names only characters the secret is kept from; `evidence` quotes the TARGET
@@ -130,7 +149,7 @@ Rules:
   "minor" for routine and scene business: meals, chores, travel, small talk, repeated gestures, the
   next step of an activity already under way. Judge by what the event changes, not by how physical or
   dramatic it looks.
-- `with`, for `event`, `goal`, `knows` and `destroyed` only: the other characters or groups the value
+- `with`, for `event`, `goal`, `knows`, `destroyed` and `threat` only: the other characters or groups the value
   is about (who received, who was attacked or helped, who is with the subject, who something is kept
   from), each as {{"name": "...", "type": "character|group"}}, named as the TARGET turn names them.
   Never the subject or object again, never a place or item, never someone the TARGET turn does not
@@ -153,6 +172,7 @@ Answer with JSON only: {{"assertions": [{{"subject": "...", "subject_type": "...
 "object": "... or null", "object_type": "... or null", "value": "... or null", "polarity": "positive|negative",
 "modality": "actual|hypothetical|dreamed|unknown", "source": "narration|character_claim",
 "asserted_by": "... or null", "salience": "major|minor (event only)",
+"outcome": "achieved|abandoned|failed|answered|averted|paid (resolved only)", "because": "... or null",
 "with": [{{"name": "...", "type": "character|group"}}], "epistemic": "stated",
 "confidence": 0.0-1.0, "evidence": "...",
 "knowledge": "public|limited|unknown", "known_by": [], "hidden_from": []}}],
@@ -377,7 +397,7 @@ def promise_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = 
     r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")),
                 ctx["target"].get("links") or ())
     threads = [t for t in fold_threads([dict(row) for row in rows if row["predicate"] in THREAD_PREDICATES], r)[0]
-               if t["status"] == "open"]
+               if t["status"] == "open" and t["kind"] == "promise"]
     shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
     out = []
     for t in threads:
@@ -389,6 +409,31 @@ def promise_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = 
         if any(n in shown for n in names):
             out.append({"by": t["by"], "to": t.get("to"), "text": t["text"], "turn": t["turn"]})
     return out[:limit]
+
+
+def thread_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = OPEN_THREADS) -> list[dict[str, Any]]:
+    """Open goals, questions, threats and debts before the target turn (PHASE-11, ADR 0039), newest first: those whose
+    owner or counterpart the prompt names first, then the persona's own (the persona is in every scene, so naming
+    it says nothing), at most `limit`."""
+    if limit <= 0 or not rows:
+        return []
+    r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")),
+                ctx["target"].get("links") or ())
+    threads = [t for t in fold_threads([dict(row) for row in rows if row["predicate"] in THREAD_PREDICATES], r)[0]
+               if t["status"] == "open" and t["kind"] != "promise"]
+    shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
+    named, persona = [], []
+    for t in threads:
+        names = set()
+        for name in (t["by"], t.get("to")):
+            e = r.entity("character", name) if name else None
+            names |= {norm(n) for n in (e["names"] if e else [name] if name else [])}
+        if any(n in shown for n in {n for n in names - r.persona_names if len(n) >= 2}):
+            named.append(t)
+        elif r.is_persona("character", t["by"]):
+            persona.append(t)
+    return [{"kind": t["kind"], "by": t["by"], "to": t.get("to"), "text": t["text"], "turn": t["turn"]}
+            for t in named + persona][:limit]
 
 
 def secret_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = OPEN_SECRETS) -> list[dict[str, Any]]:
@@ -461,6 +506,15 @@ def promises_block(promises: list[dict[str, Any]]) -> list[str]:
     return lines + [""]
 
 
+def threads_block(threads: list[dict[str, Any]]) -> list[str]:
+    if not threads:
+        return []
+    lines = ["OPEN THREADS (goals, questions, threats and debts from earlier in this story, not yet ended):"]
+    lines += [f"- [{t['kind']}] {t['by']}" + (f" → {t['to']}" if t.get("to") else "") + f": {t['text']} (turn {t['turn']})"
+              for t in threads]
+    return lines + [""]
+
+
 def secrets_block(secrets: list[dict[str, Any]]) -> list[str]:
     if not secrets:
         return []
@@ -471,8 +525,10 @@ def secrets_block(secrets: list[dict[str, Any]]) -> list[str]:
 
 
 def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
-                 promises: list[dict[str, Any]] | None = None, secrets: list[dict[str, Any]] | None = None) -> str:
-    lines = hints_block(hints or []) + promises_block(promises or []) + secrets_block(secrets or []) + ["CONTEXT:"]
+                 promises: list[dict[str, Any]] | None = None, secrets: list[dict[str, Any]] | None = None,
+                 threads: list[dict[str, Any]] | None = None) -> str:
+    lines = (hints_block(hints or []) + promises_block(promises or []) + threads_block(threads or [])
+             + secrets_block(secrets or []) + ["CONTEXT:"])
     for row in ctx["context"]:
         lines.append(f"[turn {row['turn']}] {_speaker(row['metadata'])}: {row['content'][:CONTEXT_CHARS]}")
     if len(lines) == 1:
@@ -530,7 +586,7 @@ def revealed(answer: dict[str, Any], secrets: list[dict[str, Any]], turn_text: s
 
 ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic",
                      "confidence", "evidence", "status", "reason", "knowledge", "known_by", "hidden_from",
-                     "polarity", "modality", "source", "asserted_by", "salience", "participants")
+                     "polarity", "modality", "source", "asserted_by", "salience", "participants", "outcome", "because")
 
 
 def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
@@ -558,6 +614,8 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
             status, reason = "pending", "alias not stated in the turn"
         if status == "valid" and unclaimed:
             status, reason = "pending", unclaimed
+        if status == "valid" and item.get("predicate") == "resolved" and outcome(item) is None:
+            status, reason = "pending", "resolved without an outcome"
         for extra in (note, inferred):
             if extra:
                 reason = f"{reason}; {extra}" if reason else extra
@@ -568,7 +626,8 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
                     "confidence": confidence, "evidence": text("evidence"), "status": status, "reason": reason,
                     "knowledge": scope, "known_by": known_by, "hidden_from": hidden_from, "polarity": polarity,
                     "modality": modality, "source": source, "asserted_by": asserted_by, "salience": salience(item),
-                    "participants": participants(item) if status == "valid" else None})
+                    "participants": participants(item) if status == "valid" else None,
+                    "outcome": outcome(item), "because": because(item)})
     return out
 
 
@@ -588,6 +647,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     hints: list[dict[str, Any]] | None = None
     promises: list[dict[str, Any]] = []
     secrets: list[dict[str, Any]] = []
+    threads: list[dict[str, Any]] = []
     if sum(len(r["content"]) for r in ctx["members"]) < MIN_CONTENT_CHARS:
         parsed, raw = {"assertions": []}, ""
     else:
@@ -596,8 +656,9 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         hints = entity_hints(conn, ctx, gen.key, limit, earlier) if limit > 0 else None
         promises = promise_hints(ctx, earlier)
         secrets = secret_hints(ctx, earlier)
+        threads = thread_hints(ctx, earlier)
         parsed, raw = complete(SYSTEM_PROMPT.format(registry=registry_prompt()),
-                               build_prompt(ctx, hints, promises, secrets))
+                               build_prompt(ctx, hints, promises, secrets, threads))
     items = parsed.get("assertions")
     if not isinstance(items, list):  # not an empty answer: fail the job, so it is retried and then counted failed
         raise LLMError("model reply has no `assertions` list")
@@ -612,8 +673,8 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
             " ON CONFLICT DO NOTHING RETURNING id",
             (extraction_id, revision_id, window_hash, COMPILER_VERSION, gen.key, gen.model,
              Jsonb({"reply": raw[:20000]}), Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]],
-             None if hints is None and not promises and not secrets
-             else Jsonb({"entities": hints or [], "promises": promises, "secrets": secrets})),
+             None if hints is None and not promises and not secrets and not threads
+             else Jsonb({"entities": hints or [], "promises": promises, "secrets": secrets, "threads": threads})),
         ).fetchone()
         if inserted is None:
             return "done"
