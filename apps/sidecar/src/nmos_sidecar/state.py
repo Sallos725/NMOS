@@ -54,13 +54,13 @@ def current_state(conn: psycopg.Connection, head_commit_id: UUID, rules_version:
     return conn.execute(
         """
         WITH m AS (
-            SELECT am.position, sr.id, sr.lifecycle, sr.metadata, so.host_logical_id
+            SELECT am.position, am.turn, sr.id, sr.lifecycle, sr.metadata, so.host_logical_id
             FROM active_membership am
             JOIN source_revision sr ON sr.id = am.source_revision_id
             JOIN source_object so ON so.id = sr.source_object_id
             WHERE am.commit_id = %(head)s AND am.position <= %(upto)s
         )
-        SELECT DISTINCT ON (st.key) st.key, st.value, m.position, m.host_logical_id, st.rule_id
+        SELECT DISTINCT ON (st.key) st.key, st.value, m.position, m.turn, m.host_logical_id, st.rule_id
         FROM state_observation st
         JOIN m ON m.id = st.source_revision_id
         WHERE st.rules_version = %(version)s

@@ -95,7 +95,7 @@ def vector_candidates(conn: psycopg.Connection, head: UUID, query_vec: list[floa
     return conn.execute(
         """
         WITH best AS (
-            SELECT DISTINCT ON (sr.id) sr.id, am.position, so.host_logical_id, rt.clean_content AS clean,
+            SELECT DISTINCT ON (sr.id) sr.id, am.position, am.turn, so.host_logical_id, rt.clean_content AS clean,
                    sr.metadata->>'role' AS role, sr.metadata->>'name' AS name,
                    1 - (re.embedding <=> %(q)s::vector) AS sim, re.text_start, re.text_end
             FROM active_membership am

@@ -130,15 +130,18 @@ def excerpt(content: str, query: str, window: int = 2) -> str:
 # packet-v5 is packet-v4 with how the cast stood before: a relationship, feeling or speech level that replaced an
 # earlier one names it, with its turn (PHASE-11 step 3, ADR 0038).
 # packet-v6 is packet-v5 with the cause the story states on a fact or claim ("; because: …", PHASE-11 step 6, ADR 0040).
-POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6")
+# packet-v7 is packet-v6 with one numbering for `turn`: an excerpt and a state item carry the turn index of their
+# message, as facts, claims and threads do (ADR 0008); before, they carried its head position (ADR 0041).
+POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7")
 DEFAULT_POLICY = "packet-v6"
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2,
-             "packet-v4": 1.2, "packet-v5": 1.2, "packet-v6": 1.2}  # estimated tokens per non-ASCII char
-PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6"})
-FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6"})
-ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6"})  # promises the message is about first (ADR 0019 am. 1)
-BEFORE_POLICIES = frozenset({"packet-v5", "packet-v6"})  # standing facts name what they replaced (ADR 0038)
-CAUSE_POLICIES = frozenset({"packet-v6"})  # facts and claims carry the cause the story states (ADR 0040)
+             "packet-v4": 1.2, "packet-v5": 1.2, "packet-v6": 1.2, "packet-v7": 1.2}  # estimated tokens per non-ASCII char
+PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7"})
+FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7"})
+ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7"})  # promises the message is about first (ADR 0019 am. 1)
+BEFORE_POLICIES = frozenset({"packet-v5", "packet-v6", "packet-v7"})  # standing facts name what they replaced (ADR 0038)
+CAUSE_POLICIES = frozenset({"packet-v6", "packet-v7"})  # facts and claims carry the cause the story states (ADR 0040)
+TURN_POLICIES = frozenset({"packet-v7"})  # excerpts and state carry their message's turn index (ADR 0041)
 RESTATES = 0.6  # packet-v4: a claim this close to a fact of the same head says it again (ADR 0019's match)
 # What the memory budget is for, and how far a suggested budget may go (ADR 0036).
 MEMORY_KINDS = frozenset({"state", "thread", "fact", "claim", "secret"})
@@ -156,16 +159,22 @@ REPEATS = 0.5  # share of the excerpt's spans found in one offered line
 
 @dataclass(frozen=True)
 class Excerpt:
-    turn: int
+    turn: int | None  # what the packet shows: the message's turn index since packet-v7, its position before (ADR 0041)
     speaker: str
     text: str
     score: float
     revision_id: str
     short: str = ""  # one-sentence form, used by packet-v1 when the full excerpt does not fit
+    position: int | None = None  # the message's head position, for story order (None: `turn` is the position)
+
+
+def _turn(name: str, turn: int | None) -> str:
+    """A turn attribute; a message without a turn (a comment, ADR 0008) has none."""
+    return "" if turn is None else f' {name}="{turn}"'
 
 
 def excerpt_line(item: Excerpt, text: str | None = None) -> str:
-    return (f"  <Excerpt turn=\"{item.turn}\" speaker={quoteattr(item.speaker)}>"
+    return (f"  <Excerpt{_turn('turn', item.turn)} speaker={quoteattr(item.speaker)}>"
             f"{escape(item.text if text is None else text)}</Excerpt>")
 
 
@@ -173,14 +182,14 @@ def excerpt_line(item: Excerpt, text: str | None = None) -> str:
 class StateItem:
     key: str
     value: str
-    turn: int
+    turn: int | None  # as for Excerpt.turn
 
 
 def state_block(items: list[StateItem]) -> list[str]:
     if not items:
         return []
     lines = ["  <State>"]
-    lines += [f"    <Item key={quoteattr(i.key)} as_of_turn=\"{i.turn}\">{escape(i.value)}</Item>" for i in items]
+    lines += [f"    <Item key={quoteattr(i.key)}{_turn('as_of_turn', i.turn)}>{escape(i.value)}</Item>" for i in items]
     lines.append("  </State>")
     return lines
 
@@ -423,7 +432,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
             entry["form"], entry["text"] = form, text[:400]
     if not chosen and not kept_state and not kept_facts and not kept_threads and not kept_private:
         return Compiled("", 0, [], ledger)
-    chosen.sort(key=lambda c: c[0].turn)
+    chosen.sort(key=lambda c: c[0].turn if c[0].position is None else c[0].position)  # story order
     body = state_block(kept_state)
     if kept_threads:
         body += ["  <Threads>", *kept_threads, "  </Threads>"]
