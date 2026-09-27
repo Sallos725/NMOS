@@ -1,0 +1,198 @@
+{
+  "model": "gemma4:31b-cloud",
+  "url": "http://127.0.0.1:11434/v1",
+  "runs": 3,
+  "prompt_fingerprint": "3c80e6a1b8b262a4",
+  "errors": [],
+  "scenes": {
+    "v12 | kept | surprise kept": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('하나', 'goal', '카이토를 위한 몰래 깜짝 파티 준비', ['하나', '{{user}}'], ['카이토'])]",
+        "[('하나', 'goal', '카이토를 위한 몰래 깜짝 파티 준비', ['하나', '{{user}}'], ['카이토'])]",
+        "[('하나', 'goal', '카이토를 위한 몰래 깜짝 파티 준비', ['하나', '{{user}}'], ['카이토'])]"
+      ]
+    },
+    "v11 | kept | surprise kept": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('하나', 'goal', '카이토를 위한 몰래 깜짝 파티 준비', ['하나', '{{user}}'], ['카이토'])]",
+        "[('하나', 'goal', '카이토를 위한 몰래 깜짝 파티 준비', ['하나', '{{user}}'], ['카이토'])]",
+        "[('하나', 'goal', '카이토를 위한 몰래 깜짝 파티 준비', ['하나', '{{user}}'], ['카이토'])]"
+      ]
+    },
+    "v12 | kept | lie told": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('유이', 'event', '하루 종일 하나를 만나 몰래 선물을 골랐음', ['유이', '하나'], ['카이토'])]",
+        "[('유이', 'event', '하루 종일 하나를 만나 몰래 선물을 골랐음', ['유이', '하나'], ['카이토'])]",
+        "[('유이', 'event', '하루 종일 하나를 만나 몰래 선물을 골랐음', ['유이', '하나'], ['카이토'])]"
+      ]
+    },
+    "v11 | kept | lie told": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('유이', 'event', '하루 종일 하나를 만나 몰래 선물을 골랐음', ['유이', '하나'], ['카이토'])]",
+        "[('유이', 'event', '하루 종일 하나를 만나 몰래 선물을 골랐음', ['유이', '하나'], ['카이토'])]",
+        "[('유이', 'event', '하루 종일 하나를 만나 몰래 선물을 골랐음', ['유이', '하나'], ['카이토'])]"
+      ]
+    },
+    "v12 | kept | hidden identity": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('하나', 'identity', '이 왕국의 공주', ['하나'], ['유이']), ('하나', 'goal', '유이에게 자신이 공주라는 사실을 숨기는 것', ['하나'], None)]",
+        "[('하나', 'identity', '이 왕국의 공주', ['하나'], ['유이']), ('하나', 'goal', '유이에게 자신이 공주라는 사실을 숨기는 것', ['하나'], None)]",
+        "[('하나', 'identity', '이 왕국의 공주', ['하나'], ['유이']), ('하나', 'goal', '유이에게 자신이 공주라는 사실을 숨기는 것', ['하나'], None)]"
+      ]
+    },
+    "v11 | kept | hidden identity": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('하나', 'identity', '이 왕국의 공주', ['하나'], ['유이']), ('하나', 'goal', '자신이 공주라는 사실을 유이에게 숨기는 것', ['하나'], None)]",
+        "[('하나', 'identity', '이 왕국의 공주', ['하나'], ['유이']), ('하나', 'goal', '자신이 공주라는 사실을 유이에게 숨기는 것', ['하나'], None)]",
+        "[('하나', 'identity', '이 왕국의 공주', ['하나'], ['유이']), ('하나', 'goal', '자신이 공주라는 사실을 유이에게 숨기는 것', ['하나'], None)]"
+      ]
+    },
+    "v12 | absent | absent: at the market": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[]",
+        "[]",
+        "[]"
+      ]
+    },
+    "v11 | absent | absent: at the market": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[]",
+        "[]",
+        "[]"
+      ]
+    },
+    "v12 | absent | absent: asleep": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('하나', 'event', '조용히 방을 정리함', ['하나'], None), ('하나', 'possesses', None, ['하나'], None)]",
+        "[('하나', 'event', '조용히 방을 정리함', ['하나'], None), ('하나', 'event', '창가에 새 화분을 들여놓음', ['하나'], None)]",
+        "[('하나', 'event', '조용히 방을 정리함', ['하나'], None), ('하나', 'event', '창가에 새 화분을 들여놓음', ['하나'], None)]"
+      ]
+    },
+    "v11 | absent | absent: asleep": {
+      "pass": 2,
+      "runs": 3,
+      "notes": [
+        "[('하나', 'event', '조용히 방을 정리하고 창가에 새 화분을 들여놓음', ['하나', '{{user}}'], ['유이'])]",
+        "[]",
+        "[]"
+      ]
+    },
+    "v12 | absent | absent: a talk without her": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[]",
+        "[]",
+        "[]"
+      ]
+    },
+    "v11 | absent | absent: a talk without her": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[]",
+        "[]",
+        "[]"
+      ]
+    },
+    "v12 | private | private feeling": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('하나', 'feels_toward', '질투', ['하나'], None)]",
+        "[('하나', 'feels_toward', '질투', ['하나'], None)]",
+        "[('하나', 'feels_toward', '질투', ['하나'], None)]"
+      ]
+    },
+    "v11 | private | private feeling": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('하나', 'feels_toward', '질투', ['하나'], None)]",
+        "[('하나', 'feels_toward', '질투', ['하나'], None)]",
+        "[('하나', 'feels_toward', '질투', ['하나'], None)]"
+      ]
+    },
+    "v12 | private | private hope": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('유이', 'goal', '언젠가 이 도시를 떠나 바다 건너 학교에 가는 것', ['유이'], None)]",
+        "[('유이', 'goal', '언젠가 이 도시를 떠나 바다 건너 학교에 가는 것', ['유이'], None)]",
+        "[('유이', 'goal', '언젠가 이 도시를 떠나 바다 건너 학교에 가는 것', ['유이'], None)]"
+      ]
+    },
+    "v11 | private | private hope": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "[('유이', 'goal', '언젠가 이 도시를 떠나 바다 건너 학교에 가는 것', ['유이'], None)]",
+        "[('유이', 'goal', '언젠가 이 도시를 떠나 바다 건너 학교에 가고 싶다', ['유이'], None)]",
+        "[('유이', 'goal', '언젠가 이 도시를 떠나 바다 건너 학교에 가고 싶다', ['유이'], None)]"
+      ]
+    },
+    "v12 | reveal | reveal: sees the party": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "open=[[]] learned=[('카이토', '하나 goal: 카이토 몰래 생일 파티 준비하기')] unmatched=[]",
+        "open=[[]] learned=[('카이토', '하나 goal: 카이토 몰래 생일 파티 준비하기')] unmatched=[]",
+        "open=[[]] learned=[('카이토', '하나 goal: 카이토 몰래 생일 파티 준비하기')] unmatched=[]"
+      ]
+    },
+    "v12 | reveal | reveal: confronted lie": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "open=[[]] learned=[('카이토', '유이 event: 도서관에 있었다고 카이토에게 거짓말하고 하나를 만남')] unmatched=[]",
+        "open=[[]] learned=[('카이토', '유이 event: 도서관에 있었다고 카이토에게 거짓말하고 하나를 만남')] unmatched=[]",
+        "open=[[]] learned=[('카이토', '유이 event: 도서관에 있었다고 카이토에게 거짓말하고 하나를 만남')] unmatched=[]"
+      ]
+    },
+    "v12 | reveal | reveal: overheard": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "open=[[]] learned=[('유이', '하나 identity: 왕국의 공주')] unmatched=[]",
+        "open=[[]] learned=[('유이', '하나 identity: 왕국의 공주')] unmatched=[]",
+        "open=[[]] learned=[('유이', '하나 identity: 왕국의 공주')] unmatched=[]"
+      ]
+    },
+    "v12 | control | control: holders whisper": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "open=[['카이토']] learned=[] unmatched=[]",
+        "open=[['카이토']] learned=[] unmatched=[]",
+        "open=[['카이토']] learned=[] unmatched=[]"
+      ]
+    },
+    "v12 | control | control: only suspicious": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "open=[['카이토']] learned=[] unmatched=[]",
+        "open=[['카이토']] learned=[] unmatched=[]",
+        "open=[['카이토']] learned=[] unmatched=[]"
+      ]
+    }
+  }
+}

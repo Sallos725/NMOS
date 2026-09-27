@@ -22,14 +22,15 @@ from .generations import Generation
 from .ids import uuid7
 from .entities import UNNAMED, norm, resolve
 from .facts import fact_text, links_of, persona_of, served_assertions
-from .predicates import (REGISTRY, alias_evidenced, fill_types, knowledge, participants, registry_prompt, salience,
-                         semantics, validate)
-from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
+from .predicates import (DERIVED, REGISTRY, alias_evidenced, fill_types, knowledge, participants, registry_prompt,
+                         salience, semantics, validate)
+from .secrets import fold as fold_secrets, reveal_value
+from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads, similarity
 from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
 
-COMPILER_VERSION = "extract-v11"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
+COMPILER_VERSION = "extract-v12"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
 #                                 v5: polarity, modality, source, also_called (ADR 0012, ADR 0013);
 #                                 v6: destroyed (PHASE-6, ADR 0017);
 #                                 v7: promises actual, fulfilled, OPEN PROMISES, event salience (PHASE-7);
@@ -37,13 +38,16 @@ COMPILER_VERSION = "extract-v11"  # v2: known_by / hidden_from; v3: knowledge sc
 #                                 v9: salience by what an event changes, revealed names (ADR 0024);
 #                                 v10: addresses, speech level and form of address (ADR 0028);
 #                                 v11: instructions and notes outside the story are not evidence (A-12),
-#                                 no Predicate.epistemic (A-14)
+#                                 no Predicate.epistemic (A-14);
+#                                 v12: hidden_from only for what is kept from someone, OPEN SECRETS and
+#                                 `learned` (PHASE-10, ADR 0033)
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
 TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
 CONTEXT_CHARS = 2000  # per context message
 RECENT_PRIORITY, HISTORY_PRIORITY = 250, 900  # generation rebuild: recent window first, then history
 OPEN_PROMISES = 8  # open promise threads shown to the model (PHASE-7 Q3)
+OPEN_SECRETS = 8  # open secrets shown to the model (PHASE-10)
 
 SYSTEM_PROMPT = """You extract durable story facts for the long-term memory of a role-play chat.
 You are given the recent CONTEXT turns and ONE TARGET turn: the user's message(s) and the reply to
@@ -96,6 +100,11 @@ Rules:
   listed) when the TARGET turn carries one out; `promised` with "negative" (subject, object and value as
   listed) when the TARGET turn breaks or withdraws one, or its recipient releases it. Not when a
   promise is only mentioned, remembered or still pending.
+- If OPEN SECRETS are listed (S1, S2, …), report in `secrets` each one that a character it is kept from finds
+  out in the TARGET turn: told it, overhearing it, seeing it happen, catching the holders at it, or plainly
+  working it out. `found_out_by` names only characters the secret is kept from; `evidence` quotes the TARGET
+  turn. Record what they now know as usual (e.g. `knows`) as well. Most turns reveal none: then "secrets": [].
+  A hint, a related remark, a suspicion or a guess is not finding out.
 - `addresses` when the TARGET turn settles how one character speaks to or calls another from now on:
   they agree or decide to speak informally or formally, someone asks for or allows a form of address,
   or a new form of address is used for the first time and taken up. `value`: the speech level and the
@@ -131,9 +140,12 @@ Rules:
   `knowledge` is "public" when it is openly known (said to everyone present, common knowledge in the
   world), "limited" when only some characters know it or it is kept from someone, and "unknown" when
   the messages do not show who knows. Do not guess; "unknown" is a good answer.
-  For "limited": `known_by` lists characters shown to know or witness it (names; include "{{{{user}}}}"
-  when the user's character knows) and `hidden_from` lists characters it is explicitly kept from (a
-  whispered secret, a hidden identity, something done while others were away). Characters not listed
+  For "limited": `known_by` lists characters shown to know it: they did it, saw or heard it, or were told
+  (names; include "{{{{user}}}}" when the user's character knows). `hidden_from` lists only characters it is
+  deliberately kept from: a secret, a lie told to them, a surprise or a plan they must not learn, a hidden
+  identity, something done behind their back. Someone who was simply not there is not `hidden_from`: leave
+  them out. A feeling or thought nobody else is shown knowing is "limited" with its holder alone in
+  `known_by` and no `hidden_from`, unless the holder is shown hiding it from someone. Characters not listed
   are unknown, not unaware. Otherwise use [] for both. Never list characters who are not in the story.
 
 Answer with JSON only: {{"assertions": [{{"subject": "...", "subject_type": "...", "predicate": "...",
@@ -142,7 +154,8 @@ Answer with JSON only: {{"assertions": [{{"subject": "...", "subject_type": "...
 "asserted_by": "... or null", "salience": "major|minor (event only)",
 "with": [{{"name": "...", "type": "character|group"}}], "epistemic": "stated",
 "confidence": 0.0-1.0, "evidence": "...",
-"knowledge": "public|limited|unknown", "known_by": [], "hidden_from": []}}]}}"""
+"knowledge": "public|limited|unknown", "known_by": [], "hidden_from": []}}],
+"secrets": [{{"secret": "S1", "found_out_by": ["..."], "evidence": "..."}}]}}"""
 
 
 # A job key names one unit of work (revision, window, generation). If that work was made obsolete
@@ -223,7 +236,12 @@ def retire(conn: psycopg.Connection, kind: str) -> int:
 
 
 def claim(conn: psycopg.Connection, handled: dict[str, str]) -> dict[str, Any] | None:
-    """Claim the next job whose (kind, generation) a handler implements; others stay queued."""
+    """Claim the next job whose (kind, generation) a handler implements; others stay queued.
+
+    Live and first-sight work runs newest first: nothing serves those turns yet. A generation's backfill
+    (RECENT_PRIORITY and later) runs oldest first: the previous generation still serves those turns meanwhile,
+    and each turn's OPEN PROMISES, OPEN SECRETS and hints then come from turns this generation already
+    extracted, so what a later turn resolves still names them after the switch (PHASE-10, ADR 0033)."""
     with conn.transaction():
         conn.execute(
             "UPDATE job SET status = 'queued', locked_at = NULL, updated_at = now()"
@@ -234,10 +252,11 @@ def claim(conn: psycopg.Connection, handled: dict[str, str]) -> dict[str, Any] |
             UPDATE job SET status = 'running', locked_at = now(), attempts = attempts + 1, updated_at = now()
             WHERE id = (SELECT id FROM job WHERE status = 'queued' AND run_after <= now()
                           AND kind || '|' || coalesce(payload->>'generation', '') = ANY(%s)
-                        ORDER BY priority, id DESC FOR UPDATE SKIP LOCKED LIMIT 1)
+                        ORDER BY priority, CASE WHEN priority >= %s THEN id ELSE -id END
+                        FOR UPDATE SKIP LOCKED LIMIT 1)
             RETURNING *
             """,
-            ([f"{kind}|{key}" for kind, key in handled.items()],),
+            ([f"{kind}|{key}" for kind, key in handled.items()], RECENT_PRIORITY),
         ).fetchone()
 
 
@@ -371,6 +390,29 @@ def promise_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = 
     return out[:limit]
 
 
+def secret_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = OPEN_SECRETS) -> list[dict[str, Any]]:
+    """Secrets before the target turn still kept from someone, whose holders or those it is kept from the
+    prompt names (in a message or as its speaker), newest first, at most `limit` (PHASE-10). The persona is
+    always in the story, so it does not count as named."""
+    if limit <= 0 or not rows:
+        return []
+    r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")),
+                ctx["target"].get("links") or ())
+    shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
+    out = []
+    for s in fold_secrets([dict(row) for row in rows], r)[0]:
+        if not s["open"]:
+            continue
+        names = set()
+        for name in [*s["holders"], *s["open"]]:
+            e = r.entity("character", name)
+            names |= {norm(n) for n in (e["names"] if e else [name])}
+        names = {n for n in names - r.persona_names if len(n) >= 2}
+        if any(n in shown for n in names):
+            out.append({"text": s["text"], "holders": s["holders"], "kept_from": s["open"], "turn": s["turn"]})
+    return out[:limit]
+
+
 DESCRIBING = ("has_trait", "identity", "has_status")
 
 
@@ -415,9 +457,18 @@ def promises_block(promises: list[dict[str, Any]]) -> list[str]:
     return lines + [""]
 
 
+def secrets_block(secrets: list[dict[str, Any]]) -> list[str]:
+    if not secrets:
+        return []
+    lines = ["OPEN SECRETS (kept from someone earlier in this story, not yet found out):"]
+    lines += [f"S{i}. {s['text']} (known by: {', '.join(s['holders']) or 'unknown'}; kept from: {', '.join(s['kept_from'])};"
+              f" turn {s['turn']})" for i, s in enumerate(secrets, 1)]
+    return lines + [""]
+
+
 def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
-                 promises: list[dict[str, Any]] | None = None) -> str:
-    lines = hints_block(hints or []) + promises_block(promises or []) + ["CONTEXT:"]
+                 promises: list[dict[str, Any]] | None = None, secrets: list[dict[str, Any]] | None = None) -> str:
+    lines = hints_block(hints or []) + promises_block(promises or []) + secrets_block(secrets or []) + ["CONTEXT:"]
     for row in ctx["context"]:
         lines.append(f"[turn {row['turn']}] {_speaker(row['metadata'])}: {row['content'][:CONTEXT_CHARS]}")
     if len(lines) == 1:
@@ -428,6 +479,9 @@ def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
         lines += ["", "Before answering, check each UNNAMED CHARACTER: " + ", ".join(nameless) + ". If the TARGET"
                   " turn shows that one is a character it names, add {\"subject\": \"<that name>\","
                   " \"predicate\": \"also_called\", \"value\": \"<the description as listed>\"}."]
+    if secrets:
+        lines += ["", f"Before answering, decide for each OPEN SECRET (S1–S{len(secrets)}) whether a character it is"
+                  " kept from finds it out in the TARGET turn; list only those in `secrets`."]
     return "\n".join(lines)
 
 
@@ -437,6 +491,37 @@ def coverage_of(ctx: dict[str, Any]) -> dict[str, int]:
     return {"target_chars": sum(sizes), "target_used": sum(min(n, TARGET_CHARS) for n in sizes),
             "target_messages": len(sizes), "context_messages": len(ctx["context"]),
             "context_truncated": sum(1 for r in ctx["context"] if len(r["content"]) > CONTEXT_CHARS)}
+
+
+EVIDENCE_MIN = 0.7  # trigram containment of a reveal's quoted evidence in the target turn (PHASE-10)
+
+
+def revealed(answer: dict[str, Any], secrets: list[dict[str, Any]], turn_text: str) -> list[dict[str, Any]]:
+    """The model's `secrets` check → `learned` items (ADR 0033): one per listed secret (S<n>) and each named
+    character it was kept from, value the listed text with its turn (`reveal_value`), which the read side matches
+    even after that turn is extracted again in other words. A name the secret
+    was not kept from, an unknown number, or evidence not found in the target turn gives nothing."""
+    out: list[dict[str, Any]] = []
+    entries = answer.get("secrets")
+    if not secrets or not isinstance(entries, list):
+        return out
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        ref = str(entry.get("secret") or "").strip().upper().lstrip("S")
+        if not ref.isdigit() or not 1 <= int(ref) <= len(secrets):
+            continue
+        listed = secrets[int(ref) - 1]
+        evidence = str(entry.get("evidence") or "").strip()[:300]
+        if not evidence or similarity(evidence, turn_text) < EVIDENCE_MIN:
+            continue
+        kept = {norm(n): n for n in listed["kept_from"]}
+        names = entry.get("found_out_by") if isinstance(entry.get("found_out_by"), list) else []
+        for name in dict.fromkeys(kept[norm(n)] for n in names if isinstance(n, str) and norm(n) in kept):
+            out.append({"subject": name, "subject_type": "character", "predicate": "learned", "value": reveal_value(listed),
+                        "modality": "actual", "source": "narration", "evidence": evidence, "knowledge": "unknown",
+                        "epistemic": "stated"})
+    return out
 
 
 ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic",
@@ -498,6 +583,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         return "done"
     hints: list[dict[str, Any]] | None = None
     promises: list[dict[str, Any]] = []
+    secrets: list[dict[str, Any]] = []
     if sum(len(r["content"]) for r in ctx["members"]) < MIN_CONTENT_CHARS:
         parsed, raw = {"assertions": []}, ""
     else:
@@ -505,11 +591,15 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         earlier = earlier_assertions(conn, ctx, gen.key)
         hints = entity_hints(conn, ctx, gen.key, limit, earlier) if limit > 0 else None
         promises = promise_hints(ctx, earlier)
-        parsed, raw = complete(SYSTEM_PROMPT.format(registry=registry_prompt()), build_prompt(ctx, hints, promises))
+        secrets = secret_hints(ctx, earlier)
+        parsed, raw = complete(SYSTEM_PROMPT.format(registry=registry_prompt()),
+                               build_prompt(ctx, hints, promises, secrets))
     items = parsed.get("assertions")
     if not isinstance(items, list):
         items = []
+    items = [a for a in items if not (isinstance(a, dict) and a.get("predicate") in DERIVED)]
     turn_text = "\n".join(r["content"] for r in ctx["members"])
+    items += revealed(parsed, secrets, turn_text)
     with conn.transaction():
         extraction_id = uuid7()
         inserted = conn.execute(
@@ -518,7 +608,8 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
             " ON CONFLICT DO NOTHING RETURNING id",
             (extraction_id, revision_id, window_hash, COMPILER_VERSION, gen.key, gen.model,
              Jsonb({"reply": raw[:20000]}), Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]],
-             None if hints is None and not promises else Jsonb({"entities": hints or [], "promises": promises})),
+             None if hints is None and not promises and not secrets
+             else Jsonb({"entities": hints or [], "promises": promises, "secrets": secrets})),
         ).fetchone()
         if inserted is None:
             return "done"
@@ -617,7 +708,7 @@ def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv:
                                 AND x.window_hash = e.turn_hash AND x.extractor_key = %(key)s
                                 AND x.discarded_at IS NULL)
               AND (e.turn >= e.turns - %(n)s OR %(all)s OR """ + REBUILD_PENDING + """)
-            ORDER BY e.conv, e.turn  -- claim() takes the highest id first: newest turns first
+            ORDER BY e.conv, e.turn  -- claim() takes backfill in id order: oldest turns first
             """ + REQUEUE,
             {"conv": conv, "key": key, "n": backfill, "all": history, "recent": RECENT_PRIORITY,
              "history": HISTORY_PRIORITY},

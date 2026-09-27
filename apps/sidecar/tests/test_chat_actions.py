@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from conftest import make_client
+from nmos_sidecar import extraction
 from simchat import SimChat
 from test_extraction import drain, facts, filler
 from test_generations import EMB, LLM, conv_id
@@ -139,9 +140,11 @@ def test_extract_history_retries_failed_turns(migrated, db):
         assert c.get(f"/v1/conversations/{cid}/coverage").json()["extraction"]["failed"] == 2
         assert c.post(f"/v1/conversations/{cid}/extract-history").json()["queued"]["extract"] == 8
         assert db.execute("SELECT count(*) AS n FROM job WHERE status = 'queued' AND attempts = 0").fetchone()["n"] == 8
-        # Newest turns are claimed first within a priority (claim() takes the highest id).
+        # A generation's backfill and history are claimed oldest first within a priority (claim(), PHASE-10):
+        # the earlier generation serves those turns meanwhile.
         order = [r["t"] for r in db.execute(
             "SELECT (SELECT am.turn FROM active_membership am JOIN conversation cv ON cv.head_commit_id = am.commit_id"
             " WHERE am.source_revision_id = (j.payload->>'revision_id')::uuid) AS t"
-            " FROM job j WHERE j.status = 'queued' ORDER BY j.priority, j.id DESC")]
-        assert order[:2] == [7, 6] and order[2:] == [5, 4, 3, 2, 1, 0]
+            " FROM job j WHERE j.status = 'queued'"
+            " ORDER BY j.priority, CASE WHEN j.priority >= %s THEN j.id ELSE -j.id END", (extraction.RECENT_PRIORITY,))]
+        assert order[:2] == [6, 7] and order[2:] == [0, 1, 2, 3, 4, 5]

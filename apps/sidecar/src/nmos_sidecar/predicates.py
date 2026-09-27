@@ -53,7 +53,13 @@ REGISTRY: dict[str, Predicate] = {p.name: p for p in (
               "the item no longer exists or can no longer be held or used (value: how, e.g. burned, eaten)"),
     Predicate("fulfilled", ("character", "group"), None, True, "multi",
               "the subject kept a promise listed in OPEN PROMISES (value: its text exactly as listed)"),
+    Predicate("learned", ("character",), None, True, "multi",
+              "the subject found out a listed secret (value: its text as listed); filled from `secrets`"),
 )}
+
+# Predicates the worker fills from other parts of the model's answer, never asked for directly (PHASE-10:
+# `learned` comes from the `secrets` check, ADR 0033). They stay in REGISTRY, so stored rows validate and read.
+DERIVED = frozenset({"learned"})
 
 
 # Read-side supersession that REGISTRY's own fields do not express (ADR 0011). For these predicates an
@@ -75,6 +81,8 @@ def whereabouts(a: dict[str, Any]) -> bool:
 def registry_prompt() -> str:
     lines = []
     for p in REGISTRY.values():
+        if p.name in DERIVED:
+            continue
         obj = f", object: {'|'.join(p.object_types)}" if p.object_types else ""
         val = ", value: text" if p.needs_value else ""
         lines.append(f"- {p.name} (subject: {'|'.join(p.subject_types)}{obj}{val}) — {p.description}")

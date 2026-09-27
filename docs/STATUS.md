@@ -2,8 +2,10 @@
 
 ## Current phase
 
-**Phase 10 — Knowledge and Secrets (Stage 4): spec drafted 2026-09-27, awaiting the owner's approval.**
-`docs/phases/PHASE-10.md`. No implementation before approval.
+**Phase 10 — Knowledge and Secrets (Stage 4): current.** Spec `docs/phases/PHASE-10.md`, approved by the owner
+2026-09-27 (merge of #107). Steps 2–3 done: `extract-v12` (kept from vs absent, OPEN SECRETS, `learned`) and
+secret ends on the read side (ADR 0033, D43; evidence `docs/perf/extract-v12.md`). Next: step 4, scene cast and
+`packet-v3`. No release (owner).
 
 **Phase 9 — Accountable Packets: complete (2026-09-26), released in `v0.1.0-beta.19`.** The owner asked for
 the work on a new branch and approved the merge after review. Spec `docs/phases/PHASE-9.md` (Track B, B6
@@ -147,7 +149,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H18, D1–D42, O2/O3/O4/O5 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H18, D1–D43, O2/O3/O4/O5 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
 | Schema | `migrations/0001`–`0020` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
@@ -156,7 +158,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k without extraction and embeddings (D24); with both on (15k facts, 15k vectors) 10k takes ≈3.2 s (A-09); K3 on the real host (2026-09-27): rerolls and last-reply swipes stay on the fast path, an edit of an older message at 10k takes 3.6–3.8 s |
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K28 (K10 resolved) current as of `v0.1.0-beta.21`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–8 of the original roadmap, one release each (draft, R1–R6 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
-| Decisions | `docs/adr/0001`–`0032` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate |
+| Decisions | `docs/adr/0001`–`0033` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-10.md` | 0–3 met; 4 soft subset met; 5–9 met; 10 draft |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 | Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11`, and A-12's markup half in `clean-v3` (both unreleased) |
@@ -183,7 +185,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 - Roadmap to 1.0 — decided 2026-09-27: not stable until stages 4–8 of the original roadmap are done
   (`docs/ROADMAP-1.0.md`). Open: R1 order, R2 public benchmark, R3–R6 stage scope.
 - Stage 4 — decided 2026-09-27: first milestone (R1); recommended answers to Q1–Q5; no release yet. Spec
-  `docs/phases/PHASE-10.md` (draft, awaiting approval). Tentative: a holder's own slip is direction, not a leak.
+  `docs/phases/PHASE-10.md`, approved 2026-09-27. Tentative: a holder's own slip is direction, not a leak.
 
 ## Queued for the next extractor generation
 

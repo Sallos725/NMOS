@@ -55,7 +55,7 @@ def test_hints_list_earlier_entities_most_recent_first_capped(migrated, db):
     assert hints_of(last) == ["silver key (item)", "Yui (character)"]
     stored = db.execute("SELECT hints FROM extraction ORDER BY created_at DESC LIMIT 1").fetchone()["hints"]
     assert stored == {"entities": [{"name": "silver key", "type": "item"}, {"name": "Yui", "type": "character"}],
-                      "promises": []}
+                      "promises": [], "secrets": []}
     # The first turn had nothing before it: no section, an empty list recorded.
     assert hints_of(model.prompts[0]) == []
     assert active_generation(db, "extract").spec["hints"] == 2
