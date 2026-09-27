@@ -83,20 +83,21 @@ in front of those it is kept from. A chat can choose a strict packet or a first-
 
 - [ ] Every existing test and memory-evaluation case passes; no stale memory in any mode; `packet-v2` still
       reproduces its recorded traces.
-- [ ] The new synthetic cases pass deterministically in CI, including a secret restored after its revealing
+- [x] The new synthetic cases pass deterministically in CI, including a secret restored after its revealing
       turn is edited, and replay of a Phase 9 trace under `packet-v3`.
-- [ ] Real-model extraction tier with the owner's extraction model (`gemma4:31b-cloud`), 3 runs per synthetic
+- [x] Real-model extraction tier with the owner's extraction model (`gemma4:31b-cloud`), 3 runs per synthetic
       Korean scene: deliberate secrets get `hidden_from` and mere absence does not, and a reveal is reported
       against its listed secret; every miss is listed in the evidence, and any scene below 2 of 3 is shown to
       the owner before the phase closes.
-- [ ] On a copy of the owner's database re-extracted with `extract-v12` (read-only against production), the
+- [x] On a copy of the owner's database re-extracted with `extract-v12` (read-only against production), the
       revealed secret of the pilot is no longer placed as hidden after its reveal, and the trivia marked
       hidden in the pilot are not marked hidden.
 - [ ] Response-model tier on the owner's real-chat cases (outside the repository), Opus 5.5 and Gemini 3.1 Pro,
       budget agreed first: no leak in any case whose fact marks whom it is kept from; the holder remembers the
       secret whenever the scene calls for it (never below the pilot's `packet-v2` rate); slips reported
       separately (Q4).
-- [ ] Retrieve latency at 10,000 messages within +5 ms p50 of `v0.1.0-beta.21`.
+- [x] Retrieve latency at 10,000 messages within +5 ms p50 of `v0.1.0-beta.21` (+0.5–0.7 ms,
+      `docs/perf/secrets-eval.md`).
 - [ ] Real-host smoke on an isolated PocketRisu: per-chat mode set in the panel reaches the sidecar and the
       trace; a `<Private>` section reaches the model's prompt.
 - [ ] Upgrade from a `v0.1.0-beta.21` database (`tests/test_upgrade.py`).
@@ -118,7 +119,9 @@ in front of those it is kept from. A chat can choose a strict packet or a first-
 6. Inspector. **Done**: the chat page's Secrets section (holders, kept from, the turn, and per character
    whether and when they found out), reveals that matched nothing, the last request's scene cast and memory
    mode in the packet section, and "Found out" on a character's page. Sidecar only; no plugin change.
-7. Evaluation: synthetic cases, `tools/eval_secrets.py`, the model tiers (each paid run approved first).
+7. Evaluation: synthetic cases, `tools/eval_secrets.py`, the model tiers (each paid run approved first). **In
+   progress**: synthetic cases, the tool, the extraction tier and latency done (`docs/perf/secrets-eval.md`; two
+   faults found and fixed, ADR 0033 amendment 1 and K29); the response-model tier waits for the owner's budget.
 8. Documentation, real-host smoke, upgrade check.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).

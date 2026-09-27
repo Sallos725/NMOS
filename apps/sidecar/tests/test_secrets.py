@@ -191,7 +191,7 @@ def test_a_reveal_ends_the_secret_until_its_turn_is_deleted(migrated, db):
         assert stored["hints"]["secrets"][0]["kept_from"] == ["Blanc"]
         view = facts(c, chat)
         goal = next(f for f in view if f["predicate"] == "goal")
-        assert not goal.get("hidden_from") and goal["known_by"] == ["Elpi", "{{user}}"]
+        assert not goal.get("hidden_from") and goal["known_by"] == ["Elpi", "{{user}}", "Blanc"]  # amendment 1
         assert [r["to"] for r in goal["revealed"]] == ["Blanc"]
         assert not [f for f in view if f["predicate"] == "learned"]  # a reveal is not a fact itself
         # The Inspector lists the secret and when Blanc found it out (step 6), also on Blanc's own page.
@@ -205,6 +205,6 @@ def test_a_reveal_ends_the_secret_until_its_turn_is_deleted(migrated, db):
         chat.delete(4)  # the revealing turn's user message (turns are user + reply)
         step(c, migrated, chat, model, "again")
         goal = next(f for f in facts(c, chat) if f["predicate"] == "goal")
-        assert goal["hidden_from"] == ["Blanc"] and not goal.get("revealed")
+        assert goal["hidden_from"] == ["Blanc"] and not goal.get("revealed") and goal["known_by"] == ["Elpi", "{{user}}"]
         page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
         assert "Blanc: <span class=\"warn\">does not know yet</span>" in page

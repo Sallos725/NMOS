@@ -260,13 +260,15 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     rows = kept
     threads, unmatched, consumed = fold_threads(promises, r)
     # Secrets (PHASE-10, ADR 0033): a reveal ends a secret for the character who found it out, from its
-    # turn on. The fact keeps who knows it; its hidden_from drops that name. `learned` is not a fact itself.
+    # turn on: its hidden_from drops that name and its known_by gains it (amendment 1: the scene, strict mode
+    # and a narrator must count them as knowing it). `learned` is not a fact itself.
     secrets, unrevealed, reveals = fold_secrets(rows, r)
     consumed |= reveals
     ended = {s["id"]: set(s["ended"]) for s in secrets if s["ended"]}
     for row in rows:
         if row["id"] in ended:
             row["hidden_from"] = [n for n in row["hidden_from"] if n not in ended[row["id"]]] or None
+            row["known_by"] = list(row.get("known_by") or []) + sorted(ended[row["id"]] - set(row.get("known_by") or []))
             row["revealed"] = [{"to": n, **s["ended"][n]} for s in secrets if s["id"] == row["id"] for n in s["ended"]]
     for row in rows:
         if row["id"] in consumed:

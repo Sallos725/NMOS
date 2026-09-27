@@ -1,4 +1,4 @@
-# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5–8 cases 2026-09-24; Phase 9 2026-09-26; `packet-v2` 2026-09-26)
+# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5–8 cases 2026-09-24; Phase 9 2026-09-26; `packet-v2` 2026-09-26; Phase 10 2026-09-27)
 
 Deterministic tier of the RP memory evaluation. It gates CI (`apps/sidecar/tests/test_memory_eval.py`)
 and prints this table (`tools/eval_memory.py`).
@@ -31,8 +31,8 @@ and prints this table (`tools/eval_memory.py`).
   itself excluded). `lexical`: raw lexical recall (no extractor, no embeddings). `hybrid`: lexical +
   vectors. `full`: hybrid + facts. The last 6 messages are sent as `in_context_ids`, so memory must
   bring what is older. `full-v0` (since Phase 9): `full` compiled by `packet-v0`, the packet compiler
-  before ADR 0027; `full` uses the default, `packet-v2` since ADR 0032 (`packet-v1` before; the table is
-  the same under both).
+  before ADR 0027; `full` uses the default, `packet-v4` since ADR 0036 (`packet-v1`, `-v2`, `-v3` before; the
+  table's first 35 cases are the same under each).
 
 Gold for the state cases is a fact line (e.g. `Hinata located in harbor`), which only `full` can
 produce; `lexical` and `hybrid` can still bring the original sentence as an excerpt.
@@ -80,6 +80,13 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | speech level changed back | standing facts | **no** | **no** | **no** | yes | yes |
 | quote under a full budget | budget pressure | **no** | **no** | **no** | **no** | yes |
 | one line of a long message | budget pressure | **no** | **no** | **no** | **no** | yes |
+| a secret in front of the one it is kept from | secrets | n/a | n/a | n/a | **no** | yes |
+| away is not kept from | secrets | n/a | n/a | n/a | yes | yes |
+| a reveal ends it | secrets | n/a | n/a | n/a | yes | yes |
+| an edit restores it | secrets | n/a | n/a | n/a | yes | yes |
+| strict mode withholds it | secrets | n/a | n/a | n/a | yes | yes |
+| a narrator is not told what they do not know | secrets | n/a | n/a | n/a | yes | yes |
+| a narrator who holds it | secrets | n/a | n/a | n/a | yes | yes |
 | unrelated question | irrelevant-memory suppression | — | empty | empty | empty | empty |
 
 | Mode | gold reached | cases with stale memory | irrelevant packets | mean packet tokens |
@@ -87,8 +94,18 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | recent | 0/35 | 0 | — | 0 |
 | lexical | 2/35 | 0 | 0/1 | 112 |
 | hybrid | 3/35 | 0 | 0/1 | 137 |
-| full-v0 | 33/35 | 0 | 0/1 | 197 |
-| full | 35/35 | 0 | 0/1 | 190 |
+| full-v0 | 39/42 | 0 | 0/1 | 198 |
+| full | 42/42 | 0 | 0/1 | 197 |
+
+Phase 10 (ADR 0033–0035) added seven secret cases. They need facts, so they run in `full` and `full-v0` only
+("n/a" elsewhere): a secret with the one it is kept from in the scene goes to the Private section (`packet-v3`
+and later; `full-v0` has none), someone away is not marked `hidden_from`, a reveal ends the secret and an edit
+of the revealing turn restores it, strict mode gives a Secret line and no content (neither the fact nor the
+excerpt that says it), and a first-person narrator gets only what they are shown to know. The stub extractor
+answers the `secrets` check for "X found out that …." against the listed OPEN SECRETS. The two reveal cases
+extract after every step, as in play: extracted all at once, newest first, the reveal came before its
+secret and matched nothing (K29). Before ADR 0033 amendment 1, "a reveal ends it" placed the fact in Private:
+the character who found out still did not count as knowing it.
 
 Phase 9 (ADR 0027) added two budget-pressure cases: ten long Korean traits and two claims of 하나 fill the
 600-token budget, and the answer is only in a message's words (a whole short message, or one sentence of
@@ -114,7 +131,8 @@ in its value, and recall counted only subjects and objects as mentions.
 - `full` reaches every gold.
 - Irrelevant questions get an empty packet in every memory mode.
 - `recent` reaches none of the gold (the cases really need memory).
-- `full-v0` misses exactly the budget-pressure cases, so they keep testing the budget (Phase 9).
+- `full-v0` misses exactly the budget-pressure cases, so they keep testing the budget (Phase 9), and the
+  cases whose gold is the Private section (Phase 10).
 
 ## Not covered here
 
