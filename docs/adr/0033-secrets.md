@@ -74,3 +74,29 @@ narrator they were not given it. The synthetic case "a reveal ends it" (`tests/m
 Private. Now the read side also adds the character to `known_by` from the revealing turn on; deleting that
 turn takes them out again. Packets recorded before this that placed a revealed fact may not reproduce on
 replay (on `:edge` only, never released).
+
+## Amendment 2 (2026-09-27, audit G1–G2): an edited turn and a missed reveal
+
+The 2026-09-27 audit (`docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md`) found two faults in item 5
+and K29.
+
+- **G1: rule 1 outlived an edit.** Linking by turn is meant for the same turn extracted again in other words.
+  It also held after the owner edited that turn into a different secret: Blanc, who had found out Elpi's plan
+  to watch a lecture, counted as knowing the new plan to steal a diamond. The worker now stores, with the
+  OPEN SECRETS it lists (`extraction.hints`, not shown to the model), the hash of each listed turn
+  (`listed_hash` on the reveal as read). Rule 1 considers only secrets whose turn hash on the head (their
+  served extraction's) equals it; any other secret of that turn can end only by rule 2 (content), and a reveal
+  matching nothing is reported unmatched while the secret stays kept. A reveal extracted before this has no
+  hash and keeps rule 1. The fact read carries the two hashes only on reveals and marked facts; at 10,000
+  messages it stays at ≈57 ms p50 (a first version that compared them in SQL doubled it).
+- **G2: "Extract all history" could not recover K29.** It queued only turns not yet extracted, and the turn
+  that missed the reveal had been. It now also extracts again each turn whose extraction was written before
+  any extraction holding an earlier turn's current secret existed (so its OPEN SECRETS could not list it):
+  that extraction is discarded (kept for audit) and the turn is queued, oldest first. A turn that saw an
+  earlier wording of the secret, in any generation, is left alone. In play, where turns are extracted one at
+  a time, nothing qualifies.
+
+Consequences: an edit of a secret's turn that keeps its content ends the secret only when the new wording
+reaches the content match; a far rewording is reported as unrevealed until the revealing turn is extracted
+again (Rebuild). While a re-extraction is queued, that turn's facts come from an older generation or are
+missing. Two workers can still extract neighbouring turns at once; another "Extract all history" then fixes it.

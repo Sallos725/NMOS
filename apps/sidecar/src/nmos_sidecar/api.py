@@ -557,7 +557,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     @app.post("/v1/conversations/{conv_id}/extract-history", dependencies=[Depends(auth)])
     def extract_history(conv_id: UUID, request: Request):
         """Queue every turn / message of this chat's head that the active generations have not
-        processed, beyond the first-sight backfill, at background priority; failed ones are retried."""
+        processed, beyond the first-sight backfill, at background priority; failed ones are retried, and
+        turns extracted before an earlier turn's secret are extracted again (K29)."""
         ex, pj, cur = rt["extractor"], rt["projection"], rt["settings"]
         with request.app.state.pool.connection() as conn:
             if readmodel.conversation(conn, conv_id) is None:
@@ -567,13 +568,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             for kind, gen in (("extract", ex), ("embed", pj)):
                 if gen:
                     extraction.retry_failed(conn, kind, gen.key, conv_id)
+            unseen = extraction.discard_unseen_secrets(conn, ex.key, conv_id) if ex else 0
             queued = {
                 "extract": extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id, history=True)
                 if ex else 0,
                 "embed": vectors.schedule_projection(conn, pj.key, cur.embed_backfill, conv_id, history=True)
                 if pj else 0,
             }
-            log.info("extract history conversation=%s queued=%s", conv_id, queued)
+            log.info("extract history conversation=%s queued=%s unseen_secrets=%d", conv_id, queued, unseen)
             return {"queued": queued, "coverage": coverage_view(conn, conv_id)}
 
     @app.post("/v1/conversations/{conv_id}/rebuild", dependencies=[Depends(auth)])

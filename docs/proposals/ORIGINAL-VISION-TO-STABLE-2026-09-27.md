@@ -6,6 +6,7 @@
 > 문서 저장은 owner 요청에 따른다. 아래 테스트와 재현은 저장 직전 새로 실행한 결과가 아니라
 > 같은 날 선행 감사에서 실행한 결과다.
 > 같은 날 후속 검토(§13)에서 G1–G3를 strict xfail 회귀 테스트로 고정하고, K29 안내·인용 표기·노출 범위를 바로잡았다.
+> 이후 owner 승인으로 G1–G3를 수정했다 (§13, ADR 0033 amendment 2). 아래 G1–G3 본문은 수정 전 관찰이다.
 
 ## 0. 결론과 기준
 
@@ -179,7 +180,7 @@ Ultimate §84의 `Phase 8 — Optional PocketRisu Bridge`는 **optional**이며 
 이 기능이 없는 beta.21에 같은 결함이 배포됐다는 판정은 아니다.
 다만 Phase 10은 `main` 병합 시 `:edge` image로 게시되며, owner의 운영 시험이 이 image를 쓴다.
 따라서 태그 릴리스와 별개로 **현재 운영 시험에는 노출되어 있다**. 오래된 비밀 turn을 수정하면 재현될 수 있다.
-**Regression:** `test_secrets.py::test_a_reveal_does_not_carry_over_to_a_different_secret_after_its_turn_is_edited` (strict xfail).
+**Regression:** `test_secrets.py::test_a_reveal_does_not_carry_over_to_a_different_secret_after_its_turn_is_edited` (수정됨).
 
 ### G2 — P1: K29의 안내된 복구가 같은 세대에서 작동하지 않음
 
@@ -201,9 +202,8 @@ K29는 이후 `Extract all history`를 실행하라고 안내한다.
 같은 generation·turn hash의 extraction을 건너뛴다. [K29](../KNOWN-ISSUES.md)와 실제 경로가 다르다.
 첫 sync의 job은 priority 200으로 `claim()`에서 최신 turn부터 처리된다. Rebuild의 job은 priority 250 이상이라
 오래된 turn부터 처리되어 공개 turn이 앞선 비밀을 본다. 이 차이가 두 결과를 가른다.
-**Follow-up:** K29 안내를 Rebuild로 정정했다 (비용: 채팅 전체 재추출).
-`test_rebuild_recovers_a_reveal_missed_on_first_import`는 통과(단일 worker),
-`test_extract_all_history_recovers_a_reveal_missed_on_first_import`는 strict xfail이다.
+**Follow-up:** K29 안내를 먼저 Rebuild로 정정했고, 수정 후 Extract all history로 되돌렸다.
+`test_extract_all_history_recovers_a_reveal_missed_on_first_import`와 `test_rebuild_recovers_a_reveal_missed_on_first_import` 모두 통과(단일 worker).
 **Recommended solution:** 누락 구간 채우기와 이미 처리된 구간 재처리를 구분하고,
 비밀·공개의 의존성에 따른 재처리를 제공한다. 먼저 복구 안내를 실제 검증된 범위로 바로잡는다.
 **Scope:** Medium. **Priority:** P1. **Dependencies:** G1, queue 순서·동시성 검증.
@@ -218,7 +218,7 @@ Rebuild의 이번 성공은 순차 worker 사례이며 기본 동시 worker·모
 worker 실행 후 coverage는 `eligible=1, compiled=1, failed=0, percent=100, complete=true`였다.
 이 줄은 Phase 2 커밋 `e21e9cd`(2026-09-22)부터 있어 **`v0.1.0-beta.1` 이후 모든 공개 릴리스에 포함**된다.
 과거 실모델 fixture에서 이런 출력이 실제로 나온 빈도는 아직 세지 않았다.
-**Regression:** `test_extraction.py::test_a_malformed_assertions_field_is_not_a_compiled_turn` (strict xfail).
+**Regression:** `test_extraction.py::test_a_malformed_assertions_field_is_not_a_compiled_turn` (수정됨).
 `isinstance` 분기를 예외로 바꾸는 임시 변이에서 이 테스트가 XPASS(strict)로 실패해 수정을 감지함을 확인했다.
 **Recommended solution:** envelope/schema 검증으로 정상 `[]`와 invalid output을 분리하고
 실패·재시도·진단 경로에 연결한다.
@@ -414,4 +414,16 @@ Git에서 관찰되는 약 6일의 개발 이력만으로 낙관/현실/보수 �
 | 이 문서 | `Ultimate §N` 인용 표기, G1 운영 노출, G2 구조적 원인, G3 출시 이력, P1 두 종류 분리, G4 P2 조정, 결정 항목 6–7 |
 
 외부 artifact(CI run, release digest, GHCR manifest)는 후속 검토에서 다시 확인하지 않았다.
+
+### G1–G3 수정 (2026-09-27, owner 승인)
+
+| ID | 수정 | 남은 한계 |
+|---|---|---|
+| G1 | worker가 OPEN SECRETS와 함께 각 비밀 turn의 hash를 `extraction.hints`에 저장한다(모델에는 보이지 않음). 읽을 때 공개의 `listed_hash`와 그 turn의 현재 hash가 다른 비밀에는 turn 연결(규칙 1)을 쓰지 않는다. 내용 일치(규칙 2)만 남고, 맞지 않으면 unmatched로 보고되어 비밀이 유지된다 | 수정 전에 추출된 공개는 hash가 없어 기존 연결을 유지한다 |
+| G2 | Extract all history가 앞선 turn의 현재 비밀이 어떤 세대로든 추출되기 전에 추출된 turn을 discard하고 오래된 순서로 다시 추출한다. 이전 문구의 비밀을 본 turn은 건너뛴다 | 재추출 대기 중에는 그 turn의 fact가 이전 세대에서 오거나 비어 있다. worker 2개가 이웃 turn을 동시에 처리하면 한 번 더 실행해야 할 수 있다 |
+| G3 | `assertions` 리스트가 없는 응답은 `LLMError`로 job을 실패시킨다(backoff 재시도 후 failed) | 기록된 실모델 응답 1,922건은 모두 리스트였다 |
+
+extractor generation은 바뀌지 않는다: prompt·registry·normalizer가 같고, hash는 hints에만 저장된다.
+성능: 10,000 메시지(5,000 turn, 공개 99개)의 사실 읽기는 main과 같은 p50 ≈57 ms이다. G2 판정은 모든 turn이 대상인
+최악 조건에서 ≈104 ms이다. 비교를 SQL에서 하던 첫 구현은 CTE가 두 번 참조되어 사실 읽기를 ≈129 ms로 늘렸으므로 폐기했다.
 

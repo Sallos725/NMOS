@@ -37,7 +37,7 @@ without a PocketRisu change.
 | K26 | The packet's token estimate over-counts Korean, so the reserve is under-used | Recall | reduced by `packet-v2` (ADR 0032, owner decision); still conservative by design |
 | K27 | Before `extract-v11` / `clean-v3`: an OOC note or memory-like markup inside a reply could become a fact | Memory | fixed on `main`, unreleased (audit A-12); older turns: "Extract all history" |
 | K28 | Taking turns in one chat from two tabs or devices makes memory of the messages one of them lacks drop out and come back | Data | host (H10); not planned (audit A-13) |
-| K29 | A reveal in the turns first extracted together can be missed | Memory | "Rebuild memory" after connecting a chat with secrets (ADR 0033; re-extracts the whole chat) |
+| K29 | A reveal in the turns first extracted together can be missed | Memory | "Extract all history" after connecting a chat with secrets (ADR 0033 amendment 2) |
 
 ## Performance
 
@@ -249,12 +249,11 @@ chat's open secrets as extraction lists them (ADR 0033). A generation's backfill
 run oldest turn first, but when NMOS first sees a chat it extracts the recent window newest first, so a turn
 that reveals a secret can be extracted before the turn that made it, and the reveal matches nothing. In play,
 turns are extracted one at a time and this does not happen. Found by the Phase 10 evaluation (a synthetic
-case extracted all at once). *Workaround:* after connecting an existing chat that has secrets, run **Rebuild
-memory** once: it discards the chat's extractions and re-extracts every turn oldest first, so each reveal sees
-the secrets before it (`test_rebuild_recovers_a_reveal_missed_on_first_import`, one worker). It re-runs the
-extraction model on the whole chat, and with two workers (the default) two neighbouring turns can still run
-at once. **Extract all history** does not help: it skips turns already extracted, the revealing one included
-(2026-09-27 audit G2; `test_extract_all_history_recovers_a_reveal_missed_on_first_import`, strict xfail).
+case extracted all at once). *Workaround:* after connecting an existing chat that has secrets, run **Extract
+all history** once. Since ADR 0033 amendment 2 it also extracts again every turn extracted before an earlier
+turn's secret was (audit G2; `test_extract_all_history_recovers_a_reveal_missed_on_first_import`), oldest
+first; until then it skipped them and did nothing here. With two workers (the default) two neighbouring turns
+can still run at once; running it again fixes that. **Rebuild memory** also works but extracts the whole chat.
 
 **K18 — Model changes re-process history.** Changing the LLM or embedding model or endpoint, or a
 release that changes the extraction generation (as 0.1.0-beta.8 did), re-derives all previously

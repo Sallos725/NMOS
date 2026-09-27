@@ -20,11 +20,12 @@ from . import generations, normtext
 from .config import Settings
 from .generations import Generation
 from .ids import uuid7
+from .llm import LLMError
 from .entities import UNNAMED, norm, resolve
 from .facts import fact_text, links_of, persona_of, served_assertions
 from .predicates import (DERIVED, REGISTRY, alias_evidenced, fill_types, knowledge, participants, registry_prompt,
                          salience, semantics, validate)
-from .secrets import fold as fold_secrets, reveal_value
+from .secrets import NOT_SECRETS, fold as fold_secrets, reveal_value
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads, similarity
 from .reconcile import Entry, RevKey, turn_layout
 
@@ -409,7 +410,10 @@ def secret_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = O
             names |= {norm(n) for n in (e["names"] if e else [name])}
         names = {n for n in names - r.persona_names if len(n) >= 2}
         if any(n in shown for n in names):
-            out.append({"text": s["text"], "holders": s["holders"], "kept_from": s["open"], "turn": s["turn"]})
+            # turn_hash: not shown to the model; stored with the hints, it tells the read side which content of that
+            # turn a reveal was about (ADR 0033 amendment 2)
+            out.append({"text": s["text"], "holders": s["holders"], "kept_from": s["open"], "turn": s["turn"],
+                        "turn_hash": s["turn_hash"]})
     return out[:limit]
 
 
@@ -595,8 +599,8 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         parsed, raw = complete(SYSTEM_PROMPT.format(registry=registry_prompt()),
                                build_prompt(ctx, hints, promises, secrets))
     items = parsed.get("assertions")
-    if not isinstance(items, list):
-        items = []
+    if not isinstance(items, list):  # not an empty answer: fail the job, so it is retried and then counted failed
+        raise LLMError("model reply has no `assertions` list")
     items = [a for a in items if not (isinstance(a, dict) and a.get("predicate") in DERIVED)]
     turn_text = "\n".join(r["content"] for r in ctx["members"])
     items += revealed(parsed, secrets, turn_text)
@@ -713,6 +717,54 @@ def schedule_generation(conn: psycopg.Connection, key: str, backfill: int, conv:
             {"conv": conv, "key": key, "n": backfill, "all": history, "recent": RECENT_PRIORITY,
              "history": HISTORY_PRIORITY},
         ).rowcount
+
+
+# A stored secret, as secrets.is_secret reads one.
+IS_SECRET = """s.status = 'valid' AND s.knowledge = 'limited' AND cardinality(s.hidden_from) > 0
+    AND s.predicate <> ALL(%(not_secrets)s) AND coalesce(s.modality, 'actual') <> 'dreamed'"""
+
+UNSEEN_SECRETS = """
+WITH anchor AS (
+    SELECT am.turn, am.source_revision_id AS rid, am.turn_hash
+    FROM conversation c JOIN active_membership am ON am.commit_id = c.head_commit_id
+    WHERE c.id = %(conv)s AND am.turn_hash IS NOT NULL
+),
+cur AS (
+    SELECT a.turn, a.rid, a.turn_hash, x.id AS xid, x.created_at
+    FROM anchor a JOIN extraction x ON x.source_revision_id = a.rid AND x.window_hash = a.turn_hash
+    WHERE x.extractor_key = %(key)s AND x.discarded_at IS NULL
+),
+secret_turn AS (
+    SELECT DISTINCT c.turn, c.rid, c.turn_hash FROM cur c JOIN assertion s ON s.extraction_id = c.xid WHERE """ + IS_SECRET + """
+),
+shown AS (  -- when each such turn's content, with a secret, could be listed: one span per extraction, any generation
+    SELECT DISTINCT st.turn, y.created_at AS since, y.discarded_at AS until
+    FROM secret_turn st JOIN extraction y ON y.source_revision_id = st.rid AND y.window_hash = st.turn_hash
+    WHERE EXISTS (SELECT 1 FROM assertion s WHERE s.extraction_id = y.id AND """ + IS_SECRET + """)
+)
+UPDATE extraction x SET discarded_at = now()
+FROM cur t
+WHERE x.id = t.xid AND EXISTS (
+    SELECT 1 FROM secret_turn st
+    WHERE st.turn < t.turn AND NOT EXISTS (
+        SELECT 1 FROM shown v WHERE v.turn = st.turn AND v.since < t.created_at
+                                AND (v.until IS NULL OR v.until > t.created_at)))
+RETURNING 'extract:' || x.source_revision_id || ':' || x.window_hash || ':' || %(key)s AS dedupe_key
+"""
+
+
+def discard_unseen_secrets(conn: psycopg.Connection, key: str, conv: UUID) -> int:
+    """Per-chat "extract all history" (K29, audit G2): a turn extracted before a secret of an earlier turn was,
+    in any generation, could not report finding it out (OPEN SECRETS listed nothing). Its extraction of `key` is
+    discarded (kept for audit) and its job made obsolete, so `schedule_generation` queues it again, oldest first.
+    A turn that saw an earlier wording of the secret is left alone: its reveal still links by turn (ADR 0033)."""
+    with conn.transaction():
+        keys = [r["dedupe_key"] for r in conn.execute(
+            UNSEEN_SECRETS, {"conv": conv, "key": key, "not_secrets": sorted(NOT_SECRETS)}).fetchall()]
+        if keys:
+            conn.execute("UPDATE job SET status = 'obsolete', locked_at = NULL, updated_at = now()"
+                         " WHERE dedupe_key = ANY(%s)", (keys,))
+    return len(keys)
 
 
 def retry_failed(conn: psycopg.Connection, kind: str, key: str, conv: UUID) -> int:
