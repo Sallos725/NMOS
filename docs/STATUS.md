@@ -159,7 +159,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Schema | `migrations/0001`–`0021` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (419), `adapters/pocketrisu-plugin/test` (104) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
+| Tests | `apps/sidecar/tests` (425), `adapters/pocketrisu-plugin/test` (104) | all passing except three strict xfails that pin open audit findings G1–G3 (see below); deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k without extraction and embeddings (D24); with both on (15k facts, 15k vectors) 10k takes ≈3.2 s (A-09); K3 on the real host (2026-09-27): rerolls and last-reply swipes stay on the fast path, an edit of an older message at 10k takes 3.6–3.8 s |
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K29 (K10 resolved; K29 found on `main`) current as of `v0.1.0-beta.21`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–8 of the original roadmap, one release each (draft, R1–R6 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
@@ -175,6 +175,16 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | S1–S12 | run | `fixtures/host/a14c911-2026-09-22/` (S4b, S8b variants) |
 | S13 | not executable on `a14c911` (no group chat); N/A accepted by owner | HOST-FACTS S13 |
 | S14 | run (100 / 1,000 messages) | `…/*S14*` |
+
+## Audit follow-up (2026-09-27)
+
+A read-only audit of `69800f0` is recorded in [Original vision → stable](proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md) (Korean, at the owner's request; proposal only). Its isolated API/worker probes reproduced a reveal being applied to a different secret after an old source edit (G1), the K29 history-extraction workaround queuing no work for already compiled turns (G2), and malformed assertion output being recorded as complete (G3). The 421 sidecar and 104 plugin tests that existed then passed and did not cover these cases.
+
+- G1–G3 are now strict xfail tests (`test_secrets.py`, `test_extraction.py`): each fails at its target assertion today, and a fix makes the run fail until its marker is removed.
+- Exposure: G1 and G2 come with Phase 10, which production runs from `:edge`; no tag has them. G3 dates from `e21e9cd` (Phase 2) and is in every release since `v0.1.0-beta.1`.
+- K29's workaround is corrected to **Rebuild memory** (verified with one worker, `test_rebuild_recovers_a_reveal_missed_on_first_import`).
+
+Review these before the next milestone; the audit recommends treating G1 as a release blocker. No implementation, phase authorization or release decision was made by this proposal.
 
 ## Open owner decisions
 
