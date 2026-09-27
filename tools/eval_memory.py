@@ -44,7 +44,10 @@ def main() -> None:
     for case in CASES:
         cells = []
         for mode in MODES:
-            r = next(x for x in results if x.case == case.name and x.mode == mode)
+            r = next((x for x in results if x.case == case.name and x.mode == mode), None)
+            if r is None:  # the case does not apply to this mode (it needs facts)
+                cells.append("n/a")
+                continue
             cell = mark[r.gold_hit] if not case.irrelevant else ("—" if r.irrelevant_leak is None
                                                                  else ("**leak**" if r.irrelevant_leak else "empty"))
             if r.stale_hit:

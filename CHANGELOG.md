@@ -81,6 +81,12 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
   600-token packet placed 66% of the memory lines retrieval found, 800 places 89%, and 1000 all of them
   (`docs/perf/memory-mode.md`). If you left **기억 예산(토큰) / Memory budget (tokens)** empty, lower PocketRisu's
   max context by 200 more.
+- **A character who found out a secret now counts as knowing it** (ADR 0033 amendment 1). Before, with them in
+  the scene the fact still went to the Private section with its rule telling them not to act on it, strict
+  mode withheld it from them, and as a first-person narrator they were not given it. Found by the Phase 10
+  evaluation, which adds seven synthetic secret cases to CI (`docs/perf/eval-baseline.md`).
+- Known issues: K29, a reveal among the turns first extracted together (connecting an existing chat) can be
+  missed; run **Extract all history** once after connecting a chat with secrets.
 - **The sidecar says whether your plugin is the right one** (ADR 0037, K19). The plugin sends its build id with
   every sync, and the sidecar compares it with the plugin file of its own version. The Inspector's first page
   says "the sidecar's build", or warns that the plugin in use differs (an older plugin shows as "no build id"),

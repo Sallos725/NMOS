@@ -38,6 +38,7 @@ from simchat import SimChat
 RECENT = 6  # messages the host prompt still holds (in_context_ids); older ones need memory
 # `full-v0` is `full` with the packet compiler before Phase 9 (ADR 0027), kept for the comparison.
 MODES = ("recent", "lexical", "hybrid", "full-v0", "full")
+FACT_MODES = ("full-v0", "full")
 
 # --- deterministic stand-ins ---------------------------------------------------------------------
 
@@ -64,7 +65,11 @@ RULES: list[tuple[re.Pattern[str], Callable[[re.Match[str]], dict[str, Any]]]] =
                 "object": m["item"], "object_type": "item"}),
     (re.compile(r"(?P<who>\w+) keeps a secret from (?P<other>\w+): (?P<what>[^.]+)\."),
      lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "knows", "value": m["what"],
-                "knowledge": "limited", "hidden_from": [m["other"]]}),
+                "knowledge": "limited", "known_by": [m["who"], "{{user}}"], "hidden_from": [m["other"]]}),
+    # Phase 10 (ADR 0033): someone away is not someone a thing is kept from.
+    (re.compile(r"(?P<who>\w+) reads the (?P<what>\w+) while (?P<other>\w+) is away\."),
+     lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "event",
+                "value": f"read the {m['what']}", "knowledge": "limited", "known_by": [m["who"], "{{user}}"]}),
     # Phase 5 (ADR 0013): negation, non-actual modality, a character's claim.
     (re.compile(r"(?P<who>\w+) (?:lost|does not have) the (?P<item>\w+)\."),
      lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "possesses",
@@ -124,12 +129,18 @@ RULES: list[tuple[re.Pattern[str], Callable[[re.Match[str]], dict[str, Any]]]] =
 ]
 
 
+FOUND = re.compile(r"(?P<who>\w+) found out that (?P<what>[^.]+)\.")  # Phase 10: the `secrets` check
+
+
 def stub_extractor(system: str, user: str) -> tuple[dict, str]:
-    target = user.split("TARGET", 1)[1]
+    before, target = user.split("TARGET", 1)
     items = [{"modality": "actual", "source": "narration", **build(m), "epistemic": "stated", "confidence": 0.9,
               "evidence": m.group(0)}
              for pattern, build in RULES for m in pattern.finditer(target)]
-    return {"assertions": items}, "{}"
+    listed = [line.split(". ", 1) for line in before.splitlines() if re.match(r"S\d+\. ", line)]
+    secrets = [{"secret": number, "found_out_by": [m["who"]], "evidence": m.group(0)}
+               for m in FOUND.finditer(target) for number, text in listed if m["what"] in text]
+    return {"assertions": items, "secrets": secrets}, "{}"
 
 
 CONCEPTS = [("열쇠", "key", "은빛"), ("등대", "lighthouse"), ("숨기", "hid", "감추", "숨겼")]
@@ -169,6 +180,9 @@ class Case:
     gold: list[str] = field(default_factory=list)
     stale: list[str] = field(default_factory=list)
     irrelevant: bool = False
+    memory_mode: dict[str, Any] | None = None  # the chat's memory mode (ADR 0035), set before the question
+    live: bool = False  # extract after every step, as in play (a reveal needs its secret extracted first)
+    modes: tuple[str, ...] = MODES  # where the case applies (a memory mode needs facts)
 
 
 def filler(chat: SimChat, n: int = 4) -> None:
@@ -358,6 +372,38 @@ CASES: list[Case] = [
                "한참 뒤에야 하나가 입을 열었다. 금고 비밀번호는 보라일곱이야. 그러고는 다시 창밖만 바라보았다. "
                "멀리서 종소리가 울렸다. 둘 다 그 소리를 세지 않았다."), *TRAITS, pad()],
          "하나야, 금고 비밀번호가 뭐였지?", gold=["보라일곱", "하나 has trait:"]),
+    # Phase 10 (ADR 0033–0035): secrets, a reveal, and the chat's memory mode. They need facts.
+    Case("a secret in front of the one it is kept from", "secrets",
+         [turn("Hana keeps a secret from Kaito: the letter is forged."), pad(), turn("Kaito is in the kitchen.")],
+         "Hana, Kaito is here. What about the letter?", modes=FACT_MODES,
+         gold=["<Private>", 'hidden_from="Kaito">Hana knows: the letter is forged', "Private: only its holders"]),
+    Case("away is not kept from", "secrets",
+         [turn("Hana reads the letter while Kaito is away."), pad()],
+         "Hana, Kaito is here. What about the letter?", modes=FACT_MODES,
+         gold=["Hana event: read the letter"], stale=['hidden_from="Kaito"']),
+    Case("a reveal ends it", "secrets",
+         [turn("Hana keeps a secret from Kaito: the letter is forged."), pad(2),
+          turn("Kaito found out that the letter is forged."), pad()],
+         "Hana and Kaito, what about the letter?", modes=FACT_MODES, live=True,
+         gold=['known_by="Hana, {{user}}, Kaito">Hana knows: the letter is forged'],
+         stale=['hidden_from="Kaito"', "<Private>"]),
+    Case("an edit restores it", "secrets",
+         [turn("Hana keeps a secret from Kaito: the letter is forged."), pad(2),
+          turn("Kaito found out that the letter is forged."), act(lambda c: c.edit(7, "Kaito drinks tea.")), pad()],
+         "Kaito, what about the letter?", modes=FACT_MODES, live=True,
+         gold=['hidden_from="Kaito">Hana knows: the letter is forged']),
+    Case("strict mode withholds it", "secrets",
+         [turn("Hana keeps a secret from Kaito: the letter is forged."), pad(), turn("Kaito is in the kitchen.")],
+         "Hana, Kaito is here. What about the letter?", modes=FACT_MODES, memory_mode={"strict": True},
+         gold=['<Secret holders="Hana, {{user}}" not_known_by="Kaito"'], stale=["the letter is forged"]),
+    Case("a narrator is not told what they do not know", "secrets",
+         [turn("Hana keeps a secret from Kaito: the letter is forged."), pad(), turn("Kaito is in the kitchen."), pad()],
+         "Kaito, what about the letter?", modes=FACT_MODES, memory_mode={"narrator": "Kaito"},
+         gold=["Kaito located in kitchen", "first person by Kaito"], stale=["the letter is forged"]),
+    Case("a narrator who holds it", "secrets",
+         [turn("Hana keeps a secret from Kaito: the letter is forged."), pad(), turn("Kaito is in the kitchen.")],
+         "Hana, what about the letter?", modes=FACT_MODES, memory_mode={"narrator": "Hana"},
+         gold=["Hana knows: the letter is forged", "first person by Hana"]),
     Case("unrelated question", "irrelevant-memory suppression",
          [turn("Hinata is in the chapel."), pad()],
          "Tell me a joke about bananas.", irrelevant=True),
@@ -429,10 +475,15 @@ def run_case(case: Case, mode: str, client, url: str) -> Result:
         step(chats)
         for chat in chats.values():
             _sync(client, chat)
+        if case.live:
+            _drain(url, mode)
     chat = chats[case.chat]
     chat.user(case.query)
     _sync(client, chat)
     _drain(url, mode)
+    if case.memory_mode is not None:
+        conv = next(c for c in client.get("/v1/conversations").json() if c["host_chat_ref"] == chat.id)["id"]
+        assert client.put(f"/v1/conversations/{conv}/memory-mode", json=case.memory_mode).status_code == 200
     recent = chat.messages[-RECENT:]
     if mode == "recent":
         seen = "\n".join(m.get("data", "") for m in recent[:-1])  # the question itself is not memory
@@ -457,7 +508,7 @@ def run_mode(mode: str, make_client: Callable[..., Any], url: str) -> list[Resul
     """All cases in one migrated database (each case has its own chats)."""
     embedder = StubEmbedder() if kind(mode) in ("hybrid", "full") else None
     with make_client(url, embedder=embedder, **settings_for(mode)) as client:
-        return [run_case(case, mode, client, url) for case in CASES]
+        return [run_case(case, mode, client, url) for case in CASES if mode in case.modes]
 
 
 def summary(results: list[Result]) -> dict[str, dict[str, Any]]:

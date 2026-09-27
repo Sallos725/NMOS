@@ -37,6 +37,7 @@ without a PocketRisu change.
 | K26 | The packet's token estimate over-counts Korean, so the reserve is under-used | Recall | reduced by `packet-v2` (ADR 0032, owner decision); still conservative by design |
 | K27 | Before `extract-v11` / `clean-v3`: an OOC note or memory-like markup inside a reply could become a fact | Memory | fixed on `main`, unreleased (audit A-12); older turns: "Extract all history" |
 | K28 | Taking turns in one chat from two tabs or devices makes memory of the messages one of them lacks drop out and come back | Data | host (H10); not planned (audit A-13) |
+| K29 | A reveal in the turns first extracted together can be missed | Memory | "Extract all history" after connecting a chat with secrets (ADR 0033) |
 
 ## Performance
 
@@ -240,6 +241,14 @@ switch is a commit in the Inspector (`delete`, `reroll`), their facts drop out a
 may run again for those turns. Nothing is lost and no memory of a message missing from the prompt is
 injected: a request whose copy is behind gets memory for its own copy only (audit A-13, reasoned from the
 code, not observed). *Workaround:* reload the chat in the other tab or device before generating there.
+
+**K29 — A reveal among the turns first extracted together can be missed.** A reveal is reported against the
+chat's open secrets as extraction lists them (ADR 0033). A generation's backfill and "Extract all history"
+run oldest turn first, but when NMOS first sees a chat it extracts the recent window newest first, so a turn
+that reveals a secret can be extracted before the turn that made it, and the reveal matches nothing. In play,
+turns are extracted one at a time and this does not happen. Found by the Phase 10 evaluation (a synthetic
+case extracted all at once). *Workaround:* after connecting an existing chat that has secrets, run **Extract
+all history** once.
 
 **K18 — Model changes re-process history.** Changing the LLM or embedding model or endpoint, or a
 release that changes the extraction generation (as 0.1.0-beta.8 did), re-derives all previously

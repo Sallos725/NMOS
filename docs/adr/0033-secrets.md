@@ -64,3 +64,13 @@ Not decided here: how the packet shows private facts, strict mode and first pers
 - A reveal ends a secret only when it names it closely enough. A reveal worded far from the listed text ends
   nothing and is shown as unrevealed in the facts view; the owner cannot yet end one by hand (Stage 6).
 - A character who learns part of a secret ends all of it for them.
+
+## Amendment 1 (2026-09-27, Phase 10 step 7): who found out knows it
+
+Item 6 kept the fact's `known_by` as extracted. With the Private section (ADR 0034) and the memory mode (ADR
+0035) reading `known_by`, a character who had found out a secret still counted as not knowing it: the fact
+went to Private with its rule telling them not to act on it, strict mode withheld it from them, and as a
+narrator they were not given it. The synthetic case "a reveal ends it" (`tests/memeval.py`) placed it in
+Private. Now the read side also adds the character to `known_by` from the revealing turn on; deleting that
+turn takes them out again. Packets recorded before this that placed a revealed fact may not reproduce on
+replay (on `:edge` only, never released).
