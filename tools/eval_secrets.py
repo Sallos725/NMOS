@@ -22,6 +22,7 @@ DIR/cases.json:
     [{"name": "D1", "request": "requests/4128.json",        # the host's request body, packet included
       "trace": "<the NMOS trace of that request>",            # or, for a request before the ledger (Phase 9):
       # "conversation": "<id>", "user_starts": "<the start of the request's user message>", "context": 10,
+      # "query": "<the user message the request really sent, when it was replaced by a probe>",
       "watch": [{"id": "hug", "text": "<the secret's content>", "kept_from": "<name>"}],
       "conditions": ["packet-v2", "packet-v4", "packet-v4+strict"], "runs": 3}]
 
@@ -151,7 +152,7 @@ def at_message(conn, case: dict, cond: str, extractor: str | None) -> str:
     previous = next((m for m in reversed(msgs) if m["position"] < p and m["role"] != "user"), None)
     window = {m["host_logical_id"] for m in msgs if p - case.get("context", 10) <= m["position"] <= p}
     options = dataclasses.replace(RecallOptions(), policy=policy, extractor_key=extractor, **overrides)
-    g = gather(conn, head["head_commit_id"], clean_text(user[0]["content"]),
+    g = gather(conn, head["head_commit_id"], clean_text(case.get("query") or user[0]["content"]),
                clean_text(previous["content"]) if previous else "", window, options, upto=p)
     budget = case.get("budget", 800)
     return compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts, policy=policy,
