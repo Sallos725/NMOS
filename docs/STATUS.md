@@ -2,20 +2,15 @@
 
 ## Current phase
 
-**Phase 10 — Knowledge and Secrets (Stage 4): current.** Spec `docs/phases/PHASE-10.md`, approved by the owner
-2026-09-27 (merge of #107). Steps 2–3 done: `extract-v12` (kept from vs absent, OPEN SECRETS, `learned`) and
-secret ends on the read side (ADR 0033, D43; evidence `docs/perf/extract-v12.md`). Step 4 done: scene cast and
-`packet-v3`, the default (ADR 0034, D44; `docs/perf/packet-v3.md`). Step 5 done: per-chat strict and narrator
-modes, migration 0021, the Inspector's memory mode card, private claims, default reserve 800 (ADR 0035, D45;
-`docs/perf/memory-mode.md`). Budget pressure (owner request, "B+C first"): the Status tab says what did not fit
-and the budget that holds it, and `packet-v4` (default) drops restatements (ADR 0036, D46; `docs/perf/budget.md`).
-Step 6 done: the Inspector shows a chat's secrets (who knows, kept from whom, who found out and when), reveals
-that matched nothing, and the last request's scene cast and memory mode. Outside the steps (owner request): the sidecar tells whether the plugin in use is its own build (ADR 0037,
-D47, K19). Step 7 in progress: seven synthetic secret cases in CI, `tools/eval_secrets.py`, latency within
-bound; they found two faults, fixed (ADR 0033 amendment 1: who found out counts as knowing; K29 recorded). The
-response-model tier ran on the owner's keys (Opus 18 calls $3.04, Gemini 21 calls 3.0M prompt tokens): no leak in
-39 replies, Opus recalls 6 of 6 under `packet-v4`, Gemini's narration showed the holder's memory in D1 0 of 3
-(pilot 2 of 2), for the owner to judge (`docs/perf/secrets-eval.md` §6). No release (owner).
+**Phase 10 — Knowledge and Secrets (Stage 4): complete (2026-09-27), not released (owner).** Spec
+`docs/phases/PHASE-10.md` (every acceptance criterion met), ADRs 0033–0037, D43–D47, migration 0021. A secret is
+what the story keeps from someone and ends when they find it out (`extract-v12`); what someone in the scene does
+not know goes in a `<Private>` section with a rule; a chat can choose strict or a first-person narrator; the
+Inspector shows a chat's secrets. Along the way, by the owner's requests: the default reserve 800, a Status-tab
+notice with the budget that holds what was left out and `packet-v4` (ADR 0036), and the plugin build check (ADR
+0037, K19). Evidence: `docs/perf/secrets-eval.md` — on the owner's real scenes, 48 replies of Opus 5.5 and Gemini
+3.1 Pro with no leak, the holder remembering the secret as often as the pilot's best condition once a thread
+ranking fault was fixed (ADR 0019 amendment 1). Next: the owner's call on the `0.2.0` milestone (Stage 4 done).
 
 **Phase 9 — Accountable Packets: complete (2026-09-26), released in `v0.1.0-beta.19`.** The owner asked for
 the work on a new branch and approved the merge after review. Spec `docs/phases/PHASE-9.md` (Track B, B6

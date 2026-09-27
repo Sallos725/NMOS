@@ -133,6 +133,10 @@ Done when (draft):
 Tentative owner decision (2026-09-27): a holder's own slip, such as a child blurting a secret, is direction,
 not a failure.
 
+**Done (2026-09-27, Phase 10; not released).** Every done criterion is met: `docs/perf/secrets-eval.md` (48 replies of
+the owner's response models on real scenes without a leak; holders remember), `docs/perf/extract-v12.md` (a
+revealed secret ends), the strict and narrator cases in the memory evaluation, and K11 rewritten.
+
 ## Stage 7 — Forensic recall
 
 *Original §44–55, §78; Track B, B6.* Has: packet ledger, as-of replay, echo, abstention.

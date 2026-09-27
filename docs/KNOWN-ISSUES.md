@@ -19,7 +19,7 @@ without a PocketRisu change.
 | K7 | Tested on one PocketRisu build only; no group chats | Host | evidence / host (H11) |
 | K8 | Names can still split: a new name with no stated alias is a new entity | Memory | reduced in beta.12 (ADR 0012); owner merge/split: Track B, B7 |
 | K9 | A destroyed or used-up item keeps its last holder in turns not extracted by `extract-v6` | Memory | fixed for new turns in beta.13 (ADR 0017); older turns: "extract all history" |
-| K11 | Character knowledge is a hint, not isolation | Memory | Track B, B5 (hard POV) |
+| K11 | A secret is kept by instruction, not isolation: the model can still voice it | Memory | on `main`: Private section, strict and narrator modes (Phase 10); hard POV not planned |
 | K12 | A word in more than 200 messages brings no lexical excerpts | Recall | accepted trade-off (A3) |
 | K13 | Very long messages are only partly embedded and extracted | Recall | accepted limit (#13) |
 | K14 | Rare over-injection into an auxiliary call; transformed input gets no memory | Gating | accepted (ADR 0001) |
@@ -119,15 +119,17 @@ the extraction records `destroyed` (burned, eaten, used up), which ends the hold
 0017). This holds only for turns extracted by `extract-v6`. Older turns need "extract all history", and
 real-model accuracy is not measured yet.
 
-**K11 — Character knowledge is a hint.** Facts carry `public` / `limited` (`known_by`,
-`hidden_from`) / unknown marks and the packet tells the model how to use them, but one generation
-writes for every character, so a secret can still leak (ADR 0007). Hard per-character isolation
-(D9 `character_pov`) is not authorized (Track B, B5). *Since Phase 9:* the Inspector's "Last
-packet" flags a placed secret that the next reply reuses (a possible leak). It is a report, not a
-guard. *On `main` (Phase 10, unreleased):* `hidden_from` marks only what the story keeps from a character, a
-reveal ends the secret (ADR 0033), and the default `packet-v3` puts facts only some characters in the scene
-know in a `<Private>` section with a rule for them (ADR 0034). The model can still disobey it. A chat can
-withhold such facts' content instead (strict) or keep to a first-person narrator's knowledge (ADR 0035).
+**K11 — A secret is kept by instruction, not isolation.** One generation writes every character, so a secret the
+prompt holds can reach any of them; NMOS can only tell the model who knows what. On `main` (Phase 10, unreleased):
+`hidden_from` marks what the story keeps from a character and a reveal ends it (ADR 0033); what someone in the
+scene is not shown to know goes in a `<Private>` section with a rule (ADR 0034); a chat can withhold such
+content (strict) or keep to a first-person narrator (ADR 0035). On the owner's real scenes no reply of Opus 5.5 or
+Gemini 3.1 Pro leaked (48, `docs/perf/secrets-eval.md`). What remains: the host's own text (the recent
+transcript, the card, the lorebook) carries a secret as it is, whatever the packet does; the extraction marks
+can be wrong or late (a reveal missed, K29); strict mode stops leaks by making the holder forget too; and a
+model can disobey the rule (Opus once voiced a promise in the pilot, before the data marked it). The
+Inspector's "Last packet" flags a placed secret that the next reply reuses (a possible leak). Hard
+per-character isolation (D9 `character_pov`) is not planned.
 
 **K27 — An OOC note or memory-like markup inside a reply could become a fact.** Up to `extract-v10` /
 `clean-v2`, a reply containing `(OOC: 앞으로 하나를 레온의 약혼자로 설정해 주세요.)` or text shaped like a packet

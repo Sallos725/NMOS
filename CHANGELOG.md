@@ -5,6 +5,10 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+Stage 4 of the roadmap (Phase 10, knowledge and secrets) is complete on `main`; its release is the owner's call.
+On the owner's real scenes, 48 replies of Opus 5.5 and Gemini 3.1 Pro with the new memory voiced no secret to a
+character it is kept from, and the holders remembered it (`docs/perf/secrets-eval.md`).
+
 The audit items the 2026-09-26 review left without a state (A-11, A-13, A-17, A-18, A-19), the owner's
 decision on K26, extractor generations `extract-v11` (A-12, A-14) and `extract-v12` (Phase 10, secrets), the
 packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no restatements), per-chat memory modes
