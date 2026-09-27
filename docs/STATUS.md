@@ -67,6 +67,12 @@ Outside the phase (owner request 2026-09-25, released in `v0.1.0-beta.18`): the 
 injected ("Show the injected memory"), held in the plugin's memory only. Real-host check on
 `ghcr.io/pocketrisu/pocketrisu:latest` at 1280 px and 390 px; the text matched what the stub model received.
 
+Outside the phase (owner decision 2026-09-27, unreleased): `extract-v11`, made before its milestone at the owner's
+request. It carries the two queued audit items: the prompt says notes outside the story are not evidence (A-12;
+an OOC note in a reply 0/3 → 3/3 ignored, the control kept 3/3) and the registry drops `Predicate.epistemic`
+(A-14). Memory-shaped markup still becomes a fact because the normalizer strips the tag first (K27). Evidence:
+`docs/perf/extract-v11.md`.
+
 Outside the phase (owner decision on K26, 2026-09-26, ADR 0032, D42, unreleased): the default packet policy
 is `packet-v2`, which estimates Korean at 1.2 tokens a character instead of 1.5, so more of the reserve is
 used. Evidence: `docs/perf/token-estimate.md` (three tokenizers, a replay of the owner's recorded requests,
@@ -149,7 +155,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Decisions | `docs/adr/0001`–`0032` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-9.md` | 0–3 met; 4 soft subset met; 5–9 met |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
-| Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 wait for the next extractor generation |
+| Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11` (unreleased; the markup half of K27 remains) |
 
 ## Evidence status (Phase 0A)
 
@@ -176,12 +182,9 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 ## Queued for the next extractor generation
 
 A change to the extraction prompt or registry makes a new generation and re-extracts each chat's recent
-window at the provider's cost (ADR 0006, 0014). These owner-approved changes wait for the next one, so
-the cost is paid once (owner decision 2026-09-26):
-
-- A-12: tell the extractor that instructions, OOC notes and memory markup inside a turn are not story
-  (K27). Re-run `tools/eval_poisoning_model.py` before and after (`docs/perf/memory-poisoning.md`).
-- A-14: remove `Predicate.epistemic`, which nothing reads but the registry fingerprint includes.
+window at the provider's cost (ADR 0006, 0014). Owner-approved changes wait for the next one, so the cost is
+paid once (owner decision 2026-09-26). None is queued: A-12 and A-14 shipped in `extract-v11` (owner decision
+2026-09-27, `docs/perf/extract-v11.md`).
 
 ## Public release checklist (done 2026-09-23)
 

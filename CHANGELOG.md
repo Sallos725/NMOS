@@ -5,8 +5,9 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-The audit items the 2026-09-26 review left without a state (A-11, A-13, A-17, A-18, A-19), and the owner's
-decision on K26. Sidecar only; no schema change and no new extractor or embedding generation.
+The audit items the 2026-09-26 review left without a state (A-11, A-13, A-17, A-18, A-19), the owner's
+decision on K26, and a new extractor generation `extract-v11` with the two audit items queued for it (A-12,
+A-14). Sidecar only; no schema change and no new embedding generation.
 
 - **The sidecar's access log no longer shows the auth token** (audit A-11). The Inspector opened in a browser
   tab passes the token as `?token=` on every link, and uvicorn logged each request line with it. The log now
@@ -33,6 +34,19 @@ decision on K26. Sidecar only; no schema change and no new extractor or embeddin
   counts 1.2. A full Korean packet holds about 1.5 more lines and uses 76–85 % of the budget
   (`docs/perf/token-estimate.md`). English packets are unchanged. Nothing is re-extracted. To keep the old
   estimate, set `NMOS_PACKET_POLICY=packet-v1`.
+- **An OOC note in a reply no longer becomes a fact** (K27, audit A-12; owner decision). New extractor
+  generation `extract-v11`: the prompt says that only the story is evidence. OOC notes, `[System: …]` lines,
+  requests to the memory and memory markup give nothing; the story's narration and what characters say
+  still count. With `gemma4:31b-cloud` an OOC note in a reply was stored as a fact 3 of 3 times before and 0 of
+  3 now, and the plainly told control fact is still kept 3 of 3. Text shaped like a packet line
+  (`<Fact …>…</Fact>`) still becomes a fact, because the text normalizer removes the tag before extraction
+  (K27). The registry drops `Predicate.epistemic`, which nothing read (audit A-14). Other bars are unchanged or
+  within the model's run-to-run variance (`docs/perf/extract-v11.md`).
+
+**Upgrading.** Pull the new sidecar image and restart it. With an LLM configured, `extract-v11` becomes
+active, and each chat's latest `NMOS_EXTRACT_BACKFILL` turns (default 100) are re-extracted once at the
+provider's cost. Older turns keep their `extract-v10` facts until **Extract all history**. Replacing the
+plugin file is optional (its code is unchanged). If you replace it, reload PocketRisu.
 
 ## 0.1.0-beta.21
 
