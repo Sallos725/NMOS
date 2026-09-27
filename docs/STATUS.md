@@ -177,7 +177,9 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 - Release cadence — decided 2026-09-26, revised 2026-09-27: one release per roadmap stage, urgent patches
   only in between, `:edge` built from every `main` merge (`AGENTS.md` §13).
 - Roadmap to 1.0 — decided 2026-09-27: not stable until stages 4–8 of the original roadmap are done
-  (`docs/ROADMAP-1.0.md`). Open: R1 order, R2 public benchmark, R3–R6 stage scope; stage 4 under discussion.
+  (`docs/ROADMAP-1.0.md`). Open: R1 order, R2 public benchmark, R3–R6 stage scope.
+- Stage 4 — draft design 2026-09-27 after a leak pilot (`docs/proposals/STAGE-4-KNOWLEDGE.md`,
+  `docs/perf/stage4-leak-pilot.md`); Q1–Q5 open. Tentative: a holder's own slip is direction, not a leak.
 
 ## Queued for the next extractor generation
 
