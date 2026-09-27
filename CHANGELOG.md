@@ -23,6 +23,22 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     again the turns extracted before an earlier turn's secret, oldest first. Before, it skipped them.
   - A model answer without an `assertions` list fails the job (retried, then counted failed) instead of
     counting as a turn with nothing to extract (G3; in every release since `v0.1.0-beta.1`).
+- **A saved API key is sent only to the host it was saved for** (review of an external analysis, 2026-09-27).
+  `/v1/config/test` and `/v1/config/models` sent the saved key to whatever URL the request named, and saving an
+  endpoint on another host kept the key for it, so anyone who could reach the settings API could have the key sent
+  to their own server. Now a test or model list for another host goes without the saved key (its error says why),
+  and saving an endpoint on another host drops the saved key: enter it again. A key from `.env` applies again
+  when the endpoint is back on the `.env` host.
+- **The plugin's host reads count against the request deadline.** Only the sidecar calls had a hard deadline: a
+  settings or chat read the host never answered held the generation. The memory budget and deadline set in
+  PocketRisu's own plugin argument fields are capped like the panel's; a budget over 20,000 tokens, which the
+  sidecar refuses, made every request go without memory (the panel did not cap the budget either).
+- **The worker waits for the sidecar's migrations.** Compose starts both at once, and a worker that claimed jobs
+  against the previous schema failed them and used up their attempts.
+- **A recall reads the chat as its request had it.** A sync of the same chat from another tab or device (K28)
+  that landed during a recall added its messages to what the recall read and recorded.
+- Tests: the plugin's DOM code (the Inspector sanitizer's tree walk, the settings panel) runs under `happy-dom`,
+  a new dev dependency (owner approval 2026-09-27).
 - **The sidecar's access log no longer shows the auth token** (audit A-11). The Inspector opened in a browser
   tab passes the token as `?token=` on every link, and uvicorn logged each request line with it. The log now
   shows `token=***`. The token still stays in that browser's history (K21); the panel's Inspector tab sends
