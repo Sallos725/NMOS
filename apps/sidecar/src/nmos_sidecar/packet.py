@@ -24,7 +24,12 @@ NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly 
                ("<Claim ", " A Claim is what that character said, not established truth."),
                ('disputed="true"', " disputed=\"true\" marks a place where the story contradicts itself; neither"
                                    " side is certain."),
-               ("<Thread ", " A Thread is a promise made in the story and not yet kept or broken."),
+               ('<Thread kind="promise"', " A Thread is a promise made in the story and not yet kept or broken."),
+               # extract-v13 (ADR 0039): each further kind explains itself when one is kept
+               ('<Thread kind="goal"', " A goal Thread is an aim its owner is still set on."),
+               ('<Thread kind="question"', " A question Thread is still unanswered in the story."),
+               ('<Thread kind="threat"', " A threat Thread is a danger that has not played out yet."),
+               ('<Thread kind="debt"', " A debt Thread is still owed (by → to)."),
                ("<Secret ", " A Secret is something its holders know and not_known_by characters are not known"
                             " to know; its content is withheld. Holders may act as people keeping a secret; nobody"
                             " states or hints at it."))

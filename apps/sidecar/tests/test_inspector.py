@@ -262,7 +262,7 @@ def test_inspector_shows_promises_unmatched_resolutions_and_salience(migrated):
         drain()
         conv = client.get("/v1/conversations").json()[0]["id"]
         page = client.get(f"/inspector/c/{conv}").text
-        assert '<a href="#s-threads">약속 <span class="n">2</span></a>' in page
+        assert '<a href="#s-threads">스레드 <span class="n">2</span></a>' in page
         assert page.index('id="s-threads"') < page.index('id="s-facts"')
         assert '<span class="chip" title="open">열림</span>' in page and '<span class="chip" title="kept">지킴</span>' in page
         assert "Hana fulfilled: return the book" in page  # what closed it

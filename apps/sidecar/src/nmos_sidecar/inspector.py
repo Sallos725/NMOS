@@ -79,9 +79,10 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "negated": ("부정", "negated"), "legacy": ("이전 형식", "legacy"), "disputed": ("충돌", "disputed"),
     "conflicts": ("충돌 (이야기가 앞뒤가 맞지 않음)", "Conflicts (the story contradicts itself)"),
     "h.fact": ("현재 사실", "Current fact"), "h.against": ("맞지 않는 단언", "Contradicted by"),
-    "threads": ("약속", "Promises"), "h.to": ("받는 인물", "To"), "h.promise": ("약속", "Promise"),
+    "threads": ("스레드 (약속·목표·질문·위협·빚)", "Threads (promises, goals, questions, threats, debts)"),
+    "h.to": ("상대", "To"), "h.promise": ("내용", "What"), "h.kind": ("종류", "Kind"),
     "h.status": ("상태", "Status"), "h.closed": ("닫은 단언", "Closed by"), "h.restated": ("다시 말한 턴", "Restated in turn"),
-    "unmatched": ("어느 약속에도 맞지 않은 이행·파기", "Kept or broken, matching no open promise"),
+    "unmatched": ("어느 스레드에도 맞지 않은 종료", "Ends matching no open thread"),
     "salience": ("중요도", "salience"),
     "items": ("아이템 이력", "Item timelines"), "h.item": ("아이템", "Item"), "h.timeline": ("이력 (오래된 순)", "Timeline (oldest first)"),
     "w.possesses": ("{s} 보유", "held by {s}"), "w.located_in": ("{o}에 있음", "at {o}"),
@@ -117,7 +118,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "ids": ("식별자", "Identifiers"),
     # contents: short names of the detail sections
     "toc.state": ("상태", "State"), "toc.coverage": ("처리 현황", "Coverage"), "toc.conflicts": ("충돌", "Conflicts"),
-    "toc.threads": ("약속", "Promises"), "toc.unmatched": ("맞지 않은 이행·파기", "Unmatched"),
+    "toc.threads": ("스레드", "Threads"), "toc.unmatched": ("맞지 않은 종료", "Unmatched"),
     "toc.facts": ("사실", "Facts"), "toc.items": ("아이템", "Items"), "toc.entities": ("엔티티", "Entities"),
     "toc.ambiguous": ("모호한 이름", "Ambiguous"), "toc.claims": ("주장", "Claims"), "toc.other": ("실제 아님", "Not actual"),
     "toc.retrievals": ("검색", "Retrievals"), "toc.commits": ("커밋", "Commits"), "toc.members": ("메시지", "Messages"),
@@ -203,6 +204,12 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "m.hypothetical": ("가정", "hypothetical"), "m.dreamed": ("꿈", "dreamed"), "m.unknown": ("미상", "unknown"),
     "m.actual": ("실제", "actual"),
     "t.open": ("열림", "open"), "t.kept": ("지킴", "kept"), "t.broken": ("깨짐", "broken"),
+    "t.achieved": ("이룸", "achieved"), "t.abandoned": ("그만둠", "abandoned"), "t.failed": ("실패", "failed"),
+    "t.answered": ("답이 나옴", "answered"), "t.averted": ("피함", "averted"), "t.paid": ("갚음", "paid"),
+    "k.promise": ("약속", "promise"), "k.goal": ("목표", "goal"), "k.question": ("질문", "question"),
+    "k.threat": ("위협", "threat"), "k.debt": ("빚", "debt"),
+    "p.question": ("질문", "question"), "p.threat": ("위협", "threat"), "p.owes": ("빚", "owes"),
+    "p.resolved": ("스레드 종료", "resolved"),
     "s.major": ("중요", "major"), "s.minor": ("사소", "minor"), "p.fulfilled": ("약속 이행", "fulfilled"),
     "e.character": ("인물", "character"), "e.item": ("아이템", "item"), "e.place": ("장소", "place"),
     "e.group": ("집단", "group"), "e.concept": ("개념", "concept"),
@@ -480,13 +487,15 @@ def _salience(f: dict[str, Any], lang: str) -> str:
 
 
 def _threads_table(threads: list[dict[str, Any]], lang: str) -> str:
-    """Promises with their status and what closed them (PHASE-7, ADR 0019), newest first."""
+    """Threads with their status and what closed them (PHASE-7, ADR 0019; PHASE-11, ADR 0039), newest first."""
     def closed(t: dict[str, Any]) -> str:
         c = t.get("closed_by")
         return f"{_turn(c)} · {_v(fact_line_text(c))}" if c else ""
 
-    return table([_t(lang, k) for k in ("h.by", "h.to", "h.promise", "h.turn", "h.status", "h.closed", "h.restated")],
-                 [[_v(t["by"]), _v(t.get("to") or ""), _v(t.get("text")), _turn(t), chip(lang, "t", t["status"]),
+    return table([_t(lang, k) for k in ("h.kind", "h.by", "h.to", "h.promise", "h.turn", "h.status", "h.closed",
+                                        "h.restated")],
+                 [[chip(lang, "k", t.get("kind", "promise")), _v(t["by"]), _v(t.get("to") or ""), _v(t.get("text")),
+                   _turn(t), chip(lang, "t", t["status"]),
                    closed(t), _v(", ".join(str(r["turn"] if r.get("turn") is not None else r["position"])
                                           for r in t.get("restated") or []))]
                   for t in threads[:100]])
