@@ -98,9 +98,9 @@ in front of those it is kept from. A chat can choose a strict packet or a first-
       separately (Q4).
 - [x] Retrieve latency at 10,000 messages within +5 ms p50 of `v0.1.0-beta.21` (+0.5–0.7 ms,
       `docs/perf/secrets-eval.md`).
-- [ ] Real-host smoke on an isolated PocketRisu: per-chat mode set in the panel reaches the sidecar and the
-      trace; a `<Private>` section reaches the model's prompt.
-- [ ] Upgrade from a `v0.1.0-beta.21` database (`tests/test_upgrade.py`).
+- [x] Real-host smoke on an isolated PocketRisu: per-chat mode set in the panel reaches the sidecar and the
+      trace; a `<Private>` section reaches the model's prompt (`docs/perf/secrets-eval.md` §4).
+- [x] Upgrade from a `v0.1.0-beta.21` database (`tests/test_upgrade.py`).
 - [ ] `ARCHITECTURE.md` (decisions from D43), ADRs, README, the Korean guide, KNOWN-ISSUES (K11 rewritten to what
       remains), CHANGELOG (Unreleased).
 
@@ -122,7 +122,8 @@ in front of those it is kept from. A chat can choose a strict packet or a first-
 7. Evaluation: synthetic cases, `tools/eval_secrets.py`, the model tiers (each paid run approved first). **In
    progress**: synthetic cases, the tool, the extraction tier and latency done (`docs/perf/secrets-eval.md`; two
    faults found and fixed, ADR 0033 amendment 1 and K29); the response-model tier waits for the owner's budget.
-8. Documentation, real-host smoke, upgrade check.
+8. Documentation, real-host smoke, upgrade check. **In progress**: smoke and upgrade done; the final
+   documentation follows the response-model tier.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).
 
