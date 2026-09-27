@@ -15,6 +15,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from .facts import STANDING, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
+from . import scene
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
@@ -194,6 +195,7 @@ class Gathered:
     timings: dict[str, float] = field(default_factory=dict)
     lexical_note: str = "off"
     vector_note: str = "off"
+    cast: dict[str, str] = field(default_factory=dict)  # scene cast, entity key → name (ADR 0034)
 
 
 def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, in_context: set[str],
@@ -244,20 +246,32 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.state.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in focus), reverse=True)
     if options.facts_limit > 0 or options.threads_limit > 0:
         view = memory_view(conn, head, options.extractor_key, upto, known_at)
-        persona = view["resolution"].persona_names if view["resolution"] else frozenset()
+        r = view["resolution"]
+        persona = r.persona_names if r else frozenset()
+        # Who is in the scene, so facts only some of them know are marked (packet-v3, ADR 0034).
+        g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
+                            _head_turn(conn, head, upto))
         if options.threads_limit > 0:
-            g.threads = [thread_entry(t) for t in relevant_threads(view["threads"], query, previous_ai, in_context,
-                                                                  options.threads_limit, persona)]
+            g.threads = [thread_entry(t, scene.private(t, g.cast, r))
+                         for t in relevant_threads(view["threads"], query, previous_ai, in_context,
+                                                   options.threads_limit, persona)]
         if options.facts_limit > 0:
             facts = relevant_facts(view["facts"], query, previous_ai, in_context, options.facts_limit,
-                                   options.events_limit, persona)
+                                   options.events_limit, persona, scene.names(g.cast, r))
             # Claims after facts, so the budget serves narration first (ADR 0013).
             claims = relevant_facts(view["claims"], query, previous_ai, in_context, max(1, options.facts_limit // 2),
                                     persona=persona)
             # How the cast stand with each other takes the budget before threads (ADR 0026).
-            g.lead = [fact_entry(f) for f in facts if f["predicate"] in STANDING]
-            g.facts = [fact_entry(f) for f in facts if f["predicate"] not in STANDING] + [claim_entry(c) for c in claims]
+            g.lead = [fact_entry(f, scene.private(f, g.cast, r)) for f in facts if f["predicate"] in STANDING]
+            g.facts = ([fact_entry(f, scene.private(f, g.cast, r)) for f in facts if f["predicate"] not in STANDING]
+                       + [claim_entry(c) for c in claims])
     return g
+
+
+def _head_turn(conn: psycopg.Connection, head: UUID, upto: int | None = None) -> int | None:
+    """The turn of the head's last message (as of `upto`): the turn a request answers."""
+    return conn.execute("SELECT max(turn) AS t FROM active_membership WHERE commit_id = %s AND position <= %s",
+                        (head, 2**31 - 1 if upto is None else upto)).fetchone()["t"]
 
 
 def _head_end(conn: psycopg.Connection, head: UUID) -> int | None:
@@ -318,6 +332,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                    "kept_state": kept["state"], "kept_facts": kept["facts"], "kept_threads": kept["threads"],
                    "placed": {k: sum(1 for e in placed if e["kind"] == k)
                               for k in ("state", "thread", "fact", "claim", "excerpt")},
+                   "scene_cast": sorted(g.cast.values()),
                    "embedding_projection": options.embed_projection[:20] if options.embedder else None,
                    "extractor": (options.extractor_key or "")[:20] or None,
                    **{f"client_{k}": v for k, v in request.client_timings_ms.items()}}),

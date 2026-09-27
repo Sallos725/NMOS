@@ -57,9 +57,9 @@ class Settings:
     # model name contains "qwen3-embedding", none otherwise. Documents are embedded without it.
     embed_query_instruction: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_QUERY_INSTRUCTION", "auto"))
     trace_retention_days: int = field(default_factory=lambda: int(os.environ.get("NMOS_TRACE_RETENTION_DAYS", "30")))
-    # Packet compiler (ADR 0027, 0032): packet-v2 is packet-v1 (room kept for the best excerpt) with a lower
-    # Korean token estimate; packet-v1 and packet-v0 are the earlier ones.
-    packet_policy: str = field(default_factory=lambda: os.environ.get("NMOS_PACKET_POLICY", "packet-v2"))
+    # Packet compiler (ADR 0027, 0032, 0034): packet-v3 is packet-v2 (room kept for the best excerpt, Korean
+    # estimate 1.2) with facts only some of the scene know in a <Private> section; v2, v1, v0 are earlier.
+    packet_policy: str = field(default_factory=lambda: os.environ.get("NMOS_PACKET_POLICY", "packet-v3"))
     parsers_file: str = field(default_factory=lambda: os.environ.get("NMOS_PARSERS_FILE", ""))
     # Test hook for the "sidecar slower than deadlineMs" acceptance check. Never set in production.
     debug_delay_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_DEBUG_DELAY_MS", "0")))

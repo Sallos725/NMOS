@@ -384,6 +384,9 @@ STANDING = frozenset({"relationship", "feels_toward", "addresses"})
 # and one in the previous reply (1.0), so they order facts of equal mention only.
 PRIOR_STANDING = 0.5
 PRIOR_MAJOR_EVENT = 0.3
+# Added to a mentioned fact hidden from someone in the scene (ADR 0034): above how the cast stand (0.5), below
+# a mention in the user's message rather than the previous reply (1.0) and the hidden character addressed (2.5).
+PRIOR_HIDDEN_PRESENT = 0.8
 
 
 def prior(f: dict[str, Any]) -> float:
@@ -396,11 +399,13 @@ def prior(f: dict[str, Any]) -> float:
 
 def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],
                    limit: int, events_limit: int | None = None,
-                   persona: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
+                   persona: frozenset[str] = frozenset(), present: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
-    model most needs to see (so it does not leak), and "내/my" questions concern the user's facts. Among
+    model most needs to see (so it does not leak), and "내/my" questions concern the user's facts. A fact
+    hidden from someone in the scene (`present`, normalized names; ADR 0034) gains less, and only when it is
+    mentioned or related: the scene is where it can leak, and where its holder may need it. Among
     facts of equal mention, how two characters stand (`STANDING`) comes first, then major events (ADR
     0026). Being in `known_by` adds nothing: a long list named most of a scene's cast and put trivia first.
 
@@ -429,6 +434,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         hidden = [_norm(n) for n in f.get("hidden_from") or [] if len(_norm(n)) >= 2 and _norm(n) not in user]
         if any(n in q for n in hidden):
             mention += 2.5
+        elif mention and any(n in present for n in hidden):
+            mention += PRIOR_HIDDEN_PRESENT
         if first_person and (_norm(f["subject"]) in user or _norm(f.get("value")).startswith(tuple(user))):
             mention += 1.0
         grams = _grams(fact_text(f))
@@ -511,11 +518,11 @@ def _marks(f: dict[str, Any]) -> dict[str, Any]:
     return {"hidden_from": list(f["hidden_from"])} if f.get("knowledge") == "limited" and f.get("hidden_from") else {}
 
 
-def fact_entry(f: dict[str, Any]) -> Line:
+def fact_entry(f: dict[str, Any], private: bool = False) -> Line:
     """A fact as a packet line with its provenance (ADR 0027): the assertion, and the words a reply can
-    echo (its value, else its object)."""
+    echo (its value, else its object). `private`: only some characters in the scene know it (ADR 0034)."""
     return Line("fact", fact_line(f), {"assertion": f["id"]}, f.get("turn"), fact_text(f),
-                f.get("value") or f.get("object") or "", _marks(f))
+                f.get("value") or f.get("object") or "", _marks(f), private)
 
 
 def claim_entry(c: dict[str, Any]) -> Line:
@@ -523,6 +530,6 @@ def claim_entry(c: dict[str, Any]) -> Line:
                 c.get("value") or c.get("object") or "", {"by": c.get("asserted_by")} if c.get("asserted_by") else {})
 
 
-def thread_entry(t: dict[str, Any]) -> Line:
+def thread_entry(t: dict[str, Any], private: bool = False) -> Line:
     return Line("thread", thread_line(t), {"assertion": t["id"]}, t.get("turn"),
-                f"{t['by']} → {t.get('to') or '?'}: {t.get('text') or ''}", t.get("text") or "", _marks(t))
+                f"{t['by']} → {t.get('to') or '?'}: {t.get('text') or ''}", t.get("text") or "", _marks(t), private)

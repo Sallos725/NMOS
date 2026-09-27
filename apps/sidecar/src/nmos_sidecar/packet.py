@@ -113,9 +113,16 @@ def excerpt(content: str, query: str, window: int = 2) -> str:
 # in 7 of 168 requests. packet-v1 reserves room for the best excerpt and caps parser state. packet-v2 is
 # packet-v1 with Korean and other non-ASCII text counted at 1.2 tokens a character instead of 1.5 (ADR 0032):
 # three tokenizers counted 0.74-0.98, so v1 left 15-40 % of a Korean packet's reserve unused (K26).
-POLICIES = ("packet-v0", "packet-v1", "packet-v2")
-DEFAULT_POLICY = "packet-v2"
-NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2}  # estimated tokens per non-ASCII char
+# packet-v3 is packet-v2 with facts and promises that only some characters in the scene know moved to a
+# <Private> section with a rule for them (PHASE-10, ADR 0034): the Stage 4 pilot kept a secret unsaid, and its
+# holder still remembered it, once the fact said whom it was kept from (docs/perf/stage4-leak-pilot.md).
+POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3")
+DEFAULT_POLICY = "packet-v3"
+NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2}  # estimated tokens per non-ASCII char
+PRIVATE_POLICIES = frozenset({"packet-v3"})
+# The pilot's rule, shortened to fit a 600-token Korean packet (47 estimated tokens instead of 88).
+PRIVATE_NOTE = (" Private: only its holders (known_by) know it. Others must not mention, hint at or act on it; holders"
+                " keep it from those in hidden_from unless the story reveals it.")
 EXCERPT_SHARE = 0.3  # packet-v1+: room kept for the best excerpt, as a share of the budget inside the frame
 STATE_SHARE = 0.4  # packet-v1+: parser state may take at most this share (sim bots track many values)
 MIN_EXCERPT_CHARS = 24  # an excerpt cut shorter than this says too little to keep
@@ -169,6 +176,7 @@ class Line:
     text: str
     content: str = ""
     marks: dict[str, Any] = field(default_factory=dict)
+    private: bool = False  # only some characters in the scene know it (packet-v3, ADR 0034)
 
 
 @dataclass
@@ -224,7 +232,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     """Fill the budget and record every offered line in a ledger (ADR 0027).
 
     Budget order is fixed: state, lead facts (how the cast stand with each other, ADR 0026), open threads
-    (PHASE-7), facts and claims, excerpts. Lead facts open the Facts section, which the output keeps after
+    (PHASE-7), facts and claims, excerpts. packet-v3 emits the kept threads and facts marked private in a
+    <Private> section after Facts, and adds PRIVATE_NOTE (ADR 0034); earlier policies ignore the mark. Lead facts open the Facts section, which the output keeps after
     Threads; excerpts are emitted in chronological order. packet-v0 fills them strictly in that order. packet-v1 and later skip excerpts that
     mostly restate an offered thread, fact or claim line (REPEATS), keeps room for the best-ranked
     remaining excerpt (EXCERPT_SHARE of the budget inside the frame; the excerpt is shortened to its best
@@ -270,6 +279,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         entry["placed"], entry["why"] = True, "placed"
     extras: list[str] = []
     offset = len(state)
+    privacy = policy in PRIVATE_POLICIES
+    kept_private: list[str] = []
 
     def section(lines: list[Line], tag: str, opened: bool = False) -> list[str]:
         nonlocal used, offset
@@ -277,13 +288,21 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         for line in lines:
             entry = ledger[offset]
             offset += 1
-            cost = est(line.xml + "\n") + (est(f"  <{tag}>\n  </{tag}>\n")
-                                                     if not kept and not opened else 0)
+            hidden = privacy and line.private
+            if hidden:
+                header = est("  <Private>\n  </Private>\n") if not kept_private else 0
+            else:
+                header = est(f"  <{tag}>\n  </{tag}>\n") if not kept and not opened else 0
+            cost = est(line.xml + "\n") + header
             needed = [text for mark, text in NOTE_EXTRAS if mark in line.xml and text not in extras]
+            if hidden and PRIVATE_NOTE not in extras:
+                needed.append(PRIVATE_NOTE)
             cost += sum(est(text) for text in needed)
             entry["tok"] = cost
+            if hidden:
+                entry["private"] = True
             if used + cost <= limit:
-                kept.append(line.xml)
+                (kept_private if hidden else kept).append(line.xml)
                 extras.extend(needed)
                 used += cost
                 entry["placed"], entry["why"] = True, "placed"
@@ -317,7 +336,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         entry["placed"], entry["why"] = True, "placed"
         if form != "full":
             entry["form"], entry["text"] = form, text[:400]
-    if not chosen and not kept_state and not kept_facts and not kept_threads:
+    if not chosen and not kept_state and not kept_facts and not kept_threads and not kept_private:
         return Compiled("", 0, [], ledger)
     chosen.sort(key=lambda c: c[0].turn)
     body = state_block(kept_state)
@@ -325,6 +344,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         body += ["  <Threads>", *kept_threads, "  </Threads>"]
     if kept_facts:
         body += ["  <Facts>", *kept_facts, "  </Facts>"]
+    if kept_private:
+        body += ["  <Private>", *kept_private, "  </Private>"]
     body += [excerpt_line(e, t) for e, t in chosen]
     note = PACKET_NOTE.removesuffix("</Note>") + "".join(extras) + "</Note>"
     text = "\n".join([PACKET_OPEN, note, *body, PACKET_CLOSE])
