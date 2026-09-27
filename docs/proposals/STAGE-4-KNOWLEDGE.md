@@ -1,6 +1,6 @@
 # Proposal — Stage 4: who knows what
 
-> Status: draft, 2026-09-27. Direction agreed with the owner in discussion; the questions below are open.
+> Status: decided 2026-09-27: the owner chose the recommended answer to every question; spec `docs/phases/PHASE-10.md`.
 > Evidence: `docs/perf/stage4-leak-pilot.md`. Roadmap: `docs/ROADMAP-1.0.md`, Stage 4. A phase document with
 > acceptance criteria follows once the questions are answered.
 

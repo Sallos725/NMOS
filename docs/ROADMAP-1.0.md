@@ -33,7 +33,7 @@ Stages 0–3 are the foundation and are done. Stages 4–8 are what remains befo
 Every version before 1.0.0 is a GitHub pre-release. Between versions the owner runs `:edge` (a build of
 every `main` merge; `AGENTS.md` §13). Each stage ships at most one new extractor generation.
 
-**R1 — order.** Recommended: **5 → 6 → 4 → 7 → 8**.
+**R1 — order.** Decided 2026-09-27: **Stage 4 first** (Phase 10); the order after it is decided when it is done. The earlier recommendation was 5 → 6 → 4 → 7 → 8:
 - 5 first: knowledge (stage 4) is acquired through events someone observed or was told, which stage 5 adds.
 - 6 before 4: per-character filtering is only as good as the state it filters; repair tools let the
   owner fix that state by hand.
@@ -114,7 +114,7 @@ The fixed limit (§30, K11): one generation writes every character, so a secret 
 of them. A pilot on the owner's chat with two response models (`docs/perf/stage4-leak-pilot.md`) found the
 limit matters less than the data: once a fact says whom it is kept from, the packet keeps it unsaid and the
 holder still remembers it; withholding content stops leaks only by making the holder forget. Draft design:
-`docs/proposals/STAGE-4-KNOWLEDGE.md` (questions Q1–Q5 open).
+`docs/proposals/STAGE-4-KNOWLEDGE.md` (owner answers 2026-09-27); spec `docs/phases/PHASE-10.md`.
 
 Scope (draft):
 - the extraction separates *present* from *kept from*, and a secret ends when the story shows the hidden
