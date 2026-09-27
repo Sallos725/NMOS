@@ -20,14 +20,19 @@ _spec.loader.exec_module(eval_rp)
 def test_a_case_passes_on_every_gold_phrase_in_any_wording_and_no_forbidden_one():
     packet = "<Fact>Hana knows: the letter is FORGED</Fact>\n<Excerpt>Idle   chatter about clouds.</Excerpt>"
     both = {"gold": ["letter is forged", ["위조", "idle chatter"]], "forbidden": ["dragon", "  "]}
-    assert eval_rp.score(both, packet) == {"gold": 2, "held": 2, "forbidden": 1, "placed": 0, "passed": True}
+    assert eval_rp.score(both, packet) == {"gold": 2, "held": 2, "in_prompt": 0, "forbidden": 1, "placed": 0,
+                                           "passed": True, "needs_memory": True}
     assert eval_rp.score({"gold": ["forged", "dragon"]}, packet)["passed"] is False
     assert eval_rp.score({"gold": ["forged"], "forbidden": ["clouds"]}, packet) == {
-        "gold": 1, "held": 1, "forbidden": 1, "placed": 1, "passed": False}
+        "gold": 1, "held": 1, "in_prompt": 0, "forbidden": 1, "placed": 1, "passed": False, "needs_memory": True}
     # packet-v5 names what a standing fact replaced: past, not current (ADR 0038)
     v5 = '<Fact kind="addresses" turn="35">블랑 addresses 유우마: 반말; before, turn 16: 블랑 addresses 유우마: 존댓말</Fact>'
     assert eval_rp.score({"gold": ["존댓말"], "forbidden": ["존댓말"]}, v5) == {
-        "gold": 1, "held": 1, "forbidden": 1, "placed": 0, "passed": True}
+        "gold": 1, "held": 1, "in_prompt": 0, "forbidden": 1, "placed": 0, "passed": True, "needs_memory": True}
+    # a gold answer in the messages the prompt already held counts, and says so; forbidden ones are the packet's only
+    window = "…하나는 위조된 편지를 숨겼다…"
+    assert eval_rp.score({"gold": ["위조된 편지"], "forbidden": ["위조된"]}, "<NarrativeMemory/>", window) == {
+        "gold": 1, "held": 1, "in_prompt": 1, "forbidden": 1, "placed": 0, "passed": True, "needs_memory": False}
 
 
 def test_a_probe_replaces_the_requests_message_as_the_live_request_would_send_it(full):
@@ -60,10 +65,11 @@ def test_cases_replay_their_request_and_the_report_holds_numbers_only(full):
     assert by["kept"]["passed"] and by["probe"]["passed"] and not by["missing-fact"]["passed"]
     assert by["gone"]["status"] == "missing"
     assert report["summary"]["all"] | {"tokens_mean": None} == {
-        "cases": 4, "skipped": 1, "passed": 2, "gold": 3, "held": 2, "forbidden": 2, "placed": 0, "tokens_mean": None}
+        "cases": 4, "skipped": 1, "passed": 2, "memory_cases": 3, "memory_passed": 2, "gold": 3, "held": 2,
+        "in_prompt": 0, "forbidden": 2, "placed": 0, "tokens_mean": None}
     assert report["summary"]["state"]["passed"] == 0 and report["summary"]["secret"]["passed"] == 1
     text = eval_rp.table(report)
-    assert text.splitlines()[-1].startswith("| all | 4 | 2 | 2/3 | 0/2 | 1 |")
+    assert text.splitlines()[-1].startswith("| all | 4 | 2 | 2/3 | 2/3 | 0 | 0/2 | 1 |")
     for phrase in ("forged", "dragon", "chatter", "clouds"):
         assert phrase not in text
 
@@ -80,6 +86,7 @@ def test_a_newer_extractor_generation_is_read_as_of_now(monkeypatch):
         return {"status": "ok", "text": "", "tokens": 0, "policy": policy or "packet-v4"}
 
     monkeypatch.setattr(eval_rp.audit, "replay", replay)
+    monkeypatch.setattr(eval_rp, "prompt_window", lambda conn, trace: "")
     case = [{"name": "c", "trace": "0190f3a4-1b2c-7d3e-8f40-123456789abc", "query": "probe"}]
     eval_rp.evaluate(None, case, RecallOptions())
     eval_rp.evaluate(None, case, RecallOptions(), extractor="extract-new", budget=800)

@@ -14,9 +14,11 @@ DIR/cases.json:
       "gold": ["<a phrase the packet must hold>", ["<a phrase>", "<or another wording of it>"]],
       "forbidden": ["<a phrase it must not hold: stale, irrelevant, kept from the one asking>"]}]
 
-A case passes when the packet holds every gold phrase (any wording of it) and no forbidden one; phrases match
-case- and space-insensitively. A forbidden phrase is what must not be presented as current: the earlier version a
-packet-v5 line names ("; before, turn N: …", ADR 0038) does not count against it. Categories are free text; PHASE-11 uses state, past, promise, goal, question,
+A case passes when the model has every gold phrase (any wording of it) and the packet holds no forbidden one; phrases
+match case- and space-insensitively. The model has a phrase when the packet holds it or the messages the request's
+prompt already held do (the recorded `in_context` window): memory leaves those out on purpose (D3), so a gold answer
+there is not missing. The report counts both. A forbidden phrase is what must not be presented as current: the
+earlier version a packet-v5 line names ("; before, turn N: …", ADR 0038) does not count against it. Categories are free text; PHASE-11 uses state, past, promise, goal, question,
 threat, debt, relationship, address, secret, why and irrelevant. The request is compiled again as of its own
 time (ADR 0027 replay); `--extractor` names a newer extractor generation, and the request is then compiled as
 of now with that generation's facts, as `eval_secrets.py build` does; `--policy` and `--budget` replace the
@@ -53,15 +55,35 @@ def norm(text: str) -> str:
 BEFORE = re.compile(r"; before, turn -?\d+: [^<]*")  # packet-v5: what a standing fact replaced, and how it started
 
 
-def score(case: dict[str, Any], text: str) -> dict[str, Any]:
-    """How a packet's text answers one case: gold phrases held, forbidden ones placed as current, pass."""
-    held, packet, current = [], norm(text), norm(BEFORE.sub("", text))
+def score(case: dict[str, Any], text: str, prompt: str = "") -> dict[str, Any]:
+    """How a packet's text answers one case: gold phrases the model has (in the packet, or in the prompt's own
+    messages: `prompt`), forbidden ones placed as current, pass."""
+    held, in_prompt, packet, current, window = [], 0, norm(text), norm(BEFORE.sub("", text)), norm(prompt)
     for phrase in case.get("gold") or []:
-        wordings = [phrase] if isinstance(phrase, str) else list(phrase)
-        held.append(any(norm(w) in packet for w in wordings if w.strip()))
+        wordings = [norm(w) for w in ([phrase] if isinstance(phrase, str) else phrase) if w.strip()]
+        if any(w in packet for w in wordings):
+            held.append(True)
+        elif window and any(w in window for w in wordings):
+            held.append(True)
+            in_prompt += 1
+        else:
+            held.append(False)
     placed = [norm(p) in current for p in case.get("forbidden") or [] if p.strip()]
-    return {"gold": len(held), "held": sum(held), "forbidden": len(placed), "placed": sum(placed),
-            "passed": all(held) and not any(placed)}
+    # a case needs memory when one of its gold phrases is in no wording in the prompt's own messages
+    needs = any(not any(norm(w) in window for w in ([g] if isinstance(g, str) else g) if w.strip())
+                for g in case.get("gold") or [])
+    return {"gold": len(held), "held": sum(held), "in_prompt": in_prompt, "forbidden": len(placed),
+            "placed": sum(placed), "passed": all(held) and not any(placed), "needs_memory": needs}
+
+
+def prompt_window(conn: psycopg.Connection, trace: UUID) -> str:
+    """The text of the messages the request's prompt already held (its `in_context` ids, at its head)."""
+    rows = conn.execute(
+        "SELECT sr.content FROM retrieval_trace t JOIN active_membership am ON am.commit_id = t.commit_id"
+        " JOIN source_revision sr ON sr.id = am.source_revision_id JOIN source_object so ON so.id = sr.source_object_id"
+        " WHERE t.id = %s AND so.host_logical_id = ANY(SELECT jsonb_array_elements_text(t.in_context))"
+        " AND am.position <= t.upto_position", (trace,)).fetchall()
+    return "\n".join(r["content"] or "" for r in rows)
 
 
 def options(conn: psycopg.Connection, use_vectors: bool) -> RecallOptions:
@@ -85,7 +107,8 @@ def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: Recall
         if out is None or out["status"] != "ok":
             results.append({**row, "status": "missing" if out is None else out["status"]})
             continue
-        results.append({**row, "status": "ok", "tokens": out["tokens"], "policy": out["policy"], **score(case, out["text"])})
+        results.append({**row, "status": "ok", "tokens": out["tokens"], "policy": out["policy"],
+                        **score(case, out["text"], prompt_window(conn, UUID(case["trace"])))})
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in results:
         groups[r["category"]].append(r)
@@ -93,8 +116,11 @@ def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: Recall
     summary = {}
     for name, rows in groups.items():
         ok = [r for r in rows if r["status"] == "ok"]
+        memory = [r for r in ok if r["needs_memory"]]
         summary[name] = {"cases": len(rows), "skipped": len(rows) - len(ok), "passed": sum(r["passed"] for r in ok),
+                         "memory_cases": len(memory), "memory_passed": sum(r["passed"] for r in memory),
                          "gold": sum(r["gold"] for r in ok), "held": sum(r["held"] for r in ok),
+                         "in_prompt": sum(r["in_prompt"] for r in ok),
                          "forbidden": sum(r["forbidden"] for r in ok), "placed": sum(r["placed"] for r in ok),
                          "tokens_mean": round(sum(r["tokens"] for r in ok) / len(ok)) if ok else None}
     return {"cases": results, "summary": summary}
@@ -102,11 +128,13 @@ def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: Recall
 
 def table(report: dict[str, Any]) -> str:
     """The summary as a markdown table: numbers only, no phrase of any case."""
-    rows = ["| Category | cases | passed | gold held | forbidden placed | skipped | mean tokens |",
-            "|---|---:|---:|---:|---:|---:|---:|"]
+    rows = ["| Category | cases | passed | needing memory: passed | gold held | of it in the prompt | forbidden placed"
+            " | skipped | mean tokens |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for name, s in sorted(report["summary"].items(), key=lambda kv: (kv[0] == "all", kv[0])):
-        rows.append(f"| {name} | {s['cases']} | {s['passed']} | {s['held']}/{s['gold']} | {s['placed']}/{s['forbidden']}"
-                    f" | {s['skipped']} | {s['tokens_mean'] if s['tokens_mean'] is not None else '—'} |")
+        rows.append(f"| {name} | {s['cases']} | {s['passed']} | {s['memory_passed']}/{s['memory_cases']}"
+                    f" | {s['held']}/{s['gold']} | {s['in_prompt']} | {s['placed']}/{s['forbidden']} | {s['skipped']}"
+                    f" | {s['tokens_mean'] if s['tokens_mean'] is not None else '—'} |")
     return "\n".join(rows)
 
 
