@@ -537,14 +537,26 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     return out
 
 
+def _prior(f: dict[str, Any]) -> list[dict[str, Any]]:
+    """A standing fact's earlier statements of the same predicate with another value, not denials, oldest first."""
+    if f["predicate"] not in STANDING:
+        return []
+    return [h for h in f.get("history") or () if h["position"] < f["position"] and h["predicate"] == f["predicate"]
+            and h["polarity"] == "positive" and _norm(h["value"]) != _norm(f.get("value"))]
+
+
 def earlier(f: dict[str, Any]) -> dict[str, Any] | None:
     """The version a standing fact replaced (ADR 0038): the latest earlier statement in its history, of the same
     predicate, with another value and not a denial. For a relationship that may be the other direction."""
-    if f["predicate"] not in STANDING:
-        return None
-    prior = [h for h in f.get("history") or () if h["position"] < f["position"] and h["predicate"] == f["predicate"]
-             and h["polarity"] == "positive" and _norm(h["value"]) != _norm(f.get("value"))]
+    prior = _prior(f)
     return prior[-1] if prior else None
+
+
+def first(f: dict[str, Any]) -> dict[str, Any] | None:
+    """How it started, when that differs from what it replaced: the earliest such statement (ADR 0038). "What did she
+    call him at first" was answered only by accident before the fold was fixed (M0)."""
+    prior = _prior(f)
+    return prior[0] if len(prior) > 1 and _norm(prior[0]["value"]) != _norm(prior[-1]["value"]) else None
 
 
 def fact_line(f: dict[str, Any], before: bool = False) -> str:
@@ -569,6 +581,9 @@ def fact_line(f: dict[str, Any], before: bool = False) -> str:
     if before and (was := earlier(f)):
         when = was["turn"] if was.get("turn") is not None else was["position"]
         text += f"; before, turn {when}: {fact_text(was)}"
+        if start := first(f):
+            when = start["turn"] if start.get("turn") is not None else start["position"]
+            text += f"; first, turn {when}: {fact_text(start)}"
     return f"    <Fact{attrs}>{escape(text)}</Fact>"
 
 

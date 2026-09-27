@@ -138,3 +138,15 @@ def test_packet_v5_names_what_a_standing_fact_replaced():
     trait = _versions([row(1, "유이", "has_status", None, "아픔", subject_type=CHAR),
                        row(2, "유이", "has_status", None, "회복함", subject_type=CHAR)])[0]
     assert earlier(trait) is None and "before" not in fact_line(trait, before=True)
+
+
+def test_packet_v5_names_how_it_started_when_that_is_not_what_it_replaced():
+    from nmos_sidecar.facts import fact_line
+
+    speech = [row(20, "유우마", "addresses", "라디아", "하십시오체", **C), row(39, "유우마", "addresses", "라디아", "반말, '라디아 누나'", **C),
+              row(64, "유우마", "addresses", "라디아", "반말, '누나'", **C)]
+    (f,) = _versions(speech)
+    assert fact_line(f, before=True).endswith(">유우마 addresses 라디아: 반말, '누나'; before, turn 39: 유우마 addresses 라디아:"
+                                              " 반말, '라디아 누나'; first, turn 20: 유우마 addresses 라디아: 하십시오체</Fact>")
+    (two,) = _versions(speech[1:])
+    assert "first" not in fact_line(two, before=True)  # what it replaced is how it started

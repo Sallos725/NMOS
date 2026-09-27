@@ -50,7 +50,7 @@ def norm(text: str) -> str:
     return " ".join(text.casefold().split())
 
 
-BEFORE = re.compile(r"; before, turn -?\d+: [^<]*")  # packet-v5: the version a standing fact replaced (ADR 0038)
+BEFORE = re.compile(r"; before, turn -?\d+: [^<]*")  # packet-v5: what a standing fact replaced, and how it started
 
 
 def score(case: dict[str, Any], text: str) -> dict[str, Any]:
