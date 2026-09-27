@@ -142,11 +142,14 @@ def test_secret_text_is_the_fact_line():
 
 import re  # noqa: E402
 
+import pytest  # noqa: E402
+
 from conftest import make_client  # noqa: E402
 from simchat import SimChat  # noqa: E402
-from test_extraction import facts  # noqa: E402
+from test_extraction import drain, facts  # noqa: E402
 from test_generations import LLM  # noqa: E402
 from test_hints import Recorder, step  # noqa: E402
+from test_sidecar_integration import sync  # noqa: E402
 
 KEPT = re.compile(r"(?P<who>[A-Z]\w+) secretly plans to (?P<what>[^,]+), hidden from (?P<from>[A-Z]\w+)\.")
 FOUND = re.compile(r"(?P<who>[A-Z]\w+) found out: (?P<what>[^.]+)\.")  # → the `secrets` check on S1
@@ -208,3 +211,73 @@ def test_a_reveal_ends_the_secret_until_its_turn_is_deleted(migrated, db):
         assert goal["hidden_from"] == ["Blanc"] and not goal.get("revealed") and goal["known_by"] == ["Elpi", "{{user}}"]
         page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
         assert "Blanc: <span class=\"warn\">does not know yet</span>" in page
+
+
+# --- open findings of the 2026-09-27 audit (docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md) -----------------
+# strict xfail: each fails today at its last assertion; a fix turns it into XPASS, which fails the run until the
+# marker is removed.
+
+AUDIT = "docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md"
+
+
+def goal_of(c, chat) -> dict:
+    return next(f for f in facts(c, chat) if f["predicate"] == "goal")
+
+
+@pytest.mark.xfail(strict=True, reason=f"audit G1 ({AUDIT}): a reveal is linked by turn and head, "
+                   "so it carries over to a different secret after the secret's own turn is edited")
+def test_a_reveal_does_not_carry_over_to_a_different_secret_after_its_turn_is_edited(migrated, db):
+    model, chat = SecretRecorder(), SimChat()
+    with make_client(migrated, **LLM) as c:
+        step(c, migrated, chat, model, "Elpi secretly plans to watch the lecture, hidden from Blanc.")
+        for i in range(4):  # the reveal falls outside the edited turn's context (extract_turns = 3)
+            step(c, migrated, chat, model, f"Blanc reads chapter {i}.")
+        step(c, migrated, chat, model, "Blanc found out: Elpi goal: watch the lecture.")
+        step(c, migrated, chat, model, "next")
+        assert [r["to"] for r in goal_of(c, chat)["revealed"]] == ["Blanc"]
+        chat.edit(0, "Elpi secretly plans to steal the diamond, hidden from Blanc.")
+        sync(c, chat)
+        drain(migrated, model)
+        goal = goal_of(c, chat)
+        assert goal["value"] == "steal the diamond"
+        assert goal["hidden_from"] == ["Blanc"] and not goal.get("revealed")  # Blanc learned of the lecture only
+
+
+FIRST_IMPORT = ("Elpi secretly plans to watch the lecture, hidden from Blanc.", "Blanc drinks coffee.",
+                "Blanc found out: Elpi goal: watch the lecture.", "Blanc smiles.")
+
+
+def first_import(c, migrated, model) -> tuple[SimChat, str]:
+    """K29: four complete turns seen at once; the reveal is extracted before the secret and matches nothing."""
+    chat = SimChat()
+    for line in FIRST_IMPORT:
+        chat.user(line)
+        chat.reply("Noted.")
+    sync(c, chat)
+    drain(migrated, model)
+    assert goal_of(c, chat)["hidden_from"] == ["Blanc"]
+    conv = next(x for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)["id"]
+    return chat, conv
+
+
+@pytest.mark.xfail(strict=True, reason=f"audit G2 ({AUDIT}): Extract all history skips turns already "
+                   "compiled, so the K29 workaround re-extracts nothing")
+def test_extract_all_history_recovers_a_reveal_missed_on_first_import(migrated, db):
+    model = SecretRecorder()
+    with make_client(migrated, **LLM) as c:
+        chat, conv = first_import(c, migrated, model)
+        c.post(f"/v1/conversations/{conv}/extract-history")
+        drain(migrated, model)
+        assert [r["to"] for r in (goal_of(c, chat).get("revealed") or [])] == ["Blanc"]
+
+
+def test_rebuild_recovers_a_reveal_missed_on_first_import(migrated, db):
+    """K29's workaround: Rebuild re-extracts every turn, and one worker takes them oldest first."""
+    model = SecretRecorder()
+    with make_client(migrated, **LLM) as c:
+        chat, conv = first_import(c, migrated, model)
+        out = c.post(f"/v1/conversations/{conv}/rebuild").json()
+        assert out["discarded"] == out["queued"]["extract"] > 0
+        drain(migrated, model)
+        goal = goal_of(c, chat)
+        assert not goal.get("hidden_from") and [r["to"] for r in goal["revealed"]] == ["Blanc"]

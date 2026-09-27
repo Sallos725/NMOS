@@ -305,3 +305,18 @@ def test_an_unexpected_job_error_fails_the_job_and_the_worker_goes_on(llm_client
     rows = db.execute("SELECT status, last_error FROM job ORDER BY last_error NULLS LAST").fetchall()
     assert rows[0]["status"] == "queued" and "TypeError" in rows[0]["last_error"]  # retried later (backoff)
     assert [r["status"] for r in rows[1:]] == ["done"] * (total - 1)
+
+
+@pytest.mark.xfail(strict=True, reason="audit G3 (docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md): "
+                   "a non-list `assertions` becomes [] and the turn counts as compiled")
+def test_a_malformed_assertions_field_is_not_a_compiled_turn(llm_client, migrated, db):
+    chat = SimChat()
+    chat.user("Hinata is in the old chapel.")
+    chat.reply("ok")
+    chat.user("next")
+    sync(llm_client, chat)
+    drain(migrated, lambda system, user: ({"assertions": "invalid schema"}, "{}"))
+    conv = next(x for x in llm_client.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)["id"]
+    cov = llm_client.get(f"/v1/conversations/{conv}/coverage").json()["extraction"]
+    assert cov["eligible"] == 1
+    assert cov["compiled"] == 0  # an invalid answer is not an empty one
