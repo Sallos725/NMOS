@@ -95,7 +95,9 @@ in front of those it is kept from. A chat can choose a strict packet or a first-
 - [ ] Response-model tier on the owner's real-chat cases (outside the repository), Opus 5.5 and Gemini 3.1 Pro,
       budget agreed first: no leak in any case whose fact marks whom it is kept from; the holder remembers the
       secret whenever the scene calls for it (never below the pilot's `packet-v2` rate); slips reported
-      separately (Q4).
+      separately (Q4). **Run 2026-09-27** (`docs/perf/secrets-eval.md` §6): no leak in 39 replies; Opus recalls
+      6 of 6 under `packet-v4`; Gemini's narration showed the holder's memory in D1 0 of 3 under `packet-v4`
+      (pilot 2 of 2): below the pilot's rate for that model and scene, owner to decide.
 - [x] Retrieve latency at 10,000 messages within +5 ms p50 of `v0.1.0-beta.21` (+0.5–0.7 ms,
       `docs/perf/secrets-eval.md`).
 - [x] Real-host smoke on an isolated PocketRisu: per-chat mode set in the panel reaches the sidecar and the

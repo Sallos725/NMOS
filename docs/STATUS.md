@@ -13,7 +13,9 @@ Step 6 done: the Inspector shows a chat's secrets (who knows, kept from whom, wh
 that matched nothing, and the last request's scene cast and memory mode. Outside the steps (owner request): the sidecar tells whether the plugin in use is its own build (ADR 0037,
 D47, K19). Step 7 in progress: seven synthetic secret cases in CI, `tools/eval_secrets.py`, latency within
 bound; they found two faults, fixed (ADR 0033 amendment 1: who found out counts as knowing; K29 recorded). The
-response-model tier waits for the owner's budget (`docs/perf/secrets-eval.md`). No release (owner).
+response-model tier ran on the owner's keys (Opus 18 calls $3.04, Gemini 21 calls 3.0M prompt tokens): no leak in
+39 replies, Opus recalls 6 of 6 under `packet-v4`, Gemini's narration showed the holder's memory in D1 0 of 3
+(pilot 2 of 2), for the owner to judge (`docs/perf/secrets-eval.md` §6). No release (owner).
 
 **Phase 9 — Accountable Packets: complete (2026-09-26), released in `v0.1.0-beta.19`.** The owner asked for
 the work on a new branch and approved the merge after review. Spec `docs/phases/PHASE-9.md` (Track B, B6

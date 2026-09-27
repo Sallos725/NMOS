@@ -31,7 +31,9 @@ packet as the request carried it). `build` replays the trace (ADR 0027) as of no
 newer extractor generation than the one recorded, else as of the request. Without a trace it gathers at the
 user message on the conversation's head, with the `context` messages before it as the host's window. Echo is a surface measure: a reply
 that reuses a watched secret's words either leaks it or recalls it, and only a reader can tell which; label
-them in DIR/labels.json as {"<request name>": {"<watch id>": "leak" | "slip" | "recall" | "kept"}}.
+them in DIR/labels.json as {"<request name>": {"<watch id>": ["leak" | "slip" | "recall", …]}}: `leak`, a character it
+is kept from is told or shown it; `slip`, a hint or a near miss (a holder blurting, "it's a secret"); `recall`, a
+holder shows they know it (in words to another holder, thoughts or narration). An empty list is kept, not recalled.
 """
 
 from __future__ import annotations
@@ -273,14 +275,18 @@ def report(args: argparse.Namespace) -> None:
             continue
         reply = reply_of(json.loads(path.read_text()))
         row = rows.setdefault(m["condition"], {"replies": 0, "watched": 0, "echoed": 0, "leak": 0, "slip": 0,
-                                               "recall": 0, "kept": 0, "unlabeled": 0})
+                                               "recall": 0, "unlabeled": 0})
         row["replies"] += 1
         for w in cases[m["case"]].get("watch", []):
             row["watched"] += 1
             row["echoed"] += reuse(w["text"], reply) >= ECHO
-            label = (labels.get(m["name"]) or {}).get(w["id"])
-            row[label if label in ("leak", "slip", "recall", "kept") else "unlabeled"] += 1
-    keys = ["replies", "watched", "echoed", "leak", "slip", "recall", "kept", "unlabeled"]
+            given = (labels.get(m["name"]) or {}).get(w["id"])
+            if given is None:
+                row["unlabeled"] += 1
+            for label in ([given] if isinstance(given, str) else given or []):
+                if label in ("leak", "slip", "recall"):
+                    row[label] += 1
+    keys = ["replies", "watched", "echoed", "leak", "slip", "recall", "unlabeled"]
     print("| condition | " + " | ".join(keys) + " |")
     print("|---|" + "---:|" * len(keys))
     for cond, row in rows.items():
