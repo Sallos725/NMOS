@@ -28,8 +28,9 @@ DIR/cases.json:
 
 A condition is a packet policy, optionally with `+strict` or `+narrator=<name>` (ADR 0035), or `recorded` (the
 packet as the request carried it). `build` replays the trace (ADR 0027) as of now when `--extractor` names a
-newer extractor generation than the one recorded, else as of the request. Without a trace it gathers at the
-user message on the conversation's head, with the `context` messages before it as the host's window. Echo is a surface measure: a reply
+newer extractor generation than the one recorded, else as of the request. Without a trace it gathers on the
+conversation's head as of the message before the user message (the request's own turn is extracted only after
+its reply), with the `context` messages before it as the host's window. Echo is a surface measure: a reply
 that reuses a watched secret's words either leaks it or recalls it, and only a reader can tell which; label
 them in DIR/labels.json as {"<request name>": {"<watch id>": ["leak" | "slip" | "recall", …]}}: `leak`, a character it
 is kept from is told or shown it; `slip`, a hint or a near miss (a holder blurting, "it's a secret"); `recall`, a
@@ -154,8 +155,10 @@ def at_message(conn, case: dict, cond: str, extractor: str | None) -> str:
     previous = next((m for m in reversed(msgs) if m["position"] < p and m["role"] != "user"), None)
     window = {m["host_logical_id"] for m in msgs if p - case.get("context", 10) <= m["position"] <= p}
     options = dataclasses.replace(RecallOptions(), policy=policy, extractor_key=extractor, **overrides)
+    # As of the message before it: the request's own turn was extracted later, with the reply that followed,
+    # which the request could not know (a promise that reply kept would be closed already).
     g = gather(conn, head["head_commit_id"], clean_text(case.get("query") or user[0]["content"]),
-               clean_text(previous["content"]) if previous else "", window, options, upto=p)
+               clean_text(previous["content"]) if previous else "", window, options, upto=p - 1)
     budget = case.get("budget", 800)
     return compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts, policy=policy,
                          lead=g.lead, note=g.note).text

@@ -33,6 +33,11 @@ MATCH_MARGIN = 0.15
 # 그치면 등대 앞에서 만나기로 함"). Similarity would merge different promises that share words ("등대 앞에서
 # 만나기", "등대 앞에서 기다리기"), and would compare every new promise with every open one of its maker.
 RESTATE_MIN_CHARS = 4
+# packet-v4 (ADR 0019 amendment 1): a promise whose words the user's message repeats this much (share of the
+# promise's trigrams) is what the message is about. On the owner's chat, "꼬옥 안아주면…" repeated an old hug
+# promise at 0.26 while newer promises of the same girl scored 0.07 at most, and three newer ones filled the
+# thread limit.
+ABOUT_MIN = 0.2
 
 
 def _grams(text: str | None) -> set[str]:
@@ -172,12 +177,14 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None) -> tuple[list[
 
 
 def relevant_threads(threads: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],
-                     limit: int, persona: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
+                     limit: int, persona: frozenset[str] = frozenset(), about: bool = False) -> list[dict[str, Any]]:
     """Open threads whose maker or recipient is mentioned now (Q5): in the user's message first, then in
     the previous reply; newest first within each. The persona does not count as a mention (it is in
     every chat; `persona` adds the names the host reported for it, ADR 0023), and a thread whose opening
-    message is still in the prompt is left out (D3)."""
+    message is still in the prompt is left out (D3). With `about` (packet-v4), a promise whose words the
+    user's message repeats (ABOUT_MIN) comes first, mentioned or not."""
     q, ai = norm(query), norm(previous_ai)
+    q_grams = _grams(query) if about else set()
     scored = []
     for t in threads:
         if t["status"] != "open" or t.get("host_logical_id") in in_context:
@@ -185,6 +192,10 @@ def relevant_threads(threads: list[dict[str, Any]], query: str, previous_ai: str
         names = {norm(n) for n in t["names"] if n} - USER_NAMES - persona
         names = {n for n in names if len(n) >= 2}
         mention = 2 if any(n in q for n in names) else (1 if any(n in ai for n in names) else 0)
+        if about:
+            words = _grams(t.get("text"))
+            if len(words & q_grams) / max(1, len(words)) >= ABOUT_MIN:
+                mention = 3
         if mention:
             scored.append((mention, t["position"], t))
     scored.sort(key=lambda x: (x[0], x[1]), reverse=True)

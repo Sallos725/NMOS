@@ -63,3 +63,16 @@ packet slot (PHASE-7, "Evidence").
   the text is not equal (`docs/perf/phase7-extraction.md`).
 - The thresholds are set on the deterministic cases. The real-model tier (step 6) checks them on model
   output and may move them; a change is a new entry here.
+
+## Amendment 1 (2026-09-27, Phase 10 step 7): the promise the message is about comes first
+
+Relevant promises were those whose maker or recipient the request names, newest first, at most
+`NMOS_THREADS_LIMIT` (3). In the Phase 10 response-model tier (`docs/perf/secrets-eval.md` §6) the user asked the
+daughter to go and hug her mother, and the promise to do just that (turn 9, kept from the mother) was left out:
+three newer promises of the same girl (one extracted in both directions) filled the limit. The packet held the
+matching goal fact but not the promise; Opus still recalled it, Gemini's narration did not.
+
+Under `packet-v4` a promise whose words the user's message repeats (at least `ABOUT_MIN` = 0.2 of its trigrams)
+comes first, whether or not the message names its maker or recipient; the rest keep the old order. On that
+request the hug promise scored 0.26 and the others 0.07 at most. Earlier policies rank as before, so their
+recorded traces replay unchanged; `packet-v4` traces recorded before this (on `:edge` only) may not.

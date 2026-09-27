@@ -97,7 +97,8 @@ in front of those it is kept from. A chat can choose a strict packet or a first-
       secret whenever the scene calls for it (never below the pilot's `packet-v2` rate); slips reported
       separately (Q4). **Run 2026-09-27** (`docs/perf/secrets-eval.md` §6): no leak in 39 replies; Opus recalls
       6 of 6 under `packet-v4`; Gemini's narration showed the holder's memory in D1 0 of 3 under `packet-v4`
-      (pilot 2 of 2): below the pilot's rate for that model and scene, owner to decide.
+      (pilot 2 of 2): below the pilot's rate for that model and scene. Cause: the promise was left out of the
+      packet by the thread limit; fixed for `packet-v4` (ADR 0019 amendment 1); D1 to be run again.
 - [x] Retrieve latency at 10,000 messages within +5 ms p50 of `v0.1.0-beta.21` (+0.5–0.7 ms,
       `docs/perf/secrets-eval.md`).
 - [x] Real-host smoke on an isolated PocketRisu: per-chat mode set in the panel reaches the sidecar and the

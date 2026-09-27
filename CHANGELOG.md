@@ -81,6 +81,10 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
   600-token packet placed 66% of the memory lines retrieval found, 800 places 89%, and 1000 all of them
   (`docs/perf/memory-mode.md`). If you left **기억 예산(토큰) / Memory budget (tokens)** empty, lower PocketRisu's
   max context by 200 more.
+- **The promise your message is about is remembered first** (ADR 0019 amendment 1). Promises were chosen by who
+  is named, newest first, three at most, so newer promises could push out the one the scene is about (asking a
+  child to go and hug her mother dropped her old promise to do just that). Under the default `packet-v4` a
+  promise whose words your message repeats now comes first.
 - **A character who found out a secret now counts as knowing it** (ADR 0033 amendment 1). Before, with them in
   the scene the fact still went to the Private section with its rule telling them not to act on it, strict
   mode withheld it from them, and as a first-person narrator they were not given it. Found by the Phase 10
