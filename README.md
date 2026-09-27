@@ -287,8 +287,11 @@ LLM or embedding endpoint that is remote. `docker compose down -v` deletes all N
   them behind a public reverse proxy.
 - **Set a token before binding beyond loopback.** If you set `NMOS_SIDECAR_BIND` to a LAN or Tailscale
   address, also set `NMOS_AUTH_TOKEN` and the plugin's `auth_token`. Without a token, anyone who
-  can reach the port can read your stored chats and change settings — including pointing the LLM
-  endpoint at their own server, which would then receive your stored API key.
+  can reach the port can read your stored chats and change settings.
+- **A saved API key is only sent to the host it was saved for.** A connection test or model list for
+  another host goes without it, and saving an endpoint on another host drops the saved key: enter the
+  key again. (Up to `0.1.0-beta.21`, a test, a model list or a changed endpoint sent the saved key to
+  whatever URL it named.)
 - **Without a token, the sidecar answers only to known host names** (ADR 0030). It accepts requests
   addressed to an IP address, `localhost` or a single-label name such as `nmos` or `sidecar`. Anything
   else gets HTTP 400: a web page using DNS rebinding reaches the sidecar only under its own domain name,

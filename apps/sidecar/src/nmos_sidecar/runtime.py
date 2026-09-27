@@ -1,7 +1,9 @@
 """Runtime configuration: environment defaults overridden by values saved from the plugin UI.
 
 Only these keys are editable at runtime; everything else (database, bind address, auth) stays in the
-environment. API keys are write-only through the API.
+environment. API keys are write-only through the API, and a saved key is only ever sent to the host it was
+saved for: a connection test or model list for another host goes without it, and moving an endpoint to another
+host drops it.
 """
 
 from __future__ import annotations
@@ -10,6 +12,7 @@ import dataclasses
 import json
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -27,6 +30,7 @@ EDITABLE: dict[str, type] = {
     "extract_backfill": int,
 }
 SECRET = {"llm_api_key", "embed_api_key"}
+KEY_HOSTS = {"llm_api_key": "llm_url", "embed_api_key": "embed_url"}  # each key belongs to its endpoint's host
 RANGES = {"recall_threshold": (0.05, 1.0), "vector_min_sim": (0.0, 1.0), "recall_top_k": (0, 20),
           "facts_limit": (0, 30), "events_limit": (0, 30), "threads_limit": (0, 10), "extract_backfill": (0, 5000)}
 PARSERS_KEY = "parsers"
@@ -39,6 +43,49 @@ def stored(conn: psycopg.Connection) -> dict[str, Any]:
 def effective(base: Settings, overrides: dict[str, Any]) -> Settings:
     changes = {k: v for k, v in overrides.items() if k in EDITABLE}
     return dataclasses.replace(base, **changes)
+
+
+def origin(url: str) -> str:
+    """The host an API key belongs to: scheme, host name and port of an endpoint URL."""
+    parts = urlsplit(url.strip())
+    scheme = parts.scheme.lower()
+    try:
+        port = parts.port
+    except ValueError:
+        port = None
+    return f"{scheme}://{(parts.hostname or '').lower()}:{port or {'http': 80, 'https': 443}.get(scheme)}"
+
+
+def saved_key_for(url: str, saved_url: str, saved_key: str) -> str:
+    """The saved key when `url` is on the host it was saved for (or empty: the saved endpoint), else none."""
+    return saved_key if not url or origin(url) == origin(saved_url) else ""
+
+
+def withheld_note(saved_url: str) -> str:
+    return f" (the saved API key is only sent to {origin(saved_url)}; enter the key to use it with this host)"
+
+
+def keys_follow_hosts(base: Settings, overrides: dict[str, Any], clean: dict[str, Any]) -> dict[str, Any]:
+    """`clean` with each saved API key dropped when the update moves its endpoint to another host without a
+    new key; the environment's key comes back when the endpoint returns to the environment's host."""
+    merged = dict(overrides)
+    for key, value in clean.items():
+        if value is None:
+            merged.pop(key, None)
+        else:
+            merged[key] = value
+    before, after = effective(base, overrides), effective(base, merged)
+    out = dict(clean)
+    for key, url in KEY_HOSTS.items():
+        host = origin(getattr(after, url))
+        if key in clean or host == origin(getattr(before, url)):
+            continue
+        if host == origin(getattr(base, url)):
+            if key in merged:
+                out[key] = None  # back on the environment's host: its key applies again
+        elif getattr(after, key):
+            out[key] = ""
+    return out
 
 
 def ruleset(base: Settings, overrides: dict[str, Any]) -> RuleSet:
