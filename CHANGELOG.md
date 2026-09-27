@@ -14,6 +14,15 @@ decision on K26, extractor generations `extract-v11` (A-12, A-14) and `extract-v
 packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no restatements), per-chat memory modes
 (Phase 10), the default memory budget 800 and a notice when memory did not fit, and a new text normalizer `clean-v3` (K27). Schema: migration 0021 (applied at startup).
 
+- **Fixes from the 2026-09-27 audit** (`docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md`, ADR 0033
+  amendment 2):
+  - A reveal no longer carries over to a different secret after the secret's turn is edited (G1). Blanc, who
+    found out one plan, counted as knowing whatever plan that turn was edited into. A reveal now links by turn
+    only while that turn reads as it did; otherwise it must match by content, or it is shown as unrevealed.
+  - "Extract all history" now recovers a reveal missed when a chat was first connected (K29, G2): it extracts
+    again the turns extracted before an earlier turn's secret, oldest first. Before, it skipped them.
+  - A model answer without an `assertions` list fails the job (retried, then counted failed) instead of
+    counting as a turn with nothing to extract (G3; in every release since `v0.1.0-beta.1`).
 - **The sidecar's access log no longer shows the auth token** (audit A-11). The Inspector opened in a browser
   tab passes the token as `?token=` on every link, and uvicorn logged each request line with it. The log now
   shows `token=***`. The token still stays in that browser's history (K21); the panel's Inspector tab sends
