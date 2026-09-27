@@ -22,6 +22,8 @@ class Conversation:
     id: UUID
     head_commit_id: UUID | None
     head_manifest_hash: str | None
+    memory_strict: bool = False  # per-chat memory mode (ADR 0035)
+    memory_narrator: str | None = None
 
 
 @dataclass
@@ -62,10 +64,12 @@ def lock_conversation(conn: psycopg.Connection, host: str, chat_ref: str, charac
 
 def find_conversation(conn: psycopg.Connection, host: str, chat_ref: str) -> Conversation | None:
     row = conn.execute(
-        "SELECT id, head_commit_id, head_manifest_hash FROM conversation WHERE host = %s AND host_chat_ref = %s",
+        "SELECT id, head_commit_id, head_manifest_hash, memory_strict, memory_narrator FROM conversation"
+        " WHERE host = %s AND host_chat_ref = %s",
         (host, chat_ref),
     ).fetchone()
-    return Conversation(row["id"], row["head_commit_id"], row["head_manifest_hash"]) if row else None
+    return Conversation(row["id"], row["head_commit_id"], row["head_manifest_hash"], row["memory_strict"],
+                        row["memory_narrator"]) if row else None
 
 
 def entry_from_metadata(logical_id: str, rev_hash: str, meta: dict[str, Any]) -> Entry:

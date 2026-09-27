@@ -30,7 +30,7 @@ from .ids import uuid7
 from .models import (
     BodiesRequest,
     BodiesResponse,
-    EntityLinkRequest,
+    EntityLinkRequest, MemoryModeRequest,
     OutputRequest,
     Packet,
     ReconcileRequest,
@@ -459,6 +459,33 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             view = (memory_view(conn, conv["head_commit_id"], rt["active_extractor"])
                     if conv["head_commit_id"] else {"entities": []})
         return view["entities"]
+
+    @app.get("/v1/conversations/{conv_id}/memory-mode", dependencies=[Depends(auth)])
+    def get_memory_mode(conv_id: UUID, request: Request):
+        """This chat's memory mode (ADR 0035), and the characters a narrator can be chosen from."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            names: list[str] = []
+            if conv["head_commit_id"] is not None:
+                r = memory_view(conn, conv["head_commit_id"], rt["active_extractor"])["resolution"]
+                names = [e["name"] for e in (r.entities() if r else []) if e["type"] == "character" and not e.get("persona")]
+            return {"strict": conv["memory_strict"], "narrator": conv["memory_narrator"], "characters": names}
+
+    @app.put("/v1/conversations/{conv_id}/memory-mode", dependencies=[Depends(auth)])
+    def put_memory_mode(conv_id: UUID, body: MemoryModeRequest, request: Request):
+        """Set this chat's memory mode (ADR 0035): owner input, read by every request of the chat from then on
+        and recorded with each trace."""
+        narrator = (body.narrator or "").strip() or None
+        with request.app.state.pool.connection() as conn, conn.transaction():
+            row = conn.execute("UPDATE conversation SET memory_strict = %s, memory_narrator = %s WHERE id = %s"
+                               " RETURNING memory_strict, memory_narrator", (body.strict, narrator, conv_id)).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+        log.info("memory mode conversation=%s strict=%s narrator=%s", conv_id, row["memory_strict"],
+                 "set" if row["memory_narrator"] else "none")
+        return {"strict": row["memory_strict"], "narrator": row["memory_narrator"]}
 
     @app.post("/v1/conversations/{conv_id}/entity-links", dependencies=[Depends(auth)])
     def add_entity_link(conv_id: UUID, body: EntityLinkRequest, request: Request):

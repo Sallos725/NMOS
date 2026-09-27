@@ -147,7 +147,7 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     if opts.embedder is not None and g.vector_note != "on":
         notes.append(f"vectors {g.vector_note}")  # an embedder that failed now cannot reproduce the request
     c = compile_lines(g.ranked, t["budget_tokens"], state=g.state, threads=g.threads, facts=g.facts, policy=policy,
-                      lead=g.lead)
+                      lead=g.lead, note=g.note)
     out = {"trace": str(t["id"]), "status": "ok", "policy": policy, "recorded_policy": t["policy"],
            "text": c.text, "tokens": c.tokens, "lines": c.ledger, "notes": notes}
     if policy == t["policy"] and not notes:

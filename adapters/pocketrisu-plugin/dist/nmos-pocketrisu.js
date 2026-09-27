@@ -7,7 +7,7 @@
 //@arg sidecar_url string NMOS sidecar URL (empty = http://127.0.0.1:8790)
 //@arg auth_token string Optional; only if the sidecar sets NMOS_AUTH_TOKEN
 //@arg disabled int 1 = pass every request through untouched
-//@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 600)
+//@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 800)
 //@arg deadline_ms int Hard request-path deadline in ms (0 = 3000)
 //@arg inject_position string before_last_user (default) or end
 //@arg route string auto (default) / direct / server — how to reach the sidecar
@@ -44,6 +44,7 @@
   // src/form.ts
   var DEFAULT_DEADLINE_MS = 3e3;
   var MAX_DEADLINE_MS = 3e4;
+  var DEFAULT_RESERVED_TOKENS = 800;
   var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
   var VERTEX_URL = "https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi";
   function serviceAccountProject(key) {
@@ -97,7 +98,7 @@
       sidecar_url: v.url.trim(),
       route: v.route,
       disabled: v.enabled ? 0 : 1,
-      reserved_memory_tokens: Number(v.reserved) || 600,
+      reserved_memory_tokens: Number(v.reserved) || DEFAULT_RESERVED_TOKENS,
       deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS))
     };
   }
@@ -212,6 +213,27 @@
     "link.none": ["\uD569\uCE60 \uC218 \uC788\uB294 \uAC19\uC740 \uC885\uB958\uC758 \uB300\uC0C1\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No other entity of this type."],
     "link.done": ['"{a}"\uC640(\uACFC) "{b}"\uB97C \uD569\uCCE4\uC2B5\uB2C8\uB2E4.', 'Joined "{a}" and "{b}".'],
     "link.removed": ["\uC5F0\uACB0\uC744 \uD574\uC81C\uD588\uC2B5\uB2C8\uB2E4.", "Link undone."],
+    "mode.title": ["\uAE30\uC5B5 \uBAA8\uB4DC (\uC774 \uCC44\uD305)", "Memory mode (this chat)"],
+    "mode.sub": [
+      '\uBE44\uBC00\uCC98\uB7FC \uC77C\uBD80 \uC778\uBB3C\uB9CC \uC544\uB294 \uAE30\uC5B5\uC744 \uC5B4\uB5BB\uAC8C \uB123\uC744\uC9C0 \uC815\uD569\uB2C8\uB2E4. \uAE30\uBCF8\uAC12\uC740 "\uC544\uB294 \uC778\uBB3C\uB9CC \uC548\uB2E4"\uB294 \uADDC\uCE59\uACFC \uD568\uAED8 \uB123\uB294 \uAC83\uC785\uB2C8\uB2E4.',
+      "How memory that only some characters know, such as a secret, is given to the model. By default it is given with a rule that only its holders know it."
+    ],
+    "mode.strict": ["\uC5C4\uACA9 \uBAA8\uB4DC: \uC7A5\uBA74\uC758 \uBAA8\uB450\uAC00 \uC544\uB294 \uAC83\uB9CC \uB123\uAE30", "Strict: give only what everyone in the scene knows"],
+    "mode.strict_sub": [
+      '\uC7A5\uBA74\uC5D0 \uBAA8\uB974\uB294 \uC778\uBB3C\uC774 \uC788\uC73C\uBA74 \uBE44\uBC00\uC758 \uB0B4\uC6A9 \uB300\uC2E0 "\uB204\uAC00 \uBB34\uC5B8\uAC00\uB97C \uC228\uAE30\uACE0 \uC788\uB2E4"\uB9CC \uB123\uC2B5\uB2C8\uB2E4. \uC0C8\uC5B4 \uB098\uAC08 \uC77C\uC740 \uC904\uC9C0\uB9CC, \uBE44\uBC00\uC744 \uAC00\uC9C4 \uC778\uBB3C\uB3C4 \uB0B4\uC6A9\uC744 \uB5A0\uC62C\uB9AC\uC9C0 \uBABB\uD569\uB2C8\uB2E4.',
+      'When someone in the scene does not know it, only "someone keeps something" is given, not the content. Leaks become rarer, but the holders cannot recall the content either.'
+    ],
+    "mode.narrator": ["1\uC778\uCE6D \uD654\uC790", "First-person narrator"],
+    "mode.narrator_sub": [
+      "\uC774 \uCC44\uD305\uC744 \uD55C \uC778\uBB3C\uC758 1\uC778\uCE6D\uC73C\uB85C \uC4F4\uB2E4\uBA74 \uACE0\uB974\uC138\uC694. \uADF8 \uC778\uBB3C\uC774 \uBAA8\uB974\uB294 \uAE30\uC5B5\uC740 \uB123\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "Pick one if this chat is told in one character's first person: memory that character does not know is left out."
+    ],
+    "mode.narrator_none": ["\uC5C6\uC74C (3\uC778\uCE6D\xB7\uC804\uC9C0\uC801 \uC2DC\uC810)", "None (third person or omniscient)"],
+    "mode.narrator_user": ["\uC720\uC800 \uCE90\uB9AD\uD130 (\uB098)", "The user's character (me)"],
+    "mode.save": ["\uC800\uC7A5", "Save"],
+    "mode.on": ["\uCF2C", "on"],
+    "mode.off": ["\uB054", "off"],
+    "mode.saved": ["\uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. \uC5C4\uACA9 \uBAA8\uB4DC: {s}, 1\uC778\uCE6D \uD654\uC790: {n}. \uB2E4\uC74C \uC0DD\uC131\uBD80\uD130 \uC801\uC6A9\uB429\uB2C8\uB2E4.", "Saved. Strict: {s}, narrator: {n}. Applies from the next generation."],
     "act.off": ["\uC0AC\uC2E4 \uCD94\uCD9C(\uB610\uB294 \uC784\uBCA0\uB529)\uC774 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED\uC5D0\uC11C \uCF1C\uC138\uC694.", "Fact extraction (or embeddings) is off. Turn it on in Settings."],
     // settings: connection
     "conn.title": ["\uC5F0\uACB0", "Connection"],
@@ -1536,10 +1558,12 @@ html,body{margin:0;background:#0c0c10}
       el("details", { class: "sub help" }, el("summary", { text: L("act.help") }), el("p", { text: L("act.sub") }))
     );
     const linkCard = el("div", { class: "card", style: "display:none" });
+    const modeCard = el("div", { class: "card", style: "display:none" });
     inspectorView.append(
       el("div", { class: "btns inspbar" }, inspectorBack, inspectorRefresh),
       actions,
       actionMsg,
+      modeCard,
       linkCard,
       inspectorBody,
       inspectorAddress
@@ -1592,6 +1616,7 @@ html,body{margin:0;background:#0c0c10}
       actions.style.display = conversation ? "" : "none";
       const shownEntity = inspectorEntity(path);
       if (!shownEntity) linkCard.style.display = "none";
+      if (!conversation || shownEntity) modeCard.style.display = "none";
       if (again) {
         inspectorBody.classList.add("busy");
       } else {
@@ -1611,6 +1636,7 @@ html,body{margin:0;background:#0c0c10}
         if (keep) restore(keep);
         else root.scrollTop = 0;
         if (shownEntity) void showLinks(shownEntity.conversation, shownEntity.entity, load);
+        else if (conversation) void showMode(conversation, load);
       } catch (error) {
         if (load !== loads) return;
         shownPath = null;
@@ -1618,6 +1644,59 @@ html,body{margin:0;background:#0c0c10}
       } finally {
         if (load === loads) inspectorBody.classList.remove("busy");
       }
+    }
+    async function showMode(conversation, load) {
+      let mode;
+      try {
+        mode = await deps.api("GET", `/v1/conversations/${conversation}/memory-mode`, void 0, 15e3);
+      } catch {
+        modeCard.style.display = "none";
+        return;
+      }
+      if (load !== loads) return;
+      const strict = el("input", { type: "checkbox" });
+      strict.checked = mode.strict;
+      const narrators = [
+        ["", L("mode.narrator_none")],
+        ["{{user}}", L("mode.narrator_user")],
+        ...mode.characters.map((n) => [n, n])
+      ];
+      if (mode.narrator && !narrators.some(([v]) => v === mode.narrator)) narrators.push([mode.narrator, mode.narrator]);
+      const narrator = el(
+        "select",
+        { "aria-label": L("mode.narrator") },
+        ...narrators.map(([value, text]) => el("option", { value, text }))
+      );
+      narrator.value = mode.narrator ?? "";
+      const save2 = el("button", { class: "primary", text: L("mode.save") });
+      const msg = el("div", { class: "msg" });
+      save2.addEventListener("click", async () => {
+        save2.disabled = true;
+        try {
+          const r = await deps.api(
+            "PUT",
+            `/v1/conversations/${conversation}/memory-mode`,
+            { strict: strict.checked, narrator: narrator.value || null },
+            15e3
+          );
+          say(msg, L("mode.saved", { s: L(r.strict ? "mode.on" : "mode.off"), n: r.narrator ?? L("mode.narrator_none") }), "ok");
+        } catch (error) {
+          say(msg, errorText(lang, error), "err");
+        } finally {
+          save2.disabled = false;
+        }
+      });
+      modeCard.replaceChildren(
+        el("h2", { text: L("mode.title") }),
+        el("p", { class: "sub", text: L("mode.sub") }),
+        el("div", { class: "check" }, strict, el("span", { text: L("mode.strict") })),
+        el("p", { class: "sub", text: L("mode.strict_sub") }),
+        el("div", { class: "row" }, field(L("mode.narrator"), narrator)),
+        el("p", { class: "sub", text: L("mode.narrator_sub") }),
+        el("div", { class: "btns" }, save2),
+        msg
+      );
+      modeCard.style.display = "";
     }
     async function showLinks(conversation, entity, load) {
       let entities;
@@ -1973,7 +2052,7 @@ html,body{margin:0;background:#0c0c10}
       url.value = await deps.getArg("sidecar_url") || "http://127.0.0.1:8790";
       route.value = await deps.getArg("route") || "auto";
       enabled.checked = Number(await deps.getArg("disabled")) !== 1;
-      reserved.value = String(Number(await deps.getArg("reserved_memory_tokens")) || 600);
+      reserved.value = String(Number(await deps.getArg("reserved_memory_tokens")) || DEFAULT_RESERVED_TOKENS);
       deadline.value = String(Number(await deps.getArg("deadline_ms")) || DEFAULT_DEADLINE_MS);
       hudBox.checked = Number(await deps.getArg("hud")) === 1;
     }
@@ -2096,7 +2175,6 @@ html,body{margin:0;background:#0c0c10}
 
   // src/host.ts
   var DEFAULT_SIDECAR_URL = "http://127.0.0.1:8790";
-  var DEFAULT_RESERVED_TOKENS = 600;
   async function arg(key) {
     return String(await risuai.getArgument(key) ?? "").trim();
   }

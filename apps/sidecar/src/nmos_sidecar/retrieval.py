@@ -5,6 +5,7 @@ Also assembles the packet sections: state (Phase 1), facts (Phase 2), excerpts.
 
 from __future__ import annotations
 
+import dataclasses
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -15,12 +16,13 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from .facts import STANDING, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
-from . import scene
+from . import scene, spans
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
-from .packet import DEFAULT_POLICY, Excerpt, Line, StateItem, clean_text, compile_lines, excerpt, kept_counts
+from .packet import (DEFAULT_POLICY, REPEATS, Excerpt, Line, StateItem, clean_text, compile_lines, excerpt,
+                     kept_counts, secret_line, secret_text)
 from .state import current_state
 from .threads import relevant_threads
 from .vectors import vector_candidates
@@ -54,11 +56,13 @@ class RecallOptions:
     vector_min_sim: float = 0.42
     query_prefix: str = ""
     policy: str = DEFAULT_POLICY  # packet compiler (ADR 0027)
+    strict: bool = False  # this chat's memory mode (ADR 0035): withhold what only some of the scene know
+    narrator: str | None = None  # this chat is told in this character's first person (ADR 0035)
 
 
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
 RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit", "vector_min_sim", "query_prefix",
-            "embed_timeout_ms", "lexical_timeout_ms")
+            "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator")
 
 
 def recorded_options(options: RecallOptions) -> dict[str, Any]:
@@ -196,6 +200,10 @@ class Gathered:
     lexical_note: str = "off"
     vector_note: str = "off"
     cast: dict[str, str] = field(default_factory=dict)  # scene cast, entity key → name (ADR 0034)
+    note: str = ""  # added to the packet's Note (a first-person narrator, ADR 0035)
+    withheld: int = 0  # lines and excerpts the chat's memory mode left out or replaced (ADR 0035)
+    withheld_lines: list[Line] = field(default_factory=list)
+    secret_pairs: set[tuple[frozenset[str], frozenset[str]]] = field(default_factory=set)  # (holders, absent) given a Secret line
 
 
 def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, in_context: set[str],
@@ -252,9 +260,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
                             _head_turn(conn, head, upto))
         if options.threads_limit > 0:
-            g.threads = [thread_entry(t, scene.private(t, g.cast, r))
-                         for t in relevant_threads(view["threads"], query, previous_ai, in_context,
-                                                   options.threads_limit, persona)]
+            g.threads = _moded([thread_entry(t, scene.private(t, g.cast, r)) for t in
+                                relevant_threads(view["threads"], query, previous_ai, in_context,
+                                                 options.threads_limit, persona)], view["threads"], g, r, options)
         if options.facts_limit > 0:
             facts = relevant_facts(view["facts"], query, previous_ai, in_context, options.facts_limit,
                                    options.events_limit, persona, scene.names(g.cast, r))
@@ -262,10 +270,55 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             claims = relevant_facts(view["claims"], query, previous_ai, in_context, max(1, options.facts_limit // 2),
                                     persona=persona)
             # How the cast stand with each other takes the budget before threads (ADR 0026).
-            g.lead = [fact_entry(f, scene.private(f, g.cast, r)) for f in facts if f["predicate"] in STANDING]
-            g.facts = ([fact_entry(f, scene.private(f, g.cast, r)) for f in facts if f["predicate"] not in STANDING]
-                       + [claim_entry(c) for c in claims])
+            g.lead = _moded([fact_entry(f, scene.private(f, g.cast, r)) for f in facts if f["predicate"] in STANDING],
+                            facts, g, r, options)
+            g.facts = _moded([fact_entry(f, scene.private(f, g.cast, r)) for f in facts
+                              if f["predicate"] not in STANDING]
+                             + [claim_entry(c, scene.private(c, g.cast, r)) for c in claims], facts + claims, g, r, options)
+        if g.withheld_lines:
+            # An excerpt that says what the mode withheld would give it back word for word.
+            kept = [e for e in g.ranked
+                    if not any(spans.reuse(line.content, e.text) >= REPEATS for line in g.withheld_lines)]
+            g.withheld += len(g.ranked) - len(kept)
+            g.ranked = kept
+        if options.narrator:
+            who = scene.display(r, options.narrator) if r is not None else options.narrator
+            g.note = f" The story is told in the first person by {who}: only what they know is listed."
     return g
+
+
+def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, options: RecallOptions) -> list[Line]:
+    """This chat's memory mode applied to offered lines (ADR 0035). A first-person narrator drops what the
+    narrator is not shown to know. Strict mode replaces a private line with a Secret line naming its holders
+    and the characters present who are not shown to know it, one per such pair."""
+    if not options.narrator and not options.strict:
+        return lines
+    by_id = {row["id"]: row for row in rows}
+    out: list[Line] = []
+    seen = g.secret_pairs
+    for line in lines:
+        row = by_id.get(line.ref.get("assertion"))
+        if row is None:
+            out.append(line)
+            continue
+        if options.narrator and not scene.narrator_knows(row, options.narrator, r):
+            g.withheld += 1
+            g.withheld_lines.append(line)
+            continue
+        if options.strict and line.private and r is not None:
+            holders, absent = scene.missing(row, g.cast, r)
+            g.withheld += 1
+            g.withheld_lines.append(line)
+            pair = (frozenset(holders), frozenset(absent))
+            if pair in seen:
+                continue
+            seen.add(pair)
+            # Not private itself: its content is withheld, so it needs no Private rule (and no room for one).
+            out.append(Line("secret", secret_line(holders, absent, line.turn), line.ref, line.turn,
+                            secret_text(holders, absent), "", {"not_known_by": absent}))
+            continue
+        out.append(line)
+    return out
 
 
 def _head_turn(conn: psycopg.Connection, head: UUID, upto: int | None = None) -> int | None:
@@ -301,10 +354,11 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     # steer lexical scores, fact relevance or excerpt focus either.
     query = clean_text(request.query or "")
     previous_ai = clean_text(request.previous_ai or "")
+    options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator)
     in_context = set(request.in_context_ids)
     g = gather(conn, head, query, previous_ai, in_context, options) if fresh else Gathered()
     compiled = compile_lines(g.ranked, request.budget_tokens, state=g.state, threads=g.threads, facts=g.facts,
-                             policy=options.policy, lead=g.lead)
+                             policy=options.policy, lead=g.lead, note=g.note)
     kept = kept_counts(compiled.ledger)
     timings = {**g.timings, "sidecar_total": round((time.perf_counter() - started) * 1000, 2)}
 
@@ -331,8 +385,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                    "state_items": len(g.state), "facts": len(g.lead) + len(g.facts), "threads": len(g.threads),
                    "kept_state": kept["state"], "kept_facts": kept["facts"], "kept_threads": kept["threads"],
                    "placed": {k: sum(1 for e in placed if e["kind"] == k)
-                              for k in ("state", "thread", "fact", "claim", "excerpt")},
-                   "scene_cast": sorted(g.cast.values()),
+                              for k in ("state", "thread", "fact", "claim", "secret", "excerpt")},
+                   "scene_cast": sorted(g.cast.values()), "memory_mode_withheld": g.withheld,
                    "embedding_projection": options.embed_projection[:20] if options.embedder else None,
                    "extractor": (options.extractor_key or "")[:20] or None,
                    **{f"client_{k}": v for k, v in request.client_timings_ms.items()}}),

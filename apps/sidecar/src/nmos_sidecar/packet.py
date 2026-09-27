@@ -23,7 +23,10 @@ NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly 
                ("<Claim ", " A Claim is what that character said, not established truth."),
                ('disputed="true"', " disputed=\"true\" marks a place where the story contradicts itself; neither"
                                    " side is certain."),
-               ("<Thread ", " A Thread is a promise made in the story and not yet kept or broken."))
+               ("<Thread ", " A Thread is a promise made in the story and not yet kept or broken."),
+               ("<Secret ", " A Secret is something its holders know and not_known_by characters are not known"
+                            " to know; its content is withheld. Holders may act as people keeping a secret; nobody"
+                            " states or hints at it."))
 MAX_EXCERPT_CHARS = 480
 
 # Markup and model reasoning that is not story: style/script blocks and <Thoughts>/<think> sections.
@@ -177,6 +180,7 @@ class Line:
     content: str = ""
     marks: dict[str, Any] = field(default_factory=dict)
     private: bool = False  # only some characters in the scene know it (packet-v3, ADR 0034)
+    private_xml: str = ""  # the line as the Private section shows it, when it differs (a claim's marks, ADR 0035)
 
 
 @dataclass
@@ -226,14 +230,25 @@ def _fit_excerpt(item: Excerpt, room: int, estimate: Callable[[str], int] = esti
     return ("cut", best) if best else None
 
 
+def secret_text(holders: list[str], missing: list[str]) -> str:
+    return f"Something known to {', '.join(holders) or 'someone'}, not known to {', '.join(missing)}."
+
+
+def secret_line(holders: list[str], missing: list[str], turn: int | None) -> str:
+    """Strict mode (ADR 0035): a line only some of the scene know, its content withheld."""
+    return (f"    <Secret holders={quoteattr(', '.join(holders) or 'someone')} not_known_by={quoteattr(', '.join(missing))}"
+            + (f' turn="{turn}"' if turn is not None else "") + f">{escape(secret_text(holders, missing))}</Secret>")
+
+
 def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateItem] | None = None,
                   threads: list[Line] | None = None, facts: list[Line] | None = None,
-                  policy: str = DEFAULT_POLICY, lead: list[Line] | None = None) -> Compiled:
+                  policy: str = DEFAULT_POLICY, lead: list[Line] | None = None, note: str = "") -> Compiled:
     """Fill the budget and record every offered line in a ledger (ADR 0027).
 
     Budget order is fixed: state, lead facts (how the cast stand with each other, ADR 0026), open threads
     (PHASE-7), facts and claims, excerpts. packet-v3 emits the kept threads and facts marked private in a
-    <Private> section after Facts, and adds PRIVATE_NOTE (ADR 0034); earlier policies ignore the mark. Lead facts open the Facts section, which the output keeps after
+    <Private> section after Facts, and adds PRIVATE_NOTE (ADR 0034); earlier policies ignore the mark. `note`
+    is added to the Note (a first-person narrator, ADR 0035) and counts as part of the frame. Lead facts open the Facts section, which the output keeps after
     Threads; excerpts are emitted in chronological order. packet-v0 fills them strictly in that order. packet-v1 and later skip excerpts that
     mostly restate an offered thread, fact or claim line (REPEATS), keeps room for the best-ranked
     remaining excerpt (EXCERPT_SHARE of the budget inside the frame; the excerpt is shortened to its best
@@ -247,7 +262,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     ledger = ([_entry("state", {"key": i.key}, i.turn, f"{i.key}: {i.value}", i.value) for i in state]
               + [_entry(l.kind, l.ref, l.turn, l.text, l.content, l.marks) for l in lead + threads + facts]
               + [_entry("excerpt", {"revision": e.revision_id}, e.turn, e.text, e.text) for e in ranked])
-    frame = [PACKET_OPEN, PACKET_NOTE, PACKET_CLOSE]
+    frame = [PACKET_OPEN, PACKET_NOTE.removesuffix("</Note>") + note + "</Note>", PACKET_CLOSE]
     used = est("\n".join(frame))
     if used >= budget_tokens:
         return Compiled("", 0, [], ledger)
@@ -293,8 +308,9 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
                 header = est("  <Private>\n  </Private>\n") if not kept_private else 0
             else:
                 header = est(f"  <{tag}>\n  </{tag}>\n") if not kept and not opened else 0
-            cost = est(line.xml + "\n") + header
-            needed = [text for mark, text in NOTE_EXTRAS if mark in line.xml and text not in extras]
+            xml = line.private_xml or line.xml if hidden else line.xml
+            cost = est(xml + "\n") + header
+            needed = [text for mark, text in NOTE_EXTRAS if mark in xml and text not in extras]
             if hidden and PRIVATE_NOTE not in extras:
                 needed.append(PRIVATE_NOTE)
             cost += sum(est(text) for text in needed)
@@ -302,7 +318,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
             if hidden:
                 entry["private"] = True
             if used + cost <= limit:
-                (kept_private if hidden else kept).append(line.xml)
+                (kept_private if hidden else kept).append(xml)
                 extras.extend(needed)
                 used += cost
                 entry["placed"], entry["why"] = True, "placed"
@@ -347,8 +363,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     if kept_private:
         body += ["  <Private>", *kept_private, "  </Private>"]
     body += [excerpt_line(e, t) for e, t in chosen]
-    note = PACKET_NOTE.removesuffix("</Note>") + "".join(extras) + "</Note>"
-    text = "\n".join([PACKET_OPEN, note, *body, PACKET_CLOSE])
+    full_note = PACKET_NOTE.removesuffix("</Note>") + note + "".join(extras) + "</Note>"
+    text = "\n".join([PACKET_OPEN, full_note, *body, PACKET_CLOSE])
     return Compiled(text, est(text), [e for e, _ in chosen], ledger)
 
 

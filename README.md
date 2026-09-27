@@ -47,7 +47,7 @@ continues without memory.
 3. Set the plugin argument `sidecar_url` to `http://127.0.0.1:8790`.
 4. **Reload the PocketRisu page.** Always reload after installing, updating or disabling a plugin —
    otherwise PocketRisu can hang on the next message (a PocketRisu bug, see ARCHITECTURE H13).
-5. Lower PocketRisu's max context by `reserved_memory_tokens` (default 600) so the packet fits.
+5. Lower PocketRisu's max context by `reserved_memory_tokens` (default 800) so the packet fits.
 
 That's it: raw recall works with no model configured. The panel's **Inspector** tab shows what NMOS
 stored and what it injected.
@@ -103,6 +103,10 @@ language after a page reload.
   generating in it again starts a new NMOS conversation. On an entity's page, **Same as another entity**
   joins it with another entity of the same type when the story never linked the two names (e.g. someone
   shown without a name and named later); **Undo** takes a join back. Joins survive a rebuild.
+  A conversation page also has a **Memory mode** card for that chat (ADR 0035): **Strict** gives only what
+  everyone in the scene knows (a secret becomes "something known to A, not known to B"; fewer leaks, but its
+  holder forgets it too), and **First-person narrator** leaves out what the narrator is not shown to know.
+  Both are off by default and apply from the next generation.
 - **Settings**: connection (sidecar URL, route, memory budget, deadline, on/off); **fact-extraction LLM**
   and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, Google Vertex AI, any
   OpenAI-compatible endpoint), model list, API key and a **connection test** that makes a real call;
@@ -255,6 +259,12 @@ before other facts and before promises. If Inspector → Retrievals shows many f
 A fact about two people comes back from both sides (since 0.1.0-beta.15, Phase 8): `Hana event: betrayed Kaito` is recalled
 when you address Kaito, not only Hana. Extraction lists the other people an event, goal, knowledge fact
 or destroyed item involves; being there is not taken as knowing.
+
+Who knows a fact matters (since Phase 10, unreleased): a fact the story keeps from someone is marked
+`hidden_from` them until the story shows them finding out (ADR 0033). What someone in the scene is not shown to
+know goes in a `<Private>` section with a rule: only its holders know it, and nobody voices it in front of
+those it is kept from (ADR 0034). The chat's memory mode can withhold it instead, or keep to a first-person
+narrator's knowledge (ADR 0035).
 
 ## Privacy
 
