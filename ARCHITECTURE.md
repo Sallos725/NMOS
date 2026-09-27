@@ -426,6 +426,11 @@ of head nouns: friends, lovers, siblings, classmates, rivals, colleagues…) rep
 own word is the persona. The default policy `packet-v5` names, on a standing fact's line, the earlier value it
 replaced and its turn.
 
+**D49 — Open business (Phase 11, ADR 0039).** Since `extract-v13` goals, questions, threats and debts are threads
+beside promises: the prompt lists OPEN THREADS, and `resolved` ends one by owner and text with an outcome (migration
+0022 stores it, and a cause the story states in `because`). Rows of earlier generations keep goals as facts. Reveals are
+applied before threads are folded, so a revealed goal or promise is revealed as a thread too.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

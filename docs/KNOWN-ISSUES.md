@@ -31,7 +31,7 @@ without a PocketRisu change.
 | K20 | Small UI delays: bot name, menu language | UI | not planned |
 | K21 | API keys and the auth token are stored in plain text | Security | host (H12) |
 | K22 | What becomes a fact depends on the extraction model's labels | Memory | measured per model (`docs/perf/phase5-extraction.md`, `phase7-extraction.md`, `phase8-extraction.md`) |
-| K23 | A promise stays open until the story keeps or breaks it in words extraction recognizes | Memory | beta.14 (ADR 0019); owner repair: Track B, B7 |
+| K23 | A thread (promise, goal, question, threat, debt) stays open until the story ends it in words extraction recognizes | Memory | beta.14 (ADR 0019), `extract-v13` (ADR 0039, unreleased); owner repair: Stage 6 |
 | K24 | A relationship change recorded under the other predicate leaves both lines current | Memory | the direction case closed on `main` (ADR 0038, unreleased); the predicate case shown with turns by design |
 | K25 | A speech level or form of address can still be missed or cut | Memory | ranking (ADR 0026) and `addresses` (ADR 0028); turns before `extract-v10`: "Extract all history" |
 | K26 | The packet's token estimate over-counts Korean, so the reserve is under-used | Recall | reduced by `packet-v2` (ADR 0032, owner decision); still conservative by design |
@@ -149,14 +149,15 @@ as actual narration becomes a fact (ADR 0013). On the tested model (`deepseek-v4
 inferred a negation from a clue the narration did not state (`docs/perf/phase5-extraction.md`). Other
 models were not measured. *Workaround:* check the Inspector's "not actual" list if a fact is missing. Since Phase 8 extraction also lists who else an event, goal, knowledge fact or destroyed item involves; in the Phase 8 check it agreed with a manual review in 83 of 87 assertions (`docs/perf/phase8-extraction.md`). Since Phase 7 each event is also labeled major or minor, which decides whether a mention alone brings it into the packet (4 of 4 major scenes 3/3; minor scenes never labeled major; `docs/perf/phase7-extraction.md`). With `extract-v8` turning points told only in words (a change of speech level or form of address, an admission) were labeled minor on the owner's chats; `extract-v9` names these categories (ADR 0024, `docs/perf/extract-v9.md`). An admission is still often recorded as the past act and labeled minor. Turns extracted before `extract-v9` keep their labels until "Extract all history".
 
-**K23 — Promises stay open until the story closes them.** Since 0.1.0-beta.14 (ADR 0019) a
-promise is an open thread until a turn keeps it (`fulfilled`) or breaks, withdraws or releases it.
-Three cases leave one open: the story forgets it (nothing closes a promise because it is old); the
-closing turn was extracted by a generation before `extract-v7`, which has no `fulfilled`; or the
-closing turn words the promise so differently that it matches no open promise, or matches two (the
-Inspector lists it under "matching no open promise"). An open promise reaches the packet only when
-its maker or recipient is mentioned, at most three at a time. *Workaround:* "Extract all history" for
-older turns; owner repair (close a promise by hand) is Track B, B7.
+**K23 — Threads stay open until the story closes them.** Since 0.1.0-beta.14 (ADR 0019) a
+promise is an open thread until a turn keeps it (`fulfilled`) or breaks, withdraws or releases it; since `extract-v13`
+(ADR 0039, on `main`) goals, questions, threats and debts are threads too, ended by `resolved`. Three cases leave one
+open: the story forgets it (nothing closes a thread because it is old); the closing turn was extracted by a generation
+that could not report it (before `extract-v7` for promises, before `extract-v13` for the rest, whose goals then stay
+facts); or the closing turn words it so differently that it matches no open thread, or matches two (the Inspector lists
+it under "Ends matching no open thread"). An open thread reaches the packet only when its owner or counterpart is
+mentioned, or the user's message is about it, at most three at a time. *Workaround:* "Extract all history" for older
+turns; owner repair (close a thread by hand) is Stage 6.
 
 **K24 — A relationship change recorded under the other predicate leaves both lines current.** Since ADR 0038
 (Phase 11, on `main`, unreleased) a `relationship` has one history per pair: a change recorded in the other

@@ -80,6 +80,12 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | speech level changed back | standing facts | **no** | **no** | **no** | yes | yes |
 | relationship changed the other way | standing facts | **no** | **no** | **no** | yes | yes |
 | what a relationship was before | standing facts | **no** | **no** | **no** | **no** | yes |
+| goal recalled | open business | **no** | **no** | **no** | yes | yes |
+| achieved goal | open business | — | — | — | — | — |
+| edit takes back the end | open business | **no** | **no** | **no** | yes | yes |
+| answered question | open business | — | — | — | — | — |
+| threat hangs over someone | open business | **no** | **no** | **no** | yes | yes |
+| paid debt | open business | — | — | — | — | — |
 | quote under a full budget | budget pressure | **no** | **no** | **no** | **no** | yes |
 | one line of a long message | budget pressure | **no** | **no** | **no** | **no** | yes |
 | a secret in front of the one it is kept from | secrets | n/a | n/a | n/a | **no** | yes |
@@ -93,11 +99,16 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 
 | Mode | gold reached | cases with stale memory | irrelevant packets | mean packet tokens |
 |---|---:|---:|---:|---:|
-| recent | 0/37 | 0 | — | 0 |
-| lexical | 2/37 | 0 | 0/1 | 110 |
-| hybrid | 3/37 | 0 | 0/1 | 134 |
-| full-v0 | 40/44 | 0 | 0/1 | 197 |
-| full | 44/44 | 0 | 0/1 | 196 |
+| recent | 0/40 | 0 | — | 0 |
+| lexical | 2/40 | 0 | 0/1 | 105 |
+| hybrid | 3/40 | 0 | 0/1 | 129 |
+| full-v0 | 43/47 | 0 | 0/1 | 191 |
+| full | 47/47 | 0 | 0/1 | 189 |
+
+Phase 11 steps 4–5 (ADR 0039, `extract-v13`) added six open-business cases: a goal and a threat recalled as threads
+after twelve newer events, an achieved goal, an answered question and a paid debt no longer in the packet, and an
+edit that takes back a goal's end. The stub extractor maps "X wants to …", "X wonders …", "Y threatens X with …",
+"X owes Y …" and "X's goal is achieved: …" (and the other outcomes).
 
 Phase 11 step 3 (ADR 0038) added two relationship cases: the story makes a pair lovers and extraction records it
 in the other direction than their earlier relationship (K24). Before step 3 both were current, and the earlier
