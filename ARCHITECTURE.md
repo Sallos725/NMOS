@@ -194,7 +194,8 @@ names characters shown to know it (`known_by`) and/or characters it is kept from
 is dropped from both (noted on the assertion). Names are free text in this soft phase. A fact hidden
 from a character addressed right now is ranked first. Hard POV isolation stays out of scope: a sim bot
 writes every character in one generation (D9). **Amended 2026-09-26 (ADR 0026, D37):** a name in
-`known_by` no longer counts toward ranking.
+`known_by` no longer counts toward ranking. **Amended 2026-09-27 (ADR 0033, D43):** `hidden_from` names only
+characters a fact is deliberately kept from, never someone who was only absent.
 
 **D20 — Derived projections are bound to a generation (ADR 0006).** An extractor generation hashes
 compiler version, prompt and predicate-registry fingerprints, normalizer version, endpoint identity,
@@ -383,6 +384,15 @@ name in `NMOS_ALLOWED_HOSTS`; others get 400. With a token, the token decides.
 `packet-v2`: `packet-v1` with non-ASCII characters estimated at 1.2 tokens instead of 1.5 (ASCII stays 3.5
 characters a token). Each policy keeps its own rate, so a recorded request replays exactly. The default
 reserve (600) is unchanged.
+
+**D43 — Secrets (Phase 10, ADR 0033).** A secret is a valid assertion kept from someone (`limited`, non-empty
+`hidden_from`, not dreamed); `hidden_from` is for what is deliberately kept from a character, not for absence.
+Secrets are read, not stored (`secrets.fold`). The extraction lists open secrets whose people the turn names
+(OPEN SECRETS S1…S8) and answers a numbered `secrets` check; the worker turns each finding into `learned`
+(subject: who found out; value: `[turn N] <the listed line>`). A reveal ends, for that character from its turn
+on, the listed turn's secret of the same head and every other secret whose head and content match; the fact
+then drops the name from `hidden_from` and carries `revealed`. `learned` is never a fact itself, and deleting
+the revealing turn restores the secret. Generation `extract-v12`.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

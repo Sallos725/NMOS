@@ -19,6 +19,7 @@ from xml.sax.saxutils import escape, quoteattr
 from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
 from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
+from .secrets import fold as fold_secrets
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
 # `unit` is the turn (a message without one counts alone). `live` holds every extraction that still
@@ -230,13 +231,15 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     - items: each item's whereabouts history with the outcome of every assertion (PHASE-6);
     - threads / unmatched: promises with their status, and resolutions that closed none (PHASE-7). The
       assertions a thread consumed are not facts, claims or other assertions as well.
+    - secrets / unrevealed: what is kept from whom and who found it out, and reveals that matched no open
+      secret (PHASE-10). A revealed secret's fact no longer lists that character in hidden_from.
 
     `upto` and `known_at` read it as of an earlier request (ADR 0027): the head up to that position, the
     extractions and owner links NMOS had by that time.
     """
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
-                "items": [], "threads": [], "unmatched": [], "resolution": None}
+                "items": [], "threads": [], "unmatched": [], "secrets": [], "unrevealed": [], "resolution": None}
     rows = [r for r in served_assertions(conn, head, extractor_key, upto, known_at) if r["predicate"] in REGISTRY]
     conv = conn.execute("SELECT w.conversation_id, c.host_persona_name FROM worldline_commit w"
                         " JOIN conversation c ON c.id = w.conversation_id WHERE w.id = %s", (head,)).fetchone()
@@ -256,6 +259,15 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             promises.append(row)
     rows = kept
     threads, unmatched, consumed = fold_threads(promises, r)
+    # Secrets (PHASE-10, ADR 0033): a reveal ends a secret for the character who found it out, from its
+    # turn on. The fact keeps who knows it; its hidden_from drops that name. `learned` is not a fact itself.
+    secrets, unrevealed, reveals = fold_secrets(rows, r)
+    consumed |= reveals
+    ended = {s["id"]: set(s["ended"]) for s in secrets if s["ended"]}
+    for row in rows:
+        if row["id"] in ended:
+            row["hidden_from"] = [n for n in row["hidden_from"] if n not in ended[row["id"]]] or None
+            row["revealed"] = [{"to": n, **s["ended"][n]} for s in secrets if s["id"] == row["id"] for n in s["ended"]]
     for row in rows:
         if row["id"] in consumed:
             continue
@@ -287,7 +299,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                 "position": f["position"], "history": f["history"]})
     return {"facts": facts, "claims": claims, "other": other, "entities": r.entities(),
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
-            "threads": threads, "unmatched": unmatched, "resolution": r}
+            "threads": threads, "unmatched": unmatched, "secrets": secrets, "unrevealed": unrevealed, "resolution": r}
 
 
 def links_of(conn: psycopg.Connection, conversation: UUID, known_at: datetime | None = None) -> list[dict[str, Any]]:

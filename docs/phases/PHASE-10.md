@@ -1,10 +1,9 @@
 # Phase 10 — Knowledge and Secrets (Stage 4)
 
-> **Status: draft, awaiting the owner's approval of this document (2026-09-27).** Stage 4 of
+> **Status: approved 2026-09-27 (the owner merged #107); in progress. Steps 2–3 done (ADR 0033).** Stage 4 of
 > `docs/ROADMAP-1.0.md` (original §27–30; Track B, B5 narrowed). The owner chose the recommended answer to every
 > question (R1, Q1–Q5) on 2026-09-27 and asked for no release yet. Design: `docs/proposals/STAGE-4-KNOWLEDGE.md`.
-> Evidence behind it: `docs/perf/stage4-leak-pilot.md`. Implementation starts only after the owner approves
-> this document.
+> Evidence behind it: `docs/perf/stage4-leak-pilot.md`.
 
 ## Questions and answers
 
@@ -106,9 +105,9 @@ in front of those it is kept from. A chat can choose a strict packet or a first-
 
 ## Steps (one pull request each)
 
-1. This document, approved.
-2. `extract-v12`: prompt rules, OPEN SECRETS, `learned` (ADR for knowledge marks, revising ADR 0007).
-3. Secret end on the read side, as-of aware.
+1. This document, approved. **Done** (#107).
+2. `extract-v12`: prompt rules, OPEN SECRETS, `learned` (ADR 0033, revising ADR 0007). **Done.**
+3. Secret end on the read side, as-of aware. **Done** (with step 2: `learned` must not surface as a fact).
 4. Scene cast and `packet-v3` (ADR for the packet).
 5. Per-chat memory mode: migration 0021, API, panel (ADR for the mode).
 6. Inspector.

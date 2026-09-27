@@ -6,8 +6,8 @@ later, is `docs/KNOWN-ISSUES.md`.
 ## Unreleased
 
 The audit items the 2026-09-26 review left without a state (A-11, A-13, A-17, A-18, A-19), the owner's
-decision on K26, a new extractor generation `extract-v11` with the two audit items queued for it (A-12,
-A-14), and a new text normalizer `clean-v3` (K27). Sidecar only; no schema change.
+decision on K26, extractor generations `extract-v11` (A-12, A-14) and `extract-v12` (Phase 10, secrets), and a
+new text normalizer `clean-v3` (K27). Sidecar only; no schema change.
 
 - **The sidecar's access log no longer shows the auth token** (audit A-11). The Inspector opened in a browser
   tab passes the token as `?token=` on every link, and uvicorn logged each request line with it. The log now
@@ -49,8 +49,20 @@ A-14), and a new text normalizer `clean-v3` (K27). Sidecar only; no schema chang
   it (3 of 3 with `gemma4:31b-cloud`), and recall could offer it as an excerpt. Only the tag names the packet
   writes, spelled the same way, count: a bot's `<state>` block or `<Item>` inventory line stays story text.
 
+- **Secrets: what is kept from someone, and when it stops being a secret** (Phase 10 steps 2–3, ADR 0033). New
+  extractor generation `extract-v12`. A fact is marked hidden from a character only when the story keeps it
+  from them (a secret, a lie, a surprise, a hidden identity), no longer because they were elsewhere. The
+  extraction is shown the chat's open secrets and reports which ones a character finds out in the turn; from
+  then on the fact no longer says it is hidden from them, and the facts view shows who found it out and when.
+  Deleting that turn restores the secret. On a copy of the owner's longest chat, the plan the mother found out
+  at turn 21 is no longer marked hidden from her afterwards (five copies of it end there), a surprise ends
+  when it is given, and the daughter's hug promise gets the mark it lacked (`docs/perf/extract-v12.md`).
+- A generation's backfill (after a model or prompt change, and "Extract all history") is now extracted oldest
+  turn first; new chats and new turns still go newest first. The previous generation keeps serving the turns
+  meanwhile, and a later turn's promises and secrets then refer to what this generation extracted.
+
 **Upgrading.** Pull the new sidecar image and restart it. At startup the normalized text is rewritten
-(`clean-v3`). With an LLM configured, `extract-v11` on `clean-v3` becomes active, and each chat's latest
+(`clean-v3`). With an LLM configured, `extract-v12` on `clean-v3` becomes active, and each chat's latest
 `NMOS_EXTRACT_BACKFILL` turns (default 100) are re-extracted once at the provider's cost. With embeddings on,
 every message is embedded again with the embedding model. Older turns keep their earlier facts until
 **Extract all history**. Replacing the plugin file is optional (its code is unchanged). If you replace it,
