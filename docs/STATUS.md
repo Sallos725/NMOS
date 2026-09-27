@@ -159,7 +159,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Schema | `migrations/0001`–`0021` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (426), `adapters/pocketrisu-plugin/test` (104) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
+| Tests | `apps/sidecar/tests` (432), `adapters/pocketrisu-plugin/test` (112; DOM code under `happy-dom`) | all passing; deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k without extraction and embeddings (D24); with both on (15k facts, 15k vectors) 10k takes ≈3.2 s (A-09); K3 on the real host (2026-09-27): rerolls and last-reply swipes stay on the fast path, an edit of an older message at 10k takes 3.6–3.8 s |
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K29 (K10 resolved; K29 found on `main`) current as of `v0.1.0-beta.21`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–8 of the original roadmap, one release each (draft, R1–R6 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
@@ -189,6 +189,17 @@ A read-only audit of `69800f0` is recorded in [Original vision → stable](propo
 - No extractor generation change: the prompt, registry and normalizer are unchanged; the listed turn's hash is stored with the hints only. Reveals extracted before the fix carry no hash and keep the old linking.
 
 The audit's other findings (G4–G17) stay proposals. No phase authorization or release decision was made.
+
+A second analysis the same day (an external document the owner shared, not in the repository) was reviewed against
+the code. Its confirmed defects are fixed on `main` as bug fixes (CHANGELOG, Unreleased): a saved API key is sent
+only to the host it was saved for, the plugin's host reads count against the request deadline and its budget and
+deadline arguments are capped, the worker waits for the sidecar's migrations, a recall reads the chat as its
+request had it, and the plugin's DOM code has tests (`happy-dom`, owner-approved dev dependency). Not adopted: its
+advice to tag `0.2.0` now (it missed G1–G3), a Dockerfile `HEALTHCHECK` (the worker runs the same image),
+removing the assertion's `epistemic` field (it is live: `certainty="implied"`; A-14 removed only
+`Predicate.epistemic`), and a plugin update channel (on hold by the owner; the host offers an update only for a
+higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G3 were fixed: M0 and Stage 5 (owner,
+2026-09-28).
 
 ## Open owner decisions
 

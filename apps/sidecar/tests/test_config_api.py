@@ -94,6 +94,97 @@ def test_connection_tests_report_failures_cleanly(client):
     assert emb["ok"] is False and models["ok"] is False and models["models"] == []
 
 
+def test_a_saved_key_is_sent_only_to_its_own_host(client, monkeypatch):
+    """A connection test or a model list for another host does not carry the saved key there (the key is
+    write-only through the API: pointing a test at your own server must not read it out)."""
+    from nmos_sidecar import runtime
+    from nmos_sidecar.llm import LLMError
+
+    sent: list[tuple[str, str]] = []
+
+    class Model:
+        def __init__(self, url, model, api_key, timeout_s=60, json_mode=True):
+            self.url, self.key = url, api_key
+
+        def complete_json(self, system, user):
+            sent.append((self.url, self.key))
+            if not self.key:
+                raise LLMError("HTTP 401")
+            return {"ok": True}, None
+
+    class Embed:
+        def __init__(self, url, model, api_key):
+            self.url, self.key = url, api_key
+
+        def embed(self, texts, timeout_s):
+            sent.append((self.url, self.key))
+            return [[0.0, 1.0]]
+
+    def get(url, headers, timeout):
+        sent.append((url, headers.get("Authorization", "")))
+        return httpx.Response(200, json={"data": [{"id": "m"}]}, request=httpx.Request("GET", url))
+
+    import httpx
+    monkeypatch.setattr(runtime, "ChatModel", Model)
+    monkeypatch.setattr(runtime, "Embedder", Embed)
+    monkeypatch.setattr(httpx, "get", get)
+    client.put("/v1/config", json={"llm_url": "https://llm.example/v1", "llm_model": "m", "llm_api_key": "sk-saved",
+                                   "embed_url": "http://emb.example:8080/v1", "embed_model": "e",
+                                   "embed_api_key": "ek-saved"})
+
+    def test(**body):
+        sent.clear()
+        return client.post("/v1/config/test", json=body).json(), sent[-1]
+
+    assert test(kind="llm")[1] == ("https://llm.example/v1", "sk-saved")
+    assert test(kind="llm", url="https://LLM.example:443/other/v1")[1][1] == "sk-saved"  # same host
+    out, call = test(kind="llm", url="https://evil.example/v1")
+    assert call == ("https://evil.example/v1", "") and out["ok"] is False
+    assert "https://llm.example" in out["error"]  # says why the saved key was not used
+    assert test(kind="llm", url="https://evil.example/v1", api_key="sk-typed")[1][1] == "sk-typed"
+    assert test(kind="llm", url="http://llm.example/v1")[1][1] == ""  # another scheme is another host
+    assert test(kind="embeddings")[1][1] == "ek-saved"
+    assert test(kind="embeddings", url="http://emb.example:8081/v1")[1][1] == ""  # another port too
+
+    def models(**body):
+        sent.clear()
+        client.post("/v1/config/models", json=body)
+        return sent[-1][1]
+
+    assert models(url="https://llm.example/v1") != "" and "sk-saved" in models(url="https://llm.example/v1")
+    assert models(url="https://evil.example/v1") == ""
+    assert models(url="https://evil.example/v1", api_key="sk-typed") == "Bearer sk-typed"
+    assert models(kind="embeddings", url="http://emb.example:8080/v1") == "Bearer ek-saved"
+    assert models(kind="embeddings", url="https://evil.example/v1") == ""
+
+
+def test_moving_an_endpoint_to_another_host_drops_its_saved_key(client):
+    """Otherwise the worker would send the saved key to whatever host the endpoint was changed to."""
+    def put(**body):
+        return client.put("/v1/config", json=body).json()
+
+    assert put(llm_url="https://llm.example/v1", llm_model="m", llm_api_key="sk-saved")["llm"]["api_key_set"] is True
+    assert put(llm_model="m2")["llm"]["api_key_set"] is True
+    assert put(llm_url="https://llm.example/other/v1")["llm"]["api_key_set"] is True  # same host
+    moved = put(llm_url="https://evil.example/v1", llm_model="m")
+    assert moved["llm"]["api_key_set"] is False and moved["llm"]["url"] == "https://evil.example/v1"
+    assert put(llm_url="https://llm.example/v1")["llm"]["api_key_set"] is False  # gone, not remembered
+    assert put(llm_url="https://other.example/v1", llm_api_key="sk-other")["llm"]["api_key_set"] is True
+    assert put(embed_url="http://emb.example/v1", embed_model="e", embed_api_key="ek")["embeddings"]["api_key_set"]
+    assert put(embed_url="http://127.0.0.1:11434/v1")["embeddings"]["api_key_set"] is False
+
+
+def test_an_environment_key_stays_with_the_environment_host(migrated):
+    with make_client(migrated, llm_url="https://env.example/v1", llm_model="m", llm_api_key="sk-env") as c:
+        away = c.put("/v1/config", json={"llm_url": "https://other.example/v1"}).json()
+        assert away["llm"]["api_key_set"] is False
+        back = c.put("/v1/config", json={"llm_url": "https://env.example/v1"}).json()
+        assert back["llm"]["api_key_set"] is True and "llm_api_key" not in back["overridden"]
+        reset = c.put("/v1/config", json={"llm_url": "https://other.example/v1"}).json()
+        assert reset["llm"]["api_key_set"] is False
+        assert c.put("/v1/config", json={"llm_url": None}).json()["llm"]["api_key_set"] is True  # env default
+
+
 def test_cors_preflight_allows_settings_put_from_allowed_origin_only(client):
     """The settings panel saves with a direct cross-origin PUT when the sidecar is on localhost (#11)."""
     headers = {"Access-Control-Request-Method": "PUT", "Access-Control-Request-Headers": "content-type,authorization"}

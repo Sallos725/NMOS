@@ -43,3 +43,34 @@ def test_an_interrupted_startup_keeps_the_batches_it_finished(migrated, db, monk
     with make_client(migrated):
         pass
     assert db.execute("SELECT count(*) AS n FROM revision_text").fetchone()["n"] == revisions
+
+
+def test_the_worker_waits_for_the_migrations_the_sidecar_runs(database_url):
+    """The sidecar applies migrations when it starts, and compose starts the worker alongside it; a worker
+    claiming jobs against an older schema fails them (and burns their attempts) until the sidecar is done."""
+    import threading
+
+    from nmos_sidecar import migrate, worker
+
+    assert migrate.pending(database_url) == [p.name for p in migrate.migration_files()]
+    stop, done = threading.Event(), threading.Event()
+    waiter = threading.Thread(target=lambda: (worker.wait_for_schema(database_url, stop, poll_s=0.05), done.set()))
+    waiter.start()
+    try:
+        assert not done.wait(0.3)
+        migrate.apply_migrations(database_url)
+        assert done.wait(5)
+        assert migrate.pending(database_url) == []
+    finally:
+        stop.set()
+        waiter.join(5)
+
+
+def test_a_stopped_worker_stops_waiting(database_url):
+    import threading
+
+    from nmos_sidecar import worker
+
+    stop = threading.Event()
+    stop.set()
+    worker.wait_for_schema(database_url, stop, poll_s=0.05)  # returns at once, schema or not

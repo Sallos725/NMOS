@@ -328,11 +328,6 @@ def _head_turn(conn: psycopg.Connection, head: UUID, upto: int | None = None) ->
                         (head, 2**31 - 1 if upto is None else upto)).fetchone()["t"]
 
 
-def _head_end(conn: psycopg.Connection, head: UUID) -> int | None:
-    """The last position of the head: the user's message a request answers."""
-    return conn.execute("SELECT max(position) AS p FROM active_membership WHERE commit_id = %s", (head,)).fetchone()["p"]
-
-
 def _head_last(conn: psycopg.Connection, head: UUID, upto: int | None) -> str | None:
     """Host id of the head's last message (as of `upto`)."""
     row = conn.execute(
@@ -347,9 +342,14 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     conv = find_conversation(conn, request.host, request.chat_id)
     if conv is None or conv.head_commit_id is None:
         return {"freshness": "unknown_conversation", "trace_id": None, "text": "", "tokens": 0, "count": 0}
-    head = conv.head_commit_id
+    # The head, its manifest hash and its end in one statement, and every read below bounded by that end: recall
+    # takes no conversation lock, and a concurrent sync's append extends the head commit in place (D4).
+    snap = conn.execute(
+        "SELECT head_commit_id, head_manifest_hash, (SELECT max(position) FROM active_membership am"
+        " WHERE am.commit_id = c.head_commit_id) AS head_end FROM conversation c WHERE c.id = %s", (conv.id,)).fetchone()
+    head, upto = snap["head_commit_id"], snap["head_end"]
     fresh = (request.active_commit is None or request.active_commit == head) and (
-        request.manifest_hash is None or request.manifest_hash == conv.head_manifest_hash
+        request.manifest_hash is None or request.manifest_hash == snap["head_manifest_hash"]
     )
     # The query side is normalized like the corpus: reasoning blocks in the previous AI turn must not
     # steer lexical scores, fact relevance or excerpt focus either.
@@ -357,7 +357,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     previous_ai = clean_text(request.previous_ai or "")
     options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator)
     in_context = set(request.in_context_ids)
-    g = gather(conn, head, query, previous_ai, in_context, options) if fresh else Gathered()
+    g = gather(conn, head, query, previous_ai, in_context, options, upto) if fresh else Gathered()
     def compile_at(budget: int) -> Compiled:
         return compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts,
                              policy=options.policy, lead=g.lead, note=g.note)
@@ -403,7 +403,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                    "extractor": (options.extractor_key or "")[:20] or None,
                    **{f"client_{k}": v for k, v in request.client_timings_ms.items()}}),
             "fresh" if fresh else "stale",
-            options.policy, request.budget_tokens, _head_end(conn, head) if fresh else None, previous_ai,
+            options.policy, request.budget_tokens, upto if fresh else None, previous_ai,
             Jsonb(sorted(in_context)), options.extractor_key,
             options.embed_projection if options.embedder else None, options.rules_version,
             Jsonb(recorded_options(options)), Jsonb(compiled.ledger),

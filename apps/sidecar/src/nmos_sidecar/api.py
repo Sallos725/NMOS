@@ -614,6 +614,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         clean, errors = runtime.validate_update(update)
         if errors:
             raise HTTPException(status_code=422, detail=errors)
+        clean = runtime.keys_follow_hosts(settings, rt["overrides"], clean)
         before_ex, before_pj = rt["extractor"], rt["projection"]
         before_backfill = rt["settings"].extract_backfill
         with request.app.state.pool.connection() as conn:
@@ -629,24 +630,37 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill)
         return {**runtime.public_view(rt["settings"], rt["overrides"], rt["rules"]), "queued_jobs": queued}
 
+    def key_for(body: dict[str, Any], kind: str) -> tuple[str, str]:
+        """The key a test or model list sends, and a note when the saved one was kept from another host."""
+        cur = rt["settings"]
+        saved_url, saved_key = (cur.embed_url, cur.embed_api_key) if kind == "embeddings" else (cur.llm_url, cur.llm_api_key)
+        if body.get("api_key"):
+            return body["api_key"], ""
+        key = runtime.saved_key_for(body.get("url") or "", saved_url, saved_key)
+        return key, runtime.withheld_note(saved_url) if saved_key and not key else ""
+
+    def noted(result: dict[str, Any], note: str) -> dict[str, Any]:
+        return {**result, "error": result["error"] + note} if note and not result.get("ok") and "error" in result else result
+
     @app.post("/v1/config/test", dependencies=[Depends(auth)])
     def test_config(body: dict[str, Any]):
         cur = rt["settings"]
         kind = body.get("kind")
         if kind == "llm":
-            return runtime.test_llm(body.get("url") or cur.llm_url, body.get("model") or cur.llm_model,
-                                    body.get("api_key") or cur.llm_api_key, bool(body.get("json_mode", cur.llm_json_mode)))
+            key, note = key_for(body, kind)
+            return noted(runtime.test_llm(body.get("url") or cur.llm_url, body.get("model") or cur.llm_model, key,
+                                          bool(body.get("json_mode", cur.llm_json_mode))), note)
         if kind == "embeddings":
-            return runtime.test_embeddings(body.get("url") or cur.embed_url, body.get("model") or cur.embed_model,
-                                           body.get("api_key") or cur.embed_api_key)
+            key, note = key_for(body, kind)
+            return noted(runtime.test_embeddings(body.get("url") or cur.embed_url, body.get("model") or cur.embed_model,
+                                                 key), note)
         raise HTTPException(status_code=422, detail="kind must be 'llm' or 'embeddings'")
 
     @app.post("/v1/config/models", dependencies=[Depends(auth)])
     def config_models(body: dict[str, Any]):
-        cur = rt["settings"]
         kind = body.get("kind", "llm")
-        fallback_key = cur.embed_api_key if kind == "embeddings" else cur.llm_api_key
-        return runtime.list_models(body.get("url") or "", body.get("api_key") or fallback_key, kind)
+        key, note = key_for(body, kind)
+        return noted(runtime.list_models(body.get("url") or "", key, kind), note)
 
     def inspector_index_html(request: Request, token: str | None, lang: str | None, embed: bool = False) -> str:
         with request.app.state.pool.connection() as conn:

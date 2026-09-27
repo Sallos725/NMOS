@@ -310,3 +310,32 @@ def test_live_reroll_flow_retracts_and_never_recalls(client, db):
     state = db.execute("SELECT lifecycle FROM source_revision WHERE content = %s", (discarded["data"],)).fetchone()
     assert state["lifecycle"] == "retracted"
     assert "melted" not in recall(client, chat, "What was melted into bells?", in_context=[chat.messages[-1]["chatId"]])["packet"]["text"]
+
+
+def test_a_recall_reads_one_snapshot_while_the_same_chat_syncs(client, db, monkeypatch):
+    """Recall takes no conversation lock, and an append extends the head commit in place (D4). A sync that
+    lands between the freshness check and the reads must not show up in what the recall reads or records:
+    the request answers the chat as its own manifest had it."""
+    import copy
+
+    from nmos_sidecar import retrieval
+
+    chat = SimChat()
+    chat.user("The lantern is in the archive.")
+    chat.reply("Noted.")
+    chat.user("Where is the lantern?")
+    sync(client, chat)
+    later = copy.deepcopy(chat)
+    later.reply("In the archive.")
+    later.user("And the key?")
+    gather = retrieval.gather
+
+    def racing_gather(conn, head, *args, **kwargs):
+        sync(client, later)  # another tab or device, committed on its own connection
+        return gather(conn, head, *args, **kwargs)
+
+    monkeypatch.setattr(retrieval, "gather", racing_gather)
+    out = recall(client, chat, "Where is the lantern?")
+    assert out["freshness"] == "fresh"
+    upto = db.execute("SELECT upto_position FROM retrieval_trace ORDER BY created_at DESC LIMIT 1").fetchone()
+    assert upto["upto_position"] == len(chat.messages) - 1  # not the appended messages' end

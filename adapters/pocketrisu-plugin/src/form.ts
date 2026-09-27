@@ -9,6 +9,8 @@ export const MAX_DEADLINE_MS = 30_000;
 /** Memory tokens reserved when the plugin arg is unset (0); the user lowers the host's max context by it (D2).
  *  800 since Phase 10 step 5 (was 600): Korean packets with a Private section pushed facts out at 600. */
 export const DEFAULT_RESERVED_TOKENS = 800;
+/** The largest memory budget the sidecar accepts (`RetrieveRequest.budget_tokens`); above it every request fails. */
+export const MAX_RESERVED_TOKENS = 20_000;
 export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune', 'rules'];
 
 /** Google Vertex AI's OpenAI-compatible endpoint; `{project}` comes from the pasted key (ADR 0022). */
@@ -86,7 +88,8 @@ export function connArgs(v: FormValues['conn']): Record<string, string | number>
     sidecar_url: v.url.trim(),
     route: v.route,
     disabled: v.enabled ? 0 : 1,
-    reserved_memory_tokens: Number(v.reserved) || DEFAULT_RESERVED_TOKENS,
+    reserved_memory_tokens: Math.min(MAX_RESERVED_TOKENS, Math.floor(Number(v.reserved)) > 0
+      ? Math.floor(Number(v.reserved)) : DEFAULT_RESERVED_TOKENS),
     deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS)),
   };
 }

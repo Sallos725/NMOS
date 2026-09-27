@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createAdapter, personaOf, type HostPort, type HttpResult, type Settings } from '../src/core';
 import { deadlineAdvice } from '../src/deadline';
+import { DEFAULT_DEADLINE_MS } from '../src/form';
 import type { ActivityEvent } from '../src/hud';
 import { hasPacket } from '../src/prompt';
 import type { HostChat, PromptMessage } from '../src/types';
@@ -153,6 +154,49 @@ describe('beforeRequest', () => {
       expect(settled).toBe(true);
       expect(await out).toBe(prompt);
       expect(String(warn.mock.calls[0]?.[1])).toContain('deadline');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives up at the deadline when the host does not hand over the chat', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    try {
+      const { host, calls, warn } = fakeHost(happy, { deadlineMs: 50 });
+      host.currentChat = () => new Promise<HostChat | null>(() => {});
+      let settled = false;
+      const out = createAdapter(host).beforeRequest(prompt, 'model').finally(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(49);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(settled).toBe(true);
+      expect(await out).toBe(prompt);
+      expect(calls).toEqual([]);
+      expect(String(warn.mock.calls[0]?.[1])).toContain('deadline');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives up when the host never answers with the settings, without advice to raise the deadline', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    try {
+      const { host, calls, warn } = fakeHost(happy);
+      const settings = host.settings;
+      host.settings = () => new Promise<Settings>(() => {});
+      let settled = false;
+      const adapter = createAdapter(host);
+      const out = adapter.beforeRequest(prompt, 'model').finally(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(DEFAULT_DEADLINE_MS - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await out).toBe(prompt);
+      expect(calls).toEqual([]);
+      expect(String(warn.mock.calls[0]?.[1])).toContain('settings');
+      host.settings = settings;  // the panel reads them again later
+      const { last } = await adapter.status();
+      expect(last).toMatchObject({ outcome: 'failed', deadlineMs: 0 });
+      expect(deadlineAdvice(last)).toBeNull();
     } finally {
       vi.useRealTimers();
     }
