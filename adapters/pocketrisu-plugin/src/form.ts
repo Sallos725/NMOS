@@ -6,6 +6,9 @@ export type Section = 'conn' | 'llm' | 'emb' | 'tune' | 'rules';
  *  generation needs ≈1.5 s at 5,000 messages and ≈2.7 s at 10,000 (docs/perf/scale.md). */
 export const DEFAULT_DEADLINE_MS = 3000;
 export const MAX_DEADLINE_MS = 30_000;
+/** Memory tokens reserved when the plugin arg is unset (0); the user lowers the host's max context by it (D2).
+ *  800 since Phase 10 step 5 (was 600): Korean packets with a Private section pushed facts out at 600. */
+export const DEFAULT_RESERVED_TOKENS = 800;
 export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune', 'rules'];
 
 /** Google Vertex AI's OpenAI-compatible endpoint; `{project}` comes from the pasted key (ADR 0022). */
@@ -83,7 +86,7 @@ export function connArgs(v: FormValues['conn']): Record<string, string | number>
     sidecar_url: v.url.trim(),
     route: v.route,
     disabled: v.enabled ? 0 : 1,
-    reserved_memory_tokens: Number(v.reserved) || 600,
+    reserved_memory_tokens: Number(v.reserved) || DEFAULT_RESERVED_TOKENS,
     deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS)),
   };
 }

@@ -4,7 +4,7 @@ import type { HostPort, Settings, StatusInfo } from './core';
 import { langOf, t } from './i18n';
 import type { InjectPosition } from './prompt';
 import type { HostChat, HostPersonas } from './types';
-import { DEFAULT_DEADLINE_MS } from './form';
+import { DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS } from './form';
 import { createHud, type HudDocument } from './hud-host';
 import { routeFor } from './route';
 import { openPanel, type HudControl, type PanelDeps, type Tab } from './ui';
@@ -35,7 +35,6 @@ declare const risuai: {
 };
 
 const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:8790';
-const DEFAULT_RESERVED_TOKENS = 600;
 
 async function arg(key: string): Promise<string> {
   return String((await risuai.getArgument(key)) ?? '').trim();

@@ -4,7 +4,7 @@
 
 import type { StatusInfo } from './core';
 import { deadlineAdvice, formatMs } from './deadline';
-import { configBody, connArgs, DEFAULT_DEADLINE_MS, dirtySections, fillProject, MAX_DEADLINE_MS, presetMatches, VERTEX_URL,
+import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, fillProject, MAX_DEADLINE_MS, presetMatches, VERTEX_URL,
   type FormValues, type Section } from './form';
 import { langOf, t, type Lang, type StringKey } from './i18n';
 import { entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices, localTime, safeFragment,
@@ -45,6 +45,8 @@ interface ServerConfig {
 }
 
 interface Preset { label: string | StringKey; url: string; model?: string }
+/** `GET /v1/conversations/<id>/memory-mode` (ADR 0035). */
+interface MemoryMode { strict: boolean; narrator: string | null; characters: string[] }
 
 const LLM_PRESETS: Preset[] = [
   { label: 'preset.off', url: '' },
@@ -307,8 +309,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   // Back and Refresh stay in reach while reading far down a page.
   // On an entity's page: the owner joins it with another entity of its type, or undoes a join (ADR 0025).
   const linkCard = el('div', { class: 'card', style: 'display:none' });
+  // On a conversation's page: how memory treats what only some characters know (ADR 0035).
+  const modeCard = el('div', { class: 'card', style: 'display:none' });
   inspectorView.append(el('div', { class: 'btns inspbar' }, inspectorBack, inspectorRefresh), actions, actionMsg,
-    linkCard, inspectorBody, inspectorAddress);
+    modeCard, linkCard, inspectorBody, inspectorAddress);
   let actionConversation: string | null = null;
   function place(): Place {
     const open = Array.from(inspectorBody.querySelectorAll<HTMLDetailsElement>('details[id]')).filter((d) => d.open);
@@ -358,6 +362,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     actions.style.display = conversation ? '' : 'none';
     const shownEntity = inspectorEntity(path);
     if (!shownEntity) linkCard.style.display = 'none';
+    if (!conversation || shownEntity) modeCard.style.display = 'none';
     if (again) {
       inspectorBody.classList.add('busy'); // the old page stays until the new one is there
     } else {
@@ -379,6 +384,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (keep) restore(keep);
       else root.scrollTop = 0;
       if (shownEntity) void showLinks(shownEntity.conversation, shownEntity.entity, load);
+      else if (conversation) void showMode(conversation, load);
     } catch (error) {
       if (load !== loads) return;
       shownPath = null;
@@ -386,6 +392,40 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     } finally {
       if (load === loads) inspectorBody.classList.remove('busy');
     }
+  }
+  async function showMode(conversation: string, load: number): Promise<void> {
+    let mode: MemoryMode;
+    try {
+      mode = await deps.api<MemoryMode>('GET', `/v1/conversations/${conversation}/memory-mode`, undefined, 15_000);
+    } catch {
+      modeCard.style.display = 'none'; // an older sidecar has no memory mode
+      return;
+    }
+    if (load !== loads) return;
+    const strict = el('input', { type: 'checkbox' });
+    strict.checked = mode.strict;
+    const narrators: [string, string][] = [['', L('mode.narrator_none')], ['{{user}}', L('mode.narrator_user')],
+      ...mode.characters.map((n): [string, string] => [n, n])];
+    if (mode.narrator && !narrators.some(([v]) => v === mode.narrator)) narrators.push([mode.narrator, mode.narrator]);
+    const narrator = el('select', { 'aria-label': L('mode.narrator') },
+      ...narrators.map(([value, text]) => el('option', { value, text })));
+    narrator.value = mode.narrator ?? '';
+    const save = el('button', { class: 'primary', text: L('mode.save') });
+    const msg = el('div', { class: 'msg' });
+    save.addEventListener('click', async () => {
+      save.disabled = true;
+      try {
+        const r = await deps.api<MemoryMode>('PUT', `/v1/conversations/${conversation}/memory-mode`,
+          { strict: strict.checked, narrator: narrator.value || null }, 15_000);
+        say(msg, L('mode.saved', { s: L(r.strict ? 'mode.on' : 'mode.off'), n: r.narrator ?? L('mode.narrator_none') }), 'ok');
+      } catch (error) { say(msg, errorText(lang, error), 'err'); } finally { save.disabled = false; }
+    });
+    modeCard.replaceChildren(el('h2', { text: L('mode.title') }), el('p', { class: 'sub', text: L('mode.sub') }),
+      el('div', { class: 'check' }, strict, el('span', { text: L('mode.strict') })),
+      el('p', { class: 'sub', text: L('mode.strict_sub') }),
+      el('div', { class: 'row' }, field(L('mode.narrator'), narrator)), el('p', { class: 'sub', text: L('mode.narrator_sub') }),
+      el('div', { class: 'btns' }, save), msg);
+    modeCard.style.display = '';
   }
   async function showLinks(conversation: string, entity: string, load: number): Promise<void> {
     let entities: EntityRow[];
@@ -679,7 +719,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     url.value = (await deps.getArg('sidecar_url')) || 'http://127.0.0.1:8790';
     route.value = (await deps.getArg('route')) || 'auto';
     enabled.checked = Number(await deps.getArg('disabled')) !== 1;
-    reserved.value = String(Number(await deps.getArg('reserved_memory_tokens')) || 600);
+    reserved.value = String(Number(await deps.getArg('reserved_memory_tokens')) || DEFAULT_RESERVED_TOKENS);
     deadline.value = String(Number(await deps.getArg('deadline_ms')) || DEFAULT_DEADLINE_MS);
     hudBox.checked = Number(await deps.getArg('hud')) === 1;
   }

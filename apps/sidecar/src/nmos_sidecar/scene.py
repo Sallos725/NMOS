@@ -93,3 +93,25 @@ def private(f: dict[str, Any], scene: dict[str, str], r: Resolution | None) -> b
         return False
     known = {key(r, n) for n in f.get("known_by") or ()}
     return bool(set(scene) - known)
+
+
+def narrator_knows(f: dict[str, Any], narrator: str, r: Resolution | None) -> bool:
+    """First person (ADR 0035): the narrator knows public and unmarked facts and limited ones that list them."""
+    if f.get("knowledge") != "limited":
+        return True
+    if r is None:
+        return norm(narrator) in {norm(n) for n in f.get("known_by") or ()}
+    return key(r, narrator) in {key(r, n) for n in f.get("known_by") or ()}
+
+
+def display(r: Resolution, name: str) -> str:
+    """A character's name as the story spells it: the persona under its host name rather than `{{user}}`."""
+    e = r.entity("character", PERSONA if is_persona(r, name) else name)
+    return e["name"] if e else name
+
+
+def missing(f: dict[str, Any], scene: dict[str, str], r: Resolution) -> tuple[list[str], list[str]]:
+    """(holders, characters in the scene not shown to know it), display names, for a withheld line."""
+    known = {key(r, n) for n in f.get("known_by") or ()}
+    holders = list(dict.fromkeys(scene.get(key(r, n)) or display(r, n) for n in f.get("known_by") or ()))
+    return holders, [name for k, name in scene.items() if k not in known]

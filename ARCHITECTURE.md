@@ -98,7 +98,8 @@ Short ADR-style entries. Full ADRs go in `docs/adr/`.
 proves a bridge API is needed (see reference §82 criteria). Any future fork is bridge-only.
 
 **D2 — Token budget is reserved, not stolen.** Because of H3, the user lowers the host's
-max context by `reservedMemoryTokens` (setting). The packet never exceeds that reserve.
+max context by `reservedMemoryTokens` (setting; default 800 since Phase 10, ADR 0035, was 600). The packet
+never exceeds that reserve.
 Trimming host history from inside the plugin is a later, opt-in feature.
 
 **D3 — Do not re-inject what the host already sent.** Evidence whose source revision is
@@ -399,6 +400,13 @@ turns before it, characters named now, the persona; compared by entity). A limit
 in the cast is not shown to know is private: the default policy `packet-v3` emits it in a `<Private>` section
 with a rule in the Note (only holders know it; others do not act on it; holders keep it from those in
 `hidden_from`). A mentioned fact hidden from someone in the cast ranks 0.8 higher. `packet-v2` stays available.
+
+**D45 — Per-chat memory mode (Phase 10, ADR 0035).** Each conversation stores `memory_strict` and
+`memory_narrator` (migration 0021), set from the Inspector's chat page and recorded in every trace's recall
+options. A narrator keeps only public, unmarked and narrator-known lines (and a Note line saying so). Strict
+replaces each private line with a content-free `<Secret holders=… not_known_by=…>` line, one per pair of sets,
+outside the Private section. Excerpts that say a withheld line's content are left out. Claims are marked private like facts and show their knowledge marks only in the
+Private section.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

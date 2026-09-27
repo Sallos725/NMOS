@@ -105,3 +105,94 @@ def test_a_secret_goes_private_while_the_one_it_is_kept_from_is_in_the_scene(mig
     assert "<Private>" not in without and "엄마 몰래 수업 보기" in without  # only holders in the scene now
     trace = db.execute("SELECT latency_ms FROM retrieval_trace ORDER BY created_at LIMIT 1").fetchone()["latency_ms"]
     assert "블랑" in trace["scene_cast"]
+
+
+# --- per-chat memory mode (ADR 0035) -------------------------------------------------------------------------
+
+from nmos_sidecar.scene import display, missing, narrator_knows  # noqa: E402
+
+
+def test_the_narrator_knows_public_unmarked_and_their_own_facts():
+    rows = [row(9, "블랑", "event", None, "출근", **C), row(9, "엘피", "has_status", None, "졸림", **C)]
+    r = resolve(uuid.uuid4(), rows)
+    assert narrator_knows({"knowledge": "public"}, "블랑", r) and narrator_knows({}, "블랑", r)
+    assert narrator_knows({"knowledge": "limited", "known_by": ["엘피", "블랑"]}, "블랑", r)
+    assert not narrator_knows({"knowledge": "limited", "known_by": ["엘피"], "hidden_from": ["블랑"]}, "블랑", r)
+    assert narrator_knows({"knowledge": "limited", "known_by": ["{{user}}"]}, "{{user}}", r)
+
+
+def test_a_withheld_line_names_the_persona_as_the_story_does():
+    rows = [row(9, "블랑", "event", None, "출근", **C), row(9, "유우마", "event", None, "등교", **C)]
+    r = resolve(uuid.uuid4(), rows, persona=["유우마"])
+    holders, absent = missing({"knowledge": "limited", "known_by": ["엘피", "{{user}}", "유우마"]}, cast(rows, r), r)
+    assert holders == ["엘피", "유우마"] and absent == ["블랑"]  # one persona, by the name the host reports
+    assert display(r, "{{user}}") == "유우마" and display(r, "엘피") == "엘피"
+
+
+def _secret_chat(migrated, c, complete):
+    chat = SimChat()
+    chat.user("엘피와 작전을 짠다: 엄마 몰래 수업 보기.")
+    chat.reply("엘피가 고개를 끄덕였다.")
+    filler(chat, 3)
+    chat.user("다음 날 아침.")
+    chat.reply("블랑이 출근 준비를 한다.")
+    chat.user("next")
+    sync(c, chat)
+    drain(migrated, complete)
+    return chat
+
+
+SECRET = [{"subject": "엘피", "subject_type": "character", "predicate": "goal", "value": "엄마 몰래 수업 보기",
+           "knowledge": "limited", "known_by": ["엘피", "{{user}}"], "hidden_from": ["블랑"], "modality": "actual"}]
+BLANC = [{"subject": "블랑", "subject_type": "character", "predicate": "event", "value": "출근 준비", "modality": "actual"}]
+
+
+def _complete(system, user):
+    target = user.split("TARGET", 1)[1]
+    return {"assertions": (SECRET if "작전" in target else []) + (BLANC if "출근" in target else [])}, "{}"
+
+
+def test_strict_mode_withholds_and_a_narrator_drops_what_they_do_not_know(migrated, db):
+    with make_client(migrated, **LLM) as c:
+        chat = _secret_chat(migrated, c, _complete)
+        conv = next(x for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)["id"]
+        assert c.get(f"/v1/conversations/{conv}/memory-mode").json()["strict"] is False
+        assert "블랑" in c.get(f"/v1/conversations/{conv}/memory-mode").json()["characters"]
+
+        default = recall(c, chat, "엘피와 작전을 짠다", in_context=[])["packet"]["text"]
+        assert "엄마 몰래 수업 보기" in default  # the fact; the excerpt saying it is skipped as a repeat of it
+        assert c.put(f"/v1/conversations/{conv}/memory-mode", json={"strict": True}).json() == \
+            {"strict": True, "narrator": None}
+        strict = recall(c, chat, "엘피와 작전을 짠다", in_context=[])["packet"]["text"]
+        assert "엄마 몰래 수업 보기" not in strict  # neither the fact nor the excerpt that says it
+        assert '<Secret holders="엘피, {{user}}" not_known_by="블랑"' in strict and "<Private>" not in strict and "A Secret is something" in strict
+
+        c.put(f"/v1/conversations/{conv}/memory-mode", json={"strict": False, "narrator": "블랑"})
+        told_by_blanc = recall(c, chat, "블랑, 출근 준비는? 엘피는 수업 작전 기억나?", in_context=[])["packet"]["text"]
+        assert "엄마 몰래 수업 보기" not in told_by_blanc and "<Secret" not in told_by_blanc
+        assert "블랑 event: 출근 준비" in told_by_blanc and "told in the first person by 블랑" in told_by_blanc
+        # With nothing the narrator knows, there is no packet at all.
+        assert recall(c, chat, "엘피, 수업 작전 기억나?", in_context=[])["packet"]["text"] == ""
+        c.put(f"/v1/conversations/{conv}/memory-mode", json={"strict": False, "narrator": "{{user}}"})
+        told_by_user = recall(c, chat, "엘피, 수업 작전 기억나?", in_context=[])["packet"]["text"]
+        assert "엄마 몰래 수업 보기" in told_by_user  # the user's character is a holder
+
+        traces = db.execute("SELECT id, recall_options, latency_ms FROM retrieval_trace ORDER BY created_at").fetchall()
+        assert [t["recall_options"]["strict"] for t in traces] == [False, True, False, False, False]
+        assert [t["recall_options"]["narrator"] for t in traces] == [None, None, "블랑", "블랑", "{{user}}"]
+        assert traces[1]["latency_ms"]["memory_mode_withheld"] >= 2  # the fact and the excerpt
+        # A recorded request replays with its own mode, whatever the chat's mode is now.
+        assert c.get(f"/v1/trace/{traces[1]['id']}/replay").json()["reproduced"] is True
+        assert c.put(f"/v1/conversations/{conv}/memory-mode", json={"narrator": "x" * 61}).status_code == 422
+        assert c.put("/v1/conversations/00000000-0000-0000-0000-000000000000/memory-mode", json={}).status_code == 404
+
+
+def test_a_private_claim_shows_who_knows_it_in_the_private_section_only():
+    from nmos_sidecar.facts import claim_entry
+    c = {"id": 1, "turn": 3, "subject": "엘피", "subject_type": "character", "predicate": "goal", "value": "몰래 보기",
+         "asserted_by": "엘피", "knowledge": "limited", "known_by": ["엘피"], "hidden_from": ["블랑"]}
+    v3 = compile_lines([], 600, facts=[claim_entry(c, private=True)], policy="packet-v3").text
+    assert '<Claim by="엘피" kind="goal" turn="3" known_by="엘피" hidden_from="블랑">' in v3 and "<Private>" in v3
+    v2 = compile_lines([], 600, facts=[claim_entry(c, private=True)], policy="packet-v2").text
+    assert '<Claim by="엘피" kind="goal" turn="3">' in v2 and "<Private>" not in v2  # earlier policies unchanged
+    assert claim_entry(c).marks == {"by": "엘피", "hidden_from": ["블랑"]}  # an echo of it may be a leak (K11)

@@ -1,6 +1,6 @@
 # Phase 10 — Knowledge and Secrets (Stage 4)
 
-> **Status: approved 2026-09-27 (the owner merged #107); in progress. Steps 2–4 done (ADR 0033, 0034).** Stage 4 of
+> **Status: approved 2026-09-27 (the owner merged #107); in progress. Steps 2–5 done (ADR 0033, 0034, 0035).** Stage 4 of
 > `docs/ROADMAP-1.0.md` (original §27–30; Track B, B5 narrowed). The owner chose the recommended answer to every
 > question (R1, Q1–Q5) on 2026-09-27 and asked for no release yet. Design: `docs/proposals/STAGE-4-KNOWLEDGE.md`.
 > Evidence behind it: `docs/perf/stage4-leak-pilot.md`.
@@ -109,7 +109,9 @@ in front of those it is kept from. A chat can choose a strict packet or a first-
 2. `extract-v12`: prompt rules, OPEN SECRETS, `learned` (ADR 0033, revising ADR 0007). **Done.**
 3. Secret end on the read side, as-of aware. **Done** (with step 2: `learned` must not surface as a fact).
 4. Scene cast and `packet-v3` (ADR 0034). **Done** (`docs/perf/packet-v3.md`).
-5. Per-chat memory mode: migration 0021, API, panel (ADR for the mode).
+5. Per-chat memory mode: migration 0021, API, panel (ADR for the mode). **Done** (ADR 0035, `docs/perf/memory-mode.md`;
+   the card is on the Inspector's chat page, with the chat's other actions; claims are marked private too; the
+   owner raised the default reserve to 800).
 6. Inspector.
 7. Evaluation: synthetic cases, `tools/eval_secrets.py`, the model tiers (each paid run approved first).
 8. Documentation, real-host smoke, upgrade check.

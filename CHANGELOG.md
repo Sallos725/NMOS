@@ -7,8 +7,8 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 The audit items the 2026-09-26 review left without a state (A-11, A-13, A-17, A-18, A-19), the owner's
 decision on K26, extractor generations `extract-v11` (A-12, A-14) and `extract-v12` (Phase 10, secrets), the
-packet policy `packet-v3` (Phase 10, Private section), and a new text normalizer `clean-v3` (K27). Sidecar only;
-no schema change.
+packet policy `packet-v3` (Phase 10, Private section), per-chat memory modes (Phase 10), the default memory
+budget 800, and a new text normalizer `clean-v3` (K27). Schema: migration 0021 (applied at startup).
 
 - **The sidecar's access log no longer shows the auth token** (audit A-11). The Inspector opened in a browser
   tab passes the token as `?token=` on every link, and uvicorn logged each request line with it. The log now
@@ -69,13 +69,26 @@ no schema change.
   about 47 tokens of the memory budget when the section opens; with the default 600 a fact line can drop out,
   so raise **기억 예산(토큰) / Memory budget (tokens)** for chats with many secrets (`docs/perf/packet-v3.md`).
   `NMOS_PACKET_POLICY=packet-v2` keeps the previous layout; both compose files now default to `packet-v3`.
+- **Per-chat memory mode** (Phase 10 step 5, ADR 0035). A chat's page in the Inspector has a **기억 모드 / Memory
+  mode** card. **Strict** gives the model only what everyone in the scene knows: a fact only some of them know
+  becomes "something known to A, not known to B", its content withheld (fewer leaks, but the holder forgets it
+  too). **First-person narrator** (none, your character, or a character of the chat) leaves out what the
+  narrator is not shown to know. Excerpts of the chat that say what the mode left out are left out too. Both
+  are off by default, and each request records the mode it used.
+- A character's claim that only some of the scene know now goes to the Private section like a fact, with who
+  knows it; before, strict mode could still carry a secret word for word as a `<Claim>` (ADR 0035).
+- **The default memory budget is 800 tokens** (was 600; owner decision). On the owner's recorded requests a
+  600-token packet placed 66% of the memory lines retrieval found, 800 places 89%, and 1000 all of them
+  (`docs/perf/memory-mode.md`). If you left **기억 예산(토큰) / Memory budget (tokens)** empty, lower PocketRisu's
+  max context by 200 more.
 
 **Upgrading.** Pull the new sidecar image and restart it. At startup the normalized text is rewritten
 (`clean-v3`). With an LLM configured, `extract-v12` on `clean-v3` becomes active, and each chat's latest
 `NMOS_EXTRACT_BACKFILL` turns (default 100) are re-extracted once at the provider's cost. With embeddings on,
 every message is embedded again with the embedding model. Older turns keep their earlier facts until
-**Extract all history**. Replacing the plugin file is optional (its code is unchanged). If you replace it,
-reload PocketRisu.
+**Extract all history**. Migration 0021 adds each chat's memory mode. **Replace the plugin file** (the memory
+mode card and the new default budget are in it) and reload PocketRisu; with the old plugin memory still works,
+but the mode cannot be set and the default budget stays 600.
 
 ## 0.1.0-beta.21
 

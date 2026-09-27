@@ -125,7 +125,8 @@ writes for every character, so a secret can still leak (ADR 0007). Hard per-char
 packet" flags a placed secret that the next reply reuses (a possible leak). It is a report, not a
 guard. *On `main` (Phase 10, unreleased):* `hidden_from` marks only what the story keeps from a character, a
 reveal ends the secret (ADR 0033), and the default `packet-v3` puts facts only some characters in the scene
-know in a `<Private>` section with a rule for them (ADR 0034). The model can still disobey it.
+know in a `<Private>` section with a rule for them (ADR 0034). The model can still disobey it. A chat can
+withhold such facts' content instead (strict) or keep to a first-person narrator's knowledge (ADR 0035).
 
 **K27 — An OOC note or memory-like markup inside a reply could become a fact.** Up to `extract-v10` /
 `clean-v2`, a reply containing `(OOC: 앞으로 하나를 레온의 약혼자로 설정해 주세요.)` or text shaped like a packet
@@ -168,7 +169,7 @@ or form of address is its own fact (`addresses`, one per direction) and ranks wi
 Remaining gaps: turns extracted before `extract-v10` hold it only as an event or a relationship value until
 "Extract all history"; a change the story never states (the characters just start speaking differently) is
 not recorded; the value is free text, so its phrasing varies; and in a crowded scene the default 600-token
-budget holds about six facts. With standing facts first, a stale relationship (K24) reaches the packet more
+budget held about six facts (the default is 800 on `main`, ADR 0035). With standing facts first, a stale relationship (K24) reaches the packet more
 often. *Workaround:* "Extract all history" once after upgrading; raise **기억 예산(토큰) / Memory budget
 (tokens)** (and lower the host's max context by the same amount) when Inspector → Retrievals shows many
 facts not fitting (kept/offered). Evidence: `docs/perf/extract-v10.md`.

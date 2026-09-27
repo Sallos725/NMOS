@@ -503,12 +503,15 @@ def thread_line(t: dict[str, Any]) -> str:
     return f"    <Thread{attrs}>{escape(t.get('text') or '')}</Thread>"
 
 
-def claim_line(c: dict[str, Any]) -> str:
-    """What a character said (ADR 0013): never a fact, whatever the narration says."""
+def claim_line(c: dict[str, Any], marked: bool = False) -> str:
+    """What a character said (ADR 0013): never a fact, whatever the narration says. `marked` adds who
+    knows it (the Private section, ADR 0035)."""
     turn = c["turn"] if c.get("turn") is not None else c["position"]
     attrs = f" by={quoteattr(c.get('asserted_by') or '?')} kind={quoteattr(c['predicate'])} turn=\"{turn}\""
     if c.get("polarity") == "negative":
         attrs += ' negated="true"'
+    if marked:
+        attrs += _knowledge_attrs(c)
     return f"    <Claim{attrs}>{escape(fact_text(c))}</Claim>"
 
 
@@ -525,9 +528,13 @@ def fact_entry(f: dict[str, Any], private: bool = False) -> Line:
                 f.get("value") or f.get("object") or "", _marks(f), private)
 
 
-def claim_entry(c: dict[str, Any]) -> Line:
+def claim_entry(c: dict[str, Any], private: bool = False) -> Line:
+    """A claim as a packet line. It shows no knowledge marks (ADR 0013), except in the Private section
+    (packet-v3), where who knows it is the point (ADR 0035)."""
+    marks = {"by": c["asserted_by"]} if c.get("asserted_by") else {}
     return Line("claim", claim_line(c), {"assertion": c["id"]}, c.get("turn"), fact_text(c),
-                c.get("value") or c.get("object") or "", {"by": c.get("asserted_by")} if c.get("asserted_by") else {})
+                c.get("value") or c.get("object") or "", {**marks, **_marks(c)}, private,
+                claim_line(c, marked=True) if private else "")
 
 
 def thread_entry(t: dict[str, Any], private: bool = False) -> Line:

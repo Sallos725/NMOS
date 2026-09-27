@@ -129,6 +129,12 @@ class OutputRequest(BaseModel):
     message_index: int | None = None
 
 
+class MemoryModeRequest(BaseModel):
+    """This chat's memory mode (ADR 0035): strict withholding, and a first-person narrator (None: none)."""
+    strict: bool = False
+    narrator: Text | None = Field(default=None, max_length=60)
+
+
 class EntityLinkRequest(BaseModel):
     """The owner says two names of one conversation are the same entity (ADR 0025)."""
     entity_type: Literal["character", "place", "item", "group", "concept"]
