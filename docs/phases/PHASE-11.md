@@ -1,6 +1,7 @@
 # Phase 11 — Narrative Engine, part 1 (Stage 5)
 
-> **Status: approved 2026-09-28 (owner), in progress.** Stage 5 of `docs/ROADMAP-1.0.md` (original §24–26,
+> **Status: complete 2026-09-28; one criterion partly met, accepted by the owner (goals still pile up, K23).**
+> Approved 2026-09-28 (owner). Stage 5 of `docs/ROADMAP-1.0.md` (original §24–26,
 > §31–37; Track B, B3 remainder), part 1 of 2. The owner chose Stage 5 next, with the M0 evaluation first, once
 > G1–G3 were fixed (R1), and answered every question below with the recommended answer, except Q0's release:
 > none is planned yet.
@@ -100,7 +101,8 @@ generation):
       longer pile up (the character with 40 current goals has only open ones); K24 cases in the owner's chats read
       as one history. **Partly met** (`docs/perf/extract-v13.md`, step 8): no category worse (13 → 17 of 28);
       no pair with two current relationships; goals end (9 of 48 achieved) but 37 stay open, 43 current lines
-      before; one character 9 → 15 where the owner counts 2 (K23). The owner decides.
+      before; one character 9 → 15 where the owner counts 2 (K23). The owner accepted it on 2026-09-28: Phase 11
+      closes with it, and closing a thread by hand stays in Stage 6.
 - [x] Retrieve latency at 10,000 messages within +10 ms p50 of Phase 10 `main` (+1.2 to +4.7 ms over three pairs,
       `docs/perf/extract-v13.md`).
 - [x] Real-host smoke on an isolated PocketRisu: a thread opened and resolved in play reaches the packet and the
@@ -126,7 +128,7 @@ generation):
 7. Inspector views. **Done**: threads by kind with outcomes (steps 4–5), causes (step 6), and a Relationships
    section per pair on the chat and character pages.
 8. Evaluation tiers (each paid run approved first), real-host smoke, upgrade, documentation. **Done**, with one
-   criterion partly met (goals still pile up) for the owner to decide. No paid run was needed: both models ran
+   criterion partly met (goals still pile up), accepted by the owner. No paid run was needed: both models ran
    through the local Ollama.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13). Step 4 re-extracts each chat's recent window

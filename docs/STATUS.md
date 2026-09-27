@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Phase 11 — Narrative Engine, part 1 (Stage 5): approved 2026-09-28, in progress.** Spec
+**Phase 11 — Narrative Engine, part 1 (Stage 5): complete (2026-09-28), not released.** Spec
 `docs/phases/PHASE-11.md`: the M0 evaluation on real chats (a restored backup, read-only), relationship history
 per pair (K24), goal, question, threat and debt threads with a lifecycle, and explicit links, in one extractor
 generation (`extract-v13`). The owner answered every question with the recommended answer; no release is decided.
@@ -17,8 +17,9 @@ answers the prompt's own last messages hold (`docs/perf/m0-baseline.md`): 23 →
 need memory 5 → 7. Step 7: the Inspector's Relationships section per pair and threads by kind. Step 8: every
 thread kind opened, ended, deleted and edited back in the memory evaluation (53 of 53), a real-host smoke on
 PocketRisu v1.13.0, an upgrade from Phase 10 `main`, retrieve +1.2 to +4.7 ms p50 at 10k. One criterion is partly
-met: goals end (9 of 48 on the owner's chat) but 37 stay open (K23); the owner decides whether Phase 11 closes
-with it (`docs/perf/extract-v13.md`).
+met, and the owner accepted it: goals end (9 of 48 on the owner's chat) but 37 stay open (K23; closing a thread by
+hand is Stage 6, `docs/perf/extract-v13.md`). Next: a draft spec for Phase 12 (summaries, character state), for the
+owner's approval.
 
 **Phase 10 — Knowledge and Secrets (Stage 4): complete (2026-09-27), not released (owner).** Spec
 `docs/phases/PHASE-10.md` (every acceptance criterion met), ADRs 0033–0037, D43–D47, migration 0021. A secret is
@@ -182,7 +183,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K29 (K10 resolved; K29 found on `main`) current as of `v0.1.0-beta.21`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–8 of the original roadmap, one release each (draft, R1–R6 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0040` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes |
-| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-11.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 in progress |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-11.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted) |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 | Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11`, and A-12's markup half in `clean-v3` (both unreleased) |
 
@@ -225,8 +226,10 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
 - O5 — resolved 2026-09-24: superseded vectors and text pruned (ADR 0015, D29), full-manifest host
   observations compacted losslessly (ADR 0018, D31), everything else on abandoned worldlines kept.
 - Phase 9 (accountable packets): complete, released in `v0.1.0-beta.19`.
-- Phase 11 (Stage 5, part 1): approved 2026-09-28 with the recommended answers (Q0–Q8); release on hold.
-- Phase 12+ (the rest of Stage 5, Stages 6–8): not authorized.
+- Phase 11 (Stage 5, part 1): approved 2026-09-28 with the recommended answers (Q0–Q8); complete 2026-09-28, the
+  goal pile-up criterion partly met and accepted (owner); release on hold.
+- Phase 12 (Stage 5, part 2: summaries, character state): the owner asked for a draft spec (2026-09-28); not
+  authorized yet. Stages 6–8: not authorized.
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600. Raised to 800 on 2026-09-27 (owner; ADR 0035).
 - Release cadence — decided 2026-09-26, revised 2026-09-27: one release per roadmap stage, urgent patches
