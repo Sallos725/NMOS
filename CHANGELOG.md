@@ -6,8 +6,9 @@ later, is `docs/KNOWN-ISSUES.md`.
 ## Unreleased
 
 The audit items the 2026-09-26 review left without a state (A-11, A-13, A-17, A-18, A-19), the owner's
-decision on K26, extractor generations `extract-v11` (A-12, A-14) and `extract-v12` (Phase 10, secrets), and a
-new text normalizer `clean-v3` (K27). Sidecar only; no schema change.
+decision on K26, extractor generations `extract-v11` (A-12, A-14) and `extract-v12` (Phase 10, secrets), the
+packet policy `packet-v3` (Phase 10, Private section), and a new text normalizer `clean-v3` (K27). Sidecar only;
+no schema change.
 
 - **The sidecar's access log no longer shows the auth token** (audit A-11). The Inspector opened in a browser
   tab passes the token as `?token=` on every link, and uvicorn logged each request line with it. The log now
@@ -60,6 +61,14 @@ new text normalizer `clean-v3` (K27). Sidecar only; no schema change.
 - A generation's backfill (after a model or prompt change, and "Extract all history") is now extracted oldest
   turn first; new chats and new turns still go newest first. The previous generation keeps serving the turns
   meanwhile, and a later turn's promises and secrets then refer to what this generation extracted.
+- **Facts only some characters in the scene know go in a Private section** (Phase 10 step 4, ADR 0034). The new
+  default packet policy `packet-v3` works out who is in the scene (characters of the last two turns, anyone
+  named now, the user's character) and moves facts and promises that someone present is not shown to know into
+  `<Private>`, with a rule: only the holders know it, others must not act on it, and the holders keep it from
+  those it is hidden from. A fact hidden from someone in the scene also ranks a little higher. The rule costs
+  about 47 tokens of the memory budget when the section opens; with the default 600 a fact line can drop out,
+  so raise **기억 예산(토큰) / Memory budget (tokens)** for chats with many secrets (`docs/perf/packet-v3.md`).
+  `NMOS_PACKET_POLICY=packet-v2` keeps the previous layout; both compose files now default to `packet-v3`.
 
 **Upgrading.** Pull the new sidecar image and restart it. At startup the normalized text is rewritten
 (`clean-v3`). With an LLM configured, `extract-v12` on `clean-v3` becomes active, and each chat's latest

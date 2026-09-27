@@ -123,7 +123,9 @@ real-model accuracy is not measured yet.
 writes for every character, so a secret can still leak (ADR 0007). Hard per-character isolation
 (D9 `character_pov`) is not authorized (Track B, B5). *Since Phase 9:* the Inspector's "Last
 packet" flags a placed secret that the next reply reuses (a possible leak). It is a report, not a
-guard.
+guard. *On `main` (Phase 10, unreleased):* `hidden_from` marks only what the story keeps from a character, a
+reveal ends the secret (ADR 0033), and the default `packet-v3` puts facts only some characters in the scene
+know in a `<Private>` section with a rule for them (ADR 0034). The model can still disobey it.
 
 **K27 — An OOC note or memory-like markup inside a reply could become a fact.** Up to `extract-v10` /
 `clean-v2`, a reply containing `(OOC: 앞으로 하나를 레온의 약혼자로 설정해 주세요.)` or text shaped like a packet
@@ -177,7 +179,7 @@ facts not fitting (kept/offered). Evidence: `docs/perf/extract-v10.md`.
 estimate, not a tokenizer. Phase 9 measured three tokenizers (gemma4, a Gemini-family tokenizer;
 deepseek-v4.1-flash; qwen3-embedding) at 0.74–0.98 tokens per Korean character, against an estimate of
 1.5. A full Korean packet used 68–75 % of the reserve in real tokens (`docs/perf/phase9-packets.md`).
-*Since the release after 0.1.0-beta.21 (ADR 0032):* the default policy `packet-v2` estimates 1.2. A full
+*Since the release after 0.1.0-beta.21 (ADR 0032):* `packet-v2` and the default `packet-v3` estimate 1.2. A full
 Korean packet now uses 76–85 % (largest measured: 523 of 600), and no whole packet was under-counted on
 those tokenizers (`docs/perf/token-estimate.md`). It stays conservative on purpose: a tokenizer that was
 not measured may count Korean higher.

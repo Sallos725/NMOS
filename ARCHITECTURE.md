@@ -394,6 +394,12 @@ on, the listed turn's secret of the same head and every other secret whose head 
 then drops the name from `hidden_from` and carries `revealed`. `learned` is never a fact itself, and deleting
 the revealing turn restores the secret. Generation `extract-v12`.
 
+**D44 — Private section (Phase 10, ADR 0034).** The request computes the scene cast (characters of the two
+turns before it, characters named now, the persona; compared by entity). A limited fact or promise that someone
+in the cast is not shown to know is private: the default policy `packet-v3` emits it in a `<Private>` section
+with a rule in the Note (only holders know it; others do not act on it; holders keep it from those in
+`hidden_from`). A mentioned fact hidden from someone in the cast ranks 0.8 higher. `packet-v2` stays available.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
