@@ -12,7 +12,7 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
-from . import generations, retention
+from . import generations, migrate, retention
 from .config import Settings
 from .extraction import claim, extractor, fail, finish, process_extract
 from .llm import ChatModel, Embedder, LLMError
@@ -145,6 +145,23 @@ def loop(settings: Settings, stop: threading.Event, holder: dict[str, Any]) -> N
             stop.wait(5.0)
 
 
+def wait_for_schema(database_url: str, stop: threading.Event, poll_s: float = 2.0) -> None:
+    """Return once every migration this image ships is applied (or on stop). The sidecar applies them when it
+    starts, and compose starts the worker next to it: jobs claimed against an older schema would fail."""
+    said: list[str] | None = None
+    while not stop.is_set():
+        try:
+            missing = migrate.pending(database_url)
+        except psycopg.OperationalError as exc:  # the database is not up yet
+            missing = [f"(database unavailable: {str(exc).strip()[:120]})"]
+        if not missing:
+            return
+        if missing != said:
+            log.info("waiting for the sidecar to apply migrations: %s", ", ".join(missing))
+            said = missing
+        stop.wait(poll_s)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = Settings()
@@ -152,6 +169,7 @@ def main() -> None:
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
+    wait_for_schema(settings.database_url, stop)
     threads = [threading.Thread(target=maintenance, args=(settings, stop, holder), daemon=True)]
     threads += [threading.Thread(target=loop, args=(settings, stop, holder), daemon=True)
                 for _ in range(max(1, settings.worker_concurrency))]

@@ -17,9 +17,20 @@ def migrations_dir() -> Path:
     return Path(env) if env else Path(__file__).resolve().parents[4] / "migrations"
 
 
+def migration_files(directory: Path | None = None) -> list[Path]:
+    return sorted(p for p in (directory or migrations_dir()).glob("[0-9][0-9][0-9][0-9]_*.sql"))
+
+
+def pending(database_url: str, directory: Path | None = None) -> list[str]:
+    """Migration files this database has not applied yet."""
+    with psycopg.connect(database_url, autocommit=True) as conn:
+        exists = conn.execute("SELECT to_regclass('schema_migrations') IS NOT NULL").fetchone()[0]
+        applied = {r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()} if exists else set()
+    return [p.name for p in migration_files(directory) if p.name not in applied]
+
+
 def apply_migrations(database_url: str, directory: Path | None = None) -> list[str]:
-    directory = directory or migrations_dir()
-    files = sorted(p for p in directory.glob("[0-9][0-9][0-9][0-9]_*.sql"))
+    files = migration_files(directory)
     applied_now: list[str] = []
     with psycopg.connect(database_url, autocommit=True) as conn:
         conn.execute(
