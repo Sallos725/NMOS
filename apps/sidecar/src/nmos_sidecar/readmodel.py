@@ -84,7 +84,7 @@ def traces(conn: psycopg.Connection, conv_id: UUID, limit: int = 30) -> list[dic
         """
         SELECT id, created_at, left(query, 160) AS query, freshness, token_estimate,
                jsonb_array_length(candidates) AS candidates, jsonb_array_length(selected) AS selected,
-               jsonb_array_length(excluded_in_context) AS excluded, latency_ms
+               jsonb_array_length(excluded_in_context) AS excluded, latency_ms, recall_options
         FROM retrieval_trace WHERE conversation_id = %s ORDER BY created_at DESC LIMIT %s
         """,
         (conv_id, limit),

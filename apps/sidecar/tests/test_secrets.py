@@ -194,7 +194,17 @@ def test_a_reveal_ends_the_secret_until_its_turn_is_deleted(migrated, db):
         assert not goal.get("hidden_from") and goal["known_by"] == ["Elpi", "{{user}}"]
         assert [r["to"] for r in goal["revealed"]] == ["Blanc"]
         assert not [f for f in view if f["predicate"] == "learned"]  # a reveal is not a fact itself
+        # The Inspector lists the secret and when Blanc found it out (step 6), also on Blanc's own page.
+        conv = next(x for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)["id"]
+        page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
+        assert "Secrets (kept from whom" in page and "Elpi goal: watch the lecture" in page
+        assert "Blanc: found out in turn 2" in page and "Reveals that matched no open secret" not in page
+        blanc = next(e for e in c.get(f"/v1/conversations/{conv}/entities").json() if e["name"] == "Blanc")
+        assert "Secrets this character found out" in c.get(f"/inspector/c/{conv}/e/{blanc['id']}",
+                                                          params={"lang": "en"}).text
         chat.delete(4)  # the revealing turn's user message (turns are user + reply)
         step(c, migrated, chat, model, "again")
         goal = next(f for f in facts(c, chat) if f["predicate"] == "goal")
         assert goal["hidden_from"] == ["Blanc"] and not goal.get("revealed")
+        page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
+        assert "Blanc: <span class=\"warn\">does not know yet</span>" in page

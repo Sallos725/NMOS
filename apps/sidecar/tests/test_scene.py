@@ -183,6 +183,9 @@ def test_strict_mode_withholds_and_a_narrator_drops_what_they_do_not_know(migrat
         assert traces[1]["latency_ms"]["memory_mode_withheld"] >= 2  # the fact and the excerpt
         # A recorded request replays with its own mode, whatever the chat's mode is now.
         assert c.get(f"/v1/trace/{traces[1]['id']}/replay").json()["reproduced"] is True
+        # The Inspector shows the last request's scene and mode (step 6).
+        page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
+        assert "Scene: {{user}}, 블랑, 엘피 · memory mode: narrator {{user}}" in page
         assert c.put(f"/v1/conversations/{conv}/memory-mode", json={"narrator": "x" * 61}).status_code == 422
         assert c.put("/v1/conversations/00000000-0000-0000-0000-000000000000/memory-mode", json={}).status_code == 404
 

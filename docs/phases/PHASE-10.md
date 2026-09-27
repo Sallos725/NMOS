@@ -1,6 +1,6 @@
 # Phase 10 — Knowledge and Secrets (Stage 4)
 
-> **Status: approved 2026-09-27 (the owner merged #107); in progress. Steps 2–5 done (ADR 0033, 0034, 0035).** Stage 4 of
+> **Status: approved 2026-09-27 (the owner merged #107); in progress. Steps 2–6 done (ADR 0033, 0034, 0035, 0036).** Stage 4 of
 > `docs/ROADMAP-1.0.md` (original §27–30; Track B, B5 narrowed). The owner chose the recommended answer to every
 > question (R1, Q1–Q5) on 2026-09-27 and asked for no release yet. Design: `docs/proposals/STAGE-4-KNOWLEDGE.md`.
 > Evidence behind it: `docs/perf/stage4-leak-pilot.md`.
@@ -115,7 +115,9 @@ in front of those it is kept from. A chat can choose a strict packet or a first-
    - **Budget pressure** (owner request 2026-09-27, options B and C of four): the Status tab says what the last
      request left out and the budget that holds it, and `packet-v4` drops restatements. **Done** (ADR 0036,
      `docs/perf/budget.md`). A compact line format (option D) waits for step 7.
-6. Inspector.
+6. Inspector. **Done**: the chat page's Secrets section (holders, kept from, the turn, and per character
+   whether and when they found out), reveals that matched nothing, the last request's scene cast and memory
+   mode in the packet section, and "Found out" on a character's page. Sidecar only; no plugin change.
 7. Evaluation: synthetic cases, `tools/eval_secrets.py`, the model tiers (each paid run approved first).
 8. Documentation, real-host smoke, upgrade check.
 

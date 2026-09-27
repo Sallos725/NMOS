@@ -9,7 +9,9 @@ secret ends on the read side (ADR 0033, D43; evidence `docs/perf/extract-v12.md`
 modes, migration 0021, the Inspector's memory mode card, private claims, default reserve 800 (ADR 0035, D45;
 `docs/perf/memory-mode.md`). Budget pressure (owner request, "B+C first"): the Status tab says what did not fit
 and the budget that holds it, and `packet-v4` (default) drops restatements (ADR 0036, D46; `docs/perf/budget.md`).
-Next: step 6, the Inspector's secrets view. No release (owner).
+Step 6 done: the Inspector shows a chat's secrets (who knows, kept from whom, who found out and when), reveals
+that matched nothing, and the last request's scene cast and memory mode. Next: step 7, evaluation (paid model
+runs need an agreed budget first). No release (owner).
 
 **Phase 9 — Accountable Packets: complete (2026-09-26), released in `v0.1.0-beta.19`.** The owner asked for
 the work on a new branch and approved the merge after review. Spec `docs/phases/PHASE-9.md` (Track B, B6

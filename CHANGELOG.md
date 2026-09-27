@@ -81,6 +81,11 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
   600-token packet placed 66% of the memory lines retrieval found, 800 places 89%, and 1000 all of them
   (`docs/perf/memory-mode.md`). If you left **기억 예산(토큰) / Memory budget (tokens)** empty, lower PocketRisu's
   max context by 200 more.
+- **The Inspector shows a chat's secrets** (Phase 10 step 6). A chat's page has a **비밀 / Secrets** section: each
+  fact kept from someone, who knows it, whom it is kept from, the turn, and for each of them whether and when
+  they found out. Reports of someone finding out that matched no secret are listed apart, and a character's
+  page lists the secrets they found out. The last packet's section names the scene's characters and the
+  memory mode the request used. Sidecar only.
 - **The Status tab says when memory did not fit** (ADR 0036). When the last reply's memory budget left memory
   out, a card says how many lines of how many, and the budget that holds them all (in steps of 100, up to 2000),
   with a button that sets it. Lower PocketRisu's max context by the same amount. Inspector → Retrievals shows it
