@@ -57,7 +57,8 @@ command runs, and Codex reports that it could not read anything. Either run the 
 terminal (or exclude it from the caller's sandbox), or pass `--inline`: the prompt then carries the
 `--base` diff, the working-tree diff and every untracked file, plus each `--attach PATH` (for example
 `--attach AGENTS.md --attach ARCHITECTURE.md`), up to 400,000 characters. A file outside the checkout,
-ignored by git, or with a sensitive name (`.env*`, keys, credentials, `*.db`, `*.bin`) stops the run. An inline review sees only what was attached, so say so when reporting it.
+ignored by git, or with a sensitive name (`.env*`, keys, credentials, `*.db`, `*.bin`) stops the run; changes to
+tracked files with such names are left out of every diff the script sends. An inline review sees only what was attached, so say so when reporting it.
 
 The headless `claude` backend needs a logged-in `claude` CLI in the shell that runs the script; an
 expired login fails with `Failed to authenticate`.
@@ -65,6 +66,6 @@ expired login fails with `Failed to authenticate`.
 ## Cost
 
 Each run uses the reviewer CLI's own login, not the NMOS model keys: the CLI gets only the system basics of the
-environment and its own login variables (`OPENAI_*`, `CODEX_*`, `ANTHROPIC_*`, `CLAUDE_*`), never `NMOS_*`,
-`DATABASE_URL` or `PG*`. It still costs quota or money: one
+environment and its own login variables (Codex: `OPENAI_*`, `CODEX_*`; Claude: `ANTHROPIC_*`, `CLAUDE_*`), never
+the other CLI's, `NMOS_*`, `DATABASE_URL` or `PG*`. It still costs quota or money: one
 review per material change, not one per commit.

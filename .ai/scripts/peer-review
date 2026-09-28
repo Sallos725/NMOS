@@ -59,16 +59,18 @@ def describe_scope(repo, base, scope):
     return '\n\n'.join(lines)
 
 
-# What the reviewer CLI gets of this shell's environment: the system basics, and its own login (Codex: OPENAI_ and
-# CODEX_; Claude: ANTHROPIC_ and CLAUDE_). Never the NMOS keys, token or database URLs (NMOS_*, DATABASE_URL, PG*).
+# What the reviewer CLI gets of this shell's environment: the system basics, and its own login only. Never the other
+# CLI's login, nor the NMOS keys, token or database URLs (NMOS_*, DATABASE_URL, PG*).
 ENV_NAMES = {'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LANGUAGE', 'TERM', 'TMPDIR', 'TZ', 'SSL_CERT_FILE',
              'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE', 'NODE_EXTRA_CA_CERTS', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY',
              'http_proxy', 'https_proxy', 'no_proxy'}
-ENV_PREFIXES = ('LC_', 'XDG_', 'OPENAI_', 'CODEX_', 'ANTHROPIC_', 'CLAUDE_')
+ENV_PREFIXES = ('LC_', 'XDG_')
+LOGIN_PREFIXES = {'codex': ('OPENAI_', 'CODEX_'), 'claude': ('ANTHROPIC_', 'CLAUDE_')}
 
 
-def reviewer_env():
-    env = {k: v for k, v in os.environ.items() if k in ENV_NAMES or k.startswith(ENV_PREFIXES)}
+def reviewer_env(backend):
+    prefixes = ENV_PREFIXES + LOGIN_PREFIXES[backend]
+    env = {k: v for k, v in os.environ.items() if k in ENV_NAMES or k.startswith(prefixes)}
     env[GUARD] = '1'
     return env
 
@@ -86,11 +88,15 @@ def inlinable(repo, rel):
     return path
 
 
+# Tracked files with a sensitive name stay out of the diffs too, at any depth.
+NOT_SENSITIVE = ['.', *(f':(exclude,glob)**/{pattern}' for pattern in SENSITIVE)]
+
+
 def diffs(repo, base):
     parts = []
     if base:
-        parts.append((f'git diff {base}...HEAD', git(repo, 'diff', f'{base}...HEAD')))
-    parts.append(('git diff HEAD', git(repo, 'diff', 'HEAD')))
+        parts.append((f'git diff {base}...HEAD', git(repo, 'diff', f'{base}...HEAD', '--', *NOT_SENSITIVE)))
+    parts.append(('git diff HEAD', git(repo, 'diff', 'HEAD', '--', *NOT_SENSITIVE)))
     return parts
 
 
@@ -174,7 +180,7 @@ def main():
     work = pathlib.Path(tempfile.mkdtemp(prefix='nmos-peer-review-'))
     answer = work / 'answer.md'
     log = pathlib.Path(args.log) if args.log else work / 'progress.log'
-    env = reviewer_env()
+    env = reviewer_env(args.backend)
     print(f'peer-review: {args.backend} {args.role} in {repo}; progress log {log}', file=sys.stderr)
     with open(log, 'w', encoding='utf-8') as log_file:
         try:
