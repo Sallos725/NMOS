@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import quote
 
 from .entities import norm
-from .facts import STANDING, earlier, first, participant_entities
+from .facts import STANDING, earlier, first, participant_entities, symmetric
 
 STYLE = """
 :root{color-scheme:light dark;--bg:#fbfbfa;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e3e0;--chip:#efefec;--accent:#3b5bdb}
@@ -508,7 +508,10 @@ def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
 
     return table([_t(lang, k) for k in ("h.pair", "h.relationship", "h.feelings", "h.speech")],
                  [[_v(" ↔ ".join(sorted(p["names"].values()))),
-                   "<br>".join(said(f, len(p["relationship"]) > 1) for f in p["relationship"]),
+                   # a directed value ("엄마") says who is whose only with its direction; a symmetric one needs it
+                   # only when both directions are current
+                   "<br>".join(said(f, len(p["relationship"]) > 1 or not symmetric(f.get("value")))
+                               for f in p["relationship"]),
                    "<br>".join(said(f, True) for f in p["feels"]),
                    "<br>".join(said(f, True) for f in p["speech"])] for p in entries[:100]])
 
@@ -649,7 +652,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            conflicts: list[dict[str, Any]] | None = None, items: list[dict[str, Any]] | None = None,
            threads: list[dict[str, Any]] | None = None, unmatched: list[dict[str, Any]] | None = None,
            packet: dict[str, Any] | None = None, secrets: list[dict[str, Any]] | None = None,
-           unrevealed: list[dict[str, Any]] | None = None) -> str:
+           unrevealed: list[dict[str, Any]] | None = None, standing: list[dict[str, Any]] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -674,7 +677,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         parts.append(("secrets", t("secrets"), len(secrets), _secrets_table(secrets, lang), True))
     if unrevealed:
         parts.append(("unrevealed", t("unrevealed"), len(unrevealed), _unrevealed_table(unrevealed, lang), True))
-    if both := pairs(facts):
+    if both := pairs(facts if standing is None else standing):  # every pair, not only those in the capped facts
         parts.append(("pairs", t("pairs"), len(both), _pairs_table(both, lang), True))
     if facts:
         parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
