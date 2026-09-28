@@ -43,3 +43,26 @@ def test_sidecar_and_worker_share_one_environment(path):
     assert env["sidecar"] == env["worker"] == "*nmos-env"
     missing = documented() - anchor_vars(text)
     assert not missing, f"{path} does not pass {sorted(missing)}"
+
+
+@pytest.mark.parametrize("path", ["docker-compose.yml", "deploy/docker-compose.yml"])
+def test_compose_defaults_are_the_sidecar_defaults(path):
+    """A default written in a compose file overrides the sidecar's own: `NMOS_PACKET_POLICY` stayed `packet-v4` there
+    while the sidecar's default moved to `packet-v5` and `packet-v6` (Phase 11), so a compose install never got them."""
+    import dataclasses
+
+    from nmos_sidecar.config import Settings
+
+    base = Settings()
+    names = {f.name for f in dataclasses.fields(Settings)}
+    text = (ROOT / path).read_text()
+    wrong = {}
+    for name, default in re.findall(r"^  (NMOS_\w+): \$\{NMOS_\w+:-([^}]*)\}", text, re.M):
+        attr = name.removeprefix("NMOS_").lower()
+        if attr not in names or name in ("NMOS_CORS_ORIGINS", "NMOS_ALLOWED_HOSTS"):  # lists: set per install
+            continue
+        ours = getattr(base, attr)
+        theirs = (default != "0") if isinstance(ours, bool) else type(ours)(default) if default else type(ours)()
+        if theirs != ours:
+            wrong[name] = (default, ours)
+    assert wrong == {}, f"{path}: compose default differs from the sidecar's: {wrong}"
