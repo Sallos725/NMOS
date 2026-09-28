@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:114e9f1aded5".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:ca99bd210c54".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -265,6 +265,10 @@
     "chat.switched_on": [
       "\uC774 \uCC44\uD305\uC5D0\uC11C NMOS\uB97C \uB2E4\uC2DC \uCF30\uC2B5\uB2C8\uB2E4. \uB2E4\uC74C \uC0DD\uC131\uBD80\uD130 \uAE30\uC5B5\uC744 \uB123\uC2B5\uB2C8\uB2E4.",
       "NMOS is back on for this chat. Memory goes in from the next generation."
+    ],
+    "chat.switched_on_all_off": [
+      "\uC774 \uCC44\uD305\uC5D0\uC11C NMOS\uB97C \uB2E4\uC2DC \uCF30\uC9C0\uB9CC, NMOS\uAC00 \uBAA8\uB4E0 \uCC44\uD305\uC5D0\uC11C \uAEBC\uC838 \uC788\uC5B4(\uC124\uC815 \uD0ED) \uAE30\uC5B5\uC744 \uB123\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "NMOS is back on for this chat, but it is off for every chat (Settings tab), so no memory goes in."
     ],
     "feature.state": ["\uC0C1\uD0DC\uCC3D", "Status window"],
     "feature.extraction": ["\uC0AC\uC2E4 \uCD94\uCD9C", "Fact extraction"],
@@ -1490,6 +1494,13 @@ ${revisionHash}`;
       event(event) {
         run(async () => {
           if (!await active()) return;
+          if (event.type === "request-end" && event.outcome === "chat-off") {
+            conversation = null;
+            where = null;
+            stopPolling();
+            state = { ...reduce(state, event, deps.now()), progress: null };
+            return render2();
+          }
           if (event.type === "request-end" || event.type === "background") await follow(event.conversationId);
           state = reduce(state, event, deps.now());
           await render2();
@@ -3003,8 +3014,10 @@ html,body{margin:0;background:#0c0c10}
       return typeof chat?.id === "string" && chat.id ? chat.id : null;
     }
   });
-  function chatSwitchNotice(lang, state) {
-    return t(lang, state.id === null ? "chat.none" : state.off ? "chat.switched_off" : "chat.switched_on");
+  function chatSwitchNotice(lang, state, enabled) {
+    if (state.id === null) return t(lang, "chat.none");
+    if (state.off) return t(lang, "chat.switched_off");
+    return t(lang, enabled ? "chat.switched_on" : "chat.switched_on_all_off");
   }
   async function registerHooks(beforeRequest, onOutput, status, api, hud) {
     await risuai.addRisuReplacer("beforeRequest", beforeRequest);
@@ -3033,7 +3046,7 @@ html,body{margin:0;background:#0c0c10}
       location: "chat",
       id: "nmos-chat-switch"
     }, () => {
-      risuChatSwitch.toggle().then((state) => risuai.alert(chatSwitchNotice(lang, state))).catch((error) => console.warn("[NMOS] chat switch failed:", error instanceof Error ? error.message : error));
+      risuChatSwitch.toggle().then(async (state) => risuai.alert(chatSwitchNotice(lang, state, Number(await arg("disabled")) !== 1))).catch((error) => console.warn("[NMOS] chat switch failed:", error instanceof Error ? error.message : error));
     });
     await risuai.registerButton({
       name: t(lang, "menu.panel"),

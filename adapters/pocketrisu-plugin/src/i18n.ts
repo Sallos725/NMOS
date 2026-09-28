@@ -44,6 +44,8 @@ const STRINGS = {
     'NMOS is off for this chat: nothing of it goes to the sidecar and no memory goes in. What is already remembered is kept.'],
   'chat.switched_on': ['이 채팅에서 NMOS를 다시 켰습니다. 다음 생성부터 기억을 넣습니다.',
     'NMOS is back on for this chat. Memory goes in from the next generation.'],
+  'chat.switched_on_all_off': ['이 채팅에서 NMOS를 다시 켰지만, NMOS가 모든 채팅에서 꺼져 있어(설정 탭) 기억을 넣지 않습니다.',
+    'NMOS is back on for this chat, but it is off for every chat (Settings tab), so no memory goes in.'],
   'feature.state': ['상태창', 'Status window'],
   'feature.extraction': ['사실 추출', 'Fact extraction'],
   'feature.vectors': ['의미 검색', 'Semantic recall'],

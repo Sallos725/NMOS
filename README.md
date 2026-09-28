@@ -92,7 +92,8 @@ language after a page reload.
 - **Status**: first, **This chat**: whether NMOS is on for the chat open now, and a button to turn it off or back on
   for that chat alone (ADR 0048). Off, nothing of the chat goes to the sidecar and no memory goes in; what NMOS
   already keeps of it stays, and turned back on, the next generation catches up. The same switch is in the ☰ menu
-  left of the chat input (**NMOS: this chat off/on**), which says in a dialog which way it went. Then the
+  left of the chat input (**NMOS: this chat off/on**), which says in a dialog which way it went. The switch, its
+  menu entry and the sidebar icon are read from the PocketRisu v1.13.0 source and not yet checked in a real UI run. Then the
   sidecar connection, which features are on (status window, facts, semantic recall), and what the
   last request injected. **Show the injected memory** opens the exact text that went into that request
   (kept only until the page reloads). When memory did not fit the budget, a card says how much and offers the

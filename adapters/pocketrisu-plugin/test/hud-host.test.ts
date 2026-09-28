@@ -134,6 +134,20 @@ describe('createHud', () => {
     expect(timers).toHaveLength(0);
   });
 
+  it('stops following a chat NMOS was switched off for: no coverage poll (ADR 0048)', async () => {
+    const { hud, page, advance, coverage, timers } = setup({ coverage: async () => cov(2, 2) });
+    hud.event({ type: 'request-end', outcome: 'injected', chars: 10, conversationId: 'conv-1' });
+    await advance(0);
+    expect(coverage).toHaveBeenCalledTimes(1);
+    hud.event({ type: 'request-end', outcome: 'chat-off', chars: 0, conversationId: null });
+    await advance(0);
+    expect(page.pill()?.children[0]?.text).toBe('⏻ 이 채팅은 NMOS 꺼짐');
+    await advance(POLL_MS * 3);
+    expect(coverage).toHaveBeenCalledTimes(1);
+    expect(page.pill()).toBeNull();
+    expect(timers).toHaveLength(0);
+  });
+
   /** A coverage fake whose first call waits for `release()`; later calls answer at once. */
   function gated(answers: unknown[]) {
     let release: () => void = () => {};

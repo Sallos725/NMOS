@@ -191,9 +191,11 @@ export const risuChatSwitch = createChatSwitch({
   },
 });
 
-/** What a tap on the chat menu's switch did, for the host's dialog. */
-export function chatSwitchNotice(lang: Parameters<typeof t>[0], state: ChatState): string {
-  return t(lang, state.id === null ? 'chat.none' : state.off ? 'chat.switched_off' : 'chat.switched_on');
+/** What a tap on the chat menu's switch did, for the host's dialog. The global switch wins (ADR 0048 §5). */
+export function chatSwitchNotice(lang: Parameters<typeof t>[0], state: ChatState, enabled: boolean): string {
+  if (state.id === null) return t(lang, 'chat.none');
+  if (state.off) return t(lang, 'chat.switched_off');
+  return t(lang, enabled ? 'chat.switched_on' : 'chat.switched_on_all_off');
 }
 
 export async function registerHooks(
@@ -228,7 +230,7 @@ export async function registerHooks(
   await risuai.registerButton({ name: t(lang, 'menu.chat_switch'), icon: '⏻', iconType: 'html', location: 'chat',
     id: 'nmos-chat-switch' }, () => {
     risuChatSwitch.toggle()
-      .then((state) => risuai.alert(chatSwitchNotice(lang, state)))
+      .then(async (state) => risuai.alert(chatSwitchNotice(lang, state, Number(await arg('disabled')) !== 1)))
       .catch((error) => console.warn('[NMOS] chat switch failed:', error instanceof Error ? error.message : error));
   });
   // The sidebar's ☰ menu, which shows icons only (PocketRisu v1.13.0 Sidebar.svelte): the panel, where "This chat"

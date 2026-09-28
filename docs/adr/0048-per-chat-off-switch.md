@@ -30,8 +30,11 @@ in the plugin (2026-09-28).
    - The panel's Status tab starts with a **This chat** card: on or off, what that means, and the switch.
    - The sidebar's ☰ menu opens the panel (`registerButton` location `hamburger`). It shows icons only (v1.13.0
      `Sidebar.svelte`), so it is the 🧠 icon.
-   - The progress display, when on, says "NMOS is off for this chat" after a generation in such a chat.
-5. **Global switch first.** `disabled` still turns NMOS off everywhere; the per-chat list only adds chats to it.
+   - The progress display, when on, says "NMOS is off for this chat" after a generation in such a chat, and stops
+     following the chat's conversation, so not even a coverage poll reaches the sidecar.
+   - The dialog is the one alert outside the output listener (H18 amended): it answers the owner's own tap.
+5. **Global switch first.** `disabled` still turns NMOS off everywhere; the per-chat list only adds chats to it. A chat
+   turned back on while it is set is told so, in the card and the dialog.
 
 ## Consequences
 

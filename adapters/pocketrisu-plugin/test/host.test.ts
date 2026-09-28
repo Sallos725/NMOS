@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MAX_DEADLINE_MS, MAX_RESERVED_TOKENS } from '../src/form';
-import { registerHooks, risuChatSwitch, risuHost } from '../src/host';
+import { chatSwitchNotice, registerHooks, risuChatSwitch, risuHost } from '../src/host';
 
 function withArgs(args: Record<string, string | number>) {
   (globalThis as { risuai?: unknown }).risuai = { getArgument: async (key: string) => args[key.split('::').pop()!] };
@@ -61,6 +61,13 @@ describe('menus', () => {
     await vi.waitFor(() => expect(alerts).toHaveLength(2));
     expect(args.disabled_chats).toBe('');
     expect(alerts[1]).toMatch(/^NMOS is back on/);
+  });
+
+  it('says a chat turned back on still gets nothing while NMOS is off for every chat', () => {
+    expect(chatSwitchNotice('en', { id: 'c', off: false }, false)).toMatch(/off for every chat/);
+    expect(chatSwitchNotice('en', { id: 'c', off: false }, true)).toMatch(/^NMOS is back on/);
+    expect(chatSwitchNotice('en', { id: 'c', off: true }, false)).toMatch(/^NMOS is off for this chat/);
+    expect(chatSwitchNotice('en', { id: null, off: false }, true)).toMatch(/^No chat is open/);
   });
 
   it('the switch has nothing to do when no character is open', async () => {
