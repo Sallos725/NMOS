@@ -324,6 +324,9 @@ python tools/spike_report.py fixtures/host/incoming
 
 # inspect the spike script
 cat adapters/pocketrisu-spike/nmos-host-spike.js
+
+# the canon probe (Phase 14; shapes only, never alters the prompt; setup in fixtures/host/canon-v1.13.0-2026-09-28/)
+cat adapters/pocketrisu-spike/nmos-canon-probe.js
 ```
 
 The PocketRisu spike itself is loaded through PocketRisu's plugin UI.

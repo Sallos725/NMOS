@@ -14,7 +14,7 @@ Each answer in bold was NMOS's proposal; the owner accepted every one (2026-09-2
 |---|---|---|---|
 | Q0 | One phase for canon and export/restore, or two? | **Two.** Phase 14: canon sources. Phase 15: export and restore of the ledger, the owner's input and settings, which closes Stage 6. Each is a separate kind of work, and export/restore needs no host evidence. | One phase; export/restore first. |
 | Q1 | Which canon does NMOS read? | **Four sources, their story parts only:** the character card's `name`, `desc`, `personality`, `scenario` and the greeting the chat started from; the lorebook entries of the character, the chat and the active modules; the chat's persona (`personaPrompt`); the chat's author's note (`note`). Not the card's instructions (`systemPrompt`, `postHistoryInstructions`, `creatorNotes`), example messages or assets. | The card only; everything the card holds. |
-| Q2 | How does canon reach NMOS, and how is it kept? | **The plugin reads it at each request and sends only what changed, as a hash manifest does for messages; the sidecar keeps each canon text as an immutable source revision of the conversation** (a card edit makes a new revision; the old one is kept as history, invariant 1). A request records the canon revisions in force, so it replays as it was (ADR 0027). Canon is kept per conversation, as the host shows it to that chat. | A panel button that imports canon on demand; canon shared across a character's chats. |
+| Q2 | How does canon reach NMOS, and how is it kept? | **The plugin reads it at each request and sends only what changed, as a hash manifest does for messages; the sidecar keeps each canon text as an immutable source revision of the conversation** (a card edit makes a new revision; the old one is kept as history, invariant 1). A request records the canon revisions in force, so it replays as it was (ADR 0027). Canon is kept per conversation, as the host shows it to that chat. *Step 2 (H19):* the card is read off the request path, because reading it clones the current chat; the rest is read with each request. | A panel button that imports canon on demand; canon shared across a character's chats. |
 | Q3 | Does a model read canon, and when? | **Yes, the extraction model, as its own projection (a `canon` generation), so the message extractor and its generation do not change and nothing is extracted again.** The card, the persona and the author's note are read once per revision (a few calls when they change). A lorebook entry is read once the host first puts it in a prompt (the plugin sees which entries' text is in the outgoing prompt), not all at once: a large lorebook costs calls only for the entries the story uses. The Inspector shows the calls made. | Every lorebook entry at once; no model (names only, Q6). |
 | Q4 | Canon or story: which wins? | **The story, from the turn it says something new; canon is the state before turn 0.** A card that says someone is 16 is superseded by the story's "turned 17". A story statement that contradicts canon at the same time (not a change the story tells) is listed in "Needs attention" as a conflict, with the owner's choices: keep the story's, keep canon's (a lock, Q7), or leave it. | Canon always wins; the newer source wins. |
 | Q5 | What changes in the packet? | **Almost nothing on its own:** the host already sends the card and the lorebook entries it activates, and NMOS does not send what the host sent (D3). A canon fact reaches the packet like any fact only when its text is not in the prompt (an entry the host did not activate this time, an edited-away card line), and a locked fact (Q7) holds against a story statement. No new packet policy unless step 5 shows one is needed. | Canon facts always in the packet; a `<Canon>` section. |
@@ -111,7 +111,16 @@ where the story uses it, and the message extractor is untouched.
 ## Steps (one pull request each)
 
 1. This document, approved. **Done** (2026-09-28).
-2. Host evidence and the canon inventory.
+2. Host evidence and the canon inventory. **Done** (`docs/HOST-FACTS.md` "Canon sources", H19;
+   `docs/perf/canon.md`):
+   - Every canon source is readable on v1.13.0, and an entry's text is in a prompt exactly when the host activated
+     it.
+   - `getCharacter()` clones the current chat (82–93 ms at 10,000 messages), so the card is read off the request
+     path. Everything else costs about 1 ms, or rides on the chat read NMOS already does.
+   - Sample 2's lorebook keys would make six characters' given names mentions (K31); the longest chat's keys are
+     not names.
+   - Reading only what a prompt held starts sample 2 at its 45 always-active entries, of 165.
+   - The existing host facts held on v1.13.0.
 3. Capture: migration 0025, ADR 0045, plugin and sync, the Inspector's canon list.
 4. Names from canon.
 5. Canon facts, conflicts, and `fact_lock`.

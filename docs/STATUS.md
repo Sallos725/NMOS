@@ -7,7 +7,10 @@
 immutable sources of each chat; names from canon; canon facts read by the extraction model as their own projection
 (the message extractor unchanged), superseded by the story from the turn it says something new; contradictions in
 "Needs attention"; a canon lock. Host evidence first, on the owner's PocketRisu v1.13.0. Export/restore is Phase 15 (Q0).
-The owner accepted every proposed answer; no release. Next: step 2 (host evidence and a count-only canon inventory).
+The owner accepted every proposed answer; no release. Step 2 done (`docs/HOST-FACTS.md` "Canon sources", H19,
+`docs/perf/canon.md`): every canon source is readable on v1.13.0, the card only off the request path (reading it
+clones the chat, 82–93 ms at 10,000 messages); sample 2's lorebook keys cover six given names (K31). Next: step 3
+(capture).
 
 **Phase 13 — Verification and Repair, part 1 (Stage 6): complete (2026-09-28), not released.** Spec
 `docs/phases/PHASE-13.md`: the owner repairs memory in the panel (close or reopen a thread, retract or correct a
@@ -225,7 +228,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H18, D1–D54, O2/O3/O4/O5 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H19, D1–D54, O2/O3/O4/O5 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
 | Schema | `migrations/0001`–`0024` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode, thread outcome and cause, summaries, owner repairs |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
