@@ -157,6 +157,11 @@ went in or why not (no budget, state cap), and, once the reply is in the chat, w
 reused. A hidden fact the reply repeated is marked (ADR 0027). **Relationships** shows each pair on one row: the
 relationship, and each direction's feeling and speech level with its cause, what it replaced and how it started
 (Phase 11); a fact's stated cause also shows under it in **Facts**, with the event it names when one nearby matches.
+**Summaries** shows the summary generation, the story so far and each 8-turn scene with its state: current, held back
+for a secret it repeats or was written before (with the secret), not used while a character it is kept from is in the
+scene, changed by an edit and written again, queued, or failed with its error (Phase 12). A character's page starts
+with **Current state**: what `<Cast>` says of them when they are in the scene (place, condition, feeling toward the
+persona, what they carry) and their open goals.
 
 <p><img src="docs/images/panel-status.png" alt="NMOS panel, Status tab: sidecar connected, semantic recall on, last request injected 835 characters in 90 ms" width="560"></p>
 <p><img src="docs/images/inspector.png" alt="NMOS Inspector: one conversation shown as bot name · chat name, with vector coverage 43/43" width="760"></p>

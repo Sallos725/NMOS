@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -332,6 +333,18 @@ def _first_turn(conn: psycopg.Connection, head: UUID, in_context: set[str], upto
         " AND (%s::int IS NULL OR am.position <= %s::int)", (head, list(in_context), upto, upto)).fetchone()["t"]
 
 
+def cast_facts(facts: list[dict[str, Any]], to_persona: Callable[[dict[str, Any]], bool]) -> list[dict[str, Any]]:
+    """What <Cast> says of one character (ADR 0043), from their current facts: the newest place and condition, the
+    newest feeling toward the persona, and up to CAST_ITEMS things they carry, newest first. The Inspector's state
+    block uses the same rule (PHASE-12 step 6)."""
+    facts = sorted((f for f in facts if f["predicate"] in CAST_PREDICATES and f.get("polarity") != "negative"
+                    and f.get("subject_type") in (None, "character")), key=lambda f: f["position"], reverse=True)
+    pick = [f for f in facts if f["predicate"] == "located_in"][:1]
+    pick += [f for f in facts if f["predicate"] == "has_status"][:1]
+    pick += [f for f in facts if f["predicate"] == "feels_toward" and f.get("object") and to_persona(f)][:1]
+    return pick + [f for f in facts if f["predicate"] == "possesses"][:CAST_ITEMS]
+
+
 def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str,
                 options: RecallOptions) -> tuple[list[tuple[str, list[Line]]], set[Any]]:
     """Each scene character's current state as the lines it is (PHASE-12 Q4, ADR 0043): place, condition, feeling
@@ -352,18 +365,12 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str,
 
     mine: dict[str, list[dict[str, Any]]] = {}
     for f in view["facts"]:
-        if (f["predicate"] in CAST_PREDICATES and f.get("polarity") != "negative"
-                and f.get("subject_type") in (None, "character") and shown(f)):
+        if f["predicate"] in CAST_PREDICATES and shown(f):
             mine.setdefault(scene.key(r, f["subject"]), []).append(f)
     groups: list[tuple[str, list[Line]]] = []
     used: set[Any] = set()
     for k in order:
-        facts = sorted(mine.get(k, []), key=lambda f: f["position"], reverse=True)
-        pick = [f for f in facts if f["predicate"] == "located_in"][:1]
-        pick += [f for f in facts if f["predicate"] == "has_status"][:1]
-        pick += [f for f in facts if f["predicate"] == "feels_toward" and f.get("object")
-                 and scene.key(r, f["object"]) == persona][:1]
-        pick += [f for f in facts if f["predicate"] == "possesses"][:CAST_ITEMS]
+        pick = cast_facts(mine.get(k, []), lambda f: scene.key(r, f["object"]) == persona)
         named = any(n in said for n in scene.names({k: cast[k]}, r))
         goals = [t for t in view["threads"] if named and t.get("kind") == "goal" and t["status"] == "open"
                  and scene.key(r, t["by"]) == k and shown(t)]

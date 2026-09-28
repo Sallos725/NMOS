@@ -690,7 +690,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             pj_key = rt["projection"].key if rt["projection"] else None
             return inspector.index(readmodel.list_conversations(conn), token, job_counts(conn),
                                    {"extraction": generations.describe(conn, ex_key),
-                                    "embeddings": generations.describe(conn, pj_key)},
+                                    "embeddings": generations.describe(conn, pj_key),
+                                    "summaries": generations.describe(conn, rt.get("active_summarizer"))},
                                    # no generation ever active: "—", not a 0 % that reads as unfinished work
                                    extraction.coverage(conn, ex_key) if ex_key else {},
                                    vectors.coverage(conn, pj_key) if pj_key else {},
@@ -719,8 +720,16 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     unrevealed=view["unrevealed"],
                                     standing=[f for f in view["facts"] if f["predicate"] in STANDING],
                                     packet=audit.audit(conn, traces[0]["id"]) if traces else None,
-                                    summaries=summaries.current(conn, conv_id, head, rt.get("active_summarizer"), view["secrets"])
-                                    if rt.get("active_summarizer") else None)
+                                    summaries=summary_view(conn, conv_id, head, view["secrets"]))
+
+    def summary_view(conn, conv_id: UUID, head: UUID, secrets: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """The Inspector's summaries of a chat (PHASE-12 step 6), with the generation and whether packets use them."""
+        key = rt.get("active_summarizer")
+        if key is None:
+            return None
+        view = summaries.inspect(conn, conv_id, head, key, secrets)
+        view.update(generation=generations.describe(conn, key), on=rt["summarizer"] is not None)
+        return view
 
     def inspector_character_html(conv_id: UUID, entity_id: UUID, request: Request, token: str | None,
                                  lang: str | None, embed: bool = False) -> str:
