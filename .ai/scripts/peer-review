@@ -143,7 +143,7 @@ def main():
     parser.add_argument('--log', metavar='FILE', help='reviewer progress log (default: a temp file)')
     parser.add_argument('--inline', action='store_true',
                         help='put the diff and untracked files in the prompt, for a reviewer whose '
-                             'sandbox cannot run commands (e.g. codex inside another sandbox)')
+                             'sandbox cannot run commands (e.g. codex where user namespaces are restricted)')
     parser.add_argument('--attach', metavar='PATH', action='append', default=[],
                         help='with --inline, also include this file (repeatable)')
     args = parser.parse_intermixed_args()

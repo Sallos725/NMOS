@@ -10,8 +10,9 @@ typos, test-only renames) and say that you skipped it.
 
 1. Commit or at least finish the change, and run its tests first. The reviewer sees the diff, not your
    intent.
-2. Run it in the background (it takes minutes) from the checkout that holds the change. Claude Code's
-   sandboxed Bash cannot start Codex's own sandbox, so pass `--inline` and attach what the reviewer needs:
+2. Run it in the background (it takes minutes) from the checkout that holds the change. Codex's own
+   sandbox cannot start on the owner's host (user namespaces are restricted, `.ai/README.md`), so pass
+   `--inline` and attach what the reviewer needs:
 
    ```bash
    python3 .ai/scripts/peer-review codex review --base origin/main --inline \

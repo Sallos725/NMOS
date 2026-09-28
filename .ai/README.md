@@ -51,17 +51,24 @@ fail-open behavior."
 
 ## When the reviewer cannot read the tree
 
-Codex's read-only sandbox is bubblewrap. Started from inside another sandbox (Claude Code's sandboxed
-Bash, for one), it fails with `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted` before any
-command runs, and Codex reports that it could not read anything. Either run the script from a plain
-terminal (or exclude it from the caller's sandbox), or pass `--inline`: the prompt then carries the
+Codex's read-only sandbox is bubblewrap, which needs unprivileged user namespaces. Where they are
+restricted it fails with `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted` before any command
+runs, and Codex reports that it could not read anything. The owner's host is one: Ubuntu 24.04 sets
+`kernel.apparmor_restrict_unprivileged_userns = 1`, so it fails from a plain terminal too, not only inside
+Claude Code's Bash (checked 2026-09-28 with `codex sandbox -- head -2 AGENTS.md`). Allowing it is a host
+security setting and the owner's call. Until then pass `--inline`: the prompt then carries the
 `--base` diff, the working-tree diff and every untracked file, plus each `--attach PATH` (for example
 `--attach AGENTS.md --attach ARCHITECTURE.md`), up to 400,000 characters. A file outside the checkout,
 ignored by git, or with a sensitive name (`.env*`, keys, credentials, `*.db`, `*.bin`) stops the run; changes to
 tracked files with such names are left out of every diff the script sends. An inline review sees only what was attached, so say so when reporting it.
 
-The headless `claude` backend needs a logged-in `claude` CLI in the shell that runs the script; an
-expired login fails with `Failed to authenticate`.
+The headless `claude` backend needs a logged-in `claude` CLI in the shell that runs the script (`claude auth
+status`); an expired login fails with `Failed to authenticate`. When Codex leads on the owner's host, its own
+sandbox cannot start either, and `claude -p` needs the network: Codex runs the script as a command the owner
+approves outside its sandbox.
+
+The Claude Code `codex` plugin (`/codex:rescue`) is not this review: it hands Codex the task, and Codex may
+edit. A §14 review goes through this script, read-only.
 
 ## Cost
 
