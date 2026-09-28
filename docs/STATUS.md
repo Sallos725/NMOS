@@ -116,7 +116,7 @@ latency (`docs/perf/scale.md`), a real upgrade from a `v0.1.0-beta.10` database.
 Outside the phase (owner decision 2026-09-24, D28): an optional progress display on the chat screen,
 released in `v0.1.0-beta.12`.
 Outside the phase (owner-reported bug 2026-09-24, ADR 0023, D34, released in `v0.1.0-beta.16`): the persona's name as
-the host reports it is the persona, so `{{user}}` and a named persona (유우마) are one entity; the plugin
+the host reports it is the persona, so `{{user}}` and a named persona are one entity; the plugin
 reads it with the host's "db" permission, asked at load (real-host check: `docs/HOST-FACTS.md`, "Persona
 name"). Migration 0018, `resolve-v3`.
 Outside the phase (owner report 2026-09-25, ADRs 0024 and 0025, D35 and D36, released in `v0.1.0-beta.17`): `extract-v9` labels an

@@ -343,7 +343,7 @@ PostgreSQL + pgvector is the default implementation, not the ontology.
 If the UI displays:
 
 ```text
-Hinata trusts Souta.
+Akari trusts Kenji.
 ```
 
 it must be possible to inspect:
@@ -1016,13 +1016,13 @@ Example:
 
 ```text
 Before:
-umbrella holder = Hinata
+umbrella holder = Akari
 
 Candidate event:
-Hinata gives umbrella to Souta
+Akari gives umbrella to Kenji
 
 After:
-umbrella holder = Souta
+umbrella holder = Kenji
 ```
 
 The verifier checks:
@@ -1203,12 +1203,12 @@ EntityAlias
 This supports multilingual aliases such as:
 
 ```text
-颯太
-소우타
-Souta
-Sota
-桜庭颯太
-Sakuraba Souta
+健二
+켄지
+Kenji
+Kenzi
+森本健二
+Morimoto Kenji
 ```
 
 Entity merge/split must be reversible.
@@ -1280,10 +1280,10 @@ State is versioned, not overwritten destructively.
 
 ```text
 E103:
-umbrella holder = Souta
+umbrella holder = Kenji
 
 E126:
-umbrella holder = Hinata
+umbrella holder = Akari
 ```
 
 becomes:
@@ -1292,14 +1292,14 @@ becomes:
 FactVersion
 subject = umbrella
 predicate = holder
-value = Souta
+value = Kenji
 valid_from = E103
 valid_until = E126
 
 FactVersion
 subject = umbrella
 predicate = holder
-value = Hinata
+value = Akari
 valid_from = E126
 valid_until = null
 ```
@@ -1374,14 +1374,14 @@ internal-thought status
 Example:
 
 ```text
-Souta whispers a secret to Hinata.
+Kenji whispers a secret to Akari.
 ```
 
 Projection:
 
 ```text
-Souta knows(secret)
-Hinata knows(secret)
+Kenji knows(secret)
+Akari knows(secret)
 Bob does not automatically know(secret)
 ```
 
@@ -1531,7 +1531,7 @@ Examples:
 ```text
 Magic requires spoken incantation.
 Visitors remove shoes before entering the shrine.
-Hinata makes coffee before studying.
+Akari makes coffee before studying.
 The guild requires a report after missions.
 ```
 
@@ -1919,7 +1919,7 @@ Examples:
 "그때 정확히 뭐라고 했어?"
 → EXACT_QUOTE + FORENSIC
 
-"히나타라면 지금 뭐라고 말할까?"
+"아카리라면 지금 뭐라고 말할까?"
 → CHARACTER + STYLE + CURRENT_STATE
 ```
 
@@ -2078,27 +2078,27 @@ Example output:
 
 ```xml
 <NarrativeMemory version="2">
-  <Perspective principal="Hinata">
+  <Perspective principal="Akari">
     <KnowledgeBoundary>
-      Hinata has not learned who entered the room before her.
+      Akari has not learned who entered the room before her.
     </KnowledgeBoundary>
   </Perspective>
 
   <CurrentScene>
     <Location>station platform</Location>
-    <Present>Souta, Hinata</Present>
+    <Present>Kenji, Akari</Present>
   </CurrentScene>
 
   <CurrentState>
-    <Fact confidence="high">Souta currently holds Hinata's umbrella.</Fact>
+    <Fact confidence="high">Kenji currently holds Akari's umbrella.</Fact>
   </CurrentState>
 
   <RelevantPast>
-    <Event id="E103">During heavy rain, Hinata lent Souta her umbrella.</Event>
+    <Event id="E103">During heavy rain, Akari lent Kenji her umbrella.</Event>
   </RelevantPast>
 
   <OpenThreads>
-    <Thread>Souta promised to return the umbrella.</Thread>
+    <Thread>Kenji promised to return the umbrella.</Thread>
   </OpenThreads>
 
   <StyleHints>
@@ -2513,14 +2513,14 @@ source evidence
 Example trace:
 
 ```text
-Query: "왜 히나타가 화났지?"
+Query: "왜 아카리가 화났지?"
 
 E118 promise broken
   via causal search
   confidence .94
   REQUIRED
 
-R42 Hinata resents Souta
+R42 Akari resents Kenji
   via relationship projection
   confidence .87
   REQUIRED

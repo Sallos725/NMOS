@@ -5,9 +5,9 @@ read; no schema change, no new extractor generation.
 
 ## Context
 
-`possesses` is multi-valued per subject (D6 registry): `Yujin possesses map` and later `Hana possesses
+`possesses` is multi-valued per subject (D6 registry): `Dohyun possesses map` and later `Hana possesses
 map` are different facts, so both stayed current after the map changed hands. The per-turn extraction
-comparison found exactly this (`docs/perf/turn-extraction.md`: `유진 possesses 해안 지도` stayed current
+comparison found exactly this (`docs/perf/turn-extraction.md`: `도현 possesses 해안 지도` stayed current
 after the map was returned), independently of the extraction unit.
 
 Track A offered three options: an item-centric predicate, an explicit termination assertion, or

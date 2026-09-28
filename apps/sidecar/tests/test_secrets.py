@@ -14,13 +14,13 @@ from test_semantics import row
 PLAN = "엄마 몰래 강의실 뒤에서 수업을 보기"
 
 
-def secret(pos: int, holders=("엘피", "{{user}}"), kept=("블랑",), value=PLAN, **kw):
+def secret(pos: int, holders=("루카", "{{user}}"), kept=("노엘",), value=PLAN, **kw):
     """A goal kept from someone, as extract-v12 stores one."""
-    return row(pos, "엘피", "goal", None, value, subject_type="character", knowledge="limited",
+    return row(pos, "루카", "goal", None, value, subject_type="character", knowledge="limited",
                known_by=list(holders), hidden_from=list(kept), **kw)
 
 
-def learned(pos: int, who: str = "블랑", text: str = f"엘피 goal: {PLAN}", **kw):
+def learned(pos: int, who: str = "노엘", text: str = f"루카 goal: {PLAN}", **kw):
     return row(pos, who, "learned", None, text, subject_type="character", **kw)
 
 
@@ -31,46 +31,46 @@ def secrets(rows):
 def test_a_fact_kept_from_someone_is_a_secret():
     assert is_secret(secret(1))
     assert not is_secret(secret(1, kept=()))  # limited without hidden_from: only who knows
-    assert not is_secret(row(1, "엘피", "goal", None, PLAN, subject_type="character", knowledge="public"))
+    assert not is_secret(row(1, "루카", "goal", None, PLAN, subject_type="character", knowledge="public"))
     assert not is_secret(secret(1, modality="dreamed"))
     (s,), unmatched, used = secrets([secret(7)])
-    assert (s["text"], s["kept_from"], s["open"], s["ended"]) == (f"엘피 goal: {PLAN}", ["블랑"], ["블랑"], {})
+    assert (s["text"], s["kept_from"], s["open"], s["ended"]) == (f"루카 goal: {PLAN}", ["노엘"], ["노엘"], {})
     assert unmatched == [] and used == set()
 
 
 def test_learned_ends_the_secret_for_that_character_only():
-    (s,), unmatched, used = secrets([secret(7, kept=("블랑", "라디아")), learned(21)])
-    assert s["open"] == ["라디아"] and s["ended"]["블랑"]["turn"] == 21 and unmatched == [] and used == {21}
+    (s,), unmatched, used = secrets([secret(7, kept=("노엘", "아델라")), learned(21)])
+    assert s["open"] == ["아델라"] and s["ended"]["노엘"]["turn"] == 21 and unmatched == [] and used == {21}
 
 
 def test_a_reworded_reveal_ends_every_restated_copy_but_not_another_secret():
     rows = [secret(7), secret(8, value="강의실 뒤에서 몰래 엄마 수업 보기 작전"), secret(9, value="쿠키 굽기"),
-            learned(21, text=f"엘피 goal: {PLAN}")]
+            learned(21, text=f"루카 goal: {PLAN}")]
     got, unmatched, _ = secrets(rows)
-    assert {s["turn"]: s["open"] for s in got} == {7: [], 8: [], 9: ["블랑"]} and unmatched == []
+    assert {s["turn"]: s["open"] for s in got} == {7: [], 8: [], 9: ["노엘"]} and unmatched == []
     # The content alone, without the head, matches too; a different head does not.
     assert secrets([secret(7), learned(21, text="엄마 몰래 수업 보기")])[0][0]["open"] == []
-    assert secrets([secret(7), learned(21, text=f"라디아 goal: {PLAN}")])[0][0]["open"] == ["블랑"]
+    assert secrets([secret(7), learned(21, text=f"아델라 goal: {PLAN}")])[0][0]["open"] == ["노엘"]
 
 
 def test_a_reveal_of_a_listed_turn_survives_that_turn_being_extracted_again_in_other_words():
-    # Listed as "엘피 goal: {PLAN}" from turn 7; turn 7 was extracted again later and reads differently now.
-    reworded = secret(7, value="블랑 모르게 강의 듣기")
-    (s,), unmatched, _ = secrets([reworded, learned(21, text=f"[turn 7] 엘피 goal: {PLAN}")])
+    # Listed as "루카 goal: {PLAN}" from turn 7; turn 7 was extracted again later and reads differently now.
+    reworded = secret(7, value="노엘 모르게 강의 듣기")
+    (s,), unmatched, _ = secrets([reworded, learned(21, text=f"[turn 7] 루카 goal: {PLAN}")])
     assert s["open"] == [] and unmatched == []
     # Two secrets of that turn with the head: the closer one ends; a secret of another turn does not.
     other = secret(7, value="쿠키를 서랍에 숨기기")
-    got, _, _ = secrets([reworded, other, secret(9, value="쿠키 굽기"), learned(21, text=f"[turn 7] 엘피 goal: {PLAN}")])
-    assert {s["text"][9:]: s["open"] for s in got} == {"블랑 모르게 강의 듣기": [], "쿠키를 서랍에 숨기기": ["블랑"],
-                                                       "쿠키 굽기": ["블랑"]}
+    got, _, _ = secrets([reworded, other, secret(9, value="쿠키 굽기"), learned(21, text=f"[turn 7] 루카 goal: {PLAN}")])
+    assert {s["text"][9:]: s["open"] for s in got} == {"노엘 모르게 강의 듣기": [], "쿠키를 서랍에 숨기기": ["노엘"],
+                                                       "쿠키 굽기": ["노엘"]}
 
 
 def test_a_reveal_whose_listed_turn_was_edited_matches_by_content_only():
     """ADR 0033 amendment 2: the listed turn's hash when the reveal was extracted, against the turn's now."""
-    listed = f"[turn 7] 엘피 goal: {PLAN}"
+    listed = f"[turn 7] 루카 goal: {PLAN}"
     other = secret(7, value="다이아몬드 훔치기", turn_hash="h2")
     (s,), unmatched, _ = secrets([other, learned(21, text=listed, listed_hash="h1")])
-    assert s["open"] == ["블랑"] and [u["value"] for u in unmatched] == [listed]
+    assert s["open"] == ["노엘"] and [u["value"] for u in unmatched] == [listed]
     for unchanged in ("h2", None):  # the same turn, or a reveal extracted before hashes were recorded: rule 1
         (s,), unmatched, _ = secrets([other, learned(21, text=listed, listed_hash=unchanged)])
         assert s["open"] == [] and unmatched == []
@@ -80,30 +80,30 @@ def test_a_reveal_whose_listed_turn_was_edited_matches_by_content_only():
 
 def test_a_second_reveal_of_the_same_secret_is_no_mismatch():
     (s,), unmatched, used = secrets([secret(7), learned(21), learned(30)])
-    assert s["ended"]["블랑"]["turn"] == 21 and unmatched == [] and used == {21, 30}
+    assert s["ended"]["노엘"]["turn"] == 21 and unmatched == [] and used == {21, 30}
 
 
 def test_a_reveal_matching_nothing_ends_nothing():
-    (s,), unmatched, _ = secrets([secret(7), learned(21, text="라디아 identity: 연구원")])
-    assert s["open"] == ["블랑"] and [u["turn"] for u in unmatched] == [21]
+    (s,), unmatched, _ = secrets([secret(7), learned(21, text="아델라 identity: 연구원")])
+    assert s["open"] == ["노엘"] and [u["turn"] for u in unmatched] == [21]
     # Someone the secret was not kept from cannot end it.
-    (s,), unmatched, _ = secrets([secret(7), learned(21, who="라디아")])
-    assert s["open"] == ["블랑"] and len(unmatched) == 1
+    (s,), unmatched, _ = secrets([secret(7), learned(21, who="아델라")])
+    assert s["open"] == ["노엘"] and len(unmatched) == 1
 
 
 def test_a_reveal_before_the_secret_or_not_actual_ends_nothing():
     (s,), _, _ = secrets([learned(3), secret(7)])
-    assert s["open"] == ["블랑"]
+    assert s["open"] == ["노엘"]
     (s,), _, used = secrets([secret(7), learned(21, modality="hypothetical")])
-    assert s["open"] == ["블랑"] and used == set()
+    assert s["open"] == ["노엘"] and used == set()
     (s,), _, _ = secrets([secret(7), learned(21, polarity="negative")])
-    assert s["open"] == ["블랑"]
+    assert s["open"] == ["노엘"]
 
 
 def test_learned_is_registered_for_characters():
     assert "learned" in REGISTRY
-    assert validate({"subject": "블랑", "subject_type": "character", "predicate": "learned", "value": "x"}) == ("valid", None)
-    assert validate({"subject": "블랑", "subject_type": "character", "predicate": "learned"})[0] == "pending"
+    assert validate({"subject": "노엘", "subject_type": "character", "predicate": "learned", "value": "x"}) == ("valid", None)
+    assert validate({"subject": "노엘", "subject_type": "character", "predicate": "learned"})[0] == "pending"
 
 
 def test_open_secrets_are_listed_for_named_people_and_leave_when_found_out():
@@ -112,19 +112,19 @@ def test_open_secrets_are_listed_for_named_people_and_leave_when_found_out():
            "members": [{"turn": 30, "metadata": {"role": "char"}, "content": "조용한 부엌."}]}
     rows = [secret(7)]
     assert extraction.secret_hints(ctx, rows) == []  # nobody it concerns is named
-    ctx["members"][0]["content"] = "블랑이 커피를 마셨다."
+    ctx["members"][0]["content"] = "노엘이 커피를 마셨다."
     assert extraction.secret_hints(ctx, rows) == [
-        {"text": f"엘피 goal: {PLAN}", "holders": ["엘피", "{{user}}"], "kept_from": ["블랑"], "turn": 7, "turn_hash": None}]
+        {"text": f"루카 goal: {PLAN}", "holders": ["루카", "{{user}}"], "kept_from": ["노엘"], "turn": 7, "turn_hash": None}]
     assert extraction.secret_hints(ctx, [secret(7), learned(21)]) == []  # found out: no longer open
 
 
 def test_the_prompt_lists_open_secrets_and_the_rules():
     ctx = {"target": {"turn": 30}, "context": [],
-           "members": [{"turn": 30, "metadata": {"role": "char"}, "content": "블랑이 문 앞에 섰다."}]}
-    listed = [{"text": f"엘피 goal: {PLAN}", "holders": ["엘피", "{{user}}"], "kept_from": ["블랑"], "turn": 7}]
+           "members": [{"turn": 30, "metadata": {"role": "char"}, "content": "노엘이 문 앞에 섰다."}]}
+    listed = [{"text": f"루카 goal: {PLAN}", "holders": ["루카", "{{user}}"], "kept_from": ["노엘"], "turn": 7}]
     prompt = extraction.build_prompt(ctx, None, None, listed)
     assert "OPEN SECRETS (kept from someone earlier in this story, not yet found out):" in prompt
-    assert f"S1. 엘피 goal: {PLAN} (known by: 엘피, {{{{user}}}}; kept from: 블랑; turn 7)" in prompt
+    assert f"S1. 루카 goal: {PLAN} (known by: 루카, {{{{user}}}}; kept from: 노엘; turn 7)" in prompt
     assert "decide for each OPEN SECRET (S1–S1)" in prompt
     assert "OPEN SECRETS" not in extraction.build_prompt(ctx, None, None, [])
     system = extraction.SYSTEM_PROMPT.format(registry=registry_prompt())
@@ -135,20 +135,20 @@ def test_the_prompt_lists_open_secrets_and_the_rules():
 
 
 def test_the_secrets_check_becomes_learned_only_with_a_kept_name_and_quoted_evidence():
-    listed = [{"text": f"엘피 goal: {PLAN}", "holders": ["엘피"], "kept_from": ["블랑"], "turn": 7},
+    listed = [{"text": f"루카 goal: {PLAN}", "holders": ["루카"], "kept_from": ["노엘"], "turn": 7},
               {"text": "하나 identity: 공주", "holders": ["하나"], "kept_from": ["유이", "카이토"], "turn": 3}]
-    turn = "블랑이 창문 너머로 엘피의 귀를 보았다. 강의실 뒤에 숨어 있던 엘피가 들킨 것이다."
-    answer = {"secrets": [{"secret": "S1", "found_out_by": ["블랑", "라디아"], "evidence": "엘피의 귀를 보았다"},
+    turn = "노엘이 창문 너머로 루카의 귀를 보았다. 강의실 뒤에 숨어 있던 루카가 들킨 것이다."
+    answer = {"secrets": [{"secret": "S1", "found_out_by": ["노엘", "아델라"], "evidence": "루카의 귀를 보았다"},
                           {"secret": "s2", "found_out_by": ["유이"], "evidence": "공주라는 말을 들었다"},  # not in the turn
-                          {"secret": "S9", "found_out_by": ["블랑"], "evidence": "엘피의 귀를 보았다"},  # no such line
+                          {"secret": "S9", "found_out_by": ["노엘"], "evidence": "루카의 귀를 보았다"},  # no such line
                           "S1"]}
     got = extraction.revealed(answer, listed, turn)
-    assert [(a["subject"], a["predicate"], a["value"]) for a in got] == [("블랑", "learned", f"[turn 7] 엘피 goal: {PLAN}")]
+    assert [(a["subject"], a["predicate"], a["value"]) for a in got] == [("노엘", "learned", f"[turn 7] 루카 goal: {PLAN}")]
     assert extraction.revealed({"secrets": "S1"}, listed, turn) == [] and extraction.revealed({}, listed, turn) == []
 
 
 def test_secret_text_is_the_fact_line():
-    assert secret_text(secret(7)) == f"엘피 goal: {PLAN}"
+    assert secret_text(secret(7)) == f"루카 goal: {PLAN}"
     assert secret_text(row(1, "하나", "relationship", "카이토", "연인", subject_type="character")) == "하나 relationship 카이토: 연인"
 
 
@@ -195,36 +195,36 @@ def secrets_of(prompt: str) -> list[str]:
 def test_a_reveal_ends_the_secret_until_its_turn_is_deleted(migrated, db):
     model, chat = SecretRecorder(), SimChat()
     with make_client(migrated, **LLM) as c:
-        step(c, migrated, chat, model, "Elpi secretly plans to watch the lecture, hidden from Blanc.")
-        step(c, migrated, chat, model, "Blanc drinks coffee.")
-        step(c, migrated, chat, model, "Blanc found out: Elpi goal: watch the lecture.")
-        step(c, migrated, chat, model, "Blanc smiles.")
+        step(c, migrated, chat, model, "Luca secretly plans to watch the lecture, hidden from Noel.")
+        step(c, migrated, chat, model, "Noel drinks coffee.")
+        step(c, migrated, chat, model, "Noel found out: Luca goal: watch the lecture.")
+        step(c, migrated, chat, model, "Noel smiles.")
         step(c, migrated, chat, model, "next")
-        listed = "Elpi goal: watch the lecture (known by: Elpi, {{user}}; kept from: Blanc; turn 0)"  # S1
-        assert secrets_of(model.prompts[1]) == [listed]  # Blanc is named: the secret is shown
+        listed = "Luca goal: watch the lecture (known by: Luca, {{user}}; kept from: Noel; turn 0)"  # S1
+        assert secrets_of(model.prompts[1]) == [listed]  # Noel is named: the secret is shown
         assert secrets_of(model.prompts[3]) == []  # found out in turn 2
         stored = db.execute("SELECT hints FROM extraction e JOIN active_membership am"
                             " ON am.source_revision_id = e.source_revision_id WHERE am.turn = 1 LIMIT 1").fetchone()
-        assert stored["hints"]["secrets"][0]["kept_from"] == ["Blanc"]
+        assert stored["hints"]["secrets"][0]["kept_from"] == ["Noel"]
         view = facts(c, chat)
         goal = goal_of(db)
-        assert not goal.get("hidden_from") and goal["known_by"] == ["Elpi", "{{user}}", "Blanc"]  # amendment 1
-        assert [r["to"] for r in goal["revealed"]] == ["Blanc"]
+        assert not goal.get("hidden_from") and goal["known_by"] == ["Luca", "{{user}}", "Noel"]  # amendment 1
+        assert [r["to"] for r in goal["revealed"]] == ["Noel"]
         assert not [f for f in view if f["predicate"] == "learned"]  # a reveal is not a fact itself
-        # The Inspector lists the secret and when Blanc found it out (step 6), also on Blanc's own page.
+        # The Inspector lists the secret and when Noel found it out (step 6), also on Noel's own page.
         conv = next(x for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)["id"]
         page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
-        assert "Secrets (kept from whom" in page and "Elpi goal: watch the lecture" in page
-        assert "Blanc: found out in turn 2" in page and "Reveals that matched no open secret" not in page
-        blanc = next(e for e in c.get(f"/v1/conversations/{conv}/entities").json() if e["name"] == "Blanc")
-        assert "Secrets this character found out" in c.get(f"/inspector/c/{conv}/e/{blanc['id']}",
+        assert "Secrets (kept from whom" in page and "Luca goal: watch the lecture" in page
+        assert "Noel: found out in turn 2" in page and "Reveals that matched no open secret" not in page
+        noel = next(e for e in c.get(f"/v1/conversations/{conv}/entities").json() if e["name"] == "Noel")
+        assert "Secrets this character found out" in c.get(f"/inspector/c/{conv}/e/{noel['id']}",
                                                           params={"lang": "en"}).text
         chat.delete(4)  # the revealing turn's user message (turns are user + reply)
         step(c, migrated, chat, model, "again")
         goal = goal_of(db)
-        assert goal["hidden_from"] == ["Blanc"] and not goal.get("revealed") and goal["known_by"] == ["Elpi", "{{user}}"]
+        assert goal["hidden_from"] == ["Noel"] and not goal.get("revealed") and goal["known_by"] == ["Luca", "{{user}}"]
         page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
-        assert "Blanc: <span class=\"warn\">does not know yet</span>" in page
+        assert "Noel: <span class=\"warn\">does not know yet</span>" in page
 
 
 # --- findings of the 2026-09-27 audit (docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md) ----------------------
@@ -255,29 +255,29 @@ def test_a_reveal_does_not_carry_over_to_a_different_secret_after_its_turn_is_ed
     edit. It ends one there only while that turn reads as it did (ADR 0033 amendment 2)."""
     model, chat = SecretRecorder(), SimChat()
     with make_client(migrated, **LLM) as c:
-        step(c, migrated, chat, model, "Elpi secretly plans to watch the lecture, hidden from Blanc.")
+        step(c, migrated, chat, model, "Luca secretly plans to watch the lecture, hidden from Noel.")
         for i in range(4):  # the reveal falls outside the edited turn's context (extract_turns = 3)
-            step(c, migrated, chat, model, f"Blanc reads chapter {i}.")
-        step(c, migrated, chat, model, "Blanc found out: Elpi goal: watch the lecture.")
+            step(c, migrated, chat, model, f"Noel reads chapter {i}.")
+        step(c, migrated, chat, model, "Noel found out: Luca goal: watch the lecture.")
         step(c, migrated, chat, model, "next")
-        assert [r["to"] for r in goal_of(db)["revealed"]] == ["Blanc"]
+        assert [r["to"] for r in goal_of(db)["revealed"]] == ["Noel"]
         (listed,) = [r["listed_hash"] for r in reveal_rows(db)]
         assert listed is not None
         conv = next(x for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)["id"]
         assert c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["extract"] == 0  # in order
-        chat.edit(0, "Elpi secretly plans to steal the diamond, hidden from Blanc.")
+        chat.edit(0, "Luca secretly plans to steal the diamond, hidden from Noel.")
         sync(c, chat)
         drain(migrated, model)
         goal = goal_of(db)
         assert goal["value"] == "steal the diamond"
-        assert goal["hidden_from"] == ["Blanc"] and not goal.get("revealed")  # Blanc learned of the lecture only
+        assert goal["hidden_from"] == ["Noel"] and not goal.get("revealed")  # Noel learned of the lecture only
         assert [r["listed_hash"] for r in reveal_rows(db)] == [listed] and goal_row(db)["turn_hash"] != listed
         page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
         assert "Reveals that matched no open secret" in page
 
 
-FIRST_IMPORT = ("Elpi secretly plans to watch the lecture, hidden from Blanc.", "Blanc drinks coffee.",
-                "Blanc found out: Elpi goal: watch the lecture.", "Blanc smiles.")
+FIRST_IMPORT = ("Luca secretly plans to watch the lecture, hidden from Noel.", "Noel drinks coffee.",
+                "Noel found out: Luca goal: watch the lecture.", "Noel smiles.")
 
 
 def first_import(c, migrated, model, db) -> tuple[SimChat, str]:
@@ -288,7 +288,7 @@ def first_import(c, migrated, model, db) -> tuple[SimChat, str]:
         chat.reply("Noted.")
     sync(c, chat)
     drain(migrated, model)
-    assert goal_of(db)["hidden_from"] == ["Blanc"]
+    assert goal_of(db)["hidden_from"] == ["Noel"]
     conv = next(x for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)["id"]
     return chat, conv
 
@@ -303,7 +303,7 @@ def test_extract_all_history_recovers_a_reveal_missed_on_first_import(migrated, 
         assert out["queued"]["extract"] == 2  # turns 1 and 2; turn 0 holds the secret
         drain(migrated, model)
         goal = goal_of(db)
-        assert not goal.get("hidden_from") and [r["to"] for r in goal["revealed"]] == ["Blanc"]
+        assert not goal.get("hidden_from") and [r["to"] for r in goal["revealed"]] == ["Noel"]
         assert c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["extract"] == 0  # settled
 
 
@@ -316,4 +316,4 @@ def test_rebuild_recovers_a_reveal_missed_on_first_import(migrated, db):
         assert out["discarded"] == out["queued"]["extract"] > 0
         drain(migrated, model)
         goal = goal_of(db)
-        assert not goal.get("hidden_from") and [r["to"] for r in goal["revealed"]] == ["Blanc"]
+        assert not goal.get("hidden_from") and [r["to"] for r in goal["revealed"]] == ["Noel"]

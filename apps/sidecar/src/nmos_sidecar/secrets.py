@@ -11,7 +11,7 @@ content is closest, however it is worded now: a later re-extraction of that turn
 extracted after the reveal) rewords it; and (2) every other open secret kept from that character whose head
 matches and whose content is equal or reaches the thread match (trigram overlap MATCH_MIN, ADR 0019): the same
 secret is often extracted again in later turns. A head is compared apart from the content because a shared
-head alone ("엘피 goal:") made two secrets of one character look alike. No match ends nothing and is reported
+head alone ("루카 goal:") made two secrets of one character look alike. No match ends nothing and is reported
 as unmatched. Rule 1 holds only while the listed turn reads as it did when the reveal was extracted (the
 reveal's `listed_hash` against the secret's `turn_hash`, ADR 0033 amendment 2): an edit of that turn can make
 it a different secret, which the reveal did not report; only rule 2 can still match it.
@@ -41,7 +41,7 @@ def secret_text(a: dict[str, Any]) -> str:
     return f"{text}: {a['value']}" if a.get("value") else text
 
 
-HEAD_MIN = 0.8  # the head of a reworded reveal ("엘피 goal") may differ in spacing or an alias's spelling
+HEAD_MIN = 0.8  # the head of a reworded reveal ("루카 goal") may differ in spacing or an alias's spelling
 
 
 TURN = re.compile(r"^\[turn (\d+)\] ")

@@ -261,8 +261,8 @@ def test_the_story_goes_on_after_a_repair():
     # Kept at turn 4 after a reveal at 2; a reveal at 6 ends it again.
     target = repairs.secret_target({**kept_goal(1), "text": secret_fold.secret_text(kept_goal(1))})
     (s,), _ = fold_secrets([kept_goal(1), learned(2), learned(6)],
-                           [owner("secret_keep", target, character="블랑", turn=4)])
-    assert s["open"] == [] and s["ended"]["블랑"]["turn"] == 6
+                           [owner("secret_keep", target, character="노엘", turn=4)])
+    assert s["open"] == [] and s["ended"]["노엘"]["turn"] == 6
 
 
 def test_a_repair_applies_from_its_turn():
@@ -274,12 +274,12 @@ def test_a_repair_applies_from_its_turn():
 
 def test_a_secret_repair_needs_the_same_head():
     """Another maker's secret of the same turn, worded alike, never takes the repair."""
-    elpi = {**kept_goal(1), "text": secret_fold.secret_text(kept_goal(1))}
+    luca = {**kept_goal(1), "text": secret_fold.secret_text(kept_goal(1))}
     hana = {**kept_goal(1, id=101), "subject": "하나"}
     hana["text"] = secret_fold.secret_text(hana)
-    target = repairs.secret_target(elpi)
+    target = repairs.secret_target(luca)
     assert repairs.match_secret(target, [hana]) is None
-    assert repairs.match_secret(target, [hana, elpi]) is elpi
+    assert repairs.match_secret(target, [hana, luca]) is luca
 
 
 def test_promises_are_told_apart_by_their_counterpart_and_a_tie_matches_nothing():

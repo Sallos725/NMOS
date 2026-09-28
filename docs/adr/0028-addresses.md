@@ -21,7 +21,7 @@ storage side still had gaps:
 
 1. **Predicate `addresses`** (subject character, object character, value text; `single` per (subject,
    object); world): how the subject now speaks to and calls the object, as the story settles it. The value
-   holds the speech level and the form of address in the chat's language, e.g. "반말, '유우마'라고 부름".
+   holds the speech level and the form of address in the chat's language, e.g. "반말, '타쿠미'라고 부름".
    One row per direction (Q2): speech level is often asymmetric.
 2. **Only what the story settles.** The prompt asks for `addresses` when the target turn settles it: an
    agreement or decision to speak informally or formally, a form of address asked for or allowed, a new
@@ -33,7 +33,7 @@ storage side still had gaps:
 3. **Read side.** `addresses` joins `STANDING` (ADR 0026): among equal mentions it ranks with relationships,
    and it takes the packet budget before threads. Like every single-valued predicate, a newer value replaces
    the older one per direction, and the older one stays as history in the Inspector. The packet line is
-   `<Fact kind="addresses" …>라디아 addresses {{user}}: 반말, '유우마'라고 부름</Fact>`.
+   `<Fact kind="addresses" …>하나 addresses {{user}}: 반말, '타쿠미'라고 부름</Fact>`.
 4. **Generation.** `extract-v10`: the registry and prompt fingerprints change (D20). Activation re-extracts
    each chat's recent window (`NMOS_EXTRACT_BACKFILL`); older turns keep `extract-v9` facts until "Extract
    all history" (ADR 0014).
@@ -45,7 +45,7 @@ storage side still had gaps:
 `docs/perf/extract-v10.md`. On the owner's model (`gemma4:31b-cloud`) and on `deepseek-v4.1-flash:cloud`,
 7 new synthetic scenes passed 21/21 each: agreements in both directions, a form of address taken up, a
 change back, and three controls (a slip, speech settled earlier, routine). On the owner's chat (read-only),
-the six turns where speech or address was settled gave `addresses` in 18 of 18 runs. The turn where 라디아
+the six turns where speech or address was settled gave `addresses` in 18 of 18 runs. The turn where a character
 slipped into 존댓말 gave none in 3 of 3, and routine turns gave none in 12 of 12. In an isolated real host
 the packet opened its facts with both directions of `addresses`, ahead of eight `knows` facts.
 

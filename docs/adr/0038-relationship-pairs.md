@@ -34,8 +34,8 @@ Closes K24's direction case.
 3. **`feels_toward` and `addresses` stay per direction.** A feeling is one side's; a speech level is too (ADR 0028).
    A relationship change never ends a feeling: "lovers" and "angry at him" can both hold (PHASE-11 Q5).
 4. **`resolve-v5`: the persona's full name.** A character name of two or more words whose last word is a persona
-   name (ADR 0023) is the persona: "미즈키 유우마" for the persona "유우마". Characters only; the name must end with
-   the persona's name as its own word ("유우마마" and "유우마 선배" stay other names). Another character who shares the
+   name (ADR 0023) is the persona: "아오키 타쿠미" for the persona "타쿠미". Characters only; the name must end with
+   the persona's name as its own word ("타쿠미마" and "타쿠미 선배" stay other names). Another character who shares the
    persona's given name and is written with a family name would be joined too; nothing splits entities yet (K8), so
    the rule is narrow and the owner's hand join (ADR 0025) remains the general tool.
 5. **`packet-v5` (default): what a standing fact replaced.** `packet-v4` plus, on a relationship, feeling or speech

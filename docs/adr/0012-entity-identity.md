@@ -84,7 +84,7 @@ mentions only (item 5), and the serialized hint block is unchanged by participan
 
 ## Amendment (2026-09-24, ADR 0023)
 
-The persona's name as the host reports it for the conversation (e.g. 유우마) is a persona name for
+The persona's name as the host reports it for the conversation (e.g. 타쿠미) is a persona name for
 characters, like `{{user}}` (`resolve-v3`). The extractor writes a named persona either way, so without
 it one person was two entities. The persona entity is left out of KNOWN ENTITIES under any name.
 

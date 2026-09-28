@@ -36,7 +36,7 @@ and prints this table (`tools/eval_memory.py`).
   `packet-v6`: no gold or stale string depends on an excerpt's turn number (the mean `full` packet is 1 token smaller,
   190 → 189: a turn index has fewer digits than a position).
 
-Gold for the state cases is a fact line (e.g. `Hinata located in harbor`), which only `full` can
+Gold for the state cases is a fact line (e.g. `Akari located in harbor`), which only `full` can
 produce; `lexical` and `hybrid` can still bring the original sentence as an excerpt.
 
 ## Results

@@ -13,7 +13,7 @@ from test_vectors import FakeEmbedder, drain_embeddings
 
 def history_chat() -> SimChat:
     chat = SimChat()
-    chat.user("Hinata is in the old chapel.")
+    chat.user("Akari is in the old chapel.")
     chat.reply("The chapel is quiet.")
     filler(chat, 7)
     chat.user("last")
@@ -109,9 +109,9 @@ def test_mass_delete_hides_facts_and_a_restored_range_reuses_its_extractions(mig
     with make_client(migrated, **LLM) as c:
         chat = SimChat()
         filler(chat, 3)
-        chat.user("Hinata is in the old chapel.")
+        chat.user("Akari is in the old chapel.")
         chat.reply("ok")
-        chat.user("Hinata moved to the bell tower.")
+        chat.user("Akari moved to the bell tower.")
         chat.reply("ok")
         filler(chat, 2, "b")
         chat.user("last")

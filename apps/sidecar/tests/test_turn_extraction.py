@@ -25,14 +25,14 @@ def test_turn_is_extracted_once_with_user_message_and_reply(migrated, db):
         chat = SimChat()
         chat.reply("Welcome to the village.")
         chat.user("I walk to the chapel.")
-        chat.reply("Hinata is in the old chapel.")
+        chat.reply("Akari is in the old chapel.")
         chat.user("I say hello.")
         sync(c, chat)
         drain(migrated, complete)
         assert len(prompts) == 2  # greeting (turn 0) and the first exchange (turn 1), not four messages
         prompt = next(p for p in prompts if "TARGET turn 1:" in p)
         target = prompt.split("TARGET turn 1:", 1)[1]
-        assert "USER: I walk to the chapel." in target and "CHARACTER: Hinata is in the old chapel." in target
+        assert "USER: I walk to the chapel." in target and "CHARACTER: Akari is in the old chapel." in target
         assert "[turn 0] CHARACTER: Welcome to the village." in prompt.split("TARGET", 1)[0]
         assert [(f["object"], f["turn"]) for f in facts(c, chat)] == [("old chapel", 1)]
     # Provenance reaches every member of the turn (invariant 10).
@@ -43,7 +43,7 @@ def test_turn_is_extracted_once_with_user_message_and_reply(migrated, db):
 def test_turn_waits_for_the_user_to_continue(migrated, db):
     with make_client(migrated, **LLM) as c:
         chat = SimChat()
-        chat.user("Hinata is in the old chapel.")
+        chat.user("Akari is in the old chapel.")
         sync(c, chat)
         chat.reply("Quiet.")
         sync(c, chat)
@@ -60,14 +60,14 @@ def test_second_reply_moves_the_anchor_and_the_turn_is_extracted_as_a_whole(migr
     with make_client(migrated, **LLM) as c:
         chat = SimChat()
         chat.user("Go on.")
-        chat.reply("Hinata is in the old chapel.")
+        chat.reply("Akari is in the old chapel.")
         sync(c, chat)
         chat.reply("Mina is in the kitchen.")  # a second reply to the same input
         chat.user("And then?")
         sync(c, chat)
         drain(migrated, complete)
         assert len(prompts) == 1 and "Mina is in the kitchen." in prompts[0].split("TARGET", 1)[1]
-        assert sorted(f["subject"] for f in facts(c, chat)) == ["Hinata", "Mina"]
+        assert sorted(f["subject"] for f in facts(c, chat)) == ["Akari", "Mina"]
 
 
 def test_facts_of_a_per_message_generation_are_no_longer_served(migrated, db):
@@ -75,7 +75,7 @@ def test_facts_of_a_per_message_generation_are_no_longer_served(migrated, db):
     earlier) no longer match the head; their turns are served again once re-extracted (ADR 0031)."""
     with make_client(migrated) as c:
         chat = SimChat()
-        chat.user("Hinata is in the old chapel.")
+        chat.user("Akari is in the old chapel.")
         chat.reply("ok")
         filler(chat, 2)
         chat.user("last")
@@ -88,7 +88,7 @@ def test_facts_of_a_per_message_generation_are_no_longer_served(migrated, db):
                " VALUES (gen_random_uuid(), %s, 'per-message-window', 'extract-v3', 'extract-legacy', 'm', '{}')",
                (member["source_revision_id"],))
     db.execute("INSERT INTO assertion (extraction_id, source_revision_id, subject, predicate, object, status)"
-               " SELECT id, source_revision_id, 'Hinata', 'located_in', 'old chapel', 'valid' FROM extraction")
+               " SELECT id, source_revision_id, 'Akari', 'located_in', 'old chapel', 'valid' FROM extraction")
     assert fact_versions(db, member["commit_id"], "extract-legacy") == []
     assert db.execute("SELECT count(*) AS n FROM active_membership WHERE window_hash IS NOT NULL").fetchone()["n"] == 0
 

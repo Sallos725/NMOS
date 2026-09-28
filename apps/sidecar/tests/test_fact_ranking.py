@@ -21,9 +21,9 @@ from test_sidecar_integration import recall, sync
 
 BASE = {"object": None, "object_type": None, "host_logical_id": "x", "known_by": None, "hidden_from": None,
         "knowledge": "unknown", "salience": None, "epistemic": "stated"}
-PERSONA = frozenset({"유우마"})
-QUERY = ("“귀엽네.” 반대쪽 손으로 블랑의 머리를 쓰다듬는 유우마. “난 블랑도, 누나도 좋아하는데, 독차지 하려고?” "
-         "블랑은 그 상황이 싫진 않았다. 라디아도 그 상황이 싫지는 않았다. 엘피는 아직 자고 있었다.")
+PERSONA = frozenset({"타쿠미"})
+QUERY = ("“귀엽네.” 반대쪽 손으로 노엘의 머리를 쓰다듬는 타쿠미. “난 노엘도, 누나도 좋아하는데, 독차지 하려고?” "
+         "노엘은 그 상황이 싫진 않았다. 아델라도 그 상황이 싫지는 않았다. 루카는 아직 자고 있었다.")
 
 
 def fact(position, subject, predicate, value, **extra):
@@ -32,16 +32,16 @@ def fact(position, subject, predicate, value, **extra):
 
 
 def scene():
-    trivia = [fact(100 + i, who, "knows", text, knowledge="limited", known_by=["블랑", "엘피", "라디아", "유우마"])
+    trivia = [fact(100 + i, who, "knows", text, knowledge="limited", known_by=["노엘", "루카", "아델라", "타쿠미"])
               for i, (who, text) in enumerate([
-                  ("블랑", "유우마가 엘피에게 블랑은 교수님이라서 말을 못 한다고 말한 사실"),
-                  ("블랑", "엘피와 유우마가 강의실 밖 복도에서 자신의 수업을 듣고 있었다"),
-                  ("블랑", "유우마가 엘피의 재검토 자료에 내용을 추가했다는 사실"),
-                  ("엘피", "계란은 식탁에 살살, 대신 한 번에 깨야 한다"),
-                  ("엘피", "계란 껍질이 들어갔을 때 다른 껍질 조각으로 건져낼 수 있다")])]
-    sister = fact(86, "라디아", "relationship", "누나", object="유우마", object_type="character",
+                  ("노엘", "타쿠미가 루카에게 노엘은 교수님이라서 말을 못 한다고 말한 사실"),
+                  ("노엘", "루카와 타쿠미가 강의실 밖 복도에서 자신의 수업을 듣고 있었다"),
+                  ("노엘", "타쿠미가 루카의 재검토 자료에 내용을 추가했다는 사실"),
+                  ("루카", "계란은 식탁에 살살, 대신 한 번에 깨야 한다"),
+                  ("루카", "계란 껍질이 들어갔을 때 다른 껍질 조각으로 건져낼 수 있다")])]
+    sister = fact(86, "아델라", "relationship", "누나", object="타쿠미", object_type="character",
                   knowledge="public")
-    agreed = fact(92, "라디아", "event", "유우마에게 말을 놓기 시작함", salience="major", knowledge="public")
+    agreed = fact(92, "아델라", "event", "타쿠미에게 말을 놓기 시작함", salience="major", knowledge="public")
     return trivia, sister, agreed
 
 
@@ -55,27 +55,27 @@ def test_relationship_and_major_event_outrank_trivia_in_a_crowded_scene():
 
 def test_a_known_by_name_is_not_a_mention():
     # The fact's subject is not in the scene; only its known_by list is. It no longer comes by that alone.
-    only_known = fact(120, "카이토", "knows", "지하실 열쇠의 위치", knowledge="limited", known_by=["블랑"])
-    assert relevant_facts([only_known], "블랑, 오늘 수업 어땠어?", "", set(), 8, 3, PERSONA) == []
+    only_known = fact(120, "카이토", "knows", "지하실 열쇠의 위치", knowledge="limited", known_by=["노엘"])
+    assert relevant_facts([only_known], "노엘, 오늘 수업 어땠어?", "", set(), 8, 3, PERSONA) == []
     # A character it is hidden from, addressed now, still brings it first (D19).
-    hidden = {**only_known, "known_by": None, "hidden_from": ["블랑"]}
-    assert relevant_facts([hidden], "블랑, 오늘 수업 어땠어?", "", set(), 8, 3, PERSONA) == [hidden]
+    hidden = {**only_known, "known_by": None, "hidden_from": ["노엘"]}
+    assert relevant_facts([hidden], "노엘, 오늘 수업 어땠어?", "", set(), 8, 3, PERSONA) == [hidden]
 
 
 def test_priors_order_equal_mentions_only():
     trivia, sister, agreed = scene()
     # Unmentioned: a prior never brings a fact by itself.
-    assert relevant_facts([sister, agreed], "블랑, 오늘 수업 어땠어?", "", set(), 8, 3, PERSONA) == []
+    assert relevant_facts([sister, agreed], "노엘, 오늘 수업 어땠어?", "", set(), 8, 3, PERSONA) == []
     # Mentioned only in the previous reply: below facts named in the user's message.
-    picked = relevant_facts([trivia[0], sister], "블랑, 오늘 수업 어땠어?", "라디아가 문을 열었다.", set(), 8, 3,
+    picked = relevant_facts([trivia[0], sister], "노엘, 오늘 수업 어땠어?", "아델라가 문을 열었다.", set(), 8, 3,
                             PERSONA)
     assert picked == [trivia[0], sister]
 
 
-LEAD = '    <Fact kind="relationship" turn="43" knowledge="public">라디아 relationship 유우마: 누나</Fact>'
-THREADS = [f'    <Thread kind="promise" by="엘피" to="유우마" turn="{t}" knowledge="public">다음에 같이 요리하기 {t}</Thread>'
+LEAD = '    <Fact kind="relationship" turn="43" knowledge="public">아델라 relationship 타쿠미: 누나</Fact>'
+THREADS = [f'    <Thread kind="promise" by="루카" to="타쿠미" turn="{t}" knowledge="public">다음에 같이 요리하기 {t}</Thread>'
            for t in (55, 50, 39)]
-OTHER = ['    <Fact kind="knows" turn="57">블랑 knows: 유우마가 재검토 자료에 내용을 추가했다는 사실</Fact>']
+OTHER = ['    <Fact kind="knows" turn="57">노엘 knows: 타쿠미가 재검토 자료에 내용을 추가했다는 사실</Fact>']
 
 
 def test_lead_facts_take_the_budget_before_threads():
@@ -107,27 +107,27 @@ def test_the_trace_records_what_fit(migrated):
         target = user.split("TARGET", 1)[1]
         items = []
         if "누나" in target:
-            items.append({"subject": "라디아", "subject_type": "character", "predicate": "relationship",
+            items.append({"subject": "아델라", "subject_type": "character", "predicate": "relationship",
                           "object": "{{user}}", "object_type": "character", "value": "누나", "modality": "actual",
                           "knowledge": "public"})
         if "약속" in target:
-            items += [{"subject": "엘피", "subject_type": "character", "predicate": "promised", "object": "{{user}}",
+            items += [{"subject": "루카", "subject_type": "character", "predicate": "promised", "object": "{{user}}",
                        "object_type": "character", "value": f"같이 요리하기 {i}", "modality": "actual",
                        "knowledge": "public"} for i in range(3)]
         return {"assertions": items}, "{}"
 
     with make_client(migrated, llm_url="http://fake/v1", llm_model="fake") as c:
         chat = SimChat()
-        chat.user("라디아를 누나라고 부른다.")
-        chat.reply("라디아는 웃었다.")
-        chat.user("엘피와 약속한다.")
-        chat.reply("엘피가 새끼손가락을 걸었다.")
+        chat.user("아델라를 누나라고 부른다.")
+        chat.reply("아델라는 웃었다.")
+        chat.user("루카와 약속한다.")
+        chat.reply("루카가 새끼손가락을 걸었다.")
         filler(chat, 5)
         sync(c, chat)
         drain(migrated, complete)
-        out = recall(c, chat, "라디아와 엘피가 들어왔다.", budget=260)
+        out = recall(c, chat, "아델라와 루카가 들어왔다.", budget=260)
         timings = c.get(f"/v1/trace/{out['trace_id']}").json()["latency_ms"]
     text = out["packet"]["text"]
-    assert "라디아 relationship {{user}}: 누나" in text  # the lead fact fit before any thread
+    assert "아델라 relationship {{user}}: 누나" in text  # the lead fact fit before any thread
     assert timings["facts"] == 1 and timings["kept_facts"] == 1
     assert timings["threads"] == 3 and timings["kept_threads"] == len(re.findall("<Thread ", text)) < 3

@@ -330,16 +330,17 @@ extraction stub ("X는 Y로 간다." → X located_in Y). **Source reading:** ta
    permission responses" showed the replacer dialog first, then this one. Yes → `{"personas": [{…,
    "name": "User", "id": "9280a9b8-…"}], "selectedPersona": 0}` and no dialog on later loads. No →
    `null`, with no dialog on later loads, and generation went on (the stub replied, NMOS injected).
-3. **Rename.** Typing 유우마 in Settings → Persona and leaving the page → `personas[0].name` = 유우마.
+3. **Rename.** Typing a name in Settings → Persona (written 타쿠미 here; the check typed another) and leaving
+   the page → `personas[0].name` = 타쿠미.
 4. **Selection and binding.** A second persona created and renamed 레이 became the selected one
-   (`selectedPersona: 1`); the next sync reported 레이. Binding the chat to 유우마 from the chat's
+   (`selectedPersona: 1`); the next sync reported 레이. Binding the chat to 타쿠미 from the chat's
    Persona Binding button ("Persona is successfully binded") put `bindedPersona: "9280a9b8-…"` in the
-   `getChatFromIndex` snapshot, and the next sync reported 유우마 while 레이 stayed selected.
+   `getChatFromIndex` snapshot, and the next sync reported 타쿠미 while 레이 stayed selected.
 5. **`{{user}}` in a user message.** The message typed as `{{user}}는 거실로 간다.` was stored and synced
-   as `유우마는 거실로 간다.`: the host replaces the macro before storing the message (its send path runs
+   as `타쿠미는 거실로 간다.`: the host replaces the macro before storing the message (its send path runs
    `processScript(…, 'editinput')`).
-6. **End to end.** After "{{user}}는 거실로 간다." and "유우마는 주방으로 간다.": `host_persona_name` =
-   유우마; one `located_in` fact with 2 versions under the persona entity (`persona: true`); the
+6. **End to end.** After "{{user}}는 거실로 간다." and "타쿠미는 주방으로 간다.": `host_persona_name` =
+   타쿠미; one `located_in` fact with 2 versions under the persona entity (`persona: true`); the
    extraction of the second turn got KNOWN ENTITIES `거실 (place)` only, the third `주방 (place) |
    거실 (place)`. A new chat opened after the denial had no persona name.
 

@@ -11,14 +11,14 @@ The owner's report was reproduced read-only from the owner's database. The packe
 with the sidecar's own functions from the stored assertions, the stored query and the head membership,
 and the host's prompt window was inferred from the excluded candidates (about the last 11 messages).
 
-- At turn 46 of a 69-turn chat, 라디아 started speaking 반말 to the persona (`event`, `major`,
-  current). At turn 63 her reply used 존댓말 ("괜찮아요", "유우마 씨"), and the user's next message
-  was "누나, 반말.".
-- The packet for that reply held three threads and four facts: three `knows` facts about 블랑 and one
-  about the persona. Among the relevant facts the agreement ranked 23rd and "라디아 relationship
-  {{user}}: 누나" 30th, although the user's message named 라디아 twice.
-- The next request that named 라디아 together with others ranked them 13th and 20th, behind "엘피 knows:
-  계란 껍질이 들어갔을 때 …". The one request that brought the agreement named 라디아 alone.
+- At turn 46 of a 69-turn chat, one character (A) started speaking 반말 to the persona (`event`, `major`,
+  current). At turn 63 A's reply used 존댓말 again (a polite ending and an honorific for the persona), and
+  the user's next message asked for 반말.
+- The packet for that reply held three threads and four facts: three `knows` facts about another
+  character and one about the persona. Among the relevant facts the agreement ranked 23rd and A's
+  `relationship` to the persona 30th, although the user's message named A twice.
+- The next request that named A together with others ranked them 13th and 20th, behind a third
+  character's `knows` trivia. The one request that brought the agreement named A alone.
 
 Two causes, both on the read side:
 
@@ -56,9 +56,9 @@ case of the same shape):
 
 | Budget | Facts kept | What changed |
 |---|---|---|
-| 600 (before) | 4 of 12 | 3 × `블랑 knows …`, `{{user}} knows …` |
-| 600 (after) | 6 of 12 | 라디아 → {{user}}: 누나, {{user}} → 라디아: 동생, 라디아 feels toward {{user}}: 설렘, and three more `feels_toward` of the cast; the agreement ranks 7th and does not fit |
-| 1200 (after) | 12 of 12 | also "라디아 event: 유우마에게 말을 놓기 시작함" |
+| 600 (before) | 4 of 12 | 3 × `knows` of another character, `{{user}} knows …` |
+| 600 (after) | 6 of 12 | A's `relationship` to the persona and the persona's to A, A's `feels_toward` the persona, and three more `feels_toward` of the cast; the agreement ranks 7th and does not fit |
+| 1200 (after) | 12 of 12 | also A's `event` of starting to speak 반말 to the persona |
 
 ## Consequences
 

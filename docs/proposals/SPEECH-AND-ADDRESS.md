@@ -8,15 +8,14 @@
 Owner report (2026-09-26): a character who agreed to speak 반말 went back to 존댓말. ADR 0026 reproduced
 it on the owner's chat and fixed the ranking. The storage side still has these gaps:
 
-- **No slot.** `extract-v9` records the change as a `major` event ("라디아 event: 유우마에게 말을 놓기
-  시작함", "{{user}} event: 라디아를 '누나'라고 부르기 시작함"). An event is something that happened;
-  nothing marks it as the rule that holds from then on. Events compete with every other event of the cast
-  (at most 3 per packet), and in a crowded scene the budget cuts them (ADR 0026: it fit at 1,200 tokens,
-  not at 600).
-- **Wrong slot.** Sometimes the change lands in `relationship` ("라디아 relationship {{user}}: 반말하는
-  사이"). There it shares one value per pair with "누나", "연인" and so on, so a later relationship replaces
-  it. In the owner's chat, that relationship row was extracted once and was gone after the turn was
-  re-extracted.
+- **No slot.** `extract-v9` records the change as a `major` event (one character's event of starting to
+  speak 반말 to the persona, and the persona's event of starting to call her by a family title). An event is
+  something that happened; nothing marks it as the rule that holds from then on. Events compete with every
+  other event of the cast (at most 3 per packet), and in a crowded scene the budget cuts them (ADR 0026: it
+  fit at 1,200 tokens, not at 600).
+- **Wrong slot.** Sometimes the change lands in `relationship` (a value saying the two speak 반말 to each
+  other). There it shares one value per pair with "누나", "연인" and so on, so a later relationship replaces it.
+  In the owner's chat, that relationship row was extracted once and was gone after the turn was re-extracted.
 - **No history.** A move back to 존댓말, or a new form of address, cannot supersede an event, so both stay
   current side by side.
 
@@ -24,7 +23,7 @@ it on the owner's chat and fixed the ranking. The storage side still has these g
 
 1. **Predicate `addresses`** (subject: character, object: character, value: text; `single` per
    (subject, object), world). Value: how the subject speaks to or calls the object, in the chat's
-   language, for example "반말, '유우마'라고 부름" or "존댓말(해요체), '유우마 씨'라고 부름". Extract it only
+   language, for example "반말, '타쿠미'라고 부름" or "존댓말(해요체), '타쿠미 씨'라고 부름". Extract it only
    when the target turn shows or settles it: an agreement, a first use, or a change back. Do not extract
    it for every line of dialogue.
 2. **Read side.** `addresses` joins `STANDING` (ADR 0026): among equal mentions it is ranked with
@@ -40,7 +39,7 @@ it on the owner's chat and fixed the ranking. The storage side still has these g
 
 - **Q1 — Add `addresses`?** (a) Yes, as above. (b) No: keep the ADR 0026 ranking and raise the budget.
   (c) Put it into `relationship` with a stricter prompt; this keeps the one-value-per-pair conflict.
-- **Q2 — Both directions?** (a) One row per direction (라디아 → 유우마 and 유우마 → 라디아 are separate facts),
+- **Q2 — Both directions?** (a) One row per direction (하나 → 타쿠미 and 타쿠미 → 하나 are separate facts),
   because speech level is often asymmetric. (b) One symmetric row.
 - **Q3 — Evidence before release.** (a) A real-model tier like `docs/perf/extract-v9.md`: the owner's
   model on turns 12–15, 39, 42 and 46 of the owner's chat (read-only copies), plus a synthetic change

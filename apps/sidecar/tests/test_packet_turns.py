@@ -34,7 +34,7 @@ def story(client, url: str) -> SimChat:
     """Turn 1 is a user message (position 1) and its reply (position 2); four idle turns follow."""
     chat = SimChat()
     chat.reply("Welcome to the story.")  # position 0, turn 0
-    chat.user("Hinata is in the chapel.")  # position 1, turn 1
+    chat.user("Akari is in the chapel.")  # position 1, turn 1
     chat.reply(STATUS)  # position 2, turn 1
     for i in range(4):  # positions 3-10, turns 2-5
         chat.user(f"Idle chatter {i} about clouds.")
@@ -53,14 +53,14 @@ def ask(client, chat: SimChat, text: str) -> dict:
                                              "budget_tokens": 800}).json()
 
 
-QUERY = "Hinata, what was the vault password?"
+QUERY = "Akari, what was the vault password?"
 
 
 def test_packet_v6_numbers_an_excerpt_by_its_position_and_a_fact_by_its_turn(client_for, migrated):
     """The inconsistency seen in the Phase 11 real-host smoke, kept by packet-v6 so its traces replay."""
     client = client_for("packet-v6")
     text = ask(client, story(client, migrated), QUERY)["packet"]["text"]
-    assert '<Fact kind="located_in" turn="1">Hinata located in chapel</Fact>' in text
+    assert '<Fact kind="located_in" turn="1">Akari located in chapel</Fact>' in text
     assert '<Excerpt turn="2" speaker="character">' in text  # the reply of turn 1, at position 2
     assert '<Item key="장소" as_of_turn="2">폐허가 된 성당</Item>' in text
 
@@ -69,7 +69,7 @@ def test_packet_v7_numbers_excerpts_and_state_by_the_turn_of_their_message(clien
     client = client_for("packet-v7")
     out = ask(client, story(client, migrated), QUERY)
     text = out["packet"]["text"]
-    assert '<Fact kind="located_in" turn="1">Hinata located in chapel</Fact>' in text
+    assert '<Fact kind="located_in" turn="1">Akari located in chapel</Fact>' in text
     assert '<Excerpt turn="1" speaker="character">' in text
     assert '<Item key="장소" as_of_turn="1">폐허가 된 성당</Item>' in text
     trace = client.get(f"/v1/trace/{out['trace_id']}").json()

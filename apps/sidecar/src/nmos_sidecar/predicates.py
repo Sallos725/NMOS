@@ -306,7 +306,7 @@ def knowledge(item: dict[str, Any]) -> tuple[str, list[str] | None, list[str] | 
 
 
 # How a {"name": …} entry was stored before mark_name() read the name out of it: str() of the dict, e.g.
-# "{'name': '유우마', 'type': 'character'}". The placeholder "{{user}}" does not match.
+# "{'name': '타쿠미', 'type': 'character'}". The placeholder "{{user}}" does not match.
 _NAME_REPR = re.compile(r"""\{(?:'[a-z_]+': (?:'[^']*'|"[^"]*"), )*'name': ('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")""")
 
 

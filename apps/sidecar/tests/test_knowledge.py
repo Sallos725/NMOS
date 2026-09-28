@@ -39,29 +39,29 @@ def test_contradictory_knowledge_is_dropped_and_noted():
 
 def test_name_objects_keep_only_their_name():
     # The model sometimes lists knowers in the participants shape (PHASE-8): {"name", "type"}.
-    item = {"knowledge": "limited", "known_by": [{"name": "유우마", "type": "character"}, {"name": " 라디아 "}, "유우마"],
-            "hidden_from": [{"name": "블랑", "type": "character"}, {"type": "character"}, {"name": 3}]}
-    assert knowledge(item) == ("limited", ["유우마", "라디아"], ["블랑"], None)
+    item = {"knowledge": "limited", "known_by": [{"name": "타쿠미", "type": "character"}, {"name": " 아델라 "}, "타쿠미"],
+            "hidden_from": [{"name": "노엘", "type": "character"}, {"type": "character"}, {"name": 3}]}
+    assert knowledge(item) == ("limited", ["타쿠미", "아델라"], ["노엘"], None)
     assert knowledge({"known_by": [{"name": "Kaito"}], "hidden_from": ["kaito"]})[:3] == ("unknown", None, None)
 
 
 # Stored before the fix (production, extract-v8 to v10): str() of the object in the text[] column.
-REPR = "{'name': '유우마', 'type': 'character'}"
+REPR = "{'name': '타쿠미', 'type': 'character'}"
 
 
 def test_stored_name_object_reads_as_its_name():
-    assert mark_name(REPR) == "유우마"
+    assert mark_name(REPR) == "타쿠미"
     assert mark_name("{'name': '{{user}}', 'type': 'character'}") == "{{user}}"
     assert mark_name("{'type': 'character', 'name': 'Kaito'}") == "Kaito"
     assert mark_name("""{'name': "O'Neil", 'type': 'character'}""") == "O'Neil"
-    for name in ("{{user}}", "{{char}}", "{화이트}", "유우마"):  # not a repr: unchanged
+    for name in ("{{user}}", "{{char}}", "{화이트}", "타쿠미"):  # not a repr: unchanged
         assert mark_name(name) == name
 
-    row = {"knowledge": "limited", "known_by": [REPR, "{'name': '{{user}}', 'type': 'character'}", "유우마"],
-           "hidden_from": ["{'name': '블랑', 'type': 'character'}"]}
+    row = {"knowledge": "limited", "known_by": [REPR, "{'name': '{{user}}', 'type': 'character'}", "타쿠미"],
+           "hidden_from": ["{'name': '노엘', 'type': 'character'}"]}
     stored_knowledge(row)
-    assert (row["knowledge"], row["known_by"], row["hidden_from"]) == ("limited", ["유우마", "{{user}}"], ["블랑"])
-    row = {"knowledge": "limited", "known_by": [REPR], "hidden_from": ["유우마"]}  # contradictory once read
+    assert (row["knowledge"], row["known_by"], row["hidden_from"]) == ("limited", ["타쿠미", "{{user}}"], ["노엘"])
+    row = {"knowledge": "limited", "known_by": [REPR], "hidden_from": ["타쿠미"]}  # contradictory once read
     stored_knowledge(row)
     assert (row["knowledge"], row["known_by"], row["hidden_from"]) == ("unknown", None, None)
     clean = {"knowledge": "limited", "known_by": ["하나", "{{user}}"], "hidden_from": None}
@@ -148,28 +148,28 @@ def test_existing_knowledge_rows_migrate_conservatively(database_url, tmp_path):
 
 
 def test_name_object_marks_are_names_when_stored_and_when_read(migrated, db):
-    reply = [{"subject": "온실 3동", "subject_type": "place", "predicate": "world_fact", "value": "밤에 문이 잠긴다",
-              "knowledge": "limited", "known_by": [{"name": "유우마", "type": "character"}, {"name": "{{user}}", "type": "character"}],
-              "hidden_from": [{"name": "블랑", "type": "character"}], "modality": "actual"}]
+    reply = [{"subject": "관측실 3동", "subject_type": "place", "predicate": "world_fact", "value": "밤에 문이 잠긴다",
+              "knowledge": "limited", "known_by": [{"name": "타쿠미", "type": "character"}, {"name": "{{user}}", "type": "character"}],
+              "hidden_from": [{"name": "노엘", "type": "character"}], "modality": "actual"}]
 
     def complete(system, user):
-        return {"assertions": reply if "온실" in user.split("TARGET", 1)[1] else []}, "{}"
+        return {"assertions": reply if "관측실" in user.split("TARGET", 1)[1] else []}, "{}"
 
     with make_client(migrated, **LLM) as c:
         chat = SimChat()
-        chat.user("유우마에게만 말한다. 온실 3동은 밤에 문이 잠겨. 블랑은 몰라.")
+        chat.user("타쿠미에게만 말한다. 관측실 3동은 밤에 문이 잠겨. 노엘은 몰라.")
         chat.reply("ok")
         filler(chat, 4)
         sync(c, chat)
         drain(migrated, complete)
         stored = db.execute("SELECT id, known_by, hidden_from FROM assertion WHERE predicate = 'world_fact'").fetchone()
-        assert (stored["known_by"], stored["hidden_from"]) == (["유우마", "{{user}}"], ["블랑"])
-        text = recall(c, chat, "온실 3동 블랑", in_context=[])["packet"]["text"]
-        assert 'known_by="유우마, {{user}}" hidden_from="블랑">' in text
+        assert (stored["known_by"], stored["hidden_from"]) == (["타쿠미", "{{user}}"], ["노엘"])
+        text = recall(c, chat, "관측실 3동 노엘", in_context=[])["packet"]["text"]
+        assert 'known_by="타쿠미, {{user}}" hidden_from="노엘">' in text
 
         # A row an earlier release stored with the repr is read as the names; the row stays as written.
-        old = ([REPR, "{'name': '{{user}}', 'type': 'character'}"], ["{'name': '블랑', 'type': 'character'}"])
+        old = ([REPR, "{'name': '{{user}}', 'type': 'character'}"], ["{'name': '노엘', 'type': 'character'}"])
         db.execute("UPDATE assertion SET known_by = %s, hidden_from = %s WHERE id = %s", (*old, stored["id"]))
-        text = recall(c, chat, "온실 3동 블랑", in_context=[])["packet"]["text"]
-        assert 'known_by="유우마, {{user}}" hidden_from="블랑">' in text and "'name'" not in text
+        text = recall(c, chat, "관측실 3동 노엘", in_context=[])["packet"]["text"]
+        assert 'known_by="타쿠미, {{user}}" hidden_from="노엘">' in text and "'name'" not in text
     assert tuple(db.execute("SELECT known_by, hidden_from FROM assertion WHERE id = %s", (stored["id"],)).fetchone().values()) == old

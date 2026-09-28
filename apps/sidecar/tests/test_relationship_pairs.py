@@ -93,8 +93,8 @@ def test_one_history_per_pair_in_both_directions():
 
 
 def test_a_directed_relationship_keeps_both_directions():
-    rows = [rel(1, "블랑", "엘피", "엄마"), rel(2, "엘피", "블랑", "자녀")]
-    assert current(rows) == [("블랑", "엘피", "엄마", "positive"), ("엘피", "블랑", "자녀", "positive")]
+    rows = [rel(1, "노엘", "루카", "엄마"), rel(2, "루카", "노엘", "자녀")]
+    assert current(rows) == [("노엘", "루카", "엄마", "positive"), ("루카", "노엘", "자녀", "positive")]
 
 
 def test_a_symmetric_one_ends_a_directed_one_the_other_way_and_the_same_direction_is_replaced_as_before():
@@ -117,8 +117,8 @@ def test_feelings_stay_per_direction():
 
 
 def test_the_persona_under_two_names_is_one_side_of_the_pair():
-    rows = [rel(1, "블랑", "유우마", "동료"), rel(2, "미즈키 유우마", "블랑", "연인")]
-    assert current(rows, persona=["유우마"]) == [("미즈키 유우마", "블랑", "연인", "positive")]
+    rows = [rel(1, "노엘", "타쿠미", "동료"), rel(2, "아오키 타쿠미", "노엘", "연인")]
+    assert current(rows, persona=["타쿠미"]) == [("아오키 타쿠미", "노엘", "연인", "positive")]
 
 
 def test_packet_v5_names_what_a_standing_fact_replaced():
@@ -143,10 +143,10 @@ def test_packet_v5_names_what_a_standing_fact_replaced():
 def test_packet_v5_names_how_it_started_when_that_is_not_what_it_replaced():
     from nmos_sidecar.facts import fact_line
 
-    speech = [row(20, "유우마", "addresses", "라디아", "하십시오체", **C), row(39, "유우마", "addresses", "라디아", "반말, '라디아 누나'", **C),
-              row(64, "유우마", "addresses", "라디아", "반말, '누나'", **C)]
+    speech = [row(20, "타쿠미", "addresses", "아델라", "하십시오체", **C), row(39, "타쿠미", "addresses", "아델라", "반말, '아델라 누나'", **C),
+              row(64, "타쿠미", "addresses", "아델라", "반말, '누나'", **C)]
     (f,) = _versions(speech)
-    assert fact_line(f, before=True).endswith(">유우마 addresses 라디아: 반말, '누나'; before, turn 39: 유우마 addresses 라디아:"
-                                              " 반말, '라디아 누나'; first, turn 20: 유우마 addresses 라디아: 하십시오체</Fact>")
+    assert fact_line(f, before=True).endswith(">타쿠미 addresses 아델라: 반말, '누나'; before, turn 39: 타쿠미 addresses 아델라:"
+                                              " 반말, '아델라 누나'; first, turn 20: 타쿠미 addresses 아델라: 하십시오체</Fact>")
     (two,) = _versions(speech[1:])
     assert "first" not in fact_line(two, before=True)  # what it replaced is how it started

@@ -370,12 +370,12 @@ describe('conversation labels', () => {
 });
 
 describe('persona name (ADR 0023)', () => {
-  const personas = { personas: [{ id: 'p0', name: 'User' }, { id: 'p1', name: ' 유우마 ' }, { id: 'p2', name: '레이' }], selected: 1 };
+  const personas = { personas: [{ id: 'p0', name: 'User' }, { id: 'p1', name: ' 타쿠미 ' }, { id: 'p2', name: '레이' }], selected: 1 };
 
   it('picks the chat-bound persona, else the selected one, as the host does', () => {
-    expect(personaOf({ ...chat }, personas)).toBe('유우마');
+    expect(personaOf({ ...chat }, personas)).toBe('타쿠미');
     expect(personaOf({ ...chat, bindedPersona: 'p2' }, personas)).toBe('레이');
-    expect(personaOf({ ...chat, bindedPersona: 'gone' }, personas)).toBe('유우마'); // host falls back too
+    expect(personaOf({ ...chat, bindedPersona: 'gone' }, personas)).toBe('타쿠미'); // host falls back too
     expect(personaOf({ ...chat }, { personas: [], selected: 0 })).toBeNull();
     expect(personaOf({ ...chat }, { personas: [{ name: '  ' }], selected: 0 })).toBeNull();
   });
@@ -396,7 +396,7 @@ describe('persona name (ADR 0023)', () => {
     resolve(personas);
     await new Promise((r) => setTimeout(r, 0));
     await adapter.beforeRequest([...prompt, { role: 'user', content: 'Where did we hide the lantern?' }], 'model');
-    expect(reconciles.at(-1)).toMatchObject({ persona_name: '유우마' });
+    expect(reconciles.at(-1)).toMatchObject({ persona_name: '타쿠미' });
     expect(reads).toBe(1); // cached, not read per request
   });
 

@@ -76,7 +76,7 @@ def scripted_session(client, chat: SimChat, echo=None) -> SimChat:
     """Every PHASE-0 reconciliation case, in the order a user could produce them."""
     steps = [
         lambda: (chat.user("The lantern is hidden in the old archive under the harbor."), chat.reply("I will remember the archive.")),
-        lambda: (chat.user("We met Hinata at the stone bridge at dawn."), chat.reply("Hinata waved from the bridge.")),
+        lambda: (chat.user("We met Akari at the stone bridge at dawn."), chat.reply("Akari waved from the bridge.")),
         lambda: (chat.user("The password for the vault is violet-seven."), chat.reply("Noted: violet-seven.")),
         lambda: chat.reroll("Second attempt: the vault password is violet-seven."),  # reroll
         lambda: chat.swipe(0),                                                      # swipe back
@@ -235,10 +235,10 @@ def test_recall_surfaces_out_of_context_excerpt_and_never_inactive(client):
     assert trace["selected"] and "sidecar_total" in trace["latency_ms"]
 
     # Deleted / disabled / superseded / retracted content is never recalled.
-    for query in ("We met Hinata at the stone bridge at dawn.", "Second attempt: the vault password is violet-seven.",
+    for query in ("We met Akari at the stone bridge at dawn.", "Second attempt: the vault password is violet-seven.",
                   "I will remember the archive."):
         packet = recall(client, chat, query, in_context)["packet"]["text"]
-        assert "Hinata" not in packet
+        assert "Akari" not in packet
         assert "Second attempt" not in packet
         assert "I will remember the archive.<" not in packet
 

@@ -16,11 +16,11 @@ name order and grouping it had, so extraction hints do not change because of par
 participant never named as a subject or object is an entity of its own.
 
 Since `resolve-v3` (ADR 0023) the persona's name as the host reports it for the conversation (e.g.
-"유우마") is a persona name like `{{user}}`, for characters only. The extractor writes the persona either
+"타쿠미") is a persona name like `{{user}}`, for characters only. The extractor writes the persona either
 way, so without it one person was two entities.
 
-Since `resolve-v5` (ADR 0038) a character name of two or more words whose last word is a persona name ("미즈키 유우마"
-for the persona "유우마") is the persona too: the story writes the persona's full name as well, and one chat was
+Since `resolve-v5` (ADR 0038) a character name of two or more words whose last word is a persona name ("아오키 타쿠미"
+for the persona "타쿠미") is the persona too: the story writes the persona's full name as well, and one chat was
 split in two by it (Phase 11 M0).
 
 Since `resolve-v4` (ADR 0025) the owner's links (`entity_link`) join two names of one type whenever both

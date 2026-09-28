@@ -26,7 +26,7 @@ def test_a_case_passes_on_every_gold_phrase_in_any_wording_and_no_forbidden_one(
     assert eval_rp.score({"gold": ["forged"], "forbidden": ["clouds"]}, packet) == {
         "gold": 1, "held": 1, "in_prompt": 0, "forbidden": 1, "placed": 1, "passed": False, "needs_memory": True}
     # packet-v5 names what a standing fact replaced: past, not current (ADR 0038)
-    v5 = '<Fact kind="addresses" turn="35">블랑 addresses 유우마: 반말; before, turn 16: 블랑 addresses 유우마: 존댓말</Fact>'
+    v5 = '<Fact kind="addresses" turn="35">노엘 addresses 타쿠미: 반말; before, turn 16: 노엘 addresses 타쿠미: 존댓말</Fact>'
     assert eval_rp.score({"gold": ["존댓말"], "forbidden": ["존댓말"]}, v5) == {
         "gold": 1, "held": 1, "in_prompt": 0, "forbidden": 1, "placed": 0, "passed": True, "needs_memory": True}
     # packet-v8's summaries tell the past: an answer there counts, an ended goal or an old event there is not current

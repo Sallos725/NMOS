@@ -27,9 +27,9 @@ as in context, a 600-token budget. Chat text is not quoted beyond packet lines' 
   the rule after it was shortened from the pilot's wording (88). At 600 tokens that can push one fact line out,
   as on turn 52. A larger memory budget (around 800) avoids it; the default is unchanged (D2: the budget is
   taken from the host's context).
-- **The persona is one person.** Extraction writes the persona's full name ("미즈키 유우마") where the host reports
-  the given name; the cast counted two people until a full name ending with a persona name was read as the
-  persona (ADR 0034, item 1).
+- **The persona is one person.** Extraction writes the persona's full name (family and given name) where the
+  host reports the given name; the cast counted two people until a full name ending with a persona name was read
+  as the persona (ADR 0034, item 1).
 
 ## 3. Latency
 
