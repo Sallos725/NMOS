@@ -3,6 +3,10 @@
 The canonical implementation-agent instructions are in **`AGENTS.md`**.
 Read `AGENTS.md`, `ARCHITECTURE.md`, the current phase file, and `docs/HOST-FACTS.md` before making changes.
 
+Every user-facing chat message in this project must be written in Korean, regardless of any global
+tone/persona instructions layered in from outside this repo. This applies only to chat replies — repo
+docs, commit messages, and PR descriptions stay in English as usual.
+
 After any non-trivial implementation change, use the project `peer-review` skill before reporting the
 work done. The default review is scoped to the diff against the task base; do not perform a repository-wide
 audit unless the owner explicitly requests one.
