@@ -86,4 +86,21 @@ a `gemma4` story told one character, in other words, a plan the memory still hol
 
 On the owner's chat every one of the three main characters has a secret kept from her, so the story is held in most
 of its scenes (all six gate scenes with the `gemma4` summaries). The gate passes 6 of 6 under both models' summaries
-(`docs/perf/summaries.md`). The Inspector shows the general check (0.7), since it has no scene.
+(`docs/perf/summaries.md`). The Inspector shows the general check (0.7), since it has no scene, and marks what the
+stricter one would hold (amendment 4).
+
+## Amendment 4 — a long append, and the cost of a long chat (Phase 12 steps 6–7)
+
+- **Scheduling (item 6).** An append looks at every window it can have made due: from the windows due before it on,
+  not only the newest. Found by the upgrade test: one sync of 28 messages made two windows due, only the newest was
+  queued, and the story, which waits for every due window, was never written. In play a sync adds one turn, so it
+  takes a long append: a chat continued while the sidecar was down or the plugin off.
+- **The request path.** A request finds its current scene summaries and the newest story made from them in one
+  query: a scene summary is current when its members are its window's members, compared in the database, which is
+  what its key says (`members_key`). It reads a scene's text only when it has not seen that summary (its trigrams are
+  kept by summary id; a summary's text never changes) or would offer it, and checks against the secrets only what it
+  would offer. The choice is the one `current` makes. At 10,000 messages (624 windows, six secrets) the `<Story>` part
+  of a request took about 180 ms before and about 10 ms after (`docs/perf/summaries.md`). Before, it also read every
+  story the chat ever had: one is written each time a window is summarized.
+- **The Inspector** shows each summary's state, and marks one that the stricter check of amendment 3 would hold
+  while a character a secret is kept from is in the scene ("not used while … is in the scene").

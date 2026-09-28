@@ -76,9 +76,9 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
 
 ## Acceptance criteria
 
-- [ ] Every existing test and memory-evaluation case passes; no stale memory in any mode; `packet-v6` traces still
+- [x] Every existing test and memory-evaluation case passes; no stale memory in any mode; `packet-v6` traces still
       replay.
-- [ ] Deterministic cases in CI:
+- [x] Deterministic cases in CI:
   - an old scene placed for a message about it;
   - an edit inside a window replaces its summary, with no stale text in the packet;
   - a branch sees only its own summaries;
@@ -88,21 +88,23 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
   - `<Cast>` lines are not repeated in `<Facts>`;
   - a secret stated after a summary was written holds that summary until it is written again;
   - with facts and threads off, a summary is still checked against the chat's secrets.
-- [ ] Real-model tier, both models (Phase 11 Q7), 3 runs per synthetic Korean window:
+- [x] Real-model tier, both models (Phase 11 Q7), 3 runs per synthetic Korean window:
   - the summary names the window's key events (gold phrases) and invents none (forbidden phrases);
   - it leaves a listed secret's content out;
   - it stays within its token cap.
   - Every miss is listed; any scene below 2 of 3 is shown to the owner.
-- [ ] M0 on a restored backup: no category worse than the baseline, and the new cases improve. On the owner's
+- [x] M0 on a restored backup: no category worse than the baseline, and the new cases improve. On the owner's
       longest chat, the packet's `<Story>` covers every complete window older than the prompt within the budget.
-- [ ] **Secret gate (required before summaries reach a packet):** on the restored copy, every scene in which a
+- [x] **Secret gate (required before summaries reach a packet):** on the restored copy, every scene in which a
       character is present that a secret is kept from gets a `<Story>` without that secret's words (a list of
       forbidden words per secret, confirmed with the owner), under both models' summaries.
-- [ ] Retrieve latency at 10,000 messages within +10 ms p50 of Phase 11 `main`.
-- [ ] Real-host smoke on an isolated PocketRisu: a window completed in play gets a summary that reaches the packet
+- [ ] Retrieve latency at 10,000 messages within +10 ms p50 of Phase 11 `main`. **Not met by 3 ms**: +13.1 ms with a
+      summary for each of the 624 windows (+1.6 with summaries off); +3.1 at 1,000 messages (`docs/perf/summaries.md`).
+      The owner's decision.
+- [x] Real-host smoke on an isolated PocketRisu: a window completed in play gets a summary that reaches the packet
       and the Inspector.
-- [ ] Upgrade from Phase 11 `main` (`tests/test_upgrade.py`).
-- [ ] `ARCHITECTURE.md` (decisions), ADRs, README, the Korean guide, KNOWN-ISSUES, CHANGELOG.
+- [x] Upgrade from Phase 11 `main` (`tests/test_upgrade.py`).
+- [x] `ARCHITECTURE.md` (decisions), ADRs, README, the Korean guide, KNOWN-ISSUES, CHANGELOG.
 
 ## Steps (one pull request each)
 
@@ -129,7 +131,12 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
    secret; not used while a character it is kept from is in the scene; changed and written again; queued; failed
    with its error), whether summaries are off and a narrator chat's missing `<Story>`; a character's page starts
    with the lines `<Cast>` gives them, by the same rule (`retrieval.cast_facts`), and their open goals.
-7. Evaluation, real-host smoke, upgrade, latency, documentation.
+7. Evaluation, real-host smoke, upgrade, latency, documentation. **Done** (`docs/perf/summaries.md`, "Acceptance"):
+   the deterministic cases the spec lists, an upgrade from Phase 11 `main` that goes on until summaries are written, a
+   real-host smoke in which windows completed in play reached the packet and the Inspector, and the latency at 10,000
+   messages. Two faults found and fixed (ADR 0042 amendment 4): a long append queued only its newest window, so the
+   story was never written; and a request read every story the chat ever had and checked every scene against every
+   secret (about 180 ms at 10,000 messages, now about 10).
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).
 

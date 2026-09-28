@@ -22,6 +22,7 @@ from simchat import SimChat
 from test_extraction import drain, facts
 from test_generations import EMB, LLM
 from test_sidecar_integration import recall, sync
+from test_summaries import drain as drain_summaries
 from test_vectors import FakeEmbedder, drain_embeddings
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -98,10 +99,16 @@ def test_a_database_of_an_earlier_release_upgrades_and_keeps_working(dump, datab
         assert (mode["strict"], mode["narrator"]) == (False, None)
         assert c.put(f"/v1/conversations/{convs[main.id]}/memory-mode", json={"strict": True}).json()["strict"]
         assert set(recall(c, main, "Where is Mina?")["memory"]) == {"offered", "cut", "fits_at"}  # ADR 0036
+        # Phase 12: once the story makes a window due, the upgraded chat has its scene summary queued (ADR 0042).
+        for i in range(14):
+            main.reply(f"Mina walks on, step {i}.")
+            main.user(f"And then, step {i}?")
+        assert sync(c, main)["status"] == "applied"
 
     # The current worker re-derives with the current generations, without a failed job.
     drain(database_url)
     drain_embeddings(database_url)
+    assert drain_summaries(database_url) >= 3  # both windows the append made due, then the story so far
     with psycopg.connect(database_url, row_factory=dict_row) as conn:
         failed = conn.execute("SELECT kind, last_error FROM job WHERE last_error IS NOT NULL").fetchall()
     assert failed == []
@@ -109,7 +116,7 @@ def test_a_database_of_an_earlier_release_upgrades_and_keeps_working(dump, datab
     with make_client(database_url, embedder=FakeEmbedder(), **LLM, **EMB) as c:
         assert "garden" in objects(c, main, "Mina", "located_in")
         assert "old chapel" not in objects(c, main, "Mina", "located_in")  # edited away: masked (invariant 7)
-        assert recall(c, main, "Where is Mina?")["packet"]["text"]
+        assert '<Summary kind="story"' in recall(c, main, "Where is Mina?", budget=2000)["packet"]["text"]
         assert c.post(f"/v1/conversations/{convs[branch.id]}/delete").status_code == 200
         assert {x["host_chat_ref"] for x in c.get("/v1/conversations").json()} == {main.id}
     assert rebuild_all(database_url)

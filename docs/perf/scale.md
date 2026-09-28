@@ -316,6 +316,12 @@ Findings:
   share. The reroll timings with NMOS on and off overlap, so the difference there is within the host's
   variance.
 
+### Scene summaries (2026-09-28, Phase 12, ADR 0042 amendment 4)
+
+`tools/bench_story.py 10000` (extraction on, a summary for each of the 624 windows): retrieve p50 106.6 ms on Phase 11
+`main`, 108.2 with summaries off, 118.9 with them on (five pinned rounds). Details, and the +190 ms first measured,
+in `docs/perf/summaries.md`, "Acceptance".
+
 ### Estimated added `beforeRequest` latency (warm path)
 
 Plugin copy + manifest + sidecar append + selective retrieve; network and host snapshot overhead

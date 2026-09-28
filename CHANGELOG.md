@@ -42,6 +42,12 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     held back for a secret with the secret named, not used while a character it is kept from is in the scene,
     changed and written again, queued, failed with its error), and a note when summaries are off or a chat has a
     narrator. A character's page starts with **Current state**, the lines `<Cast>` gives them and their open goals.
+  - **A long append no longer leaves scenes unsummarized** (ADR 0042 amendment 4). A sync that made two or more
+    windows due at once queued only the newest, and the story so far, which waits for every window, was never
+    written. In play a sync adds one turn; it took a chat continued while the sidecar was down or the plugin off.
+  - **`<Story>` in a long chat costs a request about 10 ms instead of 180 ms** (10,000 messages, 624 scenes). A
+    request read every story the chat ever had and checked every scene against every secret; it now finds the
+    current scenes and one story in one query and checks only what it would offer. The choice is the same.
   - **The default memory budget is 2,000 tokens** (was 800); a value saved in the plugin stays. Lower PocketRisu's max
     context accordingly.
 - **Phase 11 (Stage 5, part 1) is complete** (`docs/phases/PHASE-11.md`, 2026-09-28; no release decided):
