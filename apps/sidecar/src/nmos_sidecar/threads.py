@@ -24,6 +24,7 @@ resolution must be to match.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from .entities import USER_NAMES, Resolution, norm
@@ -174,26 +175,41 @@ def _ref(a: dict[str, Any]) -> dict[str, Any]:
                                   "source", "asserted_by", "evidence", "outcome")}
 
 
-def fold(rows: list[dict[str, Any]], r: Resolution | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[int]]:
+Event = tuple[int, int, Callable[[list[dict[str, Any]]], None]]  # (turn, order, what happens to the threads then)
+
+
+def fire(events: list[Event], items: list[dict[str, Any]], before_turn: int | None) -> None:
+    """Run, in order, the events of turns before `before_turn` (all of them when None), removing them."""
+    while events and (before_turn is None or events[0][0] < before_turn):
+        events.pop(0)[2](items)
+
+
+def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
+         events: list[Event] | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[int]]:
     """(threads newest first, unmatched resolutions, ids of the assertions the threads consumed).
 
-    `rows` are the head's valid assertions in position order, then extraction order within a turn.
+    `rows` are the head's valid assertions in position order, then extraction order within a turn. `events` happen
+    after every row of their turn, so later rows see them: the owner's repairs (ADR 0044).
     """
     threads: list[dict[str, Any]] = []
     unmatched: list[dict[str, Any]] = []
     used: set[int] = set()
+    pending = sorted(events or [], key=lambda e: (e[0], e[1]))
     open_by_maker: dict[str, list[dict[str, Any]]] = {}  # every thread per maker; closed ones are skipped
     for a in rows:
+        if a.get("turn") is not None:
+            fire(pending, threads, a["turn"])
         if opens(a, r):
             same = _restated(a, open_by_maker, r)
             if same is not None:
                 same["restated"].append({"turn": a.get("turn"), "position": a["position"]})
             else:
                 t = {"id": a["id"], "kind": KINDS[a["predicate"]], "by": a["subject"], "to": a.get("object"), "text": a.get("value"),
-                     "turn": a.get("turn"), "position": a["position"], "host_logical_id": a.get("host_logical_id"),
+                     "turn": a.get("turn"), "turn_hash": a.get("turn_hash"), "position": a["position"],
+                     "host_logical_id": a.get("host_logical_id"),
                      "source": a.get("source"), "modality": a.get("modality"), "evidence": a.get("evidence"),
                      "knowledge": a.get("knowledge"), "known_by": a.get("known_by"), "hidden_from": a.get("hidden_from"),
-                     "revealed": a.get("revealed"),
+                     "revealed": a.get("revealed"), "repair": a.get("repair"),
                      "names": a.get("names") or [a["subject"], *([a["object"]] if a.get("object") else [])],
                      "status": "open", "closed_by": None, "restated": [],
                      "_maker": _maker(a, r), "_recipient": _recipient(a, r), "_norm": norm(a.get("value"))}
@@ -213,6 +229,7 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None) -> tuple[list[
                 target["status"] = a["outcome"] if a["predicate"] == "resolved" else "achieved"
                 target["closed_by"] = _ref(a)
             used.add(a["id"])
+    fire(pending, threads, None)
     for t in threads:
         for k in ("_maker", "_recipient", "_norm", "_grams"):
             t.pop(k, None)

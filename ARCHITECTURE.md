@@ -454,6 +454,12 @@ the scene summary the message is about, in at most 30 % of the budget; none for 
 them, open goals, as their ordinary lines, not repeated elsewhere). The default memory budget is 2,000 tokens, and
 summaries are on by default.
 
+**D54 — The owner repairs memory (Phase 13, ADR 0044).** Owner repairs are owner input (`owner_repair`), never edits of
+an assertion or a message: close or reopen a thread, mark a secret found out or kept (and, from step 4, retract or
+correct a fact, split two names). A repair names its target by what it says (turn, the turn's hash, kind, maker, text),
+so it survives rebuilds and new extractor generations; an edit of that turn makes it match nothing, and it is listed.
+It applies from its turn, in the order repairs were made; a replay reads the repairs in force at its time.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

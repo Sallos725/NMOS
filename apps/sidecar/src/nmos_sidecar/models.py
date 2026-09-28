@@ -147,6 +147,23 @@ class MemoryModeRequest(BaseModel):
     narrator: Text | None = Field(default=None, max_length=60)
 
 
+class RepairRequest(BaseModel):
+    """The owner repairs one item of a conversation's memory (ADR 0044): the id the Inspector shows for a thread, a
+    secret or a fact (for a name split, a name of the entity), what to do, and what the kind needs: a close's outcome,
+    a secret's character, a correction's new object or value, a split's other name, and the turn it takes effect."""
+    kind: Literal["thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
+                  "name_split"]
+    item: Text = Field(min_length=1, max_length=120)
+    outcome: Text | None = Field(default=None, max_length=32)
+    character: Text | None = Field(default=None, max_length=120)
+    turn: int | None = Field(default=None, ge=0)
+    note: Text | None = Field(default=None, max_length=300)
+    new_object: Text | None = Field(default=None, max_length=200)
+    new_value: Text | None = Field(default=None, max_length=500)
+    other: Text | None = Field(default=None, max_length=120)
+    entity_type: Literal["character", "place", "item", "group", "concept"] = "character"
+
+
 class EntityLinkRequest(BaseModel):
     """The owner says two names of one conversation are the same entity (ADR 0025)."""
     entity_type: Literal["character", "place", "item", "group", "concept"]

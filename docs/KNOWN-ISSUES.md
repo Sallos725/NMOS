@@ -111,8 +111,8 @@ merges the two until that turn is edited or deleted (the Inspector shows each al
 marks (`known_by`, `hidden_from`) stay free text. *Since 0.1.0-beta.17 (`extract-v9`):* a character first
 shown without a name is written as a `?` description and joined to its name when a later turn reveals it
 (3/3 on the owner's reveal turn; ADR 0024), and the owner can join any two names of a chat in the panel
-(entity page → "Same as another entity"; ADR 0025). There is still no owner split of a wrong automatic
-alias.
+(entity page → "Same as another entity"; ADR 0025). *On `main` (Phase 13, ADR 0044):* the owner can split two
+names a wrong automatic alias joined (the API now, the panel in step 5).
 
 **K9 — Destroyed or used-up items keep their last holder.** A new holder ends the previous one (ADR
 0011), and since 0.1.0-beta.12 so does a statement that the holder no longer has it ("lost", "dropped
@@ -227,7 +227,7 @@ small samples.
 
 **K31 — A given name alone is no mention.** Facts come into a packet first for the characters the message names
 (`relevant_facts`). A name counts when the message contains it whole. Korean usually calls a character written in
-full as a three-syllable name (박소라) by the given name alone (소라). That is not a mention, so the character's
+full as a three-syllable name (한서윤) by the given name alone (서윤). That is not a mention, so the character's
 facts do not come in, and joining the two names by hand in the Inspector did not change it. On a second real chat
 (`docs/perf/m0-sample2.md`), three probes each asked for one fact about a character. The fact came in 2 of 3 with
 the full name and 0 of 3 with the given name.
