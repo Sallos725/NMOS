@@ -8,11 +8,13 @@ import re
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 from conftest import active_generation, make_client
 from nmos_sidecar import canon, canonfacts
 from nmos_sidecar.extraction import normalize, process_extract
 from nmos_sidecar.facts import memory_view
+from nmos_sidecar.llm import LLMError
 from nmos_sidecar.worker import run_once
 from simchat import SimChat
 from test_canon import push
@@ -30,17 +32,24 @@ RULES = [
                 "object_type": "character", "value": m["rel"]}),
     (re.compile(r"(?P<who>[A-Z]\w+) wants to (?P<what>[^.]+)\."),
      lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "goal", "value": m["what"]}),
+    (re.compile(r"(?P<who>[A-Z]\w+) has the (?P<what>[a-z]+)\."),
+     lambda m: {"subject": m["who"], "subject_type": "character", "predicate": "possesses", "object": m["what"],
+                "object_type": "item"}),
 ]
 
 
 class Model:
-    """Stand-in for the extraction model, for turns and canon alike; it records each call."""
+    """Stand-in for the extraction model, for turns and canon alike; it records each call, and fails a call whose
+    prompt has `fail_on`."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.fail_on: str | None = None
 
     def __call__(self, system: str, user: str) -> tuple[dict, str]:
         is_canon = "CANON" in system
+        if self.fail_on and self.fail_on in user:
+            raise LLMError("model unavailable")
         self.calls.append(("canon" if is_canon else "turn", user))
         text = user.split("TEXT", 1)[1] if is_canon else user.split("TARGET", 1)[1]
         items = [{"modality": "actual", "source": "narration", "epistemic": "stated", "confidence": 0.9,
@@ -275,3 +284,130 @@ def test_a_rebuild_reads_the_canon_again(migrated):
         left = conn.execute("SELECT (SELECT count(*) FROM assertion) + (SELECT count(*) FROM extraction)"
                             " + (SELECT count(*) FROM job) AS n").fetchone()["n"]
         assert left == 0
+
+
+def test_a_request_whose_manifest_has_not_arrived_reads_no_canon_facts(migrated):
+    chat, model = story(), Model()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        first = push(c, chat, canon_texts())["manifest_id"]
+        recall(c, chat, "Who is Kaito?", canon_manifest_id=first, canon_held=["card:desc", "persona", "lore:kaito"])
+        drain(migrated, model)
+        # The owner deletes the Kaito entry: the next prompt is built from a manifest the sidecar does not have yet.
+        texts = {k: v for k, v in canon_texts().items() if k != "lore:kaito"}
+        from test_canon import entry
+        second = canon.manifest_id([entry(k, t, **m) for k, (t, m) in texts.items()])
+        early = recall(c, chat, "Who is Kaito?", budget=2000, canon_manifest_id=second, canon_held=["card:desc", "persona"])
+        assert "squire" not in early["packet"]["text"]  # not the removed entry's fact from the canon in force
+        push(c, chat, texts)
+        after = recall(c, chat, "Who is Kaito?", budget=2000, canon_manifest_id=second, canon_held=["card:desc", "persona"])
+        assert "squire" not in after["packet"]["text"]
+        for trace in (early, after):
+            assert c.get(f"/v1/trace/{trace['trace_id']}/replay").json()["reproduced"] is True
+        # while the entry is in force and not in the prompt, its fact is memory
+        push(c, chat, canon_texts())
+        back = recall(c, chat, "Who is Kaito?", budget=2000, canon_manifest_id=first, canon_held=["card:desc", "persona"])
+        assert "squire" in back["packet"]["text"]
+
+
+def test_a_renamed_card_or_persona_is_read_again_where_the_text_names_them_by_macro(migrated):
+    chat, model = story(), Model()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        out = push(c, chat, {**canon_texts(), "lore:mira": ("Mira is a baker.", {"keys": ["Mira"]})})
+        recall(c, chat, "Mira?", canon_manifest_id=out["manifest_id"], canon_held=["lore:mira"])
+        drain(migrated, model)
+        assert len(model.canon_calls()) == 3
+        renamed = {**canon_texts(), "lore:mira": ("Mira is a baker.", {"keys": ["Mira"]}),
+                   "card:name": ("Hanna", {"field": "name"})}
+        push(c, chat, renamed)
+        drain(migrated, model)
+        # both texts use the name macros: read again with the new names (a text without them is not)
+        assert len(model.canon_calls()) == 5  # not the Mira entry: it names nobody by macro
+        assert any("Hanna is a lighthouse keeper." in u for u in model.canon_calls()[3:])
+        v = view(migrated, chat)
+        assert [f["subject"] for f in v["assertions"] if f.get("canon") == "card:desc" and f["predicate"] == "identity"] \
+            == ["Hanna"]
+        push(c, chat, {**renamed, "persona": ("{{user}} is a traveler.", {"name": "Tomo"})})
+        drain(migrated, model)
+        assert len(model.canon_calls()) == 7
+        assert all("USER: Tomo" in u for u in model.canon_calls()[5:])
+        v = view(migrated, chat)
+        assert [f["subject"] for f in v["assertions"] if f.get("canon") == "persona"] == ["Tomo"]
+
+
+def test_a_text_read_in_part_is_finished_when_canon_facts_come_back_on(migrated):
+    chat, model = story(), Model()
+    long = "Hana is a lighthouse keeper.\n" + "x" * canonfacts.PART_CHARS + "\nHana is Kaito's sister."
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        model.fail_on = "part 2 of 2"
+        push(c, chat, {"card:name": ("Hana", {"field": "name"}), "card:desc": (long, {"field": "desc"})})
+        drain(migrated, model)
+        assert len(model.canon_calls()) == 1  # part 1 read, part 2 failed and waits for its retry
+        assert c.put("/v1/config", json={"canon_facts": False}).status_code == 200  # retires the waiting job
+        model.fail_on = None
+        assert c.put("/v1/config", json={"canon_facts": True}).status_code == 200
+        drain(migrated, model)
+        assert len(model.canon_calls()) == 2 and "part 2 of 2" in model.canon_calls()[-1]  # part 1 is not read again
+        v = view(migrated, chat)
+        assert {f["predicate"] for f in v["assertions"] if f.get("canon")} == {"identity", "relationship"}
+        cid = v["conversation"]
+        assert c.get(f"/v1/conversations/{cid}/coverage").json()["canon"]["read"] == 1
+
+
+def test_each_direction_of_a_relationship_holds_its_own_lock_and_a_new_holder_is_held_off(migrated):
+    chat, model = SimChat("canon-locks"), Model()
+    chat.user("Go on.")
+    chat.reply("Hana is Kaito's guardian.")
+    chat.user("And?")
+    chat.reply("Kaito is Hana's ward.")
+    chat.user("Then?")
+    chat.reply("Kaito has the lamp.")
+    chat.user("Who has the lamp?")
+    desc = "Hana is Kaito's mother. Kaito is Hana's son. Hana has the lamp."
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        push(c, chat, {"card:name": ("Hana", {"field": "name"}), "card:desc": (desc, {"field": "desc"})})
+        drain(migrated, model)
+        v = view(migrated, chat)
+        cid = v["conversation"]
+        canon_rows = {(a["subject"], a["predicate"]): a for a in v["assertions"] if a.get("canon")}
+        locks = {}
+        for who, pred in (("Hana", "relationship"), ("Kaito", "relationship"), ("Hana", "possesses")):
+            res = c.post(f"/v1/conversations/{cid}/repairs",
+                         json={"kind": "fact_lock", "item": str(canon_rows[(who, pred)]["id"])})
+            assert res.status_code == 200, res.text
+            locks[(who, pred)] = res.json()["repair"]["id"]
+        v = view(migrated, chat)
+        pairs = {f["subject"]: f for f in v["facts"] if f["predicate"] == "relationship"}
+        assert (pairs["Hana"]["value"], pairs["Kaito"]["value"]) == ("mother", "son")
+        assert pairs["Hana"]["held_off"] == pairs["Kaito"]["held_off"] == 1
+        (lamp,) = [f for f in v["facts"] if f["predicate"] == "possesses"]
+        assert (lamp["subject"], lamp["held_off"]) == ("Hana", 1)  # a new holder is no restatement
+        packet = recall(c, chat, "Who has the lamp?", budget=2000, canon_held=["card:desc"])["packet"]["text"]
+        assert "Hana possesses lamp" in packet and 'locked="true"' in packet
+        # undo one direction: the story's statement of that direction is current, and listed against canon
+        assert c.post(f"/v1/conversations/{cid}/repairs/{locks[('Hana', 'relationship')]}/remove").status_code == 200
+        v = view(migrated, chat)
+        pairs = {f["subject"]: f["value"] for f in v["facts"] if f["predicate"] == "relationship"}
+        assert pairs == {"Hana": "guardian", "Kaito": "son"}
+        assert [x["kind"] for x in v["conflicts"] if x["against"].get("subject") == "Hana"] == ["canon"]
+
+
+def test_the_names_tag_and_the_macro_test_are_the_same_in_python_and_sql(migrated):
+    manifests = [
+        [{"key": "card:name", "hash": "a" * 64, "metadata": {"field": "name"}},
+         {"key": "persona", "hash": "b" * 64, "metadata": {"name": "타쿠미"}}],
+        [{"key": "card:desc", "hash": "c" * 64, "metadata": {}}],
+        [{"key": "persona", "hash": "b" * 64, "metadata": {"name": None}}],
+    ]
+    texts = ["{{char}}는", "{{ User }} waits", "{{bot}}", "{{random::a::b}}", "no macro", "{{chars}}", "{ {user}}"]
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        for entries in manifests:
+            sql = conn.execute("SELECT " + canonfacts.NAMES_TAG.format(e="%s::jsonb") + " AS tag",
+                               [Jsonb(entries)] * 2).fetchone()["tag"]
+            assert sql == canonfacts.names_tag(entries)
+        for text in texts:
+            sql = conn.execute("SELECT %s ~* %s AS named", (text, canon.MACRO_SQL)).fetchone()["named"]
+            assert sql == bool(canon.MACRO.search(text)), text

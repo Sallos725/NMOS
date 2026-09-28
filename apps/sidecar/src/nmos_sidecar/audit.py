@@ -115,12 +115,15 @@ def _same(a: list[dict[str, Any]], b: list[dict[str, Any]]) -> bool:
 
 
 def _canon_of(t: dict[str, Any]) -> dict[str, Any]:
-    """The canon a recorded request read its names from (ADR 0046): exactly the manifest it used, none included; a
-    request recorded before that was kept reads the manifest it named."""
+    """The canon a recorded request read its names and facts from (ADR 0046, 0047): exactly the manifests it used, none
+    included; a request recorded before that was kept reads the manifest it named."""
     options = t.get("recall_options") or {}
+    out: dict[str, Any] = {"canon_manifest": t.get("canon_manifest_id")}
     if "canon_names" in options:
-        return {"canon_manifest": options["canon_names"], "canon_exact": True}
-    return {"canon_manifest": t.get("canon_manifest_id")}
+        out = {"canon_manifest": options["canon_names"], "canon_exact": True}
+    if "canon_key" in options:  # and exactly the manifest whose facts it read, none included (ADR 0047)
+        out["canon_facts"] = options.get("canon_facts")
+    return out
 
 
 def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, policy: str | None = None,

@@ -17,7 +17,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from .entities import norm
-from .facts import STANDING, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
+from .facts import LIVE, STANDING, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
 from . import scene, spans, summaries
 from .ids import uuid7
 from .ledger import find_conversation
@@ -210,7 +210,8 @@ class Gathered:
     cast: dict[str, str] = field(default_factory=dict)  # scene cast, entity key → name (ADR 0034)
     note: str = ""  # added to the packet's Note (a first-person narrator, ADR 0035)
     withheld: int = 0  # lines and excerpts the chat's memory mode left out or replaced (ADR 0035)
-    canon_names: str | None = None  # the canon manifest whose names and facts the read used (ADR 0046, 0047)
+    canon_names: str | None = None  # the canon manifest whose names the read used (ADR 0046)
+    canon_facts: str | None = None  # the canon manifest whose facts it used; None: none (ADR 0047)
     withheld_lines: list[Line] = field(default_factory=list)
     secret_pairs: set[tuple[frozenset[str], frozenset[str]]] = field(default_factory=set)  # (holders, absent) given a Secret line
     story: list[Line] = field(default_factory=list)  # summaries (packet-v8, ADR 0043)
@@ -219,7 +220,8 @@ class Gathered:
 
 def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, in_context: set[str],
            options: RecallOptions, upto: int | None = None, known_at: datetime | None = None,
-           canon_manifest: str | None = None, canon_exact: bool = False, canon_held: Iterable[str] = ()) -> Gathered:
+           canon_manifest: str | None = None, canon_exact: bool = False, canon_held: Iterable[str] = (),
+           canon_facts: Any = LIVE) -> Gathered:
     """Candidates for one request, already normalized (`clean_text`). `upto` and `known_at` gather them as
     of an earlier request: the head up to that position, and what NMOS had derived by that time. The canon keys the
     prompt held count as in context: the host sent their text, so their facts are not sent again (D3, ADR 0047)."""
@@ -273,8 +275,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     view = None
     if options.facts_limit > 0 or options.threads_limit > 0:
         view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
-                           options.canon_key)
-        g.canon_names = view.get("canon_names")
+                           options.canon_key, canon_facts)
+        g.canon_names, g.canon_facts = view.get("canon_names"), view.get("canon_facts_manifest")
         r = view["resolution"]
         persona = r.persona_names if r else frozenset()
         # Who is in the scene, so facts only some of them know are marked (packet-v3, ADR 0034).
@@ -319,8 +321,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3
         if view is None and options.extractor_key:  # facts and threads off: the secrets still decide what may be told
             view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
-                               options.canon_key)
-            g.canon_names = view.get("canon_names")
+                               options.canon_key, canon_facts)
+            g.canon_names, g.canon_facts = view.get("canon_names"), view.get("canon_facts_manifest")
         r = view["resolution"] if view else None
         if view and not g.cast and r is not None:
             g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
@@ -507,7 +509,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             options.policy, request.budget_tokens, upto if fresh else None, previous_ai,
             Jsonb(sorted(in_context)), options.extractor_key,
             options.embed_projection if options.embedder else None, options.rules_version,
-            Jsonb({**recorded_options(options), "canon_names": g.canon_names}), Jsonb(compiled.ledger),
+            Jsonb({**recorded_options(options), "canon_names": g.canon_names, "canon_facts": g.canon_facts}),
+            Jsonb(compiled.ledger),
             getattr(request, "canon_manifest_id", None),  # ADR 0045
             Jsonb(sorted(set(getattr(request, "canon_held", None) or []))),
         ),

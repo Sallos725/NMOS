@@ -10,14 +10,19 @@ Which revisions it reads (Q3), of the canon in force:
 - the card's story fields and greeting, the author's note and the persona: always, once per text;
 - a lorebook entry: once a request's prompt held it (the host activated it, H19), then each new text of it.
 
-A read takes the canon facts of the manifest it uses (its request's own, as names do, ADR 0046), from the extractions
+A read takes the canon facts of the manifest its request names (none while the sidecar lacks it), from the extractions
 NMOS had by then, as facts from before turn 0: turn -1, positions below every message's, and `canon` set to the key.
+
+What a read of a text depends on besides the text and the generation: the names the host's name macros stand for, when
+the text has them (the card's name and the persona's, as the manifest gives them). They are part of the window
+(`canon:<part>:<names>`, `plain` for a text without the macros), so a renamed card or persona is read again, and a read
+takes only the windows of its manifest's names. A text counts as read once every part of it is.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
-import re
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
@@ -27,6 +32,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from . import generations, normtext
+from .canon import MACRO, MACRO_SQL
 from .config import Settings
 from .generations import Generation
 from .ids import uuid7
@@ -46,8 +52,6 @@ MAX_PARTS = 4  # a longer text is read in its first 24,000 characters; the rest 
 MIN_CHARS = 12
 PRIORITY = 150  # after live turns (100), before a first sight's backfill (200)
 POSITION_BASE = -1_000_000  # canon rows sort before every message (positions start at 0)
-
-MACRO = re.compile(r"\{\{\s*(char|bot|user)\s*\}\}", re.IGNORECASE)
 
 PROMPT = """You extract durable facts for the long-term memory of a role-play chat from its CANON: a text the chat is
 built on (the character card, the user's persona, the author's note or a lorebook entry), not the story itself.
@@ -115,17 +119,33 @@ def always(key: str) -> bool:
     return not key.startswith("lore:") and key != "card:name"
 
 
+def names_tag(entries: list[dict[str, Any]]) -> str:
+    """The names a manifest gives the host's name macros (the card's name by its hash, the persona's name), as the
+    window of a text that has the macros. NAMES_TAG is the same in SQL."""
+    by = {e["key"]: e for e in entries}
+    name = (by.get("card:name") or {}).get("hash") or ""
+    user = ((by.get("persona") or {}).get("metadata") or {}).get("name") or ""
+    return hashlib.sha256(f"{name}\n{user}".encode()).hexdigest()[:12]
+
+
+NAMES_TAG = """left(encode(sha256(convert_to(
+    coalesce((SELECT y->>'hash' FROM jsonb_array_elements({e}) y WHERE y->>'key' = 'card:name' LIMIT 1), '') || E'\\n' ||
+    coalesce((SELECT y->'metadata'->>'name' FROM jsonb_array_elements({e}) y WHERE y->>'key' = 'persona' LIMIT 1), ''),
+    'UTF8')), 'hex'), 12)"""
+# Whether a stored canon revision has the name macros (recorded at sync since this step; older ones are checked).
+NAMED = "coalesce((sr.metadata->>'named')::boolean, sr.content ~* %(macro)s)"
+
 # The revisions a canon generation reads, of each chat's canon in force: the card's fields, the note and the persona,
-# and each lorebook entry some recorded request's prompt held. WANTED: those it has not read yet.
+# and each lorebook entry some recorded request's prompt held; with the window suffix a read of it has now.
 IN_FORCE = """
 WITH chats AS (
-    SELECT c.id, c.canon_manifest_id FROM conversation c
+    SELECT c.id, m.entries, """ + NAMES_TAG.format(e="m.entries") + """ AS tag
+    FROM conversation c JOIN canon_manifest m ON m.conversation_id = c.id AND m.id = c.canon_manifest_id
     WHERE c.canon_manifest_id IS NOT NULL AND (%(conv)s::uuid IS NULL OR c.id = %(conv)s::uuid)
 ),
 e AS (
-    SELECT ch.id AS conv, x->>'key' AS key, x->>'hash' AS hash
-    FROM chats ch JOIN canon_manifest m ON m.conversation_id = ch.id AND m.id = ch.canon_manifest_id
-    CROSS JOIN LATERAL jsonb_array_elements(m.entries) x
+    SELECT ch.id AS conv, ch.tag, x->>'key' AS key, x->>'hash' AS hash
+    FROM chats ch CROSS JOIN LATERAL jsonb_array_elements(ch.entries) x
 ),
 held AS (
     SELECT DISTINCT t.conversation_id AS conv, k.key
@@ -133,7 +153,7 @@ held AS (
     CROSS JOIN LATERAL jsonb_array_elements_text(t.canon_held) k(key)
     WHERE t.canon_held <> '[]'::jsonb AND k.key LIKE 'lore:%%'
 )
-SELECT e.conv, e.key, sr.id AS rid
+SELECT e.conv, e.key, sr.id AS rid, CASE WHEN """ + NAMED + """ THEN e.tag ELSE 'plain' END AS wtag
 FROM e
 JOIN source_object so ON so.conversation_id = e.conv AND so.host_logical_id = 'canon:' || e.key
                      AND so.source_kind = 'canon'
@@ -141,9 +161,14 @@ JOIN source_revision sr ON sr.source_object_id = so.id AND sr.revision_hash = e.
 WHERE e.key <> 'card:name'
   AND (e.key NOT LIKE 'lore:%%' OR EXISTS (SELECT 1 FROM held h WHERE h.conv = e.conv AND h.key = e.key))
 """
-WANTED = IN_FORCE + """  AND NOT EXISTS (SELECT 1 FROM extraction x WHERE x.source_revision_id = sr.id AND x.extractor_key = %(gen)s
-                  AND x.discarded_at IS NULL)
-"""
+# A read of one revision in one window: its parts so far, and how many it has (every part records the count).
+READ = """(SELECT count(*) AS calls, max((x.coverage->>'parts')::int) AS parts,
+                  max((x.coverage->>'unread_chars')::int) AS unread
+           FROM extraction x WHERE x.source_revision_id = f.rid AND x.extractor_key = %(gen)s
+             AND x.discarded_at IS NULL AND split_part(x.window_hash, ':', 3) = f.wtag)"""
+# Those not read completely yet: no part, or some parts missing (a job stopped between parts).
+WANTED = ("SELECT f.* FROM (" + IN_FORCE + ") f CROSS JOIN LATERAL " + READ
+          + " rd WHERE rd.parts IS NULL OR rd.calls < rd.parts")
 
 REQUEUE = """ON CONFLICT (dedupe_key) DO UPDATE SET status = 'queued', priority = EXCLUDED.priority, attempts = 0,
     run_after = now(), locked_at = NULL, last_error = NULL, updated_at = now() WHERE job.status = 'obsolete'"""
@@ -159,10 +184,10 @@ def schedule(conn: psycopg.Connection, key: str, conv: UUID | None = None) -> in
         return conn.execute(
             "WITH wanted AS (" + WANTED + ")"
             " INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority)"
-            " SELECT 'canon', 'canon:' || w.rid || ':' || %(gen)s, w.conv,"
+            " SELECT 'canon', 'canon:' || w.rid || ':' || w.wtag || ':' || %(gen)s, w.conv,"
             "        jsonb_build_object('revision_id', w.rid::text, 'generation', %(gen)s), %(priority)s"
             " FROM wanted w ORDER BY w.conv, w.key " + REQUEUE,
-            {"conv": conv, "gen": key, "priority": PRIORITY}).rowcount
+            {"conv": conv, "gen": key, "priority": PRIORITY, "macro": MACRO_SQL}).rowcount
 
 
 def requeue(conn: psycopg.Connection, conv: UUID) -> int:
@@ -216,7 +241,7 @@ def _source(conn: psycopg.Connection, rid: UUID) -> dict[str, Any] | None:
     """A canon revision with its key and what the canon in force says of it; None when it is not in force now (a newer
     text replaced it before its job ran)."""
     row = conn.execute(
-        "SELECT sr.id, sr.revision_hash, so.host_logical_id, so.conversation_id, c.host_persona_name, m.entries"
+        "SELECT sr.id, sr.revision_hash, sr.content, sr.metadata, so.host_logical_id, so.conversation_id, m.entries"
         " FROM source_revision sr JOIN source_object so ON so.id = sr.source_object_id AND so.source_kind = 'canon'"
         " JOIN conversation c ON c.id = so.conversation_id"
         " JOIN canon_manifest m ON m.conversation_id = c.id AND m.id = c.canon_manifest_id"
@@ -236,10 +261,13 @@ def _source(conn: psycopg.Connection, rid: UUID) -> dict[str, Any] | None:
             " WHERE so.conversation_id = %s AND so.host_logical_id = 'canon:card:name' AND sr.revision_hash = %s",
             (row["conversation_id"], name["hash"])).fetchone()
         character = found["content"].strip() if found else None
-    persona = entries.get("persona")
-    user = ((persona or {}).get("metadata") or {}).get("name") or row["host_persona_name"]
+    user = ((entries.get("persona") or {}).get("metadata") or {}).get("name")  # the manifest's, so reads are its own
+    named_ = (row["metadata"] or {}).get("named")
+    if named_ is None:
+        named_ = bool(MACRO.search(row["content"]))
     return {"id": row["id"], "key": key, "conversation_id": row["conversation_id"],
-            "metadata": entry.get("metadata") or {}, "character": character, "user": user}
+            "metadata": entry.get("metadata") or {}, "character": character, "user": user if user else None,
+            "wtag": names_tag(row["entries"]) if named_ else "plain"}
 
 
 def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[dict, str]],
@@ -258,10 +286,11 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
     done = {r["window_hash"] for r in conn.execute(
         "SELECT window_hash FROM extraction WHERE source_revision_id = %s AND extractor_key = %s"
         " AND discarded_at IS NULL", (rid, gen.key)).fetchall()}
+    count = len(pieces) or 1
     system = PROMPT.format(registry=registry_prompt(PREDICATES))
     total = 0
     for i, piece in enumerate(pieces or [""]):
-        window = f"canon:{i}"
+        window = f"canon:{i}:{src['wtag']}"
         if window in done:
             continue
         if len(piece) < MIN_CHARS:
@@ -276,8 +305,7 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         for a in rows:
             if a["status"] == "valid" and a["predicate"] not in PREDICATES:
                 a["status"], a["reason"] = "pending", "not a canon predicate"
-        coverage = {"chars": len(text), "part": i, "parts": len(pieces), "part_chars": len(piece),
-                    "unread_chars": unread}
+        coverage = {"chars": len(text), "part": i, "parts": count, "part_chars": len(piece), "unread_chars": unread}
         with conn.transaction():
             xid = uuid7()
             inserted = conn.execute(
@@ -304,22 +332,26 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
 # The canon facts of one manifest: each entry's revision, one generation per revision (the given one first, then the
 # most recently activated that read it, as ADR 0014 serves turns), as of a time for a replay (ADR 0027).
 ROWS = """
-WITH e AS (
-    SELECT x->>'key' AS key, x->>'hash' AS hash, t.ord
-    FROM canon_manifest m CROSS JOIN LATERAL jsonb_array_elements(m.entries) WITH ORDINALITY AS t(x, ord)
-    WHERE m.conversation_id = %(conv)s AND m.id = %(mid)s
+WITH m AS (
+    SELECT entries, """ + NAMES_TAG.format(e="entries") + """ AS tag
+    FROM canon_manifest WHERE conversation_id = %(conv)s AND id = %(mid)s
+),
+e AS (
+    SELECT x->>'key' AS key, x->>'hash' AS hash, t.ord, m.tag
+    FROM m CROSS JOIN LATERAL jsonb_array_elements(m.entries) WITH ORDINALITY AS t(x, ord)
 ),
 r AS (
-    SELECT e.key, e.ord, sr.id AS rid
+    SELECT e.key, e.ord, sr.id AS rid, CASE WHEN """ + NAMED + """ THEN e.tag ELSE 'plain' END AS wtag
     FROM e JOIN source_object so ON so.conversation_id = %(conv)s AND so.host_logical_id = 'canon:' || e.key
                                 AND so.source_kind = 'canon'
     JOIN source_revision sr ON sr.source_object_id = so.id AND sr.revision_hash = e.hash
+    WHERE EXISTS (SELECT 1 FROM extraction x WHERE x.source_revision_id = sr.id)
 ),
 live AS (
     SELECT r.key, r.ord, x.id AS xid, x.window_hash, x.extractor_key, x.compiler_version,
            first_value(x.extractor_key) OVER (PARTITION BY r.rid
                ORDER BY x.extractor_key = %(gen)s DESC, g.activated_at DESC, g.key) AS chosen
-    FROM r JOIN extraction x ON x.source_revision_id = r.rid
+    FROM r JOIN extraction x ON x.source_revision_id = r.rid AND split_part(x.window_hash, ':', 3) = r.wtag
     JOIN projection_generation g ON g.key = x.extractor_key AND g.kind = 'canon'
     WHERE x.created_at <= %(at)s AND (x.discarded_at IS NULL OR x.discarded_at > %(at)s)
 )
@@ -338,7 +370,7 @@ def rows(conn: psycopg.Connection, conv: UUID, mid: str | None, key: str | None,
     """The canon facts of manifest `mid` as a read takes them (ADR 0047): before turn 0, in the manifest's key order."""
     if not mid or not key:
         return []
-    out = conn.execute(ROWS, {"conv": conv, "mid": mid, "gen": key,
+    out = conn.execute(ROWS, {"conv": conv, "mid": mid, "gen": key, "macro": MACRO_SQL,
                               "at": known_at or datetime.now(timezone.utc)}).fetchall()
     for i, a in enumerate(out):
         a.update(position=POSITION_BASE + i, turn=-1, turn_hash=f"canon:{a['canon']}",
@@ -354,15 +386,11 @@ def coverage(conn: psycopg.Connection, key: str | None, conv: UUID) -> dict[str,
     if not key:
         return {}
     rows_ = conn.execute(
-        "WITH wanted AS (" + IN_FORCE + ")"
-        " SELECT w.key, w.rid,"
-        "  (SELECT count(*) FROM extraction x WHERE x.source_revision_id = w.rid AND x.extractor_key = %(gen)s"
-        "   AND x.discarded_at IS NULL) AS calls,"
-        "  (SELECT max((x.coverage->>'unread_chars')::int) FROM extraction x WHERE x.source_revision_id = w.rid"
-        "   AND x.extractor_key = %(gen)s AND x.discarded_at IS NULL) AS unread,"
-        "  (SELECT j.status FROM job j WHERE j.dedupe_key = 'canon:' || w.rid || ':' || %(gen)s) AS job"
-        " FROM wanted w", {"conv": conv, "gen": key}).fetchall()
-    return {"wanted": len(rows_), "read": sum(1 for r in rows_ if r["calls"] and r["job"] != "running"),
+        "SELECT f.key, rd.calls, rd.parts, rd.unread,"
+        "  (SELECT j.status FROM job j WHERE j.dedupe_key = 'canon:' || f.rid || ':' || f.wtag || ':' || %(gen)s) AS job"
+        " FROM (" + IN_FORCE + ") f CROSS JOIN LATERAL " + READ + " rd",
+        {"conv": conv, "gen": key, "macro": MACRO_SQL}).fetchall()
+    return {"wanted": len(rows_), "read": sum(1 for r in rows_ if r["parts"] and r["calls"] >= r["parts"]),
             "pending": sum(1 for r in rows_ if r["job"] in ("queued", "running")),
             "failed": sum(1 for r in rows_ if r["job"] == "dead"),
             "calls": sum(r["calls"] for r in rows_), "unread_chars": sum(r["unread"] or 0 for r in rows_),

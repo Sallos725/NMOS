@@ -157,6 +157,9 @@ where the story uses it, and the message extractor is untouched.
      record the canon generation they read and replay with it;
    - the plugin counts a text as held with the name macros replaced (or 80 % of its lines); a new plugin build with the
      switch and the lock button.
+
+   The step's Codex review found five defects (canon facts of a manifest not yet arrived, reads that ignored renames,
+   a text read in part, one lock per relationship pair, a new holder taken for a restatement), all fixed with tests.
 6. Evaluation, real-host smoke, upgrade, latency, Codex review, documentation.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).

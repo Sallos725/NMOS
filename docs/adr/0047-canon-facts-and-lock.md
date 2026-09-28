@@ -25,7 +25,10 @@ when canon and story disagree.
      not read. Each part is one model call, stored as an extraction of the canon revision (window `canon:<part>`)
      with its assertions, like a turn's.
    - The host's name macros (`{{char}}`, `{{user}}`) are replaced by the card's and the persona's names first, as the
-     host does in a prompt.
+     host does in a prompt. A text that uses them is read for the names its manifest gives (the window records them),
+     so renaming the card or the persona reads such texts again; a text without them is not.
+   - A text counts as read once every part is: a read stopped between parts (a failure, then the switch turned off
+     and on) goes on with the parts it lacks.
    - The prompt asks for how things stand before the story: who someone is, traits, condition, relationships,
      feelings, forms of address, places, belongings, groups, knowledge, the past (`event`) and the world
      (`world_fact`). Instructions to the AI, templates and example dialogues are not facts. Open business (goals,
@@ -36,9 +39,10 @@ when canon and story disagree.
      for the first time (after the answer, off its path), when the generation changes, and on "extract all history"
      and a rebuild (which discards the canon's extractions too). `NMOS_CANON_FACTS=0` or the panel's switch turns it
      off: nothing is read and no canon fact is used.
-2. **Before turn 0; the story supersedes it (Q4).** A read takes the canon facts of the manifest it uses (the same one
-   its names come from, ADR 0046), served per revision by the active canon generation or else the most recently
-   activated one that read it (ADR 0014). They are facts from before turn 0 (turn -1, `canon` set to the key) and
+2. **Before turn 0; the story supersedes it (Q4).** A read takes the canon facts of the manifest its request names,
+   served per revision by the active canon generation or else the most recently activated one that read it (ADR
+   0014). While the sidecar lacks that manifest (its upload is under way), the read has no canon facts: the canon in
+   force may still hold an entry the host no longer shows. (Names fall back to the canon in force, ADR 0046.) They are facts from before turn 0 (turn -1, `canon` set to the key) and
    fold with the story's: a story statement of the same fact is a new version from its turn. Canon facts take no part
    in secrets, threads or the scene's cast, and a canon claim (a greeting's line) is a claim.
 3. **A contradiction is listed (Q4).** For `identity` and `relationship`, who someone is and how two stand, a story
@@ -48,7 +52,8 @@ when canon and story disagree.
    there the story supersedes canon without a listing.
 4. **The owner's lock (Q7).** `fact_lock` is an owner repair (ADR 0044's table, undo and audit) on a canon fact or the
    owner's correction. The locked version stays current: a later statement that would replace or end it is held off
-   and listed as a conflict (`locked`), and one that says the same is left out. A lock finds a canon fact by what it
+   and listed as a conflict (`locked`), and one that says the same (subject included: a new holder is a change) is
+   left out. A relationship's two directions hold their own locks. A lock finds a canon fact by what it
    says in its canon text (the key stands for the turn), so a new generation or a card edit that keeps the fact keeps
    the lock; one that matches nothing is listed. A story fact cannot be locked: the owner corrects it first.
 5. **The packet (Q5, D3).** A canon fact whose text the request's prompt held is not sent again: the host sent it.
@@ -57,13 +62,22 @@ when canon and story disagree.
    when the prompt holds its text, marked `locked="true"`: the prompt's recent messages may say otherwise. The Note
    explains either mark only when a kept line uses it. No new packet policy: only lines of canon facts are new, so
    recorded packets replay as they were.
-6. **Replays.** A request records the canon generation it read (`canon_key`) with its recall options; its replay reads
-   that generation's canon facts of the manifest it used, as NMOS had them at its time, and the keys its prompt held.
-   A request from before this step reads none.
+6. **Replays.** A request records the canon generation it read (`canon_key`) and the manifest whose facts it read
+   (`canon_facts`, none included) with its recall options; its replay reads exactly those, as NMOS had them at its
+   time, with the keys its prompt held. A request from before this step reads none.
 7. **Plugin.** The plugin's check of which canon texts a prompt holds puts the names in for the name macros first,
    and counts a text as held when 80 % of its lines are in the prompt (the host renders other syntax too). Before,
    a card whose description used `{{char}}` never counted as held, so the plugin read the card again on every request.
    The panel has the switch and the lock button. New plugin build.
+
+The step's Codex review found five defects, all confirmed and fixed with tests:
+- a request whose manifest had not arrived read the facts of the canon in force, so an entry the owner had just deleted
+  could still reach the packet;
+- a read did not depend on the names the macros stand for, so a renamed card or persona kept facts under the old name;
+- a text read in part counted as read, so its other parts were never read after the job was retired;
+- only the last lock of a relationship pair held: the other direction's could be superseded;
+- a new holder of a locked item counted as a restatement, so it was dropped instead of held off, and the lock did not
+  reach the packet.
 
 ## Consequences
 
@@ -74,4 +88,5 @@ when canon and story disagree.
   often lists each change until the owner chooses.
 - A lorebook entry read once stays in memory while it is in the canon in force, whether or not later prompts hold it;
   its facts reach the packet only when the prompt does not hold its text.
+- Renaming the card or the persona reads again every text that uses the name macros (on a real card, most of it).
 - Measurements on the two measured chats (the calls canon takes, M0, the secret gate, latency) are step 6.

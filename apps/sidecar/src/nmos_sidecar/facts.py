@@ -340,9 +340,13 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
     return out
 
 
+LIVE: Any = object()  # `canon_facts` of a live read: decided from the manifest the request names (ADR 0047)
+
+
 def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None, upto: int | None = None,
                 known_at: datetime | None = None, canon_manifest: str | None = None,
-                canon_exact: bool = False, canon_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
+                canon_exact: bool = False, canon_key: str | None = None,
+                canon_facts: Any = LIVE) -> dict[str, list[dict[str, Any]]]:
     """The head's assertions by what they may do (ADR 0013).
 
     - facts: current fact versions from actual narration (legacy rows without a source count as
@@ -367,6 +371,9 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     statement of `identity` or a relationship that replaces or denies a canon one is also listed in `conflicts`
     (`kind` "canon"), and the owner's lock (`fact_lock`) keeps a canon fact or a correction current: a later statement
     that would replace it is held off and listed (`kind` "locked"). Canon facts take no part in secrets or threads.
+    They come from the manifest a request names only: while the sidecar lacks it (its upload is under way), the read
+    has none, as it cannot tell which of the canon in force still holds. `canon_facts` (a replay) names the manifest
+    exactly, None for none; the view's `canon_facts_manifest` says which one a read used.
     """
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
@@ -403,9 +410,12 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         kept.append(row)
         if row["predicate"] in THREAD_PREDICATES:
             promises.append(row)
-    # Canon facts (ADR 0047): those of the manifest the names came from, before every row of the story.
-    canon_rows = [c for c in canonfacts.rows(conn, conv["conversation_id"], canon_used, canon_key, known_at)
-                  if c["predicate"] in REGISTRY and c["predicate"] != "also_called"] if canon_key and canon_used else []
+    # Canon facts (ADR 0047): those of the manifest the request named (a replay: the one it used), before every row of
+    # the story.
+    if canon_facts is LIVE:
+        canon_facts = canon_used if canon_key and (canon_manifest is None or canon_used == canon_manifest) else None
+    canon_rows = [c for c in canonfacts.rows(conn, conv["conversation_id"], canon_facts, canon_key, known_at)
+                  if c["predicate"] in REGISTRY and c["predicate"] != "also_called"] if canon_key and canon_facts else []
     for row in canon_rows:
         _annotate(row, r)
     rows = canon_rows + kept
@@ -449,16 +459,15 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     held: list[dict[str, Any]] = []
     if locks:
         for key, history in narrated.items():
-            mine = [a for a in history if id(a) in locks]
-            if mine:
-                for a in mine:
-                    a["locked"] = locks[id(a)]
-                narrated[key], off = _hold(history, mine[-1], r)
-                if off:
-                    mine[-1]["held_off"] = len(off)
-                    held += [{"kind": "locked", "fact": mine[-1]["id"], "turn": mine[-1]["turn"],
-                              "position": mine[-1]["position"], "text": fact_text(mine[-1]), "repair": mine[-1]["locked"],
-                              "against": _brief(a)} for a in off]
+            if any(id(a) in locks for a in history):
+                for a in history:
+                    if id(a) in locks:
+                        a["locked"] = locks[id(a)]
+                narrated[key], off = _hold(history, r)
+                for lock, a in off:
+                    lock["held_off"] = lock.get("held_off", 0) + 1
+                    held.append({"kind": "locked", "fact": lock["id"], "turn": lock["turn"], "position": lock["position"],
+                                 "text": fact_text(lock), "repair": lock["locked"], "against": _brief(a)})
     facts = [f for history in narrated.values() for f in _versions(history, r)]
     by_key: dict[tuple, list[dict[str, Any]]] = {}
     for f in facts:
@@ -490,7 +499,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
             "threads": threads, "unmatched": unmatched, "secrets": secrets, "unrevealed": unrevealed,
             "repairs": [_report(rep, applied, r) for rep in repairs], "assertions": rows, "resolution": r,
-            "canon_names": canon_used, "canon_facts": len(canon_rows)}
+            "canon_names": canon_used, "canon_facts": len(canon_rows), "canon_facts_manifest": canon_facts}
 
 
 # Predicates whose story statement, replacing a canon one, is listed as a conflict (PHASE-14 Q4, ADR 0047): who someone
@@ -531,28 +540,37 @@ def _changes(locked: dict[str, Any], a: dict[str, Any], r: Resolution | None) ->
 
 
 def _restates(a: dict[str, Any], b: dict[str, Any], r: Resolution | None) -> bool:
-    """Whether two statements say the same: predicate, polarity, value and object (as entities)."""
-    return (a["predicate"] == b["predicate"] and a.get("polarity") == b.get("polarity")
-            and _norm(a.get("value")) == _norm(b.get("value"))
-            and (_object(a, r) if a.get("object") else None) == (_object(b, r) if b.get("object") else None))
+    """Whether two statements say the same: predicate, polarity, value, subject and object (as entities). A
+    relationship said either way round is the same when it holds both ways (ADR 0038)."""
+    if a["predicate"] != b["predicate"] or a.get("polarity") != b.get("polarity") \
+            or _norm(a.get("value")) != _norm(b.get("value")):
+        return False
+    ends = lambda x: (_subject(x, r), _object(x, r) if x.get("object") else None)  # noqa: E731
+    if ends(a) == ends(b):
+        return True
+    return a["predicate"] == "relationship" and symmetric(a.get("value")) and ends(a) == ends(b)[::-1]
 
 
-def _hold(history: list[dict[str, Any]], locked: dict[str, Any],
-          r: Resolution | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """A version key's history under the owner's lock (PHASE-14 Q7): what comes after the locked statement and would
-    replace or end it is held off, so the locked version stays current. Returns (the history the fold reads, the
-    statements held off); a later statement that says the same is left out of both."""
+def _hold(history: list[dict[str, Any]],
+          r: Resolution | None) -> tuple[list[dict[str, Any]], list[tuple[dict[str, Any], dict[str, Any]]]]:
+    """A version key's history under the owner's locks (PHASE-14 Q7), rows marked `locked`: a statement after a locked
+    one that would replace or end it is held off, so each locked version stays current (a relationship's two
+    directions each, ADR 0038). Returns (the history the fold reads, (lock, statement) for each statement held off,
+    against the latest lock it would change); a later statement that says the same as that lock is left out of
+    both."""
     kept: list[dict[str, Any]] = []
-    off: list[dict[str, Any]] = []
-    after = False
+    off: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    locked: list[dict[str, Any]] = []
     for a in history:
-        if a is locked:
-            after = True
-        elif after and _changes(locked, a, r):
-            if not _restates(locked, a, r):
-                off.append(a)
+        if a.get("locked"):
+            locked.append(a)
+            kept.append(a)
             continue
-        kept.append(a)
+        against = next((x for x in reversed(locked) if _changes(x, a, r)), None)
+        if against is None:
+            kept.append(a)
+        elif not _restates(against, a, r):
+            off.append((against, a))
     return kept, off
 
 

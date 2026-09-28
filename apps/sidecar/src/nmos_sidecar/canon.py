@@ -28,6 +28,10 @@ from .ids import uuid7
 KEY_PATTERN = r"^(card:(name|desc|personality|scenario|greeting)|note|persona|lore:[A-Za-z0-9_.:-]{1,120}(~[0-9]{1,4})?)$"
 KEY = re.compile(KEY_PATTERN)
 PREFIX = "canon:"
+# The host's name macros, which it replaces by the card's and the persona's names in a prompt (ADR 0047). MACRO_SQL is
+# the same pattern for PostgreSQL's `~*`.
+MACRO = re.compile(r"\{\{\s*(char|bot|user)\s*\}\}", re.IGNORECASE)
+MACRO_SQL = r"\{\{\s*(char|bot|user)\s*\}\}"
 
 
 class CanonError(ValueError):
@@ -84,7 +88,7 @@ def sync(conn: psycopg.Connection, conv_id: UUID, entries: list[dict[str, Any]],
         rid = uuid7()
         conn.execute("INSERT INTO source_revision (id, source_object_id, revision_hash, content, metadata, lifecycle)"
                      " VALUES (%s, %s, %s, %s, %s, 'accepted')",
-                     (rid, obj["id"], digest, text, Jsonb({"canon": kind_of(key)})))
+                     (rid, obj["id"], digest, text, Jsonb({"canon": kind_of(key), "named": bool(MACRO.search(text))})))
         normtext.write(conn, rid, text)
         stored += 1
     if needed:
