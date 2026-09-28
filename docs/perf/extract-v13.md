@@ -91,11 +91,11 @@ Read-only on the restored copies, the current code (`resolve-v5`, the pair fold)
 | Longest chat | `extract-v12` (`nmos_m0`) | `extract-v13` (`nmos_m0v13b`) |
 |---|---|---|
 | goals current | 43 lines: 11 facts, 26 claims, 6 not actual | 37 open goal threads (9 achieved, 1 answered, gone), 2 claims |
-| per character | 블랑 17, 엘피 9, 라디아 4 | 엘피 15, 블랑 14, 라디아 4 |
+| per character (three main characters, A–C) | A 17, B 9, C 4 | B 15, A 14, C 4 |
 | pairs with more than one current relationship | 0 of 4 with one | 0 of 5 with one |
 
 Goals now end, but they do not stop piling up: the model ended 9 of 48 goals in 73 turns, and a goal the story
-never mentions again stays open (K23). 엘피 holds 15 open goals where the owner counts 2 as still under way. The
+never mentions again stays open (K23). One character holds 15 open goals where the owner counts 2 as still under way. The
 PHASE-11 figure "one character holds 40" counted valid assertions over every revision, not current lines. The
 packet is less affected than the Inspector: at most three threads, the ones about the people named or the message
 (ADR 0019 amendment 1).
