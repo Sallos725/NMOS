@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run one read-only peer review of an NMOS checkout with another model's CLI.
 
-The lead agent (Codex or Claude) calls this once per material change; see AGENTS.md §14 and
+The lead agent (Codex or Claude) calls this once per high-risk change; see AGENTS.md §14 and
 .ai/README.md. The reviewer's final answer goes to stdout; its progress goes to a log file.
 """
 import argparse

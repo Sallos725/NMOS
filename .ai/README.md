@@ -28,7 +28,7 @@ the how-to for the external-review escalation.
    The first argument is the **reviewer**: Claude leading calls `codex`, Codex leading calls `claude`.
    `--base` adds the branch diff; without it the scope is the working tree (untracked files included). The
    free text narrows the question. Keep the review to the diff and minimum dependency cone; do not use this
-   as a repository-wide audit.
+   as a repository-wide audit. A review takes minutes: run it in the background (default timeout 900 s).
 4. The lead classifies each finding as confirmed, partial or unsupported, citing code, a test or a fixture.
    Decisions listed in `ARCHITECTURE.md §9` go to the owner; a reviewer cannot settle them.
 5. The lead fixes confirmed defects, runs the repository's real commands (`AGENTS.md §11`), and reports
