@@ -21,8 +21,8 @@ from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
-from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAUSE_POLICIES, DEFAULT_POLICY, MEMORY_KINDS, REPEATS, Compiled, Excerpt, Line, StateItem, clean_text,
-                     compile_lines, cut_lines, excerpt, fits_at, kept_counts, secret_line, secret_text)
+from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAUSE_POLICIES, DEFAULT_POLICY, MEMORY_KINDS, REPEATS, TURN_POLICIES, Compiled,
+                     Excerpt, Line, StateItem, clean_text, compile_lines, cut_lines, excerpt, fits_at, kept_counts, secret_line, secret_text)
 from .state import current_state
 from .threads import relevant_threads
 from .vectors import vector_candidates
@@ -151,7 +151,7 @@ def _lexical_candidates(conn: psycopg.Connection, head: UUID, ids: list[UUID], q
         return []
     return conn.execute(
         """
-        SELECT sr.id, am.position, so.host_logical_id, rt.clean_content AS clean, sr.metadata->>'role' AS role,
+        SELECT sr.id, am.position, am.turn, so.host_logical_id, rt.clean_content AS clean, sr.metadata->>'role' AS role,
                sr.metadata->>'name' AS name, s.user_score,
                s.user_score + %(w)s * CASE WHEN %(ai)s = '' THEN 0 ELSE word_similarity(%(ai)s, rt.clean_content) END AS score
         FROM active_membership am
@@ -241,13 +241,16 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     g.excluded = [c for c in g.candidates if c["host_logical_id"] in in_context]
     eligible = [c for c in g.candidates if c["host_logical_id"] not in in_context][: options.top_k]
     focus = f"{query} {previous_ai}"
+    # The turn the packet shows: the message's turn index since packet-v7, as facts have it (ADR 0041).
+    by_turn = options.policy in TURN_POLICIES
     for c in eligible:
         clean = c["clean"] if c.get("user_score") else c["clean"][c["text_start"]:c["text_end"]]
-        g.ranked.append(Excerpt(turn=c["position"], speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
+        g.ranked.append(Excerpt(turn=c["turn"] if by_turn else c["position"],
+                                speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
                                 text=excerpt(clean, focus), score=float(c["rrf"]), revision_id=str(c["id"]),
-                                short=excerpt(clean, focus, window=1)))
+                                short=excerpt(clean, focus, window=1), position=c["position"]))
     if options.rules_version != "none":
-        g.state = [StateItem(key=r["key"], value=r["value"], turn=r["position"])
+        g.state = [StateItem(key=r["key"], value=r["value"], turn=r["turn"] if by_turn else r["position"])
                    for r in current_state(conn, head, options.rules_version, upto)
                    if r["host_logical_id"] not in in_context]
         # Sim bots track many characters: state of characters mentioned right now gets the budget first.

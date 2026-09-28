@@ -1,4 +1,4 @@
--- NMOS Phase 12 (ADR 0041): scene summaries and the story so far, a `summarize` projection.
+-- NMOS Phase 12 (ADR 0042): scene summaries and the story so far, a `summarize` projection.
 
 ALTER TABLE projection_generation DROP CONSTRAINT projection_generation_kind_check;
 ALTER TABLE projection_generation ADD CONSTRAINT projection_generation_kind_check

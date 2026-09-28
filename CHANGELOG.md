@@ -25,7 +25,7 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     counting as a turn with nothing to extract (G3; in every release since `v0.1.0-beta.1`).
 - **Phase 12 (Stage 5, part 2) is in progress** (`docs/phases/PHASE-12.md`, approved 2026-09-28; no release decided):
   - M0 has 12 more owner-confirmed cases whose answers lie outside the prompt's own messages: 2 of 12 on Phase 11.
-  - **Scene summaries and the story so far** (ADR 0041, migration 0023), written in the background by the extraction
+  - **Scene summaries and the story so far** (ADR 0042, migration 0023), written in the background by the extraction
     model for every 8-turn window and kept current through edits, deletes and swipes. **Off by default**
     (`NMOS_SUMMARIES`); the Inspector shows them; they reach no packet yet.
 - **Phase 11 (Stage 5, part 1) is complete** (`docs/phases/PHASE-11.md`, 2026-09-28; no release decided):
@@ -54,6 +54,15 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
   - Inspector: a **Relationships** section with each pair on one row (relationship, each direction's feeling and
     speech level, with cause, what it replaced and how it started), on the chat and character pages; open threads
     counted by kind.
+  - **`packet-v7` (new default): one numbering for `turn`** (ADR 0041). A fact, claim or thread says the
+    turn index, but an excerpt's `turn` and a state item's `as_of_turn` said the message's position, so one packet
+    could show a goal at "turn 26" next to an excerpt of the next message at "turn 56". Under `packet-v7` they carry
+    the turn of their message; excerpts stay in story order. Same outcomes on the memory evaluation and on M0
+    (26 of 28). The Inspector's state table ("As of turn") now shows the turn index; it showed the position.
+- **The compose files no longer pin a packet policy.** Both passed `NMOS_PACKET_POLICY=packet-v4` unless `.env` set
+  it, so a stack started from them on `main` kept `packet-v4` after `packet-v5` and `packet-v6` became the default.
+  They now pass it empty, which means the sidecar's own default. No release was affected (`v0.1.0-beta.21` pins
+  `packet-v1`, its default).
 - **A saved API key is sent only to the host it was saved for** (review of an external analysis, 2026-09-27).
   `/v1/config/test` and `/v1/config/models` sent the saved key to whatever URL the request named, and saving an
   endpoint on another host kept the key for it, so anyone who could reach the settings API could have the key sent

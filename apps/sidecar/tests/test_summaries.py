@@ -1,4 +1,4 @@
-"""PHASE-12 step 3 (ADR 0041): scene summaries and the story so far, a `summarize` projection."""
+"""PHASE-12 step 3 (ADR 0042): scene summaries and the story so far, a `summarize` projection."""
 
 from __future__ import annotations
 
@@ -160,3 +160,15 @@ def test_turning_it_off_stops_queued_jobs_and_deleting_the_chat_removes_them(mig
         assert jobs(db) == []
         assert c.post(f"/v1/conversations/{conv_id(c, chat)}/delete").json()["deleted"]["summaries"] == 4
     assert db.execute("SELECT count(*) AS n FROM summary").fetchone()["n"] == 0
+
+
+def test_the_settings_report_the_switch_and_a_backfill_starts_with_the_newest_chat(migrated, db):
+    older, newer = story_chat(20), story_chat(20)
+    with make_client(migrated, **LLM) as c:  # summaries off: both chats synced first
+        sync(c, older)
+        sync(c, newer)
+        assert c.get("/v1/config").json()["extraction"]["summaries"] is False
+    with make_client(migrated, **ON) as c:  # turned on: the generation's backfill of every chat (PHASE-12 Q7)
+        assert c.get("/v1/config").json()["extraction"]["summaries"] is True
+        first = db.execute("SELECT conversation_id FROM job WHERE kind = 'summarize' ORDER BY id LIMIT 1").fetchone()
+        assert str(first["conversation_id"]) == conv_id(c, newer)

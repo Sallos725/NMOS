@@ -239,6 +239,8 @@ def main() -> None:
     base = ADMIN_URL.rpartition("/")[0]
     out_dir = ROOT / "fixtures/upgrade"
     name_out = args.name or args.ref
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name_out):  # a file name in fixtures/upgrade, not a path
+        parser.error(f"not a fixture name: {name_out!r} (letters, digits, '.', '_' and '-' only)")
     out_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         worktree = Path(tmp) / "release"
