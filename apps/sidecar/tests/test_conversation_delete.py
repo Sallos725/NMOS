@@ -26,6 +26,7 @@ TABLES = {
     "retrieval_trace": "SELECT count(*) FROM retrieval_trace WHERE conversation_id = %(c)s",
     "state_observation": "SELECT count(*) FROM state_observation WHERE conversation_id = %(c)s",
     "job": "SELECT count(*) FROM job WHERE conversation_id = %(c)s",
+    "summary": "SELECT count(*) FROM summary WHERE conversation_id = %(c)s",
     "extraction": "SELECT count(*) FROM extraction e JOIN source_revision sr ON sr.id = e.source_revision_id"
                   " JOIN source_object so ON so.id = sr.source_object_id WHERE so.conversation_id = %(c)s",
     "assertion": "SELECT count(*) FROM assertion a JOIN source_revision sr ON sr.id = a.source_revision_id"

@@ -442,6 +442,11 @@ and a state item's `as_of_turn` the turn index of their message, the number fact
 no turn attribute, and excerpts stay in story order. The Inspector's state table shows the turn index. `packet-v7` is
 the default (owner, 2026-09-28).
 
+**D52 — Scene summaries (Phase 12, ADR 0042).** A `summarize` projection with its own generation, written by the
+extraction model: each 8-turn window of the head, once it is 4 replied turns old, and a story so far over the current
+scene summaries. A summary is keyed by its window's member revisions, so any change inside the window masks it at once;
+the story is keyed by its scenes. Off by default until summaries reach the packet (Phase 12 step 5).
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

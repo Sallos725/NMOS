@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 from .entities import norm
 from .facts import STANDING, earlier, first, participant_entities, symmetric
+from .summaries import LAG, WINDOW
 
 STYLE = """
 :root{color-scheme:light dark;--bg:#fbfbfa;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e3e0;--chip:#efefec;--accent:#3b5bdb}
@@ -94,6 +95,11 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "pairs": ("관계 (인물 쌍마다)", "Relationships"), "toc.pairs": ("관계", "Relationships"),
     "h.pair": ("두 인물", "Pair"), "h.relationship": ("관계", "Relationship"), "h.feelings": ("감정", "Feelings"),
     "h.speech": ("말투·호칭", "Speech"), "before": ("이전", "before"), "first": ("처음", "first"),
+    "summaries": ("요약 (장면·지금까지의 이야기)", "Summaries (scenes, story so far)"), "toc.summaries": ("요약", "Summaries"),
+    "story": ("지금까지의 이야기", "Story so far"), "h.turns": ("턴", "Turns"), "h.summary": ("요약", "Summary"),
+    "sm.current": ("있음", "current"), "sm.waiting": ("대기", "waiting"), "sm.held": ("보류", "held back"),
+    "sm.story_covers": ("장면 {n}개까지", "scenes 1–{n}"), "sm.none": ("아직 요약할 장면이 없습니다 ({w}턴마다 한 장면, 뒤로 {l}턴이 더 지나면 요약).",
+                                                      "No scene to summarize yet (one scene per {w} turns, summarized {l} turns later)."),
     "other": ("실제가 아닌 단언 (가정·꿈·미상)", "Not actual (hypothetical, dreamed, unknown)"),
     "h.modality": ("양태", "Modality"),
     "entities": ("엔티티", "Entities"), "h.type": ("종류", "Type"), "h.names": ("이름", "Names"),
@@ -516,6 +522,25 @@ def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
                    "<br>".join(said(f, True) for f in p["speech"])] for p in entries[:100]])
 
 
+def _summaries_section(view: dict[str, Any], lang: str) -> str:
+    """The story so far and each due scene with its summary (PHASE-12, ADR 0042), newest scene first."""
+    if not view["scenes"]:
+        return f"<p class=\"muted\">{_t(lang, 'sm.none').format(w=WINDOW, l=LAG)}</p>"
+    out = ""
+    if story := view.get("story"):
+        covers = _t(lang, "sm.story_covers").format(n=len(story["members"]))
+        out += (f"<p><b>{_t(lang, 'story')}</b> <span class=\"muted\">({covers})</span><br>{_v(story['text'])}</p>")
+
+    def state(x: dict[str, Any]) -> str:
+        if x["summary"] is None:
+            return chip(lang, "sm", "waiting")
+        return chip(lang, "sm", "held") if x.get("held") else chip(lang, "sm", "current")
+
+    return out + table([_t(lang, k) for k in ("h.turns", "h.status", "h.summary")],
+                       [[_v(f"{x['window'].first_turn}–{x['window'].last_turn}"), state(x),
+                         _v((x["summary"] or {}).get("text") or "")] for x in reversed(view["scenes"])][:200])
+
+
 def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> str:
     t = lambda k: _t(lang, k)
     # A fact whose turn the active generation has not compiled yet comes from an older one (ADR 0014).
@@ -652,7 +677,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            conflicts: list[dict[str, Any]] | None = None, items: list[dict[str, Any]] | None = None,
            threads: list[dict[str, Any]] | None = None, unmatched: list[dict[str, Any]] | None = None,
            packet: dict[str, Any] | None = None, secrets: list[dict[str, Any]] | None = None,
-           unrevealed: list[dict[str, Any]] | None = None, standing: list[dict[str, Any]] | None = None) -> str:
+           unrevealed: list[dict[str, Any]] | None = None, standing: list[dict[str, Any]] | None = None,
+           summaries: dict[str, Any] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -679,6 +705,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         parts.append(("unrevealed", t("unrevealed"), len(unrevealed), _unrevealed_table(unrevealed, lang), True))
     if both := pairs(facts if standing is None else standing):  # every pair, not only those in the capped facts
         parts.append(("pairs", t("pairs"), len(both), _pairs_table(both, lang), True))
+    if summaries is not None:
+        parts.append(("summaries", t("summaries"), summaries["done"], _summaries_section(summaries, lang), False))
     if facts:
         parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
     if items:

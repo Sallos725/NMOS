@@ -173,6 +173,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_EMBED_URL` / `NMOS_EMBED_MODEL` | off | Semantic recall, e.g. `qwen3-embedding:0.6b` |
 | `NMOS_EXTRACT_BACKFILL` | `100` | On first sight of a chat, extract only the latest N **turns** (cost control; the rest on request) |
 | `NMOS_EXTRACT_TURNS` | `3` | Previous turns an extraction sees as context |
+| `NMOS_SUMMARIES` | `0` | `1`: the extraction model also summarizes each 8-turn scene and the story so far, in the background (ADR 0042). Phase 12, in progress: shown in the Inspector, not yet in the packet |
 | `NMOS_EXTRACT_HINTS` | `40` | Entity names from earlier in the chat shown to extraction so it reuses them; `0` turns this off |
 | `NMOS_EMBED_BACKFILL` | `2000` | On first sight of a chat, embed the latest N messages (cheap; covers long histories) |
 | `NMOS_WORKER_CONCURRENCY` | `2` | Parallel background jobs |

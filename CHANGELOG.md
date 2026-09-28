@@ -12,7 +12,7 @@ character it is kept from, and the holders remembered it (`docs/perf/secrets-eva
 The audit items the 2026-09-26 review left without a state (A-11, A-13, A-17, A-18, A-19), the owner's
 decision on K26, extractor generations `extract-v11` (A-12, A-14) and `extract-v12` (Phase 10, secrets), the
 packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no restatements), per-chat memory modes
-(Phase 10), the default memory budget 800 and a notice when memory did not fit, and a new text normalizer `clean-v3` (K27). Schema: migration 0021 (applied at startup).
+(Phase 10), the default memory budget 800 and a notice when memory did not fit, and a new text normalizer `clean-v3` (K27). Schema: migrations 0021–0023 (applied at startup).
 
 - **Fixes from the 2026-09-27 audit** (`docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md`, ADR 0033
   amendment 2):
@@ -23,6 +23,11 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     again the turns extracted before an earlier turn's secret, oldest first. Before, it skipped them.
   - A model answer without an `assertions` list fails the job (retried, then counted failed) instead of
     counting as a turn with nothing to extract (G3; in every release since `v0.1.0-beta.1`).
+- **Phase 12 (Stage 5, part 2) is in progress** (`docs/phases/PHASE-12.md`, approved 2026-09-28; no release decided):
+  - M0 has 12 more owner-confirmed cases whose answers lie outside the prompt's own messages: 2 of 12 on Phase 11.
+  - **Scene summaries and the story so far** (ADR 0042, migration 0023), written in the background by the extraction
+    model for every 8-turn window and kept current through edits, deletes and swipes. **Off by default**
+    (`NMOS_SUMMARIES`); the Inspector shows them; they reach no packet yet.
 - **Phase 11 (Stage 5, part 1) is complete** (`docs/phases/PHASE-11.md`, 2026-09-28; no release decided):
   - M0, an evaluation on a restored copy of the owner's chats (`tools/eval_rp.py`, numbers only in
     `docs/perf/m0-baseline.md`): 13 of 28 owner-confirmed cases on the Phase 10 code, 15 after step 3.

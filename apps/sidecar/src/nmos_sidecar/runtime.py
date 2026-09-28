@@ -27,7 +27,7 @@ EDITABLE: dict[str, type] = {
     "embed_url": str, "embed_model": str, "embed_api_key": str, "embed_query_instruction": str,
     "recall_threshold": float, "vector_min_sim": float, "recall_top_k": int, "facts_limit": int,
     "events_limit": int, "threads_limit": int,
-    "extract_backfill": int,
+    "extract_backfill": int, "summaries": bool,
 }
 SECRET = {"llm_api_key", "embed_api_key"}
 KEY_HOSTS = {"llm_api_key": "llm_url", "embed_api_key": "embed_url"}  # each key belongs to its endpoint's host
@@ -189,7 +189,7 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
                    "top_k": settings.recall_top_k, "facts_limit": settings.facts_limit,
                    "events_limit": settings.events_limit,
                    "threads_limit": settings.threads_limit},
-        "extraction": {"backfill": settings.extract_backfill},
+        "extraction": {"backfill": settings.extract_backfill, "summaries": settings.summaries},
         "parsers": {"rules": overrides.get(PARSERS_KEY) if PARSERS_KEY in overrides else None,
                     "source": "ui" if PARSERS_KEY in overrides else ("file" if settings.parsers_file else "none"),
                     "active_rules": len(rules.rules), "errors": list(rules.errors)},
