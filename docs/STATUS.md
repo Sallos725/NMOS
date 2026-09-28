@@ -2,6 +2,13 @@
 
 ## Current phase
 
+**Phase 13 — Verification and Repair, part 1 (Stage 6): approved 2026-09-28, in progress.** Spec
+`docs/phases/PHASE-13.md`: the owner repairs memory in the panel (close or reopen a thread, retract or correct a
+fact, mark a secret found out, split two names), stored as owner input that survives rebuilds and new extractor
+generations and finds its target by what it says; a "Needs attention" queue per chat. Canon sources and
+export/restore are Phase 14. The owner answered every question with the recommended answer; no release. Next: step
+2, the owner's lists of finished threads and found-out secrets on the restored copy, drafted by NMOS.
+
 **Phase 12 — Narrative Engine, part 2 (Stage 5): complete (2026-09-28), not released.** Spec
 `docs/phases/PHASE-12.md`: scene summaries of 8-turn windows and a story so far, as a rebuildable `summarize`
 projection written by the extraction model; secrets left out and checked, no `<Story>` in narrator mode; a `<Cast>`
@@ -21,8 +28,8 @@ cases, an upgrade from Phase 11 `main` and a real-host smoke pass (`docs/perf/su
 found and fixed (ADR 0042 amendment 4: a long append left the story unwritten; a request's `<Story>` read cost about
 180 ms at 10,000 messages, now about 10). One criterion is not met, and the owner accepted it: retrieve at 10,000
 messages is +13.1 ms p50 over Phase 11 `main` with a summary for each of 624 windows (the spec allows +10). With
-Phases 11 and 12, Stage 5 of the roadmap is done on `main`. No phase is current. Next: the owner's call on releases
-(Stages 4 and 5) and on Stage 6.
+Phases 11 and 12, Stage 5 of the roadmap is done on `main`. The owner decided no release for now and chose Stage 6
+next: Phase 13 is current (below).
 
 **Phase 11 — Narrative Engine, part 1 (Stage 5): complete (2026-09-28), not released.** Spec
 `docs/phases/PHASE-11.md`: the M0 evaluation on real chats (a restored backup, read-only), relationship history
@@ -209,7 +216,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K30 (K10 resolved; K29, K30 found on `main`) current as of `v0.1.0-beta.21`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–8 of the original roadmap, one release each (draft, R1–R6 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0043` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast |
-| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-12.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 in progress |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-13.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 approved, in progress (Stage 6, part 1) |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 | Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11`, and A-12's markup half in `clean-v3` (both unreleased) |
 
@@ -255,7 +262,11 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
 - Phase 11 (Stage 5, part 1): approved 2026-09-28 with the recommended answers (Q0–Q8); complete 2026-09-28, the
   goal pile-up criterion partly met and accepted (owner); release on hold.
 - Phase 12 (Stage 5, part 2: summaries, character state): approved 2026-09-28 with the recommended answers
-  (Q1–Q9, `docs/phases/PHASE-12.md`); no release decided. Stages 6–8: not authorized.
+  (Q1–Q9, `docs/phases/PHASE-12.md`); complete 2026-09-28, the latency criterion missed by 3 ms and accepted
+  (owner). No release for now (owner, 2026-09-28).
+- Phase 13 (Stage 6, part 1: owner repair and a needs-attention queue): approved 2026-09-28 with the recommended
+  answers (Q0–Q9, `docs/phases/PHASE-13.md`); no release. Phase 14+ (canon sources,
+  export/restore, Stages 7–8): not authorized.
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600. Raised to 800 on 2026-09-27 (owner; ADR 0035).
 - Release cadence — decided 2026-09-26, revised 2026-09-27: one release per roadmap stage, urgent patches
