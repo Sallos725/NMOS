@@ -25,7 +25,7 @@ from . import __version__, audit, extraction, generations, inspector, ledger, no
 from .config import Settings
 from .db import make_pool
 from .extraction import enqueue_after_apply, job_counts
-from .facts import fact_versions, memory_view
+from .facts import STANDING, fact_versions, memory_view
 from .ids import uuid7
 from .models import (
     BodiesRequest,
@@ -695,6 +695,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     conflicts=view["conflicts"], items=view["items"], threads=view["threads"],
                                     unmatched=view["unmatched"], secrets=view["secrets"],
                                     unrevealed=view["unrevealed"],
+                                    standing=[f for f in view["facts"] if f["predicate"] in STANDING],
                                     packet=audit.audit(conn, traces[0]["id"]) if traces else None)
 
     def inspector_character_html(conv_id: UUID, entity_id: UUID, request: Request, token: str | None,
