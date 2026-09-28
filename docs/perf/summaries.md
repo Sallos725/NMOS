@@ -7,7 +7,9 @@ content; whether a stored summary may be used is checked when it is read (`summa
 
 `tools/eval_summaries_model.py`: 8 Korean scenes written for this evaluation (6 scenes of 3–4 turns, 2 "story so far"
 inputs of 3 scene summaries). Each scene ran 3 times on each model, through the local Ollama, with 2 workers and no
-errors. Raw prompts, replies and checks are in `fixtures/model/summaries/`. Each reply is checked for:
+errors. Raw prompts, replies and checks are in `fixtures/model/summaries/`. The scenes' third character was renamed
+after these runs (2026-09-28, the name also belongs to a character of a real chat); the raw runs keep the name they
+ran with until the next run of this evaluation replaces them. Each reply is checked for:
 
 - **gold:** one word of each group names what the scene shows;
 - **invented:** none of the words naming what it does not show;
@@ -40,7 +42,8 @@ three different ones passed.
   - `deepseek` left the moment out, or said that Hana was keeping something from Kaito.
 - **The kiss that is the whole scene, `gemma4` 1/3.** Two runs wrote it ("…부엌에서 입을 맞췄다") and one left it out
   ("…부엌에서 만났다"). The read-time check scored the two at 0.76 and holds them, so neither could reach a packet; the
-  one that left it out scored 0.59 and stays usable. `deepseek` wrote "둘은 소라에게는 비밀로 할 일을 함께 했다", 3 of 3.
+  one that left it out scored 0.59 and stays usable. `deepseek` wrote that the two did something they kept from the
+  sleeping character, 3 of 3.
 
 This record replaces an earlier one of the same prompt, in which `gemma4` passed the kiss scene 3 of 3 (21/24). That
 scene then used the names of characters from a real chat. They were replaced by synthetic ones before this record, and

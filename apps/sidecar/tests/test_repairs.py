@@ -285,10 +285,10 @@ def test_a_secret_repair_needs_the_same_head():
 def test_promises_are_told_apart_by_their_counterpart_and_a_tie_matches_nothing():
     to_kaito = {"id": 1, "kind": "promise", "by": "하나", "to": "카이토", "text": "등대 앞에서 만나기", "turn": 3,
                 "turn_hash": None, "position": 3, "status": "open"}
-    to_sora = {**to_kaito, "id": 2, "to": "소라"}
-    assert repairs.match_thread(repairs.thread_target(to_sora), [to_kaito, to_sora], None) is to_sora
-    assert repairs.match_thread(repairs.thread_target(to_sora), [to_sora, {**to_sora, "id": 3}], None) is None
-    view = {"threads": [to_sora, {**to_sora, "id": 3}], "secrets": [], "resolution": None}
+    to_sena = {**to_kaito, "id": 2, "to": "세나"}
+    assert repairs.match_thread(repairs.thread_target(to_sena), [to_kaito, to_sena], None) is to_sena
+    assert repairs.match_thread(repairs.thread_target(to_sena), [to_sena, {**to_sena, "id": 3}], None) is None
+    view = {"threads": [to_sena, {**to_sena, "id": 3}], "secrets": [], "resolution": None}
     try:
         repairs.plan("thread_close", "2", view, 5)
     except repairs.RepairError as e:
@@ -315,7 +315,7 @@ def test_a_repair_of_a_turn_runs_after_every_row_of_that_turn():
 def test_a_secret_repair_needs_the_same_object():
     base = {**kept_goal(1), "predicate": "knows", "object": "카이토"}
     base["text"] = secret_fold.secret_text(base)
-    other = {**base, "id": 102, "object": "소라"}
+    other = {**base, "id": 102, "object": "세나"}
     other["text"] = secret_fold.secret_text(other)
     assert repairs.match_secret(repairs.secret_target(base), [other]) is None
 
@@ -476,12 +476,12 @@ def test_a_later_object_correction_that_changes_the_fact_is_refused(migrated):
         cid = setup(c, migrated, chat)
         rel = fact(c, cid, "Mina", "relationship")
         res = c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "fact_correct", "item": str(rel["id"]),
-                                                               "new_object": "Sora", "turn": 2})
+                                                               "new_object": "Sena", "turn": 2})
         assert res.status_code == 422 and "leave the old fact current" in res.json()["detail"]
-        repair(c, cid, kind="fact_correct", item=str(rel["id"]), new_object="Sora")  # at its own turn: replaced
+        repair(c, cid, kind="fact_correct", item=str(rel["id"]), new_object="Sena")  # at its own turn: replaced
         pairs = [(f["subject"], f["object"]) for f in c.get(f"/v1/conversations/{cid}/facts").json()
                  if f["predicate"] == "relationship"]
-        assert pairs == [("Mina", "Sora")]
+        assert pairs == [("Mina", "Sena")]
 
 
 def test_the_api_checks_a_fact_against_the_assertions_a_read_matches():
