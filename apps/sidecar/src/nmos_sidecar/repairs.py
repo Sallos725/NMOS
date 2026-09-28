@@ -27,12 +27,13 @@ from uuid import UUID
 import psycopg
 
 from .entities import Resolution, norm
-from .predicates import OUTCOMES
+from .predicates import OUTCOMES, REGISTRY
+from .secrets import secret_text
 from .threads import MATCH_MIN, similarity
 
 KINDS = ("thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
          "name_split")
-ENABLED = frozenset({"thread_close", "thread_reopen", "secret_found_out", "secret_keep"})  # Phase 13 step 3
+ENABLED = frozenset(KINDS)  # threads and secrets since step 3, facts and names since step 4
 PROMISE_OUTCOMES = ("kept", "broken")
 
 
@@ -185,17 +186,93 @@ def thread_events(repairs: list[dict[str, Any]], r: Resolution | None, applied: 
     return out
 
 
+def splits_of(repairs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The owner's name splits (K8) as entity resolution takes them, with the links (ADR 0025)."""
+    return [{**rep["target"], "id": rep["id"], "created_at": rep.get("created_at")} for rep in repairs
+            if rep["kind"] == "name_split"]
+
+
+def _ekey(r: Resolution | None, entity_type: str | None, name: str | None) -> str | None:
+    if not name:
+        return None
+    return r.key(entity_type, name) if r is not None else "text:" + norm(name)
+
+
+def fact_target(f: dict[str, Any]) -> dict[str, Any]:
+    """What a repair stores to find this fact again: its turn, the turn's hash, its head and its line."""
+    return {"turn": f.get("turn"), "turn_hash": f.get("turn_hash"), "predicate": f["predicate"],
+            "source": f.get("source"), "subject": f["subject"], "subject_type": f.get("subject_type"),
+            "object": f.get("object"), "object_type": f.get("object_type"), "text": secret_text(f)}
+
+
+def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution | None) -> dict[str, Any] | None:
+    """The assertion a fact repair names: same turn, predicate, source, subject and object (as entities), and the
+    closest line."""
+    subject = _ekey(r, target.get("subject_type"), target.get("subject"))
+    obj = _ekey(r, target.get("object_type"), target.get("object"))
+    pool = [a for a in rows if not a.get("owner") and _same_turn(target, a) and a["predicate"] == target.get("predicate")
+            and (a.get("source") or "narration") == (target.get("source") or "narration")
+            and _ekey(r, a.get("subject_type"), a["subject"]) == subject
+            and _ekey(r, a.get("object_type"), a.get("object")) == obj]
+    return _closest(target, pool, secret_text)
+
+
+def _owner_id(rep: dict[str, Any]) -> int:
+    """An owner's version is not an assertion: a negative id, stable for the repair."""
+    return -(UUID(str(rep["id"])).int % 2**62) - 1
+
+
+def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Resolution | None,
+                applied: dict[str, str | None]) -> list[dict[str, Any]]:
+    """Retract and correct (Q1 items 2 and 3) on the head's assertions, in the order they were made. A retracted
+    assertion is left out, so the version before it is current again. A correction is an owner's version at its
+    turn, after every assertion of that turn: it supersedes the fact from there, and a later turn that states the
+    fact again supersedes it (Q4). A correction at the fact's own turn, or of a fact that accumulates (a trait, an
+    event), replaces it. Returns the new list; `applied` gets {repair id: the assertion it applied to, or None}."""
+    out = list(rows)
+    for rep in repairs:
+        if rep["kind"] not in ("fact_retract", "fact_correct"):
+            continue
+        applied.setdefault(str(rep["id"]), None)
+        a = match_fact(rep["target"], out, r)
+        if a is None:
+            continue
+        applied[str(rep["id"])] = str(a["id"])
+        value = rep.get("value") or {}
+        if rep["kind"] == "fact_retract":
+            out.remove(a)
+            continue
+        at = value.get("turn", a.get("turn"))
+        pred = REGISTRY.get(a["predicate"])
+        if at == a.get("turn") or (pred is not None and pred.cardinality == "multi"):
+            out.remove(a)
+        before = [i for i, x in enumerate(out) if x.get("turn") is not None and x["turn"] <= at]
+        place = before[-1] + 1 if before else 0
+        out.insert(place, {**a, "id": _owner_id(rep), "turn": at, "turn_hash": None, "host_logical_id": None,
+                           "position": out[place - 1]["position"] if place else a["position"],
+                           "object": value.get("object", a.get("object")), "value": value.get("value", a.get("value")),
+                           "source": "narration", "asserted_by": None, "evidence": rep.get("note") or "",
+                           "owner": True, "repair": str(rep["id"])})
+    return out
+
+
 class RepairError(ValueError):
     """A repair that cannot be made now: the message says why (the API answers 422)."""
 
 
 def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outcome: str | None = None,
-         character: str | None = None, turn: int | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+         character: str | None = None, turn: int | None = None, new_object: str | None = None,
+         new_value: str | None = None, other: str | None = None,
+         entity_type: str = "character") -> tuple[dict[str, Any], dict[str, Any]]:
     """The target and value a new repair stores, for the item the Inspector shows now (a thread's or a secret's id),
     checked against the current memory."""
     if kind not in ENABLED:
         raise RepairError(f"{kind} is not available yet")
     r = view.get("resolution")
+    if kind == "name_split":
+        return _plan_split(item, other, entity_type, r)
+    if kind.startswith("fact_"):
+        return _plan_fact(kind, item, view, last_turn, new_object, new_value, turn)
     at = last_turn if turn is None else turn
     if kind.startswith("thread_"):
         t = next((t for t in view["threads"] if str(t["id"]) == item), None)
@@ -239,3 +316,40 @@ def _check_turn(at: int | None, since: int | None, last_turn: int | None, what: 
     if at is None or (since is not None and at < since) or (last_turn is not None and at > last_turn):
         raise RepairError(f"the turn must be between the {what}'s turn (or the story's close or reveal it undoes)"
                           " and the chat's last turn")
+
+
+def _plan_split(name: str, other: str | None, entity_type: str, r: Resolution | None) -> tuple[dict, dict]:
+    if not other:
+        raise RepairError("name the other name")
+    if r is None or any(r.status(entity_type, n) == "unresolved" for n in (name, other)):
+        raise RepairError("both names must be mentioned in this chat")
+    if r.node(entity_type, name) == r.node(entity_type, other):
+        raise RepairError("the two names are the same")
+    a, b = r.entity(entity_type, name), r.entity(entity_type, other)
+    if a is None or b is None or a["id"] != b["id"]:
+        raise RepairError("the two names are not one entity now")
+    return {"entity_type": entity_type, "name": name.strip(), "other": other.strip()}, {}
+
+
+def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None, new_object: str | None,
+               new_value: str | None, turn: int | None) -> tuple[dict, dict]:
+    f = next((f for f in view["facts"] if str(f["id"]) == item), None)
+    if f is None:
+        raise RepairError("no fact with that id in this chat now")
+    if f.get("owner"):
+        raise RepairError("that is the owner's correction: take the repair back instead")
+    target = fact_target(f)
+    if match_fact(target, view["facts"], view.get("resolution")) is not f:
+        raise RepairError("the fact cannot be told apart from another one of its turn")
+    if kind == "fact_retract":
+        return target, {}
+    value: dict[str, Any] = {}
+    if new_object is not None and new_object.strip() and new_object.strip() != (f.get("object") or ""):
+        value["object"] = new_object.strip()
+    if new_value is not None and new_value.strip() and new_value.strip() != (f.get("value") or ""):
+        value["value"] = new_value.strip()
+    if not value:
+        raise RepairError("give a new object or value that differs from the fact's")
+    at = f.get("turn") if turn is None else turn
+    _check_turn(at, f.get("turn"), last_turn, "fact")
+    return target, {**value, "turn": at}

@@ -184,7 +184,7 @@ def test_repairs_that_cannot_be_made_are_refused(migrated):
         assert "name the character" in refused(kind="secret_found_out", item=str(s["id"]))
         assert "not kept from" in refused(kind="secret_found_out", item=str(s["id"]), character="Hana")
         assert "not over" in refused(kind="secret_keep", item=str(s["id"]), character="Kaito")
-        assert "not available yet" in refused(kind="fact_retract", item=str(t["id"]))
+        assert "no fact" in refused(kind="fact_retract", item=str(t["id"]))  # a thread's id is not a fact's
         assert c.post(f"/v1/conversations/{cid}/repairs/00000000-0000-0000-0000-000000000000/remove").status_code == 404
 
 
@@ -318,3 +318,123 @@ def test_a_secret_repair_needs_the_same_object():
     other = {**base, "id": 102, "object": "소라"}
     other["text"] = secret_fold.secret_text(other)
     assert repairs.match_secret(repairs.secret_target(base), [other]) is None
+
+
+# --- Step 4: facts and names -------------------------------------------------------------------------------------
+
+
+def place_chat() -> SimChat:
+    chat = SimChat()
+    for text in ("Hana is in the chapel.", "Kaito is in the harbor.", "Hana is in the garden.", "하나의 특징: 겁이 많다.",
+                 "Hana is a knight."):
+        chat.user(text)
+        chat.reply("Noted.")
+    chat.user("Go on.")
+    return chat
+
+
+def fact(c, cid: str, subject: str, predicate: str) -> dict:
+    return next(f for f in c.get(f"/v1/conversations/{cid}/facts").json()
+                if f["subject"] == subject and f["predicate"] == predicate)
+
+
+def test_retracting_a_fact_brings_back_the_version_before_it(migrated):
+    chat = place_chat()
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        garden = fact(c, cid, "Hana", "located_in")
+        assert garden["object"] == "garden"
+        out = repair(c, cid, kind="fact_retract", item=str(garden["id"]), note="she never went")
+        assert out["applied"] == str(garden["id"]) and fact(c, cid, "Hana", "located_in")["object"] == "chapel"
+        assert "Hana located in chapel" in memory(packet(c, chat, "Where is Hana?"))
+        c.post(f"/v1/conversations/{cid}/repairs/{out['repair']['id']}/remove")
+        assert fact(c, cid, "Hana", "located_in")["object"] == "garden"
+
+
+def test_a_correction_holds_from_its_turn_until_the_story_says_otherwise(migrated):
+    chat = place_chat()
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        harbor = fact(c, cid, "Kaito", "located_in")
+        out = repair(c, cid, kind="fact_correct", item=str(harbor["id"]), new_object="library", turn=3)
+        assert out["repair"]["value"] == {"object": "library", "turn": 3}
+        now = fact(c, cid, "Kaito", "located_in")
+        assert now["object"] == "library" and now["turn"] == 3 and now["owner"] is True
+        assert "corrected by the owner" in c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
+        chat.user("Kaito is in the garden.")  # the story says otherwise later (Q4)
+        chat.reply("Noted.")
+        chat.user("Go on.")
+        sync(c, chat)
+        drain(migrated, stub_extractor)
+        assert fact(c, cid, "Kaito", "located_in")["object"] == "garden"
+        # A trait accumulates: its correction replaces it at its own turn.
+        trait = fact(c, cid, "하나", "has_trait")
+        repair(c, cid, kind="fact_correct", item=str(trait["id"]), new_value="용감하다")
+        traits = [f["value"] for f in c.get(f"/v1/conversations/{cid}/facts").json() if f["predicate"] == "has_trait"]
+        assert traits == ["용감하다"]
+
+
+def knighted(system: str, user: str) -> tuple[dict, str]:
+    """A new model that words an identity differently."""
+    out, raw = stub_extractor(system, user)
+    return {**out, "assertions": [{**a, "value": f"{a['value']} of the order"} if a["predicate"] == "identity" else a
+                                  for a in out["assertions"]]}, raw
+
+
+def test_a_fact_repair_survives_a_new_generation_that_rewords_the_fact(migrated):
+    chat = place_chat()
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        out = repair(c, cid, kind="fact_retract", item=str(fact(c, cid, "Hana", "identity")["id"]))
+    with make_client(migrated, extract_backfill=100, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+        drain(migrated, knighted)
+        assert not [f for f in c.get(f"/v1/conversations/{cid}/facts").json() if f["predicate"] == "identity"]
+        assert c.get(f"/v1/conversations/{cid}/repairs").json()["repairs"][0]["applied"] is not None
+
+
+ALIAS = re.compile(r"(?P<a>\w+) is also called (?P<b>\w+)\.")
+
+
+def aliased(system: str, user: str) -> tuple[dict, str]:
+    out, raw = stub_extractor(system, user)
+    target = user.split("TARGET", 1)[1]
+    out["assertions"] += [{"subject": m["a"], "subject_type": "character", "predicate": "also_called", "value": m["b"],
+                           "modality": "actual", "source": "narration", "evidence": m.group(0)}
+                          for m in ALIAS.finditer(target)]
+    return out, raw
+
+
+def test_splitting_two_names_the_story_joined(migrated):
+    chat = SimChat()
+    for text in ("Mina is in the chapel.", "Rin is in the harbor.", "Mina is also called Rin.", "Go on."):
+        chat.user(text)
+        chat.reply("Noted.")
+    chat.user("Go on.")
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat, aliased)
+        names = {e["name"]: e["names"] for e in c.get(f"/v1/conversations/{cid}/entities").json()}
+        assert any({"Mina", "Rin"} <= set(n) for n in names.values())  # one entity (K8)
+        res = c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "name_split", "item": "Mina"})
+        assert res.status_code == 422 and "other name" in res.json()["detail"]
+        out = repair(c, cid, kind="name_split", item="Mina", other="Rin")
+        entities = c.get(f"/v1/conversations/{cid}/entities").json()
+        assert not any({"Mina", "Rin"} <= set(e["names"]) for e in entities) and out["applied"]
+        places = {f["subject"]: f["object"] for f in c.get(f"/v1/conversations/{cid}/facts").json()
+                  if f["predicate"] == "located_in"}
+        assert places == {"Mina": "chapel", "Rin": "harbor"}  # two people again, each with their own place
+        assert "Mina ≠ Rin" in c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
+        again = c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "name_split", "item": "Mina", "other": "Rin"})
+        assert again.status_code == 422 and "not one entity" in again.json()["detail"]
+
+
+def test_a_split_names_the_third_name_that_still_joins_them():
+    rows = [row(1, "Mina", "also_called", None, "Rin", subject_type="character"),
+            row(2, "Mi", "also_called", None, "Rin", subject_type="character"),
+            row(3, "Mina", "located_in", "chapel", None, subject_type="character")]
+    link = {"id": "l1", "entity_type": "character", "name": "Mina", "same_as": "Mi", "created_at": 1}
+    split = {"id": "s1", "entity_type": "character", "name": "Mina", "other": "Rin", "created_at": 2}
+    r = resolve(uuid.uuid4(), rows, links=[link], splits=[split])
+    assert r.split_via == {"s1": ["Mi"]}  # the owner's own join through Mi keeps them one
+    newer = {**link, "id": "l2", "name": "Mina", "same_as": "Rin", "created_at": 3}
+    r = resolve(uuid.uuid4(), rows, links=[newer], splits=[split])  # a newer join of the same pair holds
+    assert r.entity("character", "Mina")["id"] == r.entity("character", "Rin")["id"] and r.splits == []

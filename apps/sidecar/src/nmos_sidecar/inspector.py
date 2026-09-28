@@ -208,6 +208,8 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "h.found": ("알게 된 턴", "Found out in turn"),
     "sec.open": ("아직 모름", "does not know yet"), "sec.ended": ("{turn}턴에 알게 됨", "found out in turn {turn}"),
     "or.closed": ("오너가 닫음", "closed by the owner"), "or.marked": ("오너 표시", "marked by the owner"),
+    "or.corrected": ("오너가 고침", "corrected by the owner"),
+    "rs.via": ("{names}을(를) 거쳐 아직 한 인물", "still one entity through {names}"),
     "repairs": ("수리 (오너가 고친 것)", "Repairs (what the owner fixed)"), "toc.repairs": ("수리", "Repairs"),
     "rk.thread_close": ("스레드 닫기", "close a thread"), "rk.thread_reopen": ("스레드 다시 열기", "reopen a thread"),
     "rk.secret_found_out": ("비밀을 알게 됨", "secret found out"), "rk.secret_keep": ("비밀 유지", "secret still kept"),
@@ -619,7 +621,8 @@ def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> 
           _with(f, lang),
           _knowledge(f, lang),
           _turn(f)
-          + (older if active and f.get("generation") not in (None, active) else "")
+          + (older if active and f.get("generation") not in (None, active) and not f.get("owner") else "")
+          + (f" {chip(lang, 'or', 'corrected')}" if f.get("owner") else "")
           + (f" <span class=\"chip\">{t('negated')}</span>" if f.get("polarity") == "negative" else "")
           + (f" <span class=\"chip\">{t('disputed')}</span>" if f.get("disputed_by") else "")
           + (f" <span class=\"chip\">{t('legacy')}</span>" if f.get("source") is None else "")
@@ -685,6 +688,8 @@ def _secret_status(s: dict[str, Any], lang: str) -> str:
 
 def _repair_target(rep: dict[str, Any]) -> str:
     t = rep["target"] or {}
+    if rep["kind"] == "name_split":
+        return _v(f"{t.get('name')} ≠ {t.get('other')}")
     if rep["kind"].startswith("thread_"):
         text = f"{t.get('by')} → {t.get('to') or '?'}: {t.get('text')}"
     else:
@@ -697,6 +702,9 @@ def _repair_value(rep: dict[str, Any], lang: str) -> str:
     parts = []
     if v.get("outcome"):
         parts.append(chip(lang, "t", v["outcome"]))
+    for k in ("object", "value"):
+        if v.get(k):
+            parts.append(f"→ {_v(v[k])}")
     if v.get("character"):
         parts.append(_v(v["character"]))
     if v.get("turn") is not None:
@@ -712,6 +720,8 @@ def _repairs_table(repairs: list[dict[str, Any]], lang: str) -> str:
     def state(rep: dict[str, Any]) -> str:
         if rep.get("removed_at"):
             return chip(lang, "rs", "removed")
+        if rep.get("via"):
+            return f"<span class=\"warn\">{_v(_t(lang, 'rs.via').format(names=', '.join(rep['via'])))}</span>"
         return chip(lang, "rs", "applied") if rep.get("applied") else f"<span class=\"warn\">{_v(_t(lang, 'rs.unmatched'))}</span>"
 
     return (table([_t(lang, k) for k in ("h.repair", "h.target", "h.value", "h.made", "h.status")],

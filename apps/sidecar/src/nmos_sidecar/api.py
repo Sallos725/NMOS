@@ -613,7 +613,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             head = conv["head_commit_id"]
             try:
                 target, value = repairs.plan(body.kind, body.item, memory_view(conn, head, rt["active_extractor"]),
-                                             head_turn(conn, head), body.outcome, body.character, body.turn)
+                                             head_turn(conn, head), body.outcome, body.character, body.turn,
+                                             body.new_object, body.new_value, body.other, body.entity_type)
             except repairs.RepairError as e:
                 raise HTTPException(status_code=422, detail=str(e)) from e
             with conn.transaction():
