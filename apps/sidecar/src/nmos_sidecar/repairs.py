@@ -49,7 +49,7 @@ def default_outcome(kind: str) -> str:
 
 def repairs_of(conn: psycopg.Connection, conversation: UUID, known_at: datetime | None = None) -> list[dict[str, Any]]:
     """The owner's repairs in force for a conversation, oldest first; with `known_at`, those in force at that time
-    (ADR 0027), as `facts.links_of`."""
+    (ADR 0027), as `facts.links_of`. (A memory read fetches them with its conversation, in one query: `IN_FORCE`.)"""
     if known_at is None:
         return conn.execute("SELECT id, kind, target, value, note, created_at FROM owner_repair"
                             " WHERE conversation_id = %s AND removed_at IS NULL ORDER BY created_at, id",
@@ -57,6 +57,12 @@ def repairs_of(conn: psycopg.Connection, conversation: UUID, known_at: datetime 
     return conn.execute("SELECT id, kind, target, value, note, created_at FROM owner_repair"
                         " WHERE conversation_id = %s AND created_at <= %s AND (removed_at IS NULL OR removed_at > %s)"
                         " ORDER BY created_at, id", (conversation, known_at, known_at)).fetchall()
+
+
+# A repair `r` in force now, or at `%(at)s` (ADR 0027), for SQL that joins owner_repair.
+IN_FORCE = {False: "r.removed_at IS NULL",
+            True: "r.created_at <= %(at)s AND (r.removed_at IS NULL OR r.removed_at > %(at)s)"}
+REPAIR_COLUMNS = ("id", "kind", "target", "value", "note", "created_at")
 
 
 def _key(r: Resolution | None, name: str | None) -> str:
@@ -236,19 +242,28 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
     turn, which supersedes the fact from there, and a later turn that states the fact again supersedes it (Q4). Its
     entities are resolved again (`annotate`). Returns the new list and {repair id: the retracted assertion}; `applied`
     gets {repair id: the assertion it applied to, or None}."""
-    out = list(rows)
-    retracted: dict[str, dict[str, Any]] = {}
-    for rep in repairs:
-        if rep["kind"] not in ("fact_retract", "fact_correct"):
-            continue
+    mine = [rep for rep in repairs if rep["kind"] in ("fact_retract", "fact_correct")]
+    for rep in mine:
         applied.setdefault(str(rep["id"]), None)
-        a = match_fact(rep["target"], out, r)
+    if not mine:
+        return rows, {}
+    turns = {rep["target"].get("turn") for rep in mine}
+    by_turn: dict[Any, list[dict[str, Any]]] = {}  # the story's rows a repair can name, by turn (one pass, not one a repair)
+    for a in rows:
+        if a.get("turn") in turns and not a.get("owner"):
+            by_turn.setdefault(a.get("turn"), []).append(a)
+    gone: set[int] = set()  # rows retracted or replaced, by identity
+    swap: dict[int, dict[str, Any]] = {}  # a row replaced in place -> the owner's version
+    later: list[dict[str, Any]] = []  # owner's versions from a later turn, in the order made
+    retracted: dict[str, dict[str, Any]] = {}
+    for rep in mine:
+        a = match_fact(rep["target"], [x for x in by_turn.get(rep["target"].get("turn"), ()) if id(x) not in gone], r)
         if a is None:
             continue
         applied[str(rep["id"])] = str(a["id"])
         value = rep.get("value") or {}
         if rep["kind"] == "fact_retract":
-            out.remove(a)
+            gone.add(id(a))
             retracted[str(rep["id"])] = a
             continue
         at = value.get("turn", a.get("turn"))
@@ -260,17 +275,35 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
                     "evidence": rep.get("note") or "", "owner": True, "repair": str(rep["id"])})
         if in_place:
             new.update({"turn": a.get("turn"), "turn_hash": a.get("turn_hash"), "position": a["position"]})
-            out[out.index(a)] = new
+            gone.add(id(a))  # replaced; a correction from a later turn keeps the story's version as history
+            swap[id(a)] = new
         else:
             position = (turn_positions or {}).get(at)
             if position is None:
-                position = max((x["position"] for x in out if x.get("turn") is not None and x["turn"] <= at),
+                now = [x for x in rows if id(x) not in gone] + list(swap.values()) + later
+                position = max((x["position"] for x in now if x.get("turn") is not None and x["turn"] <= at),
                                default=a["position"])
             new.update({"turn": at, "turn_hash": None, "position": position})
-            place = max((i + 1 for i, x in enumerate(out) if x["position"] <= position), default=0)
-            out.insert(place, new)
+            later.append(new)
         if annotate is not None and r is not None:
             annotate(new, r)
+    # The result in one pass: a version from a later turn goes after every row of its position (the end of its turn),
+    # versions of one position in the order they were made.
+    if not later:
+        drop = gone - swap.keys()
+        return [swap.get(i, x) for x in rows if (i := id(x)) not in drop], retracted
+    later.sort(key=lambda x: x["position"])
+    out: list[dict[str, Any]] = []
+    i = 0
+    for x in rows:
+        while i < len(later) and later[i]["position"] < x["position"]:
+            out.append(later[i])
+            i += 1
+        if id(x) in swap:
+            out.append(swap[id(x)])
+        elif id(x) not in gone:
+            out.append(x)
+    out.extend(later[i:])
     return out, retracted
 
 

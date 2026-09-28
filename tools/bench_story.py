@@ -2,10 +2,13 @@
 model configured. Every turn has a fact and a few are secrets; where the code has summaries (Phase 12), every due
 window has a scene summary and there is a story so far, so each request reads them, checks them against the secrets
 and picks the scene the message is about. Run it in two checkouts to compare: in one without summaries the same
-requests run without them. Uses `bench_scale.py`'s chat and requests.
+requests run without them. Uses `bench_scale.py`'s chat and requests. With BENCH_REPAIRS=N (Phase 13) the chat
+has N live owner repairs (ADR 0044) when the requests run: a found out for each secret, the rest retractions and
+corrections of the facts current then.
 
     cd apps/sidecar && uv run python ../../tools/bench_story.py 10000
     cd apps/sidecar && BENCH_SUMMARIES=0 uv run python ../../tools/bench_story.py 10000  # summaries off
+    cd apps/sidecar && BENCH_REPAIRS=100 uv run python ../../tools/bench_story.py 10000  # with 100 repairs
 """
 
 from __future__ import annotations
@@ -35,6 +38,11 @@ try:
     from nmos_sidecar import summaries
 except ImportError:  # before Phase 12
     summaries = None
+try:
+    from nmos_sidecar import repairs
+    from nmos_sidecar.facts import memory_view, version_key
+except ImportError:  # before Phase 13
+    repairs = None
 
 SECRETS = 6  # about what the owner's longest chat keeps
 BUDGET = 2000  # the default since Phase 12 step 5; the same in both checkouts
@@ -84,6 +92,38 @@ def add_summaries(db: psycopg.Connection, conv, head, key: str) -> int:
     return len(ws)
 
 
+def add_repairs(db: psycopg.Connection, conv, head, key: str, count: int) -> int:
+    """`count` owner repairs as the panel makes them (repairs.plan, then a row): a found out for each secret, then three
+    retractions to one correction (its object, at its own turn) of a fact current at that point."""
+    last = db.execute("SELECT max(turn) AS t FROM active_membership WHERE commit_id = %s", (head,)).fetchone()["t"]
+    made = 0
+
+    def add(kind: str, item: str, view: dict, **kw) -> None:
+        nonlocal made
+        target, value = repairs.plan(kind, item, view, last, None, kw.get("character"), None, kw.get("new_object"),
+                                     None, None, None, version_key)
+        db.execute("INSERT INTO owner_repair (id, conversation_id, kind, target, value) VALUES (%s, %s, %s, %s, %s)",
+                   (uuid7(), conv, kind, Jsonb(target), Jsonb(value)))
+        made += 1
+
+    view = memory_view(db, head, key)
+    for s in view["secrets"]:
+        if made < count and s["open"]:
+            add("secret_found_out", str(s["id"]), view, character=s["open"][0])
+    while made < count:
+        view = memory_view(db, head, key)
+        f = next((f for f in view["facts"] if f["predicate"] == "located_in" and not f.get("owner")
+                  and not f.get("hidden_from")), None)
+        if f is None:
+            break
+        if made % 4:  # a correction ends what can be repaired of that subject: the owner's version is current
+            add("fact_retract", str(f["id"]), view)
+        else:
+            add("fact_correct", str(f["id"]), view,
+                new_object=next(x for x in PLACES if x != f.get("object")))
+    return made
+
+
 def bench(n: int) -> dict:
     name = f"nmos_bench_{uuid.uuid4().hex[:8]}"
     with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
@@ -104,6 +144,9 @@ def bench(n: int) -> dict:
             result["facts"] = add_facts(db, head, generations.active(db, "extract"))
             if result["summaries"]:
                 result["scenes"] = add_summaries(db, conv, head, generations.active(db, "summarize"))
+            wanted = int(os.environ.get("BENCH_REPAIRS", "0"))
+            if wanted and repairs is not None:
+                result["repairs"] = add_repairs(db, conv, head, generations.active(db, "extract"), wanted)
             db.execute("ANALYZE")
             with TestClient(create_app(settings)) as client:
                 # The harness holds the 10,000-message chat in this process; a full collection during a request

@@ -55,7 +55,8 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     scene summary, current now for an earlier window, was judged older than the prompt by the turns it was written
     at, so a scene the prompt no longer held could be left out. The request now uses the window it is current for,
     as before the step 7 rewrite.
-- **Phase 13 (Stage 6, part 1): the owner repairs memory** (`docs/phases/PHASE-13.md`, approved 2026-09-28; no release).
+- **Phase 13 (Stage 6, part 1): the owner repairs memory** (`docs/phases/PHASE-13.md`, approved and complete 2026-09-28;
+  no release).
   - Step 2: the owner confirmed NMOS's lists for the longest chat (50 of 59 open threads ended, 6 secrets found out);
     on the previous `main` every M0 packet carried a thread the owner closed (`docs/perf/repair.md`).
   - Step 3 (ADR 0044, migration 0024): the owner can close a thread with an outcome or reopen one the story closed,
@@ -72,6 +73,11 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     two names on an entity's page. Each chat's page starts with
     "Needs attention": threads open for 30 turns without a restatement, ends that matched no thread, disputed
     whereabouts, repairs that match nothing now, splits still joined through another name, ambiguous names.
+  - Step 6 (`docs/perf/repair.md`): with the owner's decisions made as repairs, no closed thread reaches a packet on
+    either measured chat, M0 gains a case and loses none, and `<Story>` is back in every secret-gate scene. A memory
+    read with many fact repairs no longer searches every assertion for each (it cost +66 ms at 10,000 messages with
+    100 repairs; now +7.0 ms over Phase 12, +1.7 ms with none; accepted by the owner). A thread with no counterpart
+    reads "하나: …" in the Inspector, not "하나 → ?: …". `tools/eval_secret_gate.py` takes a case's words by secret.
 - **Cross-model review** (`.ai/`, AGENTS.md §14; #138): fixed after its review, the script refuses every `.env*` name
   (`.envrc` passed before) and gives the reviewer CLI only the system basics of the environment and its own login
   variables, never `NMOS_*`, `DATABASE_URL` or `PG*` (it passed the whole environment).

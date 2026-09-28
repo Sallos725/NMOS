@@ -718,6 +718,11 @@ def _close(th: dict[str, Any]) -> str:
     return _act("thread_close", th["id"], ",".join([first] + [o for o in outcomes(th["kind"]) if o != first]))
 
 
+def _who_to(t: dict[str, Any]) -> str:
+    """A thread's maker, and its counterpart when it has one (a promise, a debt)."""
+    return f"{t.get('by')} → {t['to']}" if t.get("to") else f"{t.get('by')}"
+
+
 def _enc(text: str) -> str:
     """Percent-encode a mark's extra (a name can be any text); the panel decodes it as data only."""
     return "".join(c if c.isascii() and (c.isalnum() or c in "._~-,") else "".join(f"%{b:02X}" for b in c.encode())
@@ -742,7 +747,7 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
             latest = max((x for x in seen if x is not None), default=None)
             if th["status"] == "open" and latest is not None and latest < last_turn - STALE_TURNS:
                 rows.append([_v(_t(lang, "at.stale").format(n=STALE_TURNS)),
-                             _v(f"{th['by']} → {th.get('to') or '?'}: {th.get('text') or ''}"), _v(latest),
+                             _v(_who_to(th) + f": {th.get('text') or ''}"), _v(latest),
                              _close(th)])
     for u in view.get("unmatched", []):
         rows.append([_v(_t(lang, "at.unmatched")), _v(fact_line_text(u)), _turn(u), ""])
@@ -767,7 +772,7 @@ def _repair_target(rep: dict[str, Any]) -> str:
     if rep["kind"] == "name_split":
         return _v(f"{t.get('name')} ≠ {t.get('other')}")
     if rep["kind"].startswith("thread_"):
-        text = f"{t.get('by')} → {t.get('to') or '?'}: {t.get('text')}"
+        text = _who_to(t) + f": {t.get('text')}"
     else:
         text = t.get("text") or ""
     return f"<span class=\"muted\">{_v(t.get('turn'))}</span> {_v(text)}"
