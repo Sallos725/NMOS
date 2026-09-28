@@ -58,4 +58,5 @@ it: trigram containment of the secret's content, the names of its holders and of
 at 0.7 or more marks the summary held (the Inspector shows it; step 5 keeps it out of packets). Secrets are read from
 the head at that time, so a secret extracted after the summary was written counts too. The check catches a copied
 secret (0.76 on the real-model tier), not a reworded one (about 0.3): the prompt is the guard, the check a backstop.
-Real-model tier: `gemma4` 21/24, `deepseek` 24/24, neither wrote a secret's content (`docs/perf/summaries.md`).
+Real-model tier: `gemma4` 18/24, `deepseek` 24/24; `gemma4` wrote a kiss that was a whole scene in 2 of 3 runs, and
+the read-time check held both (0.76) (`docs/perf/summaries.md`).

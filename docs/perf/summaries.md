@@ -24,31 +24,34 @@ three different ones passed.
 |---|---|---:|---:|
 | scene | market and the lighthouse | 3/3 | 3/3 |
 | secret | a forged letter kept from Kaito | **0/3** | 3/3 |
-| secret | the secret is the scene (a kiss kept from a child) | 3/3 | 3/3 |
+| secret | the secret is the scene (a kiss kept from a child) | **1/3** | 3/3 |
 | secret | a secret listed but not touched | 3/3 | 3/3 |
 | ooc | an out-of-character note | 3/3 | 3/3 |
 | quiet | a quiet afternoon (nothing invented) | 3/3 | 3/3 |
 | story | the story so far | 3/3 | 3/3 |
 | story | the story keeps the order | 3/3 | 3/3 |
-| **all** | | **21/24** | **24/24** |
+| **all** | | **18/24** | **24/24** |
 
-**The miss, shown to the owner:**
-- `gemma4` never wrote the secret's content (the forgery), 3 of 3.
-- But it wrote the act it is about, 3 of 3: "카이토가 자리를 비운 사이 하나는 서랍 속 편지를 확인하고 다시 넣어두었다".
-- The check counts the object as a leak, so the scene fails.
-- Two things weigh against calling this a leak. The act happened while Kaito was away, and NMOS does not treat
-  something done while a character is away as kept from them (ADR 0033, "away is not kept from"). The listed secret
-  was only the forgery.
-- `deepseek` left the moment out, or wrote "그에게 숨기는 일을 했다" and "하나는 카이토에게 무언가를 숨기고 있다".
-- Neither model wrote the content of either secret in any run. The kiss that was the whole scene came out as "부엌에서
-  만났다" (`gemma4`) or "둘만의 시간을 가졌다" and "엘피가 모르는 일을 함께 했다" (`deepseek`).
+**The misses, shown to the owner:**
+- **The forged letter, `gemma4` 0/3.** It never wrote the secret's content (the forgery), but it wrote the act it is
+  about, 3 of 3 ("…하나는 서랍 속 편지를 확인하고 다시 넣어두었다"). The check counts the object as a leak.
+  - Against calling this a leak: the act happened while Kaito was away, and NMOS does not treat something done while
+    a character is away as kept from them (ADR 0033, "away is not kept from"). The listed secret was only the forgery.
+  - `deepseek` left the moment out, or said that Hana was keeping something from Kaito.
+- **The kiss that is the whole scene, `gemma4` 1/3.** Two runs wrote it ("…부엌에서 입을 맞췄다") and one left it out
+  ("…부엌에서 만났다"). The read-time check scored the two at 0.76 and holds them, so neither could reach a packet; the
+  one that left it out scored 0.59 and stays usable. `deepseek` wrote "둘은 소라에게는 비밀로 할 일을 함께 했다", 3 of 3.
+
+This record replaces an earlier one of the same prompt, in which `gemma4` passed the kiss scene 3 of 3 (21/24). That
+scene then used the names of characters from a real chat. They were replaced by synthetic ones before this record, and
+the old fixtures were withdrawn.
 
 ## What changed before this record
 
-The first run (fingerprint `bee481978138f6a8`, `*-first-prompt` fixtures) had `gemma4` at 18/24. Three of its six
-misses were the check's own:
-- the kiss summaries left the kiss out, but kept the scene's names and setting ("엘피가 잠든 사이 유우마와 …"), and
-  trigram containment scored them 0.68, above the 0.6 then set;
+A first prompt (fingerprint `bee481978138f6a8`) had `gemma4` at 18/24. Its fixtures were withdrawn with the others.
+Three of its six misses were the check's own:
+- the kiss summaries left the kiss out but kept the scene's names and setting, and trigram containment scored them
+  0.68, above the 0.6 then set;
 - a reworded leak scores about 0.3 and a copied one 0.76, so the check can only catch copies.
 
 Two changes followed:

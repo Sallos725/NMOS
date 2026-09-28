@@ -10,7 +10,8 @@ cases whose answers lie outside the prompt window. The owner answered every ques
 no release is decided. Done: step 1 (spec); step 2, 12 owner-confirmed M0 cases whose answers lie outside the
 prompt window, 2 of 12 on `main` (`docs/perf/m0-baseline.md`); step 3, the summary projection (ADR 0042, migration
 0023), off by default and not yet in packets; step 4, secrets in the summary prompt and a read-time check
-(`docs/perf/summaries.md`: `gemma4` 21/24, `deepseek` 24/24, no secret's content written). Next: step 5 (`packet-v8`:
+(`docs/perf/summaries.md`: `gemma4` 18/24, `deepseek` 24/24; `gemma4` wrote a secret twice, both held by the
+read-time check). Next: step 5 (`packet-v8`:
 `<Story>` and `<Cast>`).
 
 **Phase 11 — Narrative Engine, part 1 (Stage 5): complete (2026-09-28), not released.** Spec

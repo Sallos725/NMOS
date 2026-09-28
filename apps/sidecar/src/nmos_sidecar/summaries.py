@@ -46,7 +46,7 @@ STORY_CHARS = 2400
 OPEN_SECRETS = 12  # listed in a scene's prompt, newest first
 # Trigram containment of a secret's content in a summary, names left out of both, that holds the summary back
 # (PHASE-12 Q3). It catches a secret copied into a summary (0.76 in the real-model tier), not one reworded (0.3), and
-# a summary that leaves the secret out but keeps its setting ("엘피가 잠든 사이 …") scored 0.59 (0.68 with names).
+# a summary that leaves the secret out but keeps its setting ("소라가 잠든 사이 …") scored 0.59 (0.68 with names).
 LEAK_MIN = 0.7
 LIVE_PRIORITY = 300  # after extraction's live and recent work (100–250)
 BACKFILL_PRIORITY = 950  # after extraction's history (900); claimed oldest first
@@ -243,7 +243,7 @@ def reply_text(parsed: dict[str, Any], cap: int) -> str:
 
 
 def content(secret: dict[str, Any]) -> str:
-    """What a secret says, without its head ("블랑 knows: …" → "…")."""
+    """What a secret says, without its head ("하나 knows: …" → "…")."""
     head, sep, body = secret["text"].partition(": ")
     return body if sep else head
 
