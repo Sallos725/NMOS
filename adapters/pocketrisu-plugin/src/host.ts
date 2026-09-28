@@ -4,6 +4,7 @@ import type { HostPort, Settings, StatusInfo } from './core';
 import { langOf, t } from './i18n';
 import type { InjectPosition } from './prompt';
 import type { HostCard, HostLoreEntry } from './canon';
+import { CHAT_OFF_ARG, createChatSwitch, parseChatIds, type ChatState } from './chatoff';
 import type { HostChat, HostPersonas } from './types';
 import { DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, MAX_DEADLINE_MS, MAX_RESERVED_TOKENS } from './form';
 import { createHud, type HudDocument } from './hud-host';
@@ -66,6 +67,7 @@ export const risuHost: HostPort = {
       deadlineMs: positiveInt(await arg('deadline_ms'), DEFAULT_DEADLINE_MS, MAX_DEADLINE_MS),
       injectPosition: (position === 'end' ? 'end' : 'before_last_user') as InjectPosition,
       language: langOf(await arg('language')),
+      offChats: parseChatIds(await arg(CHAT_OFF_ARG)),
     };
   },
 
@@ -177,6 +179,25 @@ export function createRisuHud(link: { coverage(conversationId: string): Promise<
   return control;
 }
 
+/** Switching NMOS off and on for the chat open now (ADR 0048). */
+export const risuChatSwitch = createChatSwitch({
+  getArg: arg,
+  setArg: (key, value) => risuai.setArgument(key, value),
+  async currentChatId() {
+    const characterIndex = await risuai.getCurrentCharacterIndex();
+    if (characterIndex < 0) return null;
+    const chat = await risuai.getChatFromIndex(characterIndex, await risuai.getCurrentChatIndex());
+    return typeof chat?.id === 'string' && chat.id ? chat.id : null;
+  },
+});
+
+/** What a tap on the chat menu's switch did, for the host's dialog. The global switch wins (ADR 0048 §5). */
+export function chatSwitchNotice(lang: Parameters<typeof t>[0], state: ChatState, enabled: boolean): string {
+  if (state.id === null) return t(lang, 'chat.none');
+  if (state.off) return t(lang, 'chat.switched_off');
+  return t(lang, enabled ? 'chat.switched_on' : 'chat.switched_on_all_off');
+}
+
 export async function registerHooks(
   beforeRequest: (prompt: unknown, mode: unknown) => Promise<unknown>,
   onOutput: (arg: unknown) => void,
@@ -194,6 +215,7 @@ export async function registerHooks(
     show: () => risuai.showContainer('fullscreen'),
     hide: () => risuai.hideContainer(),
     hud,
+    chat: risuChatSwitch,
   };
   const open = (tab: Tab) => openPanel(deps, tab);
   // Menu names are fixed at load, in the language chosen then (they follow a change after a reload).
@@ -203,5 +225,17 @@ export async function registerHooks(
   // The ☰ menu left of the chat input.
   await risuai.registerButton({ name: t(lang, 'menu.panel'), icon: '🧠', iconType: 'html', location: 'chat', id: 'nmos-chat' },
     () => open('status'));
+  // The same menu: switch NMOS off or back on for this chat in one tap (ADR 0048). Its name is fixed at load, so the
+  // host's dialog says which way it went.
+  await risuai.registerButton({ name: t(lang, 'menu.chat_switch'), icon: '⏻', iconType: 'html', location: 'chat',
+    id: 'nmos-chat-switch' }, () => {
+    risuChatSwitch.toggle()
+      .then(async (state) => risuai.alert(chatSwitchNotice(lang, state, Number(await arg('disabled')) !== 1)))
+      .catch((error) => console.warn('[NMOS] chat switch failed:', error instanceof Error ? error.message : error));
+  });
+  // The sidebar's ☰ menu, which shows icons only (PocketRisu v1.13.0 Sidebar.svelte): the panel, where "This chat"
+  // is the first card.
+  await risuai.registerButton({ name: t(lang, 'menu.panel'), icon: '🧠', iconType: 'html', location: 'hamburger',
+    id: 'nmos-sidebar' }, () => open('status'));
   return () => void open('status');
 }

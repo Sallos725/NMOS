@@ -7,7 +7,8 @@ import { t, type Lang } from './i18n';
 export const OUTCOME_MS = 4000;
 export const DONE_MS = 3000;
 
-export type Outcome = 'injected' | 'nothing-relevant' | 'failed';
+/** `chat-off`: NMOS is switched off for this chat (ADR 0048). */
+export type Outcome = 'injected' | 'nothing-relevant' | 'failed' | 'chat-off';
 
 export interface Counts { done: number; total: number; pending: number; failed: number }
 /** Coverage of the active extraction and embedding generations; `null` when one is off or has no rows. */
@@ -63,6 +64,7 @@ export function view(state: HudState, now: number, lang: Lang): HudView | null {
   if (r?.phase === 'done' && now < r.until) {
     if (r.outcome === 'injected') return { kind: 'ok', text: t(lang, 'hud.injected', { n: r.chars }), fraction: null };
     if (r.outcome === 'nothing-relevant') return { kind: 'muted', text: t(lang, 'hud.nothing'), fraction: null };
+    if (r.outcome === 'chat-off') return { kind: 'muted', text: t(lang, 'hud.chat_off'), fraction: null };
     const reason = r.error?.startsWith('deadline')
       ? t(lang, 'hud.reason.deadline', { s: Math.round((r.deadlineMs ?? 0) / 100) / 10 })
       : t(lang, 'hud.reason.error');

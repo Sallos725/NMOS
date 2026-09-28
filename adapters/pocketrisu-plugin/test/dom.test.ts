@@ -2,6 +2,7 @@
 // DOM code (audit follow-up, 2026-09-27 review): the inspector sanitizer's tree walk and the settings panel.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { StatusInfo } from '../src/core';
+import { createChatSwitch } from '../src/chatoff';
 import { safeFragment } from '../src/inspector';
 import { openPanel, type PanelDeps } from '../src/ui';
 
@@ -54,6 +55,7 @@ describe('panel', () => {
   function deps(status: Partial<StatusInfo> = {}) {
     const calls: [string, string, unknown][] = [];
     const args: Record<string, string> = { sidecar_url: 'http://127.0.0.1:8790', language: 'en' };
+    const open: { chat: string | null } = { chat: 'chat-1' };
     const d: PanelDeps = {
       api: async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown) => {
         calls.push([method, path, body]);
@@ -66,8 +68,10 @@ describe('panel', () => {
       show: async () => {},
       hide: async () => {},
       hud: { enable: async () => 'unsupported', disable: async () => {}, problem: () => null, background: () => {} },
+      chat: createChatSwitch({ getArg: async (key) => args[key] ?? '', setArg: async (key, value) => { args[key] = value; },
+        currentChatId: async () => open.chat }),
     };
-    return { d, calls, args };
+    return { d, calls, args, open };
   }
 
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -79,6 +83,44 @@ describe('panel', () => {
     const text = document.getElementById('nmos-panel')!.textContent ?? '';
     expect(text).toContain('0.1.0b21');
     expect(text).toContain('http://127.0.0.1:8790');
+  });
+
+  it('shows this chat first and switches NMOS off and back on for it (ADR 0048)', async () => {
+    const { d, args } = deps();
+    args.disabled_chats = 'chat-0';
+    await openPanel(d, 'status');
+    await settle();
+    const panel = document.getElementById('nmos-panel')!;
+    const first = () => panel.querySelector('.card')!;
+    const flip = () => first().querySelector('button') as HTMLButtonElement;
+    expect(first().textContent).toContain('This chat');
+    expect(first().textContent).toContain('NMOS on');
+    expect(flip().textContent).toBe('Turn off for this chat');
+    flip().click();
+    await vi.waitFor(() => expect(first().textContent).toContain('NMOS off'));
+    expect(args.disabled_chats).toBe('chat-0 chat-1');
+    expect(flip().textContent).toBe('Turn back on for this chat');
+    flip().click();
+    await vi.waitFor(() => expect(first().textContent).toContain('NMOS on'));
+    expect(args.disabled_chats).toBe('chat-0');
+  });
+
+  it('says when NMOS is off for every chat', async () => {
+    const { d } = deps({ enabled: false });
+    await openPanel(d, 'status');
+    await settle();
+    const first = document.getElementById('nmos-panel')!.querySelector('.card')!;
+    expect(first.textContent).toContain('NMOS is off for every chat');
+  });
+
+  it('says when no chat is open', async () => {
+    const { d, open } = deps();
+    open.chat = null;
+    await openPanel(d, 'status');
+    await settle();
+    const first = document.getElementById('nmos-panel')!.querySelector('.card')!;
+    expect(first.textContent).toContain('No chat is open');
+    expect(first.querySelector('button')).toBeNull();
   });
 
   it('loads the settings and saves one sidecar update for the section that changed', async () => {
@@ -177,6 +219,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
       show: async () => {},
       hide: async () => {},
       hud: { enable: async () => 'unsupported', disable: async () => {}, problem: () => null, background: () => {} },
+      chat: createChatSwitch({ getArg: async () => '', setArg: async () => {}, currentChatId: async () => null }),
     };
     return { d, calls, state };
   }

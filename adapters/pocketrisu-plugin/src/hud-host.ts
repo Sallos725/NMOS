@@ -207,6 +207,14 @@ export function createHud(deps: HudDeps) {
     event(event: ActivityEvent): void {
       run(async () => {
         if (!(await active())) return;
+        if (event.type === 'request-end' && event.outcome === 'chat-off') {
+          // NMOS is off for this chat (ADR 0048): stop following, so not even a coverage poll reaches the sidecar.
+          conversation = null;
+          where = null;
+          stopPolling();
+          state = { ...reduce(state, event, deps.now()), progress: null };
+          return render();
+        }
         if (event.type === 'request-end' || event.type === 'background') await follow(event.conversationId);
         state = reduce(state, event, deps.now());
         await render();

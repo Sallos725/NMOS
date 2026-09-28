@@ -3,6 +3,13 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
+## Unreleased
+
+- **NMOS off for one chat** (ADR 0048, D58): the panel's Status tab starts with a **This chat** card that turns NMOS
+  off or back on for the chat open now, and the chat input's ☰ menu has **NMOS: this chat off/on**. A chat that is
+  off sends nothing to the sidecar and gets no memory; what NMOS keeps of it stays. The list is the new plugin arg
+  `disabled_chats`. The panel also opens from the 🧠 icon in the sidebar's ☰ menu. A new plugin build; no migration.
+
 ## 0.2.0
 
 The first milestone release (`docs/ROADMAP-1.0.md`): **Stage 4, knowledge and secrets** (Phase 10) is complete, and

@@ -21,6 +21,7 @@ const header = [
   '//@arg route string auto (default) / direct / server — how to reach the sidecar',
   '//@arg language string Panel language: ko (default) or en',
   '//@arg hud int 1 = progress display on the chat screen (turn it on from the NMOS panel)',
+  '//@arg disabled_chats string Chat ids NMOS is off for (switched from the NMOS panel or the chat menu)',
   '',
 ].join('\n');
 

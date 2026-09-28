@@ -24,6 +24,8 @@ export interface Settings {
   /** 'direct' = browser fetch (proxy fallback); 'server' = always via the PocketRisu server. */
   route: 'direct' | 'server';
   language: Lang;
+  /** Host chat ids NMOS is switched off for (ADR 0048); none when missing. */
+  offChats?: string[];
 }
 
 export interface HttpResult {
@@ -383,6 +385,11 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         return prompt;
       }
       chatId = chat.id;
+      // Switched off for this chat (ADR 0048): nothing of it is read further or sent, and no packet goes in.
+      if (settings.offChats?.includes(chat.id)) {
+        emit({ type: 'request-end', outcome: 'chat-off', chars: 0, conversationId: null });
+        return prompt;
+      }
 
       // Cache key = exact chat state (every message id + revision hash) + prompt shape, so a cached
       // packet is reused only for the same state (host retries, reroll of an unchanged chat) and never
@@ -464,7 +471,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   function onOutput(arg: { chat?: HostChat; messageIndex?: number }): void {
     void (async () => {
       const settings = await host.settings();
-      if (!settings.enabled || !settings.sidecarUrl || !arg?.chat?.id) return;
+      if (!settings.enabled || !settings.sidecarUrl || !arg?.chat?.id || settings.offChats?.includes(arg.chat.id)) return;
       adviseOnce(settings.language);
       emit({ type: 'background', conversationId: conversations.get(arg.chat.id) ?? null });
       const index = arg.messageIndex ?? -1;

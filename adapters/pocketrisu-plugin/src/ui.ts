@@ -4,6 +4,7 @@
 
 import type { StatusInfo } from './core';
 import { budgetAdvice } from './budget';
+import type { ChatSwitch } from './chatoff';
 import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
 import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, fillProject, MAX_DEADLINE_MS, presetMatches, VERTEX_URL,
@@ -35,6 +36,8 @@ export interface PanelDeps {
   show(): Promise<void>;
   hide(): Promise<void>;
   hud: HudControl;
+  /** NMOS off and on for the chat open now (ADR 0048). */
+  chat: ChatSwitch;
 }
 
 interface ServerConfig {
@@ -311,9 +314,45 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       cards.push(el('div', { class: 'card' }, el('h2', { text: L('hud.title') }),
         el('div', { class: 'warn', text: L('hud.broken', { e: problem }) })));
     }
+    // This chat first (ADR 0048): the switch is what the owner opened the panel for, often from the sidebar.
+    cards.unshift(await chatCard(s.enabled));
     const refresh = el('button', { text: L('refresh') });
     refresh.addEventListener('click', () => void refreshStatus());
     statusView.replaceChildren(...cards, el('div', { class: 'btns' }, refresh));
+  }
+
+  /** "This chat": whether NMOS is on for the chat open now, and the switch. */
+  async function chatCard(enabled: boolean): Promise<HTMLElement> {
+    const card = el('div', { class: 'card' }, el('h2', { text: L('chat.title') }));
+    let state;
+    try {
+      state = await deps.chat.current();
+    } catch (error) {
+      card.append(el('div', { class: 'err', text: errorText(lang, error) }));
+      return card;
+    }
+    if (state.id === null) {
+      card.append(el('div', { class: 'muted', text: L('chat.none') }));
+      return card;
+    }
+    const id = state.id;
+    const off = state.off;
+    const flip = el('button', { class: off ? 'primary' : '', text: L(off ? 'chat.turn_on' : 'chat.turn_off') });
+    const msg = el('div', { class: 'msg' });
+    flip.addEventListener('click', async () => {
+      flip.disabled = true;
+      try {
+        await deps.chat.set(id, !off);
+        await refreshStatus();
+      } catch (error) { flip.disabled = false; say(msg, errorText(lang, error), 'err'); }
+    });
+    card.append(el('div', { class: off ? 'line warn' : 'line' }, el('span', { class: off ? 'dot warn' : 'dot ok' }),
+      el('span', { text: L(off ? 'chat.off' : 'chat.on') })),
+    el('p', { class: 'sub', text: L(off ? 'chat.off_sub' : 'chat.on_sub') }), el('div', { class: 'btns' }, flip), msg);
+    // The global switch wins (ADR 0048 §5): say so rather than show this chat as working.
+    if (!enabled) card.insertBefore(el('div', { class: 'line warn' }, el('span', { class: 'dot warn' }),
+      el('span', { text: L('chat.all_off') })), card.children[1] ?? null);
+    return card;
   }
 
   // --- inspector tab ---------------------------------------------------------------------------
