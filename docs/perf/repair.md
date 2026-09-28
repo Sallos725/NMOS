@@ -39,3 +39,81 @@ Every packet carries at least one thread the story ended long before; the step's
 owner's repairs are applied. `<Story>` is held in all six gate scenes: with the stricter check in front of a character
 a secret is kept from (ADR 0042 amendment 3), secrets the story already told still hold it; marking them found out
 should let it back where no secret remains, with no forbidden word.
+
+## With the owner's repairs (step 6, 2026-09-28)
+
+Code: `main` after step 5 (6759cd5) and this step's changes. Each restored copy was copied again (`CREATE DATABASE …
+TEMPLATE`), migrated to 0024, and the owner's decisions were made as repairs the way the panel makes them
+(`repairs.plan`, then an `owner_repair` row). No worker ran and no model was called; replays as in step 2 (`packet-v8`,
+budget 2,000, no vectors unless stated).
+
+### The longest chat (the owner's lists of step 2)
+
+58 repairs: 50 threads closed at the turn and with the outcome the owner chose, 8 secrets marked found out (6 found
+out, 2 never kept). None was refused, and all 59 threads and 19 secrets then read as the owner decided.
+
+| | `main`, no repairs | with the owner's repairs |
+|---|---:|---:|
+| Packets carrying a thread the owner closed | 40 of 40 | **0 of 40** |
+| Lines of threads the owner closed | 113 | **0** |
+| Lines of threads the owner kept open | 64 | 145 |
+| M0, 28 cases (need memory) | 26 (7 of 9) | **27 (8 of 9)**: the goal case passes |
+| M0, 12 cases outside the prompt window | 5 (gold held 7 of 15) | 5 (8 of 15) |
+| Secret gate: scenes with `<Story>` | 0 of 6 | **6 of 6** |
+| Secret gate: scenes with a forbidden word in `<Story>` | 0 of 6 | 0 of 6 (1 of 6 by the Phase 12 cases) |
+
+- No M0 category is worse; the budget the closed threads used goes to the threads still under way.
+- The secret gate: in one scene the story now names a plan of a child character, which a parent character it was kept
+  from found out, by the owner's list, 52 turns before the scene. The Phase 12 case listed the words of that plan and of
+  a second plan still kept together; the second plan's words are not in `<Story>`. The owner chose to judge the gate by
+  their list: a case can now group its words by secret, and `tools/eval_secret_gate.py` reports the words of a secret
+  the character has found out by the scene apart, as told, not forbidden.
+
+### A second chat (sample 2, `docs/perf/m0-sample2.md`)
+
+NMOS drafted the decisions for its 11 open threads and its one secret from the chat, and the owner confirmed the
+draft as it was: 9 threads ended in the story (one threat ended by the character it threatened, which the story's
+end did not match, K23), 2 are not over, and the secret is none (every character of that world has what it names).
+10 repairs, none refused.
+
+| | `main`, no repairs | with the owner's repairs |
+|---|---:|---:|
+| Packets carrying a thread the owner closed | 15 of 17 | **0 of 17** |
+| Lines of threads the owner closed | 45 | **0** |
+| M0, 17 cases, with vectors (need memory) | 12 (8 of 13) | 12 (8 of 13), the same cases |
+| M0, 17 cases, lexical only | 8 (4 of 13) | 8 (4 of 13), the same cases |
+
+### Latency (`tools/bench_story.py`, 10,000 messages)
+
+Retrieve p50, the median of five rounds, each round running Phase 12 `main` (60965dd), this branch without repairs and
+this branch with 100 live repairs in turn, pinned to two cores. The repairs are the costliest kind: a found out for each
+of the six secrets and 94 retractions and corrections of facts (`BENCH_REPAIRS=100`).
+
+| | retrieve p50, ms | against Phase 12 `main` |
+|---|---:|---:|
+| Phase 12 `main` | 117.6 | |
+| Phase 13, no repairs | 119.3 | +1.7 |
+| Phase 13, 100 repairs | 124.6 | **+7.0** |
+
+The criterion (+5 ms with 100 live repairs) is missed by 2 ms; the owner accepted it (2026-09-28). With the owner's
+own mix (50 thread closes, 8 secrets found out) on the longest chat, a memory read took 12.3 → 14.2 ms (+1.7 to +2.4,
+three rounds).
+
+- A first run gave +66 ms: every fact repair searched all of the head's assertions, and every retraction recomputed
+  the version key of every fact. Fact repairs now look only at the rows of their turns, the result is built in one
+  pass, and a retraction finds the restored version through the facts' version-key index.
+- A read now fetches its conversation, the repairs in force and its last turn in one query, as Phase 12 fetched the
+  conversation alone; the turn positions a later-turn correction needs are read only when there is one.
+- What remains is the fact repairs' own work (about 2 ms for 94 of them over 5,000 facts) and reading the repairs.
+
+### Upgrade and real host
+
+- `tests/test_upgrade.py`: every recorded release and `main` fixture upgrades through migration 0024, and the owner
+  closes a promise on the upgraded chat and takes the repair back.
+- Real-host smoke (an isolated PocketRisu from `ghcr.io/pocketrisu/pocketrisu:latest`, a stub chat model, a stub
+  extraction model, this branch's sidecar and worker, plugin build `b1f7a1a81fe0`): a goal set in play reached
+  `<Cast>` in the next request; closed in the panel's Inspector with the outcome "abandoned", it was in neither `<Cast>`
+  nor `<Threads>` of the next request; after undo in the Repairs section it was back in the one after. The Inspector
+  showed the close controls (a box, the outcomes of the thread's kind, the button) on open threads, reopen on closed
+  ones, "Needs attention" with a promise not restated for more than 30 turns, and the repair as taken back.
+

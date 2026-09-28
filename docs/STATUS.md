@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Phase 13 — Verification and Repair, part 1 (Stage 6): approved 2026-09-28, in progress.** Spec
+**Phase 13 — Verification and Repair, part 1 (Stage 6): complete (2026-09-28), not released.** Spec
 `docs/phases/PHASE-13.md`: the owner repairs memory in the panel (close or reopen a thread, retract or correct a
 fact, mark a secret found out, split two names), stored as owner input that survives rebuilds and new extractor
 generations and finds its target by what it says; a "Needs attention" queue per chat. Canon sources and
@@ -12,7 +12,14 @@ export/restore are Phase 14. The owner answered every question with the recommen
 owner repairs as owner input, found by what their target says; threads closed or reopened and secrets found out or
 kept, through the API, listed in the Inspector. Step 4: facts retracted or corrected, two names split (K8). Step 5:
 the panel's repair buttons (bulk close, undo, splits on an entity page) and each chat's "Needs attention" list; the
-plugin build changed. Next: step 6 (the owner's lists applied and measured, real-host smoke, upgrade, latency).
+plugin build changed. Step 6 (`docs/perf/repair.md`): with the owner's decisions made as repairs, no thread the
+owner closed reaches a packet on either measured chat (113 lines in 40 packets and 45 in 17 before); M0 27 of 28
+(one more) and 5 of 12, the second chat's 17 cases unchanged; the secret gate 6 of 6 with `<Story>` back in all six
+scenes, judged by the owner's list (the owner's decision: words of a secret the character found out are told, not
+forbidden); an upgrade from every fixture and a real-host smoke pass (a thread closed in the panel leaves the next
+packet, undo brings it back). K8 and K23 are rewritten to what remains. One criterion is missed and the owner
+accepted it: retrieve at 10,000 messages is +7.0 ms p50 over Phase 12 `main` with 100 fact repairs (the spec allows
++5; +1.7 with none, about +2 with the owner's own mix). A first run was +66 ms; the fact repairs' reads were fixed.
 
 **Phase 12 — Narrative Engine, part 2 (Stage 5): complete (2026-09-28), not released.** Spec
 `docs/phases/PHASE-12.md`: scene summaries of 8-turn windows and a story so far, as a rebuildable `summarize`
@@ -216,12 +223,12 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Schema | `migrations/0001`–`0024` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode, thread outcome and cause, summaries, owner repairs |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (584), `adapters/pocketrisu-plugin/test` (120; DOM code under `happy-dom`) | all passing; the M0 real-chat evaluation is `docs/perf/m0-baseline.md` (28 owner-confirmed cases; 9 need memory: 5 before Phase 11, 7 now) and, on a second chat, `docs/perf/m0-sample2.md` (17 cases; 8 of the 13 that need memory); deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
+| Tests | `apps/sidecar/tests` (586), `adapters/pocketrisu-plugin/test` (120; DOM code under `happy-dom`) | all passing; the M0 real-chat evaluation is `docs/perf/m0-baseline.md` (28 owner-confirmed cases; 9 need memory: 5 before Phase 11, 7 now) and, on a second chat, `docs/perf/m0-sample2.md` (17 cases; 8 of the 13 that need memory); deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k without extraction and embeddings (D24); with both on (15k facts, 15k vectors) 10k takes ≈3.2 s (A-09); K3 on the real host (2026-09-27): rerolls and last-reply swipes stay on the fast path, an edit of an older message at 10k takes 3.6–3.8 s |
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K32 (K10 resolved; K29–K32 found on `main`) current as of `v0.1.0-beta.21`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–8 of the original roadmap, one release each (draft, R1–R6 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0044` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair |
-| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-13.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 approved, in progress (Stage 6, part 1) |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-13.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted) |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 | Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11`, and A-12's markup half in `clean-v3` (both unreleased) |
 
@@ -270,7 +277,8 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
   (Q1–Q9, `docs/phases/PHASE-12.md`); complete 2026-09-28, the latency criterion missed by 3 ms and accepted
   (owner). No release for now (owner, 2026-09-28).
 - Phase 13 (Stage 6, part 1: owner repair and a needs-attention queue): approved 2026-09-28 with the recommended
-  answers (Q0–Q9, `docs/phases/PHASE-13.md`); no release. Phase 14+ (canon sources,
+  answers (Q0–Q9, `docs/phases/PHASE-13.md`); complete 2026-09-28, the latency criterion missed by 2 ms and accepted
+  (owner); no release. Phase 14+ (canon sources,
   export/restore, Stages 7–8): not authorized.
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600. Raised to 800 on 2026-09-27 (owner; ADR 0035).

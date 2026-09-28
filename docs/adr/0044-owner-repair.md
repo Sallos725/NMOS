@@ -87,6 +87,15 @@ secret repair needed, kept the old object's entities, took an earlier turn's pos
 were validated against other candidates than the read used; a split's explanation could name a join resolution had
 refused; a retraction's restored version did not name the repair.
 
+## Step 6 — measured (2026-09-28)
+
+10. **Cost.** A read applies the fact repairs to the rows of their turns only and builds the result once, and fetches
+    its conversation, the repairs in force and its last turn in one query (`docs/perf/repair.md`). With 100 fact repairs
+    at 10,000 messages a retrieve is +7.0 ms p50 over Phase 12 `main` (+1.7 with none); the criterion was +5, and the
+    owner accepted the miss.
+11. **The secret gate** judges a scene by the owner's decisions: the words of a secret the character found out by the
+    scene (in the story or by a repair) are told, not forbidden (owner, 2026-09-28; `tools/eval_secret_gate.py`).
+
 ## Consequences
 
 - One repair fixes an item for good: through edits elsewhere in the chat, rebuilds and new generations, with no model
