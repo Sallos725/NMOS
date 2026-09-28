@@ -46,5 +46,15 @@ text (§36–37); the owner chose scenes of 8 turns and a story so far (PHASE-12
 - Cost: each turn is read once more, in windows of about 25,000 characters on the owner's chats (extraction reads
   each turn with its 3 context turns). The story is redone once per 8 turns and on every change to a scene.
 - An edit near the start of a long chat redoes one window and the story; a delete there redoes every later window.
-- `summarize-v1` has no secrets rule yet: step 4 adds OPEN SECRETS to the prompt and the read-time check. Nothing
-  uses summaries in a packet before step 5.
+- Nothing uses summaries in a packet before step 5.
+
+## Amendment 1 — secrets (Phase 12 step 4, PHASE-12 Q3)
+
+`summarize-v2`. The scene prompt lists the secrets stated by the window's last turn that are still kept from someone
+(OPEN SECRETS, at most 12, newest first): never write their content or the object or act they are about, at most say
+that the holders keep something. When a summary is read, `leaks` compares each secret still kept from someone with
+it: trigram containment of the secret's content, the names of its holders and of those kept from left out of both,
+at 0.7 or more marks the summary held (the Inspector shows it; step 5 keeps it out of packets). Secrets are read from
+the head at that time, so a secret extracted after the summary was written counts too. The check catches a copied
+secret (0.76 on the real-model tier), not a reworded one (about 0.3): the prompt is the guard, the check a backstop.
+Real-model tier: `gemma4` 21/24, `deepseek` 24/24, neither wrote a secret's content (`docs/perf/summaries.md`).

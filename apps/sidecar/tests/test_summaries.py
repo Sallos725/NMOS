@@ -160,3 +160,65 @@ def test_turning_it_off_stops_queued_jobs_and_deleting_the_chat_removes_them(mig
         assert jobs(db) == []
         assert c.post(f"/v1/conversations/{conv_id(c, chat)}/delete").json()["deleted"]["summaries"] == 4
     assert db.execute("SELECT count(*) AS n FROM summary").fetchone()["n"] == 0
+
+
+# --- step 4: secrets (PHASE-12 Q3) -----------------------------------------------------------------
+
+LETTER = {"text": "Hana knows: the letter is forged", "turn": 1, "position": 2, "holders": ["Hana", "{{user}}"],
+          "open": ["Kaito"]}
+
+
+def test_a_summary_that_repeats_a_kept_secret_leaks_it():
+    assert summaries.content(LETTER) == "the letter is forged"
+    assert summaries.leaks("Hana hid a note. The letter is forged, she knew.", [LETTER]) == [LETTER]
+    assert summaries.leaks("Hana kept something from Kaito and baked bread.", [LETTER]) == []
+    assert summaries.leaks("The letter is forged.", [{**LETTER, "open": []}]) == []  # found out by everyone: no secret
+
+
+def test_a_window_lists_the_secrets_stated_by_its_end_newest_first():
+    later = {**LETTER, "text": "Hana knows: the key is fake", "turn": 12, "position": 24}
+    gone = {**LETTER, "text": "Hana knows: old news", "open": []}
+    assert summaries.window_secrets([LETTER, later, gone], 7) == [LETTER]
+    assert summaries.window_secrets([LETTER, later, gone], 15) == [later, LETTER]
+    assert "- Hana, {{user}} keep from Kaito: the letter is forged" in summaries.secrets_block([LETTER])
+
+
+def test_the_prompt_lists_kept_secrets_and_a_summary_repeating_one_is_held(migrated, db):
+    from memeval import stub_extractor
+    from nmos_sidecar.facts import memory_view
+    from test_extraction import drain as drain_facts
+
+    chat = SimChat()
+    chat.user("Hana keeps a secret from Kaito: the letter is forged.")
+    chat.reply("Noted.")
+    for i in range(1, 22):
+        chat.user(f"Turn {i} begins.")
+        chat.reply(f"Reply {i} follows.")
+    prompts = []
+
+    def leaky(system: str, user: str) -> tuple[dict, str]:
+        prompts.append(user)
+        return {"summary": "Hana read it: the letter is forged." if "turn 0]" in user else "Nothing else."}, "{}"
+
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        drain_facts(migrated, stub_extractor)
+        drain(migrated, leaky)
+        assert "OPEN SECRETS" in prompts[0] and "keep from Kaito: the letter is forged" in prompts[0]
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            cid = conv_id(c, chat)
+            head = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (cid,)).fetchone()["head_commit_id"]
+            secrets = memory_view(conn, head, active_generation(conn, "extract").key)["secrets"]
+            v = summaries.current(conn, cid, head, active_generation(conn, "summarize").key, secrets)
+        assert [bool(x["held"]) for x in v["scenes"]] == [True, False]
+        assert "held back: repeats a secret" in c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
+
+
+def test_the_leak_check_is_about_the_secret_not_its_setting():
+    """Measured in the real-model tier (docs/perf/summaries.md): a summary that left the kiss out but kept the scene's
+    setting and names scored 0.68 before names were left out, above the check."""
+    kiss = {"text": "블랑 event: 엘피가 잠든 사이 유우마와 입을 맞췄다", "turn": 0, "position": 0,
+            "holders": ["블랑", "유우마"], "open": ["엘피"]}
+    left_out = "엘피가 잠든 사이 유우마와 블랑은 부엌에서 만났다. 유우마는 이 일을 엘피에게 비밀로 하자고 했다."
+    copied = "엘피가 잠든 사이 블랑과 유우마는 부엌에서 입을 맞췄다."
+    assert summaries.leaks(left_out, [kiss]) == [] and summaries.leaks(copied, [kiss]) == [kiss]

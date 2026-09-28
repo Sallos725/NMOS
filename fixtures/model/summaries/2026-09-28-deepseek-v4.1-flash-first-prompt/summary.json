@@ -1,0 +1,82 @@
+{
+  "model": "deepseek-v4.1-flash:cloud",
+  "url": "http://127.0.0.1:11434/v1",
+  "runs": 3,
+  "version": "summarize-v2",
+  "prompt_fingerprint": "bee481978138f6a8",
+  "errors": [],
+  "scenes": {
+    "scene | market and the lighthouse": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    },
+    "secret | a forged letter kept from Kaito": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    },
+    "secret | the secret is the scene": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    },
+    "secret | a secret listed but not touched": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    },
+    "ooc | an out-of-character note": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    },
+    "quiet | a quiet afternoon": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    },
+    "story | the story so far": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    },
+    "story | the story keeps the order": {
+      "pass": 3,
+      "runs": 3,
+      "notes": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    }
+  }
+}

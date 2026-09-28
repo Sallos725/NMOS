@@ -104,6 +104,8 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
 3. The summary projection: schema, generation, jobs, invalidation, the Inspector list (ADR). Off in the packet.
    **Done** (ADR 0041, migration 0023): off by default (`NMOS_SUMMARIES`).
 4. The summary prompt and secrets, measured on both models (the real-model tier), before anything reaches a packet.
+   **Done** (ADR 0041 amendment 1, `docs/perf/summaries.md`): `gemma4` 21/24, `deepseek` 24/24; no secret's content
+   written. One scene below 2 of 3, shown to the owner: `gemma4` named the forged letter (not the forgery) 3 of 3.
 5. `packet-v7`: `<Story>` and `<Cast>`, the budget share, narrator and strict handling (ADR). Before it merges, the
    owner is told the backfill size (Q7).
 6. Inspector views (summaries, story so far, character state).

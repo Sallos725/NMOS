@@ -28,19 +28,26 @@ from psycopg.types.json import Jsonb
 
 from . import generations, normtext
 from .config import Settings
+from .facts import memory_view
 from .generations import Generation
 from .ids import uuid7
 from .llm import LLMError
+from .threads import similarity
 
 log = logging.getLogger("nmos.summaries")
 
-VERSION = "summarize-v1"
+VERSION = "summarize-v2"  # v2: OPEN SECRETS in the prompt, checked when read (PHASE-12 Q3)
 WINDOW = 8  # turns per scene (PHASE-12 Q1)
 LAG = 4  # replied turns after a window before it is summarized: the last turns still change
 MESSAGE_CHARS = 6000  # normalized chars of each message the model sees, as extraction's target turn
 MIN_CONTENT_CHARS = 12
 SCENE_CHARS = 1200  # a stored scene summary's cap
 STORY_CHARS = 2400
+OPEN_SECRETS = 12  # listed in a scene's prompt, newest first
+# Trigram containment of a secret's content in a summary, names left out of both, that holds the summary back
+# (PHASE-12 Q3). It catches a secret copied into a summary (0.76 in the real-model tier), not one reworded (0.3), and
+# a summary that leaves the secret out but keeps its setting ("엘피가 잠든 사이 …") scored 0.59 (0.68 with names).
+LEAK_MIN = 0.7
 LIVE_PRIORITY = 300  # after extraction's live and recent work (100–250)
 BACKFILL_PRIORITY = 950  # after extraction's history (900); claimed oldest first
 
@@ -52,6 +59,10 @@ relationships, plans, promises), and how the scene ends. Plain past-tense narrat
 most 5 sentences. Name characters as the chat names them; the user's character is named as the chat names it.
 Only what the scene shows: no guesses, no judgments, nothing from before or after it, no out-of-character notes, no
 formatting.
+
+If OPEN SECRETS are listed, each is something the characters it is kept from do not know. Never write a secret's
+content, not even in other words or as a hint, and leave out the object or act it is about; the summary is read with
+those characters present. At most say that the holders keep something from them, or leave the moment out.
 
 Answer with JSON only: {"summary": "..."}"""
 
@@ -125,9 +136,12 @@ def _scenes(conn: psycopg.Connection, conv: UUID, key: str, ws: list[Window]) ->
     return {r["window_key"]: r for r in rows}
 
 
-def current(conn: psycopg.Connection, conv: UUID, head: UUID, key: str | None) -> dict[str, Any]:
+def current(conn: psycopg.Connection, conv: UUID, head: UUID, key: str | None,
+            secrets: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """What the head's summaries are: each due window with its current summary (or None), and the newest story made
-    only from current scene summaries (it may not cover the newest windows yet)."""
+    only from current scene summaries (it may not cover the newest windows yet). With the head's `secrets`
+    (facts.memory_view), each summary that repeats one still kept from someone is marked `held`: no packet may use
+    it."""
     ws = windows(conn, head) if key else []
     by_key = _scenes(conn, conv, key, ws) if key else {}
     scenes = [{"window": w, "summary": by_key.get(w.key)} for w in ws]
@@ -141,8 +155,12 @@ def current(conn: psycopg.Connection, conv: UUID, head: UUID, key: str | None) -
             if row["members"] and set(row["members"]) <= have:
                 story = row
                 break
+    if secrets:
+        for x in scenes:
+            x["held"] = leaks(x["summary"]["text"], secrets) if x["summary"] else []
     return {"scenes": scenes, "story": story, "due": len(ws), "done": len(ids),
-            "story_current": bool(story) and len(story["members"]) == len(ids) == len(ws)}
+            "story_current": bool(story) and len(story["members"]) == len(ids) == len(ws),
+            "story_held": leaks(story["text"], secrets) if story and secrets else []}
 
 
 # As extraction.REQUEUE: a job made obsolete that is wanted again is revived.
@@ -222,8 +240,46 @@ def reply_text(parsed: dict[str, Any], cap: int) -> str:
     return _cut(text, cap)
 
 
-def scene_prompt(rows: list[dict[str, Any]], w: Window) -> str:
-    lines = [f"SCENE: turns {w.first_turn}–{w.last_turn}", ""]
+def content(secret: dict[str, Any]) -> str:
+    """What a secret says, without its head ("블랑 knows: …" → "…")."""
+    head, sep, body = secret["text"].partition(": ")
+    return body if sep else head
+
+
+def window_secrets(secrets: list[dict[str, Any]], last_turn: int, limit: int = OPEN_SECRETS) -> list[dict[str, Any]]:
+    """The secrets a window's summary must keep: stated by its last turn and still kept from someone, newest first."""
+    kept = [s for s in secrets if s.get("open") and (s.get("turn") if s.get("turn") is not None else -1) <= last_turn]
+    return sorted(kept, key=lambda s: s.get("position") or 0, reverse=True)[:limit]
+
+
+def unnamed(text: str, names: list[str]) -> str:
+    for name in sorted({n for n in names if n}, key=len, reverse=True):
+        text = text.replace(name, " ")
+    return text
+
+
+def leak_score(secret: dict[str, Any], text: str) -> float:
+    """How much of a secret's content the text repeats, the names of its holders and of those it is kept from left out
+    of both: names and a scene's setting are shared with everything written about it."""
+    names = [*secret.get("holders", []), *secret.get("open", [])]
+    return similarity(unnamed(content(secret), names), unnamed(text, names))
+
+
+def leaks(text: str, secrets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The secrets still kept from someone whose content the text repeats (PHASE-12 Q3). Checked when a summary is read:
+    a secret extracted after the summary was written counts too."""
+    return [s for s in secrets if s.get("open") and text and leak_score(s, text) >= LEAK_MIN]
+
+
+def secrets_block(secrets: list[dict[str, Any]]) -> list[str]:
+    if not secrets:
+        return []
+    return (["OPEN SECRETS (never write their content):"]
+            + [f"- {', '.join(s['holders'])} keep from {', '.join(s['open'])}: {content(s)}" for s in secrets] + [""])
+
+
+def scene_prompt(rows: list[dict[str, Any]], w: Window, secrets: list[dict[str, Any]] | None = None) -> str:
+    lines = secrets_block(secrets or []) + [f"SCENE: turns {w.first_turn}–{w.last_turn}", ""]
     lines += [f"[turn {r['turn']}] {_speaker(r['metadata'])}: {r['content'][:MESSAGE_CHARS]}" for r in rows]
     return "\n".join(lines)
 
@@ -239,6 +295,12 @@ def _insert(conn: psycopg.Connection, conv: UUID, gen: Generation, level: str, w
         " text, raw, coverage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING RETURNING id",
         (uuid7(), conv, gen.key, level, window_key, members, first, last, text, Jsonb({"reply": raw[:20000]}),
          Jsonb(coverage) if coverage is not None else None)).fetchone() is not None
+
+
+def head_secrets(conn: psycopg.Connection, head: UUID) -> list[dict[str, Any]]:
+    """The head's secrets as the facts of the active extractor generation fold them (ADR 0033)."""
+    key = generations.active(conn, "extract")
+    return memory_view(conn, head, key)["secrets"] if key else []
 
 
 def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[dict, str]],
@@ -268,10 +330,12 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
             r["content"] = normtext.get(conn, r["id"])["clean_content"]
         sizes = [len(r["content"]) for r in rows]
         coverage = {"chars": sum(sizes), "used": sum(min(n, MESSAGE_CHARS) for n in sizes), "messages": len(rows)}
+        kept = window_secrets(head_secrets(conn, head), w.last_turn)
+        coverage["secrets"] = len(kept)
         if sum(sizes) < MIN_CONTENT_CHARS:
             text, raw = "", ""
         else:
-            parsed, raw = complete(SCENE_PROMPT, scene_prompt(rows, w))
+            parsed, raw = complete(SCENE_PROMPT, scene_prompt(rows, w, kept))
             text = reply_text(parsed, SCENE_CHARS)
         with conn.transaction():
             _insert(conn, conv, gen, "scene", w.key, list(w.members), w.first_turn, w.last_turn, text, raw, coverage)
