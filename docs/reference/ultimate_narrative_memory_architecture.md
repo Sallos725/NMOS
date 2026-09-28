@@ -1203,12 +1203,12 @@ EntityAlias
 This supports multilingual aliases such as:
 
 ```text
-颯太
+健二
 켄지
 Kenji
-Sota
-桜庭颯太
-Sakuraba Kenji
+Kenzi
+森本健二
+Morimoto Kenji
 ```
 
 Entity merge/split must be reversible.
