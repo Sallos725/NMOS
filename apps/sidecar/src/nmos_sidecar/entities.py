@@ -75,7 +75,8 @@ def mentions(row: dict[str, Any], persona: frozenset[str] = frozenset()) -> Iter
 
 class Resolution:
     def __init__(self, conversation: UUID, rows: list[dict[str, Any]], persona: Iterable[str] = (),
-                 links: Iterable[dict[str, Any]] = (), splits: Iterable[dict[str, Any]] = ()):
+                 links: Iterable[dict[str, Any]] = (), splits: Iterable[dict[str, Any]] = (),
+                 canon: Iterable[dict[str, Any]] = ()):
         self.conversation = conversation
         self.persona = frozenset(n for n in map(norm, persona) if n)
         first: dict[Node, tuple[int, str]] = {}  # node → (order, spelling) of its first mention on the head
@@ -158,6 +159,43 @@ class Resolution:
         for a, b, split in self.splits:
             if a in self._root and b in self._root and self._root[a] == self._root[b]:
                 self.split_via[str(split["id"])] = [first[n][1] for n in _path(a, b, accepted, self.links)[1:-1]]
+        # Names from canon (PHASE-14 Q6, ADR 0046), on top of the story's resolution: a lorebook entry's keys name one
+        # thing. When the keys the story knows all name one entity, a character other than the persona, and no key names
+        # anything else the story knows, the keys it does not know become that entity's aliases (K31). A key entries
+        # give to two entities is ambiguous. A canon alias never joins, splits or unsettles what the story and the owner
+        # settled, and an owner's split of an alias from its entity keeps it out (ADR 0044).
+        known: dict[str, set[Node]] = {}
+        for n in first:
+            known.setdefault(n[1], set()).add(n)
+        persona_node = ("character", PERSONA)
+        persona_root = self._root.get(persona_node)
+        claims: dict[Node, dict[Node, tuple[str, Any]]] = {}  # alias → entity root → (spelling, entry key)
+        for item in canon:
+            names = [n for n in dict.fromkeys(item.get("names") or ()) if norm(n)]
+            nodes = [(self.node("character", n), n) for n in names]
+            roots = {self._root[x] for x, _ in nodes if x in self._root}
+            if (len(roots) != 1 or any(x in self.ambiguous for x, _ in nodes)
+                    or any(x[0] != "character" for n in names for x in known.get(norm(n), ()))):
+                continue
+            (root,) = roots
+            if root == persona_root or root[0] != "character":
+                continue
+            for x, spelling in nodes:
+                if x not in first and x != persona_node:
+                    claims.setdefault(x, {}).setdefault(root, (spelling, item.get("key")))
+        for x, by in claims.items():
+            if len(by) > 1:  # entries of two entities claim it: ambiguous, joined to neither
+                first[x] = (len(first), next(iter(by.values()))[0])
+                self.ambiguous.add(x)
+                edges[x] = set(by)
+                continue
+            ((root, (spelling, key)),) = by.items()
+            members = [n for n, r in self._root.items() if r == root]
+            if any(latest.get(frozenset((x, m))) == "split" for m in members):
+                continue
+            first[x] = (len(first), spelling)
+            self._root[x] = root
+            self.alias_rows.append((root, x, {"subject": first[root][1], "value": spelling, "turn": None, "canon": key}))
         self._edges = edges
         self._first = first
         self._counts = counts
@@ -182,7 +220,8 @@ class Resolution:
         for a, b, row in self.alias_rows:
             if a in self._root and b in self._root:
                 self._entities[self._root[a]]["aliases"].append(
-                    {"name": row["subject"], "other": row["value"], "turn": row.get("turn")})
+                    {"name": row["subject"], "other": row["value"], "turn": row.get("turn"),
+                     **({"canon": row["canon"]} if row.get("canon") else {})})
         for a, _, link in self.links:
             self._entities[self._root[a]]["links"].append(
                 {"id": str(link["id"]), "name": link["name"], "same_as": link["same_as"]})
@@ -280,8 +319,9 @@ def _path(a: Node, b: Node, edges: dict[Node, set[Node]], links: list[tuple[Node
 
 
 def resolve(conversation: UUID, rows: list[dict[str, Any]], persona: Iterable[str] = (),
-            links: Iterable[dict[str, Any]] = (), splits: Iterable[dict[str, Any]] = ()) -> Resolution:
+            links: Iterable[dict[str, Any]] = (), splits: Iterable[dict[str, Any]] = (),
+            canon: Iterable[dict[str, Any]] = ()) -> Resolution:
     """Entities of one conversation's active assertions (rows in position order). `persona`: the persona's
     name as the host reports it for this conversation (ADR 0023), if known. `links`: the owner's current
     links of this conversation (`entity_type`, `name`, `same_as`, `id`; ADR 0025)."""
-    return Resolution(conversation, rows, persona, links, splits)
+    return Resolution(conversation, rows, persona, links, splits, canon)

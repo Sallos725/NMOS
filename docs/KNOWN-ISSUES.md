@@ -39,7 +39,7 @@ without a PocketRisu change.
 | K28 | Taking turns in one chat from two tabs or devices makes memory of the messages one of them lacks drop out and come back | Data | host (H10); not planned (audit A-13) |
 | K29 | A reveal in the turns first extracted together can be missed | Memory | "Extract all history" after connecting a chat with secrets (ADR 0033 amendment 2) |
 | K30 | A summary can say a secret in other words | Memory | on `main` (Phase 12, ADR 0042, 0043); summaries off for a chat where it matters |
-| K31 | A character called by the given name alone (no surname) is not a mention of that character | Recall | recorded, not scheduled (`docs/perf/m0-sample2.md`) |
+| K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced on `main` (Phase 14, ADR 0046: lorebook keys as aliases) |
 | K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | recorded, not scheduled (`docs/perf/m0-sample2.md`) |
 
 ## Performance
@@ -238,7 +238,9 @@ facts do not come in, and joining the two names by hand in the Inspector did not
 (`docs/perf/m0-sample2.md`), three probes each asked for one fact about a character. The fact came in 2 of 3 with
 the full name and 0 of 3 with the given name.
 *Workaround:* write the full name when the story needs that character's facts. Excerpts and vectors still answer
-by meaning.
+by meaning. *On `main` (Phase 14, ADR 0046):* a given name the chat's lorebook lists
+as a key of the character's entry is a mention: on the same chat, with its canon, the given-name probes found their
+fact 2 of 3, as many as the full name. A given name no lorebook lists is still no mention.
 
 **K32 — A third-person persona does not bring its own facts.** The persona's names never count as a mention
 (ADR 0023): a user who narrates by name writes that name in every message. Only a first-person question ("내 …",

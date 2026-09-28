@@ -135,7 +135,15 @@ where the story uses it, and the message extractor is untouched.
 
    The step's Codex review found eight defects in the first cut (replays, ordering, a failed read, metadata, keys,
    the cache, deletes, sizes), all fixed with tests (ADR 0045).
-4. Names from canon.
+4. Names from canon. **Done** (ADR 0046, D56):
+   - a lorebook entry's keys become aliases of the one character the head mentions among them, never the persona's
+     and never when a key names another known entity; the owner's splits apply;
+   - requests read their own manifest's names, replays too; extraction hints use them;
+   - on sample 2 with its canon, the given-name probes find their fact 2 of 3 (0 before; the full name also 2 of 3);
+   - its M0 is unchanged (8 of 17 lexical, 12 of 17 with vectors).
+   - the step's Codex review found three defects (two shared aliases could merge two characters; canon could unsettle
+     story aliases or the persona's; a late manifest changed a replay), all fixed with tests: canon aliases now
+     apply on top of the story's resolution.
 5. Canon facts, conflicts, and `fact_lock`.
 6. Evaluation, real-host smoke, upgrade, latency, Codex review, documentation.
 

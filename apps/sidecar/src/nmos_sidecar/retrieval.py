@@ -208,7 +208,8 @@ class Gathered:
     vector_note: str = "off"
     cast: dict[str, str] = field(default_factory=dict)  # scene cast, entity key → name (ADR 0034)
     note: str = ""  # added to the packet's Note (a first-person narrator, ADR 0035)
-    withheld: int = 0  # lines and excerpts the chat's memory mode left out or replaced (ADR 0035)
+    withheld: int = 0
+    canon_names: str | None = None  # the canon manifest whose names the read used (ADR 0046)  # lines and excerpts the chat's memory mode left out or replaced (ADR 0035)
     withheld_lines: list[Line] = field(default_factory=list)
     secret_pairs: set[tuple[frozenset[str], frozenset[str]]] = field(default_factory=set)  # (holders, absent) given a Secret line
     story: list[Line] = field(default_factory=list)  # summaries (packet-v8, ADR 0043)
@@ -216,7 +217,8 @@ class Gathered:
 
 
 def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, in_context: set[str],
-           options: RecallOptions, upto: int | None = None, known_at: datetime | None = None) -> Gathered:
+           options: RecallOptions, upto: int | None = None, known_at: datetime | None = None,
+           canon_manifest: str | None = None, canon_exact: bool = False) -> Gathered:
     """Candidates for one request, already normalized (`clean_text`). `upto` and `known_at` gather them as
     of an earlier request: the head up to that position, and what NMOS had derived by that time."""
     started = time.perf_counter()
@@ -266,7 +268,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.state.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in focus), reverse=True)
     view = None
     if options.facts_limit > 0 or options.threads_limit > 0:
-        view = memory_view(conn, head, options.extractor_key, upto, known_at)
+        view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact)
+        g.canon_names = view.get("canon_names")
         r = view["resolution"]
         persona = r.persona_names if r else frozenset()
         # Who is in the scene, so facts only some of them know are marked (packet-v3, ADR 0034).
@@ -310,7 +313,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 g.threads = [line for line in g.threads if line.ref.get("assertion") not in used]
     if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3
         if view is None and options.extractor_key:  # facts and threads off: the secrets still decide what may be told
-            view = memory_view(conn, head, options.extractor_key, upto, known_at)
+            view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact)
+            g.canon_names = view.get("canon_names")
         r = view["resolution"] if view else None
         if view and not g.cast and r is not None:
             g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
@@ -445,7 +449,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     previous_ai = clean_text(request.previous_ai or "")
     options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator)
     in_context = set(request.in_context_ids)
-    g = gather(conn, head, query, previous_ai, in_context, options, upto) if fresh else Gathered()
+    g = (gather(conn, head, query, previous_ai, in_context, options, upto,
+                canon_manifest=getattr(request, "canon_manifest_id", None)) if fresh else Gathered())
     def compile_at(budget: int) -> Compiled:
         return compile_gathered(g, budget, options.policy)
 
@@ -494,7 +499,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             options.policy, request.budget_tokens, upto if fresh else None, previous_ai,
             Jsonb(sorted(in_context)), options.extractor_key,
             options.embed_projection if options.embedder else None, options.rules_version,
-            Jsonb(recorded_options(options)), Jsonb(compiled.ledger),
+            Jsonb({**recorded_options(options), "canon_names": g.canon_names}), Jsonb(compiled.ledger),
             getattr(request, "canon_manifest_id", None),  # ADR 0045
             Jsonb(sorted(set(getattr(request, "canon_held", None) or []))),
         ),

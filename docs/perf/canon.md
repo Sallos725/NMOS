@@ -55,3 +55,21 @@ On PocketRisu v1.13.0 (`docs/HOST-FACTS.md`, "Canon sources"; H19):
 | `getDatabase(personas, modules)` | 0.2 ms (93 ms with the first permission dialog) | 0.8–1.1 ms |
 
 The card is therefore read off the request path (step 3). The rest is read with each request's sync.
+
+## Names from canon (step 4)
+
+Sample 2's canon, built from the owner's database the way the plugin sends it (153 texts: card fields, the greeting,
+the persona, and 149 lorebook entries, 108 with keys), stored in the evaluation copy with this step's code. The
+given-name probes of `docs/perf/m0-sample2.md`: three questions, each asking one fact about a character, once with the
+full name and once with the given name alone.
+
+| | Full name | Given name alone |
+|---|---:|---:|
+| Before (no canon) | 2 of 3 | 0 of 3 |
+| With the chat's canon | 2 of 3 | **2 of 3** |
+
+The one character whose fact the given name still does not bring is not reached with the full name either, so
+it is not a naming problem. The chat's 17 M0
+cases are unchanged: 8 of 17 lexical only (4 of 13 that need memory), 12 of 17 with vectors (8 of 13), nothing
+forbidden placed.
+
