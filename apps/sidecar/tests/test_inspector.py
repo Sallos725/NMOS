@@ -308,3 +308,46 @@ def test_access_log_masks_the_token_in_inspector_links():
     other = logging.LogRecord("uvicorn.access", logging.INFO, __file__, 0, '%s - "%s %s HTTP/%s" %d',
                               ("127.0.0.1:5000", "GET", "/v1/health?atoken=1", "1.1", 200), None)
     assert RedactToken().filter(other) and other.args[2] == "/v1/health?atoken=1"
+
+
+PAIRS = ("Yui is Kaito's classmate.", "Yui is angry at Kaito because he forgot the festival.",
+         "Kaito and Yui start dating.", "Yui and Kaito agree to speak informally.", "Hana and Ren agree to speak informally.",
+         "Mina is Rin's mother.", "Hana wants to find the lighthouse keeper.",
+         "Kaito wonders who rang the bell at midnight.")
+
+
+def test_inspector_shows_each_pair_on_one_row(migrated):
+    """PHASE-11 step 7 (ADR 0038): a pair's relationship with what it replaced, and each direction's feeling and
+    speech; the character page shows the pairs it is in."""
+    client, c, drain = story_client(migrated, PAIRS)
+    with client:
+        sync(client, c)
+        drain()
+        conv = client.get("/v1/conversations").json()[0]["id"]
+        page = client.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
+        assert '<a href="#s-pairs">Relationships <span class="n">3</span></a>' in page
+        section = page[page.index('id="s-pairs"'):page.index("</details>", page.index('id="s-pairs"'))]
+        assert "Kaito ↔ Yui" in section and "Hana ↔ Ren" in section
+        assert "Mina ↔ Rin" in section and "Mina → Rin: mother" in section  # directed: who is whose mother
+        assert "Kaito → Yui: lovers" not in section  # symmetric, one current direction: no arrow
+        threads = page[page.index('id="s-threads"'):page.index("</details>", page.index('id="s-threads"'))]
+        summary = threads[threads.index('<p class="muted">open: '):threads.index("</p>")]
+        assert "question 1" in summary and "goal 1" in summary  # open threads counted by kind
+        assert "lovers" in section and "before: classmate" in section  # the other way round, replaced
+        assert "Yui → Kaito: angry" in section and "because: he forgot the festival" in section
+        assert section.count("informal speech") == 4  # both directions of both pairs
+        who = character_links(page, conv)
+        hana = client.get(f"/inspector/c/{conv}/e/{who['Hana']}", params={"lang": "en"}).text
+        assert 'id="s-pairs"' in hana and "Hana ↔ Ren" in hana and "Kaito ↔ Yui" not in hana
+
+
+def test_every_pair_is_shown_although_the_facts_table_is_capped():
+    """The chat page's facts table shows the newest 300 facts; the Relationships section reads every standing fact."""
+    from nmos_sidecar import inspector
+
+    old = {"id": 1, "predicate": "relationship", "subject": "Mina", "object": "Rin", "value": "mother", "position": 3,
+           "turn": 1}
+    conv = {"id": "c", "host_chat_ref": "r", "head_commit_id": "h", "character_name": "Mina", "chat_name": "t"}
+    page = inspector.detail(conv, [], [], [], [], [], None, lang="en", standing=[old])
+    assert "Mina → Rin: mother" in page
+    assert "Mina ↔ Rin" not in inspector.detail(conv, [], [], [], [], [], None, lang="en")
