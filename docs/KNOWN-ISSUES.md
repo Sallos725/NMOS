@@ -266,7 +266,9 @@ window, and says never to write their content; a summary written before such a s
 again with it listed. When a summary is read, one that repeats a secret's content is held (`summaries.leaks`), but
 the check catches a copied secret, not a reworded one (`docs/perf/summaries.md`): a model that rewords a secret can
 put it in `<Story>` in front of the character it is kept from. On the real-model tier neither model wrote a secret's
-content; `gemma4` named the object a secret was about. Strict mode applies the same check, nothing more.
+content; `gemma4` named the object a secret was about. With a character a secret is kept from in the scene the
+check is stricter (0.3, ADR 0042 amendment 3), which also keeps `<Story>` out of most scenes where such characters
+meet; a rewording below that can still pass. Strict mode applies the same check, nothing more.
 *Workaround:* turn off **장면 요약 만들기 / Scene summaries** in the panel's Settings tab (or `NMOS_SUMMARIES=0`).
 **K18 — Model changes re-process history.** Changing the LLM or embedding model or endpoint, or a
 release that changes the extraction generation (as 0.1.0-beta.8 did), re-derives all previously

@@ -311,9 +311,14 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         conv = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
         if view is None and options.extractor_key:  # facts and threads off: the secrets still decide what may be told
             view = memory_view(conn, head, options.extractor_key, upto, known_at)
+        r = view["resolution"] if view else None
+        if view and not g.cast and r is not None:
+            g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
+                                _head_turn(conn, head, upto))
         g.story = summaries.packet_lines(conn, conv["conversation_id"], head, options.summarize_key,
                                          view["secrets"] if view else [], query,
-                                         _first_turn(conn, head, in_context, upto), upto, known_at)
+                                         _first_turn(conn, head, in_context, upto), upto, known_at,
+                                         scene.names(g.cast, r) if r is not None else frozenset())
     return g
 
 

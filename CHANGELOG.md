@@ -33,7 +33,8 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     about, in at most 30 % of the budget (none for a first-person narrator); each scene character's place, condition,
     feeling toward the persona, what they carry and, when the message names them, open goals. On the owner's chat
     (restored copy) 5 of 12 answers outside the prompt window reach the packet, 2 before. A summary written before a
-    secret it should keep is held and written again (ADR 0042 amendment 2); a reworded secret can still pass (K30).
+    secret it should keep is held and written again (ADR 0042 amendment 2); in front of a character a secret is kept
+    from, a summary that comes near it is held too (amendment 3); a reworded secret can still pass (K30).
   - **Summaries are on by default** where extraction is on (`NMOS_SUMMARIES=0` or the panel turns them off). On the
     first start every chat's due windows are summarized in the background: for the owner's chats, about 11 scene and
     2 story calls.

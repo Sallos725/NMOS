@@ -74,3 +74,16 @@ that character asks what happened.
 
 The same story then read "…신체적 접촉을 통해 애정을 확인했습니다" (`docs/perf/summaries.md`). A reworded secret can
 still pass (K30).
+
+## Amendment 3 — a stricter check in front of the character a secret is kept from (the secret gate, 2026-09-28)
+
+The owner required a secret gate before summaries reach a packet (review of Phase 12). On the owner's restored chat
+the `gemma4` story told Blanc "블랑의 수업에 몰래 잠입하는 작전", the plan the memory still holds as kept from her
+(0.34, below the 0.7 bar). The owner chose a stricter bar only where it matters:
+- when a character a secret is kept from is in the scene, a summary is held at 0.3 (`LEAK_NEAR`) instead of 0.7;
+- elsewhere the bar stays 0.7.
+
+On the owner's chat every one of the three main characters has a secret kept from her, so the story is held in most
+of its scenes (all six gate scenes with the `gemma4` summaries). The gate passes 6 of 6 under both models' summaries
+(`docs/perf/summaries.md`). The Inspector shows the general check (0.7), since it has no scene.
+

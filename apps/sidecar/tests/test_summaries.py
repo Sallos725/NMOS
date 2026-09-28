@@ -419,3 +419,15 @@ def test_a_replay_from_before_a_summary_was_written_again_reads_the_one_it_used(
         assert db.execute("SELECT count(*) AS n FROM summary WHERE discarded_at IS NOT NULL").fetchone()["n"] >= 1
         replay = c.get(f"/v1/trace/{before['trace_id']}/replay").json()
     assert replay["status"] == "ok" and replay["reproduced"] is True, replay.get("notes")
+
+
+def test_with_the_character_it_is_kept_from_present_a_reworded_secret_is_held():
+    """The secret gate (owner, 2026-09-28): the bar drops to LEAK_NEAR when a character the secret is kept from is in
+    the scene; elsewhere a summary that only rewords it stays usable. Synthetic text."""
+    plan = {"text": "하나 goal: 카이토의 훈련 모습을 몰래 훔쳐보는 작전을 성공시키는 것", "turn": 7, "position": 14,
+            "holders": ["하나", "유이"], "open": ["카이토"]}
+    story = "유이와 하나는 카이토를 위해 빵을 굽고, 그의 훈련 모습을 몰래 보러 가는 작전을 세웠다."
+    assert summaries.LEAK_NEAR <= summaries.leak_score(plan, story) < summaries.LEAK_MIN
+    assert summaries.leaks(story, [plan]) == []
+    assert summaries.leaks(story, [plan], frozenset({"카이토"})) == [plan]
+    assert summaries.leaks("유이와 하나는 카이토를 위해 빵을 굽고 산책을 했다.", [plan], frozenset({"카이토"})) == []

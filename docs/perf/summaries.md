@@ -125,3 +125,13 @@ secret it names is stale:
 
 None of the words stood outside `<Private>` in the `packet-v6` packets of the same requests. **Not passed** as the gate
 is written.
+
+The owner confirmed the six cases and chose a stricter check in front of the character a secret is kept from (ADR 0042
+amendment 3):
+- a summary is held there at 0.3 instead of 0.7; the story scored 0.34 against Blanc's plan;
+- run again, the gate passes: **6 of 6** with `gemma4` summaries, which are now held in all six scenes, and **6 of 6**
+  with `deepseek`'s, present in two;
+- M0 is unchanged: 26 of 28 and 5 of 12 for `gemma4`, 24 and 2 for `deepseek`.
+
+The cost: on this chat each of the three main characters has a secret kept from her, so `<Story>` is mostly absent
+while they are together. The 12 new cases' gains come from the budget and `<Cast>`. **Both gates passed.**

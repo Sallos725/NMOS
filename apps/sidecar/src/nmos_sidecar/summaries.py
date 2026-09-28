@@ -30,6 +30,7 @@ from psycopg.types.json import Jsonb
 
 from . import generations, normtext
 from .config import Settings
+from .entities import norm
 from .facts import memory_view
 from .generations import Generation
 from .ids import uuid7
@@ -55,6 +56,10 @@ NEAR = WINDOW
 # (PHASE-12 Q3). It catches a secret copied into a summary (0.76 in the real-model tier), not one reworded (0.3), and
 # a summary that leaves the secret out but keeps its setting ("엘피가 잠든 사이 …") scored 0.59 (0.68 with names).
 LEAK_MIN = 0.7
+# The same check when a character the secret is kept from is in the scene (owner, 2026-09-28, the secret gate): a
+# reworded secret scores about 0.3 ("블랑의 수업에 몰래 잠입하는 작전" against the plan kept from her: 0.34), and the
+# owner's summaries that left every secret out scored below it but for two scenes, which such a scene then goes without.
+LEAK_NEAR = 0.3
 LIVE_PRIORITY = 300  # after extraction's live and recent work (100–250)
 BACKFILL_PRIORITY = 950  # after extraction's history (900); claimed oldest first
 
@@ -156,7 +161,7 @@ def _scenes(conn: psycopg.Connection, conv: UUID, key: str, ws: list[Window],
 
 def current(conn: psycopg.Connection, conv: UUID, head: UUID, key: str | None,
             secrets: list[dict[str, Any]] | None = None, upto: int | None = None,
-            known_at: datetime | None = None) -> dict[str, Any]:
+            known_at: datetime | None = None, present: frozenset[str] = frozenset()) -> dict[str, Any]:
     """What the head's summaries are: each due window with its current summary (or None), and the newest story made
     only from current scene summaries (it may not cover the newest windows yet). With the head's `secrets`
     (facts.memory_view), each summary that repeats one still kept from someone is marked `held`: no packet may use
@@ -175,10 +180,10 @@ def current(conn: psycopg.Connection, conv: UUID, head: UUID, key: str | None,
                 story = row
                 break
     for x in scenes:
-        x["held"] = held(x["summary"], secrets) if x["summary"] and secrets else []
+        x["held"] = held(x["summary"], secrets, present) if x["summary"] and secrets else []
     return {"scenes": scenes, "story": story, "due": len(ws), "done": len(ids),
             "story_current": bool(story) and len(story["members"]) == len(ids) == len(ws),
-            "story_held": held(story, secrets) if story and secrets else []}
+            "story_held": held(story, secrets, present) if story and secrets else []}
 
 
 SCENE_MIN = 0.3  # trigram containment of the message in a scene summary that brings that scene (ADR 0043)
@@ -194,11 +199,11 @@ def summary_line(level: str, row: dict[str, Any]) -> Line:
 
 def packet_lines(conn: psycopg.Connection, conv: UUID, head: UUID, key: str, secrets: list[dict[str, Any]],
                  query: str, before_turn: int | None, upto: int | None = None,
-                 known_at: datetime | None = None) -> list[Line]:
+                 known_at: datetime | None = None, present: frozenset[str] = frozenset()) -> list[Line]:
     """What a request offers <Story> (ADR 0043): the story so far, and the scene summary the message is about among
     windows older than the prompt's own messages (`before_turn`). A summary that repeats a secret still kept from
     someone is never offered (PHASE-12 Q3)."""
-    view = current(conn, conv, head, key, secrets, upto, known_at)
+    view = current(conn, conv, head, key, secrets, upto, known_at, present)
     out: list[Line] = []
     if (story := view["story"]) and story["text"] and not view["story_held"]:
         out.append(summary_line("story", story))
@@ -347,9 +352,9 @@ def unlisted(row: dict[str, Any], secrets: list[dict[str, Any]]) -> list[dict[st
     return [s for s in window_secrets(secrets, row["last_turn"]) if secret_key(s) not in listed]
 
 
-def held(row: dict[str, Any], secrets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def held(row: dict[str, Any], secrets: list[dict[str, Any]], present: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
     """Why a summary may not be used: the secrets it repeats (`leaks`) or was not told about (`unlisted`)."""
-    return leaks(row["text"], secrets) + unlisted(row, secrets)
+    return leaks(row["text"], secrets, present) + unlisted(row, secrets)
 
 
 def unnamed(text: str, names: list[str]) -> str:
@@ -365,10 +370,18 @@ def leak_score(secret: dict[str, Any], text: str) -> float:
     return similarity(unnamed(content(secret), names), unnamed(text, names))
 
 
-def leaks(text: str, secrets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def leaks(text: str, secrets: list[dict[str, Any]], present: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
     """The secrets still kept from someone whose content the text repeats (PHASE-12 Q3). Checked when a summary is read:
-    a secret extracted after the summary was written counts too."""
-    return [s for s in secrets if s.get("open") and text and leak_score(s, text) >= LEAK_MIN]
+    a secret extracted after the summary was written counts too. With a character it is kept from among `present`
+    (the scene's names, normalized) the bar is LEAK_NEAR, low enough to catch a secret said in other words."""
+    out = []
+    for s in secrets:
+        if not s.get("open") or not text:
+            continue
+        bar = LEAK_NEAR if any(norm(n) in present for n in s["open"]) else LEAK_MIN
+        if leak_score(s, text) >= bar:
+            out.append(s)
+    return out
 
 
 def secrets_block(secrets: list[dict[str, Any]]) -> list[str]:
