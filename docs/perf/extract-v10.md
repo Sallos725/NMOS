@@ -52,12 +52,12 @@ are reported here.
 
 | Turns | Runs with a valid `addresses` | Notes |
 |---|---|---|
-| Speech or address settled (t13, t14, t15, t39, t42, t46) | 18/18 | t46 gave both directions (라디아 → persona 반말, persona → 라디아 반말 and '누나') in 3/3 |
-| 라디아's slip into 존댓말 (t63) | 0/3 | the reply the owner corrected |
-| The user's correction "누나, 반말." (t64) | 3/3 | restates 라디아 → persona: 반말 |
+| Speech or address settled (t13, t14, t15, t39, t42, t46) | 18/18 | t46 gave both directions (the character → persona 반말, persona → the character 반말 and a family title) in 3/3 |
+| The character's slip into 존댓말 (t63) | 0/3 | the reply the owner corrected |
+| The user's correction (t64) | 3/3 | restates the character → persona: 반말 |
 | Routine (t17, t21, t47, t55) | 0/12 | |
 
-Every `addresses` was narration and actual. Values varied in phrasing (e.g. "해요체, '블랑 씨'라고 부름").
+Every `addresses` was narration and actual. Values varied in phrasing (e.g. 해요체 with a name and 씨).
 
 Major events on the six settled turns, same day, same prompt builder:
 

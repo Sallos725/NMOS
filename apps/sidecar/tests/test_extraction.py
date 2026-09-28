@@ -63,7 +63,7 @@ def filler(chat, n, tag=""):
 
 def test_no_llm_means_no_jobs(client, db):
     chat = SimChat()
-    chat.user("Hinata is in the old chapel.")
+    chat.user("Akari is in the old chapel.")
     chat.reply("ok")
     chat.user("next")
     sync(client, chat)
@@ -72,7 +72,7 @@ def test_no_llm_means_no_jobs(client, db):
 
 def test_extraction_fact_versions_and_packet(llm_client, migrated, db):
     chat = SimChat()
-    chat.user("Hinata is in the old chapel.")
+    chat.user("Akari is in the old chapel.")
     chat.reply("The chapel is quiet.")
     filler(chat, 5)
     sync(llm_client, chat)
@@ -80,10 +80,10 @@ def test_extraction_fact_versions_and_packet(llm_client, migrated, db):
     assert db.execute("SELECT count(*) AS n FROM job").fetchone()["n"] == chat.complete_turns() == 5
     drain(migrated)
     current = facts(llm_client, chat)
-    assert [(f["subject"], f["object"], f["turn"]) for f in current] == [("Hinata", "old chapel", 0)]
+    assert [(f["subject"], f["object"], f["turn"]) for f in current] == [("Akari", "old chapel", 0)]
 
     # A later statement supersedes the single-valued fact; history keeps both.
-    chat.user("Hinata moved to the bell tower.")
+    chat.user("Akari moved to the bell tower.")
     chat.reply("Bells ring.")
     filler(chat, 5, "b")
     sync(llm_client, chat)
@@ -92,13 +92,13 @@ def test_extraction_fact_versions_and_packet(llm_client, migrated, db):
     assert len(current) == 1 and current[0]["object"] == "bell tower" and current[0]["versions"] == 2
     assert [h["object"] for h in current[0]["history"]] == ["old chapel", "bell tower"]
 
-    packet = recall(llm_client, chat, "Where is Hinata now?", in_context=[m["chatId"] for m in chat.messages[-4:]])
+    packet = recall(llm_client, chat, "Where is Akari now?", in_context=[m["chatId"] for m in chat.messages[-4:]])
     text = packet["packet"]["text"]
-    assert '<Fact kind="located_in" turn="6">Hinata located in bell tower</Fact>' in text
+    assert '<Fact kind="located_in" turn="6">Akari located in bell tower</Fact>' in text
     assert "old chapel</Fact>" not in text
 
     # Editing the source masks its extraction synchronously (D8) and re-queues the new window.
-    chat.edit(12, "Hinata moved to the harbor.")
+    chat.edit(12, "Akari moved to the harbor.")
     sync(llm_client, chat)
     assert all(f["object"] != "bell tower" for f in facts(llm_client, chat))
     assert facts(llm_client, chat)[0]["object"] == "old chapel"  # until the new window is extracted
@@ -266,7 +266,7 @@ def holder_complete(system: str, user: str) -> tuple[dict, str]:
 def test_an_item_has_one_current_holder_and_keeps_its_history(llm_client, migrated):
     """ADR 0011: A → B → C. Before, `possesses` accumulated per holder, so all three stayed current."""
     chat = SimChat()
-    for who in ("Yujin", "Hana", "Kaito"):
+    for who in ("Dohyun", "Hana", "Kaito"):
         chat.user(f"{who} has the map.")
         chat.reply("Noted.")
     chat.user("Mina has the key.")
@@ -278,7 +278,7 @@ def test_an_item_has_one_current_holder_and_keeps_its_history(llm_client, migrat
     drain(migrated, holder_complete)
     held = {f["object"]: f for f in facts(llm_client, chat) if f["predicate"] == "possesses"}
     assert held["map"]["subject"] == "Mina" and held["key"]["subject"] == "Mina"
-    assert [h["subject"] for h in held["map"]["history"]] == ["Yujin", "Hana", "Kaito", "Mina"]
+    assert [h["subject"] for h in held["map"]["history"]] == ["Dohyun", "Hana", "Kaito", "Mina"]
     assert [h["subject"] for h in held["key"]["history"]] == ["Mina"]
     packet = recall(llm_client, chat, "Who has the map now?")["packet"]["text"]
     assert "Mina possesses map" in packet and "Kaito possesses map" not in packet
@@ -288,7 +288,7 @@ def test_an_unexpected_job_error_fails_the_job_and_the_worker_goes_on(llm_client
     """A handler bug or odd provider reply (e.g. TypeError) used to escape `run_once` and end the worker
     thread while the process lived on (audit A-04). It must fail that job and leave the rest claimable."""
     chat = SimChat()
-    chat.user("Hinata is in the old chapel.")
+    chat.user("Akari is in the old chapel.")
     chat.reply("ok")
     filler(chat, 2)
     sync(llm_client, chat)
@@ -311,7 +311,7 @@ def test_a_malformed_assertions_field_is_not_a_compiled_turn(llm_client, migrate
     """Audit G3 (docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md): a non-list `assertions` used to become []
     and the turn counted as compiled, like an answer with nothing to extract. It fails the job instead."""
     chat = SimChat()
-    chat.user("Hinata is in the old chapel.")
+    chat.user("Akari is in the old chapel.")
     chat.reply("ok")
     chat.user("next")
     sync(llm_client, chat)

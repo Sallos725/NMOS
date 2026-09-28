@@ -31,7 +31,7 @@ def conv_id(client, chat) -> str:
 
 def fact_chat() -> SimChat:
     chat = SimChat()
-    chat.user("Hinata is in the old chapel.")
+    chat.user("Akari is in the old chapel.")
     chat.reply("The chapel is quiet.")
     filler(chat, 5)
     return chat
@@ -164,7 +164,7 @@ def test_compiler_upgrade_tracks_partial_coverage_and_backfills_beyond_recent_wi
 
 def fallback_chat() -> SimChat:
     chat = SimChat()
-    chat.user("Hinata is in the old chapel.")
+    chat.user("Akari is in the old chapel.")
     chat.reply("The chapel is quiet.")
     filler(chat, 5)
     chat.user("Mina is in the harbor.")
@@ -193,15 +193,15 @@ def test_older_turns_are_served_by_the_previous_generation_one_generation_per_tu
         served = {f["subject"]: (f["object"], f["generation"], len(f["history"])) for f in facts(c, chat)}
         # Turn 0 is outside the window: the previous generation still serves it. The recent turn has
         # extractions of both generations, and only the active one's reaches the facts, never both.
-        assert served == {"Hinata": ("old chapel", old, 1), "Mina": ("harbor v2", new, 1)}
+        assert served == {"Akari": ("old chapel", old, 1), "Mina": ("harbor v2", new, 1)}
         cid = conv_id(c, chat)
         cov = c.get(f"/v1/conversations/{cid}/coverage").json()["extraction"]
         assert (cov["compiled"], cov["historical_only"], cov["eligible"]) == (2, eligible - 2, eligible)
         page = c.get(f"/inspector/c/{cid}?lang=en").text
-        assert page.count("older generation") == 1 + 1  # coverage label + Hinata's fact
+        assert page.count("older generation") == 1 + 1  # coverage label + Akari's fact
         c.post(f"/v1/conversations/{cid}/extract-history")
         drain(migrated, v2_complete)
-        assert {f["subject"]: f["generation"] for f in facts(c, chat)} == {"Hinata": new, "Mina": new}
+        assert {f["subject"]: f["generation"] for f in facts(c, chat)} == {"Akari": new, "Mina": new}
 
 
 def test_rebuild_discards_every_generation_so_no_older_facts_reappear(migrated, db):
@@ -229,11 +229,11 @@ def test_a_generation_that_never_covered_a_turn_does_not_serve_it(migrated, db):
         drain(migrated)
     with make_client(migrated, extract_backfill=2, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
         drain(migrated, v2_complete)
-        chat.edit(0, "Hinata is in the bell tower.")
+        chat.edit(0, "Akari is in the bell tower.")
         sync(c, chat)
         assert [f["subject"] for f in facts(c, chat)] == ["Mina"]  # the old extraction no longer matches
         drain(migrated, v2_complete)
-        assert {f["subject"]: f["object"] for f in facts(c, chat)} == {"Mina": "harbor v2", "Hinata": "bell tower v2"}
+        assert {f["subject"]: f["object"] for f in facts(c, chat)} == {"Mina": "harbor v2", "Akari": "bell tower v2"}
 
 
 def test_historical_generation_does_not_trigger_permanent_stale_startup_loop(migrated, db):

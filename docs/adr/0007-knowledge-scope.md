@@ -22,7 +22,7 @@ world knowledge.
   `limited` with nobody named → `unknown`; names in `known_by` without a scope → `limited`. A list
   entry given as an object with a `name` (the participants shape, PHASE-8) keeps only that name
   (2026-09-27). Rows stored earlier kept such an object as its repr string
-  (`{'name': '유우마', 'type': 'character'}`); the fact read corrects them to the name and leaves the
+  (`{'name': '타쿠미', 'type': 'character'}`); the fact read corrects them to the name and leaves the
   row as written.
 - **Contradictory evidence:** a name in both lists is removed from both, so that character's awareness
   is unknown, and `assertion.reason` records `contradictory knowledge for: <names>`. Contradictions

@@ -75,18 +75,18 @@ describe('owner links on an entity page (ADR 0025)', () => {
   });
 
   it('offers the other entities of the same type, most mentioned first', () => {
-    const rabbit = row('a', '?흰 토끼 귀의 여자', 2);
-    const entities = [rabbit, row('b', '블랑', 40), row('c', '라디아', 25), row('d', '온실', 9, 'place')];
+    const fox = row('a', '?붉은 여우 꼬리의 여자', 2);
+    const entities = [fox, row('b', '노엘', 40), row('c', '아델라', 25), row('d', '관측실', 9, 'place')];
     const choices = linkChoices(entities, 'a');
-    expect(choices?.self).toBe(rabbit);
-    expect(choices?.others.map((e) => e.name)).toEqual(['블랑', '라디아']);
+    expect(choices?.self).toBe(fox);
+    expect(choices?.others.map((e) => e.name)).toEqual(['노엘', '아델라']);
     expect(linkChoices(entities, 'zz')).toBeNull(); // the entity is gone
     expect(linkChoices(entities.map(({ links, ...e }) => e), 'a')).toBeNull(); // an older sidecar: no owner links
   });
 
   it('follows a name to the entity that holds it after a join or an undo', () => {
-    const joined = [row('c', '라디아', 27, 'character', { names: ['라디아', '?흰 토끼 귀의 여자'] })];
-    expect(entityNamed(joined, 'character', '?흰 토끼 귀의 여자')?.id).toBe('c');
-    expect(entityNamed(joined, 'item', '라디아')).toBeNull();
+    const joined = [row('c', '아델라', 27, 'character', { names: ['아델라', '?붉은 여우 꼬리의 여자'] })];
+    expect(entityNamed(joined, 'character', '?붉은 여우 꼬리의 여자')?.id).toBe('c');
+    expect(entityNamed(joined, 'item', '아델라')).toBeNull();
   });
 });

@@ -58,7 +58,7 @@
       "chatId": "c2",
       "role": "char",
       "saying": null,
-      "name": "Hinata",
+      "name": "Akari",
       "otherUser": null,
       "isComment": null,
       "disabled": true,
@@ -68,8 +68,8 @@
       "specialComments": []
     },
     "content": "Café NFD → NFC",
-    "canonical": "{\"chatId\":\"c2\",\"disabled\":true,\"generationId\":null,\"isComment\":null,\"name\":\"Hinata\",\"otherUser\":null,\"role\":\"char\",\"saying\":null,\"selectedContent\":\"Café NFD → NFC\",\"swipeId\":null,\"v\":1}",
-    "revision_hash": "432dc43820ca7c88af45ab0448d07a91f9754c4298b1c808a57a56b4da07bcae"
+    "canonical": "{\"chatId\":\"c2\",\"disabled\":true,\"generationId\":null,\"isComment\":null,\"name\":\"Akari\",\"otherUser\":null,\"role\":\"char\",\"saying\":null,\"selectedContent\":\"Café NFD → NFC\",\"swipeId\":null,\"v\":1}",
+    "revision_hash": "a82b9d54de085ba57ea12e0a2710337c0e97fc2c5c17c97a664e0f07fad611e0"
   },
   {
     "metadata": {

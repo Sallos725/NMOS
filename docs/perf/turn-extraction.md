@@ -3,10 +3,10 @@
 ## Setup
 
 - **Chat:** a hand-written synthetic Korean role-play, 19 turns plus a greeting: 38 messages, then a
-  final user message. It is test data written for this comparison, not a user's chat. Turns 3 and 9
-  are user actions that the reply refuses: taking a key from a locked drawer, and swinging a knife
-  that the other character stops. Later turns change earlier facts (an injury heals, a map is given
-  back, a secret is told to a second character).
+  final user message. It is test data written for this comparison, not a user's chat (one character is
+  called 도현 here; the run used another given name). Turns 3 and 9 are user actions that the reply
+  refuses: taking a key from a locked drawer, and swinging a knife that the other character stops. Later
+  turns change earlier facts (an injury heals, a map is given back, a secret is told to a second character).
 - **Model:** `deepseek-v4.1-flash:cloud` through a local Ollama (OpenAI-compatible,
   `response_format: json_object`, temperature 0). A counting proxy recorded `usage` per call.
 - **Code:** `main` at `0a31ce2` (per message, `K = 6` messages, `extract-v3`) and this branch (per
@@ -41,13 +41,13 @@ The refused actions differ:
 
 | Turn | Per message (current facts afterwards) | Per turn |
 |---|---|---|
-| 3 — "나는 몰래 서랍에서 은빛 열쇠를 꺼내 주머니에 넣는다." / "서랍은 잠겨 있었다 … 열쇠는 그대로 서랍 안에 남았다." | `유진 possesses 은빛 열쇠` (from the user message, **false**) and `유진 event: 꺼내려 했으나 실패함` | `유진 event: 몰래 꺼내려 했으나 서랍이 잠겨 실패했다`, `은빛 열쇠 located_in 서랍` |
-| 9 — "카이토에게 칼을 휘두른다." / "… 손목을 붙잡았다 … 싸움은 일어나지 않았고 칼은 … 카이토가 주웠다." | `{{user}} event: 카이토에게 칼을 휘둘렀다` (**false**) and `유진 event: 제지당했고 싸움은 일어나지 않았다` | `유진 event: 휘두르려 했으나 카이토가 제지함`, `카이토 possesses 칼` |
+| 3 — "나는 몰래 서랍에서 은빛 열쇠를 꺼내 주머니에 넣는다." / "서랍은 잠겨 있었다 … 열쇠는 그대로 서랍 안에 남았다." | `도현 possesses 은빛 열쇠` (from the user message, **false**) and `도현 event: 꺼내려 했으나 실패함` | `도현 event: 몰래 꺼내려 했으나 서랍이 잠겨 실패했다`, `은빛 열쇠 located_in 서랍` |
+| 9 — "카이토에게 칼을 휘두른다." / "… 손목을 붙잡았다 … 싸움은 일어나지 않았고 칼은 … 카이토가 주웠다." | `{{user}} event: 카이토에게 칼을 휘둘렀다` (**false**) and `도현 event: 제지당했고 싸움은 일어나지 않았다` | `도현 event: 휘두르려 했으나 카이토가 제지함`, `카이토 possesses 칼` |
 
 Per message, both false facts stay current, because nothing later supersedes them. Per turn, the reply
 decides the outcome, so they never appear.
 
-Both runs still share one issue: `유진 possesses 해안 지도` stays current after the map is returned,
+Both runs still share one issue: `도현 possesses 해안 지도` stays current after the map is returned,
 next to `하나 possesses 해안 지도`. `possesses` is multi-valued per subject, so giving an item away does
 not supersede the old holder. This is independent of the extraction unit.
 

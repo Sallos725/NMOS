@@ -244,7 +244,7 @@ def _entry(kind: str, ref: dict[str, Any], turn: int | None, text: str, content:
 
 def _restates(item: Excerpt, lines: list[Line]) -> Line | None:
     """The first offered line whose content (what it says beyond names) holds REPEATS of the excerpt's
-    spans, if any. Names are left out: "Hinata is in the chapel" does not repeat "Hinata located in
+    spans, if any. Names are left out: "Akari is in the chapel" does not repeat "Akari located in
     harbor"."""
     for line in lines:
         if line.content and spans.reuse(item.text, line.content) >= REPEATS:

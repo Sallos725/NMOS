@@ -13,19 +13,19 @@ def line(kind: str, n: int, head: str, value: str) -> Line:
 
 
 def test_packet_v4_leaves_out_what_an_earlier_line_says_again():
-    lines = [line("fact", 1, "{{user}} feels toward 블랑", "좋아함"),
-             line("fact", 2, "블랑 feels toward {{user}}", "좋아함"),  # the other direction says something else
-             line("claim", 3, "{{user}} feels toward 블랑", "정말 좋아함"),  # the narration already says it
-             line("fact", 4, "{{user}} feels toward 블랑", "좋아함"),  # extracted again
-             line("claim", 5, "라디아 goal", "온실 배양조 확인")]  # nothing states it
+    lines = [line("fact", 1, "{{user}} feels toward 노엘", "좋아함"),
+             line("fact", 2, "노엘 feels toward {{user}}", "좋아함"),  # the other direction says something else
+             line("claim", 3, "{{user}} feels toward 노엘", "정말 좋아함"),  # the narration already says it
+             line("fact", 4, "{{user}} feels toward 노엘", "좋아함"),  # extracted again
+             line("claim", 5, "아델라 goal", "관측실 망원경 확인")]  # nothing states it
     assert {n: l.ref for n, l in restated(lines).items()} == {2: {"assertion": 1}, 3: {"assertion": 1}}
     v4 = compile_lines([], 600, facts=lines, policy="packet-v4")
     assert [(e["why"], e.get("restates")) for e in v4.ledger] == [
         ("placed", None), ("placed", None), ("restates", {"assertion": 1}), ("restates", {"assertion": 1}),
         ("placed", None)]
-    assert v4.text.count("{{user}} feels toward 블랑") == 1
+    assert v4.text.count("{{user}} feels toward 노엘") == 1
     v3 = compile_lines([], 600, facts=lines, policy="packet-v3")  # recorded traces replay as before
-    assert all(e["placed"] for e in v3.ledger) and v3.text.count("{{user}} feels toward 블랑") == 3
+    assert all(e["placed"] for e in v3.ledger) and v3.text.count("{{user}} feels toward 노엘") == 3
 
 
 def test_the_budget_that_holds_every_memory_line():

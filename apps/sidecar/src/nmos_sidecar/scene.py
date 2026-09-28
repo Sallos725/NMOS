@@ -22,7 +22,7 @@ PERSONA = "{{user}}"
 
 def is_persona(r: Resolution, name: str) -> bool:
     """Every name the persona goes by (ADR 0023), and a full name ending with one: extraction writes the
-    persona's family and given name ("미즈키 유우마") where the host reports the given name only."""
+    persona's family and given name ("아오키 타쿠미") where the host reports the given name only."""
     n = norm(name)
     return n in r.persona_names or (" " in n and n.rsplit(" ", 1)[1] in r.persona_names - USER_NAMES)
 

@@ -46,16 +46,16 @@ LLM은 현재 프롬프트에 들어온 정보를 기반으로 응답한다. 대
 
 예를 들어 다음 사건이 있었다고 하자.
 
-> 히나타가 비 오는 날 소우타에게 우산을 빌려주었고, 소우타는 다음 날 돌려주겠다고 약속했다.
+> 아카리가 비 오는 날 켄지에게 우산을 빌려주었고, 켄지는 다음 날 돌려주겠다고 약속했다.
 
 이 사건에는 최소한 아래 정보가 포함된다.
 
 - 사건 자체: 우산을 빌려줌
-- 참여자: 히나타, 소우타
+- 참여자: 아카리, 켄지
 - 대상 물체: 우산
 - 시간: 비가 온 날
-- 상태 변화: 우산의 현재 소지자가 히나타 → 소우타로 변경
-- 약속: 소우타가 다음 날 반납하기로 함
+- 상태 변화: 우산의 현재 소지자가 아카리 → 켄지로 변경
+- 약속: 켄지가 다음 날 반납하기로 함
 - 미해결 서사: 아직 반납되지 않았다면 약속이 열려 있음
 
 단순 요약 또는 벡터 임베딩만으로는 이 모든 의미를 안정적으로 표현하기 어렵다.
@@ -71,7 +71,7 @@ RP에서는 다음 세 가지가 같지 않다.
 
 예:
 - 범인은 Alice이다.
-- 열쇠는 현재 Souta가 가지고 있다.
+- 열쇠는 현재 Kenji가 가지고 있다.
 
 ### 관측/주장(Claimed or Observed Truth)
 어떤 인물이 말했거나 관측한 내용.
@@ -381,29 +381,29 @@ RisuAI/PocketRisu가 이미 모델에 전달하는 최근 대화.
 <NarrativeMemory>
   <Scene>
     Location: station platform
-    Present: Souta, Hinata
+    Present: Kenji, Akari
   </Scene>
 
   <CurrentState>
-    umbrella_01 holder = Souta
-    Souta promised to return umbrella_01 to Hinata by day_15
+    umbrella_01 holder = Kenji
+    Kenji promised to return umbrella_01 to Akari by day_15
   </CurrentState>
 
   <RelevantEvents>
-    E103: Hinata lent Souta her umbrella during heavy rain.
+    E103: Akari lent Kenji her umbrella during heavy rain.
   </RelevantEvents>
 
   <RelationshipContext>
-    Hinata trusts Souta moderately.
+    Akari trusts Kenji moderately.
   </RelationshipContext>
 
   <KnowledgeConstraints>
-    Souta knows E103.
-    Hinata knows E103.
+    Kenji knows E103.
+    Akari knows E103.
   </KnowledgeConstraints>
 
   <OpenThreads>
-    T14: Return Hinata's umbrella. Status: unresolved.
+    T14: Return Akari's umbrella. Status: unresolved.
   </OpenThreads>
 </NarrativeMemory>
 ```
@@ -419,7 +419,7 @@ RisuAI/PocketRisu가 이미 모델에 전달하는 최근 대화.
 예:
 
 ```text
-get_timeline(entity="Hinata", topic="umbrella")
+get_timeline(entity="Akari", topic="umbrella")
 ```
 
 또는
@@ -581,7 +581,7 @@ fact
 예:
 
 ```text
-umbrella_01 --holder--> Souta
+umbrella_01 --holder--> Kenji
 valid_from = E103
 valid_until = E126
 ```
@@ -875,13 +875,13 @@ score =
 예:
 
 ```text
-E103: umbrella holder = Souta
-E126: umbrella holder = Hinata
+E103: umbrella holder = Kenji
+E126: umbrella holder = Akari
 ```
 
 현재 질문이 "지금 누가 가지고 있지?"라면 E126 상태가 우선한다.
 
-반면 "예전에 소우타가 우산을 가지고 있었나?"라면 E103도 검색되어야 한다.
+반면 "예전에 켄지가 우산을 가지고 있었나?"라면 E103도 검색되어야 한다.
 
 따라서 "과거 event"와 "현재 materialized state"는 동시에 보존해야 한다.
 
@@ -931,7 +931,7 @@ MCP Retrieval       = optional deep recall
 ```json
 {
   "query": "umbrella promise",
-  "entities": ["Souta", "Hinata"],
+  "entities": ["Kenji", "Akari"],
   "time_hint": "past",
   "limit": 5
 }
@@ -960,7 +960,7 @@ entity canonical 정보와 alias를 조회한다.
 
 ```json
 {
-  "entity": "Hinata",
+  "entity": "Akari",
   "topic": "umbrella",
   "from": null,
   "to": null
@@ -973,8 +973,8 @@ entity canonical 정보와 alias를 조회한다.
 
 ```json
 {
-  "source": "Hinata",
-  "target": "Souta"
+  "source": "Akari",
+  "target": "Kenji"
 }
 ```
 
@@ -997,7 +997,7 @@ entity canonical 정보와 alias를 조회한다.
 
 ```json
 {
-  "entities": ["Souta"],
+  "entities": ["Kenji"],
   "limit": 10
 }
 ```

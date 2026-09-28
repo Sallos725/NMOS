@@ -269,7 +269,7 @@ written as a `?` description (`?검은 망토의 남자`) and joined to their na
 
 How characters speak to and call each other is remembered as its own fact (since 0.1.0-beta.19, `extract-v10`): an
 agreement to drop formal speech, a form of address someone asks for, or a decided change back becomes
-`<Fact kind="addresses">Radia addresses {{user}}: informal speech, calls them 'Yuuma'</Fact>`, one per
+`<Fact kind="addresses">Hana addresses {{user}}: informal speech, calls them 'Takumi'</Fact>`, one per
 direction; a newer one replaces the older. A reply that only slips into another speech level is not
 recorded. How the characters in the scene stand with each other (relationship, feelings, speech) comes
 before other facts and before promises. A relationship has one history per pair (Phase 11, ADR 0038): lovers

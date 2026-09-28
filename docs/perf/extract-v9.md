@@ -34,7 +34,7 @@ the model records the past act ("signed the list 4 years ago") as a minor event.
 minor after a turn that was already major (t50).
 
 **Revealed name.** A character first shown without a name (t19) and named in the next turn (t20). The
-rabbit ears that identify her sit at character 3,636 of a 3,834-character reply, beyond the 2,000
+trait that identifies her sits at character 3,636 of a 3,834-character reply, beyond the 2,000
 characters a context message is cut to (D21). Chained runs: t19 extracted with `extract-v9`, then t20
 extracted with those facts as history.
 
@@ -44,7 +44,7 @@ extracted with those facts as history.
 | `extract-v9`, UNNAMED CHARACTERS listed by name only | 6/9 (3 chains × 3; 0/3 when the latest row about her was dialogue only) |
 | `extract-v9`, final: each unnamed character with the rows that describe it (trait, identity, status) and its latest row | **12/12** (6 chains × 2) |
 
-t19 named her with a `?` description in every chained run (`?토끼 귀의 인물`).
+t19 named her with a `?` description in every chained run.
 
 ## 2. Synthetic scenes (`tools/eval_v9_model.py`, committed)
 
@@ -106,9 +106,9 @@ branch's sidecar and worker, the plugin built from the branch, and a determinist
 (scratch, not committed) that answers from the prompt it receives. The owner's stack was not touched.
 This run predates the "seen in turn" lines of the final hint block; the path it checks is the same.
 
-- A turn showing someone without a name produced a participant `?흰 토끼 귀의 여자`. The next turn's
+- A turn showing someone without a name produced a participant `?붉은 여우 꼬리의 여자`. The next turn's
   prompt listed it under UNNAMED CHARACTERS with the closing line; the stub's `also_called` was stored
-  valid, and the entity list showed one entity **라디아** with both names and the alias turn.
+  valid, and the entity list showed one entity **아델라** with both names and the alias turn.
 - A second unnamed participant (`?검은 망토의 남자`), never revealed, was joined to **카이** in the panel:
   Inspector → the conversation → character picker → the entity page → "같은 대상으로 합치기" → 카이 →
   "합치기". The panel moved to 카이's page; the profile showed both names and "?검은 망토의 남자 = 카이"

@@ -152,18 +152,18 @@ Ultimate §84의 `Phase 8 — Optional PocketRisu Bridge`는 **optional**이며 
 
 **재현:** 기본 `extract_turns=3`, 매 턴 worker 처리.
 
-1. turn 0: `Elpi secretly plans to watch the lecture, hidden from Blanc.`
+1. turn 0: `Luca secretly plans to watch the lecture, hidden from Noel.`
 2. turn 1–4: 비밀과 무관한 장면.
-3. turn 5: `Blanc found out: Elpi goal: watch the lecture.`
+3. turn 5: `Noel found out: Luca goal: watch the lecture.`
 4. 다음 턴으로 진행해 공개가 반영됐음을 확인.
-5. turn 0을 `Elpi secretly plans to steal the diamond, hidden from Blanc.`로 edit.
-6. sync·worker 처리 후 facts와 `What does Blanc know about Elpi?`의 packet 조회.
+5. turn 0을 `Luca secretly plans to steal the diamond, hidden from Noel.`로 edit.
+6. sync·worker 처리 후 facts와 `What does Noel know about Luca?`의 packet 조회.
 
-**관찰:** 새 goal의 `known_by`에 Blanc이 들어가고 `hidden_from`은 사라졌다.
+**관찰:** 새 goal의 `known_by`에 Noel이 들어가고 `hidden_from`은 사라졌다.
 공개 evidence는 여전히 강의를 알게 됐다는 문장이었다.
 
 ```xml
-<Fact kind="goal" turn="0" known_by="Elpi, {{user}}, Blanc">Elpi goal: steal the diamond</Fact>
+<Fact kind="goal" turn="0" known_by="Luca, {{user}}, Noel">Luca goal: steal the diamond</Fact>
 ```
 
 **Impact:** 공개되지 않은 새 비밀이 알려진 것으로 취급되고 narrator/strict 판단에도 전파된다.
@@ -188,13 +188,13 @@ Ultimate §84의 `Phase 8 — Optional PocketRisu Bridge`는 **optional**이며 
 K29는 이후 `Extract all history`를 실행하라고 안내한다.
 
 **재현:** 네 개의 완성된 턴을 한 번에 sync한 뒤 worker 처리:
-비밀 생성 → Blanc의 일상 → Blanc의 공개 → 후속 장면. 그다음 history/rebuild API를 각각 실행했다.
+비밀 생성 → Noel의 일상 → Noel의 공개 → 후속 장면. 그다음 history/rebuild API를 각각 실행했다.
 
 | 단계 | 관찰 |
 |---|---|
-| 첫 추출 | 공개됐어야 할 비밀이 `hidden_from=Blanc` |
+| 첫 추출 | 공개됐어야 할 비밀이 `hidden_from=Noel` |
 | Extract all history | `queued.extract=0`, worker 처리 0개, 상태 불변 |
-| Rebuild + 순차 worker | discarded 4, queued 4; Blanc이 known_by에 추가되고 hidden_from 제거 |
+| Rebuild + 순차 worker | discarded 4, queued 4; Noel이 known_by에 추가되고 hidden_from 제거 |
 
 **Impact:** 사용자에게 제시한 복구 방법이 정상 처리로 기록된 의미적 누락을 고치지 못한다.
 공개를 놓친 turn은 그 시점에 이미 추출된 상태이므로, 이 우회책은 검증되지 않은 것이 아니라 구조적으로 효과가 없다.

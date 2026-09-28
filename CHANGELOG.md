@@ -16,8 +16,8 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
 
 - **Fixes from the 2026-09-27 audit** (`docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md`, ADR 0033
   amendment 2):
-  - A reveal no longer carries over to a different secret after the secret's turn is edited (G1). Blanc, who
-    found out one plan, counted as knowing whatever plan that turn was edited into. A reveal now links by turn
+  - A reveal no longer carries over to a different secret after the secret's turn is edited (G1). A character
+    who found out one plan counted as knowing whatever plan that turn was edited into. A reveal now links by turn
     only while that turn reads as it did; otherwise it must match by content, or it is shown as unrevealed.
   - "Extract all history" now recovers a reveal missed when a chat was first connected (K29, G2): it extracts
     again the turns extracted before an earlier turn's secret, oldest first. Before, it skipped them.
@@ -78,7 +78,7 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     direction ("카이토 → 유이: 연인" after "유이 → 카이토: 같은 반 친구") replaces the old one when either is symmetric
     (friends, lovers, classmates…); a directed pair ("엄마", "자녀") keeps both. Feelings and speech levels stay per
     direction.
-  - **The persona's full name is the persona** (`resolve-v5`): "미즈키 유우마" for the persona "유우마". One chat was two
+  - **The persona's full name is the persona** (`resolve-v5`): "아오키 타쿠미" for the persona "타쿠미". One chat was two
     people, so old speech levels stayed current and promises made to both never closed.
   - **`packet-v5` (new default) names what a relationship, feeling or speech level replaced**, with its turn
     ("…: 연인; before, turn 1: …: 같은 반 친구"), and how it started when that differs, so "how did they stand before"
@@ -132,8 +132,8 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
   slow sync path, because the reply it replaces was never synced. An edit of an older message does: 3.6–3.8 s
   at 10,000 messages, over the 3 s default (`docs/perf/scale.md`).
 - **Knowledge marks given as objects are names again** (ADR 0007). The extraction model sometimes lists
-  `known_by` / `hidden_from` entries as `{"name": "유우마", "type": "character"}`, the participants shape;
-  validation stored the object's repr (`{'name': '유우마', 'type': 'character'}`) as the name. Such a mark
+  `known_by` / `hidden_from` entries as `{"name": "타쿠미", "type": "character"}`, the participants shape;
+  validation stored the object's repr (`{'name': '타쿠미', 'type': 'character'}`) as the name. Such a mark
   matched no character: the packet's knowledge marks and the ledger's `hidden_from` showed the repr, a
   question naming a character the fact is hidden from did not rank it up, and the Inspector did not list it
   under that character. Validation now keeps the name, and rows stored earlier read as the name without
@@ -361,13 +361,13 @@ apart from its version.
 
 - **Settled relationships stay in the packet in crowded scenes** (ADR 0026). When a message names
   several characters, every fact about them scored the same, and a fact's list of who knows it decided
-  the order, so trivia ("엘피 knows: 계란 껍질 …") took the few slots a 600-token packet has. A character's
+  the order, so trivia (a character's `knows` facts) took the few slots a 600-token packet has. A character's
   agreement to speak 반말 ranked 23rd and was forgotten. Now, among facts of equal mention, how two
   characters stand (`relationship`, `feels_toward`) comes first, then major events, and standing facts
   get the budget before promise threads. A name in a fact's "known by" list no longer ranks it.
 - **Speech level and forms of address are remembered** (ADR 0028). New extractor generation `extract-v10`
   with the fact `addresses`: how one character speaks to and calls another, one per direction, e.g.
-  "라디아 addresses {{user}}: 반말, '유우마'라고 부름". It is recorded when the story settles it (an
+  "하나 addresses {{user}}: 반말, '타쿠미'라고 부름". It is recorded when the story settles it (an
   agreement, a requested form of address, a decided change back), not when a reply merely slips into
   another speech level, and a newer one replaces the older. It ranks with relationships. On upgrade each
   chat's recent turns are re-extracted once at the provider's cost; run "Extract all history" in the
@@ -474,8 +474,8 @@ Bug fix: a named persona is the persona (ADR 0023, D34). Schema: migration 0018 
 reload PocketRisu.
 
 - **A named persona is the persona** (ADR 0023). The extractor wrote your persona both as `{{user}}`
-  and by its name (e.g. 유우마), and NMOS kept them as two characters: two current locations, split
-  promises, and every fact naming 유우마 counted as mentioned in every message you narrate by name.
+  and by its name (e.g. 타쿠미), and NMOS kept them as two characters: two current locations, split
+  promises, and every fact naming 타쿠미 counted as mentioned in every message you narrate by name.
   The plugin now reads the persona's name from PocketRisu (the chat's bound persona, else the selected
   one) and sends it with each sync; both spellings are one entity, the persona's names never count as a
   mention, and KNOWN ENTITIES leaves it out. Facts already extracted join up at the next read, with no
@@ -715,8 +715,8 @@ history** on that chat (ADR 0014). Nothing re-extracts all history by itself.
 - Inspector: facts marked *negated* or *legacy* (`extract-v4` and older), a list of claims, and a list
   of non-actual assertions.
 - **A missing entity type no longer loses the fact.** A model sometimes leaves `object_type` empty on a
-  name it typed elsewhere ("소우타 — relationship — 스즈키 히나타" while 히나타 is a `character` two lines up),
-  and validation parked the fact as pending. When the same reply or the known-entity list gives that
+  name it typed elsewhere (one character — relationship — another, while that other name is a `character` two
+  lines up), and validation parked the fact as pending. When the same reply or the known-entity list gives that
   name exactly one type, the type is filled and the assertion is noted `object_type inferred`; a type
   the model gave is never replaced, and conflicting evidence fills nothing. The extraction prompt now
   also asks for both types and, more firmly, for values in the chat's language (never translated).

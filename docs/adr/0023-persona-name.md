@@ -12,14 +12,14 @@ message typed with `{{user}}` is stored with the name already in place (HOST-FAC
 The extractor therefore wrote the persona both ways. ADR 0012 counted only `{{user}}`, `{user}`,
 `user` and `유저` as the persona, so a named persona was two characters.
 
-In the owner's chat (60 messages, the persona named 유우마 in 51, `{{user}}` in none), `extract-v8`
-wrote `{{user}}` 28 times and 유우마 70 times, `extract-v6` 4 and 31 times. The effects:
+In the owner's chat (60 messages, the persona named by its name in 51, `{{user}}` in none), `extract-v8`
+wrote `{{user}}` 28 times and the persona's name 70 times, `extract-v6` 4 and 31 times. The effects:
 
 - two current locations, holders and promise threads for one person;
 - a named persona was not the persona for recall. Its facts, events it took part in (ADR 0021) and
   knowledge marks naming it counted as a mention in every message that narrates the persona by name,
   while the same facts spelled `{{user}}` came back only for a first-person question;
-- KNOWN ENTITIES listed 유우마 as an ordinary character (47 extractions), which kept the split going.
+- KNOWN ENTITIES listed the persona's name as an ordinary character (47 extractions), which kept the split going.
 
 The V3 plugin API gives no user name. `getDatabase(['personas', 'selectedPersona'])` returns the
 personas and the selected index, behind the host's "db" permission ("access the full database").
@@ -40,7 +40,7 @@ persona's name (HOST-FACTS).
    is: a user who renames or rebinds the persona changes it for the whole chat.
 3. **Resolution (`resolve-v3`, amends ADR 0012 item 2).** For characters, the conversation's persona
    name joins `{{user}}`, `{user}`, `user` and `유저` as the persona. Other types are unaffected (an
-   item named 유우마 stays an item). The persona entity lists the host's spelling among its names, and
+   item named 타쿠미 stays an item). The persona entity lists the host's spelling among its names, and
    the resolver exposes every name the persona goes by (those, the host's name and the story's aliases
    of the persona) as `persona_names`. Nothing is stored: the next read after a name arrives, or
    changes, re-groups the rows already extracted, with no model call.

@@ -45,7 +45,7 @@ def rows(db, cid) -> dict[str, int]:
 
 def chapel_chat() -> SimChat:
     chat = SimChat()
-    chat.user("Hinata is in the old chapel.")
+    chat.user("Akari is in the old chapel.")
     chat.reply("The chapel is quiet. <status>HP 10/10</status>")
     filler(chat, 2)
     chat.user("last")

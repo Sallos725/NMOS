@@ -42,7 +42,7 @@ ADR 0007 asked for `hidden_from` on "something done while others were away", whi
    whose content is equal or reaches the thread match (overlap ≥ 0.6, ADR 0019). Linking by turn keeps a reveal
    when the listed turn is extracted again in other words: a generation switch extracts the newest turns first,
    so the list a turn saw may come from the previous generation's facts. A head is compared apart from the
-   content because a shared head alone ("엘피 goal:") made two different secrets look alike. No match ends
+   content because a shared head alone ("루카 goal:") made two different secrets look alike. No match ends
    nothing and is reported (`unrevealed`).
 6. **Read side.** `memory_view` drops the revealed character from the fact's `hidden_from`, adds `revealed`
    (to whom, by which turn) and returns the secrets. `learned` is never a fact, claim or other assertion itself.
@@ -81,7 +81,7 @@ The 2026-09-27 audit (`docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md`) 
 and K29.
 
 - **G1: rule 1 outlived an edit.** Linking by turn is meant for the same turn extracted again in other words.
-  It also held after the owner edited that turn into a different secret: Blanc, who had found out Elpi's plan
+  It also held after the owner edited that turn into a different secret: Noel, who had found out Luca's plan
   to watch a lecture, counted as knowing the new plan to steal a diamond. The worker now stores, with the
   OPEN SECRETS it lists (`extraction.hints`, not shown to the model), the hash of each listed turn
   (`listed_hash` on the reveal as read). Rule 1 considers only secrets whose turn hash on the head (their

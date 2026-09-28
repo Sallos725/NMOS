@@ -69,7 +69,7 @@ describe('createManifestBuilder', () => {
       ['reroll', () => { m[11] = { role: 'char', data: 'rerolled', chatId: 'r11', generationInfo: { generationId: 'r11' } }; }],
       ['role', () => { m[4]!.role = 'char'; }],
       ['saying', () => { m[7]!.saying = 'other'; }],
-      ['name', () => { m[6]!.name = 'Hinata'; }],
+      ['name', () => { m[6]!.name = 'Akari'; }],
       ['otherUser', () => { m[6]!.otherUser = true; }],
       ['comment', () => { m[8]!.isComment = true; }],
       ['special comment in data only', () => { m[9] = { ...m[9]!, swipes: ['x'], swipeId: 0, data: '{{specialcomment::a::}}' }; }],

@@ -14,14 +14,14 @@ from test_semantics import row
 from test_threads import kept, promise
 
 C = {"subject_type": "character"}
-GOAL = "목요일마다 블랑에게 도시락을 챙겨주는 것"
+GOAL = "목요일마다 노엘에게 도시락을 챙겨주는 것"
 
 
-def goal(pos, who="엘피", text=GOAL, **kw):
+def goal(pos, who="루카", text=GOAL, **kw):
     return row(pos, who, "goal", None, text, **C, **kw)
 
 
-def resolved(pos, who="엘피", text=GOAL, how="achieved", **kw):
+def resolved(pos, who="루카", text=GOAL, how="achieved", **kw):
     return row(pos, who, "resolved", None, text, **{**C, **kw}, outcome=how)
 
 
@@ -31,11 +31,11 @@ def status(rows):
 
 
 def test_a_goal_is_a_thread_until_the_story_ends_it():
-    assert status([goal(26)]) == [("goal", "엘피", GOAL, "open")]
+    assert status([goal(26)]) == [("goal", "루카", GOAL, "open")]
     for how in ("achieved", "abandoned", "failed"):
-        assert status([goal(26), resolved(40, how=how)]) == [("goal", "엘피", GOAL, how)]
+        assert status([goal(26), resolved(40, how=how)]) == [("goal", "루카", GOAL, how)]
     # a plan is labelled hypothetical as often as not: the aim is held now
-    assert status([goal(26, modality="hypothetical")]) == [("goal", "엘피", GOAL, "open")]
+    assert status([goal(26, modality="hypothetical")]) == [("goal", "루카", GOAL, "open")]
     assert status([goal(26, modality="dreamed")]) == []
 
 
@@ -53,8 +53,8 @@ def test_each_kind_opens_and_ends():
 
 def test_who_may_open_one():
     said = {"source": "character_claim"}
-    assert status([goal(26, asserted_by="엘피", **said)]) == [("goal", "엘피", GOAL, "open")]
-    assert status([goal(26, asserted_by="블랑", **said)]) == []  # someone else's report stays a claim
+    assert status([goal(26, asserted_by="루카", **said)]) == [("goal", "루카", GOAL, "open")]
+    assert status([goal(26, asserted_by="노엘", **said)]) == []  # someone else's report stays a claim
     threat = row(5, "하나", "threat", None, "내일 밤 너를 끝장내겠다", **C, asserted_by="산적 두목", **said)
     assert status([threat]) == [("threat", "하나", "내일 밤 너를 끝장내겠다", "open")]  # the one who threatens says it
     debt = dict(C, object_type="character")
@@ -64,8 +64,8 @@ def test_who_may_open_one():
 
 def test_a_resolution_matches_its_own_kind_and_owner_only():
     assert status([promise(10), resolved(40, "하나", "비가 그치면 내일 아침 등대 앞에서 만나기로 함")])[0][3] == "open"
-    assert status([goal(26), resolved(40, "블랑")]) == [("goal", "엘피", GOAL, "open")]
-    _, unmatched, _ = fold([goal(26), resolved(40, "블랑")], resolve(uuid.uuid4(), [goal(26)]))
+    assert status([goal(26), resolved(40, "노엘")]) == [("goal", "루카", GOAL, "open")]
+    _, unmatched, _ = fold([goal(26), resolved(40, "노엘")], resolve(uuid.uuid4(), [goal(26)]))
     assert unmatched and unmatched[0]["outcome"] == "achieved"
 
 
@@ -73,7 +73,7 @@ def test_the_same_aim_in_other_words_is_one_thread():
     rows = [goal(0, text="엄마를 위해 버터 쿠키를 만드는 것"), goal(0, text="엄마를 위해 더 달게 만든 버터 쿠키를 굽는 것")]
     (t,) = fold(rows, resolve(uuid.uuid4(), rows))[0]
     assert t["text"] == "엄마를 위해 버터 쿠키를 만드는 것" and len(t["restated"]) == 1
-    two = [goal(0, text="블랑의 수업을 몰래 보는 것"), goal(1, text="목요일마다 도시락을 싸는 것")]
+    two = [goal(0, text="노엘의 수업을 몰래 보는 것"), goal(1, text="목요일마다 도시락을 싸는 것")]
     assert len(fold(two, resolve(uuid.uuid4(), two))[0]) == 2
 
 
@@ -82,12 +82,12 @@ def test_an_earlier_generation_never_opens_one():
     r = resolve(uuid.uuid4(), [old])
     threads, _, used = fold([old], r)
     assert threads == [] and used == set()  # it stays a fact, as before
-    assert status([goal(26, compiler="extract-v13")]) == [("goal", "엘피", GOAL, "open")]
+    assert status([goal(26, compiler="extract-v13")]) == [("goal", "루카", GOAL, "open")]
     assert status([promise(10, compiler="extract-v7")])[0][3] == "open"  # promises are unchanged
 
 
 def test_outcome_and_because_are_kept_only_where_they_belong():
-    base = {"subject": "엘피", "subject_type": "character", "value": GOAL}
+    base = {"subject": "루카", "subject_type": "character", "value": GOAL}
     assert [outcome({**base, "predicate": "resolved", "outcome": o}) for o in OUTCOMES] == list(OUTCOMES)
     assert outcome({**base, "predicate": "resolved", "outcome": "done"}) is None
     assert outcome({**base, "predicate": "goal", "outcome": "achieved"}) is None
@@ -101,14 +101,14 @@ def test_outcome_and_because_are_kept_only_where_they_belong():
 def test_models_fill_in_an_object_or_say_fulfilled_and_the_goal_still_ends():
     """Seen on the owner's chat re-extracted with extract-v13 (M0): a `resolved` with its owner as `object`, and
     `fulfilled` for a goal. Both matched nothing before."""
-    with_object = row(40, "엘피", "resolved", "엘피", GOAL, **C, object_type="character", outcome="achieved")
-    assert status([goal(26), with_object]) == [("goal", "엘피", GOAL, "achieved")]
-    assert status([goal(26), kept(40, "엘피", GOAL)]) == [("goal", "엘피", GOAL, "achieved")]
+    with_object = row(40, "루카", "resolved", "루카", GOAL, **C, object_type="character", outcome="achieved")
+    assert status([goal(26), with_object]) == [("goal", "루카", GOAL, "achieved")]
+    assert status([goal(26), kept(40, "루카", GOAL)]) == [("goal", "루카", GOAL, "achieved")]
     # a promise of the same words still wins `fulfilled`
-    both = [promise(10, "엘피", "{{user}}", GOAL), goal(26), kept(40, "엘피", GOAL)]
+    both = [promise(10, "루카", "{{user}}", GOAL), goal(26), kept(40, "루카", GOAL)]
     assert sorted(t[3] for t in status(both)) == ["kept", "open"]
     # goals are one owner's: the same aim with a stray object is a restatement
-    stray = row(27, "엘피", "goal", "블랑", GOAL, **C, object_type="character")
+    stray = row(27, "루카", "goal", "노엘", GOAL, **C, object_type="character")
     assert len(status([goal(26), stray])) == 1
 
 
@@ -118,12 +118,12 @@ def test_the_extractor_sees_an_old_thread_the_target_turn_is_about():
     from nmos_sidecar import extraction
 
     rows = [goal(i, text=f"하나의 {i}번째 소원 이루기 {'가나다라마바사'[i % 7] * 3}") for i in range(12)]
-    rows.append(goal(13, text="목요일마다 블랑에게 도시락을 챙겨주는 것"))
+    rows.append(goal(13, text="목요일마다 노엘에게 도시락을 챙겨주는 것"))
     rows += [goal(20 + i, text=f"새로운 계획 {i} {'아자차카타파하'[i] * 3}") for i in range(7)]
     ctx = {"target": {"conversation_id": uuid.uuid4(), "turn": 40},
-           "context": [{"turn": 39, "metadata": {"role": "user"}, "content": "엘피가 부엌에 있다."}],
+           "context": [{"turn": 39, "metadata": {"role": "user"}, "content": "루카가 부엌에 있다."}],
            "members": [{"turn": 40, "metadata": {"role": "char"},
-                        "content": "엘피는 목요일 아침, 블랑에게 도시락을 챙겨주는 것을 잊지 않았다."}]}
+                        "content": "루카는 목요일 아침, 노엘에게 도시락을 챙겨주는 것을 잊지 않았다."}]}
     listed = extraction.thread_hints(ctx, rows)
-    assert listed[0]["text"] == "목요일마다 블랑에게 도시락을 챙겨주는 것"
+    assert listed[0]["text"] == "목요일마다 노엘에게 도시락을 챙겨주는 것"
     assert len(listed) == 8 and listed[1]["turn"] == 26  # then the newest named ones

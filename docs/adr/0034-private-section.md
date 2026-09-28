@@ -17,7 +17,7 @@ the marks say whom a fact is kept from.
    current one are about (subjects, objects, typed participants), every character named in the user's message
    or the previous reply (a known entity, or a name in knowledge marks: someone a secret is kept from may be
    named only there), and the persona. Characters compare by entity; every name the persona goes by, and a full
-   name ending with one ("미즈키 유우마"), is the persona.
+   name ending with one ("아오키 타쿠미"), is the persona.
 2. **Private.** A `limited` fact or open promise is private in this scene when someone in the cast is not among
    the characters shown to know it (`known_by`). Public, unknown and unmarked facts never are; with nobody in the
    cast, nothing is. Claims are unchanged.
