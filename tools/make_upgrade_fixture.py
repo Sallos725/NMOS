@@ -1,14 +1,16 @@
 """Record a database written by an earlier release, for the upgrade test (audit A-16).
 
     cd apps/sidecar && uv run python ../../tools/make_upgrade_fixture.py v0.1.0-beta.7
+    cd apps/sidecar && uv run python ../../tools/make_upgrade_fixture.py 8c790b2 --name main-phase10
 
 Checks the release out in a temporary git worktree and runs *its* sidecar and worker as processes
 (with `PYTHONPATH` pointing at its source), against a fresh database on the compose Postgres, with a
 deterministic stub model and embedder served from this script. A scripted chat goes through them: turns
 with facts, an edit, a reroll, a swipe back, a disabled message and a branch, with recalls in between;
 the worker drains extraction and embedding. The result is dumped with `pg_dump` (run inside the
-Postgres container) to `fixtures/upgrade/<ref>.sql`, and the chats as the host last showed them to
-`fixtures/upgrade/<ref>.chat.json`. `apps/sidecar/tests/test_upgrade.py` restores the dump and upgrades it.
+Postgres container) to `fixtures/upgrade/<name>.sql`, and the chats as the host last showed them to
+`fixtures/upgrade/<name>.chat.json`; the name is the ref, or `--name` for a commit between releases.
+`apps/sidecar/tests/test_upgrade.py` restores the dump and upgrades it.
 
 Standard library plus the sidecar's own dependencies (httpx, psycopg); no model or network access.
 """
@@ -226,6 +228,7 @@ def scenario(old: OldRelease) -> list[SimChat]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("ref", help="release tag, e.g. v0.1.0-beta.7")
+    parser.add_argument("--name", help="fixture file name, for a commit that is not a release (default: the ref)")
     parser.add_argument("--pg-container", default="nmos-postgres-1", help="container that runs pg_dump")
     args = parser.parse_args()
 
@@ -235,6 +238,9 @@ def main() -> None:
     name = f"nmos_fixture_{uuid.uuid4().hex[:8]}"
     base = ADMIN_URL.rpartition("/")[0]
     out_dir = ROOT / "fixtures/upgrade"
+    name_out = args.name or args.ref
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name_out):  # a file name in fixtures/upgrade, not a path
+        parser.error(f"not a fixture name: {name_out!r} (letters, digits, '.', '_' and '-' only)")
     out_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         worktree = Path(tmp) / "release"
@@ -250,8 +256,8 @@ def main() -> None:
                                    "--no-owner", "--no-privileges"], check=True, capture_output=True, text=True).stdout
             # psql meta-commands (`\\restrict`, pg_dump ≥ 16.10) cannot run through psycopg.
             dump = "".join(line for line in dump.splitlines(keepends=True) if not line.startswith("\\"))
-            (out_dir / f"{args.ref}.sql").write_text(dump)
-            (out_dir / f"{args.ref}.chat.json").write_text(json.dumps(
+            (out_dir / f"{name_out}.sql").write_text(dump)
+            (out_dir / f"{name_out}.chat.json").write_text(json.dumps(
                 {"ref": args.ref, "chats": [{"id": c.id, "messages": c.messages} for c in chats]},
                 ensure_ascii=False, indent=1) + "\n")
         finally:
@@ -259,7 +265,7 @@ def main() -> None:
             with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
                 admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
             subprocess.run(["git", "-C", str(ROOT), "worktree", "remove", "--force", str(worktree)], check=False)
-    print(f"wrote fixtures/upgrade/{args.ref}.sql and .chat.json")
+    print(f"wrote fixtures/upgrade/{name_out}.sql and .chat.json")
 
 
 if __name__ == "__main__":

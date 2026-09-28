@@ -23,7 +23,7 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     again the turns extracted before an earlier turn's secret, oldest first. Before, it skipped them.
   - A model answer without an `assertions` list fails the job (retried, then counted failed) instead of
     counting as a turn with nothing to extract (G3; in every release since `v0.1.0-beta.1`).
-- **Phase 11 (Stage 5, part 1) is in progress** (`docs/phases/PHASE-11.md`, approved 2026-09-28; no release decided):
+- **Phase 11 (Stage 5, part 1) is complete** (`docs/phases/PHASE-11.md`, 2026-09-28; no release decided):
   - M0, an evaluation on a restored copy of the owner's chats (`tools/eval_rp.py`, numbers only in
     `docs/perf/m0-baseline.md`): 13 of 28 owner-confirmed cases on the Phase 10 code, 15 after step 3.
   - **A relationship has one history per pair** (ADR 0038, K24). A change the extraction records in the other
@@ -40,11 +40,15 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     promises; the prompt lists the open ones and `resolved` ends one (achieved, abandoned, failed, answered, averted,
     paid). A craving or the next thing someone is about to do is not a goal. A cause the story states is kept
     (`because`). Re-extracts each chat's recent window. A promise or goal kept from someone who then finds it out is
-    no longer shown hidden from them as a thread.
+    no longer shown hidden from them as a thread. A goal the story never mentions again stays open (K23): on the
+    owner's longest chat 9 of 48 goals ended and 37 stayed open.
   - **`packet-v6` (new default): the cause the story states** ("…: 화남; because: 약속을 잊어서"), on facts and claims,
     and facts with a cause come first when the message asks why (ADR 0040). The Inspector shows each cause and the
     event it names when one nearby clearly matches.
   - M0 counts answers the prompt's own last messages hold: of 28 cases, 9 need memory; 5 of them before Phase 11, 7 now.
+  - Inspector: a **Relationships** section with each pair on one row (relationship, each direction's feeling and
+    speech level, with cause, what it replaced and how it started), on the chat and character pages; open threads
+    counted by kind.
   - **`packet-v7` (new default): one numbering for `turn`** (ADR 0041). A fact, claim or thread says the
     turn index, but an excerpt's `turn` and a state item's `as_of_turn` said the message's position, so one packet
     could show a goal at "turn 26" next to an excerpt of the next message at "turn 56". Under `packet-v7` they carry

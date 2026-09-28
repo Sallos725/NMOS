@@ -1,4 +1,4 @@
-# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5–8 cases 2026-09-24; Phase 9 2026-09-26; `packet-v2` 2026-09-26; Phase 10 2026-09-27; Phase 11 2026-09-28)
+# Memory evaluation baseline (2026-09-23, Track A, A5; Phase 5–8 cases 2026-09-24; Phase 9 2026-09-26; `packet-v2` 2026-09-26; Phase 10 2026-09-27; Phase 11 2026-09-28, step 8 the same day)
 
 Deterministic tier of the RP memory evaluation. It gates CI (`apps/sidecar/tests/test_memory_eval.py`)
 and prints this table (`tools/eval_memory.py`).
@@ -88,6 +88,16 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | answered question | open business | — | — | — | — | — |
 | threat hangs over someone | open business | **no** | **no** | **no** | yes | yes |
 | paid debt | open business | — | — | — | — | — |
+| delete removes a goal | open business | — | — | — | — | — |
+| question recalled | open business | **no** | **no** | **no** | yes | yes |
+| delete removes a question | open business | — | — | — | — | — |
+| edit takes back an answer | open business | **no** | **no** | **no** | yes | yes |
+| averted threat | open business | — | — | — | — | — |
+| delete removes a threat | open business | — | — | — | — | — |
+| edit takes back an averted threat | open business | **no** | **no** | **no** | yes | yes |
+| debt recalled | open business | **no** | **no** | **no** | yes | yes |
+| delete removes a debt | open business | — | — | — | — | — |
+| edit takes back a payment | open business | **no** | **no** | **no** | yes | yes |
 | why someone is angry | causes | **no** | **no** | **no** | **no** | yes |
 | quote under a full budget | budget pressure | **no** | **no** | **no** | **no** | yes |
 | one line of a long message | budget pressure | **no** | **no** | **no** | **no** | yes |
@@ -102,11 +112,17 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 
 | Mode | gold reached | cases with stale memory | irrelevant packets | mean packet tokens |
 |---|---:|---:|---:|---:|
-| recent | 0/41 | 0 | — | 0 |
-| lexical | 2/41 | 0 | 0/1 | 103 |
-| hybrid | 3/41 | 0 | 0/1 | 127 |
-| full-v0 | 43/48 | 0 | 0/1 | 190 |
-| full | 48/48 | 0 | 0/1 | 189 |
+| recent | 0/46 | 0 | — | 0 |
+| lexical | 2/46 | 0 | 0/1 | 90 |
+| hybrid | 3/46 | 0 | 0/1 | 113 |
+| full-v0 | 48/53 | 0 | 0/1 | 175 |
+| full | 53/53 | 0 | 0/1 | 173 |
+
+Phase 11 step 8 added ten open-business cases, so that each kind of thread is opened, ended, deleted and has its
+end edited away: a question and a debt recalled as threads after twelve newer events, an averted threat no longer in
+the packet, a goal, a question, a threat and a debt whose opening turn is deleted, and an answer, an averted threat
+and a payment whose turn is edited away, which opens the thread again. Those with gold answer under `packet-v0` too:
+threads are placed the same way by every policy.
 
 Phase 11 step 6 (ADR 0040) added "why someone is angry": a feeling with the cause the story states, asked about with
 "why" after a speech-level fact of the same pair. `packet-v6` places the feeling with its cause; `full-v0` does not.

@@ -156,7 +156,9 @@ open: the story forgets it (nothing closes a thread because it is old); the clos
 that could not report it (before `extract-v7` for promises, before `extract-v13` for the rest, whose goals then stay
 facts); or the closing turn words it so differently that it matches no open thread, or matches two (the Inspector lists
 it under "Ends matching no open thread"). An open thread reaches the packet only when its owner or counterpart is
-mentioned, or the user's message is about it, at most three at a time. *Workaround:* "Extract all history" for older
+mentioned, or the user's message is about it, at most three at a time. The first case dominates goals: on the owner's
+longest chat re-extracted with `extract-v13`, 9 of 48 goals ended and 37 stayed open, one character holding 15 where
+the owner counts 2 still under way (`docs/perf/extract-v13.md`). *Workaround:* "Extract all history" for older
 turns; owner repair (close a thread by hand) is Stage 6.
 
 **K24 — A relationship change recorded under the other predicate leaves both lines current.** Since ADR 0038

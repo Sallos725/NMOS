@@ -1,4 +1,4 @@
-# `extract-v13` — open business (Phase 11 steps 4–5, ADR 0039)
+# `extract-v13` — open business (Phase 11 steps 4–5 and 8, ADR 0039, ADR 0040)
 
 Measured 2026-09-28. Goals, questions, threats and debts open threads; `resolved` ends one with an outcome; `because`
 keeps a cause the story states.
@@ -83,3 +83,72 @@ they ended (K23). The "why" cases wait for step 6, which reads `because`.
 These counts hold a gold answer only when the packet does. With the scoring corrected in step 6 (answers the prompt's
 own last messages hold count too, `docs/perf/m0-baseline.md`), the same runs give 23 of 28 before Phase 11 and 26 with
 `extract-v13`; of the 9 cases that need memory, 5 and 7.
+
+## Acceptance on the M0 copy (step 8)
+
+Read-only on the restored copies, the current code (`resolve-v5`, the pair fold), every current line counted:
+
+| Longest chat | `extract-v12` (`nmos_m0`) | `extract-v13` (`nmos_m0v13b`) |
+|---|---|---|
+| goals current | 43 lines: 11 facts, 26 claims, 6 not actual | 37 open goal threads (9 achieved, 1 answered, gone), 2 claims |
+| per character | 블랑 17, 엘피 9, 라디아 4 | 엘피 15, 블랑 14, 라디아 4 |
+| pairs with more than one current relationship | 0 of 4 with one | 0 of 5 with one |
+
+Goals now end, but they do not stop piling up: the model ended 9 of 48 goals in 73 turns, and a goal the story
+never mentions again stays open (K23). 엘피 holds 15 open goals where the owner counts 2 as still under way. The
+PHASE-11 figure "one character holds 40" counted valid assertions over every revision, not current lines. The
+packet is less affected than the Inspector: at most three threads, the ones about the people named or the message
+(ADR 0019 amendment 1).
+
+## Latency (step 8)
+
+`tools/bench_scale.py 10000` (lexical retrieve after an append, and the fact read), three pairs against Phase 10
+`main` (8c790b2), the last in reverse order:
+
+| Pair | retrieve p50 ms, 8c790b2 → this branch | fact read p50 ms |
+|---|---:|---:|
+| 1 | 11.3 → 12.5 | 97.4 → 102.5 |
+| 2 | 9.1 → 13.8 | 111.7 → 102.6 |
+| 3 (this branch first) | 12.8 → 14.2 | 99.7 → 100.0 |
+
++1.2 to +4.7 ms p50 (+2.4 on average), within the +10 ms bound; per query +0 to +5 ms. The fact read shows no
+change beyond noise. The bench has no goals or causes, so it does not reach the thread fold or the cause links
+(read time, per request with facts).
+
+## Real-host smoke (PocketRisu v1.13.0, step 8)
+
+- **Environment:**
+  - an isolated `ghcr.io/pocketrisu/pocketrisu:latest` (v1.13.0) on its own port and save directory, with the
+    chat of the Phase 10 smoke;
+  - the plugin file from `adapters/pocketrisu-plugin/dist/` (Phase 11 does not change it);
+  - this branch's sidecar and worker on a scratch database (migrations to 0022, `extract-v13`, `packet-v6`);
+  - the stub chat model (`tools/spike_stub_llm.py --show-packets`);
+  - a deterministic extraction stub: "X는 목표를 세웠다: Z." → `goal`, "X는 목표를 이뤘다: Z." → `resolved` with
+    outcome `achieved`, "X는 Y에게 화가 났다, 왜냐하면 Z." → `feels_toward` with `because`.
+- **Messages:** "하나는 목표를 세웠다: 등대지기의 행방 찾기.", three filler messages, "하나야, 요즘 뭘 하려고 해?",
+  the anger with its cause, "하나는 목표를 이뤘다: 등대지기의 행방 찾기.", three filler messages, then "하나야, 왜
+  카이토한테 그렇게 굴어? 이제 뭘 하려고 해?".
+- **Extraction:** every prompt after the goal listed it under OPEN THREADS
+  (`- [goal] 하나: 등대지기의 행방 찾기 (turn 26)`); the stub ended it with the listed text.
+- **Packets** the stub model received (test data only; the Note and the chat's earlier secrets shortened):
+
+```xml
+<!-- "하나야, 요즘 뭘 하려고 해?" -->
+<Threads>
+  <Thread kind="goal" by="하나" turn="26">등대지기의 행방 찾기</Thread>
+  <Thread kind="promise" by="하나" to="카이토" turn="0">비가 그치면 등대 앞에서 만나기</Thread>
+</Threads>
+<!-- "하나야, 왜 카이토한테 그렇게 굴어? 이제 뭘 하려고 해?" -->
+<Threads>
+  <Thread kind="promise" by="하나" to="카이토" turn="0">비가 그치면 등대 앞에서 만나기</Thread>
+</Threads>
+<Facts>
+  <Fact kind="feels_toward" turn="31">하나 feels toward 카이토: 화남; because: 카이토가 등대 축제를 잊었다</Fact>
+  …
+</Facts>
+```
+
+- **Inspector** (the plugin panel, chat page): the thread table shows `목표 · 하나 · 등대지기의 행방 찾기 · 26 · 이룸 ·
+  32 · 하나 resolved: 등대지기의 행방 찾기`, and "열림: 약속 1"; the Relationships section shows
+  `카이토 ↔ 하나` with `하나 → 카이토: 화남 31 · 원인: 카이토가 등대 축제를 잊었다`.
+- Every request took 46–121 ms in the plugin (`[NMOS] request done`).
