@@ -75,7 +75,8 @@ def mentions(row: dict[str, Any], persona: frozenset[str] = frozenset()) -> Iter
 
 class Resolution:
     def __init__(self, conversation: UUID, rows: list[dict[str, Any]], persona: Iterable[str] = (),
-                 links: Iterable[dict[str, Any]] = (), splits: Iterable[dict[str, Any]] = ()):
+                 links: Iterable[dict[str, Any]] = (), splits: Iterable[dict[str, Any]] = (),
+                 canon: Iterable[dict[str, Any]] = ()):
         self.conversation = conversation
         self.persona = frozenset(n for n in map(norm, persona) if n)
         first: dict[Node, tuple[int, str]] = {}  # node → (order, spelling) of its first mention on the head
@@ -104,6 +105,32 @@ class Resolution:
                 counts[n] = counts.get(n, 0) + 1
                 if n[0] == "character" and _persona_name(norm(p["name"]), self.persona):
                     hosted.setdefault(norm(p["name"]), p["name"])
+        # Names from canon (PHASE-14 Q6, ADR 0046): a lorebook entry's keys name one thing. When exactly one of them is a
+        # character the head mentions, other than the persona, and no other key names anything else the head mentions,
+        # its other keys are that character's aliases (a given name alone, K31). An entry naming two joins nothing, and
+        # the owner's splits below apply to these aliases as to the story's.
+        mentioned = set(first)  # the head's names, before any canon: the guard looks at these only
+        known: dict[str, set[Node]] = {}
+        for n in mentioned:
+            known.setdefault(n[1], set()).add(n)
+        persona_node = ("character", PERSONA)
+        for item in canon:
+            names = [n for n in dict.fromkeys(item.get("names") or ()) if norm(n)]
+            hits = {self.node("character", n) for n in names} & mentioned
+            elsewhere = {x for n in names for x in known.get(norm(n), ()) if x[0] != "character"}
+            if len(hits) != 1 or elsewhere or persona_node in hits:
+                continue
+            (a,) = hits
+            group = [a] + [b for b in dict.fromkeys(self.node("character", n) for n in names) if b not in (a, persona_node)]
+            spelled = {self.node("character", n): n for n in reversed(names)}
+            for b in group[1:]:
+                first.setdefault(b, (len(first), spelled[b]))
+                self.alias_rows.append((a, b, {"subject": first[a][1], "value": spelled[b], "turn": None,
+                                               "canon": item.get("key")}))
+            for x in group:  # one entry's names name one thing: joined to each other, never "ambiguous" among themselves
+                for y in group:
+                    if x != y:
+                        edges.setdefault(x, set()).add(y)
         # The owner's links and splits between names the head mentions (ADR 0025, ADR 0044); the others wait for a
         # mention. Of a link and a split of the same two names, the newer holds.
         latest: dict[frozenset, str] = {}
@@ -182,7 +209,8 @@ class Resolution:
         for a, b, row in self.alias_rows:
             if a in self._root and b in self._root:
                 self._entities[self._root[a]]["aliases"].append(
-                    {"name": row["subject"], "other": row["value"], "turn": row.get("turn")})
+                    {"name": row["subject"], "other": row["value"], "turn": row.get("turn"),
+                     **({"canon": row["canon"]} if row.get("canon") else {})})
         for a, _, link in self.links:
             self._entities[self._root[a]]["links"].append(
                 {"id": str(link["id"]), "name": link["name"], "same_as": link["same_as"]})
@@ -280,8 +308,9 @@ def _path(a: Node, b: Node, edges: dict[Node, set[Node]], links: list[tuple[Node
 
 
 def resolve(conversation: UUID, rows: list[dict[str, Any]], persona: Iterable[str] = (),
-            links: Iterable[dict[str, Any]] = (), splits: Iterable[dict[str, Any]] = ()) -> Resolution:
+            links: Iterable[dict[str, Any]] = (), splits: Iterable[dict[str, Any]] = (),
+            canon: Iterable[dict[str, Any]] = ()) -> Resolution:
     """Entities of one conversation's active assertions (rows in position order). `persona`: the persona's
     name as the host reports it for this conversation (ADR 0023), if known. `links`: the owner's current
     links of this conversation (`entity_type`, `name`, `same_as`, `id`; ADR 0025)."""
-    return Resolution(conversation, rows, persona, links, splits)
+    return Resolution(conversation, rows, persona, links, splits, canon)

@@ -19,6 +19,7 @@ from xml.sax.saxutils import escape, quoteattr
 from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
 from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
+from . import canon
 from .repairs import IN_FORCE, REPAIR_COLUMNS, apply_facts, live, secret_events, splits_of, thread_events
 from .secrets import fold as fold_secrets
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
@@ -334,7 +335,7 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
 
 
 def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None, upto: int | None = None,
-                known_at: datetime | None = None) -> dict[str, list[dict[str, Any]]]:
+                known_at: datetime | None = None, canon_manifest: str | None = None) -> dict[str, list[dict[str, Any]]]:
     """The head's assertions by what they may do (ADR 0013).
 
     - facts: current fact versions from actual narration (legacy rows without a source count as
@@ -361,7 +362,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     rows = [r for r in served_assertions(conn, head, extractor_key, upto, known_at) if r["predicate"] in REGISTRY]
     # The conversation, the owner's repairs as of the read (ADR 0044) and the read's last turn, in one query.
     found = conn.execute(
-        "SELECT w.conversation_id, c.host_persona_name, r.id, r.kind, r.target, r.value, r.note, r.created_at,"
+        "SELECT w.conversation_id, c.host_persona_name, c.canon_manifest_id, r.id, r.kind, r.target, r.value, r.note,"
+        " r.created_at,"
         " (SELECT max(turn) FROM active_membership WHERE commit_id = %(head)s"
         "  AND (%(upto)s::int IS NULL OR position <= %(upto)s::int)) AS last_turn"
         " FROM worldline_commit w JOIN conversation c ON c.id = w.conversation_id"
@@ -371,8 +373,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     repairs = [{k: x[k] for k in REPAIR_COLUMNS} for x in found if x["id"] is not None]
     last_turn = conv["last_turn"] if repairs else None
     in_force = live(repairs, last_turn)
+    # Names from canon (PHASE-14 Q6): the request's own manifest, else the canon in force at the read.
+    canon_names = (canon.names(conn, conv["conversation_id"], known_at, canon_manifest)
+                   if conv["canon_manifest_id"] or canon_manifest else [])
     r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]),
-                links_of(conn, conv["conversation_id"], known_at), splits_of(in_force))
+                links_of(conn, conv["conversation_id"], known_at), splits_of(in_force), canon_names)
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []

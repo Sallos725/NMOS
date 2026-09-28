@@ -64,6 +64,9 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     version. The Inspector lists it in a "Canon" section, with how often a request's prompt held each text. The
     plugin sends it in the background when it changes and reads the card off the request path. Canon changes no
     packet yet.
+  - Step 4 (ADR 0046): a lorebook entry's keys count as names of the one character they name. So a character called by
+    a given name the lorebook lists is a mention (K31). On sample 2 the given-name probes found their fact 2 of 3,
+    against 0 before.
 - **Phase 13 (Stage 6, part 1): the owner repairs memory** (`docs/phases/PHASE-13.md`, approved and complete 2026-09-28;
   no release).
   - Step 2: the owner confirmed NMOS's lists for the longest chat (50 of 59 open threads ended, 6 secrets found out);

@@ -975,7 +975,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         parts.append(("entities", t("entities"), len(entities), table(
             [t(k) for k in ("h.type", "h.names", "h.mentions", "h.alias_turns", "h.owner_links")],
             [[chip(lang, "e", e["type"]), _v(" · ".join(e["names"])), _v(e["mentions"]),
-              _v(", ".join(str(a["turn"]) for a in e["aliases"])), _owner_links(e)] for e in entities[:200]]), True))
+              _v(", ".join("canon" if a.get("canon") else str(a["turn"]) for a in e["aliases"])), _owner_links(e)] for e in entities[:200]]), True))
     if ambiguous:
         parts.append(("ambiguous", t("ambiguous"), len(ambiguous), table(
             [t(k) for k in ("h.type", "h.names", "h.candidates")],

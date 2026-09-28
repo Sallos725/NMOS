@@ -148,7 +148,8 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
         query = clean_text(query)  # as the live request normalizes it
         notes.append("query replaced")
     g = gather(conn, t["head_commit_id"], t["query"] if query is None else query, t["previous_ai"] or "",
-               set(t["in_context"] or []), opts, upto=t["upto_position"], known_at=known_at or t["created_at"])
+               set(t["in_context"] or []), opts, upto=t["upto_position"], known_at=known_at or t["created_at"],
+               canon_manifest=t.get("canon_manifest_id"))  # its own canon (ADR 0045)
     if opts.embedder is not None and g.vector_note != "on":
         notes.append(f"vectors {g.vector_note}")  # an embedder that failed now cannot reproduce the request
     if budget is not None:

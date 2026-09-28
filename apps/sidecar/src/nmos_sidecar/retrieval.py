@@ -216,7 +216,8 @@ class Gathered:
 
 
 def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, in_context: set[str],
-           options: RecallOptions, upto: int | None = None, known_at: datetime | None = None) -> Gathered:
+           options: RecallOptions, upto: int | None = None, known_at: datetime | None = None,
+           canon_manifest: str | None = None) -> Gathered:
     """Candidates for one request, already normalized (`clean_text`). `upto` and `known_at` gather them as
     of an earlier request: the head up to that position, and what NMOS had derived by that time."""
     started = time.perf_counter()
@@ -266,7 +267,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.state.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in focus), reverse=True)
     view = None
     if options.facts_limit > 0 or options.threads_limit > 0:
-        view = memory_view(conn, head, options.extractor_key, upto, known_at)
+        view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest)
         r = view["resolution"]
         persona = r.persona_names if r else frozenset()
         # Who is in the scene, so facts only some of them know are marked (packet-v3, ADR 0034).
@@ -310,7 +311,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 g.threads = [line for line in g.threads if line.ref.get("assertion") not in used]
     if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3
         if view is None and options.extractor_key:  # facts and threads off: the secrets still decide what may be told
-            view = memory_view(conn, head, options.extractor_key, upto, known_at)
+            view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest)
         r = view["resolution"] if view else None
         if view and not g.cast and r is not None:
             g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
@@ -445,7 +446,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     previous_ai = clean_text(request.previous_ai or "")
     options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator)
     in_context = set(request.in_context_ids)
-    g = gather(conn, head, query, previous_ai, in_context, options, upto) if fresh else Gathered()
+    g = (gather(conn, head, query, previous_ai, in_context, options, upto,
+                canon_manifest=getattr(request, "canon_manifest_id", None)) if fresh else Gathered())
     def compile_at(budget: int) -> Compiled:
         return compile_gathered(g, budget, options.policy)
 

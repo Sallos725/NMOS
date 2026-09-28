@@ -23,6 +23,7 @@ from .ids import uuid7
 from .llm import LLMError
 from .entities import UNNAMED, norm, resolve
 from .facts import fact_text, links_of, persona_of, served_assertions
+from . import canon
 from .repairs import repairs_of, splits_of
 from .predicates import (DERIVED, REGISTRY, alias_evidenced, because, fill_types, knowledge, outcome, participants,
                          registry_prompt, salience, semantics, validate)
@@ -319,6 +320,7 @@ def load_context(conn: psycopg.Connection, revision_id: UUID, turn_hash: str, tu
             return None
         target["links"] = links_of(conn, target["conversation_id"])  # the owner's (ADR 0025): hints use them
         target["splits"] = splits_of(repairs_of(conn, target["conversation_id"]))  # and the owner's splits (ADR 0044)
+        target["canon"] = canon.names(conn, target["conversation_id"])  # and canon's names (PHASE-14 Q6)
         rows = conn.execute(
             """
             SELECT am.position, am.turn, sr.id, sr.metadata FROM active_membership am
@@ -364,7 +366,7 @@ def entity_hints(conn: psycopg.Connection, ctx: dict[str, Any], key: str, limit:
     if limit <= 0 or not rows:
         return []
     r = resolve(target["conversation_id"], rows, persona_of(target.get("host_persona_name")), target.get("links") or (),
-                target.get("splits") or ())
+                target.get("splits") or (), target.get("canon") or ())
     last: dict[str, int] = {}
     seen: dict[str, list[dict[str, Any]]] = {}  # entity id → the rows that mention it, in order
     seq = 0
@@ -399,7 +401,7 @@ def promise_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = 
         return []
     r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")),
                 ctx["target"].get("links") or (),
-                ctx["target"].get("splits") or ())
+                ctx["target"].get("splits") or (), ctx["target"].get("canon") or ())
     threads = [t for t in fold_threads([dict(row) for row in rows if row["predicate"] in THREAD_PREDICATES], r)[0]
                if t["status"] == "open" and t["kind"] == "promise"]
     shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
@@ -424,7 +426,7 @@ def thread_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = O
         return []
     r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")),
                 ctx["target"].get("links") or (),
-                ctx["target"].get("splits") or ())
+                ctx["target"].get("splits") or (), ctx["target"].get("canon") or ())
     threads = [t for t in fold_threads([dict(row) for row in rows if row["predicate"] in THREAD_PREDICATES], r)[0]
                if t["status"] == "open" and t["kind"] != "promise"]
     shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
@@ -454,7 +456,7 @@ def secret_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = O
         return []
     r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")),
                 ctx["target"].get("links") or (),
-                ctx["target"].get("splits") or ())
+                ctx["target"].get("splits") or (), ctx["target"].get("canon") or ())
     shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
     out = []
     for s in fold_secrets([dict(row) for row in rows], r)[0]:
