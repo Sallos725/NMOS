@@ -6,8 +6,10 @@
 `docs/phases/PHASE-13.md`: the owner repairs memory in the panel (close or reopen a thread, retract or correct a
 fact, mark a secret found out, split two names), stored as owner input that survives rebuilds and new extractor
 generations and finds its target by what it says; a "Needs attention" queue per chat. Canon sources and
-export/restore are Phase 14. The owner answered every question with the recommended answer; no release. Next: step
-2, the owner's lists of finished threads and found-out secrets on the restored copy, drafted by NMOS.
+export/restore are Phase 14. The owner answered every question with the recommended answer; no release. Step 2 done
+(`docs/perf/repair.md`): the owner confirmed NMOS's lists (50 of 59 open threads ended, 6 of 14 kept secrets found out,
+2 never kept); on `main` all 40 M0 packets carry a thread the owner closed. Next: step 3 (storage, matching, threads
+and secrets).
 
 **Phase 12 — Narrative Engine, part 2 (Stage 5): complete (2026-09-28), not released.** Spec
 `docs/phases/PHASE-12.md`: scene summaries of 8-turn windows and a story so far, as a rebuildable `summarize`
