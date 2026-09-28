@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""Run one read-only peer review of an NMOS checkout with another model's CLI.
+
+The lead agent (Codex or Claude) calls this once per material change; see AGENTS.md §14 and
+.ai/README.md. The reviewer's final answer goes to stdout; its progress goes to a log file.
+"""
+import argparse
+import fnmatch
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import tempfile
+
+PROMPTS = pathlib.Path(__file__).resolve().parents[1] / 'prompts'
+ROLES = ('review', 'architecture', 'security')
+GUARD = 'NMOS_PEER_REVIEW_ACTIVE'
+INLINE_LIMIT = 400_000  # characters of diff and attached files in one prompt
+# Never put these in a prompt, even when untracked or attached by hand.
+SENSITIVE = ('.env', '.env.*', '*.pem', '*.key', '*.p12', '*.pfx', 'id_rsa*', 'id_ed25519*',
+             'credentials*', '.netrc', '.npmrc', '.pypirc', '*.db', '*.bin', '*.sqlite*')
+
+RULES = """\
+Before reviewing, read AGENTS.md, ARCHITECTURE.md (§2 invariants, §9 open decisions), docs/STATUS.md (it names
+the current phase, if any), the docs/phases/PHASE-N.md that introduced the code in scope, docs/HOST-FACTS.md and
+any ADR the code cites. Current-phase scope and ARCHITECTURE.md bind this review.
+
+You are read-only. Do not modify files, commit, invoke other agents or this review script, or run destructive
+commands. Do not read .env or credential files, contact services (docker, databases, the production deployment)
+or call model APIs. The repository is public: quote no role-play chat content in your answer.
+
+For each finding give severity, path:line, the evidence, a reproduction path and the smallest fix. Mark design
+questions that need an owner decision (ARCHITECTURE.md §9) as such instead of calling them defects. Do not claim
+a test passed unless you ran it. State uncertainty explicitly. If you find nothing, say so and list residual
+risks.
+"""
+
+
+def git(repo, *args):
+    return subprocess.run(['git', *args], cwd=repo, text=True, capture_output=True,
+                          check=True).stdout.rstrip()
+
+
+def describe_scope(repo, base, scope):
+    lines = []
+    if base:
+        lines.append(f'Changes: `git diff {base}...HEAD` plus the working tree.')
+        changed = git(repo, 'diff', '--name-only', f'{base}...HEAD')
+        if changed:
+            lines.append(f'Files changed since {base}:\n{changed}')
+    status = git(repo, 'status', '--porcelain', '--untracked-files=all')
+    if status:
+        lines.append(f'Working tree (git status --porcelain):\n{status}')
+    if scope:
+        lines.append(f'Focus: {scope}')
+    elif not base:
+        lines.append('Focus: the working tree above, staged, unstaged and untracked.')
+    return '\n\n'.join(lines)
+
+
+def inlinable(repo, rel):
+    """The file at rel when it may go into a prompt: inside the checkout, not ignored, not sensitive."""
+    path = (repo / rel).resolve()
+    if repo not in path.parents or not path.is_file():
+        raise SystemExit(f'peer-review: cannot inline {rel}: not a file in this checkout')
+    if any(fnmatch.fnmatch(path.name, pattern) for pattern in SENSITIVE):
+        raise SystemExit(f'peer-review: refusing to inline {rel}: sensitive file name')
+    ignored = subprocess.run(['git', 'check-ignore', '--quiet', '--no-index', str(path)], cwd=repo)
+    if ignored.returncode == 0:
+        raise SystemExit(f'peer-review: refusing to inline {rel}: ignored by git')
+    return path
+
+
+def diffs(repo, base):
+    parts = []
+    if base:
+        parts.append((f'git diff {base}...HEAD', git(repo, 'diff', f'{base}...HEAD')))
+    parts.append(('git diff HEAD', git(repo, 'diff', 'HEAD')))
+    return parts
+
+
+def render(parts):
+    return '\n\n'.join(f'===== {title} =====\n{body}' for title, body in parts if body)
+
+
+def inline_material(repo, base, attach):
+    """The diff, untracked files and attached files as text, for a reviewer that cannot read the tree."""
+    parts = diffs(repo, base)
+    untracked = subprocess.run(['git', 'ls-files', '-z', '--others', '--exclude-standard'], cwd=repo,
+                               capture_output=True, check=True).stdout.decode('utf-8', 'surrogateescape')
+    for rel in [*filter(None, untracked.split('\0')), *attach]:
+        path = inlinable(repo, rel)
+        parts.append((f'file {path.relative_to(repo)}', path.read_text(encoding='utf-8', errors='replace')))
+    text = render(parts)
+    if len(text) > INLINE_LIMIT:
+        raise SystemExit(f'peer-review: inline material is {len(text)} characters (limit {INLINE_LIMIT}); '
+                         'narrow --base or --attach')
+    return ('Inline material (the reviewer may be unable to run commands; review from this, and name '
+            'every authority file you could not read):\n\n' + text)
+
+
+def command_for(backend, answer):
+    if backend == 'codex':
+        return ['codex', 'exec', '--sandbox', 'read-only', '--color', 'never',
+                '--output-last-message', str(answer), '-']
+    # Headless Claude gets file tools only, no Bash (even `git diff --output=` writes); the diff comes
+    # in the prompt. Anything else is denied without a prompt.
+    return ['claude', '-p', '--permission-mode', 'dontAsk', '--strict-mcp-config',
+            '--no-session-persistence', '--tools', 'Read,Grep,Glob',
+            '--allowedTools', 'Read', 'Grep', 'Glob']
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('backend', choices=('codex', 'claude'), help='the reviewer, not the lead')
+    parser.add_argument('role', choices=ROLES)
+    parser.add_argument('scope', nargs='*', help='paths or a narrow question (literal text)')
+    parser.add_argument('--base', metavar='REF',
+                        help='review REF...HEAD plus the working tree (e.g. origin/main)')
+    parser.add_argument('--timeout', type=int, default=900, help='seconds (default 900)')
+    parser.add_argument('--log', metavar='FILE', help='reviewer progress log (default: a temp file)')
+    parser.add_argument('--inline', action='store_true',
+                        help='put the diff and untracked files in the prompt, for a reviewer whose '
+                             'sandbox cannot run commands (e.g. codex inside another sandbox)')
+    parser.add_argument('--attach', metavar='PATH', action='append', default=[],
+                        help='with --inline, also include this file (repeatable)')
+    args = parser.parse_intermixed_args()
+    if args.timeout < 1:
+        parser.error('--timeout must be positive')
+    if os.environ.get(GUARD):
+        parser.error('Nested peer review is disabled')
+    if not shutil.which(args.backend):
+        parser.error(f'{args.backend} CLI not found in PATH')
+    try:
+        repo = pathlib.Path(git(os.getcwd(), 'rev-parse', '--show-toplevel')).resolve()
+    except subprocess.CalledProcessError:
+        parser.error('Run from the NMOS git checkout')
+    if not (repo / 'ARCHITECTURE.md').is_file():
+        parser.error('This checkout has no ARCHITECTURE.md; refusing to review the wrong repository')
+    if args.base:
+        try:
+            git(repo, 'rev-parse', '--verify', '--quiet', f'{args.base}^{{commit}}')
+        except subprocess.CalledProcessError:
+            parser.error(f'--base {args.base} is not a commit')
+    if args.attach and not args.inline:
+        parser.error('--attach needs --inline')
+
+    prompt = (PROMPTS / f'{args.role}.md').read_text(encoding='utf-8').strip()
+    message = f'{prompt}\n\n{describe_scope(repo, args.base, " ".join(args.scope).strip())}\n\n{RULES}'
+    if args.inline:
+        message += '\n' + inline_material(repo, args.base, args.attach) + '\n'
+    elif args.backend == 'claude':
+        text = render(diffs(repo, args.base))
+        if len(text) > INLINE_LIMIT:
+            parser.error(f'the diff is {len(text)} characters (limit {INLINE_LIMIT}); narrow --base')
+        message += f'\nThe diff (you have file tools but no shell; read other files with Read):\n\n{text}\n'
+
+    work = pathlib.Path(tempfile.mkdtemp(prefix='nmos-peer-review-'))
+    answer = work / 'answer.md'
+    log = pathlib.Path(args.log) if args.log else work / 'progress.log'
+    env = os.environ.copy()
+    env[GUARD] = '1'
+    print(f'peer-review: {args.backend} {args.role} in {repo}; progress log {log}', file=sys.stderr)
+    with open(log, 'w', encoding='utf-8') as log_file:
+        try:
+            proc = subprocess.run(command_for(args.backend, answer), input=message, text=True,
+                                  cwd=repo, env=env, timeout=args.timeout,
+                                  stdout=subprocess.PIPE, stderr=log_file)
+        except subprocess.TimeoutExpired:
+            print(f'Peer review timed out after {args.timeout}s; see {log}', file=sys.stderr)
+            return 124
+    text = answer.read_text(encoding='utf-8') if answer.is_file() else proc.stdout
+    if proc.returncode != 0:
+        with open(log, 'a', encoding='utf-8') as log_file:
+            log_file.write(proc.stdout)
+        print(f'{args.backend} exited {proc.returncode}; see {log}', file=sys.stderr)
+    print(text.strip())
+    return proc.returncode
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

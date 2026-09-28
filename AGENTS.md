@@ -179,6 +179,7 @@ For every task:
 5. Add or update the test/fixture expectation first when feasible.
 6. Implement only that slice.
 7. Run the narrow test, then the current phase's full test set.
+   For a material change, get one cross-model review (§14) and act on what it confirms.
 8. Update docs if a fact, decision, command, schema, or behavior changed.
 9. Update `docs/STATUS.md` truthfully.
 10. Stop at any evidence or owner-decision boundary.
@@ -368,3 +369,23 @@ as before; tags follow these rules.
 - **A bug fix that needs a migration, a new predicate, a new extractor generation, a new UI feature or a
   new ADR is feature work**: it joins the current stage's plan, or ask the owner. Keep other fixes small.
 - Every release before `1.0.0` is a GitHub pre-release (`release.yml`).
+
+---
+
+## 14. Cross-model review
+
+Codex and Claude both work on this repository. The one implementing a change is the **lead**; for a
+material change it asks the other for one independent, read-only review through `.ai/scripts/peer-review`
+before reporting the change done (how-to: `.ai/README.md`; Claude's steps: `.claude/skills/peer-review`).
+
+- **When:** a material change to reconciliation, immutable source history, membership, retrieval or
+  injection, packets, migrations, auth or deployment. Use `architecture` for a design question and
+  `security` for a sensitive flow. Skip trivial edits, and say so when the CLI is unavailable.
+- **Invocation:** the lead names the reviewer: `python3 .ai/scripts/peer-review codex review --base
+  origin/main <focus>` when Claude leads, `... claude review ...` when Codex leads.
+- **Findings are hypotheses.** The lead checks each cited line or reproduction, fixes what is confirmed,
+  runs the tests, and reports what it rejected and why. An `ARCHITECTURE.md §9` decision goes to the owner.
+- **The reviewer** never edits, commits, delegates or calls the script again. One review per change;
+  never loop Codex → Claude → Codex.
+- This overlay grants no exceptions: this file, `ARCHITECTURE.md` and the phase spec take precedence, and
+  a reviewer's suggestion does not authorize scope.
