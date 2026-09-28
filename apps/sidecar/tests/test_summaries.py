@@ -216,12 +216,12 @@ def test_the_prompt_lists_kept_secrets_and_a_summary_repeating_one_is_held(migra
 
 
 def test_the_leak_check_is_about_the_secret_not_its_setting():
-    """Measured in the real-model tier (docs/perf/summaries.md): a summary that left the kiss out but kept the scene's
-    setting and names scored 0.68 before names were left out, above the check."""
-    kiss = {"text": "블랑 event: 엘피가 잠든 사이 유우마와 입을 맞췄다", "turn": 0, "position": 0,
-            "holders": ["블랑", "유우마"], "open": ["엘피"]}
-    left_out = "엘피가 잠든 사이 유우마와 블랑은 부엌에서 만났다. 유우마는 이 일을 엘피에게 비밀로 하자고 했다."
-    copied = "엘피가 잠든 사이 블랑과 유우마는 부엌에서 입을 맞췄다."
+    """Measured in the real-model tier (docs/perf/summaries.md, synthetic scene): a summary that left the kiss out but
+    kept the scene's names and setting scored 0.68 before names were left out, above the check then set."""
+    kiss = {"text": "하나 event: 소라가 잠든 사이 카이토와 입을 맞췄다", "turn": 0, "position": 0,
+            "holders": ["하나", "카이토"], "open": ["소라"]}
+    left_out = "소라가 잠든 사이 하나와 카이토는 부엌에서 만났다. 두 사람은 서로의 마음을 확인하며 소라에게는 비밀로 하기로 했다."
+    copied = "소라가 잠든 사이, 하나와 카이토는 부엌에서 입을 맞췄다. 카이토는 이를 소라에게 비밀로 하자고 했다."
     assert summaries.leaks(left_out, [kiss]) == [] and summaries.leaks(copied, [kiss]) == [kiss]
 
 
@@ -312,8 +312,8 @@ def test_a_summary_repeating_a_kept_secret_and_a_narrator_get_no_story(migrated)
 
 
 def test_a_secret_stated_after_a_summary_holds_it_until_it_is_written_again(migrated, db):
-    """Phase 12 step 5 on the owner's chat: a kiss at turns 61–63 was known to be kept from someone only at 64 and 68,
-    so the summaries of that window, written before, did not keep it."""
+    """Phase 12 step 5: on the owner's chat an event was known to be kept from someone only a few turns after it, so
+    the summaries of its window, written before, did not keep it."""
     from memeval import stub_extractor
     from nmos_sidecar.facts import memory_view
     from test_extraction import drain as drain_facts

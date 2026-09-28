@@ -58,13 +58,14 @@ it: trigram containment of the secret's content, the names of its holders and of
 at 0.7 or more marks the summary held (the Inspector shows it; step 5 keeps it out of packets). Secrets are read from
 the head at that time, so a secret extracted after the summary was written counts too. The check catches a copied
 secret (0.76 on the real-model tier), not a reworded one (about 0.3): the prompt is the guard, the check a backstop.
-Real-model tier: `gemma4` 21/24, `deepseek` 24/24, neither wrote a secret's content (`docs/perf/summaries.md`).
+Real-model tier: `gemma4` 18/24, `deepseek` 24/24; `gemma4` wrote a kiss that was a whole scene in 2 of 3 runs, and
+the read-time check held both (0.76) (`docs/perf/summaries.md`).
 
 ## Amendment 2 — secrets stated after a summary (Phase 12 step 5)
 
-`summarize-v3`. On the owner's chat a kiss at turns 61–63 was stated to be kept from a character only at turns 64 and
-68, after the summaries of its window were written. The story so far then said it in other words, in the scene where
-that character asks what happened.
+`summarize-v3`. On the owner's chat, that one character's knowledge of an event was kept from another was extracted
+one and five turns after the event, after the summaries of its window were written. The story so far then told the
+event in other words, in a scene where the character it was kept from asks about it.
 
 - Each summary's prompt now lists the secrets stated up to 8 turns (`NEAR`) after its window, and records which it
   listed. The story's prompt lists them too.
@@ -72,18 +73,17 @@ that character asks what happened.
 - After each extraction the worker queues again every summary that such a secret now holds, and the story. A summary
   written again replaces the old one (the old row is discarded, kept for audit).
 
-The same story then read "…신체적 접촉을 통해 애정을 확인했습니다" (`docs/perf/summaries.md`). A reworded secret can
-still pass (K30).
+Written again, the same story no longer told the event, only a vaguer hint (`docs/perf/summaries.md`). A reworded
+secret can still pass (K30).
 
 ## Amendment 3 — a stricter check in front of the character a secret is kept from (the secret gate, 2026-09-28)
 
 The owner required a secret gate before summaries reach a packet (review of Phase 12). On the owner's restored chat
-the `gemma4` story told Blanc "블랑의 수업에 몰래 잠입하는 작전", the plan the memory still holds as kept from her
-(0.34, below the 0.7 bar). The owner chose a stricter bar only where it matters:
+a `gemma4` story told one character, in other words, a plan the memory still holds as kept from her (0.34, below the
+0.7 bar). The owner chose a stricter bar only where it matters:
 - when a character a secret is kept from is in the scene, a summary is held at 0.3 (`LEAK_NEAR`) instead of 0.7;
 - elsewhere the bar stays 0.7.
 
 On the owner's chat every one of the three main characters has a secret kept from her, so the story is held in most
 of its scenes (all six gate scenes with the `gemma4` summaries). The gate passes 6 of 6 under both models' summaries
 (`docs/perf/summaries.md`). The Inspector shows the general check (0.7), since it has no scene.
-

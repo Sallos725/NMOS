@@ -29,9 +29,9 @@ def test_a_case_passes_on_every_gold_phrase_in_any_wording_and_no_forbidden_one(
     v5 = '<Fact kind="addresses" turn="35">블랑 addresses 유우마: 반말; before, turn 16: 블랑 addresses 유우마: 존댓말</Fact>'
     assert eval_rp.score({"gold": ["존댓말"], "forbidden": ["존댓말"]}, v5) == {
         "gold": 1, "held": 1, "in_prompt": 0, "forbidden": 1, "placed": 0, "passed": True, "needs_memory": True}
-    # packet-v7's summaries tell the past: an answer there counts, an ended goal or an old event there is not current
-    v7 = '<Story>\n    <Summary kind="story" turns="0–63">둘은 가열로를 고쳤다.</Summary>\n  </Story>'
-    assert eval_rp.score({"gold": ["가열로"], "forbidden": ["가열로"]}, v7)["passed"] is True
+    # packet-v8's summaries tell the past: an answer there counts, an ended goal or an old event there is not current
+    v8 = '<Story>\n    <Summary kind="story" turns="0–63">둘은 등대 문을 고쳤다.</Summary>\n  </Story>'
+    assert eval_rp.score({"gold": ["등대 문"], "forbidden": ["등대 문"]}, v8)["passed"] is True
     # a gold answer in the messages the prompt already held counts, and says so; forbidden ones are the packet's only
     window = "…하나는 위조된 편지를 숨겼다…"
     assert eval_rp.score({"gold": ["위조된 편지"], "forbidden": ["위조된"]}, "<NarrativeMemory/>", window) == {

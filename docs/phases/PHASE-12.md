@@ -112,9 +112,11 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
 3. The summary projection: schema, generation, jobs, invalidation, the Inspector list (ADR). Off in the packet.
    **Done** (ADR 0042, migration 0023): off by default (`NMOS_SUMMARIES`).
 4. The summary prompt and secrets, measured on both models (the real-model tier), before anything reaches a packet.
-   **Done** (ADR 0042 amendment 1, `docs/perf/summaries.md`): `gemma4` 21/24, `deepseek` 24/24; no secret's content
-   written. One scene below 2 of 3, shown to the owner: `gemma4` named the forged letter (not the forgery) 3 of 3.
-   The owner accepted it (2026-09-28) and approved step 5 with the backfill size given (11 scene and 2 story calls on
+   **Done** (ADR 0042 amendment 1, `docs/perf/summaries.md`): `gemma4` 18/24, `deepseek` 24/24. Two scenes below 2 of
+   3, shown to the owner: `gemma4` named the forged letter (not the forgery) 3 of 3, and wrote a kiss that was the
+   whole scene 2 of 3, both copies the read-time check holds. (A first record, 21/24, used names from a real chat in one
+   scene; it was replaced.) The owner accepted the letter miss (2026-09-28); the kiss, found when the record was
+   redone, is shown to the owner with that change. The owner approved step 5 with the backfill size given (11 scene and 2 story calls on
    the restored copy, about 275,000 characters).
 5. `packet-v8`: `<Story>` and `<Cast>`, the budget share, narrator and strict handling (ADR). Merged only after the
    secret gate and M0 (no category worse) pass. Before it merges, the

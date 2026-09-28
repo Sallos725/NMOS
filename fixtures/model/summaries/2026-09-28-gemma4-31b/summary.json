@@ -25,12 +25,12 @@
       ]
     },
     "secret | the secret is the scene": {
-      "pass": 3,
+      "pass": 1,
       "runs": 3,
       "notes": [
         "ok",
-        "ok",
-        "ok"
+        "secret ['하나 event: 소라가 잠든 사이 카이토와 입을 맞췄다', '입을 맞']",
+        "secret ['하나 event: 소라가 잠든 사이 카이토와 입을 맞췄다', '입을 맞']"
       ]
     },
     "secret | a secret listed but not touched": {

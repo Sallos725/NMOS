@@ -49,15 +49,15 @@ SCENE_CHARS = 1200  # a stored scene summary's cap
 STORY_CHARS = 2400
 OPEN_SECRETS = 12  # listed in a summary's prompt, newest first
 # Secrets stated up to this many turns after a window can be about it: a character's knowledge of an event is often
-# extracted a few turns after the event (Phase 12 step 5: a kiss at turn 61–63, known to be kept from someone at 64 and
-# 68). A summary written before such a secret is held until it is written again with the secret listed.
+# extracted a few turns after the event (Phase 12 step 5: one and five turns after, on the owner's chat). A summary
+# written before such a secret is held until it is written again with the secret listed.
 NEAR = WINDOW
 # Trigram containment of a secret's content in a summary, names left out of both, that holds the summary back
 # (PHASE-12 Q3). It catches a secret copied into a summary (0.76 in the real-model tier), not one reworded (0.3), and
-# a summary that leaves the secret out but keeps its setting ("엘피가 잠든 사이 …") scored 0.59 (0.68 with names).
+# a summary that leaves the secret out but keeps its setting ("소라가 잠든 사이 …") scored 0.59 (0.68 with names).
 LEAK_MIN = 0.7
 # The same check when a character the secret is kept from is in the scene (owner, 2026-09-28, the secret gate): a
-# reworded secret scores about 0.3 ("블랑의 수업에 몰래 잠입하는 작전" against the plan kept from her: 0.34), and the
+# reworded secret scores about 0.3 (a plan told in other words to the one it is kept from: 0.34), and the
 # owner's summaries that left every secret out scored below it but for two scenes, which such a scene then goes without.
 LEAK_NEAR = 0.3
 LIVE_PRIORITY = 300  # after extraction's live and recent work (100–250)
@@ -327,7 +327,7 @@ def reply_text(parsed: dict[str, Any], cap: int) -> str:
 
 
 def content(secret: dict[str, Any]) -> str:
-    """What a secret says, without its head ("블랑 knows: …" → "…")."""
+    """What a secret says, without its head ("하나 knows: …" → "…")."""
     head, sep, body = secret["text"].partition(": ")
     return body if sep else head
 
