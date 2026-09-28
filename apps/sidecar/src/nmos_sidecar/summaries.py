@@ -186,6 +186,49 @@ def current(conn: psycopg.Connection, conv: UUID, head: UUID, key: str | None,
             "story_held": held(story, secrets, present) if story and secrets else []}
 
 
+def inspect(conn: psycopg.Connection, conv: UUID, head: UUID, key: str,
+            secrets: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """What the Inspector shows of a chat's summaries (PHASE-12 step 6): `current`, and for each due window and the
+    story why a summary is or is not used: its latest job (queued, running, dead with its error); an earlier summary of
+    the window from before an edit, swipe or delete in it (`changed`); the secrets it repeats (`leaks`) or was written
+    before (`unlisted`, written again); and the secrets that keep it out of a packet only while a character they are
+    kept from is in the scene (`near`, ADR 0042 amendment 3)."""
+    view = current(conn, conv, head, key, secrets)
+    jobs: dict[tuple[str, str], dict[str, Any]] = {}
+    story_job = None
+    for j in conn.execute(
+            "SELECT payload->>'level' AS level, payload->>'window_key' AS window_key, status, attempts, last_error"
+            " FROM job WHERE kind = 'summarize' AND conversation_id = %s AND payload->>'generation' = %s"
+            " AND status <> 'obsolete' ORDER BY updated_at, id", (conv, key)).fetchall():
+        jobs[(j["level"], j["window_key"])] = j  # the newest job of a window (a rewrite reuses its window key)
+        if j["level"] == "story":
+            story_job = j
+    keys = {x["window"].key for x in view["scenes"]}
+    earlier = {r["first_turn"] for r in conn.execute(
+        "SELECT first_turn, window_key FROM summary WHERE conversation_id = %s AND generation = %s AND level = 'scene'"
+        " AND discarded_at IS NULL", (conv, key)).fetchall() if r["window_key"] not in keys}
+    secrets = secrets or []
+    everyone = frozenset(norm(n) for s in secrets for n in s.get("open") or [])
+
+    def why(row: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
+        if row is None or not secrets:
+            return {"leaks": [], "unlisted": [], "near": []}
+        repeats = leaks(row["text"], secrets)
+        return {"leaks": repeats, "unlisted": unlisted(row, secrets),
+                "near": [s for s in leaks(row["text"], secrets, everyone) if s not in repeats]}
+
+    for x in view["scenes"]:
+        w = x["window"]
+        x.update(why(x["summary"]), job=jobs.get(("scene", w.key)),
+                 changed=x["summary"] is None and w.first_turn in earlier)
+    story = view["story"]
+    view["story_why"] = why(story)
+    # The story job that matters: one for the story that would replace the shown one, or the only one there is.
+    view["story_job"] = story_job if story_job and (story is None or not view["story_current"]
+                                                    or view["story_why"]["unlisted"]) else None
+    return view
+
+
 SCENE_MIN = 0.3  # trigram containment of the message in a scene summary that brings that scene (ADR 0043)
 
 

@@ -431,3 +431,78 @@ def test_with_the_character_it_is_kept_from_present_a_reworded_secret_is_held():
     assert summaries.leaks(story, [plan]) == []
     assert summaries.leaks(story, [plan], frozenset({"카이토"})) == [plan]
     assert summaries.leaks("유이와 하나는 카이토를 위해 빵을 굽고 산책을 했다.", [plan], frozenset({"카이토"})) == []
+
+
+def page(client, chat: SimChat) -> str:
+    return client.get(f"/inspector/c/{conv_id(client, chat)}", params={"lang": "en"}).text
+
+
+def test_the_inspector_says_why_a_scene_has_no_summary(migrated, db):
+    """PHASE-12 step 6: the generation, a scene changed by an edit, its job queued or failed, the story waiting, and
+    summaries turned off."""
+    chat = story_chat(30)
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        drain(migrated)
+        key = active_generation(db, "summarize").key
+        text = page(c, chat)
+        assert "Summary generation" in text and key[:20] in text and "Story of 0–7, 8–15, 16–23" in text
+        assert "scenes 1–3 of 3" in text and "not in it yet" not in text
+        chat.edit(2, "Turn 1 was rewritten.")
+        sync(c, chat)
+        text = page(c, chat)
+        assert "scene changed: written again" in text and ">queued<" in text
+        assert "Written once every scene has a summary (2 of 3)." in text
+        db.execute("UPDATE job SET status = 'dead', last_error = 'the model said no' WHERE kind = 'summarize'"
+                   " AND status = 'queued'")
+        text = page(c, chat)
+        assert ">failed<" in text and "the model said no" in text
+        assert c.put("/v1/config", json={"summaries": False}).status_code == 200
+        assert "Scene summaries are off" in page(c, chat)
+
+
+def test_the_inspector_names_the_secret_that_holds_a_summary():
+    from nmos_sidecar import inspector
+    from nmos_sidecar.summaries import Window
+
+    secret = {"text": "Hana keeps from Kaito: the letter is forged", "holders": ["Hana"], "open": ["Kaito"]}
+    row = {"text": "Hana reads the letter.", "members": [], "last_turn": 7}
+    w = Window(0, 0, 7, (), "k")
+    held = inspector._summary_state({"window": w, "summary": row, "leaks": [secret], "unlisted": [], "near": [],
+                                     "job": None}, "en")
+    assert "held back: repeats a secret" in held and "the letter is forged" in held
+    near = inspector._summary_state({"window": w, "summary": row, "leaks": [], "unlisted": [], "near": [secret],
+                                     "job": None}, "en")
+    assert ">current<" in near and "not used while Kaito is in the scene" in near
+    again = inspector._summary_state({"window": w, "summary": row, "leaks": [], "unlisted": [secret], "near": [],
+                                      "job": {"status": "queued"}}, "en")
+    assert "a secret stated after it, written again" in again and ">queued<" in again
+
+
+def test_a_character_page_shows_what_cast_says_of_them(migrated, db):
+    from memeval import stub_extractor
+    from nmos_sidecar.facts import memory_view
+    from test_extraction import drain as drain_facts
+
+    chat = SimChat()
+    chat.user("Hana is in the chapel.")
+    chat.reply("Hana takes the lantern. Hana wants to find the keeper.")
+    chat.user("Go on.")
+    chat.reply("Kaito is in the garden.")
+    chat.user("Next.")
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        sync(c, chat)
+        drain_facts(migrated, stub_extractor)
+        cid = conv_id(c, chat)
+        head = db.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (cid,)).fetchone()["head_commit_id"]
+        entities = memory_view(db, head, active_generation(db, "extract").key)["entities"]
+        by_name = {e["name"]: e["id"] for e in entities}
+        hana = c.get(f"/inspector/c/{cid}/e/{by_name['Hana']}", params={"lang": "en"}).text
+        lantern = c.get(f"/inspector/c/{cid}/e/{by_name['lantern']}", params={"lang": "en"}).text
+    assert "Current state (&lt;Cast&gt;)" in hana and "<Cast>" not in hana
+    start = hana.index("Current state (&lt;Cast&gt;)")
+    state = hana[start:hana.index("</details>", start)]
+    for said in ("Place", "Hana located in chapel", "Carries", "Hana possesses lantern", "Open goal", "find the keeper"):
+        assert said in state
+    assert "Current state" not in lantern  # an item has no <Cast> group
+

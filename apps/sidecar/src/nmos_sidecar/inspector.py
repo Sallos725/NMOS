@@ -12,6 +12,8 @@ from urllib.parse import quote
 
 from .entities import norm
 from .facts import STANDING, earlier, first, participant_entities, symmetric
+from . import scene
+from .retrieval import CAST_GOALS, cast_facts
 from .summaries import LAG, WINDOW
 
 STYLE = """
@@ -98,7 +100,17 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "summaries": ("요약 (장면·지금까지의 이야기)", "Summaries (scenes, story so far)"), "toc.summaries": ("요약", "Summaries"),
     "story": ("지금까지의 이야기", "Story so far"), "h.turns": ("턴", "Turns"), "h.summary": ("요약", "Summary"),
     "sm.current": ("있음", "current"), "sm.waiting": ("대기", "waiting"), "sm.held": ("보류: 비밀을 담음", "held back: repeats a secret"),
-    "sm.story_covers": ("장면 {n}개까지", "scenes 1–{n}"), "sm.none": ("아직 요약할 장면이 없습니다 ({w}턴마다 한 장면, 뒤로 {l}턴이 더 지나면 요약).",
+    "sm.unlisted": ("보류: 뒤에 드러난 비밀, 다시 작성", "held back: a secret stated after it, written again"),
+    "sm.near": ("{names} 앞에서는 쓰지 않음", "not used while {names} is in the scene"),
+    "sm.queued": ("작성 대기", "queued"), "sm.running": ("작성 중", "writing"), "sm.dead": ("실패", "failed"),
+    "sm.changed": ("장면이 바뀜: 다시 작성", "scene changed: written again"),
+    "sm.secret": ("비밀", "secret"), "sm.generation": ("요약 세대", "Summary generation"),
+    "sm.off": ("장면 요약이 꺼져 있습니다. 저장된 요약만 보여 주며, 어떤 패킷도 쓰지 않습니다.",
+               "Scene summaries are off: the stored ones are shown, and no packet uses them."),
+    "sm.narrator": ("화자 모드: 이 채팅의 패킷에는 <Story>가 들어가지 않습니다.", "Narrator mode: this chat's packets have no <Story>."),
+    "sm.story_wait": ("모든 장면에 요약이 생기면 작성합니다 ({n}/{m}).", "Written once every scene has a summary ({n} of {m})."),
+    "sm.behind": ("최신 장면은 아직 반영 안 됨", "the newest scenes are not in it yet"),
+    "sm.story_covers": ("장면 {n}/{m}개", "scenes 1–{n} of {m}"), "sm.none": ("아직 요약할 장면이 없습니다 ({w}턴마다 한 장면, 뒤로 {l}턴이 더 지나면 요약).",
                                                       "No scene to summarize yet (one scene per {w} turns, summarized {l} turns later)."),
     "other": ("실제가 아닌 단언 (가정·꿈·미상)", "Not actual (hypothetical, dreamed, unknown)"),
     "h.modality": ("양태", "Modality"),
@@ -144,6 +156,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "h.placed": ("배치", "Placed"),
     "lk.state": ("상태", "state"), "lk.thread": ("약속", "thread"), "lk.fact": ("사실", "fact"),
     "lk.claim": ("주장", "claim"), "lk.excerpt": ("원문", "excerpt"),
+    "lk.summary": ("요약", "summary"), "lk.cast": ("인물 상태", "cast"),
     "pk.placed": ("들어감", "placed"), "pk.budget": ("예산 부족", "no budget"), "pk.state_cap": ("상태 상한", "state cap"),
     "pk.repeats": ("사실과 중복", "repeats a fact"), "pk.restates": ("앞 줄과 같은 내용", "says an earlier line again"),
     "fits_at": ("예산 {n}이면 모두", "all at {n}"),
@@ -157,6 +170,15 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "who.gone": ("이 인물을 찾을 수 없습니다. 기억을 다시 만들었거나 이름이 다른 인물과 합쳐졌을 수 있습니다.",
                  "This character cannot be found. Memory may have been rebuilt, or the name merged with another."),
     "who.empty": ("이 인물에 대해 추출된 내용이 아직 없습니다.", "Nothing has been extracted about this character yet."),
+    "now": ("지금 상태 (<Cast>)", "Current state (<Cast>)"), "toc.now": ("지금 상태", "Current state"),
+    "cs.located_in": ("있는 곳", "Place"), "cs.has_status": ("상태", "Condition"),
+    "cs.feels_toward": ("페르소나에 대한 감정", "Feeling toward the persona"), "cs.possesses": ("지닌 것", "Carries"),
+    "cs.goal": ("열린 목표", "Open goal"), "h.aspect": ("항목", "Aspect"),
+    "cs.note": ("이 인물이 장면에 있을 때 패킷의 <Cast>가 말하는 내용입니다. 목표는 메시지가 이 인물을 부를 때만 {n}개까지 "
+                "들어가고, 장면의 일부만 아는 줄은 <Private>에 남습니다.",
+                "What the packet's <Cast> says of this character when they are in the scene. Open goals go in, up to {n}, "
+                "only when the message names them, and a line only some of the scene know stays in <Private>."),
+    "cs.empty": ("<Cast>에 넣을 현재 상태가 없습니다.", "No current state for <Cast>."),
     "profile": ("프로필", "Profile"), "held": ("지금 가진 것", "Holding now"),
     "about": ("이 인물에 대한 사실", "Facts about this character"),
     "takes_part": ("참여한 일 (주어나 대상이 아닌 사실)", "Takes part in (facts where they are neither subject nor object)"),
@@ -352,7 +374,9 @@ def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str
     body = (f"<div class=\"top\"><h1>{_t(lang, 'title')}</h1>{switch}</div>"
             f"<p class=\"muted\">{_t(lang, 'intro')} {queue}</p>"
             f"<p>{_t(lang, 'extractor')}: {_generation(gens.get('extraction'), lang)}<br>"
-            f"{_t(lang, 'projection')}: {_generation(gens.get('embeddings'), lang)}</p>"
+            f"{_t(lang, 'projection')}: {_generation(gens.get('embeddings'), lang)}"
+            + (f"<br>{_t(lang, 'sm.generation')}: {_generation(gens['summaries'], lang)}" if gens.get("summaries") else "")
+            + "</p>"
             + _plugin_status(plugin or {}, q, lang, embed) + listing)
     return body if embed else page(_t(lang, "title"), body, lang)
 
@@ -522,23 +546,51 @@ def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
                    "<br>".join(said(f, True) for f in p["speech"])] for p in entries[:100]])
 
 
-def _summaries_section(view: dict[str, Any], lang: str) -> str:
-    """The story so far and each due scene with its summary (PHASE-12, ADR 0042), newest scene first."""
+def _summary_state(x: dict[str, Any], lang: str) -> str:
+    """Why a summary is or is not used (PHASE-12 step 6): held for a secret, not used in front of someone, or, without
+    one, its job's state; with the secrets and the error that explain it."""
+    notes = [f"{_t(lang, 'sm.secret')}: {s['text']}" for s in x["leaks"] + x["unlisted"]]
+    if x["summary"] is not None:
+        out = (chip(lang, "sm", "held") if x["leaks"] else chip(lang, "sm", "unlisted") if x["unlisted"]
+               else chip(lang, "sm", "current"))
+        if x["unlisted"] and not x["leaks"] and x.get("job") and x["job"]["status"] != "done":
+            out += " " + chip(lang, "sm", x["job"]["status"])
+        if x["near"]:
+            names = ", ".join(sorted({n for s in x["near"] for n in s.get("open") or []}))
+            out += f" <span class=\"chip\">{_v(_t(lang, 'sm.near').format(names=names))}</span>"
+    else:
+        job = x.get("job")
+        out = chip(lang, "sm", "changed") if x.get("changed") else ""
+        if job and job["status"] != "done":
+            out += " " + chip(lang, "sm", job["status"])
+            if job["status"] == "dead" and job.get("last_error"):
+                notes.append(str(job["last_error"])[:200])
+        out = out.strip() or chip(lang, "sm", "waiting")
+    return out + "".join(f"<br><span class=\"muted\">{_v(n[:160])}</span>" for n in notes)
+
+
+def _summaries_section(view: dict[str, Any], lang: str, gen: dict[str, Any] | None = None, on: bool = True,
+                       narrator: str | None = None) -> str:
+    """The story so far and each due scene with its summary and state (PHASE-12, ADR 0042), newest scene first."""
+    t = lambda k: _t(lang, k)
+    head = f"<p class=\"muted\">{t('sm.generation')}: {_generation(gen, lang)}</p>"
+    head += "" if on else f"<p class=\"warn\">{_v(t('sm.off'))}</p>"
+    head += f"<p class=\"muted\">{_v(t('sm.narrator'))}</p>" if narrator else ""
     if not view["scenes"]:
-        return f"<p class=\"muted\">{_t(lang, 'sm.none').format(w=WINDOW, l=LAG)}</p>"
-    out = ""
+        return head + f"<p class=\"muted\">{t('sm.none').format(w=WINDOW, l=LAG)}</p>"
+    out = head
     if story := view.get("story"):
-        covers = _t(lang, "sm.story_covers").format(n=len(story["members"]))
-        held = f" {chip(lang, 'sm', 'held')}" if view.get("story_held") else ""
-        out += (f"<p><b>{_t(lang, 'story')}</b> <span class=\"muted\">({covers})</span>{held}<br>{_v(story['text'])}</p>")
-
-    def state(x: dict[str, Any]) -> str:
-        if x["summary"] is None:
-            return chip(lang, "sm", "waiting")
-        return chip(lang, "sm", "held") if x.get("held") else chip(lang, "sm", "current")
-
-    return out + table([_t(lang, k) for k in ("h.turns", "h.status", "h.summary")],
-                       [[_v(f"{x['window'].first_turn}–{x['window'].last_turn}"), state(x),
+        covers = t("sm.story_covers").format(n=len(story["members"]), m=view["due"])
+        state = _summary_state({"summary": story, "job": view.get("story_job"), **view["story_why"]}, lang)
+        behind = "" if view["story_current"] else f" <span class=\"muted\">{_v(t('sm.behind'))}</span>"
+        out += f"<p><b>{t('story')}</b> <span class=\"muted\">({covers})</span> {state}{behind}<br>{_v(story['text'])}</p>"
+    else:
+        job = view.get("story_job")
+        state = f" {chip(lang, 'sm', job['status'])}" if job and job["status"] != "done" else ""
+        out += (f"<p><b>{t('story')}</b> <span class=\"muted\">"
+                f"{_v(t('sm.story_wait').format(n=view['done'], m=view['due']))}</span>{state}</p>")
+    return out + table([t(k) for k in ("h.turns", "h.status", "h.summary")],
+                       [[_v(f"{x['window'].first_turn}–{x['window'].last_turn}"), _summary_state(x, lang),
                          _v((x["summary"] or {}).get("text") or "")] for x in reversed(view["scenes"])][:200])
 
 
@@ -707,7 +759,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     if both := pairs(facts if standing is None else standing):  # every pair, not only those in the capped facts
         parts.append(("pairs", t("pairs"), len(both), _pairs_table(both, lang), True))
     if summaries is not None:
-        parts.append(("summaries", t("summaries"), summaries["done"], _summaries_section(summaries, lang), False))
+        parts.append(("summaries", t("summaries"), summaries["done"], _summaries_section(summaries, lang, summaries.get("generation"), summaries.get("on", True),
+                                                        conv.get("memory_narrator")), False))
     if facts:
         parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
     if items:
@@ -771,7 +824,8 @@ def _packet_section(packet: dict[str, Any], trace: dict[str, Any], lang: str) ->
         echo = "" if "echo" not in e else f"{round(e['echo'] * 100)}%"
         if e.get("possible_leak"):
             echo += f" <span class=\"warn\">{_v(t('leak'))}</span>"
-        rows.append([chip(lang, "lk", e["kind"]), _v(e.get("turn")), _v(e.get("text")), outcome, _v(e.get("tok")), echo])
+        kind = chip(lang, "lk", e["kind"]) + (f" {chip(lang, 'lk', 'cast')}" if e.get("section") == "cast" else "")
+        rows.append([kind, _v(e.get("turn")), _v(e.get("text")), outcome, _v(e.get("tok")), echo])
     timings, options = trace.get("latency_ms") or {}, trace.get("recall_options") or {}
     scene = ""
     if "scene_cast" in timings:  # recorded since packet-v3 (ADR 0034) and the memory mode (ADR 0035)
@@ -789,6 +843,22 @@ def _packet_section(packet: dict[str, Any], trace: dict[str, Any], lang: str) ->
 def _owner_links(entity: dict[str, Any]) -> str:
     """The owner's links that joined this entity's names (ADR 0025), as "name = same as"."""
     return _v(", ".join(f"{link['name']} = {link['same_as']}" for link in entity.get("links") or []))
+
+
+def _cast_state(view: dict[str, Any], entity_id: str, r: Any, lang: str) -> str:
+    """A character's state block (PHASE-12 step 6): the lines <Cast> gives them, by the same rule (ADR 0043), and
+    their open goals, newest first."""
+    persona = scene.key(r, scene.PERSONA)
+    own = [f for f in view["facts"] if scene.key(r, f["subject"]) == entity_id]
+    rows = [[chip(lang, "cs", f["predicate"]), _v(fact_line_text(f)), _turn(f), _knowledge(f, lang)]
+            for f in cast_facts(own, lambda f: scene.key(r, f["object"]) == persona)]
+    goals = sorted((th for th in view.get("threads", []) if th.get("kind") == "goal" and th["status"] == "open"
+                    and scene.key(r, th["by"]) == entity_id), key=lambda th: th["position"], reverse=True)
+    rows += [[chip(lang, "cs", "goal"), _v(th.get("text")), _turn(th), ""] for th in goals[:20]]
+    if not rows:
+        return f"<p class=\"muted\">{_v(_t(lang, 'cs.empty'))}</p>"
+    return (table([_t(lang, k) for k in ("h.aspect", "h.fact", "h.turn", "h.knowledge")], rows)
+            + f"<p class=\"muted\">{_v(_t(lang, 'cs.note').format(n=CAST_GOALS))}</p>")
 
 
 def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[str, Any]]], token: str | None,
@@ -846,6 +916,9 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
         [t("h.type"), t("h.names"), t("h.mentions"), t("h.alias_turns"), t("h.owner_links")],
         [[chip(lang, "e", entity["type"]), _v(" · ".join(entity["names"])), _v(entity["mentions"]),
           _v(", ".join(str(a["turn"]) for a in entity["aliases"])), _owner_links(entity)]]), True)]
+    if (r := view.get("resolution")) is not None and entity["type"] == "character" \
+            and entity_id != scene.key(r, scene.PERSONA):
+        parts.append(("now", _v(t("now")), None, _cast_state(view, entity_id, r, lang), True))
     if conflicts:
         parts.append(("conflicts", t("conflicts"), len(conflicts), _conflicts_table(conflicts, lang), True))
     if threads:

@@ -38,6 +38,10 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
   - **Summaries are on by default** where extraction is on (`NMOS_SUMMARIES=0` or the panel turns them off). On the
     first start every chat's due windows are summarized in the background: for the owner's chats, about 11 scene and
     2 story calls.
+  - **The Inspector shows why a summary is or is not used**: the summary generation, each scene's state (current,
+    held back for a secret with the secret named, not used while a character it is kept from is in the scene,
+    changed and written again, queued, failed with its error), and a note when summaries are off or a chat has a
+    narrator. A character's page starts with **Current state**, the lines `<Cast>` gives them and their open goals.
   - **The default memory budget is 2,000 tokens** (was 800); a value saved in the plugin stays. Lower PocketRisu's max
     context accordingly.
 - **Phase 11 (Stage 5, part 1) is complete** (`docs/phases/PHASE-11.md`, 2026-09-28; no release decided):

@@ -124,7 +124,11 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
    800 tokens (a stop condition); the owner chose a default budget of 2,000 (2026-09-28). A summary that restated a
    secret stated after it (another stop condition); the owner chose to write such summaries again. M0 with `gemma4`
    extraction: 2 → 5 of the 12 new cases, 26 of 28 kept (`docs/perf/summaries.md`).
-6. Inspector views (summaries, story so far, character state).
+6. Inspector views (summaries, story so far, character state). **Done**: the Summaries section shows the summary
+   generation and each scene's state (current; held back for a secret it repeats or was written before, with the
+   secret; not used while a character it is kept from is in the scene; changed and written again; queued; failed
+   with its error), whether summaries are off and a narrator chat's missing `<Story>`; a character's page starts
+   with the lines `<Cast>` gives them, by the same rule (`retrieval.cast_facts`), and their open goals.
 7. Evaluation, real-host smoke, upgrade, latency, documentation.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).
