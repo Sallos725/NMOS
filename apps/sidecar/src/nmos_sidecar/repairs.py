@@ -70,7 +70,8 @@ def thread_target(t: dict[str, Any]) -> dict[str, Any]:
 def secret_target(s: dict[str, Any]) -> dict[str, Any]:
     """What a repair stores to find this secret again: its head (subject and predicate) and text."""
     return {"turn": s.get("turn"), "turn_hash": s.get("turn_hash"), "subject": s.get("subject"),
-            "predicate": s.get("predicate"), "holders": list(s.get("holders") or []), "text": s["text"]}
+            "predicate": s.get("predicate"), "object": s.get("object"), "holders": list(s.get("holders") or []),
+            "text": s["text"]}
 
 
 def _closest(target: dict[str, Any], items: list[dict[str, Any]], text_of) -> dict[str, Any] | None:
@@ -99,11 +100,14 @@ def match_thread(target: dict[str, Any], threads: list[dict[str, Any]], r: Resol
 
 
 def match_secret(target: dict[str, Any], secrets: list[dict[str, Any]], r: Resolution | None = None) -> dict[str, Any] | None:
-    """The secret a repair names: same turn, predicate and subject (the same entity), and the closest text."""
+    """The secret a repair names: same turn, head (predicate, subject and object, as entities), and the closest
+    text."""
     subject = _key(r, target.get("subject")) if target.get("subject") else None
+    obj = _key(r, target.get("object")) if target.get("object") else None
     pool = [s for s in secrets if _same_turn(target, s)
             and (target.get("predicate") is None or s.get("predicate") == target["predicate"])
-            and (subject is None or _key(r, s.get("subject")) == subject)]
+            and (subject is None or _key(r, s.get("subject")) == subject)
+            and (obj is None or _key(r, s.get("object")) == obj)]
     return _closest(target, pool, lambda s: s["text"])
 
 

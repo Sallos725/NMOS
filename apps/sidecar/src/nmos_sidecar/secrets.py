@@ -126,7 +126,7 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
             for name in a["hidden_from"]:
                 kept.setdefault(_who(r, name), name)
             secrets.append({"id": a["id"], "text": secret_text(a), "turn": a.get("turn"), "turn_hash": a.get("turn_hash"),
-                            "subject": a["subject"], "predicate": a["predicate"],
+                            "subject": a["subject"], "predicate": a["predicate"], "object": a.get("object"),
                             "position": a["position"],
                             "host_logical_id": a.get("host_logical_id"), "holders": list(a.get("known_by") or []),
                             "kept_from": list(kept.values()), "ended": {}, "_kept": kept})

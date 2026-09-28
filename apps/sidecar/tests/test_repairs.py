@@ -302,3 +302,19 @@ def test_a_secret_repair_names_itself_on_the_thread_and_claim_lines_it_changed()
     assert t["repair"] == "found-1"
     assert facts_mod._ref({"id": 7, "repair": "found-1"}) == {"assertion": 7, "repair": "found-1"}
     assert facts_mod._ref({"id": 7}) == {"assertion": 7}
+
+
+def test_a_repair_of_a_turn_runs_after_every_row_of_that_turn():
+    """Copilot review of #145: a repair's turn is the turn it follows, not one it runs before."""
+    (t,), _ = fold_threads([goal(1)], [owner("thread_close", AIM_TARGET, outcome="achieved", turn=1)])
+    assert t["status"] == "achieved"  # the thread opened in the same turn is there when the close runs
+    (t,), _ = fold_threads([goal(1), resolved(2)], [owner("thread_reopen", AIM_TARGET, turn=2)])
+    assert t["status"] == "open"  # the story's close of that turn came first
+
+
+def test_a_secret_repair_needs_the_same_object():
+    base = {**kept_goal(1), "predicate": "knows", "object": "카이토"}
+    base["text"] = secret_fold.secret_text(base)
+    other = {**base, "id": 102, "object": "소라"}
+    other["text"] = secret_fold.secret_text(other)
+    assert repairs.match_secret(repairs.secret_target(base), [other]) is None

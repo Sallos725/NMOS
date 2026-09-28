@@ -26,8 +26,8 @@ generation makes new rows for the same turn, often in other words, so a fix keye
    step), and `fact_retract`, `fact_correct`, `name_split` (step 4; the API refuses them until then). A rebuild keeps
    it; undo sets `removed_at` and keeps the row; deleting the chat deletes it (ADR 0009).
 2. **A target is what the item says.** For a thread: its turn, the turn's hash (ADR 0008), its kind, maker,
-   counterpart and text. For a secret: its turn, the turn's hash, its head (subject and predicate), its holders and
-   its text. The read applies a repair to the one item of the same turn, while that turn's hash is unchanged, of the
+   counterpart and text. For a secret: its turn, the turn's hash, its head (subject, predicate and object), its
+   holders and its text. The read applies a repair to the one item of the same turn, while that turn's hash is unchanged, of the
    same kind and maker (the same entity, ADR 0012) — for a promise or a debt the same counterpart too, as a
    restatement must have — or, for a secret, of the same head, whose text is closest and at least as close as a thread
    match (`MATCH_MIN`, ADR 0019). Two items equally close match nothing, and the API refuses a repair of an item it
