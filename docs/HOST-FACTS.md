@@ -361,6 +361,53 @@ about plugins overwriting each other's dialogs.
 Conclusion: H18. A plugin alert during a request could replace a host dialog, so NMOS alerts only after a
 reply, at most once per page.
 
+## Canon sources (2026-09-28, Phase 14, H19)
+
+Observed on `ghcr.io/pocketrisu/pocketrisu:latest` (v1.13.0, image `e3fc431541a9`, the owner's version since
+2026-09-27), an isolated container with a fresh save directory seeded with synthetic canon, headless Chromium 1223,
+the stub chat model and the canon probe (`adapters/pocketrisu-spike/nmos-canon-probe.js`). Setup, script and raw
+lines: `fixtures/host/canon-v1.13.0-2026-09-28/`. **Source reading:** tag `v1.13.0` of
+`github.com/PocketRisu/PocketRisu`: `src/ts/plugins/apiV3/v3.svelte.ts`, `src/ts/plugins/plugins.svelte.ts`
+(`allowedDbKeys`), `src/ts/storage/database.svelte.ts`. The owner's instance was not touched.
+
+1. **Every canon call exists.** `getCharacter`, `getCurrentLorebookEntries`, `getCurrentCharacterIndex`,
+   `getCurrentChatIndex`, `getChatFromIndex` and `getDatabase` are functions on the V3 object.
+2. **The card.** `getCharacter()` returns the current character: `name`, `desc`, `personality`, `scenario`,
+   `firstMessage`, `alternateGreetings`, `globalLore` and `chats`. It asks no permission. An edit of `desc` through
+   the host's own character write showed in the next request's `getCharacter()` (a new hash). Its snapshot
+   includes every message of the current chat: 1.65 million characters and **82–93 ms at 10,000 messages**. The
+   character's other chat (5,000 messages) was not loaded and added none.
+3. **The lorebooks.** `getCurrentLorebookEntries()` returned the character's four entries (a keyed `normal` entry,
+   an always-active `constant` entry, a `folder` with empty content, and a keyed entry whose `folder` names it), the
+   chat's local entry and the enabled module's entry: six in all, each with its `id`, `mode`, `alwaysActive` and
+   keys. It returns every entry, activated or not, in 0.3–2.3 ms at any chat length.
+4. **What a prompt holds.** Each entry's `content` was in the outgoing prompt exactly when the host activated it:
+   - the always-active entry in every request;
+   - a keyed entry in the request whose recent messages named it;
+   - the entry in the folder, never named, in none.
+
+   The card's `desc`, `personality`, `scenario` and the greeting, the chat's author's note and the bound persona's
+   `personaPrompt` were in every prompt verbatim.
+5. **The chat.** `getChatFromIndex` carries `note` (the author's note), `localLore`, `bindedPersona`, `fmIndex` and
+   `id`: the fields NMOS already reads with the chat, at the same cost (80–83 ms at 10,000 messages, as the sync
+   already pays).
+6. **The persona.** `getDatabase(['personas', 'selectedPersona', 'modules', 'enabledModules'])` returned the
+   personas with `personaPrompt`, the modules with their lorebooks, and the enabled module ids. The first call
+   showed the "full database" dialog of H17 (93 ms with the answer); later calls took about 1 ms.
+
+Conclusion: H19. The lorebooks, the chat's note and local entries, and the persona are cheap to read at each
+request. The card is not: reading it clones the current chat, so it is read off the request path.
+
+**Re-check of the existing host facts on v1.13.0.** The Phase 13 real-host smoke ran on this image
+(`docs/perf/repair.md`):
+- a plugin re-import with the "Duplicate plugin… update?" confirm, then a reload (H13);
+- the replacer permission and the `beforeRequest` injection after prompt assembly (H1, H3);
+- the sync through `getChatFromIndex`;
+- the panel in the plugin frame with the Inspector in it (H15);
+- the persona's name through `getDatabase` (H17).
+
+All held. Production has recorded requests with NMOS memory on v1.13.0 since 2026-09-27.
+
 ## Scenario evidence index
 
 | Scenario | Before fixture | After fixture | Other logs | Done |
