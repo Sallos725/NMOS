@@ -171,24 +171,28 @@ def held(conn: psycopg.Connection, conv_id: UUID) -> dict[str, dict[str, Any]]:
     return {r["key"]: r for r in rows}
 
 
-def names(conn: psycopg.Connection, conv_id: UUID, known_at: datetime | None = None,
-          mid: str | None = None) -> list[dict[str, Any]]:
-    """Each lorebook entry's keys, as names of one thing (PHASE-14 Q6), from the manifest `mid` when the sidecar has it
-    (a request's own), else the conversation's canon now, or as applied at `known_at` (a replay)."""
-    entries = None
+def names(conn: psycopg.Connection, conv_id: UUID, known_at: datetime | None = None, mid: str | None = None,
+          exact: bool = False) -> tuple[list[dict[str, Any]], str | None]:
+    """Each lorebook entry's keys, as names of one thing (PHASE-14 Q6), and the manifest they came from: `mid` when the
+    sidecar has it (a request's own), else the conversation's canon now, or as applied at `known_at`. With `exact`, the
+    manifest `mid` and no other (None: no canon), as a replay reads the one its request used (ADR 0046)."""
+    entries, used = None, None
     if mid:
         row = conn.execute("SELECT entries FROM canon_manifest WHERE conversation_id = %s AND id = %s",
                            (conv_id, mid)).fetchone()
-        entries = row and row["entries"]
-    if entries is None and known_at is not None:
+        if row:
+            entries, used = row["entries"], mid
+    if entries is None and not exact and known_at is not None:
         row = conn.execute(
-            "SELECT m.entries FROM canon_applied a JOIN canon_manifest m ON m.conversation_id = a.conversation_id"
+            "SELECT m.id, m.entries FROM canon_applied a JOIN canon_manifest m ON m.conversation_id = a.conversation_id"
             " AND m.id = a.manifest_id WHERE a.conversation_id = %s AND a.applied_at <= %s"
             " ORDER BY a.applied_at DESC LIMIT 1", (conv_id, known_at)).fetchone()
-        entries = row and row["entries"]
-    if entries is None and known_at is None:
-        row = conn.execute("SELECT m.entries FROM conversation c JOIN canon_manifest m ON m.conversation_id = c.id"
+        if row:
+            entries, used = row["entries"], row["id"]
+    if entries is None and not exact and known_at is None:
+        row = conn.execute("SELECT m.id, m.entries FROM conversation c JOIN canon_manifest m ON m.conversation_id = c.id"
                            " AND m.id = c.canon_manifest_id WHERE c.id = %s", (conv_id,)).fetchone()
-        entries = row and row["entries"]
-    return [{"key": e["key"], "names": list((e.get("metadata") or {}).get("keys") or [])}
-            for e in entries or () if e["key"].startswith("lore:") and (e.get("metadata") or {}).get("keys")]
+        if row:
+            entries, used = row["entries"], row["id"]
+    return ([{"key": e["key"], "names": list((e.get("metadata") or {}).get("keys") or [])}
+             for e in entries or () if e["key"].startswith("lore:") and (e.get("metadata") or {}).get("keys")], used)

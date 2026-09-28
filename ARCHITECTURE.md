@@ -468,10 +468,11 @@ computed alike by plugin and sidecar) is the chat's canon at one time; a request
 its prompt held, so it replays with its own canon. The plugin reads the card off the request path (H19) and uploads
 canon in the background, one upload per chat at a time. No message pipeline reads canon, and the packet is unchanged.
 
-**D56 — Names from canon (Phase 14, ADR 0046).** A lorebook entry's keys name one thing. When exactly one key is a
-character the head mentions (not the persona) and no key names another known entity, the other keys are that
-character's aliases (K31). An entry naming two known characters joins nothing, and the owner's splits apply.
-Requests and replays read their own manifest's names; extraction hints use them.
+**D56 — Names from canon (Phase 14, ADR 0046).** A lorebook entry's keys name one thing. After the story's resolution,
+when the keys the story knows all name one character (not the persona) and no key names anything else it knows, the
+keys it does not know become that character's aliases (K31). Canon never joins, splits or unsettles what the story and
+the owner settled. A key given to two characters is ambiguous, and the owner's split keeps an alias out. A request
+records the manifest whose names it used, and its replay reads exactly that one.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

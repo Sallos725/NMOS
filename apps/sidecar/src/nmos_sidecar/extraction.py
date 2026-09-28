@@ -320,7 +320,7 @@ def load_context(conn: psycopg.Connection, revision_id: UUID, turn_hash: str, tu
             return None
         target["links"] = links_of(conn, target["conversation_id"])  # the owner's (ADR 0025): hints use them
         target["splits"] = splits_of(repairs_of(conn, target["conversation_id"]))  # and the owner's splits (ADR 0044)
-        target["canon"] = canon.names(conn, target["conversation_id"])  # and canon's names (PHASE-14 Q6)
+        target["canon"] = canon.names(conn, target["conversation_id"])[0]  # and canon's names (PHASE-14 Q6)
         rows = conn.execute(
             """
             SELECT am.position, am.turn, sr.id, sr.metadata FROM active_membership am

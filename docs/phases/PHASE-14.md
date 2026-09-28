@@ -141,6 +141,9 @@ where the story uses it, and the message extractor is untouched.
    - requests read their own manifest's names, replays too; extraction hints use them;
    - on sample 2 with its canon, the given-name probes find their fact 2 of 3 (0 before; the full name also 2 of 3);
    - its M0 is unchanged (8 of 17 lexical, 12 of 17 with vectors).
+   - the step's Codex review found three defects (two shared aliases could merge two characters; canon could unsettle
+     story aliases or the persona's; a late manifest changed a replay), all fixed with tests: canon aliases now
+     apply on top of the story's resolution.
 5. Canon facts, conflicts, and `fact_lock`.
 6. Evaluation, real-host smoke, upgrade, latency, Codex review, documentation.
 

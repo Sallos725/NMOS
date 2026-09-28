@@ -105,32 +105,6 @@ class Resolution:
                 counts[n] = counts.get(n, 0) + 1
                 if n[0] == "character" and _persona_name(norm(p["name"]), self.persona):
                     hosted.setdefault(norm(p["name"]), p["name"])
-        # Names from canon (PHASE-14 Q6, ADR 0046): a lorebook entry's keys name one thing. When exactly one of them is a
-        # character the head mentions, other than the persona, and no other key names anything else the head mentions,
-        # its other keys are that character's aliases (a given name alone, K31). An entry naming two joins nothing, and
-        # the owner's splits below apply to these aliases as to the story's.
-        mentioned = set(first)  # the head's names, before any canon: the guard looks at these only
-        known: dict[str, set[Node]] = {}
-        for n in mentioned:
-            known.setdefault(n[1], set()).add(n)
-        persona_node = ("character", PERSONA)
-        for item in canon:
-            names = [n for n in dict.fromkeys(item.get("names") or ()) if norm(n)]
-            hits = {self.node("character", n) for n in names} & mentioned
-            elsewhere = {x for n in names for x in known.get(norm(n), ()) if x[0] != "character"}
-            if len(hits) != 1 or elsewhere or persona_node in hits:
-                continue
-            (a,) = hits
-            group = [a] + [b for b in dict.fromkeys(self.node("character", n) for n in names) if b not in (a, persona_node)]
-            spelled = {self.node("character", n): n for n in reversed(names)}
-            for b in group[1:]:
-                first.setdefault(b, (len(first), spelled[b]))
-                self.alias_rows.append((a, b, {"subject": first[a][1], "value": spelled[b], "turn": None,
-                                               "canon": item.get("key")}))
-            for x in group:  # one entry's names name one thing: joined to each other, never "ambiguous" among themselves
-                for y in group:
-                    if x != y:
-                        edges.setdefault(x, set()).add(y)
         # The owner's links and splits between names the head mentions (ADR 0025, ADR 0044); the others wait for a
         # mention. Of a link and a split of the same two names, the newer holds.
         latest: dict[frozenset, str] = {}
@@ -185,6 +159,43 @@ class Resolution:
         for a, b, split in self.splits:
             if a in self._root and b in self._root and self._root[a] == self._root[b]:
                 self.split_via[str(split["id"])] = [first[n][1] for n in _path(a, b, accepted, self.links)[1:-1]]
+        # Names from canon (PHASE-14 Q6, ADR 0046), on top of the story's resolution: a lorebook entry's keys name one
+        # thing. When the keys the story knows all name one entity, a character other than the persona, and no key names
+        # anything else the story knows, the keys it does not know become that entity's aliases (K31). A key entries
+        # give to two entities is ambiguous. A canon alias never joins, splits or unsettles what the story and the owner
+        # settled, and an owner's split of an alias from its entity keeps it out (ADR 0044).
+        known: dict[str, set[Node]] = {}
+        for n in first:
+            known.setdefault(n[1], set()).add(n)
+        persona_node = ("character", PERSONA)
+        persona_root = self._root.get(persona_node)
+        claims: dict[Node, dict[Node, tuple[str, Any]]] = {}  # alias → entity root → (spelling, entry key)
+        for item in canon:
+            names = [n for n in dict.fromkeys(item.get("names") or ()) if norm(n)]
+            nodes = [(self.node("character", n), n) for n in names]
+            roots = {self._root[x] for x, _ in nodes if x in self._root}
+            if (len(roots) != 1 or any(x in self.ambiguous for x, _ in nodes)
+                    or any(x[0] != "character" for n in names for x in known.get(norm(n), ()))):
+                continue
+            (root,) = roots
+            if root == persona_root or root[0] != "character":
+                continue
+            for x, spelling in nodes:
+                if x not in first and x != persona_node:
+                    claims.setdefault(x, {}).setdefault(root, (spelling, item.get("key")))
+        for x, by in claims.items():
+            if len(by) > 1:  # entries of two entities claim it: ambiguous, joined to neither
+                first[x] = (len(first), next(iter(by.values()))[0])
+                self.ambiguous.add(x)
+                edges[x] = set(by)
+                continue
+            ((root, (spelling, key)),) = by.items()
+            members = [n for n, r in self._root.items() if r == root]
+            if any(latest.get(frozenset((x, m))) == "split" for m in members):
+                continue
+            first[x] = (len(first), spelling)
+            self._root[x] = root
+            self.alias_rows.append((root, x, {"subject": first[root][1], "value": spelling, "turn": None, "canon": key}))
         self._edges = edges
         self._first = first
         self._counts = counts

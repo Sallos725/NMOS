@@ -114,6 +114,15 @@ def _same(a: list[dict[str, Any]], b: list[dict[str, Any]]) -> bool:
     return [{k: x.get(k) for k in keys} for x in a] == [{k: x.get(k) for k in keys} for x in b]
 
 
+def _canon_of(t: dict[str, Any]) -> dict[str, Any]:
+    """The canon a recorded request read its names from (ADR 0046): exactly the manifest it used, none included; a
+    request recorded before that was kept reads the manifest it named."""
+    options = t.get("recall_options") or {}
+    if "canon_names" in options:
+        return {"canon_manifest": options["canon_names"], "canon_exact": True}
+    return {"canon_manifest": t.get("canon_manifest_id")}
+
+
 def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, policy: str | None = None,
            known_at: datetime | None = None, query: str | None = None, budget: int | None = None,
            **overrides: Any) -> dict[str, Any] | None:
@@ -149,7 +158,7 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
         notes.append("query replaced")
     g = gather(conn, t["head_commit_id"], t["query"] if query is None else query, t["previous_ai"] or "",
                set(t["in_context"] or []), opts, upto=t["upto_position"], known_at=known_at or t["created_at"],
-               canon_manifest=t.get("canon_manifest_id"))  # its own canon (ADR 0045)
+               **_canon_of(t))
     if opts.embedder is not None and g.vector_note != "on":
         notes.append(f"vectors {g.vector_note}")  # an embedder that failed now cannot reproduce the request
     if budget is not None:

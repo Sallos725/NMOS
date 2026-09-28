@@ -335,7 +335,8 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
 
 
 def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None, upto: int | None = None,
-                known_at: datetime | None = None, canon_manifest: str | None = None) -> dict[str, list[dict[str, Any]]]:
+                known_at: datetime | None = None, canon_manifest: str | None = None,
+                canon_exact: bool = False) -> dict[str, list[dict[str, Any]]]:
     """The head's assertions by what they may do (ADR 0013).
 
     - facts: current fact versions from actual narration (legacy rows without a source count as
@@ -374,8 +375,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     last_turn = conv["last_turn"] if repairs else None
     in_force = live(repairs, last_turn)
     # Names from canon (PHASE-14 Q6): the request's own manifest, else the canon in force at the read.
-    canon_names = (canon.names(conn, conv["conversation_id"], known_at, canon_manifest)
-                   if conv["canon_manifest_id"] or canon_manifest else [])
+    canon_names, canon_used = (canon.names(conn, conv["conversation_id"], known_at, canon_manifest, canon_exact)
+                               if conv["canon_manifest_id"] or canon_manifest else ([], None))
     r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]),
                 links_of(conn, conv["conversation_id"], known_at), splits_of(in_force), canon_names)
     narrated: dict[tuple, list[dict[str, Any]]] = {}
@@ -453,7 +454,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     return {"facts": facts, "claims": claims, "other": other, "entities": r.entities(),
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
             "threads": threads, "unmatched": unmatched, "secrets": secrets, "unrevealed": unrevealed,
-            "repairs": [_report(rep, applied, r) for rep in repairs], "assertions": rows, "resolution": r}
+            "repairs": [_report(rep, applied, r) for rep in repairs], "assertions": rows, "resolution": r,
+            "canon_names": canon_used}
 
 
 def _report(rep: dict[str, Any], applied: dict[str, str | None], r: Resolution) -> dict[str, Any]:
