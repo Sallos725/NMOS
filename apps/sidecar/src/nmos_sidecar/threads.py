@@ -190,7 +190,8 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None) -> tuple[list[
                 same["restated"].append({"turn": a.get("turn"), "position": a["position"]})
             else:
                 t = {"id": a["id"], "kind": KINDS[a["predicate"]], "by": a["subject"], "to": a.get("object"), "text": a.get("value"),
-                     "turn": a.get("turn"), "position": a["position"], "host_logical_id": a.get("host_logical_id"),
+                     "turn": a.get("turn"), "turn_hash": a.get("turn_hash"), "position": a["position"],
+                     "host_logical_id": a.get("host_logical_id"),
                      "source": a.get("source"), "modality": a.get("modality"), "evidence": a.get("evidence"),
                      "knowledge": a.get("knowledge"), "known_by": a.get("known_by"), "hidden_from": a.get("hidden_from"),
                      "revealed": a.get("revealed"),
