@@ -1,7 +1,8 @@
 # Cross-model review (Codex ⇄ Claude)
 
-One agent leads a change; the other model gives one read-only second opinion. The rule itself is
-`AGENTS.md §14`; this file is the how-to.
+One agent leads a change. For changes classified as high risk by `AGENTS.md §14`, the other model gives
+one read-only second opinion. Lower-risk changes stay with the lead's diff-scoped self-review; this file is
+the how-to for the external-review escalation.
 
 ```text
 .ai/scripts/peer-review   runs the reviewer CLI read-only and prints its final answer
@@ -16,7 +17,8 @@ One agent leads a change; the other model gives one read-only second opinion. Th
    task scope and the phase it belongs to.
 2. The lead implements in its own checkout. One writer per checkout; parallel work uses separate Git
    worktrees and is integrated deliberately.
-3. For a material change (`AGENTS.md §14`), the lead runs one focused review with the other model:
+3. If `AGENTS.md §14` classifies the change as **high risk**, the lead runs one focused review with
+   the other model. Lower-risk material changes do not invoke the other model.
 
    ```bash
    python3 .ai/scripts/peer-review codex review --base origin/main "reroll and swipe invalidation in the fold"
@@ -25,7 +27,8 @@ One agent leads a change; the other model gives one read-only second opinion. Th
 
    The first argument is the **reviewer**: Claude leading calls `codex`, Codex leading calls `claude`.
    `--base` adds the branch diff; without it the scope is the working tree (untracked files included). The
-   free text narrows the question. A review takes minutes: run it in the background (default timeout 900 s).
+   free text narrows the question. Keep the review to the diff and minimum dependency cone; do not use this
+   as a repository-wide audit.
 4. The lead classifies each finding as confirmed, partial or unsupported, citing code, a test or a fixture.
    Decisions listed in `ARCHITECTURE.md §9` go to the owner; a reviewer cannot settle them.
 5. The lead fixes confirmed defects, runs the repository's real commands (`AGENTS.md §11`), and reports
@@ -74,5 +77,5 @@ edit. A §14 review goes through this script, read-only.
 
 Each run uses the reviewer CLI's own login, not the NMOS model keys: the CLI gets only the system basics of the
 environment and its own login variables (Codex: `OPENAI_*`, `CODEX_*`; Claude: `ANTHROPIC_*`, `CLAUDE_*`), never
-the other CLI's, `NMOS_*`, `DATABASE_URL` or `PG*`. It still costs quota or money: one
-review per material change, not one per commit.
+the other CLI's, `NMOS_*`, `DATABASE_URL` or `PG*`. It still costs quota or money, so external review is
+reserved for high-risk changes and is limited to one run per change.
