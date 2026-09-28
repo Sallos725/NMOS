@@ -2,6 +2,13 @@
 
 ## Current phase
 
+**Phase 14 — Verification and Repair, part 2: canon sources (Stage 6): draft 2026-09-28, awaiting the owner's
+answers.** Spec `docs/phases/PHASE-14.md`: the character card, the lorebooks, the persona and the author's note as
+immutable sources of each chat; names from canon; canon facts read by the extraction model as their own projection
+(the message extractor unchanged), superseded by the story from the turn it says something new; contradictions in
+"Needs attention"; a canon lock. Host evidence first, on the owner's PocketRisu v1.13.0. Export/restore is proposed as
+Phase 15. No release.
+
 **Phase 13 — Verification and Repair, part 1 (Stage 6): complete (2026-09-28), not released.** Spec
 `docs/phases/PHASE-13.md`: the owner repairs memory in the panel (close or reopen a thread, retract or correct a
 fact, mark a secret found out, split two names), stored as owner input that survives rebuilds and new extractor

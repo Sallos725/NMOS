@@ -1,6 +1,6 @@
 # Phase 13 — Verification and Repair, part 1 (Stage 6)
 
-> **Status: approved 2026-09-28 (owner), in progress.** Stage 6 of `docs/ROADMAP-1.0.md` (original §20, §66–67; Track B,
+> **Status: complete 2026-09-28** (approved the same day; the latency criterion missed by 2 ms, accepted by the owner). Stage 6 of `docs/ROADMAP-1.0.md` (original §20, §66–67; Track B,
 > B7 and the B2 remainder), part 1 of 2: the owner repairs what memory got wrong, and a queue shows what needs a
 > look. Canon sources and export/restore are part 2 (Q0). The owner chose Stage 6 next after Phase 12 (2026-09-28)
 > and decided no release for now. The owner answered every question below with the recommended answer
