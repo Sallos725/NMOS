@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, keepAttribute, linkChoices, localTime,
-  sectionTarget } from '../src/inspector';
+import { closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, keepAttribute, linkChoices,
+  localTime, repairAction, sectionTarget, splitChoices } from '../src/inspector';
 import type { EntityRow } from '../src/inspector';
 
 const id = '0190f3a4-1b2c-7d3e-8f40-123456789abc';
@@ -50,6 +50,26 @@ describe('inspector markup', () => {
   });
 });
 
+describe('repair marks (ADR 0044)', () => {
+  it('parse a kind, an item and a character or field, and nothing else', () => {
+    expect(repairAction(`thread_close:${id}`)).toEqual({ kind: 'thread_close', item: id, extra: null });
+    expect(repairAction('secret_found_out:-3:하나')).toEqual({ kind: 'secret_found_out', item: '-3', extra: '하나' });
+    expect(repairAction('fact_correct:42:object')).toEqual({ kind: 'fact_correct', item: '42', extra: 'object' });
+    expect(repairAction(`undo:${who}`)?.kind).toBe('undo');
+    for (const value of [null, '', 'thread_close', 'thread_close:', 'name_split:1:x', 'drop:1', 'thread_close:xyz',
+      'thread_close:1:a:b', 'secret_keep:1:<b>', 'secret_keep:1:"x"', 'THREAD_CLOSE:1', ` thread_close:1`,
+      `thread_close:${'1'.repeat(65)}`, `secret_keep:1:${'가'.repeat(121)}`]) {
+      expect(repairAction(value), String(value)).toBeNull();
+    }
+    expect(closeOutcomes(repairAction('thread_close:7:kept,broken')?.extra ?? null)).toEqual(['kept', 'broken']);
+    expect(closeOutcomes('achieved,Bad,x y,')).toEqual(['achieved']);
+    expect(closeOutcomes(null)).toEqual([]);
+    expect(keepAttribute('data-repair', 'thread_reopen:7')).toBe(true);
+    expect(keepAttribute('data-repair', 'javascript:alert(1)')).toBe(false);
+    expect(keepAttribute('data-other', 'thread_reopen:7')).toBe(false);
+  });
+});
+
 describe('localTime', () => {
   const now = new Date('2026-09-24T12:00:00Z');
   it('is relative within a week and a local date after that', () => {
@@ -88,5 +108,15 @@ describe('owner links on an entity page (ADR 0025)', () => {
     const joined = [row('c', '라디아', 27, 'character', { names: ['라디아', '?흰 토끼 귀의 여자'] })];
     expect(entityNamed(joined, 'character', '?흰 토끼 귀의 여자')?.id).toBe('c');
     expect(entityNamed(joined, 'item', '라디아')).toBeNull();
+  });
+
+  it('offers a split for each pair of story aliases that still joins names of this entity (K8)', () => {
+    const hana = row('a', '하나', 30, 'character', { names: ['하나', '하나 씨', '유이'], aliases: [
+      { name: '하나', other: '하나 씨', turn: 2 }, { name: '하나 씨', other: '하나', turn: 5 }, // one pair, twice
+      { name: '하나', other: '유이', turn: 7 },
+      { name: '하나', other: '카이토', turn: 9 }, // refused by resolution: not one entity
+    ] });
+    expect(splitChoices(hana)).toEqual([{ name: '하나', other: '하나 씨' }, { name: '하나', other: '유이' }]);
+    expect(splitChoices(row('b', '카이토', 3))).toEqual([]); // an older sidecar: no aliases
   });
 });

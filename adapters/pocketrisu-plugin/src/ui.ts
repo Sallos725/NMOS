@@ -8,10 +8,10 @@ import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
 import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, fillProject, MAX_DEADLINE_MS, presetMatches, VERTEX_URL,
   type FormValues, type Section } from './form';
-import { langOf, t, type Lang, type StringKey } from './i18n';
-import { entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices, localTime, safeFragment,
-  sectionTarget } from './inspector';
-import type { EntityRow } from './inspector';
+import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
+import { closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices, localTime,
+  repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
+import type { EntityRow, RepairAction } from './inspector';
 import { routeFor } from './route';
 
 export type Tab = 'status' | 'inspector' | 'settings';
@@ -338,8 +338,98 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const linkCard = el('div', { class: 'card', style: 'display:none' });
   // On a conversation's page: how memory treats what only some characters know (ADR 0035).
   const modeCard = el('div', { class: 'card', style: 'display:none' });
+  // The owner's repairs (ADR 0044): the threads picked for closing together, each with the outcome chosen for it.
+  const picked = new Map<string, () => string | undefined>();
+  const bulkClose = el('button');
+  const bulkBar = el('div', { class: 'btns', style: 'display:none' }, bulkClose);
   inspectorView.append(el('div', { class: 'btns inspbar' }, inspectorBack, inspectorRefresh), actions, actionMsg,
-    modeCard, linkCard, inspectorBody, inspectorAddress);
+    bulkBar, modeCard, linkCard, inspectorBody, inspectorAddress);
+  function updateBulk(): void {
+    bulkBar.style.display = picked.size ? '' : 'none';
+    bulkClose.textContent = L('rp.bulk', { n: picked.size });
+  }
+  /** The buttons for one repair the page marks: what to do, and for a close a box to close several at once. */
+  function repairControls(action: RepairAction): Node[] {
+    const label = L(`rp.${action.kind}` as StringKey, { n: action.extra ?? '' });
+    const button = el('button', { class: 'mini', text: label });
+    if (action.kind !== 'thread_close') {
+      button.addEventListener('click', () => void repairNow(action, button));
+      return [button];
+    }
+    // A close offers the outcomes of the thread's kind, the default first.
+    const choices = closeOutcomes(action.extra);
+    const outcome = choices.length > 1
+      ? el('select', { class: 'mini', 'aria-label': L('rp.outcome') },
+        ...choices.map((o) => el('option', { value: o, text: outcomeLabel(o) })))
+      : null;
+    const before = picked.get(action.item)?.(); // a refresh keeps the outcome chosen for a picked thread
+    if (outcome && before && choices.includes(before)) outcome.value = before;
+    const chosen = () => outcome?.value ?? choices[0];
+    button.addEventListener('click', () => void repairNow(action, button, chosen()));
+    const box = el('input', { type: 'checkbox', 'aria-label': L('rp.select') });
+    box.checked = picked.has(action.item);
+    if (box.checked) picked.set(action.item, chosen);
+    box.addEventListener('change', () => {
+      if (box.checked) picked.set(action.item, chosen); else picked.delete(action.item);
+      updateBulk();
+    });
+    return outcome ? [box, outcome, button] : [box, button];
+  }
+  function outcomeLabel(outcome: string): string {
+    const key = `oc.${outcome}` as StringKey;
+    return STRING_KEYS.includes(key) ? L(key) : outcome;
+  }
+  async function repairNow(action: RepairAction, button: HTMLButtonElement, outcome?: string): Promise<void> {
+    const conversation = inspectorConversation(inspectorPath);
+    if (!conversation) return;
+    let path = `/v1/conversations/${conversation}/repairs`;
+    let body: Record<string, unknown> = { kind: action.kind, item: action.item };
+    if (outcome) body.outcome = outcome;
+    if (action.kind === 'undo') {
+      path = `${path}/${action.item}/remove`;
+      body = {};
+    } else if (action.kind === 'secret_found_out' || action.kind === 'secret_keep') {
+      body.character = action.extra;
+    } else if (action.kind === 'fact_correct') {
+      const field = action.extra === 'object' ? 'object' : 'value';
+      const next = window.prompt(L('rp.correct_prompt', { f: L(`rp.field_${field}`) }))?.trim();
+      if (!next) return;
+      body[field === 'object' ? 'new_object' : 'new_value'] = next;
+    }
+    button.disabled = true;
+    try {
+      await deps.api('POST', path, body, 15_000);
+      picked.delete(action.item);
+      updateBulk();
+      say(actionMsg, L(action.kind === 'undo' ? 'rp.undone' : 'rp.done'), 'ok');
+      await showInspector();
+    } catch (error) {
+      say(actionMsg, errorText(lang, error), 'err');
+      button.disabled = false;
+    }
+  }
+  bulkClose.addEventListener('click', async () => {
+    const conversation = inspectorConversation(inspectorPath);
+    if (!conversation || !picked.size) return;
+    bulkClose.disabled = true;
+    let done = 0;
+    try {
+      for (const [item, chosen] of Array.from(picked)) {
+        const outcome = chosen();
+        await deps.api('POST', `/v1/conversations/${conversation}/repairs`,
+          { kind: 'thread_close', item, ...(outcome ? { outcome } : {}) }, 15_000);
+        picked.delete(item);
+        done += 1;
+      }
+      say(actionMsg, L('rp.bulk_done', { n: done }), 'ok');
+    } catch (error) {
+      say(actionMsg, errorText(lang, error), 'err');
+    } finally {
+      bulkClose.disabled = false;
+      updateBulk();
+      await showInspector();
+    }
+  });
   let actionConversation: string | null = null;
   function place(): Place {
     const open = Array.from(inspectorBody.querySelectorAll<HTMLDetailsElement>('details[id]')).filter((d) => d.open);
@@ -351,6 +441,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   }
   /** Adapt a page to the panel: times in the viewer's zone, the character links as a drop-down. */
   function enhance(page: DocumentFragment): void {
+    for (const spot of Array.from(page.querySelectorAll('span.rp[data-repair]'))) {
+      const action = repairAction(spot.getAttribute('data-repair'));
+      if (action) spot.replaceChildren(...repairControls(action));
+    }
     for (const span of Array.from(page.querySelectorAll('span.ts[title]'))) {
       const shown = localTime(span.getAttribute('title') ?? '', lang);
       if (!shown) continue;
@@ -385,6 +479,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       actionConversation = conversation;
       say(actionMsg, '');
       disarm();
+      picked.clear();
+      updateBulk();
     }
     actions.style.display = conversation ? '' : 'none';
     const shownEntity = inspectorEntity(path);
@@ -486,6 +582,23 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       rows.push(el('div', { class: 'btns' }, el('span', { text: `${link.name} = ${link.same_as}` }), undo));
     }
     const card: (Node | string)[] = [el('h2', { text: L('link.title') }), el('p', { class: 'sub', text: L('link.sub') }), ...rows];
+    const splits: HTMLElement[] = [];
+    for (const alias of splitChoices(self)) {
+      const split = el('button', { text: L('split.do') });
+      split.addEventListener('click', async () => {
+        split.disabled = true;
+        try {
+          await deps.api('POST', `/v1/conversations/${conversation}/repairs`,
+            { kind: 'name_split', item: alias.name, other: alias.other, entity_type: self.type }, 15_000);
+          const now = await deps.api<EntityRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
+          const next = entityNamed(now, self.type, self.name);
+          say(actionMsg, L('split.done', { a: alias.name, b: alias.other }), 'ok');
+          if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+          else await showInspector();
+        } catch (error) { say(msg, errorText(lang, error), 'err'); split.disabled = false; }
+      });
+      splits.push(el('div', { class: 'btns' }, el('span', { text: `${alias.name} ~ ${alias.other}` }), split));
+    }
     if (others.length) {
       const pick = el('select', { 'aria-label': L('link.pick') },
         ...others.map((e) => el('option', { value: e.name, text: `${e.name} (${e.mentions})` })));
@@ -504,6 +617,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     } else {
       card.push(el('div', { class: 'muted', text: L('link.none') }));
     }
+    if (splits.length) card.push(el('h2', { text: L('split.title') }), el('p', { class: 'sub', text: L('split.sub') }), ...splits);
     linkCard.replaceChildren(...card, msg);
     linkCard.style.display = '';
   }

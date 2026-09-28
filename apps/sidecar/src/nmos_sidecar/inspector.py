@@ -11,6 +11,8 @@ from typing import Any
 from urllib.parse import quote
 
 from .entities import norm
+from .predicates import REGISTRY
+from .repairs import default_outcome, outcomes
 from .facts import STANDING, earlier, first, participant_entities, symmetric
 from . import scene
 from .retrieval import CAST_GOALS, cast_facts
@@ -210,6 +212,17 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "or.closed": ("오너가 닫음", "closed by the owner"), "or.marked": ("오너 표시", "marked by the owner"),
     "or.corrected": ("오너가 고침", "corrected by the owner"),
     "rs.via": ("{names}을(를) 거쳐 아직 한 인물", "still one entity through {names}"),
+    "attention": ("확인 필요", "Needs attention"), "toc.attention": ("확인 필요", "Needs attention"),
+    "h.issue": ("무엇", "What"),
+    "at.stale": ("{n}턴 넘게 다시 나오지 않은 열린 스레드", "open for more than {n} turns without a restatement"),
+    "at.unmatched": ("짝이 맞는 열린 스레드가 없는 종료", "an end matching no open thread"),
+    "at.disputed": ("이야기가 엇갈린 사실", "a fact the story contradicts"),
+    "at.repair": ("지금 맞는 항목이 없는 수리", "a repair that matches nothing now"),
+    "at.split": ("아직 한 인물인 이름 분리", "a split whose names are still one entity"),
+    "at.ambiguous": ("모호한 이름 (연결 안 함)", "an ambiguous name (not linked)"),
+    "at.none": ("확인할 것이 없습니다.", "Nothing needs a look."),
+    "at.note": ("NMOS가 이미 찾아낸 것 가운데 오너가 고칠 수 있는 것입니다. NMOS 화면의 인스펙터 탭에서 줄마다 고칠 수 있습니다.",
+                "What NMOS already found that the owner can fix: the panel's Inspector tab fixes each line."),
     "repairs": ("수리 (오너가 고친 것)", "Repairs (what the owner fixed)"), "toc.repairs": ("수리", "Repairs"),
     "rk.thread_close": ("스레드 닫기", "close a thread"), "rk.thread_reopen": ("스레드 다시 열기", "reopen a thread"),
     "rk.secret_found_out": ("비밀을 알게 됨", "secret found out"), "rk.secret_keep": ("비밀 유지", "secret still kept"),
@@ -617,7 +630,8 @@ def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> 
     older = f" <span class=\"chip\">{t('older_gen')}</span>"
     return table(
         [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.with", "h.knowledge", "h.turn", "h.versions")],
-        [[_v(f["subject"]), chip(lang, "p", f["predicate"]), _v(f.get("object") or f.get("value")) + _cause(f, lang),
+        [[_v(f["subject"]), chip(lang, "p", f["predicate"]), _v(f.get("object") or f.get("value")) + _cause(f, lang)
+          + ("" if f.get("owner") else _act("fact_retract", f["id"]) + _act("fact_correct", f["id"], _correctable(f))),
           _with(f, lang),
           _knowledge(f, lang),
           _turn(f)
@@ -658,7 +672,9 @@ def _threads_table(threads: list[dict[str, Any]], lang: str) -> str:
     return summary + table([_t(lang, k) for k in ("h.kind", "h.by", "h.to", "h.promise", "h.turn", "h.status", "h.closed",
                                                   "h.restated")],
                  [[chip(lang, "k", t.get("kind", "promise")), _v(t["by"]), _v(t.get("to") or ""), _v(t.get("text")),
-                   _turn(t), chip(lang, "t", t["status"]),
+                   _turn(t), chip(lang, "t", t["status"])
+                   + (_close(t) if t["status"] == "open"
+                      else _act("thread_reopen", t["id"]) if not (t.get("closed_by") or {}).get("owner") else ""),
                    closed(t), _v(", ".join(str(r["turn"] if r.get("turn") is not None else r["position"])
                                           for r in t.get("restated") or []))]
                   for t in threads[:100]])
@@ -677,13 +693,62 @@ def _secret_status(s: dict[str, Any], lang: str) -> str:
     for name in s["kept_from"]:
         ended = s["ended"].get(name)
         if ended is None:
-            out.append(f"{_v(name)}: <span class=\"warn\">{_v(_t(lang, 'sec.open'))}</span>")
+            out.append(f"{_v(name)}: <span class=\"warn\">{_v(_t(lang, 'sec.open'))}</span>"
+                       + _act("secret_found_out", s["id"], name))
         else:
             turn = ended["turn"] if ended.get("turn") is not None else ended.get("position")
-            owner = f" {chip(lang, 'or', 'marked')}" if ended.get("owner") else ""
+            owner = f" {chip(lang, 'or', 'marked')}" if ended.get("owner") else _act("secret_keep", s["id"], name)
             out.append(f"<span title=\"{_v(ended.get('evidence') or '')}\">{_v(name)}: "
                        f"{_v(_t(lang, 'sec.ended').format(turn=turn))}</span>{owner}")
     return "<br>".join(out)
+
+
+STALE_TURNS = 30  # an open thread not restated for this long is suggested for closing (PHASE-13 Q6)
+
+
+def _act(kind: str, item: Any, extra: str | None = None) -> str:
+    """Where the panel puts a repair button (ADR 0044); nothing shows in a browser tab (H15)."""
+    value = f"{kind}:{item}" + (f":{extra}" if extra else "")
+    return f"<span class=\"rp\" data-repair=\"{_v(value)}\"></span>"
+
+
+def _close(th: dict[str, Any]) -> str:
+    """A close button with the outcomes of the thread's kind, its default first (ADR 0044 item 3)."""
+    first = default_outcome(th["kind"])
+    return _act("thread_close", th["id"], ",".join([first] + [o for o in outcomes(th["kind"]) if o != first]))
+
+
+def _correctable(f: dict[str, Any]) -> str:
+    """Which field a correction of this fact sets: its object, when its predicate has one, else its value."""
+    pred = REGISTRY.get(f["predicate"])
+    return "object" if pred is not None and pred.object_types is not None else "value"
+
+
+def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: int | None, lang: str) -> list[list[str]]:
+    """What needs a look (PHASE-13 Q6), each with its repair where one fits: from what NMOS already detects."""
+    rows: list[list[str]] = []
+    if last_turn is not None:
+        for th in view.get("threads", []):
+            seen = [th.get("turn")] + [r.get("turn") for r in th.get("restated") or []]
+            latest = max((x for x in seen if x is not None), default=None)
+            if th["status"] == "open" and latest is not None and latest <= last_turn - STALE_TURNS:
+                rows.append([_v(_t(lang, "at.stale").format(n=STALE_TURNS)),
+                             _v(f"{th['by']} → {th.get('to') or '?'}: {th.get('text') or ''}"), _v(latest),
+                             _close(th)])
+    for u in view.get("unmatched", []):
+        rows.append([_v(_t(lang, "at.unmatched")), _v(fact_line_text(u)), _turn(u), ""])
+    for c in view.get("conflicts", []):
+        rows.append([_v(_t(lang, "at.disputed")), _v(c["text"]), _v(c.get("turn")), _act("fact_retract", c["fact"])])
+    for rep in repairs:
+        if rep.get("removed_at"):
+            continue
+        if rep.get("via"):
+            rows.append([_v(_t(lang, "at.split")), _repair_target(rep), "", _act("undo", rep["id"])])
+        elif not rep.get("applied"):
+            rows.append([_v(_t(lang, "at.repair")), _repair_target(rep), "", _act("undo", rep["id"])])
+    for a in view.get("ambiguous", []):
+        rows.append([_v(_t(lang, "at.ambiguous")), _v(f"{a['name']}: " + ", ".join(a.get("candidates") or [])), "", ""])
+    return rows
 
 
 def _repair_target(rep: dict[str, Any]) -> str:
@@ -720,9 +785,11 @@ def _repairs_table(repairs: list[dict[str, Any]], lang: str) -> str:
     def state(rep: dict[str, Any]) -> str:
         if rep.get("removed_at"):
             return chip(lang, "rs", "removed")
+        undo = _act("undo", rep["id"])
         if rep.get("via"):
-            return f"<span class=\"warn\">{_v(_t(lang, 'rs.via').format(names=', '.join(rep['via'])))}</span>"
-        return chip(lang, "rs", "applied") if rep.get("applied") else f"<span class=\"warn\">{_v(_t(lang, 'rs.unmatched'))}</span>"
+            return f"<span class=\"warn\">{_v(_t(lang, 'rs.via').format(names=', '.join(rep['via'])))}</span>" + undo
+        return (chip(lang, "rs", "applied") if rep.get("applied")
+                else f"<span class=\"warn\">{_v(_t(lang, 'rs.unmatched'))}</span>") + undo
 
     return (table([_t(lang, k) for k in ("h.repair", "h.target", "h.value", "h.made", "h.status")],
                   [[chip(lang, "rk", rep["kind"]), _repair_target(rep), _repair_value(rep, lang), timestamp(rep["created_at"]),
@@ -796,7 +863,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            threads: list[dict[str, Any]] | None = None, unmatched: list[dict[str, Any]] | None = None,
            packet: dict[str, Any] | None = None, secrets: list[dict[str, Any]] | None = None,
            unrevealed: list[dict[str, Any]] | None = None, standing: list[dict[str, Any]] | None = None,
-           summaries: dict[str, Any] | None = None, repairs: list[dict[str, Any]] | None = None) -> str:
+           summaries: dict[str, Any] | None = None, repairs: list[dict[str, Any]] | None = None,
+           last_turn: int | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -805,7 +873,12 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
             f"<h1>{_v(name)}</h1>" + _meta(conv, lang) + _who(conv["id"], entities or [], None, q, lang))
     active = (((coverage or {}).get("extraction") or {}).get("generation") or {}).get("key")
     # What needs a look comes first; logs of the machinery start folded.
+    queue = _attention({"threads": threads or [], "unmatched": unmatched or [], "conflicts": conflicts or [],
+                        "ambiguous": ambiguous or []}, repairs or [], last_turn, lang)
     parts: list[Section] = [
+        ("attention", t("attention"), len(queue),
+         table([t(k) for k in ("h.issue", "h.text", "h.turn", "h.repair")], queue) + f"<p class=\"muted\">{t('at.note')}</p>"
+         if queue else f"<p class=\"muted\">{t('at.none')}</p>", bool(queue)),
         ("state", t("state"), None, table([t("h.key"), t("h.value"), t("h.as_of"), t("h.rule")],
                                           [[_v(s["key"]), _v(s["value"]), _v(s["turn"]), _v(s["rule_id"])]
                                            for s in state])

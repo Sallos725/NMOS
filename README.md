@@ -106,6 +106,11 @@ language after a page reload.
   generating in it again starts a new NMOS conversation. On an entity's page, **Same as another entity**
   joins it with another entity of the same type when the story never linked the two names (e.g. someone
   shown without a name and named later); **Undo** takes a join back. Joins survive a rebuild.
+  The Inspector's lines carry the owner's **repairs** (ADR 0044): close a thread with an outcome (tick several to
+  close them together) or reopen one, mark a secret found out or still kept by a character, retract or correct a
+  fact, and on an entity's page split two names the story joined. A repair survives rebuilds and new extractor
+  generations, is listed under **Repairs** with **Undo**, and each chat's page starts with **Needs attention** (old
+  open threads, ends that matched no thread, disputed whereabouts, repairs that match nothing now, ambiguous names).
   A conversation page lists the chat's **Secrets** (who knows, kept from whom, who found out and when), and the
   last packet's section names the scene's characters and memory mode.
   A conversation page also has a **Memory mode** card for that chat (ADR 0035): **Strict** gives only what

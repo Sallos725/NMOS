@@ -60,12 +60,17 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     on the previous `main` every M0 packet carried a thread the owner closed (`docs/perf/repair.md`).
   - Step 3 (ADR 0044, migration 0024): the owner can close a thread with an outcome or reopen one the story closed,
     and mark a secret found out by a character or keep one the story ended by mistake, through
-    `POST /v1/conversations/{id}/repairs` (the panel's buttons come in step 5). A repair is owner input: it survives
+    `POST /v1/conversations/{id}/repairs`. A repair is owner input: it survives
     rebuilds and new extractor generations, finds its target by what it says, and is listed in the Inspector, with
     undo. A repair whose target's turn was edited matches nothing and says so.
   - Step 4: the owner can retract a fact (the version before it is current again), correct one (a new object or value,
     at its own turn or from a later one, until the story says otherwise), and split two names the story joined (K8),
     with the names that still join them when a split cannot separate them.
+  - Step 5 (new plugin build): the repairs are buttons in the panel's Inspector, on the line they fix: close a thread
+    with an outcome (or tick several and close them together), reopen, mark a secret found out or still kept per
+    character, retract or correct a fact, undo; split two names on an entity's page. Each chat's page starts with
+    "Needs attention": threads open for 30 turns without a restatement, ends that matched no thread, disputed
+    whereabouts, repairs that match nothing now, splits still joined through another name, ambiguous names.
 - **Cross-model review** (`.ai/`, AGENTS.md §14; #138): fixed after its review, the script refuses every `.env*` name
   (`.envrc` passed before) and gives the reviewer CLI only the system basics of the environment and its own login
   variables, never `NMOS_*`, `DATABASE_URL` or `PG*` (it passed the whole environment).

@@ -536,3 +536,29 @@ def test_a_correction_follows_the_predicate(migrated):
         res = c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "fact_correct", "item": str(trait["id"]),
                                                                "new_object": "Kaito"})
         assert res.status_code == 422 and "has no object" in res.json()["detail"]
+
+
+# --- Step 5: where the panel repairs, and what needs a look ---------------------------------------------------------
+
+
+def test_the_inspector_marks_where_each_repair_can_be_made_and_lists_what_needs_a_look(migrated):
+    chat = repair_chat()
+    for i in range(33):  # the goal stays open, not restated, for more than STALE_TURNS turns
+        chat.user(f"Turn {i} passes.")
+        chat.reply("Noted.")
+    chat.user("Go on.")
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        t, s = thread(c, cid), secret(c, cid)
+        page = c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
+        # a goal: its default outcome first, then the others its kind may close with
+        assert f'data-repair="thread_close:{t["id"]}:achieved,abandoned,failed,answered,averted,paid"' in page
+        assert f'data-repair="secret_found_out:{s["id"]}:Kaito"' in page
+        located = fact(c, cid, "Kaito", "located_in")
+        assert f'data-repair="fact_retract:{located["id"]}"' in page and f'data-repair="fact_correct:{located["id"]}:object"' in page
+        attention = page[page.index('id="s-attention"'):page.index("</details>", page.index('id="s-attention"'))]
+        assert "open for more than 30 turns without a restatement" in attention and GOAL in attention
+        out = repair(c, cid, kind="thread_close", item=str(t["id"]))
+        page = c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
+        assert f'data-repair="undo:{out["repair"]["id"]}"' in page and f'data-repair="thread_close:{t["id"]}' not in page
+        assert "Nothing needs a look." in page

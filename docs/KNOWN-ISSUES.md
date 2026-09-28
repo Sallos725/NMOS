@@ -31,7 +31,7 @@ without a PocketRisu change.
 | K20 | Small UI delays: bot name, menu language | UI | not planned |
 | K21 | API keys and the auth token are stored in plain text | Security | host (H12) |
 | K22 | What becomes a fact depends on the extraction model's labels | Memory | measured per model (`docs/perf/phase5-extraction.md`, `phase7-extraction.md`, `phase8-extraction.md`) |
-| K23 | A thread (promise, goal, question, threat, debt) stays open until the story ends it in words extraction recognizes | Memory | beta.14 (ADR 0019), `extract-v13` (ADR 0039, unreleased); owner repair: Stage 6 |
+| K23 | A thread (promise, goal, question, threat, debt) stays open until the story ends it in words extraction recognizes | Memory | beta.14 (ADR 0019), `extract-v13` (ADR 0039, unreleased); owner repair on `main` (Phase 13) |
 | K24 | A relationship change recorded under the other predicate leaves both lines current | Memory | the direction case closed on `main` (ADR 0038, unreleased); the predicate case shown with turns by design |
 | K25 | A speech level or form of address can still be missed or cut | Memory | ranking (ADR 0026) and `addresses` (ADR 0028); turns before `extract-v10`: "Extract all history" |
 | K26 | The packet's token estimate over-counts Korean, so the reserve is under-used | Recall | reduced by `packet-v2` (ADR 0032, owner decision); still conservative by design |
@@ -112,7 +112,7 @@ marks (`known_by`, `hidden_from`) stay free text. *Since 0.1.0-beta.17 (`extract
 shown without a name is written as a `?` description and joined to its name when a later turn reveals it
 (3/3 on the owner's reveal turn; ADR 0024), and the owner can join any two names of a chat in the panel
 (entity page → "Same as another entity"; ADR 0025). *On `main` (Phase 13, ADR 0044):* the owner can split two
-names a wrong automatic alias joined (the API now, the panel in step 5).
+names a wrong automatic alias joined (entity page → "Split names joined by mistake").
 
 **K9 — Destroyed or used-up items keep their last holder.** A new holder ends the previous one (ADR
 0011), and since 0.1.0-beta.12 so does a statement that the holder no longer has it ("lost", "dropped
@@ -162,7 +162,9 @@ it under "Ends matching no open thread"). An open thread reaches the packet only
 mentioned, or the user's message is about it, at most three at a time. The first case dominates goals: on the owner's
 longest chat re-extracted with `extract-v13`, 9 of 48 goals ended and 37 stayed open, one character holding 15 where
 the owner counts 2 still under way (`docs/perf/extract-v13.md`). *Workaround:* "Extract all history" for older
-turns; owner repair (close a thread by hand) is Stage 6.
+turns. *On `main` (Phase 13, ADR 0044):* close a thread in the panel's Inspector with an outcome, or tick several and
+close them together; each chat's "Needs attention" lists threads open for 30 turns without a restatement and ends that
+matched no thread.
 
 **K24 — A relationship change recorded under the other predicate leaves both lines current.** Since ADR 0038
 (Phase 11, on `main`, unreleased) a `relationship` has one history per pair: a change recorded in the other
