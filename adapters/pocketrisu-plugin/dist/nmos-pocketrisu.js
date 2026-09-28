@@ -7,7 +7,7 @@
 //@arg sidecar_url string NMOS sidecar URL (empty = http://127.0.0.1:8790)
 //@arg auth_token string Optional; only if the sidecar sets NMOS_AUTH_TOKEN
 //@arg disabled int 1 = pass every request through untouched
-//@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 800)
+//@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 2000)
 //@arg deadline_ms int Hard request-path deadline in ms (0 = 3000)
 //@arg inject_position string before_last_user (default) or end
 //@arg route string auto (default) / direct / server — how to reach the sidecar
@@ -16,7 +16,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:a785e95676e4".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:8f2d502c32b2".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -47,7 +47,7 @@
   // src/form.ts
   var DEFAULT_DEADLINE_MS = 3e3;
   var MAX_DEADLINE_MS = 3e4;
-  var DEFAULT_RESERVED_TOKENS = 800;
+  var DEFAULT_RESERVED_TOKENS = 2e3;
   var MAX_RESERVED_TOKENS = 2e4;
   var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
   var VERTEX_URL = "https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi";
@@ -91,7 +91,8 @@
         vector_min_sim: num(v.tune.minSim),
         recall_top_k: num(v.tune.topK),
         facts_limit: num(v.tune.facts),
-        extract_backfill: num(v.tune.backfill)
+        extract_backfill: num(v.tune.backfill),
+        summaries: v.tune.summaries
       });
     }
     if (dirty.includes("rules")) body.parsers = v.rules.trim() ? v.rules : null;
@@ -321,6 +322,11 @@
     "tune.top_k": ["\uBC1C\uCDCC \uC218", "Excerpts"],
     "tune.facts": ["\uC0AC\uC2E4 \uC218", "Facts"],
     "tune.backfill": ["\uCC98\uC74C \uC5F0\uACB0 \uC2DC \uCD94\uCD9C\uD560 \uD134 \uC218", "Turns extracted on first sync"],
+    "tune.summaries": ["\uC7A5\uBA74 \uC694\uC57D \uB9CC\uB4E4\uAE30", "Scene summaries"],
+    "tune.summaries_hint": [
+      "\uCD94\uCD9C \uBAA8\uB378\uC774 8\uD134\uB9C8\uB2E4 \uC7A5\uBA74\uACFC \uC9C0\uAE08\uAE4C\uC9C0\uC758 \uC774\uC57C\uAE30\uB97C \uC694\uC57D\uD574 \uAE30\uC5B5\uC5D0 \uB123\uC2B5\uB2C8\uB2E4. \uB044\uBA74 \uC694\uC57D\uC744 \uB9CC\uB4E4\uC9C0\uB3C4, \uB123\uC9C0\uB3C4 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "The extraction model summarizes every 8 turns and the story so far for memory. Off: none are written or used."
+    ],
     // settings: parser rules
     "rules.title": ["\uC0C1\uD0DC\uCC3D \uADDC\uCE59", "Status-window rules"],
     "rules.sub": [
@@ -1228,7 +1234,7 @@ ${revisionHash}`;
   }
 
   // src/budget.ts
-  var FIT_CAP = 2e3;
+  var FIT_CAP = 6e3;
   function budgetAdvice(r, current2) {
     if (!r || r.outcome === "failed" || !r.memory || !(r.memory.cut > 0) || !(r.budgetTokens && r.budgetTokens > 0)) return null;
     const all = typeof r.memory.fits_at === "number";
@@ -2091,13 +2097,16 @@ html,body{margin:0;background:#0c0c10}
     const topK = el("input", { type: "number", min: 0, max: 20 });
     const factsLimit = el("input", { type: "number", min: 0, max: 30 });
     const backfill = el("input", { type: "number", min: 0, max: 5e3 });
+    const summaries = el("input", { type: "checkbox" });
     settingsView.append(el(
       "div",
       { class: "card" },
       el("h2", { text: L("tune.title") }),
       el("p", { class: "sub", text: L("tune.sub") }),
       el("div", { class: "row" }, field(L("tune.threshold"), threshold), field(L("tune.min_sim"), minSim)),
-      el("div", { class: "row" }, field(L("tune.top_k"), topK), field(L("tune.facts"), factsLimit), field(L("tune.backfill"), backfill))
+      el("div", { class: "row" }, field(L("tune.top_k"), topK), field(L("tune.facts"), factsLimit), field(L("tune.backfill"), backfill)),
+      el("div", { class: "check" }, summaries, el("span", { text: L("tune.summaries") })),
+      el("p", { class: "sub", text: L("tune.summaries_hint") })
     ));
     const rules = el("textarea", { spellcheck: "false" });
     const example = el("button", { text: L("rules.example") });
@@ -2123,7 +2132,14 @@ html,body{margin:0;background:#0c0c10}
         conn: { url: url.value, route: route.value, enabled: enabled.checked, reserved: reserved.value, deadline: deadline.value },
         llm: llm.values(),
         emb: emb.values(),
-        tune: { threshold: threshold.value, minSim: minSim.value, topK: topK.value, facts: factsLimit.value, backfill: backfill.value },
+        tune: {
+          threshold: threshold.value,
+          minSim: minSim.value,
+          topK: topK.value,
+          facts: factsLimit.value,
+          backfill: backfill.value,
+          summaries: summaries.checked
+        },
         rules: rules.value
       };
     }
@@ -2156,6 +2172,7 @@ html,body{margin:0;background:#0c0c10}
       topK.value = String(cfg.recall.top_k);
       factsLimit.value = String(cfg.recall.facts_limit);
       backfill.value = String(cfg.extraction.backfill);
+      summaries.checked = cfg.extraction.summaries !== false;
       rules.value = cfg.parsers.source === "ui" ? JSON.stringify(cfg.parsers.rules, null, 2) : "";
       rules.placeholder = cfg.parsers.source === "file" ? L("rules.from_file", { n: cfg.parsers.active_rules }) : L("rules.none");
     }

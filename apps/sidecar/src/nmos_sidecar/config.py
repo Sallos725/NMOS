@@ -35,9 +35,9 @@ class Settings:
     extract_turns: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_TURNS", "3")))
     # Known entity names shown to extraction (ADR 0012); 0 turns hints off. Part of the extractor generation.
     extract_hints: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_HINTS", "40")))
-    # Scene summaries and the story so far (PHASE-12, ADR 0042), written by the extraction model. Off unless set
-    # ("1") or turned on from the plugin; needs NMOS_LLM_URL.
-    summaries: bool = field(default_factory=lambda: os.environ.get("NMOS_SUMMARIES", "0") == "1")
+    # Scene summaries and the story so far (PHASE-12, ADR 0042, 0043), written by the extraction model; "0" or the
+    # plugin's switch turns them off. Needs NMOS_LLM_URL.
+    summaries: bool = field(default_factory=lambda: os.environ.get("NMOS_SUMMARIES", "1") != "0")
     # Turns extracted when NMOS first sees a chat (ADR 0008: turns, not messages).
     extract_backfill: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_BACKFILL", "100")))
     # Embeddings are cheap (local models): cover far more history on first sight than LLM extraction.
@@ -60,10 +60,11 @@ class Settings:
     # model name contains "qwen3-embedding", none otherwise. Documents are embedded without it.
     embed_query_instruction: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_QUERY_INSTRUCTION", "auto"))
     trace_retention_days: int = field(default_factory=lambda: int(os.environ.get("NMOS_TRACE_RETENTION_DAYS", "30")))
-    # Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0041). Empty or unknown: `packet.DEFAULT_POLICY`
-    # (packet-v7: room kept for the best excerpt, Korean estimate 1.2, a <Private> section, no line that says an
-    # earlier line again, what standing facts replaced, stated causes, excerpts and state numbered by turn);
-    # v6 … v0 are earlier. The compose files pass it empty, so a pinned value cannot outlive a new default.
+    # Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0041, 0043). Empty or unknown: `packet.DEFAULT_POLICY`
+    # (packet-v8: room kept for the best excerpt, Korean estimate 1.2, a <Private> section, no line that says an
+    # earlier line again, what standing facts replaced, stated causes, excerpts and state numbered by turn, and
+    # summaries in <Story> and each scene character's state in <Cast>); v7 … v0 are earlier. The compose files pass
+    # it empty, so a pinned value cannot outlive a new default.
     packet_policy: str = field(default_factory=lambda: os.environ.get("NMOS_PACKET_POLICY", ""))
     parsers_file: str = field(default_factory=lambda: os.environ.get("NMOS_PARSERS_FILE", ""))
     # Test hook for the "sidecar slower than deadlineMs" acceptance check. Never set in production.

@@ -65,3 +65,69 @@ Two changes followed:
   check. Step 5 has to decide how much a summary may be trusted with a secret's character in the scene.
 - **Real chats come in step 5.** The owner's chats are longer and their secrets are extracted as the story goes. Step 5
   measures summaries of the restored copy with M0, including its secret cases.
+
+## The owner's longest chat (step 5, M0)
+
+The restored copy (PHASE-11 Q1), read-only, lexical recall only (`--no-vectors`), the request at turn 73. Numbers only;
+what the chat says stays outside the repository. Two extractions of the same chat: `gemma4:31b-cloud` (`extract-v13`)
+and `deepseek-v4.1-flash` (`extract-v13`, 73 turns re-extracted through the local Ollama for this comparison). Each
+has its own summaries (`summarize-v3`, 8 scenes and the story, written by the same model), and M0 uses both case sets.
+
+| | `gemma4`: 28 cases (memory 9) | `gemma4`: 12 cases outside the window | `deepseek`: 28 (memory 9) | `deepseek`: 12 |
+|---|---:|---:|---:|---:|
+| `packet-v6`, budget 800 (Phase 11) | 26 (7) | 2 | 24 (5) | 1 |
+| `packet-v6`, budget 2,000 | 26 (7) | 4 | — | — |
+| `packet-v8`, budget 2,000 | 26 (7) | 5 | 24 (5) | 2 |
+
+Nothing forbidden was placed as current in any `packet-v8` run. What the step added:
+- **The budget** brought two of the 12 answers (an early event and a why), from facts and excerpts that 800 tokens
+  had no room for.
+- **`<Cast>`** brought one more: an item a character carried, from her group.
+- The scene summary that holds an answer depends on how the model wrote it. With `summarize-v2` summaries the same
+  runs gave 27 of 28 and 6 of 12. One case each way moved on wording alone.
+- `deepseek` extraction answered fewer of the owner's cases than `gemma4`'s, although it did better on the synthetic
+  tiers. The 28 cases were drafted from the `gemma4`-extracted facts, so their wording may favour it.
+
+**Two faults found here and fixed before this record:**
+1. **A finished goal in an unrelated question.** The first `<Cast>` gave every scene character's open goals. An old
+   goal, reached in the story long before but never closed (K23), came into a question about arithmetic. `<Cast>` now
+   groups goals only for a character the message names.
+2. **A secret in the story, reworded.** That an event was kept from one character was extracted one and five turns
+   after it, after the summaries of its window were written. The story so far then told the event in other words in
+   a scene where that character asks about it; `packet-v6` had it in `<Private>` only. Now (ADR 0042 amendment 2,
+   `summarize-v3`):
+   - each summary's prompt lists the secrets stated up to 8 turns after its window, and the story's prompt lists
+     them too;
+   - a summary written before such a secret is held and written again;
+   - written again, the story no longer told the event, only a vaguer hint (K30).
+
+## Gates before summaries reach a packet (review, 2026-09-28)
+
+`packet-v8` (after the turn-numbering fix took `packet-v7`), the restored copy, `summarize-v3` summaries.
+
+**M0** (`gemma4` extraction, the production model; `packet-v6` at 800 against `packet-v8` at 2,000): no category of
+the 28 cases changed and nothing more was placed as forbidden; the 12 cases outside the prompt window went from 2 to 5
+(early events 1 → 3, the why 0 → 1). `deepseek` extraction: 24 of 28 and 2 of 12, as before. **Passed.**
+
+**Secret gate** (`tools/eval_secret_gate.py`, 6 cases the owner confirmed, outside the repository). Each case is a
+probe at the chat's recorded request, addressed to a character a secret is kept from (each of the chat's three main
+characters has some), with the words that would tell it:
+
+| | cases with none of the words in `<Story>` | `<Story>` present |
+|---|---:|---:|
+| `gemma4` summaries | 5 of 6 | 6 |
+| `deepseek` summaries | 6 of 6 | 2 (held in 4) |
+
+The miss: a `gemma4` story told a character, in other words, a plan still held as kept from her. That secret is stale:
+the story had her find the plan out twice, and the facts record her knowing it, but no reveal matched the listed
+secrets, so they stay open (the K29 family of misses). None of the words stood outside `<Private>` in the
+`packet-v6` packets of the same requests. **Not passed** as the gate is written.
+
+The owner chose a stricter check in front of the character a secret is kept from (ADR 0042 amendment 3):
+- a summary is held there at 0.3 instead of 0.7; the story scored 0.34 against the plan;
+- run again, the gate passes: **6 of 6** with `gemma4` summaries, which are now held in all six scenes, and **6 of 6**
+  with `deepseek`'s, present in two;
+- M0 is unchanged: 26 of 28 and 5 of 12 for `gemma4`, 24 and 2 for `deepseek`.
+
+The cost: on this chat each of the three main characters has a secret kept from her, so `<Story>` is mostly absent
+while they are together. The 12 new cases' gains come from the budget and `<Cast>`. **Both gates passed.**

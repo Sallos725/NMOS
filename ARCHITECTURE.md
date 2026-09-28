@@ -98,7 +98,7 @@ Short ADR-style entries. Full ADRs go in `docs/adr/`.
 proves a bridge API is needed (see reference §82 criteria). Any future fork is bridge-only.
 
 **D2 — Token budget is reserved, not stolen.** Because of H3, the user lowers the host's
-max context by `reservedMemoryTokens` (setting; default 800 since Phase 10, ADR 0035, was 600). The packet
+max context by `reservedMemoryTokens` (setting; default 2,000 since Phase 12, ADR 0042; 800 since Phase 10, was 600). The packet
 never exceeds that reserve.
 Trimming host history from inside the plugin is a later, opt-in feature.
 
@@ -445,7 +445,14 @@ the default (owner, 2026-09-28).
 **D52 — Scene summaries (Phase 12, ADR 0042).** A `summarize` projection with its own generation, written by the
 extraction model: each 8-turn window of the head, once it is 4 replied turns old, and a story so far over the current
 scene summaries. A summary is keyed by its window's member revisions, so any change inside the window masks it at once;
-the story is keyed by its scenes. Off by default until summaries reach the packet (Phase 12 step 5).
+the story is keyed by its scenes. A summary is held while it repeats a secret still kept from someone or was written
+before one (it is written again).
+
+**D53 — Story and cast (Phase 12, ADR 0043).** The default policy `packet-v8` adds `<Story>` (the story so far and
+the scene summary the message is about, in at most 30 % of the budget; none for a first-person narrator) and `<Cast>`
+(each scene character's place, condition, feeling toward the persona, what they carry and, when the message names
+them, open goals, as their ordinary lines, not repeated elsewhere). The default memory budget is 2,000 tokens, and
+summaries are on by default.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

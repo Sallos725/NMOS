@@ -144,7 +144,7 @@ def test_compiler_upgrade_tracks_partial_coverage_and_backfills_beyond_recent_wi
         cov = c.get(f"/v1/conversations/{cid}/coverage").json()["extraction"]
         # Only the recent window is queued (ADR 0014); older turns are served by the previous generation.
         prio = [r["priority"] for r in db.execute(
-            "SELECT priority FROM job WHERE status = 'queued' ORDER BY priority").fetchall()]
+            "SELECT priority FROM job WHERE status = 'queued' AND kind = 'extract' ORDER BY priority").fetchall()]
         assert prio == [extraction.RECENT_PRIORITY] * 4
         assert cov["complete"] is False and cov["compiled"] == 0 and cov["pending"] == 4
         assert cov["historical_only"] == eligible and cov["generation"]["spec"]["compiler"] == "extract-next"

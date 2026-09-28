@@ -26,9 +26,20 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
 - **Phase 12 (Stage 5, part 2) is in progress** (`docs/phases/PHASE-12.md`, approved 2026-09-28; no release decided):
   - M0 has 12 more owner-confirmed cases whose answers lie outside the prompt's own messages: 2 of 12 on Phase 11.
   - **Scene summaries and the story so far** (ADR 0042, migration 0023), written in the background by the extraction
-    model for every 8-turn window and kept current through edits, deletes and swipes. **Off by default**
-    (`NMOS_SUMMARIES`); the Inspector shows them; they reach no packet yet. The prompt lists the secrets still kept
-    from someone and says to leave them out; a summary that repeats one is held back when it is read.
+    model for every 8-turn window and kept current through edits, deletes and swipes; the Inspector shows them. The
+    prompt lists the secrets still kept from someone and says to leave them out; a summary that repeats one is held
+    back when it is read.
+  - **`packet-v8` (new default): `<Story>` and `<Cast>`** (ADR 0043). The story so far and the scene the message is
+    about, in at most 30 % of the budget (none for a first-person narrator); each scene character's place, condition,
+    feeling toward the persona, what they carry and, when the message names them, open goals. On the owner's chat
+    (restored copy) 5 of 12 answers outside the prompt window reach the packet, 2 before. A summary written before a
+    secret it should keep is held and written again (ADR 0042 amendment 2); in front of a character a secret is kept
+    from, a summary that comes near it is held too (amendment 3); a reworded secret can still pass (K30).
+  - **Summaries are on by default** where extraction is on (`NMOS_SUMMARIES=0` or the panel turns them off). On the
+    first start every chat's due windows are summarized in the background: for the owner's chats, about 11 scene and
+    2 story calls.
+  - **The default memory budget is 2,000 tokens** (was 800); a value saved in the plugin stays. Lower PocketRisu's max
+    context accordingly.
 - **Phase 11 (Stage 5, part 1) is complete** (`docs/phases/PHASE-11.md`, 2026-09-28; no release decided):
   - M0, an evaluation on a restored copy of the owner's chats (`tools/eval_rp.py`, numbers only in
     `docs/perf/m0-baseline.md`): 13 of 28 owner-confirmed cases on the Phase 10 code, 15 after step 3.

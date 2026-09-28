@@ -9,7 +9,7 @@ export interface MemoryFit {
   fits_at: number | null;
 }
 
-export const FIT_CAP = 2000;
+export const FIT_CAP = 6000;  // as the sidecar's (packet.FIT_CAP)
 
 export interface BudgetAdvice {
   cut: number;

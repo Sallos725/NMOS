@@ -38,7 +38,7 @@ def test_the_budget_that_holds_every_memory_line():
     assert all(e["placed"] for e in at(need).ledger) and not all(e["placed"] for e in at(need - 100).ledger)
     many = [fact(i) for i in range(200)]
     assert fits_at(lambda b: compile_lines([], b, facts=many, policy="packet-v4"), 600) is None  # beyond FIT_CAP
-    assert FIT_CAP == 2000
+    assert FIT_CAP == 6000
 
 
 def test_a_request_reports_memory_left_out_and_the_budget_for_it(full):

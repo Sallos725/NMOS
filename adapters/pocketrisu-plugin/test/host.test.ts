@@ -15,6 +15,6 @@ describe('plugin arguments', () => {
     expect([s.deadlineMs, s.reservedMemoryTokens]).toEqual([MAX_DEADLINE_MS, MAX_RESERVED_TOKENS]);
     withArgs({ deadline_ms: 0, reserved_memory_tokens: 0 });  // PocketRisu's unset int
     const d = await risuHost.settings();
-    expect([d.deadlineMs, d.reservedMemoryTokens]).toEqual([3000, 800]);
+    expect([d.deadlineMs, d.reservedMemoryTokens]).toEqual([3000, 2000]);
   });
 });

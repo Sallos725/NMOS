@@ -89,7 +89,7 @@ describe('panel', () => {
     expect(endpoint).toBeDefined();
     endpoint.value = 'https://llm.example/v2';
     endpoint.dispatchEvent(new Event('input', { bubbles: true }));
-    const reserved = [...panel.querySelectorAll('input')].find((i) => i.value === '800')!;
+    const reserved = [...panel.querySelectorAll('input')].find((i) => i.value === '2000')!;
     reserved.value = '99999';
     reserved.dispatchEvent(new Event('input', { bubbles: true }));
     (panel.querySelector('button.primary') as HTMLButtonElement).click();
@@ -97,5 +97,20 @@ describe('panel', () => {
     expect(calls.filter(([method]) => method === 'PUT')).toEqual([['PUT', '/v1/config',
       { llm_url: 'https://llm.example/v2', llm_model: 'm' }]]);  // no key typed: none sent
     expect(args.reserved_memory_tokens).toBe('20000');
+  });
+
+  it('turns summaries off from the settings (ADR 0042, 0043)', async () => {
+    const { d, calls } = deps();
+    await openPanel(d, 'settings');
+    const panel = document.getElementById('nmos-panel')!;
+    const label = [...panel.querySelectorAll('.check')].find((c) => c.textContent === 'Scene summaries')!;
+    const box = label.querySelector('input') as HTMLInputElement;
+    expect(box.checked).toBe(true);  // the settings response has no `summaries`: on, the sidecar's default
+    box.checked = false;
+    box.dispatchEvent(new Event('change', { bubbles: true }));
+    (panel.querySelector('button.primary') as HTMLButtonElement).click();
+    await settle();
+    const put = calls.find(([method]) => method === 'PUT')!;
+    expect((put[2] as Record<string, unknown>).summaries).toBe(false);
   });
 });

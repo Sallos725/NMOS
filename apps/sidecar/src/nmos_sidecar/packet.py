@@ -30,6 +30,9 @@ NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly 
                ('<Thread kind="question"', " A question Thread is still unanswered in the story."),
                ('<Thread kind="threat"', " A threat Thread is a danger that has not played out yet."),
                ('<Thread kind="debt"', " A debt Thread is still owed (by → to)."),
+               # packet-v8 (ADR 0043)
+               ("<Summary ", " A Summary tells earlier parts of the story in short; the lines below it are more exact."),
+               ("<Character ", " A Character groups where that character stands now."),
                ("<Secret ", " A Secret is something its holders know and not_known_by characters are not known"
                             " to know; its content is withheld. Holders may act as people keeping a secret; nobody"
                             " states or hints at it."))
@@ -133,20 +136,28 @@ def excerpt(content: str, query: str, window: int = 2) -> str:
 # packet-v7 is packet-v6 with one numbering for `turn`: an excerpt and a state item carry the turn index of their
 # message, as facts, claims and threads do (ADR 0008); before, they carried its head position (ADR 0041; default
 # since the owner's approval, 2026-09-28).
-POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7")
-DEFAULT_POLICY = "packet-v7"
+# packet-v8 is packet-v7 with a <Story> section (the story so far and the scene summary the message is about,
+# ADR 0042) in at most STORY_SHARE of the budget, and a <Cast> section: each scene character's place, condition,
+# feeling toward the persona, open goals and what they carry, as the lines they are, grouped (PHASE-12 step 5,
+# ADR 0043).
+POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
+            "packet-v8")
+DEFAULT_POLICY = "packet-v8"
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2,
-             "packet-v4": 1.2, "packet-v5": 1.2, "packet-v6": 1.2, "packet-v7": 1.2}  # estimated tokens per non-ASCII char
-PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7"})
-FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7"})
-ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7"})  # promises the message is about first (ADR 0019 am. 1)
-BEFORE_POLICIES = frozenset({"packet-v5", "packet-v6", "packet-v7"})  # standing facts name what they replaced (ADR 0038)
-CAUSE_POLICIES = frozenset({"packet-v6", "packet-v7"})  # facts and claims carry the cause the story states (ADR 0040)
-TURN_POLICIES = frozenset({"packet-v7"})  # excerpts and state carry their message's turn index (ADR 0041)
+             "packet-v4": 1.2, "packet-v5": 1.2, "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2}  # estimated tokens per non-ASCII char
+PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", "packet-v8"})
+FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", "packet-v8"})
+ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", "packet-v8"})  # promises the message is about first (ADR 0019 am. 1)
+BEFORE_POLICIES = frozenset({"packet-v5", "packet-v6", "packet-v7", "packet-v8"})  # standing facts name what they replaced (ADR 0038)
+CAUSE_POLICIES = frozenset({"packet-v6", "packet-v7", "packet-v8"})  # facts and claims carry the cause the story states (ADR 0040)
+TURN_POLICIES = frozenset({"packet-v7", "packet-v8"})  # excerpts and state carry their message's turn index (ADR 0041)
+STORY_POLICIES = frozenset({"packet-v8"})  # summaries in a <Story> section (ADR 0043)
+CAST_POLICIES = frozenset({"packet-v8"})  # each scene character's state in a <Cast> section (ADR 0043)
+STORY_SHARE = 0.3  # packet-v8: <Story> may take at most this share of the budget inside the frame (PHASE-12 Q5)
 RESTATES = 0.6  # packet-v4: a claim this close to a fact of the same head says it again (ADR 0019's match)
 # What the memory budget is for, and how far a suggested budget may go (ADR 0036).
-MEMORY_KINDS = frozenset({"state", "thread", "fact", "claim", "secret"})
-FIT_STEP, FIT_CAP = 100, 2000
+MEMORY_KINDS = frozenset({"state", "thread", "fact", "claim", "secret", "summary"})
+FIT_STEP, FIT_CAP = 100, 6000  # the cap was 2000 while the default budget was 800 (ADR 0043)
 # The pilot's rule, shortened to fit a 600-token Korean packet (47 estimated tokens instead of 88).
 PRIVATE_NOTE = (" Private: only its holders (known_by) know it. Others must not mention, hint at or act on it; holders"
                 " keep it from those in hidden_from unless the story reveals it.")
@@ -316,7 +327,8 @@ def secret_line(holders: list[str], missing: list[str], turn: int | None) -> str
 
 def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateItem] | None = None,
                   threads: list[Line] | None = None, facts: list[Line] | None = None,
-                  policy: str = DEFAULT_POLICY, lead: list[Line] | None = None, note: str = "") -> Compiled:
+                  policy: str = DEFAULT_POLICY, lead: list[Line] | None = None, note: str = "",
+                  story: list[Line] | None = None, cast: list[tuple[str, list[Line]]] | None = None) -> Compiled:
     """Fill the budget and record every offered line in a ledger (ADR 0027).
 
     Budget order is fixed: state, lead facts (how the cast stand with each other, ADR 0026), open threads
@@ -328,14 +340,20 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     mostly restate an offered thread, fact or claim line (REPEATS), keeps room for the best-ranked
     remaining excerpt (EXCERPT_SHARE of the budget inside the frame; the excerpt is shortened to its best
     sentence, or cut, to fit) and cap parser state at STATE_SHARE. Costs use the policy's estimate (NON_ASCII). Returns an empty text when
-    nothing fits or nothing is relevant; the ledger still lists what was offered."""
+    nothing fits or nothing is relevant; the ledger still lists what was offered.
+
+    packet-v8 (ADR 0043): `story` (summary lines) is placed after state, in at most STORY_SHARE, and emitted first;
+    `cast` ((character, lines) groups) after it, emitted as <Cast> before Threads. The callers offer them only
+    under packet-v8 and keep private lines out of `cast`."""
     if policy not in POLICIES:
         raise ValueError(f"unknown packet policy: {policy}")
     est = partial(estimate_tokens, non_ascii=NON_ASCII[policy])
     reserving = policy != "packet-v0"  # packet-v1 and later
-    state, threads, facts, lead = state or [], threads or [], facts or [], lead or []
+    state, threads, facts, lead, story, cast = state or [], threads or [], facts or [], lead or [], story or [], cast or []
+    cast_lines = [line for _, lines in cast for line in lines]
     ledger = ([_entry("state", {"key": i.key}, i.turn, f"{i.key}: {i.value}", i.value) for i in state]
-              + [_entry(l.kind, l.ref, l.turn, l.text, l.content, l.marks) for l in lead + threads + facts]
+              + [_entry(l.kind, l.ref, l.turn, l.text, l.content, l.marks) for l in story + cast_lines + lead + threads
+                 + facts]
               + [_entry("excerpt", {"revision": e.revision_id}, e.turn, e.text, e.text) for e in ranked])
     frame = [PACKET_OPEN, PACKET_NOTE.removesuffix("</Note>") + note + "</Note>", PACKET_CLOSE]
     used = est("\n".join(frame))
@@ -345,7 +363,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     repeats: dict[int, Line] = {}
     if reserving:
         for n, item in enumerate(ranked):
-            if (same := _restates(item, lead + threads + facts)) is not None:
+            if (same := _restates(item, story + cast_lines + lead + threads + facts)) is not None:
                 repeats[n] = same
     first = next((n for n in range(len(ranked)) if n not in repeats), None)
     reserved: tuple[str, str] | None = None
@@ -369,6 +387,45 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         entry["placed"], entry["why"] = True, "placed"
     extras: list[str] = []
     offset = len(state)
+
+    def needed_notes(xml: str) -> list[str]:
+        return [text for mark, text in NOTE_EXTRAS if mark in xml and text not in extras]
+
+    kept_story: list[str] = []
+    story_cap = used + int(inner * STORY_SHARE)
+    for line in story:
+        entry = ledger[offset]
+        offset += 1
+        needed = needed_notes(line.xml)
+        cost = est(line.xml + "\n") + (0 if kept_story else est("  <Story>\n  </Story>\n")) + sum(est(t) for t in needed)
+        entry["tok"] = cost
+        if used + cost > min(limit, story_cap):
+            entry["why"] = "story_cap" if used + cost <= limit else "budget"
+            continue
+        kept_story.append(line.xml)
+        extras.extend(needed)
+        used += cost
+        entry["placed"], entry["why"] = True, "placed"
+    kept_cast: list[str] = []
+    for name, lines in cast:
+        group: list[str] = []
+        opening = f"    <Character name={quoteattr(name)}>"
+        for line in lines:
+            entry = ledger[offset]
+            offset += 1
+            xml = "  " + line.xml
+            needed = needed_notes(xml + opening)
+            cost = (est(xml + "\n") + (0 if group else est(opening + "\n    </Character>\n"))
+                    + (0 if kept_cast or group else est("  <Cast>\n  </Cast>\n")) + sum(est(t) for t in needed))
+            entry["tok"], entry["section"] = cost, "cast"
+            if used + cost <= limit:
+                group.append(xml)
+                extras.extend(needed)
+                used += cost
+                entry["placed"], entry["why"] = True, "placed"
+        if group:
+            kept_cast += [opening, *group, "    </Character>"]
+    base = offset  # where lead, threads and facts start in the ledger
     privacy = policy in PRIVATE_POLICIES
     kept_private: list[str] = []
     folded = restated(lead + threads + facts) if policy in FOLD_POLICIES else {}
@@ -379,7 +436,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         for line in lines:
             entry = ledger[offset]
             offset += 1
-            if (same := folded.get(offset - 1 - len(state))) is not None:
+            if (same := folded.get(offset - 1 - base)) is not None:
                 entry["why"], entry["restates"] = "restates", same.ref
                 continue
             hidden = privacy and line.private
@@ -431,10 +488,14 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         entry["placed"], entry["why"] = True, "placed"
         if form != "full":
             entry["form"], entry["text"] = form, text[:400]
-    if not chosen and not kept_state and not kept_facts and not kept_threads and not kept_private:
+    if not chosen and not kept_state and not kept_facts and not kept_threads and not kept_private and not kept_story \
+            and not kept_cast:
         return Compiled("", 0, [], ledger)
     chosen.sort(key=lambda c: c[0].turn if c[0].position is None else c[0].position)  # story order
-    body = state_block(kept_state)
+    body = ["  <Story>", *kept_story, "  </Story>"] if kept_story else []
+    body += state_block(kept_state)
+    if kept_cast:
+        body += ["  <Cast>", *kept_cast, "  </Cast>"]
     if kept_threads:
         body += ["  <Threads>", *kept_threads, "  </Threads>"]
     if kept_facts:

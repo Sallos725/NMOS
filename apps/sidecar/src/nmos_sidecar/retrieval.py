@@ -15,16 +15,18 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
+from .entities import norm
 from .facts import STANDING, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
-from . import scene, spans
+from . import scene, spans, summaries
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
-from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAUSE_POLICIES, DEFAULT_POLICY, MEMORY_KINDS, REPEATS, TURN_POLICIES, Compiled,
-                     Excerpt, Line, StateItem, clean_text, compile_lines, cut_lines, excerpt, fits_at, kept_counts, secret_line, secret_text)
+from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, DEFAULT_POLICY, MEMORY_KINDS, REPEATS,
+                     STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line, StateItem, clean_text, compile_lines,
+                     cut_lines, excerpt, fits_at, kept_counts, secret_line, secret_text)
 from .state import current_state
-from .threads import relevant_threads
+from .threads import relevant_threads, similarity
 from .vectors import vector_candidates
 
 CANDIDATE_LIMIT = 50
@@ -58,11 +60,15 @@ class RecallOptions:
     policy: str = DEFAULT_POLICY  # packet compiler (ADR 0027)
     strict: bool = False  # this chat's memory mode (ADR 0035): withhold what only some of the scene know
     narrator: str | None = None  # this chat is told in this character's first person (ADR 0035)
+    summarize_key: str | None = None  # summaries of this generation in <Story> (packet-v8, ADR 0043); None: off
 
 
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
 RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit", "vector_min_sim", "query_prefix",
-            "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator")
+            "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator", "summarize_key")
+CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
+CAST_GOALS, CAST_ITEMS = 2, 3
+CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
 
 
 def recorded_options(options: RecallOptions) -> dict[str, Any]:
@@ -204,6 +210,8 @@ class Gathered:
     withheld: int = 0  # lines and excerpts the chat's memory mode left out or replaced (ADR 0035)
     withheld_lines: list[Line] = field(default_factory=list)
     secret_pairs: set[tuple[frozenset[str], frozenset[str]]] = field(default_factory=set)  # (holders, absent) given a Secret line
+    story: list[Line] = field(default_factory=list)  # summaries (packet-v8, ADR 0043)
+    cast_lines: list[tuple[str, list[Line]]] = field(default_factory=list)  # each scene character's state (packet-v8)
 
 
 def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, in_context: set[str],
@@ -255,6 +263,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                    if r["host_logical_id"] not in in_context]
         # Sim bots track many characters: state of characters mentioned right now gets the budget first.
         g.state.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in focus), reverse=True)
+    view = None
     if options.facts_limit > 0 or options.threads_limit > 0:
         view = memory_view(conn, head, options.extractor_key, upto, known_at)
         r = view["resolution"]
@@ -292,7 +301,84 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         if options.narrator:
             who = scene.display(r, options.narrator) if r is not None else options.narrator
             g.note = f" The story is told in the first person by {who}: only what they know is listed."
+        if options.policy in CAST_POLICIES and r is not None:
+            g.cast_lines, used = cast_groups(view, g.cast, r, query, options)
+            if used:  # a line in <Cast> is not said again in another section
+                g.lead = [line for line in g.lead if line.ref.get("assertion") not in used]
+                g.facts = [line for line in g.facts if line.ref.get("assertion") not in used]
+                g.threads = [line for line in g.threads if line.ref.get("assertion") not in used]
+    if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3
+        conv = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
+        if view is None and options.extractor_key:  # facts and threads off: the secrets still decide what may be told
+            view = memory_view(conn, head, options.extractor_key, upto, known_at)
+        r = view["resolution"] if view else None
+        if view and not g.cast and r is not None:
+            g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
+                                _head_turn(conn, head, upto))
+        g.story = summaries.packet_lines(conn, conv["conversation_id"], head, options.summarize_key,
+                                         view["secrets"] if view else [], query,
+                                         _first_turn(conn, head, in_context, upto), upto, known_at,
+                                         scene.names(g.cast, r) if r is not None else frozenset())
     return g
+
+
+def _first_turn(conn: psycopg.Connection, head: UUID, in_context: set[str], upto: int | None) -> int | None:
+    """The earliest turn of the messages the prompt already holds: summaries of later windows would say it again."""
+    if not in_context:
+        return None
+    return conn.execute(
+        "SELECT min(am.turn) AS t FROM active_membership am JOIN source_revision sr ON sr.id = am.source_revision_id"
+        " JOIN source_object so ON so.id = sr.source_object_id WHERE am.commit_id = %s AND so.host_logical_id = ANY(%s)"
+        " AND (%s::int IS NULL OR am.position <= %s::int)", (head, list(in_context), upto, upto)).fetchone()["t"]
+
+
+def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str,
+                options: RecallOptions) -> tuple[list[tuple[str, list[Line]]], set[Any]]:
+    """Each scene character's current state as the lines it is (PHASE-12 Q4, ADR 0043): place, condition, feeling
+    toward the persona, what they carry, and, for a character the message names, their open goals, the one the
+    message is about first: an open goal can be long over without a turn saying so (K23), and every request would
+    carry it. Up to CAST_MAX characters, the persona left out. A line only some of the scene know stays in its section
+    (its Private handling), and a narrator's unknowns are left out (ADR 0035). Returns the groups and the assertions
+    they use."""
+    persona = scene.key(r, scene.PERSONA)
+    order = [k for k in cast if k != persona][:CAST_MAX]
+    said = norm(query)
+    before, cause = options.policy in BEFORE_POLICIES, options.policy in CAUSE_POLICIES
+
+    def shown(row: dict[str, Any]) -> bool:
+        if scene.private(row, cast, r):
+            return False
+        return not options.narrator or scene.narrator_knows(row, options.narrator, r)
+
+    mine: dict[str, list[dict[str, Any]]] = {}
+    for f in view["facts"]:
+        if (f["predicate"] in CAST_PREDICATES and f.get("polarity") != "negative"
+                and f.get("subject_type") in (None, "character") and shown(f)):
+            mine.setdefault(scene.key(r, f["subject"]), []).append(f)
+    groups: list[tuple[str, list[Line]]] = []
+    used: set[Any] = set()
+    for k in order:
+        facts = sorted(mine.get(k, []), key=lambda f: f["position"], reverse=True)
+        pick = [f for f in facts if f["predicate"] == "located_in"][:1]
+        pick += [f for f in facts if f["predicate"] == "has_status"][:1]
+        pick += [f for f in facts if f["predicate"] == "feels_toward" and f.get("object")
+                 and scene.key(r, f["object"]) == persona][:1]
+        pick += [f for f in facts if f["predicate"] == "possesses"][:CAST_ITEMS]
+        named = any(n in said for n in scene.names({k: cast[k]}, r))
+        goals = [t for t in view["threads"] if named and t.get("kind") == "goal" and t["status"] == "open"
+                 and scene.key(r, t["by"]) == k and shown(t)]
+        goals.sort(key=lambda t: (similarity(query, t.get("text")) if query else 0.0, t["position"]), reverse=True)
+        lines = [fact_entry(f, False, before, cause) for f in pick] + [thread_entry(t) for t in goals[:CAST_GOALS]]
+        if lines:
+            groups.append((cast[k], lines))
+            used |= {line.ref.get("assertion") for line in lines}
+    return groups, used
+
+
+def compile_gathered(g: Gathered, budget: int, policy: str) -> Compiled:
+    """One request's packet from what `gather` offered (the request and its replay compile alike)."""
+    return compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts, policy=policy, lead=g.lead,
+                         note=g.note, story=g.story, cast=g.cast_lines)
 
 
 def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, options: RecallOptions) -> list[Line]:
@@ -366,8 +452,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     in_context = set(request.in_context_ids)
     g = gather(conn, head, query, previous_ai, in_context, options, upto) if fresh else Gathered()
     def compile_at(budget: int) -> Compiled:
-        return compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts,
-                             policy=options.policy, lead=g.lead, note=g.note)
+        return compile_gathered(g, budget, options.policy)
 
     compiled = compile_at(request.budget_tokens)
     kept = kept_counts(compiled.ledger)
@@ -403,7 +488,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                    "state_items": len(g.state), "facts": len(g.lead) + len(g.facts), "threads": len(g.threads),
                    "kept_state": kept["state"], "kept_facts": kept["facts"], "kept_threads": kept["threads"],
                    "placed": {k: sum(1 for e in placed if e["kind"] == k)
-                              for k in ("state", "thread", "fact", "claim", "secret", "excerpt")},
+                              for k in ("state", "thread", "fact", "claim", "secret", "summary", "excerpt")},
+                   "cast": sum(1 for e in placed if e.get("section") == "cast"),
                    "scene_cast": sorted(g.cast.values()), "memory_mode_withheld": g.withheld,
                    "memory_cut": cut, "fits_at": fit,
                    "embedding_projection": options.embed_projection[:20] if options.embedder else None,

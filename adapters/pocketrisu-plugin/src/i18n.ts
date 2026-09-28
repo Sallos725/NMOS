@@ -153,6 +153,9 @@ const STRINGS = {
   'tune.top_k': ['발췌 수', 'Excerpts'],
   'tune.facts': ['사실 수', 'Facts'],
   'tune.backfill': ['처음 연결 시 추출할 턴 수', 'Turns extracted on first sync'],
+  'tune.summaries': ['장면 요약 만들기', 'Scene summaries'],
+  'tune.summaries_hint': ['추출 모델이 8턴마다 장면과 지금까지의 이야기를 요약해 기억에 넣습니다. 끄면 요약을 만들지도, 넣지도 않습니다.',
+    'The extraction model summarizes every 8 turns and the story so far for memory. Off: none are written or used.'],
   // settings: parser rules
   'rules.title': ['상태창 규칙', 'Status-window rules'],
   'rules.sub': ['block: 시작~끝 사이의 "키: 값" 줄을 읽습니다. entity_line으로 [인물] 줄마다 인물별로 나눕니다 (시뮬봇). regex: key/value 이름 그룹.',
