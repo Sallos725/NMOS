@@ -19,7 +19,6 @@ CREATE TABLE summary (
     first_turn      integer,
     last_turn       integer,
     text            text NOT NULL,
-    held_back       text,  -- why the packet may not use it (NULL: it may)
     raw             jsonb NOT NULL,
     coverage        jsonb,
     created_at      timestamptz NOT NULL DEFAULT now(),

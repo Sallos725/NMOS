@@ -528,13 +528,13 @@ def _summaries_section(view: dict[str, Any], lang: str) -> str:
         covers = _t(lang, "sm.story_covers").format(n=len(story["members"]))
         out += (f"<p><b>{_t(lang, 'story')}</b> <span class=\"muted\">({covers})</span><br>{_v(story['text'])}</p>")
 
-    def state(s: dict[str, Any] | None) -> str:
-        if s is None:
+    def state(x: dict[str, Any]) -> str:
+        if x["summary"] is None:
             return chip(lang, "sm", "waiting")
-        return chip(lang, "sm", "held") if s.get("held_back") else chip(lang, "sm", "current")
+        return chip(lang, "sm", "held") if x.get("held") else chip(lang, "sm", "current")
 
     return out + table([_t(lang, k) for k in ("h.turns", "h.status", "h.summary")],
-                       [[_v(f"{x['window'].first_turn}–{x['window'].last_turn}"), state(x["summary"]),
+                       [[_v(f"{x['window'].first_turn}–{x['window'].last_turn}"), state(x),
                          _v((x["summary"] or {}).get("text") or "")] for x in reversed(view["scenes"])][:200])
 
 

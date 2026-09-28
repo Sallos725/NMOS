@@ -36,13 +36,15 @@ text (§36–37); the owner chose scenes of 8 turns and a story so far (PHASE-12
    look at every window. After a scene is written the story is queued when every due window has a summary.
 7. **Off by default** (`NMOS_SUMMARIES=0`, and a `summaries` setting the plugin can change). Turning it off makes
    queued jobs obsolete. Step 5 turns it on by default, after the owner is told the backfill's size (Q7).
-8. The Inspector's chat page shows the story so far and each due window with its state (current, waiting, held back)
-   and text. Deleting a chat deletes its summaries (ADR 0009); a per-chat rebuild of facts leaves them.
+8. The Inspector's chat page shows the story so far and each due window with its state (current, waiting)
+   and text. Deleting a chat deletes its summaries (ADR 0009); a per-chat rebuild of facts leaves them. Whether a
+   summary may be used is decided when it is read, not stored: the secrets it must not repeat can be extracted after
+   it was written.
 
 ## Consequences
 
 - Cost: each turn is read once more, in windows of about 25,000 characters on the owner's chats (extraction reads
   each turn with its 3 context turns). The story is redone once per 8 turns and on every change to a scene.
 - An edit near the start of a long chat redoes one window and the story; a delete there redoes every later window.
-- `summarize-v1` has no secrets rule yet: step 4 adds OPEN SECRETS to the prompt and the check on the output, and
-  `held_back` is written then. Nothing uses summaries in a packet before step 5.
+- `summarize-v1` has no secrets rule yet: step 4 adds OPEN SECRETS to the prompt and the read-time check. Nothing
+  uses summaries in a packet before step 5.
