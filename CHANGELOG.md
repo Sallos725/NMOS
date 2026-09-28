@@ -63,6 +63,9 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     `POST /v1/conversations/{id}/repairs` (the panel's buttons come in step 5). A repair is owner input: it survives
     rebuilds and new extractor generations, finds its target by what it says, and is listed in the Inspector, with
     undo. A repair whose target's turn was edited matches nothing and says so.
+  - Step 4: the owner can retract a fact (the version before it is current again), correct one (a new object or value,
+    at its own turn or from a later one, until the story says otherwise), and split two names the story joined (K8),
+    with the names that still join them when a split cannot separate them.
 - **Cross-model review** (`.ai/`, AGENTS.md §14; #138): fixed after its review, the script refuses every `.env*` name
   (`.envrc` passed before) and gives the reviewer CLI only the system basics of the environment and its own login
   variables, never `NMOS_*`, `DATABASE_URL` or `PG*` (it passed the whole environment).

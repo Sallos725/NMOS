@@ -154,9 +154,10 @@ class Resolution:
         self._root = {n: find(n) for n in first if n not in self.ambiguous}
         # A split whose names are still one entity, and the names that still join them.
         self.split_via: dict[str, list[str]] = {}
+        accepted = {a: {b for b in nbrs if not {a, b} & (self.ambiguous | overruled)} for a, nbrs in edges.items()}
         for a, b, split in self.splits:
             if a in self._root and b in self._root and self._root[a] == self._root[b]:
-                self.split_via[str(split["id"])] = [first[n][1] for n in _path(a, b, edges, self.links)[1:-1]]
+                self.split_via[str(split["id"])] = [first[n][1] for n in _path(a, b, accepted, self.links)[1:-1]]
         self._edges = edges
         self._first = first
         self._counts = counts

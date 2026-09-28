@@ -438,3 +438,86 @@ def test_a_split_names_the_third_name_that_still_joins_them():
     newer = {**link, "id": "l2", "name": "Mina", "same_as": "Rin", "created_at": 3}
     r = resolve(uuid.uuid4(), rows, links=[newer], splits=[split])  # a newer join of the same pair holds
     assert r.entity("character", "Mina")["id"] == r.entity("character", "Rin")["id"] and r.splits == []
+
+
+# --- The Codex review of step 4 (AGENTS.md §14) -------------------------------------------------------------------
+
+
+def test_a_correction_in_place_keeps_its_turn_repairs_position_and_entities(migrated):
+    """Findings 1–3: a same-turn correction keeps the turn hash (so the turn's secret repair still matches), the
+    source position (so the earlier version is still earlier), and resolves its new object."""
+    chat = repair_chat()
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        s = secret(c, cid)
+        repair(c, cid, kind="secret_found_out", item=str(s["id"]), character="Kaito")
+        knows = next(f for f in c.get(f"/v1/conversations/{cid}/facts").json() if f["predicate"] == "knows")
+        repair(c, cid, kind="fact_correct", item=str(knows["id"]), new_value="the letter is fake")
+        s = next(s for s in c.get(f"/v1/conversations/{cid}/secrets").json() if "letter" in s["text"])
+        assert "fake" in s["text"] and s["open"] == []  # still found out: the secret repair found the correction
+    chat = place_chat()
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        harbor = fact(c, cid, "Kaito", "located_in")
+        repair(c, cid, kind="fact_correct", item=str(harbor["id"]), new_object="library")
+        now = fact(c, cid, "Kaito", "located_in")
+        assert now["position"] == harbor["position"] and now["turn"] == harbor["turn"]
+        assert "library" in now["names"] and "harbor" not in now["names"]
+
+
+def test_a_later_object_correction_that_changes_the_fact_is_refused(migrated):
+    """Finding 4: from a later turn a new object of a pair (a relationship) would leave both pairs current."""
+    chat = SimChat()
+    for text in ("Mina is Rin's classmate.", "Rin is in the harbor.", "Mina is in the chapel."):
+        chat.user(text)
+        chat.reply("Noted.")
+    chat.user("Go on.")
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        rel = fact(c, cid, "Mina", "relationship")
+        res = c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "fact_correct", "item": str(rel["id"]),
+                                                               "new_object": "Sora", "turn": 2})
+        assert res.status_code == 422 and "leave the old fact current" in res.json()["detail"]
+        repair(c, cid, kind="fact_correct", item=str(rel["id"]), new_object="Sora")  # at its own turn: replaced
+        pairs = [(f["subject"], f["object"]) for f in c.get(f"/v1/conversations/{cid}/facts").json()
+                 if f["predicate"] == "relationship"]
+        assert pairs == [("Mina", "Sora")]
+
+
+def test_the_api_checks_a_fact_against_the_assertions_a_read_matches():
+    """Finding 5: two assertions of one turn that fold into one fact cannot be told apart."""
+    f = {**row(3, "Hana", "has_trait", None, "brave", subject_type="character"), "turn_hash": "h"}
+    view = {"facts": [f], "assertions": [f, {**f, "id": 99}], "secrets": [], "threads": [], "resolution": None}
+    try:
+        repairs.plan("fact_retract", "3", view, 5)
+    except repairs.RepairError as e:
+        assert "cannot be told apart" in str(e)
+    else:
+        raise AssertionError("an ambiguous fact was accepted")
+
+
+def test_a_split_is_explained_only_by_joins_resolution_accepted():
+    """Finding 6: X is ambiguous once A and B are split, so the owner's joins through C and D keep them one."""
+    rows = [row(1, "A", "also_called", None, "B", subject_type="character"),
+            row(2, "A", "also_called", None, "X", subject_type="character"),
+            row(3, "B", "also_called", None, "X", subject_type="character"),
+            row(4, "X", "also_called", None, "Y", subject_type="character"),
+            row(5, "C", "located_in", "chapel", None, subject_type="character"),
+            row(6, "D", "located_in", "harbor", None, subject_type="character")]
+    links = [{"id": f"l{i}", "entity_type": "character", "name": a, "same_as": b, "created_at": i}
+             for i, (a, b) in enumerate((("A", "C"), ("C", "D"), ("D", "B")))]
+    split = {"id": "s1", "entity_type": "character", "name": "A", "other": "B", "created_at": 9}
+    r = resolve(uuid.uuid4(), rows, links=links, splits=[split])
+    assert r.split_via == {"s1": ["C", "D"]}
+
+
+def test_the_version_a_retraction_made_current_names_the_repair(migrated):
+    """Finding 7: the restored version's packet line carries the repair in its provenance."""
+    chat = place_chat()
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        out = repair(c, cid, kind="fact_retract", item=str(fact(c, cid, "Hana", "located_in")["id"]))
+        assert fact(c, cid, "Hana", "located_in")["repair"] == out["repair"]["id"]
+        lines = recall(c, chat, "Where is Hana?", budget=2000)
+        ledger = c.get(f"/v1/trace/{lines['trace_id']}/replay").json()["lines"]
+        assert any(e["ref"].get("repair") == out["repair"]["id"] and e.get("placed") for e in ledger)

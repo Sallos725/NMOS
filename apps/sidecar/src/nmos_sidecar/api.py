@@ -27,7 +27,7 @@ from . import (__version__, audit, extraction, generations, inspector, ledger, n
 from .config import Settings
 from .db import make_pool
 from .extraction import enqueue_after_apply, job_counts
-from .facts import STANDING, fact_versions, memory_view
+from .facts import STANDING, fact_versions, memory_view, version_key
 from .ids import uuid7
 from .models import (
     BodiesRequest,
@@ -614,7 +614,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             try:
                 target, value = repairs.plan(body.kind, body.item, memory_view(conn, head, rt["active_extractor"]),
                                              head_turn(conn, head), body.outcome, body.character, body.turn,
-                                             body.new_object, body.new_value, body.other, body.entity_type)
+                                             body.new_object, body.new_value, body.other, body.entity_type,
+                                             version_key)
             except repairs.RepairError as e:
                 raise HTTPException(status_code=422, detail=str(e)) from e
             with conn.transaction():

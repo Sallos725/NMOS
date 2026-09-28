@@ -357,7 +357,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
                 "items": [], "threads": [], "unmatched": [], "secrets": [], "unrevealed": [], "repairs": [],
-                "resolution": None}
+                "assertions": [], "resolution": None}
     rows = [r for r in served_assertions(conn, head, extractor_key, upto, known_at) if r["predicate"] in REGISTRY]
     conv = conn.execute("SELECT w.conversation_id, c.host_persona_name FROM worldline_commit w"
                         " JOIN conversation c ON c.id = w.conversation_id WHERE w.id = %s", (head,)).fetchone()
@@ -384,7 +384,12 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     # The owner's repairs (ADR 0044): retracted and corrected facts first, then events of their turn in the secret and
     # thread folds, and name splits in the resolution above.
     applied: dict[str, str | None] = {}
-    rows = apply_facts(rows, in_force, r, applied)
+    corrected_at = sorted({(rep.get("value") or {}).get("turn") for rep in in_force if rep["kind"] == "fact_correct"}
+                          - {None})
+    turn_positions = {x["turn"]: x["p"] for x in conn.execute(
+        "SELECT turn, max(position) AS p FROM active_membership WHERE commit_id = %s AND turn = ANY(%s) GROUP BY turn",
+        (head, corrected_at)).fetchall()} if corrected_at else {}
+    rows, retracted = apply_facts(rows, in_force, r, applied, _annotate, turn_positions)
     # Secrets (PHASE-10, ADR 0033): a reveal ends a secret for the character who found it out, from its
     # turn on: its hidden_from drops that name and its known_by gains it (amendment 1: the scene, strict mode
     # and a narrator must count them as knowing it). `learned` is not a fact itself. Before the threads, which copy
@@ -421,6 +426,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             f["claims"].append({"by": c["asserted_by"], "turn": c["turn"], "position": c["position"],
                                 "object": c["object"], "value": c["value"], "polarity": c["polarity"]})
     facts.sort(key=lambda f: f["position"], reverse=True)
+    for rid, gone in retracted.items():  # the version a retraction made current again names it (ADR 0044, Q7)
+        key = version_key(gone, r)
+        for f in facts:
+            if not f.get("repair") and version_key(f, r) == key:
+                f["repair"] = rid
     other.sort(key=lambda a: a["position"], reverse=True)
     cause_links(facts + claims, [f for f in facts if f["predicate"] == "event" and f.get("polarity") != "negative"], r)
     conflicts = [{"fact": f["id"], "turn": f["turn"], "position": f["position"], "text": fact_text(f),
@@ -434,7 +444,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     return {"facts": facts, "claims": claims, "other": other, "entities": r.entities(),
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
             "threads": threads, "unmatched": unmatched, "secrets": secrets, "unrevealed": unrevealed,
-            "repairs": [_report(rep, applied, r) for rep in repairs], "resolution": r}
+            "repairs": [_report(rep, applied, r) for rep in repairs], "assertions": rows, "resolution": r}
 
 
 def _report(rep: dict[str, Any], applied: dict[str, str | None], r: Resolution) -> dict[str, Any]:

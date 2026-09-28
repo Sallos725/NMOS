@@ -109,8 +109,8 @@ merges the two until that turn is edited or deleted (the Inspector shows each al
 marks (`known_by`, `hidden_from`) stay free text. *Since 0.1.0-beta.17 (`extract-v9`):* a character first
 shown without a name is written as a `?` description and joined to its name when a later turn reveals it
 (3/3 on the owner's reveal turn; ADR 0024), and the owner can join any two names of a chat in the panel
-(entity page → "Same as another entity"; ADR 0025). There is still no owner split of a wrong automatic
-alias.
+(entity page → "Same as another entity"; ADR 0025). *On `main` (Phase 13, ADR 0044):* the owner can split two
+names a wrong automatic alias joined (the API now, the panel in step 5).
 
 **K9 — Destroyed or used-up items keep their last holder.** A new holder ends the previous one (ADR
 0011), and since 0.1.0-beta.12 so does a statement that the holder no longer has it ("lost", "dropped

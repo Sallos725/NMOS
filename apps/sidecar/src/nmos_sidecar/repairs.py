@@ -20,6 +20,7 @@ Pure: no database here, except `repairs_of`.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -222,14 +223,21 @@ def _owner_id(rep: dict[str, Any]) -> int:
     return -(UUID(str(rep["id"])).int % 2**62) - 1
 
 
+ANNOTATIONS = ("subject_entity", "object_entity", "names", "participant_entities")
+
+
 def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Resolution | None,
-                applied: dict[str, str | None]) -> list[dict[str, Any]]:
+                applied: dict[str, str | None], annotate: Callable[[dict[str, Any], Any], None] | None = None,
+                turn_positions: dict[int, int] | None = None) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     """Retract and correct (Q1 items 2 and 3) on the head's assertions, in the order they were made. A retracted
-    assertion is left out, so the version before it is current again. A correction is an owner's version at its
-    turn, after every assertion of that turn: it supersedes the fact from there, and a later turn that states the
-    fact again supersedes it (Q4). A correction at the fact's own turn, or of a fact that accumulates (a trait, an
-    event), replaces it. Returns the new list; `applied` gets {repair id: the assertion it applied to, or None}."""
+    assertion is left out, so the version before it is current again. A correction is an owner's version of the fact:
+    at the fact's own turn, or for a fact that accumulates (a trait, an event), it replaces it in place (same position
+    and turn hash, so the turn's other repairs still find it); from a later turn it is a version at the end of that
+    turn, which supersedes the fact from there, and a later turn that states the fact again supersedes it (Q4). Its
+    entities are resolved again (`annotate`). Returns the new list and {repair id: the retracted assertion}; `applied`
+    gets {repair id: the assertion it applied to, or None}."""
     out = list(rows)
+    retracted: dict[str, dict[str, Any]] = {}
     for rep in repairs:
         if rep["kind"] not in ("fact_retract", "fact_correct"):
             continue
@@ -241,19 +249,29 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
         value = rep.get("value") or {}
         if rep["kind"] == "fact_retract":
             out.remove(a)
+            retracted[str(rep["id"])] = a
             continue
         at = value.get("turn", a.get("turn"))
         pred = REGISTRY.get(a["predicate"])
-        if at == a.get("turn") or (pred is not None and pred.cardinality == "multi"):
-            out.remove(a)
-        before = [i for i, x in enumerate(out) if x.get("turn") is not None and x["turn"] <= at]
-        place = before[-1] + 1 if before else 0
-        out.insert(place, {**a, "id": _owner_id(rep), "turn": at, "turn_hash": None, "host_logical_id": None,
-                           "position": out[place - 1]["position"] if place else a["position"],
-                           "object": value.get("object", a.get("object")), "value": value.get("value", a.get("value")),
-                           "source": "narration", "asserted_by": None, "evidence": rep.get("note") or "",
-                           "owner": True, "repair": str(rep["id"])})
-    return out
+        in_place = at == a.get("turn") or (pred is not None and pred.cardinality == "multi")
+        new = {k: v for k, v in a.items() if k not in ANNOTATIONS}
+        new.update({"id": _owner_id(rep), "host_logical_id": None, "object": value.get("object", a.get("object")),
+                    "value": value.get("value", a.get("value")), "source": "narration", "asserted_by": None,
+                    "evidence": rep.get("note") or "", "owner": True, "repair": str(rep["id"])})
+        if in_place:
+            new.update({"turn": a.get("turn"), "turn_hash": a.get("turn_hash"), "position": a["position"]})
+            out[out.index(a)] = new
+        else:
+            position = (turn_positions or {}).get(at)
+            if position is None:
+                position = max((x["position"] for x in out if x.get("turn") is not None and x["turn"] <= at),
+                               default=a["position"])
+            new.update({"turn": at, "turn_hash": None, "position": position})
+            place = max((i + 1 for i, x in enumerate(out) if x["position"] <= position), default=0)
+            out.insert(place, new)
+        if annotate is not None and r is not None:
+            annotate(new, r)
+    return out, retracted
 
 
 class RepairError(ValueError):
@@ -262,8 +280,8 @@ class RepairError(ValueError):
 
 def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outcome: str | None = None,
          character: str | None = None, turn: int | None = None, new_object: str | None = None,
-         new_value: str | None = None, other: str | None = None,
-         entity_type: str = "character") -> tuple[dict[str, Any], dict[str, Any]]:
+         new_value: str | None = None, other: str | None = None, entity_type: str = "character",
+         version_key: Callable[..., tuple] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     """The target and value a new repair stores, for the item the Inspector shows now (a thread's or a secret's id),
     checked against the current memory."""
     if kind not in ENABLED:
@@ -272,7 +290,7 @@ def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outc
     if kind == "name_split":
         return _plan_split(item, other, entity_type, r)
     if kind.startswith("fact_"):
-        return _plan_fact(kind, item, view, last_turn, new_object, new_value, turn)
+        return _plan_fact(kind, item, view, last_turn, new_object, new_value, turn, version_key)
     at = last_turn if turn is None else turn
     if kind.startswith("thread_"):
         t = next((t for t in view["threads"] if str(t["id"]) == item), None)
@@ -332,14 +350,16 @@ def _plan_split(name: str, other: str | None, entity_type: str, r: Resolution | 
 
 
 def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None, new_object: str | None,
-               new_value: str | None, turn: int | None) -> tuple[dict, dict]:
+               new_value: str | None, turn: int | None, version_key: Callable[..., tuple] | None = None) -> tuple[dict, dict]:
     f = next((f for f in view["facts"] if str(f["id"]) == item), None)
     if f is None:
         raise RepairError("no fact with that id in this chat now")
     if f.get("owner"):
         raise RepairError("that is the owner's correction: take the repair back instead")
+    r = view.get("resolution")
     target = fact_target(f)
-    if match_fact(target, view["facts"], view.get("resolution")) is not f:
+    hit = match_fact(target, view.get("assertions") or view["facts"], r)  # the rows a read matches against
+    if hit is None or str(hit["id"]) != item:
         raise RepairError("the fact cannot be told apart from another one of its turn")
     if kind == "fact_retract":
         return target, {}
@@ -352,4 +372,8 @@ def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None
         raise RepairError("give a new object or value that differs from the fact's")
     at = f.get("turn") if turn is None else turn
     _check_turn(at, f.get("turn"), last_turn, "fact")
+    if ("object" in value and at != f.get("turn") and version_key is not None
+            and version_key(f, r) != version_key({**f, "object": value["object"]}, r)):
+        raise RepairError("from a later turn a new object would leave the old fact current too: correct it at its own"
+                          " turn, or retract it")
     return target, {**value, "turn": at}

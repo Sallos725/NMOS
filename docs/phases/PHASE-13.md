@@ -111,7 +111,10 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
 3. Storage, matching, threads and secrets: migration 0024, ADR, API, the Inspector's "Repairs" list. **Done** (ADR 0044,
    D54): `owner_repair`; threads closed with an outcome or reopened, secrets found out or kept, per character; the
    API with its checks; the Inspector's "Repairs" section; every assertion row now carries its turn's hash.
-4. Facts and names: retract, correct, split.
+4. Facts and names: retract, correct, split. **Done** (ADR 0044 items 8–9): a retraction brings back the version
+   before it; a correction replaces a fact at its own turn or supersedes it from a later turn, until the story says
+   otherwise; a split separates two names the story joined and says which names still join them. The step's Codex
+   review found seven defects, all fixed with tests.
 5. Panel: buttons, forms, undo, bulk close; the "Needs attention" queue.
 6. Evaluation, real-host smoke, upgrade, latency, Codex review, documentation.
 

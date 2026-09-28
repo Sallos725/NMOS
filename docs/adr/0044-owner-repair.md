@@ -61,6 +61,32 @@ generation makes new rows for the same turn, often in other words, so a fix keye
    applied, matches nothing now, or was taken back); threads the owner closed and secrets the owner marked say so. The
    buttons are the panel's, in step 5; the Inspector HTML stays read-only (H15).
 
+## Step 4 — facts and names (2026-09-28)
+
+8. **Facts.** A fact repair's target is the assertion's turn, the turn's hash, its predicate, source, subject and
+   object (as entities) and its line. It is applied to the head's assertions before the folds, in the order repairs
+   were made, and matched against the same assertions the API checked it against (`assertions` in the memory view),
+   so a target the API accepted is never silently ambiguous.
+   - `fact_retract`: the assertion is left out, whatever generation extracts it again, so the version before it is
+     current again; that version's packet line names the repair.
+   - `fact_correct` (a new object, a new value, or both): an owner's version of the fact. At the fact's own turn, or
+     for a fact that accumulates (a trait, an event), it replaces the assertion in place, with its position and turn
+     hash, so the turn's other repairs (a secret found out) still find it. From a later turn it is a version at the end
+     of that turn, which supersedes the fact from there, and a later statement of the story supersedes it (Q4). Its
+     entities are resolved again. The API refuses a new object from a later turn when it changes what the fact is about
+     (a relationship's pair, an item's whereabouts): both would stay current; the owner corrects it at its own turn or
+     retracts it. An owner's version cannot itself be repaired: the owner takes the repair back.
+9. **Names (K8).** `name_split` says two names of one type are not one entity. Resolution drops the story's aliases
+   that join them directly. When they are still one entity — the owner's own join through another name, or aliases
+   resolution accepts — the repair lists the names that still join them, over exactly the joins resolution made. Of an
+   owner join (ADR 0025) and a split of the same two names, the newer holds. Extraction's entity hints use the splits,
+   as they use the joins.
+
+The step's Codex review found seven defects, all confirmed and fixed before merge: corrections cleared the turn hash a
+secret repair needed, kept the old object's entities, took an earlier turn's position, could leave two pairs current,
+were validated against other candidates than the read used; a split's explanation could name a join resolution had
+refused; a retraction's restored version did not name the repair.
+
 ## Consequences
 
 - One repair fixes an item for good: through edits elsewhere in the chat, rebuilds and new generations, with no model
