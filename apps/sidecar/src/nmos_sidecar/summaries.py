@@ -36,7 +36,7 @@ from .generations import Generation
 from .ids import uuid7
 from .llm import LLMError
 from .packet import Line
-from .threads import similarity
+from .threads import _grams, _overlap, similarity
 
 log = logging.getLogger("nmos.summaries")
 
@@ -149,14 +149,29 @@ _AS_OF = ("(%s::timestamptz IS NULL OR created_at <= %s::timestamptz)"
           " AND (discarded_at IS NULL OR (%s::timestamptz IS NOT NULL AND discarded_at > %s::timestamptz))")
 
 
+_COLUMNS = ("id, conversation_id, generation, level, window_key, members, first_turn, last_turn, text, coverage,"
+            " created_at, discarded_at")  # not the model's raw answer
+
+
 def _scenes(conn: psycopg.Connection, conv: UUID, key: str, ws: list[Window],
             known_at: datetime | None = None) -> dict[str, dict[str, Any]]:
     if not ws:
         return {}
     rows = conn.execute(
-        "SELECT * FROM summary WHERE conversation_id = %s AND generation = %s AND level = 'scene' AND window_key = ANY(%s)"
+        "SELECT " + _COLUMNS + " FROM summary WHERE conversation_id = %s AND generation = %s AND level = 'scene'"
+        " AND window_key = ANY(%s)"
         " AND " + _AS_OF, (conv, key, [w.key for w in ws], known_at, known_at, known_at, known_at)).fetchall()
     return {r["window_key"]: r for r in rows}
+
+
+def _story(conn: psycopg.Connection, conv: UUID, key: str, have: list[UUID],
+           known_at: datetime | None = None) -> dict[str, Any] | None:
+    """The newest story made only from these scene summaries. A story is written each time a window is summarized,
+    so a long chat has hundreds: the database picks the one."""
+    return conn.execute(
+        "SELECT " + _COLUMNS + " FROM summary WHERE conversation_id = %s AND generation = %s AND level = 'story'"
+        " AND cardinality(members) > 0 AND members <@ %s::uuid[] AND " + _AS_OF + " ORDER BY created_at DESC, id DESC"
+        " LIMIT 1", (conv, key, list(have), known_at, known_at, known_at, known_at)).fetchone()
 
 
 def current(conn: psycopg.Connection, conv: UUID, head: UUID, key: str | None,
@@ -170,15 +185,7 @@ def current(conn: psycopg.Connection, conv: UUID, head: UUID, key: str | None,
     by_key = _scenes(conn, conv, key, ws, known_at) if key else {}
     scenes = [{"window": w, "summary": by_key.get(w.key)} for w in ws]
     ids = [s["summary"]["id"] for s in scenes if s["summary"]]
-    story = None
-    if ids:
-        have = set(ids)
-        for row in conn.execute(
-                "SELECT * FROM summary WHERE conversation_id = %s AND generation = %s AND level = 'story' AND " + _AS_OF
-                + " ORDER BY created_at DESC, id DESC", (conv, key, known_at, known_at, known_at, known_at)).fetchall():
-            if row["members"] and set(row["members"]) <= have:
-                story = row
-                break
+    story = _story(conn, conv, key, ids, known_at) if ids else None
     for x in scenes:
         x["held"] = held(x["summary"], secrets, present) if x["summary"] and secrets else []
     return {"scenes": scenes, "story": story, "due": len(ws), "done": len(ids),
@@ -240,23 +247,79 @@ def summary_line(level: str, row: dict[str, Any]) -> Line:
                 {"summary": str(row["id"])}, row["last_turn"], f"{level} {turns}: {row['text']}", row["text"])
 
 
-def packet_lines(conn: psycopg.Connection, conv: UUID, head: UUID, key: str, secrets: list[dict[str, Any]],
-                 query: str, before_turn: int | None, upto: int | None = None,
-                 known_at: datetime | None = None, present: frozenset[str] = frozenset()) -> list[Line]:
+_GRAMS: dict[str, set[str]] = {}  # a summary's text never changes: its trigrams, by summary id
+_GRAMS_MAX = 50_000
+
+
+def _scene_grams(conn: psycopg.Connection, scenes: list[dict[str, Any]]) -> dict[str, set[str]]:
+    missing = [x["id"] for x in scenes if x["id"] not in _GRAMS]
+    if missing:
+        if len(_GRAMS) + len(missing) > _GRAMS_MAX:
+            _GRAMS.clear()
+            missing = [x["id"] for x in scenes]
+        for r in conn.execute("SELECT id::text, text FROM summary WHERE id = ANY(%s::uuid[])", (missing,)).fetchall():
+            _GRAMS[r["id"]] = _grams(r["text"]) if r["text"] else set()
+    return _GRAMS
+
+
+# What a request needs of the summaries, in one query (`current`, `_story`, `due`): the head's current scene summaries,
+# the newest story made only from them, and the earliest turn of the messages the prompt holds. A scene summary is
+# current when its members are its window's members, compared in the database, which is what its key says
+# (`members_key`). A request reads no member lists, and a scene's text only when it has not seen that summary (its
+# trigrams are kept by summary id) or would offer it.
+_AS_OF_S = ("(%(at)s::timestamptz IS NULL OR s.created_at <= %(at)s::timestamptz) AND (s.discarded_at IS NULL"
+            " OR (%(at)s::timestamptz IS NOT NULL AND s.discarded_at > %(at)s::timestamptz))")
+_UPTO = "(%(upto)s::int IS NULL OR {0}position <= %(upto)s::int)"
+_CURRENT = (
+    "WITH c AS (SELECT conversation_id AS id FROM worldline_commit WHERE id = %(head)s),"
+    " d AS (SELECT (greatest(0, coalesce(max(turn), -1) + 1 - %(lag)s) / %(w)s) * %(w)s AS e FROM active_membership"
+    " WHERE commit_id = %(head)s AND turn_hash IS NOT NULL AND " + _UPTO.format("") + "),"
+    " w AS (SELECT array_agg(source_revision_id ORDER BY position) AS members FROM active_membership"
+    " WHERE commit_id = %(head)s AND turn >= 0 AND turn < (SELECT e FROM d) GROUP BY turn / %(w)s),"
+    " f AS (SELECT min(am.turn) AS t FROM active_membership am JOIN source_revision sr ON sr.id = am.source_revision_id"
+    " JOIN source_object so ON so.id = sr.source_object_id WHERE am.commit_id = %(head)s"
+    " AND so.conversation_id = (SELECT id FROM c) AND so.host_logical_id = ANY(%(ctx)s) AND " + _UPTO.format("am.") + "),"
+    " scenes AS (SELECT s.id, s.level, s.first_turn, s.last_turn FROM summary s JOIN w ON s.members = w.members"
+    " WHERE s.conversation_id = (SELECT id FROM c) AND s.generation = %(key)s AND s.level = 'scene' AND " + _AS_OF_S + ")"
+    " SELECT id::text, level, first_turn, last_turn, NULL::text AS text, NULL::jsonb AS coverage, (SELECT t FROM f) AS before"
+    " FROM scenes UNION ALL (SELECT s.id::text, s.level, s.first_turn, s.last_turn, s.text, s.coverage, NULL FROM summary s"
+    " WHERE s.conversation_id = (SELECT id FROM c) AND s.generation = %(key)s AND s.level = 'story'"
+    " AND cardinality(s.members) > 0 AND s.members <@ ARRAY(SELECT id FROM scenes) AND " + _AS_OF_S
+    + " ORDER BY s.created_at DESC, s.id DESC LIMIT 1)")
+
+
+def packet_lines(conn: psycopg.Connection, head: UUID, key: str, secrets: list[dict[str, Any]], query: str,
+                 in_context: set[str], upto: int | None = None, known_at: datetime | None = None,
+                 present: frozenset[str] = frozenset()) -> list[Line]:
     """What a request offers <Story> (ADR 0043): the story so far, and the scene summary the message is about among
-    windows older than the prompt's own messages (`before_turn`). A summary that repeats a secret still kept from
-    someone is never offered (PHASE-12 Q3)."""
-    view = current(conn, conv, head, key, secrets, upto, known_at, present)
+    windows older than the prompt's own messages (`in_context`, host ids). A summary that repeats a secret still kept
+    from someone is never offered (PHASE-12 Q3). The same choice as `current`, made for the request path: one query
+    finds the current summaries, and only what it would offer is checked against the secrets."""
+    rows = conn.execute(_CURRENT, {"w": WINDOW, "lag": LAG, "head": head, "key": key, "at": known_at, "upto": upto,
+                                   "ctx": list(in_context)}).fetchall()
+    scenes = [x for x in rows if x["level"] == "scene"]
+    story = next((x for x in rows if x["level"] == "story"), None)
+    before_turn = scenes[0]["before"] if scenes else None
+
+    def usable(row: dict[str, Any]) -> bool:
+        if row["level"] == "scene":  # its text and coverage are read only when it would be offered
+            row.update(conn.execute("SELECT text, coverage FROM summary WHERE id = %s::uuid", (row["id"],)).fetchone())
+        return bool(row["text"]) and not (secrets and held(row, secrets, present))
+
     out: list[Line] = []
-    if (story := view["story"]) and story["text"] and not view["story_held"]:
+    if story and usable(story):
         out.append(summary_line("story", story))
-    if query.strip():
-        pool = [x["summary"] for x in view["scenes"] if x["summary"] and x["summary"]["text"] and not x.get("held")
-                and (before_turn is None or x["window"].last_turn < before_turn)]
-        scored = [(similarity(query, s["text"]), s["last_turn"], s) for s in pool]
-        best = max(scored, key=lambda x: (x[0], x[1]), default=None)
-        if best and best[0] >= SCENE_MIN:
-            out.append(summary_line("scene", best[2]))
+    if query.strip() and scenes:
+        asked, grams = _grams(query), _scene_grams(conn, scenes)
+        scored = sorted(((_overlap(asked, grams[x["id"]]), x["last_turn"], x) for x in scenes
+                         if grams[x["id"]] and (before_turn is None or x["last_turn"] < before_turn)),
+                        key=lambda t: (t[0], t[1]), reverse=True)
+        for score, _, x in scored:
+            if score < SCENE_MIN:
+                break
+            if usable(x):
+                out.append(summary_line("scene", x))
+                break
     return out
 
 
@@ -273,16 +336,19 @@ def _scene_job(conv: UUID, key: str, w: Window, priority: int, again: str = "") 
 
 
 def schedule(conn: psycopg.Connection, conv: UUID, head: UUID, key: str, full: bool = True,
-             priority: int = LIVE_PRIORITY) -> int:
+             priority: int = LIVE_PRIORITY, since: int | None = None) -> int:
     """Queue the due windows that have no summary, and the story once every due window has one. Idempotent.
 
-    `full=False` (an append) looks only at the newest due window: an append changes no earlier window. Any other
-    commit, and a generation's activation, look at all of them."""
+    `full=False` (an append of the messages from position `since` on) looks only at the windows it can have made due:
+    an append changes no earlier window, but a long one can complete several. Any other commit, and a generation's
+    activation, look at all of them."""
     if full:
         ws = windows(conn, head)
     else:
         n = due(replied_turns(conn, head))
-        ws = windows(conn, head, n - 1) if n else []
+        # Due before the append: its turns up to `since`, less the one whose reply the append may have brought.
+        first = n - 1 if since is None else due(max(0, replied_turns(conn, head, since - 1) - 1))
+        ws = windows(conn, head, min(first, n - 1)) if n else []
     have = _scenes(conn, conv, key, ws)
     rows = [_scene_job(conv, key, w, priority) for w in ws if w.key not in have]
     if rows:

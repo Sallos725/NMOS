@@ -110,6 +110,21 @@ def test_an_append_queues_the_window_it_makes_due_and_the_story_follows(migrated
         assert v["story"]["text"] == "Story of 0–7, 8–15, 16–23, 24–31" and v["story_current"]
 
 
+def test_a_long_append_queues_every_window_it_makes_due(migrated, db):
+    """Found in the Phase 12 upgrade test: one sync that appends 28 messages made windows 0–7 and 8–15 due at once,
+    and only the newest was queued, so the story, which waits for every window, was never written."""
+    chat = story_chat(8)
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        assert jobs(db) == []
+        for i in range(8, 22):
+            chat.user(f"Turn {i} begins.")
+            chat.reply(f"Reply {i} follows.")
+        sync(c, chat)  # one append: 22 replied turns, two windows due
+        assert [j["payload"]["first_turn"] for j in jobs(db)] == [0, 8]
+        assert drain(migrated) == 3 and view(migrated, c, chat)["story_current"]
+
+
 def test_an_edit_inside_a_window_masks_its_summary_and_the_story(migrated, db):
     chat = story_chat(30)
     with make_client(migrated, **ON) as c:
@@ -506,3 +521,53 @@ def test_a_character_page_shows_what_cast_says_of_them(migrated, db):
         assert said in state
     assert "Current state" not in lantern  # an item has no <Cast> group
 
+
+def test_an_edit_inside_a_window_leaves_no_stale_summary_in_the_packet(migrated):
+    chat = story_chat(30)
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        drain(migrated)
+        assert '<Summary kind="scene" turns="0–7">' in ask(c, chat, "What happened when Turn 1 begins?")["text"]
+        chat.edit(2, "Turn 1 was rewritten.")
+        stale = ask(c, chat, "What happened when Turn 1 begins?")["text"]
+        drain(migrated)
+        fresh = ask(c, chat, "What happened when Turn 1 was rewritten?")["text"]
+    story = stale[stale.index("<Story>"):stale.index("</Story>")]  # the question itself is an excerpt
+    assert "Turn 1 begins" not in story and 'turns="0–7"' not in story  # masked at once
+    assert '<Summary kind="story"' not in story  # its story was made from the old scene
+    assert '<Summary kind="scene" turns="0–7">' in fresh and "Turn 1 was rewritten" in fresh
+
+
+def test_a_branch_sees_only_its_own_summaries(migrated):
+    chat = story_chat(30)
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        drain(migrated)
+        other = chat.branch(19)  # after turn 9's reply
+        for i in range(10, 30):
+            other.user(f"Desert {i} begins.")
+            other.reply(f"Sand {i} follows.")
+        sync(c, other)
+        drain(migrated)
+        mine, theirs = view(migrated, c, other), view(migrated, c, chat)
+    said = [x["summary"]["text"] for x in mine["scenes"]]
+    assert len(said) == 3 and "Desert 16 begins" in said[2] and not any("Turn 16" in s for s in said)
+    assert mine["story"] is not None and not any("Desert" in x["summary"]["text"] for x in theirs["scenes"])
+
+
+def test_in_strict_mode_a_story_that_repeats_a_secret_is_not_told(migrated):
+    chat = lighthouse_chat()
+
+    def leaky(system: str, user: str) -> tuple[dict, str]:
+        if system == summaries.STORY_PROMPT:
+            return {"summary": "Hana read it: the letter is forged."}, "{}"
+        return stub(system, user)
+
+    with make_client(migrated, **ON, extract_backfill=100) as c:
+        sync(c, chat)
+        story_setup(migrated, chat, leaky)
+        cid = conv_id(c, chat)
+        assert c.put(f"/v1/conversations/{cid}/memory-mode", json={"strict": True}).status_code == 200
+        text = ask(c, chat, "Kaito and Hana, what about the lighthouse keeper's door?")["text"]
+    assert '<Summary kind="story"' not in text and "the letter is forged" not in text.split("<Private>")[0]
+    assert '<Summary kind="scene"' in text  # the scene without the secret is still told

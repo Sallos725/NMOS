@@ -51,7 +51,7 @@ returns part of a chat. Without extraction and embeddings, the 3 s default deadl
 and 15,101 vectors, a warm generation took 3.14–3.29 s, because recall adds ≈0.4–0.7 s (reading facts
 ≈280 ms, vector search ≈115 ms). All 10 requests would have gone without memory at the default
 (`docs/perf/scale.md`, "with extraction and embeddings on"; audit A-09). A chat with more facts per turn
-reads more.
+reads more. Scene summaries (Phase 12) add ≈10 ms at 10,000 messages (`docs/perf/summaries.md`).
 *Workaround:* raise **제한 시간(ms) / Deadline (ms)** in the panel's Settings tab (≈4,000 at 10,000
 messages with extraction and embeddings on; ≈5,000 at 15,000 messages). The plugin tells you when: the
 Status tab shows the time taken and the value to set once a request uses 80 % of the deadline or misses it,

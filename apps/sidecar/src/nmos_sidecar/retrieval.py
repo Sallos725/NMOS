@@ -309,28 +309,16 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 g.facts = [line for line in g.facts if line.ref.get("assertion") not in used]
                 g.threads = [line for line in g.threads if line.ref.get("assertion") not in used]
     if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3
-        conv = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
         if view is None and options.extractor_key:  # facts and threads off: the secrets still decide what may be told
             view = memory_view(conn, head, options.extractor_key, upto, known_at)
         r = view["resolution"] if view else None
         if view and not g.cast and r is not None:
             g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
                                 _head_turn(conn, head, upto))
-        g.story = summaries.packet_lines(conn, conv["conversation_id"], head, options.summarize_key,
-                                         view["secrets"] if view else [], query,
-                                         _first_turn(conn, head, in_context, upto), upto, known_at,
+        g.story = summaries.packet_lines(conn, head, options.summarize_key, view["secrets"] if view else [], query,
+                                         in_context, upto, known_at,
                                          scene.names(g.cast, r) if r is not None else frozenset())
     return g
-
-
-def _first_turn(conn: psycopg.Connection, head: UUID, in_context: set[str], upto: int | None) -> int | None:
-    """The earliest turn of the messages the prompt already holds: summaries of later windows would say it again."""
-    if not in_context:
-        return None
-    return conn.execute(
-        "SELECT min(am.turn) AS t FROM active_membership am JOIN source_revision sr ON sr.id = am.source_revision_id"
-        " JOIN source_object so ON so.id = sr.source_object_id WHERE am.commit_id = %s AND so.host_logical_id = ANY(%s)"
-        " AND (%s::int IS NULL OR am.position <= %s::int)", (head, list(in_context), upto, upto)).fetchone()["t"]
 
 
 def cast_facts(facts: list[dict[str, Any]], to_persona: Callable[[dict[str, Any]], bool]) -> list[dict[str, Any]]:

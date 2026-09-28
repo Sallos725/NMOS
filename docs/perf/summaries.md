@@ -131,3 +131,53 @@ The owner chose a stricter check in front of the character a secret is kept from
 
 The cost: on this chat each of the three main characters has a secret kept from her, so `<Story>` is mostly absent
 while they are together. The 12 new cases' gains come from the budget and `<Cast>`. **Both gates passed.**
+
+## Acceptance (steps 6–7, 2026-09-28)
+
+**Deterministic cases in CI** (`apps/sidecar/tests/test_summaries.py`), one or more for each case the spec lists: an
+old scene placed for a message about it; an edit inside a window, checked on the packet (neither the old scene nor the
+story made from it reaches `<Story>` until the scene is written again); a branch with only its own summaries; a secret
+kept out of `<Story>` with the character it is kept from in the scene, and in strict mode; no `<Story>` for a narrator;
+`<Story>` within its share; `<Cast>` lines not said again in `<Facts>`; a secret stated after a summary; facts and
+threads off. The Inspector's states, a held summary naming its secret, and a character's state block have cases too.
+
+**Upgrade from Phase 11 `main`** (`fixtures/upgrade/main-phase11.sql`, recorded from 5d40c09): every fixture (beta.7,
+beta.16, beta.21, Phase 10 and Phase 11 `main`) now goes on until one sync makes two windows due; the current worker
+writes both scenes and the story, and the next recall carries `<Story>`. This found a fault: an append queued only the
+newest window it made due, so the story, which waits for every window, was never written (ADR 0042 amendment 4, with a
+case of its own).
+
+**Latency at 10,000 messages** (`tools/bench_story.py`: extraction on, a fact for every turn, six secrets, a scene
+summary for every one of the 624 due windows and a story; 15 requests after an append each, budget 2,000; five rounds
+of Phase 11 `main` (5d40c09), this branch with summaries off, this branch with them on, each run pinned to one CPU):
+
+| | retrieve p50, ms (median of 5) | against Phase 11 `main` |
+|---|---:|---:|
+| Phase 11 `main` | 106.6 | |
+| this branch, summaries off | 108.2 | +1.6 |
+| this branch, summaries on (`<Story>` in all 75 packets) | 118.9 | **+13.1** |
+
+The criterion (+10 ms) is not met at this size, by 3 ms: `<Story>` costs a request about 10 ms with 624 scenes.
+It grows with the number of scenes; the owner's longest chat has 8 (at 1,000 messages and 62 scenes, three rounds: 20.7 ms on Phase 11 `main`, 21.8 with summaries off, 23.8 on).
+What the step changed on the way:
+- a first run gave +190 ms: every request checked every scene against every secret, and read every story the chat
+  had ever had. A request now reads its current scenes and one story in one query, compares a scene with its window
+  in the database, and checks only what it would offer (ADR 0042 amendment 4);
+- runs of the same code split into about 100 and about 120 ms. The harness keeps the 10,000-message chat in its own
+  process, and a full garbage collection during a request scanned it too; which request one landed in depended on
+  small differences in allocation. The bench now freezes the harness's objects before it times, which the sidecar
+  alone never needs.
+
+Without a model (`tools/bench_scale.py 10000`, two pairs), nothing changed: lexical retrieve p50 11–14 ms, append
+p50 158–170 ms, fact read p50 102–106 ms on both.
+
+**Real-host smoke** (an isolated PocketRisu from `ghcr.io/pocketrisu/pocketrisu:latest`, a stub chat model, a stub
+extraction model that also answers the summary prompts, this branch's sidecar and worker, plugin build `8f2d502c32b2`
+at the default budget). A test chat of 37 turns, first seen by this sidecar, then 24 messages in play:
+- the first sync queued the windows due then; three more were completed in play and summarized by the worker while
+  the chat went on (seven scenes and four stories, 11 calls, no failed job);
+- the request after the last message carried `<Story>` with the story of all seven scenes (turns 0–55, the newest
+  written in play) and one scene summary; requests took 55–62 ms in the plugin (sync about 30, retrieve about 15);
+- the Inspector showed the summary generation, the story as covering 7 of 7 scenes and each scene as current, one
+  marked "not used while 카이토 is in the scene" (its text names what is kept from him). He was not in that request's
+  scene, so it could be offered.
