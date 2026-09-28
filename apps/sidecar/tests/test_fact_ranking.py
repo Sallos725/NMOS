@@ -22,8 +22,8 @@ from test_sidecar_integration import recall, sync
 BASE = {"object": None, "object_type": None, "host_logical_id": "x", "known_by": None, "hidden_from": None,
         "knowledge": "unknown", "salience": None, "epistemic": "stated"}
 PERSONA = frozenset({"타쿠미"})
-QUERY = ("“귀엽네.” 반대쪽 손으로 노엘의 머리를 쓰다듬는 타쿠미. “난 노엘도, 누나도 좋아하는데, 독차지 하려고?” "
-         "노엘은 그 상황이 싫진 않았다. 아델라도 그 상황이 싫지는 않았다. 루카는 아직 자고 있었다.")
+QUERY = ("“비 온다.” 현관에서 노엘에게 우산을 펼쳐 주는 타쿠미. “노엘도, 누나도 같이 가자. 늦겠어.” "
+         "노엘은 우산을 받아 들었다. 아델라도 신발끈을 묶었다. 루카는 아직 자고 있었다.")
 
 
 def fact(position, subject, predicate, value, **extra):
@@ -34,11 +34,11 @@ def fact(position, subject, predicate, value, **extra):
 def scene():
     trivia = [fact(100 + i, who, "knows", text, knowledge="limited", known_by=["노엘", "루카", "아델라", "타쿠미"])
               for i, (who, text) in enumerate([
-                  ("노엘", "타쿠미가 루카에게 노엘은 교수님이라서 말을 못 한다고 말한 사실"),
-                  ("노엘", "루카와 타쿠미가 강의실 밖 복도에서 자신의 수업을 듣고 있었다"),
-                  ("노엘", "타쿠미가 루카의 재검토 자료에 내용을 추가했다는 사실"),
-                  ("루카", "계란은 식탁에 살살, 대신 한 번에 깨야 한다"),
-                  ("루카", "계란 껍질이 들어갔을 때 다른 껍질 조각으로 건져낼 수 있다")])]
+                  ("노엘", "타쿠미가 루카에게 노엘의 우산을 빌려준 사실"),
+                  ("노엘", "루카와 타쿠미가 도서관 창가에서 숙제를 하고 있었다"),
+                  ("노엘", "타쿠미가 루카의 공책에 낙서를 했다는 사실"),
+                  ("루카", "빵 반죽은 따뜻한 곳에서 한 시간 부풀려야 한다"),
+                  ("루카", "우유가 끓어 넘치면 불을 줄이고 냄비를 들어 올리면 된다")])]
     sister = fact(86, "아델라", "relationship", "누나", object="타쿠미", object_type="character",
                   knowledge="public")
     agreed = fact(92, "아델라", "event", "타쿠미에게 말을 놓기 시작함", salience="major", knowledge="public")
@@ -73,9 +73,9 @@ def test_priors_order_equal_mentions_only():
 
 
 LEAD = '    <Fact kind="relationship" turn="43" knowledge="public">아델라 relationship 타쿠미: 누나</Fact>'
-THREADS = [f'    <Thread kind="promise" by="루카" to="타쿠미" turn="{t}" knowledge="public">다음에 같이 요리하기 {t}</Thread>'
+THREADS = [f'    <Thread kind="promise" by="루카" to="타쿠미" turn="{t}" knowledge="public">다음에 같이 연 날리기 {t}</Thread>'
            for t in (55, 50, 39)]
-OTHER = ['    <Fact kind="knows" turn="57">노엘 knows: 타쿠미가 재검토 자료에 내용을 추가했다는 사실</Fact>']
+OTHER = ['    <Fact kind="knows" turn="57">노엘 knows: 타쿠미가 루카의 공책에 낙서를 했다는 사실</Fact>']
 
 
 def test_lead_facts_take_the_budget_before_threads():
@@ -112,7 +112,7 @@ def test_the_trace_records_what_fit(migrated):
                           "knowledge": "public"})
         if "약속" in target:
             items += [{"subject": "루카", "subject_type": "character", "predicate": "promised", "object": "{{user}}",
-                       "object_type": "character", "value": f"같이 요리하기 {i}", "modality": "actual",
+                       "object_type": "character", "value": f"같이 연 날리기 {i}", "modality": "actual",
                        "knowledge": "public"} for i in range(3)]
         return {"assertions": items}, "{}"
 

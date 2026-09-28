@@ -186,12 +186,12 @@ class OldRelease:
 
 
 def scenario(old: OldRelease) -> list[SimChat]:
-    labels = {"character_name": "Mina", "chat_name": "Upgrade fixture", "persona_name": "Yuuma"}
+    labels = {"character_name": "Mina", "chat_name": "Upgrade fixture", "persona_name": "Takumi"}
     chat = SimChat()
     lines = [
         ("We should rest somewhere safe.", "Mina is in the old chapel. Mina has the brass key."),
         ("Is Rin with you?", "Rin is Mina's sister. Rin went to the harbor."),
-        ("What did Mina say before she left?", "Mina promised Yuuma to return before the bell rings."),
+        ("What did Mina say before she left?", "Mina promised Takumi to return before the bell rings."),
         ("Let's check the market.", "Idle reply about lanterns and rain."),
         ("Any news from the harbor?", "Rin has the silver compass. The gulls are loud today."),
         ("Where do we meet tonight?", "Mina moved to the bell tower."),

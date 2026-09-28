@@ -62,7 +62,7 @@ def test_an_unnamed_character_is_listed_with_what_it_looked_like():
 
 def test_a_revealed_name_needs_the_description_to_have_been_listed():
     reveal = {"subject": "아델라", "subject_type": "character", "predicate": "also_called", "value": FOX}
-    text = "아델라가 무릎걸음으로 다가왔다. 긴 여우 꼬리 하나가 앞으로 축 처졌다."
+    text = "아델라가 서류 뭉치를 안고 다가왔다. 긴 여우 꼬리 하나가 바닥에 끌렸다."
     assert alias_evidenced(reveal, text, [hint(FOX)])
     assert alias_evidenced({**reveal, "subject": FOX, "value": "아델라"}, text, [hint(FOX)])  # either way round
     assert not alias_evidenced(reveal, text, [])  # never listed: the model coined it now

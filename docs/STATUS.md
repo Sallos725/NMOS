@@ -293,8 +293,13 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
 
 A change to the extraction prompt or registry makes a new generation and re-extracts each chat's recent
 window at the provider's cost (ADR 0006, 0014). Owner-approved changes wait for the next one, so the cost is
-paid once (owner decision 2026-09-26). None is queued: A-12 and A-14 shipped in `extract-v11` (owner decision
-2026-09-27, `docs/perf/extract-v11.md`).
+paid once (owner decision 2026-09-26). A-12 and A-14 shipped in `extract-v11` (owner decision 2026-09-27,
+`docs/perf/extract-v11.md`). Queued:
+
+- **Synthetic prompt examples** (owner decision 2026-09-28, PR #149). The extraction prompt's `because`
+  example and `addresses` examples (`extraction.py`) and the example value in the `addresses` description
+  (`predicates.py`) come from the owner's chat. Replace them with synthetic examples (the persona 타쿠미 /
+  Takumi, as in the tests); the repository is public.
 
 ## Public release checklist (done 2026-09-23)
 
