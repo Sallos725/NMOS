@@ -268,10 +268,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                 embed_key=rt["projection"].key if rt["projection"] else None,
                                 embed_backfill=cur.embed_backfill)
 
-    def summarize_after(conn, conv_id, head, appended: bool) -> None:
-        """Queue the window this sync made due (an append), or every window missing a summary (any other commit)."""
+    def summarize_after(conn, conv_id, head, since: int | None) -> None:
+        """Queue the windows this sync made due (an append from position `since`), or every window missing a summary
+        (any other commit)."""
         if rt["summarizer"]:
-            summaries.schedule(conn, conv_id, head, rt["summarizer"].key, full=not appended)
+            summaries.schedule(conn, conv_id, head, rt["summarizer"].key, full=since is None, since=since)
 
     def append_reconcile(conn, conv, body: ReconcileRequest) -> ReconcileResponse | None:
         """Verified append fast path (Track A, A1): None means "not provably an append", and the caller
@@ -319,7 +320,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         offset = tail.turn_start - tail.start
         enqueue(conn, conv.id, tail.entries[offset:], lifecycle, entries[offset:], {**lifecycle, **result.lifecycle},
                 revision_ids)
-        summarize_after(conn, conv.id, head, appended=True)
+        summarize_after(conn, conv.id, head, since=length)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=full_hash, changes_summary=result.summary, commit_reason=None)
 
@@ -351,7 +352,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         head = ledger.apply_plan(conn, conv, state, result, observation, manifest, settings.extract_turns)
         enqueue(conn, conv.id, state.head, state.lifecycle, manifest, {**state.lifecycle, **result.lifecycle},
                 state.revision_ids)
-        summarize_after(conn, conv.id, head, appended=result.commit_reason is None)
+        summarize_after(conn, conv.id, head, since=len(state.head or []) if result.commit_reason is None else None)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=result.manifest_hash, changes_summary=result.summary,
                                  commit_reason=result.commit_reason)
