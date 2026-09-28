@@ -546,26 +546,27 @@ def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
                    "<br>".join(said(f, True) for f in p["speech"])] for p in entries[:100]])
 
 
+def _job_state(job: dict[str, Any], notes: list[str], lang: str) -> str:
+    """A summary job still to finish, as a chip; a failed one adds its error to `notes`."""
+    if job["status"] == "dead" and job.get("last_error"):
+        notes.append(str(job["last_error"])[:200])
+    return chip(lang, "sm", job["status"])
+
+
 def _summary_state(x: dict[str, Any], lang: str) -> str:
     """Why a summary is or is not used (PHASE-12 step 6): held for a secret, not used in front of someone, or, without
     one, its job's state; with the secrets and the error that explain it."""
     notes = [f"{_t(lang, 'sm.secret')}: {s['text']}" for s in x["leaks"] + x["unlisted"]]
+    job = x.get("job")  # the newest job of its window, or of the story that would replace it
+    pending = " " + _job_state(job, notes, lang) if job and job["status"] != "done" else ""
     if x["summary"] is not None:
         out = (chip(lang, "sm", "held") if x["leaks"] else chip(lang, "sm", "unlisted") if x["unlisted"]
-               else chip(lang, "sm", "current"))
-        if x["unlisted"] and not x["leaks"] and x.get("job") and x["job"]["status"] != "done":
-            out += " " + chip(lang, "sm", x["job"]["status"])
+               else chip(lang, "sm", "current")) + pending
         if x["near"]:
             names = ", ".join(sorted({n for s in x["near"] for n in s.get("open") or []}))
             out += f" <span class=\"chip\">{_v(_t(lang, 'sm.near').format(names=names))}</span>"
     else:
-        job = x.get("job")
-        out = chip(lang, "sm", "changed") if x.get("changed") else ""
-        if job and job["status"] != "done":
-            out += " " + chip(lang, "sm", job["status"])
-            if job["status"] == "dead" and job.get("last_error"):
-                notes.append(str(job["last_error"])[:200])
-        out = out.strip() or chip(lang, "sm", "waiting")
+        out = ((chip(lang, "sm", "changed") if x.get("changed") else "") + pending).strip() or chip(lang, "sm", "waiting")
     return out + "".join(f"<br><span class=\"muted\">{_v(n[:160])}</span>" for n in notes)
 
 
@@ -585,8 +586,9 @@ def _summaries_section(view: dict[str, Any], lang: str, gen: dict[str, Any] | No
         behind = "" if view["story_current"] else f" <span class=\"muted\">{_v(t('sm.behind'))}</span>"
         out += f"<p><b>{t('story')}</b> <span class=\"muted\">({covers})</span> {state}{behind}<br>{_v(story['text'])}</p>"
     else:
-        job = view.get("story_job")
-        state = f" {chip(lang, 'sm', job['status'])}" if job and job["status"] != "done" else ""
+        job, notes = view.get("story_job"), []
+        state = f" {_job_state(job, notes, lang)}" if job and job["status"] != "done" else ""
+        state += "".join(f"<br><span class=\"muted\">{_v(n[:160])}</span>" for n in notes)
         out += (f"<p><b>{t('story')}</b> <span class=\"muted\">"
                 f"{_v(t('sm.story_wait').format(n=view['done'], m=view['due']))}</span>{state}</p>")
     return out + table([t(k) for k in ("h.turns", "h.status", "h.summary")],

@@ -18,7 +18,7 @@ ROLES = ('review', 'architecture', 'security')
 GUARD = 'NMOS_PEER_REVIEW_ACTIVE'
 INLINE_LIMIT = 400_000  # characters of diff and attached files in one prompt
 # Never put these in a prompt, even when untracked or attached by hand.
-SENSITIVE = ('.env', '.env.*', '*.pem', '*.key', '*.p12', '*.pfx', 'id_rsa*', 'id_ed25519*',
+SENSITIVE = ('.env*', '*.pem', '*.key', '*.p12', '*.pfx', 'id_rsa*', 'id_ed25519*',
              'credentials*', '.netrc', '.npmrc', '.pypirc', '*.db', '*.bin', '*.sqlite*')
 
 RULES = """\
@@ -57,6 +57,20 @@ def describe_scope(repo, base, scope):
     elif not base:
         lines.append('Focus: the working tree above, staged, unstaged and untracked.')
     return '\n\n'.join(lines)
+
+
+# What the reviewer CLI gets of this shell's environment: the system basics, and its own login (Codex: OPENAI_ and
+# CODEX_; Claude: ANTHROPIC_ and CLAUDE_). Never the NMOS keys, token or database URLs (NMOS_*, DATABASE_URL, PG*).
+ENV_NAMES = {'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LANGUAGE', 'TERM', 'TMPDIR', 'TZ', 'SSL_CERT_FILE',
+             'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE', 'NODE_EXTRA_CA_CERTS', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY',
+             'http_proxy', 'https_proxy', 'no_proxy'}
+ENV_PREFIXES = ('LC_', 'XDG_', 'OPENAI_', 'CODEX_', 'ANTHROPIC_', 'CLAUDE_')
+
+
+def reviewer_env():
+    env = {k: v for k, v in os.environ.items() if k in ENV_NAMES or k.startswith(ENV_PREFIXES)}
+    env[GUARD] = '1'
+    return env
 
 
 def inlinable(repo, rel):
@@ -160,8 +174,7 @@ def main():
     work = pathlib.Path(tempfile.mkdtemp(prefix='nmos-peer-review-'))
     answer = work / 'answer.md'
     log = pathlib.Path(args.log) if args.log else work / 'progress.log'
-    env = os.environ.copy()
-    env[GUARD] = '1'
+    env = reviewer_env()
     print(f'peer-review: {args.backend} {args.role} in {repo}; progress log {log}', file=sys.stderr)
     with open(log, 'w', encoding='utf-8') as log_file:
         try:

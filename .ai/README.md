@@ -64,5 +64,7 @@ expired login fails with `Failed to authenticate`.
 
 ## Cost
 
-Each run uses the reviewer CLI's own login, not the NMOS model keys. It still costs quota or money: one
+Each run uses the reviewer CLI's own login, not the NMOS model keys: the CLI gets only the system basics of the
+environment and its own login variables (`OPENAI_*`, `CODEX_*`, `ANTHROPIC_*`, `CLAUDE_*`), never `NMOS_*`,
+`DATABASE_URL` or `PG*`. It still costs quota or money: one
 review per material change, not one per commit.
