@@ -143,6 +143,7 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
         raise ValueError(f"unknown packet policy: {policy}")
     notes: list[str] = []
     recorded = {k: v for k, v in (t.get("recall_options") or {}).items() if k in RECORDED}
+    recorded.setdefault("canon_key", None)  # a request from before canon facts read none (ADR 0047)
     opts = dataclasses.replace(options, **recorded, extractor_key=t["extractor_key"],
                                rules_version=t["rules_version"] or "none", policy=policy)
     if t["embed_projection"] and not (options.embedder is not None and options.embed_projection == t["embed_projection"]):
@@ -158,7 +159,7 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
         notes.append("query replaced")
     g = gather(conn, t["head_commit_id"], t["query"] if query is None else query, t["previous_ai"] or "",
                set(t["in_context"] or []), opts, upto=t["upto_position"], known_at=known_at or t["created_at"],
-               **_canon_of(t))
+               canon_held=t.get("canon_held") or (), **_canon_of(t))
     if opts.embedder is not None and g.vector_note != "on":
         notes.append(f"vectors {g.vector_note}")  # an embedder that failed now cannot reproduce the request
     if budget is not None:

@@ -106,10 +106,32 @@ export function canonTexts(card: HostCard | null, chat: HostChat, lore: HostLore
   return out;
 }
 
-/** The canon keys whose text the outgoing prompt holds (the host sent them; an entry it activated, H19). */
+const NAME_MACRO = /\{\{\s*(char|bot|user)\s*\}\}/gi;
+/** A line shorter than this says too little to show that its text is in a prompt. */
+const HELD_MIN_LINE = 12;
+/** The share of a text's lines a prompt must hold when the text is not in it whole (ADR 0047). */
+const HELD_SHARE = 0.8;
+
+/**
+ * The canon keys whose text the outgoing prompt holds (the host sent them; an entry it activated, H19). The host puts
+ * the names in for its name macros (`{{char}}`, `{{user}}`) and may render other syntax in a text, so a text counts as
+ * held when, with the names in, it is in the prompt whole, or when HELD_SHARE of its lines are (lines of at least
+ * HELD_MIN_LINE characters and no other macro; a text needs two such lines).
+ */
 export function heldKeys(canon: CanonText[], prompt: PromptMessage[]): string[] {
   const all = normalizeText(prompt.map((m) => (typeof m?.content === 'string' ? m.content : '')).join('\n'));
-  return canon.filter((c) => c.key !== 'card:name' && all.includes(normalizeText(c.text).trim())).map((c) => c.key);
+  const character = canon.find((c) => c.key === 'card:name')?.text.trim();
+  const persona = canon.find((c) => c.key === 'persona')?.metadata.name;
+  const user = typeof persona === 'string' && persona.trim() ? persona.trim() : undefined;
+  const named = (value: string) =>
+    value.replace(NAME_MACRO, (m, which: string) => (which.toLowerCase() === 'user' ? user : character) ?? m);
+  return canon.filter((c) => {
+    if (c.key === 'card:name') return false;
+    const whole = normalizeText(named(c.text)).trim();
+    if (all.includes(whole)) return true;
+    const lines = whole.split('\n').map((l) => l.trim()).filter((l) => l.length >= HELD_MIN_LINE && !l.includes('{{'));
+    return lines.length >= 2 && lines.filter((l) => all.includes(l)).length >= HELD_SHARE * lines.length;
+  }).map((c) => c.key);
 }
 
 export interface CanonEntry {

@@ -65,8 +65,8 @@ def cast(rows: list[dict[str, Any]], r: Resolution | None, query: str = "", prev
         if row.get("known_by") or row.get("hidden_from"):
             marked.update(row.get("known_by") or ())
             marked.update(row.get("hidden_from") or ())
-        if row.get("turn") is None or not since <= row["turn"] <= until:
-            continue
+        if row.get("turn") is None or row.get("canon") or not since <= row["turn"] <= until:
+            continue  # canon is before the story: never the scene (ADR 0047)
         if row.get("subject_type") == "character":
             add(row["subject"])
         if row.get("object_type") == "character":

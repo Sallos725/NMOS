@@ -41,7 +41,7 @@ interface ServerConfig {
   llm: { url: string; model: string; api_key_set: boolean; json_mode: boolean };
   embeddings: { url: string; model: string; api_key_set: boolean; query_instruction: string };
   recall: { threshold: number; vector_min_sim: number; top_k: number; facts_limit: number };
-  extraction: { backfill: number; summaries?: boolean };
+  extraction: { backfill: number; summaries?: boolean; canon_facts?: boolean };
   parsers: { rules: unknown; source: string; active_rules: number; errors: string[] };
   queued_jobs?: number;
 }
@@ -879,12 +879,15 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const factsLimit = el('input', { type: 'number', min: 0, max: 30 });
   const backfill = el('input', { type: 'number', min: 0, max: 5000 });
   const summaries = el('input', { type: 'checkbox' });  // scene summaries and the story so far (ADR 0042, 0043)
+  const canonFacts = el('input', { type: 'checkbox' });  // facts read from the canon (ADR 0047)
   settingsView.append(el('div', { class: 'card' },
     el('h2', { text: L('tune.title') }), el('p', { class: 'sub', text: L('tune.sub') }),
     el('div', { class: 'row' }, field(L('tune.threshold'), threshold), field(L('tune.min_sim'), minSim)),
     el('div', { class: 'row' }, field(L('tune.top_k'), topK), field(L('tune.facts'), factsLimit), field(L('tune.backfill'), backfill)),
     el('div', { class: 'check' }, summaries, el('span', { text: L('tune.summaries') })),
-    el('p', { class: 'sub', text: L('tune.summaries_hint') })));
+    el('p', { class: 'sub', text: L('tune.summaries_hint') }),
+    el('div', { class: 'check' }, canonFacts, el('span', { text: L('tune.canon_facts') })),
+    el('p', { class: 'sub', text: L('tune.canon_facts_hint') })));
 
   const rules = el('textarea', { spellcheck: 'false' });
   const example = el('button', { text: L('rules.example') });
@@ -905,7 +908,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       conn: { url: url.value, route: route.value, enabled: enabled.checked, reserved: reserved.value, deadline: deadline.value },
       llm: llm.values(), emb: emb.values(),
       tune: { threshold: threshold.value, minSim: minSim.value, topK: topK.value, facts: factsLimit.value, backfill: backfill.value,
-        summaries: summaries.checked },
+        summaries: summaries.checked, canonFacts: canonFacts.checked },
       rules: rules.value,
     };
   }
@@ -941,6 +944,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     factsLimit.value = String(cfg.recall.facts_limit);
     backfill.value = String(cfg.extraction.backfill);
     summaries.checked = cfg.extraction.summaries !== false;
+    canonFacts.checked = cfg.extraction.canon_facts !== false;
     rules.value = cfg.parsers.source === 'ui' ? JSON.stringify(cfg.parsers.rules, null, 2) : '';
     rules.placeholder = cfg.parsers.source === 'file' ? L('rules.from_file', { n: cfg.parsers.active_rules }) : L('rules.none');
   }

@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,12 +23,12 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from . import (__version__, audit, canon, extraction, generations, inspector, ledger, normtext, plugin, readmodel,
-               retention, repairs, runtime, summaries, vectors)
+from . import (__version__, audit, canon, canonfacts, extraction, generations, inspector, ledger, normtext, plugin,
+               readmodel, retention, repairs, runtime, summaries, vectors)
 from .config import Settings
 from .db import make_pool
 from .extraction import enqueue_after_apply, job_counts
-from .facts import STANDING, fact_versions, memory_view, version_key
+from .facts import STANDING, memory_view, version_key
 from .ids import uuid7
 from .models import (
     BodiesRequest,
@@ -129,7 +129,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         pj = vectors.projection(cur)
         sm = summaries.summarizer(cur)
         rt.update(settings=cur, rules=rules, overrides=overrides, extractor=extraction.extractor(cur), projection=pj,
-                  summarizer=sm,
+                  summarizer=sm, canon=canonfacts.generation(cur),
                   recall=RecallOptions(
             top_k=cur.recall_top_k, threshold=cur.recall_threshold, rules_version=rules.version,
             facts_limit=cur.facts_limit, events_limit=cur.events_limit,
@@ -138,11 +138,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             lexical_timeout_ms=cur.lexical_timeout_ms,
             vector_min_sim=cur.vector_min_sim, query_prefix=query_prefix(cur.embed_model, cur.embed_query_instruction),
             policy=cur.packet_policy if cur.packet_policy in POLICIES else DEFAULT_POLICY,
-            summarize_key=sm.key if sm else None,
+            summarize_key=sm.key if sm else None, canon_key=rt.get("active_canon") if cur.canon_facts else None,
         ))
 
     def activate(conn, before_extractor: str | None, before_projection: str | None,
-                 before_summarizer: str | None = None) -> int:
+                 before_summarizer: str | None = None, before_canon: str | None = None) -> int:
         """Make the configured generations active and queue what they are missing (D20, #8).
 
         Runs at startup (idempotent: only missing work is queued) and whenever a setting changed a
@@ -174,12 +174,45 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         elif sm.key != before_summarizer:
             generations.activate(conn, sm)
             queued += summaries.schedule_all(conn, sm.key)  # every chat's due windows, oldest first (PHASE-12 Q7)
+        cg = rt["canon"]
+        if cg is None:
+            if retired := extraction.retire(conn, "canon"):
+                log.info("canon facts are off: %d queued canon jobs made obsolete", retired)
+        elif cg.key != before_canon:
+            generations.activate(conn, cg)
+            queued += canonfacts.schedule(conn, cg.key)  # every chat's canon in force (ADR 0047)
         rt["active_extractor"] = generations.active(conn, "extract")
         rt["active_summarizer"] = generations.active(conn, "summarize")
-        rt["recall"] = dataclasses.replace(rt["recall"], extractor_key=rt["active_extractor"])
+        # Off means none read or made (the panel's switch), as for summaries.
+        rt["active_canon"] = generations.active(conn, "canon") if cg is not None else None
+        rt["recall"] = dataclasses.replace(rt["recall"], extractor_key=rt["active_extractor"],
+                                           canon_key=rt["active_canon"])
         return queued
 
     rebuild({})
+
+    def view_of(conn, head: UUID) -> dict[str, Any]:
+        """The chat's memory now (ADR 0013), with its canon facts while they are on (ADR 0047)."""
+        return memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"))
+
+    held_seen: dict[tuple[UUID, str | None], frozenset[str]] = {}  # canon keys a prompt held, already scheduled
+
+    def schedule_held(conv_id: UUID, manifest_id: str | None, held: frozenset[str]) -> None:
+        """After a request's answer (off its path): read the lorebook entries its prompt held for the first time (Q3)."""
+        cg = rt["canon"]
+        if cg is None:
+            return
+        try:
+            with app.state.pool.connection() as conn:
+                queued = canonfacts.schedule(conn, cg.key, conv_id)
+        except psycopg.Error as exc:
+            log.warning("canon jobs not queued conversation=%s: %s", conv_id, exc)
+            return
+        if len(held_seen) > 1000:
+            held_seen.clear()
+        held_seen[(conv_id, manifest_id)] = held_seen.get((conv_id, manifest_id), frozenset()) | held
+        if queued:
+            log.info("canon jobs queued conversation=%s jobs=%d", conv_id, queued)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -197,7 +230,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             with conn.transaction():  # drop other rule versions and backfill as one: a partial backfill looks done
                 backfilled = sync_rules(conn, rt["rules"])
             with conn.transaction():  # a generation becomes active together with the jobs it is missing
-                queued = activate(conn, None, None, None)
+                queued = activate(conn, None, None, None, None)
             log.info("generations: extract=%s embed=%s summarize=%s; queued %d missing jobs",
                      rt["active_extractor"], rt["projection"].key if rt["projection"] else None,
                      rt["summarizer"].key if rt["summarizer"] else None, queued)
@@ -422,13 +455,22 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=422, detail=str(e)) from e
         log.info("canon sync conversation=%s entries=%d needed=%d stored=%d applied=%s stale=%s", conv.id,
                  len(body.entries), len(out["needed"]), out["stored"], out["applied"], out.get("stale"))
+        if out["applied"] and rt["canon"] is not None:  # the canon in force changed: read what it has not (ADR 0047)
+            with request.app.state.pool.connection() as conn:
+                if queued := canonfacts.schedule(conn, rt["canon"].key, conv.id):
+                    log.info("canon jobs queued conversation=%s jobs=%d", conv.id, queued)
         return out
 
     @app.post("/v1/retrieve", response_model=RetrieveResponse, dependencies=[Depends(auth)])
-    def retrieve_route(body: RetrieveRequest, request: Request):
+    def retrieve_route(body: RetrieveRequest, request: Request, background: BackgroundTasks):
         delay()
         with request.app.state.pool.connection() as conn:
             out = retrieve(conn, body, rt["recall"])
+        lore = frozenset(k for k in body.canon_held if k.startswith("lore:"))
+        conv_id = out.get("conversation_id")
+        if lore and conv_id is not None and rt["canon"] is not None and \
+                not lore <= held_seen.get((conv_id, body.canon_manifest_id), frozenset()):
+            background.add_task(schedule_held, conv_id, body.canon_manifest_id, lore)
         return RetrieveResponse(
             trace_id=out["trace_id"] or uuid7(),
             freshness=out["freshness"],
@@ -501,8 +543,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            facts = (fact_versions(conn, conv["head_commit_id"], rt["active_extractor"])
-                     if conv["head_commit_id"] else [])
+            facts = view_of(conn, conv["head_commit_id"])["facts"] if conv["head_commit_id"] else []
         return [{k: v for k, v in f.items() if history or k != "history"} for f in facts]
 
     @app.get("/v1/conversations/{conv_id}/entities", dependencies=[Depends(auth)])
@@ -512,7 +553,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            view = (memory_view(conn, conv["head_commit_id"], rt["active_extractor"])
+            view = (view_of(conn, conv["head_commit_id"])
                     if conv["head_commit_id"] else {"entities": []})
         return view["entities"]
 
@@ -525,7 +566,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="conversation not found")
             names: list[str] = []
             if conv["head_commit_id"] is not None:
-                r = memory_view(conn, conv["head_commit_id"], rt["active_extractor"])["resolution"]
+                r = view_of(conn, conv["head_commit_id"])["resolution"]
                 names = [e["name"] for e in (r.entities() if r else []) if e["type"] == "character" and not e.get("persona")]
             return {"strict": conv["memory_strict"], "narrator": conv["memory_narrator"], "characters": names}
 
@@ -551,7 +592,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            r = memory_view(conn, conv["head_commit_id"], rt["active_extractor"])["resolution"]
+            r = view_of(conn, conv["head_commit_id"])["resolution"]
             if r is None or any(r.status(body.entity_type, n) == "unresolved" for n in (body.name, body.same_as)):
                 raise HTTPException(status_code=422, detail="both names must be mentioned in this chat")
             if r.node(body.entity_type, body.name) == r.node(body.entity_type, body.same_as):
@@ -562,7 +603,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     " RETURNING id, entity_type, name, same_as, created_at",
                     (uuid7(), conv_id, body.entity_type, body.name.strip(), body.same_as.strip())).fetchone()
             log.info("entity link conversation=%s link=%s", conv_id, link["id"])
-            entity = memory_view(conn, conv["head_commit_id"], rt["active_extractor"])["resolution"].entity(
+            entity = view_of(conn, conv["head_commit_id"])["resolution"].entity(
                 body.entity_type, body.name)
             return {"link": link, "entity": entity}
 
@@ -596,7 +637,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="conversation not found")
             if conv["head_commit_id"] is None:
                 return []
-            return memory_view(conn, conv["head_commit_id"], rt["active_extractor"])[key]
+            return view_of(conn, conv["head_commit_id"])[key]
 
     @app.get("/v1/conversations/{conv_id}/threads", dependencies=[Depends(auth)])
     def conversation_threads(conv_id: UUID, request: Request):
@@ -619,7 +660,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            view = memory_view(conn, conv["head_commit_id"], rt["active_extractor"])
+            view = view_of(conn, conv["head_commit_id"])
             return {"repairs": repair_rows(conn, conv_id, view["repairs"])}
 
     @app.post("/v1/conversations/{conv_id}/repairs", dependencies=[Depends(auth)])
@@ -633,7 +674,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="conversation not found")
             head = conv["head_commit_id"]
             try:
-                target, value = repairs.plan(body.kind, body.item, memory_view(conn, head, rt["active_extractor"]),
+                target, value = repairs.plan(body.kind, body.item, view_of(conn, head),
                                              head_turn(conn, head), body.outcome, body.character, body.turn,
                                              body.new_object, body.new_value, body.other, body.entity_type,
                                              version_key)
@@ -644,7 +685,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     "INSERT INTO owner_repair (id, conversation_id, kind, target, value, note) VALUES (%s, %s, %s, %s, %s, %s)"
                     " RETURNING id, kind, target, value, note, created_at",
                     (uuid7(), conv_id, body.kind, Jsonb(target), Jsonb(value), (body.note or "").strip() or None)).fetchone()
-            applied = next((x["applied"] for x in memory_view(conn, head, rt["active_extractor"])["repairs"]
+            applied = next((x["applied"] for x in view_of(conn, head)["repairs"]
                             if x["id"] == row["id"]), None)
         log.info("owner repair conversation=%s repair=%s kind=%s applied=%s", conv_id, row["id"], body.kind,
                  applied is not None)
@@ -679,6 +720,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                            **extraction.coverage(conn, ex_key, conv_id).get(conv_id, {})},
             "embeddings": {"generation": generations.describe(conn, pj_key),
                            **vectors.coverage(conn, pj_key, conv_id).get(conv_id, {})},
+            "canon": {"generation": generations.describe(conn, rt.get("active_canon")),
+                      **canonfacts.coverage(conn, rt.get("active_canon"), conv_id)},
         }
 
     # Per-chat actions (D22, ADR 0008). Only for chats NMOS has seen: NMOS never ingests a chat itself.
@@ -693,7 +736,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="conversation not found")
             if ex is None and pj is None:
                 raise HTTPException(status_code=409, detail="fact extraction and embeddings are both off")
-            for kind, gen in (("extract", ex), ("embed", pj)):
+            for kind, gen in (("extract", ex), ("embed", pj), ("canon", rt["canon"])):
                 if gen:
                     extraction.retry_failed(conn, kind, gen.key, conv_id)
             unseen = extraction.discard_unseen_secrets(conn, ex.key, conv_id) if ex else 0
@@ -702,6 +745,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 if ex else 0,
                 "embed": vectors.schedule_projection(conn, pj.key, cur.embed_backfill, conv_id, history=True)
                 if pj else 0,
+                "canon": canonfacts.schedule(conn, rt["canon"].key, conv_id) if rt["canon"] else 0,
             }
             log.info("extract history conversation=%s queued=%s unseen_secrets=%d", conv_id, queued, unseen)
             return {"queued": queued, "coverage": coverage_view(conn, conv_id)}
@@ -717,10 +761,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if ex is None:
                 raise HTTPException(status_code=409, detail="fact extraction is off")
             with conn.transaction():
-                discarded = extraction.discard(conn, conv_id)
+                discarded = extraction.discard(conn, conv_id)  # the canon's extractions too (ADR 0047)
                 queued = extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id, history=True)
-            log.info("rebuild conversation=%s discarded=%d queued=%d", conv_id, discarded, queued)
-            return {"discarded": discarded, "queued": {"extract": queued}, "coverage": coverage_view(conn, conv_id)}
+                canonfacts.requeue(conn, conv_id)
+            read = canonfacts.schedule(conn, rt["canon"].key, conv_id) if rt["canon"] else 0
+            log.info("rebuild conversation=%s discarded=%d queued=%d canon=%d", conv_id, discarded, queued, read)
+            return {"discarded": discarded, "queued": {"extract": queued, "canon": read},
+                    "coverage": coverage_view(conn, conv_id)}
 
     @app.post("/v1/conversations/{conv_id}/delete", dependencies=[Depends(auth)])
     def delete_conversation(conv_id: UUID, request: Request):
@@ -743,7 +790,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         if errors:
             raise HTTPException(status_code=422, detail=errors)
         clean = runtime.keys_follow_hosts(settings, rt["overrides"], clean)
-        before_ex, before_pj, before_sm = rt["extractor"], rt["projection"], rt["summarizer"]
+        before_ex, before_pj, before_sm, before_cg = rt["extractor"], rt["projection"], rt["summarizer"], rt["canon"]
         before_backfill = rt["settings"].extract_backfill
         with request.app.state.pool.connection() as conn:
             runtime.save(conn, clean)
@@ -751,7 +798,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if runtime.PARSERS_KEY in clean:
                 rebuild_state(conn, rt["rules"])
             queued = activate(conn, before_ex.key if before_ex else None, before_pj.key if before_pj else None,
-                              before_sm.key if before_sm else None)
+                              before_sm.key if before_sm else None, before_cg.key if before_cg else None)
             ex = rt["extractor"]
             if ex and before_ex and ex.key == before_ex.key and rt["settings"].extract_backfill != before_backfill:
                 # Same generation, different backfill: queue what the new window is missing now, not at
@@ -814,12 +861,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             head = conv["head_commit_id"]
             ex_key = rt["active_extractor"]
             pj_key = rt["projection"].key if rt["projection"] else None
-            view = inspector.with_participants(memory_view(conn, head, ex_key))
+            view = inspector.with_participants(view_of(conn, head))
             traces = readmodel.traces(conn, conv_id)
+            cov = coverage_view(conn, conv_id)
             return inspector.detail(conv, current_state(conn, head, rt["rules"].version),
                                     readmodel.membership(conn, head, ex_key, pj_key),
                                     readmodel.commits(conn, conv_id), traces,
-                                    view["facts"][:300], token, coverage_view(conn, conv_id),
+                                    view["facts"][:300], token, cov,
                                     lang=inspector.lang_of(lang), embed=embed, claims=view["claims"],
                                     other=view["other"], entities=view["entities"], ambiguous=view["ambiguous"],
                                     conflicts=view["conflicts"], items=view["items"], threads=view["threads"],
@@ -830,7 +878,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     summaries=summary_view(conn, conv_id, head, view["secrets"]),
                                     repairs=repair_rows(conn, conv_id, view["repairs"]), last_turn=head_turn(conn, head),
                                     canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
-                                    canon_held=canon.held(conn, conv_id))
+                                    canon_held=canon.held(conn, conv_id), canon_read=cov["canon"].get("keys"),
+                                    canon_facts=view.get("canon_facts", 0))
 
     def summary_view(conn, conv_id: UUID, head: UUID, secrets: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The Inspector's summaries of a chat (PHASE-12 step 6), with the generation and whether packets use them."""
@@ -847,7 +896,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            view = inspector.with_participants(memory_view(conn, conv["head_commit_id"], rt["active_extractor"]))
+            view = inspector.with_participants(view_of(conn, conv["head_commit_id"]))
             return inspector.character(conv, str(entity_id), view, token, active=rt["active_extractor"],
                                        lang=inspector.lang_of(lang), embed=embed)
 

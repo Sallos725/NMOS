@@ -93,6 +93,7 @@ const STRINGS = {
   'rp.secret_keep': ['{n}: 아직 모름', '{n}: still kept'],
   'rp.fact_retract': ['철회', 'Retract'],
   'rp.fact_correct': ['정정({n})', 'Correct {n}'],
+  'rp.fact_lock': ['고정', 'Lock'],  // a canon fact or a correction stays current against the story (ADR 0047)
   'rp.undo': ['되돌리기', 'Undo'],
   'rp.select': ['일괄 닫기에 넣기', 'Select to close'],
   'rp.outcome': ['닫는 결과', 'Outcome'],
@@ -186,6 +187,9 @@ const STRINGS = {
   'tune.summaries': ['장면 요약 만들기', 'Scene summaries'],
   'tune.summaries_hint': ['추출 모델이 8턴마다 장면과 지금까지의 이야기를 요약해 기억에 넣습니다. 끄면 요약을 만들지도, 넣지도 않습니다.',
     'The extraction model summarizes every 8 turns and the story so far for memory. Off: none are written or used.'],
+  'tune.canon_facts': ['원전에서 사실 읽기', 'Facts from canon'],
+  'tune.canon_facts_hint': ['추출 모델이 카드·페르소나·작가 노트와, 프롬프트에 한 번이라도 들어간 로어북 항목을 읽어 기억에 넣습니다. 이야기가 새로 말하면 그 턴부터 이야기를 따릅니다. 끄면 읽지도, 쓰지도 않습니다.',
+    'The extraction model reads the card, the persona, the author\'s note and each lorebook entry a prompt has held, for memory. The story supersedes them. Off: none are read or used.'],
   // settings: parser rules
   'rules.title': ['상태창 규칙', 'Status-window rules'],
   'rules.sub': ['block: 시작~끝 사이의 "키: 값" 줄을 읽습니다. entity_line으로 [인물] 줄마다 인물별로 나눕니다 (시뮬봇). regex: key/value 이름 그룹.',

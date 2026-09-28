@@ -38,6 +38,9 @@ class Settings:
     # Scene summaries and the story so far (PHASE-12, ADR 0042, 0043), written by the extraction model; "0" or the
     # plugin's switch turns them off. Needs NMOS_LLM_URL.
     summaries: bool = field(default_factory=lambda: os.environ.get("NMOS_SUMMARIES", "1") != "0")
+    # Canon facts (PHASE-14 Q3, ADR 0047): the extraction model reads the card, the persona, the author's note and each
+    # lorebook entry a prompt held; "0" or the plugin's switch turns it off. Needs NMOS_LLM_URL.
+    canon_facts: bool = field(default_factory=lambda: os.environ.get("NMOS_CANON_FACTS", "1") != "0")
     # Turns extracted when NMOS first sees a chat (ADR 0008: turns, not messages).
     extract_backfill: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_BACKFILL", "100")))
     # Embeddings are cheap (local models): cover far more history on first sight than LLM extraction.

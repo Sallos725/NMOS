@@ -58,6 +58,7 @@ describe('repair marks (ADR 0044)', () => {
     // the sidecar percent-encodes a name, so any text is data (Codex review of step 5)
     expect(repairAction('secret_keep:3:O%27Neil%20%26%20Co%3A%201')?.extra).toBe("O'Neil & Co: 1");
     expect(repairAction('fact_correct:42:object')).toEqual({ kind: 'fact_correct', item: '42', extra: 'object' });
+    expect(repairAction('fact_lock:42')).toEqual({ kind: 'fact_lock', item: '42', extra: null });  // ADR 0047
     expect(repairAction(`undo:${who}`)?.kind).toBe('undo');
     for (const value of [null, '', 'thread_close', 'thread_close:', 'name_split:1:x', 'drop:1', 'thread_close:xyz',
       'thread_close:1:a:b', 'secret_keep:1:<b>', 'secret_keep:1:"x"', 'THREAD_CLOSE:1', ` thread_close:1`,

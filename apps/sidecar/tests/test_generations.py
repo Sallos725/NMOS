@@ -214,7 +214,7 @@ def test_rebuild_discards_every_generation_so_no_older_facts_reappear(migrated, 
         drain(migrated, v2_complete)
         cid = conv_id(c, chat)
         out = c.post(f"/v1/conversations/{cid}/rebuild").json()
-        assert out["discarded"] == eligible + 2 and out["queued"] == {"extract": eligible}
+        assert out["discarded"] == eligible + 2 and out["queued"] == {"extract": eligible, "canon": 0}
         assert facts(c, chat) == [] and out["coverage"]["extraction"]["historical_only"] == 0
         drain(migrated, v2_complete)
         assert {f["object"] for f in facts(c, chat)} == {"old chapel v2", "harbor v2"}

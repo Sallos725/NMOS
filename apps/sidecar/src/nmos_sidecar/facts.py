@@ -19,8 +19,8 @@ from xml.sax.saxutils import escape, quoteattr
 from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
 from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
-from . import canon
-from .repairs import IN_FORCE, REPAIR_COLUMNS, apply_facts, live, secret_events, splits_of, thread_events
+from . import canon, canonfacts
+from .repairs import IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, live, secret_events, splits_of, thread_events
 from .secrets import fold as fold_secrets
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
@@ -208,10 +208,18 @@ def _pair_versions(history: list[dict[str, Any]], r: Resolution | None = None) -
     current_rows = [s for s in slots.values() if s is not None] + list(negatives.values())
     for row in current_rows:
         outcome[id(row)] = "current"
-    entries = [{"position": h["position"], "turn": h["turn"], "predicate": h["predicate"], "subject": h["subject"],
-                "value": h["value"], "object": h["object"], "polarity": h["polarity"],
-                "outcome": outcome.get(id(h), "superseded")} for h in history]
+    entries = [_entry(h, outcome) for h in history]
     return [{**row, "versions": len(history), "history": entries, "claims": []} for row in current_rows]
+
+
+def _entry(h: dict[str, Any], outcome: dict[int, str]) -> dict[str, Any]:
+    """One history entry of a fact version; a canon statement names its canon key (ADR 0047)."""
+    out = {"position": h["position"], "turn": h["turn"], "predicate": h["predicate"], "subject": h["subject"],
+           "value": h["value"], "object": h["object"], "polarity": h["polarity"],
+           "outcome": outcome.get(id(h), "superseded")}
+    if h.get("canon"):
+        out["canon"] = h["canon"]
+    return out
 
 
 CAUSE_MIN = 0.35  # trigram overlap of a stated cause with the event it names, names left out (ADR 0040)
@@ -318,9 +326,7 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
     current_rows = [s for s in slots.values() if s is not None] + list(negatives.values())
     for row in current_rows:
         outcome[id(row)] = "current"
-    entries = [{"position": h["position"], "turn": h["turn"], "predicate": h["predicate"], "subject": h["subject"],
-                "value": h["value"], "object": h["object"], "polarity": h["polarity"],
-                "outcome": outcome.get(id(h), "superseded")} for h in history]
+    entries = [_entry(h, outcome) for h in history]
     out = []
     for fact in current_rows:
         f = dict(fact)
@@ -336,7 +342,7 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
 
 def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None, upto: int | None = None,
                 known_at: datetime | None = None, canon_manifest: str | None = None,
-                canon_exact: bool = False) -> dict[str, list[dict[str, Any]]]:
+                canon_exact: bool = False, canon_key: str | None = None) -> dict[str, list[dict[str, Any]]]:
     """The head's assertions by what they may do (ADR 0013).
 
     - facts: current fact versions from actual narration (legacy rows without a source count as
@@ -355,6 +361,12 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
 
     `upto` and `known_at` read it as of an earlier request (ADR 0027): the head up to that position, the
     extractions and owner links NMOS had by that time.
+
+    With `canon_key` (a canon generation, ADR 0047), the canon facts of the manifest the names come from are facts
+    from before turn 0 (turn -1, `canon` set): the story supersedes them from the turn it says something new. A story
+    statement of `identity` or a relationship that replaces or denies a canon one is also listed in `conflicts`
+    (`kind` "canon"), and the owner's lock (`fact_lock`) keeps a canon fact or a correction current: a later statement
+    that would replace it is held off and listed (`kind` "locked"). Canon facts take no part in secrets or threads.
     """
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
@@ -391,7 +403,12 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         kept.append(row)
         if row["predicate"] in THREAD_PREDICATES:
             promises.append(row)
-    rows = kept
+    # Canon facts (ADR 0047): those of the manifest the names came from, before every row of the story.
+    canon_rows = [c for c in canonfacts.rows(conn, conv["conversation_id"], canon_used, canon_key, known_at)
+                  if c["predicate"] in REGISTRY and c["predicate"] != "also_called"] if canon_key and canon_used else []
+    for row in canon_rows:
+        _annotate(row, r)
+    rows = canon_rows + kept
     # The owner's repairs (ADR 0044): retracted and corrected facts first, then events of their turn in the secret and
     # thread folds, and name splits in the resolution above.
     applied: dict[str, str | None] = {}
@@ -401,11 +418,13 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         "SELECT turn, max(position) AS p FROM active_membership WHERE commit_id = %s AND turn = ANY(%s) GROUP BY turn",
         (head, corrected_at)).fetchall()} if corrected_at else {}
     rows, retracted = apply_facts(rows, in_force, r, applied, _annotate, turn_positions)
+    locks = apply_locks(rows, in_force, r, applied)  # PHASE-14 Q7
     # Secrets (PHASE-10, ADR 0033): a reveal ends a secret for the character who found it out, from its
     # turn on: its hidden_from drops that name and its known_by gains it (amendment 1: the scene, strict mode
     # and a narrator must count them as knowing it). `learned` is not a fact itself. Before the threads, which copy
     # the marks of the row that opens them: a revealed goal or promise is revealed as a thread too (ADR 0039).
-    secrets, unrevealed, reveals = fold_secrets(rows, r, secret_events(in_force, r, applied))
+    secrets, unrevealed, reveals = fold_secrets([x for x in rows if not x.get("canon")] if canon_rows else rows, r,
+                                                secret_events(in_force, r, applied))
     ended = {s["id"]: set(s["ended"]) for s in secrets if s["ended"]}
     by_repair = {s["id"]: s["repair"] for s in secrets if s.get("repair")}
     for row in rows:
@@ -427,6 +446,19 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             other.append(row)
         else:
             narrated.setdefault(version_key(row, r), []).append(row)
+    held: list[dict[str, Any]] = []
+    if locks:
+        for key, history in narrated.items():
+            mine = [a for a in history if id(a) in locks]
+            if mine:
+                for a in mine:
+                    a["locked"] = locks[id(a)]
+                narrated[key], off = _hold(history, mine[-1], r)
+                if off:
+                    mine[-1]["held_off"] = len(off)
+                    held += [{"kind": "locked", "fact": mine[-1]["id"], "turn": mine[-1]["turn"],
+                              "position": mine[-1]["position"], "text": fact_text(mine[-1]), "repair": mine[-1]["locked"],
+                              "against": _brief(a)} for a in off]
     facts = [f for history in narrated.values() for f in _versions(history, r)]
     by_key: dict[tuple, list[dict[str, Any]]] = {}
     for f in facts:
@@ -443,8 +475,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                 f["repair"] = rid
     other.sort(key=lambda a: a["position"], reverse=True)
     cause_links(facts + claims, [f for f in facts if f["predicate"] == "event" and f.get("polarity") != "negative"], r)
-    conflicts = [{"fact": f["id"], "turn": f["turn"], "position": f["position"], "text": fact_text(f),
+    conflicts = [{"kind": "disputed", "fact": f["id"], "turn": f["turn"], "position": f["position"], "text": fact_text(f),
                   "against": f["disputed_by"]} for f in facts if f.get("disputed_by")]
+    if canon_rows:
+        conflicts += _canon_conflicts(facts, {a["position"]: a for a in rows if a.get("canon")}, r)
+    conflicts += held
     items: dict[tuple, dict[str, Any]] = {}
     for f in facts:  # one timeline per item, newest first (facts are sorted by position)
         if whereabouts(f):
@@ -455,7 +490,70 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
             "threads": threads, "unmatched": unmatched, "secrets": secrets, "unrevealed": unrevealed,
             "repairs": [_report(rep, applied, r) for rep in repairs], "assertions": rows, "resolution": r,
-            "canon_names": canon_used}
+            "canon_names": canon_used, "canon_facts": len(canon_rows)}
+
+
+# Predicates whose story statement, replacing a canon one, is listed as a conflict (PHASE-14 Q4, ADR 0047): who someone
+# is and how two stand are rarely a change the story tells without saying so. A place, a condition, a feeling or a form
+# of address changes as the story goes: the story supersedes canon there without a listing.
+CANON_CONFLICTS = frozenset({"identity", "relationship"})
+
+
+def _brief(a: dict[str, Any]) -> dict[str, Any]:
+    out = {k: a.get(k) for k in ("id", "position", "turn", "subject", "predicate", "object", "value", "polarity")}
+    if a.get("canon"):
+        out["canon"] = a["canon"]
+    return out
+
+
+def _canon_conflicts(facts: list[dict[str, Any]], canon_at: dict[int, dict[str, Any]],
+                     r: Resolution | None) -> list[dict[str, Any]]:
+    """A current story fact of CANON_CONFLICTS that replaced or ended a canon statement saying something else."""
+    out = []
+    for f in facts:
+        if f["predicate"] not in CANON_CONFLICTS or f.get("canon") or f.get("owner"):
+            continue
+        for h in f.get("history") or ():
+            c = canon_at.get(h["position"]) if h.get("canon") else None
+            if c is None or h["outcome"] not in ("superseded", "ended") or _restates(c, f, r):
+                continue
+            out.append({"kind": "canon", "fact": f["id"], "turn": f["turn"], "position": f["position"],
+                        "text": fact_text(f), "against": _brief(c)})
+    return out
+
+
+def _changes(locked: dict[str, Any], a: dict[str, Any], r: Resolution | None) -> bool:
+    """Whether a statement of the locked fact's version key would replace or end it: for a relationship, one of the same
+    direction or a symmetric one (ADR 0038); for every other key, any."""
+    if locked["predicate"] == "relationship" and a["predicate"] == "relationship":
+        return _subject(a, r) == _subject(locked, r) or symmetric(a["value"]) or symmetric(locked["value"])
+    return True
+
+
+def _restates(a: dict[str, Any], b: dict[str, Any], r: Resolution | None) -> bool:
+    """Whether two statements say the same: predicate, polarity, value and object (as entities)."""
+    return (a["predicate"] == b["predicate"] and a.get("polarity") == b.get("polarity")
+            and _norm(a.get("value")) == _norm(b.get("value"))
+            and (_object(a, r) if a.get("object") else None) == (_object(b, r) if b.get("object") else None))
+
+
+def _hold(history: list[dict[str, Any]], locked: dict[str, Any],
+          r: Resolution | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """A version key's history under the owner's lock (PHASE-14 Q7): what comes after the locked statement and would
+    replace or end it is held off, so the locked version stays current. Returns (the history the fold reads, the
+    statements held off); a later statement that says the same is left out of both."""
+    kept: list[dict[str, Any]] = []
+    off: list[dict[str, Any]] = []
+    after = False
+    for a in history:
+        if a is locked:
+            after = True
+        elif after and _changes(locked, a, r):
+            if not _restates(locked, a, r):
+                off.append(a)
+            continue
+        kept.append(a)
+    return kept, off
 
 
 def _report(rep: dict[str, Any], applied: dict[str, str | None], r: Resolution) -> dict[str, Any]:
@@ -603,7 +701,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     user = USER_NAMES | persona
     scored = []
     for f in facts:
-        if f["host_logical_id"] in in_context:
+        if f["host_logical_id"] in in_context and not f.get("held_off"):  # a lock holds against the story (ADR 0047)
             continue
         names = [n for n in {_norm(x) for x in (f.get("names") or [f["subject"], f.get("object")])}
                  if len(n) >= 2 and n not in user]
@@ -664,9 +762,12 @@ def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False) -> s
     hidden_from for limited facts, or no mark at all when who knows is unknown. A negated fact is
     explicitly not (or no longer) true (ADR 0013). A disputed fact carries what contradicts it in the same
     line, and neither side is presented as certain (PHASE-6 Q1). With `before` (packet-v5), a standing fact that
-    replaced another names it and its turn (ADR 0038); with `cause` (packet-v6), the cause the story states (ADR 0040)."""
+    replaced another names it and its turn (ADR 0038); with `cause` (packet-v6), the cause the story states (ADR 0040).
+    A canon fact says so in place of a turn, and a fact the owner locked says that (ADR 0047)."""
     turn = f["turn"] if f.get("turn") is not None else f["position"]
-    attrs = f" kind={quoteattr(f['predicate'])} turn=\"{turn}\""
+    attrs = f" kind={quoteattr(f['predicate'])}" + (' source="canon"' if f.get("canon") else f" turn=\"{turn}\"")
+    if f.get("locked"):
+        attrs += ' locked="true"'
     if f.get("polarity") == "negative":
         attrs += ' negated="true"'
     if f.get("disputed_by"):
@@ -681,12 +782,17 @@ def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False) -> s
     if cause and f.get("because"):
         text += f"; because: {f['because']}"
     if before and (was := earlier(f)):
-        when = was["turn"] if was.get("turn") is not None else was["position"]
-        text += f"; before, turn {when}: {fact_text(was)}"
+        text += f"; before, {_when(was)}: {fact_text(was)}"
         if start := first(f):
-            when = start["turn"] if start.get("turn") is not None else start["position"]
-            text += f"; first, turn {when}: {fact_text(start)}"
+            text += f"; first, {_when(start)}: {fact_text(start)}"
     return f"    <Fact{attrs}>{escape(text)}</Fact>"
+
+
+def _when(h: dict[str, Any]) -> str:
+    """Where a history entry comes from, for a packet line: its turn, or canon (ADR 0047)."""
+    if h.get("canon"):
+        return "in canon"
+    return f"turn {h['turn'] if h.get('turn') is not None else h['position']}"
 
 
 def _knowledge_attrs(f: dict[str, Any]) -> str:

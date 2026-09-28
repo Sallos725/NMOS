@@ -1,4 +1,5 @@
-"""nmos-worker: processes queued jobs (extraction, embedding, summaries). Several workers may run concurrently."""
+"""nmos-worker: processes queued jobs (extraction, embedding, summaries, canon facts). Several workers may run
+concurrently."""
 
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
-from . import generations, migrate, retention, summaries
+from . import canonfacts, generations, migrate, retention, summaries
 from .config import Settings
 from .extraction import claim, extractor, fail, finish, process_extract
 from .llm import ChatModel, Embedder, LLMError
@@ -45,6 +46,11 @@ def handlers(settings: Settings) -> Handlers:
         writer = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
                            settings.llm_json_mode)
         out["summarize"] = (sm.key, lambda conn, job: summaries.process(conn, job, writer.complete_json, sm))
+    cg = canonfacts.generation(settings)
+    if cg is not None:
+        reader = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
+                           settings.llm_json_mode)
+        out["canon"] = (cg.key, lambda conn, job: canonfacts.process(conn, job, reader.complete_json, cg))
     pj = projection(settings)
     if pj is not None:
         embedder = Embedder(settings.embed_url, settings.embed_model, settings.embed_api_key)
@@ -117,7 +123,8 @@ def maintenance(settings: Settings, stop: threading.Event, holder: dict[str, Any
                 new_signature = (tuple(sorted((k, key) for k, (key, _) in jobs.items())), current.llm_api_key,
                                  current.embed_api_key, current.llm_timeout_s)
                 if new_signature != signature:
-                    for gen in (extractor(current), projection(current), summaries.summarizer(current)):
+                    for gen in (extractor(current), projection(current), summaries.summarizer(current),
+                                canonfacts.generation(current)):
                         if gen is not None:
                             generations.ensure(conn, gen)  # rows reference their generation
                     holder["jobs"] = jobs

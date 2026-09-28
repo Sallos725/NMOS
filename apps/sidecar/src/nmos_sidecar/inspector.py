@@ -82,7 +82,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "partially_embedded": ("일부만 임베딩", "partially embedded"),
     "facts": ("현재 사실", "Current facts"),
     "negated": ("부정", "negated"), "legacy": ("이전 형식", "legacy"), "disputed": ("충돌", "disputed"),
-    "conflicts": ("충돌 (이야기가 앞뒤가 맞지 않음)", "Conflicts (the story contradicts itself)"),
+    "conflicts": ("충돌 (이야기끼리, 원전과, 고정한 사실과)", "Conflicts (within the story, with canon, with a lock)"),
     "h.fact": ("현재 사실", "Current fact"), "h.against": ("맞지 않는 단언", "Contradicted by"),
     "threads": ("스레드 (약속·목표·질문·위협·빚)", "Threads (promises, goals, questions, threats, debts)"),
     "h.to": ("상대", "To"), "h.promise": ("내용", "What"), "h.kind": ("종류", "Kind"),
@@ -236,6 +236,25 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "cn.persona": ("페르소나", "persona"), "cn.lore": ("로어북", "lorebook"), "cn.keys": ("키 {n}개", "{n} keys"),
     "cn.held": ("{n}회, 마지막", "{n}×, last"), "cn.never": ("아직 없음", "not yet"),
     "cn.missing": ("텍스트가 아직 오지 않음", "text not received yet"),
+    "h.read": ("사실 읽기", "Facts read"), "cn.read": ("읽음 (호출 {n}회)", "read ({n} calls)"),
+    "cn.reading": ("읽는 중", "reading"), "cn.failed": ("실패", "failed"),
+    "cn.unread": ("아직 안 읽음 (프롬프트에 든 적 없음)", "not read (no prompt held it yet)"),
+    "cn.none": ("읽지 않음", "not read"),
+    "cn.facts": ("원전에서 읽은 사실 {n}개가 기억에 들어 있습니다. 이야기가 새로 말하면 그 턴부터 이야기를 따릅니다. 호스트가 이미 "
+                 "보낸 원전의 사실은 패킷에 다시 넣지 않습니다.",
+                 "{n} facts read from the canon are in memory. The story supersedes them from the turn it says something "
+                 "new. Facts of canon the host already sent are not sent again."),
+    "canon_row": ("원전 사실", "Canon facts"),
+    "canon_detail": ("모델 호출 {calls} · 대기 {pending} · 실패 {failed} · 안 읽은 글자 {unread}",
+                     "model calls {calls} · pending {pending} · failed {failed} · characters not read {unread}"),
+    "cf.disputed": ("이야기끼리", "story vs story"), "cf.canon": ("원전과 이야기", "canon vs story"),
+    "cf.locked": ("고정한 사실과 이야기", "locked vs story"),
+    "at.canon": ("원전과 다른 이야기 (고정하면 원전 유지, 철회하면 이야기 유지)",
+                 "the story differs from canon (lock keeps canon's, retract keeps the story's)"),
+    "at.canon_says": ("원전", "canon"), "at.story_says": ("이야기", "story"),
+    "or.locked": ("오너가 고정", "locked by the owner"),
+    "held_off": ("이야기 {n}건 보류", "{n} story statements held off"),
+    "rk.fact_lock": ("사실 고정", "lock a fact"),
     "rk.thread_close": ("스레드 닫기", "close a thread"), "rk.thread_reopen": ("스레드 다시 열기", "reopen a thread"),
     "rk.secret_found_out": ("비밀을 알게 됨", "secret found out"), "rk.secret_keep": ("비밀 유지", "secret still kept"),
     "rk.fact_retract": ("사실 철회", "retract a fact"), "rk.fact_correct": ("사실 정정", "correct a fact"),
@@ -466,6 +485,12 @@ def _coverage_section(cov: dict[str, Any], lang: str) -> str:
                      _v(f"{t('pending')} {ex.get('pending', 0)} · {t('failed')} {ex.get('failed', 0)} · "
                         f"{t('not_queued')} {ex.get('not_queued', 0)} · {t('older_only')} {ex.get('historical_only', 0)}"
                         f" · {t('truncated')} {ex.get('target_truncated', 0)}")])
+    cn = cov.get("canon") or {}
+    if cn.get("generation"):
+        done = f"{cn.get('read', 0)}/{cn.get('wanted', 0)}"
+        rows.append([t("canon_row"), _generation(cn["generation"], lang), _v(done),
+                     _v(t("canon_detail").format(calls=cn.get("calls", 0), pending=cn.get("pending", 0),
+                                                 failed=cn.get("failed", 0), unread=f"{cn.get('unread_chars', 0):,}"))])
     if emb.get("generation"):
         rows.append([t("vectors_row"), _generation(emb["generation"], lang), _percent(emb, "embedded", lang),
                      _v(f"{t('pending')} {emb.get('pending', 0)} · {t('failed')} {emb.get('failed', 0)} · "
@@ -506,6 +531,8 @@ def _step(h: dict[str, Any], lang: str) -> str:
 
 
 def _turn(a: dict[str, Any]) -> str:
+    if a.get("canon"):  # before turn 0 (ADR 0047): the canon text it came from
+        return f"<span class=\"chip\" title=\"{_v(a['canon'])}\">canon</span>"
     return _v(a["turn"] if a.get("turn") is not None else a["position"])
 
 
@@ -643,12 +670,15 @@ def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> 
     return table(
         [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.with", "h.knowledge", "h.turn", "h.versions")],
         [[_v(f["subject"]), chip(lang, "p", f["predicate"]), _v(f.get("object") or f.get("value")) + _cause(f, lang)
-          + ("" if f.get("owner") else _act("fact_retract", f["id"]) + "".join(_act("fact_correct", f["id"], x) for x in _corrections(f))),
+          + ("" if f.get("owner") else _act("fact_retract", f["id"]) + "".join(_act("fact_correct", f["id"], x) for x in _corrections(f)))
+          + (_act("fact_lock", f["id"]) if (f.get("canon") or f.get("owner")) and not f.get("locked") else ""),
           _with(f, lang),
           _knowledge(f, lang),
           _turn(f)
           + (older if active and f.get("generation") not in (None, active) and not f.get("owner") else "")
           + (f" {chip(lang, 'or', 'corrected')}" if f.get("owner") else "")
+          + (f" {chip(lang, 'or', 'locked')}" + _act("undo", f["locked"]) if f.get("locked") else "")
+          + (f" <span class=\"chip\">{_v(t('held_off').format(n=f['held_off']))}</span>" if f.get("held_off") else "")
           + (f" <span class=\"chip\">{t('negated')}</span>" if f.get("polarity") == "negative" else "")
           + (f" <span class=\"chip\">{t('disputed')}</span>" if f.get("disputed_by") else "")
           + (f" <span class=\"chip\">{t('legacy')}</span>" if f.get("source") is None else "")
@@ -765,6 +795,14 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
         rows.append([_v(_t(lang, "at.unmatched")), _v(fact_line_text(u)), _turn(u), ""])
     owned = {f["id"]: f["repair"] for f in view.get("facts", []) if f.get("owner")}  # the owner's corrections
     for c in view.get("conflicts", []):
+        if c.get("kind") == "canon":  # keep canon's (a lock) or the story's (canon's statement retracted), or leave it
+            rows.append([_v(_t(lang, "at.canon")),
+                         _v(f"{_t(lang, 'at.canon_says')}: {fact_line_text(c['against'])} · "
+                            f"{_t(lang, 'at.story_says')}: {c['text']}"), _v(c.get("turn")),
+                         _act("fact_lock", c["against"]["id"]) + _act("fact_retract", c["against"]["id"])])
+            continue
+        if c.get("kind") == "locked":  # the owner chose: the Conflicts section lists it
+            continue
         act = _act("undo", owned[c["fact"]]) if c["fact"] in owned else _act("fact_retract", c["fact"])
         rows.append([_v(_t(lang, "at.disputed")), _v(c["text"]), _v(c.get("turn")), act])
     for rep in repairs:
@@ -826,9 +864,22 @@ def _repairs_table(repairs: list[dict[str, Any]], lang: str) -> str:
 
 
 def _canon_table(rows: list[dict[str, Any]], history: dict[str, dict[str, Any]], held: dict[str, dict[str, Any]],
-                 lang: str) -> str:
-    """The chat's canon in force (ADR 0045): what each text is, how long, since when and in how many versions, and
-    whether a request's prompt held it (the host sends what it activates; NMOS does not repeat it, D3)."""
+                 lang: str, read: dict[str, dict[str, Any]] | None = None) -> str:
+    """The chat's canon in force (ADR 0045): what each text is, how long, since when and in how many versions,
+    whether a request's prompt held it (the host sends what it activates; NMOS does not repeat it, D3), and what the
+    canon generation read of it (ADR 0047: a lorebook entry only once a prompt held it)."""
+    def facts(key: str) -> str:
+        if read is None:
+            return ""
+        x = read.get(key)
+        if x is None:
+            return f"<span class=\"muted\">{_v(_t(lang, 'cn.unread' if key.startswith('lore:') else 'cn.none'))}</span>"
+        if x["job"] in ("queued", "running"):
+            return _v(_t(lang, "cn.reading"))
+        if x["job"] == "dead":
+            return f"<span class=\"warn\">{_v(_t(lang, 'cn.failed'))}</span>"
+        return _v(_t(lang, "cn.read").format(n=x["calls"])) if x["calls"] else ""
+
     def what(r: dict[str, Any]) -> str:
         m = r["metadata"] or {}
         bits = [m.get("scope"), m.get("mode"), "always" if m.get("always_active") else None,
@@ -846,11 +897,11 @@ def _canon_table(rows: list[dict[str, Any]], history: dict[str, dict[str, Any]],
             else f"<span class=\"warn\">{_v(_t(lang, 'cn.missing'))}</span>"
 
     return (table([_t(lang, k) for k in ("h.source", "h.key", "h.what", "h.chars", "h.versions", "h.since", "h.held",
-                                         "h.text")],
+                                         "h.read", "h.text")],
                   [[chip(lang, "cn", r["key"].split(":")[0]), _v(r["key"]), what(r),
                     _v(len(r["content"]) if r.get("content") is not None else "—"),
                     _v((history.get(r["key"]) or {}).get("versions", 1)),
-                    timestamp((history.get(r["key"]) or {}).get("since")), seen(r["key"]), text(r)]
+                    timestamp((history.get(r["key"]) or {}).get("since")), seen(r["key"]), facts(r["key"]), text(r)]
                    for r in rows[:500]])
             + f"<p class=\"muted\">{_v(_t(lang, 'cn.about'))}</p>")
 
@@ -872,8 +923,11 @@ def _unrevealed_table(unrevealed: list[dict[str, Any]], lang: str) -> str:
 
 
 def _conflicts_table(conflicts: list[dict[str, Any]], lang: str) -> str:
-    return table([_t(lang, k) for k in ("h.fact", "h.turn", "h.against", "h.turn")],
-                 [[_v(c["text"]), _turn(c), _v(fact_line_text(c["against"])), _turn(c["against"])]
+    """The story against itself (disputed), against canon (canon, ADR 0047), and against the owner's lock (locked:
+    the locked fact stays current, the statement is held off)."""
+    return table([_t(lang, k) for k in ("h.kind", "h.fact", "h.turn", "h.against", "h.turn")],
+                 [[chip(lang, "cf", c.get("kind") or "disputed"), _v(c["text"]), _turn(c),
+                   _v(fact_line_text(c["against"])), _turn(c["against"])]
                   for c in conflicts[:100]])
 
 
@@ -924,7 +978,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            summaries: dict[str, Any] | None = None, repairs: list[dict[str, Any]] | None = None,
            last_turn: int | None = None, canon_rows: list[dict[str, Any]] | None = None,
            canon_history: dict[str, dict[str, Any]] | None = None,
-           canon_held: dict[str, dict[str, Any]] | None = None) -> str:
+           canon_held: dict[str, dict[str, Any]] | None = None, canon_read: dict[str, dict[str, Any]] | None = None,
+           canon_facts: int = 0) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -964,7 +1019,9 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         parts.append(("repairs", t("repairs"), live, _repairs_table(repairs, lang), True))
     if canon_rows:
         parts.append(("canon", t("canon"), len(canon_rows),
-                      _canon_table(canon_rows, canon_history or {}, canon_held or {}, lang), False))
+                      _canon_table(canon_rows, canon_history or {}, canon_held or {}, lang, canon_read)
+                      + (f"<p class=\"muted\">{_v(t('cn.facts').format(n=canon_facts))}</p>" if canon_read is not None
+                         else ""), False))
     if facts:
         parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
     if items:

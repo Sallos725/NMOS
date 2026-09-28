@@ -49,7 +49,8 @@ export interface FormValues {
   conn: { url: string; route: string; enabled: boolean; reserved: string; deadline: string };
   llm: ModelValues;
   emb: ModelValues;
-  tune: { threshold: string; minSim: string; topK: string; facts: string; backfill: string; summaries: boolean };
+  tune: { threshold: string; minSim: string; topK: string; facts: string; backfill: string; summaries: boolean;
+    canonFacts: boolean };
   rules: string;
 }
 
@@ -78,6 +79,7 @@ export function configBody(dirty: Section[], v: FormValues): Record<string, unkn
     Object.assign(body, {
       recall_threshold: num(v.tune.threshold), vector_min_sim: num(v.tune.minSim), recall_top_k: num(v.tune.topK),
       facts_limit: num(v.tune.facts), extract_backfill: num(v.tune.backfill), summaries: v.tune.summaries,
+      canon_facts: v.tune.canonFacts,
     });
   }
   if (dirty.includes('rules')) body.parsers = v.rules.trim() ? v.rules : null;

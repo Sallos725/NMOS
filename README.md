@@ -185,6 +185,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_EXTRACT_BACKFILL` | `100` | On first sight of a chat, extract only the latest N **turns** (cost control; the rest on request) |
 | `NMOS_EXTRACT_TURNS` | `3` | Previous turns an extraction sees as context |
 | `NMOS_SUMMARIES` | `1` | The extraction model also summarizes each 8-turn scene and the story so far, in the background (ADR 0042); `packet-v8` puts them in `<Story>`. `0` turns this off (so does the panel) |
+| `NMOS_CANON_FACTS` | `1` | The extraction model also reads the chat's canon for facts, in the background (ADR 0047): the card, the persona, the author's note, and each lorebook entry once a prompt held it. The story supersedes them. `0` turns this off (so does the panel) |
 | `NMOS_EXTRACT_HINTS` | `40` | Entity names from earlier in the chat shown to extraction so it reuses them; `0` turns this off |
 | `NMOS_EMBED_BACKFILL` | `2000` | On first sight of a chat, embed the latest N messages (cheap; covers long histories) |
 | `NMOS_WORKER_CONCURRENCY` | `2` | Parallel background jobs |
