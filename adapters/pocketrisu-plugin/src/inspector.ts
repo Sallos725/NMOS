@@ -36,6 +36,51 @@ export interface EntityRow {
   mentions: number;
   persona?: boolean;
   links?: { id: string; name: string; same_as: string }[];
+  aliases?: { name: string; other: string; turn: number | null }[];
+}
+
+/** A repair the inspector marks for the panel (ADR 0044): what to do, to which item, and a character or field. */
+export interface RepairAction { kind: string; item: string; extra: string | null }
+
+const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|undo):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+
+/** Parse a `data-repair` value (`kind:item[:extra]`, the extra percent-encoded, so a name is any text); null for
+ * anything else. The extra is data only: a request body and a button's text. */
+export function repairAction(value: string | null): RepairAction | null {
+  const m = value ? REPAIR.exec(value) : null;
+  if (!m?.[1] || !m[2]) return null;
+  let extra: string | null = null;
+  if (m[3] !== undefined) {
+    try {
+      extra = decodeURIComponent(m[3]);
+    } catch {
+      return null;
+    }
+    if (!extra.trim() || extra.length > 120 || /[\u0000-\u001f\u007f]/.test(extra)) return null;
+  }
+  return { kind: m[1], item: m[2], extra };
+}
+
+/** The outcomes a close mark offers (`kind,kind…`, the default first); empty for a mark without them. */
+export function closeOutcomes(extra: string | null): string[] {
+  return (extra ?? '').split(',').filter((o) => /^[a-z_]{1,24}$/.test(o));
+}
+
+/** The story's aliases the owner can split on an entity's page (ADR 0044, K8): each pair once, and only while both
+ * names are this entity's (an alias resolution refused joins nothing). */
+export function splitChoices(self: EntityRow): { name: string; other: string }[] {
+  const own = new Set(self.names.map((n) => n.trim().toLowerCase()));
+  const seen = new Set<string>();
+  const out: { name: string; other: string }[] = [];
+  for (const { name, other } of self.aliases ?? []) {
+    const a = name.trim().toLowerCase();
+    const b = other.trim().toLowerCase();
+    const key = a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`;
+    if (a === b || !own.has(a) || !own.has(b) || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name, other });
+  }
+  return out;
 }
 
 /** What the panel offers on an entity's page (ADR 0025): the entity, the others of its type it can be
@@ -59,12 +104,14 @@ export function sectionTarget(href: string | null): string | null {
   return SECTION.test(id) ? id : null;
 }
 
-/** Whether an attribute of the inspector markup survives: styling, tooltips, folds and inspector links. */
+/** Whether an attribute of the inspector markup survives: styling, tooltips, folds, inspector links and where a
+ * repair can be made (ADR 0044). */
 export function keepAttribute(name: string, value: string): boolean {
   switch (name) {
     case 'class': case 'title': case 'open': return true;
     case 'id': return SECTION.test(value);
     case 'href': return inspectorApiPath(value) !== null || sectionTarget(value) !== null;
+    case 'data-repair': return repairAction(value) !== null;
     default: return false;
   }
 }

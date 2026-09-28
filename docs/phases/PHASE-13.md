@@ -115,7 +115,18 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
    before it; a correction replaces a fact at its own turn or supersedes it from a later turn, until the story says
    otherwise; a split separates two names the story joined and says which names still join them. The step's Codex
    review found seven defects, all fixed with tests.
-5. Panel: buttons, forms, undo, bulk close; the "Needs attention" queue.
+5. Panel: buttons, forms, undo, bulk close; the "Needs attention" queue. **Done**: the Inspector marks each line a
+   repair fits (`data-repair`, which the panel's sanitizer keeps only in its strict form; a browser tab shows nothing,
+   H15) and the panel puts the button there: close with an outcome of the thread's kind (the default first) and a box
+   to close several at once, reopen, found out or still kept per character, retract, correct (a small form: the new
+   object or value, and the turn it takes effect), undo; an entity's page offers a split of each alias pair the story
+   joined. Each chat's page opens with "Needs
+   attention": threads open for more than 30 turns without a restatement, ends that matched no open thread, disputed
+   whereabouts, repairs that match nothing now, splits the names are still joined through, and ambiguous names.
+   The step's Codex review found six defects, all fixed with tests: a relationship could be corrected only in its
+   counterpart, the correction had no turn, a thread shown twice (Threads and Needs attention) could close with the
+   other control's outcome, a refresh kept threads picked that were gone, a name with a quote, an ampersand or a
+   colon lost its buttons (the mark's extra is now percent-encoded), and a thread 30 turns old counted as more than 30.
 6. Evaluation, real-host smoke, upgrade, latency, Codex review, documentation.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).
