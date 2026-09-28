@@ -104,7 +104,10 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
 ## Steps (one pull request each)
 
 1. This document, approved. **Done** (2026-09-28).
-2. The owner's lists and the baseline on `main` (M0, secret gate, open threads).
+2. The owner's lists and the baseline on `main` (M0, secret gate, open threads). **Done** (`docs/perf/repair.md`): the
+   owner confirmed the drafted lists (50 of 59 open threads ended, 9 under way; 6 of 14 kept secrets found out, 2 never
+   kept). On `main` every one of the 40 M0 packets carries a thread the owner closed (113 lines, 16 threads); M0 26/28 and
+   5/12; the secret gate 6 of 6, with `<Story>` held in all six scenes.
 3. Storage, matching, threads and secrets: migration 0024, ADR, API, the Inspector's "Repairs" list.
 4. Facts and names: retract, correct, split.
 5. Panel: buttons, forms, undo, bulk close; the "Needs attention" queue.
