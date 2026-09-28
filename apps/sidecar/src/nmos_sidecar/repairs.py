@@ -363,6 +363,11 @@ def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None
         raise RepairError("the fact cannot be told apart from another one of its turn")
     if kind == "fact_retract":
         return target, {}
+    pred = REGISTRY.get(f["predicate"])
+    if new_object and new_object.strip() and pred is not None and pred.object_types is None:
+        raise RepairError(f"a {f['predicate']} fact has no object: correct its value")
+    if new_value and new_value.strip() and pred is not None and not pred.needs_value and not f.get("value"):
+        raise RepairError(f"a {f['predicate']} fact has no value: correct its object")
     value: dict[str, Any] = {}
     if new_object is not None and new_object.strip() and new_object.strip() != (f.get("object") or ""):
         value["object"] = new_object.strip()

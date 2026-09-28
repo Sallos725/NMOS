@@ -521,3 +521,18 @@ def test_the_version_a_retraction_made_current_names_the_repair(migrated):
         lines = recall(c, chat, "Where is Hana?", budget=2000)
         ledger = c.get(f"/v1/trace/{lines['trace_id']}/replay").json()["lines"]
         assert any(e["ref"].get("repair") == out["repair"]["id"] and e.get("placed") for e in ledger)
+
+
+def test_a_correction_follows_the_predicate(migrated):
+    """Copilot review of #147: a correction may only set what the predicate has."""
+    chat = place_chat()
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        place = fact(c, cid, "Kaito", "located_in")
+        res = c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "fact_correct", "item": str(place["id"]),
+                                                               "new_value": "quietly"})
+        assert res.status_code == 422 and "has no value" in res.json()["detail"]
+        trait = fact(c, cid, "하나", "has_trait")
+        res = c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "fact_correct", "item": str(trait["id"]),
+                                                               "new_object": "Kaito"})
+        assert res.status_code == 422 and "has no object" in res.json()["detail"]
