@@ -45,6 +45,9 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     and facts with a cause come first when the message asks why (ADR 0040). The Inspector shows each cause and the
     event it names when one nearby clearly matches.
   - M0 counts answers the prompt's own last messages hold: of 28 cases, 9 need memory; 5 of them before Phase 11, 7 now.
+- **The compose files now default to `packet-v6`.** They still said `packet-v4`, which overrides the sidecar's own
+  default, so an install from `docker-compose.yml` or `deploy/docker-compose.yml` never got `packet-v5` or `packet-v6`
+  (Phase 11) unless `NMOS_PACKET_POLICY` was set. A test now checks every compose default against the sidecar's.
 - **A saved API key is sent only to the host it was saved for** (review of an external analysis, 2026-09-27).
   `/v1/config/test` and `/v1/config/models` sent the saved key to whatever URL the request named, and saving an
   endpoint on another host kept the key for it, so anyone who could reach the settings API could have the key sent
