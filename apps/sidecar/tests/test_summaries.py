@@ -1,4 +1,4 @@
-"""PHASE-12 step 3 (ADR 0041): scene summaries and the story so far, a `summarize` projection."""
+"""PHASE-12 step 3 (ADR 0042): scene summaries and the story so far, a `summarize` projection."""
 
 from __future__ import annotations
 
@@ -222,3 +222,15 @@ def test_the_leak_check_is_about_the_secret_not_its_setting():
     left_out = "엘피가 잠든 사이 유우마와 블랑은 부엌에서 만났다. 유우마는 이 일을 엘피에게 비밀로 하자고 했다."
     copied = "엘피가 잠든 사이 블랑과 유우마는 부엌에서 입을 맞췄다."
     assert summaries.leaks(left_out, [kiss]) == [] and summaries.leaks(copied, [kiss]) == [kiss]
+
+
+def test_the_settings_report_the_switch_and_a_backfill_starts_with_the_newest_chat(migrated, db):
+    older, newer = story_chat(20), story_chat(20)
+    with make_client(migrated, **LLM) as c:  # summaries off: both chats synced first
+        sync(c, older)
+        sync(c, newer)
+        assert c.get("/v1/config").json()["extraction"]["summaries"] is False
+    with make_client(migrated, **ON) as c:  # turned on: the generation's backfill of every chat (PHASE-12 Q7)
+        assert c.get("/v1/config").json()["extraction"]["summaries"] is True
+        first = db.execute("SELECT conversation_id FROM job WHERE kind = 'summarize' ORDER BY id LIMIT 1").fetchone()
+        assert str(first["conversation_id"]) == conv_id(c, newer)

@@ -43,3 +43,36 @@ def test_sidecar_and_worker_share_one_environment(path):
     assert env["sidecar"] == env["worker"] == "*nmos-env"
     missing = documented() - anchor_vars(text)
     assert not missing, f"{path} does not pass {sorted(missing)}"
+
+
+@pytest.mark.parametrize("path", ["docker-compose.yml", "deploy/docker-compose.yml"])
+def test_the_packet_policy_defaults_to_the_images(path):
+    """The compose files pinned packet-v4 through two new defaults (packet-v5, packet-v6); empty means the
+    sidecar's own default (`packet.DEFAULT_POLICY`)."""
+    assert re.search(r"^  NMOS_PACKET_POLICY: \$\{NMOS_PACKET_POLICY:-\}", (ROOT / path).read_text(), re.M)
+
+
+@pytest.mark.parametrize("path", ["docker-compose.yml", "deploy/docker-compose.yml"])
+def test_compose_defaults_are_the_sidecar_defaults(path, monkeypatch):
+    """A default written in a compose file overrides the sidecar's own: `NMOS_PACKET_POLICY` stayed `packet-v4` there
+    through two new defaults. Every non-empty compose default must equal the code's default, read with the
+    environment's `NMOS_*` variables cleared; an empty one means the sidecar's own."""
+    import dataclasses
+    import os
+
+    from nmos_sidecar.config import Settings
+
+    for name in [n for n in os.environ if n.startswith("NMOS_")]:
+        monkeypatch.delenv(name)
+    base = Settings()
+    fields = {f.name for f in dataclasses.fields(Settings)}
+    wrong = {}
+    for name, default in re.findall(r"^  (NMOS_\w+): \$\{NMOS_\w+:-([^}]*)\}", (ROOT / path).read_text(), re.M):
+        attr = name.removeprefix("NMOS_").lower()
+        if not default or attr not in fields or name in ("NMOS_CORS_ORIGINS", "NMOS_ALLOWED_HOSTS"):  # lists: per install
+            continue
+        ours = getattr(base, attr)
+        theirs = (default != "0") if isinstance(ours, bool) else type(ours)(default)
+        if theirs != ours:
+            wrong[name] = (default, ours)
+    assert wrong == {}, f"{path}: compose default differs from the sidecar's: {wrong}"

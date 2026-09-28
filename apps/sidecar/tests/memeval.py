@@ -137,6 +137,9 @@ RULES: list[tuple[re.Pattern[str], Callable[[re.Match[str]], dict[str, Any]]]] =
     (re.compile(r"(?P<a>\w+) is (?P<b>\w+)'s classmate\."),
      lambda m: {"subject": m["a"], "subject_type": "character", "predicate": "relationship", "object": m["b"],
                 "object_type": "character", "value": "classmate"}),
+    (re.compile(r"(?P<a>\w+) is (?P<b>\w+)'s mother\."),  # a directed relationship (ADR 0038)
+     lambda m: {"subject": m["a"], "subject_type": "character", "predicate": "relationship", "object": m["b"],
+                "object_type": "character", "value": "mother"}),
     (re.compile(r"(?P<a>\w+) and (?P<b>\w+) start dating\."),
      lambda m: {"subject": m["a"], "subject_type": "character", "predicate": "relationship", "object": m["b"],
                 "object_type": "character", "value": "lovers"}),

@@ -1,4 +1,4 @@
-# Scene summaries — real-model tier (Phase 12 step 4, ADR 0041)
+# Scene summaries — real-model tier (Phase 12 step 4, ADR 0042)
 
 Measured 2026-09-28. `summarize-v2`: the scene prompt lists the window's OPEN SECRETS and says never to write their
 content; whether a stored summary may be used is checked when it is read (`summaries.leaks`).

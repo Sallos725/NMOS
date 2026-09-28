@@ -1,4 +1,4 @@
-# 0041 — Scene summaries and the story so far, a `summarize` projection
+# 0042 — Scene summaries and the story so far, a `summarize` projection
 
 Status: accepted, 2026-09-28. Phase 12 step 3 (`docs/phases/PHASE-12.md`, Q1, Q2, Q6, Q7). New projection kind
 `summarize` (generation `summarize-v1`); migration 0023 (`summary`). Off by default until step 5 puts summaries in the
@@ -34,8 +34,9 @@ text (§36–37); the owner chose scenes of 8 turns and a story so far (PHASE-12
    every chat after extraction's history, oldest window first (Q7).
 6. **Scheduling.** An append looks only at the newest due window; any other commit, and a generation's activation,
    look at every window. After a scene is written the story is queued when every due window has a summary.
-7. **Off by default** (`NMOS_SUMMARIES=0`, and a `summaries` setting the plugin can change). Turning it off makes
-   queued jobs obsolete. Step 5 turns it on by default, after the owner is told the backfill's size (Q7).
+7. **Off by default** (`NMOS_SUMMARIES=0`, and a `summaries` setting through the settings API, which the settings
+   response reports under `extraction`; the panel's switch comes with the step that turns summaries on). Turning it off
+   makes queued jobs obsolete. Step 5 turns it on by default, after the owner is told the backfill's size (Q7).
 8. The Inspector's chat page shows the story so far and each due window with its state (current, waiting)
    and text. Deleting a chat deletes its summaries (ADR 0009); a per-chat rebuild of facts leaves them. Whether a
    summary may be used is decided when it is read, not stored: the secrets it must not repeat can be extracted after

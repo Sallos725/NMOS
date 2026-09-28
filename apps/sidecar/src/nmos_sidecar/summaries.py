@@ -1,4 +1,4 @@
-"""Scene summaries and the story so far (PHASE-12, ADR 0041): a rebuildable `summarize` projection.
+"""Scene summaries and the story so far (PHASE-12, ADR 0042): a rebuildable `summarize` projection.
 
 A scene is a fixed window of WINDOW turns of the head (turns 0–7, 8–15, …; turns as ADR 0008 counts them). It is
 summarized once it is complete and LAG more turns have a reply, so the turns still being rerolled or edited are not.
@@ -210,9 +210,11 @@ def schedule_story(conn: psycopg.Connection, conv: UUID, head: UUID, key: str, p
 
 
 def schedule_all(conn: psycopg.Connection, key: str, conv: UUID | None = None) -> int:
-    """Everything a generation is missing in every chat (or one), at background priority (PHASE-12 Q7)."""
+    """Everything a generation is missing in every chat (or one), at background priority, newest chats first
+    (PHASE-12 Q7): backfill jobs are claimed in the order they are queued."""
     heads = conn.execute("SELECT id, head_commit_id FROM conversation WHERE head_commit_id IS NOT NULL"
-                         " AND (%s::uuid IS NULL OR id = %s::uuid) ORDER BY id", (conv, conv)).fetchall()
+                         " AND (%s::uuid IS NULL OR id = %s::uuid) ORDER BY created_at DESC, id DESC",
+                         (conv, conv)).fetchall()
     with conn.transaction():
         conn.execute("UPDATE job SET status = 'obsolete', updated_at = now() WHERE kind = 'summarize'"
                      " AND status = 'queued' AND payload->>'generation' IS DISTINCT FROM %s", (key,))

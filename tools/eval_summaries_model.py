@@ -1,4 +1,4 @@
-"""Real-model tier of `summarize-v2` (docs/phases/PHASE-12.md step 4, ADR 0041): scene summaries and the story so far.
+"""Real-model tier of `summarize-v2` (docs/phases/PHASE-12.md step 4, ADR 0042): scene summaries and the story so far.
 
 Runs the sidecar's own summary prompts on short Korean scenes written for this evaluation, several times each,
 against one OpenAI-compatible endpoint, and checks each reply:

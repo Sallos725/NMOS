@@ -68,7 +68,11 @@ def test_a_database_of_an_earlier_release_upgrades_and_keeps_working(dump, datab
         assert ("bell tower" in objects(c, main, "Mina", "located_in")) is not per_message
         if not per_message:  # Phase 11: its promise reads as an open thread, its relationship as one pair
             page = c.get(f"/inspector/c/{convs[main.id]}", params={"lang": "en"}).text
-            assert "return before the bell rings" in page and "Mina ↔ Rin" in page
+            section = lambda sid: page[page.index(f'id="s-{sid}"'):page.index("</details>", page.index(f'id="s-{sid}"'))]
+            promise = next(row for row in section("threads").split("<tr>") if "return before the bell rings" in row)
+            assert 'title="open"' in promise
+            pairs = section("pairs")
+            assert 'Relationships <span class="n">1</span>' in pairs and pairs.count("Mina ↔ Rin") == 1
         old_trace = c.get(f"/v1/conversations/{convs[main.id]}/traces").json()
         assert old_trace, "the earlier release's recall traces are kept"
         # Packets an earlier release recorded (since the ledger, beta.19) replay under their own policy; one

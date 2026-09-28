@@ -69,7 +69,7 @@ def test_parsers_from_ui_rebuild_state(client):
                         "entity_line": r"\[(?P<entity>[^\]]+)\]"}]}
     view = client.put("/v1/config", json={"parsers": rules}).json()
     assert view["parsers"]["source"] == "ui" and view["parsers"]["active_rules"] == 1
-    assert '<Item key="하나.장소" as_of_turn="1">성당</Item>' in recall(client, chat, "어디?")["packet"]["text"]
+    assert '<Item key="하나.장소" as_of_turn="0">성당</Item>' in recall(client, chat, "어디?")["packet"]["text"]  # turn 0
 
 
 def test_enabling_embeddings_backfills_existing_chats(client, db):
