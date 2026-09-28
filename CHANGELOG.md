@@ -3,16 +3,36 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
-## Unreleased
+## 0.2.0
 
-Stage 4 of the roadmap (Phase 10, knowledge and secrets) is complete on `main`; its release is the owner's call.
-On the owner's real scenes, 48 replies of Opus 5.5 and Gemini 3.1 Pro with the new memory voiced no secret to a
-character it is kept from, and the holders remembered it (`docs/perf/secrets-eval.md`).
+The first milestone release (`docs/ROADMAP-1.0.md`): **Stage 4, knowledge and secrets** (Phase 10) is complete, and
+`main` has since added **Stage 5, the narrative engine** (Phases 11–12), and most of **Stage 6, verification and
+repair** (Phase 13 and Phase 14 steps 1–5). The owner asked for this release on 2026-09-28. On the owner's real scenes,
+48 replies of Opus 5.5 and Gemini 3.1 Pro with the new memory voiced no secret to a character it is kept from, and the
+holders remembered it (`docs/perf/secrets-eval.md`).
 
-The audit items the 2026-09-26 review left without a state (A-11, A-13, A-17, A-18, A-19), the owner's
-decision on K26, extractor generations `extract-v11` (A-12, A-14) and `extract-v12` (Phase 10, secrets), the
-packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no restatements), per-chat memory modes
-(Phase 10), the default memory budget 800 and a notice when memory did not fit, and a new text normalizer `clean-v3` (K27). Schema: migrations 0021–0023 (applied at startup).
+What changes, in short:
+- **Secrets:** what is kept from whom, who found it out and when; a Private section; strict and first-person
+  narrator modes per chat.
+- **Open business and causes:** promises, goals, questions, threats and debts are open until the story ends them;
+  the stated cause of a feeling or an event.
+- **Relationships:** a relationship is one pair, both ways.
+- **Summaries:** scenes and the story so far are summarized in `<Story>`; each scene character's state goes in
+  `<Cast>`.
+- **The owner repairs memory:** close or reopen a thread, retract or correct a fact, mark a secret found out, split
+  two names, lock a fact; each with undo.
+- **Canon:** the card, the lorebooks, the persona and the author's note become sources of each chat. Lorebook keys
+  give given names; the extraction model reads canon facts, which the story supersedes.
+
+It also has the fixes of the 2026-09-26 and 2026-09-27 audits and a new text normalizer. The generations and schema
+that change are:
+- extractor generations `extract-v11` to `extract-v13`;
+- the text normalizer `clean-v3`;
+- the default packet policy `packet-v8`;
+- migrations 0021–0026.
+
+The Phase 14 evaluation of canon facts on the measured chats (their model calls, M0, the secret gate, latency with a
+large lorebook) and its real-host smoke are still to come (step 6).
 
 - **Fixes from the 2026-09-27 audit** (`docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md`, ADR 0033
   amendment 2):
@@ -23,7 +43,7 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     again the turns extracted before an earlier turn's secret, oldest first. Before, it skipped them.
   - A model answer without an `assertions` list fails the job (retried, then counted failed) instead of
     counting as a turn with nothing to extract (G3; in every release since `v0.1.0-beta.1`).
-- **Phase 12 (Stage 5, part 2) is complete** (`docs/phases/PHASE-12.md`, 2026-09-28; no release decided):
+- **Phase 12 (Stage 5, part 2) is complete** (`docs/phases/PHASE-12.md`, 2026-09-28):
   - M0 has 12 more owner-confirmed cases whose answers lie outside the prompt's own messages: 2 of 12 on Phase 11.
   - **Scene summaries and the story so far** (ADR 0042, migration 0023), written in the background by the extraction
     model for every 8-turn window and kept current through edits, deletes and swipes; the Inspector shows them. The
@@ -55,7 +75,7 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     scene summary, current now for an earlier window, was judged older than the prompt by the turns it was written
     at, so a scene the prompt no longer held could be left out. The request now uses the window it is current for,
     as before the step 7 rewrite.
-- **Phase 14 (Stage 6, part 2): canon sources** (`docs/phases/PHASE-14.md`, approved 2026-09-28; no release): the card,
+- **Phase 14 (Stage 6, part 2): canon sources** (`docs/phases/PHASE-14.md`, approved 2026-09-28; steps 1–5): the card,
   the lorebooks, the persona and the author's note as sources of each chat, host evidence first. Export and restore
   are Phase 15.
   - Step 2: canon host evidence on PocketRisu v1.13.0 (`docs/HOST-FACTS.md`, H19) and a count-only inventory of the
@@ -76,8 +96,7 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     A canon fact whose text the prompt already holds is not sent again; a locked one is, when the story contradicts
     it. The plugin now recognises a card that uses `{{char}}` in the prompt, so it no longer reads the card again on
     every request.
-- **Phase 13 (Stage 6, part 1): the owner repairs memory** (`docs/phases/PHASE-13.md`, approved and complete 2026-09-28;
-  no release).
+- **Phase 13 (Stage 6, part 1): the owner repairs memory** (`docs/phases/PHASE-13.md`, approved and complete 2026-09-28).
   - Step 2: the owner confirmed NMOS's lists for the longest chat (50 of 59 open threads ended, 6 secrets found out);
     on the previous `main` every M0 packet carried a thread the owner closed (`docs/perf/repair.md`).
   - Step 3 (ADR 0044, migration 0024): the owner can close a thread with an outcome or reopen one the story closed,
@@ -104,7 +123,7 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
   variables, never `NMOS_*`, `DATABASE_URL` or `PG*` (it passed the whole environment).
   - **The default memory budget is 2,000 tokens** (was 800); a value saved in the plugin stays. Lower PocketRisu's max
     context accordingly.
-- **Phase 11 (Stage 5, part 1) is complete** (`docs/phases/PHASE-11.md`, 2026-09-28; no release decided):
+- **Phase 11 (Stage 5, part 1) is complete** (`docs/phases/PHASE-11.md`, 2026-09-28):
   - M0, an evaluation on a restored copy of the owner's chats (`tools/eval_rp.py`, numbers only in
     `docs/perf/m0-baseline.md`): 13 of 28 owner-confirmed cases on the Phase 10 code, 15 after step 3.
   - **A relationship has one history per pair** (ADR 0038, K24). A change the extraction records in the other
@@ -258,13 +277,39 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
   claim of what the narration already says), which frees room for others. `NMOS_PACKET_POLICY=packet-v3` keeps
   the previous layout; both compose files now default to `packet-v4`.
 
-**Upgrading.** Pull the new sidecar image and restart it. At startup the normalized text is rewritten
-(`clean-v3`). With an LLM configured, `extract-v12` on `clean-v3` becomes active, and each chat's latest
-`NMOS_EXTRACT_BACKFILL` turns (default 100) are re-extracted once at the provider's cost. With embeddings on,
-every message is embedded again with the embedding model. Older turns keep their earlier facts until
-**Extract all history**. Migration 0021 adds each chat's memory mode. **Replace the plugin file** (the memory
-mode card, the budget notice and the new default budget are in it) and reload PocketRisu; with the old plugin memory still works,
-but the mode cannot be set and the default budget stays 600.
+### Upgrading from 0.1.0-beta.21
+
+Back up the database first (README, "Upgrade, backup and rollback"): migrations 0021–0026 run when the new sidecar
+starts, and a rollback needs the backup.
+
+1. **Pull the new image and restart the sidecar and the worker.** At startup:
+   - the normalized text is rewritten (`clean-v3`);
+   - migrations 0021–0026 add memory modes, thread outcomes and causes, summaries, owner repairs and canon.
+2. **Model calls at the provider's cost** (with an LLM configured):
+   - `extract-v13` becomes active, and each chat's latest `NMOS_EXTRACT_BACKFILL` turns (default 100) are extracted
+     again once. Older turns keep their earlier facts until **Extract all history**, which also finds reveals a first
+     extraction missed (K29).
+   - Scenes are summarized (one call per 8 turns and a story call; `NMOS_SUMMARIES=0` or the panel turns this off).
+   - Canon facts are read once the new plugin sends a chat's canon: the card, the persona and the note at once, and
+     each lorebook entry once a prompt has held it (`NMOS_CANON_FACTS=0` or the panel turns this off).
+   - With embeddings on, every message is embedded again.
+3. **Replace the plugin file** (the host offers the update: `//@version 0.2.0`) and reload PocketRisu. The sidecar
+   serves it at `/v1/plugin/nmos-pocketrisu.js`, and the Inspector says whether the plugin in use matches (ADR 0037).
+   - The new plugin brings the memory mode, the repair buttons, the canon sync, the switches and the default budget
+     of 2,000 tokens.
+   - With the old plugin memory still works, but without canon, repairs or the new default budget.
+
+### Known limitations
+
+- **Canon facts are not yet measured** on the owner's chats (Phase 14 step 6), and neither are their model calls or
+  the latency with a large lorebook. A story that changes who someone is, or how two characters stand, is listed in
+  "Needs attention" against canon until the owner chooses.
+- **Secrets:** a secret is kept by instruction, not isolation (K11). A summary can say a secret in other words (K30).
+- **Threads** stay open until the story ends them in words extraction recognizes, or the owner closes them (K23).
+- **Names:** a given name alone is a mention only when the lorebook lists it (K31). A persona narrated in the third
+  person does not bring its own facts (K32).
+- **Long chats:** beyond about 10,000 messages memory needs a higher deadline (K1).
+- The full list is `docs/KNOWN-ISSUES.md`.
 
 ## 0.1.0-beta.21
 

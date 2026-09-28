@@ -288,7 +288,7 @@ A fact about two people comes back from both sides (since 0.1.0-beta.15, Phase 8
 when you address Kaito, not only Hana. Extraction lists the other people an event, goal, knowledge fact
 or destroyed item involves; being there is not taken as knowing.
 
-Who knows a fact matters (since Phase 10, unreleased): a fact the story keeps from someone is marked
+Who knows a fact matters (since 0.2.0): a fact the story keeps from someone is marked
 `hidden_from` them until the story shows them finding out (ADR 0033). What someone in the scene is not shown to
 know goes in a `<Private>` section with a rule: only its holders know it, and nobody voices it in front of
 those it is kept from (ADR 0034). The chat's memory mode can withhold it instead, or keep to a first-person
