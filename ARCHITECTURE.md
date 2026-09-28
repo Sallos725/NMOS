@@ -483,6 +483,12 @@ something else is listed with the owner's choices. `fact_lock`, an owner repair,
 current and holds off later statements, listed as conflicts. A canon fact whose text the prompt held is not sent again
 (D3), unless a lock holds it against the story. A request records the canon generation it read; its replay reads it.
 
+**D58 — NMOS off for one chat (ADR 0048; owner request outside the Phase 14 steps).** The plugin arg
+`disabled_chats` lists host chat ids NMOS is off for. Such a chat's requests pass through untouched after the chat is
+read: nothing is synced, uploaded or retrieved, and no output notice is sent. What the sidecar keeps of it stays; taken
+off the list, its next generation syncs as usual. It is switched from the chat input's ☰ menu or the panel's "This
+chat" card; the sidebar's ☰ menu opens the panel.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

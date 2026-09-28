@@ -13,10 +13,11 @@
 //@arg route string auto (default) / direct / server — how to reach the sidecar
 //@arg language string Panel language: ko (default) or en
 //@arg hud int 1 = progress display on the chat screen (turn it on from the NMOS panel)
+//@arg disabled_chats string Chat ids NMOS is off for (switched from the NMOS panel or the chat menu)
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:91f2ba96f84a".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:114e9f1aded5".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -218,6 +219,7 @@
   var STRINGS = {
     // menus (registered once at load, in the language chosen then)
     "menu.panel": ["NMOS \uAE30\uC5B5", "NMOS memory"],
+    "menu.chat_switch": ["NMOS: \uC774 \uCC44\uD305 \uB044\uAE30/\uCF1C\uAE30", "NMOS: this chat off/on"],
     // frame
     "title": ["NMOS \uAE30\uC5B5", "NMOS memory"],
     "tab.status": ["\uC0C1\uD0DC", "Status"],
@@ -237,6 +239,33 @@
     ],
     "status.memory_off": ["\uAE30\uC5B5 \uB123\uAE30\uAC00 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED\uC5D0\uC11C \uCF24 \uC218 \uC788\uC2B5\uB2C8\uB2E4.", "Memory is switched off. Turn it on in Settings."],
     "status.features": ["\uAE30\uB2A5", "Features"],
+    // this chat (ADR 0048)
+    "chat.title": ["\uC774 \uCC44\uD305", "This chat"],
+    "chat.none": ["\uC5F4\uB9B0 \uCC44\uD305\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uCC44\uD305\uC744 \uC5F0 \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.", "No chat is open. Open one and try again."],
+    "chat.on": ["NMOS \uCF1C\uC9D0", "NMOS on"],
+    "chat.off": ["NMOS \uAEBC\uC9D0", "NMOS off"],
+    "chat.on_sub": [
+      "\uC774 \uCC44\uD305\uC758 \uB300\uD654\uB97C \uAE30\uC5B5\uD558\uACE0 \uC0DD\uC131\uD560 \uB54C \uAE30\uC5B5\uC744 \uB123\uC2B5\uB2C8\uB2E4. \uB044\uBA74 \uC774 \uCC44\uD305\uC740 \uC0AC\uC774\uB4DC\uCE74\uB85C \uBCF4\uB0B4\uC9C0 \uC54A\uACE0 \uAE30\uC5B5\uB3C4 \uB123\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC774\uBBF8 \uC313\uC778 \uAE30\uC5B5\uC740 \uC9C0\uC6B0\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "This chat is remembered and gets memory when you generate. Off: nothing of it goes to the sidecar and no memory goes in. What is already remembered is kept."
+    ],
+    "chat.off_sub": [
+      "\uC774 \uCC44\uD305\uC740 \uC0AC\uC774\uB4DC\uCE74\uB85C \uBCF4\uB0B4\uC9C0 \uC54A\uACE0 \uAE30\uC5B5\uB3C4 \uB123\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC774\uBBF8 \uC313\uC778 \uAE30\uC5B5\uC740 \uADF8\uB300\uB85C\uC774\uBA70, \uB2E4\uC2DC \uCF1C\uBA74 \uB2E4\uC74C \uC0DD\uC131 \uB54C \uADF8\uB3D9\uC548\uC758 \uB300\uD654\uB97C \uB530\uB77C\uC7A1\uC2B5\uB2C8\uB2E4.",
+      "Nothing of this chat goes to the sidecar and no memory goes in. What is already remembered is kept; turned back on, the next generation catches up."
+    ],
+    "chat.all_off": [
+      "NMOS\uAC00 \uBAA8\uB4E0 \uCC44\uD305\uC5D0\uC11C \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4(\uC124\uC815 \uD0ED). \uC774 \uCC44\uD305\uB3C4 \uCF1C\uAE30 \uC804\uAE4C\uC9C0\uB294 \uC4F0\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "NMOS is off for every chat (Settings tab), so this chat is not used either until it is back on."
+    ],
+    "chat.turn_off": ["\uC774 \uCC44\uD305\uC5D0\uC11C \uB044\uAE30", "Turn off for this chat"],
+    "chat.turn_on": ["\uC774 \uCC44\uD305\uC5D0\uC11C \uB2E4\uC2DC \uCF1C\uAE30", "Turn back on for this chat"],
+    "chat.switched_off": [
+      "\uC774 \uCC44\uD305\uC5D0\uC11C NMOS\uB97C \uAED0\uC2B5\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uB85C \uBCF4\uB0B4\uC9C0 \uC54A\uACE0 \uAE30\uC5B5\uB3C4 \uB123\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC774\uBBF8 \uC313\uC778 \uAE30\uC5B5\uC740 \uADF8\uB300\uB85C\uC785\uB2C8\uB2E4.",
+      "NMOS is off for this chat: nothing of it goes to the sidecar and no memory goes in. What is already remembered is kept."
+    ],
+    "chat.switched_on": [
+      "\uC774 \uCC44\uD305\uC5D0\uC11C NMOS\uB97C \uB2E4\uC2DC \uCF30\uC2B5\uB2C8\uB2E4. \uB2E4\uC74C \uC0DD\uC131\uBD80\uD130 \uAE30\uC5B5\uC744 \uB123\uC2B5\uB2C8\uB2E4.",
+      "NMOS is back on for this chat. Memory goes in from the next generation."
+    ],
     "feature.state": ["\uC0C1\uD0DC\uCC3D", "Status window"],
     "feature.extraction": ["\uC0AC\uC2E4 \uCD94\uCD9C", "Fact extraction"],
     "feature.vectors": ["\uC758\uBBF8 \uAC80\uC0C9", "Semantic recall"],
@@ -481,6 +510,7 @@
     "hud.recalling": ["\u{1F9E0} \uAE30\uC5B5 \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "\u{1F9E0} Recalling memory\u2026"],
     "hud.injected": ["\u2713 \uAE30\uC5B5 \uC8FC\uC785 ({n}\uC790)", "\u2713 Memory injected ({n} chars)"],
     "hud.nothing": ["\u2013 \uAD00\uB828 \uAE30\uC5B5 \uC5C6\uC74C", "\u2013 Nothing relevant"],
+    "hud.chat_off": ["\u23FB \uC774 \uCC44\uD305\uC740 NMOS \uAEBC\uC9D0", "\u23FB NMOS is off for this chat"],
     "hud.skipped": ["\u26A0 \uAC74\uB108\uB700: {r}", "\u26A0 Skipped: {r}"],
     "hud.reason.deadline": ["\uC81C\uD55C \uC2DC\uAC04 {s}\uCD08 \uCD08\uACFC \xB7 \uB20C\uB7EC\uC11C \uB298\uB9AC\uAE30", "over the {s} s deadline \xB7 tap to raise"],
     "hud.reason.error": ["\uC0AC\uC774\uB4DC\uCE74 \uC624\uB958", "sidecar error"],
@@ -1015,6 +1045,10 @@ ${revisionHash}`;
           return prompt;
         }
         chatId = chat.id;
+        if (settings.offChats?.includes(chat.id)) {
+          emit({ type: "request-end", outcome: "chat-off", chars: 0, conversationId: null });
+          return prompt;
+        }
         const t0 = host.now();
         const { request, bodies } = await within(buildManifest(
           chat,
@@ -1126,7 +1160,7 @@ ${revisionHash}`;
     function onOutput(arg2) {
       void (async () => {
         const settings = await host.settings();
-        if (!settings.enabled || !settings.sidecarUrl || !arg2?.chat?.id) return;
+        if (!settings.enabled || !settings.sidecarUrl || !arg2?.chat?.id || settings.offChats?.includes(arg2.chat.id)) return;
         adviseOnce(settings.language);
         emit({ type: "background", conversationId: conversations.get(arg2.chat.id) ?? null });
         const index = arg2.messageIndex ?? -1;
@@ -1189,6 +1223,45 @@ ${revisionHash}`;
     return null;
   }
 
+  // src/chatoff.ts
+  var CHAT_OFF_ARG = "disabled_chats";
+  function parseChatIds(value) {
+    return [...new Set(value.split(/[\s,]+/).filter(Boolean))];
+  }
+  function withChat(ids, chatId, off) {
+    const rest = ids.filter((id) => id !== chatId);
+    return off ? [...rest, chatId] : rest;
+  }
+  function formatChatIds(ids) {
+    return ids.join(" ");
+  }
+  function createChatSwitch(deps) {
+    let queue = Promise.resolve();
+    function serial(task) {
+      const next = queue.then(task, task);
+      queue = next.catch(() => {
+      });
+      return next;
+    }
+    async function current2() {
+      const id = await deps.currentChatId();
+      return { id, off: id !== null && parseChatIds(await deps.getArg(CHAT_OFF_ARG)).includes(id) };
+    }
+    async function write(id, off) {
+      const ids = parseChatIds(await deps.getArg(CHAT_OFF_ARG));
+      if (ids.includes(id) !== off) await deps.setArg(CHAT_OFF_ARG, formatChatIds(withChat(ids, id, off)));
+      return { id, off };
+    }
+    return {
+      current: () => serial(current2),
+      set: (id, off) => serial(() => write(id, off)),
+      toggle: () => serial(async () => {
+        const now = await current2();
+        return now.id === null ? now : write(now.id, !now.off);
+      })
+    };
+  }
+
   // src/hud.ts
   var OUTCOME_MS = 4e3;
   var DONE_MS = 3e3;
@@ -1226,6 +1299,7 @@ ${revisionHash}`;
     if (r?.phase === "done" && now < r.until) {
       if (r.outcome === "injected") return { kind: "ok", text: t(lang, "hud.injected", { n: r.chars }), fraction: null };
       if (r.outcome === "nothing-relevant") return { kind: "muted", text: t(lang, "hud.nothing"), fraction: null };
+      if (r.outcome === "chat-off") return { kind: "muted", text: t(lang, "hud.chat_off"), fraction: null };
       const reason = r.error?.startsWith("deadline") ? t(lang, "hud.reason.deadline", { s: Math.round((r.deadlineMs ?? 0) / 100) / 10 }) : t(lang, "hud.reason.error");
       return { kind: "warn", text: t(lang, "hud.skipped", { r: reason }), fraction: null };
     }
@@ -1898,9 +1972,56 @@ html,body{margin:0;background:#0c0c10}
           el("div", { class: "warn", text: L("hud.broken", { e: problem }) })
         ));
       }
+      cards.unshift(await chatCard(s.enabled));
       const refresh = el("button", { text: L("refresh") });
       refresh.addEventListener("click", () => void refreshStatus());
       statusView.replaceChildren(...cards, el("div", { class: "btns" }, refresh));
+    }
+    async function chatCard(enabled2) {
+      const card = el("div", { class: "card" }, el("h2", { text: L("chat.title") }));
+      let state;
+      try {
+        state = await deps.chat.current();
+      } catch (error) {
+        card.append(el("div", { class: "err", text: errorText(lang, error) }));
+        return card;
+      }
+      if (state.id === null) {
+        card.append(el("div", { class: "muted", text: L("chat.none") }));
+        return card;
+      }
+      const id = state.id;
+      const off = state.off;
+      const flip = el("button", { class: off ? "primary" : "", text: L(off ? "chat.turn_on" : "chat.turn_off") });
+      const msg = el("div", { class: "msg" });
+      flip.addEventListener("click", async () => {
+        flip.disabled = true;
+        try {
+          await deps.chat.set(id, !off);
+          await refreshStatus();
+        } catch (error) {
+          flip.disabled = false;
+          say(msg, errorText(lang, error), "err");
+        }
+      });
+      card.append(
+        el(
+          "div",
+          { class: off ? "line warn" : "line" },
+          el("span", { class: off ? "dot warn" : "dot ok" }),
+          el("span", { text: L(off ? "chat.off" : "chat.on") })
+        ),
+        el("p", { class: "sub", text: L(off ? "chat.off_sub" : "chat.on_sub") }),
+        el("div", { class: "btns" }, flip),
+        msg
+      );
+      if (!enabled2) card.insertBefore(el(
+        "div",
+        { class: "line warn" },
+        el("span", { class: "dot warn" }),
+        el("span", { text: L("chat.all_off") })
+      ), card.children[1] ?? null);
+      return card;
     }
     let inspectorPath = "/v1/inspector";
     let shownPath = null;
@@ -2769,7 +2890,8 @@ html,body{margin:0;background:#0c0c10}
         reservedMemoryTokens: positiveInt(await arg("reserved_memory_tokens"), DEFAULT_RESERVED_TOKENS, MAX_RESERVED_TOKENS),
         deadlineMs: positiveInt(await arg("deadline_ms"), DEFAULT_DEADLINE_MS, MAX_DEADLINE_MS),
         injectPosition: position === "end" ? "end" : "before_last_user",
-        language: langOf(await arg("language"))
+        language: langOf(await arg("language")),
+        offChats: parseChatIds(await arg(CHAT_OFF_ARG))
       };
     },
     async currentChat() {
@@ -2871,6 +2993,19 @@ html,body{margin:0;background:#0c0c10}
     };
     return control;
   }
+  var risuChatSwitch = createChatSwitch({
+    getArg: arg,
+    setArg: (key, value) => risuai.setArgument(key, value),
+    async currentChatId() {
+      const characterIndex = await risuai.getCurrentCharacterIndex();
+      if (characterIndex < 0) return null;
+      const chat = await risuai.getChatFromIndex(characterIndex, await risuai.getCurrentChatIndex());
+      return typeof chat?.id === "string" && chat.id ? chat.id : null;
+    }
+  });
+  function chatSwitchNotice(lang, state) {
+    return t(lang, state.id === null ? "chat.none" : state.off ? "chat.switched_off" : "chat.switched_on");
+  }
   async function registerHooks(beforeRequest, onOutput, status, api, hud) {
     await risuai.addRisuReplacer("beforeRequest", beforeRequest);
     await risuai.addRisuChatListener("output", onOutput);
@@ -2881,7 +3016,8 @@ html,body{margin:0;background:#0c0c10}
       setArg: (key, value) => risuai.setArgument(key, value),
       show: () => risuai.showContainer("fullscreen"),
       hide: () => risuai.hideContainer(),
-      hud
+      hud,
+      chat: risuChatSwitch
     };
     const open = (tab) => openPanel(deps, tab);
     const lang = langOf(await arg("language"));
@@ -2890,6 +3026,22 @@ html,body{margin:0;background:#0c0c10}
       { name: t(lang, "menu.panel"), icon: "\u{1F9E0}", iconType: "html", location: "chat", id: "nmos-chat" },
       () => open("status")
     );
+    await risuai.registerButton({
+      name: t(lang, "menu.chat_switch"),
+      icon: "\u23FB",
+      iconType: "html",
+      location: "chat",
+      id: "nmos-chat-switch"
+    }, () => {
+      risuChatSwitch.toggle().then((state) => risuai.alert(chatSwitchNotice(lang, state))).catch((error) => console.warn("[NMOS] chat switch failed:", error instanceof Error ? error.message : error));
+    });
+    await risuai.registerButton({
+      name: t(lang, "menu.panel"),
+      icon: "\u{1F9E0}",
+      iconType: "html",
+      location: "hamburger",
+      id: "nmos-sidebar"
+    }, () => open("status"));
     return () => void open("status");
   }
 

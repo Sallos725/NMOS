@@ -251,6 +251,31 @@ describe('beforeRequest', () => {
     expect(await createAdapter(host).beforeRequest(prompt, 'model')).toBe(prompt);
     expect(calls).toEqual([]);
   });
+
+  it('sends nothing of a chat NMOS is off for and leaves its prompt as it is (ADR 0048)', async () => {
+    const { host, calls } = fakeHost(happy, { offChats: ['other', 'chat-1'] });
+    const card = vi.fn(async () => null);
+    const lorebook = vi.fn(async () => []);
+    const events: ActivityEvent[] = [];
+    const adapter = createAdapter({ ...host, card, lorebook }, (e) => events.push(e));
+    expect(await adapter.beforeRequest(prompt, 'model')).toBe(prompt);
+    adapter.onOutput({ chat, messageIndex: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(calls).toEqual([]);
+    expect(card).not.toHaveBeenCalled();
+    expect(lorebook).not.toHaveBeenCalled();
+    expect(events).toEqual([{ type: 'request-start' },
+      { type: 'request-end', outcome: 'chat-off', chars: 0, conversationId: null }]);
+    expect((await adapter.status()).last).toBeNull();
+  });
+
+  it('works as before for a chat NMOS is not off for, and again once it is back on', async () => {
+    const other = fakeHost(happy, { offChats: ['other'] });
+    expect(hasPacket(await createAdapter(other.host).beforeRequest(prompt, 'model'))).toBe(true);
+    const on = fakeHost(happy, { offChats: [] });
+    expect(hasPacket(await createAdapter(on.host).beforeRequest(prompt, 'model'))).toBe(true);
+    expect(on.calls).toEqual(['/v1/sync/reconcile', '/v1/sync/bodies', '/v1/retrieve']);
+  });
 });
 
 describe('onOutput', () => {

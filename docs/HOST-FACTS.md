@@ -409,6 +409,21 @@ request. The card is not: reading it clones the current chat, so it is read off 
 
 All held. Production has recorded requests with NMOS memory on v1.13.0 since 2026-09-27.
 
+## Plugin menus and a string arg (2026-09-28, ADR 0048)
+
+**Source reading only** (`github.com/PocketRisu/PocketRisu` at tag v1.13.0, `3d30fc5`):
+- `src/ts/plugins/apiV3/v3.svelte.ts` `registerButton` takes `location` `action`, `chat` or `hamburger`; a known `id`
+  replaces that button in place. `hamburger` goes to `additionalHamburgerMenu`, which
+  `src/lib/SideBars/Sidebar.svelte` draws in the sidebar's ☰ menu as an icon only (no name, no tooltip), below
+  Settings, Home and Playground. `chat` goes to the chat input's ☰ menu with its icon and name
+  (`DefaultChatScreen.svelte`).
+- `setArgument(key, value)` writes `plugin.realArg[key]` in the database; `getArgument` reads it back.
+  `src/ts/plugins/plugins.svelte.ts` keeps an arg's value when an update declares it with the same type, and a new
+  string arg starts as `''`.
+
+**Runtime:** not yet observed. The real-host smoke of ADR 0048 checks the sidebar icon, the chat-menu switch, and that
+`disabled_chats` survives a page reload and a plugin update.
+
 ## Scenario evidence index
 
 | Scenario | Before fixture | After fixture | Other logs | Done |

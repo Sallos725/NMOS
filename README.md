@@ -84,12 +84,16 @@ provider's cost.
 
 ## NMOS panel (status, inspector, settings)
 
-Open it from the **☰ menu left of the chat input → NMOS 기억 / NMOS memory**, or from PocketRisu →
-Settings → **NMOS 기억 / NMOS memory**. Tabs switch between **Status**, **Inspector** and **Settings**;
+Open it from the **☰ menu left of the chat input → NMOS 기억 / NMOS memory**, from the **🧠 icon in the sidebar's
+☰ menu**, or from PocketRisu → Settings → **NMOS 기억 / NMOS memory**. Tabs switch between **Status**, **Inspector** and **Settings**;
 the language picker (Korean by default, or English) is at the top right. Menu names follow the
 language after a page reload.
 
-- **Status**: sidecar connection, which features are on (status window, facts, semantic recall), and what the
+- **Status**: first, **This chat**: whether NMOS is on for the chat open now, and a button to turn it off or back on
+  for that chat alone (ADR 0048). Off, nothing of the chat goes to the sidecar and no memory goes in; what NMOS
+  already keeps of it stays, and turned back on, the next generation catches up. The same switch is in the ☰ menu
+  left of the chat input (**NMOS: this chat off/on**), which says in a dialog which way it went. Then the
+  sidecar connection, which features are on (status window, facts, semantic recall), and what the
   last request injected. **Show the injected memory** opens the exact text that went into that request
   (kept only until the page reloads). When memory did not fit the budget, a card says how much and offers the
   budget that holds it all; after raising it, lower PocketRisu's max context by as much.

@@ -29,6 +29,14 @@ describe('request outcome', () => {
     expect(view(end('injected'), 100 + OUTCOME_MS, 'ko')).toBeNull();
   });
 
+  it('says so when NMOS is off for the chat (ADR 0048)', () => {
+    const s = run([[{ type: 'request-start' }, 0],
+      [{ type: 'request-end', outcome: 'chat-off', chars: 0, conversationId: null }, 10]]);
+    expect(view(s, 10, 'ko')).toEqual({ kind: 'muted', text: '⏻ 이 채팅은 NMOS 꺼짐', fraction: null });
+    expect(view(s, 10, 'en')?.text).toBe('⏻ NMOS is off for this chat');
+    expect(view(s, 10 + OUTCOME_MS, 'ko')).toBeNull();
+  });
+
   it('an abandoned request clears the running pill but not a finished one', () => {
     expect(view(run([[{ type: 'request-start' }, 0], [{ type: 'request-abandon' }, 1]]), 1, 'ko')).toBeNull();
     const done = run([[{ type: 'request-end', outcome: 'injected', chars: 5, conversationId: null }, 0], [{ type: 'request-abandon' }, 1]]);
