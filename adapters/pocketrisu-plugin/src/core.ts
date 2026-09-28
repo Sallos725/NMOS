@@ -2,8 +2,9 @@
 
 import type { MemoryFit } from './budget';
 import { PLUGIN_BUILD } from './build';
-import { canonTexts, heldKeys, type CanonText, type HostCard, type HostLoreEntry, type HostPersona } from './canon';
-import { canonicalJson, normalizeText } from './canonical';
+import { canonHash, canonManifestId, canonTexts, heldKeys, type CanonEntry, type CanonText, type HostCard, type HostLoreEntry,
+  type HostPersona } from './canon';
+import { canonicalJson } from './canonical';
 import { sha256Hex } from './hash';
 import { deadlineAdvice, formatMs } from './deadline';
 import { DEFAULT_DEADLINE_MS } from './form';
@@ -110,6 +111,19 @@ const NAME_TTL_MS = 10 * 60_000;
 const CANON_TIMEOUT_MS = 30_000;
 const CANON_ROUNDS = 20;
 const CANON_BATCH_CHARS = 800_000; // texts per canon call (a lorebook can hold 400k+ characters)
+const TEXT_HASH_LIMIT = 4000;
+
+interface CanonSnapshot {
+  id: string;
+  entries: CanonEntry[];
+  texts: CanonText[];
+  observedAt: number;
+}
+
+interface CanonObservation {
+  held: string[];
+  snapshot: CanonSnapshot | null;
+}
 const PERSONA_TTL_MS = 30_000; // a persona switch reaches the sidecar within this (it is re-read in the background)
 
 /** The persona the host uses for `{{user}}` in this chat: the chat-bound one, else the selected one. */
@@ -125,7 +139,9 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   const cache = new Map<string, CacheEntry>();
   const conversations = new Map<string, string>(); // host chat id → sidecar conversation id
   const names = new Map<string, { name: string | null; card: HostCard | null; at: number }>();
-  const canonSent = new Map<string, string>(); // host chat id → the canon manifest the sidecar has in force
+  const canonSent = new Map<string, string>(); // sidecar + conversation → the manifest id the sidecar has in force
+  const canonQueue = new Map<string, { running: boolean; next: CanonSnapshot | null }>(); // one upload per chat at a time
+  const textHashes = new Map<string, string>(); // canon text → its hash (texts rarely change: hashed once)
   let canonUnsupported = false; // an older sidecar has no /v1/sync/canon
   let personas: { value: HostPersonas | null; at: number } | null = null;
   const buildManifest = createManifestBuilder();
@@ -170,39 +186,88 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     return bound ?? list[personas?.value?.selected ?? 0] ?? null;
   }
 
-  /** Sends the chat's canon when it changed since the sidecar last had it (ADR 0045): the manifest, then the texts the
-   *  sidecar asks for, in batches. Background work after a request: never awaited, never throws. */
-  function syncCanon(settings: Settings, chatId: string, canon: CanonText[]): void {
-    if (canonUnsupported) return;
+  /** The chat's canon as this request sees it: its texts, and once the card is known its manifest (ADR 0045). A failed
+   *  lorebook read gives none, never an empty lorebook (which would end every entry). */
+  async function observeCanon(chat: HostChat, prompt: PromptMessage[], deadline: number): Promise<CanonObservation | null> {
+    if (!host.lorebook) return null;
+    let lore: HostLoreEntry[];
+    try {
+      lore = await within(host.lorebook(), deadline, 'the lorebook');
+    } catch (error) {
+      if (error instanceof DeadlineError) throw error;
+      return null;
+    }
+    if (!Array.isArray(lore)) return null;
+    const character = names.get(chat.id!);
+    const texts = canonTexts(character?.card ?? null, chat, lore, personaRecord(chat));
+    const held = heldKeys(texts, prompt);
+    // The card's description is in every prompt (H19): missing, the card was edited since it was read.
+    if (character?.card?.desc?.trim() && !held.includes('card:desc')) refreshCharacter(chat.id!);
+    if (!character?.card) return { held, snapshot: null }; // no scope for the entries yet: wait for the card
+    const entries: CanonEntry[] = await within(Promise.all(texts.map(async (t) => {
+      let hash = textHashes.get(t.text);
+      if (!hash) {
+        hash = await canonHash(t.text);
+        textHashes.set(t.text, hash);
+        while (textHashes.size > TEXT_HASH_LIMIT) textHashes.delete(textHashes.keys().next().value as string);
+      }
+      return { key: t.key, hash, metadata: t.metadata };
+    })), deadline, 'the canon hashes');
+    return { held, snapshot: { id: await canonManifestId(entries), entries, texts, observedAt: Date.now() } };
+  }
+
+  /** Sends the chat's canon when the sidecar does not have this manifest in force (ADR 0045): the manifest, then the
+   *  texts it asks for, in batches. One upload per chat at a time, the newest waiting; background work after a
+   *  request, never awaited, never throws. */
+  function syncCanon(settings: Settings, conversationId: string, chatId: string, snapshot: CanonSnapshot): void {
+    const key = `${settings.sidecarUrl}|${conversationId}`;
+    if (canonUnsupported || canonSent.get(key) === snapshot.id) return;
+    const queue = canonQueue.get(key) ?? { running: false, next: null };
+    canonQueue.set(key, queue);
+    if (queue.running) {
+      queue.next = snapshot; // the newest observation wins; an older one waiting is dropped
+      return;
+    }
+    queue.running = true;
     void (async () => {
-      const entries = await Promise.all(canon.map(async (c) => ({ key: c.key, hash: await sha256Hex(normalizeText(c.text)),
-        metadata: c.metadata })));
-      const manifest = entries.map((e) => `${e.key}=${e.hash}`).join('|');
-      if (canonSent.get(chatId) === manifest) return;
-      const texts = new Map(entries.map((e, i) => [e.hash, canon[i]!.text]));
-      const deadline = host.now() + CANON_TIMEOUT_MS;
-      const body = { host: 'pocketrisu', chat_id: chatId, entries };
-      let out = await call<{ needed: string[] }>(settings, '/v1/sync/canon', body, deadline);
-      for (let round = 0; out.needed.length && round < CANON_ROUNDS; round++) {
-        const contents: Record<string, string> = {};
-        let size = 0;
-        for (const h of out.needed) {
-          const text = texts.get(h);
-          if (text === undefined || (size && size + text.length > CANON_BATCH_CHARS)) continue;
-          contents[h] = text;
-          size += text.length;
+      for (let current: CanonSnapshot | null = snapshot; current; current = queue.next, queue.next = null) {
+        if (canonSent.get(key) === current.id) continue;
+        try {
+          if (await uploadCanon(settings, chatId, current)) {
+            canonSent.set(key, current.id);
+            while (canonSent.size > CACHE_LIMIT) canonSent.delete(canonSent.keys().next().value as string);
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (/HTTP 404/.test(message) && !/conversation not found/.test(message)) canonUnsupported = true;
+          host.debug('[NMOS] canon not synced:', message);
+          if (canonUnsupported) break;
         }
-        out = await call<{ needed: string[] }>(settings, '/v1/sync/canon', { ...body, contents }, deadline);
       }
-      if (!out.needed.length) {
-        canonSent.set(chatId, manifest);
-        while (canonSent.size > CACHE_LIMIT) canonSent.delete(canonSent.keys().next().value as string);
+      queue.running = false;
+      queue.next = null;
+    })();
+  }
+
+  /** One manifest upload: true once the sidecar has every text (applied, or a newer observation already in force). */
+  async function uploadCanon(settings: Settings, chatId: string, snapshot: CanonSnapshot): Promise<boolean> {
+    const texts = new Map(snapshot.entries.map((e, i) => [e.hash, snapshot.texts[i]!.text]));
+    const deadline = host.now() + CANON_TIMEOUT_MS;
+    const body = { host: 'pocketrisu', chat_id: chatId, entries: snapshot.entries, observed_at: snapshot.observedAt };
+    let out = await call<{ needed: string[] }>(settings, '/v1/sync/canon', body, deadline);
+    for (let round = 0; out.needed.length && round < CANON_ROUNDS; round++) {
+      const contents: Record<string, string> = {};
+      let size = 0;
+      for (const h of out.needed) {
+        const text = texts.get(h);
+        // Batches of up to CANON_BATCH_CHARS; a longer text (up to MAX_CANON_CHARS) goes alone.
+        if (text === undefined || (size && size + text.length > CANON_BATCH_CHARS)) continue;
+        contents[h] = text;
+        size += text.length;
       }
-    })().catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      if (/HTTP 404/.test(message) && !/conversation not found/.test(message)) canonUnsupported = true;
-      host.debug('[NMOS] canon not synced:', message);
-    });
+      out = await call<{ needed: string[] }>(settings, '/v1/sync/canon', { ...body, contents }, deadline);
+    }
+    return !out.needed.length;
   }
 
   /** Reads the host's personas in the background; a refusal or failure leaves the name unknown. */
@@ -330,8 +395,13 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       key = await within(sha256Hex(JSON.stringify([
         chat.id, mode, prompt.length, request.messages.map((m) => [m.host_logical_id, m.revision_hash]),
       ])), deadline, 'the cache key');
+      // Canon (ADR 0045): which of it this prompt holds and its manifest go with the request; the texts follow in the
+      // background. Observed for a cached packet too, whose canon may have changed.
+      const canon = await observeCanon(chat, prompt, deadline);
       const cached = cache.get(key);
       if (cached && cached.expires > host.now()) {
+        const known = conversations.get(chat.id);
+        if (canon?.snapshot && known) syncCanon(settings, known, chat.id, canon.snapshot);
         const outcome = cached.packet ? 'injected' : 'nothing-relevant';
         // A retry served from the miss cache keeps the failure on the status tab.
         if (!cached.failed) last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: cached.packet.length,
@@ -351,18 +421,6 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         while (conversations.size > CACHE_LIMIT) conversations.delete(conversations.keys().next().value as string);
       }
 
-      // Canon (ADR 0045): which of it this prompt holds goes with the request; the texts follow in the background.
-      let canon: CanonText[] | null = null;
-      let held: string[] = [];
-      if (host.lorebook) {
-        const lore = await within(host.lorebook().catch(() => [] as HostLoreEntry[]), deadline, 'the lorebook');
-        const character = names.get(chat.id);
-        canon = canonTexts(character?.card ?? null, chat, lore, personaRecord(chat));
-        held = heldKeys(canon, prompt);
-        // The card's description is in every prompt (H19): missing, the card was edited since it was read.
-        if (character?.card?.desc?.trim() && !held.includes('card:desc')) refreshCharacter(chat.id);
-      }
-
       const { query, previousAi } = queryTexts(messages);
       const t2 = host.now();
       const retrieved = await call<{ freshness: string; packet: { text: string }; memory?: MemoryFit | null }>(settings, '/v1/retrieve', {
@@ -375,9 +433,10 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         in_context_ids: inContextIds(prompt, messages),
         budget_tokens: settings.reservedMemoryTokens,
         client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started },
-        canon_held: held,
+        canon_manifest_id: canon?.snapshot?.id ?? null,
+        canon_held: canon?.held ?? [],
       }, deadline, undefined, late);
-      if (canon && names.get(chat.id)?.card) syncCanon(settings, chat.id, canon); // once the card is known
+      if (canon?.snapshot && synced.conversation_id) syncCanon(settings, synced.conversation_id, chat.id, canon.snapshot);
       const packet = retrieved.freshness === 'fresh' ? retrieved.packet.text : '';
       const memory = retrieved.freshness === 'fresh' ? retrieved.memory ?? null : null; // older sidecars send none
       remember(key, packet, SUCCESS_TTL_MS, false, memory);

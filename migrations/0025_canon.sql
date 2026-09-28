@@ -1,19 +1,30 @@
 -- Phase 14 (ADR 0045): canon sources. A canon text of a conversation (a card field, the author's note, the persona,
 -- a lorebook entry) is a source_object of kind 'canon' (host_logical_id 'canon:<key>') with immutable revisions,
--- like a message. canon_state says which revision of each key was in force when: a sync that finds a key changed
--- or gone closes its row (until) and opens the new one, so a read as of an earlier request sees that request's canon
--- (ADR 0027). A request records the canon keys its prompt held (canon_held).
+-- keyed by the hash of the text, like a message.
+--
+-- A canon manifest is the chat's canon at one time: each key with the hash of its text and what it is (metadata),
+-- identified by the hash of its canonical JSON, which the plugin computes too. A request records the manifest its
+-- prompt was built with and the keys the prompt held, so it replays with its own canon even when the texts reach the
+-- sidecar after it (ADR 0027). canon_applied is the order in which manifests became the conversation's canon.
 
-CREATE TABLE canon_state (
-    id                 uuid PRIMARY KEY,
-    conversation_id    uuid NOT NULL REFERENCES conversation (id),
-    canon_key          text NOT NULL,
-    source_revision_id uuid NOT NULL REFERENCES source_revision (id),
-    since              timestamptz NOT NULL DEFAULT now(),
-    until              timestamptz
+CREATE TABLE canon_manifest (
+    conversation_id uuid NOT NULL REFERENCES conversation (id),
+    id              text NOT NULL,
+    entries         jsonb NOT NULL,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (conversation_id, id)
 );
 
-CREATE INDEX canon_state_conversation ON canon_state (conversation_id, since);
-CREATE UNIQUE INDEX canon_state_current ON canon_state (conversation_id, canon_key) WHERE until IS NULL;
+CREATE TABLE canon_applied (
+    conversation_id uuid NOT NULL REFERENCES conversation (id),
+    manifest_id     text NOT NULL,
+    applied_at      timestamptz NOT NULL DEFAULT now(),
+    observed_at     timestamptz
+);
 
-ALTER TABLE retrieval_trace ADD COLUMN canon_held jsonb NOT NULL DEFAULT '[]'::jsonb;
+CREATE INDEX canon_applied_conversation ON canon_applied (conversation_id, applied_at);
+
+ALTER TABLE conversation ADD COLUMN canon_manifest_id text, ADD COLUMN canon_observed_at timestamptz;
+
+ALTER TABLE retrieval_trace ADD COLUMN canon_manifest_id text,
+                            ADD COLUMN canon_held jsonb NOT NULL DEFAULT '[]'::jsonb;

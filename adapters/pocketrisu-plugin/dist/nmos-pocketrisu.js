@@ -16,7 +16,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:a1e93f553b97".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:f5d2f0abd71e".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -38,8 +38,15 @@
     return JSON.stringify(canonicalize(value));
   }
 
+  // src/hash.ts
+  async function sha256Hex(text2) {
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text2));
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
   // src/canon.ts
   var ID = /^[A-Za-z0-9_.:-]{1,110}$/;
+  var MAX_CANON_CHARS = 19e5;
   function fnv(text2) {
     let h = 2166136261;
     for (let i = 0; i < text2.length; i++) {
@@ -63,7 +70,7 @@
     const out = [];
     const add = (key, value, metadata = {}) => {
       const t2 = text(value);
-      if (t2) out.push({ key, text: t2, metadata });
+      if (t2 && t2.length <= MAX_CANON_CHARS) out.push({ key, text: t2, metadata });
     };
     if (card) {
       for (const field2 of ["name", "desc", "personality", "scenario"]) add(`card:${field2}`, card[field2], { field: field2 });
@@ -80,7 +87,7 @@
       let key = loreKey(entry);
       const n = seen.get(key) ?? 0;
       seen.set(key, n + 1);
-      if (n) key = `${key}.${n}`;
+      if (n) key = `${key}~${n}`;
       const scope = local.some((e) => same(e, entry)) ? "chat" : global.some((e) => same(e, entry)) ? "character" : card ? "module" : null;
       add(key, entry.content, {
         scope: scope ?? void 0,
@@ -96,11 +103,12 @@
     const all = normalizeText(prompt.map((m) => typeof m?.content === "string" ? m.content : "").join("\n"));
     return canon.filter((c) => c.key !== "card:name" && all.includes(normalizeText(c.text))).map((c) => c.key);
   }
-
-  // src/hash.ts
-  async function sha256Hex(text2) {
-    const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text2));
-    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  function canonHash(text2) {
+    return sha256Hex(normalizeText(text2));
+  }
+  function canonManifestId(entries) {
+    const rows = entries.map((e) => ({ key: e.key, hash: e.hash, metadata: e.metadata ?? {} })).sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+    return sha256Hex(canonicalJson(rows));
   }
 
   // src/form.ts
@@ -762,6 +770,7 @@ ${revisionHash}`;
   var CANON_TIMEOUT_MS = 3e4;
   var CANON_ROUNDS = 20;
   var CANON_BATCH_CHARS = 8e5;
+  var TEXT_HASH_LIMIT = 4e3;
   var PERSONA_TTL_MS = 3e4;
   function personaOf(chat, host) {
     const list = Array.isArray(host.personas) ? host.personas : [];
@@ -774,6 +783,8 @@ ${revisionHash}`;
     const conversations = /* @__PURE__ */ new Map();
     const names = /* @__PURE__ */ new Map();
     const canonSent = /* @__PURE__ */ new Map();
+    const canonQueue = /* @__PURE__ */ new Map();
+    const textHashes = /* @__PURE__ */ new Map();
     let canonUnsupported = false;
     let personas = null;
     const buildManifest = createManifestBuilder();
@@ -809,40 +820,78 @@ ${revisionHash}`;
       const bound = chat.bindedPersona ? list.find((p) => p?.id === chat.bindedPersona) : void 0;
       return bound ?? list[personas?.value?.selected ?? 0] ?? null;
     }
-    function syncCanon(settings, chatId, canon) {
-      if (canonUnsupported) return;
+    async function observeCanon(chat, prompt, deadline) {
+      if (!host.lorebook) return null;
+      let lore;
+      try {
+        lore = await within(host.lorebook(), deadline, "the lorebook");
+      } catch (error) {
+        if (error instanceof DeadlineError) throw error;
+        return null;
+      }
+      if (!Array.isArray(lore)) return null;
+      const character = names.get(chat.id);
+      const texts = canonTexts(character?.card ?? null, chat, lore, personaRecord(chat));
+      const held = heldKeys(texts, prompt);
+      if (character?.card?.desc?.trim() && !held.includes("card:desc")) refreshCharacter(chat.id);
+      if (!character?.card) return { held, snapshot: null };
+      const entries = await within(Promise.all(texts.map(async (t2) => {
+        let hash = textHashes.get(t2.text);
+        if (!hash) {
+          hash = await canonHash(t2.text);
+          textHashes.set(t2.text, hash);
+          while (textHashes.size > TEXT_HASH_LIMIT) textHashes.delete(textHashes.keys().next().value);
+        }
+        return { key: t2.key, hash, metadata: t2.metadata };
+      })), deadline, "the canon hashes");
+      return { held, snapshot: { id: await canonManifestId(entries), entries, texts, observedAt: Date.now() } };
+    }
+    function syncCanon(settings, conversationId, chatId, snapshot) {
+      const key = `${settings.sidecarUrl}|${conversationId}`;
+      if (canonUnsupported || canonSent.get(key) === snapshot.id) return;
+      const queue = canonQueue.get(key) ?? { running: false, next: null };
+      canonQueue.set(key, queue);
+      if (queue.running) {
+        queue.next = snapshot;
+        return;
+      }
+      queue.running = true;
       void (async () => {
-        const entries = await Promise.all(canon.map(async (c) => ({
-          key: c.key,
-          hash: await sha256Hex(normalizeText(c.text)),
-          metadata: c.metadata
-        })));
-        const manifest = entries.map((e) => `${e.key}=${e.hash}`).join("|");
-        if (canonSent.get(chatId) === manifest) return;
-        const texts = new Map(entries.map((e, i) => [e.hash, canon[i].text]));
-        const deadline = host.now() + CANON_TIMEOUT_MS;
-        const body = { host: "pocketrisu", chat_id: chatId, entries };
-        let out = await call(settings, "/v1/sync/canon", body, deadline);
-        for (let round = 0; out.needed.length && round < CANON_ROUNDS; round++) {
-          const contents = {};
-          let size = 0;
-          for (const h of out.needed) {
-            const text2 = texts.get(h);
-            if (text2 === void 0 || size && size + text2.length > CANON_BATCH_CHARS) continue;
-            contents[h] = text2;
-            size += text2.length;
+        for (let current2 = snapshot; current2; current2 = queue.next, queue.next = null) {
+          if (canonSent.get(key) === current2.id) continue;
+          try {
+            if (await uploadCanon(settings, chatId, current2)) {
+              canonSent.set(key, current2.id);
+              while (canonSent.size > CACHE_LIMIT) canonSent.delete(canonSent.keys().next().value);
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (/HTTP 404/.test(message) && !/conversation not found/.test(message)) canonUnsupported = true;
+            host.debug("[NMOS] canon not synced:", message);
+            if (canonUnsupported) break;
           }
-          out = await call(settings, "/v1/sync/canon", { ...body, contents }, deadline);
         }
-        if (!out.needed.length) {
-          canonSent.set(chatId, manifest);
-          while (canonSent.size > CACHE_LIMIT) canonSent.delete(canonSent.keys().next().value);
+        queue.running = false;
+        queue.next = null;
+      })();
+    }
+    async function uploadCanon(settings, chatId, snapshot) {
+      const texts = new Map(snapshot.entries.map((e, i) => [e.hash, snapshot.texts[i].text]));
+      const deadline = host.now() + CANON_TIMEOUT_MS;
+      const body = { host: "pocketrisu", chat_id: chatId, entries: snapshot.entries, observed_at: snapshot.observedAt };
+      let out = await call(settings, "/v1/sync/canon", body, deadline);
+      for (let round = 0; out.needed.length && round < CANON_ROUNDS; round++) {
+        const contents = {};
+        let size = 0;
+        for (const h of out.needed) {
+          const text2 = texts.get(h);
+          if (text2 === void 0 || size && size + text2.length > CANON_BATCH_CHARS) continue;
+          contents[h] = text2;
+          size += text2.length;
         }
-      })().catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        if (/HTTP 404/.test(message) && !/conversation not found/.test(message)) canonUnsupported = true;
-        host.debug("[NMOS] canon not synced:", message);
-      });
+        out = await call(settings, "/v1/sync/canon", { ...body, contents }, deadline);
+      }
+      return !out.needed.length;
     }
     function warmPersonas() {
       if (!host.personas) return;
@@ -959,8 +1008,11 @@ ${revisionHash}`;
           prompt.length,
           request.messages.map((m) => [m.host_logical_id, m.revision_hash])
         ])), deadline, "the cache key");
+        const canon = await observeCanon(chat, prompt, deadline);
         const cached = cache.get(key);
         if (cached && cached.expires > host.now()) {
+          const known = conversations.get(chat.id);
+          if (canon?.snapshot && known) syncCanon(settings, known, chat.id, canon.snapshot);
           const outcome2 = cached.packet ? "injected" : "nothing-relevant";
           if (!cached.failed) last = {
             at: Date.now(),
@@ -988,15 +1040,6 @@ ${revisionHash}`;
           conversations.set(chat.id, synced.conversation_id);
           while (conversations.size > CACHE_LIMIT) conversations.delete(conversations.keys().next().value);
         }
-        let canon = null;
-        let held = [];
-        if (host.lorebook) {
-          const lore = await within(host.lorebook().catch(() => []), deadline, "the lorebook");
-          const character = names.get(chat.id);
-          canon = canonTexts(character?.card ?? null, chat, lore, personaRecord(chat));
-          held = heldKeys(canon, prompt);
-          if (character?.card?.desc?.trim() && !held.includes("card:desc")) refreshCharacter(chat.id);
-        }
         const { query, previousAi } = queryTexts(messages);
         const t2 = host.now();
         const retrieved = await call(settings, "/v1/retrieve", {
@@ -1009,9 +1052,10 @@ ${revisionHash}`;
           in_context_ids: inContextIds(prompt, messages),
           budget_tokens: settings.reservedMemoryTokens,
           client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started },
-          canon_held: held
+          canon_manifest_id: canon?.snapshot?.id ?? null,
+          canon_held: canon?.held ?? []
         }, deadline, void 0, late);
-        if (canon && names.get(chat.id)?.card) syncCanon(settings, chat.id, canon);
+        if (canon?.snapshot && synced.conversation_id) syncCanon(settings, synced.conversation_id, chat.id, canon.snapshot);
         const packet = retrieved.freshness === "fresh" ? retrieved.packet.text : "";
         const memory = retrieved.freshness === "fresh" ? retrieved.memory ?? null : null;
         remember(key, packet, SUCCESS_TTL_MS, false, memory);

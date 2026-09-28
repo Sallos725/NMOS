@@ -1,7 +1,8 @@
 // Canon sources (Phase 14, ADR 0045): what the card, the chat's author's note, its persona and the lorebooks say,
 // as the host shows them to this chat. Pure: the host reads are in host.ts, the sync in core.ts.
 
-import { normalizeText } from './canonical';
+import { canonicalJson, normalizeText } from './canonical';
+import { sha256Hex } from './hash';
 import type { HostChat, PromptMessage } from './types';
 
 /** A lorebook entry as `getCurrentLorebookEntries()` returns it (H19). */
@@ -39,7 +40,9 @@ export interface CanonText {
   metadata: Record<string, unknown>;
 }
 
-const ID = /^[A-Za-z0-9_.:-]{1,110}$/;
+const ID = /^[A-Za-z0-9_.:-]{1,110}$/; // the sidecar's key pattern; `~` is kept for the suffix of a repeated key
+/** A text longer than this is not kept (the sidecar takes up to 2,000,000 characters per text). */
+export const MAX_CANON_CHARS = 1_900_000;
 
 /** FNV-1a (32-bit), for a stable key of an entry that has no id. */
 function fnv(text: string): string {
@@ -77,7 +80,7 @@ export function canonTexts(card: HostCard | null, chat: HostChat, lore: HostLore
   const out: CanonText[] = [];
   const add = (key: string, value: unknown, metadata: Record<string, unknown> = {}) => {
     const t = text(value);
-    if (t) out.push({ key, text: t, metadata });
+    if (t && t.length <= MAX_CANON_CHARS) out.push({ key, text: t, metadata });
   };
   if (card) {
     for (const field of ['name', 'desc', 'personality', 'scenario'] as const) add(`card:${field}`, card[field], { field });
@@ -94,7 +97,7 @@ export function canonTexts(card: HostCard | null, chat: HostChat, lore: HostLore
     let key = loreKey(entry);
     const n = seen.get(key) ?? 0;
     seen.set(key, n + 1);
-    if (n) key = `${key}.${n}`; // two entries alike in what names them: keep both, in host order
+    if (n) key = `${key}~${n}`; // two entries alike in what names them: keep both, in host order
     const scope = local.some((e) => same(e, entry)) ? 'chat' : global.some((e) => same(e, entry)) ? 'character'
       : card ? 'module' : null;
     add(key, entry.content, { scope: scope ?? undefined, mode: entry.mode, always_active: !!entry.alwaysActive,
@@ -107,4 +110,23 @@ export function canonTexts(card: HostCard | null, chat: HostChat, lore: HostLore
 export function heldKeys(canon: CanonText[], prompt: PromptMessage[]): string[] {
   const all = normalizeText(prompt.map((m) => (typeof m?.content === 'string' ? m.content : '')).join('\n'));
   return canon.filter((c) => c.key !== 'card:name' && all.includes(normalizeText(c.text))).map((c) => c.key);
+}
+
+export interface CanonEntry {
+  key: string;
+  hash: string;
+  metadata: Record<string, unknown>;
+}
+
+/** The hash a canon text is sent and kept under: SHA-256 of its normalized text (the sidecar's `content_hash`). */
+export function canonHash(text: string): Promise<string> {
+  return sha256Hex(normalizeText(text));
+}
+
+/** A manifest's id: SHA-256 of the canonical JSON of its entries in key order (the sidecar's `manifest_id`,
+ *  fixtures/unit/canon-manifest-v1.json). */
+export function canonManifestId(entries: CanonEntry[]): Promise<string> {
+  const rows = entries.map((e) => ({ key: e.key, hash: e.hash, metadata: e.metadata ?? {} }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  return sha256Hex(canonicalJson(rows));
 }

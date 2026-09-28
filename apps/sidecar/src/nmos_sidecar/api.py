@@ -9,6 +9,7 @@ import dataclasses
 import ipaddress
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -413,9 +414,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if conv is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             conn.execute("SELECT 1 FROM conversation WHERE id = %s FOR UPDATE", (conv.id,))
-            out = canon.sync(conn, conv.id, [e.model_dump() for e in body.entries], dict(body.contents))
-        log.info("canon sync conversation=%s entries=%d needed=%d stored=%d changed=%d", conv.id, len(body.entries),
-                 len(out["needed"]), out["stored"], out["changed"])
+            observed = (datetime.fromtimestamp(body.observed_at / 1000, tz=timezone.utc)
+                        if body.observed_at is not None else None)
+            try:
+                out = canon.sync(conn, conv.id, [e.model_dump() for e in body.entries], dict(body.contents), observed)
+            except canon.CanonError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
+        log.info("canon sync conversation=%s entries=%d needed=%d stored=%d applied=%s stale=%s", conv.id,
+                 len(body.entries), len(out["needed"]), out["stored"], out["applied"], out.get("stale"))
         return out
 
     @app.post("/v1/retrieve", response_model=RetrieveResponse, dependencies=[Depends(auth)])
@@ -823,7 +829,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     packet=audit.audit(conn, traces[0]["id"]) if traces else None,
                                     summaries=summary_view(conn, conv_id, head, view["secrets"]),
                                     repairs=repair_rows(conn, conv_id, view["repairs"]), last_turn=head_turn(conn, head),
-                                    canon_rows=canon.in_force(conn, conv_id), canon_held=canon.held(conn, conv_id))
+                                    canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
+                                    canon_held=canon.held(conn, conv_id))
 
     def summary_view(conn, conv_id: UUID, head: UUID, secrets: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The Inspector's summaries of a chat (PHASE-12 step 6), with the generation and whether packets use them."""

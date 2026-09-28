@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { canonTexts, heldKeys, loreKey, type HostCard, type HostLoreEntry } from '../src/canon';
+import { readFileSync } from 'node:fs';
+import { canonManifestId, canonTexts, heldKeys, loreKey, MAX_CANON_CHARS, type HostCard, type HostLoreEntry } from '../src/canon';
 import { createAdapter, type HostPort, type HttpResult } from '../src/core';
 import type { HostChat, PromptMessage } from '../src/types';
 
@@ -40,7 +41,19 @@ describe('canon texts (ADR 0045)', () => {
     expect(loreKey({ ...tunnel, id: 'has spaces and 한글' })).toBe(loreKey(tunnel)); // not a key the sidecar takes
     const twins = canonTexts(null, chat, [tunnel, { ...tunnel, content: '두 번째' }], null).map((t) => t.key)
       .filter((k) => k.startsWith('lore:'));
-    expect(twins).toEqual([loreKey(tunnel), `${loreKey(tunnel)}.1`]);
+    expect(twins).toEqual([loreKey(tunnel), `${loreKey(tunnel)}~1`]);
+    // host ids x, x and x.1 stay three keys: `~` is never in an id the sidecar takes
+    const ids = canonTexts(null, chat, [{ ...market }, { ...market, content: 'b' }, { ...market, id: 'lore-market.1', content: 'c' }], null)
+      .map((t) => t.key).filter((k) => k.startsWith('lore:'));
+    expect(new Set(ids).size).toBe(3);
+    // a text past what the sidecar takes is not kept
+    expect(canonTexts(null, { ...chat, note: 'x'.repeat(MAX_CANON_CHARS + 1) }, [], null).map((t) => t.key)).toEqual([]);
+  });
+
+  it('manifest ids are the sidecar\'s (fixtures/unit/canon-manifest-v1.json)', async () => {
+    const doc = JSON.parse(readFileSync(new URL('../../../fixtures/unit/canon-manifest-v1.json', import.meta.url), 'utf8'));
+    expect(await canonManifestId(doc.entries)).toBe(doc.id);
+    expect(await canonManifestId([...doc.entries].reverse())).toBe(doc.id);
   });
 
   it('held by a prompt are the texts in it, as the host activated them (H19)', () => {
@@ -60,20 +73,26 @@ describe('canon sync', () => {
     { role: 'system', content: `${card.desc}\n${card.personality}\n${world.content}` },
     { role: 'user', content: '카이토는 어디 있어?' },
   ];
-  function host(handler: (path: string, body: any) => HttpResult, cardFor: () => HostCard | null = () => card, delay = 0) {
+  const more = (tag: string): PromptMessage[] => structuredClone([...prompt, { role: 'user', content: tag }]);
+  function host(handler: (path: string, body: any) => HttpResult | Promise<HttpResult>, opts: { delay?: number;
+    lorebook?: () => Promise<HostLoreEntry[]>; conversation?: () => string } = {}) {
     const posts: { path: string; body: any }[] = [];
     const h: HostPort = {
       settings: async () => ({ sidecarUrl: 'http://s', authToken: '', enabled: true, reservedMemoryTokens: 600, deadlineMs: 500,
         injectPosition: 'before_last_user', route: 'direct', language: 'en' }),
       currentChat: async () => structuredClone(chat),
       card: vi.fn(async () => {
-        if (delay) await new Promise((r) => setTimeout(r, delay));
-        return cardFor();
+        if (opts.delay) await new Promise((r) => setTimeout(r, opts.delay));
+        return card;
       }),
-      lorebook: async () => [kaito, world, folder, tunnel],
+      lorebook: opts.lorebook ?? (async () => [kaito, world, folder, tunnel]),
       request: async (_m, url, body) => {
         const path = url.replace('http://s', '');
         posts.push({ path, body });
+        if (path === '/v1/sync/reconcile') {
+          return { status: 200, json: { status: 'noop', active_commit: 'c', manifest_hash: 'm',
+            conversation_id: opts.conversation?.() ?? 'v' } };
+        }
         return handler(path, body);
       },
       warn: () => {}, debug: () => {}, now: () => performance.now(),
@@ -81,7 +100,6 @@ describe('canon sync', () => {
     return { h, posts };
   }
   const sidecar = (store: Set<string>) => (path: string, body: any): HttpResult => {
-    if (path === '/v1/sync/reconcile') return { status: 200, json: { status: 'noop', active_commit: 'c', manifest_hash: 'm', conversation_id: 'v' } };
     if (path === '/v1/retrieve') return { status: 200, json: { freshness: 'fresh', packet: { text: '' } } };
     if (path === '/v1/sync/canon') {
       for (const [h] of Object.entries(body.contents ?? {})) store.add(h);
@@ -89,30 +107,87 @@ describe('canon sync', () => {
     }
     return { status: 404, json: null };
   };
-  const settle = () => new Promise((r) => setTimeout(r, 20));
+  const settle = (ms = 20) => new Promise((r) => setTimeout(r, ms));
+  const canonPosts = (posts: { path: string; body: any }[]) => posts.filter((p) => p.path === '/v1/sync/canon');
 
-  it('sends which canon the prompt holds with the request, and the texts in the background once the card is known', async () => {
+  it('sends the canon the prompt holds and its manifest with the request, and the texts in the background once the card is known', async () => {
     const store = new Set<string>();
-    const { h, posts } = host(sidecar(store), () => card, 30);
+    const { h, posts } = host(sidecar(store), { delay: 30 });
     const adapter = createAdapter(h);
-    await adapter.beforeRequest(prompt, 'model'); // the card is still being read in the background: no canon sync
+    await adapter.beforeRequest(prompt, 'model'); // the card is still being read: no manifest, no canon sync
     const first = posts.find((p) => p.path === '/v1/retrieve')!.body;
-    expect(first.canon_held).toEqual(['lore:lore-world']);
+    expect([first.canon_held, first.canon_manifest_id]).toEqual([['lore:lore-world'], null]);
     await settle();
-    expect(posts.filter((p) => p.path === '/v1/sync/canon')).toHaveLength(0);
-    await new Promise((r) => setTimeout(r, 40));
-    await adapter.beforeRequest(structuredClone([...prompt, { role: 'user', content: 'again' }]), 'model');
+    expect(canonPosts(posts)).toHaveLength(0);
+    await settle(40);
+    await adapter.beforeRequest(more('again'), 'model');
     await settle();
-    expect(posts.filter((p) => p.path === '/v1/retrieve')[1]!.body.canon_held)
-      .toEqual(['card:desc', 'card:personality', 'lore:lore-world']);
-    const canonPosts = posts.filter((p) => p.path === '/v1/sync/canon');
-    expect(canonPosts).toHaveLength(2); // the manifest, then the texts it asked for
-    expect(canonPosts[0]!.body.contents).toBeUndefined();
-    expect(Object.keys(canonPosts[1]!.body.contents)).toHaveLength(canonPosts[0]!.body.entries.length);
-    expect(canonPosts[0]!.body.entries.map((e: any) => e.key)).toContain('card:desc');
-    await adapter.beforeRequest(structuredClone([...prompt, { role: 'user', content: 'third' }]), 'model');
+    const second = posts.filter((p) => p.path === '/v1/retrieve')[1]!.body;
+    expect(second.canon_held).toEqual(['card:desc', 'card:personality', 'lore:lore-world']);
+    const sent = canonPosts(posts);
+    expect(sent).toHaveLength(2); // the manifest, then the texts it asked for
+    expect(await canonManifestId(sent[0]!.body.entries)).toBe(second.canon_manifest_id);
+    expect(sent[0]!.body.contents).toBeUndefined();
+    expect(typeof sent[0]!.body.observed_at).toBe('number');
+    expect(Object.keys(sent[1]!.body.contents)).toHaveLength(sent[0]!.body.entries.length);
+    await adapter.beforeRequest(more('third'), 'model');
     await settle();
-    expect(posts.filter((p) => p.path === '/v1/sync/canon')).toHaveLength(2); // unchanged: nothing sent
+    expect(canonPosts(posts)).toHaveLength(2); // unchanged: nothing sent
+  });
+
+  it('syncs canon for a cached packet too, and again for a conversation made anew after a delete', async () => {
+    let conversation = 'v1';
+    const { h, posts } = host(sidecar(new Set()), { conversation: () => conversation });
+    const adapter = createAdapter(h);
+    await adapter.beforeRequest(prompt, 'model');
+    await settle();
+    const before = canonPosts(posts).length;
+    await adapter.beforeRequest(structuredClone(prompt), 'model'); // the same state: the cached packet
+    await settle();
+    expect(posts.filter((p) => p.path === '/v1/retrieve')).toHaveLength(1);
+    expect(canonPosts(posts).length).toBeGreaterThanOrEqual(before); // observed; unchanged, so nothing new
+    conversation = 'v2'; // the chat was deleted in the sidecar and synced again
+    await adapter.beforeRequest(more('after delete'), 'model');
+    await settle();
+    expect(canonPosts(posts).length).toBeGreaterThan(before);
+  });
+
+  it('never syncs an empty lorebook when reading it failed', async () => {
+    let fail = false;
+    const { h, posts } = host(sidecar(new Set()), { lorebook: async () => { if (fail) throw new Error('host'); return [kaito, world]; } });
+    const adapter = createAdapter(h);
+    await adapter.beforeRequest(prompt, 'model');
+    await settle();
+    const n = canonPosts(posts).length;
+    fail = true;
+    await adapter.beforeRequest(more('x'), 'model');
+    await settle();
+    expect(canonPosts(posts)).toHaveLength(n);
+    expect(posts.filter((p) => p.path === '/v1/retrieve').at(-1)!.body.canon_held).toEqual([]);
+  });
+
+  it('uploads one manifest per chat at a time, the newest last', async () => {
+    const store = new Set<string>();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    let calls = 0;
+    const { h, posts } = host(async (path, body) => {
+      if (path === '/v1/sync/canon' && calls++ === 0) await gate; // the first upload is slow
+      return sidecar(store)(path, body);
+    });
+    const adapter = createAdapter(h);
+    await adapter.beforeRequest(prompt, 'model');
+    await settle();
+    (h.lorebook as any) = async () => [kaito, world, folder, tunnel, market]; // the lorebook grew
+    await adapter.beforeRequest(more('b'), 'model');
+    await adapter.beforeRequest(more('c'), 'model');
+    await settle();
+    expect(canonPosts(posts)).toHaveLength(1); // the second waits for the first
+    release();
+    await settle(50);
+    const manifests = canonPosts(posts).map((p) => p.body.entries.length);
+    expect(manifests[0]).toBe(4 + 1 + 3); // four card fields, the note, the first lorebook
+    expect(manifests.at(-1)).toBe(4 + 1 + 4); // the newest observation last
   });
 
   it('reads the card again when its description is no longer in the prompt (an edit, H19)', async () => {
@@ -122,7 +197,7 @@ describe('canon sync', () => {
     await settle();
     const reads = (h.card as any).mock.calls.length;
     await adapter.beforeRequest([{ role: 'system', content: '하나는 이제 열여섯 살이다.' }, { role: 'system', content: 'x' },
-      prompt[1]!], 'model'); // another length: not the cached packet
+      prompt[1]!], 'model');
     await settle();
     expect((h.card as any).mock.calls.length).toBe(reads + 1);
   });
@@ -132,9 +207,9 @@ describe('canon sync', () => {
       : sidecar(new Set())(path, body)));
     const adapter = createAdapter(h);
     for (const extra of ['a', 'b', 'c']) {
-      await adapter.beforeRequest(structuredClone([...prompt, { role: 'user', content: extra }]), 'model');
+      await adapter.beforeRequest(more(extra), 'model');
       await settle();
     }
-    expect(posts.filter((p) => p.path === '/v1/sync/canon')).toHaveLength(1);
+    expect(canonPosts(posts)).toHaveLength(1);
   });
 });

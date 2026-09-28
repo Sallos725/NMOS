@@ -1,0 +1,59 @@
+{
+ "version": 1,
+ "note": "Canon manifest ids (ADR 0045): SHA-256 of the canonical JSON of the entries in key order. Both the sidecar (canon.manifest_id) and the plugin (canonManifestId) must produce `id`.",
+ "texts": {
+  "card:desc": "하나는 항구 마을 등대지기의 딸이다.\r\n눈은 푸른색이다."
+ },
+ "entries": [
+  {
+   "key": "lore:lore-kaito",
+   "hash": "5f83c27c2967adca5a426973c928a498f75861fc452b14e8a89010f5299caebf",
+   "metadata": {
+    "scope": "character",
+    "mode": "normal",
+    "always_active": false,
+    "keys": [
+     "카이토",
+     "카이"
+    ],
+    "comment": "카이토"
+   }
+  },
+  {
+   "key": "card:desc",
+   "hash": "0f614c2ce3d97cfbacf62614e31e0ddd8768f3f4b4cda8bc255a5eb102704fb4",
+   "metadata": {
+    "field": "desc"
+   }
+  },
+  {
+   "key": "card:greeting",
+   "hash": "f18cf016c365e1bb42ca67efe4e73ffd3d7669bae8d296745fc7a417e01dc4ab",
+   "metadata": {
+    "field": "greeting",
+    "index": -1
+   }
+  },
+  {
+   "key": "persona",
+   "hash": "ff95ad145b6af03c4811b628cfa995659987f7031774492bc9c2c3b1f4526cbd",
+   "metadata": {
+    "name": "타쿠미",
+    "persona_id": "p1"
+   }
+  },
+  {
+   "key": "lore:fa1b2c3d4~1",
+   "hash": "ac513b0c17ce11d631c6cd9c44c98c51eff04fd2e560f00c54bc993c96bba877",
+   "metadata": {
+    "scope": "chat",
+    "mode": "normal",
+    "always_active": false,
+    "keys": [
+     "비밀 통로"
+    ]
+   }
+  }
+ ],
+ "id": "2005e877e830e059f6dab3f9d9cf9e3ee288795786070433555dbdbbea884f22"
+}

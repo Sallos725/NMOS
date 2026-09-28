@@ -1,9 +1,11 @@
-"""Canon sources (Phase 14 step 3, ADR 0045): capture as immutable revisions, the canon in force, replays, what a
-prompt held, the Inspector, deletion, and that no message pipeline sees canon."""
+"""Canon sources (Phase 14 step 3, ADR 0045): capture as immutable revisions, manifests and the canon in force, replays,
+what a prompt held, the Inspector, deletion, and that no message pipeline sees canon."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import json
+import time
+from pathlib import Path
 
 import psycopg
 from psycopg.rows import dict_row
@@ -16,22 +18,21 @@ from test_sidecar_integration import recall, sync
 DESC = "하나는 항구 마을 등대지기의 딸이다. 하나의 눈은 푸른색이다."
 LORE = "카이토는 견습 기사이고 하나의 소꿉친구다."
 NOTE = "지금은 한겨울 밤이다."
+VECTOR = Path(__file__).resolve().parents[3] / "fixtures/unit/canon-manifest-v1.json"
 
 
 def entry(key: str, text: str, **metadata) -> dict:
     return {"key": key, "hash": canon.content_hash(text), "metadata": metadata}
 
 
-def push(c, chat: SimChat, texts: dict[str, tuple[str, dict]]) -> dict:
+def push(c, chat: SimChat, texts: dict[str, tuple[str, dict]], observed_at: int | None = None) -> dict:
     """The plugin's two calls: the manifest, then the texts the sidecar asked for."""
     entries = [entry(k, text, **meta) for k, (text, meta) in texts.items()]
-    res = c.post("/v1/sync/canon", json={"chat_id": chat.id, "entries": entries})
-    assert res.status_code == 200, res.text
-    out = res.json()
+    body = {"chat_id": chat.id, "entries": entries, **({"observed_at": observed_at} if observed_at else {})}
+    out = c.post("/v1/sync/canon", json=body).json()
     if out["needed"]:
         by_hash = {canon.content_hash(text): text for text, _ in texts.values()}
-        res = c.post("/v1/sync/canon", json={"chat_id": chat.id, "entries": entries,
-                                             "contents": {h: by_hash[h] for h in out["needed"]}})
+        res = c.post("/v1/sync/canon", json={**body, "contents": {h: by_hash[h] for h in out["needed"]}})
         assert res.status_code == 200, res.text
         out = res.json()
     return out
@@ -50,25 +51,33 @@ def conv_id(url: str, chat: SimChat):
         return conn.execute("SELECT id FROM conversation WHERE host_chat_ref = %s", (chat.id,)).fetchone()["id"]
 
 
-def test_canon_is_stored_once_and_made_the_canon_in_force(migrated):
+def test_the_manifest_id_is_the_same_in_both_languages():
+    doc = json.loads(VECTOR.read_text())
+    assert canon.manifest_id(doc["entries"]) == doc["id"]
+    assert canon.manifest_id(list(reversed(doc["entries"]))) == doc["id"]  # key order, whatever the host's order
+    assert doc["entries"][1]["hash"] == canon.content_hash(doc["texts"]["card:desc"].replace("\r\n", "\n"))
+
+
+def test_canon_is_stored_once_and_its_manifest_made_the_canon_in_force(migrated):
     chat = a_chat()
     with make_client(migrated) as c:
         sync(c, chat)
         texts = {"card:desc": (DESC, {"field": "desc"}), "note": (NOTE, {}),
                  "lore:kaito": (LORE, {"scope": "character", "mode": "normal", "keys": ["카이토", "카이"]})}
-        first = c.post("/v1/sync/canon", json={"chat_id": chat.id,
-                                               "entries": [entry(k, t, **m) for k, (t, m) in texts.items()]}).json()
-        assert sorted(first["needed"]) == sorted(canon.content_hash(t) for t, _ in texts.values())
-        assert first["in_force"] is None  # nothing changes until every text is there
+        entries = [entry(k, t, **m) for k, (t, m) in texts.items()]
+        first = c.post("/v1/sync/canon", json={"chat_id": chat.id, "entries": entries}).json()
+        assert sorted(first["needed"]) == sorted(e["hash"] for e in entries) and not first["applied"]
         out = push(c, chat, texts)
-        assert (out["needed"], out["stored"], out["changed"], out["in_force"]) == ([], 3, 3, 3)
+        assert (out["needed"], out["stored"], out["applied"], out["in_force"]) == ([], 3, True, 3)
+        assert out["manifest_id"] == canon.manifest_id(entries)
         again = push(c, chat, texts)  # the same canon: nothing to send, nothing changed
-        assert (again["needed"], again["stored"], again["changed"]) == ([], 0, 0)
+        assert (again["needed"], again["stored"], again["applied"]) == ([], 0, False)
+        dup = c.post("/v1/sync/canon", json={"chat_id": chat.id, "entries": [entries[0], entries[0]]})
+        assert dup.status_code == 422
     with psycopg.connect(migrated, row_factory=dict_row) as conn:
-        rows = canon.in_force(conn, conv_id(migrated, chat))
-        assert [(r["key"], r["content"], r["versions"]) for r in rows] == [
-            ("card:desc", DESC, 1), ("lore:kaito", LORE, 1), ("note", NOTE, 1)]
-        assert rows[1]["metadata"] == {"canon": "lore", "scope": "character", "mode": "normal", "keys": ["카이토", "카이"]}
+        rows = canon.manifest(conn, conv_id(migrated, chat))
+        assert [(r["key"], r["content"]) for r in rows] == [("card:desc", DESC), ("lore:kaito", LORE), ("note", NOTE)]
+        assert rows[1]["metadata"] == {"scope": "character", "mode": "normal", "keys": ["카이토", "카이"]}
 
 
 def test_a_text_that_does_not_match_its_hash_is_asked_for_again_and_not_stored(migrated):
@@ -84,43 +93,54 @@ def test_a_text_that_does_not_match_its_hash_is_asked_for_again_and_not_stored(m
         assert bad.status_code == 422  # instructions are not canon (PHASE-14 Q1)
 
 
-def test_an_edit_makes_a_new_version_and_a_removal_ends_one_and_a_replay_sees_the_old_canon(migrated):
+def test_edits_metadata_and_removals_make_new_manifests_and_an_older_observation_does_not_win(migrated):
     chat = a_chat()
+    t0 = int(time.time() * 1000)
     with make_client(migrated) as c:
         sync(c, chat)
-        push(c, chat, {"card:desc": (DESC, {}), "note": (NOTE, {})})
-        before = datetime.now(timezone.utc)
+        push(c, chat, {"card:desc": (DESC, {}), "lore:kaito": (LORE, {"keys": ["카이토"]}), "note": (NOTE, {})}, t0)
         edited = DESC + " 하나는 열여섯 살이다."
-        out = push(c, chat, {"card:desc": (edited, {})})  # the note is gone from the host
-        assert (out["stored"], out["changed"], out["in_force"]) == (1, 2, 1)
+        # the description edited, the entry's keys changed with the same text, the note gone
+        out = push(c, chat, {"card:desc": (edited, {}), "lore:kaito": (LORE, {"keys": ["카이토", "카이"]})}, t0 + 2000)
+        assert (out["stored"], out["applied"], out["in_force"]) == (1, True, 2)
+        # an upload of an older observation finishing late does not bring the old canon back
+        late = push(c, chat, {"card:desc": (DESC, {}), "lore:kaito": (LORE, {"keys": ["카이토"]}), "note": (NOTE, {})},
+                    t0 + 1000)
+        assert (late["applied"], late["stale"]) == (False, True)
     with psycopg.connect(migrated, row_factory=dict_row) as conn:
         cid = conv_id(migrated, chat)
-        now = canon.in_force(conn, cid)
-        assert [(r["key"], r["content"], r["versions"]) for r in now] == [("card:desc", edited, 2)]
-        then = canon.in_force(conn, cid, before)
-        assert [(r["key"], r["content"]) for r in then] == [("card:desc", DESC), ("note", NOTE)]
-        # The old text is kept, immutable, as history (invariant 1).
+        now = canon.manifest(conn, cid)
+        assert [(r["key"], r["content"], r["metadata"]) for r in now] == [
+            ("card:desc", edited, {}), ("lore:kaito", LORE, {"keys": ["카이토", "카이"]})]
+        hist = canon.history(conn, cid)
+        assert hist["card:desc"]["versions"] == 2 and hist["lore:kaito"]["versions"] == 2
+        # the old texts stay, immutable, as history (invariant 1)
         n = conn.execute("SELECT count(*) AS n FROM source_revision sr JOIN source_object so ON so.id = sr.source_object_id"
                          " WHERE so.conversation_id = %s AND so.source_kind = 'canon'", (cid,)).fetchone()["n"]
-        assert n == 3
+        assert n == 4
 
 
-def test_a_request_records_the_canon_its_prompt_held_and_the_inspector_lists_canon(migrated):
+def test_a_request_records_its_canon_and_replays_with_it_even_when_the_texts_arrive_later(migrated):
     chat = a_chat()
     with make_client(migrated) as c:
         sync(c, chat)
-        push(c, chat, {"card:desc": (DESC, {}), "lore:kaito": (LORE, {"scope": "character", "mode": "normal",
-                                                                        "keys": ["카이토"]})})
-        recall(c, chat, "카이토는 어디 있어?", canon_held=["lore:kaito", "card:desc"])
-        recall(c, chat, "카이토는 어디 있어?", canon_held=["card:desc"])
+        push(c, chat, {"card:desc": (DESC, {})})
+        edited = DESC + " 하나는 열여섯 살이다."
+        new_manifest = canon.manifest_id([entry("card:desc", edited)])
+        # the plugin sends the request first (its prompt already has the edit), the texts after it
+        out = recall(c, chat, "하나는 몇 살이야?", canon_manifest_id=new_manifest, canon_held=["card:desc"])
+        push(c, chat, {"card:desc": (edited, {})})
+        recall(c, chat, "하나는 몇 살이야?", canon_manifest_id=new_manifest, canon_held=["card:desc"])
         cid = conv_id(migrated, chat)
         page = c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
         section = page[page.index('id="s-canon"'):page.index("</details>", page.index('id="s-canon"'))]
-        assert "Canon (card, lorebooks, persona, author" in section and "lore:kaito" in section
-        assert "2×, last" in section and "1×, last" in section and "character · normal · 1 keys" in section
+        assert "Canon (card, lorebooks, persona, author" in section and "2×, last" in section
     with psycopg.connect(migrated, row_factory=dict_row) as conn:
-        held = canon.held(conn, cid)
-        assert {k: v["requests"] for k, v in held.items()} == {"card:desc": 2, "lore:kaito": 1}
+        trace = conn.execute("SELECT canon_manifest_id, canon_held FROM retrieval_trace WHERE id = %s",
+                             (out["trace_id"],)).fetchone()
+        assert (trace["canon_manifest_id"], trace["canon_held"]) == (new_manifest, ["card:desc"])
+        assert [r["content"] for r in canon.manifest(conn, cid, trace["canon_manifest_id"])] == [edited]
+        assert canon.held(conn, cid)["card:desc"]["requests"] == 2
 
 
 def test_canon_reaches_no_message_pipeline_and_goes_with_the_chat(migrated):
@@ -147,5 +167,6 @@ def test_canon_reaches_no_message_pipeline_and_goes_with_the_chat(migrated):
                                 " WHERE o.source_kind = 'canon'").fetchone()["n"] == 0
         assert c.post(f"/v1/conversations/{cid}/delete").status_code == 200
     with psycopg.connect(migrated, row_factory=dict_row) as conn:
-        assert conn.execute("SELECT count(*) AS n FROM canon_state").fetchone()["n"] == 0
+        for table in ("canon_manifest", "canon_applied"):
+            assert conn.execute(f"SELECT count(*) AS n FROM {table}").fetchone()["n"] == 0
         assert conn.execute("SELECT count(*) AS n FROM source_object WHERE source_kind = 'canon'").fetchone()["n"] == 0

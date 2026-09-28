@@ -235,6 +235,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
         "again what the host already sends."),
     "cn.persona": ("페르소나", "persona"), "cn.lore": ("로어북", "lorebook"), "cn.keys": ("키 {n}개", "{n} keys"),
     "cn.held": ("{n}회, 마지막", "{n}×, last"), "cn.never": ("아직 없음", "not yet"),
+    "cn.missing": ("텍스트가 아직 오지 않음", "text not received yet"),
     "rk.thread_close": ("스레드 닫기", "close a thread"), "rk.thread_reopen": ("스레드 다시 열기", "reopen a thread"),
     "rk.secret_found_out": ("비밀을 알게 됨", "secret found out"), "rk.secret_keep": ("비밀 유지", "secret still kept"),
     "rk.fact_retract": ("사실 철회", "retract a fact"), "rk.fact_correct": ("사실 정정", "correct a fact"),
@@ -824,7 +825,8 @@ def _repairs_table(repairs: list[dict[str, Any]], lang: str) -> str:
             + f"<p class=\"muted\">{_v(_t(lang, 'or.note'))}</p>")
 
 
-def _canon_table(rows: list[dict[str, Any]], held: dict[str, dict[str, Any]], lang: str) -> str:
+def _canon_table(rows: list[dict[str, Any]], history: dict[str, dict[str, Any]], held: dict[str, dict[str, Any]],
+                 lang: str) -> str:
     """The chat's canon in force (ADR 0045): what each text is, how long, since when and in how many versions, and
     whether a request's prompt held it (the host sends what it activates; NMOS does not repeat it, D3)."""
     def what(r: dict[str, Any]) -> str:
@@ -838,11 +840,17 @@ def _canon_table(rows: list[dict[str, Any]], held: dict[str, dict[str, Any]], la
         return (_v(_t(lang, "cn.held").format(n=h["requests"])) + " " + timestamp(h["last_at"])) if h \
             else f"<span class=\"muted\">{_v(_t(lang, 'cn.never'))}</span>"
 
+    def text(r: dict[str, Any]) -> str:
+        c = r.get("content")
+        return _v(c[:120] + ("…" if len(c) > 120 else "")) if c is not None \
+            else f"<span class=\"warn\">{_v(_t(lang, 'cn.missing'))}</span>"
+
     return (table([_t(lang, k) for k in ("h.source", "h.key", "h.what", "h.chars", "h.versions", "h.since", "h.held",
                                          "h.text")],
-                  [[chip(lang, "cn", r["metadata"].get("canon") if r["metadata"] else r["key"].split(":")[0]),
-                    _v(r["key"]), what(r), _v(len(r["content"])), _v(r["versions"]), timestamp(r["since"]),
-                    seen(r["key"]), _v(r["content"][:120] + ("…" if len(r["content"]) > 120 else ""))]
+                  [[chip(lang, "cn", r["key"].split(":")[0]), _v(r["key"]), what(r),
+                    _v(len(r["content"]) if r.get("content") is not None else "—"),
+                    _v((history.get(r["key"]) or {}).get("versions", 1)),
+                    timestamp((history.get(r["key"]) or {}).get("since")), seen(r["key"]), text(r)]
                    for r in rows[:500]])
             + f"<p class=\"muted\">{_v(_t(lang, 'cn.about'))}</p>")
 
@@ -915,6 +923,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            unrevealed: list[dict[str, Any]] | None = None, standing: list[dict[str, Any]] | None = None,
            summaries: dict[str, Any] | None = None, repairs: list[dict[str, Any]] | None = None,
            last_turn: int | None = None, canon_rows: list[dict[str, Any]] | None = None,
+           canon_history: dict[str, dict[str, Any]] | None = None,
            canon_held: dict[str, dict[str, Any]] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
@@ -954,7 +963,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         live = sum(1 for rep in repairs if not rep.get("removed_at"))
         parts.append(("repairs", t("repairs"), live, _repairs_table(repairs, lang), True))
     if canon_rows:
-        parts.append(("canon", t("canon"), len(canon_rows), _canon_table(canon_rows, canon_held or {}, lang), False))
+        parts.append(("canon", t("canon"), len(canon_rows),
+                      _canon_table(canon_rows, canon_history or {}, canon_held or {}, lang), False))
     if facts:
         parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
     if items:
