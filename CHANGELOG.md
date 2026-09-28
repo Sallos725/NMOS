@@ -27,7 +27,8 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
   - M0 has 12 more owner-confirmed cases whose answers lie outside the prompt's own messages: 2 of 12 on Phase 11.
   - **Scene summaries and the story so far** (ADR 0042, migration 0023), written in the background by the extraction
     model for every 8-turn window and kept current through edits, deletes and swipes. **Off by default**
-    (`NMOS_SUMMARIES`); the Inspector shows them; they reach no packet yet.
+    (`NMOS_SUMMARIES`); the Inspector shows them; they reach no packet yet. The prompt lists the secrets still kept
+    from someone and says to leave them out; a summary that repeats one is held back when it is read.
 - **Phase 11 (Stage 5, part 1) is complete** (`docs/phases/PHASE-11.md`, 2026-09-28; no release decided):
   - M0, an evaluation on a restored copy of the owner's chats (`tools/eval_rp.py`, numbers only in
     `docs/perf/m0-baseline.md`): 13 of 28 owner-confirmed cases on the Phase 10 code, 15 after step 3.

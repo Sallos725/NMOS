@@ -717,7 +717,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     unrevealed=view["unrevealed"],
                                     standing=[f for f in view["facts"] if f["predicate"] in STANDING],
                                     packet=audit.audit(conn, traces[0]["id"]) if traces else None,
-                                    summaries=summaries.current(conn, conv_id, head, rt.get("active_summarizer"))
+                                    summaries=summaries.current(conn, conv_id, head, rt.get("active_summarizer"), view["secrets"])
                                     if rt.get("active_summarizer") else None)
 
     def inspector_character_html(conv_id: UUID, entity_id: UUID, request: Request, token: str | None,

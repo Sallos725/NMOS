@@ -97,7 +97,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "h.speech": ("말투·호칭", "Speech"), "before": ("이전", "before"), "first": ("처음", "first"),
     "summaries": ("요약 (장면·지금까지의 이야기)", "Summaries (scenes, story so far)"), "toc.summaries": ("요약", "Summaries"),
     "story": ("지금까지의 이야기", "Story so far"), "h.turns": ("턴", "Turns"), "h.summary": ("요약", "Summary"),
-    "sm.current": ("있음", "current"), "sm.waiting": ("대기", "waiting"), "sm.held": ("보류", "held back"),
+    "sm.current": ("있음", "current"), "sm.waiting": ("대기", "waiting"), "sm.held": ("보류: 비밀을 담음", "held back: repeats a secret"),
     "sm.story_covers": ("장면 {n}개까지", "scenes 1–{n}"), "sm.none": ("아직 요약할 장면이 없습니다 ({w}턴마다 한 장면, 뒤로 {l}턴이 더 지나면 요약).",
                                                       "No scene to summarize yet (one scene per {w} turns, summarized {l} turns later)."),
     "other": ("실제가 아닌 단언 (가정·꿈·미상)", "Not actual (hypothetical, dreamed, unknown)"),
@@ -529,7 +529,8 @@ def _summaries_section(view: dict[str, Any], lang: str) -> str:
     out = ""
     if story := view.get("story"):
         covers = _t(lang, "sm.story_covers").format(n=len(story["members"]))
-        out += (f"<p><b>{_t(lang, 'story')}</b> <span class=\"muted\">({covers})</span><br>{_v(story['text'])}</p>")
+        held = f" {chip(lang, 'sm', 'held')}" if view.get("story_held") else ""
+        out += (f"<p><b>{_t(lang, 'story')}</b> <span class=\"muted\">({covers})</span>{held}<br>{_v(story['text'])}</p>")
 
     def state(x: dict[str, Any]) -> str:
         if x["summary"] is None:
