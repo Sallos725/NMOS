@@ -1,7 +1,8 @@
 """Seed the isolated PocketRisu v1.13.0 (port 6141) for Phase 14 step 2 with synthetic canon: one character with a
 card, a character lorebook (a keyed entry, an always-active entry, a folder and an entry in it), a chat with an
 author's note and a local lorebook entry, a bound persona with a prompt, and an enabled module with a lorebook.
-The model is the local stub. Run with the container stopped."""
+The model is the local stub on port 8806. Run with the container stopped, after `first.mjs` opened the fresh instance
+once: `uv run --with msgpack python seed.py [messages] [other chat messages]` (msgpack for this script only)."""
 import sqlite3
 import sys
 from pathlib import Path
@@ -56,6 +57,9 @@ def main():
     blob = b"\x00RISUSAVE\x00\x07" + msgpack.packb(db, use_bin_type=True)
     con = sqlite3.connect(HERE / "save" / "risuai.db")
     n = con.execute("update kv set value=? where key='database/database.bin'", (blob,)).rowcount
+    if n != 1:  # open the fresh instance once first (first.mjs): it writes the row this replaces
+        con.rollback()
+        raise SystemExit(f"expected one database/database.bin row, found {n}; nothing changed")
     con.execute("delete from manifest_chunks where manifest_key='database/database.bin'")
     con.execute("delete from kv where key like 'database/dbbackup-%'")
     con.commit()

@@ -386,8 +386,9 @@ lines: `fixtures/host/canon-v1.13.0-2026-09-28/`. **Source reading:** tag `v1.13
    - a keyed entry in the request whose recent messages named it;
    - the entry in the folder, never named, in none.
 
-   The card's `desc`, `personality`, `scenario` and the greeting, the chat's author's note and the bound persona's
-   `personaPrompt` were in every prompt verbatim.
+   The card's `desc`, `personality` and `scenario`, the chat's author's note and the bound persona's
+   `personaPrompt` were in every prompt verbatim. The greeting was in every prompt of the short chat. On the
+   10,000-message chat it was in none, because the host cut the oldest part of the chat to fit the context.
 5. **The chat.** `getChatFromIndex` carries `note` (the author's note), `localLore`, `bindedPersona`, `fmIndex` and
    `id`: the fields NMOS already reads with the chat, at the same cost (80–83 ms at 10,000 messages, as the sync
    already pays).
