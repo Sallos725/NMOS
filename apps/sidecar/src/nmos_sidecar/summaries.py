@@ -270,7 +270,8 @@ def _scene_grams(conn: psycopg.Connection, scenes: list[dict[str, Any]]) -> dict
     return out
 
 
-# What a request needs of the summaries, in one query (`current`, `_story`, `due`): the head's current scene summaries,
+# What a request needs of the summaries, in one query (`current`, `_story`, `due`): the head's current scene summaries
+# with the last turn of the window each is current for (a delete of whole windows moves a summary to an earlier one),
 # the newest story made only from them, and the earliest turn of the messages the prompt holds. A scene summary is
 # current when its members are its window's members, compared in the database, which is what its key says
 # (`members_key`). A request reads no member lists, and a scene's text only when it has not seen that summary (its
@@ -282,15 +283,17 @@ _CURRENT = (
     "WITH c AS (SELECT conversation_id AS id FROM worldline_commit WHERE id = %(head)s),"
     " d AS (SELECT (greatest(0, coalesce(max(turn), -1) + 1 - %(lag)s) / %(w)s) * %(w)s AS e FROM active_membership"
     " WHERE commit_id = %(head)s AND turn_hash IS NOT NULL AND " + _UPTO.format("") + "),"
-    " w AS (SELECT array_agg(source_revision_id ORDER BY position) AS members FROM active_membership"
-    " WHERE commit_id = %(head)s AND turn >= 0 AND turn < (SELECT e FROM d) GROUP BY turn / %(w)s),"
+    " w AS (SELECT array_agg(source_revision_id ORDER BY position) AS members, turn / %(w)s AS i FROM active_membership"
+    " WHERE commit_id = %(head)s AND turn >= 0 AND turn < (SELECT e FROM d) GROUP BY i),"
     " f AS (SELECT min(am.turn) AS t FROM active_membership am JOIN source_revision sr ON sr.id = am.source_revision_id"
     " JOIN source_object so ON so.id = sr.source_object_id WHERE am.commit_id = %(head)s"
     " AND so.conversation_id = (SELECT id FROM c) AND so.host_logical_id = ANY(%(ctx)s) AND " + _UPTO.format("am.") + "),"
-    " scenes AS (SELECT s.id, s.level, s.first_turn, s.last_turn FROM summary s JOIN w ON s.members = w.members"
+    " scenes AS (SELECT s.id, s.level, s.first_turn, s.last_turn, (w.i + 1) * %(w)s - 1 AS window_last FROM summary s"
+    " JOIN w ON s.members = w.members"
     " WHERE s.conversation_id = (SELECT id FROM c) AND s.generation = %(key)s AND s.level = 'scene' AND " + _AS_OF_S + ")"
-    " SELECT id::text, level, first_turn, last_turn, NULL::text AS text, NULL::jsonb AS coverage, (SELECT t FROM f) AS before"
-    " FROM scenes UNION ALL (SELECT s.id::text, s.level, s.first_turn, s.last_turn, s.text, s.coverage, NULL FROM summary s"
+    " SELECT id::text, level, first_turn, last_turn, window_last, NULL::text AS text, NULL::jsonb AS coverage,"
+    " (SELECT t FROM f) AS before FROM scenes UNION ALL (SELECT s.id::text, s.level, s.first_turn, s.last_turn, NULL,"
+    " s.text, s.coverage, NULL FROM summary s"
     " WHERE s.conversation_id = (SELECT id FROM c) AND s.generation = %(key)s AND s.level = 'story'"
     " AND cardinality(s.members) > 0 AND s.members <@ ARRAY(SELECT id FROM scenes) AND " + _AS_OF_S
     + " ORDER BY s.created_at DESC, s.id DESC LIMIT 1)")
@@ -320,7 +323,7 @@ def packet_lines(conn: psycopg.Connection, head: UUID, key: str, secrets: list[d
     if query.strip() and scenes:
         asked, grams = _grams(query), _scene_grams(conn, scenes)
         scored = sorted(((_overlap(asked, grams[x["id"]]), x["last_turn"], x) for x in scenes
-                         if grams.get(x["id"]) and (before_turn is None or x["last_turn"] < before_turn)),
+                         if grams.get(x["id"]) and (before_turn is None or x["window_last"] < before_turn)),
                         key=lambda t: (t[0], t[1]), reverse=True)
         for score, _, x in scored:
             if score < SCENE_MIN:

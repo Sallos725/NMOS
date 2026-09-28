@@ -611,3 +611,23 @@ def test_a_request_keeps_its_own_trigrams_when_another_clears_the_cache():
     grams = summaries._scene_grams(Conn(), [{"id": "a"}, {"id": "b"}])
     summaries._GRAMS.clear()  # another request crossing the cap
     assert grams["a"] == {"cached"} and grams["b"] and set(grams) == {"a", "b"}
+
+
+def test_a_summary_moved_to_an_earlier_window_is_judged_by_that_window(migrated, db):
+    """Codex review of #139: deleting a whole window's turns moves the later summaries to earlier windows (their members
+    are unchanged). Whether a scene is older than the prompt is a question about the window it is current for now, not
+    the turns it was written at."""
+    chat = story_chat(30)
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        drain(migrated)
+        for _ in range(16):  # the first eight turns
+            chat.delete(0)
+        sync(c, chat)
+        in_context = [m["chatId"] for m in chat.messages[24:]]  # from the current turn 12 on
+        text = c.post("/v1/retrieve", json={"chat_id": chat.id, "query": "What happened when Turn 9 begins?",
+                                            "previous_ai": "", "budget_tokens": 2000,
+                                            "in_context_ids": in_context}).json()["packet"]["text"]
+        v = view(migrated, c, chat)
+    assert v["scenes"][0]["summary"]["first_turn"] == 8  # written for turns 8–15, current now for window 0–7
+    assert "Turn 9 begins" in text[text.index("<Story>"):text.index("</Story>")]
