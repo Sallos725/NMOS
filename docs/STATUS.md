@@ -16,6 +16,11 @@ Step 6 (ADR 0040, `packet-v6`): stated causes in the packet and linked in the In
 answers the prompt's own last messages hold (`docs/perf/m0-baseline.md`): 23 → 26 of 28, and of the 9 cases that
 need memory 5 → 7. Next: step 7 (Inspector views), step 8 (evaluation tiers, real-host smoke, upgrade).
 
+Outside the phase (found in the Phase 11 real-host smoke; owner decision 2026-09-28): `packet-v7`, the default, numbers
+an excerpt's `turn` and a state item's `as_of_turn` by the turn of their message, as facts and threads are numbered
+(ADR 0041, D51); earlier policies and their traces are unchanged. The compose files pass the packet policy empty, so a
+compose install gets the sidecar's default (they had pinned `packet-v4`).
+
 **Phase 10 — Knowledge and Secrets (Stage 4): complete (2026-09-27), not released (owner).** Spec
 `docs/phases/PHASE-10.md` (every acceptance criterion met), ADRs 0033–0037, D43–D47, migration 0021. A secret is
 what the story keeps from someone and ends when they find it out (`extract-v12`); what someone in the scene does

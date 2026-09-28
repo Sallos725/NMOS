@@ -431,7 +431,7 @@ beside promises: the prompt lists OPEN THREADS, and `resolved` ends one by owner
 0022 stores it, and a cause the story states in `because`). Rows of earlier generations keep goals as facts. Reveals are
 applied before threads are folded, so a revealed goal or promise is revealed as a thread too.
 
-**D50 — Stated causes (Phase 11, ADR 0040).** The default policy `packet-v6` shows a fact's or claim's stated cause
+**D50 — Stated causes (Phase 11, ADR 0040).** `packet-v6` (the default until D51) shows a fact's or claim's stated cause
 (`; because: …`), counts its words in relevance, and ranks facts with a cause higher when the message asks why. At read
 time a cause links to the event it names only when one of the same people, at most 5 turns back, clearly matches with
 names left out; links show in the Inspector, never in the packet. No cause is inferred.
