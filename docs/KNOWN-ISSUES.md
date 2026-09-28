@@ -1,6 +1,6 @@
 # NMOS Known Issues
 
-Current as of `v0.1.0-beta.21` (2026-09-26), with changes since then noted. This is the single list of what does not work, or works
+Current as of `v0.2.0` (2026-09-28). This is the single list of what does not work, or works
 only partly, in the current release. Each release's "Known limitations" in `CHANGELOG.md` describes
 that release at the time; entries fixed later are listed under [Resolved](#resolved) below.
 
@@ -17,9 +17,9 @@ without a PocketRisu change.
 | K5 | Every generation hangs after installing, updating or disabling the plugin until reload | Host | host (H13) |
 | K6 | PocketRisu must be opened at `localhost` or HTTPS | Host | browser rule |
 | K7 | Tested on one PocketRisu build only; no group chats | Host | evidence / host (H11) |
-| K8 | A new name with no stated alias is a new entity, and a wrong alias joins two, until the owner joins or splits them | Memory | reduced in beta.12 (ADR 0012); the owner joins (ADR 0025) and splits (ADR 0044, on `main`) in the panel |
+| K8 | A new name with no stated alias is a new entity, and a wrong alias joins two, until the owner joins or splits them | Memory | reduced in beta.12 (ADR 0012); the owner joins (ADR 0025) and splits (ADR 0044, 0.2.0) in the panel |
 | K9 | A destroyed or used-up item keeps its last holder in turns not extracted by `extract-v6` | Memory | fixed for new turns in beta.13 (ADR 0017); older turns: "extract all history" |
-| K11 | A secret is kept by instruction, not isolation: the model can still voice it | Memory | on `main`: Private section, strict and narrator modes (Phase 10); hard POV not planned |
+| K11 | A secret is kept by instruction, not isolation: the model can still voice it | Memory | 0.2.0: Private section, strict and narrator modes (Phase 10); hard POV not planned |
 | K12 | A word in more than 200 messages brings no lexical excerpts | Recall | accepted trade-off (A3) |
 | K13 | Very long messages are only partly embedded and extracted | Recall | accepted limit (#13) |
 | K14 | Rare over-injection into an auxiliary call; transformed input gets no memory | Gating | accepted (ADR 0001) |
@@ -27,19 +27,19 @@ without a PocketRisu change.
 | K16 | NMOS does not notice a chat deleted in PocketRisu | Data | host (H10) |
 | K17 | Storage grows with abandoned branches | Data | O5 decided: superseded vectors pruned (ADR 0015), observations compacted (ADR 0018); abandoned branches kept |
 | K18 | Changing a model or endpoint re-processes history at the provider's cost | Data | LLM: bounded to the recent window since beta.11 (ADR 0014); embeddings: by design |
-| K19 | Plugin and sidecar versions are not checked against each other | Setup | shown, not enforced, on `main` (ADR 0037) |
+| K19 | Plugin and sidecar versions are not checked against each other | Setup | shown, not enforced, since 0.2.0 (ADR 0037) |
 | K20 | Small UI delays: bot name, menu language | UI | not planned |
 | K21 | API keys and the auth token are stored in plain text | Security | host (H12) |
 | K22 | What becomes a fact depends on the extraction model's labels | Memory | measured per model (`docs/perf/phase5-extraction.md`, `phase7-extraction.md`, `phase8-extraction.md`) |
-| K23 | A thread (promise, goal, question, threat, debt) stays open until the story ends it in words extraction recognizes, or the owner closes it | Memory | beta.14 (ADR 0019), `extract-v13` (ADR 0039, unreleased); owner repair on `main` (Phase 13, ADR 0044) |
-| K24 | A relationship change recorded under the other predicate leaves both lines current | Memory | the direction case closed on `main` (ADR 0038, unreleased); the predicate case shown with turns by design |
+| K23 | A thread (promise, goal, question, threat, debt) stays open until the story ends it in words extraction recognizes, or the owner closes it | Memory | beta.14 (ADR 0019), `extract-v13` (ADR 0039) and owner repair (Phase 13, ADR 0044) in 0.2.0 |
+| K24 | A relationship change recorded under the other predicate leaves both lines current | Memory | the direction case closed in 0.2.0 (ADR 0038); the predicate case shown with turns by design |
 | K25 | A speech level or form of address can still be missed or cut | Memory | ranking (ADR 0026) and `addresses` (ADR 0028); turns before `extract-v10`: "Extract all history" |
 | K26 | The packet's token estimate over-counts Korean, so the reserve is under-used | Recall | reduced by `packet-v2` (ADR 0032, owner decision); still conservative by design |
-| K27 | Before `extract-v11` / `clean-v3`: an OOC note or memory-like markup inside a reply could become a fact | Memory | fixed on `main`, unreleased (audit A-12); older turns: "Extract all history" |
+| K27 | Before `extract-v11` / `clean-v3`: an OOC note or memory-like markup inside a reply could become a fact | Memory | fixed in 0.2.0 (audit A-12); older turns: "Extract all history" |
 | K28 | Taking turns in one chat from two tabs or devices makes memory of the messages one of them lacks drop out and come back | Data | host (H10); not planned (audit A-13) |
 | K29 | A reveal in the turns first extracted together can be missed | Memory | "Extract all history" after connecting a chat with secrets (ADR 0033 amendment 2) |
-| K30 | A summary can say a secret in other words | Memory | on `main` (Phase 12, ADR 0042, 0043); summaries off for a chat where it matters |
-| K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced on `main` (Phase 14, ADR 0046: lorebook keys as aliases) |
+| K30 | A summary can say a secret in other words | Memory | since 0.2.0 (Phase 12, ADR 0042, 0043); summaries off for a chat where it matters |
+| K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases) |
 | K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | recorded, not scheduled (`docs/perf/m0-sample2.md`) |
 
 ## Performance

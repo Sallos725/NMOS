@@ -1,7 +1,7 @@
 //@name nmos_memory
 //@display-name NMOS Narrative Memory
 //@api 3.0
-//@version 0.1.0-beta.21
+//@version 0.2.0
 //@link https://github.com/Sallos725/NMOS Documentation
 //@update-url https://raw.githubusercontent.com/Sallos725/NMOS/main/adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js
 //@arg sidecar_url string NMOS sidecar URL (empty = http://127.0.0.1:8790)
@@ -16,7 +16,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:7f14eeb91653".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:91f2ba96f84a".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2916,6 +2916,6 @@ html,body{margin:0;background:#0c0c10}
       hud
     );
     adapter.warmPersonas();
-    console.log("[NMOS] adapter loaded", { version: "0.1.0-beta.21" });
+    console.log("[NMOS] adapter loaded", { version: "0.2.0" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));
 })();
