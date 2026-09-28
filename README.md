@@ -47,7 +47,7 @@ continues without memory.
 3. Set the plugin argument `sidecar_url` to `http://127.0.0.1:8790`.
 4. **Reload the PocketRisu page.** Always reload after installing, updating or disabling a plugin —
    otherwise PocketRisu can hang on the next message (a PocketRisu bug, see ARCHITECTURE H13).
-5. Lower PocketRisu's max context by `reserved_memory_tokens` (default 800) so the packet fits.
+5. Lower PocketRisu's max context by `reserved_memory_tokens` (default 2000) so the packet fits.
 
 That's it: raw recall works with no model configured. The panel's **Inspector** tab shows what NMOS
 stored and what it injected.
@@ -173,7 +173,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_EMBED_URL` / `NMOS_EMBED_MODEL` | off | Semantic recall, e.g. `qwen3-embedding:0.6b` |
 | `NMOS_EXTRACT_BACKFILL` | `100` | On first sight of a chat, extract only the latest N **turns** (cost control; the rest on request) |
 | `NMOS_EXTRACT_TURNS` | `3` | Previous turns an extraction sees as context |
-| `NMOS_SUMMARIES` | `0` | `1`: the extraction model also summarizes each 8-turn scene and the story so far, in the background (ADR 0041). Phase 12, in progress: shown in the Inspector, not yet in the packet |
+| `NMOS_SUMMARIES` | `1` | The extraction model also summarizes each 8-turn scene and the story so far, in the background (ADR 0041); `packet-v7` puts them in `<Story>`. `0` turns this off (so does the panel) |
 | `NMOS_EXTRACT_HINTS` | `40` | Entity names from earlier in the chat shown to extraction so it reuses them; `0` turns this off |
 | `NMOS_EMBED_BACKFILL` | `2000` | On first sight of a chat, embed the latest N messages (cheap; covers long histories) |
 | `NMOS_WORKER_CONCURRENCY` | `2` | Parallel background jobs |
@@ -182,7 +182,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_VECTOR_MIN_SIM` | `0.42` | Minimum cosine similarity for semantic recall (model-dependent) |
 | `NMOS_EMBED_QUERY_INSTRUCTION` | `auto` | Query instruction for instruction-tuned embedders (`auto` = Qwen3 format for `qwen3-embedding`; `none`; or your text) |
 | `NMOS_TRACE_RETENTION_DAYS` | `30` | How long retrieval traces (with each packet's ledger) are kept |
-| `NMOS_PACKET_POLICY` | `packet-v6` | Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040): `packet-v6` also shows the cause the story states on a fact (`; because: …`); `packet-v5` names what a relationship, feeling or speech level replaced, with its turn; `packet-v4` leaves out lines that say an earlier line again (a fact extracted twice, a character's claim of what the narration states); `packet-v3` puts facts only some characters in the scene know in a `<Private>` section with a rule for them; `packet-v2` is the same without it (room kept for the best excerpt, Korean counted at 1.2 tokens a character); `packet-v1` counts 1.5, `packet-v0` the one before |
+| `NMOS_PACKET_POLICY` | `packet-v7` | Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0042): `packet-v7` adds `<Story>` (the story so far and the scene the message is about, at most 30 % of the budget) and `<Cast>` (each scene character's place, condition, feeling, what they carry and, when named, open goals); `packet-v6` also shows the cause the story states on a fact (`; because: …`); `packet-v5` names what a relationship, feeling or speech level replaced, with its turn; `packet-v4` leaves out lines that say an earlier line again (a fact extracted twice, a character's claim of what the narration states); `packet-v3` puts facts only some characters in the scene know in a `<Private>` section with a rule for them; `packet-v2` is the same without it (room kept for the best excerpt, Korean counted at 1.2 tokens a character); `packet-v1` counts 1.5, `packet-v0` the one before |
 | `NMOS_AUTH_TOKEN` | off | Required if you expose the sidecar beyond loopback (`NMOS_SIDECAR_BIND`); set the plugin's `auth_token` too. See [Security](#security) |
 | `NMOS_ALLOWED_HOSTS` | (empty) | Without a token, domain names the sidecar answers to besides IP addresses, `localhost` and single-label names such as `nmos`: e.g. `risu.example.com,*.ts.net`; `*` turns the check off. See [Security](#security) |
 | `NMOS_SIDECAR_BIND` / `NMOS_SIDECAR_PORT` | `127.0.0.1` / `8790` | Where the sidecar listens |

@@ -4,7 +4,7 @@ needs, and keep out what it must not? Read-only; point it at a restored backup (
 The cases are the owner's chats and stay outside the repository; the report prints numbers only.
 
     cd apps/sidecar
-    uv run python ../../tools/eval_rp.py DIR --db postgresql://…/copy [--extractor KEY] [--policy P] [--budget N]
+    uv run python ../../tools/eval_rp.py DIR --db postgresql://…/copy [--extractor KEY] [--summarizer KEY] [--policy P] [--budget N]
         [--no-vectors] [--json]
 
 DIR/cases.json:
@@ -53,12 +53,13 @@ def norm(text: str) -> str:
 
 
 BEFORE = re.compile(r"; before, turn -?\d+: [^<]*")  # packet-v5: what a standing fact replaced, and how it started
+STORY = re.compile(r"<Story>.*?</Story>", re.S)  # summaries tell the past (packet-v7, ADR 0042)
 
 
 def score(case: dict[str, Any], text: str, prompt: str = "") -> dict[str, Any]:
     """How a packet's text answers one case: gold phrases the model has (in the packet, or in the prompt's own
     messages: `prompt`), forbidden ones placed as current, pass."""
-    held, in_prompt, packet, current, window = [], 0, norm(text), norm(BEFORE.sub("", text)), norm(prompt)
+    held, in_prompt, packet, current, window = [], 0, norm(text), norm(BEFORE.sub("", STORY.sub("", text))), norm(prompt)
     for phrase in case.get("gold") or []:
         wordings = [norm(w) for w in ([phrase] if isinstance(phrase, str) else phrase) if w.strip()]
         if any(w in packet for w in wordings):
@@ -95,11 +96,13 @@ def options(conn: psycopg.Connection, use_vectors: bool) -> RecallOptions:
 
 
 def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: RecallOptions, policy: str | None = None,
-             extractor: str | None = None, budget: int | None = None) -> dict[str, Any]:
+             extractor: str | None = None, budget: int | None = None, summarizer: str | None = None) -> dict[str, Any]:
     """Every case's numbers, and a summary per category and overall. Read-only."""
     results: list[dict[str, Any]] = []
     overrides = {"extractor_key": extractor} if extractor else {}
-    known_at = datetime.now(timezone.utc) if extractor else None
+    if summarizer:  # summaries of this generation in <Story> (packet-v7, ADR 0042), as of now
+        overrides["summarize_key"] = summarizer
+    known_at = datetime.now(timezone.utc) if extractor or summarizer else None
     for case in cases:
         out = audit.replay(conn, UUID(case["trace"]), opts, policy, known_at=known_at, query=case.get("query"),
                            budget=budget, **overrides)
@@ -143,6 +146,7 @@ def main() -> None:
     ap.add_argument("dir", type=Path, help="the case directory (outside the repository)")
     ap.add_argument("--db", default=os.environ.get("NMOS_DATABASE_URL", Settings().database_url))
     ap.add_argument("--extractor", help="a newer extractor generation's key: compile as of now with its facts")
+    ap.add_argument("--summarizer", help="a summarize generation's key: <Story> from its summaries as of now")
     ap.add_argument("--policy", help="a packet policy in place of each request's own")
     ap.add_argument("--budget", type=int, help="a memory budget (tokens) in place of each request's own")
     ap.add_argument("--no-vectors", action="store_true")
@@ -151,7 +155,8 @@ def main() -> None:
     cases = json.loads((args.dir / "cases.json").read_text(encoding="utf-8"))
     with psycopg.connect(args.db, row_factory=dict_row, autocommit=True,
                          options="-c default_transaction_read_only=on") as conn:
-        report = evaluate(conn, cases, options(conn, not args.no_vectors), args.policy, args.extractor, args.budget)
+        report = evaluate(conn, cases, options(conn, not args.no_vectors), args.policy, args.extractor, args.budget,
+                          args.summarizer)
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:

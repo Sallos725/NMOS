@@ -28,12 +28,19 @@ log = logging.getLogger("nmos.worker")
 def handlers(settings: Settings) -> Handlers:
     out: Handlers = {}
     ex = extractor(settings)
+    sm = summaries.summarizer(settings)
     if ex is not None:
         model = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
                           settings.llm_json_mode)
-        out["extract"] = (ex.key, lambda conn, job: process_extract(conn, job, model.complete_json, ex,
-                                                                     settings.extract_turns))
-    sm = summaries.summarizer(settings)
+
+        def extract(conn: psycopg.Connection, job: dict[str, Any]) -> str:
+            status = process_extract(conn, job, model.complete_json, ex, settings.extract_turns)
+            if status == "done" and sm is not None:  # a secret it stated may be one a summary was not told about
+                with conn.transaction():
+                    summaries.schedule_stale(conn, job["conversation_id"], sm.key)
+            return status
+
+        out["extract"] = (ex.key, extract)
     if sm is not None:
         writer = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
                            settings.llm_json_mode)

@@ -109,7 +109,10 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
    The owner accepted it (2026-09-28) and approved step 5 with the backfill size given (11 scene and 2 story calls on
    the restored copy, about 275,000 characters).
 5. `packet-v7`: `<Story>` and `<Cast>`, the budget share, narrator and strict handling (ADR). Before it merges, the
-   owner is told the backfill size (Q7).
+   owner is told the backfill size (Q7). **Done** (ADR 0042, ADR 0041 amendment 2). The stories did not fit 30 % of
+   800 tokens (a stop condition); the owner chose a default budget of 2,000 (2026-09-28). A summary that restated a
+   secret stated after it (another stop condition); the owner chose to write such summaries again. M0 with `gemma4`
+   extraction: 2 → 5 of the 12 new cases, 26 of 28 kept (`docs/perf/summaries.md`).
 6. Inspector views (summaries, story so far, character state).
 7. Evaluation, real-host smoke, upgrade, latency, documentation.
 

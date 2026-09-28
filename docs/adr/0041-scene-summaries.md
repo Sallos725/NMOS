@@ -58,3 +58,18 @@ at 0.7 or more marks the summary held (the Inspector shows it; step 5 keeps it o
 the head at that time, so a secret extracted after the summary was written counts too. The check catches a copied
 secret (0.76 on the real-model tier), not a reworded one (about 0.3): the prompt is the guard, the check a backstop.
 Real-model tier: `gemma4` 21/24, `deepseek` 24/24, neither wrote a secret's content (`docs/perf/summaries.md`).
+
+## Amendment 2 — secrets stated after a summary (Phase 12 step 5)
+
+`summarize-v3`. On the owner's chat a kiss at turns 61–63 was stated to be kept from a character only at turns 64 and
+68, after the summaries of its window were written. The story so far then said it in other words, in the scene where
+that character asks what happened.
+
+- Each summary's prompt now lists the secrets stated up to 8 turns (`NEAR`) after its window, and records which it
+  listed. The story's prompt lists them too.
+- When a summary is read, a secret it should have listed and did not (`unlisted`) holds it, as a repeated one does.
+- After each extraction the worker queues again every summary that such a secret now holds, and the story. A summary
+  written again replaces the old one (the old row is discarded, kept for audit).
+
+The same story then read "…신체적 접촉을 통해 애정을 확인했습니다" (`docs/perf/summaries.md`). A reworded secret can
+still pass (K30).

@@ -57,7 +57,8 @@ def jobs(db, status: str = "queued") -> list[dict]:
 
 
 def test_the_generation_needs_the_switch_and_a_model():
-    assert summaries.summarizer(Settings(**LLM)) is None  # off by default (PHASE-12 step 3)
+    assert summaries.summarizer(Settings(**LLM)) is not None  # on by default since step 5 (ADR 0042)
+    assert summaries.summarizer(Settings(**LLM, summaries=False)) is None
     assert summaries.summarizer(Settings(summaries=True)) is None  # no model
     on = summaries.summarizer(Settings(**ON))
     other = summaries.summarizer(Settings(**{**ON, "llm_model": "other"}))
@@ -68,9 +69,9 @@ def test_windows_are_due_once_complete_and_lag_turns_old():
     assert [summaries.due(n) for n in (0, 11, 12, 19, 20, 28)] == [0, 0, 1, 1, 2, 3]
 
 
-def test_off_by_default_nothing_is_queued(migrated, db):
+def test_turned_off_nothing_is_queued(migrated, db):
     chat = story_chat(30)
-    with make_client(migrated, **LLM) as c:
+    with make_client(migrated, **LLM, summaries=False) as c:
         sync(c, chat)
         assert jobs(db) == []
         assert "Summaries" not in c.get(f"/inspector/c/{conv_id(c, chat)}", params={"lang": "en"}).text
@@ -175,8 +176,8 @@ def test_a_summary_that_repeats_a_kept_secret_leaks_it():
     assert summaries.leaks("The letter is forged.", [{**LETTER, "open": []}]) == []  # found out by everyone: no secret
 
 
-def test_a_window_lists_the_secrets_stated_by_its_end_newest_first():
-    later = {**LETTER, "text": "Hana knows: the key is fake", "turn": 12, "position": 24}
+def test_a_window_lists_the_secrets_stated_by_near_its_end_newest_first():
+    later = {**LETTER, "text": "Hana knows: the key is fake", "turn": 20, "position": 40}  # past window 0–7 + NEAR
     gone = {**LETTER, "text": "Hana knows: old news", "open": []}
     assert summaries.window_secrets([LETTER, later, gone], 7) == [LETTER]
     assert summaries.window_secrets([LETTER, later, gone], 15) == [later, LETTER]
@@ -222,3 +223,130 @@ def test_the_leak_check_is_about_the_secret_not_its_setting():
     left_out = "엘피가 잠든 사이 유우마와 블랑은 부엌에서 만났다. 유우마는 이 일을 엘피에게 비밀로 하자고 했다."
     copied = "엘피가 잠든 사이 블랑과 유우마는 부엌에서 입을 맞췄다."
     assert summaries.leaks(left_out, [kiss]) == [] and summaries.leaks(copied, [kiss]) == [kiss]
+
+
+# --- step 5: packet-v7, <Story> and <Cast> (ADR 0042) ------------------------------------------------
+
+from nmos_sidecar.packet import STORY_SHARE, Line, compile_lines, estimate_tokens  # noqa: E402
+
+
+def summary(level: str, text: str, first: int = 0, last: int = 7, sid: str = "s1") -> Line:
+    return summaries.summary_line(level, {"id": sid, "first_turn": first, "last_turn": last, "text": text})
+
+
+def fact_line(text: str, aid: int) -> Line:
+    return Line("fact", f'    <Fact kind="located_in" turn="3">{text}</Fact>', {"assertion": aid}, 3, text, text)
+
+
+def test_story_comes_first_within_its_share_and_cast_groups_its_lines():
+    story = [summary("story", "Hana found the key; Kaito hurt his knee."), summary("scene", "They went to the lighthouse.",
+                                                                                     8, 15, "s2")]
+    cast = [("Hana", [fact_line("Hana located in lighthouse", 1)])]
+    out = compile_lines([], 2000, facts=[fact_line("Kaito located in market", 2)], policy="packet-v7", story=story,
+                        cast=cast)
+    body = out.text.splitlines()
+    assert body[2] == "  <Story>" and '<Summary kind="story" turns="0–7">' in body[3]
+    assert '    <Character name="Hana">' in body
+    assert any(b.startswith("      <Fact") and "Hana located in lighthouse" in b for b in body)
+    assert out.text.index("<Cast>") < out.text.index("<Facts>") and "A Summary tells" in out.text
+    assert [e.get("section") for e in out.ledger if e["kind"] == "fact"] == ["cast", None]
+    long = [summary("story", "긴 이야기가 이어졌다. " * 60)]  # over the share, within the budget
+    capped = compile_lines([], 2000, policy="packet-v7", story=long, facts=[fact_line("Kaito located in market", 2)])
+    assert capped.ledger[0]["why"] == "story_cap" and "<Story>" not in capped.text  # never over STORY_SHARE
+    assert STORY_SHARE == 0.3 and 2000 * STORY_SHARE < estimate_tokens(long[0].xml, 1.2) < 1500
+    assert "<Story>" not in compile_lines([], 2000, policy="packet-v6", facts=[fact_line("x", 3)]).text
+
+
+def story_setup(migrated, chat: SimChat, complete=stub):
+    from memeval import stub_extractor
+    from test_extraction import drain as drain_facts
+
+    drain_facts(migrated, stub_extractor)
+    drain(migrated, complete)
+
+
+def lighthouse_chat() -> SimChat:
+    chat = SimChat()
+    chat.user("Hana is in the chapel.")
+    chat.reply("Hana keeps a secret from Kaito: the letter is forged.")
+    for i in range(1, 30):
+        chat.user(f"Turn {i} begins at the lighthouse keeper's door.")
+        chat.reply(f"Reply {i} follows.")
+    return chat
+
+
+def ask(client, chat: SimChat, text: str) -> dict:
+    chat.user(text)
+    sync(client, chat)
+    return client.post("/v1/retrieve", json={"chat_id": chat.id, "query": text, "previous_ai": "", "budget_tokens": 2000,
+                                             "in_context_ids": [m["chatId"] for m in chat.messages[-6:]]}).json()["packet"]
+
+
+def test_a_request_gets_the_story_the_scene_it_is_about_and_the_cast(migrated):
+    chat = lighthouse_chat()
+    with make_client(migrated, **ON, extract_backfill=100) as c:
+        sync(c, chat)
+        story_setup(migrated, chat)
+        text = ask(c, chat, "Hana, what about the lighthouse keeper's door?")["text"]
+    assert '<Summary kind="story"' in text and text.index("<Story>") < text.index("<Cast>")
+    assert '<Summary kind="scene"' in text  # the message is about a scene the prompt no longer holds
+    assert '<Character name="Hana">' in text and text.count("Hana located in chapel") == 1  # in <Cast>, not twice
+
+
+def test_a_summary_repeating_a_kept_secret_and_a_narrator_get_no_story(migrated):
+    chat = lighthouse_chat()
+
+    def leaky(system: str, user: str) -> tuple[dict, str]:
+        if system == summaries.STORY_PROMPT:
+            return {"summary": "Hana read it: the letter is forged."}, "{}"
+        return stub(system, user)
+
+    with make_client(migrated, **ON, extract_backfill=100) as c:
+        sync(c, chat)
+        story_setup(migrated, chat, leaky)
+        text = ask(c, chat, "Kaito, anything new?")["text"]
+        assert '<Summary kind="story"' not in text and "the letter is forged" not in text.split("<Private>")[0]
+        cid = conv_id(c, chat)
+        assert c.put(f"/v1/conversations/{cid}/memory-mode", json={"narrator": "Kaito"}).status_code == 200
+        assert "<Story>" not in ask(c, chat, "Hana, what about the lighthouse keeper's door?")["text"]
+
+
+def test_a_secret_stated_after_a_summary_holds_it_until_it_is_written_again(migrated, db):
+    """Phase 12 step 5 on the owner's chat: a kiss at turns 61–63 was known to be kept from someone only at 64 and 68,
+    so the summaries of that window, written before, did not keep it."""
+    from memeval import stub_extractor
+    from nmos_sidecar.facts import memory_view
+    from test_extraction import drain as drain_facts
+
+    chat = story_chat(22)  # windows 0–7 and 8–15 are due
+    prompts: list[str] = []
+
+    def recording(system: str, user: str) -> tuple[dict, str]:
+        prompts.append(user)
+        return stub(system, user)
+
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        drain(migrated, recording)
+        chat.user("Hana keeps a secret from Kaito: the letter is forged.")  # turn 22, within NEAR of window 8–15
+        chat.reply("Noted.")
+        chat.user("Go on.")  # the turn is extracted once the user continues from it (ADR 0008)
+        sync(c, chat)
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            cid = conv_id(c, chat)
+            head = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (cid,)).fetchone()["head_commit_id"]
+            key = active_generation(conn, "summarize").key
+            drain_facts(migrated, stub_extractor)
+            secrets = memory_view(conn, head, active_generation(conn, "extract").key)["secrets"]
+            v = summaries.current(conn, cid, head, key, secrets)
+            assert [bool(x["held"]) for x in v["scenes"]] == [False, True] and v["story_held"]  # held at once
+            assert summaries.schedule_stale(conn, cid, key) == 1
+        prompts.clear()
+        drain(migrated, recording)
+        assert "keep from Kaito: the letter is forged" in prompts[0]  # written again with it listed
+        assert any("SCENES:" in p and "OPEN SECRETS" in p for p in prompts)  # and the story too
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            v = summaries.current(conn, cid, head, key, secrets)
+        assert not any(x["held"] for x in v["scenes"]) and not v["story_held"] and v["story_current"]
+        # the scene written again replaces the old one; the old story, made from it, is simply no longer current
+        assert db.execute("SELECT count(*) AS n FROM summary WHERE discarded_at IS NOT NULL").fetchone()["n"] == 1

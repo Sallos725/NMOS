@@ -35,8 +35,8 @@ from uuid import UUID
 import psycopg
 
 from . import spans
-from .packet import POLICIES, clean_text, compile_lines
-from .retrieval import RECORDED, RecallOptions, gather
+from .packet import POLICIES, clean_text
+from .retrieval import RECORDED, RecallOptions, compile_gathered, gather
 
 echo, echoed = spans.reuse, spans.reused
 
@@ -153,8 +153,7 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
         notes.append(f"vectors {g.vector_note}")  # an embedder that failed now cannot reproduce the request
     if budget is not None:
         notes.append("budget changed")
-    c = compile_lines(g.ranked, t["budget_tokens"] if budget is None else budget, state=g.state, threads=g.threads,
-                      facts=g.facts, policy=policy, lead=g.lead, note=g.note)
+    c = compile_gathered(g, t["budget_tokens"] if budget is None else budget, policy)
     out = {"trace": str(t["id"]), "status": "ok", "policy": policy, "recorded_policy": t["policy"],
            "text": c.text, "tokens": c.tokens, "lines": c.ledger, "notes": notes}
     if policy == t["policy"] and not notes:

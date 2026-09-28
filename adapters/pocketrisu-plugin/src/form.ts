@@ -7,8 +7,10 @@ export type Section = 'conn' | 'llm' | 'emb' | 'tune' | 'rules';
 export const DEFAULT_DEADLINE_MS = 3000;
 export const MAX_DEADLINE_MS = 30_000;
 /** Memory tokens reserved when the plugin arg is unset (0); the user lowers the host's max context by it (D2).
- *  800 since Phase 10 step 5 (was 600): Korean packets with a Private section pushed facts out at 600. */
-export const DEFAULT_RESERVED_TOKENS = 800;
+ *  800 since Phase 10 step 5 (was 600): Korean packets with a Private section pushed facts out at 600.
+ *  2000 since Phase 12 step 5 (owner): the story so far did not fit 30 % of 800, and presets keep ~50,000 tokens of
+ *  context. */
+export const DEFAULT_RESERVED_TOKENS = 2000;
 /** The largest memory budget the sidecar accepts (`RetrieveRequest.budget_tokens`); above it every request fails. */
 export const MAX_RESERVED_TOKENS = 20_000;
 export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune', 'rules'];

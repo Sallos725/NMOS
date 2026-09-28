@@ -62,3 +62,39 @@ Two changes followed:
   check. Step 5 has to decide how much a summary may be trusted with a secret's character in the scene.
 - **Real chats come in step 5.** The owner's chats are longer and their secrets are extracted as the story goes. Step 5
   measures summaries of the restored copy with M0, including its secret cases.
+
+## The owner's longest chat (step 5, M0)
+
+The restored copy (PHASE-11 Q1), read-only, lexical recall only (`--no-vectors`), the request at turn 73. Two
+extractions of the same chat: `gemma4:31b-cloud` (`extract-v13`, copy `nmos_m0v13b`) and `deepseek-v4.1-flash`
+(`extract-v13`, copy `nmos_m0ds`, 73 turns re-extracted through the local Ollama for this comparison). Each copy has
+its own summaries (`summarize-v3`, 8 scenes and the story, written by the same model), and M0 uses both case sets.
+
+| | `gemma4`: 28 cases (memory 9) | `gemma4`: 12 cases outside the window | `deepseek`: 28 (memory 9) | `deepseek`: 12 |
+|---|---:|---:|---:|---:|
+| `packet-v6`, budget 800 (Phase 11) | 26 (7) | 2 | 24 (5) | 1 |
+| `packet-v6`, budget 2,000 | 26 (7) | 4 | — | — |
+| `packet-v7`, budget 2,000 | 26 (7) | 5 | 24 (5) | 2 |
+
+Nothing forbidden was placed as current in any `packet-v7` run. What the step added:
+- **The budget** brought two of the 12 answers: the heater and why the soup tasted odd, from facts and excerpts
+  that 800 tokens had no room for.
+- **`<Cast>`** brought one more. What Elpi carried the cookies in came from her group: `엘피 possesses 양철 상자`,
+  turn 19.
+- The scene summary that holds an answer depends on how the model wrote it. With `summarize-v2` summaries the same
+  runs gave 27 of 28 and 6 of 12. One case each way moved on wording alone.
+- `deepseek` extraction answered fewer of the owner's cases than `gemma4`'s, although it did better on the synthetic
+  tiers. The 28 cases were drafted from the `gemma4`-extracted facts, so their wording may favour it.
+
+**Two faults found here and fixed before this record:**
+1. **A finished goal in an unrelated question.** The first `<Cast>` gave every scene character's open goals.
+   Radia's goal to check the kitchen heater had been over since turn 29, but nothing closed it (K23), and it reached
+   a question about arithmetic. `<Cast>` now groups goals only for a character the message names.
+2. **A secret in the story, reworded.** A kiss at turns 61–63 was stated to be kept from Elpi only at turns 64 and 68,
+   after the summaries of its window were written. The story so far said "…모두에게 애정을 표현하며 입을 맞추었고…" in
+   the scene where Elpi asks what happened last night; `packet-v6` had it in `<Private>` only. Now (ADR 0041 amendment
+   2, `summarize-v3`):
+   - each summary's prompt lists the secrets stated up to 8 turns after its window, and the story's prompt lists
+     them too;
+   - a summary written before such a secret is held and written again;
+   - the same story then read "…신체적 접촉을 통해 애정을 확인했습니다": no kiss, a vaguer hint (K30).

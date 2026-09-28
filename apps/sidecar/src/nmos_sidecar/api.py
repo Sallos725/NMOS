@@ -124,8 +124,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         emb = embedder or (Embedder(cur.embed_url, cur.embed_model, cur.embed_api_key)
                            if cur.embed_url and cur.embed_model else None)
         pj = vectors.projection(cur)
+        sm = summaries.summarizer(cur)
         rt.update(settings=cur, rules=rules, overrides=overrides, extractor=extraction.extractor(cur), projection=pj,
-                  summarizer=summaries.summarizer(cur),
+                  summarizer=sm,
                   recall=RecallOptions(
             top_k=cur.recall_top_k, threshold=cur.recall_threshold, rules_version=rules.version,
             facts_limit=cur.facts_limit, events_limit=cur.events_limit,
@@ -134,6 +135,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             lexical_timeout_ms=cur.lexical_timeout_ms,
             vector_min_sim=cur.vector_min_sim, query_prefix=query_prefix(cur.embed_model, cur.embed_query_instruction),
             policy=cur.packet_policy if cur.packet_policy in POLICIES else DEFAULT_POLICY,
+            summarize_key=sm.key if sm else None,
         ))
 
     def activate(conn, before_extractor: str | None, before_projection: str | None,

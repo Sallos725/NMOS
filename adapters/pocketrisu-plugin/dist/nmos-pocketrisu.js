@@ -7,7 +7,7 @@
 //@arg sidecar_url string NMOS sidecar URL (empty = http://127.0.0.1:8790)
 //@arg auth_token string Optional; only if the sidecar sets NMOS_AUTH_TOKEN
 //@arg disabled int 1 = pass every request through untouched
-//@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 800)
+//@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 2000)
 //@arg deadline_ms int Hard request-path deadline in ms (0 = 3000)
 //@arg inject_position string before_last_user (default) or end
 //@arg route string auto (default) / direct / server — how to reach the sidecar
@@ -16,7 +16,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:a785e95676e4".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:3e2ff5308283".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -47,7 +47,7 @@
   // src/form.ts
   var DEFAULT_DEADLINE_MS = 3e3;
   var MAX_DEADLINE_MS = 3e4;
-  var DEFAULT_RESERVED_TOKENS = 800;
+  var DEFAULT_RESERVED_TOKENS = 2e3;
   var MAX_RESERVED_TOKENS = 2e4;
   var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
   var VERTEX_URL = "https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi";
@@ -1228,7 +1228,7 @@ ${revisionHash}`;
   }
 
   // src/budget.ts
-  var FIT_CAP = 2e3;
+  var FIT_CAP = 6e3;
   function budgetAdvice(r, current2) {
     if (!r || r.outcome === "failed" || !r.memory || !(r.memory.cut > 0) || !(r.budgetTokens && r.budgetTokens > 0)) return null;
     const all = typeof r.memory.fits_at === "number";

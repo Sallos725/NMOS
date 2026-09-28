@@ -89,7 +89,7 @@ describe('panel', () => {
     expect(endpoint).toBeDefined();
     endpoint.value = 'https://llm.example/v2';
     endpoint.dispatchEvent(new Event('input', { bubbles: true }));
-    const reserved = [...panel.querySelectorAll('input')].find((i) => i.value === '800')!;
+    const reserved = [...panel.querySelectorAll('input')].find((i) => i.value === '2000')!;
     reserved.value = '99999';
     reserved.dispatchEvent(new Event('input', { bubbles: true }));
     (panel.querySelector('button.primary') as HTMLButtonElement).click();

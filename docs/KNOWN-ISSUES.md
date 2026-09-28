@@ -38,6 +38,7 @@ without a PocketRisu change.
 | K27 | Before `extract-v11` / `clean-v3`: an OOC note or memory-like markup inside a reply could become a fact | Memory | fixed on `main`, unreleased (audit A-12); older turns: "Extract all history" |
 | K28 | Taking turns in one chat from two tabs or devices makes memory of the messages one of them lacks drop out and come back | Data | host (H10); not planned (audit A-13) |
 | K29 | A reveal in the turns first extracted together can be missed | Memory | "Extract all history" after connecting a chat with secrets (ADR 0033 amendment 2) |
+| K30 | A summary can say a secret in other words | Memory | on `main` (Phase 12, ADR 0041, 0042); summaries off for a chat where it matters |
 
 ## Performance
 
@@ -258,6 +259,15 @@ turn's secret was (audit G2; `test_extract_all_history_recovers_a_reveal_missed_
 first; until then it skipped them and did nothing here. With two workers (the default) two neighbouring turns
 can still run at once; running it again fixes that. **Rebuild memory** also works but extracts the whole chat.
 
+
+**K30 — A summary can say a secret in other words.** Since Phase 12 (ADR 0041, 0042, on `main`) the prompt of each
+scene summary and of the story so far lists the secrets still kept from someone, stated up to 8 turns after the
+window, and says never to write their content; a summary written before such a secret is held until it is written
+again with it listed. When a summary is read, one that repeats a secret's content is held (`summaries.leaks`), but
+the check catches a copied secret, not a reworded one (`docs/perf/summaries.md`): a model that rewords a secret can
+put it in `<Story>` in front of the character it is kept from. On the real-model tier neither model wrote a secret's
+content; `gemma4` named the object a secret was about. Strict mode applies the same check, nothing more.
+*Workaround:* `NMOS_SUMMARIES=0` or the `summaries` setting turns summaries off.
 **K18 — Model changes re-process history.** Changing the LLM or embedding model or endpoint, or a
 release that changes the extraction generation (as 0.1.0-beta.8 did), re-derives all previously
 covered history with the new model, recent turns first, at the provider's cost. Until done, the
