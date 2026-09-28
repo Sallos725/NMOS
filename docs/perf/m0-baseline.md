@@ -138,6 +138,6 @@ budget 800 and lexical recall only, as above.
 | lasting state | 3 | 1 | 1 of 3 |
 | **all** | **12** | **2** | **2 of 15** |
 
-Every one needs memory. The two that pass have their answer in a fact line the question's words reach: the events
-of the gift (`엘피 event: 엄마에게 귀 모양 쿠키를 선물함`) and a possession (`라디아 possesses 초록색 담요`). The rest
-were said once, early, and no line the packet chooses carries them. The packets used 737–789 of 800 tokens.
+Every one needs memory. The two that pass have their answer in a fact line the question's words reach: two events
+of the same gift, and a possession. The rest were said once, early, and no line the packet chooses carries them. The
+packets used 737–789 of 800 tokens.
