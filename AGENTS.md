@@ -32,7 +32,7 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-13.md` is the latest, a draft;
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-13.md` is the latest;
    `PHASE-0.md`…`PHASE-12.md` still define the behavior they introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
 6. Relevant ADRs in `docs/adr/`.
@@ -73,7 +73,7 @@ If two normative documents appear to conflict:
 | 10 — knowledge and secrets (Stage 4; Track B, B5 narrowed) | complete (2026-09-27), not released | `PHASE-10.md`, ADRs 0033–0037 |
 | 11 — narrative engine, part 1 (Stage 5) | complete (2026-09-28), not released; one criterion partly met (owner accepted) | `PHASE-11.md`, ADRs 0038–0040 |
 | 12 — narrative engine, part 2 (Stage 5: summaries, character state) | complete (2026-09-28), not released; the latency criterion missed by 3 ms at 10,000 messages (owner accepted) | `PHASE-12.md`, ADRs 0042–0043 |
-| 13 — verification and repair, part 1 (Stage 6: owner repair, needs-attention queue) | **draft, not authorized** (owner chose Stage 6 next, 2026-09-28) | `PHASE-13.md` |
+| 13 — verification and repair, part 1 (Stage 6: owner repair, needs-attention queue) | **current** (approved 2026-09-28) | `PHASE-13.md` |
 | 14+ (the rest of Stage 6, Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,

@@ -1,14 +1,14 @@
 # Phase 13 — Verification and Repair, part 1 (Stage 6)
 
-> **Status: draft, not authorized (2026-09-28).** Stage 6 of `docs/ROADMAP-1.0.md` (original §20, §66–67; Track B,
+> **Status: approved 2026-09-28 (owner), in progress.** Stage 6 of `docs/ROADMAP-1.0.md` (original §20, §66–67; Track B,
 > B7 and the B2 remainder), part 1 of 2: the owner repairs what memory got wrong, and a queue shows what needs a
 > look. Canon sources and export/restore are part 2 (Q0). The owner chose Stage 6 next after Phase 12 (2026-09-28)
-> and decided no release for now. Every question below has a recommended answer; nothing is built until the owner
-> answers them.
+> and decided no release for now. The owner answered every question below with the recommended answer
+> (2026-09-28), and chose to confirm a list NMOS drafts for step 2 rather than mark the threads from scratch.
 
 ## Questions and answers
 
-| # | Question | Recommended answer | Alternatives not taken |
+| # | Question | Answer | Alternatives not taken |
 |---|---|---|---|
 | Q0 | One phase for Stage 6, or two? | **Two.** Phase 13: owner repair and a "needs attention" queue (closes K8 and K23). Phase 14: canon sources (character card, lorebook, persona, author's note), which need host evidence first, and export/restore. | One phase; canon first. |
 | Q1 | What can the owner repair? | **Five kinds:** (1) close a thread (goal, question, threat, debt, promise) with an outcome, or reopen one the story closed by a wrong match; (2) retract a fact (it was never true: the earlier version is current again); (3) correct a fact's value from a turn on (a place, a condition, a relationship); (4) mark a secret found out by a character, or keep one the story ended by mistake; (5) split two names the story joined (K8). | Threads and splits only (the K23/K8 minimum); free edits of every field. |
@@ -48,8 +48,9 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
 
 ## In scope (Phase 13)
 
-1. **The owner's lists (Q8).** On the restored copy, from the Inspector: which open threads are over, and which
-   secrets were found out and by whom. Kept outside the repository. Numbers on `main` before any Phase 13 change are
+1. **The owner's lists (Q8).** On the restored copy: which open threads are over, and which secrets were found out
+   and by whom. NMOS drafts the lists with the turns that suggest each answer; the owner confirms or corrects them.
+   Kept outside the repository. Numbers on `main` before any Phase 13 change are
    the baseline.
 2. **Storage and matching (Q2, Q3; ADR, migration 0024).** `owner_repair` as owner input; a matcher shared by every
    kind (turn, turn hash, head, closest text); every read applies the live repairs; `removed_at` for undo. Deleting
@@ -102,7 +103,7 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
 
 ## Steps (one pull request each)
 
-1. This document, approved.
+1. This document, approved. **Done** (2026-09-28).
 2. The owner's lists and the baseline on `main` (M0, secret gate, open threads).
 3. Storage, matching, threads and secrets: migration 0024, ADR, API, the Inspector's "Repairs" list.
 4. Facts and names: retract, correct, split.
