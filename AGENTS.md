@@ -181,7 +181,7 @@ For every task:
 5. Add or update the test/fixture expectation first when feasible.
 6. Implement only that slice.
 7. Run the narrow test, then the current phase's full test set.
-   For a material change, get one cross-model review (§14) and act on what it confirms.
+   For a material change, run the scoped review workflow (§14); cross-model review is required only when §14 classifies the change as high risk.
 8. Update docs if a fact, decision, command, schema, or behavior changed.
 9. Update `docs/STATUS.md` truthfully.
 10. Stop at any evidence or owner-decision boundary.
@@ -377,20 +377,53 @@ as before; tags follow these rules.
 
 ---
 
-## 14. Cross-model review
+## 14. Scoped review and cross-model escalation
 
-Codex and Claude both work on this repository. The one implementing a change is the **lead**; for a
-material change it asks the other for one independent, read-only review through `.ai/scripts/peer-review`
-before reporting the change done (how-to: `.ai/README.md`; Claude's steps: `.claude/skills/peer-review`).
+Every non-trivial change gets a review before the lead reports it done. The default is a **diff-scoped
+self-review by the lead**. An independent review by the other model is an escalation for high-risk changes,
+not a repository-wide second pass.
 
-- **When:** a material change to reconciliation, immutable source history, membership, retrieval or
-  injection, packets, migrations, auth or deployment. Use `architecture` for a design question and
-  `security` for a sensitive flow. Skip trivial edits, and say so when the CLI is unavailable.
-- **Invocation:** the lead names the reviewer: `python3 .ai/scripts/peer-review codex review --base
-  origin/main <focus>` when Claude leads, `... claude review ...` when Codex leads.
-- **Findings are hypotheses.** The lead checks each cited line or reproduction, fixes what is confirmed,
-  runs the tests, and reports what it rejected and why. An `ARCHITECTURE.md §9` decision goes to the owner.
-- **The reviewer** never edits, commits, delegates or calls the script again. One review per change;
+### Scope
+
+- Start from the branch diff against the task base (normally `origin/main`):
+  `git diff --name-only origin/main...HEAD` and `git diff origin/main...HEAD`.
+- Review all changed code. Expand only as needed into direct callers/callees, shared interfaces/types,
+  directly relevant tests, and schema/migrations when the changed path depends on them.
+- Do not inspect `fixtures/model/**`, generated output such as `dist/**`, large JSON/JSONL artifacts,
+  historical changelogs, or unrelated documentation unless a changed code path specifically requires it.
+- Do not perform a repository-wide audit unless the owner explicitly asks for one.
+
+### Risk and escalation
+
+A change is **high risk** when it can materially affect one or more of these guarantees:
+
+- stored data, schema, migrations, upgrades, backfills, deletion, or data-loss recovery;
+- reconciliation, immutable source history, membership, canon, identity, or provenance;
+- authentication, secrets, authorization, security boundaries, or sensitive logging;
+- retrieval/injection semantics that change memory selection, isolation, provenance, or fail-open behavior;
+- deployment compatibility where a mistake can corrupt persisted state or weaken a security boundary.
+
+For a high-risk change, the lead gets **one** independent, read-only review through
+`.ai/scripts/peer-review` before reporting the change done (how-to: `.ai/README.md`; Claude's workflow:
+`.claude/skills/peer-review`). Use `architecture` for a design/invariant question and `security` for a
+sensitive flow.
+
+For other non-trivial changes, the lead's scoped self-review is sufficient. Trivial edits (for example
+wording, typo fixes, or test-only renames with no behavior change) may skip review; say so in the report.
+
+### External reviewer rules
+
+- The lead names the reviewer: Claude leading calls `codex`; Codex leading calls `claude`.
+- Keep the external review scoped to the diff and the minimum dependency cone. On an inline run, attach
+  only the authority/spec files and touched files needed to validate the high-risk property; never attach
+  the whole tree.
+- Findings are hypotheses. The lead verifies every cited line or reproduction, fixes what is confirmed,
+  reruns the relevant tests, and reports what it rejected and why. An `ARCHITECTURE.md §9` decision goes
+  to the owner.
+- The reviewer never edits, commits, delegates, or calls the script again. One external review per change;
   never loop Codex → Claude → Codex.
-- This overlay grants no exceptions: this file, `ARCHITECTURE.md` and the phase spec take precedence, and
-  a reviewer's suggestion does not authorize scope.
+- If the reviewer CLI is unavailable or authentication fails, report that fact and continue without
+  silently substituting a repository-wide self-audit.
+
+This overlay grants no exceptions: this file, `ARCHITECTURE.md`, and the current phase spec take
+precedence, and a reviewer's suggestion does not authorize scope.
