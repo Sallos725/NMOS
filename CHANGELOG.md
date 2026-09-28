@@ -51,6 +51,10 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
   - Fixes from the review of #137 and #139: the Inspector shows the job that would replace a summary still in use
     (queued, writing, or failed with its error), such as a story behind the newest scene; and a request keeps the
     scene trigrams it read, so another request clearing the shared cache cannot drop a scene from its choice.
+  - From the first cross-model review (Codex, AGENTS.md §14): after the turns of a whole window were deleted, a later
+    scene summary, current now for an earlier window, was judged older than the prompt by the turns it was written
+    at, so a scene the prompt no longer held could be left out. The request now uses the window it is current for,
+    as before the step 7 rewrite.
 - **Cross-model review** (`.ai/`, AGENTS.md §14; #138): fixed after its review, the script refuses every `.env*` name
   (`.envrc` passed before) and gives the reviewer CLI only the system basics of the environment and its own login
   variables, never `NMOS_*`, `DATABASE_URL` or `PG*` (it passed the whole environment).
