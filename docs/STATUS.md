@@ -2,18 +2,18 @@
 
 ## Current phase
 
-**Phase 14 — Verification and Repair, part 2: canon sources (Stage 6): draft 2026-09-28, awaiting the owner's
-answers.** Spec `docs/phases/PHASE-14.md`: the character card, the lorebooks, the persona and the author's note as
+**Phase 14 — Verification and Repair, part 2: canon sources (Stage 6): approved 2026-09-28, in progress.** Spec
+`docs/phases/PHASE-14.md`: the character card, the lorebooks, the persona and the author's note as
 immutable sources of each chat; names from canon; canon facts read by the extraction model as their own projection
 (the message extractor unchanged), superseded by the story from the turn it says something new; contradictions in
-"Needs attention"; a canon lock. Host evidence first, on the owner's PocketRisu v1.13.0. Export/restore is proposed as
-Phase 15. No release.
+"Needs attention"; a canon lock. Host evidence first, on the owner's PocketRisu v1.13.0. Export/restore is Phase 15 (Q0).
+The owner accepted every proposed answer; no release. Next: step 2 (host evidence and a count-only canon inventory).
 
 **Phase 13 — Verification and Repair, part 1 (Stage 6): complete (2026-09-28), not released.** Spec
 `docs/phases/PHASE-13.md`: the owner repairs memory in the panel (close or reopen a thread, retract or correct a
 fact, mark a secret found out, split two names), stored as owner input that survives rebuilds and new extractor
-generations and finds its target by what it says; a "Needs attention" queue per chat. Canon sources and
-export/restore are Phase 14. The owner answered every question with the recommended answer; no release. Step 2 done
+generations and finds its target by what it says; a "Needs attention" queue per chat. Canon sources are Phase 14
+and export/restore Phase 15. The owner answered every question with the recommended answer; no release. Step 2 done
 (`docs/perf/repair.md`): the owner confirmed NMOS's lists (50 of 59 open threads ended, 6 of 14 kept secrets found out,
 2 never kept); on `main` all 40 M0 packets carry a thread the owner closed. Step 3 (ADR 0044, D54, migration 0024):
 owner repairs as owner input, found by what their target says; threads closed or reopened and secrets found out or
@@ -285,8 +285,10 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
   (owner). No release for now (owner, 2026-09-28).
 - Phase 13 (Stage 6, part 1: owner repair and a needs-attention queue): approved 2026-09-28 with the recommended
   answers (Q0–Q9, `docs/phases/PHASE-13.md`); complete 2026-09-28, the latency criterion missed by 2 ms and accepted
-  (owner); no release. Phase 14+ (canon sources,
-  export/restore, Stages 7–8): not authorized.
+  (owner); no release.
+- Phase 14 (Stage 6, part 2: canon sources): approved 2026-09-28 with every proposed answer (Q0–Q10,
+  `docs/phases/PHASE-14.md`); export/restore is Phase 15 (Q0); no release. Phase 15+ (export/restore, Stages 7–8):
+  not authorized.
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600. Raised to 800 on 2026-09-27 (owner; ADR 0035).
 - Release cadence — decided 2026-09-26, revised 2026-09-27: one release per roadmap stage, urgent patches

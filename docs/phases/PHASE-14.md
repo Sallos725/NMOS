@@ -1,14 +1,14 @@
 # Phase 14 — Verification and Repair, part 2: canon sources (Stage 6)
 
-> **Status: draft 2026-09-28, awaiting the owner's answers.** Stage 6 of `docs/ROADMAP-1.0.md` (original §7.6, §66,
+> **Status: approved 2026-09-28 (owner), in progress.** Stage 6 of `docs/ROADMAP-1.0.md` (original §7.6, §66,
 > §80.3; Track B, B7), part 2: what the character card, the lorebooks, the persona and the author's note say becomes
 > source for memory, next to the story. Phase 13 Q0 put canon sources and export/restore in this phase; Q0 below
-> proposes to give export/restore its own phase. The owner chose to start Phase 14 on 2026-09-28 and decided no release
-> for now.
+> gives export/restore its own phase. The owner chose to start Phase 14 on 2026-09-28 and decided no release for now.
+> The owner answered Q0, Q3, Q4/Q7 and Q8 with the proposed answers and took the others as proposed (2026-09-28).
 
 ## Questions and answers
 
-Each answer in bold is NMOS's proposal; the owner confirms or changes it.
+Each answer in bold was NMOS's proposal; the owner accepted every one (2026-09-28).
 
 | # | Question | Proposed answer | Alternatives |
 |---|---|---|---|
@@ -110,7 +110,7 @@ where the story uses it, and the message extractor is untouched.
 
 ## Steps (one pull request each)
 
-1. This document, approved.
+1. This document, approved. **Done** (2026-09-28).
 2. Host evidence and the canon inventory.
 3. Capture: migration 0025, ADR 0045, plugin and sync, the Inspector's canon list.
 4. Names from canon.

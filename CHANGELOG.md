@@ -55,6 +55,9 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     scene summary, current now for an earlier window, was judged older than the prompt by the turns it was written
     at, so a scene the prompt no longer held could be left out. The request now uses the window it is current for,
     as before the step 7 rewrite.
+- **Phase 14 (Stage 6, part 2): canon sources** (`docs/phases/PHASE-14.md`, approved 2026-09-28; no release): the card,
+  the lorebooks, the persona and the author's note as sources of each chat, host evidence first. Export and restore
+  are Phase 15.
 - **Phase 13 (Stage 6, part 1): the owner repairs memory** (`docs/phases/PHASE-13.md`, approved and complete 2026-09-28;
   no release).
   - Step 2: the owner confirmed NMOS's lists for the longest chat (50 of 59 open threads ended, 6 secrets found out);
