@@ -10,7 +10,7 @@
 
 | # | Question | Answer | Alternatives not taken |
 |---|---|---|---|
-| Q0 | One phase for Stage 6, or two? | **Two.** Phase 13: owner repair and a "needs attention" queue (closes K8 and K23). Phase 14: canon sources (character card, lorebook, persona, author's note), which need host evidence first, and export/restore. | One phase; canon first. |
+| Q0 | One phase for Stage 6, or two? | **Two.** Phase 13: owner repair and a "needs attention" queue (closes K8 and K23). Phase 14: canon sources (character card, lorebook, persona, author's note), which need host evidence first, and export/restore (later split: export/restore is Phase 15, PHASE-14 Q0). | One phase; canon first. |
 | Q1 | What can the owner repair? | **Five kinds:** (1) close a thread (goal, question, threat, debt, promise) with an outcome, or reopen one the story closed by a wrong match; (2) retract a fact (it was never true: the earlier version is current again); (3) correct a fact's value from a turn on (a place, a condition, a relationship); (4) mark a secret found out by a character, or keep one the story ended by mistake; (5) split two names the story joined (K8). | Threads and splits only (the K23/K8 minimum); free edits of every field. |
 | Q2 | How is a repair stored? | **As owner input, like the owner's name joins (ADR 0025):** a table `owner_repair` with the chat, the kind, the target as the Inspector showed it, the new value or outcome, the turn it takes effect, an optional note, `created_at` and `removed_at`. No assertion or message is ever edited (invariants 1, 2). A rebuild and a new extractor generation keep it; undo sets `removed_at`; deleting the chat deletes it (ADR 0009). | Repairs as assertions with `source = "owner"` (mixes owner input into derived rows); edits of derived rows (lost on rebuild). |
 | Q3 | How does a repair find its target after a rebuild or a new generation? | **By what the target says, not by its row id:** the target's turn, the turn's hash while it reads as it did (ADR 0008; as reveals after ADR 0033 amendment 2), its predicate or thread kind, its subject and its text. On read a repair applies to the one current item of that turn whose head matches and whose text is closest, at the thread match (ADR 0019, `MATCH_MIN`). A repair that matches nothing now (its turn was edited or deleted, or a new generation worded the item too differently) stays stored, does nothing, and is listed in the queue (Q6). | Assertion ids (a new generation makes new rows: every repair would be lost); exact text only (lost on rewording). |
@@ -71,7 +71,7 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
 ## Out of scope (Phase 13)
 
 - Canon sources, authority levels and canon lock (Phase 14, host evidence first).
-- Export and restore of the ledger, repairs and settings (Phase 14).
+- Export and restore of the ledger, repairs and settings (Phase 15, PHASE-14 Q0).
 - Pending, conflicting and rejected outcomes in extraction, and a semantic verifier (in the roadmap's draft scope for
   Stage 6, not in its done criteria).
 - Repairs by the response model or from chat text: only the owner, through the panel or the API.

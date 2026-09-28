@@ -80,7 +80,7 @@ where the story uses it, and the message extractor is untouched.
 
 ## Out of scope (Phase 14)
 
-- Export and restore (Phase 15, if Q0 is accepted).
+- Export and restore (Phase 15, Q0).
 - Writing canon: the plugin never changes the card, a lorebook or the persona (host data stays read-only).
 - Transition rules with pending, conflicting and rejected outcomes, and a semantic verifier (§20; not in Stage 6's
   done criteria).
