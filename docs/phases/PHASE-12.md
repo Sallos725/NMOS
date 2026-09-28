@@ -102,6 +102,7 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
 2. M0: the new cases with the owner, and their baseline on `main`. **Done**: 12 owner-confirmed cases, every answer
    outside the prompt window; 2 of 12 on `main` after Phase 11 (`docs/perf/m0-baseline.md`).
 3. The summary projection: schema, generation, jobs, invalidation, the Inspector list (ADR). Off in the packet.
+   **Done** (ADR 0041, migration 0023): off by default (`NMOS_SUMMARIES`).
 4. The summary prompt and secrets, measured on both models (the real-model tier), before anything reaches a packet.
 5. `packet-v7`: `<Story>` and `<Cast>`, the budget share, narrator and strict handling (ADR). Before it merges, the
    owner is told the backfill size (Q7).

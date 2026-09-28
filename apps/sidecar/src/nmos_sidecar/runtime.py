@@ -27,7 +27,7 @@ EDITABLE: dict[str, type] = {
     "embed_url": str, "embed_model": str, "embed_api_key": str, "embed_query_instruction": str,
     "recall_threshold": float, "vector_min_sim": float, "recall_top_k": int, "facts_limit": int,
     "events_limit": int, "threads_limit": int,
-    "extract_backfill": int,
+    "extract_backfill": int, "summaries": bool,
 }
 SECRET = {"llm_api_key", "embed_api_key"}
 KEY_HOSTS = {"llm_api_key": "llm_url", "embed_api_key": "embed_url"}  # each key belongs to its endpoint's host

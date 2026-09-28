@@ -21,7 +21,8 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-from . import __version__, audit, extraction, generations, inspector, ledger, normtext, plugin, readmodel, retention, runtime, vectors
+from . import (__version__, audit, extraction, generations, inspector, ledger, normtext, plugin, readmodel, retention,
+               runtime, summaries, vectors)
 from .config import Settings
 from .db import make_pool
 from .extraction import enqueue_after_apply, job_counts
@@ -124,6 +125,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                            if cur.embed_url and cur.embed_model else None)
         pj = vectors.projection(cur)
         rt.update(settings=cur, rules=rules, overrides=overrides, extractor=extraction.extractor(cur), projection=pj,
+                  summarizer=summaries.summarizer(cur),
                   recall=RecallOptions(
             top_k=cur.recall_top_k, threshold=cur.recall_threshold, rules_version=rules.version,
             facts_limit=cur.facts_limit, events_limit=cur.events_limit,
@@ -134,7 +136,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             policy=cur.packet_policy if cur.packet_policy in POLICIES else DEFAULT_POLICY,
         ))
 
-    def activate(conn, before_extractor: str | None, before_projection: str | None) -> int:
+    def activate(conn, before_extractor: str | None, before_projection: str | None,
+                 before_summarizer: str | None = None) -> int:
         """Make the configured generations active and queue what they are missing (D20, #8).
 
         Runs at startup (idempotent: only missing work is queued) and whenever a setting changed a
@@ -159,7 +162,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             # revisions they covered are re-embedded at background priority (#17).
             generations.activate(conn, pj)
             queued += vectors.schedule_projection(conn, pj.key, cur.embed_backfill)
+        sm = rt["summarizer"]
+        if sm is None:
+            if retired := extraction.retire(conn, "summarize"):
+                log.info("summaries are off: %d queued summarize jobs made obsolete", retired)
+        elif sm.key != before_summarizer:
+            generations.activate(conn, sm)
+            queued += summaries.schedule_all(conn, sm.key)  # every chat's due windows, oldest first (PHASE-12 Q7)
         rt["active_extractor"] = generations.active(conn, "extract")
+        rt["active_summarizer"] = generations.active(conn, "summarize")
         rt["recall"] = dataclasses.replace(rt["recall"], extractor_key=rt["active_extractor"])
         return queued
 
@@ -181,9 +192,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             with conn.transaction():  # drop other rule versions and backfill as one: a partial backfill looks done
                 backfilled = sync_rules(conn, rt["rules"])
             with conn.transaction():  # a generation becomes active together with the jobs it is missing
-                queued = activate(conn, None, None)
-            log.info("generations: extract=%s embed=%s; queued %d missing jobs",
-                     rt["active_extractor"], rt["projection"].key if rt["projection"] else None, queued)
+                queued = activate(conn, None, None, None)
+            log.info("generations: extract=%s embed=%s summarize=%s; queued %d missing jobs",
+                     rt["active_extractor"], rt["projection"].key if rt["projection"] else None,
+                     rt["summarizer"].key if rt["summarizer"] else None, queued)
         app.state.pool = pool or make_pool(settings.database_url)
         if backfilled:
             log.info("state backfilled: %d observations for rules %s", backfilled, rt["rules"].version)
@@ -254,6 +266,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                 embed_key=rt["projection"].key if rt["projection"] else None,
                                 embed_backfill=cur.embed_backfill)
 
+    def summarize_after(conn, conv_id, head, appended: bool) -> None:
+        """Queue the window this sync made due (an append), or every window missing a summary (any other commit)."""
+        if rt["summarizer"]:
+            summaries.schedule(conn, conv_id, head, rt["summarizer"].key, full=not appended)
+
     def append_reconcile(conn, conv, body: ReconcileRequest) -> ReconcileResponse | None:
         """Verified append fast path (Track A, A1): None means "not provably an append", and the caller
         runs the full path. Every check here only decides between the two paths; results are equal."""
@@ -300,6 +317,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         offset = tail.turn_start - tail.start
         enqueue(conn, conv.id, tail.entries[offset:], lifecycle, entries[offset:], {**lifecycle, **result.lifecycle},
                 revision_ids)
+        summarize_after(conn, conv.id, head, appended=True)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=full_hash, changes_summary=result.summary, commit_reason=None)
 
@@ -331,6 +349,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         head = ledger.apply_plan(conn, conv, state, result, observation, manifest, settings.extract_turns)
         enqueue(conn, conv.id, state.head, state.lifecycle, manifest, {**state.lifecycle, **result.lifecycle},
                 state.revision_ids)
+        summarize_after(conn, conv.id, head, appended=result.commit_reason is None)
         return ReconcileResponse(conversation_id=conv.id, status="applied", active_commit=head,
                                  manifest_hash=result.manifest_hash, changes_summary=result.summary,
                                  commit_reason=result.commit_reason)
@@ -615,14 +634,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         if errors:
             raise HTTPException(status_code=422, detail=errors)
         clean = runtime.keys_follow_hosts(settings, rt["overrides"], clean)
-        before_ex, before_pj = rt["extractor"], rt["projection"]
+        before_ex, before_pj, before_sm = rt["extractor"], rt["projection"], rt["summarizer"]
         before_backfill = rt["settings"].extract_backfill
         with request.app.state.pool.connection() as conn:
             runtime.save(conn, clean)
             rebuild(runtime.stored(conn))
             if runtime.PARSERS_KEY in clean:
                 rebuild_state(conn, rt["rules"])
-            queued = activate(conn, before_ex.key if before_ex else None, before_pj.key if before_pj else None)
+            queued = activate(conn, before_ex.key if before_ex else None, before_pj.key if before_pj else None,
+                              before_sm.key if before_sm else None)
             ex = rt["extractor"]
             if ex and before_ex and ex.key == before_ex.key and rt["settings"].extract_backfill != before_backfill:
                 # Same generation, different backfill: queue what the new window is missing now, not at
@@ -695,7 +715,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     conflicts=view["conflicts"], items=view["items"], threads=view["threads"],
                                     unmatched=view["unmatched"], secrets=view["secrets"],
                                     unrevealed=view["unrevealed"],
-                                    packet=audit.audit(conn, traces[0]["id"]) if traces else None)
+                                    packet=audit.audit(conn, traces[0]["id"]) if traces else None,
+                                    summaries=summaries.current(conn, conv_id, head, rt.get("active_summarizer"))
+                                    if rt.get("active_summarizer") else None)
 
     def inspector_character_html(conv_id: UUID, entity_id: UUID, request: Request, token: str | None,
                                  lang: str | None, embed: bool = False) -> str:

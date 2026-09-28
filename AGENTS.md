@@ -72,7 +72,7 @@ If two normative documents appear to conflict:
 | 9 — accountable packets (Track B, B6 narrowed) | complete (2026-09-26, beta.19) | `PHASE-9.md`, ADR 0027 |
 | 10 — knowledge and secrets (Stage 4; Track B, B5 narrowed) | complete (2026-09-27), not released | `PHASE-10.md`, ADRs 0033–0037 |
 | 11 — narrative engine, part 1 (Stage 5) | complete (2026-09-28), not released; one criterion partly met (owner accepted) | `PHASE-11.md`, ADRs 0038–0040 |
-| 12 — narrative engine, part 2 (Stage 5: summaries, character state) | **current** (approved 2026-09-28) | `PHASE-12.md` |
+| 12 — narrative engine, part 2 (Stage 5: summaries, character state) | **current** (approved 2026-09-28) | `PHASE-12.md`, ADR 0041 |
 | 13+ (Stages 6–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,

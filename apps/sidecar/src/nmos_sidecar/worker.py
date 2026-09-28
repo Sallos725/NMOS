@@ -1,4 +1,4 @@
-"""nmos-worker: processes queued jobs (extraction, embedding). Several workers may run concurrently."""
+"""nmos-worker: processes queued jobs (extraction, embedding, summaries). Several workers may run concurrently."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
-from . import generations, migrate, retention
+from . import generations, migrate, retention, summaries
 from .config import Settings
 from .extraction import claim, extractor, fail, finish, process_extract
 from .llm import ChatModel, Embedder, LLMError
@@ -33,6 +33,11 @@ def handlers(settings: Settings) -> Handlers:
                           settings.llm_json_mode)
         out["extract"] = (ex.key, lambda conn, job: process_extract(conn, job, model.complete_json, ex,
                                                                      settings.extract_turns))
+    sm = summaries.summarizer(settings)
+    if sm is not None:
+        writer = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
+                           settings.llm_json_mode)
+        out["summarize"] = (sm.key, lambda conn, job: summaries.process(conn, job, writer.complete_json, sm))
     pj = projection(settings)
     if pj is not None:
         embedder = Embedder(settings.embed_url, settings.embed_model, settings.embed_api_key)
@@ -105,7 +110,7 @@ def maintenance(settings: Settings, stop: threading.Event, holder: dict[str, Any
                 new_signature = (tuple(sorted((k, key) for k, (key, _) in jobs.items())), current.llm_api_key,
                                  current.embed_api_key, current.llm_timeout_s)
                 if new_signature != signature:
-                    for gen in (extractor(current), projection(current)):
+                    for gen in (extractor(current), projection(current), summaries.summarizer(current)):
                         if gen is not None:
                             generations.ensure(conn, gen)  # rows reference their generation
                     holder["jobs"] = jobs
