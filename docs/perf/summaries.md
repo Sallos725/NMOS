@@ -98,3 +98,30 @@ Nothing forbidden was placed as current in any `packet-v8` run. What the step ad
      them too;
    - a summary written before such a secret is held and written again;
    - the same story then read "…신체적 접촉을 통해 애정을 확인했습니다": no kiss, a vaguer hint (K30).
+
+## Gates before summaries reach a packet (review, 2026-09-28)
+
+`packet-v8` (after the turn-numbering fix took `packet-v7`), the restored copy, `summarize-v3` summaries.
+
+**M0** (`gemma4` extraction, the production model; `packet-v6` at 800 against `packet-v8` at 2,000): no category of
+the 28 cases changed and nothing more was placed as forbidden; the 12 cases outside the prompt window went from 2 to 5
+(early events 1 → 3, the why 0 → 1). `deepseek` extraction: 24 of 28 and 2 of 12, as before. **Passed.**
+
+**Secret gate** (`tools/eval_secret_gate.py`, 6 draft cases outside the repository, **waiting for the owner's
+confirmation**). Each case is a probe at the chat's recorded request, addressed to a character a secret is kept from
+(Elpi: the kisses of turns 60–68; Blanc: Elpi's plans to watch her class, Yuuma's early leave, the dark kitchen at
+night; Radia: the back door at the third period), with the words that would tell it:
+
+| | cases with none of the words in `<Story>` | `<Story>` present |
+|---|---:|---:|
+| `gemma4` summaries | 5 of 6 | 6 |
+| `deepseek` summaries | 6 of 6 | 2 (held in 4) |
+
+The miss: asked by Blanc what Elpi is plotting, the `gemma4` story said "블랑의 수업에 몰래 잠입하는 작전". The
+secret it names is stale:
+- the story had Blanc see them at the window at turn 21 and at the back door at turn 30, and the facts record her
+  knowing it;
+- but no reveal matched the listed secrets, so they stay open (the K29 family of misses).
+
+None of the words stood outside `<Private>` in the `packet-v6` packets of the same requests. **Not passed** as the gate
+is written.
