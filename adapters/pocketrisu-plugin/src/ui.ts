@@ -8,10 +8,10 @@ import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
 import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, fillProject, MAX_DEADLINE_MS, presetMatches, VERTEX_URL,
   type FormValues, type Section } from './form';
-import { langOf, t, type Lang, type StringKey } from './i18n';
-import { entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices, localTime, safeFragment,
-  sectionTarget } from './inspector';
-import type { EntityRow } from './inspector';
+import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
+import { closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices, localTime,
+  repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
+import type { EntityRow, RepairAction } from './inspector';
 import { routeFor } from './route';
 
 export type Tab = 'status' | 'inspector' | 'settings';
@@ -124,6 +124,10 @@ html,body{margin:0;background:#0c0c10}
 .nmos .insp th,.nmos .insp td{text-align:left;padding:6px 8px;border-bottom:1px solid #30323b;vertical-align:top}
 .nmos .insp th{font-weight:600;color:#9a9ca8;font-size:12px;white-space:nowrap}
 .nmos .insp .chip{display:inline-block;padding:0 6px;border-radius:4px;background:#2b2d36;font-size:12px}
+.nmos .insp span.rp{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;margin-left:6px;vertical-align:middle}
+.nmos .insp span.rp input,.nmos .insp span.rp select{width:auto;padding:2px 6px;font-size:12px}
+.nmos .insp span.rp input[type=text]{width:12em}.nmos .insp span.rp input.turn{width:7em}
+.nmos button.mini{padding:2px 8px;font-size:12px}
 .nmos .inspbar{position:sticky;top:0;z-index:1;background:#0c0c10;padding:8px 0;margin-top:4px}
 .nmos .help{margin:8px 0 0}.nmos .help summary{cursor:pointer}.nmos .help p{margin:6px 0 0}
 .nmos .packet{margin:8px 0 0;max-height:420px;overflow:auto;background:#15161b;border:1px solid #30323b;border-radius:6px;padding:10px;font-family:ui-monospace,monospace;font-size:12.5px;white-space:pre-wrap;word-break:break-word}
@@ -338,8 +342,155 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const linkCard = el('div', { class: 'card', style: 'display:none' });
   // On a conversation's page: how memory treats what only some characters know (ADR 0035).
   const modeCard = el('div', { class: 'card', style: 'display:none' });
+  // The owner's repairs (ADR 0044): the threads picked for closing together, and the close controls on the page now,
+  // by thread (one can show twice: under Threads and under Needs attention; its controls stay in step).
+  const picked = new Set<string>();
+  const chosen = new Map<string, string>(); // the outcome picked for a thread, kept through a refresh
+  let closers = new Map<string, { first?: string; boxes: HTMLInputElement[]; selects: HTMLSelectElement[] }>();
+  const bulkClose = el('button');
+  const bulkBar = el('div', { class: 'btns', style: 'display:none' }, bulkClose);
   inspectorView.append(el('div', { class: 'btns inspbar' }, inspectorBack, inspectorRefresh), actions, actionMsg,
-    modeCard, linkCard, inspectorBody, inspectorAddress);
+    bulkBar, modeCard, linkCard, inspectorBody, inspectorAddress);
+  function updateBulk(): void {
+    bulkBar.style.display = picked.size ? '' : 'none';
+    bulkClose.textContent = L('rp.bulk', { n: picked.size });
+  }
+  /** The outcome a close of this thread sends: the one picked on the page, else its kind's default. */
+  function outcomeOf(item: string): Record<string, string> {
+    const c = closers.get(item);
+    const outcome = c?.selects[0]?.value ?? c?.first;
+    return outcome ? { outcome } : {};
+  }
+  /** The controls for one repair the page marks. */
+  function repairControls(action: RepairAction): Node[] {
+    if (action.kind === 'thread_close') return closeControls(action);
+    const n = action.kind === 'fact_correct' ? L(action.extra === 'object' ? 'rp.field_object' : 'rp.field_value')
+      : action.extra ?? '';
+    const button = el('button', { class: 'mini', text: L(`rp.${action.kind}` as StringKey, { n }) });
+    button.addEventListener('click', () => {
+      if (action.kind === 'fact_correct') correctForm(action, button);
+      else void repairNow(action, button);
+    });
+    return [button];
+  }
+  /** A close: the outcomes of the thread's kind (the default first), a box to close several at once, the button. */
+  function closeControls(action: RepairAction): Node[] {
+    const item = action.item;
+    const choices = closeOutcomes(action.extra);
+    let c = closers.get(item);
+    if (!c) closers.set(item, c = { first: choices[0], boxes: [], selects: [] });
+    const group = c;
+    const nodes: Node[] = [];
+    const box = el('input', { type: 'checkbox', 'aria-label': L('rp.select') });
+    box.checked = picked.has(item);
+    box.addEventListener('change', () => {
+      if (box.checked) picked.add(item); else picked.delete(item);
+      for (const other of group.boxes) other.checked = box.checked;
+      updateBulk();
+    });
+    group.boxes.push(box);
+    nodes.push(box);
+    if (choices.length > 1) {
+      const select = el('select', { class: 'mini', 'aria-label': L('rp.outcome') },
+        ...choices.map((o) => el('option', { value: o, text: outcomeLabel(o) })));
+      const was = chosen.get(item);
+      if (was && choices.includes(was)) select.value = was;
+      select.addEventListener('change', () => {
+        chosen.set(item, select.value);
+        for (const other of group.selects) other.value = select.value;
+      });
+      group.selects.push(select);
+      nodes.push(select);
+    }
+    const button = el('button', { class: 'mini', text: L('rp.thread_close') });
+    button.addEventListener('click', () => void repairNow(action, button, outcomeOf(item)));
+    nodes.push(button);
+    return nodes;
+  }
+  function outcomeLabel(outcome: string): string {
+    const key = `oc.${outcome}` as StringKey;
+    return STRING_KEYS.includes(key) ? L(key) : outcome;
+  }
+  /** A correction's form in place of its button (PHASE-13 Q5): the new object or value, and the turn it takes effect
+   * (empty: the fact's own turn). */
+  function correctForm(action: RepairAction, button: HTMLButtonElement): void {
+    const spot = button.parentElement;
+    if (!spot) return;
+    const field = action.extra === 'object' ? 'object' : 'value';
+    const text = el('input', { type: 'text', placeholder: L('rp.correct_prompt', { f: L(`rp.field_${field}`) }),
+      'aria-label': L(`rp.field_${field}`) });
+    const turn = el('input', { type: 'number', min: '0', step: '1', class: 'turn', placeholder: L('rp.turn_hint'),
+      'aria-label': L('rp.turn') });
+    const save = el('button', { class: 'mini', text: L('save') });
+    const cancel = el('button', { class: 'mini', text: L('cancel') });
+    cancel.addEventListener('click', () => spot.replaceChildren(...repairControls(action)));
+    save.addEventListener('click', () => {
+      const next = text.value.trim();
+      if (!next) return void text.focus();
+      const body: Record<string, unknown> = { [field === 'object' ? 'new_object' : 'new_value']: next };
+      const at = turn.value.trim();
+      if (at) {
+        const n = Number(at);
+        if (!Number.isInteger(n) || n < 0) return void say(actionMsg, L('rp.bad_turn'), 'err');
+        body.turn = n;
+      }
+      void repairNow(action, save, body);
+    });
+    spot.replaceChildren(el('span', { class: 'rpform' }, text, turn, save, cancel));
+    text.focus();
+  }
+  async function repairNow(action: RepairAction, button: HTMLButtonElement, extra: Record<string, unknown> = {}):
+    Promise<void> {
+    const conversation = inspectorConversation(inspectorPath);
+    if (!conversation) return;
+    let path = `/v1/conversations/${conversation}/repairs`;
+    let body: Record<string, unknown> = { kind: action.kind, item: action.item, ...extra };
+    if (action.kind === 'undo') {
+      path = `${path}/${action.item}/remove`;
+      body = {};
+    } else if (action.kind === 'secret_found_out' || action.kind === 'secret_keep') {
+      body.character = action.extra;
+    }
+    button.disabled = true;
+    try {
+      await deps.api('POST', path, body, 15_000);
+      picked.delete(action.item);
+      updateBulk();
+      say(actionMsg, L(action.kind === 'undo' ? 'rp.undone' : 'rp.done'), 'ok');
+      await showInspector();
+    } catch (error) {
+      say(actionMsg, errorText(lang, error), 'err');
+      button.disabled = false;
+    }
+  }
+  bulkClose.addEventListener('click', async () => {
+    const conversation = inspectorConversation(inspectorPath);
+    if (!conversation || !picked.size) return;
+    bulkClose.disabled = true;
+    let done = 0;
+    let failed = 0;
+    let firstError: unknown = null;
+    for (const item of Array.from(picked)) { // one refusal does not stop the others
+      try {
+        await deps.api('POST', `/v1/conversations/${conversation}/repairs`,
+          { kind: 'thread_close', item, ...outcomeOf(item) }, 15_000);
+        picked.delete(item);
+        done += 1;
+      } catch (error) {
+        failed += 1;
+        firstError ??= error;
+      }
+    }
+    if (failed) {
+      say(actionMsg, `${L('rp.bulk_done', { n: done })} ${L('rp.bulk_failed', { n: failed })} ${errorText(lang, firstError)}`,
+        'err');
+    } else {
+      say(actionMsg, L('rp.bulk_done', { n: done }), 'ok');
+    }
+    bulkClose.disabled = false;
+    updateBulk();
+    await showInspector();
+  });
   let actionConversation: string | null = null;
   function place(): Place {
     const open = Array.from(inspectorBody.querySelectorAll<HTMLDetailsElement>('details[id]')).filter((d) => d.open);
@@ -351,6 +502,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   }
   /** Adapt a page to the panel: times in the viewer's zone, the character links as a drop-down. */
   function enhance(page: DocumentFragment): void {
+    closers = new Map();
+    for (const spot of Array.from(page.querySelectorAll('span.rp[data-repair]'))) {
+      const action = repairAction(spot.getAttribute('data-repair'));
+      if (action) spot.replaceChildren(...repairControls(action));
+    }
+    for (const item of Array.from(picked)) if (!closers.has(item)) picked.delete(item); // closed or gone since
+    updateBulk();
     for (const span of Array.from(page.querySelectorAll('span.ts[title]'))) {
       const shown = localTime(span.getAttribute('title') ?? '', lang);
       if (!shown) continue;
@@ -385,6 +543,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       actionConversation = conversation;
       say(actionMsg, '');
       disarm();
+      picked.clear();
+      updateBulk();
     }
     actions.style.display = conversation ? '' : 'none';
     const shownEntity = inspectorEntity(path);
@@ -486,6 +646,23 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       rows.push(el('div', { class: 'btns' }, el('span', { text: `${link.name} = ${link.same_as}` }), undo));
     }
     const card: (Node | string)[] = [el('h2', { text: L('link.title') }), el('p', { class: 'sub', text: L('link.sub') }), ...rows];
+    const splits: HTMLElement[] = [];
+    for (const alias of splitChoices(self)) {
+      const split = el('button', { text: L('split.do') });
+      split.addEventListener('click', async () => {
+        split.disabled = true;
+        try {
+          await deps.api('POST', `/v1/conversations/${conversation}/repairs`,
+            { kind: 'name_split', item: alias.name, other: alias.other, entity_type: self.type }, 15_000);
+          const now = await deps.api<EntityRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
+          const next = entityNamed(now, self.type, self.name);
+          say(actionMsg, L('split.done', { a: alias.name, b: alias.other }), 'ok');
+          if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+          else await showInspector();
+        } catch (error) { say(msg, errorText(lang, error), 'err'); split.disabled = false; }
+      });
+      splits.push(el('div', { class: 'btns' }, el('span', { text: `${alias.name} ~ ${alias.other}` }), split));
+    }
     if (others.length) {
       const pick = el('select', { 'aria-label': L('link.pick') },
         ...others.map((e) => el('option', { value: e.name, text: `${e.name} (${e.mentions})` })));
@@ -504,6 +681,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     } else {
       card.push(el('div', { class: 'muted', text: L('link.none') }));
     }
+    if (splits.length) card.push(el('h2', { text: L('split.title') }), el('p', { class: 'sub', text: L('split.sub') }), ...splits);
     linkCard.replaceChildren(...card, msg);
     linkCard.style.display = '';
   }

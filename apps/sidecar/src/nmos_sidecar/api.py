@@ -807,7 +807,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     standing=[f for f in view["facts"] if f["predicate"] in STANDING],
                                     packet=audit.audit(conn, traces[0]["id"]) if traces else None,
                                     summaries=summary_view(conn, conv_id, head, view["secrets"]),
-                                    repairs=repair_rows(conn, conv_id, view["repairs"]))
+                                    repairs=repair_rows(conn, conv_id, view["repairs"]), last_turn=head_turn(conn, head))
 
     def summary_view(conn, conv_id: UUID, head: UUID, secrets: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The Inspector's summaries of a chat (PHASE-12 step 6), with the generation and whether packets use them."""

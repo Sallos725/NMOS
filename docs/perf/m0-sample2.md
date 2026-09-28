@@ -79,3 +79,6 @@ already ended in the story, close to the first chat (50 of 59). Four ends were e
 restate a goal that is already closed. In the other two, someone other than the thread's owner ends it: the one
 threatened resolves a threat, and a helper resolves another's goal. Both carry the thread's exact text and name its
 owner as the object. On the first chat, 1 of 9 unmatched ends is of this kind (a promise).
+
+Phase 13 step 6: with the owner's decisions made as repairs (9 threads closed), none of them reaches a packet
+(`docs/perf/repair.md`).

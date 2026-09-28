@@ -19,7 +19,7 @@ from xml.sax.saxutils import escape, quoteattr
 from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
 from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
-from .repairs import apply_facts, live, repairs_of, secret_events, splits_of, thread_events
+from .repairs import IN_FORCE, REPAIR_COLUMNS, apply_facts, live, secret_events, splits_of, thread_events
 from .secrets import fold as fold_secrets
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
@@ -359,12 +359,17 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                 "items": [], "threads": [], "unmatched": [], "secrets": [], "unrevealed": [], "repairs": [],
                 "assertions": [], "resolution": None}
     rows = [r for r in served_assertions(conn, head, extractor_key, upto, known_at) if r["predicate"] in REGISTRY]
-    conv = conn.execute("SELECT w.conversation_id, c.host_persona_name FROM worldline_commit w"
-                        " JOIN conversation c ON c.id = w.conversation_id WHERE w.id = %s", (head,)).fetchone()
-    repairs = repairs_of(conn, conv["conversation_id"], known_at)  # the owner's (ADR 0044), as of the read
-    last_turn = conn.execute(
-        "SELECT max(turn) AS t FROM active_membership WHERE commit_id = %s AND (%s::int IS NULL OR position <= %s::int)",
-        (head, upto, upto)).fetchone()["t"] if repairs else None
+    # The conversation, the owner's repairs as of the read (ADR 0044) and the read's last turn, in one query.
+    found = conn.execute(
+        "SELECT w.conversation_id, c.host_persona_name, r.id, r.kind, r.target, r.value, r.note, r.created_at,"
+        " (SELECT max(turn) FROM active_membership WHERE commit_id = %(head)s"
+        "  AND (%(upto)s::int IS NULL OR position <= %(upto)s::int)) AS last_turn"
+        " FROM worldline_commit w JOIN conversation c ON c.id = w.conversation_id"
+        f" LEFT JOIN owner_repair r ON r.conversation_id = w.conversation_id AND {IN_FORCE[known_at is not None]}"
+        " WHERE w.id = %(head)s ORDER BY r.created_at, r.id", {"head": head, "upto": upto, "at": known_at}).fetchall()
+    conv = found[0]
+    repairs = [{k: x[k] for k in REPAIR_COLUMNS} for x in found if x["id"] is not None]
+    last_turn = conv["last_turn"] if repairs else None
     in_force = live(repairs, last_turn)
     r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]),
                 links_of(conn, conv["conversation_id"], known_at), splits_of(in_force))
@@ -384,8 +389,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     # The owner's repairs (ADR 0044): retracted and corrected facts first, then events of their turn in the secret and
     # thread folds, and name splits in the resolution above.
     applied: dict[str, str | None] = {}
-    corrected_at = sorted({(rep.get("value") or {}).get("turn") for rep in in_force if rep["kind"] == "fact_correct"}
-                          - {None})
+    corrected_at = sorted({(rep.get("value") or {}).get("turn") for rep in in_force if rep["kind"] == "fact_correct"
+                           and (rep.get("value") or {}).get("turn") != rep["target"].get("turn")} - {None})  # later turns
     turn_positions = {x["turn"]: x["p"] for x in conn.execute(
         "SELECT turn, max(position) AS p FROM active_membership WHERE commit_id = %s AND turn = ANY(%s) GROUP BY turn",
         (head, corrected_at)).fetchall()} if corrected_at else {}
@@ -427,9 +432,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                                 "object": c["object"], "value": c["value"], "polarity": c["polarity"]})
     facts.sort(key=lambda f: f["position"], reverse=True)
     for rid, gone in retracted.items():  # the version a retraction made current again names it (ADR 0044, Q7)
-        key = version_key(gone, r)
-        for f in facts:
-            if not f.get("repair") and version_key(f, r) == key:
+        for f in by_key.get(version_key(gone, r), []):
+            if not f.get("repair"):
                 f["repair"] = rid
     other.sort(key=lambda a: a["position"], reverse=True)
     cause_links(facts + claims, [f for f in facts if f["predicate"] == "event" and f.get("polarity") != "negative"], r)

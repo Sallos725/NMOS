@@ -74,6 +74,17 @@ def test_a_database_of_an_earlier_release_upgrades_and_keeps_working(dump, datab
             assert 'title="open"' in promise
             pairs = section("pairs")
             assert 'Relationships <span class="n">1</span>' in pairs and pairs.count("Mina ↔ Rin") == 1
+            # Phase 13: the owner closes that thread on the upgraded chat (migration 0024), and takes it back.
+            cid = convs[main.id]
+            promise = next(t for t in c.get(f"/v1/conversations/{cid}/threads").json()
+                           if "return before the bell rings" in t["text"])
+            made = c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "thread_close", "item": str(promise["id"])})
+            assert made.status_code == 200 and made.json()["applied"], made.text
+            status = lambda: next(t["status"] for t in c.get(f"/v1/conversations/{cid}/threads").json()
+                                  if "return before the bell rings" in t["text"])
+            assert status() == "kept"
+            undo = c.post(f"/v1/conversations/{cid}/repairs/{made.json()['repair']['id']}/remove")
+            assert undo.status_code == 200 and status() == "open"
         old_trace = c.get(f"/v1/conversations/{convs[main.id]}/traces").json()
         assert old_trace, "the earlier release's recall traces are kept"
         # Packets an earlier release recorded (since the ledger, beta.19) replay under their own policy; one

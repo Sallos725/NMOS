@@ -536,3 +536,83 @@ def test_a_correction_follows_the_predicate(migrated):
         res = c.post(f"/v1/conversations/{cid}/repairs", json={"kind": "fact_correct", "item": str(trait["id"]),
                                                                "new_object": "Kaito"})
         assert res.status_code == 422 and "has no object" in res.json()["detail"]
+
+
+# --- Step 5: where the panel repairs, and what needs a look ---------------------------------------------------------
+
+
+def test_a_thread_needs_a_look_after_more_than_30_turns_without_a_restatement():
+    """PHASE-13 Q6 (Codex review of step 5): more than STALE_TURNS turns, counted from its latest statement."""
+    from nmos_sidecar.inspector import STALE_TURNS, _attention
+    th = {"id": 1, "kind": "goal", "status": "open", "turn": 1, "restated": [], "by": "하나", "to": None, "text": AIM}
+    def listed(last: int, **kw) -> bool:
+        return bool(_attention({"threads": [{**th, **kw}]}, [], last, "en"))
+    assert not listed(STALE_TURNS) and not listed(1 + STALE_TURNS) and listed(2 + STALE_TURNS)
+    assert not listed(40, restated=[{"turn": 20}])
+    assert not listed(40, status="achieved")
+
+
+def test_apply_facts_keeps_a_later_turn_correction_s_original_and_lets_a_later_repair_name_it():
+    """Codex review of step 6: a correction from a later turn is a new version; the story's version stays history."""
+    rows = [{"id": t + 1, "turn": t, "turn_hash": f"h{t}", "position": 2 * t + 1, "predicate": "located_in",
+             "source": "narration", "subject": "하나", "subject_type": "character", "object": f"장소{t}",
+             "object_type": "place", "value": None} for t in range(5)]
+    def owner(kind, row, **value):
+        return {"id": uuid.uuid4(), "kind": kind, "target": repairs.fact_target(row), "value": value, "note": None}
+    later = owner("fact_correct", rows[1], object="등대", turn=3)
+    again = owner("fact_retract", rows[1])
+    applied: dict = {}
+    out, retracted = repairs.apply_facts(rows, [later, again], None, applied, turn_positions={3: 7})
+    assert [x["id"] for x in out if not x.get("owner")] == [1, 3, 4, 5]  # the retraction named the original
+    new = next(x for x in out if x.get("owner"))
+    assert (new["turn"], new["position"], out.index(new)) == (3, 7, 3)  # at the end of turn 3
+    assert applied == {str(later["id"]): "2", str(again["id"]): "2"} and set(retracted) == {str(again["id"])}
+    out, _ = repairs.apply_facts(rows, [later], None, {}, turn_positions={3: 7})
+    assert [x["id"] for x in out][:5] == [1, 2, 3, 4, new["id"]]  # the story's version stays as history
+
+
+def test_a_disputed_owner_correction_offers_its_undo_not_a_retraction():
+    """Copilot review of step 5: the API refuses to repair an owner's version; the owner takes the repair back."""
+    from nmos_sidecar.inspector import _attention
+    rid = str(uuid.uuid4())
+    view = {"facts": [{"id": -7, "owner": True, "repair": rid}, {"id": 8}],
+            "conflicts": [{"fact": -7, "text": "the owner's version", "turn": 3},
+                          {"fact": 8, "text": "the story's", "turn": 4}]}
+    acts = [row[-1] for row in _attention(view, [], 10, "en")]
+    assert acts == [f'<span class="rp" data-repair="undo:{rid}"></span>',
+                    '<span class="rp" data-repair="fact_retract:8"></span>']
+
+
+def test_a_mark_carries_any_name_as_data_and_offers_each_field_a_correction_can_set():
+    """Codex review of step 5: a name with a quote, an ampersand or a colon keeps its button; a relationship can be
+    corrected in its counterpart or in its value."""
+    from nmos_sidecar.inspector import _act, _corrections
+    assert _act("secret_found_out", 3, "O'Neil & Co: 1") == (
+        '<span class="rp" data-repair="secret_found_out:3:O%27Neil%20%26%20Co%3A%201"></span>')
+    assert _act("secret_keep", 3, "하나") == '<span class="rp" data-repair="secret_keep:3:%ED%95%98%EB%82%98"></span>'
+    assert _act("thread_close", 5, "kept,broken").endswith(':kept,broken"></span>')
+    assert _corrections({"predicate": "relationship", "object": "카이토", "value": "친구"}) == ["object", "value"]
+    assert _corrections({"predicate": "located_in", "object": "등대", "value": None}) == ["object"]
+
+
+def test_the_inspector_marks_where_each_repair_can_be_made_and_lists_what_needs_a_look(migrated):
+    chat = repair_chat()
+    for i in range(33):  # the goal stays open, not restated, for more than STALE_TURNS turns
+        chat.user(f"Turn {i} passes.")
+        chat.reply("Noted.")
+    chat.user("Go on.")
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        t, s = thread(c, cid), secret(c, cid)
+        page = c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
+        # a goal: its default outcome first, then the others its kind may close with
+        assert f'data-repair="thread_close:{t["id"]}:achieved,abandoned,failed,answered,averted,paid"' in page
+        assert f'data-repair="secret_found_out:{s["id"]}:Kaito"' in page
+        located = fact(c, cid, "Kaito", "located_in")
+        assert f'data-repair="fact_retract:{located["id"]}"' in page and f'data-repair="fact_correct:{located["id"]}:object"' in page
+        attention = page[page.index('id="s-attention"'):page.index("</details>", page.index('id="s-attention"'))]
+        assert "open for more than 30 turns without a restatement" in attention and GOAL in attention
+        out = repair(c, cid, kind="thread_close", item=str(t["id"]))
+        page = c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
+        assert f'data-repair="undo:{out["repair"]["id"]}"' in page and f'data-repair="thread_close:{t["id"]}' not in page
+        assert "Nothing needs a look." in page

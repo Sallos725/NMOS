@@ -94,7 +94,10 @@ outside the prompt window 2 → 5 of 12 with the story covering every scene with
 ## Stage 6 — Verification and repair
 
 *Original §20, §66–67; Track B, B2 remainder, B4, B7.* Has: item whereabouts, `destroyed`, conflicts,
-Inspector, owner entity links.
+Inspector, owner entity links. Part 1 on `main` (Phase 13, ADR 0044): owner repair (close or reopen a thread, retract or
+correct a fact, a secret found out or kept, split two names) in the panel, audited and surviving rebuilds, and a
+"Needs attention" list per chat; K8 and K23 rewritten to what remains (`docs/perf/repair.md`). Open: transition rules,
+canon as sources, export and restore.
 
 Scope (draft):
 - transition rules for status and identity and for relationships, with pending, conflicting and

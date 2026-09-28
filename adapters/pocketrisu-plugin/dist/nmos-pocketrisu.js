@@ -16,7 +16,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:8f2d502c32b2".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:b1f7a1a81fe0".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -237,6 +237,45 @@
     "link.none": ["\uD569\uCE60 \uC218 \uC788\uB294 \uAC19\uC740 \uC885\uB958\uC758 \uB300\uC0C1\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No other entity of this type."],
     "link.done": ['"{a}"\uC640(\uACFC) "{b}"\uB97C \uD569\uCCE4\uC2B5\uB2C8\uB2E4.', 'Joined "{a}" and "{b}".'],
     "link.removed": ["\uC5F0\uACB0\uC744 \uD574\uC81C\uD588\uC2B5\uB2C8\uB2E4.", "Link undone."],
+    // owner repair (ADR 0044): buttons the panel puts on the inspector's lines
+    "rp.thread_close": ["\uB2EB\uAE30", "Close"],
+    "rp.thread_reopen": ["\uB2E4\uC2DC \uC5F4\uAE30", "Reopen"],
+    "rp.secret_found_out": ["{n}: \uC54C\uAC8C \uB428", "{n}: found out"],
+    "rp.secret_keep": ["{n}: \uC544\uC9C1 \uBAA8\uB984", "{n}: still kept"],
+    "rp.fact_retract": ["\uCCA0\uD68C", "Retract"],
+    "rp.fact_correct": ["\uC815\uC815({n})", "Correct {n}"],
+    "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
+    "rp.select": ["\uC77C\uAD04 \uB2EB\uAE30\uC5D0 \uB123\uAE30", "Select to close"],
+    "rp.outcome": ["\uB2EB\uB294 \uACB0\uACFC", "Outcome"],
+    "oc.kept": ["\uC9C0\uD0B4", "kept"],
+    "oc.broken": ["\uAE68\uC9D0", "broken"],
+    "oc.achieved": ["\uC774\uB8F8", "achieved"],
+    "oc.abandoned": ["\uADF8\uB9CC\uB460", "abandoned"],
+    "oc.failed": ["\uC2E4\uD328", "failed"],
+    "oc.answered": ["\uB2F5\uC774 \uB098\uC634", "answered"],
+    "oc.averted": ["\uD53C\uD568", "averted"],
+    "oc.paid": ["\uAC1A\uC74C", "paid"],
+    "rp.bulk": ["\uACE0\uB978 \uC2A4\uB808\uB4DC {n}\uAC1C \uB2EB\uAE30", "Close {n} selected threads"],
+    "rp.bulk_done": ["\uC2A4\uB808\uB4DC {n}\uAC1C\uB97C \uB2EB\uC558\uC2B5\uB2C8\uB2E4.", "Closed {n} threads."],
+    "rp.bulk_failed": ["{n}\uAC1C\uB294 \uB2EB\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4:", "{n} could not be closed:"],
+    "rp.done": [
+      "\uACE0\uCCE4\uC2B5\uB2C8\uB2E4. \uC7AC\uAD6C\uCD95\uACFC \uC0C8 \uCD94\uCD9C \uC138\uB300\uC5D0\uB3C4 \uB0A8\uACE0, \uC218\uB9AC \uCE78\uC5D0\uC11C \uB418\uB3CC\uB9B4 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+      "Fixed. It survives rebuilds and new extractor generations; undo it in Repairs."
+    ],
+    "rp.undone": ["\uB418\uB3CC\uB838\uC2B5\uB2C8\uB2E4.", "Undone."],
+    "rp.correct_prompt": ["\uC0C8 {f}", "New {f}"],
+    "rp.turn": ["\uC801\uC6A9 \uD134", "From turn"],
+    "rp.turn_hint": ["\uD134 (\uBE44\uC6B0\uBA74 \uADF8 \uC0AC\uC2E4\uC758 \uD134)", "turn (empty: the fact's)"],
+    "rp.bad_turn": ["\uD134\uC740 0 \uC774\uC0C1\uC758 \uC815\uC218\uC785\uB2C8\uB2E4.", "A turn is a whole number, 0 or more."],
+    "rp.field_object": ["\uB300\uC0C1", "object"],
+    "rp.field_value": ["\uAC12", "value"],
+    "split.title": ["\uC798\uBABB \uD569\uCCD0\uC9C4 \uC774\uB984 \uB098\uB204\uAE30", "Split names joined by mistake"],
+    "split.sub": [
+      "\uC774\uC57C\uAE30\uAC00 \uAC19\uC740 \uC778\uBB3C\uB85C \uBB36\uC740 \uB450 \uC774\uB984\uC744 \uB098\uB215\uB2C8\uB2E4(K8). \uC624\uB108\uAC00 \uD569\uCE5C \uAC83\uC740 \uC704\uC758 \uD574\uC81C\uB97C \uC4F0\uC138\uC694.",
+      "Separates two names the story joined as one (K8). For a join you made, use Undo above."
+    ],
+    "split.do": ["\uBD84\uB9AC", "Split"],
+    "split.done": ['"{a}"\uC640(\uACFC) "{b}"\uB97C \uB098\uB234\uC2B5\uB2C8\uB2E4.', 'Split "{a}" and "{b}".'],
     "mode.title": ["\uAE30\uC5B5 \uBAA8\uB4DC (\uC774 \uCC44\uD305)", "Memory mode (this chat)"],
     "mode.sub": [
       '\uBE44\uBC00\uCC98\uB7FC \uC77C\uBD80 \uC778\uBB3C\uB9CC \uC544\uB294 \uAE30\uC5B5\uC744 \uC5B4\uB5BB\uAC8C \uB123\uC744\uC9C0 \uC815\uD569\uB2C8\uB2E4. \uAE30\uBCF8\uAC12\uC740 "\uC544\uB294 \uC778\uBB3C\uB9CC \uC548\uB2E4"\uB294 \uADDC\uCE59\uACFC \uD568\uAED8 \uB123\uB294 \uAC83\uC785\uB2C8\uB2E4.',
@@ -1276,6 +1315,38 @@ ${revisionHash}`;
     const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
+  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|undo):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+  function repairAction(value) {
+    const m = value ? REPAIR.exec(value) : null;
+    if (!m?.[1] || !m[2]) return null;
+    let extra = null;
+    if (m[3] !== void 0) {
+      try {
+        extra = decodeURIComponent(m[3]);
+      } catch {
+        return null;
+      }
+      if (!extra.trim() || extra.length > 120 || /[\u0000-\u001f\u007f]/.test(extra)) return null;
+    }
+    return { kind: m[1], item: m[2], extra };
+  }
+  function closeOutcomes(extra) {
+    return (extra ?? "").split(",").filter((o) => /^[a-z_]{1,24}$/.test(o));
+  }
+  function splitChoices(self) {
+    const own = new Set(self.names.map((n) => n.trim().toLowerCase()));
+    const seen = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const { name, other } of self.aliases ?? []) {
+      const a = name.trim().toLowerCase();
+      const b = other.trim().toLowerCase();
+      const key = a < b ? `${a}\0${b}` : `${b}\0${a}`;
+      if (a === b || !own.has(a) || !own.has(b) || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ name, other });
+    }
+    return out;
+  }
   function linkChoices(entities, id) {
     const self = entities.find((e) => e.id === id);
     if (!self || !Array.isArray(self.links)) return null;
@@ -1299,6 +1370,8 @@ ${revisionHash}`;
         return SECTION.test(value);
       case "href":
         return inspectorApiPath(value) !== null || sectionTarget(value) !== null;
+      case "data-repair":
+        return repairAction(value) !== null;
       default:
         return false;
     }
@@ -1414,6 +1487,10 @@ html,body{margin:0;background:#0c0c10}
 .nmos .insp th,.nmos .insp td{text-align:left;padding:6px 8px;border-bottom:1px solid #30323b;vertical-align:top}
 .nmos .insp th{font-weight:600;color:#9a9ca8;font-size:12px;white-space:nowrap}
 .nmos .insp .chip{display:inline-block;padding:0 6px;border-radius:4px;background:#2b2d36;font-size:12px}
+.nmos .insp span.rp{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;margin-left:6px;vertical-align:middle}
+.nmos .insp span.rp input,.nmos .insp span.rp select{width:auto;padding:2px 6px;font-size:12px}
+.nmos .insp span.rp input[type=text]{width:12em}.nmos .insp span.rp input.turn{width:7em}
+.nmos button.mini{padding:2px 8px;font-size:12px}
 .nmos .inspbar{position:sticky;top:0;z-index:1;background:#0c0c10;padding:8px 0;margin-top:4px}
 .nmos .help{margin:8px 0 0}.nmos .help summary{cursor:pointer}.nmos .help p{margin:6px 0 0}
 .nmos .packet{margin:8px 0 0;max-height:420px;overflow:auto;background:#15161b;border:1px solid #30323b;border-radius:6px;padding:10px;font-family:ui-monospace,monospace;font-size:12.5px;white-space:pre-wrap;word-break:break-word}
@@ -1657,15 +1734,174 @@ html,body{margin:0;background:#0c0c10}
     );
     const linkCard = el("div", { class: "card", style: "display:none" });
     const modeCard = el("div", { class: "card", style: "display:none" });
+    const picked = /* @__PURE__ */ new Set();
+    const chosen = /* @__PURE__ */ new Map();
+    let closers = /* @__PURE__ */ new Map();
+    const bulkClose = el("button");
+    const bulkBar = el("div", { class: "btns", style: "display:none" }, bulkClose);
     inspectorView.append(
       el("div", { class: "btns inspbar" }, inspectorBack, inspectorRefresh),
       actions,
       actionMsg,
+      bulkBar,
       modeCard,
       linkCard,
       inspectorBody,
       inspectorAddress
     );
+    function updateBulk() {
+      bulkBar.style.display = picked.size ? "" : "none";
+      bulkClose.textContent = L("rp.bulk", { n: picked.size });
+    }
+    function outcomeOf(item) {
+      const c = closers.get(item);
+      const outcome = c?.selects[0]?.value ?? c?.first;
+      return outcome ? { outcome } : {};
+    }
+    function repairControls(action) {
+      if (action.kind === "thread_close") return closeControls(action);
+      const n = action.kind === "fact_correct" ? L(action.extra === "object" ? "rp.field_object" : "rp.field_value") : action.extra ?? "";
+      const button = el("button", { class: "mini", text: L(`rp.${action.kind}`, { n }) });
+      button.addEventListener("click", () => {
+        if (action.kind === "fact_correct") correctForm(action, button);
+        else void repairNow(action, button);
+      });
+      return [button];
+    }
+    function closeControls(action) {
+      const item = action.item;
+      const choices = closeOutcomes(action.extra);
+      let c = closers.get(item);
+      if (!c) closers.set(item, c = { first: choices[0], boxes: [], selects: [] });
+      const group = c;
+      const nodes = [];
+      const box = el("input", { type: "checkbox", "aria-label": L("rp.select") });
+      box.checked = picked.has(item);
+      box.addEventListener("change", () => {
+        if (box.checked) picked.add(item);
+        else picked.delete(item);
+        for (const other of group.boxes) other.checked = box.checked;
+        updateBulk();
+      });
+      group.boxes.push(box);
+      nodes.push(box);
+      if (choices.length > 1) {
+        const select2 = el(
+          "select",
+          { class: "mini", "aria-label": L("rp.outcome") },
+          ...choices.map((o) => el("option", { value: o, text: outcomeLabel(o) }))
+        );
+        const was = chosen.get(item);
+        if (was && choices.includes(was)) select2.value = was;
+        select2.addEventListener("change", () => {
+          chosen.set(item, select2.value);
+          for (const other of group.selects) other.value = select2.value;
+        });
+        group.selects.push(select2);
+        nodes.push(select2);
+      }
+      const button = el("button", { class: "mini", text: L("rp.thread_close") });
+      button.addEventListener("click", () => void repairNow(action, button, outcomeOf(item)));
+      nodes.push(button);
+      return nodes;
+    }
+    function outcomeLabel(outcome) {
+      const key = `oc.${outcome}`;
+      return STRING_KEYS.includes(key) ? L(key) : outcome;
+    }
+    function correctForm(action, button) {
+      const spot = button.parentElement;
+      if (!spot) return;
+      const field2 = action.extra === "object" ? "object" : "value";
+      const text = el("input", {
+        type: "text",
+        placeholder: L("rp.correct_prompt", { f: L(`rp.field_${field2}`) }),
+        "aria-label": L(`rp.field_${field2}`)
+      });
+      const turn = el("input", {
+        type: "number",
+        min: "0",
+        step: "1",
+        class: "turn",
+        placeholder: L("rp.turn_hint"),
+        "aria-label": L("rp.turn")
+      });
+      const save2 = el("button", { class: "mini", text: L("save") });
+      const cancel = el("button", { class: "mini", text: L("cancel") });
+      cancel.addEventListener("click", () => spot.replaceChildren(...repairControls(action)));
+      save2.addEventListener("click", () => {
+        const next = text.value.trim();
+        if (!next) return void text.focus();
+        const body = { [field2 === "object" ? "new_object" : "new_value"]: next };
+        const at = turn.value.trim();
+        if (at) {
+          const n = Number(at);
+          if (!Number.isInteger(n) || n < 0) return void say(actionMsg, L("rp.bad_turn"), "err");
+          body.turn = n;
+        }
+        void repairNow(action, save2, body);
+      });
+      spot.replaceChildren(el("span", { class: "rpform" }, text, turn, save2, cancel));
+      text.focus();
+    }
+    async function repairNow(action, button, extra = {}) {
+      const conversation = inspectorConversation(inspectorPath);
+      if (!conversation) return;
+      let path = `/v1/conversations/${conversation}/repairs`;
+      let body = { kind: action.kind, item: action.item, ...extra };
+      if (action.kind === "undo") {
+        path = `${path}/${action.item}/remove`;
+        body = {};
+      } else if (action.kind === "secret_found_out" || action.kind === "secret_keep") {
+        body.character = action.extra;
+      }
+      button.disabled = true;
+      try {
+        await deps.api("POST", path, body, 15e3);
+        picked.delete(action.item);
+        updateBulk();
+        say(actionMsg, L(action.kind === "undo" ? "rp.undone" : "rp.done"), "ok");
+        await showInspector();
+      } catch (error) {
+        say(actionMsg, errorText(lang, error), "err");
+        button.disabled = false;
+      }
+    }
+    bulkClose.addEventListener("click", async () => {
+      const conversation = inspectorConversation(inspectorPath);
+      if (!conversation || !picked.size) return;
+      bulkClose.disabled = true;
+      let done = 0;
+      let failed = 0;
+      let firstError = null;
+      for (const item of Array.from(picked)) {
+        try {
+          await deps.api(
+            "POST",
+            `/v1/conversations/${conversation}/repairs`,
+            { kind: "thread_close", item, ...outcomeOf(item) },
+            15e3
+          );
+          picked.delete(item);
+          done += 1;
+        } catch (error) {
+          failed += 1;
+          firstError ??= error;
+        }
+      }
+      if (failed) {
+        say(
+          actionMsg,
+          `${L("rp.bulk_done", { n: done })} ${L("rp.bulk_failed", { n: failed })} ${errorText(lang, firstError)}`,
+          "err"
+        );
+      } else {
+        say(actionMsg, L("rp.bulk_done", { n: done }), "ok");
+      }
+      bulkClose.disabled = false;
+      updateBulk();
+      await showInspector();
+    });
     let actionConversation = null;
     function place() {
       const open = Array.from(inspectorBody.querySelectorAll("details[id]")).filter((d) => d.open);
@@ -1676,6 +1912,13 @@ html,body{margin:0;background:#0c0c10}
       root.scrollTop = at.scroll;
     }
     function enhance(page) {
+      closers = /* @__PURE__ */ new Map();
+      for (const spot of Array.from(page.querySelectorAll("span.rp[data-repair]"))) {
+        const action = repairAction(spot.getAttribute("data-repair"));
+        if (action) spot.replaceChildren(...repairControls(action));
+      }
+      for (const item of Array.from(picked)) if (!closers.has(item)) picked.delete(item);
+      updateBulk();
       for (const span of Array.from(page.querySelectorAll("span.ts[title]"))) {
         const shown2 = localTime(span.getAttribute("title") ?? "", lang);
         if (!shown2) continue;
@@ -1710,6 +1953,8 @@ html,body{margin:0;background:#0c0c10}
         actionConversation = conversation;
         say(actionMsg, "");
         disarm();
+        picked.clear();
+        updateBulk();
       }
       actions.style.display = conversation ? "" : "none";
       const shownEntity = inspectorEntity(path);
@@ -1831,6 +2076,30 @@ html,body{margin:0;background:#0c0c10}
         rows.push(el("div", { class: "btns" }, el("span", { text: `${link.name} = ${link.same_as}` }), undo));
       }
       const card = [el("h2", { text: L("link.title") }), el("p", { class: "sub", text: L("link.sub") }), ...rows];
+      const splits = [];
+      for (const alias of splitChoices(self)) {
+        const split = el("button", { text: L("split.do") });
+        split.addEventListener("click", async () => {
+          split.disabled = true;
+          try {
+            await deps.api(
+              "POST",
+              `/v1/conversations/${conversation}/repairs`,
+              { kind: "name_split", item: alias.name, other: alias.other, entity_type: self.type },
+              15e3
+            );
+            const now = await deps.api("GET", `/v1/conversations/${conversation}/entities`, void 0, 15e3);
+            const next = entityNamed(now, self.type, self.name);
+            say(actionMsg, L("split.done", { a: alias.name, b: alias.other }), "ok");
+            if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+            else await showInspector();
+          } catch (error) {
+            say(msg, errorText(lang, error), "err");
+            split.disabled = false;
+          }
+        });
+        splits.push(el("div", { class: "btns" }, el("span", { text: `${alias.name} ~ ${alias.other}` }), split));
+      }
       if (others.length) {
         const pick = el(
           "select",
@@ -1859,6 +2128,7 @@ html,body{margin:0;background:#0c0c10}
       } else {
         card.push(el("div", { class: "muted", text: L("link.none") }));
       }
+      if (splits.length) card.push(el("h2", { text: L("split.title") }), el("p", { class: "sub", text: L("split.sub") }), ...splits);
       linkCard.replaceChildren(...card, msg);
       linkCard.style.display = "";
     }
