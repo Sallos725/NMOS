@@ -87,6 +87,13 @@ The step's Codex review found eight defects, all confirmed and fixed before merg
 - a chat deleted and synced again got no canon;
 - a first text could exceed the batch size.
 
+The Copilot review of the pull request found five more, all fixed with tests:
+- a text is kept as the host has it (only its hash is normalized), not trimmed;
+- a lone surrogate hashes as U+FFFD, as the browser's encoder does (ADR 0029);
+- a host without the lorebook call, or without a list, gives no canon observation at all;
+- a message whose id happens to be a canon id is never taken as canon;
+- the newest observation holds from the time its manifest arrives, before its texts do.
+
 ## Consequences
 
 - A chat's canon is kept as the host showed it to that chat, with its history, and a request replays with its

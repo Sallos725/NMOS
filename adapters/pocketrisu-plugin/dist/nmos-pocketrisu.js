@@ -16,7 +16,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:f5d2f0abd71e".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:57e96ec4ffc6".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -69,8 +69,7 @@
   function canonTexts(card, chat, lore, persona) {
     const out = [];
     const add = (key, value, metadata = {}) => {
-      const t2 = text(value);
-      if (t2 && t2.length <= MAX_CANON_CHARS) out.push({ key, text: t2, metadata });
+      if (typeof value === "string" && value.trim() && value.length <= MAX_CANON_CHARS) out.push({ key, text: value, metadata });
     };
     if (card) {
       for (const field2 of ["name", "desc", "personality", "scenario"]) add(`card:${field2}`, card[field2], { field: field2 });
@@ -101,7 +100,7 @@
   }
   function heldKeys(canon, prompt) {
     const all = normalizeText(prompt.map((m) => typeof m?.content === "string" ? m.content : "").join("\n"));
-    return canon.filter((c) => c.key !== "card:name" && all.includes(normalizeText(c.text))).map((c) => c.key);
+    return canon.filter((c) => c.key !== "card:name" && all.includes(normalizeText(c.text).trim())).map((c) => c.key);
   }
   function canonHash(text2) {
     return sha256Hex(normalizeText(text2));
@@ -2763,9 +2762,10 @@ html,body{margin:0;background:#0c0c10}
       return { name, desc, personality, scenario, firstMessage, alternateGreetings, globalLore };
     },
     async lorebook() {
-      if (typeof risuai.getCurrentLorebookEntries !== "function") return [];
+      if (typeof risuai.getCurrentLorebookEntries !== "function") throw new Error("no lorebook call on this host");
       const entries = await risuai.getCurrentLorebookEntries();
-      return Array.isArray(entries) ? entries : [];
+      if (!Array.isArray(entries)) throw new Error("the host returned no lorebook list");
+      return entries;
     },
     async personas() {
       if (typeof risuai.getDatabase !== "function") return null;

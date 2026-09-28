@@ -91,9 +91,11 @@ export const risuHost: HostPort = {
 
   async lorebook(): Promise<HostLoreEntry[]> {
     // Every entry of the character, the chat and the enabled modules, activated or not; about 1 ms (H19).
-    if (typeof risuai.getCurrentLorebookEntries !== 'function') return [];
+    // No lorebook call, or no list, is no observation: an empty list would end every entry (ADR 0045).
+    if (typeof risuai.getCurrentLorebookEntries !== 'function') throw new Error('no lorebook call on this host');
     const entries = await risuai.getCurrentLorebookEntries();
-    return Array.isArray(entries) ? entries : [];
+    if (!Array.isArray(entries)) throw new Error('the host returned no lorebook list');
+    return entries;
   },
 
   async personas(): Promise<HostPersonas | null> {

@@ -50,6 +50,13 @@ describe('canon texts (ADR 0045)', () => {
     expect(canonTexts(null, { ...chat, note: 'x'.repeat(MAX_CANON_CHARS + 1) }, [], null).map((t) => t.key)).toEqual([]);
   });
 
+  it('keep a text as the host has it, and hold it by its trimmed words (Copilot review of #154)', () => {
+    const spaced = canonTexts(null, { ...chat, note: '  지금은 한겨울 밤이다.\n' }, [], null);
+    expect(spaced[0]!.text).toBe('  지금은 한겨울 밤이다.\n');
+    expect(heldKeys(spaced, [{ role: 'system', content: '지금은 한겨울 밤이다.' }])).toEqual(['note']);
+    expect(canonTexts(null, { ...chat, note: '   ' }, [], null)).toEqual([]);
+  });
+
   it('manifest ids are the sidecar\'s (fixtures/unit/canon-manifest-v1.json)', async () => {
     const doc = JSON.parse(readFileSync(new URL('../../../fixtures/unit/canon-manifest-v1.json', import.meta.url), 'utf8'));
     expect(await canonManifestId(doc.entries)).toBe(doc.id);
@@ -164,6 +171,16 @@ describe('canon sync', () => {
     await settle();
     expect(canonPosts(posts)).toHaveLength(n);
     expect(posts.filter((p) => p.path === '/v1/retrieve').at(-1)!.body.canon_held).toEqual([]);
+  });
+
+  it('sends no canon when the host has no lorebook call', async () => {
+    const { h, posts } = host(sidecar(new Set()), { lorebook: async () => { throw new Error('no lorebook call on this host'); } });
+    const adapter = createAdapter(h);
+    await adapter.beforeRequest(prompt, 'model');
+    await settle();
+    await adapter.beforeRequest(more('y'), 'model');
+    await settle();
+    expect(canonPosts(posts)).toHaveLength(0);
   });
 
   it('uploads one manifest per chat at a time, the newest last', async () => {

@@ -39,8 +39,9 @@ def kind_of(key: str) -> str:
 
 
 def content_hash(content: str) -> str:
-    """The hash a canon text is sent and kept under: SHA-256 of its normalized text (NFC, LF)."""
-    return hashlib.sha256(normalize_text(content).encode("utf-8")).hexdigest()
+    """The hash a canon text is sent and kept under: SHA-256 of its normalized text (NFC, LF), a lone surrogate read as
+    U+FFFD as the browser's encoder does (ADR 0029)."""
+    return hashlib.sha256(storable(normalize_text(content)).encode("utf-8")).hexdigest()
 
 
 def manifest_id(entries: list[dict[str, Any]]) -> str:
@@ -65,8 +66,8 @@ def sync(conn: psycopg.Connection, conv_id: UUID, entries: list[dict[str, Any]],
         hlid = PREFIX + key
         if conn.execute(
                 "SELECT 1 FROM source_object so JOIN source_revision sr ON sr.source_object_id = so.id"
-                " WHERE so.conversation_id = %s AND so.host_logical_id = %s AND sr.revision_hash = %s",
-                (conv_id, hlid, digest)).fetchone():
+                " WHERE so.conversation_id = %s AND so.host_logical_id = %s AND so.source_kind = 'canon'"
+                " AND sr.revision_hash = %s", (conv_id, hlid, digest)).fetchone():
             continue
         content = contents.get(digest)
         if content is None or content_hash(content) != digest:
@@ -75,8 +76,10 @@ def sync(conn: psycopg.Connection, conv_id: UUID, entries: list[dict[str, Any]],
         conn.execute("INSERT INTO source_object (id, conversation_id, host_logical_id, source_kind)"
                      " VALUES (%s, %s, %s, 'canon') ON CONFLICT (conversation_id, host_logical_id) DO NOTHING",
                      (uuid7(), conv_id, hlid))
-        obj = conn.execute("SELECT id FROM source_object WHERE conversation_id = %s AND host_logical_id = %s",
+        obj = conn.execute("SELECT id, source_kind FROM source_object WHERE conversation_id = %s AND host_logical_id = %s",
                            (conv_id, hlid)).fetchone()
+        if obj["source_kind"] != "canon":  # a message the host happened to give this id: never mix the two
+            raise CanonError(f"{hlid} is a message of this chat")
         text = storable(normalize_text(content))
         rid = uuid7()
         conn.execute("INSERT INTO source_revision (id, source_object_id, revision_hash, content, metadata, lifecycle)"
@@ -85,6 +88,9 @@ def sync(conn: psycopg.Connection, conv_id: UUID, entries: list[dict[str, Any]],
         normtext.write(conn, rid, text)
         stored += 1
     if needed:
+        if observed_at is not None:  # the newest observation holds from now: an older upload finishing first is stale
+            conn.execute("UPDATE conversation SET canon_observed_at = greatest(canon_observed_at, %s) WHERE id = %s",
+                         (observed_at, conv_id))
         return {"needed": sorted(set(needed)), "stored": stored, "applied": False, "manifest_id": None}
     mid = manifest_id(entries)  # over the metadata as sent, as the plugin computed it
     rows = sorted(({"key": e["key"], "hash": e["hash"], "metadata": storable(e.get("metadata") or {})}

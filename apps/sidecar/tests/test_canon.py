@@ -170,3 +170,31 @@ def test_canon_reaches_no_message_pipeline_and_goes_with_the_chat(migrated):
         for table in ("canon_manifest", "canon_applied"):
             assert conn.execute(f"SELECT count(*) AS n FROM {table}").fetchone()["n"] == 0
         assert conn.execute("SELECT count(*) AS n FROM source_object WHERE source_kind = 'canon'").fetchone()["n"] == 0
+
+
+def test_copilot_review_of_154_a_surrogate_a_colliding_message_id_and_a_newer_observation_still_uploading(migrated):
+    chat = a_chat()
+    chat.messages.append({"role": "char", "data": "카드 설명처럼 보이는 메시지", "chatId": "canon:card:desc"})
+    chat.user("다음.")
+    t0 = int(time.time() * 1000)
+    with make_client(migrated) as c:
+        sync(c, chat)
+        # a lone surrogate (half an emoji from a browser) hashes as U+FFFD, as the plugin's encoder does
+        assert canon.content_hash("a\ud83d") == canon.content_hash("a�")
+        lone = entry("note", "a\ufffd")  # what the plugin hashed; the text arrives with the lone surrogate escaped
+        raw = json.dumps({"chat_id": chat.id, "entries": [lone], "contents": {lone["hash"]: "a\ud83d"}})  # \ud83d as sent
+        res = c.post("/v1/sync/canon", content=raw, headers={"Content-Type": "application/json"})
+        assert res.status_code == 200 and res.json()["applied"], res.text
+        # a message that happens to carry a canon id is never taken as canon
+        collide = entry("card:desc", DESC)
+        res = c.post("/v1/sync/canon", json={"chat_id": chat.id, "entries": [collide],
+                                             "contents": {collide["hash"]: DESC}})
+        assert res.status_code == 422
+        # the newer observation is still uploading its texts; an older upload finishing first is stale
+        newer = entry("note", NOTE + " 새로")
+        waiting = c.post("/v1/sync/canon", json={"chat_id": chat.id, "entries": [newer], "observed_at": t0 + 2000}).json()
+        assert waiting["needed"]
+        older = push(c, chat, {"note": (NOTE, {})}, t0 + 1000)
+        assert (older["applied"], older["stale"]) == (False, True)
+        done = push(c, chat, {"note": (NOTE + " 새로", {})}, t0 + 2000)
+        assert done["applied"]

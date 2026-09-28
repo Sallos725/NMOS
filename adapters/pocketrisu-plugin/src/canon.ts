@@ -79,8 +79,8 @@ export function canonTexts(card: HostCard | null, chat: HostChat, lore: HostLore
   CanonText[] {
   const out: CanonText[] = [];
   const add = (key: string, value: unknown, metadata: Record<string, unknown> = {}) => {
-    const t = text(value);
-    if (t && t.length <= MAX_CANON_CHARS) out.push({ key, text: t, metadata });
+    // Kept as the host has it (only its hash is normalized); an empty or blank text is no canon.
+    if (typeof value === 'string' && value.trim() && value.length <= MAX_CANON_CHARS) out.push({ key, text: value, metadata });
   };
   if (card) {
     for (const field of ['name', 'desc', 'personality', 'scenario'] as const) add(`card:${field}`, card[field], { field });
@@ -109,7 +109,7 @@ export function canonTexts(card: HostCard | null, chat: HostChat, lore: HostLore
 /** The canon keys whose text the outgoing prompt holds (the host sent them; an entry it activated, H19). */
 export function heldKeys(canon: CanonText[], prompt: PromptMessage[]): string[] {
   const all = normalizeText(prompt.map((m) => (typeof m?.content === 'string' ? m.content : '')).join('\n'));
-  return canon.filter((c) => c.key !== 'card:name' && all.includes(normalizeText(c.text))).map((c) => c.key);
+  return canon.filter((c) => c.key !== 'card:name' && all.includes(normalizeText(c.text).trim())).map((c) => c.key);
 }
 
 export interface CanonEntry {
