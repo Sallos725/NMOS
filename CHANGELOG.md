@@ -8,7 +8,10 @@ later, is `docs/KNOWN-ISSUES.md`.
 - **NMOS off for one chat** (ADR 0048, D58): the panel's Status tab starts with a **This chat** card that turns NMOS
   off or back on for the chat open now, and the chat input's ☰ menu has **NMOS: this chat off/on**. A chat that is
   off sends nothing to the sidecar and gets no memory; what NMOS keeps of it stays. The list is the new plugin arg
-  `disabled_chats`. The panel also opens from the 🧠 icon in the sidebar's ☰ menu. A new plugin build; no migration.
+  `disabled_chats`. The panel also opens from NMOS's icon in the sidebar's ☰ menu. A new plugin build; no migration.
+- **A new icon**: the 🧠 emoji is replaced by NMOS's own line icon (an N with a memory node) in Settings, the chat
+  input's ☰ menu and the sidebar's ☰ menu. It takes the host's text colour. The progress display shows it before
+  "Recalling memory…" only. A new plugin build.
 
 ## 0.2.0
 

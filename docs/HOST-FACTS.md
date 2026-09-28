@@ -424,6 +424,21 @@ All held. Production has recorded requests with NMOS memory on v1.13.0 since 202
 **Runtime:** not yet observed. The real-host smoke of ADR 0048 checks the sidebar icon, the chat-menu switch, and that
 `disabled_chats` survives a page reload and a plugin update.
 
+## Plugin icons (2026-09-28)
+
+**Source reading only** (`github.com/PocketRisu/PocketRisu` at `3d30fc5`, v1.13.0):
+- An `html` icon of `registerSetting` or `registerButton` is drawn by `src/lib/Others/PluginDefinedIcon.svelte` as
+  `{@html DOMPurify.sanitize(icon, …)}`, forbidding the tags `script`, `style`, `iframe`, `object`, `embed` and the
+  attributes `onerror`, `onclick`, `onload`, `onmouseover`, `style`, `class`, inside a `w-5 h-5` (20 px) box. Settings,
+  the sidebar and the chat screen all use it.
+- `SafeElement.setInnerHTML` (`src/ts/plugins/apiV3/v3.svelte.ts`) is `DOMPurify.sanitize(value)` with no options.
+
+**Local check:** DOMPurify 3.3.3 (PocketRisu asks for `^3.3.3`) under jsdom returns NMOS's SVG icon (`src/icon.ts`)
+with every element and attribute kept, under both configurations.
+
+**Runtime:** not yet observed. The real-host check looks at the icon in Settings, both ☰ menus and the progress
+display.
+
 ## Scenario evidence index
 
 | Scenario | Before fixture | After fixture | Other logs | Done |

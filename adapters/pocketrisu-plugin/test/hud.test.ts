@@ -13,7 +13,7 @@ function run(events: [HudEvent, number][]): HudState {
 describe('request outcome', () => {
   it('shows a running request without a bar', () => {
     const s = run([[{ type: 'request-start' }, 0]]);
-    expect(view(s, 0, 'ko')).toEqual({ kind: 'busy', text: '🧠 기억 불러오는 중…', fraction: null });
+    expect(view(s, 0, 'ko')).toEqual({ kind: 'busy', text: '기억 불러오는 중…', fraction: null, icon: true });
   });
 
   it('shows each outcome, then hides it', () => {
@@ -46,7 +46,7 @@ describe('request outcome', () => {
   it('speaks English', () => {
     const s = run([[{ type: 'request-end', outcome: 'injected', chars: 12, conversationId: null }, 0]]);
     expect(view(s, 0, 'en')?.text).toBe('✓ Memory injected (12 chars)');
-    expect(view(run([[{ type: 'request-start' }, 0]]), 0, 'en')?.text).toBe('🧠 Recalling memory…');
+    expect(view(run([[{ type: 'request-start' }, 0]]), 0, 'en')?.text).toBe('Recalling memory…');
   });
 });
 

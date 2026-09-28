@@ -4,6 +4,7 @@
 
 import { EMPTY, nextChange, parseCoverage, pending, reduce, view, type ActivityEvent, type HudState, type HudView } from './hud';
 import type { Lang } from './i18n';
+import { NMOS_ICON } from './icon';
 
 /** The part of PocketRisu's `SafeElement` proxy the display uses. Every call crosses the frame bridge. */
 export interface HudElement {
@@ -13,6 +14,8 @@ export interface HudElement {
   setStyleAttribute(value: string): Promise<void>;
   setStyle(property: string, value: string): Promise<void>;
   setTextContent(value: string): Promise<void>;
+  /** DOMPurify-sanitized by the host (H16). */
+  setInnerHTML(value: string): Promise<void>;
   getBoundingClientRect(): Promise<{ left: number; top: number; right: number; bottom: number }>;
   /** Registered on the whole document by the host, whatever the element (H16). */
   addEventListener(type: 'click', listener: (event: { clientX: number; clientY: number }) => void): Promise<string>;
@@ -50,12 +53,16 @@ const ROOT_STYLE = 'position:fixed;top:calc(8px + env(safe-area-inset-top));righ
   + 'z-index:900;min-width:140px;max-width:min(320px,calc(100vw - 72px));background:#1d1e24;border:1px solid #30323b;border-radius:12px;'
   + 'padding:6px 12px;font:13px/1.4 system-ui,-apple-system,"Noto Sans KR",sans-serif;'
   + 'box-shadow:0 2px 10px rgba(0,0,0,.35);cursor:pointer;user-select:none';
-const TEXT_STYLE = 'display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e8e8ec';
+// The line's colour is the state's; the icon (`currentColor`) and the text take it.
+const LINE_STYLE = 'display:flex;align-items:center;gap:6px;color:#e8e8ec';
+const ICON_STYLE = 'display:none;flex:none;width:14px;height:14px';
+const TEXT_STYLE = 'display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
 const TRACK_STYLE = 'display:none;height:3px;margin-top:4px;background:#30323b;border-radius:2px;overflow:hidden';
 const FILL_STYLE = 'height:3px;width:0;background:#4c6ef5;border-radius:2px;transition:width .3s';
 const COLORS: Record<HudView['kind'], string> = { busy: '#e8e8ec', ok: '#8ce99a', muted: '#9a9ca8', warn: '#ffd43b' };
 
-interface Drawn { root: HudElement; text: HudElement; track: HudElement; fill: HudElement; listener: string; last: string }
+interface Drawn { root: HudElement; line: HudElement; icon: HudElement; text: HudElement; track: HudElement; fill: HudElement;
+  listener: string; last: string }
 
 export function createHud(deps: HudDeps) {
   let state: HudState = EMPTY;
@@ -108,18 +115,25 @@ export function createHud(deps: HudDeps) {
     const root = await doc.createElement('div');
     await root.addClass(CLASS);
     await root.setStyleAttribute(ROOT_STYLE);
+    const line = await doc.createElement('div');
+    await line.setStyleAttribute(LINE_STYLE);
+    const icon = await doc.createElement('span');
+    await icon.setStyleAttribute(ICON_STYLE);
+    await icon.setInnerHTML(NMOS_ICON);
     const text = await doc.createElement('span');
     await text.setStyleAttribute(TEXT_STYLE);
+    await line.appendChild(icon);
+    await line.appendChild(text);
     const track = await doc.createElement('div');
     await track.setStyleAttribute(TRACK_STYLE);
     const fill = await doc.createElement('div');
     await fill.setStyleAttribute(FILL_STYLE);
     await track.appendChild(fill);
-    await root.appendChild(text);
+    await root.appendChild(line);
     await root.appendChild(track);
     await body.appendChild(root);
     const listener = await root.addEventListener('click', (event) => { void hit(event); });
-    return { root, text, track, fill, listener, last: '' };
+    return { root, line, icon, text, track, fill, listener, last: '' };
   }
 
   // The host listens on the whole document: act only on clicks inside the pill.
@@ -148,7 +162,8 @@ export function createHud(deps: HudDeps) {
     if (d.last !== key) {
       d.last = key;
       await d.text.setTextContent(v.text);
-      await d.text.setStyle('color', COLORS[v.kind]);
+      await d.line.setStyle('color', COLORS[v.kind]);
+      await d.icon.setStyle('display', v.icon ? 'block' : 'none');
       await d.track.setStyle('display', v.fraction === null ? 'none' : 'block');
       if (v.fraction !== null) await d.fill.setStyle('width', `${Math.round(v.fraction * 100)}%`);
     }

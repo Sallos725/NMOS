@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:ca99bd210c54".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:19860ec266da".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -511,7 +511,7 @@
     "lang_unsaved": ["\uC5B8\uC5B4\uB97C \uBC14\uAFB8\uAE30 \uC804\uC5D0 \uBCC0\uACBD\uC744 \uC800\uC7A5\uD558\uAC70\uB098 \uB418\uB3CC\uB9AC\uC138\uC694.", "Save or revert your changes before switching the language."],
     "conn_saved_server_failed": ["\uC5F0\uACB0 \uC124\uC815\uC740 \uC800\uC7A5\uD588\uC9C0\uB9CC \uC11C\uBC84 \uC124\uC815\uC740 \uC800\uC7A5\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: {e}", "Connection saved, but the server settings were not: {e}"],
     // progress display (HUD) on the chat screen
-    "hud.recalling": ["\u{1F9E0} \uAE30\uC5B5 \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "\u{1F9E0} Recalling memory\u2026"],
+    "hud.recalling": ["\uAE30\uC5B5 \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Recalling memory\u2026"],
     "hud.injected": ["\u2713 \uAE30\uC5B5 \uC8FC\uC785 ({n}\uC790)", "\u2713 Memory injected ({n} chars)"],
     "hud.nothing": ["\u2013 \uAD00\uB828 \uAE30\uC5B5 \uC5C6\uC74C", "\u2013 Nothing relevant"],
     "hud.chat_off": ["\u23FB \uC774 \uCC44\uD305\uC740 NMOS \uAEBC\uC9D0", "\u23FB NMOS is off for this chat"],
@@ -1299,7 +1299,7 @@ ${revisionHash}`;
   }
   function view(state, now, lang) {
     const r = state.request;
-    if (r?.phase === "running") return { kind: "busy", text: t(lang, "hud.recalling"), fraction: null };
+    if (r?.phase === "running") return { kind: "busy", text: t(lang, "hud.recalling"), fraction: null, icon: true };
     if (r?.phase === "done" && now < r.until) {
       if (r.outcome === "injected") return { kind: "ok", text: t(lang, "hud.injected", { n: r.chars }), fraction: null };
       if (r.outcome === "nothing-relevant") return { kind: "muted", text: t(lang, "hud.nothing"), fraction: null };
@@ -1345,13 +1345,18 @@ ${revisionHash}`;
     return { extract: counts(body.extraction, "compiled"), embed: counts(body.embeddings, "embedded") };
   }
 
+  // src/icon.ts
+  var NMOS_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 19V5l12 14V9.5"/><circle cx="18" cy="5.5" r="1.75" fill="currentColor"/></svg>';
+
   // src/hud-host.ts
   var POLL_MS = 3e3;
   var MAX_POLL_ERRORS = 5;
   var MIN_POLL_GAP_MS = 1e3;
   var CLASS = "nmos-hud";
   var ROOT_STYLE = 'position:fixed;top:calc(8px + env(safe-area-inset-top));right:calc(8px + env(safe-area-inset-right));z-index:900;min-width:140px;max-width:min(320px,calc(100vw - 72px));background:#1d1e24;border:1px solid #30323b;border-radius:12px;padding:6px 12px;font:13px/1.4 system-ui,-apple-system,"Noto Sans KR",sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.35);cursor:pointer;user-select:none';
-  var TEXT_STYLE = "display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e8e8ec";
+  var LINE_STYLE = "display:flex;align-items:center;gap:6px;color:#e8e8ec";
+  var ICON_STYLE = "display:none;flex:none;width:14px;height:14px";
+  var TEXT_STYLE = "display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
   var TRACK_STYLE = "display:none;height:3px;margin-top:4px;background:#30323b;border-radius:2px;overflow:hidden";
   var FILL_STYLE = "height:3px;width:0;background:#4c6ef5;border-radius:2px;transition:width .3s";
   var COLORS = { busy: "#e8e8ec", ok: "#8ce99a", muted: "#9a9ca8", warn: "#ffd43b" };
@@ -1400,20 +1405,27 @@ ${revisionHash}`;
       const root = await doc.createElement("div");
       await root.addClass(CLASS);
       await root.setStyleAttribute(ROOT_STYLE);
+      const line = await doc.createElement("div");
+      await line.setStyleAttribute(LINE_STYLE);
+      const icon = await doc.createElement("span");
+      await icon.setStyleAttribute(ICON_STYLE);
+      await icon.setInnerHTML(NMOS_ICON);
       const text2 = await doc.createElement("span");
       await text2.setStyleAttribute(TEXT_STYLE);
+      await line.appendChild(icon);
+      await line.appendChild(text2);
       const track = await doc.createElement("div");
       await track.setStyleAttribute(TRACK_STYLE);
       const fill = await doc.createElement("div");
       await fill.setStyleAttribute(FILL_STYLE);
       await track.appendChild(fill);
-      await root.appendChild(text2);
+      await root.appendChild(line);
       await root.appendChild(track);
       await body.appendChild(root);
       const listener = await root.addEventListener("click", (event) => {
         void hit(event);
       });
-      return { root, text: text2, track, fill, listener, last: "" };
+      return { root, line, icon, text: text2, track, fill, listener, last: "" };
     }
     async function hit(event) {
       try {
@@ -1439,7 +1451,8 @@ ${revisionHash}`;
       if (d.last !== key) {
         d.last = key;
         await d.text.setTextContent(v.text);
-        await d.text.setStyle("color", COLORS[v.kind]);
+        await d.line.setStyle("color", COLORS[v.kind]);
+        await d.icon.setStyle("display", v.icon ? "block" : "none");
         await d.track.setStyle("display", v.fraction === null ? "none" : "block");
         if (v.fraction !== null) await d.fill.setStyle("width", `${Math.round(v.fraction * 100)}%`);
       }
@@ -3034,9 +3047,9 @@ html,body{margin:0;background:#0c0c10}
     };
     const open = (tab) => openPanel(deps, tab);
     const lang = langOf(await arg("language"));
-    await risuai.registerSetting(t(lang, "menu.panel"), () => open("status"), "\u{1F9E0}", "html", "nmos-panel");
+    await risuai.registerSetting(t(lang, "menu.panel"), () => open("status"), NMOS_ICON, "html", "nmos-panel");
     await risuai.registerButton(
-      { name: t(lang, "menu.panel"), icon: "\u{1F9E0}", iconType: "html", location: "chat", id: "nmos-chat" },
+      { name: t(lang, "menu.panel"), icon: NMOS_ICON, iconType: "html", location: "chat", id: "nmos-chat" },
       () => open("status")
     );
     await risuai.registerButton({
@@ -3050,7 +3063,7 @@ html,body{margin:0;background:#0c0c10}
     });
     await risuai.registerButton({
       name: t(lang, "menu.panel"),
-      icon: "\u{1F9E0}",
+      icon: NMOS_ICON,
       iconType: "html",
       location: "hamburger",
       id: "nmos-sidebar"

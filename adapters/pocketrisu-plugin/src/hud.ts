@@ -31,7 +31,8 @@ export interface HudState {
 
 export const EMPTY: HudState = { request: null, progress: null };
 
-export interface HudView { kind: 'busy' | 'ok' | 'muted' | 'warn'; text: string; fraction: number | null }
+/** `icon`: NMOS's icon before the text, while memory is being recalled. */
+export interface HudView { kind: 'busy' | 'ok' | 'muted' | 'warn'; text: string; fraction: number | null; icon?: true }
 
 export function pending(c: Coverage): number {
   return (c.extract?.pending ?? 0) + (c.embed?.pending ?? 0);
@@ -60,7 +61,7 @@ export function reduce(state: HudState, event: HudEvent, now: number): HudState 
 /** Running request > its outcome > pending work > "done" > nothing. */
 export function view(state: HudState, now: number, lang: Lang): HudView | null {
   const r = state.request;
-  if (r?.phase === 'running') return { kind: 'busy', text: t(lang, 'hud.recalling'), fraction: null };
+  if (r?.phase === 'running') return { kind: 'busy', text: t(lang, 'hud.recalling'), fraction: null, icon: true };
   if (r?.phase === 'done' && now < r.until) {
     if (r.outcome === 'injected') return { kind: 'ok', text: t(lang, 'hud.injected', { n: r.chars }), fraction: null };
     if (r.outcome === 'nothing-relevant') return { kind: 'muted', text: t(lang, 'hud.nothing'), fraction: null };
