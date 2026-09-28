@@ -42,12 +42,23 @@ export interface EntityRow {
 /** A repair the inspector marks for the panel (ADR 0044): what to do, to which item, and a character or field. */
 export interface RepairAction { kind: string; item: string; extra: string | null }
 
-const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|undo):(-?[0-9a-f-]{1,64})(?::([^:<>"'&]{1,120}))?$/;
+const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|undo):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
 
-/** Parse a `data-repair` value (`kind:item[:extra]`); null for anything else. */
+/** Parse a `data-repair` value (`kind:item[:extra]`, the extra percent-encoded, so a name is any text); null for
+ * anything else. The extra is data only: a request body and a button's text. */
 export function repairAction(value: string | null): RepairAction | null {
   const m = value ? REPAIR.exec(value) : null;
-  return m?.[1] && m[2] ? { kind: m[1], item: m[2], extra: m[3] ?? null } : null;
+  if (!m?.[1] || !m[2]) return null;
+  let extra: string | null = null;
+  if (m[3] !== undefined) {
+    try {
+      extra = decodeURIComponent(m[3]);
+    } catch {
+      return null;
+    }
+    if (!extra.trim() || extra.length > 120 || /[\u0000-\u001f\u007f]/.test(extra)) return null;
+  }
+  return { kind: m[1], item: m[2], extra };
 }
 
 /** The outcomes a close mark offers (`kind,kind…`, the default first); empty for a mark without them. */

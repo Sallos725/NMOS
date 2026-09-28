@@ -68,7 +68,8 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     with the names that still join them when a split cannot separate them.
   - Step 5 (new plugin build): the repairs are buttons in the panel's Inspector, on the line they fix: close a thread
     with an outcome (or tick several and close them together), reopen, mark a secret found out or still kept per
-    character, retract or correct a fact, undo; split two names on an entity's page. Each chat's page starts with
+    character, retract or correct a fact (its object or its value, from its own turn or a later one), undo; split
+    two names on an entity's page. Each chat's page starts with
     "Needs attention": threads open for 30 turns without a restatement, ends that matched no thread, disputed
     whereabouts, repairs that match nothing now, splits still joined through another name, ambiguous names.
 - **Cross-model review** (`.ai/`, AGENTS.md §14; #138): fixed after its review, the script refuses every `.env*` name

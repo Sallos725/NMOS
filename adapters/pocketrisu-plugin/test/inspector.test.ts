@@ -53,11 +53,15 @@ describe('inspector markup', () => {
 describe('repair marks (ADR 0044)', () => {
   it('parse a kind, an item and a character or field, and nothing else', () => {
     expect(repairAction(`thread_close:${id}`)).toEqual({ kind: 'thread_close', item: id, extra: null });
-    expect(repairAction('secret_found_out:-3:하나')).toEqual({ kind: 'secret_found_out', item: '-3', extra: '하나' });
+    expect(repairAction(`secret_found_out:-3:${encodeURIComponent('하나')}`)).toEqual(
+      { kind: 'secret_found_out', item: '-3', extra: '하나' });
+    // the sidecar percent-encodes a name, so any text is data (Codex review of step 5)
+    expect(repairAction('secret_keep:3:O%27Neil%20%26%20Co%3A%201')?.extra).toBe("O'Neil & Co: 1");
     expect(repairAction('fact_correct:42:object')).toEqual({ kind: 'fact_correct', item: '42', extra: 'object' });
     expect(repairAction(`undo:${who}`)?.kind).toBe('undo');
     for (const value of [null, '', 'thread_close', 'thread_close:', 'name_split:1:x', 'drop:1', 'thread_close:xyz',
       'thread_close:1:a:b', 'secret_keep:1:<b>', 'secret_keep:1:"x"', 'THREAD_CLOSE:1', ` thread_close:1`,
+      'secret_keep:1:하나', 'secret_keep:1:%E0%A4%A', 'secret_keep:1:%00x', 'secret_keep:1:%20',
       `thread_close:${'1'.repeat(65)}`, `secret_keep:1:${'가'.repeat(121)}`]) {
       expect(repairAction(value), String(value)).toBeNull();
     }

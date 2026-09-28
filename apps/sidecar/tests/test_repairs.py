@@ -541,6 +541,29 @@ def test_a_correction_follows_the_predicate(migrated):
 # --- Step 5: where the panel repairs, and what needs a look ---------------------------------------------------------
 
 
+def test_a_thread_needs_a_look_after_more_than_30_turns_without_a_restatement():
+    """PHASE-13 Q6 (Codex review of step 5): more than STALE_TURNS turns, counted from its latest statement."""
+    from nmos_sidecar.inspector import STALE_TURNS, _attention
+    th = {"id": 1, "kind": "goal", "status": "open", "turn": 1, "restated": [], "by": "하나", "to": None, "text": AIM}
+    def listed(last: int, **kw) -> bool:
+        return bool(_attention({"threads": [{**th, **kw}]}, [], last, "en"))
+    assert not listed(STALE_TURNS) and not listed(1 + STALE_TURNS) and listed(2 + STALE_TURNS)
+    assert not listed(40, restated=[{"turn": 20}])
+    assert not listed(40, status="achieved")
+
+
+def test_a_mark_carries_any_name_as_data_and_offers_each_field_a_correction_can_set():
+    """Codex review of step 5: a name with a quote, an ampersand or a colon keeps its button; a relationship can be
+    corrected in its counterpart or in its value."""
+    from nmos_sidecar.inspector import _act, _corrections
+    assert _act("secret_found_out", 3, "O'Neil & Co: 1") == (
+        '<span class="rp" data-repair="secret_found_out:3:O%27Neil%20%26%20Co%3A%201"></span>')
+    assert _act("secret_keep", 3, "하나") == '<span class="rp" data-repair="secret_keep:3:%ED%95%98%EB%82%98"></span>'
+    assert _act("thread_close", 5, "kept,broken").endswith(':kept,broken"></span>')
+    assert _corrections({"predicate": "relationship", "object": "카이토", "value": "친구"}) == ["object", "value"]
+    assert _corrections({"predicate": "located_in", "object": "등대", "value": None}) == ["object"]
+
+
 def test_the_inspector_marks_where_each_repair_can_be_made_and_lists_what_needs_a_look(migrated):
     chat = repair_chat()
     for i in range(33):  # the goal stays open, not restated, for more than STALE_TURNS turns

@@ -126,24 +126,31 @@ describe('owner repairs in the panel (ADR 0044)', () => {
   const t2 = '0190f3a4-0000-7000-8000-000000000002';
   const who = '5c6d7e8f-9a0b-5c2d-8e3f-0123456789ab';
   const mark = (value: string) => `<span class="rp" data-repair="${value}"></span>`;
-  const chat = `<details id="s-threads" open><summary>Threads</summary><table>`
-    + `<tr><td>a goal</td><td>open ${mark(`thread_close:${t1}:achieved,abandoned`)}</td></tr>`
-    + `<tr><td>a promise</td><td>open ${mark(`thread_close:${t2}:kept,broken`)}</td></tr>`
+  const hana = encodeURIComponent('하나');
+  const goal = `<tr><td>a goal</td><td>open ${mark(`thread_close:${t1}:achieved,abandoned`)}</td></tr>`;
+  const promise = `<tr><td>a promise</td><td>open ${mark(`thread_close:${t2}:kept,broken`)}</td></tr>`;
+  const page = (threads: string) => `<details id="s-attention" open><summary>Needs attention</summary><table>`
+    + `<tr><td>open for more than 30 turns</td><td>${mark(`thread_close:${t2}:kept,broken`)}</td></tr></table></details>`
+    + `<details id="s-threads" open><summary>Threads</summary><table>${threads}`
     + `<tr><td>a plan</td><td>closed ${mark('thread_reopen:-4')}</td></tr></table></details>`
-    + `<p>a secret ${mark('secret_found_out:12:하나')}</p><p>a fact ${mark('fact_correct:42:object')}</p>`
-    + `<p>a repair ${mark(`undo:${t1}`)}</p><p>forged ${mark('name_split:1:x')}<span class="rp" data-repair="x"></span></p>`;
+    + `<p>a secret ${mark(`secret_found_out:12:${hana}`)}</p>`
+    + `<p>a fact ${mark('fact_correct:42:object')}${mark('fact_correct:42:value')}</p>`
+    + `<p>a repair ${mark(`undo:${t1}`)}</p><p>forged ${mark('name_split:1:x')}${mark('secret_keep:1:하나')}</p>`;
 
   function deps(entities: unknown[] = []) {
     const calls: [string, string, unknown][] = [];
-    let fail = false;
+    const state = { html: page(goal + promise), refuse: new Set<string>() };
     const d: PanelDeps = {
       api: async <T>(method: 'GET' | 'POST' | 'PUT', address: string, body?: unknown) => {
         const path = address.replace(/\?lang=en$/, '');
         calls.push([method, path, body]);
-        if (method === 'POST' && fail) throw new Error('422 already closed');
+        const item = (body as { item?: string } | undefined)?.item;
+        if (method === 'POST' && (state.refuse.has('*') || (item && state.refuse.has(item)))) {
+          throw new Error('422 already closed');
+        }
         if (path === '/v1/inspector') return { html: `<a href="/inspector/c/${id}">chat</a>` } as T;
         if (path.startsWith(`/v1/inspector/c/${id}/e/`)) return { html: '<p>a character</p>' } as T;
-        if (path.startsWith(`/v1/inspector/c/${id}`)) return { html: chat } as T;
+        if (path.startsWith(`/v1/inspector/c/${id}`)) return { html: state.html } as T;
         if (path.endsWith('/entities')) return entities as T;
         if (path.endsWith('/memory-mode')) throw new Error('404');
         return {} as T;
@@ -156,13 +163,14 @@ describe('owner repairs in the panel (ADR 0044)', () => {
       hide: async () => {},
       hud: { enable: async () => 'unsupported', disable: async () => {}, problem: () => null, background: () => {} },
     };
-    return { d, calls, failPosts: () => { fail = true; } };
+    return { d, calls, state };
   }
 
   const settle = async () => { for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setTimeout(resolve, 0)); };
   const panel = () => document.getElementById('nmos-panel')!;
   const button = (text: string) => [...panel().querySelectorAll('button')].find((b) => b.textContent === text)!;
   const posts = (calls: [string, string, unknown][]) => calls.filter(([method]) => method === 'POST');
+  const closeOf = (item: string) => [...panel().querySelectorAll(`span.rp[data-repair^="thread_close:${item}:"]`)];
 
   async function openChat(d: PanelDeps, path = `/inspector/c/${id}`): Promise<void> {
     await openPanel(d, 'inspector');
@@ -177,10 +185,11 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     const { d, calls } = deps();
     await openChat(d);
     const spots = [...panel().querySelectorAll('span.rp[data-repair]')];
-    expect(spots.map((s) => s.getAttribute('data-repair'))).toEqual(
-      [`thread_close:${t1}:achieved,abandoned`, `thread_close:${t2}:kept,broken`, 'thread_reopen:-4', 'secret_found_out:12:하나', 'fact_correct:42:object',
-        `undo:${t1}`]); // a mark the panel does not know is dropped with the attribute
+    expect(spots.map((s) => s.getAttribute('data-repair'))).toEqual([`thread_close:${t2}:kept,broken`,
+      `thread_close:${t1}:achieved,abandoned`, `thread_close:${t2}:kept,broken`, 'thread_reopen:-4',
+      `secret_found_out:12:${hana}`, 'fact_correct:42:object', 'fact_correct:42:value', `undo:${t1}`]);
     expect(spots.every((s) => s.querySelector('button'))).toBe(true);
+    // a mark the panel does not know, or a name not encoded, is dropped with the attribute
     expect(panel().querySelectorAll('span.rp:not([data-repair]) button')).toHaveLength(0);
     expect(button('Reopen')).toBeDefined();
     button('하나: found out').click();
@@ -193,50 +202,81 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     expect(posts(calls)[1]).toEqual(['POST', `/v1/conversations/${id}/repairs/${t1}/remove`, {}]);
   });
 
-  it('asks for the new object of a correction, and posts nothing when the owner cancels', async () => {
+  it('corrects a fact in a form with the new value and the turn it takes effect (PHASE-13 Q5)', async () => {
     const { d, calls } = deps();
     await openChat(d);
-    const answers = ['', '  유이  '];
-    vi.spyOn(window, 'prompt').mockImplementation(() => answers.shift() ?? null);
-    button('Correct').click();
+    button('Correct value').click();
+    const form = panel().querySelector('span.rpform')!;
+    const [text, turn] = [...form.querySelectorAll('input')];
+    button('Save').click(); // nothing typed: nothing posted
+    turn!.value = '-1';
+    text!.value = '  친구  ';
+    button('Save').click();
     await settle();
     expect(posts(calls)).toEqual([]);
-    button('Correct').click();
+    expect(panel().textContent).toContain('A turn is a whole number');
+    turn!.value = '7';
+    button('Save').click();
     await settle();
     expect(posts(calls)).toEqual([['POST', `/v1/conversations/${id}/repairs`,
-      { kind: 'fact_correct', item: '42', new_object: '유이' }]]);
+      { kind: 'fact_correct', item: '42', new_value: '친구', turn: 7 }]]);
+    button('Correct object').click();
+    button('Cancel').click();
+    expect(button('Correct object')).toBeDefined(); // the button is back, nothing posted
+    expect(posts(calls)).toHaveLength(1);
   });
 
-  it('closes the picked threads together, and says why when the sidecar refuses', async () => {
-    const { d, calls, failPosts } = deps();
+  it('keeps the controls of a thread shown twice in step, and closes the picked threads with their outcomes', async () => {
+    const { d, calls, state } = deps();
     await openChat(d);
-    const boxes = [...panel().querySelectorAll<HTMLInputElement>('span.rp input[type="checkbox"]')];
-    expect(boxes).toHaveLength(2); // only open threads can be picked
-    expect(button('Close 0 selected threads')?.closest<HTMLElement>('.btns')?.style.display).toBe('none');
-    for (const box of boxes) {
-      box.checked = true;
-      box.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-    const outcome = panel().querySelector<HTMLSelectElement>(`span.rp[data-repair^="thread_close:${t2}"] select`)!;
-    expect([...outcome.options].map((o) => o.textContent)).toEqual(['kept', 'broken']);
-    outcome.value = 'broken'; // chosen after the box was ticked: the bulk close still uses it
+    const [attention, listed] = closeOf(t2);
+    const outcome = (spot: Element | undefined) => spot!.querySelector('select')!;
+    const box = (spot: Element | undefined) => spot!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect([...outcome(listed).options].map((o) => o.textContent)).toEqual(['kept', 'broken']);
+    outcome(attention).value = 'broken';
+    outcome(attention).dispatchEvent(new Event('change', { bubbles: true }));
+    expect(outcome(listed).value).toBe('broken');
+    box(listed).checked = true;
+    box(listed).dispatchEvent(new Event('change', { bubbles: true }));
+    expect(box(attention).checked).toBe(true);
+    box(closeOf(t1)[0]).checked = true;
+    box(closeOf(t1)[0]).dispatchEvent(new Event('change', { bubbles: true }));
+    state.refuse.add(t1); // one refusal does not stop the others
     button('Close 2 selected threads').click();
     await settle();
-    expect(posts(calls).map(([, , body]) => body)).toEqual([{ kind: 'thread_close', item: t1, outcome: 'achieved' },
-      { kind: 'thread_close', item: t2, outcome: 'broken' }]);
-    expect(panel().textContent).toContain('Closed 2 threads.');
-    failPosts();
-    const close = panel().querySelector<HTMLButtonElement>(`span.rp[data-repair^="thread_close:${t1}"] button`)!;
+    expect(posts(calls).map(([, , body]) => body)).toEqual([{ kind: 'thread_close', item: t2, outcome: 'broken' },
+      { kind: 'thread_close', item: t1, outcome: 'achieved' }]);
+    expect(panel().textContent).toContain('Closed 1 threads. 1 could not be closed: ');
+    expect(panel().textContent).toContain('422 already closed');
+    expect(button('Close 1 selected threads')).toBeDefined(); // the refused one stays picked
+    state.html = page(promise); // closed elsewhere: gone from the page
+    button('Refresh').click();
+    await settle();
+    expect(button('Close 0 selected threads')?.closest<HTMLElement>('.btns')?.style.display).toBe('none');
+  });
+
+  it('keeps the outcome picked for a thread through a refresh, and reports a refused close', async () => {
+    const { d, calls, state } = deps();
+    await openChat(d);
+    const select = closeOf(t2)[1]!.querySelector('select')!;
+    select.value = 'broken';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    button('Refresh').click();
+    await settle();
+    expect(closeOf(t2).map((s) => s.querySelector('select')!.value)).toEqual(['broken', 'broken']);
+    state.refuse.add('*');
+    const close = closeOf(t1)[0]!.querySelector('button')!;
     close.click();
     await settle();
+    expect(posts(calls).map(([, , body]) => body)).toEqual([{ kind: 'thread_close', item: t1, outcome: 'achieved' }]);
     expect(panel().textContent).toContain('422 already closed');
     expect(close.disabled).toBe(false);
   });
 
   it('splits two names the story joined on the entity page (K8)', async () => {
-    const hana = { id: who, type: 'character', name: '하나', names: ['하나', '유이'], mentions: 9, links: [],
+    const hanaRow = { id: who, type: 'character', name: '하나', names: ['하나', '유이'], mentions: 9, links: [],
       aliases: [{ name: '하나', other: '유이', turn: 3 }] };
-    const { d, calls } = deps([hana, { id: t2, type: 'character', name: '카이토', names: ['카이토'], mentions: 4, links: [] }]);
+    const { d, calls } = deps([hanaRow, { id: t2, type: 'character', name: '카이토', names: ['카이토'], mentions: 4, links: [] }]);
     await openChat(d, `/inspector/c/${id}/e/${who}`);
     expect(panel().textContent).toContain('하나 ~ 유이');
     button('Split').click();

@@ -631,7 +631,7 @@ def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> 
     return table(
         [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.with", "h.knowledge", "h.turn", "h.versions")],
         [[_v(f["subject"]), chip(lang, "p", f["predicate"]), _v(f.get("object") or f.get("value")) + _cause(f, lang)
-          + ("" if f.get("owner") else _act("fact_retract", f["id"]) + _act("fact_correct", f["id"], _correctable(f))),
+          + ("" if f.get("owner") else _act("fact_retract", f["id"]) + "".join(_act("fact_correct", f["id"], x) for x in _corrections(f))),
           _with(f, lang),
           _knowledge(f, lang),
           _turn(f)
@@ -708,7 +708,7 @@ STALE_TURNS = 30  # an open thread not restated for this long is suggested for c
 
 def _act(kind: str, item: Any, extra: str | None = None) -> str:
     """Where the panel puts a repair button (ADR 0044); nothing shows in a browser tab (H15)."""
-    value = f"{kind}:{item}" + (f":{extra}" if extra else "")
+    value = f"{kind}:{item}" + (f":{_enc(extra)}" if extra else "")
     return f"<span class=\"rp\" data-repair=\"{_v(value)}\"></span>"
 
 
@@ -718,10 +718,19 @@ def _close(th: dict[str, Any]) -> str:
     return _act("thread_close", th["id"], ",".join([first] + [o for o in outcomes(th["kind"]) if o != first]))
 
 
-def _correctable(f: dict[str, Any]) -> str:
-    """Which field a correction of this fact sets: its object, when its predicate has one, else its value."""
+def _enc(text: str) -> str:
+    """Percent-encode a mark's extra (a name can be any text); the panel decodes it as data only."""
+    return "".join(c if c.isascii() and (c.isalnum() or c in "._~-,") else "".join(f"%{b:02X}" for b in c.encode())
+                   for c in text)
+
+
+def _corrections(f: dict[str, Any]) -> list[str]:
+    """The fields a correction of this fact can set, as the API checks them (ADR 0044 item 8): its object when its
+    predicate has one, its value when it needs or has one (a relationship: both)."""
     pred = REGISTRY.get(f["predicate"])
-    return "object" if pred is not None and pred.object_types is not None else "value"
+    has_object = pred.object_types is not None if pred is not None else bool(f.get("object"))
+    has_value = (pred.needs_value if pred is not None else False) or bool(f.get("value"))
+    return (["object"] if has_object else []) + (["value"] if has_value else [])
 
 
 def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: int | None, lang: str) -> list[list[str]]:
@@ -731,7 +740,7 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
         for th in view.get("threads", []):
             seen = [th.get("turn")] + [r.get("turn") for r in th.get("restated") or []]
             latest = max((x for x in seen if x is not None), default=None)
-            if th["status"] == "open" and latest is not None and latest <= last_turn - STALE_TURNS:
+            if th["status"] == "open" and latest is not None and latest < last_turn - STALE_TURNS:
                 rows.append([_v(_t(lang, "at.stale").format(n=STALE_TURNS)),
                              _v(f"{th['by']} → {th.get('to') or '?'}: {th.get('text') or ''}"), _v(latest),
                              _close(th)])
