@@ -48,6 +48,12 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
   - **`<Story>` in a long chat costs a request about 10 ms instead of 180 ms** (10,000 messages, 624 scenes). A
     request read every story the chat ever had and checked every scene against every secret; it now finds the
     current scenes and one story in one query and checks only what it would offer. The choice is the same.
+  - Fixes from the review of #137 and #139: the Inspector shows the job that would replace a summary still in use
+    (queued, writing, or failed with its error), such as a story behind the newest scene; and a request keeps the
+    scene trigrams it read, so another request clearing the shared cache cannot drop a scene from its choice.
+- **Cross-model review** (`.ai/`, AGENTS.md §14; #138): fixed after its review, the script refuses every `.env*` name
+  (`.envrc` passed before) and gives the reviewer CLI only the system basics of the environment and its own login
+  variables, never `NMOS_*`, `DATABASE_URL` or `PG*` (it passed the whole environment).
   - **The default memory budget is 2,000 tokens** (was 800); a value saved in the plugin stays. Lower PocketRisu's max
     context accordingly.
 - **Phase 11 (Stage 5, part 1) is complete** (`docs/phases/PHASE-11.md`, 2026-09-28; no release decided):

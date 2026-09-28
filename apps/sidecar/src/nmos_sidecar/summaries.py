@@ -252,14 +252,22 @@ _GRAMS_MAX = 50_000
 
 
 def _scene_grams(conn: psycopg.Connection, scenes: list[dict[str, Any]]) -> dict[str, set[str]]:
-    missing = [x["id"] for x in scenes if x["id"] not in _GRAMS]
+    """Each scene summary's trigrams, from the cache or its text. The mapping is the request's own: another request
+    can clear the shared cache at any time."""
+    out: dict[str, set[str]] = {}
+    missing = []
+    for x in scenes:
+        grams = _GRAMS.get(x["id"])
+        if grams is None:
+            missing.append(x["id"])
+        else:
+            out[x["id"]] = grams
     if missing:
         if len(_GRAMS) + len(missing) > _GRAMS_MAX:
             _GRAMS.clear()
-            missing = [x["id"] for x in scenes]
         for r in conn.execute("SELECT id::text, text FROM summary WHERE id = ANY(%s::uuid[])", (missing,)).fetchall():
-            _GRAMS[r["id"]] = _grams(r["text"]) if r["text"] else set()
-    return _GRAMS
+            out[r["id"]] = _GRAMS[r["id"]] = _grams(r["text"]) if r["text"] else set()
+    return out
 
 
 # What a request needs of the summaries, in one query (`current`, `_story`, `due`): the head's current scene summaries,
@@ -312,7 +320,7 @@ def packet_lines(conn: psycopg.Connection, head: UUID, key: str, secrets: list[d
     if query.strip() and scenes:
         asked, grams = _grams(query), _scene_grams(conn, scenes)
         scored = sorted(((_overlap(asked, grams[x["id"]]), x["last_turn"], x) for x in scenes
-                         if grams[x["id"]] and (before_turn is None or x["last_turn"] < before_turn)),
+                         if grams.get(x["id"]) and (before_turn is None or x["last_turn"] < before_turn)),
                         key=lambda t: (t[0], t[1]), reverse=True)
         for score, _, x in scored:
             if score < SCENE_MIN:

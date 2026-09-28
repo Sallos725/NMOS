@@ -18,7 +18,7 @@ ROLES = ('review', 'architecture', 'security')
 GUARD = 'NMOS_PEER_REVIEW_ACTIVE'
 INLINE_LIMIT = 400_000  # characters of diff and attached files in one prompt
 # Never put these in a prompt, even when untracked or attached by hand.
-SENSITIVE = ('.env', '.env.*', '*.pem', '*.key', '*.p12', '*.pfx', 'id_rsa*', 'id_ed25519*',
+SENSITIVE = ('.env*', '*.pem', '*.key', '*.p12', '*.pfx', 'id_rsa*', 'id_ed25519*',
              'credentials*', '.netrc', '.npmrc', '.pypirc', '*.db', '*.bin', '*.sqlite*')
 
 RULES = """\
@@ -59,6 +59,22 @@ def describe_scope(repo, base, scope):
     return '\n\n'.join(lines)
 
 
+# What the reviewer CLI gets of this shell's environment: the system basics, and its own login only. Never the other
+# CLI's login, nor the NMOS keys, token or database URLs (NMOS_*, DATABASE_URL, PG*).
+ENV_NAMES = {'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LANGUAGE', 'TERM', 'TMPDIR', 'TZ', 'SSL_CERT_FILE',
+             'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE', 'NODE_EXTRA_CA_CERTS', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY',
+             'http_proxy', 'https_proxy', 'no_proxy'}
+ENV_PREFIXES = ('LC_', 'XDG_')
+LOGIN_PREFIXES = {'codex': ('OPENAI_', 'CODEX_'), 'claude': ('ANTHROPIC_', 'CLAUDE_')}
+
+
+def reviewer_env(backend):
+    prefixes = ENV_PREFIXES + LOGIN_PREFIXES[backend]
+    env = {k: v for k, v in os.environ.items() if k in ENV_NAMES or k.startswith(prefixes)}
+    env[GUARD] = '1'
+    return env
+
+
 def inlinable(repo, rel):
     """The file at rel when it may go into a prompt: inside the checkout, not ignored, not sensitive."""
     path = (repo / rel).resolve()
@@ -72,11 +88,15 @@ def inlinable(repo, rel):
     return path
 
 
+# Tracked files with a sensitive name stay out of the diffs too, at any depth.
+NOT_SENSITIVE = ['.', *(f':(exclude,glob)**/{pattern}' for pattern in SENSITIVE)]
+
+
 def diffs(repo, base):
     parts = []
     if base:
-        parts.append((f'git diff {base}...HEAD', git(repo, 'diff', f'{base}...HEAD')))
-    parts.append(('git diff HEAD', git(repo, 'diff', 'HEAD')))
+        parts.append((f'git diff {base}...HEAD', git(repo, 'diff', f'{base}...HEAD', '--', *NOT_SENSITIVE)))
+    parts.append(('git diff HEAD', git(repo, 'diff', 'HEAD', '--', *NOT_SENSITIVE)))
     return parts
 
 
@@ -160,8 +180,7 @@ def main():
     work = pathlib.Path(tempfile.mkdtemp(prefix='nmos-peer-review-'))
     answer = work / 'answer.md'
     log = pathlib.Path(args.log) if args.log else work / 'progress.log'
-    env = os.environ.copy()
-    env[GUARD] = '1'
+    env = reviewer_env(args.backend)
     print(f'peer-review: {args.backend} {args.role} in {repo}; progress log {log}', file=sys.stderr)
     with open(log, 'w', encoding='utf-8') as log_file:
         try:

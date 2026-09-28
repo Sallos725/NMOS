@@ -571,3 +571,43 @@ def test_in_strict_mode_a_story_that_repeats_a_secret_is_not_told(migrated):
         text = ask(c, chat, "Kaito and Hana, what about the lighthouse keeper's door?")["text"]
     assert '<Summary kind="story"' not in text and "the letter is forged" not in text.split("<Private>")[0]
     assert '<Summary kind="scene"' in text  # the scene without the secret is still told
+
+
+def test_the_inspector_shows_the_job_that_would_replace_a_summary_and_its_error():
+    """Copilot review of #137: a story behind the newest scene hid its replacement's queued or failed job."""
+    from nmos_sidecar import inspector
+    from nmos_sidecar.summaries import Window
+
+    w = Window(0, 0, 7, (), "k")
+    story = {"id": "s", "text": "The story.", "members": ["a"], "last_turn": 7, "coverage": {}}
+    view = {"scenes": [{"window": w, "summary": dict(story, text="A scene."), "leaks": [], "unlisted": [], "near": [],
+                        "job": None, "changed": False}],
+            "story": story, "due": 2, "done": 1, "story_current": False,
+            "story_why": {"leaks": [], "unlisted": [], "near": []},
+            "story_job": {"status": "dead", "last_error": "the model said no"}}
+    text = inspector._summaries_section(view, "en")
+    story_part = text[:text.index("<table")]
+    assert ">current<" in story_part and ">failed<" in story_part and "the model said no" in story_part
+    view.update(story=None, story_job={"status": "dead", "last_error": "still no"})
+    story_part = inspector._summaries_section(view, "en").split("<table")[0]
+    assert ">failed<" in story_part and "still no" in story_part
+
+
+def test_a_request_keeps_its_own_trigrams_when_another_clears_the_cache():
+    """Copilot review of #139: the shared cache, cleared by another request, could lose a scene in the middle."""
+    class Rows:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+    class Conn:
+        def execute(self, sql, params):
+            return Rows([{"id": i, "text": f"scene {i}"} for i in params[0]])
+
+    summaries._GRAMS.clear()
+    summaries._GRAMS["a"] = {"cached"}
+    grams = summaries._scene_grams(Conn(), [{"id": "a"}, {"id": "b"}])
+    summaries._GRAMS.clear()  # another request crossing the cap
+    assert grams["a"] == {"cached"} and grams["b"] and set(grams) == {"a", "b"}
