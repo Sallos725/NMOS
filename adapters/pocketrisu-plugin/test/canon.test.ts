@@ -73,6 +73,21 @@ describe('canon texts (ADR 0045)', () => {
     expect(heldKeys(texts, prompt)).toEqual(['card:desc', 'card:personality', 'note', 'persona', 'lore:lore-kaito',
       'lore:lore-world']);
   });
+
+  it('held by a prompt are texts with the host\'s names in, or nearly all of their lines (ADR 0047)', () => {
+    const macro: HostCard = { ...card, desc: '{{char}}는 항구 마을 등대지기의 딸이다.\n{{char}}는 {{user}}를 오빠라고 부른다.' };
+    const texts = canonTexts(macro, chat, [], persona);
+    const sent = '하나는 항구 마을 등대지기의 딸이다.\n하나는 타쿠미를 오빠라고 부른다.';
+    expect(heldKeys(texts, [{ role: 'system', content: sent }])).toEqual(['card:desc']);
+    // a text whose other syntax the host rendered: its plain lines are there
+    const long: HostCard = { ...card, desc: ['하나의 눈은 푸른색이고 머리는 은빛이다.', '하나는 매일 새벽 등대의 불을 확인한다.',
+      '{{random::비::눈}}이 오는 날에는 문을 닫는다.', '하나는 바다를 무서워하지 않는다, 한 번도.', '하나는 편지를 모아 둔다, 상자 가득.',
+      '하나의 어머니는 오래전에 바다로 떠났다.'].join('\n') };
+    const rendered = long.desc!.replace('{{random::비::눈}}', '비').split('\n');
+    const held = (lines: string[]) => heldKeys(canonTexts(long, chat, [], null), [{ role: 'system', content: lines.join('\n') }]);
+    expect(held(rendered)).toEqual(['card:desc']);
+    expect(held(rendered.slice(0, 3))).toEqual([]);  // most of it is missing: an edit since, or not sent
+  });
 });
 
 describe('canon sync', () => {

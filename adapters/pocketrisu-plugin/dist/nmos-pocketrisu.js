@@ -16,7 +16,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:57e96ec4ffc6".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:7f14eeb91653".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -98,9 +98,22 @@
     }
     return out;
   }
+  var NAME_MACRO = /\{\{\s*(char|bot|user)\s*\}\}/gi;
+  var HELD_MIN_LINE = 12;
+  var HELD_SHARE = 0.8;
   function heldKeys(canon, prompt) {
     const all = normalizeText(prompt.map((m) => typeof m?.content === "string" ? m.content : "").join("\n"));
-    return canon.filter((c) => c.key !== "card:name" && all.includes(normalizeText(c.text).trim())).map((c) => c.key);
+    const character = canon.find((c) => c.key === "card:name")?.text.trim();
+    const persona = canon.find((c) => c.key === "persona")?.metadata.name;
+    const user = typeof persona === "string" && persona.trim() ? persona.trim() : void 0;
+    const named = (value) => value.replace(NAME_MACRO, (m, which) => (which.toLowerCase() === "user" ? user : character) ?? m);
+    return canon.filter((c) => {
+      if (c.key === "card:name") return false;
+      const whole = normalizeText(named(c.text)).trim();
+      if (all.includes(whole)) return true;
+      const lines = whole.split("\n").map((l) => l.trim()).filter((l) => l.length >= HELD_MIN_LINE && !l.includes("{{"));
+      return lines.length >= 2 && lines.filter((l) => all.includes(l)).length >= HELD_SHARE * lines.length;
+    }).map((c) => c.key);
   }
   function canonHash(text2) {
     return sha256Hex(normalizeText(text2));
@@ -158,7 +171,8 @@
         recall_top_k: num(v.tune.topK),
         facts_limit: num(v.tune.facts),
         extract_backfill: num(v.tune.backfill),
-        summaries: v.tune.summaries
+        summaries: v.tune.summaries,
+        canon_facts: v.tune.canonFacts
       });
     }
     if (dirty.includes("rules")) body.parsers = v.rules.trim() ? v.rules : null;
@@ -310,6 +324,8 @@
     "rp.secret_keep": ["{n}: \uC544\uC9C1 \uBAA8\uB984", "{n}: still kept"],
     "rp.fact_retract": ["\uCCA0\uD68C", "Retract"],
     "rp.fact_correct": ["\uC815\uC815({n})", "Correct {n}"],
+    "rp.fact_lock": ["\uACE0\uC815", "Lock"],
+    // a canon fact or a correction stays current against the story (ADR 0047)
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
     "rp.select": ["\uC77C\uAD04 \uB2EB\uAE30\uC5D0 \uB123\uAE30", "Select to close"],
     "rp.outcome": ["\uB2EB\uB294 \uACB0\uACFC", "Outcome"],
@@ -431,6 +447,11 @@
     "tune.summaries_hint": [
       "\uCD94\uCD9C \uBAA8\uB378\uC774 8\uD134\uB9C8\uB2E4 \uC7A5\uBA74\uACFC \uC9C0\uAE08\uAE4C\uC9C0\uC758 \uC774\uC57C\uAE30\uB97C \uC694\uC57D\uD574 \uAE30\uC5B5\uC5D0 \uB123\uC2B5\uB2C8\uB2E4. \uB044\uBA74 \uC694\uC57D\uC744 \uB9CC\uB4E4\uC9C0\uB3C4, \uB123\uC9C0\uB3C4 \uC54A\uC2B5\uB2C8\uB2E4.",
       "The extraction model summarizes every 8 turns and the story so far for memory. Off: none are written or used."
+    ],
+    "tune.canon_facts": ["\uC6D0\uC804\uC5D0\uC11C \uC0AC\uC2E4 \uC77D\uAE30", "Facts from canon"],
+    "tune.canon_facts_hint": [
+      "\uCD94\uCD9C \uBAA8\uB378\uC774 \uCE74\uB4DC\xB7\uD398\uB974\uC18C\uB098\xB7\uC791\uAC00 \uB178\uD2B8\uC640, \uD504\uB86C\uD504\uD2B8\uC5D0 \uD55C \uBC88\uC774\uB77C\uB3C4 \uB4E4\uC5B4\uAC04 \uB85C\uC5B4\uBD81 \uD56D\uBAA9\uC744 \uC77D\uC5B4 \uAE30\uC5B5\uC5D0 \uB123\uC2B5\uB2C8\uB2E4. \uC774\uC57C\uAE30\uAC00 \uC0C8\uB85C \uB9D0\uD558\uBA74 \uADF8 \uD134\uBD80\uD130 \uC774\uC57C\uAE30\uB97C \uB530\uB985\uB2C8\uB2E4. \uB044\uBA74 \uC77D\uC9C0\uB3C4, \uC4F0\uC9C0\uB3C4 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "The extraction model reads the card, the persona, the author's note and each lorebook entry a prompt has held, for memory. The story supersedes them. Off: none are read or used."
     ],
     // settings: parser rules
     "rules.title": ["\uC0C1\uD0DC\uCC3D \uADDC\uCE59", "Status-window rules"],
@@ -1482,7 +1503,7 @@ ${revisionHash}`;
     const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
-  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|undo):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|undo):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
   function repairAction(value) {
     const m = value ? REPAIR.exec(value) : null;
     if (!m?.[1] || !m[2]) return null;
@@ -2535,6 +2556,7 @@ html,body{margin:0;background:#0c0c10}
     const factsLimit = el("input", { type: "number", min: 0, max: 30 });
     const backfill = el("input", { type: "number", min: 0, max: 5e3 });
     const summaries = el("input", { type: "checkbox" });
+    const canonFacts = el("input", { type: "checkbox" });
     settingsView.append(el(
       "div",
       { class: "card" },
@@ -2543,7 +2565,9 @@ html,body{margin:0;background:#0c0c10}
       el("div", { class: "row" }, field(L("tune.threshold"), threshold), field(L("tune.min_sim"), minSim)),
       el("div", { class: "row" }, field(L("tune.top_k"), topK), field(L("tune.facts"), factsLimit), field(L("tune.backfill"), backfill)),
       el("div", { class: "check" }, summaries, el("span", { text: L("tune.summaries") })),
-      el("p", { class: "sub", text: L("tune.summaries_hint") })
+      el("p", { class: "sub", text: L("tune.summaries_hint") }),
+      el("div", { class: "check" }, canonFacts, el("span", { text: L("tune.canon_facts") })),
+      el("p", { class: "sub", text: L("tune.canon_facts_hint") })
     ));
     const rules = el("textarea", { spellcheck: "false" });
     const example = el("button", { text: L("rules.example") });
@@ -2575,7 +2599,8 @@ html,body{margin:0;background:#0c0c10}
           topK: topK.value,
           facts: factsLimit.value,
           backfill: backfill.value,
-          summaries: summaries.checked
+          summaries: summaries.checked,
+          canonFacts: canonFacts.checked
         },
         rules: rules.value
       };
@@ -2610,6 +2635,7 @@ html,body{margin:0;background:#0c0c10}
       factsLimit.value = String(cfg.recall.facts_limit);
       backfill.value = String(cfg.extraction.backfill);
       summaries.checked = cfg.extraction.summaries !== false;
+      canonFacts.checked = cfg.extraction.canon_facts !== false;
       rules.value = cfg.parsers.source === "ui" ? JSON.stringify(cfg.parsers.rules, null, 2) : "";
       rules.placeholder = cfg.parsers.source === "file" ? L("rules.from_file", { n: cfg.parsers.active_rules }) : L("rules.none");
     }

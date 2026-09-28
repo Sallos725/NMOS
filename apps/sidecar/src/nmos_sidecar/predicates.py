@@ -88,10 +88,11 @@ def whereabouts(a: dict[str, Any]) -> bool:
             or (a["predicate"] == "located_in" and a.get("subject_type") == "item"))
 
 
-def registry_prompt() -> str:
+def registry_prompt(only: frozenset[str] | None = None) -> str:
+    """The predicates a prompt allows, one per line; `only` narrows them (canon facts, ADR 0047)."""
     lines = []
     for p in REGISTRY.values():
-        if p.name in DERIVED:
+        if p.name in DERIVED or (only is not None and p.name not in only):
             continue
         obj = f", object: {'|'.join(p.object_types)}" if p.object_types else ""
         val = ", value: text" if p.needs_value else ""

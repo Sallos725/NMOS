@@ -35,7 +35,12 @@ NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly 
                ("<Character ", " A Character groups where that character stands now."),
                ("<Secret ", " A Secret is something its holders know and not_known_by characters are not known"
                             " to know; its content is withheld. Holders may act as people keeping a secret; nobody"
-                            " states or hints at it."))
+                            " states or hints at it."),
+               # canon facts (ADR 0047)
+               ('source="canon"', " source=\"canon\" marks how things stood before the story, from its setting; the"
+                                  " story may have changed it since."),
+               ('locked="true"', " locked=\"true\" marks a fact the user fixed: it holds, whatever the story said"
+                                 " against it."))
 MAX_EXCERPT_CHARS = 480
 
 # Markup and model reasoning that is not story: style/script blocks and <Thoughts>/<think> sections.

@@ -33,7 +33,7 @@ def test_extract_history_queues_what_first_sight_left_out(migrated, db):
         cid = conv_id(c, chat)
         assert facts(c, chat) == []  # turn 0 is older than the first-sight backfill
         out = c.post(f"/v1/conversations/{cid}/extract-history").json()
-        assert out["queued"] == {"extract": 6, "embed": len(chat.messages) - 4}
+        assert out["queued"] == {"extract": 6, "embed": len(chat.messages) - 4, "canon": 0}
         assert out["coverage"]["extraction"]["pending"] == 6
         drain(migrated)
         drain_embeddings(migrated)
@@ -41,7 +41,7 @@ def test_extract_history_queues_what_first_sight_left_out(migrated, db):
         assert cov["extraction"]["complete"] and cov["embeddings"]["complete"]
         assert [f["object"] for f in facts(c, chat)] == ["old chapel"]
         # Idempotent: nothing is missing any more.
-        assert c.post(f"/v1/conversations/{cid}/extract-history").json()["queued"] == {"extract": 0, "embed": 0}
+        assert c.post(f"/v1/conversations/{cid}/extract-history").json()["queued"] == {"extract": 0, "embed": 0, "canon": 0}
 
 
 def test_rebuild_discards_and_reextracts_every_turn(migrated, db):
@@ -60,7 +60,7 @@ def test_rebuild_discards_and_reextracts_every_turn(migrated, db):
         drain(migrated, complete)
         assert [f["object"] for f in facts(c, chat)] == ["old chapel"] and len(calls) == 8
         out = c.post(f"/v1/conversations/{cid}/rebuild").json()
-        assert out["discarded"] == 8 and out["queued"] == {"extract": 8}
+        assert out["discarded"] == 8 and out["queued"] == {"extract": 8, "canon": 0}
         # Facts disappear at once (discarded extractions never match) and coverage is partial.
         assert facts(c, chat) == [] and out["coverage"]["extraction"]["compiled"] == 0
         prio = sorted(r["priority"] for r in db.execute("SELECT priority FROM job WHERE status = 'queued'"))

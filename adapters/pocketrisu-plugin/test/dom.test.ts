@@ -113,6 +113,21 @@ describe('panel', () => {
     const put = calls.find(([method]) => method === 'PUT')!;
     expect((put[2] as Record<string, unknown>).summaries).toBe(false);
   });
+
+  it('turns canon facts off from the settings (ADR 0047)', async () => {
+    const { d, calls } = deps();
+    await openPanel(d, 'settings');
+    const panel = document.getElementById('nmos-panel')!;
+    const label = [...panel.querySelectorAll('.check')].find((c) => c.textContent === 'Facts from canon')!;
+    const box = label.querySelector('input') as HTMLInputElement;
+    expect(box.checked).toBe(true);  // absent from the settings response: on, the sidecar's default
+    box.checked = false;
+    box.dispatchEvent(new Event('change', { bubbles: true }));
+    (panel.querySelector('button.primary') as HTMLButtonElement).click();
+    await settle();
+    const put = calls.find(([method]) => method === 'PUT')!;
+    expect((put[2] as Record<string, unknown>).canon_facts).toBe(false);
+  });
 });
 
 describe('owner repairs in the panel (ADR 0044)', () => {

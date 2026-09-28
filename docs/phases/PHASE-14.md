@@ -144,7 +144,22 @@ where the story uses it, and the message extractor is untouched.
    - the step's Codex review found three defects (two shared aliases could merge two characters; canon could unsettle
      story aliases or the persona's; a late manifest changed a replay), all fixed with tests: canon aliases now
      apply on top of the story's resolution.
-5. Canon facts, conflicts, and `fact_lock`.
+5. Canon facts, conflicts, and `fact_lock`. **Done** (ADR 0047, D57, migration 0026):
+   - a `canon` generation reads, with the extraction model, the card's story fields and greeting, the note and the
+     persona at once, and a lorebook entry once a request's prompt held it (after the answer, off its path); each
+     text once, in parts of 6,000 characters, at most 4; the host's name macros replaced by the names;
+   - its facts are before turn 0 (turn -1) and the story supersedes them; open business and names are left to the
+     story and the keys; canon takes no part in secrets, threads or the scene;
+   - a story statement replacing a canon `identity` or `relationship` with something else is listed in "Needs
+     attention" with the choices (lock canon's, retract canon's, leave it);
+   - `fact_lock` on a canon fact or a correction, with undo: later statements are held off and listed;
+   - a canon fact whose text the prompt held is not sent again, unless a lock holds it against the story; requests
+     record the canon generation they read and replay with it;
+   - the plugin counts a text as held with the name macros replaced (or 80 % of its lines); a new plugin build with the
+     switch and the lock button.
+
+   The step's Codex review found five defects (canon facts of a manifest not yet arrived, reads that ignored renames,
+   a text read in part, one lock per relationship pair, a new holder taken for a restatement), all fixed with tests.
 6. Evaluation, real-host smoke, upgrade, latency, Codex review, documentation.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).

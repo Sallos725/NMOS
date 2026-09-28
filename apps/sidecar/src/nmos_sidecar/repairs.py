@@ -33,8 +33,8 @@ from .secrets import secret_text
 from .threads import MATCH_MIN, similarity
 
 KINDS = ("thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
-         "name_split")
-ENABLED = frozenset(KINDS)  # threads and secrets since step 3, facts and names since step 4
+         "name_split", "fact_lock")
+ENABLED = frozenset(KINDS)  # threads and secrets since step 3, facts and names since step 4, locks since Phase 14
 PROMISE_OUTCOMES = ("kept", "broken")
 
 
@@ -307,6 +307,29 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
     return out, retracted
 
 
+def apply_locks(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Resolution | None,
+                applied: dict[str, str | None]) -> dict[int, str]:
+    """The owner's locks (PHASE-14 Q7, ADR 0047) on the rows after retractions and corrections: a canon fact, found by
+    what it says as a fact repair finds its target (its turn is -1, its turn hash the canon key), or an owner's
+    correction, found by its repair. Returns {id() of the locked row: the lock's id}; `applied` gets {lock id: the
+    row's id, or None}."""
+    out: dict[int, str] = {}
+    for rep in repairs:
+        if rep["kind"] != "fact_lock":
+            continue
+        applied.setdefault(str(rep["id"]), None)
+        t = rep["target"] or {}
+        if t.get("repair"):
+            a = next((x for x in rows if x.get("owner") and str(x.get("repair")) == str(t["repair"])), None)
+        else:
+            a = match_fact(t, [x for x in rows if x.get("canon")], r)
+        if a is None or id(a) in out:
+            continue
+        out[id(a)] = str(rep["id"])
+        applied[str(rep["id"])] = str(a["id"])
+    return out
+
+
 class RepairError(ValueError):
     """A repair that cannot be made now: the message says why (the API answers 422)."""
 
@@ -385,11 +408,16 @@ def _plan_split(name: str, other: str | None, entity_type: str, r: Resolution | 
 def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None, new_object: str | None,
                new_value: str | None, turn: int | None, version_key: Callable[..., tuple] | None = None) -> tuple[dict, dict]:
     f = next((f for f in view["facts"] if str(f["id"]) == item), None)
+    if f is None and kind in ("fact_retract", "fact_lock"):
+        # a canon fact the story superseded: the owner keeps the story's (retract) or canon's (lock) (PHASE-14 Q4)
+        f = next((a for a in view.get("assertions") or () if a.get("canon") and str(a["id"]) == item), None)
     if f is None:
         raise RepairError("no fact with that id in this chat now")
+    r = view.get("resolution")
+    if kind == "fact_lock":
+        return _plan_lock(f, view, r)
     if f.get("owner"):
         raise RepairError("that is the owner's correction: take the repair back instead")
-    r = view.get("resolution")
     target = fact_target(f)
     hit = match_fact(target, view.get("assertions") or view["facts"], r)  # the rows a read matches against
     if hit is None or str(hit["id"]) != item:
@@ -415,3 +443,21 @@ def _plan_fact(kind: str, item: str, view: dict[str, Any], last_turn: int | None
         raise RepairError("from a later turn a new object would leave the old fact current too: correct it at its own"
                           " turn, or retract it")
     return target, {**value, "turn": at}
+
+
+def _plan_lock(f: dict[str, Any], view: dict[str, Any], r: Resolution | None) -> tuple[dict, dict]:
+    """A lock (PHASE-14 Q7): a canon fact or the owner's correction, as a fact (narrated, actual), not locked yet."""
+    if not (f.get("canon") or f.get("owner")):
+        raise RepairError("only a canon fact or the owner's correction can be locked")
+    if f.get("locked"):
+        raise RepairError("the fact is locked already")
+    if (f.get("source") or "narration") != "narration" or f.get("modality", "actual") != "actual":
+        raise RepairError("only a fact can be locked, not a claim or a plan")
+    if f.get("owner"):
+        return {"repair": str(f["repair"]), "turn": f.get("turn"), "predicate": f["predicate"], "subject": f["subject"],
+                "object": f.get("object"), "text": secret_text(f)}, {}
+    target = fact_target(f)
+    hit = match_fact(target, [a for a in view.get("assertions") or () if a.get("canon")], r)
+    if hit is None or str(hit["id"]) != str(f["id"]):
+        raise RepairError("the fact cannot be told apart from another one of its canon text")
+    return target, {}

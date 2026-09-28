@@ -170,7 +170,7 @@ def test_inspector_shows_item_timelines_and_conflicts(migrated, db):
         drain(migrated, stub_extractor)
         conv = c.get("/v1/conversations").json()[0]["id"]
         page = c.get(f"/inspector/c/{conv}").text
-        assert "충돌 (이야기가 앞뒤가 맞지 않음)" in page and "letter destroyed: burned" in page
+        assert "충돌 (이야기끼리, 원전과, 고정한 사실과)" in page and "letter destroyed: burned" in page
         assert "Hana 보유" in page and "소멸: burned" in page and "끝남" in page and ">충돌<" in page
         en = c.get(f"/inspector/c/{conv}?lang=en").text
         assert "held by Hana" in en and "destroyed: burned" in en and "conflicting" in en
