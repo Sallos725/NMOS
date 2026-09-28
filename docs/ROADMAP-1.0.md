@@ -84,6 +84,13 @@ Done when:
   and summaries cover the chat within the budget;
 - K24 is closed.
 
+**Done (2026-09-28, Phases 11–12; not released).** Thread kinds opened, ended, deleted and edited back in the memory
+evaluation (53 of 53), stated causes linked, relationships per pair with what they replaced (K24's direction case
+closed; a feeling recorded apart from a relationship stays by the owner's decision, PHASE-11 Q5); the real-model tier
+on `gemma4` and `deepseek` for `extract-v13` and for summaries; on the owner's longest chat, replayed offline, answers
+outside the prompt window 2 → 5 of 12 with the story covering every scene within the default budget
+(`docs/perf/extract-v13.md`, `docs/perf/summaries.md`). Open: goals the story never closes in words (K23, Stage 6).
+
 ## Stage 6 — Verification and repair
 
 *Original §20, §66–67; Track B, B2 remainder, B4, B7.* Has: item whereabouts, `destroyed`, conflicts,

@@ -23,7 +23,7 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
     again the turns extracted before an earlier turn's secret, oldest first. Before, it skipped them.
   - A model answer without an `assertions` list fails the job (retried, then counted failed) instead of
     counting as a turn with nothing to extract (G3; in every release since `v0.1.0-beta.1`).
-- **Phase 12 (Stage 5, part 2) is in progress** (`docs/phases/PHASE-12.md`, approved 2026-09-28; no release decided):
+- **Phase 12 (Stage 5, part 2) is complete** (`docs/phases/PHASE-12.md`, 2026-09-28; no release decided):
   - M0 has 12 more owner-confirmed cases whose answers lie outside the prompt's own messages: 2 of 12 on Phase 11.
   - **Scene summaries and the story so far** (ADR 0042, migration 0023), written in the background by the extraction
     model for every 8-turn window and kept current through edits, deletes and swipes; the Inspector shows them. The

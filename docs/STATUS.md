@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Phase 12 — Narrative Engine, part 2 (Stage 5): approved 2026-09-28, in progress.** Spec
+**Phase 12 — Narrative Engine, part 2 (Stage 5): complete (2026-09-28), not released.** Spec
 `docs/phases/PHASE-12.md`: scene summaries of 8-turn windows and a story so far, as a rebuildable `summarize`
 projection written by the extraction model; secrets left out and checked, no `<Story>` in narrator mode; a `<Cast>`
 block of each scene character's state from facts; `packet-v8` with `<Story>` in at most 30% of the budget; new M0
@@ -19,8 +19,10 @@ stricter check in front of the character a secret is kept from (amendment 3). St
 summary's state and why one is not used, and a character's `<Cast>` state and open goals. Step 7: the deterministic
 cases, an upgrade from Phase 11 `main` and a real-host smoke pass (`docs/perf/summaries.md`, "Acceptance"); two faults
 found and fixed (ADR 0042 amendment 4: a long append left the story unwritten; a request's `<Story>` read cost about
-180 ms at 10,000 messages, now about 10). One criterion is not met: retrieve at 10,000 messages is +13.1 ms p50 over
-Phase 11 `main` with a summary for each of 624 windows (the spec allows +10); the owner's decision.
+180 ms at 10,000 messages, now about 10). One criterion is not met, and the owner accepted it: retrieve at 10,000
+messages is +13.1 ms p50 over Phase 11 `main` with a summary for each of 624 windows (the spec allows +10). With
+Phases 11 and 12, Stage 5 of the roadmap is done on `main`. No phase is current. Next: the owner's call on releases
+(Stages 4 and 5) and on Stage 6.
 
 **Phase 11 — Narrative Engine, part 1 (Stage 5): complete (2026-09-28), not released.** Spec
 `docs/phases/PHASE-11.md`: the M0 evaluation on real chats (a restored backup, read-only), relationship history

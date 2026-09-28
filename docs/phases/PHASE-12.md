@@ -1,6 +1,7 @@
 # Phase 12 — Narrative Engine, part 2 (Stage 5)
 
-> **Status: approved 2026-09-28 (owner), in progress.** Stage 5 of `docs/ROADMAP-1.0.md` (original §26, §32,
+> **Status: complete 2026-09-28, not released.** Every acceptance criterion is met except the latency at 10,000
+> messages (+13.1 ms p50, +10 allowed), which the owner accepted the same day. Stage 5 of `docs/ROADMAP-1.0.md` (original §26, §32,
 > §36–37), part 2 of 2, after PHASE-11 Q0 and Q8: summaries and character state, with a summary projection and no
 > extractor change. The owner asked for this spec after accepting Phase 11 and answered every question below with the
 > recommended answer (2026-09-28). Amended the same day after review: the story prompt lists secrets too, a summary
@@ -100,7 +101,7 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
       forbidden words per secret, confirmed with the owner), under both models' summaries.
 - [ ] Retrieve latency at 10,000 messages within +10 ms p50 of Phase 11 `main`. **Not met by 3 ms**: +13.1 ms with a
       summary for each of the 624 windows (+1.6 with summaries off); +3.1 at 1,000 messages (`docs/perf/summaries.md`).
-      The owner's decision.
+      Accepted by the owner (2026-09-28).
 - [x] Real-host smoke on an isolated PocketRisu: a window completed in play gets a summary that reaches the packet
       and the Inspector.
 - [x] Upgrade from Phase 11 `main` (`tests/test_upgrade.py`).
