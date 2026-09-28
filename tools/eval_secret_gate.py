@@ -54,23 +54,27 @@ def words(case: dict[str, Any], told: list[bool]) -> tuple[list[str], list[str]]
     return live, known
 
 
+def told_group(turns: list[int], secrets: list[dict[str, Any]], who: str, key: Any, scene: int | None) -> bool:
+    """Whether the character has found out every secret of these turns kept from them by the scene's turn. Each listed
+    turn must hold such a secret: a group NMOS cannot account for fully stays forbidden."""
+    mine = [s for s in secrets if s["turn"] in turns and who in {key(n) for n in s["kept_from"]}]
+    if not turns or not set(turns) <= {s["turn"] for s in mine} or scene is None:
+        return False
+    return all(any(key(n) == who and e.get("turn") is not None and e["turn"] <= scene for n, e in s["ended"].items())
+               for s in mine)
+
+
 def told(conn: psycopg.Connection, case: dict[str, Any], extractor: str) -> list[bool]:
-    """For each group: whether every secret of its turns kept from the case's character has ended for them by the
-    scene's turn (the request's last message), as memory reads now."""
+    """For each group: whether the case's character has found out its secrets by the scene's turn (the request's last
+    message), as memory reads now up to that message (the replay's prefix, which it checks is unchanged)."""
     t = conn.execute("SELECT t.upto_position, c.head_commit_id FROM retrieval_trace t"
                      " JOIN conversation c ON c.id = t.conversation_id WHERE t.id = %s", (UUID(case["trace"]),)).fetchone()
     scene = conn.execute("SELECT max(turn) AS t FROM active_membership WHERE commit_id = %s AND position <= %s",
                          (t["head_commit_id"], t["upto_position"])).fetchone()["t"]
-    view = memory_view(conn, t["head_commit_id"], extractor)
+    view = memory_view(conn, t["head_commit_id"], extractor, upto=t["upto_position"])
     r = view["resolution"]
-    who = r.key("character", case["kept_from"]) if r else case["kept_from"]
     key = (lambda n: r.key("character", n)) if r else (lambda n: n)
-    out = []
-    for g in groups(case):
-        mine = [s for s in view["secrets"] if s["turn"] in g["turns"] and who in {key(n) for n in s["kept_from"]}]
-        out.append(bool(mine) and all(any(key(n) == who and e.get("turn") is not None and e["turn"] <= scene
-                                          for n, e in s["ended"].items()) for s in mine))
-    return out
+    return [told_group(g["turns"], view["secrets"], key(case["kept_from"]), key, scene) for g in groups(case)]
 
 
 def check(conn: psycopg.Connection, case: dict[str, Any], extractor: str, summarizer: str,

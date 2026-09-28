@@ -552,6 +552,25 @@ def test_a_thread_needs_a_look_after_more_than_30_turns_without_a_restatement():
     assert not listed(40, status="achieved")
 
 
+def test_apply_facts_keeps_a_later_turn_correction_s_original_and_lets_a_later_repair_name_it():
+    """Codex review of step 6: a correction from a later turn is a new version; the story's version stays history."""
+    rows = [{"id": t + 1, "turn": t, "turn_hash": f"h{t}", "position": 2 * t + 1, "predicate": "located_in",
+             "source": "narration", "subject": "하나", "subject_type": "character", "object": f"장소{t}",
+             "object_type": "place", "value": None} for t in range(5)]
+    def owner(kind, row, **value):
+        return {"id": uuid.uuid4(), "kind": kind, "target": repairs.fact_target(row), "value": value, "note": None}
+    later = owner("fact_correct", rows[1], object="등대", turn=3)
+    again = owner("fact_retract", rows[1])
+    applied: dict = {}
+    out, retracted = repairs.apply_facts(rows, [later, again], None, applied, turn_positions={3: 7})
+    assert [x["id"] for x in out if not x.get("owner")] == [1, 3, 4, 5]  # the retraction named the original
+    new = next(x for x in out if x.get("owner"))
+    assert (new["turn"], new["position"], out.index(new)) == (3, 7, 3)  # at the end of turn 3
+    assert applied == {str(later["id"]): "2", str(again["id"]): "2"} and set(retracted) == {str(again["id"])}
+    out, _ = repairs.apply_facts(rows, [later], None, {}, turn_positions={3: 7})
+    assert [x["id"] for x in out][:5] == [1, 2, 3, 4, new["id"]]  # the story's version stays as history
+
+
 def test_a_disputed_owner_correction_offers_its_undo_not_a_retraction():
     """Copilot review of step 5: the API refuses to repair an owner's version; the owner takes the repair back."""
     from nmos_sidecar.inspector import _attention

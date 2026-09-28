@@ -98,7 +98,8 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
 - [x] Upgrade from Phase 12 `main` (`tests/test_upgrade.py`).
 - [ ] Retrieve latency at 10,000 messages within +5 ms p50 of Phase 12 `main` with 100 live repairs
       (`tools/bench_story.py`). Missed by 2 ms (+7.0 with 100 fact repairs); accepted by the owner.
-- [ ] One Codex review (AGENTS.md §14) of the fold and API changes, with each finding confirmed or rejected.
+- [x] One Codex review (AGENTS.md §14) of the fold and API changes, with each finding confirmed or rejected (one per
+      step, 3–6; every finding confirmed or partly confirmed, and fixed).
 - [x] `ARCHITECTURE.md` (decisions), ADRs, README, the Korean guide, KNOWN-ISSUES, CHANGELOG.
 
 ## Steps (one pull request each)
@@ -132,7 +133,10 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
    packet (113 → 0 lines, 45 → 0); M0 27 of 28 (+1) and 5 of 12, sample 2 unchanged; the secret gate 6 of 6 with
    `<Story>` in all six scenes, by the owner's list (Q8 amended by the owner: words of a secret the character found out
    by the scene are told, not forbidden). Upgrade and real-host smoke pass. Latency +7.0 ms p50 with 100 fact repairs
-   (criterion +5), accepted by the owner; a first run was +66 ms and the fact repairs' reads were fixed.
+   (criterion +5), accepted by the owner; a first run was +66 ms and the fact repairs' reads were fixed. The step's
+   Codex review found that the faster read dropped the story's version under a later-turn correction, and that the
+   gate tool could excuse a group of words it could not account for fully or read past the scene; all three fixed
+   with tests.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).
 

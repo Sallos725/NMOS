@@ -262,8 +262,8 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
             continue
         applied[str(rep["id"])] = str(a["id"])
         value = rep.get("value") or {}
-        gone.add(id(a))
         if rep["kind"] == "fact_retract":
+            gone.add(id(a))
             retracted[str(rep["id"])] = a
             continue
         at = value.get("turn", a.get("turn"))
@@ -275,6 +275,7 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
                     "evidence": rep.get("note") or "", "owner": True, "repair": str(rep["id"])})
         if in_place:
             new.update({"turn": a.get("turn"), "turn_hash": a.get("turn_hash"), "position": a["position"]})
+            gone.add(id(a))  # replaced; a correction from a later turn keeps the story's version as history
             swap[id(a)] = new
         else:
             position = (turn_positions or {}).get(at)
