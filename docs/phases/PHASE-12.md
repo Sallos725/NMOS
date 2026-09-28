@@ -106,6 +106,8 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
 4. The summary prompt and secrets, measured on both models (the real-model tier), before anything reaches a packet.
    **Done** (ADR 0041 amendment 1, `docs/perf/summaries.md`): `gemma4` 21/24, `deepseek` 24/24; no secret's content
    written. One scene below 2 of 3, shown to the owner: `gemma4` named the forged letter (not the forgery) 3 of 3.
+   The owner accepted it (2026-09-28) and approved step 5 with the backfill size given (11 scene and 2 story calls on
+   the restored copy, about 275,000 characters).
 5. `packet-v7`: `<Story>` and `<Cast>`, the budget share, narrator and strict handling (ADR). Before it merges, the
    owner is told the backfill size (Q7).
 6. Inspector views (summaries, story so far, character state).
