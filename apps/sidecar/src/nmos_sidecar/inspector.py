@@ -663,7 +663,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     # What needs a look comes first; logs of the machinery start folded.
     parts: list[Section] = [
         ("state", t("state"), None, table([t("h.key"), t("h.value"), t("h.as_of"), t("h.rule")],
-                                          [[_v(s["key"]), _v(s["value"]), _v(s["position"]), _v(s["rule_id"])]
+                                          [[_v(s["key"]), _v(s["value"]), _v(s["turn"]), _v(s["rule_id"])]
                                            for s in state])
          if state else f"<p class=\"muted\">{t('no_state')}</p>{_no_state_example(lang)}", True),
         ("coverage", t("coverage"), None, _coverage_section(coverage or {}, lang), True)]
