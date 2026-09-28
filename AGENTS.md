@@ -374,8 +374,9 @@ as before; tags follow these rules.
 
 ## 14. Cross-model review
 
-Codex and Claude both work on this repository. The one implementing a change is the **lead**; the other
-may give one independent, read-only review through `.ai/scripts/peer-review` (how-to: `.ai/README.md`).
+Codex and Claude both work on this repository. The one implementing a change is the **lead**; for a
+material change it asks the other for one independent, read-only review through `.ai/scripts/peer-review`
+before reporting the change done (how-to: `.ai/README.md`; Claude's steps: `.claude/skills/peer-review`).
 
 - **When:** a material change to reconciliation, immutable source history, membership, retrieval or
   injection, packets, migrations, auth or deployment. Use `architecture` for a design question and
