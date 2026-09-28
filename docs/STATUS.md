@@ -5,7 +5,7 @@
 **Phase 12 — Narrative Engine, part 2 (Stage 5): approved 2026-09-28, in progress.** Spec
 `docs/phases/PHASE-12.md`: scene summaries of 8-turn windows and a story so far, as a rebuildable `summarize`
 projection written by the extraction model; secrets left out and checked, no `<Story>` in narrator mode; a `<Cast>`
-block of each scene character's state from facts; `packet-v7` with `<Story>` in at most 30% of the budget; new M0
+block of each scene character's state from facts; `packet-v8` with `<Story>` in at most 30% of the budget; new M0
 cases whose answers lie outside the prompt window. The owner answered every question with the recommended answer;
 no release is decided. Done: step 1 (spec); step 2, 12 owner-confirmed M0 cases whose answers lie outside the
 prompt window, 2 of 12 on `main` (`docs/perf/m0-baseline.md`). Next: step 3 (the summary projection).
