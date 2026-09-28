@@ -19,7 +19,7 @@ from xml.sax.saxutils import escape, quoteattr
 from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
 from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
-from .repairs import live, repairs_of, secret_events, thread_events
+from .repairs import apply_facts, live, repairs_of, secret_events, splits_of, thread_events
 from .secrets import fold as fold_secrets
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
@@ -357,16 +357,17 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
                 "items": [], "threads": [], "unmatched": [], "secrets": [], "unrevealed": [], "repairs": [],
-                "resolution": None}
+                "assertions": [], "resolution": None}
     rows = [r for r in served_assertions(conn, head, extractor_key, upto, known_at) if r["predicate"] in REGISTRY]
     conv = conn.execute("SELECT w.conversation_id, c.host_persona_name FROM worldline_commit w"
                         " JOIN conversation c ON c.id = w.conversation_id WHERE w.id = %s", (head,)).fetchone()
-    r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]),
-                links_of(conn, conv["conversation_id"], known_at))
     repairs = repairs_of(conn, conv["conversation_id"], known_at)  # the owner's (ADR 0044), as of the read
     last_turn = conn.execute(
         "SELECT max(turn) AS t FROM active_membership WHERE commit_id = %s AND (%s::int IS NULL OR position <= %s::int)",
         (head, upto, upto)).fetchone()["t"] if repairs else None
+    in_force = live(repairs, last_turn)
+    r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]),
+                links_of(conn, conv["conversation_id"], known_at), splits_of(in_force))
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []
@@ -380,13 +381,19 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         if row["predicate"] in THREAD_PREDICATES:
             promises.append(row)
     rows = kept
+    # The owner's repairs (ADR 0044): retracted and corrected facts first, then events of their turn in the secret and
+    # thread folds, and name splits in the resolution above.
+    applied: dict[str, str | None] = {}
+    corrected_at = sorted({(rep.get("value") or {}).get("turn") for rep in in_force if rep["kind"] == "fact_correct"}
+                          - {None})
+    turn_positions = {x["turn"]: x["p"] for x in conn.execute(
+        "SELECT turn, max(position) AS p FROM active_membership WHERE commit_id = %s AND turn = ANY(%s) GROUP BY turn",
+        (head, corrected_at)).fetchall()} if corrected_at else {}
+    rows, retracted = apply_facts(rows, in_force, r, applied, _annotate, turn_positions)
     # Secrets (PHASE-10, ADR 0033): a reveal ends a secret for the character who found it out, from its
     # turn on: its hidden_from drops that name and its known_by gains it (amendment 1: the scene, strict mode
     # and a narrator must count them as knowing it). `learned` is not a fact itself. Before the threads, which copy
     # the marks of the row that opens them: a revealed goal or promise is revealed as a thread too (ADR 0039).
-    # The owner's repairs (ADR 0044) are events of their turn in the secret and thread folds.
-    applied: dict[str, str | None] = {}
-    in_force = live(repairs, last_turn)
     secrets, unrevealed, reveals = fold_secrets(rows, r, secret_events(in_force, r, applied))
     ended = {s["id"]: set(s["ended"]) for s in secrets if s["ended"]}
     by_repair = {s["id"]: s["repair"] for s in secrets if s.get("repair")}
@@ -419,6 +426,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             f["claims"].append({"by": c["asserted_by"], "turn": c["turn"], "position": c["position"],
                                 "object": c["object"], "value": c["value"], "polarity": c["polarity"]})
     facts.sort(key=lambda f: f["position"], reverse=True)
+    for rid, gone in retracted.items():  # the version a retraction made current again names it (ADR 0044, Q7)
+        key = version_key(gone, r)
+        for f in facts:
+            if not f.get("repair") and version_key(f, r) == key:
+                f["repair"] = rid
     other.sort(key=lambda a: a["position"], reverse=True)
     cause_links(facts + claims, [f for f in facts if f["predicate"] == "event" and f.get("polarity") != "negative"], r)
     conflicts = [{"fact": f["id"], "turn": f["turn"], "position": f["position"], "text": fact_text(f),
@@ -432,7 +444,19 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     return {"facts": facts, "claims": claims, "other": other, "entities": r.entities(),
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
             "threads": threads, "unmatched": unmatched, "secrets": secrets, "unrevealed": unrevealed,
-            "repairs": [{**rep, "applied": applied.get(str(rep["id"]))} for rep in repairs], "resolution": r}
+            "repairs": [_report(rep, applied, r) for rep in repairs], "assertions": rows, "resolution": r}
+
+
+def _report(rep: dict[str, Any], applied: dict[str, str | None], r: Resolution) -> dict[str, Any]:
+    """A repair with what it applies to now (ADR 0044); a name split, the entity it left and the names that still
+    join the two when it could not separate them."""
+    if rep["kind"] != "name_split":
+        return {**rep, "applied": applied.get(str(rep["id"]))}
+    t = rep["target"]
+    via = r.split_via.get(str(rep["id"]))
+    done = via is None and any(str(s["id"]) == str(rep["id"]) for _, _, s in r.splits)
+    entity = r.entity(t["entity_type"], t["name"]) if done else None
+    return {**rep, "applied": entity["id"] if entity else None, "via": via}
 
 
 def links_of(conn: psycopg.Connection, conversation: UUID, known_at: datetime | None = None) -> list[dict[str, Any]]:

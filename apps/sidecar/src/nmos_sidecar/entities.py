@@ -75,7 +75,7 @@ def mentions(row: dict[str, Any], persona: frozenset[str] = frozenset()) -> Iter
 
 class Resolution:
     def __init__(self, conversation: UUID, rows: list[dict[str, Any]], persona: Iterable[str] = (),
-                 links: Iterable[dict[str, Any]] = ()):
+                 links: Iterable[dict[str, Any]] = (), splits: Iterable[dict[str, Any]] = ()):
         self.conversation = conversation
         self.persona = frozenset(n for n in map(norm, persona) if n)
         first: dict[Node, tuple[int, str]] = {}  # node → (order, spelling) of its first mention on the head
@@ -104,12 +104,28 @@ class Resolution:
                 counts[n] = counts.get(n, 0) + 1
                 if n[0] == "character" and _persona_name(norm(p["name"]), self.persona):
                     hosted.setdefault(norm(p["name"]), p["name"])
-        # The owner's links between names the head mentions (ADR 0025); the others wait for a mention.
+        # The owner's links and splits between names the head mentions (ADR 0025, ADR 0044); the others wait for a
+        # mention. Of a link and a split of the same two names, the newer holds.
+        latest: dict[frozenset, str] = {}
+        for kind, item in sorted([("link", x) for x in links] + [("split", x) for x in splits],
+                                 key=lambda ki: (ki[1].get("created_at") is not None, ki[1].get("created_at"))):
+            latest[frozenset((self.node(item["entity_type"], item["name"]),
+                              self.node(item["entity_type"], item.get("same_as") or item.get("other"))))] = kind
         self.links: list[tuple[Node, Node, dict[str, Any]]] = []
         for link in links:
             a, b = self.node(link["entity_type"], link["name"]), self.node(link["entity_type"], link["same_as"])
-            if a != b and a in first and b in first:
+            if a != b and a in first and b in first and latest.get(frozenset((a, b))) == "link":
                 self.links.append((a, b, link))
+        # A split drops the story's aliases that join the two names directly (K8); a third name can still join them.
+        self.splits: list[tuple[Node, Node, dict[str, Any]]] = []
+        for split in splits:
+            a, b = self.node(split["entity_type"], split["name"]), self.node(split["entity_type"], split["other"])
+            if a != b and a in first and b in first and latest.get(frozenset((a, b))) == "split":
+                self.splits.append((a, b, split))
+                edges.get(a, set()).discard(b)
+                edges.get(b, set()).discard(a)
+        self.alias_rows = [(a, b, row) for a, b, row in self.alias_rows
+                           if not any({a, b} == {x, y} for x, y, _ in self.splits)]
         linked = {n for a, b, _ in self.links for n in (a, b)}
         overruled = {n for n in linked if _splits(n, edges)}  # the owner settles what the story left ambiguous
         self.ambiguous = {n for n in edges if _splits(n, edges)} - linked
@@ -136,6 +152,12 @@ class Resolution:
         for a, b, _ in self.links:
             union(a, b)
         self._root = {n: find(n) for n in first if n not in self.ambiguous}
+        # A split whose names are still one entity, and the names that still join them.
+        self.split_via: dict[str, list[str]] = {}
+        accepted = {a: {b for b in nbrs if not {a, b} & (self.ambiguous | overruled)} for a, nbrs in edges.items()}
+        for a, b, split in self.splits:
+            if a in self._root and b in self._root and self._root[a] == self._root[b]:
+                self.split_via[str(split["id"])] = [first[n][1] for n in _path(a, b, accepted, self.links)[1:-1]]
         self._edges = edges
         self._first = first
         self._counts = counts
@@ -236,9 +258,30 @@ def _splits(n: Node, edges: dict[Node, set[Node]]) -> bool:
     return any(m not in seen for m in nbrs[1:])
 
 
+def _path(a: Node, b: Node, edges: dict[Node, set[Node]], links: list[tuple[Node, Node, Any]]) -> list[Node]:
+    """A shortest chain of aliases and owner links from a to b (both ends included), or [a, b] when none."""
+    graph = {n: set(v) for n, v in edges.items()}
+    for x, y, _ in links:
+        graph.setdefault(x, set()).add(y)
+        graph.setdefault(y, set()).add(x)
+    back, queue = {a: a}, [a]
+    while queue:
+        n = queue.pop(0)
+        if n == b:
+            out = [b]
+            while out[-1] != a:
+                out.append(back[out[-1]])
+            return out[::-1]
+        for m in sorted(graph.get(n, ())):
+            if m not in back:
+                back[m] = n
+                queue.append(m)
+    return [a, b]
+
+
 def resolve(conversation: UUID, rows: list[dict[str, Any]], persona: Iterable[str] = (),
-            links: Iterable[dict[str, Any]] = ()) -> Resolution:
+            links: Iterable[dict[str, Any]] = (), splits: Iterable[dict[str, Any]] = ()) -> Resolution:
     """Entities of one conversation's active assertions (rows in position order). `persona`: the persona's
     name as the host reports it for this conversation (ADR 0023), if known. `links`: the owner's current
     links of this conversation (`entity_type`, `name`, `same_as`, `id`; ADR 0025)."""
-    return Resolution(conversation, rows, persona, links)
+    return Resolution(conversation, rows, persona, links, splits)
