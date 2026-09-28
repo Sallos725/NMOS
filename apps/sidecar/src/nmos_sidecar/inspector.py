@@ -224,6 +224,17 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "at.note": ("NMOS가 이미 찾아낸 것 가운데 오너가 고칠 수 있는 것입니다. NMOS 화면의 인스펙터 탭에서 줄마다 고칠 수 있습니다.",
                 "What NMOS already found that the owner can fix: the panel's Inspector tab fixes each line."),
     "repairs": ("수리 (오너가 고친 것)", "Repairs (what the owner fixed)"), "toc.repairs": ("수리", "Repairs"),
+    "canon": ("원전 (카드·로어북·페르소나·작가 노트)", "Canon (card, lorebooks, persona, author's note)"),
+    "toc.canon": ("원전", "Canon"), "h.source": ("원전", "Source"), "h.what": ("무엇", "What"),
+    "h.chars": ("글자 수", "Chars"), "h.since": ("효력 시작", "In force since"),
+    "h.held": ("프롬프트에 든 요청", "In prompts"), "cn.card": ("카드", "card"), "cn.note": ("작가 노트", "author's note"),
+    "cn.about": (
+        "호스트가 이 채팅에 보여 주는 원전입니다. 카드를 고치면 새 판이 생기고 옛 판은 이력으로 남습니다. 호스트가 이미 보내는 원전은 "
+        "NMOS가 다시 보내지 않습니다.",
+        "The canon the host shows this chat. A card edit makes a new version and keeps the old one. NMOS does not send "
+        "again what the host already sends."),
+    "cn.persona": ("페르소나", "persona"), "cn.lore": ("로어북", "lorebook"), "cn.keys": ("키 {n}개", "{n} keys"),
+    "cn.held": ("{n}회, 마지막", "{n}×, last"), "cn.never": ("아직 없음", "not yet"),
     "rk.thread_close": ("스레드 닫기", "close a thread"), "rk.thread_reopen": ("스레드 다시 열기", "reopen a thread"),
     "rk.secret_found_out": ("비밀을 알게 됨", "secret found out"), "rk.secret_keep": ("비밀 유지", "secret still kept"),
     "rk.fact_retract": ("사실 철회", "retract a fact"), "rk.fact_correct": ("사실 정정", "correct a fact"),
@@ -813,6 +824,29 @@ def _repairs_table(repairs: list[dict[str, Any]], lang: str) -> str:
             + f"<p class=\"muted\">{_v(_t(lang, 'or.note'))}</p>")
 
 
+def _canon_table(rows: list[dict[str, Any]], held: dict[str, dict[str, Any]], lang: str) -> str:
+    """The chat's canon in force (ADR 0045): what each text is, how long, since when and in how many versions, and
+    whether a request's prompt held it (the host sends what it activates; NMOS does not repeat it, D3)."""
+    def what(r: dict[str, Any]) -> str:
+        m = r["metadata"] or {}
+        bits = [m.get("scope"), m.get("mode"), "always" if m.get("always_active") else None,
+                _t(lang, "cn.keys").format(n=len(m["keys"])) if m.get("keys") else None]
+        return _v(" · ".join(b for b in bits if b))
+
+    def seen(key: str) -> str:
+        h = held.get(key)
+        return (_v(_t(lang, "cn.held").format(n=h["requests"])) + " " + timestamp(h["last_at"])) if h \
+            else f"<span class=\"muted\">{_v(_t(lang, 'cn.never'))}</span>"
+
+    return (table([_t(lang, k) for k in ("h.source", "h.key", "h.what", "h.chars", "h.versions", "h.since", "h.held",
+                                         "h.text")],
+                  [[chip(lang, "cn", r["metadata"].get("canon") if r["metadata"] else r["key"].split(":")[0]),
+                    _v(r["key"]), what(r), _v(len(r["content"])), _v(r["versions"]), timestamp(r["since"]),
+                    seen(r["key"]), _v(r["content"][:120] + ("…" if len(r["content"]) > 120 else ""))]
+                   for r in rows[:500]])
+            + f"<p class=\"muted\">{_v(_t(lang, 'cn.about'))}</p>")
+
+
 def _secrets_table(secrets: list[dict[str, Any]], lang: str) -> str:
     """A chat's secrets, newest first (PHASE-10 step 6, ADR 0033): holders, whom it is kept from, the turn that
     made it, and per character whether and when they found out."""
@@ -880,7 +914,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            packet: dict[str, Any] | None = None, secrets: list[dict[str, Any]] | None = None,
            unrevealed: list[dict[str, Any]] | None = None, standing: list[dict[str, Any]] | None = None,
            summaries: dict[str, Any] | None = None, repairs: list[dict[str, Any]] | None = None,
-           last_turn: int | None = None) -> str:
+           last_turn: int | None = None, canon_rows: list[dict[str, Any]] | None = None,
+           canon_held: dict[str, dict[str, Any]] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -918,6 +953,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     if repairs:
         live = sum(1 for rep in repairs if not rep.get("removed_at"))
         parts.append(("repairs", t("repairs"), live, _repairs_table(repairs, lang), True))
+    if canon_rows:
+        parts.append(("canon", t("canon"), len(canon_rows), _canon_table(canon_rows, canon_held or {}, lang), False))
     if facts:
         parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
     if items:

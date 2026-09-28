@@ -121,7 +121,15 @@ where the story uses it, and the message extractor is untouched.
      not names.
    - Reading only what a prompt held starts sample 2 at its 45 always-active entries, of 165.
    - The existing host facts held on v1.13.0.
-3. Capture: migration 0025, ADR 0045, plugin and sync, the Inspector's canon list.
+3. Capture: migration 0025, ADR 0045, plugin and sync, the Inspector's canon list. **Done** (ADR 0045, D55):
+   - canon kept per chat as immutable `canon` revisions, and `canon_state` recording which revision of each key is
+     in force from when (a replay sees its request's canon);
+   - `POST /v1/sync/canon`: a manifest, then the texts asked for, verified against their hashes;
+   - the plugin sends the canon keys a prompt holds with each request, and the texts in the background when they
+     changed. It reads the card off the request path, again at once when its description leaves the prompt;
+   - the Inspector's folded "Canon" section;
+   - no message pipeline reads canon; a state rebuild reads messages only;
+   - a new plugin build.
 4. Names from canon.
 5. Canon facts, conflicts, and `fact_lock`.
 6. Evaluation, real-host smoke, upgrade, latency, Codex review, documentation.

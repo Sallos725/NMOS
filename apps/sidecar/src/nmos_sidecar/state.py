@@ -40,7 +40,7 @@ def rebuild_state(conn: psycopg.Connection, ruleset: RuleSet) -> int:
     total = 0
     rows = conn.execute(
         "SELECT sr.id, sr.content, sr.metadata, so.conversation_id FROM source_revision sr"
-        " JOIN source_object so ON so.id = sr.source_object_id"
+        " JOIN source_object so ON so.id = sr.source_object_id WHERE so.source_kind = 'message'"  # not canon (ADR 0045)
     ).fetchall()
     for r in rows:
         total += write_state(conn, ruleset, r["conversation_id"], r["id"], r["content"], r["metadata"])

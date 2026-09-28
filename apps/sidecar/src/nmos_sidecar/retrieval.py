@@ -471,8 +471,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     conn.execute(
         "INSERT INTO retrieval_trace (id, conversation_id, commit_id, query, candidates, selected, excluded_in_context,"
         " token_estimate, latency_ms, freshness, policy, budget_tokens, upto_position, previous_ai, in_context,"
-        " extractor_key, embed_projection, rules_version, recall_options, lines)"
-        " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        " extractor_key, embed_projection, rules_version, recall_options, lines, canon_held)"
+        " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             trace_id, conv.id, head, query,
             Jsonb([brief(c) for c in g.candidates]),
@@ -495,6 +495,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             Jsonb(sorted(in_context)), options.extractor_key,
             options.embed_projection if options.embedder else None, options.rules_version,
             Jsonb(recorded_options(options)), Jsonb(compiled.ledger),
+            Jsonb(sorted(set(getattr(request, "canon_held", None) or []))),  # ADR 0045
         ),
     )
     return {"freshness": "fresh" if fresh else "stale", "trace_id": trace_id, "text": compiled.text,

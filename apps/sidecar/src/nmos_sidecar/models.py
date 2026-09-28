@@ -98,6 +98,27 @@ class BodiesResponse(BaseModel):
     reconcile: ReconcileResponse | None = None
 
 
+class CanonEntry(BaseModel):
+    """One canon text of the chat as the host shows it (ADR 0045): its key, the hash of its text and what it is."""
+    key: str = Field(pattern=r"^(card:(name|desc|personality|scenario|greeting)|note|persona|lore:[A-Za-z0-9_.:-]{1,120})$")
+    hash: str = Hex64
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CanonSyncRequest(BaseModel):
+    host: Literal["pocketrisu"] = "pocketrisu"
+    chat_id: str
+    entries: list[CanonEntry] = Field(max_length=5000)
+    contents: dict[str, BodyText] = Field(default_factory=dict, max_length=5000)  # hash -> text the sidecar asked for
+
+
+class CanonSyncResponse(BaseModel):
+    needed: list[str] = Field(default_factory=list)
+    stored: int = 0
+    changed: int = 0
+    in_force: int | None = None
+
+
 class RetrieveRequest(BaseModel):
     host: Literal["pocketrisu"] = "pocketrisu"
     chat_id: str
@@ -108,6 +129,7 @@ class RetrieveRequest(BaseModel):
     in_context_ids: list[str] = Field(default_factory=list, max_length=20000)
     budget_tokens: int = Field(ge=0, le=20000)
     client_timings_ms: dict[str, float] = Field(default_factory=dict)
+    canon_held: list[str] = Field(default_factory=list, max_length=5000)  # canon keys this prompt holds (ADR 0045)
 
 
 class Packet(BaseModel):

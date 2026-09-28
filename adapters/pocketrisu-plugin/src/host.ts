@@ -3,6 +3,7 @@
 import type { HostPort, Settings, StatusInfo } from './core';
 import { langOf, t } from './i18n';
 import type { InjectPosition } from './prompt';
+import type { HostCard, HostLoreEntry } from './canon';
 import type { HostChat, HostPersonas } from './types';
 import { DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, MAX_DEADLINE_MS, MAX_RESERVED_TOKENS } from './form';
 import { createHud, type HudDocument } from './hud-host';
@@ -16,7 +17,8 @@ declare const risuai: {
   getCurrentCharacterIndex(): Promise<number>;
   getCurrentChatIndex(): Promise<number>;
   getChatFromIndex(characterIndex: number, chatIndex: number): Promise<HostChat | null>;
-  getCharacterFromIndex(index: number): Promise<{ name?: string; chats?: { id?: string }[] } | null>;
+  getCharacterFromIndex(index: number): Promise<(HostCard & { chats?: { id?: string }[] }) | null>;
+  getCurrentLorebookEntries?(): Promise<HostLoreEntry[]>;
   nativeFetch(url: string, options: Record<string, unknown>): Promise<Response>;
   addRisuReplacer(name: 'beforeRequest', fn: (prompt: unknown, mode: unknown) => unknown): Promise<void>;
   addRisuChatListener(mode: 'output', fn: (arg: unknown) => unknown): Promise<void>;
@@ -74,10 +76,24 @@ export const risuHost: HostPort = {
   },
 
   async characterName(chatId: string): Promise<string | null> {
-    // The host returns a snapshot of the whole character (every chat), so this runs off the request path.
+    const card = await this.card!(chatId);
+    return typeof card?.name === 'string' && card.name.trim() ? card.name.trim() : null;
+  },
+
+  async card(chatId: string): Promise<HostCard | null> {
+    // The host clones the current chat with the character (H19: 82-93 ms at 10,000 messages), so this runs off the
+    // request path. Only the story fields are kept (PHASE-14 Q1).
     const character = await risuai.getCharacterFromIndex(await risuai.getCurrentCharacterIndex());
     if (!character?.chats?.some((c) => c?.id === chatId)) return null; // switched characters meanwhile
-    return typeof character.name === 'string' && character.name.trim() ? character.name.trim() : null;
+    const { name, desc, personality, scenario, firstMessage, alternateGreetings, globalLore } = character;
+    return { name, desc, personality, scenario, firstMessage, alternateGreetings, globalLore };
+  },
+
+  async lorebook(): Promise<HostLoreEntry[]> {
+    // Every entry of the character, the chat and the enabled modules, activated or not; about 1 ms (H19).
+    if (typeof risuai.getCurrentLorebookEntries !== 'function') return [];
+    const entries = await risuai.getCurrentLorebookEntries();
+    return Array.isArray(entries) ? entries : [];
   },
 
   async personas(): Promise<HostPersonas | null> {
@@ -85,8 +101,9 @@ export const risuHost: HostPort = {
     const db = await risuai.getDatabase(['personas', 'selectedPersona']);
     if (!db || !Array.isArray(db.personas)) return null;
     const personas = db.personas.map((p) => {
-      const { id, name } = (p ?? {}) as { id?: unknown; name?: unknown };
-      return { id: typeof id === 'string' ? id : undefined, name: typeof name === 'string' ? name : undefined };
+      const { id, name, personaPrompt } = (p ?? {}) as { id?: unknown; name?: unknown; personaPrompt?: unknown };
+      return { id: typeof id === 'string' ? id : undefined, name: typeof name === 'string' ? name : undefined,
+        personaPrompt: typeof personaPrompt === 'string' ? personaPrompt : undefined };
     });
     return { personas, selected: Number.isInteger(db.selectedPersona) ? Number(db.selectedPersona) : 0 };
   },
