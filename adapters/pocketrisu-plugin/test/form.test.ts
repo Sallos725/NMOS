@@ -7,7 +7,7 @@ const base: FormValues = {
   conn: { url: 'http://127.0.0.1:8790', route: 'auto', enabled: true, reserved: '800', deadline: '3000' },
   llm: { url: 'http://llm/v1', model: 'm', key: '' },
   emb: { url: '', model: '', key: '' },
-  tune: { threshold: '0.4', minSim: '0.42', topK: '5', facts: '8', backfill: '100' },
+  tune: { threshold: '0.4', minSim: '0.42', topK: '5', facts: '8', backfill: '100', summaries: true },
   rules: '',
 };
 
@@ -20,7 +20,7 @@ describe('batch save', () => {
     expect(dirty).toEqual(['llm', 'tune']);
     expect(configBody(dirty, edited)).toEqual({
       llm_url: 'http://llm/v1', llm_model: 'm2',
-      recall_threshold: 0.4, vector_min_sim: 0.42, recall_top_k: 3, facts_limit: 8, extract_backfill: 100,
+      recall_threshold: 0.4, vector_min_sim: 0.42, recall_top_k: 3, facts_limit: 8, extract_backfill: 100, summaries: true,
     });
   });
 

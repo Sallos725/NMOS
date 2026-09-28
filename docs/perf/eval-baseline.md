@@ -31,8 +31,10 @@ and prints this table (`tools/eval_memory.py`).
   itself excluded). `lexical`: raw lexical recall (no extractor, no embeddings). `hybrid`: lexical +
   vectors. `full`: hybrid + facts. The last 6 messages are sent as `in_context_ids`, so memory must
   bring what is older. `full-v0` (since Phase 9): `full` compiled by `packet-v0`, the packet compiler
-  before ADR 0027; `full` uses the default, `packet-v7` since ADR 0042 (`packet-v1` to `-v6` before; the
-  table's first 35 cases are the same under each).
+  before ADR 0027; `full` uses the default, `packet-v8` since ADR 0043 (`packet-v1` to `-v7` before; the
+  table's first 35 cases are the same under each). `packet-v7` gives every case of every mode the same outcome as
+  `packet-v6`: no gold or stale string depends on an excerpt's turn number (the mean `full` packet is 1 token smaller,
+  190 → 189: a turn index has fewer digits than a position).
 
 Gold for the state cases is a fact line (e.g. `Hinata located in harbor`), which only `full` can
 produce; `lexical` and `hybrid` can still bring the original sentence as an excerpt.
@@ -116,9 +118,10 @@ produce; `lexical` and `hybrid` can still bring the original sentence as an exce
 | full-v0 | 48/53 | 0 | 0/1 | 175 |
 | full | 53/53 | 0 | 0/1 | 181 |
 
-Phase 12 step 5 (ADR 0042) made `packet-v7` the default: `full` still answers 53 of 53 with no stale memory. The
+Phase 12 step 5 (ADR 0043) made `packet-v8` the default: `full` still answers 53 of 53 with no stale memory. The
 cases have no summaries (no summarize generation runs here), so `<Story>` is empty; `<Cast>` groups the scene
-characters' lines, which the gold still finds, at 7 more tokens a packet on average. The summary cases are in
+characters' lines, which the gold still finds, at 8 more tokens a packet on average than `packet-v7` (173 → 181).
+The summary cases are in
 `tests/test_summaries.py`.
 
 Phase 11 step 8 added ten open-business cases, so that each kind of thread is opened, ended, deleted and has its

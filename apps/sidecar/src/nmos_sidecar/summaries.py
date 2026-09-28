@@ -1,4 +1,4 @@
-"""Scene summaries and the story so far (PHASE-12, ADR 0041): a rebuildable `summarize` projection.
+"""Scene summaries and the story so far (PHASE-12, ADR 0042): a rebuildable `summarize` projection.
 
 A scene is a fixed window of WINDOW turns of the head (turns 0–7, 8–15, …; turns as ADR 0008 counts them). It is
 summarized once it is complete and LAG more turns have a reply, so the turns still being rerolled or edited are not.
@@ -138,14 +138,19 @@ def windows(conn: psycopg.Connection, head: UUID, first: int = 0, upto: int | No
             for i, ids in sorted(grouped.items())]
 
 
+# A row current at `known_at` (a replay, ADR 0027), or now: written by then and not yet discarded then. A summary written
+# again after a late secret discards the old row without changing the head, so a replay from before needs it back.
+_AS_OF = ("(%s::timestamptz IS NULL OR created_at <= %s::timestamptz)"
+          " AND (discarded_at IS NULL OR (%s::timestamptz IS NOT NULL AND discarded_at > %s::timestamptz))")
+
+
 def _scenes(conn: psycopg.Connection, conv: UUID, key: str, ws: list[Window],
             known_at: datetime | None = None) -> dict[str, dict[str, Any]]:
     if not ws:
         return {}
     rows = conn.execute(
-        "SELECT * FROM summary WHERE conversation_id = %s AND generation = %s AND level = 'scene'"
-        " AND discarded_at IS NULL AND window_key = ANY(%s) AND (%s::timestamptz IS NULL OR created_at <= %s::timestamptz)",
-        (conv, key, [w.key for w in ws], known_at, known_at)).fetchall()
+        "SELECT * FROM summary WHERE conversation_id = %s AND generation = %s AND level = 'scene' AND window_key = ANY(%s)"
+        " AND " + _AS_OF, (conv, key, [w.key for w in ws], known_at, known_at, known_at, known_at)).fetchall()
     return {r["window_key"]: r for r in rows}
 
 
@@ -164,9 +169,8 @@ def current(conn: psycopg.Connection, conv: UUID, head: UUID, key: str | None,
     if ids:
         have = set(ids)
         for row in conn.execute(
-                "SELECT * FROM summary WHERE conversation_id = %s AND generation = %s AND level = 'story'"
-                " AND discarded_at IS NULL AND (%s::timestamptz IS NULL OR created_at <= %s::timestamptz)"
-                " ORDER BY created_at DESC, id DESC", (conv, key, known_at, known_at)).fetchall():
+                "SELECT * FROM summary WHERE conversation_id = %s AND generation = %s AND level = 'story' AND " + _AS_OF
+                + " ORDER BY created_at DESC, id DESC", (conv, key, known_at, known_at, known_at, known_at)).fetchall():
             if row["members"] and set(row["members"]) <= have:
                 story = row
                 break
@@ -177,7 +181,7 @@ def current(conn: psycopg.Connection, conv: UUID, head: UUID, key: str | None,
             "story_held": held(story, secrets) if story and secrets else []}
 
 
-SCENE_MIN = 0.3  # trigram containment of the message in a scene summary that brings that scene (ADR 0042)
+SCENE_MIN = 0.3  # trigram containment of the message in a scene summary that brings that scene (ADR 0043)
 
 
 def summary_line(level: str, row: dict[str, Any]) -> Line:
@@ -191,7 +195,7 @@ def summary_line(level: str, row: dict[str, Any]) -> Line:
 def packet_lines(conn: psycopg.Connection, conv: UUID, head: UUID, key: str, secrets: list[dict[str, Any]],
                  query: str, before_turn: int | None, upto: int | None = None,
                  known_at: datetime | None = None) -> list[Line]:
-    """What a request offers <Story> (ADR 0042): the story so far, and the scene summary the message is about among
+    """What a request offers <Story> (ADR 0043): the story so far, and the scene summary the message is about among
     windows older than the prompt's own messages (`before_turn`). A summary that repeats a secret still kept from
     someone is never offered (PHASE-12 Q3)."""
     view = current(conn, conv, head, key, secrets, upto, known_at)
@@ -285,9 +289,11 @@ def schedule_stale(conn: psycopg.Connection, conv: UUID, key: str, priority: int
 
 
 def schedule_all(conn: psycopg.Connection, key: str, conv: UUID | None = None) -> int:
-    """Everything a generation is missing in every chat (or one), at background priority (PHASE-12 Q7)."""
+    """Everything a generation is missing in every chat (or one), at background priority, newest chats first
+    (PHASE-12 Q7): backfill jobs are claimed in the order they are queued."""
     heads = conn.execute("SELECT id, head_commit_id FROM conversation WHERE head_commit_id IS NOT NULL"
-                         " AND (%s::uuid IS NULL OR id = %s::uuid) ORDER BY id", (conv, conv)).fetchall()
+                         " AND (%s::uuid IS NULL OR id = %s::uuid) ORDER BY created_at DESC, id DESC",
+                         (conv, conv)).fetchall()
     with conn.transaction():
         conn.execute("UPDATE job SET status = 'obsolete', updated_at = now() WHERE kind = 'summarize'"
                      " AND status = 'queued' AND payload->>'generation' IS DISTINCT FROM %s", (key,))
@@ -451,7 +457,10 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         return "done"
     scenes = [s["summary"] for s in view["scenes"]]
     kept = window_secrets(secrets, scenes[-1]["last_turn"])
-    parsed, raw = complete(STORY_PROMPT, story_prompt(scenes, kept))
+    # A scene that repeats a secret gives the story nothing of its text (it would pass the secret on); its turns stay
+    # in the story's range, told by the scenes around them.
+    told = [{**s, "text": "(left out: it repeats a secret)"} if leaks(s["text"], secrets) else s for s in scenes]
+    parsed, raw = complete(STORY_PROMPT, story_prompt(told, kept))
     text = reply_text(parsed, STORY_CHARS)
     with conn.transaction():
         conn.execute("UPDATE summary SET discarded_at = now() WHERE conversation_id = %s AND generation = %s"

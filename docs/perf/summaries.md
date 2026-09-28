@@ -1,4 +1,4 @@
-# Scene summaries — real-model tier (Phase 12 step 4, ADR 0041)
+# Scene summaries — real-model tier (Phase 12 step 4, ADR 0042)
 
 Measured 2026-09-28. `summarize-v2`: the scene prompt lists the window's OPEN SECRETS and says never to write their
 content; whether a stored summary may be used is checked when it is read (`summaries.leaks`).
@@ -74,9 +74,9 @@ its own summaries (`summarize-v3`, 8 scenes and the story, written by the same m
 |---|---:|---:|---:|---:|
 | `packet-v6`, budget 800 (Phase 11) | 26 (7) | 2 | 24 (5) | 1 |
 | `packet-v6`, budget 2,000 | 26 (7) | 4 | — | — |
-| `packet-v7`, budget 2,000 | 26 (7) | 5 | 24 (5) | 2 |
+| `packet-v8`, budget 2,000 | 26 (7) | 5 | 24 (5) | 2 |
 
-Nothing forbidden was placed as current in any `packet-v7` run. What the step added:
+Nothing forbidden was placed as current in any `packet-v8` run. What the step added:
 - **The budget** brought two of the 12 answers: the heater and why the soup tasted odd, from facts and excerpts
   that 800 tokens had no room for.
 - **`<Cast>`** brought one more. What Elpi carried the cookies in came from her group: `엘피 possesses 양철 상자`,
@@ -92,7 +92,7 @@ Nothing forbidden was placed as current in any `packet-v7` run. What the step ad
    a question about arithmetic. `<Cast>` now groups goals only for a character the message names.
 2. **A secret in the story, reworded.** A kiss at turns 61–63 was stated to be kept from Elpi only at turns 64 and 68,
    after the summaries of its window were written. The story so far said "…모두에게 애정을 표현하며 입을 맞추었고…" in
-   the scene where Elpi asks what happened last night; `packet-v6` had it in `<Private>` only. Now (ADR 0041 amendment
+   the scene where Elpi asks what happened last night; `packet-v6` had it in `<Private>` only. Now (ADR 0042 amendment
    2, `summarize-v3`):
    - each summary's prompt lists the secrets stated up to 8 turns after its window, and the story's prompt lists
      them too;

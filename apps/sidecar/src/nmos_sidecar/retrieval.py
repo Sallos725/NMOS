@@ -23,8 +23,8 @@ from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
 from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, DEFAULT_POLICY, MEMORY_KINDS, REPEATS,
-                     STORY_POLICIES, Compiled, Excerpt, Line, StateItem, clean_text, compile_lines, cut_lines, excerpt,
-                     fits_at, kept_counts, secret_line, secret_text)
+                     STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line, StateItem, clean_text, compile_lines,
+                     cut_lines, excerpt, fits_at, kept_counts, secret_line, secret_text)
 from .state import current_state
 from .threads import relevant_threads, similarity
 from .vectors import vector_candidates
@@ -60,7 +60,7 @@ class RecallOptions:
     policy: str = DEFAULT_POLICY  # packet compiler (ADR 0027)
     strict: bool = False  # this chat's memory mode (ADR 0035): withhold what only some of the scene know
     narrator: str | None = None  # this chat is told in this character's first person (ADR 0035)
-    summarize_key: str | None = None  # summaries of this generation in <Story> (packet-v7, ADR 0042); None: off
+    summarize_key: str | None = None  # summaries of this generation in <Story> (packet-v8, ADR 0043); None: off
 
 
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
@@ -157,7 +157,7 @@ def _lexical_candidates(conn: psycopg.Connection, head: UUID, ids: list[UUID], q
         return []
     return conn.execute(
         """
-        SELECT sr.id, am.position, so.host_logical_id, rt.clean_content AS clean, sr.metadata->>'role' AS role,
+        SELECT sr.id, am.position, am.turn, so.host_logical_id, rt.clean_content AS clean, sr.metadata->>'role' AS role,
                sr.metadata->>'name' AS name, s.user_score,
                s.user_score + %(w)s * CASE WHEN %(ai)s = '' THEN 0 ELSE word_similarity(%(ai)s, rt.clean_content) END AS score
         FROM active_membership am
@@ -210,8 +210,8 @@ class Gathered:
     withheld: int = 0  # lines and excerpts the chat's memory mode left out or replaced (ADR 0035)
     withheld_lines: list[Line] = field(default_factory=list)
     secret_pairs: set[tuple[frozenset[str], frozenset[str]]] = field(default_factory=set)  # (holders, absent) given a Secret line
-    story: list[Line] = field(default_factory=list)  # summaries (packet-v7, ADR 0042)
-    cast_lines: list[tuple[str, list[Line]]] = field(default_factory=list)  # each scene character's state (packet-v7)
+    story: list[Line] = field(default_factory=list)  # summaries (packet-v8, ADR 0043)
+    cast_lines: list[tuple[str, list[Line]]] = field(default_factory=list)  # each scene character's state (packet-v8)
 
 
 def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, in_context: set[str],
@@ -249,13 +249,16 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     g.excluded = [c for c in g.candidates if c["host_logical_id"] in in_context]
     eligible = [c for c in g.candidates if c["host_logical_id"] not in in_context][: options.top_k]
     focus = f"{query} {previous_ai}"
+    # The turn the packet shows: the message's turn index since packet-v7, as facts have it (ADR 0041).
+    by_turn = options.policy in TURN_POLICIES
     for c in eligible:
         clean = c["clean"] if c.get("user_score") else c["clean"][c["text_start"]:c["text_end"]]
-        g.ranked.append(Excerpt(turn=c["position"], speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
+        g.ranked.append(Excerpt(turn=c["turn"] if by_turn else c["position"],
+                                speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
                                 text=excerpt(clean, focus), score=float(c["rrf"]), revision_id=str(c["id"]),
-                                short=excerpt(clean, focus, window=1)))
+                                short=excerpt(clean, focus, window=1), position=c["position"]))
     if options.rules_version != "none":
-        g.state = [StateItem(key=r["key"], value=r["value"], turn=r["position"])
+        g.state = [StateItem(key=r["key"], value=r["value"], turn=r["turn"] if by_turn else r["position"])
                    for r in current_state(conn, head, options.rules_version, upto)
                    if r["host_logical_id"] not in in_context]
         # Sim bots track many characters: state of characters mentioned right now gets the budget first.
@@ -304,8 +307,10 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 g.lead = [line for line in g.lead if line.ref.get("assertion") not in used]
                 g.facts = [line for line in g.facts if line.ref.get("assertion") not in used]
                 g.threads = [line for line in g.threads if line.ref.get("assertion") not in used]
-    if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0042, PHASE-12 Q3
+    if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3
         conv = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
+        if view is None and options.extractor_key:  # facts and threads off: the secrets still decide what may be told
+            view = memory_view(conn, head, options.extractor_key, upto, known_at)
         g.story = summaries.packet_lines(conn, conv["conversation_id"], head, options.summarize_key,
                                          view["secrets"] if view else [], query,
                                          _first_turn(conn, head, in_context, upto), upto, known_at)
@@ -324,7 +329,7 @@ def _first_turn(conn: psycopg.Connection, head: UUID, in_context: set[str], upto
 
 def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str,
                 options: RecallOptions) -> tuple[list[tuple[str, list[Line]]], set[Any]]:
-    """Each scene character's current state as the lines it is (PHASE-12 Q4, ADR 0042): place, condition, feeling
+    """Each scene character's current state as the lines it is (PHASE-12 Q4, ADR 0043): place, condition, feeling
     toward the persona, what they carry, and, for a character the message names, their open goals, the one the
     message is about first: an open goal can be long over without a turn saying so (K23), and every request would
     carry it. Up to CAST_MAX characters, the persona left out. A line only some of the scene know stays in its section

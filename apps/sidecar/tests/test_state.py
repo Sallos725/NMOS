@@ -59,8 +59,9 @@ def test_state_follows_membership_and_is_injected_out_of_context(state_client, m
     fill(chat, 6)
     sync(state_client, chat)
     text = packet(state_client, chat)
-    assert '<Item key="장소" as_of_turn="1">폐허가 된 성당</Item>' in text
-    assert '<Item key="HP" as_of_turn="1">42/100</Item>' in text
+    # the reply at position 1 answers the first user message: turn 0 (packet-v7, ADR 0041)
+    assert '<Item key="장소" as_of_turn="0">폐허가 된 성당</Item>' in text
+    assert '<Item key="HP" as_of_turn="0">42/100</Item>' in text
 
     # A later status window supersedes the earlier one.
     chat.reply(STATUS.replace("폐허가 된 성당", "지하 묘지").replace("42/100", "30/100"))

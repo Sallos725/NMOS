@@ -1,8 +1,8 @@
-# 0042 — `packet-v7`: the story so far and the scene's characters, with a 2,000-token default budget
+# 0043 — `packet-v8`: the story so far and the scene's characters, with a 2,000-token default budget
 
 Status: accepted, 2026-09-28. Phase 12 step 5 (`docs/phases/PHASE-12.md`, Q3, Q4, Q5; the owner's budget decision).
-New default packet policy `packet-v7`. Summaries on by default (`NMOS_SUMMARIES`). Default memory budget 2,000 tokens
-(was 800). Amends ADR 0035 (the default budget) and ADR 0036 (`FIT_CAP`). ADR 0041 amendment 2 (late secrets) belongs
+New default packet policy `packet-v8` (`packet-v7` with the sections below; ADR 0041 numbers excerpts by turn). Summaries on by default (`NMOS_SUMMARIES`). Default memory budget 2,000 tokens
+(was 800). Amends ADR 0035 (the default budget) and ADR 0036 (`FIT_CAP`). ADR 0042 amendment 2 (late secrets) belongs
 to the same step.
 
 ## Context
@@ -16,12 +16,12 @@ to the same step.
 
 ## Decision
 
-1. **`packet-v7` (default)** is `packet-v6` with two sections.
+1. **`packet-v8` (default)** is `packet-v7` with two sections.
    - **`<Story>`** comes first in the packet, and is placed after parser state in at most 30 % of the budget inside
      the frame. It holds the story so far, then the scene summary the message is about. That scene summary is the
      best trigram containment of the message (at least 0.3), among windows that end before the prompt's own first
      turn.
-     - A summary held under ADR 0041 (it repeats a secret, or was written before one) is never offered.
+     - A summary held under ADR 0042 (it repeats a secret, or was written before one) is never offered.
      - Narrator mode offers none (PHASE-12 Q3).
      - The line is `<Summary kind="story|scene" turns="a–b">`, with a Note sentence saying that summaries are the
        earlier story in short.
@@ -39,9 +39,10 @@ to the same step.
    request.
 3. **Default budget 2,000** (plugin `reserved_memory_tokens`, when unset). A value saved in the plugin stays as it
    is. `FIT_CAP` (the largest budget the panel suggests) goes from 2,000 to 6,000.
-4. **Summaries are on by default** where extraction is on. `NMOS_SUMMARIES=0` or the `summaries` setting turns them
+4. **Summaries are on by default** where extraction is on. The panel's switch (**장면 요약 만들기 / Scene summaries**,
+   the `summaries` setting) or `NMOS_SUMMARIES=0` turns them
    off. Turning them on makes the summarize generation active and queues every chat's due windows at background
-   priority (ADR 0041, PHASE-12 Q7).
+   priority (ADR 0042, PHASE-12 Q7).
 
 ## Consequences
 

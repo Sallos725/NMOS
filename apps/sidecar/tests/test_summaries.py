@@ -1,4 +1,4 @@
-"""PHASE-12 step 3 (ADR 0041): scene summaries and the story so far, a `summarize` projection."""
+"""PHASE-12 step 3 (ADR 0042): scene summaries and the story so far, a `summarize` projection."""
 
 from __future__ import annotations
 
@@ -225,7 +225,7 @@ def test_the_leak_check_is_about_the_secret_not_its_setting():
     assert summaries.leaks(left_out, [kiss]) == [] and summaries.leaks(copied, [kiss]) == [kiss]
 
 
-# --- step 5: packet-v7, <Story> and <Cast> (ADR 0042) ------------------------------------------------
+# --- step 5: packet-v8, <Story> and <Cast> (ADR 0043) ------------------------------------------------
 
 from nmos_sidecar.packet import STORY_SHARE, Line, compile_lines, estimate_tokens  # noqa: E402
 
@@ -242,7 +242,7 @@ def test_story_comes_first_within_its_share_and_cast_groups_its_lines():
     story = [summary("story", "Hana found the key; Kaito hurt his knee."), summary("scene", "They went to the lighthouse.",
                                                                                      8, 15, "s2")]
     cast = [("Hana", [fact_line("Hana located in lighthouse", 1)])]
-    out = compile_lines([], 2000, facts=[fact_line("Kaito located in market", 2)], policy="packet-v7", story=story,
+    out = compile_lines([], 2000, facts=[fact_line("Kaito located in market", 2)], policy="packet-v8", story=story,
                         cast=cast)
     body = out.text.splitlines()
     assert body[2] == "  <Story>" and '<Summary kind="story" turns="0–7">' in body[3]
@@ -251,7 +251,7 @@ def test_story_comes_first_within_its_share_and_cast_groups_its_lines():
     assert out.text.index("<Cast>") < out.text.index("<Facts>") and "A Summary tells" in out.text
     assert [e.get("section") for e in out.ledger if e["kind"] == "fact"] == ["cast", None]
     long = [summary("story", "긴 이야기가 이어졌다. " * 60)]  # over the share, within the budget
-    capped = compile_lines([], 2000, policy="packet-v7", story=long, facts=[fact_line("Kaito located in market", 2)])
+    capped = compile_lines([], 2000, policy="packet-v8", story=long, facts=[fact_line("Kaito located in market", 2)])
     assert capped.ledger[0]["why"] == "story_cap" and "<Story>" not in capped.text  # never over STORY_SHARE
     assert STORY_SHARE == 0.3 and 2000 * STORY_SHARE < estimate_tokens(long[0].xml, 1.2) < 1500
     assert "<Story>" not in compile_lines([], 2000, policy="packet-v6", facts=[fact_line("x", 3)]).text
@@ -350,3 +350,72 @@ def test_a_secret_stated_after_a_summary_holds_it_until_it_is_written_again(migr
         assert not any(x["held"] for x in v["scenes"]) and not v["story_held"] and v["story_current"]
         # the scene written again replaces the old one; the old story, made from it, is simply no longer current
         assert db.execute("SELECT count(*) AS n FROM summary WHERE discarded_at IS NOT NULL").fetchone()["n"] == 1
+
+
+def test_the_settings_report_the_switch_and_a_backfill_starts_with_the_newest_chat(migrated, db):
+    older, newer = story_chat(20), story_chat(20)
+    with make_client(migrated, **LLM, summaries=False) as c:  # summaries off: both chats synced first
+        sync(c, older)
+        sync(c, newer)
+        assert c.get("/v1/config").json()["extraction"]["summaries"] is False
+    with make_client(migrated, **ON) as c:  # turned on: the generation's backfill of every chat (PHASE-12 Q7)
+        assert c.get("/v1/config").json()["extraction"]["summaries"] is True
+        first = db.execute("SELECT conversation_id FROM job WHERE kind = 'summarize' ORDER BY id LIMIT 1").fetchone()
+        assert str(first["conversation_id"]) == conv_id(c, newer)
+
+
+def test_with_facts_and_threads_off_a_story_that_repeats_a_secret_is_still_held(migrated):
+    chat = lighthouse_chat()
+
+    def leaky(system: str, user: str) -> tuple[dict, str]:
+        if system == summaries.STORY_PROMPT:
+            return {"summary": "Hana read it: the letter is forged."}, "{}"
+        return stub(system, user)
+
+    with make_client(migrated, **ON, extract_backfill=100, facts_limit=0, threads_limit=0) as c:
+        sync(c, chat)
+        story_setup(migrated, chat, leaky)
+        assert "the letter is forged" not in ask(c, chat, "Kaito, anything new?")["text"]
+
+
+def test_a_scene_that_repeats_a_secret_gives_the_story_none_of_its_text(migrated):
+    chat = lighthouse_chat()
+    prompts: list[str] = []
+
+    def recording(system: str, user: str) -> tuple[dict, str]:
+        prompts.append(user)
+        if system == summaries.STORY_PROMPT:
+            return {"summary": "Story."}, "{}"
+        return {"summary": "Hana read it: the letter is forged." if "turn 0]" in user else "Nothing else."}, "{}"
+
+    with make_client(migrated, **ON, extract_backfill=100) as c:
+        sync(c, chat)
+        story_setup(migrated, chat, recording)
+    story = next(p for p in prompts if "SCENES:" in p)
+    assert "(left out: it repeats a secret)" in story and "the letter is forged." not in story.split("SCENES:")[1]
+
+
+def test_a_replay_from_before_a_summary_was_written_again_reads_the_one_it_used(migrated, db):
+    chat = story_chat(22)
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        drain(migrated)
+        chat.user("Turn 3 begins, remember?")
+        sync(c, chat)
+        before = c.post("/v1/retrieve", json={"chat_id": chat.id, "query": "Turn 3 begins, remember?", "budget_tokens": 2000,
+                                              "in_context_ids": [m["chatId"] for m in chat.messages[-6:]]}).json()
+        assert "<Story>" in before["packet"]["text"]
+        chat.user("Hana keeps a secret from Kaito: the letter is forged.")
+        chat.reply("Noted.")
+        chat.user("Go on.")
+        sync(c, chat)
+        from memeval import stub_extractor
+        from test_extraction import drain as drain_facts
+
+        drain_facts(migrated, stub_extractor)
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            summaries.schedule_stale(conn, conv_id(c, chat), active_generation(conn, "summarize").key)
+        drain(migrated)
+        assert db.execute("SELECT count(*) AS n FROM summary WHERE discarded_at IS NOT NULL").fetchone()["n"] >= 1
+        replay = c.get(f"/v1/trace/{before['trace_id']}/replay").json()
+    assert replay["status"] == "ok" and replay["reproduced"] is True, replay.get("notes")

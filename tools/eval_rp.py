@@ -53,7 +53,7 @@ def norm(text: str) -> str:
 
 
 BEFORE = re.compile(r"; before, turn -?\d+: [^<]*")  # packet-v5: what a standing fact replaced, and how it started
-STORY = re.compile(r"<Story>.*?</Story>", re.S)  # summaries tell the past (packet-v7, ADR 0042)
+STORY = re.compile(r"<Story>.*?</Story>", re.S)  # summaries tell the past (packet-v8, ADR 0043)
 
 
 def score(case: dict[str, Any], text: str, prompt: str = "") -> dict[str, Any]:
@@ -100,7 +100,7 @@ def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: Recall
     """Every case's numbers, and a summary per category and overall. Read-only."""
     results: list[dict[str, Any]] = []
     overrides = {"extractor_key": extractor} if extractor else {}
-    if summarizer:  # summaries of this generation in <Story> (packet-v7, ADR 0042), as of now
+    if summarizer:  # summaries of this generation in <Story> (packet-v8, ADR 0043), as of now
         overrides["summarize_key"] = summarizer
     known_at = datetime.now(timezone.utc) if extractor or summarizer else None
     for case in cases:

@@ -431,18 +431,24 @@ beside promises: the prompt lists OPEN THREADS, and `resolved` ends one by owner
 0022 stores it, and a cause the story states in `because`). Rows of earlier generations keep goals as facts. Reveals are
 applied before threads are folded, so a revealed goal or promise is revealed as a thread too.
 
-**D50 — Stated causes (Phase 11, ADR 0040).** The default policy `packet-v6` shows a fact's or claim's stated cause
+**D50 — Stated causes (Phase 11, ADR 0040).** `packet-v6` (the default until D51) shows a fact's or claim's stated cause
 (`; because: …`), counts its words in relevance, and ranks facts with a cause higher when the message asks why. At read
 time a cause links to the event it names only when one of the same people, at most 5 turns back, clearly matches with
 names left out; links show in the Inspector, never in the packet. No cause is inferred.
 
-**D51 — Scene summaries (Phase 12, ADR 0041).** A `summarize` projection with its own generation, written by the
+**D51 — One numbering for `turn` (ADR 0041; found in the Phase 11 real-host smoke).** `packet-v7` gives an excerpt's `turn`
+and a state item's `as_of_turn` the turn index of their message, the number facts, claims, threads and secrets show
+(ADR 0008); earlier policies show the message's position there, and their traces replay so. A message without a turn gets
+no turn attribute, and excerpts stay in story order. The Inspector's state table shows the turn index. `packet-v7` is
+the default (owner, 2026-09-28).
+
+**D52 — Scene summaries (Phase 12, ADR 0042).** A `summarize` projection with its own generation, written by the
 extraction model: each 8-turn window of the head, once it is 4 replied turns old, and a story so far over the current
 scene summaries. A summary is keyed by its window's member revisions, so any change inside the window masks it at once;
 the story is keyed by its scenes. A summary is held while it repeats a secret still kept from someone or was written
 before one (it is written again).
 
-**D52 — Story and cast (Phase 12, ADR 0042).** The default policy `packet-v7` adds `<Story>` (the story so far and
+**D53 — Story and cast (Phase 12, ADR 0043).** The default policy `packet-v8` adds `<Story>` (the story so far and
 the scene summary the message is about, in at most 30 % of the budget; none for a first-person narrator) and `<Cast>`
 (each scene character's place, condition, feeling toward the persona, what they carry and, when the message names
 them, open goals, as their ordinary lines, not repeated elsewhere). The default memory budget is 2,000 tokens, and
