@@ -746,8 +746,10 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
                              _close(th)])
     for u in view.get("unmatched", []):
         rows.append([_v(_t(lang, "at.unmatched")), _v(fact_line_text(u)), _turn(u), ""])
+    owned = {f["id"]: f["repair"] for f in view.get("facts", []) if f.get("owner")}  # the owner's corrections
     for c in view.get("conflicts", []):
-        rows.append([_v(_t(lang, "at.disputed")), _v(c["text"]), _v(c.get("turn")), _act("fact_retract", c["fact"])])
+        act = _act("undo", owned[c["fact"]]) if c["fact"] in owned else _act("fact_retract", c["fact"])
+        rows.append([_v(_t(lang, "at.disputed")), _v(c["text"]), _v(c.get("turn")), act])
     for rep in repairs:
         if rep.get("removed_at"):
             continue

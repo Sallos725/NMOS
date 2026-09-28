@@ -110,7 +110,8 @@ language after a page reload.
   close them together) or reopen one, mark a secret found out or still kept by a character, retract or correct a
   fact, and on an entity's page split two names the story joined. A repair survives rebuilds and new extractor
   generations, is listed under **Repairs** with **Undo**, and each chat's page starts with **Needs attention** (old
-  open threads, ends that matched no thread, disputed whereabouts, repairs that match nothing now, ambiguous names).
+  open threads, ends that matched no thread, disputed whereabouts, repairs that match nothing now, splits still
+  joined through another name, ambiguous names).
   A conversation page lists the chat's **Secrets** (who knows, kept from whom, who found out and when), and the
   last packet's section names the scene's characters and memory mode.
   A conversation page also has a **Memory mode** card for that chat (ADR 0035): **Strict** gives only what

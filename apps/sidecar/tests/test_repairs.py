@@ -552,6 +552,18 @@ def test_a_thread_needs_a_look_after_more_than_30_turns_without_a_restatement():
     assert not listed(40, status="achieved")
 
 
+def test_a_disputed_owner_correction_offers_its_undo_not_a_retraction():
+    """Copilot review of step 5: the API refuses to repair an owner's version; the owner takes the repair back."""
+    from nmos_sidecar.inspector import _attention
+    rid = str(uuid.uuid4())
+    view = {"facts": [{"id": -7, "owner": True, "repair": rid}, {"id": 8}],
+            "conflicts": [{"fact": -7, "text": "the owner's version", "turn": 3},
+                          {"fact": 8, "text": "the story's", "turn": 4}]}
+    acts = [row[-1] for row in _attention(view, [], 10, "en")]
+    assert acts == [f'<span class="rp" data-repair="undo:{rid}"></span>',
+                    '<span class="rp" data-repair="fact_retract:8"></span>']
+
+
 def test_a_mark_carries_any_name_as_data_and_offers_each_field_a_correction_can_set():
     """Codex review of step 5: a name with a quote, an ampersand or a colon keeps its button; a relationship can be
     corrected in its counterpart or in its value."""
