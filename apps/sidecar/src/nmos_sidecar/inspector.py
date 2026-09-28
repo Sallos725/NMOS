@@ -207,6 +207,19 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "h.who": ("인물", "Who"), "h.listed": ("보고된 비밀", "Reported secret"), "h.evidence": ("근거", "Evidence"),
     "h.found": ("알게 된 턴", "Found out in turn"),
     "sec.open": ("아직 모름", "does not know yet"), "sec.ended": ("{turn}턴에 알게 됨", "found out in turn {turn}"),
+    "or.closed": ("오너가 닫음", "closed by the owner"), "or.marked": ("오너 표시", "marked by the owner"),
+    "repairs": ("수리 (오너가 고친 것)", "Repairs (what the owner fixed)"), "toc.repairs": ("수리", "Repairs"),
+    "rk.thread_close": ("스레드 닫기", "close a thread"), "rk.thread_reopen": ("스레드 다시 열기", "reopen a thread"),
+    "rk.secret_found_out": ("비밀을 알게 됨", "secret found out"), "rk.secret_keep": ("비밀 유지", "secret still kept"),
+    "rk.fact_retract": ("사실 철회", "retract a fact"), "rk.fact_correct": ("사실 정정", "correct a fact"),
+    "rk.name_split": ("이름 분리", "split two names"),
+    "rs.applied": ("적용됨", "applied"), "rs.unmatched": ("지금 맞는 항목 없음", "matches nothing now"),
+    "rs.removed": ("되돌림", "taken back"),
+    "h.repair": ("수리", "Repair"), "h.target": ("대상", "Target"), "h.value": ("내용", "Value"), "h.made": ("만든 때", "Made"),
+    "or.note": ("오너가 고친 것은 재구축과 새 추출 세대에도 남습니다. 대상의 턴이 편집되거나 새 세대가 내용을 너무 다르게 적으면 "
+                "'지금 맞는 항목 없음'이 됩니다.",
+                "What the owner fixed survives rebuilds and new extractor generations. When the target's turn is edited, or a "
+                "new generation words it too differently, the repair matches nothing."),
     "sec.note": ("추출 모델이 붙인 표시라 틀릴 수 있습니다. 같은 비밀이 여러 턴에 다시 기록되면 줄도 여러 개입니다. 알게 된 턴을 "
                  "지우거나 고치면 비밀이 다시 열립니다.",
                  "Marks from the extraction model may be wrong. A secret extracted again in later turns has a line for "
@@ -628,6 +641,8 @@ def _threads_table(threads: list[dict[str, Any]], lang: str) -> str:
     """Threads with their status and what closed them (PHASE-7, ADR 0019; PHASE-11, ADR 0039), newest first."""
     def closed(t: dict[str, Any]) -> str:
         c = t.get("closed_by")
+        if c and c.get("owner"):
+            return f"<span title=\"{_v(c.get('evidence') or '')}\">{_turn(c)} · {chip(lang, 'or', 'closed')}</span>"
         return f"{_turn(c)} · {_v(fact_line_text(c))}" if c else ""
 
     counts: dict[str, int] = {}
@@ -662,9 +677,47 @@ def _secret_status(s: dict[str, Any], lang: str) -> str:
             out.append(f"{_v(name)}: <span class=\"warn\">{_v(_t(lang, 'sec.open'))}</span>")
         else:
             turn = ended["turn"] if ended.get("turn") is not None else ended.get("position")
+            owner = f" {chip(lang, 'or', 'marked')}" if ended.get("owner") else ""
             out.append(f"<span title=\"{_v(ended.get('evidence') or '')}\">{_v(name)}: "
-                       f"{_v(_t(lang, 'sec.ended').format(turn=turn))}</span>")
+                       f"{_v(_t(lang, 'sec.ended').format(turn=turn))}</span>{owner}")
     return "<br>".join(out)
+
+
+def _repair_target(rep: dict[str, Any]) -> str:
+    t = rep["target"] or {}
+    if rep["kind"].startswith("thread_"):
+        text = f"{t.get('by')} → {t.get('to') or '?'}: {t.get('text')}"
+    else:
+        text = t.get("text") or ""
+    return f"<span class=\"muted\">{_v(t.get('turn'))}</span> {_v(text)}"
+
+
+def _repair_value(rep: dict[str, Any], lang: str) -> str:
+    v = rep.get("value") or {}
+    parts = []
+    if v.get("outcome"):
+        parts.append(chip(lang, "t", v["outcome"]))
+    if v.get("character"):
+        parts.append(_v(v["character"]))
+    if v.get("turn") is not None:
+        parts.append(f"<span class=\"muted\">{_v(_t(lang, 'h.turn'))} {_v(v['turn'])}</span>")
+    if rep.get("note"):
+        parts.append(f"<span class=\"muted\">{_v(rep['note'])}</span>")
+    return " ".join(parts)
+
+
+def _repairs_table(repairs: list[dict[str, Any]], lang: str) -> str:
+    """The owner's repairs of the chat (ADR 0044), newest first: in force (applied, or matching nothing now) or taken
+    back."""
+    def state(rep: dict[str, Any]) -> str:
+        if rep.get("removed_at"):
+            return chip(lang, "rs", "removed")
+        return chip(lang, "rs", "applied") if rep.get("applied") else f"<span class=\"warn\">{_v(_t(lang, 'rs.unmatched'))}</span>"
+
+    return (table([_t(lang, k) for k in ("h.repair", "h.target", "h.value", "h.made", "h.status")],
+                  [[chip(lang, "rk", rep["kind"]), _repair_target(rep), _repair_value(rep, lang), timestamp(rep["created_at"]),
+                    state(rep)] for rep in repairs[:200]])
+            + f"<p class=\"muted\">{_v(_t(lang, 'or.note'))}</p>")
 
 
 def _secrets_table(secrets: list[dict[str, Any]], lang: str) -> str:
@@ -733,7 +786,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            threads: list[dict[str, Any]] | None = None, unmatched: list[dict[str, Any]] | None = None,
            packet: dict[str, Any] | None = None, secrets: list[dict[str, Any]] | None = None,
            unrevealed: list[dict[str, Any]] | None = None, standing: list[dict[str, Any]] | None = None,
-           summaries: dict[str, Any] | None = None) -> str:
+           summaries: dict[str, Any] | None = None, repairs: list[dict[str, Any]] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -763,6 +816,9 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     if summaries is not None:
         parts.append(("summaries", t("summaries"), summaries["done"], _summaries_section(summaries, lang, summaries.get("generation"), summaries.get("on", True),
                                                         conv.get("memory_narrator")), False))
+    if repairs:
+        live = sum(1 for rep in repairs if not rep.get("removed_at"))
+        parts.append(("repairs", t("repairs"), live, _repairs_table(repairs, lang), True))
     if facts:
         parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
     if items:

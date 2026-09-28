@@ -108,7 +108,9 @@ From the restored copy of the owner's backup (Phase 11 Q1; read-only, 2026-09-28
    owner confirmed the drafted lists (50 of 59 open threads ended, 9 under way; 6 of 14 kept secrets found out, 2 never
    kept). On `main` every one of the 40 M0 packets carries a thread the owner closed (113 lines, 16 threads); M0 26/28 and
    5/12; the secret gate 6 of 6, with `<Story>` held in all six scenes.
-3. Storage, matching, threads and secrets: migration 0024, ADR, API, the Inspector's "Repairs" list.
+3. Storage, matching, threads and secrets: migration 0024, ADR, API, the Inspector's "Repairs" list. **Done** (ADR 0044,
+   D54): `owner_repair`; threads closed with an outcome or reopened, secrets found out or kept, per character; the
+   API with its checks; the Inspector's "Repairs" section; every assertion row now carries its turn's hash.
 4. Facts and names: retract, correct, split.
 5. Panel: buttons, forms, undo, bulk close; the "Needs attention" queue.
 6. Evaluation, real-host smoke, upgrade, latency, Codex review, documentation.

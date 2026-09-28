@@ -19,6 +19,7 @@ from xml.sax.saxutils import escape, quoteattr
 from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
 from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
+from .repairs import live, repairs_of, secret_events, thread_events
 from .secrets import fold as fold_secrets
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
@@ -53,8 +54,9 @@ SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.
        a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
        a.participants::text AS participants, a.outcome, a.because,
        l.position, l.turn, l.host_logical_id, l.extractor_key AS generation, l.compiler_version AS compiler,
-       -- ADR 0033 amendment 2: a possible secret's turn hash, and the hash a reveal's listed turn had
-       CASE WHEN a.knowledge = 'limited' THEN l.turn_hash END AS turn_hash,
+       -- the turn's hash: a secret's (ADR 0033 amendment 2) and an owner repair's target (ADR 0044); and the hash a
+       -- reveal's listed turn had
+       l.turn_hash,
        CASE WHEN a.predicate = 'learned' THEN (
            SELECT h->>'turn_hash' FROM extraction x, jsonb_array_elements(x.hints->'secrets') h
            WHERE x.id = l.eid AND '[turn ' || (h->>'turn') || '] ' || (h->>'text') = a.value
@@ -354,12 +356,17 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     """
     if extractor_key is None:
         return {"facts": [], "claims": [], "other": [], "entities": [], "ambiguous": [], "conflicts": [],
-                "items": [], "threads": [], "unmatched": [], "secrets": [], "unrevealed": [], "resolution": None}
+                "items": [], "threads": [], "unmatched": [], "secrets": [], "unrevealed": [], "repairs": [],
+                "resolution": None}
     rows = [r for r in served_assertions(conn, head, extractor_key, upto, known_at) if r["predicate"] in REGISTRY]
     conv = conn.execute("SELECT w.conversation_id, c.host_persona_name FROM worldline_commit w"
                         " JOIN conversation c ON c.id = w.conversation_id WHERE w.id = %s", (head,)).fetchone()
     r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]),
                 links_of(conn, conv["conversation_id"], known_at))
+    repairs = repairs_of(conn, conv["conversation_id"], known_at)  # the owner's (ADR 0044), as of the read
+    last_turn = conn.execute(
+        "SELECT max(turn) AS t FROM active_membership WHERE commit_id = %s AND (%s::int IS NULL OR position <= %s::int)",
+        (head, upto, upto)).fetchone()["t"] if repairs else None
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []
@@ -377,14 +384,20 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     # turn on: its hidden_from drops that name and its known_by gains it (amendment 1: the scene, strict mode
     # and a narrator must count them as knowing it). `learned` is not a fact itself. Before the threads, which copy
     # the marks of the row that opens them: a revealed goal or promise is revealed as a thread too (ADR 0039).
-    secrets, unrevealed, reveals = fold_secrets(rows, r)
+    # The owner's repairs (ADR 0044) are events of their turn in the secret and thread folds.
+    applied: dict[str, str | None] = {}
+    in_force = live(repairs, last_turn)
+    secrets, unrevealed, reveals = fold_secrets(rows, r, secret_events(in_force, r, applied))
     ended = {s["id"]: set(s["ended"]) for s in secrets if s["ended"]}
+    by_repair = {s["id"]: s["repair"] for s in secrets if s.get("repair")}
     for row in rows:
+        if row["id"] in by_repair:
+            row["repair"] = by_repair[row["id"]]
         if row["id"] in ended:
             row["hidden_from"] = [n for n in row["hidden_from"] if n not in ended[row["id"]]] or None
             row["known_by"] = list(row.get("known_by") or []) + sorted(ended[row["id"]] - set(row.get("known_by") or []))
             row["revealed"] = [{"to": n, **s["ended"][n]} for s in secrets if s["id"] == row["id"] for n in s["ended"]]
-    threads, unmatched, consumed = fold_threads(promises, r)
+    threads, unmatched, consumed = fold_threads(promises, r, thread_events(in_force, r, applied))
     consumed |= reveals
     for row in rows:
         if row["id"] in consumed:
@@ -418,7 +431,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
                 "position": f["position"], "history": f["history"]})
     return {"facts": facts, "claims": claims, "other": other, "entities": r.entities(),
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
-            "threads": threads, "unmatched": unmatched, "secrets": secrets, "unrevealed": unrevealed, "resolution": r}
+            "threads": threads, "unmatched": unmatched, "secrets": secrets, "unrevealed": unrevealed,
+            "repairs": [{**rep, "applied": applied.get(str(rep["id"]))} for rep in repairs], "resolution": r}
 
 
 def links_of(conn: psycopg.Connection, conversation: UUID, known_at: datetime | None = None) -> list[dict[str, Any]]:
@@ -685,7 +699,7 @@ def fact_entry(f: dict[str, Any], private: bool = False, before: bool = False, c
     """A fact as a packet line with its provenance (ADR 0027): the assertion, and the words a reply can
     echo (its value, else its object). `private`: only some characters in the scene know it (ADR 0034).
     `before`: name the version a standing fact replaced (packet-v5, ADR 0038); `cause`: the stated cause (ADR 0040)."""
-    return Line("fact", fact_line(f, before, cause), {"assertion": f["id"]}, f.get("turn"), fact_text(f),
+    return Line("fact", fact_line(f, before, cause), _ref(f), f.get("turn"), fact_text(f),
                 f.get("value") or f.get("object") or "", _marks(f), private)
 
 
@@ -693,11 +707,16 @@ def claim_entry(c: dict[str, Any], private: bool = False, cause: bool = False) -
     """A claim as a packet line. It shows no knowledge marks (ADR 0013), except in the Private section
     (packet-v3), where who knows it is the point (ADR 0035). `cause`: the cause they give (packet-v6, ADR 0040)."""
     marks = {"by": c["asserted_by"]} if c.get("asserted_by") else {}
-    return Line("claim", claim_line(c, cause=cause), {"assertion": c["id"]}, c.get("turn"), fact_text(c),
+    return Line("claim", claim_line(c, cause=cause), _ref(c), c.get("turn"), fact_text(c),
                 c.get("value") or c.get("object") or "", {**marks, **_marks(c)}, private,
                 claim_line(c, marked=True, cause=cause) if private else "")
 
 
+def _ref(a: dict[str, Any]) -> dict[str, Any]:
+    """A line's provenance (ADR 0027): its assertion, and the owner's repair that changed it (ADR 0044)."""
+    return {"assertion": a["id"], "repair": a["repair"]} if a.get("repair") else {"assertion": a["id"]}
+
+
 def thread_entry(t: dict[str, Any], private: bool = False) -> Line:
-    return Line("thread", thread_line(t), {"assertion": t["id"]}, t.get("turn"),
+    return Line("thread", thread_line(t), _ref(t), t.get("turn"),
                 f"{t['by']} → {t.get('to') or '?'}: {t.get('text') or ''}", t.get("text") or "", _marks(t), private)

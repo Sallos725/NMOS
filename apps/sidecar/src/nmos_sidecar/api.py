@@ -19,10 +19,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from . import (__version__, audit, extraction, generations, inspector, ledger, normtext, plugin, readmodel, retention,
-               runtime, summaries, vectors)
+               repairs, runtime, summaries, vectors)
 from .config import Settings
 from .db import make_pool
 from .extraction import enqueue_after_apply, job_counts
@@ -31,7 +32,7 @@ from .ids import uuid7
 from .models import (
     BodiesRequest,
     BodiesResponse,
-    EntityLinkRequest, MemoryModeRequest,
+    EntityLinkRequest, MemoryModeRequest, RepairRequest,
     OutputRequest,
     Packet,
     ReconcileRequest,
@@ -557,6 +558,88 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         log.info("entity link removed conversation=%s link=%s", conv_id, link_id)
         return {"removed": str(link_id)}
 
+    def repair_rows(conn, conv_id: UUID, live: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Every repair of a chat, newest first, with the item each in force applies to now (ADR 0044)."""
+        applied = {str(x["id"]): x["applied"] for x in live}
+        rows = conn.execute("SELECT id, kind, target, value, note, created_at, removed_at FROM owner_repair"
+                            " WHERE conversation_id = %s ORDER BY created_at DESC, id DESC", (conv_id,)).fetchall()
+        return [{**row, "applied": applied.get(str(row["id"]))} for row in rows]
+
+    def head_turn(conn, head: UUID) -> int | None:
+        return conn.execute("SELECT max(turn) AS t FROM active_membership WHERE commit_id = %s", (head,)).fetchone()["t"]
+
+    def items_of(conv_id: UUID, request: Request, key: str) -> list[dict[str, Any]]:
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            if conv["head_commit_id"] is None:
+                return []
+            return memory_view(conn, conv["head_commit_id"], rt["active_extractor"])[key]
+
+    @app.get("/v1/conversations/{conv_id}/threads", dependencies=[Depends(auth)])
+    def conversation_threads(conv_id: UUID, request: Request):
+        """This chat's threads, newest first (ADR 0019, 0039), with the `id` a repair names (ADR 0044)."""
+        return [{k: t.get(k) for k in ("id", "kind", "by", "to", "text", "turn", "status", "closed_by", "restated",
+                                       "repair")} for t in items_of(conv_id, request, "threads")]
+
+    @app.get("/v1/conversations/{conv_id}/secrets", dependencies=[Depends(auth)])
+    def conversation_secrets(conv_id: UUID, request: Request):
+        """This chat's secrets, newest first (ADR 0033): who keeps each from whom, who found it out, and the `id` a
+        repair names (ADR 0044)."""
+        return [{k: s.get(k) for k in ("id", "text", "turn", "holders", "kept_from", "open", "ended", "repair")}
+                for s in items_of(conv_id, request, "secrets")]
+
+    @app.get("/v1/conversations/{conv_id}/repairs", dependencies=[Depends(auth)])
+    def list_repairs(conv_id: UUID, request: Request):
+        """The owner's repairs of this chat (ADR 0044), newest first: each in force with the item it applies to now
+        (None when it matches nothing), and those taken back, with `removed_at`."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            view = memory_view(conn, conv["head_commit_id"], rt["active_extractor"])
+            return {"repairs": repair_rows(conn, conv_id, view["repairs"])}
+
+    @app.post("/v1/conversations/{conv_id}/repairs", dependencies=[Depends(auth)])
+    def add_repair(conv_id: UUID, body: RepairRequest, request: Request):
+        """The owner repairs one item of this chat's memory (ADR 0044): `item` is the id the Inspector shows for a
+        thread or a secret. The repair stores what the item says, not the id, so it survives rebuilds and new
+        extractor generations; it applies on every read until the owner takes it back."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            head = conv["head_commit_id"]
+            try:
+                target, value = repairs.plan(body.kind, body.item, memory_view(conn, head, rt["active_extractor"]),
+                                             head_turn(conn, head), body.outcome, body.character, body.turn)
+            except repairs.RepairError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
+            with conn.transaction():
+                row = conn.execute(
+                    "INSERT INTO owner_repair (id, conversation_id, kind, target, value, note) VALUES (%s, %s, %s, %s, %s, %s)"
+                    " RETURNING id, kind, target, value, note, created_at",
+                    (uuid7(), conv_id, body.kind, Jsonb(target), Jsonb(value), (body.note or "").strip() or None)).fetchone()
+            applied = next((x["applied"] for x in memory_view(conn, head, rt["active_extractor"])["repairs"]
+                            if x["id"] == row["id"]), None)
+        log.info("owner repair conversation=%s repair=%s kind=%s applied=%s", conv_id, row["id"], body.kind,
+                 applied is not None)
+        return {"repair": row, "applied": applied}
+
+    @app.post("/v1/conversations/{conv_id}/repairs/{repair_id}/remove", dependencies=[Depends(auth)])
+    def remove_repair(conv_id: UUID, repair_id: UUID, request: Request):
+        """The owner takes a repair back (ADR 0044): the next read is as the story alone says. The row stays with
+        `removed_at` for audit."""
+        with request.app.state.pool.connection() as conn:
+            with conn.transaction():
+                n = conn.execute("UPDATE owner_repair SET removed_at = now() WHERE id = %s AND conversation_id = %s"
+                                 " AND removed_at IS NULL", (repair_id, conv_id)).rowcount
+        if not n:
+            raise HTTPException(status_code=404, detail="repair not found")
+        log.info("owner repair removed conversation=%s repair=%s", conv_id, repair_id)
+        return {"removed": str(repair_id)}
+
     @app.get("/v1/conversations/{conv_id}/coverage", dependencies=[Depends(auth)])
     def conversation_coverage(conv_id: UUID, request: Request):
         """How completely the active generations cover this chat's head (#8, #13)."""
@@ -721,7 +804,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     unrevealed=view["unrevealed"],
                                     standing=[f for f in view["facts"] if f["predicate"] in STANDING],
                                     packet=audit.audit(conn, traces[0]["id"]) if traces else None,
-                                    summaries=summary_view(conn, conv_id, head, view["secrets"]))
+                                    summaries=summary_view(conn, conv_id, head, view["secrets"]),
+                                    repairs=repair_rows(conn, conv_id, view["repairs"]))
 
     def summary_view(conn, conv_id: UUID, head: UUID, secrets: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The Inspector's summaries of a chat (PHASE-12 step 6), with the generation and whether packets use them."""
