@@ -19,7 +19,7 @@ from xml.sax.saxutils import escape, quoteattr
 from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
 from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
-from .repairs import apply_secrets, apply_threads, repairs_of
+from .repairs import live, repairs_of, secret_events, thread_events
 from .secrets import fold as fold_secrets
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
@@ -384,8 +384,10 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     # turn on: its hidden_from drops that name and its known_by gains it (amendment 1: the scene, strict mode
     # and a narrator must count them as knowing it). `learned` is not a fact itself. Before the threads, which copy
     # the marks of the row that opens them: a revealed goal or promise is revealed as a thread too (ADR 0039).
-    secrets, unrevealed, reveals = fold_secrets(rows, r)
-    applied = apply_secrets(secrets, repairs, r, last_turn)  # found out and kept by the owner (ADR 0044)
+    # The owner's repairs (ADR 0044) are events of their turn in the secret and thread folds.
+    applied: dict[str, str | None] = {}
+    in_force = live(repairs, last_turn)
+    secrets, unrevealed, reveals = fold_secrets(rows, r, secret_events(in_force, r, applied))
     ended = {s["id"]: set(s["ended"]) for s in secrets if s["ended"]}
     by_repair = {s["id"]: s["repair"] for s in secrets if s.get("repair")}
     for row in rows:
@@ -395,8 +397,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             row["hidden_from"] = [n for n in row["hidden_from"] if n not in ended[row["id"]]] or None
             row["known_by"] = list(row.get("known_by") or []) + sorted(ended[row["id"]] - set(row.get("known_by") or []))
             row["revealed"] = [{"to": n, **s["ended"][n]} for s in secrets if s["id"] == row["id"] for n in s["ended"]]
-    threads, unmatched, consumed = fold_threads(promises, r)
-    applied |= apply_threads(threads, repairs, r, last_turn)  # closed and reopened by the owner (ADR 0044)
+    threads, unmatched, consumed = fold_threads(promises, r, thread_events(in_force, r, applied))
     consumed |= reveals
     for row in rows:
         if row["id"] in consumed:
@@ -706,7 +707,7 @@ def claim_entry(c: dict[str, Any], private: bool = False, cause: bool = False) -
     """A claim as a packet line. It shows no knowledge marks (ADR 0013), except in the Private section
     (packet-v3), where who knows it is the point (ADR 0035). `cause`: the cause they give (packet-v6, ADR 0040)."""
     marks = {"by": c["asserted_by"]} if c.get("asserted_by") else {}
-    return Line("claim", claim_line(c, cause=cause), {"assertion": c["id"]}, c.get("turn"), fact_text(c),
+    return Line("claim", claim_line(c, cause=cause), _ref(c), c.get("turn"), fact_text(c),
                 c.get("value") or c.get("object") or "", {**marks, **_marks(c)}, private,
                 claim_line(c, marked=True, cause=cause) if private else "")
 

@@ -121,7 +121,10 @@ def test_the_owner_reopens_a_thread_the_story_closed(migrated):
         assert t["status"] == "achieved"
         assert c.post(f"/v1/conversations/{cid}/repairs",
                       json={"kind": "thread_close", "item": str(t["id"])}).status_code == 422  # already closed
-        repair(c, cid, kind="thread_reopen", item=str(t["id"]))
+        assert c.post(f"/v1/conversations/{cid}/repairs",
+                      json={"kind": "thread_reopen", "item": str(t["id"]), "turn": 2}).status_code == 422  # before its close
+        out = repair(c, cid, kind="thread_reopen", item=str(t["id"]))
+        assert out["repair"]["value"] == {"turn": 4}
         assert thread(c, cid)["status"] == "open" and thread(c, cid)["closed_by"] is None
 
 
@@ -204,3 +207,98 @@ def test_a_thread_is_found_by_its_turn_maker_and_closest_text():
     assert repairs.match_thread(target, [{**t1, "by": "Kaito"}], None) is None  # another maker
     assert repairs.match_thread(target, [{**t1, "kind": "question"}], None) is None
     assert repairs.match_thread(target, [{**t1, "text": "sail to the island"}], None) is None  # too different
+
+
+# --- The Codex review of step 3 (AGENTS.md §14): the fold, pure ------------------------------------------------------
+
+import uuid  # noqa: E402
+
+from nmos_sidecar import facts as facts_mod  # noqa: E402
+from nmos_sidecar import secrets as secret_fold  # noqa: E402
+from nmos_sidecar import threads as thread_fold  # noqa: E402
+from nmos_sidecar.entities import resolve  # noqa: E402
+from test_secrets import learned, secret as kept_goal  # noqa: E402
+from test_semantics import row  # noqa: E402
+
+AIM = "등대지기를 찾기"
+
+
+def goal(pos: int, who: str = "하나", text: str = AIM, **kw) -> dict:
+    return row(pos, who, "goal", None, text, subject_type="character", **kw)
+
+
+def resolved(pos: int, who: str = "하나", text: str = AIM) -> dict:
+    return row(pos, who, "resolved", None, text, subject_type="character", outcome="achieved")
+
+
+def owner(kind: str, target: dict, **value) -> dict:
+    return {"id": f"{kind}-{value.get('turn')}", "kind": kind, "target": target, "value": value, "note": None}
+
+
+def fold_threads(rows: list[dict], reps: list[dict], last_turn: int = 99):
+    r, applied = resolve(uuid.uuid4(), rows), {}
+    out, _, _ = thread_fold.fold(rows, r, repairs.thread_events(repairs.live(reps, last_turn), r, applied))
+    return sorted(out, key=lambda t: t["position"]), applied
+
+
+def fold_secrets(rows: list[dict], reps: list[dict]):
+    r, applied = resolve(uuid.uuid4(), rows), {}
+    out, _, _ = secret_fold.fold(rows, r, repairs.secret_events(reps, r, applied))
+    return out, applied
+
+
+AIM_TARGET = {"turn": 1, "turn_hash": None, "kind": "goal", "by": "하나", "to": None, "text": AIM}
+
+
+def test_the_story_goes_on_after_a_repair():
+    """PHASE-13 Q4: a repair is an event of its turn; what the story says later still counts."""
+    # Closed at turn 3; the same aim stated at turn 5 is a new thread, not a restatement of the closed one.
+    (old, new), _ = fold_threads([goal(1), goal(5)], [owner("thread_close", AIM_TARGET, outcome="achieved", turn=3)])
+    assert (old["status"], new["status"]) == ("achieved", "open")
+    # Reopened at turn 4 after the story closed it at 2; the story closes it again at 6.
+    (t,), _ = fold_threads([goal(1), resolved(2), resolved(6)], [owner("thread_reopen", AIM_TARGET, turn=4)])
+    assert t["status"] == "achieved" and t["closed_by"]["turn"] == 6
+    # Kept at turn 4 after a reveal at 2; a reveal at 6 ends it again.
+    target = repairs.secret_target({**kept_goal(1), "text": secret_fold.secret_text(kept_goal(1))})
+    (s,), _ = fold_secrets([kept_goal(1), learned(2), learned(6)],
+                           [owner("secret_keep", target, character="블랑", turn=4)])
+    assert s["open"] == [] and s["ended"]["블랑"]["turn"] == 6
+
+
+def test_a_repair_applies_from_its_turn():
+    close = owner("thread_close", AIM_TARGET, outcome="achieved", turn=5)
+    assert repairs.live([close], 3) == [] and repairs.live([close], 5) == [close]
+    (t,), applied = fold_threads([goal(1)], [close], last_turn=3)  # a read of the head as of turn 3
+    assert t["status"] == "open" and applied == {}
+
+
+def test_a_secret_repair_needs_the_same_head():
+    """Another maker's secret of the same turn, worded alike, never takes the repair."""
+    elpi = {**kept_goal(1), "text": secret_fold.secret_text(kept_goal(1))}
+    hana = {**kept_goal(1, id=101), "subject": "하나"}
+    hana["text"] = secret_fold.secret_text(hana)
+    target = repairs.secret_target(elpi)
+    assert repairs.match_secret(target, [hana]) is None
+    assert repairs.match_secret(target, [hana, elpi]) is elpi
+
+
+def test_promises_are_told_apart_by_their_counterpart_and_a_tie_matches_nothing():
+    to_kaito = {"id": 1, "kind": "promise", "by": "하나", "to": "카이토", "text": "등대 앞에서 만나기", "turn": 3,
+                "turn_hash": None, "position": 3, "status": "open"}
+    to_sora = {**to_kaito, "id": 2, "to": "소라"}
+    assert repairs.match_thread(repairs.thread_target(to_sora), [to_kaito, to_sora], None) is to_sora
+    assert repairs.match_thread(repairs.thread_target(to_sora), [to_sora, {**to_sora, "id": 3}], None) is None
+    view = {"threads": [to_sora, {**to_sora, "id": 3}], "secrets": [], "resolution": None}
+    try:
+        repairs.plan("thread_close", "2", view, 5)
+    except repairs.RepairError as e:
+        assert "cannot be told apart" in str(e)
+    else:
+        raise AssertionError("an ambiguous thread was accepted")
+
+
+def test_a_secret_repair_names_itself_on_the_thread_and_claim_lines_it_changed():
+    (t,), _ = fold_threads([{**goal(1), "repair": "found-1"}], [])
+    assert t["repair"] == "found-1"
+    assert facts_mod._ref({"id": 7, "repair": "found-1"}) == {"assertion": 7, "repair": "found-1"}
+    assert facts_mod._ref({"id": 7}) == {"assertion": 7}

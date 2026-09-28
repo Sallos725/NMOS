@@ -26,7 +26,7 @@ import re
 from typing import Any
 
 from .entities import Resolution, norm
-from .threads import MATCH_MIN, similarity
+from .threads import MATCH_MIN, Event, fire, similarity
 
 PREDICATE = "learned"
 NOT_SECRETS = frozenset({PREDICATE, "also_called", "fulfilled"})
@@ -105,22 +105,28 @@ def _ref(a: dict[str, Any]) -> dict[str, Any]:
     return {k: a.get(k) for k in ("id", "position", "turn", "subject", "value", "source", "asserted_by", "evidence")}
 
 
-def fold(rows: list[dict[str, Any]], r: Resolution | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[int]]:
+def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
+         events: list[Event] | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[int]]:
     """(secrets newest first, unmatched reveals, ids of the `learned` assertions read).
 
     `rows` are the head's valid assertions in position order, then extraction order within a turn. Each
     secret: id, text, turn, position, holders (known_by), kept_from (every name it was kept from), ended
-    ({name: the revealing assertion}), open (the names it is still kept from).
+    ({name: the revealing assertion}), open (the names it is still kept from). `events` happen after every row of
+    their turn, so a later reveal still ends a secret: the owner's repairs (ADR 0044).
     """
     secrets: list[dict[str, Any]] = []
     unmatched: list[dict[str, Any]] = []
     used: set[int] = set()
+    pending = sorted(events or [], key=lambda e: (e[0], e[1]))
     for a in rows:
+        if a.get("turn") is not None:
+            fire(pending, secrets, a["turn"])
         if is_secret(a):
             kept = {}
             for name in a["hidden_from"]:
                 kept.setdefault(_who(r, name), name)
             secrets.append({"id": a["id"], "text": secret_text(a), "turn": a.get("turn"), "turn_hash": a.get("turn_hash"),
+                            "subject": a["subject"], "predicate": a["predicate"],
                             "position": a["position"],
                             "host_logical_id": a.get("host_logical_id"), "holders": list(a.get("known_by") or []),
                             "kept_from": list(kept.values()), "ended": {}, "_kept": kept})
@@ -132,6 +138,7 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None) -> tuple[list[
                 unmatched.append(_ref(a))
             for s in hit:  # a secret this character already found out stays ended by the first reveal
                 s["ended"].setdefault(s["_kept"][who], _ref(a))
+    fire(pending, secrets, None)
     for s in secrets:
         s["open"] = [n for n in s["kept_from"] if n not in s["ended"]]
         s.pop("_kept")
