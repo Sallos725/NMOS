@@ -81,7 +81,7 @@ def check(scene: Scene, text: str, raw_len: int) -> tuple[bool, str]:
 
 HANA, KAITO, YUI, LEON = "하나", "카이토", "유이", "레온"
 LETTER = secret([HANA], [KAITO], "하나 knows: 서랍 속 편지는 하나가 위조한 것이다")
-KISS = secret(["하나", "카이토"], ["소라"], "하나 event: 소라가 잠든 사이 카이토와 입을 맞췄다")
+KISS = secret(["하나", "카이토"], ["세나"], "하나 event: 세나가 잠든 사이 카이토와 입을 맞췄다")
 
 SCENES: list[Scene] = [
     Scene("market and the lighthouse", "scene", [
@@ -97,9 +97,9 @@ SCENES: list[Scene] = [
         [(HANA, U, "잘 구워졌다!"), (KAITO, C, "카이토가 갓 구운 빵을 반으로 갈랐다.")]],
         secrets=[LETTER], gold=[["빵"]], invented=["고백", "싸웠"], secret_words=["위조", "편지"]),
     Scene("the secret is the scene", "secret", [
-        [(KAITO, U, "소라 자?"), (HANA, C, "하나가 소라의 이불을 덮어 주고 고개를 끄덕였다.")],
-        [(KAITO, U, "그럼… 잠깐 이리 와."), (HANA, C, "소라가 잠든 사이, 하나와 카이토는 부엌에서 입을 맞췄다.")],
-        [(KAITO, U, "소라한테는 비밀이야."), (HANA, C, "하나는 대답 대신 카이토의 손을 꼭 잡았다.")],
+        [(KAITO, U, "세나 자?"), (HANA, C, "하나가 세나의 이불을 덮어 주고 고개를 끄덕였다.")],
+        [(KAITO, U, "그럼… 잠깐 이리 와."), (HANA, C, "세나가 잠든 사이, 하나와 카이토는 부엌에서 입을 맞췄다.")],
+        [(KAITO, U, "세나한테는 비밀이야."), (HANA, C, "하나는 대답 대신 카이토의 손을 꼭 잡았다.")],
         [(KAITO, U, "내일 아침은 수프 할게."), (HANA, C, "하나는 수프에 넣을 병을 꺼내 두었다.")]],
         secrets=[KISS], gold=[["수프"]], invented=["싸웠", "죽"], secret_words=["입을 맞", "입맞춤", "키스", "뽀뽀"]),
     Scene("a secret listed but not touched", "secret", [

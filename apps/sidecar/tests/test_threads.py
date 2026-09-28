@@ -114,10 +114,10 @@ def test_relevant_threads_need_a_mention_other_than_the_persona():
 
 def test_packet_v4_puts_the_promise_the_message_is_about_first():
     """ADR 0019 amendment 1: newest first filled the limit with newer promises of the same girl."""
-    old = {"status": "open", "names": ["루카", "{{user}}"], "position": 18, "text": "다음에 엄마가 또 그러면, 꼬옥 안아주자"}
+    old = {"status": "open", "names": ["루카", "{{user}}"], "position": 18, "text": "다음에 천둥이 치면, 이불 속에 같이 숨자"}
     newer = [{"status": "open", "names": ["루카", "{{user}}"], "position": 50 + i, "text": text}
-             for i, text in enumerate(("뛰지 말 것", "아델라를 살살 깨워줄 것", "손 씻고 오기"))]
-    query = "엄마가 새벽에 추웠대. 꼬옥 안아주면 따뜻하지? 루카도 가서 안아줄래?"
+             for i, text in enumerate(("복도에서 뛰지 말 것", "아델라에게 책 돌려주기", "밥 먹기 전에 손 씻기"))]
+    query = "밤새 천둥이 쳤대. 이불 속에 같이 숨으면 안 무섭지? 루카도 이불 가져올래?"
     assert old not in relevant_threads([old, *newer], query, "", set(), 3)  # packet-v3 and earlier
     assert relevant_threads([old, *newer], query, "", set(), 3, about=True)[0] is old
     unnamed = {**old, "names": ["{{user}}"]}  # about it without naming anyone

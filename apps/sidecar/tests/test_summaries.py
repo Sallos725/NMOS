@@ -233,10 +233,10 @@ def test_the_prompt_lists_kept_secrets_and_a_summary_repeating_one_is_held(migra
 def test_the_leak_check_is_about_the_secret_not_its_setting():
     """Measured in the real-model tier (docs/perf/summaries.md, synthetic scene): a summary that left the kiss out but
     kept the scene's names and setting scored 0.68 before names were left out, above the check then set."""
-    kiss = {"text": "하나 event: 소라가 잠든 사이 카이토와 입을 맞췄다", "turn": 0, "position": 0,
-            "holders": ["하나", "카이토"], "open": ["소라"]}
-    left_out = "소라가 잠든 사이 하나와 카이토는 부엌에서 만났다. 두 사람은 서로의 마음을 확인하며 소라에게는 비밀로 하기로 했다."
-    copied = "소라가 잠든 사이, 하나와 카이토는 부엌에서 입을 맞췄다. 카이토는 이를 소라에게 비밀로 하자고 했다."
+    kiss = {"text": "하나 event: 세나가 잠든 사이 카이토와 입을 맞췄다", "turn": 0, "position": 0,
+            "holders": ["하나", "카이토"], "open": ["세나"]}
+    left_out = "세나가 잠든 사이 하나와 카이토는 부엌에서 만났다. 두 사람은 서로의 마음을 확인하며 세나에게는 비밀로 하기로 했다."
+    copied = "세나가 잠든 사이, 하나와 카이토는 부엌에서 입을 맞췄다. 카이토는 이를 세나에게 비밀로 하자고 했다."
     assert summaries.leaks(left_out, [kiss]) == [] and summaries.leaks(copied, [kiss]) == [kiss]
 
 

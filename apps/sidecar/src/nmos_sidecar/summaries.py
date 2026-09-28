@@ -54,7 +54,7 @@ OPEN_SECRETS = 12  # listed in a summary's prompt, newest first
 NEAR = WINDOW
 # Trigram containment of a secret's content in a summary, names left out of both, that holds the summary back
 # (PHASE-12 Q3). It catches a secret copied into a summary (0.76 in the real-model tier), not one reworded (0.3), and
-# a summary that leaves the secret out but keeps its setting ("소라가 잠든 사이 …") scored 0.59 (0.68 with names).
+# a summary that leaves the secret out but keeps its setting ("세나가 잠든 사이 …") scored 0.59 (0.68 with names).
 LEAK_MIN = 0.7
 # The same check when a character the secret is kept from is in the scene (owner, 2026-09-28, the secret gate): a
 # reworded secret scores about 0.3 (a plan told in other words to the one it is kept from: 0.34), and the
