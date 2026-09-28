@@ -461,6 +461,13 @@ correct a fact, split two names). A repair names its target by what it says (tur
 so it survives rebuilds and new extractor generations; an edit of that turn makes it match nothing, and it is listed.
 It applies from its turn, in the order repairs were made; a replay reads the repairs in force at its time.
 
+**D55 — Canon is source (Phase 14, ADR 0045).** The card's story fields, the greeting a chat started from, its author's
+note, its persona's prompt and every lorebook entry the host shows it are kept per conversation as immutable source
+revisions of kind `canon`. A manifest (each key's text hash and metadata, identified by the hash of its canonical JSON,
+computed alike by plugin and sidecar) is the chat's canon at one time; a request records its manifest id and the keys
+its prompt held, so it replays with its own canon. The plugin reads the card off the request path (H19) and uploads
+canon in the background, one upload per chat at a time. No message pipeline reads canon, and the packet is unchanged.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

@@ -436,6 +436,8 @@ def delete_conversation(conn: psycopg.Connection, conv_id: UUID) -> dict[str, in
             ("state", "DELETE FROM state_observation WHERE conversation_id = %(c)s"),
             ("entity_links", "DELETE FROM entity_link WHERE conversation_id = %(c)s"),
             ("owner_repairs", "DELETE FROM owner_repair WHERE conversation_id = %(c)s"),
+            ("canon", "DELETE FROM canon_applied WHERE conversation_id = %(c)s"),
+            ("canon", "DELETE FROM canon_manifest WHERE conversation_id = %(c)s"),
             ("summaries", "DELETE FROM summary WHERE conversation_id = %(c)s"),
             ("head", "UPDATE conversation SET head_commit_id = NULL WHERE id = %(c)s"),
             ("membership", "DELETE FROM active_membership WHERE commit_id IN"

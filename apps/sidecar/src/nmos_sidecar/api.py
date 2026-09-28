@@ -9,6 +9,7 @@ import dataclasses
 import ipaddress
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -22,8 +23,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from . import (__version__, audit, extraction, generations, inspector, ledger, normtext, plugin, readmodel, retention,
-               repairs, runtime, summaries, vectors)
+from . import (__version__, audit, canon, extraction, generations, inspector, ledger, normtext, plugin, readmodel,
+               retention, repairs, runtime, summaries, vectors)
 from .config import Settings
 from .db import make_pool
 from .extraction import enqueue_after_apply, job_counts
@@ -32,6 +33,7 @@ from .ids import uuid7
 from .models import (
     BodiesRequest,
     BodiesResponse,
+    CanonSyncRequest, CanonSyncResponse,
     EntityLinkRequest, MemoryModeRequest, RepairRequest,
     OutputRequest,
     Packet,
@@ -402,6 +404,25 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return BodiesResponse(ok=not rejected, stored=stored,
                               rejected=[RevisionRef(host_logical_id=k[0], revision_hash=k[1]) for k in rejected],
                               reconcile=result)
+
+    @app.post("/v1/sync/canon", response_model=CanonSyncResponse, dependencies=[Depends(auth)])
+    def sync_canon(body: CanonSyncRequest, request: Request):
+        """The chat's canon as the host shows it (ADR 0045): the manifest of keys and hashes, and the texts the sidecar
+        asked for. Answers the hashes it still needs; the canon in force changes only once it has them all."""
+        with request.app.state.pool.connection() as conn, conn.transaction():
+            conv = ledger.find_conversation(conn, body.host, body.chat_id)
+            if conv is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            conn.execute("SELECT 1 FROM conversation WHERE id = %s FOR UPDATE", (conv.id,))
+            observed = (datetime.fromtimestamp(body.observed_at / 1000, tz=timezone.utc)
+                        if body.observed_at is not None else None)
+            try:
+                out = canon.sync(conn, conv.id, [e.model_dump() for e in body.entries], dict(body.contents), observed)
+            except canon.CanonError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
+        log.info("canon sync conversation=%s entries=%d needed=%d stored=%d applied=%s stale=%s", conv.id,
+                 len(body.entries), len(out["needed"]), out["stored"], out["applied"], out.get("stale"))
+        return out
 
     @app.post("/v1/retrieve", response_model=RetrieveResponse, dependencies=[Depends(auth)])
     def retrieve_route(body: RetrieveRequest, request: Request):
@@ -807,7 +828,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     standing=[f for f in view["facts"] if f["predicate"] in STANDING],
                                     packet=audit.audit(conn, traces[0]["id"]) if traces else None,
                                     summaries=summary_view(conn, conv_id, head, view["secrets"]),
-                                    repairs=repair_rows(conn, conv_id, view["repairs"]), last_turn=head_turn(conn, head))
+                                    repairs=repair_rows(conn, conv_id, view["repairs"]), last_turn=head_turn(conn, head),
+                                    canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
+                                    canon_held=canon.held(conn, conv_id))
 
     def summary_view(conn, conv_id: UUID, head: UUID, secrets: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The Inspector's summaries of a chat (PHASE-12 step 6), with the generation and whether packets use them."""

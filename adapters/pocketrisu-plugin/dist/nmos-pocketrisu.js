@@ -16,7 +16,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:b1f7a1a81fe0".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:57e96ec4ffc6".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -39,9 +39,75 @@
   }
 
   // src/hash.ts
-  async function sha256Hex(text) {
-    const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  async function sha256Hex(text2) {
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text2));
     return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // src/canon.ts
+  var ID = /^[A-Za-z0-9_.:-]{1,110}$/;
+  var MAX_CANON_CHARS = 19e5;
+  function fnv(text2) {
+    let h = 2166136261;
+    for (let i = 0; i < text2.length; i++) {
+      h ^= text2.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h.toString(16).padStart(8, "0");
+  }
+  function loreKey(entry) {
+    if (typeof entry.id === "string" && ID.test(entry.id)) return `lore:${entry.id}`;
+    return `lore:f${fnv([entry.comment ?? "", entry.key ?? "", entry.secondkey ?? "", entry.mode ?? ""].join("\0"))}`;
+  }
+  function keysOf(entry) {
+    return `${entry.key ?? ""},${entry.secondkey ?? ""}`.split(/[,\n]/).map((k) => k.trim()).filter(Boolean);
+  }
+  var text = (value) => typeof value === "string" ? value.trim() : "";
+  function same(a, b) {
+    return a === b || !!a.id && a.id === b.id || a.content === b.content && a.key === b.key && a.comment === b.comment;
+  }
+  function canonTexts(card, chat, lore, persona) {
+    const out = [];
+    const add = (key, value, metadata = {}) => {
+      if (typeof value === "string" && value.trim() && value.length <= MAX_CANON_CHARS) out.push({ key, text: value, metadata });
+    };
+    if (card) {
+      for (const field2 of ["name", "desc", "personality", "scenario"]) add(`card:${field2}`, card[field2], { field: field2 });
+      const index = Number.isInteger(chat.fmIndex) ? Number(chat.fmIndex) : -1;
+      add("card:greeting", index < 0 ? card.firstMessage : card.alternateGreetings?.[index], { field: "greeting", index });
+    }
+    add("note", chat.note);
+    if (persona) add("persona", persona.personaPrompt, { name: text(persona.name) || void 0, persona_id: persona.id });
+    const local = Array.isArray(chat.localLore) ? chat.localLore : [];
+    const global = Array.isArray(card?.globalLore) ? card.globalLore : [];
+    const seen = /* @__PURE__ */ new Map();
+    for (const entry of lore) {
+      if (!entry || entry.mode === "folder") continue;
+      let key = loreKey(entry);
+      const n = seen.get(key) ?? 0;
+      seen.set(key, n + 1);
+      if (n) key = `${key}~${n}`;
+      const scope = local.some((e) => same(e, entry)) ? "chat" : global.some((e) => same(e, entry)) ? "character" : card ? "module" : null;
+      add(key, entry.content, {
+        scope: scope ?? void 0,
+        mode: entry.mode,
+        always_active: !!entry.alwaysActive,
+        keys: keysOf(entry),
+        comment: text(entry.comment) || void 0
+      });
+    }
+    return out;
+  }
+  function heldKeys(canon, prompt) {
+    const all = normalizeText(prompt.map((m) => typeof m?.content === "string" ? m.content : "").join("\n"));
+    return canon.filter((c) => c.key !== "card:name" && all.includes(normalizeText(c.text).trim())).map((c) => c.key);
+  }
+  function canonHash(text2) {
+    return sha256Hex(normalizeText(text2));
+  }
+  function canonManifestId(entries) {
+    const rows = entries.map((e) => ({ key: e.key, hash: e.hash, metadata: e.metadata ?? {} })).sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+    return sha256Hex(canonicalJson(rows));
   }
 
   // src/form.ts
@@ -52,10 +118,10 @@
   var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
   var VERTEX_URL = "https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi";
   function serviceAccountProject(key) {
-    const text = key.trim();
-    if (!text.startsWith("{")) return null;
+    const text2 = key.trim();
+    if (!text2.startsWith("{")) return null;
     try {
-      const info = JSON.parse(text);
+      const info = JSON.parse(text2);
       return info.type === "service_account" && typeof info.project_id === "string" && info.project_id ? info.project_id : null;
     } catch {
       return null;
@@ -428,8 +494,8 @@
     "sidecar_error": ["\uC0AC\uC774\uB4DC\uCE74 \uC624\uB958: ", "Sidecar error: "]
   };
   function t(lang, key, vars = {}) {
-    const text = STRINGS[key][lang === "en" ? 1 : 0];
-    return text.replace(/\{(\w+)\}/g, (m, name) => name in vars ? String(vars[name]) : m);
+    const text2 = STRINGS[key][lang === "en" ? 1 : 0];
+    return text2.replace(/\{(\w+)\}/g, (m, name) => name in vars ? String(vars[name]) : m);
   }
   var STRING_KEYS = Object.keys(STRINGS);
 
@@ -480,8 +546,8 @@
 ${revisionHash}`;
   var LABEL_MAX = 200;
   function labelOf(value) {
-    const text = typeof value === "string" ? value.trim() : "";
-    return text ? text.slice(0, LABEL_MAX) : void 0;
+    const text2 = typeof value === "string" ? value.trim() : "";
+    return text2 ? text2.slice(0, LABEL_MAX) : void 0;
   }
   function manifestEntry(m, revisionHash) {
     const meta = revisionMetadata(m);
@@ -629,10 +695,10 @@ ${revisionHash}`;
   function cleanText(value) {
     return normalizeText(value).replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ").replace(/<[^>\n]{1,500}>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
   }
-  function anchorOf(text, size = 48) {
-    if (text.length <= size) return text;
-    const start = Math.floor((text.length - size) / 2);
-    return text.slice(start, start + size);
+  function anchorOf(text2, size = 48) {
+    if (text2.length <= size) return text2;
+    const start = Math.floor((text2.length - size) / 2);
+    return text2.slice(start, start + size);
   }
   function inContextIds(prompt, hostMessages, minAnchor = 16, maxMisses = 3) {
     const texts = prompt.map((m) => cleanText(contentText(m?.content)));
@@ -642,9 +708,9 @@ ${revisionHash}`;
     for (let i = hostMessages.length - 1; i >= 0 && pointer >= 0; i -= 1) {
       const m = hostMessages[i];
       if (!isActive(m)) continue;
-      const text = cleanText(selectedContent(m));
-      if (text.length < minAnchor) continue;
-      const anchor = anchorOf(text);
+      const text2 = cleanText(selectedContent(m));
+      if (text2.length < minAnchor) continue;
+      const anchor = anchorOf(text2);
       let found = -1;
       for (let k = pointer; k >= 0; k -= 1) {
         if (texts[k].includes(anchor)) {
@@ -700,6 +766,10 @@ ${revisionHash}`;
   var CACHE_LIMIT = 64;
   var BODY_CHUNK = 250;
   var NAME_TTL_MS = 10 * 6e4;
+  var CANON_TIMEOUT_MS = 3e4;
+  var CANON_ROUNDS = 20;
+  var CANON_BATCH_CHARS = 8e5;
+  var TEXT_HASH_LIMIT = 4e3;
   var PERSONA_TTL_MS = 3e4;
   function personaOf(chat, host) {
     const list = Array.isArray(host.personas) ? host.personas : [];
@@ -711,6 +781,10 @@ ${revisionHash}`;
     const cache = /* @__PURE__ */ new Map();
     const conversations = /* @__PURE__ */ new Map();
     const names = /* @__PURE__ */ new Map();
+    const canonSent = /* @__PURE__ */ new Map();
+    const canonQueue = /* @__PURE__ */ new Map();
+    const textHashes = /* @__PURE__ */ new Map();
+    let canonUnsupported = false;
     let personas = null;
     const buildManifest = createManifestBuilder();
     let last = null;
@@ -720,16 +794,103 @@ ${revisionHash}`;
       } catch {
       }
     }
-    function characterName(chatId) {
+    function refreshCharacter(chatId) {
       const hit = names.get(chatId);
-      if (host.characterName && (!hit || host.now() - hit.at > NAME_TTL_MS)) {
-        names.set(chatId, { name: hit?.name ?? null, at: host.now() });
+      names.set(chatId, { name: hit?.name ?? null, card: hit?.card ?? null, at: host.now() });
+      if (host.card) {
+        host.card(chatId).then((card) => {
+          if (card) names.set(chatId, { name: card.name?.trim() || null, card, at: host.now() });
+        }).catch(() => {
+        });
+      } else if (host.characterName) {
         host.characterName(chatId).then((name) => {
-          if (name) names.set(chatId, { name, at: host.now() });
+          if (name) names.set(chatId, { name, card: null, at: host.now() });
         }).catch(() => {
         });
       }
+    }
+    function characterName(chatId) {
+      const hit = names.get(chatId);
+      if ((host.card || host.characterName) && (!hit || host.now() - hit.at > NAME_TTL_MS)) refreshCharacter(chatId);
       return hit?.name ?? null;
+    }
+    function personaRecord(chat) {
+      const list = personas?.value?.personas ?? [];
+      const bound = chat.bindedPersona ? list.find((p) => p?.id === chat.bindedPersona) : void 0;
+      return bound ?? list[personas?.value?.selected ?? 0] ?? null;
+    }
+    async function observeCanon(chat, prompt, deadline) {
+      if (!host.lorebook) return null;
+      let lore;
+      try {
+        lore = await within(host.lorebook(), deadline, "the lorebook");
+      } catch (error) {
+        if (error instanceof DeadlineError) throw error;
+        return null;
+      }
+      if (!Array.isArray(lore)) return null;
+      const character = names.get(chat.id);
+      const texts = canonTexts(character?.card ?? null, chat, lore, personaRecord(chat));
+      const held = heldKeys(texts, prompt);
+      if (character?.card?.desc?.trim() && !held.includes("card:desc")) refreshCharacter(chat.id);
+      if (!character?.card) return { held, snapshot: null };
+      const entries = await within(Promise.all(texts.map(async (t2) => {
+        let hash = textHashes.get(t2.text);
+        if (!hash) {
+          hash = await canonHash(t2.text);
+          textHashes.set(t2.text, hash);
+          while (textHashes.size > TEXT_HASH_LIMIT) textHashes.delete(textHashes.keys().next().value);
+        }
+        return { key: t2.key, hash, metadata: t2.metadata };
+      })), deadline, "the canon hashes");
+      return { held, snapshot: { id: await canonManifestId(entries), entries, texts, observedAt: Date.now() } };
+    }
+    function syncCanon(settings, conversationId, chatId, snapshot) {
+      const key = `${settings.sidecarUrl}|${conversationId}`;
+      if (canonUnsupported || canonSent.get(key) === snapshot.id) return;
+      const queue = canonQueue.get(key) ?? { running: false, next: null };
+      canonQueue.set(key, queue);
+      if (queue.running) {
+        queue.next = snapshot;
+        return;
+      }
+      queue.running = true;
+      void (async () => {
+        for (let current2 = snapshot; current2; current2 = queue.next, queue.next = null) {
+          if (canonSent.get(key) === current2.id) continue;
+          try {
+            if (await uploadCanon(settings, chatId, current2)) {
+              canonSent.set(key, current2.id);
+              while (canonSent.size > CACHE_LIMIT) canonSent.delete(canonSent.keys().next().value);
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (/HTTP 404/.test(message) && !/conversation not found/.test(message)) canonUnsupported = true;
+            host.debug("[NMOS] canon not synced:", message);
+            if (canonUnsupported) break;
+          }
+        }
+        queue.running = false;
+        queue.next = null;
+      })();
+    }
+    async function uploadCanon(settings, chatId, snapshot) {
+      const texts = new Map(snapshot.entries.map((e, i) => [e.hash, snapshot.texts[i].text]));
+      const deadline = host.now() + CANON_TIMEOUT_MS;
+      const body = { host: "pocketrisu", chat_id: chatId, entries: snapshot.entries, observed_at: snapshot.observedAt };
+      let out = await call(settings, "/v1/sync/canon", body, deadline);
+      for (let round = 0; out.needed.length && round < CANON_ROUNDS; round++) {
+        const contents = {};
+        let size = 0;
+        for (const h of out.needed) {
+          const text2 = texts.get(h);
+          if (text2 === void 0 || size && size + text2.length > CANON_BATCH_CHARS) continue;
+          contents[h] = text2;
+          size += text2.length;
+        }
+        out = await call(settings, "/v1/sync/canon", { ...body, contents }, deadline);
+      }
+      return !out.needed.length;
     }
     function warmPersonas() {
       if (!host.personas) return;
@@ -846,8 +1007,11 @@ ${revisionHash}`;
           prompt.length,
           request.messages.map((m) => [m.host_logical_id, m.revision_hash])
         ])), deadline, "the cache key");
+        const canon = await observeCanon(chat, prompt, deadline);
         const cached = cache.get(key);
         if (cached && cached.expires > host.now()) {
+          const known = conversations.get(chat.id);
+          if (canon?.snapshot && known) syncCanon(settings, known, chat.id, canon.snapshot);
           const outcome2 = cached.packet ? "injected" : "nothing-relevant";
           if (!cached.failed) last = {
             at: Date.now(),
@@ -886,8 +1050,11 @@ ${revisionHash}`;
           previous_ai: previousAi,
           in_context_ids: inContextIds(prompt, messages),
           budget_tokens: settings.reservedMemoryTokens,
-          client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started }
+          client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started },
+          canon_manifest_id: canon?.snapshot?.id ?? null,
+          canon_held: canon?.held ?? []
         }, deadline, void 0, late);
+        if (canon?.snapshot && synced.conversation_id) syncCanon(settings, synced.conversation_id, chat.id, canon.snapshot);
         const packet = retrieved.freshness === "fresh" ? retrieved.packet.text : "";
         const memory = retrieved.freshness === "fresh" ? retrieved.memory ?? null : null;
         remember(key, packet, SUCCESS_TTL_MS, false, memory);
@@ -1134,20 +1301,20 @@ ${revisionHash}`;
       const root = await doc.createElement("div");
       await root.addClass(CLASS);
       await root.setStyleAttribute(ROOT_STYLE);
-      const text = await doc.createElement("span");
-      await text.setStyleAttribute(TEXT_STYLE);
+      const text2 = await doc.createElement("span");
+      await text2.setStyleAttribute(TEXT_STYLE);
       const track = await doc.createElement("div");
       await track.setStyleAttribute(TRACK_STYLE);
       const fill = await doc.createElement("div");
       await fill.setStyleAttribute(FILL_STYLE);
       await track.appendChild(fill);
-      await root.appendChild(text);
+      await root.appendChild(text2);
       await root.appendChild(track);
       await body.appendChild(root);
       const listener = await root.addEventListener("click", (event) => {
         void hit(event);
       });
-      return { root, text, track, fill, listener, last: "" };
+      return { root, text: text2, track, fill, listener, last: "" };
     }
     async function hit(event) {
       try {
@@ -1516,9 +1683,9 @@ html,body{margin:0;background:#0c0c10}
     for (const child of children) node.append(child);
     return node;
   }
-  function say(target, text, kind = "muted") {
+  function say(target, text2, kind = "muted") {
     target.className = `${target.classList.contains("text") ? "text" : "msg"} ${kind}`;
-    target.textContent = text;
+    target.textContent = text2;
   }
   function field(labelText, input) {
     return el("div", {}, el("label", { text: labelText }), input);
@@ -1529,8 +1696,8 @@ html,body{margin:0;background:#0c0c10}
     return i >= 0 ? i : presets.length - 1;
   }
   function errorText(lang, error) {
-    const text = error instanceof Error ? error.message : String(error);
-    return text.replace(/^\/v1\/\S+ -> HTTP 422: /, t(lang, "invalid")).replace(/^\/v1\/\S+ -> /, t(lang, "sidecar_error"));
+    const text2 = error instanceof Error ? error.message : String(error);
+    return text2.replace(/^\/v1\/\S+ -> HTTP 422: /, t(lang, "invalid")).replace(/^\/v1\/\S+ -> /, t(lang, "sidecar_error"));
   }
   var current = null;
   async function openPanel(deps, tab) {
@@ -1643,12 +1810,12 @@ html,body{margin:0;background:#0c0c10}
         const open = el("button", { text: L("deadline.open_settings") });
         open.addEventListener("click", () => select("settings"));
         const took = advice.tookMs === null ? "" : L("deadline.took", { n: formatMs(advice.tookMs) });
-        const text = advice.level === "over" ? L("deadline.over", { d: formatMs(advice.deadlineMs), took, s: formatMs(advice.suggestMs) }) : L("deadline.near", { d: formatMs(advice.deadlineMs), n: formatMs(advice.tookMs ?? 0), s: formatMs(advice.suggestMs) });
+        const text2 = advice.level === "over" ? L("deadline.over", { d: formatMs(advice.deadlineMs), took, s: formatMs(advice.suggestMs) }) : L("deadline.near", { d: formatMs(advice.deadlineMs), n: formatMs(advice.tookMs ?? 0), s: formatMs(advice.suggestMs) });
         cards.unshift(el(
           "div",
           { class: "card" },
           el("h2", { class: advice.level === "over" ? "err" : "warn", text: L(`deadline.${advice.level}.title`) }),
-          el("p", { class: "sub", text }),
+          el("p", { class: "sub", text: text2 }),
           el("div", { class: "btns" }, open)
         ));
       }
@@ -1667,7 +1834,7 @@ html,body{margin:0;background:#0c0c10}
             say(msg, errorText(lang, error), "err");
           }
         });
-        const text = L(budget.all ? "budget.text" : "budget.text_more", {
+        const text2 = L(budget.all ? "budget.text" : "budget.text_more", {
           m: budget.offered,
           c: budget.cut,
           b: budget.budget,
@@ -1678,7 +1845,7 @@ html,body{margin:0;background:#0c0c10}
           "div",
           { class: "card" },
           el("h2", { class: "warn", text: L("budget.title", { c: budget.cut }) }),
-          el("p", { class: "sub", text }),
+          el("p", { class: "sub", text: text2 }),
           el("div", { class: "btns" }, apply),
           msg
         ));
@@ -1813,7 +1980,7 @@ html,body{margin:0;background:#0c0c10}
       const spot = button.parentElement;
       if (!spot) return;
       const field2 = action.extra === "object" ? "object" : "value";
-      const text = el("input", {
+      const text2 = el("input", {
         type: "text",
         placeholder: L("rp.correct_prompt", { f: L(`rp.field_${field2}`) }),
         "aria-label": L(`rp.field_${field2}`)
@@ -1830,8 +1997,8 @@ html,body{margin:0;background:#0c0c10}
       const cancel = el("button", { class: "mini", text: L("cancel") });
       cancel.addEventListener("click", () => spot.replaceChildren(...repairControls(action)));
       save2.addEventListener("click", () => {
-        const next = text.value.trim();
-        if (!next) return void text.focus();
+        const next = text2.value.trim();
+        if (!next) return void text2.focus();
         const body = { [field2 === "object" ? "new_object" : "new_value"]: next };
         const at = turn.value.trim();
         if (at) {
@@ -1841,8 +2008,8 @@ html,body{margin:0;background:#0c0c10}
         }
         void repairNow(action, save2, body);
       });
-      spot.replaceChildren(el("span", { class: "rpform" }, text, turn, save2, cancel));
-      text.focus();
+      spot.replaceChildren(el("span", { class: "rpform" }, text2, turn, save2, cancel));
+      text2.focus();
     }
     async function repairNow(action, button, extra = {}) {
       const conversation = inspectorConversation(inspectorPath);
@@ -2008,7 +2175,7 @@ html,body{margin:0;background:#0c0c10}
       const narrator = el(
         "select",
         { "aria-label": L("mode.narrator") },
-        ...narrators.map(([value, text]) => el("option", { value, text }))
+        ...narrators.map(([value, text2]) => el("option", { value, text: text2 }))
       );
       narrator.value = mode.narrator ?? "";
       const save2 = el("button", { class: "primary", text: L("mode.save") });
@@ -2483,8 +2650,8 @@ html,body{margin:0;background:#0c0c10}
         update({ text: parts.join(" "), kind: "ok" });
         return true;
       } catch (error) {
-        const text = errorText(lang, error);
-        update({ text: d.includes("conn") ? L("conn_saved_server_failed", { e: text }) : text, kind: "err" });
+        const text2 = errorText(lang, error);
+        update({ text: d.includes("conn") ? L("conn_saved_server_failed", { e: text2 }) : text2, kind: "err" });
         return false;
       }
     }
@@ -2585,17 +2752,32 @@ html,body{margin:0;background:#0c0c10}
       return risuai.getChatFromIndex(characterIndex, chatIndex);
     },
     async characterName(chatId) {
+      const card = await this.card(chatId);
+      return typeof card?.name === "string" && card.name.trim() ? card.name.trim() : null;
+    },
+    async card(chatId) {
       const character = await risuai.getCharacterFromIndex(await risuai.getCurrentCharacterIndex());
       if (!character?.chats?.some((c) => c?.id === chatId)) return null;
-      return typeof character.name === "string" && character.name.trim() ? character.name.trim() : null;
+      const { name, desc, personality, scenario, firstMessage, alternateGreetings, globalLore } = character;
+      return { name, desc, personality, scenario, firstMessage, alternateGreetings, globalLore };
+    },
+    async lorebook() {
+      if (typeof risuai.getCurrentLorebookEntries !== "function") throw new Error("no lorebook call on this host");
+      const entries = await risuai.getCurrentLorebookEntries();
+      if (!Array.isArray(entries)) throw new Error("the host returned no lorebook list");
+      return entries;
     },
     async personas() {
       if (typeof risuai.getDatabase !== "function") return null;
       const db = await risuai.getDatabase(["personas", "selectedPersona"]);
       if (!db || !Array.isArray(db.personas)) return null;
       const personas = db.personas.map((p) => {
-        const { id, name } = p ?? {};
-        return { id: typeof id === "string" ? id : void 0, name: typeof name === "string" ? name : void 0 };
+        const { id, name, personaPrompt } = p ?? {};
+        return {
+          id: typeof id === "string" ? id : void 0,
+          name: typeof name === "string" ? name : void 0,
+          personaPrompt: typeof personaPrompt === "string" ? personaPrompt : void 0
+        };
       });
       return { personas, selected: Number.isInteger(db.selectedPersona) ? Number(db.selectedPersona) : 0 };
     },

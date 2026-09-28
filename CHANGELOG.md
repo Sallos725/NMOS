@@ -58,6 +58,12 @@ packet policies `packet-v3` (Phase 10, Private section) and `packet-v4` (no rest
 - **Phase 14 (Stage 6, part 2): canon sources** (`docs/phases/PHASE-14.md`, approved 2026-09-28; no release): the card,
   the lorebooks, the persona and the author's note as sources of each chat, host evidence first. Export and restore
   are Phase 15.
+  - Step 2: canon host evidence on PocketRisu v1.13.0 (`docs/HOST-FACTS.md`, H19) and a count-only inventory of the
+    two measured chats' canon (`docs/perf/canon.md`).
+  - Step 3 (ADR 0045, migration 0025; new plugin build): each chat's canon is kept as the host shows it, with every
+    version. The Inspector lists it in a "Canon" section, with how often a request's prompt held each text. The
+    plugin sends it in the background when it changes and reads the card off the request path. Canon changes no
+    packet yet.
 - **Phase 13 (Stage 6, part 1): the owner repairs memory** (`docs/phases/PHASE-13.md`, approved and complete 2026-09-28;
   no release).
   - Step 2: the owner confirmed NMOS's lists for the longest chat (50 of 59 open threads ended, 6 secrets found out);
