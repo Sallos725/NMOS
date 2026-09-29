@@ -76,7 +76,7 @@ If two normative documents appear to conflict:
 | 13 — verification and repair, part 1 (Stage 6: owner repair, needs-attention queue) | complete (2026-09-28), not released; the latency criterion missed by 2 ms (owner accepted) | `PHASE-13.md`, ADR 0044 |
 | 14 — verification and repair, part 2 (Stage 6: canon sources) | complete (2026-09-29), not released; the latency criterion missed with a 200-entry lorebook read whole (owner accepted) | `PHASE-14.md`, ADRs 0045–0047 |
 | 15 — a packet that fills its budget (P1 of `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`) | complete (2026-09-29), not released | `PHASE-15.md`, ADR 0049 |
-| 16 — export and restore (Stage 6, part 3) | **current** (approved 2026-09-29) | `PHASE-16.md` |
+| 16 — export and restore (Stage 6, part 3) | complete (2026-09-29) but for the owner's phone check of the panel's Export (K38, open); not released | `PHASE-16.md`, ADR 0050 |
 | 17 — model-call cost and fallback outcomes (C4, C5 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`) | draft, **not authorized**; after Phase 16 (owner, 2026-09-29) | `PHASE-17.md` |
 | 18+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
