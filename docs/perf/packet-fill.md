@@ -89,3 +89,22 @@ Two host facts for anyone testing on v1.13.0: the chat-model request leaves from
 - **`qwen3-embedding:8b` loads cold in ≈18 s** on the local Ollama; warm, a query embeds in ≈50 ms. The request path
   gives the query embedding 300 ms and falls back to lexical recall (PHASE-3), so a request after the model was
   unloaded recalls without vectors (K34). How often that happens in production was not measured.
+
+## The `packet-v8` baseline with vectors (Phase 15 step 2)
+
+`tools/eval_rp.py` now searches a named projection (`--projection`, the copies' full `qwen3-embedding:8b` projection
+here), warms the embedder before the first case, gives each replay's query 5,000 ms, and reports per case whether
+vector search ran; with vectors asked for, a case without them makes it exit with status 2 (Phase 15 Q6). The replay
+itself says so (`vectors`: on, off, or the fallback's reason), and searches a named projection as it is now, with its
+model's query prefix (the rest of the request as of its time). `packet-v8` at 2,000 tokens on the same copies:
+
+| Chat, extraction | Passed | Needing memory | Forbidden placed | Mean tokens | With vectors |
+|---|---:|---:|---:|---:|---:|
+| main, gemma4 `extract-v13` | 32/40 | 13/21 | 0 | 1,904 | 40/40 |
+| main, deepseek-v4.1-flash | 30/40 | 11/21 | 0 | 1,910 | 40/40 |
+| sample 2, deepseek-v4.1-flash | 9/15 | 8/13 | 1 | 1,755 | 15/15 |
+| sample 2, gemma4 `extract-v13` | 10/15 | 8/13 | 0 | 1,743 | 15/15 |
+
+These are the what-if's baselines to the case, now with every case confirmed to have run with vectors. Without
+`--projection`, the same copies ran without vectors in every case (the settings of a copy name no embedder), and the
+tool said so and exited with status 2.

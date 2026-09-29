@@ -5,7 +5,7 @@ The cases are the owner's chats and stay outside the repository; the report prin
 
     cd apps/sidecar
     uv run python ../../tools/eval_rp.py DIR --db postgresql://…/copy [--extractor KEY] [--summarizer KEY] [--canon KEY]
-        [--policy P] [--budget N] [--no-vectors] [--json]
+        [--policy P] [--budget N] [--projection KEY [--embed-url URL]] [--no-vectors] [--json]
 
 DIR/cases.json:
 
@@ -26,6 +26,14 @@ request's own (a request recorded before the default reserve rose to 800 carries
 generation whose facts the request reads, as of now (ADR 0047): a request recorded before canon facts reads the chat's
 canon in force, one recorded since keeps the canon it recorded (ADR 0027), so its read may have none. A request whose chat was
 edited before its position since cannot be replayed and is counted as skipped.
+
+Vectors (PHASE-15 Q6). By default each request searches the embedding projection it recorded, with the settings'
+embedder. `--projection` names another one, for a copy embedded again since (a request's own projection may have
+been partial): the query is embedded with that projection's model, at its recorded endpoint when that is this
+machine, else at `--embed-url`, which must then be given. The embedder is warmed with one query first (a local model
+loads in seconds, a request waits 300 ms), and every replay gets `--embed-timeout-ms` (5,000) for its query. Each case
+reports whether vector search ran; the table counts them, and when vectors were asked for and a case ran without
+them, the tool says so and exits with status 2: a lexical-only number is never passed off as one with vectors.
 """
 
 from __future__ import annotations
@@ -89,20 +97,47 @@ def prompt_window(conn: psycopg.Connection, trace: UUID) -> str:
     return "\n".join(r["content"] or "" for r in rows)
 
 
-def options(conn: psycopg.Connection, use_vectors: bool) -> RecallOptions:
+LOCAL = re.compile(r"^https?://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(/|$)")
+
+
+def options(conn: psycopg.Connection, use_vectors: bool, projection: str | None = None,
+            embed_url: str | None = None) -> RecallOptions:
+    """The embedder a replay searches with: the settings' active projection, or `projection` (its model; its recorded
+    endpoint only when local, so a copy of another machine's database never calls that machine's endpoint)."""
     cur = runtime.effective(Settings(), runtime.stored(conn))
-    pj = vectors.projection(cur) if use_vectors else None
+    if not use_vectors:
+        return RecallOptions(query_prefix=query_prefix(cur.embed_model, cur.embed_query_instruction))
+    if projection:
+        row = conn.execute("SELECT model, endpoint FROM projection_generation WHERE key = %s AND kind = 'embed'",
+                           (projection,)).fetchone()
+        if row is None:
+            raise SystemExit(f"no embedding projection {projection} in this database")
+        url = embed_url or (row["endpoint"] if LOCAL.match(row["endpoint"]) else None)
+        if not url:
+            raise SystemExit(f"{projection} was embedded at another machine's endpoint: give --embed-url")
+        return RecallOptions(embedder=Embedder(url, row["model"], ""), embed_projection=projection,
+                             query_prefix=query_prefix(row["model"], cur.embed_query_instruction))
+    pj = vectors.projection(cur)
     emb = Embedder(cur.embed_url, cur.embed_model, cur.embed_api_key) if pj else None
     return RecallOptions(embedder=emb, embed_projection=pj.key if pj else "",
                          query_prefix=query_prefix(cur.embed_model, cur.embed_query_instruction))
 
 
+def warm(opts: RecallOptions) -> None:
+    """Load the embedding model before the first replay (a cold local model takes seconds, PHASE-15 Q6)."""
+    if opts.embedder is not None:
+        opts.embedder.embed([opts.query_prefix + "warm-up"], 120)
+
+
 def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: RecallOptions, policy: str | None = None,
              extractor: str | None = None, budget: int | None = None, summarizer: str | None = None,
-             canon: str | None = None) -> dict[str, Any]:
+             canon: str | None = None, projection: str | None = None,
+             embed_timeout_ms: int | None = None) -> dict[str, Any]:
     """Every case's numbers, and a summary per category and overall. Read-only."""
     results: list[dict[str, Any]] = []
-    overrides = {"extractor_key": extractor} if extractor else {}
+    overrides: dict[str, Any] = {"extractor_key": extractor} if extractor else {}
+    if embed_timeout_ms is not None and opts.embedder is not None:  # a replay is not a timing test
+        overrides["embed_timeout_ms"] = embed_timeout_ms
     if summarizer:  # summaries of this generation in <Story> (packet-v8, ADR 0043), as of now
         overrides["summarize_key"] = summarizer
     if canon:  # canon facts of this generation (ADR 0047), as of now
@@ -110,12 +145,13 @@ def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: Recall
     known_at = datetime.now(timezone.utc) if extractor or summarizer or canon else None
     for case in cases:
         out = audit.replay(conn, UUID(case["trace"]), opts, policy, known_at=known_at, query=case.get("query"),
-                           budget=budget, **overrides)
+                           budget=budget, projection=projection, **overrides)
         row = {"name": case["name"], "category": case.get("category") or "other"}
         if out is None or out["status"] != "ok":
             results.append({**row, "status": "missing" if out is None else out["status"]})
             continue
         results.append({**row, "status": "ok", "tokens": out["tokens"], "policy": out["policy"],
+                        "vectors": out.get("vectors") == "on",
                         **score(case, out["text"], prompt_window(conn, UUID(case["trace"])))})
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in results:
@@ -130,19 +166,21 @@ def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: Recall
                          "gold": sum(r["gold"] for r in ok), "held": sum(r["held"] for r in ok),
                          "in_prompt": sum(r["in_prompt"] for r in ok),
                          "forbidden": sum(r["forbidden"] for r in ok), "placed": sum(r["placed"] for r in ok),
-                         "tokens_mean": round(sum(r["tokens"] for r in ok) / len(ok)) if ok else None}
+                         "tokens_mean": round(sum(r["tokens"] for r in ok) / len(ok)) if ok else None,
+                         "vectors": sum(r["vectors"] for r in ok)}
     return {"cases": results, "summary": summary}
 
 
 def table(report: dict[str, Any]) -> str:
     """The summary as a markdown table: numbers only, no phrase of any case."""
     rows = ["| Category | cases | passed | needing memory: passed | gold held | of it in the prompt | forbidden placed"
-            " | skipped | mean tokens |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+            " | skipped | mean tokens | with vectors |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for name, s in sorted(report["summary"].items(), key=lambda kv: (kv[0] == "all", kv[0])):
         rows.append(f"| {name} | {s['cases']} | {s['passed']} | {s['memory_passed']}/{s['memory_cases']}"
                     f" | {s['held']}/{s['gold']} | {s['in_prompt']} | {s['placed']}/{s['forbidden']} | {s['skipped']}"
-                    f" | {s['tokens_mean'] if s['tokens_mean'] is not None else '—'} |")
+                    f" | {s['tokens_mean'] if s['tokens_mean'] is not None else '—'}"
+                    f" | {s['vectors']}/{s['cases'] - s['skipped']} |")
     return "\n".join(rows)
 
 
@@ -157,17 +195,26 @@ def main() -> None:
     ap.add_argument("--policy", help="a packet policy in place of each request's own")
     ap.add_argument("--budget", type=int, help="a memory budget (tokens) in place of each request's own")
     ap.add_argument("--no-vectors", action="store_true")
+    ap.add_argument("--projection", help="search this embedding projection's vectors in place of each request's own")
+    ap.add_argument("--embed-url", help="the embedding endpoint for --projection (needed when it was not this machine's)")
+    ap.add_argument("--embed-timeout-ms", type=int, default=5000, help="each replay's query embedding timeout")
     ap.add_argument("--json", action="store_true", help="per-case numbers as JSON (names and counts only)")
     args = ap.parse_args()
     cases = json.loads((args.dir / "cases.json").read_text(encoding="utf-8"))
     with psycopg.connect(args.db, row_factory=dict_row, autocommit=True,
                          options="-c default_transaction_read_only=on") as conn:
-        report = evaluate(conn, cases, options(conn, not args.no_vectors), args.policy, args.extractor, args.budget,
-                          args.summarizer, args.canon)
+        opts = options(conn, not args.no_vectors, args.projection, args.embed_url)
+        warm(opts)
+        report = evaluate(conn, cases, opts, args.policy, args.extractor, args.budget, args.summarizer, args.canon,
+                          args.projection, args.embed_timeout_ms)
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:
         print(table(report))
+    lexical = [r["name"] for r in report["cases"] if r["status"] == "ok" and not r["vectors"]]
+    if not args.no_vectors and lexical:
+        print(f"vectors did not run for {len(lexical)} case(s): {', '.join(lexical)}", file=sys.stderr)
+        sys.exit(2)
     sys.exit(0)
 
 

@@ -221,10 +221,11 @@ class Gathered:
 def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, in_context: set[str],
            options: RecallOptions, upto: int | None = None, known_at: datetime | None = None,
            canon_manifest: str | None = None, canon_exact: bool = False, canon_held: Iterable[str] = (),
-           canon_facts: Any = LIVE) -> Gathered:
+           canon_facts: Any = LIVE, vectors_now: bool = False) -> Gathered:
     """Candidates for one request, already normalized (`clean_text`). `upto` and `known_at` gather them as
     of an earlier request: the head up to that position, and what NMOS had derived by that time. The canon keys the
-    prompt held count as in context: the host sent their text, so their facts are not sent again (D3, ADR 0047)."""
+    prompt held count as in context: the host sent their text, so their facts are not sent again (D3, ADR 0047).
+    `vectors_now` searches vectors as they are now whatever `known_at` says (a replay's named projection)."""
     started = time.perf_counter()
     g = Gathered()
     if canon_held:
@@ -249,7 +250,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                                  timeout_s=options.embed_timeout_ms / 1000)
                 g.timings["embed"] = round((time.perf_counter() - t0) * 1000, 2)
                 vector = vector_candidates(conn, head, qvec, options.embed_projection, cut, CANDIDATE_LIMIT,
-                                           upto, known_at)
+                                           upto, None if vectors_now else known_at)
                 g.timings["vector"] = round((time.perf_counter() - t0) * 1000 - g.timings["embed"], 2)
                 g.vector_note = "on"
             except (LLMError, ValueError) as exc:  # fail open to lexical-only
