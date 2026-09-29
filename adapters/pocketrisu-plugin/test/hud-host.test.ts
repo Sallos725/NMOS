@@ -1,22 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DONE_MS } from '../src/hud';
+import { NMOS_ICON } from '../src/icon';
 import { createHud, MAX_POLL_ERRORS, MIN_POLL_GAP_MS, POLL_MS, type HudDeps, type HudDocument, type HudElement } from '../src/hud-host';
 
-interface FakeElement extends HudElement { tag: string; text: string; styles: Record<string, string>; children: FakeElement[];
-  removed: boolean; classes: string[] }
+interface FakeElement extends HudElement { tag: string; text: string; html: string; styles: Record<string, string>;
+  children: FakeElement[]; removed: boolean; classes: string[] }
 
 function fakePage(existing = false) {
   const log: string[] = [];
   const listeners = new Map<string, (e: { clientX: number; clientY: number }) => void>();
   const make = (tag: string): FakeElement => {
     const node: FakeElement = {
-      tag, text: '', styles: {}, children: [], removed: false, classes: [],
+      tag, text: '', html: '', styles: {}, children: [], removed: false, classes: [],
       async remove() { node.removed = true; log.push(`remove ${tag}${node.classes.map((c) => '.' + c).join('')}`); },
       async appendChild(child) { node.children.push(child as FakeElement); },
       async addClass(name) { node.classes.push(name); },
       async setStyleAttribute() {},
       async setStyle(property, value) { node.styles[property] = value; },
       async setTextContent(value) { node.text = value; log.push(`text ${value}`); },
+      async setInnerHTML(value) { node.html = value; },
       async getBoundingClientRect() { return { left: 900, top: 8, right: 1100, bottom: 40 }; },
       async addEventListener(_type, fn) { const id = `l${listeners.size + 1}`; listeners.set(id, fn); return id; },
       async removeEventListener(_type, id) { listeners.delete(id); },
@@ -35,8 +37,11 @@ function fakePage(existing = false) {
     async createElement(tag) { return make(tag); },
   };
   const pill = () => body.children.find((c) => !c.removed) ?? null;
+  // The pill is [line [icon, text], track].
+  const line = () => pill()?.children[0]?.children ?? [];
+  const text = () => line()[1]?.text;
   const click = (x: number, y: number) => { for (const fn of listeners.values()) fn({ clientX: x, clientY: y }); };
-  return { doc, body, pill, log, listeners, click, stale };
+  return { doc, body, pill, line, text, log, listeners, click, stale };
 }
 
 function setup(opts: { enabled?: boolean; coverage?: (id: string) => Promise<unknown>; doc?: HudDocument | null;
@@ -102,8 +107,22 @@ describe('createHud', () => {
     await advance(0);
     expect(page.stale?.removed).toBe(true);
     expect(page.body.children).toHaveLength(1);
-    expect(page.log.filter((l) => l.startsWith('text'))).toEqual(['text 🧠 기억 불러오는 중…']);
+    expect(page.log.filter((l) => l.startsWith('text'))).toEqual(['text 기억 불러오는 중…']);
     expect(page.pill()?.children[1]?.styles.display).toBe('none'); // no bar for a running request
+  });
+
+  it("shows NMOS's icon only while recalling, in the state colour", async () => {
+    const { hud, page, advance } = setup();
+    hud.event({ type: 'request-start' });
+    await advance(0);
+    const [icon] = page.line();
+    expect(icon?.html).toBe(NMOS_ICON);
+    expect(icon?.styles.display).toBe('block');
+    hud.event({ type: 'request-end', outcome: 'injected', chars: 10, conversationId: null });
+    await advance(0);
+    expect(page.text()).toBe('✓ 기억 주입 (10자)');
+    expect(icon?.styles.display).toBe('none');
+    expect(page.pill()?.children[0]?.styles.color).toBe('#8ce99a');
   });
 
   it('opens the panel only for clicks on the pill', async () => {
@@ -123,11 +142,11 @@ describe('createHud', () => {
     hud.event({ type: 'request-end', outcome: 'injected', chars: 10, conversationId: 'conv-1' });
     await advance(0);
     expect(coverage).toHaveBeenCalledWith('conv-1');
-    expect(page.pill()?.children[0]?.text).toBe('✓ 기억 주입 (10자)');
+    expect(page.text()).toBe('✓ 기억 주입 (10자)');
     await advance(4000);  // outcome expired; second poll done at 3000
-    expect(page.pill()?.children[0]?.text).toBe('추출 3/4');
+    expect(page.text()).toBe('추출 3/4');
     await advance(POLL_MS); // third poll: nothing pending
-    expect(page.pill()?.children[0]?.text).toBe('✓ 처리 완료');
+    expect(page.text()).toBe('✓ 처리 완료');
     expect(coverage).toHaveBeenCalledTimes(3);
     await advance(DONE_MS);
     expect(page.pill()).toBeNull();
@@ -141,7 +160,7 @@ describe('createHud', () => {
     expect(coverage).toHaveBeenCalledTimes(1);
     hud.event({ type: 'request-end', outcome: 'chat-off', chars: 0, conversationId: null });
     await advance(0);
-    expect(page.pill()?.children[0]?.text).toBe('⏻ 이 채팅은 NMOS 꺼짐');
+    expect(page.text()).toBe('⏻ 이 채팅은 NMOS 꺼짐');
     await advance(POLL_MS * 3);
     expect(coverage).toHaveBeenCalledTimes(1);
     expect(page.pill()).toBeNull();
@@ -220,7 +239,7 @@ describe('createHud', () => {
     const { hud, page, advance, coverage } = setup({ coverage: async () => cov(3, 1), position: () => where });
     hud.background('conv-1');
     await advance(0);
-    expect(page.pill()?.children[0]?.text).toBe('추출 1/4');
+    expect(page.text()).toBe('추출 1/4');
     where = '0:1';
     await advance(POLL_MS);
     expect(page.pill()).toBeNull();

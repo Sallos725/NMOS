@@ -29,7 +29,7 @@ in the plugin (2026-09-28).
      dialog which way it went.
    - The panel's Status tab starts with a **This chat** card: on or off, what that means, and the switch.
    - The sidebar's ☰ menu opens the panel (`registerButton` location `hamburger`). It shows icons only (v1.13.0
-     `Sidebar.svelte`), so it is the 🧠 icon.
+     `Sidebar.svelte`), so it is NMOS's icon (`src/icon.ts`).
    - The progress display, when on, says "NMOS is off for this chat" after a generation in such a chat, and stops
      following the chat's conversation, so not even a coverage poll reaches the sidecar.
    - The dialog is the one alert outside the output listener (H18 amended): it answers the owner's own tap.

@@ -233,7 +233,7 @@ const STRINGS = {
   'lang_unsaved': ['언어를 바꾸기 전에 변경을 저장하거나 되돌리세요.', 'Save or revert your changes before switching the language.'],
   'conn_saved_server_failed': ['연결 설정은 저장했지만 서버 설정은 저장하지 못했습니다: {e}', 'Connection saved, but the server settings were not: {e}'],
   // progress display (HUD) on the chat screen
-  'hud.recalling': ['🧠 기억 불러오는 중…', '🧠 Recalling memory…'],
+  'hud.recalling': ['기억 불러오는 중…', 'Recalling memory…'],
   'hud.injected': ['✓ 기억 주입 ({n}자)', '✓ Memory injected ({n} chars)'],
   'hud.nothing': ['– 관련 기억 없음', '– Nothing relevant'],
   'hud.chat_off': ['⏻ 이 채팅은 NMOS 꺼짐', '⏻ NMOS is off for this chat'],

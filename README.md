@@ -84,8 +84,8 @@ provider's cost.
 
 ## NMOS panel (status, inspector, settings)
 
-Open it from the **☰ menu left of the chat input → NMOS 기억 / NMOS memory**, from the **🧠 icon in the sidebar's
-☰ menu**, or from PocketRisu → Settings → **NMOS 기억 / NMOS memory**. Tabs switch between **Status**, **Inspector** and **Settings**;
+Open it from the **☰ menu left of the chat input → NMOS 기억 / NMOS memory**, from the **NMOS icon (an N) in the
+sidebar's ☰ menu**, or from PocketRisu → Settings → **NMOS 기억 / NMOS memory**. Tabs switch between **Status**, **Inspector** and **Settings**;
 the language picker (Korean by default, or English) is at the top right. Menu names follow the
 language after a page reload.
 
@@ -148,13 +148,13 @@ responses**.
 
 | Pill | Meaning |
 |---|---|
-| `🧠 기억 불러오는 중…` | NMOS is preparing memory for this request |
+| NMOS icon + `기억 불러오는 중…` | NMOS is preparing memory for this request |
 | `✓ 기억 주입 (N자)` / `– 관련 기억 없음` | memory went in / nothing relevant (shown 4 s) |
 | `⚠ 건너뜀: 제한 시간 초과` | the request went without memory (deadline or sidecar error) |
 | `추출 2/5 · 임베딩 5/5` + bar | background extraction/embedding of this chat; `⚠ 실패 N` if some failed |
 | `✓ 처리 완료` | that work finished (shown 3 s) |
 
-Tap the pill to open the panel. The text follows the panel language (English: `🧠 Recalling memory…`,
+Tap the pill to open the panel. The text follows the panel language (English: `Recalling memory…`,
 `✓ Memory injected (N chars)`, `Facts 2/5 · Embeddings 5/5`, …).
 
 The Inspector lists conversations as **bot name · chat name** (after the next message in that chat)

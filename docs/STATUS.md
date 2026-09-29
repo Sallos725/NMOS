@@ -32,6 +32,11 @@ keeps stays). Switched from the chat input's ☰ menu and a "This chat" card at 
 panel also opens from the sidebar's ☰ menu. A new plugin build; no migration. Plugin tests pass; the real-host smoke
 (the two menus, the arg surviving a reload and an update) is not yet run.
 
+**Owner request (2026-09-28): a new icon.** NMOS's own SVG line icon (an N with a memory node, `src/icon.ts`) replaces
+🧠 in the three menus and before "Recalling memory…" in the progress display. A new plugin build. Source reading and
+a local DOMPurify check say the host keeps it (`docs/HOST-FACTS.md` "Plugin icons"); the real-host look is not yet
+checked.
+
 **Phase 13 — Verification and Repair, part 1 (Stage 6): complete (2026-09-28), not released.** Spec
 `docs/phases/PHASE-13.md`: the owner repairs memory in the panel (close or reopen a thread, retract or correct a
 fact, mark a secret found out, split two names), stored as owner input that survives rebuilds and new extractor
