@@ -1,6 +1,6 @@
 # Phase 15 — A packet that fills its budget
 
-> **Status: approved 2026-09-29 (owner), not started.** P1 of `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`.
+> **Status: approved 2026-09-29 (owner), in progress.** P1 of `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`.
 > The owner chose on 2026-09-29 to do this before export and restore, which is now Phase 16 (`docs/ROADMAP-1.0.md`,
 > `docs/STATUS.md`, AGENTS.md §2). It starts after Phase 14 step 6.
 > On 2026-09-29 the owner also chose a fixed default budget over one that follows the host's context (Q3).
@@ -109,7 +109,10 @@ sample 2, with vectors on.
 ## Steps (one pull request each)
 
 1. This document, approved; the renumbering. **Done** (2026-09-29).
-2. Evaluation tooling and the `packet-v8` baseline with vectors.
+2. Evaluation tooling and the `packet-v8` baseline with vectors. **Done** (`docs/perf/packet-fill.md`, "The
+   `packet-v8` baseline with vectors"): `tools/eval_rp.py --projection`, a warm-up, a query timeout for replays, vectors
+   reported per case and a run without them refused; `audit.replay` takes the projection and says whether vectors ran.
+   The baseline equals the what-if's on both chats and both extractions, every case with vectors.
 3. `packet-v9`, ADR 0049, the default budget, and a plugin build.
 4. Cold embeddings: measure, then the note and notice if warranted.
 5. Evaluation, the owner's traces, real-host smoke, latency, review, documentation.

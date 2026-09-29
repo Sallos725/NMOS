@@ -128,11 +128,13 @@ def _canon_of(t: dict[str, Any]) -> dict[str, Any]:
 
 def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, policy: str | None = None,
            known_at: datetime | None = None, query: str | None = None, budget: int | None = None,
-           **overrides: Any) -> dict[str, Any] | None:
+           projection: str | None = None, **overrides: Any) -> dict[str, Any] | None:
     """Compile a recorded request again, as of its time, with its own recall options, generations and
     budget; `policy`, `query` (a probe in place of the request's user message, as the request would have sent
     it), `budget` (tokens) and `overrides` (RecallOptions fields) change what is being tested. `options` gives
-    the embedder: vectors are searched only when it serves the trace's projection. Read-only."""
+    the embedder: vectors are searched only when it serves the trace's projection, or `projection` (an evaluation
+    of a copy embedded again since). `vectors` in the result says whether vector search ran ("on"), was off, or
+    fell back and why. Read-only."""
     t = _trace(conn, trace_id)
     if t is None:
         return None
@@ -149,10 +151,13 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     recorded.setdefault("canon_key", None)  # a request from before canon facts read none (ADR 0047)
     opts = dataclasses.replace(options, **recorded, extractor_key=t["extractor_key"],
                                rules_version=t["rules_version"] or "none", policy=policy)
-    if t["embed_projection"] and not (options.embedder is not None and options.embed_projection == t["embed_projection"]):
+    wanted = projection or t["embed_projection"]
+    if projection and projection != t["embed_projection"]:
+        notes.append("projection changed")
+    if wanted and not (options.embedder is not None and options.embed_projection == wanted):
         opts = dataclasses.replace(opts, embedder=None)
         notes.append("vectors of the trace's projection unavailable: lexical only")
-    elif not t["embed_projection"]:
+    elif not wanted:
         opts = dataclasses.replace(opts, embedder=None)
     if overrides:
         opts = dataclasses.replace(opts, **overrides)
@@ -169,7 +174,8 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
         notes.append("budget changed")
     c = compile_gathered(g, t["budget_tokens"] if budget is None else budget, policy)
     out = {"trace": str(t["id"]), "status": "ok", "policy": policy, "recorded_policy": t["policy"],
-           "text": c.text, "tokens": c.tokens, "lines": c.ledger, "notes": notes}
+           "text": c.text, "tokens": c.tokens, "lines": c.ledger, "notes": notes,
+           "vectors": g.vector_note if opts.embedder is not None else "off"}
     if policy == t["policy"] and not notes:
         out["reproduced"] = _same(c.ledger, t["lines"])
     return out

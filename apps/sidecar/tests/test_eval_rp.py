@@ -69,10 +69,11 @@ def test_cases_replay_their_request_and_the_report_holds_numbers_only(full):
     assert by["gone"]["status"] == "missing"
     assert report["summary"]["all"] | {"tokens_mean": None} == {
         "cases": 4, "skipped": 1, "passed": 2, "memory_cases": 3, "memory_passed": 2, "gold": 3, "held": 2,
-        "in_prompt": 0, "forbidden": 2, "placed": 0, "tokens_mean": None}
+        "in_prompt": 0, "forbidden": 2, "placed": 0, "tokens_mean": None, "vectors": 0}
     assert report["summary"]["state"]["passed"] == 0 and report["summary"]["secret"]["passed"] == 1
     text = eval_rp.table(report)
     assert text.splitlines()[-1].startswith("| all | 4 | 2 | 2/3 | 2/3 | 0 | 0/2 | 1 |")
+    assert text.splitlines()[-1].endswith("| 0/3 |")  # no case ran with vectors (PHASE-15 Q6)
     for phrase in ("forged", "dragon", "chatter", "clouds"):
         assert phrase not in text
 
@@ -84,9 +85,10 @@ def test_a_newer_extractor_generation_is_read_as_of_now(monkeypatch):
 
     seen: list[dict] = []
 
-    def replay(conn, trace_id, options, policy=None, known_at=None, query=None, budget=None, **overrides):
+    def replay(conn, trace_id, options, policy=None, known_at=None, query=None, budget=None, projection=None,
+               **overrides):
         seen.append({"known_at": known_at, "query": query, "budget": budget, **overrides})
-        return {"status": "ok", "text": "", "tokens": 0, "policy": policy or "packet-v4"}
+        return {"status": "ok", "text": "", "tokens": 0, "policy": policy or "packet-v4", "vectors": "off"}
 
     monkeypatch.setattr(eval_rp.audit, "replay", replay)
     monkeypatch.setattr(eval_rp, "prompt_window", lambda conn, trace: "")
@@ -96,3 +98,27 @@ def test_a_newer_extractor_generation_is_read_as_of_now(monkeypatch):
     assert seen[0] == {"known_at": None, "query": "probe", "budget": None}
     assert seen[1]["extractor_key"] == "extract-new" and seen[1]["query"] == "probe" and seen[1]["budget"] == 800
     assert abs((datetime.now(timezone.utc) - seen[1]["known_at"]).total_seconds()) < 60
+
+
+def test_each_case_says_whether_vectors_ran_and_a_named_projection_is_searched(monkeypatch):
+    """PHASE-15 Q6: `--projection` reaches every replay with a timeout for its query, and each case reports whether
+    vector search ran."""
+    seen: list[dict] = []
+
+    def replay(conn, trace_id, options, policy=None, known_at=None, query=None, budget=None, projection=None,
+               **overrides):
+        seen.append({"projection": projection, **overrides})
+        return {"status": "ok", "text": "", "tokens": 0, "policy": "packet-v8",
+                "vectors": "on" if query == "a" else "fallback: timed out"}
+
+    monkeypatch.setattr(eval_rp.audit, "replay", replay)
+    monkeypatch.setattr(eval_rp, "prompt_window", lambda conn, trace: "")
+    cases = [{"name": n, "trace": "0190f3a4-1b2c-7d3e-8f40-123456789abc", "query": n} for n in ("a", "b")]
+    opts = RecallOptions(embedder=object(), embed_projection="embed-x")
+    report = eval_rp.evaluate(None, cases, opts, projection="embed-x", embed_timeout_ms=5000)
+    assert seen == [{"projection": "embed-x", "embed_timeout_ms": 5000}] * 2
+    assert [c["vectors"] for c in report["cases"]] == [True, False] and report["summary"]["all"]["vectors"] == 1
+    # without an embedder the timeout is not touched (a lexical run)
+    seen.clear()
+    eval_rp.evaluate(None, cases[:1], RecallOptions(), embed_timeout_ms=5000)
+    assert seen == [{"projection": None}]

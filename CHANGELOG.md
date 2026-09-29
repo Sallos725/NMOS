@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 15 step 2: evaluations that cannot drop vectors silently** (PHASE-15 Q6): `tools/eval_rp.py --projection`
+  searches a named embedding projection (its recorded endpoint only when local, else `--embed-url`), warms the
+  embedder, and reports per case whether vectors ran; a run that asked for vectors and lacked them exits with status 2.
+  A replay (`/v1/trace/{id}/replay`, `audit.replay`) now says `vectors`: on, off or why it fell back. The `packet-v8`
+  baseline with vectors is in `docs/perf/packet-fill.md`.
 - **Phase 14 (Stage 6, part 2: canon sources) is complete** (`docs/phases/PHASE-14.md`, 2026-09-29):
   - On both measured chats with their canon, M0 and the secret gate are unchanged case by case, and canon took 12 and
     66 model calls (26 on the owner's production chat), as the inventory predicted (`docs/perf/canon.md`).

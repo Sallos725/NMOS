@@ -402,3 +402,25 @@ def test_replay_does_not_claim_reproduction_when_the_embedder_fails(migrated):
                                                                       embed_projection=trace["embed_projection"]))
         assert again["status"] == "ok" and "reproduced" not in again
         assert any(n.startswith("vectors fallback") for n in again["notes"])
+        assert again["vectors"].startswith("fallback")
+
+
+def test_replay_can_search_another_projection_and_says_whether_vectors_ran(migrated):
+    """PHASE-15 Q6: an evaluation of a copy embedded again since names the projection to search; the replay says
+    whether vector search ran, so a lexical-only number is never taken for one with vectors."""
+    from nmos_sidecar.retrieval import RecallOptions
+
+    with make_client(migrated, embedder=StubEmbedder(), **settings_for("full")) as client:
+        chat = story(client, migrated, vectors=True)
+        out = ask(client, chat, "혹시 그 반짝이는 은빛 물건은 어디 숨겼지?")
+        projection = client.get(f"/v1/trace/{out['trace_id']}").json()["embed_projection"]
+        with db(migrated) as conn:
+            conn.execute("UPDATE retrieval_trace SET embed_projection = NULL WHERE id = %s", (out["trace_id"],))
+            conn.commit()
+            opts = RecallOptions(embedder=StubEmbedder(), embed_projection=projection)
+            own = audit.replay(conn, out["trace_id"], opts)  # the request recorded none: no vectors
+            named = audit.replay(conn, out["trace_id"], opts, projection=projection)
+            missing = audit.replay(conn, out["trace_id"], RecallOptions(), projection=projection)
+    assert own["vectors"] == "off" and own["reproduced"] is True
+    assert named["vectors"] == "on" and "projection changed" in named["notes"] and "reproduced" not in named
+    assert missing["vectors"] == "off" and "vectors of the trace's projection unavailable: lexical only" in missing["notes"]
