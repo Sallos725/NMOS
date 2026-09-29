@@ -368,8 +368,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
 
     With `canon_key` (a canon generation, ADR 0047), the canon facts of the manifest the names come from are facts
     from before turn 0 (turn -1, `canon` set): the story supersedes them from the turn it says something new. A story
-    statement of `identity` or a relationship that replaces or denies a canon one is also listed in `conflicts`
-    (`kind` "canon"), and the owner's lock (`fact_lock`) keeps a canon fact or a correction current: a later statement
+    statement of a relationship (CANON_CONFLICTS, ADR 0047 amendment 1) that replaces or denies a canon one is also
+    listed in `conflicts` (`kind` "canon"), and the owner's lock (`fact_lock`) keeps a canon fact or a correction current: a later statement
     that would replace it is held off and listed (`kind` "locked"). Canon facts take no part in secrets or threads.
     They come from the manifest a request names only: while the sidecar lacks it (its upload is under way), the read
     has none, as it cannot tell which of the canon in force still holds. `canon_facts` (a replay) names the manifest

@@ -23,7 +23,8 @@ threat, debt, relationship, address, secret, why and irrelevant. The request is 
 time (ADR 0027 replay); `--extractor` names a newer extractor generation, and the request is then compiled as
 of now with that generation's facts, as `eval_secrets.py build` does; `--policy` and `--budget` replace the
 request's own (a request recorded before the default reserve rose to 800 carries 600); `--canon` names a canon
-generation whose facts the request reads, as of now, from the chat's canon in force (ADR 0047). A request whose chat was
+generation whose facts the request reads, as of now (ADR 0047): a request recorded before canon facts reads the chat's
+canon in force, one recorded since keeps the canon it recorded (ADR 0027), so its read may have none. A request whose chat was
 edited before its position since cannot be replayed and is counted as skipped.
 """
 
@@ -151,7 +152,8 @@ def main() -> None:
     ap.add_argument("--db", default=os.environ.get("NMOS_DATABASE_URL", Settings().database_url))
     ap.add_argument("--extractor", help="a newer extractor generation's key: compile as of now with its facts")
     ap.add_argument("--summarizer", help="a summarize generation's key: <Story> from its summaries as of now")
-    ap.add_argument("--canon", help="a canon generation's key: its facts of the chat's canon in force, as of now")
+    ap.add_argument("--canon", help="a canon generation's key: its facts, as of now (a request recorded since canon"
+                    " facts keeps the canon it recorded)")
     ap.add_argument("--policy", help="a packet policy in place of each request's own")
     ap.add_argument("--budget", type=int, help="a memory budget (tokens) in place of each request's own")
     ap.add_argument("--no-vectors", action="store_true")

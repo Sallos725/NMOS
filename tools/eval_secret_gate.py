@@ -12,7 +12,8 @@ point it at a restored backup (PHASE-11 Q1).
     cd apps/sidecar && uv run python ../../tools/eval_secret_gate.py DIR --db postgresql://…/copy \\
         --extractor KEY --summarizer KEY [--canon KEY] [--budget 2000] [--json]
 
-`--canon` compiles both packets with a canon generation's facts (ADR 0047); canon takes no part in secrets.
+`--canon` compiles both packets with a canon generation's facts (ADR 0047), from the chat's canon in force for a request
+recorded before canon facts (one recorded since keeps its own); canon takes no part in secrets.
 """
 
 from __future__ import annotations
