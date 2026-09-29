@@ -232,6 +232,10 @@ def test_an_archive_of_an_older_schema_is_migrated_as_an_upgrade_would(database_
     target = database_url_factory()
     done = archive.restore_file(target, str(old))
     assert done.migrated and done.migrated[0] > level
+    with psycopg.connect(target) as conn:  # rows from before migration 0027: "not recorded" (ADR 0051)
+        for t in ("extraction", "summary", "revision_embedding"):
+            rows, recorded = conn.execute(f"SELECT count(*), count(usage) FROM {t}").fetchone()
+            assert recorded == 0 and (rows > 0 or t != "extraction")
     apply_migrations(database_url)  # the same database, upgraded in place
     assert tables(export_to(tmp_path, target, "t", embeddings=True)) == \
         tables(export_to(tmp_path, database_url, "u", embeddings=True))

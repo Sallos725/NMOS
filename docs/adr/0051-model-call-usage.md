@@ -33,7 +33,9 @@ OpenAI-compatible API report it in the response: `usage.prompt_tokens`, `complet
 ## Consequences
 
 - A call that failed (an HTTP error, a reply without JSON) wrote no row and is not counted, though a provider may
-  bill it; retries of a failing job are invisible here.
+  bill it; retries of a failing job are invisible here. An embedding job embeds every chunk of a message before it
+  stores any, so when a later chunk fails the earlier chunks' calls are not kept either, and the retry calls them
+  again (as before this ADR: which chunks count as embedded is not Phase 17's to change).
 - The reply model's usage is not NMOS's (the host logs it); money is not computed (prices vary, the owner's are local
   or flat).
 - The request path is unchanged: it writes no usage (a query embedding is not stored).

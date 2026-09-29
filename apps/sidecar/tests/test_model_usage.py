@@ -163,3 +163,14 @@ def test_usage_goes_out_and_comes_back_with_the_archive(migrated, database_url_f
                 "SELECT usage FROM revision_embedding ORDER BY source_revision_id, projection, chunk"):
         rows = usages(migrated, sql)
         assert rows and any(u and u.get("input") for u in rows) and usages(target, sql) == rows
+
+
+def test_a_call_that_reported_nothing_is_kept_as_a_call(llm_client, migrated):
+    chat = SimChat()
+    chat.user("Where is Mina?")
+    chat.reply("Mina is in the library.")
+    chat.user("And then?")
+    sync(llm_client, chat)
+    drain_extract(migrated, lambda s, u: (*fake_complete(s, u), llm.usage_of({"model": "local"}, 0.0)))
+    (usage,) = usages(migrated, "SELECT usage FROM extraction")
+    assert set(usage) == {"calls", "ms", "model"} and usage["calls"] == 1 and not llm.reported(usage)
