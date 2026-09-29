@@ -463,6 +463,35 @@ with every element and attribute kept, under both configurations, and the sideba
 **Runtime:** not yet observed. The real-host check looks at the icon in Settings, both ☰ menus and the progress
 display.
 
+## Saving a file from the plugin frame (2026-09-29, Phase 16 step 2, H21)
+
+Observed on `ghcr.io/pocketrisu/pocketrisu:latest` (v1.13.0, the owner's version), an isolated container on
+`http://localhost:6181` with a synthetic save, headless Chromium 1223 and Firefox 1543 (Playwright). A probe plugin
+(`//@api 3.0`, not NMOS) drew buttons in its fullscreen container; a local server answered `GET` with N MB of
+deterministic bytes, their SHA-256 in a header, as an attachment. The owner's instance was not touched. Probe, scripts
+and output: `fixtures/host/download-v1.13.0-2026-09-29/` (`results.txt`); the numbers below are from that run.
+
+1. **Sandbox unchanged (H15).** The plugin iframes still carry `sandbox="allow-scripts allow-modals allow-downloads"`
+   and `allow="screen-wake-lock"`. The frame's origin is opaque (`null`); it is a secure context on `localhost`, with
+   `crypto.subtle`.
+2. **A Blob saves.** `URL.createObjectURL(new Blob(…))` on an `<a download="name">` clicked by script saved the file
+   under the given name (Chromium and Firefox: a browser download of `blob:null/…`). A click 8 s after the owner's tap
+   saved too (Chromium), so the file may be fetched first.
+3. **Binary bodies arrive whole through `nativeFetch`.** `risuai.nativeFetch(url, …)` returned a `Response` whose
+   `arrayBuffer()` held every byte, SHA-256 equal to the server's, on both routes: the default (the browser fetches)
+   and `networkRoute: 'local_network'` (PocketRisu's server fetches; the server logged a `node` user agent). 1 MB:
+   headers 3–11 ms, body 8–12 ms. 30 MB: server route headers 5 ms, body 139 ms (Firefox: 5 ms, 256 ms); direct route
+   headers 9 ms, body 146 ms (Firefox: 4 ms, 230 ms). The saved files had the server's size and hash.
+4. **A link to the file does not.** An `<a href="http://…" download>` to the server (cross-origin, served as an
+   attachment) saved nothing and navigated the plugin frame to an error page (`chrome-error://chromewebdata/`): the
+   panel was gone until reopened.
+
+Not observed: mobile browsers (Safari on iOS, Chrome on Android) and WebKit (Playwright's WebKit build does not start
+on this machine). The owner's phone is part of the real-host smoke (Phase 16 step 5).
+
+Conclusion: H21. What NMOS does with it: the panel's Export fetches the archive through `nativeFetch` on the chosen
+route and saves it as a Blob (Phase 16 Q6); the Inspector link stays the fallback.
+
 ## Scenario evidence index
 
 | Scenario | Before fixture | After fixture | Other logs | Done |
