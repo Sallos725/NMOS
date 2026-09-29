@@ -1,0 +1,46 @@
+## Chromium 1223
+opened true frames 3 probe frame true
+sandbox allow-scripts allow-modals allow-downloads | screen-wake-lock ;; allow-scripts allow-modals allow-downloads | screen-wake-lock
+[NMOS-PROBE] secure=true origin=null subtle=true ua=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, l
+info: downloads +0 frames: http://localhost:6181/ | about:blank | about:blank
+[NMOS-PROBE] small clicked
+DOWNLOAD small.txt blob:null/5f6ccc07-a2be-4b95-b39e-e4f2c9 size=10 sha=c7e97abae027
+small: downloads +1 frames: http://localhost:6181/ | about:blank | about:blank
+[NMOS-PROBE] delayed clicked
+DOWNLOAD delayed.txt blob:null/7f787940-56fe-4939-972c-e29130 size=4 sha=089001a35679
+delayed: downloads +1 frames: http://localhost:6181/ | about:blank | about:blank
+[NMOS-PROBE] fetch mb=1 route=server status=200 type=object ctor=Response bytes=1048576 sha=2435372a5fe1 header=2435372a5fe1 match=true headers_ms=11 body_ms=8
+DOWNLOAD server1.nmos.zip blob:null/f2ea22e8-cad8-4631-96b5-8fafb9 size=1048576 sha=2435372a5fe1
+server1: downloads +1 frames: http://localhost:6181/ | about:blank | about:blank
+[NMOS-PROBE] fetch mb=1 route=direct status=200 type=object ctor=Response bytes=1048576 sha=2435372a5fe1 header=2435372a5fe1 match=true headers_ms=3 body_ms=12
+DOWNLOAD direct1.nmos.zip blob:null/843224bb-4d69-41bc-a32b-7cc097 size=1048576 sha=2435372a5fe1
+direct1: downloads +1 frames: http://localhost:6181/ | about:blank | about:blank
+[NMOS-PROBE] fetch mb=30 route=server status=200 type=object ctor=Response bytes=31457280 sha=8ee9c2b7da6e header=8ee9c2b7da6e match=true headers_ms=5 body_ms=139
+DOWNLOAD server30.nmos.zip blob:null/ef42c612-b1a4-4a2e-a4fa-6c3dc1 size=31457280 sha=8ee9c2b7da6e
+server30: downloads +1 frames: http://localhost:6181/ | about:blank | about:blank
+[NMOS-PROBE] fetch mb=30 route=direct status=200 type=object ctor=Response bytes=31457280 sha=8ee9c2b7da6e header=8ee9c2b7da6e match=true headers_ms=9 body_ms=146
+DOWNLOAD direct30.nmos.zip blob:null/62b29a0d-a813-4ce8-b41d-1775a5 size=31457280 sha=8ee9c2b7da6e
+direct30: downloads +1 frames: http://localhost:6181/ | about:blank | about:blank
+[NMOS-PROBE] link clicked
+link: downloads +0 frames: http://localhost:6181/ | about:blank | chrome-error://chromewebdata/
+
+## Firefox 1543
+opened true frames 3 probe frame true
+sandbox allow-scripts allow-modals allow-downloads | screen-wake-lock ;; allow-scripts allow-modals allow-downloads | screen-wake-lock
+[NMOS-PROBE] secure=true origin=null subtle=true ua=Mozilla/5.0 (X11; Linux x86_64; rv:155.0) Gecko/20100101 Fir
+info: downloads +0 frames: http://localhost:6181/ | about:srcdoc | about:srcdoc
+[NMOS-PROBE] small clicked
+DOWNLOAD small.txt blob:null/4903ba40-0914-48ac-bc9b-b06c68 size=10 sha=c7e97abae027
+small: downloads +1 frames: http://localhost:6181/ | about:srcdoc | about:srcdoc
+[NMOS-PROBE] fetch mb=1 route=server status=200 type=object ctor=Response bytes=1048576 sha=2435372a5fe1 header=2435372a5fe1 match=true headers_ms=9 body_ms=10
+DOWNLOAD server1.nmos.zip blob:null/e1529b13-639b-43d3-9b1d-20d268 size=1048576 sha=2435372a5fe1
+server1: downloads +1 frames: http://localhost:6181/ | about:srcdoc | about:srcdoc
+[NMOS-PROBE] fetch mb=1 route=direct status=200 type=object ctor=Response bytes=1048576 sha=2435372a5fe1 header=2435372a5fe1 match=true headers_ms=3 body_ms=10
+DOWNLOAD direct1.nmos.zip blob:null/0d3f61e4-8199-46dd-a5f8-6ced64 size=1048576 sha=2435372a5fe1
+direct1: downloads +1 frames: http://localhost:6181/ | about:srcdoc | about:srcdoc
+[NMOS-PROBE] fetch mb=30 route=server status=200 type=object ctor=Response bytes=31457280 sha=8ee9c2b7da6e header=8ee9c2b7da6e match=true headers_ms=5 body_ms=256
+DOWNLOAD server30.nmos.zip blob:null/32bf5697-4e3e-427c-b189-832c6c size=31457280 sha=8ee9c2b7da6e
+server30: downloads +1 frames: http://localhost:6181/ | about:srcdoc | about:srcdoc
+[NMOS-PROBE] fetch mb=30 route=direct status=200 type=object ctor=Response bytes=31457280 sha=8ee9c2b7da6e header=8ee9c2b7da6e match=true headers_ms=4 body_ms=230
+DOWNLOAD direct30.nmos.zip blob:null/7f2f8f97-90a4-49d3-bdca-d8b4c5 size=31457280 sha=8ee9c2b7da6e
+direct30: downloads +1 frames: http://localhost:6181/ | about:srcdoc | about:srcdoc

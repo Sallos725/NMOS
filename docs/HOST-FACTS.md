@@ -446,7 +446,8 @@ display.
 Observed on `ghcr.io/pocketrisu/pocketrisu:latest` (v1.13.0, the owner's version), an isolated container on
 `http://localhost:6181` with a synthetic save, headless Chromium 1223 and Firefox 1543 (Playwright). A probe plugin
 (`//@api 3.0`, not NMOS) drew buttons in its fullscreen container; a local server answered `GET` with N MB of
-deterministic bytes, their SHA-256 in a header, as an attachment. The owner's instance was not touched.
+deterministic bytes, their SHA-256 in a header, as an attachment. The owner's instance was not touched. Probe, scripts
+and output: `fixtures/host/download-v1.13.0-2026-09-29/` (`results.txt`); the numbers below are from that run.
 
 1. **Sandbox unchanged (H15).** The plugin iframes still carry `sandbox="allow-scripts allow-modals allow-downloads"`
    and `allow="screen-wake-lock"`. The frame's origin is opaque (`null`); it is a secure context on `localhost`, with
@@ -457,8 +458,8 @@ deterministic bytes, their SHA-256 in a header, as an attachment. The owner's in
 3. **Binary bodies arrive whole through `nativeFetch`.** `risuai.nativeFetch(url, …)` returned a `Response` whose
    `arrayBuffer()` held every byte, SHA-256 equal to the server's, on both routes: the default (the browser fetches)
    and `networkRoute: 'local_network'` (PocketRisu's server fetches; the server logged a `node` user agent). 1 MB:
-   headers 3–7 ms, body 7–13 ms. 30 MB: server route headers 103 ms, body 124 ms (Firefox: 6 ms, 199 ms); direct route
-   headers 3 ms, body 136 ms. The saved files had the server's size and hash.
+   headers 3–11 ms, body 8–12 ms. 30 MB: server route headers 5 ms, body 139 ms (Firefox: 5 ms, 256 ms); direct route
+   headers 9 ms, body 146 ms (Firefox: 4 ms, 230 ms). The saved files had the server's size and hash.
 4. **A link to the file does not.** An `<a href="http://…" download>` to the server (cross-origin, served as an
    attachment) saved nothing and navigated the plugin frame to an error page (`chrome-error://chromewebdata/`): the
    panel was gone until reopened.
