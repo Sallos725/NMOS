@@ -307,6 +307,11 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       cards.splice(1, 0, el('div', { class: 'card' }, el('h2', { class: 'warn', text: L('budget.title', { c: budget.cut }) }),
         el('p', { class: 'sub', text }), el('div', { class: 'btns' }, apply), msg));
     }
+    // Recall without vectors (PHASE-15 Q5, K34): on the owner's production 70 % of requests were, silently.
+    if (s.last?.vectors === 'fallback') {
+      cards.splice(1, 0, el('div', { class: 'card' }, el('h2', { class: 'warn', text: L('vectors.title') }),
+        el('p', { class: 'sub', text: L('vectors.text') })));
+    }
     const problem = deps.hud.problem();
     if (Number(await deps.getArg('hud')) !== 1) {
       const turnOn = el('button', { text: L('hud.enable') });

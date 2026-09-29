@@ -86,6 +86,21 @@ describe('beforeRequest', () => {
     expect((await adapter.status()).last).toMatchObject({ budgetTokens: 600, memory });
   });
 
+  it('keeps whether recall searched vectors for the status tab, also for a cached packet (PHASE-15 Q5)', async () => {
+    const { host } = fakeHost((path, body) => {
+      const res = happy(path, body);
+      return path === '/v1/retrieve' ? { status: 200, json: { ...(res.json as object), vectors: 'fallback' } } : res;
+    });
+    const adapter = createAdapter(host);
+    await adapter.beforeRequest(prompt, 'model');
+    expect((await adapter.status()).last?.vectors).toBe('fallback');
+    await adapter.beforeRequest(structuredClone(prompt), 'model');  // cached
+    expect((await adapter.status()).last?.vectors).toBe('fallback');
+    const old = createAdapter(fakeHost(happy).host);  // an older sidecar sends none
+    await old.beforeRequest(structuredClone(prompt), 'model');
+    expect((await old.status()).last?.vectors).toBeNull();
+  });
+
   it('tells the sidecar its build with every sync (ADR 0037)', async () => {
     const builds: unknown[] = [];
     const { host } = fakeHost((path, body) => {

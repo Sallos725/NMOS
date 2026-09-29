@@ -5,6 +5,10 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 15 step 4: memory recalled without vectors is no longer silent** (K34). On the owner's production 70 % of
+  recalls went without vectors because the query's embedding took longer than 300 ms. The retrieve answer now says
+  whether vectors ran (`vectors`: on, off, fallback), and the panel's Status tab says so after a request that fell
+  back, with what to do. `NMOS_EMBED_TIMEOUT_MS` is documented. A new plugin build.
 - **Phase 15 step 3: a packet that fills its budget** (`packet-v9`, ADR 0049, D59), the new default policy: above
   2,000 tokens the excerpt count, each excerpt's length and the fact limit grow with the memory budget, from your own
   settings (up to 4× excerpts and 2× facts at 8,000; the added fact slots only for facts kept from no one); threads,

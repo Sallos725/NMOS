@@ -156,6 +156,9 @@ class RetrieveResponse(BaseModel):
     freshness: Literal["fresh", "stale", "unknown_conversation"]
     packet: Packet
     memory: MemoryFit | None = None
+    # Whether vector search ran (PHASE-15 Q5, K34): "on", "off" (no embedder, or nothing to search), or "fallback" (the
+    # embedder failed or did not answer in time, so recall was lexical only). None: not recalled (stale or unknown).
+    vectors: Literal["on", "off", "fallback"] | None = None
 
 
 class OutputRequest(BaseModel):

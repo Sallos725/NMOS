@@ -42,7 +42,7 @@ without a PocketRisu change.
 | K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases) |
 | K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | recorded, not scheduled (`docs/perf/m0-sample2.md`); canon did not change it |
 | K33 | The packet stops at ≈2,000–3,000 tokens whatever the memory budget | Recall | `packet-v9` on `main` (Phase 15, ADR 0049): excerpts and facts grow with the budget; measured in step 5 |
-| K34 | A request right after the embedding model was unloaded recalls without vectors | Recall | evidence (production rate not measured) |
+| K34 | A request whose query embedding does not answer in 300 ms recalls without vectors | Recall | measured (Phase 15): 70 % of the owner's production requests; the Status tab says so since Phase 15 |
 | K35 | "The story so far" is written from every scene summary, with no cap on its input | Memory | recorded, not scheduled |
 | K36 | A chat whose large lorebook NMOS has read almost whole recalls more slowly | Performance | measured, accepted (Phase 14, owner 2026-09-29) |
 | K37 | A story that changes who someone is, against the card or a lorebook, is not flagged | Memory | by decision (ADR 0047 amendment 1); needs a model check |
@@ -292,12 +292,18 @@ tokens; main chat: 30 → 33 of 40 at ≈5,900), and above ≈8,000 tokens it pl
 *On `main` (Phase 15, ADR 0049):* `packet-v9` grows the excerpts (count and length) and facts with the budget up to
 8,000, from the request's own settings; threads, events, secrets, `<Cast>` and `<Story>` keep their limits.
 
-**K34 — A cold embedding model means no vectors for that request.** The request path gives the query embedding
-300 ms and then recalls lexically (PHASE-3). A local Ollama unloads an idle model (5 minutes by default), and
-`qwen3-embedding:8b` took ≈18 s to load again on the homelab machine, so the first request after a pause gets no
-vector recall; excerpts that only vectors would find are missing from it. How often this happens in production was
-not measured. *Workaround:* keep the embedding model loaded (Ollama `keep_alive`, e.g. `OLLAMA_KEEP_ALIVE=-1`), or
-use a small embedding model that loads fast.
+**K34 — A slow or cold embedding model means no vectors for that request.** The request path gives the query
+embedding 300 ms (`NMOS_EMBED_TIMEOUT_MS`) and then recalls lexically (PHASE-3). A local Ollama unloads an idle model
+(5 minutes by default), and `qwen3-embedding:8b` took ≈18 s to load again on the homelab machine; excerpts that only
+vectors would find are missing from such a request. **Measured on the owner's production (Phase 15 step 4, read-only,
+2026-09-23 to 09-28): 141 of 201 recalls (70 %) went without vectors, every one a timeout, on every day; the 60 that
+had them took 280 ms (median) and 452 ms (95th percentile) to embed the query.** There the sidecar reaches the embedder
+through the public proxy address, so even a warm model is close to 300 ms. Since Phase 15 the retrieve answer says
+whether vectors ran, and the panel's Status tab tells the user when they did not.
+*Workaround:* keep the embedding model loaded (Ollama `keep_alive`, e.g. `OLLAMA_KEEP_ALIVE=-1`), and raise
+`NMOS_EMBED_TIMEOUT_MS` (e.g. 1000) for a remote or slow embedder; it is not part of the projection, so nothing is
+embedded again. Pointing the embedding URL at a closer address would help too, but a new endpoint is a new projection
+and re-embeds every chat (K18).
 
 ## Data and lifecycle
 

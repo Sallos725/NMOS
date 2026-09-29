@@ -476,6 +476,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             freshness=out["freshness"],
             packet=Packet(text=out["text"], token_estimate=out["tokens"], excerpt_count=out["count"]),
             memory=out.get("memory"),
+            vectors=out.get("vectors"),
         )
 
     @app.post("/v1/output", status_code=202, dependencies=[Depends(auth)])

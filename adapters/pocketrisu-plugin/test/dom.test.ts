@@ -113,6 +113,19 @@ describe('panel', () => {
     expect(first.textContent).toContain('NMOS is off for every chat');
   });
 
+  it('says when the last request recalled without vectors (PHASE-15 Q5, K34)', async () => {
+    const last = { at: Date.now(), ms: 900, packetChars: 10, packet: 'x', outcome: 'injected' as const, deadlineMs: 3000 };
+    for (const [vectors, shown] of [['fallback', true], ['on', false], [null, false]] as const) {
+      const { d } = deps({ last: { ...last, vectors } });
+      await openPanel(d, 'status');
+      await settle();
+      const text = document.getElementById('nmos-panel')!.textContent!;
+      expect(text.includes('Memory was recalled without semantic search')).toBe(shown);
+      if (shown) expect(text).toContain('NMOS_EMBED_TIMEOUT_MS');
+      document.getElementById('nmos-panel')?.remove();
+    }
+  });
+
   it('says when no chat is open', async () => {
     const { d, open } = deps();
     open.chat = null;

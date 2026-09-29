@@ -559,4 +559,5 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         ),
     )
     return {"freshness": "fresh" if fresh else "stale", "trace_id": trace_id, "text": compiled.text,
-            "tokens": compiled.tokens, "count": len(compiled.excerpts), "memory": memory, "conversation_id": conv.id}
+            "tokens": compiled.tokens, "count": len(compiled.excerpts), "memory": memory, "conversation_id": conv.id,
+            "vectors": ("fallback" if g.vector_note.startswith("fallback") else g.vector_note) if fresh else None}
