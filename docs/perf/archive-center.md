@@ -128,10 +128,22 @@ The owner's current preset has a 150,000-token context and a 50,000-token respon
 | | 4,000 fill | 11 | 9/13 | 0/4 | 2,654 |
 | | 8,000 fill | 11 | 9/13 | 0/4 | 4,122 |
 
+Growing only excerpts and facts (excerpts ×budget/2,000, facts up to ×2; threads, events and secrets as today)
+kept the gains without the stale lines; at 16,000 the forbidden phrases of the full fill had stood in open threads
+and secrets:
+
+| Chat, extraction | 4,000 | 8,000 | 16,000 |
+|---|---|---|---|
+| main, gemma4 | 36 passed, 17/21, forbidden 1 (2,919 tokens) | 36, 17/21, 1 (3,663) | 36, 17/21, 1 (5,079) |
+| main, deepseek | 31, 12/21, 1 (3,202) | 31, 12/21, 1 (3,946) | 33, 14/21, 1 (5,362) |
+| sample 2, deepseek | 12, 11/13, 1 (3,861) | 12, 11/13, 1 (5,916) | 12, 11/13, 1 (7,490) |
+| sample 2, gemma4 | 11, 9/13, 0 (2,652) | 11, 9/13, 0 (4,120) | 11, 9/13, 0 (5,694) |
+
 Raising the budget without "fill" changed little (main, deepseek: 31 passed at 4,000–20,000, all at ≈2,200 tokens).
 With it, NMOS matched Archive Center on sample 2 at ≈3,900 tokens (a fifth of its block) and led on the main chat;
 beyond ≈8,000 tokens the extra lines were mostly older facts, and forbidden phrases rose to 8–10 of 16. Stale facts,
-not room, are the limit there. Proposed as the next change: `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`.
+not room, are the limit there. Proposed as the next change: `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`,
+`docs/phases/PHASE-15.md`.
 
 ## Pitfalls found
 

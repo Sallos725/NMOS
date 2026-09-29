@@ -75,6 +75,10 @@ Today NMOS needs Docker, PostgreSQL with pgvector, and model endpoints configure
 
 Archive Center's installers and in-app update are the bar to compare against (`docs/perf/archive-center.md`, "Setup").
 
+A user moving from another memory plugin needs no chat migration: NMOS reads the chat from the host. What such a
+user may want to bring is what they curated there, such as corrected memories or an imported source work. That would be
+owner input with its own source kind, never facts without a source revision (invariant 1). Candidate, not planned.
+
 ### P5 — Announcement
 
 After P1, P3 and P4: the benchmark, its method and data, a demo, and the release notes. Comparisons with other
