@@ -40,11 +40,13 @@ normalized text and the parsed state are recomputed from the rest.
    Chosen conversations take their own rows only; a branch keeps its link column as stored (PHASE-16 Q2 governs
    restore). Every generation goes in, since rows of any conversation may name any of them and they are small.
 4. **No credential, ever** (Q7, K21). Settings are an allowlist (`runtime.EDITABLE` without `runtime.SECRET`, plus
-   the parser rules), so a key saved in the panel never qualifies. An endpoint setting whose URL has a password or a
-   query string (`?key=`) is left out and named in `omitted_settings`. A generation whose endpoint has a password
-   refuses the export (its key hashes it; it cannot be left out). Every line is checked against every credential NMOS
-   holds (the saved keys, the environment's keys, the auth token, a service account's private key); a match anywhere
-   refuses the export (HTTP 409, command exit 2) and names the table, never the value. The archive holds chat text
+   the parser rules), so a key saved in the panel never qualifies. An endpoint setting whose URL has a user, a
+   password, a query string (`?key=`) or a fragment is left out and named in `omitted_settings`. A generation whose
+   endpoint has a user or a password refuses the export (its key hashes it; it cannot be left out). Every string of
+   every row, decoded (so an escaped quote or backslash still matches), and of the manifest is checked against every
+   credential NMOS holds of four characters or more (the saved keys, the environment's keys, the auth token, a service
+   account's private key); a match anywhere refuses the export (HTTP 409, command exit 2) and names the table, never
+   the value. The step's Codex review found the first cut missed short and quoted keys and a user in a URL. The archive holds chat text
    and is not encrypted: the guide says to keep it as the chat itself.
 5. **One consistent snapshot.** The export reads in one `REPEATABLE READ, READ ONLY` transaction: syncs and workers
    carry on, and the archive is the state at its start.

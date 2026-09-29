@@ -82,6 +82,8 @@ NEVER = ("job", "revision_text", "state_observation", "schema_migrations")
 # Settings an archive may hold: the editable ones but the keys (K21), and the parser rules.
 SETTINGS = tuple(sorted(set(runtime.EDITABLE) - runtime.SECRET)) + (runtime.PARSERS_KEY,)
 URL_SETTINGS = ("llm_url", "embed_url")
+# A credential shorter than this is not looked for: a key of one or two characters would refuse nearly every chat.
+MIN_SECRET = 4
 
 
 class ArchiveError(Exception):
@@ -114,9 +116,9 @@ def _q(conn: psycopg.Connection, sql: str, params: Any = None) -> list[tuple[Any
 
 
 def _url_has_secret(url: str) -> bool:
-    """A URL that may carry a credential: a password in it, or a query string (`?key=`)."""
+    """A URL that may carry a credential: a user or password in it, a query string (`?key=`) or a fragment."""
     parts = urlsplit(url.strip())
-    return parts.password is not None or bool(parts.query)
+    return parts.username is not None or parts.password is not None or bool(parts.query) or bool(parts.fragment)
 
 
 def _secrets(conn: psycopg.Connection, settings: Settings | None) -> list[str]:
@@ -136,7 +138,26 @@ def _secrets(conn: psycopg.Connection, settings: Settings | None) -> list[str]:
         if isinstance(key, dict) and isinstance(key.get("private_key"), str):
             out.add(key["private_key"])
             out.update(line for line in key["private_key"].splitlines() if len(line) >= 16 and "-----" not in line)
-    return sorted(s for s in out if len(s.strip()) >= 8)
+    return sorted(s for s in out if len(s.strip()) >= MIN_SECRET)
+
+
+def _strings(value: Any) -> Iterable[str]:
+    """Every string in a decoded JSON value, object keys included."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            yield k
+            yield from _strings(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from _strings(v)
+
+
+def _holds(line: str, secrets: list[str]) -> bool:
+    """A row (JSON text) holds a credential: checked on its decoded strings, so an escaped quote or backslash in a
+    key still matches."""
+    return bool(secrets) and any(s in text for text in _strings(json.loads(line)) for s in secrets)
 
 
 def _conversations(conn: psycopg.Connection, wanted: list[str] | None) -> list[UUID]:
@@ -196,8 +217,9 @@ def write_archive(conn: psycopg.Connection, out: IO[bytes], conversations: list[
         convs = _conversations(conn, conversations)
         secrets = _secrets(conn, settings)
         for (endpoint,) in _q(conn, "SELECT endpoint FROM projection_generation"):
-            if urlsplit(endpoint).password is not None:
-                raise ArchiveError("a generation's endpoint holds a password; an archive never holds one (K21)")
+            where = urlsplit(endpoint)
+            if where.username is not None or where.password is not None:
+                raise ArchiveError("a generation's endpoint holds a user or password; an archive never holds one (K21)")
         labels = _q(conn, "SELECT id, host, host_chat_ref, host_character_name, host_chat_name,"
                           " branched_from_conversation_id FROM conversation WHERE id = ANY(%s) ORDER BY created_at, id",
                     (convs,))
@@ -219,7 +241,7 @@ def write_archive(conn: psycopg.Connection, out: IO[bytes], conversations: list[
                                 omitted.append(json.loads(line)["key"])
                                 continue
                             line = kept
-                        if any(s in line for s in secrets):
+                        if _holds(line, secrets):
                             raise ArchiveError(f"a row of {table.name} holds a credential NMOS keeps; an archive never"
                                                " holds one (K21)")
                         data = line.encode("utf-8") + b"\n"
@@ -245,10 +267,9 @@ def write_archive(conn: psycopg.Connection, out: IO[bytes], conversations: list[
                 "files": [{"path": w.path, "table": w.table, "rows": w.rows, "bytes": w.bytes, "sha256": w.sha256}
                           for w in export.files],
             }
-            text = json.dumps(export.manifest, ensure_ascii=False, indent=2) + "\n"
-            if any(s in text for s in secrets):  # a chat or character named after a key
+            if any(s in t for t in _strings(export.manifest) for s in secrets):  # a chat or character named after a key
                 raise ArchiveError("the manifest holds a credential NMOS keeps; an archive never holds one (K21)")
-            zf.writestr("manifest.json", text)
+            zf.writestr("manifest.json", json.dumps(export.manifest, ensure_ascii=False, indent=2) + "\n")
     return export
 
 

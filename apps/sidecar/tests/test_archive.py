@@ -240,3 +240,29 @@ def test_the_command_names_the_file_when_not_told(migrated, tmp_path, monkeypatc
     assert archive.main(["export"]) == 0
     [written] = list(tmp_path.iterdir())
     assert written.name.startswith("nmos-all-") and written.name.endswith(archive.SUFFIX)
+
+
+def test_a_short_or_quoted_credential_is_found_too(migrated):
+    quoted = 'k"ey\\7'  # a quote and a backslash: escaped in the row's JSON
+    for key in ("k3y7", quoted):
+        with make_client(migrated, **LLM) as c:
+            assert c.put("/v1/config", json={"llm_api_key": key}).status_code == 200
+            chat = SimChat()
+            chat.user(f"the key was {key} all along")
+            sync(c, chat)
+            res = c.get("/v1/archive", params={"conversation": conv_id(c, chat)})
+            assert res.status_code == 409, key
+
+
+def test_a_user_or_fragment_in_an_endpoint_never_reaches_an_archive(migrated):
+    with make_client(migrated) as c:
+        # A fragment: the generation's endpoint drops it; the setting is left out.
+        assert c.put("/v1/config", json={"llm_url": "https://llm.example/v1#token=abc", "llm_model": "m"}
+                     ).status_code == 200
+        manifest, _, raw = read(export(c))
+        assert manifest["omitted_settings"] == ["llm_url"]
+        assert not any(b"token=abc" in body for body in raw.values())
+        # A user: the generation's endpoint keeps it (its key hashes it), so the export is refused.
+        assert c.put("/v1/config", json={"llm_url": "https://api-token@llm.example/v1"}).status_code == 200
+        res = c.get("/v1/archive")
+        assert res.status_code == 409 and "user or password" in res.json()["detail"]
