@@ -1,7 +1,7 @@
 # Phase 16 — Export and restore (Stage 6, part 3)
 
-> **Status: complete (2026-09-29), approved the same day with every proposed answer (Q0–Q9); the phone check of the
-> panel's Export is the owner's (K38).** Stage 6 of `docs/ROADMAP-1.0.md` (original §89,
+> **Status: complete (2026-09-29) but for the owner's phone check of the panel's Export (K38, open); approved the
+> same day with every proposed answer (Q0–Q9).** Stage 6 of `docs/ROADMAP-1.0.md` (original §89,
 > §66–67; Track B, B7): "export and restore of the ledger, repairs and settings", and Stage 6's last done criterion,
 > "export, restore into a fresh install and replay give the same packets". Phase 14 Q0 gave it its own phase; Phase 15
 > (a packet that fills its budget) ran first at the owner's choice (2026-09-29).
@@ -69,9 +69,9 @@ same repairs and links, the same answers to recorded requests, without paying fo
       exported; a changed or truncated file refused before anything is written; a present chat refused; a newer
       archive refused; an archive from an older NMOS restored and migrated (Phase 13 `main`, level 0024; the measured
       copies, level 0025; Phase 15 `main` is this schema's level).
-- [x] Host evidence on PocketRisu v1.13.0 for saving a file from the plugin's frame, in `HOST-FACTS.md` (H21); a
-      real-host smoke of the panel's Export (this chat and everything), `fixtures/host/export-smoke-v1.13.0-2026-09-29/`.
-      Not on a phone (K38).
+- [ ] Host evidence on PocketRisu v1.13.0 for saving a file from the plugin's frame, in `HOST-FACTS.md` (H21); a
+      real-host smoke of the panel's Export (this chat and everything), `fixtures/host/export-smoke-v1.13.0-2026-09-29/`
+      (desktop Chromium). **Open:** the owner's phone (K38).
 - [x] On the owner's two measured chats (copies): the ledger state equal, every recorded request compiled again the
       same as on the source (lexical; replays with vectors are covered by the deterministic cases), M0 and the secret
       gate unchanged, a rebuild equal to the source's (`docs/perf/archive.md`).

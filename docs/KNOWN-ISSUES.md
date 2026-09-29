@@ -115,8 +115,8 @@ tunnel to `http://localhost:6001` (README "Requirements").
 group-chat type (H11), so group-chat scenarios (S13) could not be run.
 
 **K38 — Export from the panel not tried on a phone.** The panel's Export buttons save the file as a Blob from the
-plugin's frame (H21): observed in Chromium and Firefox on a desktop, not on a phone's browser (Safari on iOS, Chrome on
-Android). *Workaround:* where the button saves nothing, open `/v1/archive` on the sidecar in a browser that reaches it,
+plugin's frame (H21): NMOS's buttons were observed in Chromium on a desktop, and saving a Blob from the frame in
+Chromium and Firefox; not on a phone's browser (Safari on iOS, Chrome on Android). *Workaround:* where the button saves nothing, open `/v1/archive` on the sidecar in a browser that reaches it,
 or run `python -m nmos_sidecar.archive export` (README "Export").
 
 ## Memory

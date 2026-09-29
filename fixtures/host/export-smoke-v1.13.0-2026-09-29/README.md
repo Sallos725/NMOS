@@ -12,7 +12,8 @@ instance was not touched.
   args), clicks **전부 내보내기** (Export everything) there, then opens the first conversation in the Inspector tab
   and clicks **이 대화 내보내기** (Export this chat), and logs each browser download's name, size and SHA-256 and the
   panel's message.
-- `results.txt` is its output. The two files were checked afterwards: the whole-install file's tables are the same
+- `results.txt` is a summary of its output: the panel found, the settings saved, each download's line and the
+  panel's last message (the script also prints the args it tried and the panels' text). The two files were checked afterwards: the whole-install file's tables are the same
   bytes as `python -m nmos_sidecar.archive export` of the same database; it restored into a fresh database, which
   exported the same bytes again; the chat's file passed `restore --check` (one conversation).
 

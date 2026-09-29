@@ -487,7 +487,7 @@ and output: `fixtures/host/download-v1.13.0-2026-09-29/` (`results.txt`); the nu
    panel was gone until reopened.
 
 Not observed: mobile browsers (Safari on iOS, Chrome on Android) and WebKit (Playwright's WebKit build does not start
-on this machine). The owner's phone is part of the real-host smoke (Phase 16 step 5).
+on this machine). The owner's phone was to be part of the real-host smoke (Phase 16 step 5); it is still open (K38).
 
 Conclusion: H21. What NMOS does with it: the panel's Export fetches the archive through `nativeFetch` on the chosen
 route and saves it as a Blob (Phase 16 Q6); the Inspector link stays the fallback.

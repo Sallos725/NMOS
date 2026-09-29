@@ -28,12 +28,16 @@ await p.waitForTimeout(2000);
 let fr = null;
 for (const f of p.frames()) if (await f.locator('#nmos-panel').count().catch(() => 0)) fr = f;
 console.log('panel', !!fr);
-const wait = async (n) => { for (let i = 0; i < 60 && saved.length < n; i++) await p.waitForTimeout(500); };
+const wait = async (n) => {
+  for (let i = 0; i < 60 && saved.length < n; i++) await p.waitForTimeout(500);
+  if (saved.length < n) throw new Error(`expected ${n} download(s), saw ${saved.length}`);
+};
 await fr.getByRole('button', { name: '설정', exact: true }).click(); await p.waitForTimeout(1500);
 const url = fr.locator('#nmos-panel input[spellcheck="false"]').first();
-if ((await url.inputValue()) !== 'http://127.0.0.1:8841') {
+const routeSelect = fr.locator('#nmos-panel select:has(option[value="server"])').first();
+if ((await url.inputValue()) !== 'http://127.0.0.1:8841' || (await routeSelect.inputValue()) !== route) {
   await url.fill('http://127.0.0.1:8841');
-  await fr.locator('#nmos-panel select:has(option[value="server"])').first().selectOption(route);
+  await routeSelect.selectOption(route);
   await fr.locator('#nmos-panel button.primary').click(); await p.waitForTimeout(2500);
   console.log('saved settings; url now', await url.inputValue());
 }
