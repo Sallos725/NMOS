@@ -507,7 +507,10 @@ schema's migrations, what it holds and each file's rows and SHA-256. It always h
 input, the recorded requests and every generation; the settings without keys for the whole install; the model's work
 by default; embeddings when asked; never jobs, derived text or a credential (any credential found refuses it). It is
 written from one read-only snapshot by `GET /v1/archive`, `python -m nmos_sidecar.archive export` and the panel's
-Export buttons, which save it as a Blob (H21).
+Export buttons, which save it as a Blob (H21). `python -m nmos_sidecar.archive restore` checks every file first, refuses
+a newer archive or a conversation already present (never merged), builds the archive's schema level in a scratch
+schema, loads the rows, applies the later migrations and copies them in with ids and timestamps kept (shared
+sequenced ids moved past the install's own when taken, recorded requests' assertion refs with them).
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

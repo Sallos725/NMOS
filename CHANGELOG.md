@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 16 step 4: restore** (ADR 0050 amendment 1): `python -m nmos_sidecar.archive restore FILE` (or `-` for
+  stdin; `--check` to verify only), with the sidecar and worker stopped. Every file's size and hash is checked before
+  anything is written; an archive from a newer NMOS, or a chat this install already holds, is refused (nothing is
+  merged); an archive from an older NMOS is upgraded as the upgrade would. Ids and timestamps are kept, so recorded
+  requests replay as before (with embeddings in the archive when they used vectors). Settings already set here stay.
 - **Phase 16 step 3: export** (NMOS Archive, ADR 0050, D60). **Export everything** in the panel's Settings tab and
   **Export this chat** on a conversation's Inspector page save a `.nmos.zip`: every conversation's history, canon,
   your repairs and links, the recorded requests, and by default the model's extractions and summaries (embeddings when

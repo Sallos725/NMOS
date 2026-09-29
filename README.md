@@ -98,6 +98,20 @@ install's archive also holds the settings without keys. It holds chat text: keep
 If NMOS finds a key or the token anywhere in what it would write (a key pasted into a chat), it refuses and says in
 which table. `pg_dump` backups stay the way to roll back an upgrade.
 
+Restore (a command; into a fresh install, or one that does not hold the archive's chats):
+
+```bash
+docker compose stop sidecar worker
+docker compose run --rm -T sidecar python -m nmos_sidecar.archive restore - < nmos-all-20260929-181500.nmos.zip
+docker compose up -d
+```
+
+It checks every file's size and hash before writing anything (`--check` only checks), refuses an archive from a newer
+NMOS and a chat this install already holds (delete it there first; nothing is merged), and upgrades an archive from
+an older NMOS as the upgrade would. Settings already set on this install stay. On start the sidecar writes what it
+derives and queues what is missing: with extractions in the archive nothing is extracted again. Include embeddings if
+you want the Inspector's replays of old requests that used vectors to stay exact.
+
 ## NMOS panel (status, inspector, settings)
 
 Open it from the **☰ menu left of the chat input → NMOS 기억 / NMOS memory**, from the **NMOS icon (an N) in the

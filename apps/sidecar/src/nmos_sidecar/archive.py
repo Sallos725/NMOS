@@ -11,6 +11,7 @@ generations they name, and for the whole install the settings without secrets; b
 (`revision_text`, `state_observation`), API keys or the auth token.
 
     python -m nmos_sidecar.archive export [--conversation ID ...] [--no-projections] [--embeddings] [-o FILE]
+    python -m nmos_sidecar.archive restore [--check] FILE|-
 """
 
 from __future__ import annotations
@@ -232,8 +233,8 @@ def write_archive(conn: psycopg.Connection, out: IO[bytes], conversations: list[
         omitted: list[str] = []
         with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
             for table in TABLES:
-                if table.part not in parts:
-                    continue
+                if table.part not in parts or _q(conn, "SELECT to_regclass(%s::text)", (table.name,))[0][0] is None:
+                    continue  # not asked for, or not yet in this schema (an older NMOS: its level says so)
                 written = Written(path=f"tables/{table.name}.jsonl", table=table.name)
                 digest = hashlib.sha256()
                 with zf.open(written.path, "w", force_zip64=True) as f:
@@ -297,6 +298,272 @@ def default_name(conversations: int | None, when: datetime | None = None) -> str
     return f"nmos-{scope}-{stamp}{SUFFIX}"
 
 
+# --- restore (Phase 16 step 4; ADR 0050 amendment 1) ----------------------------------------------------------------
+
+KNOWN = {t.name for t in TABLES}
+# Rows whose ids come from a sequence shared by every conversation: kept when free in the install, else moved past
+# its largest id with their order kept (and the assertion ids a recorded request's lines name moved with them).
+SEQUENCED = {"assertion": "id", "worldline_commit": "seq", "worldline_append": "seq"}
+# Rows that belong to no conversation: the install's own row wins (the same key is the same generation; settings
+# already chosen stay).
+GLOBAL = {"projection_generation": "key", "app_config": "key"}
+BATCH = 500
+
+
+@dataclass
+class Checked:
+    """An archive whose manifest, files, sizes, row counts and hashes were all verified."""
+    path: str
+    manifest: dict[str, Any]
+    files: dict[str, dict[str, Any]]  # table -> manifest entry
+
+
+@dataclass
+class Restored:
+    conversations: list[dict[str, Any]]
+    rows: dict[str, int]
+    renumbered: list[str]
+    settings_kept: list[str]
+    links_cleared: list[str]
+    migrated: list[str]
+
+
+def _bundled() -> list[tuple[str, str]]:
+    from .migrate import migration_files
+    return [(f.name, hashlib.sha256(f.read_text(encoding="utf-8").encode("utf-8")).hexdigest())
+            for f in migration_files()]
+
+
+def check_archive(path: str) -> Checked:
+    """Verify an archive before anything is written: its manifest, that it holds exactly the files listed, and each
+    file's size, row count and SHA-256. Refuses an archive from a newer NMOS or with other migrations (Q5)."""
+    try:
+        zf = zipfile.ZipFile(path)
+    except (OSError, zipfile.BadZipFile) as error:
+        raise ArchiveError(f"not a readable archive: {error}") from None
+    with zf:
+        try:
+            manifest = json.loads(zf.read("manifest.json"))
+        except KeyError:
+            raise ArchiveError("the archive has no manifest.json") from None
+        except ValueError:
+            raise ArchiveError("the archive's manifest is not JSON") from None
+        if not isinstance(manifest, dict) or manifest.get("format") != FORMAT:
+            raise ArchiveError("not an NMOS archive")
+        if manifest.get("format_version") != FORMAT_VERSION:
+            raise ArchiveError(f"archive format {manifest.get('format_version')!r}; this NMOS reads {FORMAT_VERSION}")
+        files: dict[str, dict[str, Any]] = {}
+        for f in manifest.get("files") or []:
+            table = f.get("table")
+            if table not in KNOWN or f.get("path") != f"tables/{table}.jsonl" or table in files:
+                raise ArchiveError(f"the manifest lists an unexpected file: {f.get('path')!r}")
+            files[table] = f
+        names = set(zf.namelist())
+        if names != {f["path"] for f in files.values()} | {"manifest.json"}:
+            extra = sorted(names - {f["path"] for f in files.values()} - {"manifest.json"})
+            missing = sorted({f["path"] for f in files.values()} - names)
+            raise ArchiveError(f"the archive's files differ from its manifest (extra {extra}, missing {missing})")
+        for table, f in files.items():
+            if zf.getinfo(f["path"]).file_size != f["bytes"]:
+                raise ArchiveError(f"{f['path']} is {zf.getinfo(f['path']).file_size} bytes; the manifest says {f['bytes']}")
+            digest, rows = hashlib.sha256(), 0
+            with zf.open(f["path"]) as fh:
+                for line in fh:
+                    digest.update(line)
+                    rows += 1
+            if digest.hexdigest() != f["sha256"] or rows != f["rows"]:
+                raise ArchiveError(f"{f['path']} was changed or cut: its hash or row count differs from the manifest")
+    migrations = [(m.get("version"), m.get("checksum")) for m in (manifest.get("schema") or {}).get("migrations") or []]
+    bundled = _bundled()
+    if not migrations:
+        raise ArchiveError("the manifest names no schema")
+    if len(migrations) > len(bundled) or migrations != bundled[:len(migrations)]:
+        newer = [v for v, _ in migrations if v not in {b for b, _ in bundled}]
+        if newer:
+            raise ArchiveError(f"the archive was made by a newer NMOS (schema {migrations[-1][0]}); upgrade NMOS first")
+        raise ArchiveError("the archive's migrations differ from this NMOS's; it was not made by a release of it")
+    return Checked(path=path, manifest=manifest, files=files)
+
+
+def _rows(zf: zipfile.ZipFile, path: str) -> Iterable[list[str]]:
+    batch: list[str] = []
+    with zf.open(path) as fh:
+        for line in fh:
+            batch.append(line.decode("utf-8").rstrip("\n"))
+            if len(batch) >= BATCH:
+                yield batch
+                batch = []
+    if batch:
+        yield batch
+
+
+def _columns(conn: psycopg.Connection, schema: str, table: str) -> list[str]:
+    return [r[0] for r in _q(conn, "SELECT attname FROM pg_attribute WHERE attrelid = format('%%I.%%I', %s::text, %s::text)::regclass"
+                                   " AND attnum > 0 AND NOT attisdropped ORDER BY attnum", (schema, table))]
+
+
+def restore_archive(database_url: str, checked: Checked) -> Restored:
+    """Restore a checked archive into this install, in one transaction: refused whole if any of its conversations
+    (by id or host chat) is here already. The archive's schema level is created in a scratch schema from the bundled
+    migrations, the rows loaded there as they were written, the later migrations applied to them, and the result
+    copied in, ids and timestamps kept (ADR 0050 amendment 1). Migrates this install first."""
+    from .migrate import apply_migrations, migration_files
+    apply_migrations(database_url)
+    manifest = checked.manifest
+    level = manifest["schema"]["level"]
+    files = migration_files()
+    before = [f for f in files if f.name <= level]
+    after = [f for f in files if f.name > level]
+    scratch = f"nmos_restore_{os.urandom(6).hex()}"
+    out = Restored(conversations=manifest.get("conversations") or [], rows={}, renumbered=[], settings_kept=[],
+                   links_cleared=[], migrated=[f.name for f in after])
+    with psycopg.connect(database_url, row_factory=tuple_row) as conn, zipfile.ZipFile(checked.path) as zf:
+        with conn.transaction():
+            conn.execute("SELECT pg_advisory_xact_lock(727003)")
+            conn.execute("SET LOCAL TimeZone = 'UTC'")
+            # Refused whole when a conversation is here already (Q4: never merged).
+            ids = [c["id"] for c in out.conversations]
+            refs = [(c["host"], c["host_chat_ref"]) for c in out.conversations]
+            present = _q(conn, "SELECT id::text, host, host_chat_ref FROM conversation WHERE id = ANY(%s::uuid[])"
+                               " OR (host, host_chat_ref) IN (SELECT * FROM unnest(%s::text[], %s::text[]))",
+                         (ids, [h for h, _ in refs], [r for _, r in refs]))
+            if present:
+                raise ArchiveError("this install already holds " + ", ".join(f"{h} chat {r}" for _, h, r in present)
+                                   + "; delete it there first to restore it (restores never merge)")
+            # The archive's schema, in a scratch schema: tables as its NMOS made them, without foreign keys.
+            conn.execute(f'CREATE SCHEMA "{scratch}"')
+            conn.execute(f'SET LOCAL search_path = "{scratch}", public')
+            for f in before:
+                conn.execute(f.read_text(encoding="utf-8"))
+            for table, name in _q(conn, "SELECT c.conrelid::regclass::text, c.conname FROM pg_constraint c"
+                                        " JOIN pg_namespace n ON n.oid = c.connamespace"
+                                        " WHERE n.nspname = %s AND c.contype = 'f'", (scratch,)):
+                conn.execute(f'ALTER TABLE {table} DROP CONSTRAINT "{name}"')
+            for table, entry in checked.files.items():
+                for batch in _rows(zf, entry["path"]):
+                    conn.execute(f'INSERT INTO "{scratch}".{table} OVERRIDING SYSTEM VALUE'
+                                 f' SELECT * FROM json_populate_recordset(NULL::"{scratch}".{table}, %s::json)',
+                                 ("[" + ",".join(batch) + "]",))
+            for f in after:  # the upgrade those rows would have had (Q5)
+                conn.execute(f.read_text(encoding="utf-8"))
+            conn.execute("SET LOCAL search_path = public")
+            _make_room(conn, scratch, out)
+            _copy_in(conn, scratch, checked, out)
+            conn.execute(f'DROP SCHEMA "{scratch}" CASCADE')
+    return out
+
+
+def _make_room(conn: psycopg.Connection, scratch: str, out: Restored) -> None:
+    """Keep each sequenced id when no row here has it; else move the archive's ids past this install's largest,
+    order kept, and move the assertion ids recorded requests name with them."""
+    for table, col in SEQUENCED.items():
+        clash = _q(conn, f'SELECT EXISTS (SELECT 1 FROM public.{table} p JOIN "{scratch}".{table} s USING ({col}))')[0][0]
+        if not clash:
+            continue
+        shift = _q(conn, f'SELECT greatest((SELECT max({col}) FROM public.{table}),'
+                         f' (SELECT max({col}) FROM "{scratch}".{table}))')[0][0]
+        conn.execute(f'ALTER TABLE "{scratch}".{table} ALTER COLUMN {col} DROP IDENTITY IF EXISTS')  # scratch only
+        conn.execute(f'UPDATE "{scratch}".{table} SET {col} = {col} + %s', (shift,))
+        out.renumbered.append(table)
+        if table == "assertion":
+            conn.execute(f"""
+                UPDATE "{scratch}".retrieval_trace t SET lines = (
+                    SELECT jsonb_agg(
+                        CASE WHEN jsonb_typeof(l) <> 'object' THEN l ELSE (
+                            SELECT jsonb_object_agg(k, CASE
+                                WHEN k IN ('ref', 'restates', 'repeats') AND jsonb_typeof(v) = 'object'
+                                     AND jsonb_typeof(v->'assertion') = 'number' AND (v->>'assertion')::bigint > 0
+                                THEN jsonb_set(v, '{{assertion}}', to_jsonb((v->>'assertion')::bigint + %(shift)s))
+                                ELSE v END)
+                            FROM jsonb_each(l) AS e(k, v)) END
+                        ORDER BY i)
+                    FROM jsonb_array_elements(t.lines) WITH ORDINALITY AS a(l, i))
+                WHERE jsonb_typeof(t.lines) = 'array' AND jsonb_array_length(t.lines) > 0""", {"shift": shift})
+
+
+def _copy_in(conn: psycopg.Connection, scratch: str, checked: Checked, out: Restored) -> None:
+    """Copy the scratch rows into this install, parents first, then link heads and branches."""
+    restored = [c["id"] for c in out.conversations]
+    for table in [t.name for t in TABLES]:
+        if _q(conn, "SELECT to_regclass(%s::text)", (f'"{scratch}".{table}',))[0][0] is None:
+            continue
+        cols = _columns(conn, "public", table)
+        names = ", ".join(f'"{c}"' for c in cols)
+        picked = ", ".join(("NULL" if table == "conversation" and c in ("head_commit_id", "branched_from_conversation_id")
+                            else f'"{c}"') for c in cols)
+        if table in GLOBAL:
+            key = GLOBAL[table]
+            if table == "app_config":
+                out.settings_kept = [r[0] for r in _q(conn, f'SELECT s.key FROM "{scratch}".app_config s'
+                                                            f" JOIN public.app_config p USING (key) ORDER BY 1")]
+            cur = conn.execute(f'INSERT INTO public.{table} ({names}) SELECT {picked} FROM "{scratch}".{table}'
+                               f" ON CONFLICT ({key}) DO NOTHING")
+        else:
+            cur = conn.execute(f'INSERT INTO public.{table} ({names}) OVERRIDING SYSTEM VALUE'
+                               f' SELECT {picked} FROM "{scratch}".{table}')
+        out.rows[table] = cur.rowcount
+    # Heads, then branch links: to an origin restored with it or already here; else cleared, as a delete clears it
+    # (ADR 0009), host refs kept.
+    conn.execute(f'UPDATE public.conversation c SET head_commit_id = s.head_commit_id FROM "{scratch}".conversation s'
+                 " WHERE c.id = s.id")
+    conn.execute(f'UPDATE public.conversation c SET branched_from_conversation_id = s.branched_from_conversation_id'
+                 f' FROM "{scratch}".conversation s WHERE c.id = s.id AND s.branched_from_conversation_id IN'
+                 " (SELECT id FROM public.conversation)")
+    out.links_cleared = [r[0] for r in _q(conn, f'SELECT s.id::text FROM "{scratch}".conversation s'
+                                                " JOIN public.conversation c ON c.id = s.id"
+                                                " WHERE s.branched_from_conversation_id IS NOT NULL"
+                                                " AND c.branched_from_conversation_id IS NULL")]
+    # A branch here whose origin was deleted finds it again (its host refs name it).
+    conn.execute("UPDATE public.conversation b SET branched_from_conversation_id = o.id FROM public.conversation o"
+                 " WHERE o.id = ANY(%s::uuid[]) AND b.branched_from_conversation_id IS NULL"
+                 " AND b.host = o.host AND b.branched_from_host_chat_ref = o.host_chat_ref AND b.id <> o.id",
+                 (restored,))
+    for table, col in SEQUENCED.items():
+        conn.execute(f"SELECT setval(pg_get_serial_sequence('public.{table}', %s),"
+                     f" greatest((SELECT max({col}) FROM public.{table}), 1))", (col,))
+
+
+def restore_file(database_url: str, path: str) -> Restored:
+    return restore_archive(database_url, check_archive(path))
+
+
+def _restore_command(settings: Settings, source: str, check_only: bool) -> int:
+    spool = None
+    try:
+        if source == "-":
+            spool = tempfile.NamedTemporaryFile(prefix="nmos-restore-", suffix=SUFFIX, delete=False)
+            with spool:
+                shutil.copyfileobj(sys.stdin.buffer, spool)
+            source = spool.name
+        checked = check_archive(source)
+        m = checked.manifest
+        print(f"archive: {m['scope']}, {len(m.get('conversations') or [])} conversation(s), schema {m['schema']['level']},"
+              f" NMOS {m.get('nmos_version')}, made {m.get('created_at')}; every file checked", file=sys.stderr)
+        if check_only:
+            return 0
+        done = restore_archive(settings.database_url, checked)
+    except ArchiveError as error:
+        print(f"restore refused: {error}", file=sys.stderr)
+        return 2
+    finally:
+        if spool is not None:
+            os.unlink(spool.name)
+    for c in done.conversations:
+        print(f"restored {c['host']} chat {c['host_chat_ref']} ({c.get('character') or '?'}) as {c['id']}", file=sys.stderr)
+    print("rows: " + ", ".join(f"{t} {n}" for t, n in done.rows.items() if n), file=sys.stderr)
+    if done.migrated:
+        print(f"migrated from {m['schema']['level']}: {', '.join(done.migrated)}", file=sys.stderr)
+    if done.renumbered:
+        print(f"ids moved past this install's own: {', '.join(done.renumbered)}", file=sys.stderr)
+    if done.settings_kept:
+        print(f"settings already set here were kept: {', '.join(done.settings_kept)}", file=sys.stderr)
+    if done.links_cleared:
+        print(f"branches whose origin is not here lost their link: {', '.join(done.links_cleared)}", file=sys.stderr)
+    print("start the sidecar and worker: they write the derived text and state and queue what is missing",
+          file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m nmos_sidecar.archive", description="NMOS Archive (ADR 0050).")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -306,9 +573,14 @@ def main(argv: list[str] | None = None) -> int:
     ex.add_argument("--no-projections", action="store_true",
                     help="leave out extractions, summaries and canon reads (a restore extracts again, at model cost)")
     ex.add_argument("--embeddings", action="store_true", help="include embeddings (larger; rebuilt locally otherwise)")
+    rs = sub.add_parser("restore", help="restore an archive into this install (stop the sidecar and worker first)")
+    rs.add_argument("archive", help=f"the {SUFFIX} file ('-' for stdin)")
+    rs.add_argument("--check", action="store_true", help="verify the archive only; write nothing")
     ex.add_argument("-o", "--output", help=f"file to write ('-' for stdout; default: nmos-….{SUFFIX.lstrip('.')} here)")
     args = parser.parse_args(argv)
     settings = Settings()
+    if args.command == "restore":
+        return _restore_command(settings, args.archive, args.check)
     kwargs = {"conversations": args.conversation, "projections": not args.no_projections,
               "embeddings": args.embeddings, "settings": settings}
     try:
