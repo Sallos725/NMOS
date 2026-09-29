@@ -166,6 +166,13 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   let personas: { value: HostPersonas | null; at: number } | null = null;
   const buildManifest = createManifestBuilder();
   let last: LastRequest | null = null;
+  let epoch = 0; // bumped by every panel change: a request that saw another epoch neither caches nor injects
+
+  /** Drops every cached packet, and every packet still being fetched. */
+  function invalidate(): void {
+    epoch++;
+    cache.clear();
+  }
 
   function emit(event: ActivityEvent): void {
     try {
@@ -377,6 +384,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
 
   async function beforeRequest(prompt: PromptMessage[], mode: unknown): Promise<PromptMessage[]> {
     const started = host.now();
+    const since = epoch;
     let settings: Settings | null = null;
     let key: string | null = null;
     let chatId: string | null = null;
@@ -423,6 +431,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // The token is hashed with the rest, never kept as it is.
       key = await within(sha256Hex(JSON.stringify([
         chat.id, mode, prompt.length, request.messages.map((m) => [m.host_logical_id, m.revision_hash]), inContext,
+        request.persona_name ?? null, // the sidecar reads `{{user}}` from the sync a cached packet skips (ADR 0023)
         settings.sidecarUrl.replace(/\/+$/, ''), settings.route, settings.authToken, settings.reservedMemoryTokens,
       ])), deadline, 'the cache key');
       // Canon (ADR 0045): which of it this prompt holds and its manifest go with the request; the texts follow in the
@@ -473,6 +482,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const packet = retrieved.freshness === 'fresh' ? retrieved.packet.text : '';
       const memory = retrieved.freshness === 'fresh' ? retrieved.memory ?? null : null; // older sidecars send none
       const vectors = retrieved.freshness === 'fresh' ? retrieved.vectors ?? null : null;
+      // A delete, repair or settings save while this request ran: its packet may hold what that removed.
+      if (epoch !== since) throw new Error('memory changed during this request');
       remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors, canonKey);
       host.debug('[NMOS] request done', { ms: Math.round(host.now() - started), manifestMs: Math.round(manifestMs),
         syncMs: Math.round(syncMs), retrieveMs: Math.round(host.now() - t2), packetChars: packet.length });
@@ -483,7 +494,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       return injectPacket(prompt, packet, settings.injectPosition, turn);
     } catch (error) {
       // Cache the miss briefly so host retries of this request (H2) do not wait out the deadline again.
-      if (key) remember(key, '', FAILURE_TTL_MS, true);
+      if (key && epoch === since) remember(key, '', FAILURE_TTL_MS, true);
       last = failure = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: 0, packet: '', outcome: 'failed',
         error: error instanceof Error ? error.message : String(error), deadlineMs: settings?.deadlineMs ?? 0 };
       if (lateAt !== null) failure.neededMs = Math.round(lateAt - started);
@@ -546,13 +557,15 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   /** Sidecar API for the settings UI (longer timeout: connection tests call real models). */
   async function api<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeoutMs = 90_000): Promise<T> {
     const settings = await host.settings();
+    // A settings save, rebuild or delete changes what a packet would contain: a reroll of an unchanged chat must not
+    // reuse a packet built before it (a deleted chat's memory, old facts), nor one fetched while it ran. Also when the
+    // answer failed or came after the timeout: the sidecar may have applied it, or apply it then.
+    const change = method !== 'GET';
+    if (change) invalidate();
     try {
-      return await call<T>(settings, path, body, host.now() + timeoutMs, method);
+      return await call<T>(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : undefined);
     } finally {
-      // A settings save, rebuild or delete changes what a packet would contain: a reroll of an unchanged
-      // chat must not reuse a packet built before it (a deleted chat's memory, old facts). Also when the
-      // answer failed or came late: the sidecar may have applied it.
-      if (method !== 'GET') cache.clear();
+      if (change) invalidate();
     }
   }
 

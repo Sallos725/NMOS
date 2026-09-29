@@ -377,6 +377,38 @@ describe('packet cache', () => {
     expect(calls.filter((c) => c === '/v1/retrieve')).toHaveLength(2);
   });
 
+  it('neither caches nor injects a packet fetched while a panel action ran', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const { host, calls } = fakeHost(async (path, body) => {
+      if (path.startsWith('/v1/conversations')) return { status: 200, json: {} };
+      if (path === '/v1/retrieve' && calls.filter((c) => c === '/v1/retrieve').length === 1) await gate;
+      return happy(path, body);
+    });
+    const adapter = createAdapter(host);
+    const pending = adapter.beforeRequest(structuredClone(prompt), 'model');
+    await vi.waitFor(() => expect(calls).toContain('/v1/retrieve'));
+    await adapter.api('POST', '/v1/conversations/x/delete', {});  // the chat deleted while its memory was fetched
+    release();
+    expect(hasPacket(await pending)).toBe(false);  // fail open: the prompt as it was
+    expect((await adapter.status()).last).toMatchObject({ outcome: 'failed', error: 'memory changed during this request' });
+    expect(hasPacket(await adapter.beforeRequest(structuredClone(prompt), 'model'))).toBe(true);
+    expect(calls.filter((c) => c === '/v1/retrieve')).toHaveLength(2);  // asked again, not the packet from before
+  });
+
+  it('is emptied again when a panel action that timed out answers late', async () => {
+    let answer!: (r: HttpResult) => void;
+    const { host, calls } = fakeHost((path, body) => path.startsWith('/v1/conversations')
+      ? new Promise<HttpResult>((r) => { answer = r; }) : happy(path, body));
+    const adapter = createAdapter(host);
+    await expect(adapter.api('POST', '/v1/conversations/x/delete', {}, 20)).rejects.toThrow(/deadline/);
+    await adapter.beforeRequest(structuredClone(prompt), 'model');  // before the sidecar applied the delete
+    answer({ status: 200, json: {} });
+    await new Promise((r) => setTimeout(r, 0));
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(calls.filter((c) => c === '/v1/retrieve')).toHaveLength(2);
+  });
+
   it('is emptied by a panel action whose answer failed, since the sidecar may have applied it', async () => {
     const { host, calls } = fakeHost((path, body) => path.startsWith('/v1/conversations') ? { status: 502, json: null } : happy(path, body));
     const adapter = createAdapter(host);
@@ -493,6 +525,26 @@ describe('persona name (ADR 0023)', () => {
     await adapter.beforeRequest([...prompt, { role: 'user', content: 'Where did we hide the lantern?' }], 'model');
     expect(reconciles.at(-1)).toMatchObject({ persona_name: '타쿠미' });
     expect(reads).toBe(1); // cached, not read per request
+  });
+
+  it('never reuses a packet after the chat\'s persona changed', async () => {
+    const reconciles: any[] = [];
+    const { host } = fakeHost((path, body) => {
+      if (path === '/v1/sync/reconcile') reconciles.push(body);
+      return happy(path, body);
+    });
+    let current = structuredClone(chat);
+    host.currentChat = async () => structuredClone(current);
+    host.personas = async () => personas;
+    const adapter = createAdapter(host);
+    adapter.warmPersonas();
+    await new Promise((r) => setTimeout(r, 0));
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    await adapter.beforeRequest(structuredClone(prompt), 'model');  // cached
+    expect(reconciles.map((r) => r.persona_name)).toEqual(['타쿠미']);
+    current = { ...current, bindedPersona: 'p2' };  // the chat bound to another persona: no message changed
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(reconciles.map((r) => r.persona_name)).toEqual(['타쿠미', '레이']);
   });
 
   it('sends none when the host refuses or the read fails', async () => {
