@@ -323,20 +323,19 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                                  about=options.policy in ABOUT_POLICIES)], view["threads"], g, r, options)
         if options.facts_limit > 0:
             causes = options.policy in CAUSE_POLICIES
-            present = scene.names(g.cast, r)
-            facts = relevant_facts(view["facts"], query, previous_ai, in_context, options.facts_limit,
-                                   options.events_limit, persona, present, causes=causes)
+            # packet-v9 ranks every candidate once: the configured limit's share is its head (relevant_facts keeps
+            # its order and event cap at any limit), and the added slots go to what no one is kept from (ADR 0049).
+            grow = options.fill_facts > 0
+            claims_limit = max(1, options.facts_limit // 2)
+            ranked = relevant_facts(view["facts"], query, previous_ai, in_context,
+                                    len(view["facts"]) if grow else options.facts_limit,
+                                    options.events_limit, persona, scene.names(g.cast, r), causes=causes)
+            facts = _grown(ranked[:options.facts_limit], ranked, options.fill_facts)
             # Claims after facts, so the budget serves narration first (ADR 0013).
-            claims = relevant_facts(view["claims"], query, previous_ai, in_context, max(1, options.facts_limit // 2),
-                                    persona=persona, causes=causes)
-            if options.fill_facts > 0:  # packet-v9: more of what no one is kept from (ADR 0049)
-                everything = len(view["facts"]) + len(view["claims"])
-                facts = _grown(facts, relevant_facts(view["facts"], query, previous_ai, in_context, everything,
-                                                     options.events_limit, persona, present, causes=causes),
-                               options.fill_facts)
-                claims = _grown(claims, relevant_facts(view["claims"], query, previous_ai, in_context, everything,
-                                                       persona=persona, causes=causes),
-                                max(1, (options.facts_limit + options.fill_facts) // 2) - max(1, options.facts_limit // 2))
+            ranked = relevant_facts(view["claims"], query, previous_ai, in_context,
+                                    len(view["claims"]) if grow else claims_limit, persona=persona, causes=causes)
+            claims = _grown(ranked[:claims_limit], ranked,
+                            max(1, (options.facts_limit + options.fill_facts) // 2) - claims_limit)
             # How the cast stand with each other takes the budget before threads (ADR 0026).
             before, cause = options.policy in BEFORE_POLICIES, causes
             g.lead = _moded([fact_entry(f, scene.private(f, g.cast, r), before, cause) for f in facts

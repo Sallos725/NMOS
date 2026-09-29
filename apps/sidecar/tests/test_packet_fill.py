@@ -218,3 +218,26 @@ def test_the_budget_advice_is_a_floor_within_the_panels_range(v9):
     fit = tight["memory"]["fits_at"]
     assert fit is not None and 300 < fit <= FIT_CAP
     assert ask(client, chat, query, fit)["memory"]["offered"] >= tight["memory"]["offered"]
+
+
+def test_a_smaller_limit_selects_the_head_of_the_full_ranking(v9):
+    """`gather` ranks facts and claims once under packet-v9 and takes the configured limit's share as the head of that
+    ranking (Copilot review of PHASE-15 step 3): relevant_facts must keep its order and event cap at any limit."""
+    from conftest import active_generation
+    from nmos_sidecar.facts import memory_view, relevant_facts
+
+    client, url = v9
+    chat = secrets_chat(client, url)
+    for i in range(6):
+        chat.user(f"Hana reads the letter{i} while Kaito is away.")  # events, some beyond the event cap
+        chat.reply("Noted.")
+    _sync(client, chat)
+    extract(url)
+    with db(url) as conn:
+        head = conn.execute("SELECT head_commit_id FROM conversation").fetchone()["head_commit_id"]
+        view = memory_view(conn, head, active_generation(conn, "extract").key)
+    query = "Kaito, what does Hana have, what did she read, and what about the letters?"
+    full = relevant_facts(view["facts"], query, "", set(), len(view["facts"]), 3)
+    assert sum(f["predicate"] == "event" for f in full) == 3 and len(full) > 8
+    for limit in range(len(full) + 1):
+        assert relevant_facts(view["facts"], query, "", set(), limit, 3) == full[:limit]
