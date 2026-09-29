@@ -126,7 +126,7 @@ the "db" permission (H17), not measured for cost. *Cost:* host evidence first. *
 
 1. **C1** measured: not seen in production, K14 updated, the gate unchanged.
 2. **C6** only with P4 (importing another plugin's memory), if that is ever taken.
-3. **C4 + C5** as Phase 17, after Phase 16 (owner, 2026-09-29); a draft spec follows.
+3. **C4 + C5** as Phase 17, after Phase 16 (owner, 2026-09-29); `docs/phases/PHASE-17.md`, approved 2026-09-29.
 4. **C2** on the queued list for the next extractor generation (queued in `docs/STATUS.md`, 2026-09-29); **C3**
    measured and dropped (§4).
 5. **C7 and C10** with Stage 6's remaining items; **C8** with Stage 7; **C9** only with an approved spend.

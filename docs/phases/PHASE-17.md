@@ -1,8 +1,7 @@
 # Phase 17 — What NMOS's own model calls cost, and fallbacks told from failures
 
-> **Status: draft (2026-09-29), not authorized.** The owner chose to run it after Phase 16 (2026-09-29). Source:
-> C4 and C5 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`. The owner approves this document, with or without the
-> proposed answers, before any step starts.
+> **Status: approved (2026-09-29) with every proposed answer (Q1–Q7); current.** The owner chose to run it after
+> Phase 16 (2026-09-29). Source: C4 and C5 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`. No release.
 
 ## Questions and proposed answers
 
@@ -10,7 +9,7 @@
 |---|---|---|---|
 | Q1 | Which calls? | **Every model call the worker makes for a projection:** extraction, summaries, canon reads. Embeddings too, as input tokens only, where the endpoint reports them. | Extraction only. |
 | Q2 | What is recorded? | **What the provider reports, never an estimate:** input, output, cached input and reasoning tokens from the response's `usage` (OpenAI-compatible fields, `prompt_tokens_details.cached_tokens`, `completion_tokens_details.reasoning_tokens`), the model name and the call's duration. A response without `usage` records none, shown as "not reported". | A tokenizer estimate when the provider reports nothing. |
-| Q3 | Where? | **One nullable `usage` JSON column on `extraction` and `summary`**, written with the row it produced, so a rebuild or a new generation keeps the old rows' cost for audit. Embeddings: a counter per projection in the same column shape on the job. One migration. | A separate call-log table. |
+| Q3 | Where? | **One nullable `usage` JSON column on `extraction` and `summary`**, written with the row it produced, so a rebuild or a new generation keeps the old rows' cost for audit. Embeddings: the same column on each `revision_embedding` row (one chunk, one call). One migration. *Amended 2026-09-29 (owner): the draft put embeddings on the job, but finished jobs are pruned after 7 days.* | A separate call-log table. |
 | Q4 | Where is it shown? | **The Inspector's coverage, per chat and per generation:** calls, input / output / cached tokens, and the share of calls that reported usage. The panel's Status tab: this chat's totals in one line. No money: prices vary by provider and the owner's are local or flat. | A price table; a global dashboard. |
 | Q5 | Which request outcomes does the HUD show? | **Besides "injected", "nothing relevant", "off for this chat" and "skipped": "injected, lexical only"** when the retrieve answer says vectors fell back (K34), and **"injected (reused)"** for a cached packet on a reroll, both in the neutral style, not as warnings. | The Status tab only (today). |
 | Q6 | What does the HUD show after background work? | **"Done" becomes "N facts, M summaries"** from the coverage change since the request, when the sidecar reports it; otherwise "done" as today. | Unchanged. |
@@ -25,7 +24,7 @@ cost in tokens, from the provider's own numbers, and the HUD says when memory wa
 ## In scope (Phase 17)
 
 1. Reading `usage` from chat-completion and embedding responses in `llm.py`; storing it with the rows (Q1–Q3).
-2. Migration: `usage jsonb` on `extraction` and `summary`, and on the embedding job's record (Q3).
+2. Migration: `usage jsonb` on `extraction`, `summary` and `revision_embedding` (Q3).
 3. Inspector coverage and a Status-tab line (Q4).
 4. HUD outcomes and the "done" summary (Q5, Q6); strings in both languages; a new plugin build.
 5. Docs: `docs/guide.ko.md` (what the numbers mean), CHANGELOG, KNOWN-ISSUES K34 (the HUD now says it).
