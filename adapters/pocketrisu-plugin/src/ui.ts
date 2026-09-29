@@ -15,6 +15,7 @@ import { closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, in
 import type { EntityRow, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
+import { usageText, type UsageTotal } from './usage';
 
 export type Tab = 'status' | 'inspector' | 'settings';
 
@@ -373,10 +374,27 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     card.append(el('div', { class: off ? 'line warn' : 'line' }, el('span', { class: off ? 'dot warn' : 'dot ok' }),
       el('span', { text: L(off ? 'chat.off' : 'chat.on') })),
     el('p', { class: 'sub', text: L(off ? 'chat.off_sub' : 'chat.on_sub') }), el('div', { class: 'btns' }, flip), msg);
+    const spent = await usageLine(id);
+    if (spent) card.insertBefore(spent, card.querySelector('p.sub'));
     // The global switch wins (ADR 0048 §5): say so rather than show this chat as working.
     if (!enabled) card.insertBefore(el('div', { class: 'line warn' }, el('span', { class: 'dot warn' }),
       el('span', { text: L('chat.all_off') })), card.children[1] ?? null);
     return card;
+  }
+
+  /** One line: what this chat's memory cost in NMOS's own model calls (PHASE-17 Q4). Nothing when the sidecar
+   * does not know the chat or does not answer: the card is about the switch. */
+  async function usageLine(hostChatId: string): Promise<HTMLElement | null> {
+    try {
+      const chats = await deps.api<{ id: string; host_chat_ref: string }[]>('GET', '/v1/conversations', undefined, 5000);
+      const chat = chats.find((c) => c.host_chat_ref === hostChatId);
+      if (!chat) return null;
+      const cov = await deps.api<{ usage?: { total?: UsageTotal } }>('GET',
+        `/v1/conversations/${encodeURIComponent(chat.id)}/coverage?usage=true`, undefined, 5000);
+      return cov.usage?.total ? el('div', { class: 'muted', text: usageText(cov.usage.total, lang) }) : null;
+    } catch {
+      return null;
+    }
   }
 
   // --- inspector tab ---------------------------------------------------------------------------

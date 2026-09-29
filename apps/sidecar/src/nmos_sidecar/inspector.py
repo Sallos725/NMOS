@@ -245,6 +245,20 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
                  "{n} facts read from the canon are in memory. The story supersedes them from the turn it says something "
                  "new. Facts of canon the host already sent are not sent again."),
     "canon_row": ("원전 사실", "Canon facts"),
+    "us.title": ("모델 사용량", "Model usage"), "toc.usage": ("사용량", "Usage"),
+    "us.intro": ("이 채팅의 기억에 NMOS가 부른 모델 호출과, 제공자가 보고한 토큰이에요. 추정하지 않아요. 다시 만들면서 버린 결과의 "
+                 "호출도 셉니다.",
+                 "The model calls NMOS made for this chat's memory, and the tokens the provider reported; nothing is "
+                 "estimated. Calls whose results were discarded by a rebuild count too."),
+    "us.none": ("아직 기록된 모델 호출이 없어요.", "No model calls recorded yet."),
+    "us.kind.extract": ("사실 추출", "Fact extraction"), "us.kind.canon": ("원전 읽기", "Canon reads"),
+    "us.kind.summarize": ("요약", "Summaries"), "us.kind.embed": ("임베딩", "Embeddings"),
+    "us.total": ("합계", "Total"), "us.active": ("사용 중", "active"),
+    "us.h.calls": ("호출", "Calls"), "us.h.input": ("입력 토큰", "Input tokens"),
+    "us.h.output": ("출력 토큰", "Output tokens"), "us.h.cached": ("캐시 입력", "Cached input"),
+    "us.h.reported": ("보고된 호출", "Calls reported"),
+    "us.not_reported": ("보고 없음", "not reported"),
+    "us.not_recorded": ("기록 이전 결과 {n}개", "{n} results from before recording"),
     "canon_detail": ("모델 호출 {calls} · 대기 {pending} · 실패 {failed} · 안 읽은 글자 {unread}",
                      "model calls {calls} · pending {pending} · failed {failed} · characters not read {unread}"),
     "cf.disputed": ("이야기끼리", "story vs story"), "cf.canon": ("원전과 이야기", "canon vs story"),
@@ -498,6 +512,35 @@ def _coverage_section(cov: dict[str, Any], lang: str) -> str:
     if not rows:
         return f"<p class=\"muted\">{t('no_generation')}</p>"
     return table([t("h.projection"), t("h.generation"), t("h.coverage"), t("h.detail")], rows)
+
+
+def _usage_section(usage: dict[str, Any], lang: str) -> str:
+    """What the chat's model calls used, per generation (ADR 0051): only counts the provider reported."""
+    t = lambda k: _t(lang, k)
+
+    def cells(u: dict[str, Any]) -> list[str]:
+        tokens = [f"{u[k]:,}" if u["reported"] else "—" for k in ("input", "output", "cached")]
+        share = f"{u['reported']:,}/{u['calls']:,}" if u["calls"] else "—"
+        if u["calls"] and not u["reported"]:
+            share = f"<span class=\"chip\">{t('us.not_reported')}</span> {share}"
+        if u["not_recorded"]:
+            share += f" <span class=\"muted\">· {t('us.not_recorded').format(n=f'{u['not_recorded']:,}')}</span>"
+        return [f"{u['calls']:,}", *tokens, share]
+
+    rows = []
+    for g in usage.get("generations") or []:
+        kind = f"us.kind.{g['kind']}"
+        name = _v(t(kind) if kind in T else g["kind"])
+        if g["active"]:
+            name += f" <span class=\"chip\">{t('us.active')}</span>"
+        rows.append([name, f"<span class=\"mono\" title=\"{_v(g['key'])}\">{_v(g['key'][:20])}</span> {_v(g['model'])}",
+                     *cells(g)])
+    head = f"<p class=\"muted\">{t('us.intro')}</p>"
+    if not rows:
+        return head + f"<p class=\"muted\">{t('us.none')}</p>"
+    rows.append([f"<strong>{t('us.total')}</strong>", "", *cells(usage["total"])])
+    return head + table([t("h.kind"), t("h.generation"), t("us.h.calls"), t("us.h.input"), t("us.h.output"),
+                         t("us.h.cached"), t("us.h.reported")], rows)
 
 
 def _processed(m: dict[str, Any], lang: str) -> str:
@@ -1001,6 +1044,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
                                            for s in state])
          if state else f"<p class=\"muted\">{t('no_state')}</p>{_no_state_example(lang)}", True),
         ("coverage", t("coverage"), None, _coverage_section(coverage or {}, lang), True)]
+    if (coverage or {}).get("usage") is not None:
+        parts.append(("usage", t("us.title"), None, _usage_section(coverage["usage"], lang), False))
     if conflicts:
         parts.append(("conflicts", t("conflicts"), len(conflicts), _conflicts_table(conflicts, lang), True))
     if threads:

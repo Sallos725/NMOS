@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:8e4296f4b094".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:49291eca6606".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -258,6 +258,18 @@
       "NMOS is off for every chat (Settings tab), so this chat is not used either until it is back on."
     ],
     "chat.turn_off": ["\uC774 \uCC44\uD305\uC5D0\uC11C \uB044\uAE30", "Turn off for this chat"],
+    // what this chat's memory cost in NMOS's own model calls (PHASE-17 Q4)
+    "usage.line": [
+      "NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uD638\uCD9C {calls}\uD68C \xB7 \uC785\uB825 {input} \xB7 \uCD9C\uB825 {output} \uD1A0\uD070{cached}",
+      "NMOS model use: {calls} calls \xB7 {input} input \xB7 {output} output tokens{cached}"
+    ],
+    "usage.cached": [" (\uC785\uB825 \uC911 \uCE90\uC2DC {n})", " ({n} of the input cached)"],
+    "usage.partial": [" \xB7 {calls}\uD68C \uC911 {r}\uD68C\uB9CC \uBCF4\uACE0\uB428", " \xB7 {r} of {calls} calls reported"],
+    "usage.unreported": [
+      "NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uD638\uCD9C {calls}\uD68C (\uC81C\uACF5\uC790\uAC00 \uD1A0\uD070\uC744 \uBCF4\uACE0\uD558\uC9C0 \uC54A\uC74C)",
+      "NMOS model use: {calls} calls (the provider reported no tokens)"
+    ],
+    "usage.none": ["NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uC544\uC9C1 \uAE30\uB85D \uC5C6\uC74C", "NMOS model use: none recorded yet"],
     "chat.turn_on": ["\uC774 \uCC44\uD305\uC5D0\uC11C \uB2E4\uC2DC \uCF1C\uAE30", "Turn back on for this chat"],
     "chat.switched_off": [
       "\uC774 \uCC44\uD305\uC5D0\uC11C NMOS\uB97C \uAED0\uC2B5\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uB85C \uBCF4\uB0B4\uC9C0 \uC54A\uACE0 \uAE30\uC5B5\uB3C4 \uB123\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC774\uBBF8 \uC313\uC778 \uAE30\uC5B5\uC740 \uADF8\uB300\uB85C\uC785\uB2C8\uB2E4.",
@@ -1794,6 +1806,16 @@ ${revisionHash}`;
     return { text: rtf.format(value, unit), title };
   }
 
+  // src/usage.ts
+  var count = (n) => n.toLocaleString("en-US");
+  function usageText(u, lang) {
+    if (!u.calls) return t(lang, "usage.none");
+    if (!u.reported) return t(lang, "usage.unreported", { calls: count(u.calls) });
+    const cached = u.cached ? t(lang, "usage.cached", { n: count(u.cached) }) : "";
+    const partial = u.reported < u.calls ? t(lang, "usage.partial", { r: count(u.reported), calls: count(u.calls) }) : "";
+    return t(lang, "usage.line", { calls: count(u.calls), input: count(u.input), output: count(u.output), cached }) + partial;
+  }
+
   // src/ui.ts
   var LLM_PRESETS = [
     { label: "preset.off", url: "" },
@@ -2156,6 +2178,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("div", { class: "btns" }, flip),
         msg
       );
+      const spent = await usageLine(id);
+      if (spent) card.insertBefore(spent, card.querySelector("p.sub"));
       if (!enabled2) card.insertBefore(el(
         "div",
         { class: "line warn" },
@@ -2163,6 +2187,22 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("span", { text: L("chat.all_off") })
       ), card.children[1] ?? null);
       return card;
+    }
+    async function usageLine(hostChatId) {
+      try {
+        const chats = await deps.api("GET", "/v1/conversations", void 0, 5e3);
+        const chat = chats.find((c) => c.host_chat_ref === hostChatId);
+        if (!chat) return null;
+        const cov = await deps.api(
+          "GET",
+          `/v1/conversations/${encodeURIComponent(chat.id)}/coverage?usage=true`,
+          void 0,
+          5e3
+        );
+        return cov.usage?.total ? el("div", { class: "muted", text: usageText(cov.usage.total, lang) }) : null;
+      } catch {
+        return null;
+      }
     }
     let inspectorPath = "/v1/inspector";
     let shownPath = null;
