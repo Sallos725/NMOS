@@ -102,7 +102,7 @@ correct a fact, a secret found out or kept, split two names) in the panel, audit
 "Needs attention" list per chat; K8 and K23 rewritten to what remains (`docs/perf/repair.md`). Part 2, Phase 14
 (approved 2026-09-28, complete 2026-09-29): canon as sources. Then Phase 15, the packet that fills its
 budget (approved and complete 2026-09-29, `docs/phases/PHASE-15.md`; not a Stage 6 item), and Phase 16: export and
-restore (not authorized yet).
+restore (approved 2026-09-29, `docs/phases/PHASE-16.md`).
 Open beyond them: transition rules, not yet assigned to a phase.
 
 Scope (draft):

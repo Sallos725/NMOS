@@ -1,13 +1,13 @@
 # Phase 16 — Export and restore (Stage 6, part 3)
 
-> **Status: draft, awaiting the owner's approval (2026-09-29).** Stage 6 of `docs/ROADMAP-1.0.md` (original §89,
+> **Status: approved (2026-09-29), with every proposed answer (Q0–Q9).** Stage 6 of `docs/ROADMAP-1.0.md` (original §89,
 > §66–67; Track B, B7): "export and restore of the ledger, repairs and settings", and Stage 6's last done criterion,
 > "export, restore into a fresh install and replay give the same packets". Phase 14 Q0 gave it its own phase; Phase 15
 > (a packet that fills its budget) ran first at the owner's choice (2026-09-29).
 
 ## Questions and proposed answers
 
-Each answer in bold is NMOS's proposal. Nothing is decided until the owner approves.
+Each answer in bold was NMOS's proposal; the owner accepted all of them (2026-09-29).
 
 | # | Question | Proposed answer | Alternatives |
 |---|---|---|---|
