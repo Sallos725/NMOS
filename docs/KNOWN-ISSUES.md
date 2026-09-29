@@ -249,6 +249,10 @@ the target turn and 2,000 of each context message. The Inspector flags partly pr
 **K14 — Gating edge cases.** A main generation is recognized by the user's latest input appearing in
 the prompt (ADR 0001, amendment 2). A `model`-mode auxiliary call (trigger/Lua) whose prompt contains
 that input is treated as main and may get a packet (not observed; accepted as rare over-injection).
+*Measured 2026-09-29:* the host sends Lua `LLM()`, `simpleLLM` and the trigger's `runLLM` as `model` (Lua `axLLM`
+as `otherAx`), and every such call runs the `beforeRequest` replacers (HOST-FACTS Q1). In the owner's production
+request log (2026-09-23 to 09-29) none of 751 `model` requests was such a call: every one carried chat history
+with the model's replies, and all 560 packets went into those. Still accepted; the gate is unchanged.
 A preset that sends the input only in transformed form (e.g. translated) gets no memory (fail-safe).
 
 **K15 — Tuned on limited data.** Recall thresholds were set on few real chats (ADR 0004/0005). The
