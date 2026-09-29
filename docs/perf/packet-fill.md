@@ -95,7 +95,8 @@ Two host facts for anyone testing on v1.13.0: the chat-model request leaves from
 `tools/eval_rp.py` now searches a named projection (`--projection`, the copies' full `qwen3-embedding:8b` projection
 here), warms the embedder before the first case, gives each replay's query 5,000 ms, and reports per case whether
 vector search ran; with vectors asked for, a case without them makes it exit with status 2 (Phase 15 Q6). The replay
-itself says so (`vectors`: on, off, or the fallback's reason). `packet-v8` at 2,000 tokens on the same copies:
+itself says so (`vectors`: on, off, or the fallback's reason), and searches a named projection as it is now, with its
+model's query prefix (the rest of the request as of its time). `packet-v8` at 2,000 tokens on the same copies:
 
 | Chat, extraction | Passed | Needing memory | Forbidden placed | Mean tokens | With vectors |
 |---|---:|---:|---:|---:|---:|

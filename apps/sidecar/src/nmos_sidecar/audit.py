@@ -133,7 +133,8 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     budget; `policy`, `query` (a probe in place of the request's user message, as the request would have sent
     it), `budget` (tokens) and `overrides` (RecallOptions fields) change what is being tested. `options` gives
     the embedder: vectors are searched only when it serves the trace's projection, or `projection` (an evaluation
-    of a copy embedded again since). `vectors` in the result says whether vector search ran ("on"), was off, or
+    of a copy embedded again since: that projection's vectors are searched as they are now, with its model's query
+    prefix from `options`; everything else is still read as of the request). `vectors` in the result says whether vector search ran ("on"), was off, or
     fell back and why. Read-only."""
     t = _trace(conn, trace_id)
     if t is None:
@@ -152,7 +153,9 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     opts = dataclasses.replace(options, **recorded, extractor_key=t["extractor_key"],
                                rules_version=t["rules_version"] or "none", policy=policy)
     wanted = projection or t["embed_projection"]
-    if projection and projection != t["embed_projection"]:
+    other = bool(projection) and projection != t["embed_projection"]
+    if other:  # its model's query prefix, and its vectors as they are now: a copy embedded again since the request
+        opts = dataclasses.replace(opts, query_prefix=options.query_prefix)
         notes.append("projection changed")
     if wanted and not (options.embedder is not None and options.embed_projection == wanted):
         opts = dataclasses.replace(opts, embedder=None)
@@ -167,7 +170,7 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
         notes.append("query replaced")
     g = gather(conn, t["head_commit_id"], t["query"] if query is None else query, t["previous_ai"] or "",
                set(t["in_context"] or []), opts, upto=t["upto_position"], known_at=known_at or t["created_at"],
-               canon_held=t.get("canon_held") or (), **_canon_of(t))
+               canon_held=t.get("canon_held") or (), vectors_now=other, **_canon_of(t))
     if opts.embedder is not None and g.vector_note != "on":
         notes.append(f"vectors {g.vector_note}")  # an embedder that failed now cannot reproduce the request
     if budget is not None:

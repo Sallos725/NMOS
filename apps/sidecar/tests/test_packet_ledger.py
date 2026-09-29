@@ -424,3 +424,34 @@ def test_replay_can_search_another_projection_and_says_whether_vectors_ran(migra
     assert own["vectors"] == "off" and own["reproduced"] is True
     assert named["vectors"] == "on" and "projection changed" in named["notes"] and "reproduced" not in named
     assert missing["vectors"] == "off" and "vectors of the trace's projection unavailable: lexical only" in missing["notes"]
+
+
+def test_a_named_projection_is_searched_as_it_is_now_with_its_models_prefix(migrated, monkeypatch):
+    """A copy embedded again since the request (Copilot review of PHASE-15 step 2): the named projection's vectors are
+    searched as of now, with the query prefix of its model, not the request's; the rest stays as of the request."""
+    from nmos_sidecar import retrieval
+    from nmos_sidecar.retrieval import RecallOptions
+
+    class Recording(StubEmbedder):
+        texts: list[str] = []
+
+        def embed(self, texts, timeout_s):
+            Recording.texts += texts
+            return super().embed(texts, timeout_s)
+
+    searched: list = []
+    real = retrieval.vector_candidates
+    monkeypatch.setattr(retrieval, "vector_candidates",
+                        lambda *a, **k: searched.append(a[7]) or real(*a, **k))
+    with make_client(migrated, embedder=StubEmbedder(), **settings_for("full")) as client:
+        chat = story(client, migrated, vectors=True)
+        out = ask(client, chat, "혹시 그 반짝이는 은빛 물건은 어디 숨겼지?")
+        projection = client.get(f"/v1/trace/{out['trace_id']}").json()["embed_projection"]
+        with db(migrated) as conn:
+            conn.execute("UPDATE retrieval_trace SET embed_projection = 'embed-older' WHERE id = %s", (out["trace_id"],))
+            conn.commit()
+            searched.clear()
+            opts = RecallOptions(embedder=Recording(), embed_projection=projection, query_prefix="Q: ")
+            named = audit.replay(conn, out["trace_id"], opts, projection=projection)
+    assert named["vectors"] == "on" and searched == [None]  # vectors as of now
+    assert Recording.texts == ["Q: 혹시 그 반짝이는 은빛 물건은 어디 숨겼지?"]  # the named model's prefix
