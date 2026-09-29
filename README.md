@@ -386,7 +386,7 @@ cd apps/sidecar && uv sync && uv run pytest               # needs the compose Po
 cd adapters/pocketrisu-plugin && npm ci && npm test && npm run typecheck && npm run build
 ```
 
-Design: `ARCHITECTURE.md` (invariants, host facts H1–H19, decisions), `docs/phases/`, `docs/adr/`,
+Design: `ARCHITECTURE.md` (invariants, host facts H1–H20, decisions), `docs/phases/`, `docs/adr/`,
 `docs/HOST-FACTS.md`. Agent contract: `AGENTS.md`.
 
 ## License

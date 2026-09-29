@@ -409,6 +409,28 @@ request. The card is not: reading it clones the current chat, so it is read off 
 
 All held. Production has recorded requests with NMOS memory on v1.13.0 since 2026-09-27.
 
+## CBS blocks in canon texts (2026-09-29, H20)
+
+**Source reading** of `ghcr.io/pocketrisu/pocketrisu:latest` (v1.13.0, the owner's version since 2026-09-27):
+`src/ts/parser/parser.svelte.ts` from the image's source map (`blockStartMatcher`, `blockEndMatcher` and the parse
+loop). Not observed at runtime. The owner's instance was not touched.
+
+1. **Blocks.** A tag `{{#…}}` opens a block when its text starts with `#if` (`#if_pure` too), `#when`, `#each` or
+   `#escape`, is exactly `#pure`, `#pure_display`, `#puredisplay` or `#code`, or is `#func` with a name. Any other
+   `{{#…}}` is output as it is.
+2. **What a block shows.** `#if` / `#if_pure` show their body when the condition (after the nested macros are
+   evaluated) is `true` or `1`; `#when::…` evaluates its own operators (`is`, `isnot`, `not`, `and`, `or`, `var`,
+   `toggle`, `vis`, `tis`, comparisons, with `keep` and `legacy` modes); `{{:else}}` gives a body for the other case; `#each` repeats its body per item with `{{slot::…}}` replaced; `#func` defines a
+   function and shows nothing. `#pure`, `#pure_display`, `#code` and `#escape` show their body (as it is, or
+   normalized).
+3. **Closing.** `{{/…}}` (anything after the slash but a second slash) closes the innermost open block.
+
+A card's or lorebook entry's text that holds such blocks therefore reaches the prompt rendered, not verbatim (H19 was
+observed on texts without them). Counted on the two measured chats' copies (`docs/perf/canon.md`): the main chat's
+canon has no block; sample 2's has blocks in 56 of 154 texts, 12 of them with exclusive branches on one variable.
+
+Conclusion: H20. What NMOS does with it: ADR 0047 amendment 2.
+
 ## Plugin menus and a string arg (2026-09-28, ADR 0048)
 
 **Source reading only** (`github.com/PocketRisu/PocketRisu` at tag v1.13.0, `3d30fc5`):

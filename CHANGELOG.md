@@ -5,6 +5,10 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Fixed: canon facts from a branch the host never shows** (ADR 0047 amendment 2, H20). A card or lorebook text
+  with `{{#if …}}` / `{{#when …}}` blocks was read with every branch, and its facts were sent as memory even when
+  the chat's variables hid them (a language or a display switch, for example). A canon fact quoted only inside such
+  a block is no longer served; nothing is re-extracted. No migration, no plugin change.
 - **Phase 15 (a packet that fills its budget) is complete** (`docs/phases/PHASE-15.md`, `docs/perf/packet-fill.md`):
   on the owner's two chats with both extraction models, `packet-v9` at 4,000 answered 6 more cases needing memory than
   `packet-v8` at 2,000, with 2 more forbidden phrases (one old excerpt); on 38 recorded requests it added only facts,
