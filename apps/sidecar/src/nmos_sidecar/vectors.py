@@ -11,12 +11,13 @@ from typing import Any
 from uuid import UUID
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 from . import generations, normtext
 from .config import Settings
 from .extraction import ELIGIBLE, REQUEUE
 from .generations import Generation
-from .llm import Embedder
+from .llm import Embedder, embedded
 
 CHUNK_CHARS = 700
 MAX_CHUNKS = 8
@@ -75,14 +76,15 @@ def process_embed(conn: psycopg.Connection, job: dict[str, Any], embedder: Embed
         return "done"
     # One chunk per request: Ollama serves embeddings in order, and a large batch here would delay the
     # request-path query embedding past its timeout (measured: 582 ms behind an 8-chunk batch vs ~25 ms).
-    vectors = [embedder.embed([text[s:e]], timeout_s=60)[0] for s, e in spans]
+    calls = [embedded(embedder, text[s:e]) for s, e in spans]
     with conn.transaction():
         with conn.cursor() as cur:
             cur.executemany(
                 "INSERT INTO revision_embedding (source_revision_id, projection, model, chunk, dim, text_start, text_end,"
-                " embedding) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::vector) ON CONFLICT DO NOTHING",
-                [(revision_id, gen.key, gen.model, i, len(v), s, e, vector_literal(v))
-                 for i, ((s, e), v) in enumerate(zip(spans, vectors))],
+                " embedding, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::vector, %s) ON CONFLICT DO NOTHING",
+                [(revision_id, gen.key, gen.model, i, len(v), s, e, vector_literal(v),
+                  Jsonb(usage) if usage is not None else None)
+                 for i, ((s, e), (v, usage)) in enumerate(zip(spans, calls))],
             )
     return "done"
 

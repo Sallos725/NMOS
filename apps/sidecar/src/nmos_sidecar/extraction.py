@@ -20,7 +20,7 @@ from . import generations, normtext
 from .config import Settings
 from .generations import Generation
 from .ids import uuid7
-from .llm import LLMError
+from .llm import NO_CALL, LLMError, metered
 from .entities import UNNAMED, norm, resolve
 from .facts import fact_text, links_of, persona_of, served_assertions
 from . import canon
@@ -644,7 +644,7 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
     return out
 
 
-def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[dict, str]],
+def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[Any, ...]],
                     gen: Generation, turns: int) -> str:
     """Returns the final job status."""
     if job["payload"].get("generation") != gen.key:
@@ -662,7 +662,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     secrets: list[dict[str, Any]] = []
     threads: list[dict[str, Any]] = []
     if sum(len(r["content"]) for r in ctx["members"]) < MIN_CONTENT_CHARS:
-        parsed, raw = {"assertions": []}, ""
+        parsed, raw, usage = {"assertions": []}, "", NO_CALL
     else:
         limit = gen.spec.get("hints", 0)
         earlier = earlier_assertions(conn, ctx, gen.key)
@@ -670,8 +670,8 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         promises = promise_hints(ctx, earlier)
         secrets = secret_hints(ctx, earlier)
         threads = thread_hints(ctx, earlier)
-        parsed, raw = complete(SYSTEM_PROMPT.format(registry=registry_prompt()),
-                               build_prompt(ctx, hints, promises, secrets, threads))
+        parsed, raw, usage = metered(complete, SYSTEM_PROMPT.format(registry=registry_prompt()),
+                                     build_prompt(ctx, hints, promises, secrets, threads))
     items = parsed.get("assertions")
     if not isinstance(items, list):  # not an empty answer: fail the job, so it is retried and then counted failed
         raise LLMError("model reply has no `assertions` list")
@@ -682,12 +682,13 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         extraction_id = uuid7()
         inserted = conn.execute(
             "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model, raw,"
-            " coverage, members, hints) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " coverage, members, hints, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             " ON CONFLICT DO NOTHING RETURNING id",
             (extraction_id, revision_id, window_hash, COMPILER_VERSION, gen.key, gen.model,
              Jsonb({"reply": raw[:20000]}), Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]],
              None if hints is None and not promises and not secrets and not threads
-             else Jsonb({"entities": hints or [], "promises": promises, "secrets": secrets, "threads": threads})),
+             else Jsonb({"entities": hints or [], "promises": promises, "secrets": secrets, "threads": threads}),
+             Jsonb(usage) if usage is not None else None),
         ).fetchone()
         if inserted is None:
             return "done"

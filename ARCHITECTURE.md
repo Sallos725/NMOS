@@ -512,6 +512,11 @@ a newer archive or a conversation already present (never merged), builds the arc
 schema, loads the rows, applies the later migrations and copies them in with ids and timestamps kept (shared
 sequenced ids moved past the install's own when taken, recorded requests' assertion refs with them).
 
+**D61 — Model-call usage (Phase 17, ADR 0051).** Each row a model call of the worker produced (a turn's or canon
+part's extraction, a scene or story summary, an embedded chunk) keeps that call's usage as the provider reported it,
+never estimated: `calls`, `ms`, the provider's `model`, and `input` / `output` / `cached` / `reasoning` tokens only
+when the response carried them. NULL is a row from before migration 0027, `{"calls": 0}` a row written without a call.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

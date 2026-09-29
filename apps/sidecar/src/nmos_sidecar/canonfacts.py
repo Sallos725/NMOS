@@ -37,7 +37,7 @@ from .canon import MACRO, MACRO_SQL
 from .config import Settings
 from .generations import Generation
 from .ids import uuid7
-from .llm import LLMError
+from .llm import NO_CALL, LLMError, metered
 from .predicates import REGISTRY, registry_prompt, stored_knowledge
 
 log = logging.getLogger("nmos.canon")
@@ -271,7 +271,7 @@ def _source(conn: psycopg.Connection, rid: UUID) -> dict[str, Any] | None:
             "wtag": names_tag(row["entries"]) if named_ else "plain"}
 
 
-def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[dict, str]],
+def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[Any, ...]],
             gen: Generation) -> str:
     """Read one canon revision (every part not read yet) and store its facts. Returns the final job status."""
     from .extraction import ASSERTION_COLUMNS, normalize  # the same normalizer as a turn's (ADR 0013, D6, D19)
@@ -295,10 +295,10 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         if window in done:
             continue
         if len(piece) < MIN_CHARS:
-            parsed, raw = {"assertions": []}, ""
+            parsed, raw, usage = {"assertions": []}, "", NO_CALL
         else:
-            parsed, raw = complete(system, build_prompt(src["key"], src["metadata"], src["character"], src["user"],
-                                                        piece, i, len(pieces)))
+            parsed, raw, usage = metered(complete, system, build_prompt(src["key"], src["metadata"], src["character"],
+                                                                        src["user"], piece, i, len(pieces)))
         items = parsed.get("assertions")
         if not isinstance(items, list):
             raise LLMError("model reply has no `assertions` list")
@@ -311,10 +311,11 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
             xid = uuid7()
             inserted = conn.execute(
                 "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model,"
-                " raw, coverage, members, hints) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                " raw, coverage, members, hints, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
                 " ON CONFLICT DO NOTHING RETURNING id",
                 (xid, rid, window, VERSION, gen.key, gen.model, Jsonb({"reply": raw[:20000]}), Jsonb(coverage), [rid],
-                 Jsonb({"canon": src["key"], "character": src["character"], "user": src["user"]}))).fetchone()
+                 Jsonb({"canon": src["key"], "character": src["character"], "user": src["user"]}),
+                 Jsonb(usage) if usage is not None else None)).fetchone()
             if inserted is None:
                 continue
             values = [(xid, rid, *(Jsonb(a[c]) if c == "participants" and a[c] is not None else a[c]
