@@ -430,11 +430,13 @@ All held. Production has recorded requests with NMOS memory on v1.13.0 since 202
 - An `html` icon of `registerSetting` or `registerButton` is drawn by `src/lib/Others/PluginDefinedIcon.svelte` as
   `{@html DOMPurify.sanitize(icon, …)}`, forbidding the tags `script`, `style`, `iframe`, `object`, `embed` and the
   attributes `onerror`, `onclick`, `onload`, `onmouseover`, `style`, `class`, inside a `w-5 h-5` (20 px) box. Settings,
-  the sidebar and the chat screen all use it.
+  the sidebar and the chat screen all use it. Settings and the chat input's ☰ menu show the name beside it; the
+  sidebar's `BarIcon.svelte` button holds only the icon, with no name, `aria-label` or `title`.
 - `SafeElement.setInnerHTML` (`src/ts/plugins/apiV3/v3.svelte.ts`) is `DOMPurify.sanitize(value)` with no options.
 
 **Local check:** DOMPurify 3.3.3 (PocketRisu asks for `^3.3.3`) under jsdom returns NMOS's SVG icon (`src/icon.ts`)
-with every element and attribute kept, under both configurations.
+with every element and attribute kept, under both configurations, and the sidebar's named variant with its `role`,
+`aria-label` and `<title>`.
 
 **Runtime:** not yet observed. The real-host check looks at the icon in Settings, both ☰ menus and the progress
 display.

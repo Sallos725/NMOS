@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:19860ec266da".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:46dee5cf2d20".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -1346,7 +1346,13 @@ ${revisionHash}`;
   }
 
   // src/icon.ts
-  var NMOS_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 19V5l12 14V9.5"/><circle cx="18" cy="5.5" r="1.75" fill="currentColor"/></svg>';
+  var SHAPE = '<path d="M6 19V5l12 14V9.5"/><circle cx="18" cy="5.5" r="1.75" fill="currentColor"/>';
+  var svg = (a11y, title) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" ${a11y}>${title}${SHAPE}</svg>`;
+  var NMOS_ICON = svg('aria-hidden="true"', "");
+  function namedIcon(name) {
+    const text2 = name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    return svg(`role="img" aria-label="${text2}"`, `<title>${text2}</title>`);
+  }
 
   // src/hud-host.ts
   var POLL_MS = 3e3;
@@ -3063,7 +3069,7 @@ html,body{margin:0;background:#0c0c10}
     });
     await risuai.registerButton({
       name: t(lang, "menu.panel"),
-      icon: NMOS_ICON,
+      icon: namedIcon(t(lang, "menu.panel")),
       iconType: "html",
       location: "hamburger",
       id: "nmos-sidebar"

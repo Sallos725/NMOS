@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MAX_DEADLINE_MS, MAX_RESERVED_TOKENS } from '../src/form';
 import { chatSwitchNotice, registerHooks, risuChatSwitch, risuHost } from '../src/host';
-import { NMOS_ICON } from '../src/icon';
+import { NMOS_ICON, namedIcon } from '../src/icon';
 
 function withArgs(args: Record<string, string | number>) {
   (globalThis as { risuai?: unknown }).risuai = { getArgument: async (key: string) => args[key.split('::').pop()!] };
@@ -53,9 +53,10 @@ describe('menus', () => {
     await registerHooks(async (p) => p, () => {}, async () => ({} as never), async () => ({} as never), hud);
     expect(buttons.map((b) => [b.arg.location, b.arg.id])).toEqual([
       ['chat', 'nmos-chat'], ['chat', 'nmos-chat-switch'], ['hamburger', 'nmos-sidebar']]);
-    // The panel's three entries carry NMOS's icon.
+    // The panel's three entries carry NMOS's icon; the sidebar shows no name, so there the icon carries it.
     expect(settingIcons).toEqual([NMOS_ICON]);
-    expect(buttons.filter((b) => b.arg.id !== 'nmos-chat-switch').map((b) => b.arg.icon)).toEqual([NMOS_ICON, NMOS_ICON]);
+    expect(buttons.filter((b) => b.arg.id !== 'nmos-chat-switch').map((b) => b.arg.icon))
+      .toEqual([NMOS_ICON, namedIcon('NMOS memory')]);
     const toggle = buttons.find((b) => b.arg.id === 'nmos-chat-switch')!;
     toggle.callback();
     await vi.waitFor(() => expect(alerts).toHaveLength(1));

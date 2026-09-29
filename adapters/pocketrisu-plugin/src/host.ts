@@ -8,7 +8,7 @@ import { CHAT_OFF_ARG, createChatSwitch, parseChatIds, type ChatState } from './
 import type { HostChat, HostPersonas } from './types';
 import { DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, MAX_DEADLINE_MS, MAX_RESERVED_TOKENS } from './form';
 import { createHud, type HudDocument } from './hud-host';
-import { NMOS_ICON } from './icon';
+import { NMOS_ICON, namedIcon } from './icon';
 import { routeFor } from './route';
 import { openPanel, type HudControl, type PanelDeps, type Tab } from './ui';
 
@@ -236,7 +236,7 @@ export async function registerHooks(
   });
   // The sidebar's ☰ menu, which shows icons only (PocketRisu v1.13.0 Sidebar.svelte): the panel, where "This chat"
   // is the first card.
-  await risuai.registerButton({ name: t(lang, 'menu.panel'), icon: NMOS_ICON, iconType: 'html', location: 'hamburger',
-    id: 'nmos-sidebar' }, () => open('status'));
+  await risuai.registerButton({ name: t(lang, 'menu.panel'), icon: namedIcon(t(lang, 'menu.panel')), iconType: 'html',
+    location: 'hamburger', id: 'nmos-sidebar' }, () => open('status'));
   return () => void open('status');
 }
