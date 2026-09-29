@@ -50,15 +50,15 @@ export const MIN_POLL_GAP_MS = 1000;
 const CLASS = 'nmos-hud';
 // Under the panel frame (z-index 1000) so the open panel covers it.
 const ROOT_STYLE = 'position:fixed;top:calc(8px + env(safe-area-inset-top));right:calc(8px + env(safe-area-inset-right));'
-  + 'z-index:900;min-width:140px;max-width:min(320px,calc(100vw - 72px));background:#1d1e24;border:1px solid #30323b;border-radius:12px;'
-  + 'padding:6px 12px;font:13px/1.4 system-ui,-apple-system,"Noto Sans KR",sans-serif;'
-  + 'box-shadow:0 2px 10px rgba(0,0,0,.35);cursor:pointer;user-select:none';
+  + 'z-index:900;min-width:140px;max-width:min(320px,calc(100vw - 72px));background:rgba(18,19,24,0.92);border:1px solid rgba(255,255,255,0.08);border-radius:16px;'
+  + 'padding:6px 12px;font:12.5px/1.4 system-ui,-apple-system,"Noto Sans KR",sans-serif;backdrop-filter:blur(14px);'
+  + 'box-shadow:0 4px 16px rgba(0,0,0,.45);cursor:pointer;user-select:none;transition:all .15s ease';
 // The line's colour is the state's; the icon (`currentColor`) and the text take it.
-const LINE_STYLE = 'display:flex;align-items:center;gap:6px;color:#e8e8ec';
+const LINE_STYLE = 'display:flex;align-items:center;gap:7px;color:#e8e8ec';
 const ICON_STYLE = 'display:none;flex:none;width:14px;height:14px';
-const TEXT_STYLE = 'display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
-const TRACK_STYLE = 'display:none;height:3px;margin-top:4px;background:#30323b;border-radius:2px;overflow:hidden';
-const FILL_STYLE = 'height:3px;width:0;background:#4c6ef5;border-radius:2px;transition:width .3s';
+const TEXT_STYLE = 'display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:ui-monospace,monospace;font-size:11.5px;letter-spacing:-0.01em';
+const TRACK_STYLE = 'display:none;height:2px;margin-top:5px;background:rgba(255,255,255,0.08);border-radius:1px;overflow:hidden';
+const FILL_STYLE = 'height:2px;width:0;background:#5275ff;border-radius:1px;transition:width .3s ease';
 const COLORS: Record<HudView['kind'], string> = { busy: '#e8e8ec', ok: '#8ce99a', muted: '#9a9ca8', warn: '#ffd43b' };
 
 interface Drawn { root: HudElement; line: HudElement; icon: HudElement; text: HudElement; track: HudElement; fill: HudElement;
