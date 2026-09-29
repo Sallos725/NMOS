@@ -32,6 +32,11 @@ later, is `docs/KNOWN-ISSUES.md`.
   key or the token. A new plugin build; no migration. Restoring comes in step 4.
 - **Phase 16 step 2: the plugin's frame can save a file** (H21, `docs/HOST-FACTS.md`): on PocketRisu v1.13.0 a Blob
   saves from the panel (Chromium, Firefox) and `nativeFetch` carries a binary body whole on both routes.
+- **Fixed (security): a narrator's name could break out of the packet's Note** (ADR 0035). With a first-person
+  narrator set for a chat, the narrator's display name went into the packet's `<Note>` unescaped, so a name holding
+  markup (`</Note><Fact>…`) could add elements of its own to the system-role packet. The Note's text is now escaped
+  like every other line. A name without `<`, `>` or `&` gives the same packet as before, so recorded requests still
+  replay. No migration, no plugin change.
 - **Fixed: canon facts from a branch the host never shows** (ADR 0047 amendment 2, H20). A card or lorebook text
   with `{{#if …}}` / `{{#when …}}` blocks was read with every branch, and its facts were sent as memory even when
   the chat's variables hid them (a language or a display switch, for example). A canon fact quoted only inside such
