@@ -75,9 +75,10 @@ Status tab. *Cost:* plugin UI only. *Kind:* UI; ships with the next milestone.
 
 **C6 — Imported data carries its own provenance kind.** When that plugin imports memory it cannot check against a
 source, it keeps it but rewrites every evidence reference to "manual, unverified" and prefixes the reason. Phase 16
-(export and restore) should do the same: a restored projection that the target database's ledger cannot rebuild is
-labelled `restored_unverified` in its provenance and in the Inspector, never as extracted. *Cost:* part of the
-Phase 16 spec. *Kind:* Phase 16.
+(approved) restores an NMOS archive, which holds the ledger itself, so nothing restored is unverified there. The rule
+belongs to importing another plugin's memory (Phase 16 out of scope; proposal P4 of
+`PUBLIC-RELEASE-AND-BENCHMARK.md`): such rows would be their own source kind, labelled unverified in provenance and in
+the Inspector, never shown as extracted. *Kind:* P4, if it is ever taken.
 
 **C7 — Merge with a preview.** That plugin's person merge builds a plan first: blockers, every conflicting field
 with a choice of side, numbers never summed, a backup downloaded before applying, and the plan refused if memory
@@ -116,7 +117,7 @@ the "db" permission (H17), not measured for cost. *Cost:* host evidence first. *
 ## 6. Recommended order (owner decision)
 
 1. **C1 now** (host evidence on the local harness; correctness, no phase).
-2. **C6 into the Phase 16 spec** when it is written.
+2. **C6** only with P4 (importing another plugin's memory), if that is ever taken.
 3. **C4 + C5** as one small ops/UI step (a migration and a plugin build), with the owner's go.
 4. **C2** on the queued list for the next extractor generation; **C3** as an offline replay experiment first.
 5. **C7 and C10** with Stage 6's remaining items; **C8** with Stage 7; **C9** only with an approved spend.
