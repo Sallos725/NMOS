@@ -22,7 +22,11 @@ Export saves a Blob. Step 3 (ADR 0050, D60): the NMOS Archive and its export: `G
 nmos_sidecar.archive export`, and the panel's **Export this chat** (Inspector) and **Export everything** (Settings);
 one read-only snapshot, the ledger, canon, the owner's input, recorded requests and generations always, settings
 for the whole install, the model's work by default, embeddings when asked; any credential refuses the export. A new
-plugin build; no migration.
+plugin build; no migration. Step 4 (ADR 0050 amendment 1): `python -m nmos_sidecar.archive restore [--check]`: every
+file checked first; refused for a newer archive or a conversation already here (never merged); the archive's schema
+built in a scratch schema, rows loaded, later migrations applied, copied in with ids and timestamps kept (shared
+sequenced ids moved past the install's own when taken, with the recorded requests' refs); a whole install restored
+into a fresh one re-exports to the same bytes and replays the same; a Phase 13 archive restores as the upgrade would.
 
 **Phase 14 — Verification and Repair, part 2: canon sources (Stage 6): approved 2026-09-28, complete 2026-09-29.** Spec
 `docs/phases/PHASE-14.md`: the character card, the lorebooks, the persona and the author's note as
