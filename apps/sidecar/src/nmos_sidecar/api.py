@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hmac
 import logging
+import os
+import tempfile
 import time
 import dataclasses
 import ipaddress
@@ -13,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +25,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from . import (__version__, audit, canon, canonfacts, extraction, generations, inspector, ledger, normtext, plugin,
+from . import (__version__, archive, audit, canon, canonfacts, extraction, generations, inspector, ledger, normtext, plugin,
                readmodel, retention, repairs, runtime, summaries, vectors)
 from .config import Settings
 from .db import make_pool
@@ -780,6 +782,30 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             raise HTTPException(status_code=404, detail="conversation not found")
         log.info("deleted conversation=%s rows=%s", conv_id, deleted)
         return {"deleted": deleted}
+
+    @app.get("/v1/archive", dependencies=[Depends(auth)])
+    def archive_export(request: Request, background: BackgroundTasks,
+                       conversation: list[UUID] | None = Query(None), projections: bool = True,
+                       embeddings: bool = False):
+        """An NMOS Archive (ADR 0050): the whole install with its settings, or the chosen conversations. One
+        read-only snapshot; the file holds chat text, never a key or the token."""
+        tmp = tempfile.NamedTemporaryFile(prefix="nmos-archive-", suffix=archive.SUFFIX, delete=False)
+        try:
+            with tmp, request.app.state.pool.connection() as conn:
+                result = archive.write_archive(conn, tmp, [str(c) for c in conversation] if conversation else None,
+                                               projections=projections, embeddings=embeddings,
+                                               settings=rt["settings"])
+        except archive.ArchiveError as error:
+            os.unlink(tmp.name)
+            missing = str(error).startswith("no such conversation")
+            raise HTTPException(status_code=404 if missing else 409, detail=str(error)) from None
+        except BaseException:
+            os.unlink(tmp.name)
+            raise
+        background.add_task(os.unlink, tmp.name)
+        log.info("archive scope=%s conversations=%d bytes=%d", result.manifest["scope"],
+                 len(result.manifest["conversations"]), os.path.getsize(tmp.name))
+        return FileResponse(tmp.name, media_type="application/zip", filename=archive.default_name(result))
 
     @app.get("/v1/config", dependencies=[Depends(auth)])
     def get_config():

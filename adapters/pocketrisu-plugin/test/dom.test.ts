@@ -70,6 +70,11 @@ describe('panel', () => {
       hud: { enable: async () => 'unsupported', disable: async () => {}, problem: () => null, background: () => {} },
       chat: createChatSwitch({ getArg: async (key) => args[key] ?? '', setArg: async (key, value) => { args[key] = value; },
         currentChatId: async () => open.chat }),
+      download: async (path, name) => {
+        calls.push(['DOWNLOAD', path, name]);
+        if (args.refuse_export) throw new Error('/v1/archive -> HTTP 409: a row holds a credential');
+        return 3 * 1_048_576;
+      },
     };
     return { d, calls, args, open };
   }
@@ -155,6 +160,28 @@ describe('panel', () => {
     expect(reserved.value).toBe('8000');  // and shows what it stored (Phase 15 real-host smoke)
   });
 
+  it('exports everything from the settings, with embeddings when asked, and says what it saved (ADR 0050)', async () => {
+    const { d, calls, args } = deps();
+    await openPanel(d, 'settings');
+    const panel = document.getElementById('nmos-panel')!;
+    const exportAll = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Export everything')!;
+    exportAll.click();
+    await settle();
+    const downloads = () => calls.filter(([kind]) => kind === 'DOWNLOAD');
+    expect(downloads()[0]?.[1]).toBe('/v1/archive');
+    expect(downloads()[0]?.[2]).toMatch(/^nmos-all-\d{8}-\d{6}\.nmos\.zip$/);
+    expect(panel.textContent).toContain('Saved 3.0 MB.');
+    const label = [...panel.querySelectorAll('.check')].find((c) => c.textContent?.startsWith('Include embeddings'))!;
+    (label.querySelector('input') as HTMLInputElement).checked = true;
+    args.refuse_export = '1';
+    exportAll.click();
+    await settle();
+    expect(downloads()[1]?.[1]).toBe('/v1/archive?embeddings=true');
+    expect(panel.textContent).toContain('a row holds a credential');
+    expect(exportAll.disabled).toBe(false);
+    expect(calls.filter(([method]) => method === 'PUT')).toEqual([]);  // not a setting: nothing saved
+  });
+
   it('turns summaries off from the settings (ADR 0042, 0043)', async () => {
     const { d, calls } = deps();
     await openPanel(d, 'settings');
@@ -234,6 +261,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
       hide: async () => {},
       hud: { enable: async () => 'unsupported', disable: async () => {}, problem: () => null, background: () => {} },
       chat: createChatSwitch({ getArg: async () => '', setArg: async () => {}, currentChatId: async () => null }),
+      download: async (path, name) => { calls.push(['DOWNLOAD', path, name]); return 524_288; },
     };
     return { d, calls, state };
   }
@@ -252,6 +280,17 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     link.click();
     await settle();
   }
+
+  it('exports the chat on its page (ADR 0050)', async () => {
+    const { d, calls } = deps();
+    await openChat(d);
+    button('Export this chat').click();
+    await settle();
+    const [, path, name] = calls.find(([kind]) => kind === 'DOWNLOAD')!;
+    expect(path).toBe(`/v1/archive?conversation=${id}`);
+    expect(name).toMatch(/^nmos-chat-\d{8}-\d{6}\.nmos\.zip$/);
+    expect(panel().textContent).toContain('Saved 0.5 MB.');
+  });
 
   it('puts a button on each line the page marks and posts that repair', async () => {
     const { d, calls } = deps();

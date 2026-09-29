@@ -50,7 +50,8 @@ describe('menus', () => {
       getChatFromIndex: async () => ({ id: 'chat-9', message: [] }),
     };
     const hud = { enable: async () => 'unsupported' as const, disable: async () => {}, problem: () => null, background: () => {} };
-    await registerHooks(async (p) => p, () => {}, async () => ({} as never), async () => ({} as never), hud);
+    await registerHooks(async (p) => p, () => {}, async () => ({} as never), async () => ({} as never),
+      async () => new ArrayBuffer(0), hud);
     expect(buttons.map((b) => [b.arg.location, b.arg.id])).toEqual([
       ['chat', 'nmos-chat'], ['chat', 'nmos-chat-switch'], ['hamburger', 'nmos-sidebar']]);
     // The panel's three entries carry NMOS's icon; the sidebar shows no name, so there the icon carries it.

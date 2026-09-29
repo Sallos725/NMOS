@@ -130,6 +130,25 @@ export const risuHost: HostPort = {
     return { status: res.status, json };
   },
 
+  async requestFile(url, headers, timeoutMs, route) {
+    const res = await risuai.nativeFetch(url, {
+      method: 'GET',
+      headers,
+      requestTimeoutMs: Math.max(1, Math.floor(timeoutMs)),
+      ...fetchOptions(route),
+    });
+    // Binary bodies arrive whole through nativeFetch on both routes (H21).
+    const bytes = await res.arrayBuffer();
+    if (res.status >= 200 && res.status < 300) return { status: res.status, bytes, json: null };
+    let json: unknown = null;
+    try {
+      json = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      json = null;
+    }
+    return { status: res.status, bytes: null, json };
+  },
+
   warn: (...args) => console.warn(...args),
   debug: (...args) => console.debug(...args),
   now: () => performance.now(),
@@ -199,11 +218,26 @@ export function chatSwitchNotice(lang: Parameters<typeof t>[0], state: ChatState
   return t(lang, enabled ? 'chat.switched_on' : 'chat.switched_on_all_off');
 }
 
+/** Save bytes as a file through the browser (H21): a Blob on a link with `download`, clicked by script. A link to the
+ * sidecar would navigate the plugin frame instead. */
+export function saveFile(bytes: ArrayBuffer, name: string, type = 'application/zip'): void {
+  const url = URL.createObjectURL(new Blob([bytes], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.style.display = 'none';
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 export async function registerHooks(
   beforeRequest: (prompt: unknown, mode: unknown) => Promise<unknown>,
   onOutput: (arg: unknown) => void,
   status: () => Promise<StatusInfo>,
   api: PanelDeps['api'],
+  file: (path: string) => Promise<ArrayBuffer>,
   hud: HudControl,
 ): Promise<() => void> {
   await risuai.addRisuReplacer('beforeRequest', beforeRequest);
@@ -217,6 +251,11 @@ export async function registerHooks(
     hide: () => risuai.hideContainer(),
     hud,
     chat: risuChatSwitch,
+    async download(path, name) {
+      const bytes = await file(path);
+      saveFile(bytes, name);
+      return bytes.byteLength;
+    },
   };
   const open = (tab: Tab) => openPanel(deps, tab);
   // Menu names are fixed at load, in the language chosen then (they follow a change after a reload).

@@ -501,6 +501,14 @@ and `<Story>` keep their limits. At 2,000 and below
 it is `packet-v8`; recall stops growing at 8,000, the panel's largest suggestion. The plugin's default budget is 4,000,
 fixed; the user still lowers the host's max context by it (D2).
 
+**D60 — NMOS Archive (Phase 16, ADR 0050).** An archive is one `.nmos.zip`: a JSON Lines file per table, rows from
+PostgreSQL's `row_to_json` (exact timestamps, jsonb, reals and vectors), then a manifest with the format version, the
+schema's migrations, what it holds and each file's rows and SHA-256. It always holds the ledger, canon, the owner's
+input, the recorded requests and every generation; the settings without keys for the whole install; the model's work
+by default; embeddings when asked; never jobs, derived text or a credential (any credential found refuses it). It is
+written from one read-only snapshot by `GET /v1/archive`, `python -m nmos_sidecar.archive export` and the panel's
+Export buttons, which save it as a Blob (H21).
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
