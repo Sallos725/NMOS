@@ -1,13 +1,13 @@
 # Phase 15 — A packet that fills its budget
 
-> **Status: draft 2026-09-29, for the owner's approval.** P1 of `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`.
-> The owner chose on 2026-09-29 to do this before export and restore; approving this document renumbers export and
-> restore to Phase 16 (`docs/ROADMAP-1.0.md`, `docs/STATUS.md`, AGENTS.md §2). It starts after Phase 14 step 6.
+> **Status: approved 2026-09-29 (owner), not started.** P1 of `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`.
+> The owner chose on 2026-09-29 to do this before export and restore, which is now Phase 16 (`docs/ROADMAP-1.0.md`,
+> `docs/STATUS.md`, AGENTS.md §2). It starts after Phase 14 step 6.
 > On 2026-09-29 the owner also chose a fixed default budget over one that follows the host's context (Q3).
 
 ## Questions and answers
 
-Each answer in bold is NMOS's proposal.
+Each answer in bold was NMOS's proposal; the owner approved the document with them (2026-09-29).
 
 | # | Question | Proposed answer | Alternatives |
 |---|---|---|---|
@@ -102,7 +102,7 @@ sample 2, with vectors on.
 
 ## Steps (one pull request each)
 
-1. This document, approved; the renumbering.
+1. This document, approved; the renumbering. **Done** (2026-09-29).
 2. Evaluation tooling and the `packet-v8` baseline with vectors.
 3. `packet-v9`, ADR 0049, the default budget, and a plugin build.
 4. Cold embeddings: measure, then the note and notice if warranted.

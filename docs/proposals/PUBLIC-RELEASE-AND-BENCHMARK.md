@@ -34,7 +34,7 @@ Documentation first (this page, `docs/perf/packet-fill.md`, K33–K35), then the
 
 Scale recall with the budget: raw excerpts in number and length, and facts up to twice today's limit. Open threads,
 events and secrets keep their limits. The default budget is fixed (4,000), not a share of the host's context.
-Spec draft: `docs/phases/PHASE-15.md`.
+Spec: `docs/phases/PHASE-15.md` (Phase 15, approved 2026-09-29).
 
 ### P2 — Cold embedding model (K34)
 

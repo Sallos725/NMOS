@@ -12,7 +12,7 @@ packet policy `packet-v8`, migrations 0021–0026. Phase 14 step 6 (canon facts 
 `docs/phases/PHASE-14.md`: the character card, the lorebooks, the persona and the author's note as
 immutable sources of each chat; names from canon; canon facts read by the extraction model as their own projection
 (the message extractor unchanged), superseded by the story from the turn it says something new; contradictions in
-"Needs attention"; a canon lock. Host evidence first, on the owner's PocketRisu v1.13.0. Export/restore is Phase 15 (Q0).
+"Needs attention"; a canon lock. Host evidence first, on the owner's PocketRisu v1.13.0. Export/restore is Phase 16 (Q0; renumbered 2026-09-29).
 The owner accepted every proposed answer; no release. Step 2 done (`docs/HOST-FACTS.md` "Canon sources", H19,
 `docs/perf/canon.md`): every canon source is readable on v1.13.0, the card only off the request path (reading it
 clones the chat, 82–93 ms at 10,000 messages); sample 2's lorebook keys cover six given names (K31). Step 3 (ADR 0045,
@@ -315,8 +315,10 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
   answers (Q0–Q9, `docs/phases/PHASE-13.md`); complete 2026-09-28, the latency criterion missed by 2 ms and accepted
   (owner); no release.
 - Phase 14 (Stage 6, part 2: canon sources): approved 2026-09-28 with every proposed answer (Q0–Q10,
-  `docs/phases/PHASE-14.md`); export/restore is Phase 15 (Q0); no release. Phase 15+ (export/restore, Stages 7–8):
-  not authorized.
+  `docs/phases/PHASE-14.md`); export/restore is Phase 16 (Q0; renumbered 2026-09-29); no release.
+- Phase 15 (a packet that fills its budget; P1 of `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`): approved
+  2026-09-29 with the proposed answers (Q0–Q8, `docs/phases/PHASE-15.md`); before export/restore, after Phase 14
+  step 6; default budget 4,000, fixed; no release. Phase 16+ (export/restore, Stages 7–8): not authorized.
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600. Raised to 800 on 2026-09-27 (owner; ADR 0035).
 - Release cadence — decided 2026-09-26, revised 2026-09-27: one release per roadmap stage, urgent patches
