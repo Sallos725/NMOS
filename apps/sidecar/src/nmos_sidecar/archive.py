@@ -334,65 +334,106 @@ def _bundled() -> list[tuple[str, str]]:
             for f in migration_files()]
 
 
+MANIFEST_MAX = 4 * 1024 * 1024  # a manifest is a few kilobytes; more is not one NMOS wrote
+SHA256 = frozenset("0123456789abcdef")
+
+
+def _entries(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """The manifest's files by table, each checked for its shape; the ledger's tables must be there."""
+    files: dict[str, dict[str, Any]] = {}
+    listed = manifest.get("files")
+    if not isinstance(listed, list):
+        raise ArchiveError("the manifest lists no files")
+    for f in listed:
+        table = f.get("table") if isinstance(f, dict) else None
+        if (table not in KNOWN or f.get("path") != f"tables/{table}.jsonl" or table in files
+                or not isinstance(f.get("rows"), int) or not isinstance(f.get("bytes"), int)
+                or f["rows"] < 0 or f["bytes"] < 0 or not isinstance(f.get("sha256"), str)
+                or len(f["sha256"]) != 64 or not set(f["sha256"]) <= SHA256):
+            raise ArchiveError(f"the manifest lists an unexpected file: {f!r:.120}")
+        files[table] = f
+    for table in ("conversation", "source_object", "source_revision", "worldline_commit", "projection_generation"):
+        if table not in files:
+            raise ArchiveError(f"the archive has no {table} file; it was not made by NMOS's export")
+    return files
+
+
 def check_archive(path: str) -> Checked:
-    """Verify an archive before anything is written: its manifest, that it holds exactly the files listed, and each
-    file's size, row count and SHA-256. Refuses an archive from a newer NMOS or with other migrations (Q5)."""
+    """Verify an archive before anything is written: its manifest, that it holds exactly the files listed (no
+    duplicate, no encrypted member), and each file's size, row count and SHA-256. Refuses an archive from a newer
+    NMOS or with other migrations (Q5). A restore checks each file's hash again as it loads it."""
     try:
         zf = zipfile.ZipFile(path)
     except (OSError, zipfile.BadZipFile) as error:
         raise ArchiveError(f"not a readable archive: {error}") from None
     with zf:
+        infos = zf.infolist()
+        names = [i.filename for i in infos]
+        if len(names) != len(set(names)):
+            raise ArchiveError("the archive holds a file twice")
+        if any(i.flag_bits & 0x1 for i in infos):
+            raise ArchiveError("the archive holds an encrypted file")
+        if "manifest.json" not in names:
+            raise ArchiveError("the archive has no manifest.json")
+        if zf.getinfo("manifest.json").file_size > MANIFEST_MAX:
+            raise ArchiveError("the archive's manifest is too large to be NMOS's")
         try:
             manifest = json.loads(zf.read("manifest.json"))
-        except KeyError:
-            raise ArchiveError("the archive has no manifest.json") from None
-        except ValueError:
-            raise ArchiveError("the archive's manifest is not JSON") from None
+        except (ValueError, zipfile.BadZipFile, EOFError, OSError) as error:
+            raise ArchiveError(f"the archive's manifest cannot be read: {error}") from None
         if not isinstance(manifest, dict) or manifest.get("format") != FORMAT:
             raise ArchiveError("not an NMOS archive")
         if manifest.get("format_version") != FORMAT_VERSION:
             raise ArchiveError(f"archive format {manifest.get('format_version')!r}; this NMOS reads {FORMAT_VERSION}")
-        files: dict[str, dict[str, Any]] = {}
-        for f in manifest.get("files") or []:
-            table = f.get("table")
-            if table not in KNOWN or f.get("path") != f"tables/{table}.jsonl" or table in files:
-                raise ArchiveError(f"the manifest lists an unexpected file: {f.get('path')!r}")
-            files[table] = f
-        names = set(zf.namelist())
-        if names != {f["path"] for f in files.values()} | {"manifest.json"}:
-            extra = sorted(names - {f["path"] for f in files.values()} - {"manifest.json"})
-            missing = sorted({f["path"] for f in files.values()} - names)
+        files = _entries(manifest)
+        if set(names) != {f["path"] for f in files.values()} | {"manifest.json"}:
+            extra = sorted(set(names) - {f["path"] for f in files.values()} - {"manifest.json"})
+            missing = sorted({f["path"] for f in files.values()} - set(names))
             raise ArchiveError(f"the archive's files differ from its manifest (extra {extra}, missing {missing})")
-        for table, f in files.items():
+        for f in files.values():
             if zf.getinfo(f["path"]).file_size != f["bytes"]:
                 raise ArchiveError(f"{f['path']} is {zf.getinfo(f['path']).file_size} bytes; the manifest says {f['bytes']}")
-            digest, rows = hashlib.sha256(), 0
-            with zf.open(f["path"]) as fh:
-                for line in fh:
-                    digest.update(line)
-                    rows += 1
-            if digest.hexdigest() != f["sha256"] or rows != f["rows"]:
-                raise ArchiveError(f"{f['path']} was changed or cut: its hash or row count differs from the manifest")
-    migrations = [(m.get("version"), m.get("checksum")) for m in (manifest.get("schema") or {}).get("migrations") or []]
+            for _ in _rows(zf, f):
+                pass
+    schema = manifest.get("schema") if isinstance(manifest.get("schema"), dict) else {}
+    raw = schema.get("migrations") if isinstance(schema.get("migrations"), list) else []
+    migrations = [(m.get("version"), m.get("checksum")) if isinstance(m, dict) else (None, None) for m in raw]
+    if not migrations or schema.get("level") != migrations[-1][0]:
+        raise ArchiveError("the manifest names no schema, or a level that is not its last migration")
     bundled = _bundled()
-    if not migrations:
-        raise ArchiveError("the manifest names no schema")
     if len(migrations) > len(bundled) or migrations != bundled[:len(migrations)]:
         newer = [v for v, _ in migrations if v not in {b for b, _ in bundled}]
         if newer:
             raise ArchiveError(f"the archive was made by a newer NMOS (schema {migrations[-1][0]}); upgrade NMOS first")
         raise ArchiveError("the archive's migrations differ from this NMOS's; it was not made by a release of it")
+    conversations = manifest.get("conversations")
+    if not isinstance(conversations, list) or len(conversations) != files["conversation"]["rows"]:
+        raise ArchiveError("the manifest's conversations differ from its conversation file")
     return Checked(path=path, manifest=manifest, files=files)
 
 
-def _rows(zf: zipfile.ZipFile, path: str) -> Iterable[list[str]]:
+def _rows(zf: zipfile.ZipFile, entry: dict[str, Any]) -> Iterable[list[str]]:
+    """A file's rows in batches, its size, row count and SHA-256 checked against the manifest as it is read: the
+    archive's last batch is given only once the whole file matched (so a file replaced after the check is refused
+    too, with the transaction)."""
     batch: list[str] = []
-    with zf.open(path) as fh:
-        for line in fh:
-            batch.append(line.decode("utf-8").rstrip("\n"))
-            if len(batch) >= BATCH:
-                yield batch
-                batch = []
+    digest, rows, size = hashlib.sha256(), 0, 0
+    try:
+        with zf.open(entry["path"]) as fh:
+            for line in fh:
+                size += len(line)
+                if size > entry["bytes"]:
+                    raise ArchiveError(f"{entry['path']} is longer than the manifest says")
+                digest.update(line)
+                rows += 1
+                batch.append(line.decode("utf-8").rstrip("\n"))
+                if len(batch) >= BATCH:
+                    yield batch
+                    batch = []
+    except (zipfile.BadZipFile, EOFError, OSError, UnicodeDecodeError, ValueError) as error:
+        raise ArchiveError(f"{entry['path']} cannot be read: {error}") from None
+    if digest.hexdigest() != entry["sha256"] or rows != entry["rows"] or size != entry["bytes"]:
+        raise ArchiveError(f"{entry['path']} was changed or cut: its hash or row count differs from the manifest")
     if batch:
         yield batch
 
@@ -422,7 +463,7 @@ def restore_archive(database_url: str, checked: Checked) -> Restored:
             with conn.transaction():
                 _restore_in(conn, zf, checked, scratch, before, after, out)
     except psycopg.Error as error:
-        raise ArchiveError(f"the archive's rows could not be restored here, nothing was written: {error}") from None
+        raise ArchiveError(f"the archive's rows could not be restored here; none were written: {error}") from None
     return out
 
 
@@ -440,7 +481,7 @@ def _restore_in(conn: psycopg.Connection, zf: zipfile.ZipFile, checked: Checked,
                                 " WHERE n.nspname = %s AND c.contype = 'f'", (scratch,)):
         conn.execute(f'ALTER TABLE {table} DROP CONSTRAINT "{name}"')
     for table, entry in checked.files.items():
-        for batch in _rows(zf, entry["path"]):
+        for batch in _rows(zf, entry):
             conn.execute(f'INSERT INTO "{scratch}".{table} OVERRIDING SYSTEM VALUE'
                          f' SELECT * FROM json_populate_recordset(NULL::"{scratch}".{table}, %s::json)',
                          ("[" + ",".join(batch) + "]",))
@@ -486,6 +527,12 @@ def _self_contained(conn: psycopg.Connection, scratch: str) -> None:
         if stray:
             raise ArchiveError(f"{stray} row(s) of {table} name a {ref} the archive does not hold; it was not made by"
                                " NMOS's export")
+    # A commit's parents: earlier commits of its own conversation, in the archive (ledger.py: the head it followed).
+    stray = _q(conn, f'SELECT count(*) FROM "{scratch}".worldline_commit w, unnest(w.parent_commit_ids) p(id)'
+                     f' WHERE NOT EXISTS (SELECT 1 FROM "{scratch}".worldline_commit x'
+                     f' WHERE x.id = p.id AND x.conversation_id = w.conversation_id)')[0][0]
+    if stray:
+        raise ArchiveError(f"{stray} commit parent(s) are not commits of the same conversation in the archive")
     # Conversation-scoped tables without a foreign key.
     for table in ("observation_base", "canon_applied"):
         if _q(conn, "SELECT to_regclass(%s::text)", (f'"{scratch}".{table}',))[0][0] is None:
@@ -526,7 +573,6 @@ def _make_room(conn: psycopg.Connection, scratch: str, out: Restored) -> None:
 
 def _copy_in(conn: psycopg.Connection, scratch: str, checked: Checked, out: Restored) -> None:
     """Copy the scratch rows into this install, parents first, then link heads and branches."""
-    restored = [c["id"] for c in out.conversations]
     for table in [t.name for t in TABLES]:
         if _q(conn, "SELECT to_regclass(%s::text)", (f'"{scratch}".{table}',))[0][0] is None:
             continue
@@ -556,11 +602,6 @@ def _copy_in(conn: psycopg.Connection, scratch: str, checked: Checked, out: Rest
                                                 " JOIN public.conversation c ON c.id = s.id"
                                                 " WHERE s.branched_from_conversation_id IS NOT NULL"
                                                 " AND c.branched_from_conversation_id IS NULL")]
-    # A branch here whose origin was deleted finds it again (its host refs name it).
-    conn.execute("UPDATE public.conversation b SET branched_from_conversation_id = o.id FROM public.conversation o"
-                 " WHERE o.id = ANY(%s::uuid[]) AND b.branched_from_conversation_id IS NULL"
-                 " AND b.host = o.host AND b.branched_from_host_chat_ref = o.host_chat_ref AND b.id <> o.id",
-                 (restored,))
     for table, col in SEQUENCED.items():
         conn.execute(f"SELECT setval(pg_get_serial_sequence('public.{table}', %s),"
                      f" greatest((SELECT max({col}) FROM public.{table}), 1))", (col,))

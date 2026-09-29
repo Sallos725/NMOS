@@ -99,7 +99,7 @@ def test_one_chat_into_an_install_with_its_own_chats_moves_its_ids(migrated, dat
     assert True in replays(target, [cid]).values()
 
 
-def test_a_deleted_chat_comes_back_and_its_branch_finds_it_again(migrated, tmp_path):
+def test_a_deleted_chat_comes_back_and_its_branch_here_is_left_alone(migrated, tmp_path):
     with client(migrated) as c:
         chat, branch = play(c, migrated)
         cid, bid = conv_id(c, chat), conv_id(c, branch)
@@ -114,9 +114,9 @@ def test_a_deleted_chat_comes_back_and_its_branch_finds_it_again(migrated, tmp_p
     done = archive.restore_file(migrated, str(source))
     assert done.renumbered == []  # its ids were freed by the delete
     assert tables(export_to(tmp_path, migrated, "again", conversations=[cid], embeddings=True)) == tables(source)
-    with psycopg.connect(migrated) as conn:
-        assert str(conn.execute("SELECT branched_from_conversation_id FROM conversation WHERE id = %s",
-                                (bid,)).fetchone()[0]) == cid
+    with psycopg.connect(migrated) as conn:  # a restore changes no conversation already here
+        assert conn.execute("SELECT branched_from_conversation_id FROM conversation WHERE id = %s",
+                            (bid,)).fetchone()[0] is None
     assert replays(migrated, [cid]) == before
 
 
@@ -306,3 +306,47 @@ def test_rows_that_name_a_chat_outside_the_archive_are_refused(migrated, databas
         with pytest.raises(archive.ArchiveError, match="does not hold"):
             archive.restore_file(target, str(forged))
     assert counts(target) == before
+
+
+def test_an_archive_replaced_after_its_check_is_refused_as_it_loads(migrated, database_url_factory, tmp_path):
+    with client(migrated) as c:
+        play(c, migrated)
+    source = export_to(tmp_path, migrated, "a")
+    checked = archive.check_archive(str(source))
+    rewrite(source, source.with_suffix(".tmp"), lambda n, d: d.replace(b"Hana", b"Hanb") if n.startswith("tables/")
+            else d).replace(source)
+    target = database_url_factory()
+    with pytest.raises(archive.ArchiveError, match="changed or cut"):
+        archive.restore_archive(target, checked)
+    assert set(counts(target).values()) == {0}
+
+
+def test_a_forged_commit_parent_a_duplicate_file_or_a_wrong_level_is_refused(migrated, database_url_factory,
+                                                                             tmp_path):
+    with client(migrated) as c:
+        chat, _ = play(c, migrated)
+        cid = conv_id(c, chat)
+    source = export_to(tmp_path, migrated, "one", conversations=[cid])
+    target = database_url_factory()
+    forged = reseal(source, tmp_path / f"parent{archive.SUFFIX}", "worldline_commit",
+                    lambda r: {**r, "parent_commit_ids": ["00000000-0000-7000-8000-000000000001"]})
+    with pytest.raises(archive.ArchiveError, match="commit parent"):
+        archive.restore_file(target, str(forged))
+    doubled = tmp_path / f"doubled{archive.SUFFIX}"
+    with zipfile.ZipFile(source) as src, zipfile.ZipFile(doubled, "w") as dst:
+        for name in src.namelist():
+            dst.writestr(name, src.read(name))
+        with pytest.warns(UserWarning):
+            dst.writestr("tables/owner_repair.jsonl", src.read("tables/owner_repair.jsonl"))
+    with pytest.raises(archive.ArchiveError, match="twice"):
+        archive.check_archive(str(doubled))
+
+    def level(name, data):
+        if name != "manifest.json":
+            return data
+        m = json.loads(data)
+        m["schema"]["level"] = m["schema"]["migrations"][0]["version"]
+        return json.dumps(m).encode()
+    with pytest.raises(archive.ArchiveError, match="not its last migration"):
+        archive.check_archive(str(rewrite(source, tmp_path / f"level{archive.SUFFIX}", level)))
+    assert set(counts(target).values()) == {0}
