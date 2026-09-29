@@ -1,7 +1,8 @@
 # Proposal — Ideas from a survey of another memory plugin
 
 > Status: proposal only (2026-09-29). It does not authorize a phase or change the current scope in `AGENTS.md`,
-> `ARCHITECTURE.md` or `docs/STATUS.md`. The owner decides where each candidate goes (§5).
+> `ARCHITECTURE.md` or `docs/STATUS.md`. The owner decides where each candidate goes (§6). Owner, 2026-09-29: follow the
+> recommended order.
 
 ## 1. Source
 
@@ -61,6 +62,9 @@ evidence from 3 different scenes, and a person reviews it. In NMOS a single stat
 read-side rule could serve a trait as current only after it is stated in N turns of M scenes, and as "once" before
 that. *Cost:* a packet-policy change measured offline by replay (no model calls). *Risk:* a card's trait stated
 once in canon would need an exception (canon counts as settled).
+*Measured 2026-09-29 (dropped):* on the two measured copies the active extraction holds 18 and 14 `has_trait`
+facts, and no value is stated in two turns (0 of 32). NMOS's traits are free text, so a repetition threshold would
+hide every one; that plugin can count repetitions because its axes are a fixed vocabulary. Not pursued.
 
 **C4 — Token usage of NMOS's own model calls.** That plugin shows provider-reported usage per stage (with cache
 and reasoning tokens) and marks estimates as such. NMOS records calls but not their tokens, and the owner pays for
@@ -119,5 +123,6 @@ the "db" permission (H17), not measured for cost. *Cost:* host evidence first. *
 1. **C1 now** (host evidence on the local harness; correctness, no phase).
 2. **C6** only with P4 (importing another plugin's memory), if that is ever taken.
 3. **C4 + C5** as one small ops/UI step (a migration and a plugin build), with the owner's go.
-4. **C2** on the queued list for the next extractor generation; **C3** as an offline replay experiment first.
+4. **C2** on the queued list for the next extractor generation (queued in `docs/STATUS.md`, 2026-09-29); **C3**
+   measured and dropped (§4).
 5. **C7 and C10** with Stage 6's remaining items; **C8** with Stage 7; **C9** only with an approved spend.

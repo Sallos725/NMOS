@@ -359,6 +359,10 @@ paid once (owner decision 2026-09-26). A-12 and A-14 shipped in `extract-v11` (o
   example and `addresses` examples (`extraction.py`) and the example value in the `addresses` description
   (`predicates.py`) come from the owner's chat. Replace them with synthetic examples (the persona 타쿠미 /
   Takumi, as in the tests); the repository is public.
+- **Evidence found in the turn for every assertion** (owner decision 2026-09-29, C2 of
+  `docs/proposals/IDEA-SURVEY-2026-09-29.md`). Reveals already need their quoted evidence in the target turn
+  (trigram containment 0.7, PHASE-10); apply the same check to every assertion, parking one whose evidence is not
+  found as `pending` ("evidence not in the turn"). Measure with M0 and the rate of newly parked rows before it ships.
 
 ## Public release checklist (done 2026-09-23)
 
