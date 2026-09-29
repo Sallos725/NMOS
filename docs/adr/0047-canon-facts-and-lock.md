@@ -110,3 +110,32 @@ which was read missed the +5 ms criterion: a canon fact costs what a story fact 
 **Consequences.** "Needs attention" lists nothing on the two measured chats. A card whose identity the story really
 contradicts is not flagged; its canon version stays in the fact's history. The latency is `docs/perf/canon.md`
 (K36).
+
+## Amendment 2 — a fact read inside a conditional block is not served (2026-09-29)
+
+**Context.** A card or lorebook text can hold the host's CBS blocks (H20): `{{#if …}}`, `{{#when …}}` and the like
+show their body only for some values of the chat's variables, and the host sends the text rendered. NMOS reads the
+raw text, every branch at once. On sample 2's copy, 56 of 154 canon texts hold blocks, 12 of the 17 that gave facts
+have exclusive branches on one variable (a language, a display switch), and 110 of their 190 facts quote text inside
+a block. The rendered text is also never "held" by the 80 % line test (item 5), so those facts were sent every time.
+
+**Decision.**
+1. A canon fact is served only when its text has no conditional block, or its evidence is found outside the
+   conditional blocks at least as often as only inside them. The evidence is looked for in pieces of 12 characters,
+   spaces and case ignored (the model quotes the text with names in place of the macros). Evidence found nowhere in a
+   text with blocks is not served: fail closed, as the host shows nothing it cannot resolve.
+2. Which blocks hide their body and which show it follows the host (H20). The check reads the revision's raw
+   content, not a normalized text, so a verdict does not depend on the normalizer and a replay of an older generation
+   reads the same. A revision's spans and each verdict are kept in memory, since a revision never changes; a request
+   takes its revisions' blocks whole before it reads any, so a concurrent first read never sees half of them.
+3. The rule applies where canon facts are read (`canonfacts.rows`): the packet, the facts view, conflicts and locks.
+   Nothing is re-extracted and nothing stored changes: the facts stay in the extraction for audit.
+
+**Consequences.**
+- On sample 2's copy, 125 of 323 served canon facts leave (each quoted only inside a block); the main chat's canon has
+  no block and is unchanged. With a warm cache the read costs no measurable time (medians of 15 reads, 5.7–6.4 ms with the check and
+  6.2–8.2 ms without, in two runs); the first read of a revision in a process takes about 20 ms more on that chat.
+- A fact from the branch the host does show is not served either: the variables are not read, so NMOS cannot tell
+  which branch is live. The host sends that branch's text whenever it holds the entry.
+- A lock on a canon fact read inside a block matches nothing and is listed as such (item 4).
+- A request recorded before this change that served such a fact replays without it and reports `reproduced: false`.
