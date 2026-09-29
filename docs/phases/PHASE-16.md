@@ -1,6 +1,7 @@
 # Phase 16 — Export and restore (Stage 6, part 3)
 
-> **Status: approved (2026-09-29), with every proposed answer (Q0–Q9).** Stage 6 of `docs/ROADMAP-1.0.md` (original §89,
+> **Status: complete (2026-09-29), approved the same day with every proposed answer (Q0–Q9); the phone check of the
+> panel's Export is the owner's (K38).** Stage 6 of `docs/ROADMAP-1.0.md` (original §89,
 > §66–67; Track B, B7): "export and restore of the ledger, repairs and settings", and Stage 6's last done criterion,
 > "export, restore into a fresh install and replay give the same packets". Phase 14 Q0 gave it its own phase; Phase 15
 > (a packet that fills its budget) ran first at the owner's choice (2026-09-29).
@@ -61,19 +62,23 @@ same repairs and links, the same answers to recorded requests, without paying fo
 
 ## Acceptance criteria
 
-- [ ] Every existing test passes.
-- [ ] Deterministic cases: a round trip of a chat with edits, swipes, a branch, a deleted message, canon, repairs,
+- [x] Every existing test passes (sidecar 655, plugin 162).
+- [x] Deterministic cases: a round trip of a chat with edits, swipes, a branch, a deleted message, canon, repairs,
       links and a memory mode gives an equal ledger state and reproduced replays; a branch exported without its origin
       restores with its host refs and no link; embeddings optional; secrets never
       exported; a changed or truncated file refused before anything is written; a present chat refused; a newer
-      archive refused; an archive from Phase 15 `main` restored and migrated.
-- [ ] Host evidence on PocketRisu v1.13.0 for saving a file from the plugin's frame, in `HOST-FACTS.md`; a real-host
-      smoke of the panel's Export (this chat and everything), or of its fallback link.
-- [ ] On the owner's two measured chats (copies): the ledger state equal, every replayable request reproduced, M0 and
-      the secret gate unchanged, a rebuild equal to the source's.
-- [ ] Size and time of export and restore of the production-sized copy reported.
-- [ ] A review per AGENTS.md §14 (high risk: stored data).
-- [ ] `ARCHITECTURE.md` (D60), ADR 0050, README, the Korean guide, KNOWN-ISSUES, CHANGELOG, the roadmap's Stage 6.
+      archive refused; an archive from an older NMOS restored and migrated (Phase 13 `main`, level 0024; the measured
+      copies, level 0025; Phase 15 `main` is this schema's level).
+- [x] Host evidence on PocketRisu v1.13.0 for saving a file from the plugin's frame, in `HOST-FACTS.md` (H21); a
+      real-host smoke of the panel's Export (this chat and everything), `fixtures/host/export-smoke-v1.13.0-2026-09-29/`.
+      Not on a phone (K38).
+- [x] On the owner's two measured chats (copies): the ledger state equal, every recorded request compiled again the
+      same as on the source (lexical; replays with vectors are covered by the deterministic cases), M0 and the secret
+      gate unchanged, a rebuild equal to the source's (`docs/perf/archive.md`).
+- [x] Size and time of export and restore of the production-sized copy reported: 15.3 MB with embeddings (2.1 MB
+      without), export 2.6 s, restore 2.9 s.
+- [x] A review per AGENTS.md §14 (high risk): one Codex review each for export (step 3) and restore (step 4).
+- [x] `ARCHITECTURE.md` (D60), ADR 0050, README, the Korean guide, KNOWN-ISSUES, CHANGELOG, the roadmap's Stage 6.
 
 ## Steps (one pull request each)
 
