@@ -354,7 +354,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     (PHASE-7), facts and claims, excerpts. packet-v3 emits the kept threads and facts marked private in a
     <Private> section after Facts, and adds PRIVATE_NOTE (ADR 0034); earlier policies ignore the mark. packet-v4
     leaves out lines that say again what an earlier one says (`restated`, ADR 0036). `note`
-    is added to the Note (a first-person narrator, ADR 0035) and counts as part of the frame. Lead facts open the Facts section, which the output keeps after
+    is text added to the Note (a first-person narrator, ADR 0035), escaped like every line, and counts as part of the frame. Lead facts open the Facts section, which the output keeps after
     Threads; excerpts are emitted in chronological order. packet-v0 fills them strictly in that order. packet-v1 and later skip excerpts that
     mostly restate an offered thread, fact or claim line (REPEATS), keeps room for the best-ranked
     remaining excerpt (EXCERPT_SHARE of the budget inside the frame; the excerpt is shortened to its best
@@ -369,6 +369,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     est = partial(estimate_tokens, non_ascii=NON_ASCII[policy])
     reserving = policy != "packet-v0"  # packet-v1 and later
     state, threads, facts, lead, story, cast = state or [], threads or [], facts or [], lead or [], story or [], cast or []
+    note = escape(note)  # a narrator's name is not markup: it stays inside the Note
     cast_lines = [line for _, lines in cast for line in lines]
     ledger = ([_entry("state", {"key": i.key}, i.turn, f"{i.key}: {i.value}", i.value) for i in state]
               + [_entry(l.kind, l.ref, l.turn, l.text, l.content, l.marks) for l in story + cast_lines + lead + threads
