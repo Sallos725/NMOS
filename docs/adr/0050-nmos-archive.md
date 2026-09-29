@@ -85,7 +85,9 @@ normalized text and the parsed state are recomputed from the rest.
    first"), one with other migrations too. `--check` stops there.
 3. **Into an install without its conversations:** this install is migrated first (a fresh database too); if any
    archived conversation is here, by id or by host chat, the restore is refused whole and names it. Nothing is
-   merged (invariant 1).
+   merged (invariant 1). The conversations are the archive's rows, not its manifest's list, and every reference of
+   an archived row must point inside the archive (each foreign key of this install's tables, and the conversation
+   of the tables without one), so an archive not written by the export cannot add rows to a chat already here.
 4. **The archive's own schema, then the upgrade it would have had** (Q5): in one transaction, a scratch schema gets
    the bundled migrations up to the archive's level (foreign keys dropped there), the rows are loaded as written
    (`json_populate_recordset`, identity values kept), the later migrations run on them, and the rows are copied into

@@ -417,40 +417,83 @@ def restore_archive(database_url: str, checked: Checked) -> Restored:
     scratch = f"nmos_restore_{os.urandom(6).hex()}"
     out = Restored(conversations=manifest.get("conversations") or [], rows={}, renumbered=[], settings_kept=[],
                    links_cleared=[], migrated=[f.name for f in after])
-    with psycopg.connect(database_url, row_factory=tuple_row) as conn, zipfile.ZipFile(checked.path) as zf:
-        with conn.transaction():
-            conn.execute("SELECT pg_advisory_xact_lock(727003)")
-            conn.execute("SET LOCAL TimeZone = 'UTC'")
-            # Refused whole when a conversation is here already (Q4: never merged).
-            ids = [c["id"] for c in out.conversations]
-            refs = [(c["host"], c["host_chat_ref"]) for c in out.conversations]
-            present = _q(conn, "SELECT id::text, host, host_chat_ref FROM conversation WHERE id = ANY(%s::uuid[])"
-                               " OR (host, host_chat_ref) IN (SELECT * FROM unnest(%s::text[], %s::text[]))",
-                         (ids, [h for h, _ in refs], [r for _, r in refs]))
-            if present:
-                raise ArchiveError("this install already holds " + ", ".join(f"{h} chat {r}" for _, h, r in present)
-                                   + "; delete it there first to restore it (restores never merge)")
-            # The archive's schema, in a scratch schema: tables as its NMOS made them, without foreign keys.
-            conn.execute(f'CREATE SCHEMA "{scratch}"')
-            conn.execute(f'SET LOCAL search_path = "{scratch}", public')
-            for f in before:
-                conn.execute(f.read_text(encoding="utf-8"))
-            for table, name in _q(conn, "SELECT c.conrelid::regclass::text, c.conname FROM pg_constraint c"
-                                        " JOIN pg_namespace n ON n.oid = c.connamespace"
-                                        " WHERE n.nspname = %s AND c.contype = 'f'", (scratch,)):
-                conn.execute(f'ALTER TABLE {table} DROP CONSTRAINT "{name}"')
-            for table, entry in checked.files.items():
-                for batch in _rows(zf, entry["path"]):
-                    conn.execute(f'INSERT INTO "{scratch}".{table} OVERRIDING SYSTEM VALUE'
-                                 f' SELECT * FROM json_populate_recordset(NULL::"{scratch}".{table}, %s::json)',
-                                 ("[" + ",".join(batch) + "]",))
-            for f in after:  # the upgrade those rows would have had (Q5)
-                conn.execute(f.read_text(encoding="utf-8"))
-            conn.execute("SET LOCAL search_path = public")
-            _make_room(conn, scratch, out)
-            _copy_in(conn, scratch, checked, out)
-            conn.execute(f'DROP SCHEMA "{scratch}" CASCADE')
+    try:
+        with psycopg.connect(database_url, row_factory=tuple_row) as conn, zipfile.ZipFile(checked.path) as zf:
+            with conn.transaction():
+                _restore_in(conn, zf, checked, scratch, before, after, out)
+    except psycopg.Error as error:
+        raise ArchiveError(f"the archive's rows could not be restored here, nothing was written: {error}") from None
     return out
+
+
+def _restore_in(conn: psycopg.Connection, zf: zipfile.ZipFile, checked: Checked, scratch: str, before: list,
+                after: list, out: Restored) -> None:
+    conn.execute("SELECT pg_advisory_xact_lock(727003)")
+    conn.execute("SET LOCAL TimeZone = 'UTC'")
+    # The archive's schema, in a scratch schema: tables as its NMOS made them, without foreign keys.
+    conn.execute(f'CREATE SCHEMA "{scratch}"')
+    conn.execute(f'SET LOCAL search_path = "{scratch}", public')
+    for f in before:
+        conn.execute(f.read_text(encoding="utf-8"))
+    for table, name in _q(conn, "SELECT c.conrelid::regclass::text, c.conname FROM pg_constraint c"
+                                " JOIN pg_namespace n ON n.oid = c.connamespace"
+                                " WHERE n.nspname = %s AND c.contype = 'f'", (scratch,)):
+        conn.execute(f'ALTER TABLE {table} DROP CONSTRAINT "{name}"')
+    for table, entry in checked.files.items():
+        for batch in _rows(zf, entry["path"]):
+            conn.execute(f'INSERT INTO "{scratch}".{table} OVERRIDING SYSTEM VALUE'
+                         f' SELECT * FROM json_populate_recordset(NULL::"{scratch}".{table}, %s::json)',
+                         ("[" + ",".join(batch) + "]",))
+    for f in after:  # the upgrade those rows would have had (Q5)
+        conn.execute(f.read_text(encoding="utf-8"))
+    conn.execute("SET LOCAL search_path = public")
+    _self_contained(conn, scratch)
+    out.conversations = [
+        {"id": r[0], "host": r[1], "host_chat_ref": r[2], "character": r[3], "chat": r[4]}
+        for r in _q(conn, f'SELECT id::text, host, host_chat_ref, host_character_name, host_chat_name'
+                          f' FROM "{scratch}".conversation ORDER BY created_at, id')]
+    # Refused whole when a conversation is here already (Q4: never merged).
+    present = _q(conn, f'SELECT c.host, c.host_chat_ref FROM public.conversation c'
+                       f' JOIN "{scratch}".conversation s ON s.id = c.id'
+                       f' OR (s.host = c.host AND s.host_chat_ref = c.host_chat_ref)')
+    if present:
+        raise ArchiveError("this install already holds " + ", ".join(f"{h} chat {r}" for h, r in present)
+                           + "; delete it there first to restore it (restores never merge)")
+    _make_room(conn, scratch, out)
+    _copy_in(conn, scratch, checked, out)
+    conn.execute(f'DROP SCHEMA "{scratch}" CASCADE')
+
+
+def _self_contained(conn: psycopg.Connection, scratch: str) -> None:
+    """Every reference of an archived row stays inside the archive, so a restore can add rows to no conversation that
+    is here: each single-column foreign key of this install's tables, checked on the scratch rows (generations,
+    rows of no conversation, may be here instead; a branch's origin is resolved later)."""
+    fks = _q(conn, """
+        SELECT cl.relname, a.attname, rf.relname, af.attname
+        FROM pg_constraint c
+        JOIN pg_class cl ON cl.oid = c.conrelid JOIN pg_namespace n ON n.oid = cl.relnamespace
+        JOIN pg_class rf ON rf.oid = c.confrelid
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+        JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = c.confkey[1]
+        WHERE c.contype = 'f' AND n.nspname = 'public' AND cardinality(c.conkey) = 1 ORDER BY 1, 2""")
+    for table, col, ref, ref_col in fks:
+        if table not in KNOWN or ref in GLOBAL or (table, col) == ("conversation", "branched_from_conversation_id"):
+            continue
+        if _q(conn, "SELECT to_regclass(%s::text)", (f'"{scratch}".{table}',))[0][0] is None:
+            continue
+        stray = _q(conn, f'SELECT count(*) FROM "{scratch}".{table} t WHERE t."{col}" IS NOT NULL AND NOT EXISTS'
+                         f' (SELECT 1 FROM "{scratch}".{ref} r WHERE r."{ref_col}" = t."{col}")')[0][0]
+        if stray:
+            raise ArchiveError(f"{stray} row(s) of {table} name a {ref} the archive does not hold; it was not made by"
+                               " NMOS's export")
+    # Conversation-scoped tables without a foreign key.
+    for table in ("observation_base", "canon_applied"):
+        if _q(conn, "SELECT to_regclass(%s::text)", (f'"{scratch}".{table}',))[0][0] is None:
+            continue
+        stray = _q(conn, f'SELECT count(*) FROM "{scratch}".{table} t WHERE NOT EXISTS'
+                         f' (SELECT 1 FROM "{scratch}".conversation c WHERE c.id = t.conversation_id)')[0][0]
+        if stray:
+            raise ArchiveError(f"{stray} row(s) of {table} name a conversation the archive does not hold")
 
 
 def _make_room(conn: psycopg.Connection, scratch: str, out: Restored) -> None:

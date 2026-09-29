@@ -267,3 +267,42 @@ def test_settings_already_chosen_here_stay(migrated, database_url_factory, tmp_p
     with client(target) as c:
         recall = c.get("/v1/config").json()["recall"]
     assert recall["top_k"] == 3 and recall["facts_limit"] == 9
+
+
+def reseal(path: Path, out: Path, table: str, change) -> Path:
+    """A copy whose `table` rows went through `change(row)`, with the manifest's size, rows and hash made to match:
+    an archive that passes every file check but was not written by NMOS's export."""
+    import hashlib
+    with zipfile.ZipFile(path) as src:
+        manifest = json.loads(src.read("manifest.json"))
+        data = {n: src.read(n) for n in src.namelist() if n != "manifest.json"}
+    rows = [change(json.loads(x)) for x in data[f"tables/{table}.jsonl"].splitlines()]
+    body = b"".join(json.dumps(r).encode() + b"\n" for r in rows)
+    data[f"tables/{table}.jsonl"] = body
+    for f in manifest["files"]:
+        if f["table"] == table:
+            f.update(bytes=len(body), rows=len(rows), sha256=hashlib.sha256(body).hexdigest())
+    with zipfile.ZipFile(out, "w") as dst:
+        for n, b in data.items():
+            dst.writestr(n, b)
+        dst.writestr("manifest.json", json.dumps(manifest))
+    return out
+
+
+def test_rows_that_name_a_chat_outside_the_archive_are_refused(migrated, database_url_factory, tmp_path):
+    with client(migrated) as c:
+        chat, _ = play(c, migrated)
+        cid = conv_id(c, chat)
+    source = export_to(tmp_path, migrated, "one", conversations=[cid])
+    target = database_url_factory()
+    with client(target) as c:
+        other = story()
+        sync(c, other)
+        victim = conv_id(c, other)
+    before = counts(target)
+    for table in ("source_object", "retrieval_trace", "owner_repair", "canon_applied"):
+        forged = reseal(source, tmp_path / f"forged-{table}{archive.SUFFIX}", table,
+                        lambda r: {**r, "conversation_id": victim})
+        with pytest.raises(archive.ArchiveError, match="does not hold"):
+            archive.restore_file(target, str(forged))
+    assert counts(target) == before
