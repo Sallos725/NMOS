@@ -115,7 +115,7 @@ sample 2, with vectors on.
    The baseline equals the what-if's on both chats and both extractions, every case with vectors.
 3. `packet-v9`, ADR 0049, the default budget, and a plugin build. **Done** (ADR 0049, D59): `packet-v9` the default;
    excerpts, their length and facts grow from the request's own limits; `FIT_CAP` 8,000; the plugin's default budget
-   4,000 (build 09f83f37e6df); deterministic tests (`tests/test_packet_fill.py`).
+   4,000, saved up to 8,000 (build 93c9106e91d4); deterministic tests (`tests/test_packet_fill.py`).
 4. Cold embeddings: measure, then the note and notice if warranted.
 5. Evaluation, the owner's traces, real-host smoke, latency, review, documentation.
 

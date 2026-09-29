@@ -66,6 +66,7 @@ class RecallOptions:
     summarize_key: str | None = None  # summaries of this generation in <Story> (packet-v8, ADR 0043); None: off
     canon_key: str | None = None  # canon facts of this generation (ADR 0047); None: off
     excerpt_chars: int = MAX_EXCERPT_CHARS  # an excerpt's length at most; derived from the budget (`filled`), not recorded
+    fill_facts: int = 0  # fact slots the budget adds, for facts kept from no one (`filled`, ADR 0049), not recorded
 
 
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
@@ -82,15 +83,29 @@ def recorded_options(options: RecallOptions) -> dict[str, Any]:
 
 def filled(options: RecallOptions, budget: int) -> RecallOptions:
     """The recall a budget buys under the options' policy (packet-v9, ADR 0049): the configured excerpt count and each
-    excerpt's length times `packet.fill`, the fact limit times that factor up to FILL_FACTS_MAX; a limit of 0 stays 0.
-    Every other limit, and every policy before packet-v9, is left as it is. A request records its configured limits,
-    so its replay grows them again from the budget it compiles at."""
+    excerpt's length times `packet.fill`, and fact slots up to the fact limit times that factor (at most FILL_FACTS_MAX)
+    in `fill_facts`: `gather` gives them only to facts kept from no one, so secrets and <Private> do not grow. A limit of
+    0 stays 0. Every other limit, and every policy before packet-v9, is left as it is. A request records its configured
+    limits, so its replay grows them again from the budget it compiles at."""
     f = fill(budget, options.policy)
     if f == 1.0:
         return options
     return dataclasses.replace(options, top_k=math.floor(options.top_k * f),
-                               facts_limit=math.floor(options.facts_limit * min(f, FILL_FACTS_MAX)),
+                               fill_facts=math.floor(options.facts_limit * min(f, FILL_FACTS_MAX)) - options.facts_limit,
                                excerpt_chars=math.floor(MAX_EXCERPT_CHARS * f))
+
+
+def _grown(base: list[dict[str, Any]], ranked: list[dict[str, Any]], extra: int) -> list[dict[str, Any]]:
+    """`base` (what the configured limit selects) and up to `extra` more from `ranked` (every candidate, best first):
+    facts kept from no one and not events (packet-v9, ADR 0049): secrets, <Private> and events keep their limits.
+    In ranked order."""
+    if extra <= 0:
+        return base
+    chosen = {id(f) for f in base}
+    more = [f for f in ranked if id(f) not in chosen and f.get("knowledge") != "limited" and not f.get("hidden_from")
+            and f["predicate"] != "event"][:extra]
+    order = {id(f): i for i, f in enumerate(ranked)}
+    return sorted(base + more, key=lambda f: order.get(id(f), -1))
 
 
 def query_prefix(model: str, setting: str) -> str:
@@ -308,11 +323,20 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                                  about=options.policy in ABOUT_POLICIES)], view["threads"], g, r, options)
         if options.facts_limit > 0:
             causes = options.policy in CAUSE_POLICIES
+            present = scene.names(g.cast, r)
             facts = relevant_facts(view["facts"], query, previous_ai, in_context, options.facts_limit,
-                                   options.events_limit, persona, scene.names(g.cast, r), causes=causes)
+                                   options.events_limit, persona, present, causes=causes)
             # Claims after facts, so the budget serves narration first (ADR 0013).
             claims = relevant_facts(view["claims"], query, previous_ai, in_context, max(1, options.facts_limit // 2),
                                     persona=persona, causes=causes)
+            if options.fill_facts > 0:  # packet-v9: more of what no one is kept from (ADR 0049)
+                everything = len(view["facts"]) + len(view["claims"])
+                facts = _grown(facts, relevant_facts(view["facts"], query, previous_ai, in_context, everything,
+                                                     options.events_limit, persona, present, causes=causes),
+                               options.fill_facts)
+                claims = _grown(claims, relevant_facts(view["claims"], query, previous_ai, in_context, everything,
+                                                       persona=persona, causes=causes),
+                                max(1, (options.facts_limit + options.fill_facts) // 2) - max(1, options.facts_limit // 2))
             # How the cast stand with each other takes the budget before threads (ADR 0026).
             before, cause = options.policy in BEFORE_POLICIES, causes
             g.lead = _moded([fact_entry(f, scene.private(f, g.cast, r), before, cause) for f in facts

@@ -99,7 +99,8 @@ Short ADR-style entries. Full ADRs go in `docs/adr/`.
 proves a bridge API is needed (see reference §82 criteria). Any future fork is bridge-only.
 
 **D2 — Token budget is reserved, not stolen.** Because of H3, the user lowers the host's
-max context by `reservedMemoryTokens` (setting; default 2,000 since Phase 12, ADR 0042; 800 since Phase 10, was 600). The packet
+max context by `reservedMemoryTokens` (setting; default 4,000 since Phase 15, ADR 0049; 2,000 since Phase 12, ADR 0042;
+800 since Phase 10, was 600). The packet
 never exceeds that reserve.
 Trimming host history from inside the plugin is a later, opt-in feature.
 
@@ -409,7 +410,7 @@ replaces each private line with a content-free `<Secret holders=… not_known_by
 outside the Private section. Excerpts that say a withheld line's content are left out.
 
 **D46 — Budget pressure (Phase 10, ADR 0036).** A request reports the memory lines its packet left out for the
-budget and the smallest budget (100s, up to 2000) that holds them all; the panel's Status tab shows it with a
+budget and the smallest budget (100s, up to `FIT_CAP`: 8,000 since ADR 0049) that holds them all; the panel's Status tab shows it with a
 button that sets the plugin's budget, and reminds the user to lower the host's max context by as much (D2).
 `packet-v4` (and `packet-v5`, D48) leave out a line that says an earlier line again (same head and content, or a
 claim restating a fact of the same head); the ledger keeps it as `restates`.
@@ -452,7 +453,8 @@ before one (it is written again).
 **D53 — Story and cast (Phase 12, ADR 0043).** The default policy `packet-v8` adds `<Story>` (the story so far and
 the scene summary the message is about, in at most 30 % of the budget; none for a first-person narrator) and `<Cast>`
 (each scene character's place, condition, feeling toward the persona, what they carry and, when the message names
-them, open goals, as their ordinary lines, not repeated elsewhere). The default memory budget is 2,000 tokens, and
+them, open goals, as their ordinary lines, not repeated elsewhere). The default memory budget is 2,000 tokens (4,000 since
+D59), and
 summaries are on by default.
 
 **D54 — The owner repairs memory (Phase 13, ADR 0044).** Owner repairs are owner input (`owner_repair`), never edits of
@@ -492,7 +494,8 @@ chat" card; the sidebar's ☰ menu opens the panel.
 
 **D59 — A packet that fills its budget (Phase 15, ADR 0049).** `packet-v9`, the default, is `packet-v8` whose excerpt
 count, excerpt length and fact limit grow with the budget, from the request's own settings: by the budget's share of
-2,000, up to 4 (facts up to 2). Threads, events, secrets, `<Cast>` and `<Story>` keep their limits. At 2,000 and below
+2,000, up to 4 (facts up to 2, the added slots only for facts kept from no one). Threads, events, secrets, `<Cast>`
+and `<Story>` keep their limits. At 2,000 and below
 it is `packet-v8`; recall stops growing at 8,000, the panel's largest suggestion. The plugin's default budget is 4,000,
 fixed; the user still lowers the host's max context by it (D2).
 

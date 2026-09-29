@@ -7,8 +7,8 @@ import { budgetAdvice } from './budget';
 import type { ChatSwitch } from './chatoff';
 import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
-import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, fillProject, MAX_DEADLINE_MS, presetMatches, VERTEX_URL,
-  type FormValues, type Section } from './form';
+import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, fillProject, MAX_DEADLINE_MS,
+  PANEL_MAX_RESERVED_TOKENS, presetMatches, VERTEX_URL, type FormValues, type Section } from './form';
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
 import { closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices, localTime,
   repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
@@ -842,7 +842,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const url = el('input', { spellcheck: 'false' });
   const route = el('select', {}, ...['auto', 'direct', 'server'].map((v) => el('option', { value: v, text: v })));
   const enabled = el('input', { type: 'checkbox' });
-  const reserved = el('input', { type: 'number', min: 100, max: 8000 });
+  const reserved = el('input', { type: 'number', min: 100, max: PANEL_MAX_RESERVED_TOKENS });
   const deadline = el('input', { type: 'number', min: 200, max: MAX_DEADLINE_MS, step: 100 });
   settingsView.append(el('div', { class: 'card' },
     el('h2', { text: L('conn.title') }), el('p', { class: 'sub', text: L('conn.sub') }),

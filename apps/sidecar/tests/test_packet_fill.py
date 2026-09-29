@@ -26,17 +26,18 @@ def test_the_factor_and_the_limits_it_grows():
     assert filled(V9, 2000) is V9 and filled(V9, 600) is V9
     assert filled(dataclasses.replace(V9, policy="packet-v8"), 8000).top_k == 5
     grown = filled(V9, 3000)
-    assert (grown.top_k, grown.facts_limit, grown.excerpt_chars) == (7, 12, 720)  # floor(5 × 1.5), 8 × 1.5
+    assert (grown.top_k, grown.facts_limit + grown.fill_facts, grown.excerpt_chars) == (7, 12, 720)  # floor(5 × 1.5), 8 × 1.5
+    assert grown.facts_limit == 8  # the configured limit selects as packet-v8 does; the added slots are apart
     top = filled(V9, 8000)
-    assert (top.top_k, top.facts_limit, top.excerpt_chars) == (20, 16, 1920)  # facts at most twice
+    assert (top.top_k, top.facts_limit + top.fill_facts, top.excerpt_chars) == (20, 16, 1920)  # facts at most twice
     assert filled(V9, 20000) == top  # recall stops growing at 8,000
     # threads, events and every other option stay packet-v8's
     assert (top.threads_limit, top.events_limit, top.threshold) == (V9.threads_limit, V9.events_limit, V9.threshold)
     # from the request's own settings; a limit of 0 stays 0
     mine = filled(dataclasses.replace(V9, top_k=3, facts_limit=5), 4000)
-    assert (mine.top_k, mine.facts_limit) == (6, 10)
+    assert (mine.top_k, mine.facts_limit + mine.fill_facts) == (6, 10)
     off = filled(dataclasses.replace(V9, top_k=0, facts_limit=0), 8000)
-    assert (off.top_k, off.facts_limit) == (0, 0)
+    assert (off.top_k, off.facts_limit, off.fill_facts) == (0, 0, 0)
     assert FIT_CAP == 8000
 
 
@@ -126,3 +127,94 @@ def test_at_2000_and_below_packet_v9_is_packet_v8_and_a_recorded_v8_request_repl
         mine = dict(top_k=3, facts_limit=4)
         assert audit.replay(conn, tid, RecallOptions(), "packet-v9", **mine)["text"] == \
             audit.replay(conn, tid, RecallOptions(), "packet-v8", **mine)["text"]
+
+
+def secrets_chat(client, url: str) -> SimChat:
+    chat = SimChat()
+    chat.reply("Welcome to the story.")
+    for i in range(12):
+        chat.user(f"Hana keeps a secret from Kaito: the letter {i} is forged.")
+        chat.reply("Noted.")
+        chat.user(f"Hana has the key{i}.")
+        chat.reply("Noted.")
+    for i in range(4):
+        chat.user(f"Idle chatter {i} about clouds.")
+        chat.reply("Noted.")
+    _sync(client, chat)
+    extract(url)
+    return chat
+
+
+def private_lines(text: str) -> int:
+    if "<Private>" not in text:
+        return 0
+    return text.split("<Private>", 1)[1].split("</Private>", 1)[0].count("<Fact")
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_the_added_slots_go_to_facts_kept_from_no_one(v9, strict):
+    """Codex review of PHASE-15 step 3: growing the fact limit must not grow <Private> or strict mode's <Secret>
+    lines (Q1: secrets keep their limits). The added slots take facts kept from no one; the rest is packet-v8's."""
+    client, url = v9
+    chat = secrets_chat(client, url)
+    if strict:
+        cid = client.get("/v1/conversations").json()[0]["id"]
+        assert client.put(f"/v1/conversations/{cid}/memory-mode", json={"strict": True}).json()["strict"]
+    query = "Kaito, what does Hana have, and what about the letters?"
+    chat.user(query)
+    _sync(client, chat)
+    small, large = (ask(client, chat, query, b)["packet"]["text"] for b in (2000, 8000))
+    if strict:
+        assert 0 < large.count("<Secret ") == small.count("<Secret ")
+    else:
+        assert 0 < private_lines(large) == private_lines(small)
+    keys = lambda text: sum(f"has the key{i}" in text or f"possesses key{i}" in text for i in range(12))
+    assert keys(large) > keys(small)  # facts kept from no one grow
+
+
+def test_a_budget_override_replays_as_a_live_request_at_that_budget(v9):
+    """Codex review of PHASE-15 step 3: a replay at another budget grows recall from that budget, as a live request at
+    it does; 20,000 offers what 8,000 does."""
+    client, url = v9
+    chat = lighthouse_chat(client, url)
+    query = "What did the lighthouse keeper write in the logbook?"
+    chat.user(query)
+    _sync(client, chat)
+    recorded = ask(client, chat, query, 2000)
+    live = {b: ask(client, chat, query, b) for b in (4000, 8000, 20000)}
+    with db(url) as conn:
+        for b, out in live.items():
+            again = audit.replay(conn, UUID(recorded["trace_id"]), RecallOptions(), budget=b)
+            assert again["text"] == out["packet"]["text"] and again["notes"] == ["budget changed"]
+        offered = lambda tid: {tuple(sorted(e["ref"].items())) for e in conn.execute(
+            "SELECT lines FROM retrieval_trace WHERE id = %s", (tid,)).fetchone()["lines"] if e["kind"] == "excerpt"}
+        assert offered(live[20000]["trace_id"]) == offered(live[8000]["trace_id"])
+
+
+def test_a_limit_of_0_stays_0_live_and_in_a_replay(migrated):
+    settings = {k: v for k, v in settings_for("full").items() if not k.startswith("embed_")} | {"embed_backfill": 0}
+    with make_client(migrated, **(settings | {"packet_policy": "packet-v9", "recall_top_k": 0, "facts_limit": 0})) as client:
+        chat = lighthouse_chat(client, migrated)
+        query = "What did the lighthouse keeper write in the logbook? And Hana's map?"
+        chat.user(query)
+        _sync(client, chat)
+        out = ask(client, chat, query, 8000)
+    assert out["packet"]["excerpt_count"] == 0 and "<Fact" not in out["packet"]["text"]
+    with db(migrated) as conn:
+        again = audit.replay(conn, UUID(out["trace_id"]), RecallOptions())
+    assert again["reproduced"] is True and "<Excerpt" not in again["text"] and "<Fact" not in again["text"]
+
+
+def test_the_budget_advice_is_a_floor_within_the_panels_range(v9):
+    """ADR 0036 under packet-v9 (ADR 0049): a request that left memory out suggests the budget, up to FIT_CAP, at which
+    what it was offered fits; at that budget recall offers at least as much."""
+    client, url = v9
+    chat = secrets_chat(client, url)
+    query = "Kaito, what does Hana have, and what about the letters?"
+    chat.user(query)
+    _sync(client, chat)
+    tight = ask(client, chat, query, 300)
+    assert tight["memory"]["cut"] > 0
+    fit = tight["memory"]["fits_at"]
+    assert fit is not None and 300 < fit <= FIT_CAP
+    assert ask(client, chat, query, fit)["memory"]["offered"] >= tight["memory"]["offered"]

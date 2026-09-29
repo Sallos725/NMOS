@@ -54,7 +54,7 @@ describe('batch save', () => {
   it('keeps the memory budget within what the sidecar accepts', () => {
     const reserved = (value: string) => connArgs({ ...base.conn, reserved: value }).reserved_memory_tokens;
     expect([reserved(''), reserved('abc'), reserved('-5'), reserved('1200.6'), reserved('99999')])
-      .toEqual([4000, 4000, 4000, 1200, 20000]);
+      .toEqual([4000, 4000, 4000, 1200, 8000]);  // the panel saves up to 8,000 (ADR 0049)
   });
 
   it('defaults the deadline to 3 s and keeps it between 200 ms and 30 s', () => {

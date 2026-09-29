@@ -74,8 +74,8 @@ If two normative documents appear to conflict:
 | 11 — narrative engine, part 1 (Stage 5) | complete (2026-09-28), not released; one criterion partly met (owner accepted) | `PHASE-11.md`, ADRs 0038–0040 |
 | 12 — narrative engine, part 2 (Stage 5: summaries, character state) | complete (2026-09-28), not released; the latency criterion missed by 3 ms at 10,000 messages (owner accepted) | `PHASE-12.md`, ADRs 0042–0043 |
 | 13 — verification and repair, part 1 (Stage 6: owner repair, needs-attention queue) | complete (2026-09-28), not released; the latency criterion missed by 2 ms (owner accepted) | `PHASE-13.md`, ADR 0044 |
-| 14 — verification and repair, part 2 (Stage 6: canon sources) | **current** (approved 2026-09-28) | `PHASE-14.md` |
-| 15 — a packet that fills its budget (P1 of `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`) | approved 2026-09-29; starts after Phase 14 step 6 | `PHASE-15.md` |
+| 14 — verification and repair, part 2 (Stage 6: canon sources) | complete (2026-09-29), not released; the latency criterion missed with a 200-entry lorebook read whole (owner accepted) | `PHASE-14.md`, ADRs 0045–0047 |
+| 15 — a packet that fills its budget (P1 of `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`) | **current** (approved 2026-09-29) | `PHASE-15.md`, ADR 0049 |
 | 16+ (export/restore, Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,

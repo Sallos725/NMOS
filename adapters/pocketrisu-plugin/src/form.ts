@@ -12,8 +12,11 @@ export const MAX_DEADLINE_MS = 30_000;
  *  context. 4000 since Phase 15 (owner, ADR 0049): packet-v9's recall grows with the budget, and at 4,000 it answered
  *  more of the owner's cases than at 2,000; fixed, not the host's context. */
 export const DEFAULT_RESERVED_TOKENS = 4000;
-/** The largest memory budget the sidecar accepts (`RetrieveRequest.budget_tokens`); above it every request fails. */
+/** The largest memory budget the sidecar accepts (`RetrieveRequest.budget_tokens`); above it every request fails.
+ *  A stored budget up to it is still read as it is. */
 export const MAX_RESERVED_TOKENS = 20_000;
+/** The largest budget the panel saves (ADR 0049): recall grows up to it, and a larger one recalls as it does. */
+export const PANEL_MAX_RESERVED_TOKENS = 8000;
 export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune', 'rules'];
 
 /** Google Vertex AI's OpenAI-compatible endpoint; `{project}` comes from the pasted key (ADR 0022). */
@@ -93,7 +96,7 @@ export function connArgs(v: FormValues['conn']): Record<string, string | number>
     sidecar_url: v.url.trim(),
     route: v.route,
     disabled: v.enabled ? 0 : 1,
-    reserved_memory_tokens: Math.min(MAX_RESERVED_TOKENS, Math.floor(Number(v.reserved)) > 0
+    reserved_memory_tokens: Math.min(PANEL_MAX_RESERVED_TOKENS, Math.floor(Number(v.reserved)) > 0
       ? Math.floor(Number(v.reserved)) : DEFAULT_RESERVED_TOKENS),
     deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS)),
   };

@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:09f83f37e6df".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:93c9106e91d4".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -129,6 +129,7 @@
   var MAX_DEADLINE_MS = 3e4;
   var DEFAULT_RESERVED_TOKENS = 4e3;
   var MAX_RESERVED_TOKENS = 2e4;
+  var PANEL_MAX_RESERVED_TOKENS = 8e3;
   var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
   var VERTEX_URL = "https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi";
   function serviceAccountProject(key) {
@@ -184,7 +185,7 @@
       sidecar_url: v.url.trim(),
       route: v.route,
       disabled: v.enabled ? 0 : 1,
-      reserved_memory_tokens: Math.min(MAX_RESERVED_TOKENS, Math.floor(Number(v.reserved)) > 0 ? Math.floor(Number(v.reserved)) : DEFAULT_RESERVED_TOKENS),
+      reserved_memory_tokens: Math.min(PANEL_MAX_RESERVED_TOKENS, Math.floor(Number(v.reserved)) > 0 ? Math.floor(Number(v.reserved)) : DEFAULT_RESERVED_TOKENS),
       deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS))
     };
   }
@@ -2600,7 +2601,7 @@ html,body{margin:0;background:#0c0c10}
     const url = el("input", { spellcheck: "false" });
     const route = el("select", {}, ...["auto", "direct", "server"].map((v) => el("option", { value: v, text: v })));
     const enabled = el("input", { type: "checkbox" });
-    const reserved = el("input", { type: "number", min: 100, max: 8e3 });
+    const reserved = el("input", { type: "number", min: 100, max: PANEL_MAX_RESERVED_TOKENS });
     const deadline = el("input", { type: "number", min: 200, max: MAX_DEADLINE_MS, step: 100 });
     settingsView.append(el(
       "div",
