@@ -4,11 +4,14 @@ window has a scene summary and there is a story so far, so each request reads th
 and picks the scene the message is about. Run it in two checkouts to compare: in one without summaries the same
 requests run without them. Uses `bench_scale.py`'s chat and requests. With BENCH_REPAIRS=N (Phase 13) the chat
 has N live owner repairs (ADR 0044) when the requests run: a found out for each secret, the rest retractions and
-corrections of the facts current then.
+corrections of the facts current then. With BENCH_CANON=N (Phase 14) the chat has a canon of N lorebook entries, the
+card and the persona, synced as the plugin does, with the canon generation's facts stored (ADR 0047); each request
+names that canon and holds a quarter of the entries, the card and the persona in its prompt.
 
     cd apps/sidecar && uv run python ../../tools/bench_story.py 10000
     cd apps/sidecar && BENCH_SUMMARIES=0 uv run python ../../tools/bench_story.py 10000  # summaries off
     cd apps/sidecar && BENCH_REPAIRS=100 uv run python ../../tools/bench_story.py 10000  # with 100 repairs
+    cd apps/sidecar && BENCH_CANON=200 uv run python ../../tools/bench_story.py 10000  # with a 200-entry lorebook
 """
 
 from __future__ import annotations
@@ -43,6 +46,10 @@ try:
     from nmos_sidecar.facts import memory_view, version_key
 except ImportError:  # before Phase 13
     repairs = None
+try:
+    from nmos_sidecar import canon, canonfacts
+except ImportError:  # before Phase 14
+    canon = None
 
 SECRETS = 6  # about what the owner's longest chat keeps
 BUDGET = 2000  # the default since Phase 12 step 5; the same in both checkouts
@@ -124,6 +131,58 @@ def add_repairs(db: psycopg.Connection, conv, head, key: str, count: int) -> int
     return made
 
 
+CARD = "하나는 항구 마을의 등대지기 딸로, 오래된 편지를 모으며 도서관에서 일한다. " * 40  # ≈ 1,800 characters
+PERSONA = "카이토는 바다를 건너온 우편배달부로, 하나에게 편지를 전한다. " * 30  # ≈ 1,000 characters
+LORE = "{name}은(는) 항구 마을 사람으로, {place}에서 일하며 {other}과(와) 오랜 친구 사이다. "  # × 12 ≈ 600 characters
+
+
+def add_canon(client: TestClient, db: psycopg.Connection, chat, count: int) -> dict:
+    """The chat's canon as the plugin syncs it (ADR 0045): the card, the persona and `count` lorebook entries, each
+    keyed by its subject's name and an alias; then five canon facts per text of the canon generation, as its reads
+    store them (ADR 0047). Returns the manifest id and the keys a prompt holds."""
+    texts = {"card:name": "하나", "card:desc": CARD, "persona": PERSONA}
+    meta: dict[str, dict] = {"card:name": {"field": "name"}, "card:desc": {"field": "desc"}, "persona": {"name": "카이토"}}
+    for i in range(count):
+        texts[f"lore:e{i}"] = LORE.format(name=f"인물{i}" if i < 40 else f"장소{i}", place=PLACES[i % len(PLACES)],
+                                          other=f"인물{(i + 1) % 40}") * 12
+        meta[f"lore:e{i}"] = {"scope": "character", "mode": "normal", "always_active": i % 4 == 0,
+                              "keys": [f"인물{i}" if i < 40 else f"장소{i}", f"별칭{i}"]}
+    entries = [{"key": k, "hash": canon.content_hash(t), "metadata": meta[k]} for k, t in texts.items()]
+    out, _ = post(client, "/v1/sync/canon", {"chat_id": chat.id, "entries": entries,
+                                             "contents": {canon.content_hash(t): t for t in texts.values()}})
+    assert out["applied"], out
+    key = generations.active(db, "canon")
+    db.execute("UPDATE job SET status = 'obsolete' WHERE status = 'queued'")  # the reads are stored below instead
+    revs = db.execute("SELECT so.host_logical_id AS hlid, sr.id AS rid, length(sr.content) AS chars FROM source_object so"
+                      " JOIN source_revision sr ON sr.source_object_id = so.id WHERE so.source_kind = 'canon'"
+                      " AND so.host_logical_id <> 'canon:card:name'").fetchall()
+    ids = [uuid7() for _ in revs]
+    with db.cursor() as cur:
+        cur.executemany(
+            "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model, raw,"
+            " coverage, members) VALUES (%s, %s, 'canon:0:plain', %s, %s, 'bench', '{}', %s, %s)",
+            [(i, r["rid"], canonfacts.VERSION, key, Jsonb({"chars": r["chars"], "part": 0, "parts": 1,
+                                                          "part_chars": r["chars"], "unread_chars": 0}), [r["rid"]])
+             for i, r in zip(ids, revs)])
+        facts = []
+        for n, (i, r) in enumerate(zip(ids, revs)):  # as sample 2's: about five facts a text, each text about its own
+            who = f"인물{n}" if n < 40 else f"장소{n}"  # subject; the first 40 are the story's characters
+            if n < 40:
+                facts += [(i, r["rid"], who, "character", "identity", None, None, f"항구 마을의 {PLACES[n % len(PLACES)]} 일꾼"),
+                          (i, r["rid"], who, "character", "has_trait", None, None, "편지를 아낀다"),
+                          (i, r["rid"], who, "character", "has_trait", None, None, "바다를 무서워한다"),
+                          (i, r["rid"], who, "character", "member_of", "등대 모임", "group", None),
+                          (i, r["rid"], who, "character", "relationship", f"인물{(n + 1) % 40}", "character", "오랜 친구")]
+            else:
+                facts += [(i, r["rid"], who, "place", "world_fact", None, None, text)
+                          for text in ("항구 북쪽에 있다", "밤에는 문을 닫는다", "오래된 편지가 보관되어 있다",
+                                       "등대에서 보인다", "마을 사람들이 자주 찾는다")]
+        cur.executemany("INSERT INTO assertion (extraction_id, source_revision_id, subject, subject_type, predicate,"
+                        " object, object_type, value, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'valid')", facts)
+    held = ["card:desc", "persona"] + [k for k, m in meta.items() if m.get("always_active")]
+    return {"manifest": out["manifest_id"], "held": held, "texts": len(revs), "facts": len(facts)}
+
+
 def bench(n: int) -> dict:
     name = f"nmos_bench_{uuid.uuid4().hex[:8]}"
     with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
@@ -136,8 +195,10 @@ def bench(n: int) -> dict:
         apply_migrations(url)
         chat = build_chat(n)
         with psycopg.connect(url, row_factory=dict_row, autocommit=True) as db:
+            lore = int(os.environ.get("BENCH_CANON", "0")) if canon is not None else 0
             with TestClient(create_app(settings)) as client:
                 sync(client, chat)
+                held = add_canon(client, db, chat, lore) if lore else None
             head = db.execute("SELECT head_commit_id FROM conversation").fetchone()["head_commit_id"]
             conv = db.execute("SELECT id FROM conversation").fetchone()["id"]
             db.execute("UPDATE job SET status = 'obsolete' WHERE status = 'queued'")  # no worker in this run
@@ -147,6 +208,10 @@ def bench(n: int) -> dict:
             wanted = int(os.environ.get("BENCH_REPAIRS", "0"))
             if wanted and repairs is not None:
                 result["repairs"] = add_repairs(db, conv, head, generations.active(db, "extract"), wanted)
+            if held:
+                result["canon"] = {"lore": lore, "texts": held["texts"], "facts": held["facts"],
+                                   "held": len(held["held"])}
+            extra = {"canon_manifest_id": held["manifest"], "canon_held": held["held"]} if held else {}
             db.execute("ANALYZE")
             with TestClient(create_app(settings)) as client:
                 # The harness holds the 10,000-message chat in this process; a full collection during a request
@@ -161,11 +226,15 @@ def bench(n: int) -> dict:
                     q = QUERIES[i % len(QUERIES)]
                     out, ms = post(client, "/v1/retrieve", {"chat_id": chat.id, "query": q, "previous_ai": SENTENCE,
                                                              "in_context_ids": [m["chatId"] for m in chat.messages[-40:]],
-                                                             "budget_tokens": BUDGET})
+                                                             "budget_tokens": BUDGET, **extra})
                     retrieves.append(ms)
                     story += "<Story>" in out["packet"]["text"]
             result["retrieve_ms"] = {"p50": p(retrieves, 0.5), "p95": p(retrieves, 0.95)}
             result["packets_with_story"] = story
+            if held:  # the requests read the canon's names and facts (ADR 0046, 0047)
+                result["canon"]["requests_read"] = db.execute(
+                    "SELECT count(*) AS n FROM retrieval_trace WHERE recall_options->>'canon_facts' = %s",
+                    (held["manifest"],)).fetchone()["n"]
     finally:
         with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
             admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')

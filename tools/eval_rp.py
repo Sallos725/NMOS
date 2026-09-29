@@ -4,8 +4,8 @@ needs, and keep out what it must not? Read-only; point it at a restored backup (
 The cases are the owner's chats and stay outside the repository; the report prints numbers only.
 
     cd apps/sidecar
-    uv run python ../../tools/eval_rp.py DIR --db postgresql://…/copy [--extractor KEY] [--summarizer KEY] [--policy P] [--budget N]
-        [--no-vectors] [--json]
+    uv run python ../../tools/eval_rp.py DIR --db postgresql://…/copy [--extractor KEY] [--summarizer KEY] [--canon KEY]
+        [--policy P] [--budget N] [--no-vectors] [--json]
 
 DIR/cases.json:
 
@@ -22,7 +22,8 @@ earlier version a packet-v5 line names ("; before, turn N: …", ADR 0038) does 
 threat, debt, relationship, address, secret, why and irrelevant. The request is compiled again as of its own
 time (ADR 0027 replay); `--extractor` names a newer extractor generation, and the request is then compiled as
 of now with that generation's facts, as `eval_secrets.py build` does; `--policy` and `--budget` replace the
-request's own (a request recorded before the default reserve rose to 800 carries 600). A request whose chat was
+request's own (a request recorded before the default reserve rose to 800 carries 600); `--canon` names a canon
+generation whose facts the request reads, as of now, from the chat's canon in force (ADR 0047). A request whose chat was
 edited before its position since cannot be replayed and is counted as skipped.
 """
 
@@ -96,13 +97,16 @@ def options(conn: psycopg.Connection, use_vectors: bool) -> RecallOptions:
 
 
 def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: RecallOptions, policy: str | None = None,
-             extractor: str | None = None, budget: int | None = None, summarizer: str | None = None) -> dict[str, Any]:
+             extractor: str | None = None, budget: int | None = None, summarizer: str | None = None,
+             canon: str | None = None) -> dict[str, Any]:
     """Every case's numbers, and a summary per category and overall. Read-only."""
     results: list[dict[str, Any]] = []
     overrides = {"extractor_key": extractor} if extractor else {}
     if summarizer:  # summaries of this generation in <Story> (packet-v8, ADR 0043), as of now
         overrides["summarize_key"] = summarizer
-    known_at = datetime.now(timezone.utc) if extractor or summarizer else None
+    if canon:  # canon facts of this generation (ADR 0047), as of now
+        overrides["canon_key"] = canon
+    known_at = datetime.now(timezone.utc) if extractor or summarizer or canon else None
     for case in cases:
         out = audit.replay(conn, UUID(case["trace"]), opts, policy, known_at=known_at, query=case.get("query"),
                            budget=budget, **overrides)
@@ -147,6 +151,7 @@ def main() -> None:
     ap.add_argument("--db", default=os.environ.get("NMOS_DATABASE_URL", Settings().database_url))
     ap.add_argument("--extractor", help="a newer extractor generation's key: compile as of now with its facts")
     ap.add_argument("--summarizer", help="a summarize generation's key: <Story> from its summaries as of now")
+    ap.add_argument("--canon", help="a canon generation's key: its facts of the chat's canon in force, as of now")
     ap.add_argument("--policy", help="a packet policy in place of each request's own")
     ap.add_argument("--budget", type=int, help="a memory budget (tokens) in place of each request's own")
     ap.add_argument("--no-vectors", action="store_true")
@@ -156,7 +161,7 @@ def main() -> None:
     with psycopg.connect(args.db, row_factory=dict_row, autocommit=True,
                          options="-c default_transaction_read_only=on") as conn:
         report = evaluate(conn, cases, options(conn, not args.no_vectors), args.policy, args.extractor, args.budget,
-                          args.summarizer)
+                          args.summarizer, args.canon)
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:

@@ -2,7 +2,7 @@
 
 Each `fixtures/upgrade/<release>.sql` is a `pg_dump` of a database that release's own sidecar and worker
 wrote (`tools/make_upgrade_fixture.py`): two chats with edits, a reroll, a swipe, a disabled message and
-a branch, extractions, embeddings and recall traces. `<release>.chat.json` is the chats as the host last
+a branch, extractions, embeddings and recall traces (Phase 13 `main` and earlier: none has canon yet). `<release>.chat.json` is the chats as the host last
 showed them. The test restores the dump, applies the current migrations and starts the current sidecar,
 then goes on with the story."""
 
@@ -19,6 +19,8 @@ from conftest import make_client
 from nmos_sidecar.migrate import apply_migrations
 from nmos_sidecar.rebuild import rebuild_all
 from simchat import SimChat
+from test_canon import push
+from test_canon_facts import Model, current, drain as drain_canon, view
 from test_extraction import drain, facts
 from test_generations import EMB, LLM
 from test_sidecar_integration import recall, sync
@@ -130,4 +132,12 @@ def test_a_database_of_an_earlier_release_upgrades_and_keeps_working(dump, datab
         assert '<Summary kind="story"' in recall(c, main, "Where is Mina?", budget=2000)["packet"]["text"]
         assert c.post(f"/v1/conversations/{convs[branch.id]}/delete").status_code == 200
         assert {x["host_chat_ref"] for x in c.get("/v1/conversations").json()} == {main.id}
+        # Phase 14: the upgraded chat takes its canon (migrations 0025, 0026, ADR 0045, 0047).
+        card = {"card:name": ("Mina", {"field": "name"}), "card:desc": ("{{char}} is in the lighthouse.", {"field": "desc"})}
+        assert push(c, main, card)["applied"]
+    model = Model()
+    assert drain_canon(database_url, model) == 1 and len(model.canon_calls()) == 1  # the card, read once
+    (place,) = current(view(database_url, main), "Mina", "located_in")  # canon is before turn 0; the story supersedes it
+    assert place["object"] == "garden" and place["history"][0]["canon"] == "card:desc"
+    assert place["history"][0]["object"] == "lighthouse" and place["history"][0]["outcome"] == "superseded"
     assert rebuild_all(database_url)

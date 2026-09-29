@@ -1,6 +1,6 @@
 # Phase 14 — Verification and Repair, part 2: canon sources (Stage 6)
 
-> **Status: approved 2026-09-28 (owner), in progress.** Stage 6 of `docs/ROADMAP-1.0.md` (original §7.6, §66,
+> **Status: approved 2026-09-28 (owner), complete 2026-09-29.** Stage 6 of `docs/ROADMAP-1.0.md` (original §7.6, §66,
 > §80.3; Track B, B7), part 2: what the character card, the lorebooks, the persona and the author's note say becomes
 > source for memory, next to the story. Phase 13 Q0 put canon sources and export/restore in this phase; Q0 below
 > gives export/restore its own phase. The owner chose to start Phase 14 on 2026-09-28 and decided no release for now.
@@ -89,24 +89,26 @@ where the story uses it, and the message extractor is untouched.
 
 ## Acceptance criteria
 
-- [ ] Every existing test and memory-evaluation case passes; recorded packets replay as they were.
-- [ ] Host evidence for each canon source kind on PocketRisu v1.13.0 is in `HOST-FACTS.md`, and the existing host
+- [x] Every existing test and memory-evaluation case passes; recorded packets replay as they were.
+- [x] Host evidence for each canon source kind on PocketRisu v1.13.0 is in `HOST-FACTS.md`, and the existing host
       facts are re-checked there.
-- [ ] Deterministic cases for each source kind:
+- [x] Deterministic cases for each source kind:
   - capture, a new revision on an edit, and replay as of an earlier request;
   - names from canon, including the guard of Q6;
   - a canon fact superseded by the story, and a contradiction listed;
   - a lock that holds, and its undo;
   - an entry read only once a prompt held it.
-- [ ] On both measured chats with their canon: M0 no category worse; the secret gate 6 of 6; the K31 given-name
+- [x] On both measured chats with their canon: M0 no category worse; the secret gate 6 of 6; the K31 given-name
       probes; the model calls canon took, reported.
-- [ ] Upgrade from Phase 13 `main` (`tests/test_upgrade.py`).
-- [ ] Real-host smoke on an isolated PocketRisu v1.13.0: a card edit makes a new canon revision; a contradicting
+- [x] Upgrade from Phase 13 `main` (`tests/test_upgrade.py`).
+- [x] Real-host smoke on an isolated PocketRisu v1.13.0: a card edit makes a new canon revision; a contradicting
       story statement is listed; a lock holds in the next packet; undo releases it.
 - [ ] Retrieve latency at 10,000 messages with a 200-entry lorebook within +5 ms p50 of Phase 13 `main`
-      (`tools/bench_story.py`).
-- [ ] One Codex review (AGENTS.md §14) of the capture, resolution and fold changes, each finding confirmed or rejected.
-- [ ] `ARCHITECTURE.md` (decisions), ADRs, README, the Korean guide, KNOWN-ISSUES (K31, K32), CHANGELOG.
+      (`tools/bench_story.py`). **Missed**: +33.7 ms (120.3 → 154.0) with 1,010 canon facts, every entry read; +13.4 ms with 50
+      entries, about the owner's chats (`docs/perf/canon.md`). The owner accepted it after a small fix (2026-09-29, K36).
+- [x] One Codex review (AGENTS.md §14) of the capture, resolution and fold changes, each finding confirmed or rejected
+      (steps 3–5).
+- [x] `ARCHITECTURE.md` (decisions), ADRs, README, the Korean guide, KNOWN-ISSUES (K31, K32), CHANGELOG.
 
 ## Steps (one pull request each)
 
@@ -160,7 +162,20 @@ where the story uses it, and the message extractor is untouched.
 
    The step's Codex review found five defects (canon facts of a manifest not yet arrived, reads that ignored renames,
    a text read in part, one lock per relationship pair, a new holder taken for a restatement), all fixed with tests.
-6. Evaluation, real-host smoke, upgrade, latency, Codex review, documentation.
+6. Evaluation, real-host smoke, upgrade, latency, documentation. **Done** (`docs/perf/canon.md`, "Evaluation";
+   ADR 0047 amendment 1):
+   - on both measured chats with their canon, M0 and the secret gate are unchanged case by case (27 of 28, 5 of 12,
+     6 of 6; sample 2 8 and 12 of 17), and the given-name probes too; canon took 12 and 66 model calls, as step 2
+     predicted, and 26 on the owner's production chat;
+   - the listed conflicts were almost all one identity in two languages or two true descriptions: the owner chose to
+     list relationships only (amendment 1);
+   - latency missed the criterion (acceptance above); the owner chose a small fix and to record the rest (K36);
+   - an upgrade fixture from Phase 13 `main`; a real-host smoke on PocketRisu v1.13.0, which found a display bug in the
+     Inspector (fixed);
+   - the evaluation tools take a canon generation (`--canon`, `BENCH_CANON`).
+
+   The Codex reviews were the steps' own (steps 3–5, each finding fixed); this step changes tools, tests, docs, the
+   conflict list and a query's preparation (AGENTS.md §14: no high-risk change), and had the scoped self-review.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).
 

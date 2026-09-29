@@ -5,6 +5,17 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 14 (Stage 6, part 2: canon sources) is complete** (`docs/phases/PHASE-14.md`, 2026-09-29):
+  - On both measured chats with their canon, M0 and the secret gate are unchanged case by case, and canon took 12 and
+    66 model calls (26 on the owner's production chat), as the inventory predicted (`docs/perf/canon.md`).
+  - **Only relationships are listed as conflicts with canon** (ADR 0047 amendment 1, owner decision): on real chats
+    the listed identities were the same one in English and Korean, or two true descriptions. A story's identity
+    supersedes canon's quietly; the owner can still lock a canon fact from its line.
+  - The canon-facts query is prepared once per connection. Latency with a 200-entry lorebook read whole misses the
+    +5 ms criterion; the owner accepted it (K36).
+  - Fixed: the Inspector marked every canon fact "older generation".
+  - Tools: `tools/eval_rp.py` and `tools/eval_secret_gate.py` take `--canon`, `tools/bench_story.py` `BENCH_CANON=N`;
+    an upgrade fixture from Phase 13 `main`. No migration, no plugin change.
 - **NMOS off for one chat** (ADR 0048, D58): the panel's Status tab starts with a **This chat** card that turns NMOS
   off or back on for the chat open now, and the chat input's ☰ menu has **NMOS: this chat off/on**. A chat that is
   off sends nothing to the sidecar and gets no memory; what NMOS keeps of it stays. The list is the new plugin arg
@@ -43,7 +54,7 @@ that change are:
 - migrations 0021–0026.
 
 The Phase 14 evaluation of canon facts on the measured chats (their model calls, M0, the secret gate, latency with a
-large lorebook) and its real-host smoke are still to come (step 6).
+large lorebook) and its real-host smoke were still to come (step 6; done after this release, see Unreleased).
 
 - **Fixes from the 2026-09-27 audit** (`docs/proposals/ORIGINAL-VISION-TO-STABLE-2026-09-27.md`, ADR 0033
   amendment 2):

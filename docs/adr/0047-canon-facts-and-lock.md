@@ -45,7 +45,7 @@ when canon and story disagree.
    force may still hold an entry the host no longer shows. (Names fall back to the canon in force, ADR 0046.) They are facts from before turn 0 (turn -1, `canon` set to the key) and
    fold with the story's: a story statement of the same fact is a new version from its turn. Canon facts take no part
    in secrets, threads or the scene's cast, and a canon claim (a greeting's line) is a claim.
-3. **A contradiction is listed (Q4).** For `identity` and `relationship`, who someone is and how two stand, a story
+3. **A contradiction is listed (Q4).** For `identity` and `relationship` (since amendment 1, `relationship` only), who someone is and how two stand, a story
    statement that replaces or denies a canon one saying something else is listed in "Needs attention" with the
    owner's choices: keep canon's (a lock, below), keep the story's (canon's statement retracted, ADR 0044), or leave
    it (the story's stays current). A place, a condition, a feeling or a form of address changes as the story goes;
@@ -89,4 +89,24 @@ The step's Codex review found five defects, all confirmed and fixed with tests:
 - A lorebook entry read once stays in memory while it is in the canon in force, whether or not later prompts hold it;
   its facts reach the packet only when the prompt does not hold its text.
 - Renaming the card or the persona reads again every text that uses the name macros (on a real card, most of it).
-- Measurements on the two measured chats (the calls canon takes, M0, the secret gate, latency) are step 6.
+- Measurements on the two measured chats (the calls canon takes, M0, the secret gate, latency) are step 6: amendment 1.
+
+## Amendment 1 — relationships only are listed; the cost measured (Phase 14 step 6, 2026-09-29)
+
+**Context.** On the two measured chats with their canon (`docs/perf/canon.md`, step 6), 10 canon conflicts were listed
+and about one was a contradiction. Sample 2's lorebook and persona are written in English, so their facts are in
+English, and the story's Korean statement of the same identity read as "something else" (6 of its 8). `identity`
+holds one value, so a second true description (a job, then where someone lives) replaced the first (both of the
+longest chat's). No relationship conflict was listed on either chat. Latency with a 200-entry lorebook every entry of
+which was read missed the +5 ms criterion: a canon fact costs what a story fact costs in the fold.
+
+**Decision** (the owner, 2026-09-29):
+1. Only `relationship` is listed (item 3). A story statement of who someone is supersedes canon's without a listing,
+   as a place does; the owner can still lock or retract a canon identity from its line, and a lock holds as before.
+   Telling a new identity from the same one in other words needs a model; that is left for later.
+2. The canon-facts query is prepared once per connection (its planning took longer than its run). The rest of the
+   cost is recorded, not optimized here: a faster fold serves story facts as much as canon's.
+
+**Consequences.** "Needs attention" lists nothing on the two measured chats. A card whose identity the story really
+contradicts is not flagged; its canon version stays in the fact's history. The latency is `docs/perf/canon.md`
+(K36).

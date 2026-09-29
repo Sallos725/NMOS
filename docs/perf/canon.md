@@ -73,3 +73,96 @@ it is not a naming problem. The chat's 17 M0
 cases are unchanged: 8 of 17 lexical only (4 of 13 that need memory), 12 of 17 with vectors (8 of 13), nothing
 forbidden placed.
 
+
+## Evaluation (step 6, 2026-09-29)
+
+### Setup
+
+Copies of the two measured chats' evaluation databases (Phase 13's, with the owner's repairs applied), migrated to
+0026, with each chat's canon built from the owner's PocketRisu database and stored as the plugin sends it. The probe
+requests predate canon, so the keys their prompt held were simulated as the host activates canon: the card's
+description and the persona in every prompt; a lorebook entry when always active, or when one of its keys (and a
+second key, for a selective entry) is in the last messages the host scans (5 on the longest chat, 10 on sample 2); the
+greeting only when it is a message of the window. The canon generation then read what a prompt held, with the
+extraction model the owner uses (`gemma4:31b-cloud`, through the local Ollama), and no other job ran. The scripts are
+outside the repository (`~/nmos-eval/phase14-step6/`). M0 and the secret gate were run with and without canon facts on
+the same copies and code (`tools/eval_rp.py --canon`, `tools/eval_secret_gate.py --canon`).
+
+### Model calls
+
+| | Canon texts | Read (held by a prompt, or always read) | Model calls | Facts (valid) | Time |
+|---|---:|---:|---:|---:|---:|
+| Longest chat | 12 | 8 | 12 | 118 | 66 s |
+| Sample 2 | 153 | 62 | 66 | 323 | 188 s |
+| Production (one chat, since the owner installed the plugin; counts only) | 156 | 22 | 26 | 257 | ≈1 min |
+
+Sample 2 read what step 2 predicted: the card, the greeting, the persona, its 45 always-active entries and the 14
+entries the probe's scanned messages name. No call failed. The persona's 15.6k characters on the longest chat took 3
+calls. Half of sample 2's texts gave no fact (a text of names and numbers, a folder's note); the others about ten each.
+
+### Memory
+
+| | Without canon facts | With canon facts |
+|---|---:|---:|
+| Longest chat, M0 28 cases | 27 (8 of 9 needing memory) | 27 (8 of 9), the same cases |
+| Longest chat, M0 12 cases | 5 of 12 | 5 of 12, the same cases |
+| Longest chat, secret gate | 6 of 6 | 6 of 6 |
+| Sample 2, M0 17 cases, lexical | 8 (4 of 13) | 8 (4 of 13), the same cases |
+| Sample 2, M0 17 cases, with vectors | 12 (8 of 13) | 12 (8 of 13), the same cases |
+| Forbidden phrases placed | 0 | 0 |
+| Given-name probes (K31), sample 2 | given name finds what the full name finds | the same |
+
+No category is worse. Canon facts changed no case, as Q5 expected: the host sends the card, the persona and the entries
+it activates, and NMOS does not send a canon fact whose text the prompt held (D3). On the longest chat 23 canon lines
+reached 21 of its 40 packets (+9 tokens a packet on average), all from the greeting, the one canon text the prompt no
+longer held at turn 73. On sample 2 3 canon lines reached 1 of 17 packets. 105 of the longest chat's 118 canon facts,
+and 296 of sample 2's 323, are still current at the probe; the story superseded the rest.
+
+### Conflicts
+
+With `identity` and `relationship` listed (ADR 0047 as step 5 had it), 10 canon conflicts were listed: 8 on sample 2
+and 2 on the longest chat, and about one was a contradiction. Sample 2's lorebook and persona are in English, so their
+facts are, and the story's Korean statement of the same identity read as another one (6). `identity` holds one value,
+so a job and where someone lives replaced each other (2). No
+relationship was listed. The owner decided to list relationships only (ADR 0047 amendment 1): none is listed on either
+chat now. Telling a new identity from the same one in other words needs a model and is left for later.
+
+### Latency (`tools/bench_story.py`, 10,000 messages)
+
+Retrieve p50, the median of five rounds, each round running Phase 13 `main` (fea5967), this step without canon, with
+a 50-entry lorebook and with a 200-entry lorebook in turn, pinned to two cores, nothing else running. The canon is the
+card, the persona and the lorebook, every text read, about five facts a text (as sample 2's reads), each entry about
+its own subject; each request holds the card, the persona and a quarter of the entries (`BENCH_CANON=N`).
+
+| | Canon facts | retrieve p50, ms | against Phase 13 `main` |
+|---|---:|---:|---:|
+| Phase 13 `main` | — | 120.3 | |
+| Phase 14, no canon | — | 123.5 | +3.2 |
+| Phase 14, 50 entries | 260 | 133.7 | +13.4 |
+| Phase 14, 200 entries | 1,010 | 154.0 | **+33.7** |
+
+The criterion (+5 ms with 200 entries) is missed. The owner accepted it (2026-09-29, K36) after the one low-risk fix:
+- A canon fact costs what a story fact costs: every read folds it with the story's (≈15 µs a fact). 1,010 canon facts
+  cost about what the facts of 2,000 more messages would.
+- The canon-facts query's planning (≈4.7 ms) took longer than its run (≈1.6 ms with 260 facts); it is now prepared
+  once per connection. A run before that fix gave +35.4 ms at 200 entries, so it saves one or two milliseconds of a
+  request's median here, and the planning of every later request on the same connection.
+- What the owner's chats read is closer to the 50-entry row: 118–323 canon facts (22–62 texts).
+
+### Upgrade and real host
+
+- **Upgrade.** A database written by Phase 13 `main` (fea5967, `fixtures/upgrade/main-phase13.sql`) upgrades to 0026,
+  takes a canon on an upgraded chat, reads the card once, and the story supersedes its place; every earlier fixture
+  does the same (`tests/test_upgrade.py`, 6 fixtures).
+- **Real host** (an isolated PocketRisu v1.13.0, stub models, 2026-09-29), each step passed:
+  1. the card was captured and read after the first request whose card read finished (the card is read after a request,
+     off its path);
+  2. an edit of the card's description made a second revision and manifest, the first kept, and was read once;
+  3. a story line making the card's sister a rival was listed in "Needs attention" with Lock and Retract;
+  4. after Lock, the next packet carried the canon's relationship marked `source="canon" locked="true"` and not the
+     story's, also with a short-window preset where the story's line was outside the prompt (without the lock it was
+     sent);
+  5. after Undo, the story's relationship was sent again, with canon's as its earlier version.
+
+  It found one display bug, fixed in this step: the Inspector marked every canon fact "older generation" (it compared
+  the canon generation with the extraction generation).

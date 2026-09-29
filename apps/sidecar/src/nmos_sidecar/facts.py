@@ -502,10 +502,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
             "canon_names": canon_used, "canon_facts": len(canon_rows), "canon_facts_manifest": canon_facts}
 
 
-# Predicates whose story statement, replacing a canon one, is listed as a conflict (PHASE-14 Q4, ADR 0047): who someone
-# is and how two stand are rarely a change the story tells without saying so. A place, a condition, a feeling or a form
-# of address changes as the story goes: the story supersedes canon there without a listing.
-CANON_CONFLICTS = frozenset({"identity", "relationship"})
+# Predicates whose story statement, replacing a canon one, is listed as a conflict (PHASE-14 Q4, ADR 0047 amendment 1):
+# how two stand is rarely a change the story tells without saying so. `identity` is not listed: on the measured chats a
+# canon identity in another language, or a second true description, read as "something else" (PHASE-14 step 6). A
+# place, a condition, a feeling, a form of address or who someone is now: the story supersedes canon without a listing.
+CANON_CONFLICTS = frozenset({"relationship"})
 
 
 def _brief(a: dict[str, Any]) -> dict[str, Any]:

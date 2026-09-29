@@ -478,8 +478,9 @@ records the manifest whose names it used, and its replay reads exactly that one.
 extractor is unchanged) reads the canon in force with the extraction model: the card's story fields and greeting, the
 note and the persona at once, a lorebook entry once a request's prompt held it, each text once, in parts. Its facts are
 from before turn 0 and fold with the story's, which supersedes them from the turn it says something new; they take no
-part in secrets, threads or the scene. A story statement that replaces a canon `identity` or `relationship` with
-something else is listed with the owner's choices. `fact_lock`, an owner repair, keeps a canon fact or a correction
+part in secrets, threads or the scene. A story statement that replaces a canon `relationship` with something else is
+listed with the owner's choices (`identity` too until amendment 1: on real chats it listed the same identity in
+another language). `fact_lock`, an owner repair, keeps a canon fact or a correction
 current and holds off later statements, listed as conflicts. A canon fact whose text the prompt held is not sent again
 (D3), unless a lock holds it against the story. A request records the canon generation it read; its replay reads it.
 

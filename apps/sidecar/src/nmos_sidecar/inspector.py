@@ -675,7 +675,9 @@ def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> 
           _with(f, lang),
           _knowledge(f, lang),
           _turn(f)
-          + (older if active and f.get("generation") not in (None, active) and not f.get("owner") else "")
+          # a canon fact carries its canon generation, whose reads the Canon section covers (ADR 0047)
+          + (older if active and f.get("generation") not in (None, active) and not f.get("owner")
+             and not f.get("canon") else "")
           + (f" {chip(lang, 'or', 'corrected')}" if f.get("owner") else "")
           + (f" {chip(lang, 'or', 'locked')}" + _act("undo", f["locked"]) if f.get("locked") else "")
           + (f" <span class=\"chip\">{_v(t('held_off').format(n=f['held_off']))}</span>" if f.get("held_off") else "")
