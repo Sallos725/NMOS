@@ -198,9 +198,9 @@ class Near:
     so vector search has more relevant candidates than any budget takes, as on a long real chat."""
 
     def __init__(self) -> None:
-        self.base = [random.Random(11).gauss(0, 1) for _ in range(DIM)]
+        self.base: list[float] = [random.Random(11).gauss(0, 1) for _ in range(DIM)]
 
-    def embed(self, texts, timeout_s):
+    def embed(self, texts: list[str], timeout_s: float) -> list[list[float]]:
         return [self.base for _ in texts]
 
 
