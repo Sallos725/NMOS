@@ -29,7 +29,7 @@ Phase 15 (a packet that fills its budget, `docs/phases/PHASE-15.md`) is not a st
 | Version | When |
 |---|---|
 | `0.1.x` | the feature set of the betas; `v0.1.0-beta.21` was the last, and only urgent fixes followed |
-| `0.2.0` … `0.6.0` | one per stage, in the order of R1, when that stage meets its done criteria. `v0.2.0` (2026-09-28, at the owner's request) carries Stages 4 and 5 and the Stage 6 work then on `main` |
+| `0.2.0` … `0.6.0` | one per stage, in the order of R1, when that stage meets its done criteria. `v0.2.0` (2026-09-28) was cut early at the owner's request: it carries Stages 4 and 5 together, plus the Stage 6 work then on `main` |
 | `1.0.0` | the 1.0 gate below |
 
 Every version before 1.0.0 is a GitHub pre-release. Between versions the owner runs `:edge` (a build of
@@ -86,7 +86,7 @@ Done when:
   and summaries cover the chat within the budget;
 - K24 is closed.
 
-**Done (2026-09-28, Phases 11–12; not released).** Thread kinds opened, ended, deleted and edited back in the memory
+**Done (2026-09-28, Phases 11–12; released in `v0.2.0`).** Thread kinds opened, ended, deleted and edited back in the memory
 evaluation (53 of 53), stated causes linked, relationships per pair with what they replaced (K24's direction case
 closed; a feeling recorded apart from a relationship stays by the owner's decision, PHASE-11 Q5); the real-model tier
 on `gemma4` and `deepseek` for `extract-v13` and for summaries; on the owner's longest chat, replayed offline, answers
@@ -147,7 +147,7 @@ Done when (draft):
 Tentative owner decision (2026-09-27): a holder's own slip, such as a child blurting a secret, is direction,
 not a failure.
 
-**Done (2026-09-27, Phase 10; not released).** Every done criterion is met: `docs/perf/secrets-eval.md` (48 replies of
+**Done (2026-09-27, Phase 10; released in `v0.2.0`).** Every done criterion is met: `docs/perf/secrets-eval.md` (48 replies of
 the owner's response models on real scenes without a leak; holders remember), `docs/perf/extract-v12.md` (a
 revealed secret ends), the strict and narrator cases in the memory evaluation, and K11 rewritten.
 
