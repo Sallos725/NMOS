@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:939ad4a2a44c".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:f688bc7f36c7".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -292,8 +292,8 @@
     ],
     "vectors.title": ["\uAE30\uC5B5\uC744 \uC758\uBBF8 \uAC80\uC0C9 \uC5C6\uC774 \uCC3E\uC558\uC2B5\uB2C8\uB2E4", "Memory was recalled without semantic search"],
     "vectors.text": [
-      "\uB9C8\uC9C0\uB9C9 \uC694\uCCAD\uC5D0\uC11C \uC784\uBCA0\uB529 \uBAA8\uB378\uC774 \uC81C\uD55C \uC2DC\uAC04 \uC548\uC5D0 \uB2F5\uD558\uC9C0 \uC54A\uC544, \uAE30\uC5B5\uC744 \uB2E8\uC5B4\uAC00 \uACB9\uCE58\uB294 \uAC83\uC73C\uB85C\uB9CC \uCC3E\uC558\uC2B5\uB2C8\uB2E4. \uB9D0\uC744 \uBC14\uAFD4 \uC4F4 \uC61B \uC7A5\uBA74\uC740 \uC774\uB54C \uBE60\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uBAA8\uB378\uC774 \uC26C\uB2E4\uAC00 \uB2E4\uC2DC \uC62C\uB77C\uC624\uB294 \uC911\uC774\uC5C8\uB2E4\uBA74(Ollama\uB294 5\uBD84 \uC26C\uBA74 \uB0B4\uB9BC) \uB2E4\uC74C \uC694\uCCAD\uC740 \uAD1C\uCC2E\uC2B5\uB2C8\uB2E4. \uC790\uC8FC \uB728\uBA74 \uC784\uBCA0\uB529 \uBAA8\uB378\uC744 \uACC4\uC18D \uC62C\uB824 \uB450\uAC70\uB098(Ollama keep_alive) \uC0AC\uC774\uB4DC\uCE74\uC758 NMOS_EMBED_TIMEOUT_MS\uB97C \uB298\uB824 \uC8FC\uC138\uC694.",
-      "On the last request the embedding model did not answer in time, so memory was found by shared words only; an earlier scene in other words can be missed then. If the model was loading after a pause (Ollama unloads it after 5 minutes idle), the next request is fine. If this shows often, keep the embedding model loaded (Ollama keep_alive) or raise the sidecar's NMOS_EMBED_TIMEOUT_MS."
+      "\uB9C8\uC9C0\uB9C9 \uC694\uCCAD\uC5D0\uC11C \uC784\uBCA0\uB529 \uBAA8\uB378\uC774 \uC81C\uB54C \uB2F5\uD558\uC9C0 \uC54A\uC558\uAC70\uB098 \uC624\uB958\uB97C \uB0B4\uC11C, \uAE30\uC5B5\uC744 \uB2E8\uC5B4\uAC00 \uACB9\uCE58\uB294 \uAC83\uC73C\uB85C\uB9CC \uCC3E\uC558\uC2B5\uB2C8\uB2E4. \uB9D0\uC744 \uBC14\uAFD4 \uC4F4 \uC61B \uC7A5\uBA74\uC740 \uC774\uB54C \uBE60\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uBA3C\uC800 \uC124\uC815 \uD0ED\uC758 \uC758\uBBF8 \uAC80\uC0C9 \uC784\uBCA0\uB529 \uC5F0\uACB0 \uD14C\uC2A4\uD2B8\uB85C \uC8FC\uC18C\uC640 \uD0A4\uB97C \uD655\uC778\uD558\uC138\uC694. \uBAA8\uB378\uC774 \uC26C\uB2E4\uAC00 \uB2E4\uC2DC \uC62C\uB77C\uC624\uB294 \uC911\uC774\uC5C8\uB2E4\uBA74(Ollama\uB294 5\uBD84 \uC26C\uBA74 \uB0B4\uB9BC) \uB2E4\uC74C \uC694\uCCAD\uC740 \uAD1C\uCC2E\uC2B5\uB2C8\uB2E4. \uC5F0\uACB0\uC740 \uB418\uB294\uB370 \uC790\uC8FC \uB728\uBA74 \uC784\uBCA0\uB529 \uBAA8\uB378\uC744 \uACC4\uC18D \uC62C\uB824 \uB450\uAC70\uB098(Ollama keep_alive) \uC0AC\uC774\uB4DC\uCE74\uC758 NMOS_EMBED_TIMEOUT_MS\uB97C \uB298\uB824 \uC8FC\uC138\uC694.",
+      "On the last request the embedding model did not answer in time or answered with an error, so memory was found by shared words only; an earlier scene in other words can be missed then. First check the address and key with the embedding connection test in the Settings tab. If the model was loading after a pause (Ollama unloads it after 5 minutes idle), the next request is fine. If it connects and this still shows often, keep the embedding model loaded (Ollama keep_alive) or raise the sidecar's NMOS_EMBED_TIMEOUT_MS."
     ],
     "deadline.took": [" (\uC2E4\uC81C\uB85C\uB294 \uC57D {n}ms \uAC78\uB9BC)", " (it took about {n} ms)"],
     "status.plugin_mismatch": [

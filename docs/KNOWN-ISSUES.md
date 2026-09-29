@@ -299,7 +299,7 @@ vectors would find are missing from such a request. **Measured on the owner's pr
 2026-09-23 to 09-28): 141 of 201 recalls (70 %) went without vectors, every one a timeout, on every day; the 60 that
 had them took 280 ms (median) and 452 ms (95th percentile) to embed the query.** There the sidecar reaches the embedder
 through the public proxy address, so even a warm model is close to 300 ms. Since Phase 15 the retrieve answer says
-whether vectors ran, and the panel's Status tab tells the user when they did not.
+whether vectors ran, and the panel's Status tab tells the user when they did not (a timeout, or an embedding error).
 *Workaround:* keep the embedding model loaded (Ollama `keep_alive`, e.g. `OLLAMA_KEEP_ALIVE=-1`), and raise
 `NMOS_EMBED_TIMEOUT_MS` (e.g. 1000) for a remote or slow embedder; it is not part of the projection, so nothing is
 embedded again. Pointing the embedding URL at a closer address would help too, but a new endpoint is a new projection
