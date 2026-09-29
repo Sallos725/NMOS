@@ -340,14 +340,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         el('div', { class: 'warn', text: L('hud.broken', { e: problem }) })));
     }
     // This chat first (ADR 0048): the switch is what the owner opened the panel for, often from the sidebar.
-    cards.unshift(await chatCard(s.enabled));
+    cards.unshift(await chatCard(s.enabled, s.connected));
     const refresh = el('button', { text: L('refresh') });
     refresh.addEventListener('click', () => void refreshStatus());
     statusView.replaceChildren(...cards, el('div', { class: 'btns' }, refresh));
   }
 
   /** "This chat": whether NMOS is on for the chat open now, and the switch. */
-  async function chatCard(enabled: boolean): Promise<HTMLElement> {
+  async function chatCard(enabled: boolean, connected: boolean): Promise<HTMLElement> {
     const card = el('div', { class: 'card' }, el('h2', { text: L('chat.title') }));
     let state;
     try {
@@ -374,7 +374,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     card.append(el('div', { class: off ? 'line warn' : 'line' }, el('span', { class: off ? 'dot warn' : 'dot ok' }),
       el('span', { text: L(off ? 'chat.off' : 'chat.on') })),
     el('p', { class: 'sub', text: L(off ? 'chat.off_sub' : 'chat.on_sub') }), el('div', { class: 'btns' }, flip), msg);
-    const spent = await usageLine(id);
+    const spent = connected ? await usageLine(id) : null;
     if (spent) card.insertBefore(spent, card.querySelector('p.sub'));
     // The global switch wins (ADR 0048 §5): say so rather than show this chat as working.
     if (!enabled) card.insertBefore(el('div', { class: 'line warn' }, el('span', { class: 'dot warn' }),

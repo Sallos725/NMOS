@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:49291eca6606".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:787450666b4a".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2135,12 +2135,12 @@ html,body{margin:0;background:${PALETTE.bg}}
           el("div", { class: "warn", text: L("hud.broken", { e: problem }) })
         ));
       }
-      cards.unshift(await chatCard(s.enabled));
+      cards.unshift(await chatCard(s.enabled, s.connected));
       const refresh = el("button", { text: L("refresh") });
       refresh.addEventListener("click", () => void refreshStatus());
       statusView.replaceChildren(...cards, el("div", { class: "btns" }, refresh));
     }
-    async function chatCard(enabled2) {
+    async function chatCard(enabled2, connected) {
       const card = el("div", { class: "card" }, el("h2", { text: L("chat.title") }));
       let state;
       try {
@@ -2178,7 +2178,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("div", { class: "btns" }, flip),
         msg
       );
-      const spent = await usageLine(id);
+      const spent = connected ? await usageLine(id) : null;
       if (spent) card.insertBefore(spent, card.querySelector("p.sub"));
       if (!enabled2) card.insertBefore(el(
         "div",
