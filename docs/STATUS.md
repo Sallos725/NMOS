@@ -15,7 +15,10 @@ needing memory; 70 % of production recalls went without vectors (K34), now shown
 whole install or chosen chats, with the ledger, canon, the owner's input, recorded requests and settings without
 secrets, by default the model's work too (embeddings optional); restore into an install without those chats, same or
 newer NMOS, never merged; export from the panel as well as a command, restore a command. Host evidence first (can the
-plugin's frame save a file). The owner accepted every proposed answer; no release.
+plugin's frame save a file). The owner accepted every proposed answer; no release. Step 2 done (`docs/HOST-FACTS.md`
+"Saving a file from the plugin frame", H21): on v1.13.0 the frame saves a Blob (Chromium and Firefox; mobile not yet
+observed) and `nativeFetch` carries a 30 MB binary body whole on both routes; a link to the file breaks the panel, so
+Export saves a Blob.
 
 **Phase 14 — Verification and Repair, part 2: canon sources (Stage 6): approved 2026-09-28, complete 2026-09-29.** Spec
 `docs/phases/PHASE-14.md`: the character card, the lorebooks, the persona and the author's note as
@@ -266,7 +269,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H19, D1–D59, O2/O3/O4/O5 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H19, H21, D1–D59, O2/O3/O4/O5 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
 | Schema | `migrations/0001`–`0026` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode, thread outcome and cause, summaries, owner repairs, canon, canon facts and lock |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
