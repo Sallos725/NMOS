@@ -346,6 +346,24 @@ unless `deadline_ms` is raised (≈1,200 ms at 10k on this machine).
 Cold first sync of long chats already spans several requests by design (chunked, durable bodies
 upload): ≈9 s of sidecar time at 10k, ≈27 s at 25k.
 
+### The envelope in tokens (2026-09-29)
+
+The tiers above count messages of the synthetic chat: a short user turn and a ≈1,200-character Korean reply, ≈1,300
+characters a turn. Korean costs ≈0.6–1.2 tokens a character depending on the tokenizer (`packet-v2` estimates 1.2),
+so, roughly:
+
+| Messages | ≈ characters | ≈ tokens |
+|---|---:|---:|
+| 5,000 | 3.3 M | 2–4 M |
+| 10,000 | 6.5 M | 4–8 M |
+| 30,000 (`MAX_MANIFEST_MESSAGES`) | 19.5 M | 12–23 M |
+
+Within the default deadline with extraction and embeddings on, that is a few million tokens of chat; with a raised
+deadline, the 30,000-message cap is the only hard limit. Real messages differ: the owner's main chat averages ≈6,200
+characters a message. On a long chat with summaries on, the story's input (K35) can outgrow the extraction model's context well before
+the sync reaches its limits.
+On PocketRisu v1.13.0 the 5,000-message chat added ≈0.9–1.0 s per warm generation (`docs/perf/archive-center.md`).
+
 ## Supported envelope (decision)
 
 - The API accepts manifests up to **30,000 messages** (`MAX_MANIFEST_MESSAGES`; it was 20,000, which

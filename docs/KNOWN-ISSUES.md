@@ -41,6 +41,9 @@ without a PocketRisu change.
 | K30 | A summary can say a secret in other words | Memory | since 0.2.0 (Phase 12, ADR 0042, 0043); summaries off for a chat where it matters |
 | K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases) |
 | K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | recorded, not scheduled (`docs/perf/m0-sample2.md`) |
+| K33 | The packet stops at ≈2,000–3,000 tokens whatever the memory budget | Recall | proposal: budget-scaled recall ("fill", `docs/perf/archive-center.md`) |
+| K34 | A request right after the embedding model was unloaded recalls without vectors | Recall | evidence (production rate not measured) |
+| K35 | "The story so far" is written from every scene summary, with no cap on its input | Memory | recorded, not scheduled |
 
 ## Performance
 
@@ -190,6 +193,15 @@ often. *Workaround:* "Extract all history" once after upgrading; raise **기억 
 facts not fitting (kept/offered); on `main` the Status tab says so and offers the budget that holds them
 (ADR 0036). Evidence: `docs/perf/extract-v10.md`.
 
+**K35 — "The story so far" has no input cap.** Each time a scene (8 turns) is summarized, the story is written
+again from every current scene summary (`summaries.story_prompt`). A scene summary holds at most 1,200 characters,
+so the story's input grows by up to 1,200 characters every 8 turns: at the cap, a model with a 128,000-token context
+is outgrown near 700 turns, and the input sent over a chat's life grows with the square of its length. When the call
+fails, the last story made from still-current scenes keeps serving and covers less and less. Real scene summaries
+are shorter than the cap; the owner's chats are far from it. Not measured on a long real chat.
+*Workaround:* none needed below several hundred turns; turn summaries off for a very long chat if the story stops
+updating.
+
 ## Recall and gating
 
 **K26 — The token estimate over-counts Korean.** The packet budget is filled against a conservative
@@ -248,6 +260,20 @@ fact 2 of 3, as many as the full name. A given name no lorebook lists is still n
 asks about it in the third person too. On the same chat, the persona's own past was not reached by its facts in
 either case that asked about it; the same question in the first person reached it.
 *Workaround:* ask in the first person, or rely on excerpts and summaries.
+
+**K33 — The packet stops at ≈2,000–3,000 tokens.** Recall has fixed limits (5 excerpts of at most 480
+characters, 8 facts, 3 events, 3 threads), so a larger **기억 예산(토큰) / Memory budget (tokens)** leaves most of
+the room unused: on the owner's two M0 chats, budgets from 4,000 to 20,000 all compiled packets of ≈1,800–2,900
+tokens. A what-if that scales the limits with the budget answered more cases (sample 2: 9 → 12 of 15 at ≈3,900
+tokens; main chat: 30 → 33 of 40 at ≈5,900), and above ≈8,000 tokens it placed stale facts (forbidden phrases 8–10 of
+16). Evidence: `docs/perf/archive-center.md`, "What-if". *Workaround:* none; raising the budget above ≈3,000 changes little today.
+
+**K34 — A cold embedding model means no vectors for that request.** The request path gives the query embedding
+300 ms and then recalls lexically (PHASE-3). A local Ollama unloads an idle model (5 minutes by default), and
+`qwen3-embedding:8b` took ≈18 s to load again on the homelab machine, so the first request after a pause gets no
+vector recall; excerpts that only vectors would find are missing from it. How often this happens in production was
+not measured. *Workaround:* keep the embedding model loaded (Ollama `keep_alive`, e.g. `OLLAMA_KEEP_ALIVE=-1`), or
+use a small embedding model that loads fast.
 
 ## Data and lifecycle
 
