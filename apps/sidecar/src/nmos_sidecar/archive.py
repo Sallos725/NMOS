@@ -121,15 +121,15 @@ def _url_has_secret(url: str) -> bool:
     return parts.username is not None or parts.password is not None or bool(parts.query) or bool(parts.fragment)
 
 
-def _secrets(conn: psycopg.Connection, settings: Settings | None) -> list[str]:
+def _secrets(conn: psycopg.Connection, settings: Settings | list[Settings] | None) -> list[str]:
     """Every credential NMOS holds (saved keys, the environment's keys, the auth token), to refuse an archive that
     would carry one anywhere (K21). A service-account key also counts by its private key alone."""
     out: set[str] = set()
     for (value,) in _q(conn, "SELECT value FROM app_config WHERE key = ANY(%s)", (sorted(runtime.SECRET),)):
         if isinstance(value, str):
             out.add(value)
-    if settings is not None:
-        out.update(v for v in (settings.llm_api_key, settings.embed_api_key, settings.auth_token) if v)
+    for s in ([settings] if isinstance(settings, Settings) else settings or []):
+        out.update(v for v in (s.llm_api_key, s.embed_api_key, s.auth_token) if v)
     for value in list(out):
         try:
             key = json.loads(value)
@@ -199,11 +199,14 @@ def _setting_line(line: str) -> str | None:
 
 
 def write_archive(conn: psycopg.Connection, out: IO[bytes], conversations: list[str] | None = None,
-                  projections: bool = True, embeddings: bool = False, settings: Settings | None = None) -> Export:
+                  projections: bool = True, embeddings: bool = False,
+                  settings: Settings | list[Settings] | None = None) -> Export:
     """Write an archive to `out` (a binary file) from one consistent, read-only snapshot. `conversations` None is
     the whole install (every conversation and the settings); a list is those conversations only. Raises
     ArchiveError, with nothing useful written, when a chosen conversation is missing or a credential would be
-    archived. `conn` must not be in a transaction."""
+    archived. `settings`: every Settings whose credentials to look for (the environment's and the effective ones: a key
+    saved in the panel replaces the environment's in the effective settings, and either may be in a chat). `conn` must
+    not be in a transaction."""
     parts = {"ledger", "settings" if conversations is None else "", "projections" if projections else "",
              "embeddings" if embeddings else ""}
     with conn.transaction():

@@ -266,3 +266,14 @@ def test_a_user_or_fragment_in_an_endpoint_never_reaches_an_archive(migrated):
         assert c.put("/v1/config", json={"llm_url": "https://api-token@llm.example/v1"}).status_code == 200
         res = c.get("/v1/archive")
         assert res.status_code == 409 and "user or password" in res.json()["detail"]
+
+
+def test_an_environment_key_replaced_in_the_panel_is_still_looked_for(migrated):
+    env_key = "sk-environment-key-0123"
+    with make_client(migrated, llm_api_key=env_key, **LLM) as c:
+        assert c.put("/v1/config", json={"llm_api_key": KEY}).status_code == 200  # saved: replaces the env's
+        chat = SimChat()
+        chat.user(f"the old key was {env_key}")
+        sync(c, chat)
+        res = c.get("/v1/archive")
+        assert res.status_code == 409 and "credential" in res.json()["detail"]

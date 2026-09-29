@@ -491,6 +491,39 @@ describe('route selection', () => {
   });
 });
 
+describe('archive files (ADR 0050)', () => {
+  function fileHost(answer: { status: number; bytes: ArrayBuffer | null; json: unknown } | null) {
+    const seen: Array<{ url: string; headers: Record<string, string>; timeout: number; route: string }> = [];
+    const host: HostPort = {
+      settings: async () => ({ sidecarUrl: 'http://sidecar/', authToken: 't', enabled: true, reservedMemoryTokens: 600,
+        deadlineMs: 200, injectPosition: 'before_last_user', route: 'server', language: 'ko' }),
+      currentChat: async () => null,
+      request: async () => { throw new Error('not a JSON call'); },
+      ...(answer ? { requestFile: async (url: string, headers: Record<string, string>, timeout: number, route: string) => {
+        seen.push({ url, headers, timeout, route });
+        return answer;
+      } } : {}),
+      warn: () => {}, debug: () => {}, now: () => performance.now(),
+    };
+    return { host, seen };
+  }
+
+  it('fetches the archive with the token on the chosen route and returns its bytes', async () => {
+    const bytes = new Uint8Array([80, 75, 3, 4]).buffer;
+    const { host, seen } = fileHost({ status: 200, bytes, json: null });
+    expect(await createAdapter(host).file('/v1/archive?conversation=c-1')).toBe(bytes);
+    expect(seen).toEqual([{ url: 'http://sidecar/v1/archive?conversation=c-1', headers: { Authorization: 'Bearer t' },
+      timeout: 300_000, route: 'server' }]);
+  });
+
+  it("says the sidecar's refusal, and a host that cannot fetch a file", async () => {
+    const refused = fileHost({ status: 409, bytes: null, json: { detail: 'a row of source_revision holds a credential' } });
+    await expect(createAdapter(refused.host).file('/v1/archive')).rejects
+      .toThrow('/v1/archive -> HTTP 409: a row of source_revision holds a credential');
+    await expect(createAdapter(fileHost(null).host).file('/v1/archive')).rejects.toThrow('cannot fetch a file');
+  });
+});
+
 describe('activity events (progress display)', () => {
   const withConversation = (path: string, body: any): HttpResult => {
     const res = happy(path, body);

@@ -794,7 +794,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             with tmp, request.app.state.pool.connection() as conn:
                 result = archive.write_archive(conn, tmp, [str(c) for c in conversation] if conversation else None,
                                                projections=projections, embeddings=embeddings,
-                                               settings=rt["settings"])
+                                               settings=[settings, rt["settings"]])
         except archive.ArchiveError as error:
             os.unlink(tmp.name)
             missing = isinstance(error, archive.NoSuchConversation)

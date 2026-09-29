@@ -82,3 +82,26 @@ describe('menus', () => {
     expect(await risuChatSwitch.toggle()).toEqual({ id: null, off: false });
   });
 });
+
+describe('archive files (ADR 0050, H21)', () => {
+  it('are fetched through nativeFetch on the route as bytes, and an error answer as its JSON', async () => {
+    const calls: [string, Record<string, unknown>][] = [];
+    const zip = new Uint8Array([80, 75, 3, 4, 0]);
+    let answer: { status: number; body: Uint8Array } = { status: 200, body: zip };
+    (globalThis as { risuai?: unknown }).risuai = {
+      nativeFetch: async (url: string, options: Record<string, unknown>) => {
+        calls.push([url, options]);
+        return new Response(answer.body, { status: answer.status });
+      },
+    };
+    const ok = await risuHost.requestFile!('http://nmos:8790/v1/archive', { Authorization: 'Bearer t' }, 300_000, 'server');
+    expect(ok.status).toBe(200);
+    expect(new Uint8Array(ok.bytes!)).toEqual(zip);
+    expect(calls[0]).toEqual(['http://nmos:8790/v1/archive', { method: 'GET', headers: { Authorization: 'Bearer t' },
+      requestTimeoutMs: 300_000, networkRoute: 'local_network' }]);
+    answer = { status: 409, body: new TextEncoder().encode('{"detail":"refused"}') };
+    expect(await risuHost.requestFile!('http://127.0.0.1:8790/v1/archive', {}, 1000, 'direct'))
+      .toEqual({ status: 409, bytes: null, json: { detail: 'refused' } });
+    expect(calls[1]?.[1]).not.toHaveProperty('networkRoute');
+  });
+});
