@@ -62,7 +62,7 @@ same repairs and links, the same answers to recorded requests, without paying fo
 
 ## Acceptance criteria
 
-- [x] Every existing test passes (sidecar 655, plugin 162).
+- [x] Every existing test passes (sidecar 657, plugin 162).
 - [x] Deterministic cases: a round trip of a chat with edits, swipes, a branch, a deleted message, canon, repairs,
       links and a memory mode gives an equal ledger state and reproduced replays; a branch exported without its origin
       restores with its host refs and no link; embeddings optional; secrets never
