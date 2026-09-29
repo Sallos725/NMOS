@@ -144,8 +144,8 @@ class Packet(BaseModel):
 
 class MemoryFit(BaseModel):
     """How much memory the budget held (ADR 0036): memory lines offered (state, promises, facts, claims),
-    those left out for the budget, and the smallest budget in 100s up to 2000 that holds them all (None:
-    nothing left out, or more than 2000 needed)."""
+    those left out for the budget, and the smallest budget in 100s up to `packet.FIT_CAP` that holds them all (None:
+    nothing left out, or more than FIT_CAP needed)."""
     offered: int
     cut: int
     fits_at: int | None = None

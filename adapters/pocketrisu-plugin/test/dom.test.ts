@@ -131,14 +131,14 @@ describe('panel', () => {
     expect(endpoint).toBeDefined();
     endpoint.value = 'https://llm.example/v2';
     endpoint.dispatchEvent(new Event('input', { bubbles: true }));
-    const reserved = [...panel.querySelectorAll('input')].find((i) => i.value === '2000')!;
+    const reserved = [...panel.querySelectorAll('input')].find((i) => i.value === '4000')!;
     reserved.value = '99999';
     reserved.dispatchEvent(new Event('input', { bubbles: true }));
     (panel.querySelector('button.primary') as HTMLButtonElement).click();
     await settle();
     expect(calls.filter(([method]) => method === 'PUT')).toEqual([['PUT', '/v1/config',
       { llm_url: 'https://llm.example/v2', llm_model: 'm' }]]);  // no key typed: none sent
-    expect(args.reserved_memory_tokens).toBe('20000');
+    expect(args.reserved_memory_tokens).toBe('8000');  // the panel saves up to 8,000 (ADR 0049)
   });
 
   it('turns summaries off from the settings (ADR 0042, 0043)', async () => {

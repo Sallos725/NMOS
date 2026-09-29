@@ -107,8 +107,8 @@ def sentences(text: str) -> list[str]:
     return [s.strip() for s in _SENTENCE.findall(text) if s.strip()]
 
 
-def excerpt(content: str, query: str, window: int = 2) -> str:
-    """The `window` consecutive sentences sharing the most trigrams with `query`, capped in length."""
+def excerpt(content: str, query: str, window: int = 2, max_chars: int = MAX_EXCERPT_CHARS) -> str:
+    """The `window` consecutive sentences sharing the most trigrams with `query`, capped at `max_chars`."""
     parts = sentences(content) or [content.strip()]
     query_grams = _trigrams(query)
     best, best_score = 0, -1
@@ -117,8 +117,8 @@ def excerpt(content: str, query: str, window: int = 2) -> str:
         if score > best_score:
             best, best_score = i, score
     text = " ".join(parts[best : best + window])
-    if len(text) > MAX_EXCERPT_CHARS:
-        text = text[: MAX_EXCERPT_CHARS - 1].rstrip() + "…"
+    if len(text) > max_chars:
+        text = text[: max_chars - 1].rstrip() + "…"
     prefix = "…" if best > 0 else ""
     suffix = "…" if best + window < len(parts) else ""
     return f"{prefix}{text}{suffix}"
@@ -145,24 +145,32 @@ def excerpt(content: str, query: str, window: int = 2) -> str:
 # ADR 0042) in at most STORY_SHARE of the budget, and a <Cast> section: each scene character's place, condition,
 # feeling toward the persona, open goals and what they carry, as the lines they are, grouped (PHASE-12 step 5,
 # ADR 0043).
+# packet-v9 is packet-v8 whose recall grows with the budget (PHASE-15, ADR 0049): above FILL_BASE tokens, the request's
+# own excerpt count and fact limit, and each excerpt's length, scale by the budget's share of FILL_BASE, up to
+# FILL_MAX; facts to twice their limit at most. Threads, events, secrets, <Cast> and <Story> keep packet-v8's limits:
+# growing them placed stale business above ≈8,000 tokens (docs/perf/packet-fill.md). At FILL_BASE and below it is
+# packet-v8.
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
-            "packet-v8")
-DEFAULT_POLICY = "packet-v8"
-NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2,
-             "packet-v4": 1.2, "packet-v5": 1.2, "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2}  # estimated tokens per non-ASCII char
-PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", "packet-v8"})
-FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", "packet-v8"})
-ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", "packet-v8"})  # promises the message is about first (ADR 0019 am. 1)
-BEFORE_POLICIES = frozenset({"packet-v5", "packet-v6", "packet-v7", "packet-v8"})  # standing facts name what they replaced (ADR 0038)
-CAUSE_POLICIES = frozenset({"packet-v6", "packet-v7", "packet-v8"})  # facts and claims carry the cause the story states (ADR 0040)
-TURN_POLICIES = frozenset({"packet-v7", "packet-v8"})  # excerpts and state carry their message's turn index (ADR 0041)
-STORY_POLICIES = frozenset({"packet-v8"})  # summaries in a <Story> section (ADR 0043)
-CAST_POLICIES = frozenset({"packet-v8"})  # each scene character's state in a <Cast> section (ADR 0043)
+            "packet-v8", "packet-v9")
+DEFAULT_POLICY = "packet-v9"
+NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
+             "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2}  # estimated tokens per non-ASCII char
+_V8 = ("packet-v8", "packet-v9")  # packet-v8 and what builds on it
+PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
+FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
+ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})  # promises the message is about first (ADR 0019 am. 1)
+BEFORE_POLICIES = frozenset({"packet-v5", "packet-v6", "packet-v7", *_V8})  # standing facts name what they replaced (ADR 0038)
+CAUSE_POLICIES = frozenset({"packet-v6", "packet-v7", *_V8})  # facts and claims carry the cause the story states (ADR 0040)
+TURN_POLICIES = frozenset({"packet-v7", *_V8})  # excerpts and state carry their message's turn index (ADR 0041)
+STORY_POLICIES = frozenset(_V8)  # summaries in a <Story> section (ADR 0043)
+CAST_POLICIES = frozenset(_V8)  # each scene character's state in a <Cast> section (ADR 0043)
+FILL_POLICIES = frozenset({"packet-v9"})  # recall grows with the budget (ADR 0049)
+FILL_BASE, FILL_MAX, FILL_FACTS_MAX = 2000, 4.0, 2.0  # the budget recall is sized for, and the largest factors
 STORY_SHARE = 0.3  # packet-v8: <Story> may take at most this share of the budget inside the frame (PHASE-12 Q5)
 RESTATES = 0.6  # packet-v4: a claim this close to a fact of the same head says it again (ADR 0019's match)
 # What the memory budget is for, and how far a suggested budget may go (ADR 0036).
 MEMORY_KINDS = frozenset({"state", "thread", "fact", "claim", "secret", "summary"})
-FIT_STEP, FIT_CAP = 100, 6000  # the cap was 2000 while the default budget was 800 (ADR 0043)
+FIT_STEP, FIT_CAP = 100, 8000  # the panel's largest suggestion: recall grows up to it (ADR 0049; 6,000 until then)
 # The pilot's rule, shortened to fit a 600-token Korean packet (47 estimated tokens instead of 88).
 PRIVATE_NOTE = (" Private: only its holders (known_by) know it. Others must not mention, hint at or act on it; holders"
                 " keep it from those in hidden_from unless the story reveals it.")
@@ -297,6 +305,12 @@ def restated(lines: list[Line]) -> dict[int, Line]:
         else:
             out[n] = same
     return out
+
+
+def fill(budget: int, policy: str) -> float:
+    """How much recall grows at `budget` under `policy` (ADR 0049): 1 below FILL_BASE and for every other policy,
+    FILL_MAX at FILL_BASE × FILL_MAX and above."""
+    return min(max(budget / FILL_BASE, 1.0), FILL_MAX) if policy in FILL_POLICIES else 1.0
 
 
 def cut_lines(ledger: list[dict[str, Any]]) -> int:

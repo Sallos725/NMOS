@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:b07cd38d78d4".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:8e38edbf7a82".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -127,8 +127,9 @@
   // src/form.ts
   var DEFAULT_DEADLINE_MS = 3e3;
   var MAX_DEADLINE_MS = 3e4;
-  var DEFAULT_RESERVED_TOKENS = 2e3;
+  var DEFAULT_RESERVED_TOKENS = 4e3;
   var MAX_RESERVED_TOKENS = 2e4;
+  var PANEL_MAX_RESERVED_TOKENS = 8e3;
   var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
   var VERTEX_URL = "https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi";
   function serviceAccountProject(key) {
@@ -184,7 +185,7 @@
       sidecar_url: v.url.trim(),
       route: v.route,
       disabled: v.enabled ? 0 : 1,
-      reserved_memory_tokens: Math.min(MAX_RESERVED_TOKENS, Math.floor(Number(v.reserved)) > 0 ? Math.floor(Number(v.reserved)) : DEFAULT_RESERVED_TOKENS),
+      reserved_memory_tokens: Math.min(PANEL_MAX_RESERVED_TOKENS, Math.floor(Number(v.reserved)) > 0 ? Math.floor(Number(v.reserved)) : DEFAULT_RESERVED_TOKENS),
       deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS))
     };
   }
@@ -1602,7 +1603,7 @@ ${revisionHash}`;
   }
 
   // src/budget.ts
-  var FIT_CAP = 6e3;
+  var FIT_CAP = 8e3;
   function budgetAdvice(r, current2) {
     if (!r || r.outcome === "failed" || !r.memory || !(r.memory.cut > 0) || !(r.budgetTokens && r.budgetTokens > 0)) return null;
     const all = typeof r.memory.fits_at === "number";
@@ -2646,7 +2647,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     const url = el("input", { spellcheck: "false" });
     const route = el("select", {}, ...["auto", "direct", "server"].map((v) => el("option", { value: v, text: v })));
     const enabled = el("input", { type: "checkbox" });
-    const reserved = el("input", { type: "number", min: 100, max: 8e3 });
+    const reserved = el("input", { type: "number", min: 100, max: PANEL_MAX_RESERVED_TOKENS });
     const deadline = el("input", { type: "number", min: 200, max: MAX_DEADLINE_MS, step: 100 });
     settingsView.append(el(
       "div",

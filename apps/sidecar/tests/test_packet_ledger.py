@@ -104,7 +104,7 @@ def test_packet_v1_skips_an_excerpt_that_restates_a_fact(policy):
 def test_packet_v2_counts_non_ascii_at_1_2_tokens_a_character():
     """K26: three tokenizers counted 0.74-0.98 tokens per Korean character; v0 and v1 estimate 1.5."""
     assert NON_ASCII == {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2,
-                         "packet-v5": 1.2, "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2}
+                         "packet-v5": 1.2, "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2}
     assert estimate_tokens("가" * 100) == 150 and estimate_tokens("가" * 100, 1.2) == 120
     assert estimate_tokens("a" * 35, 1.2) == estimate_tokens("a" * 35) == 10  # ASCII unchanged
 
@@ -135,7 +135,7 @@ def test_compile_packet_keeps_the_v0_contract():
 
 def test_unknown_policy_is_refused():
     with pytest.raises(ValueError):
-        compile_lines([], 600, policy="packet-v9")
+        compile_lines([], 600, policy="packet-v10")
 
 
 def test_echo_counts_reused_spans_the_request_did_not_contain():
@@ -204,7 +204,8 @@ def test_a_trace_records_every_offered_line_with_provenance(full):
     chat = story(client, url)
     out = ask(client, chat, "Kaito, what do you know about the letter?")
     trace = client.get(f"/v1/trace/{out['trace_id']}").json()
-    assert trace["policy"] == "packet-v8" and trace["budget_tokens"] == 600
+    assert trace["policy"] == "packet-v9" and trace["budget_tokens"] == 600
+    assert trace["recall_options"]["fill"] == 1.0  # below 2,000: packet-v8's recall (ADR 0049)
     assert trace["upto_position"] == len(chat.messages) - 1 and trace["previous_ai"] == ""
     assert trace["recall_options"]["facts_limit"] == 8
     facts = [e for e in trace["lines"] if e["kind"] == "fact"]
@@ -308,12 +309,14 @@ def test_compare_policies_over_traces(full):
     with db(url) as conn:
         report = audit.compare(conn, ids, RecallOptions())
     assert report["traces"] == 2 and report["skipped"] == {}
-    v0, v1, v2, v3, v4, v5, v6, v7, v8 = (report["policies"][p] for p in (
-        "packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", "packet-v8"))
+    v0, v1, v2, v3, v4, v5, v6, v7, v8, v9 = (report["policies"][p] for p in (
+        "packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", "packet-v8",
+        "packet-v9"))
     assert v8["packets"] == v7["packets"] == v6["packets"] == v5["packets"] == v4["packets"] == v3["packets"] \
         == v2["packets"] == v1["packets"] == 2
     assert v0["packets"] == 2
-    assert v8["replayed_same_policy"] == v8["reproduced"] == 2  # recorded by the default, packet-v8
+    assert v9["replayed_same_policy"] == v9["reproduced"] == 2  # recorded by the default, packet-v9
+    assert v8["replayed_same_policy"] == 0 and v8["placed"] == v9["placed"]  # at 600 tokens they are one (ADR 0049)
     assert v0["replayed_same_policy"] == v1["replayed_same_policy"] == v2["replayed_same_policy"] == 0
     assert v3["replayed_same_policy"] == v4["replayed_same_policy"] == v5["replayed_same_policy"] \
         == v6["replayed_same_policy"] == v7["replayed_same_policy"] == 0
@@ -363,7 +366,7 @@ def test_inspector_shows_the_last_packet_ledger(full):
     _sync(client, chat)
     conv = client.get("/v1/conversations").json()[0]["id"]
     page = client.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
-    assert "Last packet: what went in" in page and "policy packet-v8" in page and "next reply: present" in page
+    assert "Last packet: what went in" in page and "policy packet-v9" in page and "next reply: present" in page
     assert "a hidden fact reappears" in page and "the letter is forged" in page
     assert "fact 2" in page or "fact 1" in page  # the retrievals table counts what each packet held
     ko = client.get(f"/inspector/c/{conv}").text
