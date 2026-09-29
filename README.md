@@ -82,6 +82,22 @@ Put the older plugin file back and reload PocketRisu. Your chats themselves live
 generation in each chat syncs what changed since the backup, and the worker extracts it again at the
 provider's cost.
 
+### Export (NMOS Archive)
+
+An archive (`.nmos.zip`, ADR 0050) holds what NMOS keeps in a form that does not depend on this schema: every
+conversation's history, canon, your repairs and links, the recorded requests, and by default the model's extractions
+and summaries, so moving it does not pay for extraction again. It never holds an API key or the auth token; the whole
+install's archive also holds the settings without keys. It holds chat text: keep it as you keep the chat.
+
+- In the panel: **Settings → Export → Export everything** (tick "Include embeddings" for a larger file that needs no
+  re-embedding), or **Export this chat** on a conversation's Inspector page. The browser saves the file.
+- From the shell: `docker compose exec -T sidecar python -m nmos_sidecar.archive export -o - > nmos.nmos.zip`
+  (`--conversation <id>` for one chat, `--embeddings`, `--no-projections`).
+- `GET /v1/archive` on the sidecar (the same parameters: `conversation`, `embeddings`, `projections`).
+
+If NMOS finds a key or the token anywhere in what it would write (a key pasted into a chat), it refuses and says in
+which table. `pg_dump` backups stay the way to roll back an upgrade.
+
 ## NMOS panel (status, inspector, settings)
 
 Open it from the **☰ menu left of the chat input → NMOS 기억 / NMOS memory**, from the **NMOS icon (an N) in the

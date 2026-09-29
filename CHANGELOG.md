@@ -5,6 +5,14 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 16 step 3: export** (NMOS Archive, ADR 0050, D60). **Export everything** in the panel's Settings tab and
+  **Export this chat** on a conversation's Inspector page save a `.nmos.zip`: every conversation's history, canon,
+  your repairs and links, the recorded requests, and by default the model's extractions and summaries (embeddings when
+  asked); the whole install's archive also holds the settings, never an API key or the token. The same from
+  `GET /v1/archive` and `python -m nmos_sidecar.archive export`. NMOS refuses to write an archive in which it finds a
+  key or the token. A new plugin build; no migration. Restoring comes in step 4.
+- **Phase 16 step 2: the plugin's frame can save a file** (H21, `docs/HOST-FACTS.md`): on PocketRisu v1.13.0 a Blob
+  saves from the panel (Chromium, Firefox) and `nativeFetch` carries a binary body whole on both routes.
 - **Fixed: canon facts from a branch the host never shows** (ADR 0047 amendment 2, H20). A card or lorebook text
   with `{{#if …}}` / `{{#when …}}` blocks was read with every branch, and its facts were sent as memory even when
   the chat's variables hid them (a language or a display switch, for example). A canon fact quoted only inside such

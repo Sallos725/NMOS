@@ -50,7 +50,8 @@ describe('menus', () => {
       getChatFromIndex: async () => ({ id: 'chat-9', message: [] }),
     };
     const hud = { enable: async () => 'unsupported' as const, disable: async () => {}, problem: () => null, background: () => {} };
-    await registerHooks(async (p) => p, () => {}, async () => ({} as never), async () => ({} as never), hud);
+    await registerHooks(async (p) => p, () => {}, async () => ({} as never), async () => ({} as never),
+      async () => new ArrayBuffer(0), hud);
     expect(buttons.map((b) => [b.arg.location, b.arg.id])).toEqual([
       ['chat', 'nmos-chat'], ['chat', 'nmos-chat-switch'], ['hamburger', 'nmos-sidebar']]);
     // The panel's three entries carry NMOS's icon; the sidebar shows no name, so there the icon carries it.
@@ -79,5 +80,28 @@ describe('menus', () => {
   it('the switch has nothing to do when no character is open', async () => {
     (globalThis as { risuai?: unknown }).risuai = { getCurrentCharacterIndex: async () => -1, getArgument: async () => '' };
     expect(await risuChatSwitch.toggle()).toEqual({ id: null, off: false });
+  });
+});
+
+describe('archive files (ADR 0050, H21)', () => {
+  it('are fetched through nativeFetch on the route as bytes, and an error answer as its JSON', async () => {
+    const calls: [string, Record<string, unknown>][] = [];
+    const zip = new Uint8Array([80, 75, 3, 4, 0]);
+    let answer: { status: number; body: Uint8Array } = { status: 200, body: zip };
+    (globalThis as { risuai?: unknown }).risuai = {
+      nativeFetch: async (url: string, options: Record<string, unknown>) => {
+        calls.push([url, options]);
+        return new Response(answer.body, { status: answer.status });
+      },
+    };
+    const ok = await risuHost.requestFile!('http://nmos:8790/v1/archive', { Authorization: 'Bearer t' }, 300_000, 'server');
+    expect(ok.status).toBe(200);
+    expect(new Uint8Array(ok.bytes!)).toEqual(zip);
+    expect(calls[0]).toEqual(['http://nmos:8790/v1/archive', { method: 'GET', headers: { Authorization: 'Bearer t' },
+      requestTimeoutMs: 300_000, networkRoute: 'local_network' }]);
+    answer = { status: 409, body: new TextEncoder().encode('{"detail":"refused"}') };
+    expect(await risuHost.requestFile!('http://127.0.0.1:8790/v1/archive', {}, 1000, 'direct'))
+      .toEqual({ status: 409, bytes: null, json: { detail: 'refused' } });
+    expect(calls[1]?.[1]).not.toHaveProperty('networkRoute');
   });
 });

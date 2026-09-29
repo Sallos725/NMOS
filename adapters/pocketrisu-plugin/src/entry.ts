@@ -20,6 +20,7 @@ import type { PromptMessage } from './types';
     (arg) => adapter.onOutput(arg as Parameters<typeof adapter.onOutput>[0]),
     () => adapter.status(),
     (method, path, body, timeoutMs) => adapter.api(method, path, body, timeoutMs),
+    (path) => adapter.file(path),
     hud,
   );
   // After the hooks: the host shows its "db" permission dialog (if it has not been answered) after the

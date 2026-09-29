@@ -39,6 +39,8 @@ export interface PanelDeps {
   hud: HudControl;
   /** NMOS off and on for the chat open now (ADR 0048). */
   chat: ChatSwitch;
+  /** Fetch a file from the sidecar and save it under `name` (an archive, ADR 0050); its size in bytes. */
+  download(path: string, name: string): Promise<number>;
 }
 
 interface ServerConfig {
@@ -168,6 +170,13 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = {}, ..
   }
   for (const child of children) node.append(child);
   return node;
+}
+
+/** An archive's file name: what it holds and when, in local time (`nmos-chat-20260929-181500.nmos.zip`). */
+export function archiveName(kind: string, at: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  const stamp = `${at.getFullYear()}${p(at.getMonth() + 1)}${p(at.getDate())}-${p(at.getHours())}${p(at.getMinutes())}${p(at.getSeconds())}`;
+  return `nmos-${kind}-${stamp}.nmos.zip`;
 }
 
 function say(target: HTMLElement, text: string, kind: 'ok' | 'err' | 'warn' | 'muted' = 'muted'): void {
@@ -387,8 +396,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const historyButton = el('button', { text: L('act.history') });
   const rebuildButton = el('button', { text: L('act.rebuild') });
   const deleteButton = el('button', { text: L('act.delete') });
+  const exportButton = el('button', { text: L('exp.chat') });
   const actionMsg = el('div', { class: 'msg' });
-  const actions = el('div', {}, el('div', { class: 'btns' }, historyButton, rebuildButton, deleteButton),
+  const actions = el('div', {}, el('div', { class: 'btns' }, historyButton, rebuildButton, exportButton, deleteButton),
     el('details', { class: 'sub help' }, el('summary', { text: L('act.help') }), el('p', { text: L('act.sub') })));
   // The message sits outside the actions so a result stays visible after a delete returns to the list.
   // Back and Refresh stay in reach while reading far down a page.
@@ -829,6 +839,25 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     } catch (error) { say(actionMsg, errorText(lang, error), 'err'); } finally { deleteButton.disabled = false; }
   });
 
+  exportButton.addEventListener('click', async () => {
+    const conversation = actionConversation;
+    if (!conversation) return;
+    await exportTo(exportButton, actionMsg, `/v1/archive?conversation=${conversation}`, 'chat');
+  });
+  /** Fetch an archive from the sidecar and save it (ADR 0050, H21), saying how it went under the button. */
+  async function exportTo(button: HTMLButtonElement, msg: HTMLElement, path: string, kind: string): Promise<void> {
+    button.disabled = true;
+    say(msg, L('exp.working'));
+    try {
+      const size = await deps.download(path, archiveName(kind, new Date()));
+      say(msg, L('exp.saved', { mb: (size / 1_048_576).toFixed(1) }), 'ok');
+    } catch (error) {
+      say(msg, errorText(lang, error), 'err');
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   // --- settings tab: progress display (applied at once: it may ask PocketRisu for a permission) --
   const hudBox = el('input', { type: 'checkbox' });
   const hudMsg = el('div', { class: 'msg' });
@@ -949,6 +978,17 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   settingsView.append(el('div', { class: 'card' },
     el('h2', { text: L('rules.title') }), el('p', { class: 'sub', text: L('rules.sub') }),
     rules, el('div', { class: 'btns' }, example)));
+
+  // --- settings tab: export (applied at once; ADR 0050) ------------------------------------------
+  const exportEmbeddings = el('input', { type: 'checkbox' });
+  const exportAll = el('button', { text: L('exp.all') });
+  const exportMsg = el('div', { class: 'msg' });
+  exportAll.addEventListener('click', () => void exportTo(exportAll, exportMsg,
+    `/v1/archive${exportEmbeddings.checked ? '?embeddings=true' : ''}`, 'all'));
+  settingsView.append(el('div', { class: 'card' },
+    el('h2', { text: L('exp.title') }), el('p', { class: 'sub', text: L('exp.sub') }),
+    el('div', { class: 'check' }, exportEmbeddings, el('span', { text: L('exp.embeddings') })),
+    el('div', { class: 'btns' }, exportAll), exportMsg));
 
   // --- settings tab: one save bar ---------------------------------------------------------------
   const barText = el('span', { class: 'text muted' });
