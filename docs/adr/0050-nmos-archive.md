@@ -1,7 +1,7 @@
-# 0050 — NMOS Archive: export
+# 0050 — NMOS Archive: export and restore
 
 Status: accepted, 2026-09-29. Phase 16 step 3 (`docs/phases/PHASE-16.md` Q1–Q3, Q6, Q7, approved by the owner). A new
-endpoint, a command and a plugin build; no migration. Restore is step 4 and amends this ADR.
+endpoint, a command and a plugin build; no migration. Restore is step 4: amendment 1.
 
 ## Context
 
@@ -46,7 +46,9 @@ normalized text and the parsed state are recomputed from the rest.
    every row, decoded (so an escaped quote or backslash still matches), and of the manifest is checked against every
    credential NMOS holds of four characters or more (the saved keys, the environment's keys, the auth token, a service
    account's private key); a match anywhere refuses the export (HTTP 409, command exit 2) and names the table, never
-   the value. The step's Codex review found the first cut missed short and quoted keys and a user in a URL. The archive holds chat text
+   the value. The step's Codex review found the first cut missed short and quoted keys and a user in a URL; step 4's
+   found a file replaceable between check and load, loose manifest checks, unchecked commit parents and the relink of a
+   branch already here (all changed as above). The archive holds chat text
    and is not encrypted: the guide says to keep it as the chat itself.
 5. **One consistent snapshot.** The export reads in one `REPEATABLE READ, READ ONLY` transaction: syncs and workers
    carry on, and the archive is the state at its start.
@@ -73,3 +75,52 @@ normalized text and the parsed state are recomputed from the rest.
   `applied_at` (step 4).
 - The export holds the whole archive in a temporary file (≈ the zip's size) while it is sent.
 - Production-sized numbers are measured in step 5.
+
+## Amendment 1 — restore (2026-09-29, Phase 16 step 4; Q4, Q5)
+
+1. **A command, never the panel:** `python -m nmos_sidecar.archive restore [--check] FILE|-`, with the sidecar and
+   the worker stopped (`docker compose stop sidecar worker`, then `docker compose run --rm -T sidecar python -m
+   nmos_sidecar.archive restore - < file.nmos.zip`, then `docker compose up -d`). It writes a whole database.
+2. **Checked before anything is written:** the manifest's format, version and shape (at most 4 MB; a level that is
+   its last migration; the ledger's files present; as many conversations as its conversation file); that the zip
+   holds exactly the files the manifest lists, each named after a known table, none twice, none encrypted; each
+   file's size, row count and SHA-256. The archive's migrations must be the first of this NMOS's, checksums equal: an
+   archive from a newer NMOS is refused ("upgrade first"), one with other migrations too. `--check` stops there.
+   The restore reads each file's hash again as it loads it, so a file replaced after the check is refused with the
+   transaction.
+3. **Into an install without its conversations:** this install is migrated first, as its sidecar would be at start
+   (a fresh database too; those migrations stay if the restore is then refused); if any
+   archived conversation is here, by id or by host chat, the restore is refused whole and names it. Nothing is
+   merged (invariant 1). The conversations are the archive's rows, not its manifest's list, and every reference of
+   an archived row must point inside the archive (each foreign key of this install's tables, the conversation of the
+   tables without one, and each commit's parents: commits of its own conversation), so an archive not written by the
+   export cannot add rows to a chat already here. A restore changes no conversation already here.
+4. **The archive's own schema, then the upgrade it would have had** (Q5): in one transaction, a scratch schema gets
+   the bundled migrations up to the archive's level (foreign keys dropped there), the rows are loaded as written
+   (`json_populate_recordset`, identity values kept), the later migrations run on them, and the rows are copied into
+   the install, parents first, and the scratch schema dropped. An archive of the current level runs no migration.
+5. **Ids and timestamps kept.** Every uuid and timestamp is the archive's. The sequenced ids shared by all
+   conversations (`assertion.id`, `worldline_commit.seq`, `worldline_append.seq`) are kept when no row here has them
+   (a fresh install; a chat deleted here and restored), else moved past this install's largest, order kept, and the
+   assertion ids a recorded request's lines name (`ref`, `restates`, `repeats`; not the negative ids of owner
+   corrections) moved with them, so its replay still compares. The sequences are set past the largest id.
+6. **Rows of no conversation:** a generation already here keeps its own row (the same key is the same generation);
+   a setting already set here stays and is reported, the rest are the archive's.
+7. **Branches:** a restored branch whose origin is restored with it or already here (by id, or by its host chat under
+   this install's own id, as a branch is linked when first seen) keeps its link; else the link is cleared (host refs kept, reported), as deleting the origin clears it (ADR 0009). A branch already here whose origin
+   was deleted and is now restored keeps its cleared link (a restore changes no conversation already here); its host
+   refs still name the origin.
+8. **Derived data follows:** jobs, the normalized text and the parsed state are not archived; the sidecar's startup
+   writes the text and state and queues the missing extraction, embedding, summary and canon work of the active
+   generations, as for any chat (the first-sight backfill limits apply).
+
+Consequences:
+
+- A restore of the archive of a whole install into a fresh one gives an archive of the same bytes and the same
+  replays (tested).
+- **Replays and embeddings.** A replay reads vectors as of its request; a vector embedded again after a restore is
+  newer than every recorded request. So a recorded request that used vectors replays exactly only when the archive
+  held the embeddings; without them its excerpts from vectors are missing from the replay (its packet in the ledger
+  is unchanged). The guide says to tick "Include embeddings" to keep that audit.
+- Recorded requests older than `NMOS_TRACE_RETENTION_DAYS` (30) are pruned by the worker's next pass, as on the
+  source.

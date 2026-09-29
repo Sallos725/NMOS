@@ -46,6 +46,7 @@ without a PocketRisu change.
 | K35 | "The story so far" is written from every scene summary, with no cap on its input | Memory | recorded, not scheduled |
 | K36 | A chat whose large lorebook NMOS has read almost whole recalls more slowly | Performance | measured, accepted (Phase 14, owner 2026-09-29) |
 | K37 | A story that changes who someone is, against the card or a lorebook, is not flagged | Memory | by decision (ADR 0047 amendment 1); needs a model check |
+| K38 | The panel's Export was not tried on a phone | Host | evidence (owner's phone) |
 
 ## Performance
 
@@ -112,6 +113,11 @@ tunnel to `http://localhost:6001` (README "Requirements").
 **K7 — One tested host build; no group chats.** Behavior is verified on PocketRisu `a14c911`
 (v1.12.0) only. Upstream RisuAI uses the same V3 plugin API but is untested. That build has no
 group-chat type (H11), so group-chat scenarios (S13) could not be run.
+
+**K38 — Export from the panel not tried on a phone.** The panel's Export buttons save the file as a Blob from the
+plugin's frame (H21): NMOS's buttons were observed in Chromium on a desktop, and saving a Blob from the frame in
+Chromium and Firefox; not on a phone's browser (Safari on iOS, Chrome on Android). *Workaround:* where the button saves nothing, open `/v1/archive` on the sidecar in a browser that reaches it,
+or run `python -m nmos_sidecar.archive export` (README "Export").
 
 ## Memory
 
@@ -249,6 +255,10 @@ the target turn and 2,000 of each context message. The Inspector flags partly pr
 **K14 — Gating edge cases.** A main generation is recognized by the user's latest input appearing in
 the prompt (ADR 0001, amendment 2). A `model`-mode auxiliary call (trigger/Lua) whose prompt contains
 that input is treated as main and may get a packet (not observed; accepted as rare over-injection).
+*Measured 2026-09-29:* the host sends Lua `LLM()`, `simpleLLM` and the trigger's `runLLM` as `model` (Lua `axLLM`
+as `otherAx`), and every such call runs the `beforeRequest` replacers (HOST-FACTS Q1). In the owner's production
+request log (2026-09-23 to 09-29) none of 751 `model` requests was such a call: every one carried chat history
+with the model's replies, and all 560 packets went into those. Still accepted; the gate is unchanged.
 A preset that sends the input only in transformed form (e.g. translated) gets no memory (fail-safe).
 
 **K15 — Tuned on limited data.** Recall thresholds were set on few real chats (ADR 0004/0005). The
