@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:f371c057201b".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:9d6a0f3c6fb0".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -977,8 +977,8 @@ ${revisionHash}`;
       if (!personas || host.now() - personas.at > PERSONA_TTL_MS) warmPersonas();
       return personas?.value ? personaOf(chat, personas.value) : null;
     }
-    function remember(key, packet, ttl, failed = false, memory = null, vectors = null) {
-      cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors });
+    function remember(key, packet, ttl, failed = false, memory = null, vectors = null, canon) {
+      cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors, canon });
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
     }
     async function within(work, deadline, what) {
@@ -1081,11 +1081,15 @@ ${revisionHash}`;
           chat.id,
           mode,
           prompt.length,
-          request.messages.map((m) => [m.host_logical_id, m.revision_hash])
+          request.messages.map((m) => [m.host_logical_id, m.revision_hash]),
+          settings.sidecarUrl.replace(/\/+$/, ""),
+          settings.authToken,
+          settings.reservedMemoryTokens
         ])), deadline, "the cache key");
         const canon = await observeCanon(chat, prompt, deadline);
+        const canonKey = JSON.stringify([canon?.snapshot?.id ?? null, canon?.held ?? []]);
         const cached = cache.get(key);
-        if (cached && cached.expires > host.now()) {
+        if (cached && cached.expires > host.now() && (cached.failed || cached.canon === canonKey)) {
           const known = conversations.get(chat.id);
           if (canon?.snapshot && known) syncCanon(settings, known, chat.id, canon.snapshot);
           const outcome2 = cached.packet ? "injected" : "nothing-relevant";
@@ -1135,7 +1139,7 @@ ${revisionHash}`;
         const packet = retrieved.freshness === "fresh" ? retrieved.packet.text : "";
         const memory = retrieved.freshness === "fresh" ? retrieved.memory ?? null : null;
         const vectors = retrieved.freshness === "fresh" ? retrieved.vectors ?? null : null;
-        remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors);
+        remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors, canonKey);
         host.debug("[NMOS] request done", {
           ms: Math.round(host.now() - started),
           manifestMs: Math.round(manifestMs),

@@ -174,6 +174,33 @@ describe('canon sync', () => {
     expect(canonPosts(posts).length).toBeGreaterThan(before);
   });
 
+  it('never reuses a cached packet after the canon changed or the prompt holds other canon', async () => {
+    const { h, posts } = host(sidecar(new Set()));
+    const adapter = createAdapter(h);
+    const retrieves = () => posts.filter((p) => p.path === '/v1/retrieve').map((p) => p.body);
+    const reroll = async (p = prompt) => { await adapter.beforeRequest(structuredClone(p), 'model'); await settle(); };
+    await reroll();
+    await reroll(); // the card is known by now
+    const n = retrieves().length;
+    await reroll(); // unchanged: the cached packet
+    expect(retrieves()).toHaveLength(n);
+    (h.lorebook as any) = async () => [{ ...kaito, content: '카이토는 이제 정식 기사다.' }, world, folder, tunnel]; // an entry edited
+    await reroll();
+    expect(retrieves()).toHaveLength(n + 1);
+    expect(retrieves()[n]!.canon_manifest_id).not.toBe(retrieves()[n - 1]!.canon_manifest_id);
+    await reroll();
+    expect(retrieves()).toHaveLength(n + 1); // the new canon is cached in turn
+    (h.lorebook as any) = async () => [world, folder, tunnel]; // an entry removed
+    await reroll();
+    expect(retrieves()).toHaveLength(n + 2);
+    h.currentChat = async () => structuredClone({ ...chat, note: '지금은 한여름 낮이다.' }); // the author's note edited
+    await reroll();
+    expect(retrieves()).toHaveLength(n + 3);
+    await reroll([{ role: 'system', content: `${card.desc}\n${card.personality}` }, prompt[1]!]); // the same length, less canon
+    expect(retrieves()).toHaveLength(n + 4);
+    expect(retrieves()[n + 3]!.canon_held).toEqual(['card:desc', 'card:personality']);
+  });
+
   it('never syncs an empty lorebook when reading it failed', async () => {
     let fail = false;
     const { h, posts } = host(sidecar(new Set()), { lorebook: async () => { if (fail) throw new Error('host'); return [kaito, world]; } });

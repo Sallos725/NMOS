@@ -83,6 +83,8 @@ interface CacheEntry {
   failed?: boolean;
   memory?: MemoryFit | null;
   vectors?: Vectors | null;
+  /** The canon the packet was built with (its manifest id and what the prompt held): another one misses. */
+  canon?: string;
 }
 
 /** Whether the sidecar's recall searched vectors (PHASE-15 Q5, K34): "fallback" is lexical only because the embedder
@@ -304,8 +306,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   }
 
   function remember(key: string, packet: string, ttl: number, failed = false, memory: MemoryFit | null = null,
-    vectors: Vectors | null = null): void {
-    cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors });
+    vectors: Vectors | null = null, canon?: string): void {
+    cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors, canon });
     while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
   }
 
@@ -408,22 +410,27 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         return prompt;
       }
 
-      // Cache key = exact chat state (every message id + revision hash) + prompt shape, so a cached
-      // packet is reused only for the same state (host retries, reroll of an unchanged chat) and never
-      // survives an edit anywhere in the chat.
+      // Cache key = exact chat state (every message id + revision hash) + prompt shape + the sidecar, token and budget
+      // it was asked with, so a cached packet is reused only for the same state (host retries, reroll of an unchanged
+      // chat) and never survives an edit anywhere in the chat or a switch to another sidecar. The canon is checked
+      // against the entry below (it is observed after the key).
       const t0 = host.now();
       const { request, bodies } = await within(buildManifest(chat, firstSaying(messages),
         { characterName: characterName(chat.id), personaName: personaName(chat) }), deadline, 'the manifest');
       const manifestMs = host.now() - t0;
       // Internal key only (not a cross-language hash): plain JSON keeps it linear and cheap.
+      // The token is hashed with the rest, never kept as it is.
       key = await within(sha256Hex(JSON.stringify([
         chat.id, mode, prompt.length, request.messages.map((m) => [m.host_logical_id, m.revision_hash]),
+        settings.sidecarUrl.replace(/\/+$/, ''), settings.authToken, settings.reservedMemoryTokens,
       ])), deadline, 'the cache key');
       // Canon (ADR 0045): which of it this prompt holds and its manifest go with the request; the texts follow in the
       // background. Observed for a cached packet too, whose canon may have changed.
       const canon = await observeCanon(chat, prompt, deadline);
+      const canonKey = JSON.stringify([canon?.snapshot?.id ?? null, canon?.held ?? []]);
       const cached = cache.get(key);
-      if (cached && cached.expires > host.now()) {
+      // A packet built with other canon (an entry, the card or the note edited) is stale; a cached miss holds none.
+      if (cached && cached.expires > host.now() && (cached.failed || cached.canon === canonKey)) {
         const known = conversations.get(chat.id);
         if (canon?.snapshot && known) syncCanon(settings, known, chat.id, canon.snapshot);
         const outcome = cached.packet ? 'injected' : 'nothing-relevant';
@@ -465,7 +472,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const packet = retrieved.freshness === 'fresh' ? retrieved.packet.text : '';
       const memory = retrieved.freshness === 'fresh' ? retrieved.memory ?? null : null; // older sidecars send none
       const vectors = retrieved.freshness === 'fresh' ? retrieved.vectors ?? null : null;
-      remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors);
+      remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors, canonKey);
       host.debug('[NMOS] request done', { ms: Math.round(host.now() - started), manifestMs: Math.round(manifestMs),
         syncMs: Math.round(syncMs), retrieveMs: Math.round(host.now() - t2), packetChars: packet.length });
       const outcome = packet ? 'injected' : 'nothing-relevant';

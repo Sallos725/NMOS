@@ -319,6 +319,39 @@ describe('packet cache', () => {
     expect(calls.filter((c) => c === '/v1/retrieve')).toHaveLength(2);
   });
 
+  it('never reuses a packet from another sidecar, token or budget', async () => {
+    let settings: Settings = { sidecarUrl: 'http://sidecar', authToken: 't', enabled: true, reservedMemoryTokens: 600,
+      deadlineMs: 200, injectPosition: 'before_last_user', route: 'direct', language: 'ko' };
+    const retrieves: string[] = [];
+    const host: HostPort = {
+      settings: async () => settings,
+      currentChat: async () => structuredClone(chat),
+      request: async (_method, url, body, headers) => {
+        const { origin, pathname } = new URL(url);
+        if (pathname === '/v1/retrieve') retrieves.push(`${origin} ${headers.Authorization} ${body.budget_tokens}`);
+        return happy(pathname, body);
+      },
+      warn: () => {}, debug: () => {}, now: () => performance.now(),
+    };
+    const adapter = createAdapter(host);
+    const reroll = () => adapter.beforeRequest(structuredClone(prompt), 'model');
+    await reroll();
+    settings = { ...settings, sidecarUrl: 'http://sidecar/' };  // the same sidecar, written with a slash: cached
+    await reroll();
+    expect(retrieves).toEqual(['http://sidecar Bearer t 600']);
+    settings = { ...settings, sidecarUrl: 'http://other-sidecar' };
+    await reroll();
+    settings = { ...settings, authToken: 'u' };
+    await reroll();
+    settings = { ...settings, reservedMemoryTokens: 900 };
+    await reroll();
+    expect(retrieves).toEqual(['http://sidecar Bearer t 600', 'http://other-sidecar Bearer t 600',
+      'http://other-sidecar Bearer u 600', 'http://other-sidecar Bearer u 900']);
+    settings = { ...settings, injectPosition: 'end', deadlineMs: 300 };  // where it goes and how long it may take: cached
+    await reroll();
+    expect(retrieves).toHaveLength(4);
+  });
+
   it('is emptied by a panel action, so a reroll after deleting the chat gets no old memory', async () => {
     const { host, calls } = fakeHost((path, body) => path.startsWith('/v1/conversations') ? { status: 200, json: {} } : happy(path, body));
     const adapter = createAdapter(host);
