@@ -8,32 +8,34 @@
 
 ## Where NMOS stands
 
-| Original stage | Content (§84) | State after `v0.1.0-beta.21` |
+| Original stage | Content (§84) | State after `v0.2.0` (2026-09-28) plus `main` (2026-09-29) |
 |---|---|---|
 | 0 — Host adapter spike | plugin, injection, no fork | done |
 | 1 — Source ledger | immutable revisions, reconcile, worldlines | done |
 | 2 — Minimal compiler | entities, events, assertions, provenance, fact versions | done |
 | 3 — Retrieval core | SQL, lexical, vector, RRF, packet, traces | done |
-| 4 — Epistemic engine | observer model, knowledge projection, principal ACL, false beliefs, private thoughts | partial: knowledge marks as hints (Phase 4 soft subset), leak report (Phase 9) |
-| 5 — Narrative engine | causal links, open threads, scenes, episodes, arcs, dynamic character state | partial: promise threads, event salience, participants (Phases 7–8) |
-| 6 — Verification and repair | transition verifier, conflict queue, inspector, entity merge/split, canon locking | partial: item transitions and conflicts (Phase 6), Inspector, owner merge (ADR 0025) |
-| 7 — Forensic recall | raw-history search, evidence traversal, exact quotes | partial: packet ledger and as-of replay (Phase 9) |
-| 8 — PocketRisu bridge | partial chat reads, mutation events | not started |
+| 4 — Epistemic engine | observer model, knowledge projection, principal ACL, false beliefs, private thoughts | done, released in `v0.2.0` (Phase 10; K11 rewritten to what remains) |
+| 5 — Narrative engine | causal links, open threads, scenes, episodes, arcs, dynamic character state | done, released in `v0.2.0` (Phases 11–12) |
+| 6 — Verification and repair | transition verifier, conflict queue, inspector, entity merge/split, canon locking | in progress: owner repair (Phase 13) and canon sources (Phase 14, steps 1–5) on `main`; step 6, then Phase 16 (export and restore), remain; transition rules unscheduled |
+| 7 — Forensic recall | raw-history search, evidence traversal, exact quotes | partial: packet ledger and as-of replay (Phase 9); not authorized |
+| 8 — PocketRisu bridge | partial chat reads, mutation events | not started; not authorized |
 
-Stages 0–3 are the foundation and are done. Stages 4–8 are what remains before 1.0.
+Stages 0–3 are the foundation and are done. Stages 4 and 5 are done. Stages 6–8 are what remains before 1.0.
+Phase 15 (a packet that fills its budget, `docs/phases/PHASE-15.md`) is not a stage of this roadmap: it is P1 of
+`docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`, approved 2026-09-29, and runs after Phase 14 step 6 and before Phase 16.
 
 ## Versions
 
 | Version | When |
 |---|---|
-| `0.1.x` | the current feature set; after `v0.1.0-beta.21` only urgent fixes |
-| `0.2.0` … `0.6.0` | one per stage, in the order of R1, when that stage meets its done criteria |
+| `0.1.x` | the feature set of the betas; `v0.1.0-beta.21` was the last, and only urgent fixes followed |
+| `0.2.0` … `0.6.0` | one per stage, in the order of R1, when that stage meets its done criteria. `v0.2.0` (2026-09-28) was cut early at the owner's request: it carries Stages 4 and 5 together, plus the Stage 6 work then on `main` |
 | `1.0.0` | the 1.0 gate below |
 
 Every version before 1.0.0 is a GitHub pre-release. Between versions the owner runs `:edge` (a build of
 every `main` merge; `AGENTS.md` §13). Each stage ships at most one new extractor generation.
 
-**R1 — order.** Decided 2026-09-27: **Stage 4 first** (Phase 10); the order after it is decided when it is done. The earlier recommendation was 5 → 6 → 4 → 7 → 8:
+**R1 — order.** Decided 2026-09-27: **Stage 4 first** (Phase 10); the order after it is decided when it is done. The owner then chose Stage 5 (2026-09-28) and Stage 6 (2026-09-28); the order of 7 and 8 is open. The earlier recommendation was 5 → 6 → 4 → 7 → 8:
 - 5 first: knowledge (stage 4) is acquired through events someone observed or was told, which stage 5 adds.
 - 6 before 4: per-character filtering is only as good as the state it filters; repair tools let the
   owner fix that state by hand.
@@ -84,7 +86,7 @@ Done when:
   and summaries cover the chat within the budget;
 - K24 is closed.
 
-**Done (2026-09-28, Phases 11–12; not released).** Thread kinds opened, ended, deleted and edited back in the memory
+**Done (2026-09-28, Phases 11–12; released in `v0.2.0`).** Thread kinds opened, ended, deleted and edited back in the memory
 evaluation (53 of 53), stated causes linked, relationships per pair with what they replaced (K24's direction case
 closed; a feeling recorded apart from a relationship stays by the owner's decision, PHASE-11 Q5); the real-model tier
 on `gemma4` and `deepseek` for `extract-v13` and for summaries; on the owner's longest chat, replayed offline, answers
@@ -97,8 +99,9 @@ outside the prompt window 2 → 5 of 12 with the story covering every scene with
 Inspector, owner entity links. Part 1 on `main` (Phase 13, ADR 0044): owner repair (close or reopen a thread, retract or
 correct a fact, a secret found out or kept, split two names) in the panel, audited and surviving rebuilds, and a
 "Needs attention" list per chat; K8 and K23 rewritten to what remains (`docs/perf/repair.md`). Part 2, Phase 14
-(approved 2026-09-28): canon as sources. Phase 16: export and restore (Phase 15, approved 2026-09-29, is the packet
-that fills its budget, `docs/phases/PHASE-15.md`). Open beyond them: transition rules.
+(approved 2026-09-28, steps 1–5 on `main`, step 6 open): canon as sources. Then Phase 15, the packet that fills its
+budget (approved 2026-09-29, `docs/phases/PHASE-15.md`; not a Stage 6 item), and Phase 16: export and restore.
+Open beyond them: transition rules, not yet assigned to a phase.
 
 Scope (draft):
 - transition rules for status and identity and for relationships, with pending, conflicting and
@@ -144,7 +147,7 @@ Done when (draft):
 Tentative owner decision (2026-09-27): a holder's own slip, such as a child blurting a secret, is direction,
 not a failure.
 
-**Done (2026-09-27, Phase 10; not released).** Every done criterion is met: `docs/perf/secrets-eval.md` (48 replies of
+**Done (2026-09-27, Phase 10; released in `v0.2.0`).** Every done criterion is met: `docs/perf/secrets-eval.md` (48 replies of
 the owner's response models on real scenes without a leak; holders remember), `docs/perf/extract-v12.md` (a
 revealed secret ends), the strict and narrator cases in the memory evaluation, and K11 rewritten.
 
