@@ -17,7 +17,7 @@ Each answer in bold is NMOS's proposal. Nothing is decided until the owner appro
 | Q3 | Format? | **"NMOS Archive" (§89): one `.nmos.zip` with `manifest.json` (archive format version, NMOS version, schema migration level, generation keys, per-file row counts and SHA-256) and one JSON Lines file per table, rows as named columns.** Readable without NMOS, independent of PostgreSQL. | A `pg_dump` per chat; a single JSON file. |
 | Q4 | Restore into what? | **A fresh install, or an install that does not hold the archive's conversations.** A conversation already present (the same host chat) is refused, never merged: two histories of one chat cannot be joined safely (invariant 1). Rows keep their ids, so traces, repairs and links still point at what they named. | Merge into an existing chat; new ids on restore. |
 | Q5 | Across versions? | **An archive restores into its own or a newer NMOS.** The importer creates the archive's schema level from the bundled migrations, loads the rows, then applies the later migrations, the path the upgrade tests already cover (`tests/test_upgrade.py`). A newer archive into an older NMOS is refused. Generation keys come along, so the new install serves the same facts until its settings name another model. | Current version only; a converter per version. |
-| Q6 | How is it run? | **A command in the sidecar image** (`docker compose exec nmos python -m nmos_sidecar.archive export|restore …`), and **a download link on each conversation's Inspector page** (export only; the browser tab, since PocketRisu blocks plugin downloads). Restore stays a command: it writes a whole database. | Panel buttons for both; API only. |
+| Q6 | How is it run? | **Export from the panel as well as a command** (owner, 2026-09-29): an **Export** button in the NMOS panel, for this chat on its Inspector page and for everything in the Settings tab, and a command in the sidecar image (`docker compose exec nmos python -m nmos_sidecar.archive export|restore …`). Whether the plugin's frame may save a file is host evidence to gather first (PocketRisu v1.13.0 already blocks plugins from opening tabs); if it may not, the button shows a link to the same file on the sidecar, opened from the browser Inspector. Restore stays a command: it writes a whole database. | Command and Inspector link only; restore from the panel too. |
 | Q7 | Secrets and privacy? | **No keys or tokens, ever** (K21). The archive holds chat text, so the guide says to keep it like the chat itself. It is not encrypted (a password-protected zip gives little); the owner can encrypt the file. | Encrypted archives. |
 | Q8 | How is it measured? | **Round trip on the owner's two measured chats (copies, read-only source):** export, restore into a fresh database, then (1) the ledger state is equal row for row; (2) every recorded request replays reproduced, as on the source; (3) M0 and the secret gate give the same numbers; (4) a rebuild gives the same projections as a rebuild of the source. Also: an archive of Phase 15 `main` restored into this phase's code (Q5); a chat restored after it was deleted (ADR 0009); a restore refused for a chat present; sizes and times on the production-sized copy; a review per AGENTS.md §14 (high risk: stored data). | Synthetic chats only. |
 | Q9 | Release? | **None until the owner asks.** Stage 6's done criteria would then all be met except transition rules (still unscheduled). | A release after this phase. |
@@ -41,13 +41,16 @@ same repairs and links, the same answers to recorded requests, without paying fo
 ## In scope (Phase 16)
 
 1. **This document**, approved.
-2. **The archive format** (Q1–Q3; ADR 0050, D60): manifest, one JSON Lines file per table, what is always in,
+2. **Host evidence (Q6):** whether a V3 plugin's frame on PocketRisu v1.13.0 can save a file (a download link, a Blob URL),
+   in `HOST-FACTS.md`.
+3. **The archive format** (Q1–Q3; ADR 0050, D60): manifest, one JSON Lines file per table, what is always in,
    in by default, optional, never; a format version.
-3. **Export** (Q2, Q6): the command for the whole install or chosen conversations, and the Inspector's download
-   link for one conversation. Read-only, one consistent snapshot.
-4. **Restore** (Q4, Q5): into an empty database or one without the archive's conversations; checks every file's hash
+4. **Export** (Q2, Q6): the command for the whole install or chosen conversations, and the panel's Export buttons
+   (this chat; everything) with the Inspector link as the fallback. Read-only, one consistent snapshot. A new plugin
+   build.
+5. **Restore** (Q4, Q5): into an empty database or one without the archive's conversations; checks every file's hash
    and count before writing; one transaction; refuses a present chat or a newer archive; migrates after loading.
-5. **Evaluation (Q8)**, review, and documentation (README, the Korean guide, KNOWN-ISSUES, CHANGELOG).
+6. **Evaluation (Q8)**, a real-host smoke of the panel's export, review, and documentation (README, the Korean guide, KNOWN-ISSUES, CHANGELOG).
 
 ## Out of scope (Phase 16)
 
@@ -63,6 +66,8 @@ same repairs and links, the same answers to recorded requests, without paying fo
       links and a memory mode gives an equal ledger state and reproduced replays; embeddings optional; secrets never
       exported; a changed or truncated file refused before anything is written; a present chat refused; a newer
       archive refused; an archive from Phase 15 `main` restored and migrated.
+- [ ] Host evidence on PocketRisu v1.13.0 for saving a file from the plugin's frame, in `HOST-FACTS.md`; a real-host
+      smoke of the panel's Export (this chat and everything), or of its fallback link.
 - [ ] On the owner's two measured chats (copies): the ledger state equal, every replayable request reproduced, M0 and
       the secret gate unchanged, a rebuild equal to the source's.
 - [ ] Size and time of export and restore of the production-sized copy reported.
@@ -72,9 +77,10 @@ same repairs and links, the same answers to recorded requests, without paying fo
 ## Steps (one pull request each)
 
 1. This document, approved.
-2. The archive format and export (command and Inspector link), ADR 0050.
-3. Restore, with its checks and migrations.
-4. Evaluation, review, documentation.
+2. Host evidence: can the plugin's frame save a file.
+3. The archive format and export (command, panel buttons, Inspector link), ADR 0050, a plugin build.
+4. Restore, with its checks and migrations.
+5. Evaluation, real-host smoke, review, documentation.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).
 
