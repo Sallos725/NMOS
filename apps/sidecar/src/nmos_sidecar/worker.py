@@ -35,7 +35,7 @@ def handlers(settings: Settings) -> Handlers:
                           settings.llm_json_mode)
 
         def extract(conn: psycopg.Connection, job: dict[str, Any]) -> str:
-            status = process_extract(conn, job, model.complete_json, ex, settings.extract_turns)
+            status = process_extract(conn, job, model.complete_metered, ex, settings.extract_turns)
             if status == "done" and sm is not None:  # a secret it stated may be one a summary was not told about
                 with conn.transaction():
                     summaries.schedule_stale(conn, job["conversation_id"], sm.key)
@@ -45,12 +45,12 @@ def handlers(settings: Settings) -> Handlers:
     if sm is not None:
         writer = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
                            settings.llm_json_mode)
-        out["summarize"] = (sm.key, lambda conn, job: summaries.process(conn, job, writer.complete_json, sm))
+        out["summarize"] = (sm.key, lambda conn, job: summaries.process(conn, job, writer.complete_metered, sm))
     cg = canonfacts.generation(settings)
     if cg is not None:
         reader = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
                            settings.llm_json_mode)
-        out["canon"] = (cg.key, lambda conn, job: canonfacts.process(conn, job, reader.complete_json, cg))
+        out["canon"] = (cg.key, lambda conn, job: canonfacts.process(conn, job, reader.complete_metered, cg))
     pj = projection(settings)
     if pj is not None:
         embedder = Embedder(settings.embed_url, settings.embed_model, settings.embed_api_key)

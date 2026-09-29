@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
 
 import httpx
@@ -49,6 +50,52 @@ def parse_json_object(text: str) -> dict[str, Any]:
     return value
 
 
+def _count(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def usage_of(body: Any, started: float) -> dict[str, Any]:
+    """One model call's usage as the provider reported it (ADR 0051, D61): never estimated. `input`, `output`,
+    `cached` and `reasoning` appear only when the response's `usage` carries them; without them the call is
+    "not reported". `calls`, `ms` and the model the provider answered with are always kept."""
+    out: dict[str, Any] = {"calls": 1, "ms": round((time.monotonic() - started) * 1000)}
+    if not isinstance(body, dict):
+        return out
+    if isinstance(body.get("model"), str):
+        out["model"] = storable(body["model"])[:200]
+    usage = body.get("usage")
+    if not isinstance(usage, dict):
+        return out
+    details = {"cached": (usage.get("prompt_tokens_details"), "cached_tokens"),
+               "reasoning": (usage.get("completion_tokens_details"), "reasoning_tokens")}
+    for key, value in (("input", usage.get("prompt_tokens")), ("output", usage.get("completion_tokens")),
+                       *((k, d.get(f) if isinstance(d, dict) else None) for k, (d, f) in details.items())):
+        if (n := _count(value)) is not None:
+            out[key] = n
+    return out
+
+
+NO_CALL: dict[str, Any] = {"calls": 0}  # a row written without asking the model (too little text)
+
+
+def metered(complete: Any, system: str, user: str) -> tuple[dict[str, Any], str, dict[str, Any] | None]:
+    """Call `complete` (a `ChatModel.complete_metered`, or a test's two-value stand-in whose usage is unknown)."""
+    parsed, raw, *usage = complete(system, user)
+    return parsed, raw, usage[0] if usage else None
+
+
+def embedded(embedder: Any, text: str) -> tuple[list[float], dict[str, Any] | None]:
+    """Embed one chunk with `Embedder.embed_metered`, or a test's `embed`-only stand-in whose usage is unknown."""
+    if hasattr(embedder, "embed_metered"):
+        vectors, usage = embedder.embed_metered([text], timeout_s=60)
+        return vectors[0], usage
+    return embedder.embed([text], timeout_s=60)[0], None
+
+
+def reported(usage: dict[str, Any] | None) -> bool:
+    return bool(usage) and ("input" in usage or "output" in usage)
+
+
 class ChatModel:
     def __init__(self, url: str, model: str, api_key: str = "", timeout_s: float = 120.0, json_mode: bool = True):
         self.url = url.rstrip("/")
@@ -58,6 +105,11 @@ class ChatModel:
         self.json_mode = json_mode
 
     def complete_json(self, system: str, user: str) -> tuple[dict[str, Any], str]:
+        parsed, text, _ = self.complete_metered(system, user)
+        return parsed, text
+
+    def complete_metered(self, system: str, user: str) -> tuple[dict[str, Any], str, dict[str, Any]]:
+        """`complete_json` and the call's usage (`usage_of`). The worker's handlers pass this one."""
         body: dict[str, Any] = {
             "model": self.model,
             "temperature": 0,
@@ -65,21 +117,24 @@ class ChatModel:
         }
         if self.json_mode:
             body["response_format"] = {"type": "json_object"}
+        headers = chat_headers(self.api_key)
+        started = time.monotonic()
         try:
-            res = httpx.post(f"{self.url}/chat/completions", json=body, headers=chat_headers(self.api_key),
-                             timeout=self.timeout_s)
+            res = httpx.post(f"{self.url}/chat/completions", json=body, headers=headers, timeout=self.timeout_s)
         except httpx.HTTPError as exc:
             raise LLMError(f"request failed: {exc}") from exc
         if res.status_code >= 400:
             raise LLMError(f"HTTP {res.status_code}: {res.text[:300]}")
         try:
-            text = res.json()["choices"][0]["message"]["content"] or ""
+            reply = res.json()
+            text = reply["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError, ValueError) as exc:  # TypeError: a null message or choices
             raise LLMError(f"unexpected response shape: {exc}") from exc
         if not isinstance(text, str):
             raise LLMError(f"unexpected response shape: content is {type(text).__name__}, not text")
         text = storable(text)
-        return storable(parse_json_object(text)), text  # a model can escape half an emoji (ADR 0029)
+        # a model can escape half an emoji (ADR 0029)
+        return storable(parse_json_object(text)), text, usage_of(reply, started)
 
 
 class Embedder:
@@ -89,6 +144,11 @@ class Embedder:
         self.api_key = api_key
 
     def embed(self, texts: list[str], timeout_s: float) -> list[list[float]]:
+        return self.embed_metered(texts, timeout_s)[0]
+
+    def embed_metered(self, texts: list[str], timeout_s: float) -> tuple[list[list[float]], dict[str, Any]]:
+        """`embed` and the call's usage (`usage_of`; an embedding reports input tokens only)."""
+        started = time.monotonic()
         try:
             res = httpx.post(f"{self.url}/embeddings", json={"model": self.model, "input": texts},
                              headers=_headers(self.api_key), timeout=timeout_s)
@@ -97,7 +157,8 @@ class Embedder:
         if res.status_code >= 400:
             raise LLMError(f"embedding HTTP {res.status_code}: {res.text[:300]}")
         try:
-            data = sorted(res.json()["data"], key=lambda d: d.get("index", 0))
-            return [list(map(float, d["embedding"])) for d in data]
+            reply = res.json()
+            data = sorted(reply["data"], key=lambda d: d.get("index", 0))
+            return [list(map(float, d["embedding"])) for d in data], usage_of(reply, started)
         except (KeyError, ValueError, TypeError) as exc:
             raise LLMError(f"unexpected embedding response: {exc}") from exc

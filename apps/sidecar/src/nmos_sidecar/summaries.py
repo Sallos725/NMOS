@@ -34,7 +34,7 @@ from .entities import norm
 from .facts import memory_view
 from .generations import Generation
 from .ids import uuid7
-from .llm import LLMError
+from .llm import NO_CALL, LLMError, metered
 from .packet import Line
 from .threads import _grams, _overlap, similarity
 
@@ -523,12 +523,15 @@ def story_prompt(scenes: list[dict[str, Any]], secrets: list[dict[str, Any]] | N
 
 
 def _insert(conn: psycopg.Connection, conv: UUID, gen: Generation, level: str, window_key: str, members: list[UUID],
-            first: int | None, last: int | None, text: str, raw: str, coverage: dict[str, int] | None) -> bool:
+            first: int | None, last: int | None, text: str, raw: str, coverage: dict[str, int] | None,
+            usage: dict[str, Any] | None) -> bool:
     return conn.execute(
         "INSERT INTO summary (id, conversation_id, generation, level, window_key, members, first_turn, last_turn,"
-        " text, raw, coverage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING RETURNING id",
+        " text, raw, coverage, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        " ON CONFLICT DO NOTHING RETURNING id",
         (uuid7(), conv, gen.key, level, window_key, members, first, last, text, Jsonb({"reply": raw[:20000]}),
-         Jsonb(coverage) if coverage is not None else None)).fetchone() is not None
+         Jsonb(coverage) if coverage is not None else None,
+         Jsonb(usage) if usage is not None else None)).fetchone() is not None
 
 
 def head_secrets(conn: psycopg.Connection, head: UUID) -> list[dict[str, Any]]:
@@ -537,7 +540,7 @@ def head_secrets(conn: psycopg.Connection, head: UUID) -> list[dict[str, Any]]:
     return memory_view(conn, head, key)["secrets"] if key else []
 
 
-def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[dict, str]],
+def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[str, str], tuple[Any, ...]],
             gen: Generation) -> str:
     """Summarize one scene or the story; returns the final job status. No transaction is held while the model
     answers."""
@@ -569,14 +572,15 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         kept = window_secrets(secrets, w.last_turn)
         coverage["secrets"] = [secret_key(s) for s in kept]
         if sum(sizes) < MIN_CONTENT_CHARS:
-            text, raw = "", ""
+            text, raw, usage = "", "", NO_CALL
         else:
-            parsed, raw = complete(SCENE_PROMPT, scene_prompt(rows, w, kept))
+            parsed, raw, usage = metered(complete, SCENE_PROMPT, scene_prompt(rows, w, kept))
             text = reply_text(parsed, SCENE_CHARS)
         with conn.transaction():
             if old is not None:  # written again with the secrets it was not told about (`unlisted`)
                 conn.execute("UPDATE summary SET discarded_at = now() WHERE id = %s", (old["id"],))
-            _insert(conn, conv, gen, "scene", w.key, list(w.members), w.first_turn, w.last_turn, text, raw, coverage)
+            _insert(conn, conv, gen, "scene", w.key, list(w.members), w.first_turn, w.last_turn, text, raw, coverage,
+                    usage)
         log.info("summarized scene conversation=%s turns=%d-%d chars=%d", conv, w.first_turn, w.last_turn, len(text))
         with conn.transaction():
             schedule_story(conn, conv, head, gen.key, job["priority"], secrets)
@@ -593,12 +597,12 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
     # A scene that repeats a secret gives the story nothing of its text (it would pass the secret on); its turns stay
     # in the story's range, told by the scenes around them.
     told = [{**s, "text": "(left out: it repeats a secret)"} if leaks(s["text"], secrets) else s for s in scenes]
-    parsed, raw = complete(STORY_PROMPT, story_prompt(told, kept))
+    parsed, raw, usage = metered(complete, STORY_PROMPT, story_prompt(told, kept))
     text = reply_text(parsed, STORY_CHARS)
     with conn.transaction():
         conn.execute("UPDATE summary SET discarded_at = now() WHERE conversation_id = %s AND generation = %s"
                      " AND level = 'story' AND window_key = %s AND discarded_at IS NULL", (conv, gen.key, payload["window_key"]))
         _insert(conn, conv, gen, "story", payload["window_key"], ids, scenes[0]["first_turn"], scenes[-1]["last_turn"],
-                text, raw, {"scenes": len(scenes), "secrets": [secret_key(s) for s in kept]})
+                text, raw, {"scenes": len(scenes), "secrets": [secret_key(s) for s in kept]}, usage)
     log.info("summarized story conversation=%s scenes=%d chars=%d", conv, len(scenes), len(text))
     return "done"

@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 17 step 2: what NMOS's own model calls used** (ADR 0051, D61, migration 0027). Each extraction, canon read,
+  summary and embedded chunk now keeps the tokens its model call used, exactly as the provider reported them (input,
+  output, cached input and reasoning tokens, when reported), with the call's duration and model. Nothing is estimated:
+  a provider that reports nothing is recorded as such. Rows from before this version show nothing. Shown in the
+  Inspector and the Status tab in a later step.
 - **Fixed: a reroll could reuse a packet built for another sidecar or with old canon** (Codex security review of
   Phase 16 step 3). The plugin keeps a packet for 10 minutes for the same chat state; it was reused after
   `sidecar_url`, the route, the token or the memory budget changed (the new sidecar was never asked), after a lorebook
