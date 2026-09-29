@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:f371c057201b".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:8e4296f4b094".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -860,6 +860,11 @@ ${revisionHash}`;
     let personas = null;
     const buildManifest = createManifestBuilder();
     let last = null;
+    let epoch = 0;
+    function invalidate() {
+      epoch++;
+      cache.clear();
+    }
     function emit(event) {
       try {
         onActivity?.(event);
@@ -977,8 +982,8 @@ ${revisionHash}`;
       if (!personas || host.now() - personas.at > PERSONA_TTL_MS) warmPersonas();
       return personas?.value ? personaOf(chat, personas.value) : null;
     }
-    function remember(key, packet, ttl, failed = false, memory = null, vectors = null) {
-      cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors });
+    function remember(key, packet, ttl, failed = false, memory = null, vectors = null, canon) {
+      cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors, canon });
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
     }
     async function within(work, deadline, what) {
@@ -1041,6 +1046,7 @@ ${revisionHash}`;
     }
     async function beforeRequest(prompt, mode) {
       const started = host.now();
+      const since = epoch;
       let settings = null;
       let key = null;
       let chatId = null;
@@ -1077,15 +1083,24 @@ ${revisionHash}`;
           { characterName: characterName(chat.id), personaName: personaName(chat) }
         ), deadline, "the manifest");
         const manifestMs = host.now() - t0;
+        const inContext = inContextIds(prompt, messages);
         key = await within(sha256Hex(JSON.stringify([
           chat.id,
           mode,
           prompt.length,
-          request.messages.map((m) => [m.host_logical_id, m.revision_hash])
+          request.messages.map((m) => [m.host_logical_id, m.revision_hash]),
+          inContext,
+          request.persona_name ?? null,
+          // the sidecar reads `{{user}}` from the sync a cached packet skips (ADR 0023)
+          settings.sidecarUrl.replace(/\/+$/, ""),
+          settings.route,
+          settings.authToken,
+          settings.reservedMemoryTokens
         ])), deadline, "the cache key");
         const canon = await observeCanon(chat, prompt, deadline);
+        const canonKey = JSON.stringify([canon?.snapshot?.id ?? null, canon?.held ?? []]);
         const cached = cache.get(key);
-        if (cached && cached.expires > host.now()) {
+        if (cached && cached.expires > host.now() && (cached.failed || cached.canon === canonKey)) {
           const known = conversations.get(chat.id);
           if (canon?.snapshot && known) syncCanon(settings, known, chat.id, canon.snapshot);
           const outcome2 = cached.packet ? "injected" : "nothing-relevant";
@@ -1125,7 +1140,7 @@ ${revisionHash}`;
           manifest_hash: synced.manifest_hash,
           query,
           previous_ai: previousAi,
-          in_context_ids: inContextIds(prompt, messages),
+          in_context_ids: inContext,
           budget_tokens: settings.reservedMemoryTokens,
           client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started },
           canon_manifest_id: canon?.snapshot?.id ?? null,
@@ -1135,7 +1150,8 @@ ${revisionHash}`;
         const packet = retrieved.freshness === "fresh" ? retrieved.packet.text : "";
         const memory = retrieved.freshness === "fresh" ? retrieved.memory ?? null : null;
         const vectors = retrieved.freshness === "fresh" ? retrieved.vectors ?? null : null;
-        remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors);
+        if (epoch !== since) throw new Error("memory changed during this request");
+        remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors, canonKey);
         host.debug("[NMOS] request done", {
           ms: Math.round(host.now() - started),
           manifestMs: Math.round(manifestMs),
@@ -1158,7 +1174,7 @@ ${revisionHash}`;
         emit({ type: "request-end", outcome, chars: packet.length, conversationId: synced.conversation_id ?? null });
         return injectPacket(prompt, packet, settings.injectPosition, turn);
       } catch (error) {
-        if (key) remember(key, "", FAILURE_TTL_MS, true);
+        if (key && epoch === since) remember(key, "", FAILURE_TTL_MS, true);
         last = failure = {
           at: Date.now(),
           ms: Math.round(host.now() - started),
@@ -1236,9 +1252,13 @@ ${revisionHash}`;
     }
     async function api(method, path, body, timeoutMs = 9e4) {
       const settings = await host.settings();
-      const out = await call(settings, path, body, host.now() + timeoutMs, method);
-      if (method !== "GET") cache.clear();
-      return out;
+      const change = method !== "GET";
+      if (change) invalidate();
+      try {
+        return await call(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : void 0);
+      } finally {
+        if (change) invalidate();
+      }
     }
     async function file(path, timeoutMs = 3e5) {
       if (!host.requestFile) throw new Error("this host cannot fetch a file");

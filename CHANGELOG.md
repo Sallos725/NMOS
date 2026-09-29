@@ -5,6 +5,15 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Fixed: a reroll could reuse a packet built for another sidecar or with old canon** (Codex security review of
+  Phase 16 step 3). The plugin keeps a packet for 10 minutes for the same chat state; it was reused after
+  `sidecar_url`, the route, the token or the memory budget changed (the new sidecar was never asked), after a lorebook
+  entry, the card, the persona or the author's note changed or the chat was bound to another persona without a new
+  message, and for a prompt of the same length holding other messages. These are now part of the key (the token
+  hashed), and a packet built with other canon (its manifest or what the prompt held) is not reused. A panel action (a
+  delete, a repair, a settings save) now empties the cache also when its answer failed or came late, since the sidecar
+  may have applied it, and a request that was fetching memory meanwhile goes without it rather than cache or inject a
+  packet from before. A new plugin build; nothing changes in the sidecar.
 - **Phase 16 (Stage 6, part 3: export and restore) is complete** (`docs/phases/PHASE-16.md`, `docs/perf/archive.md`):
   on copies of the owner's two measured chats an archive restored into a fresh database (migrating it one level on
   the way) held every table the same, compiled every recorded request the same, and gave the same M0 and secret-gate

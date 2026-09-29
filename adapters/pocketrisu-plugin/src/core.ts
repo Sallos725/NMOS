@@ -83,6 +83,8 @@ interface CacheEntry {
   failed?: boolean;
   memory?: MemoryFit | null;
   vectors?: Vectors | null;
+  /** The canon the packet was built with (its manifest id and what the prompt held): another one misses. */
+  canon?: string;
 }
 
 /** Whether the sidecar's recall searched vectors (PHASE-15 Q5, K34): "fallback" is lexical only because the embedder
@@ -164,6 +166,13 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   let personas: { value: HostPersonas | null; at: number } | null = null;
   const buildManifest = createManifestBuilder();
   let last: LastRequest | null = null;
+  let epoch = 0; // bumped by every panel change: a request that saw another epoch neither caches nor injects
+
+  /** Drops every cached packet, and every packet still being fetched. */
+  function invalidate(): void {
+    epoch++;
+    cache.clear();
+  }
 
   function emit(event: ActivityEvent): void {
     try {
@@ -304,8 +313,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   }
 
   function remember(key: string, packet: string, ttl: number, failed = false, memory: MemoryFit | null = null,
-    vectors: Vectors | null = null): void {
-    cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors });
+    vectors: Vectors | null = null, canon?: string): void {
+    cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors, canon });
     while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
   }
 
@@ -375,6 +384,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
 
   async function beforeRequest(prompt: PromptMessage[], mode: unknown): Promise<PromptMessage[]> {
     const started = host.now();
+    const since = epoch;
     let settings: Settings | null = null;
     let key: string | null = null;
     let chatId: string | null = null;
@@ -408,22 +418,29 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         return prompt;
       }
 
-      // Cache key = exact chat state (every message id + revision hash) + prompt shape, so a cached
-      // packet is reused only for the same state (host retries, reroll of an unchanged chat) and never
-      // survives an edit anywhere in the chat.
+      // Cache key = exact chat state (every message id + revision hash) + prompt shape and the messages it holds + the
+      // sidecar, route, token and budget it was asked with, so a cached packet is reused only for the same state (host retries, reroll of an unchanged
+      // chat) and never survives an edit anywhere in the chat or a switch to another sidecar. The canon is checked
+      // against the entry below (it is observed after the key).
       const t0 = host.now();
       const { request, bodies } = await within(buildManifest(chat, firstSaying(messages),
         { characterName: characterName(chat.id), personaName: personaName(chat) }), deadline, 'the manifest');
       const manifestMs = host.now() - t0;
+      const inContext = inContextIds(prompt, messages);
       // Internal key only (not a cross-language hash): plain JSON keeps it linear and cheap.
+      // The token is hashed with the rest, never kept as it is.
       key = await within(sha256Hex(JSON.stringify([
-        chat.id, mode, prompt.length, request.messages.map((m) => [m.host_logical_id, m.revision_hash]),
+        chat.id, mode, prompt.length, request.messages.map((m) => [m.host_logical_id, m.revision_hash]), inContext,
+        request.persona_name ?? null, // the sidecar reads `{{user}}` from the sync a cached packet skips (ADR 0023)
+        settings.sidecarUrl.replace(/\/+$/, ''), settings.route, settings.authToken, settings.reservedMemoryTokens,
       ])), deadline, 'the cache key');
       // Canon (ADR 0045): which of it this prompt holds and its manifest go with the request; the texts follow in the
       // background. Observed for a cached packet too, whose canon may have changed.
       const canon = await observeCanon(chat, prompt, deadline);
+      const canonKey = JSON.stringify([canon?.snapshot?.id ?? null, canon?.held ?? []]);
       const cached = cache.get(key);
-      if (cached && cached.expires > host.now()) {
+      // A packet built with other canon (an entry, the card or the note edited) is stale; a cached miss holds none.
+      if (cached && cached.expires > host.now() && (cached.failed || cached.canon === canonKey)) {
         const known = conversations.get(chat.id);
         if (canon?.snapshot && known) syncCanon(settings, known, chat.id, canon.snapshot);
         const outcome = cached.packet ? 'injected' : 'nothing-relevant';
@@ -455,7 +472,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         manifest_hash: synced.manifest_hash,
         query,
         previous_ai: previousAi,
-        in_context_ids: inContextIds(prompt, messages),
+        in_context_ids: inContext,
         budget_tokens: settings.reservedMemoryTokens,
         client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started },
         canon_manifest_id: canon?.snapshot?.id ?? null,
@@ -465,7 +482,9 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const packet = retrieved.freshness === 'fresh' ? retrieved.packet.text : '';
       const memory = retrieved.freshness === 'fresh' ? retrieved.memory ?? null : null; // older sidecars send none
       const vectors = retrieved.freshness === 'fresh' ? retrieved.vectors ?? null : null;
-      remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors);
+      // A delete, repair or settings save while this request ran: its packet may hold what that removed.
+      if (epoch !== since) throw new Error('memory changed during this request');
+      remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors, canonKey);
       host.debug('[NMOS] request done', { ms: Math.round(host.now() - started), manifestMs: Math.round(manifestMs),
         syncMs: Math.round(syncMs), retrieveMs: Math.round(host.now() - t2), packetChars: packet.length });
       const outcome = packet ? 'injected' : 'nothing-relevant';
@@ -475,7 +494,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       return injectPacket(prompt, packet, settings.injectPosition, turn);
     } catch (error) {
       // Cache the miss briefly so host retries of this request (H2) do not wait out the deadline again.
-      if (key) remember(key, '', FAILURE_TTL_MS, true);
+      if (key && epoch === since) remember(key, '', FAILURE_TTL_MS, true);
       last = failure = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: 0, packet: '', outcome: 'failed',
         error: error instanceof Error ? error.message : String(error), deadlineMs: settings?.deadlineMs ?? 0 };
       if (lateAt !== null) failure.neededMs = Math.round(lateAt - started);
@@ -538,11 +557,16 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   /** Sidecar API for the settings UI (longer timeout: connection tests call real models). */
   async function api<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeoutMs = 90_000): Promise<T> {
     const settings = await host.settings();
-    const out = await call<T>(settings, path, body, host.now() + timeoutMs, method);
-    // A settings save, rebuild or delete changes what a packet would contain: a reroll of an unchanged
-    // chat must not reuse a packet built before it (a deleted chat's memory, old facts).
-    if (method !== 'GET') cache.clear();
-    return out;
+    // A settings save, rebuild or delete changes what a packet would contain: a reroll of an unchanged chat must not
+    // reuse a packet built before it (a deleted chat's memory, old facts), nor one fetched while it ran. Also when the
+    // answer failed or came after the timeout: the sidecar may have applied it, or apply it then.
+    const change = method !== 'GET';
+    if (change) invalidate();
+    try {
+      return await call<T>(settings, path, body, host.now() + timeoutMs, method, change ? invalidate : undefined);
+    } finally {
+      if (change) invalidate();
+    }
   }
 
   /** A file from the sidecar (an archive, ADR 0050), as bytes; an error answer throws with the sidecar's detail. */
