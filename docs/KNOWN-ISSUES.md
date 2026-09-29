@@ -40,10 +40,12 @@ without a PocketRisu change.
 | K29 | A reveal in the turns first extracted together can be missed | Memory | "Extract all history" after connecting a chat with secrets (ADR 0033 amendment 2) |
 | K30 | A summary can say a secret in other words | Memory | since 0.2.0 (Phase 12, ADR 0042, 0043); summaries off for a chat where it matters |
 | K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases) |
-| K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | recorded, not scheduled (`docs/perf/m0-sample2.md`) |
+| K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | recorded, not scheduled (`docs/perf/m0-sample2.md`); canon did not change it |
 | K33 | The packet stops at ≈2,000–3,000 tokens whatever the memory budget | Recall | proposal: budget-scaled recall ("fill", `docs/perf/packet-fill.md`) |
 | K34 | A request right after the embedding model was unloaded recalls without vectors | Recall | evidence (production rate not measured) |
 | K35 | "The story so far" is written from every scene summary, with no cap on its input | Memory | recorded, not scheduled |
+| K36 | A chat whose large lorebook NMOS has read almost whole recalls more slowly | Performance | measured, accepted (Phase 14, owner 2026-09-29) |
+| K37 | A story that changes who someone is, against the card or a lorebook, is not flagged | Memory | by decision (ADR 0047 amendment 1); needs a model check |
 
 ## Performance
 
@@ -86,6 +88,15 @@ Evidence: `docs/perf/scale.md` ("Rerolls, swipes and edits on the real host").
 
 **K4 — Phones were not measured.** All latency numbers are desktop. A phone browser's copy of a
 long chat is likely slower; the real envelope there is unknown.
+
+**K36 — A large lorebook read almost whole slows recall.** NMOS reads a lorebook entry for facts once a prompt has
+held it (ADR 0047), and every read reads the chat's canon facts with the story's: a canon fact costs what a story fact
+costs. At 10,000 messages, retrieve p50 rose from 120.3 ms (Phase 13 `main`) to 133.7 ms with a 50-entry lorebook read whole
+(260 canon facts) and to 154.0 ms with 200 entries (1,010 facts) (`docs/perf/canon.md`). On the owner's chats the reads were
+22–62 texts and 118–323 facts, about a 50-entry lorebook. The criterion was +5 ms; the owner accepted the rest after
+the canon query was prepared once per connection (2026-09-29). A faster fact fold would serve story facts as much.
+*Workaround:* none needed at the measured sizes; **Facts from canon** off in Recall tuning removes the cost (names from
+canon stay).
 
 ## Host
 
@@ -202,6 +213,14 @@ are shorter than the cap; the owner's chats are far from it. Not measured on a l
 *Workaround:* none needed below several hundred turns; turn summaries off for a very long chat if the story stops
 updating.
 
+**K37 — A changed identity against canon is not flagged.** A story line that says someone is something other than the
+card or a lorebook entry says supersedes canon's statement from its turn, as a changed place does, without a listing in
+"Needs attention". Only relationships are listed (ADR 0047 amendment 1): on the two measured chats, 10 identity and
+relationship conflicts were listed, and about one was a contradiction. A lorebook in English gave English facts that
+the Korean story's same statement did not match (6), and `identity` holds one value, so a job and where someone lives
+replaced each other (2). Telling a new identity from the same one in other words needs a model.
+*Workaround:* the canon version stays in the fact's history (the Inspector's fact line); lock it there to keep it.
+
 ## Recall and gating
 
 **K26 — The token estimate over-counts Korean.** The packet budget is filled against a conservative
@@ -252,7 +271,8 @@ the full name and 0 of 3 with the given name.
 *Workaround:* write the full name when the story needs that character's facts. Excerpts and vectors still answer
 by meaning. *On `main` (Phase 14, ADR 0046):* a given name the chat's lorebook lists
 as a key of the character's entry is a mention: on the same chat, with its canon, the given-name probes found their
-fact 2 of 3, as many as the full name. A given name no lorebook lists is still no mention.
+fact 2 of 3, as many as the full name. A given name no lorebook lists is still no mention. With canon facts on
+(Phase 14 step 6) the probes gave the same.
 
 **K32 — A third-person persona does not bring its own facts.** The persona's names never count as a mention
 (ADR 0023): a user who narrates by name writes that name in every message. Only a first-person question ("내 …",
@@ -260,6 +280,8 @@ fact 2 of 3, as many as the full name. A given name no lorebook lists is still n
 asks about it in the third person too. On the same chat, the persona's own past was not reached by its facts in
 either case that asked about it; the same question in the first person reached it.
 *Workaround:* ask in the first person, or rely on excerpts and summaries.
+*Phase 14:* the persona's prompt is now canon and read for facts, but the persona's facts still come in only as
+above; sample 2's M0 cases were unchanged with canon facts on.
 
 **K33 — The packet stops at ≈2,000–3,000 tokens.** Recall has fixed limits (5 excerpts of at most 480
 characters, 8 facts, 3 events, 3 threads), so a larger **기억 예산(토큰) / Memory budget (tokens)** leaves most of

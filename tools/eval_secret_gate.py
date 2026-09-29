@@ -10,7 +10,10 @@ that packet and in the `packet-v6` packet of the same request (facts and excerpt
 point it at a restored backup (PHASE-11 Q1).
 
     cd apps/sidecar && uv run python ../../tools/eval_secret_gate.py DIR --db postgresql://…/copy \\
-        --extractor KEY --summarizer KEY [--budget 2000] [--json]
+        --extractor KEY --summarizer KEY [--canon KEY] [--budget 2000] [--json]
+
+`--canon` compiles both packets with a canon generation's facts (ADR 0047), from the chat's canon in force for a request
+recorded before canon facts (one recorded since keeps its own); canon takes no part in secrets.
 """
 
 from __future__ import annotations
@@ -78,9 +81,10 @@ def told(conn: psycopg.Connection, case: dict[str, Any], extractor: str) -> list
 
 
 def check(conn: psycopg.Connection, case: dict[str, Any], extractor: str, summarizer: str,
-          budget: int) -> dict[str, Any]:
+          budget: int, canon: str | None = None) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
-    common = {"known_at": now, "query": case["query"], "budget": budget, "extractor_key": extractor}
+    common = {"known_at": now, "query": case["query"], "budget": budget, "extractor_key": extractor,
+              **({"canon_key": canon} if canon else {})}
     v8 = audit.replay(conn, UUID(case["trace"]), RecallOptions(), "packet-v8", summarize_key=summarizer, **common)
     v6 = audit.replay(conn, UUID(case["trace"]), RecallOptions(), "packet-v6", **common)
     if not v8 or v8["status"] != "ok" or not v6 or v6["status"] != "ok":
@@ -99,13 +103,14 @@ def main() -> None:
     ap.add_argument("--db", required=True)
     ap.add_argument("--extractor", required=True)
     ap.add_argument("--summarizer", required=True)
+    ap.add_argument("--canon", help="a canon generation's key: its facts in both packets (ADR 0047)")
     ap.add_argument("--budget", type=int, default=2000)
     ap.add_argument("--json", action="store_true", help="per-case results (names and matched words only)")
     args = ap.parse_args()
     cases = json.loads((args.dir / "cases.json").read_text(encoding="utf-8"))
     with psycopg.connect(args.db, row_factory=dict_row, autocommit=True,
                          options="-c default_transaction_read_only=on") as conn:
-        results = [check(conn, c, args.extractor, args.summarizer, args.budget) for c in cases]
+        results = [check(conn, c, args.extractor, args.summarizer, args.budget, args.canon) for c in cases]
     if args.json:
         print(json.dumps(results, ensure_ascii=False, indent=2))
     else:

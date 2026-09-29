@@ -117,6 +117,14 @@ language after a page reload.
   generations, is listed under **Repairs** with **Undo**, and each chat's page starts with **Needs attention** (old
   open threads, ends that matched no thread, disputed whereabouts, repairs that match nothing now, splits still
   joined through another name, ambiguous names).
+  **Canon** (Phase 14, ADR 0045–0047): NMOS keeps each chat's card (its story fields and greeting), lorebook entries,
+  persona and author's note as sources, a new revision on each edit, listed in the conversation page's **Canon**
+  section. Lorebook keys give a character's other names. The extraction model reads the card, the persona and the note
+  once, and a lorebook entry once a prompt held it, for facts from before the story, which the story supersedes; a
+  fact whose text the host already sent is not sent again. A story line that changes a **relationship** canon states
+  is listed in **Needs attention** with **Lock** (canon's stays, `locked="true"` in the packet) and **Retract** (the
+  story's stays). On the owner's chats canon took 26–66 model calls at first; **Facts from canon** in Recall tuning
+  turns it off. A chat whose large lorebook is read almost whole recalls more slowly (K36).
   A conversation page lists the chat's **Secrets** (who knows, kept from whom, who found out and when), and the
   last packet's section names the scene's characters and memory mode.
   A conversation page also has a **Memory mode** card for that chat (ADR 0035): **Strict** gives only what

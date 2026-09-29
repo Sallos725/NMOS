@@ -164,13 +164,23 @@ def test_canon_is_before_turn_0_the_story_supersedes_it_and_a_contradiction_is_l
         assert [f["value"] for f in current(v, "Hana", "identity")] == ["smuggler"]
         assert [f["value"] for f in current(v, "Hana", "relationship")] == ["sister"]
         assert current(v, "Hana", "relationship")[0]["turn"] == -1
-        # A place changes as the story goes: not listed. Who someone is: listed, with the owner's choices.
+        # A place changes as the story goes, and so does who someone is now (ADR 0047 amendment 1): not listed.
+        assert [x for x in v["conflicts"] if x["kind"] == "canon"] == []
+        # How two stand: listed, with the owner's choices.
+        chat.reply("Hana is Kaito's rival.")
+        chat.user("How are Hana and Kaito?")
+        sync(c, chat)
+        drain(migrated, model)
+        v = view(migrated, chat)
+        assert [f["value"] for f in current(v, "Hana", "relationship")] == ["rival"]
         listed = [x for x in v["conflicts"] if x["kind"] == "canon"]
-        assert len(listed) == 1 and listed[0]["against"]["value"] == "lighthouse keeper"
+        assert len(listed) == 1 and listed[0]["against"]["value"] == "sister"
         canon_id = listed[0]["against"]["id"]
         page = c.get(f"/inspector/c/{v['conversation']}", params={"lang": "en"}).text
         attention = page[page.index('id="s-attention"'):page.index("</details>", page.index('id="s-attention"'))]
         assert f'data-repair="fact_lock:{canon_id}"' in attention and f'data-repair="fact_retract:{canon_id}"' in attention
+        facts_section = page[page.index('id="s-facts"'):page.index("</details>", page.index('id="s-facts"'))]
+        assert "canon" in facts_section and "older generation" not in facts_section  # its own generation, not older
 
         # Keep canon's: a lock. The canon version stays current, the story's statement is held off and listed.
         res = c.post(f"/v1/conversations/{v['conversation']}/repairs", json={"kind": "fact_lock", "item": str(canon_id)})
@@ -178,12 +188,13 @@ def test_canon_is_before_turn_0_the_story_supersedes_it_and_a_contradiction_is_l
         lock = res.json()["repair"]["id"]
         assert res.json()["applied"] == str(canon_id)
         v = view(migrated, chat)
-        (locked,) = current(v, "Hana", "identity")
-        assert (locked["value"], locked["locked"], locked["held_off"]) == ("lighthouse keeper", str(lock), 1)
-        assert [x["kind"] for x in v["conflicts"]] == ["locked"] and v["conflicts"][0]["against"]["value"] == "smuggler"
+        (locked,) = current(v, "Hana", "relationship")
+        assert (locked["value"], locked["locked"], locked["held_off"]) == ("sister", str(lock), 1)
+        assert [x["kind"] for x in v["conflicts"]] == ["locked"] and v["conflicts"][0]["against"]["value"] == "rival"
         # The lock holds in the packet, although the host sent the card (D3 gives way to a lock).
-        packet = recall(c, chat, "What does Hana do?", budget=2000, canon_held=["card:desc", "persona"])["packet"]["text"]
-        assert 'source="canon" locked="true"' in packet and "lighthouse keeper" in packet and "smuggler" not in packet
+        packet = recall(c, chat, "How are Hana and Kaito?", [m["chatId"] for m in chat.messages], budget=2000,
+                        canon_held=["card:desc", "persona"])["packet"]["text"]
+        assert 'source="canon" locked="true"' in packet and "sister" in packet and "rival" not in packet
         assert "locked=\"true\" marks a fact the user fixed" in packet and "before the story, from its setting" in packet
         assert c.post(f"/v1/conversations/{v['conversation']}/repairs",
                       json={"kind": "fact_lock", "item": str(canon_id)}).status_code == 422  # locked already
@@ -191,14 +202,14 @@ def test_canon_is_before_turn_0_the_story_supersedes_it_and_a_contradiction_is_l
         # Undo: the story's version is current again, and the contradiction is listed again.
         assert c.post(f"/v1/conversations/{v['conversation']}/repairs/{lock}/remove").status_code == 200
         v = view(migrated, chat)
-        assert [f["value"] for f in current(v, "Hana", "identity")] == ["smuggler"]
+        assert [f["value"] for f in current(v, "Hana", "relationship")] == ["rival"]
         assert [x["kind"] for x in v["conflicts"]] == ["canon"]
 
         # Keep the story's: canon's statement retracted. Nothing is listed.
         res = c.post(f"/v1/conversations/{v['conversation']}/repairs", json={"kind": "fact_retract", "item": str(canon_id)})
         assert res.status_code == 200 and res.json()["applied"] == str(canon_id)
         v = view(migrated, chat)
-        assert [f["value"] for f in current(v, "Hana", "identity")] == ["smuggler"] and v["conflicts"] == []
+        assert [f["value"] for f in current(v, "Hana", "relationship")] == ["rival"] and v["conflicts"] == []
 
 
 def test_a_story_fact_cannot_be_locked_a_correction_can(migrated):

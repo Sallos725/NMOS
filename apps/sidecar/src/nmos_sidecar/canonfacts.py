@@ -370,8 +370,9 @@ def rows(conn: psycopg.Connection, conv: UUID, mid: str | None, key: str | None,
     """The canon facts of manifest `mid` as a read takes them (ADR 0047): before turn 0, in the manifest's key order."""
     if not mid or not key:
         return []
+    # Prepared at its first use on a connection: planning it takes longer than running it (PHASE-14 step 6).
     out = conn.execute(ROWS, {"conv": conv, "mid": mid, "gen": key, "macro": MACRO_SQL,
-                              "at": known_at or datetime.now(timezone.utc)}).fetchall()
+                              "at": known_at or datetime.now(timezone.utc)}, prepare=True).fetchall()
     for i, a in enumerate(out):
         a.update(position=POSITION_BASE + i, turn=-1, turn_hash=f"canon:{a['canon']}",
                  host_logical_id=f"canon:{a['canon']}", listed_hash=None, participants=None)

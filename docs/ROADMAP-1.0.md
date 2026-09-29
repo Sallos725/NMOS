@@ -16,7 +16,7 @@
 | 3 — Retrieval core | SQL, lexical, vector, RRF, packet, traces | done |
 | 4 — Epistemic engine | observer model, knowledge projection, principal ACL, false beliefs, private thoughts | done, released in `v0.2.0` (Phase 10; K11 rewritten to what remains) |
 | 5 — Narrative engine | causal links, open threads, scenes, episodes, arcs, dynamic character state | done, released in `v0.2.0` (Phases 11–12) |
-| 6 — Verification and repair | transition verifier, conflict queue, inspector, entity merge/split, canon locking | in progress: owner repair (Phase 13) and canon sources (Phase 14, steps 1–5) on `main`; step 6, then Phase 16 (export and restore), remain; transition rules unscheduled |
+| 6 — Verification and repair | transition verifier, conflict queue, inspector, entity merge/split, canon locking | in progress: owner repair (Phase 13) and canon sources (Phase 14) on `main`; Phase 16 (export and restore) remains; transition rules unscheduled |
 | 7 — Forensic recall | raw-history search, evidence traversal, exact quotes | partial: packet ledger and as-of replay (Phase 9); not authorized |
 | 8 — PocketRisu bridge | partial chat reads, mutation events | not started; not authorized |
 
@@ -99,7 +99,7 @@ outside the prompt window 2 → 5 of 12 with the story covering every scene with
 Inspector, owner entity links. Part 1 on `main` (Phase 13, ADR 0044): owner repair (close or reopen a thread, retract or
 correct a fact, a secret found out or kept, split two names) in the panel, audited and surviving rebuilds, and a
 "Needs attention" list per chat; K8 and K23 rewritten to what remains (`docs/perf/repair.md`). Part 2, Phase 14
-(approved 2026-09-28, steps 1–5 on `main`, step 6 open): canon as sources. Then Phase 15, the packet that fills its
+(approved 2026-09-28, complete 2026-09-29): canon as sources. Then Phase 15, the packet that fills its
 budget (approved 2026-09-29, `docs/phases/PHASE-15.md`; not a Stage 6 item), and Phase 16: export and restore.
 Open beyond them: transition rules, not yet assigned to a phase.
 

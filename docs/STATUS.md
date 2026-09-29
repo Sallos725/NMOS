@@ -6,9 +6,10 @@
 (knowledge and secrets, Phase 10) complete, with Stage 5 (Phases 11–12) and Stage 6 so far (Phase 13, Phase 14 steps
 1–5) from `main`: secrets and memory modes, open business and causes, relationship pairs, summaries in `<Story>` and
 `<Cast>`, owner repairs and the lock, canon sources, names and facts. Extractor `extract-v13`, normalizer `clean-v3`,
-packet policy `packet-v8`, migrations 0021–0026. Phase 14 step 6 (canon facts measured, real-host smoke) follows.
+packet policy `packet-v8`, migrations 0021–0026. Phase 14 step 6 (canon facts measured, real-host smoke) followed on
+`main`; Phase 15 is next.
 
-**Phase 14 — Verification and Repair, part 2: canon sources (Stage 6): approved 2026-09-28, in progress.** Spec
+**Phase 14 — Verification and Repair, part 2: canon sources (Stage 6): approved 2026-09-28, complete 2026-09-29.** Spec
 `docs/phases/PHASE-14.md`: the character card, the lorebooks, the persona and the author's note as
 immutable sources of each chat; names from canon; canon facts read by the extraction model as their own projection
 (the message extractor unchanged), superseded by the story from the turn it says something new; contradictions in
@@ -24,7 +25,11 @@ unchanged. Step 5 (ADR 0047, D57, migration 0026): a `canon` generation reads th
 lorebook entry once a prompt held it; its facts are before turn 0 and the story supersedes them; a story that changes
 who someone is or how two stand is listed in "Needs attention" with the owner's choices; `fact_lock` keeps a canon fact
 or a correction current; a canon fact whose text the prompt held is not sent again; a new plugin build (the switch,
-the lock button, macro-aware "held"). Next: step 6 (evaluation, real-host smoke, latency, documentation).
+the lock button, macro-aware "held"). Step 6 (`docs/perf/canon.md`, "Evaluation"; ADR 0047 amendment 1): on both
+measured chats with their canon, M0 and the secret gate unchanged case by case; canon took 12 and 66 model calls (26 on
+production); only relationships are listed as conflicts with canon now (the owner's choice: the identities listed were
+the same one in two languages, K37); latency with a 200-entry lorebook read whole +33.7 ms, accepted (K36); an upgrade
+fixture from Phase 13 `main`; a real-host smoke on v1.13.0 passed and found an Inspector display bug (fixed).
 
 **Owner request (2026-09-28), outside the Phase 14 steps: NMOS off for one chat** (ADR 0048, D58). The plugin arg
 `disabled_chats` lists chats whose requests pass through untouched (nothing synced, uploaded or retrieved; what NMOS
@@ -260,10 +265,10 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
 | Tests | `apps/sidecar/tests` (602), `adapters/pocketrisu-plugin/test` (132; DOM code under `happy-dom`) | all passing; the M0 real-chat evaluation is `docs/perf/m0-baseline.md` (28 owner-confirmed cases; 9 need memory: 5 before Phase 11, 7 now) and, on a second chat, `docs/perf/m0-sample2.md` (17 cases; 8 of the 13 that need memory); deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k without extraction and embeddings (D24); with both on (15k facts, 15k vectors) 10k takes ≈3.2 s (A-09); K3 on the real host (2026-09-27): rerolls and last-reply swipes stay on the fast path, an edit of an older message at 10k takes 3.6–3.8 s |
-| Known issues | `docs/KNOWN-ISSUES.md` | K1–K35 (K10 resolved; K33–K35 recorded 2026-09-29) current as of `v0.2.0`, each with workaround and tracking (host, Track B stage); resolved limitations listed |
+| Known issues | `docs/KNOWN-ISSUES.md` | K1–K37 (K10 resolved; K33–K37 recorded 2026-09-29) current as of `v0.2.0` and Phase 14, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–8 of the original roadmap, one release each (draft, R1–R6 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0048` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair; Phase 14: canon sources, names from canon, canon facts and lock; NMOS off for one chat |
-| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-15.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 approved, in progress (Stage 6, part 2: canon); 15 approved, not started (packet fill) |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-15.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 approved, not started (packet fill) |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 | Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11`, and A-12's markup half in `clean-v3` (both unreleased) |
 
@@ -315,7 +320,8 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
   answers (Q0–Q9, `docs/phases/PHASE-13.md`); complete 2026-09-28, the latency criterion missed by 2 ms and accepted
   (owner); no release.
 - Phase 14 (Stage 6, part 2: canon sources): approved 2026-09-28 with every proposed answer (Q0–Q10,
-  `docs/phases/PHASE-14.md`); export/restore is Phase 16 (Q0; renumbered 2026-09-29); no release.
+  `docs/phases/PHASE-14.md`); export/restore is Phase 16 (Q0; renumbered 2026-09-29); complete 2026-09-29, the latency
+  criterion missed (+33.7 ms with a 200-entry lorebook read whole) and accepted (owner); no release.
 - Phase 15 (a packet that fills its budget; P1 of `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`): approved
   2026-09-29 with the proposed answers (Q0–Q8, `docs/phases/PHASE-15.md`); before export/restore, after Phase 14
   step 6; default budget 4,000, fixed; no release. Phase 16+ (export/restore, Stages 7–8): not authorized.
