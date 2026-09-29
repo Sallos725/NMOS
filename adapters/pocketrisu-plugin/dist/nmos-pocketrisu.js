@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:8e38edbf7a82".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:f688bc7f36c7".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -289,6 +289,11 @@
     "deadline.near": [
       "\uB9C8\uC9C0\uB9C9 \uC694\uCCAD\uC740 \uC81C\uD55C \uC2DC\uAC04 {d}ms \uC911 {n}ms\uB97C \uC37C\uC2B5\uB2C8\uB2E4. \uCC44\uD305\uC774 \uB354 \uAE38\uC5B4\uC9C0\uBA74 \uAE30\uC5B5\uC774 \uBE60\uC9C8 \uC218 \uC788\uC73C\uB2C8, \uC124\uC815 \uD0ED\uC5D0\uC11C \uC81C\uD55C \uC2DC\uAC04(ms)\uC744 {s} \uC815\uB3C4\uB85C \uC62C\uB824 \uB450\uC138\uC694.",
       "The last request used {n} ms of its {d} ms deadline. As the chat grows, memory may start to miss it: raise Deadline (ms) in the Settings tab to about {s}."
+    ],
+    "vectors.title": ["\uAE30\uC5B5\uC744 \uC758\uBBF8 \uAC80\uC0C9 \uC5C6\uC774 \uCC3E\uC558\uC2B5\uB2C8\uB2E4", "Memory was recalled without semantic search"],
+    "vectors.text": [
+      "\uB9C8\uC9C0\uB9C9 \uC694\uCCAD\uC5D0\uC11C \uC784\uBCA0\uB529 \uBAA8\uB378\uC774 \uC81C\uB54C \uB2F5\uD558\uC9C0 \uC54A\uC558\uAC70\uB098 \uC624\uB958\uB97C \uB0B4\uC11C, \uAE30\uC5B5\uC744 \uB2E8\uC5B4\uAC00 \uACB9\uCE58\uB294 \uAC83\uC73C\uB85C\uB9CC \uCC3E\uC558\uC2B5\uB2C8\uB2E4. \uB9D0\uC744 \uBC14\uAFD4 \uC4F4 \uC61B \uC7A5\uBA74\uC740 \uC774\uB54C \uBE60\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uBA3C\uC800 \uC124\uC815 \uD0ED\uC758 \uC758\uBBF8 \uAC80\uC0C9 \uC784\uBCA0\uB529 \uC5F0\uACB0 \uD14C\uC2A4\uD2B8\uB85C \uC8FC\uC18C\uC640 \uD0A4\uB97C \uD655\uC778\uD558\uC138\uC694. \uBAA8\uB378\uC774 \uC26C\uB2E4\uAC00 \uB2E4\uC2DC \uC62C\uB77C\uC624\uB294 \uC911\uC774\uC5C8\uB2E4\uBA74(Ollama\uB294 5\uBD84 \uC26C\uBA74 \uB0B4\uB9BC) \uB2E4\uC74C \uC694\uCCAD\uC740 \uAD1C\uCC2E\uC2B5\uB2C8\uB2E4. \uC5F0\uACB0\uC740 \uB418\uB294\uB370 \uC790\uC8FC \uB728\uBA74 \uC784\uBCA0\uB529 \uBAA8\uB378\uC744 \uACC4\uC18D \uC62C\uB824 \uB450\uAC70\uB098(Ollama keep_alive) \uC0AC\uC774\uB4DC\uCE74\uC758 NMOS_EMBED_TIMEOUT_MS\uB97C \uB298\uB824 \uC8FC\uC138\uC694.",
+      "On the last request the embedding model did not answer in time or answered with an error, so memory was found by shared words only; an earlier scene in other words can be missed then. First check the address and key with the embedding connection test in the Settings tab. If the model was loading after a pause (Ollama unloads it after 5 minutes idle), the next request is fine. If it connects and this still shows often, keep the embedding model loaded (Ollama keep_alive) or raise the sidecar's NMOS_EMBED_TIMEOUT_MS."
     ],
     "deadline.took": [" (\uC2E4\uC81C\uB85C\uB294 \uC57D {n}ms \uAC78\uB9BC)", " (it took about {n} ms)"],
     "status.plugin_mismatch": [
@@ -961,8 +966,8 @@ ${revisionHash}`;
       if (!personas || host.now() - personas.at > PERSONA_TTL_MS) warmPersonas();
       return personas?.value ? personaOf(chat, personas.value) : null;
     }
-    function remember(key, packet, ttl, failed = false, memory = null) {
-      cache.set(key, { packet, expires: host.now() + ttl, failed, memory });
+    function remember(key, packet, ttl, failed = false, memory = null, vectors = null) {
+      cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors });
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
     }
     async function within(work, deadline, what) {
@@ -1081,7 +1086,8 @@ ${revisionHash}`;
             outcome: outcome2,
             deadlineMs: settings.deadlineMs,
             budgetTokens: settings.reservedMemoryTokens,
-            memory: cached.memory ?? null
+            memory: cached.memory ?? null,
+            vectors: cached.vectors ?? null
           };
           emit({
             type: "request-end",
@@ -1117,7 +1123,8 @@ ${revisionHash}`;
         if (canon?.snapshot && synced.conversation_id) syncCanon(settings, synced.conversation_id, chat.id, canon.snapshot);
         const packet = retrieved.freshness === "fresh" ? retrieved.packet.text : "";
         const memory = retrieved.freshness === "fresh" ? retrieved.memory ?? null : null;
-        remember(key, packet, SUCCESS_TTL_MS, false, memory);
+        const vectors = retrieved.freshness === "fresh" ? retrieved.vectors ?? null : null;
+        remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors);
         host.debug("[NMOS] request done", {
           ms: Math.round(host.now() - started),
           manifestMs: Math.round(manifestMs),
@@ -1134,7 +1141,8 @@ ${revisionHash}`;
           outcome,
           deadlineMs: settings.deadlineMs,
           budgetTokens: settings.reservedMemoryTokens,
-          memory
+          memory,
+          vectors
         };
         emit({ type: "request-end", outcome, chars: packet.length, conversationId: synced.conversation_id ?? null });
         return injectPacket(prompt, packet, settings.injectPosition, turn);
@@ -2020,6 +2028,14 @@ html,body{margin:0;background:${PALETTE.bg}}
           el("p", { class: "sub", text: text2 }),
           el("div", { class: "btns" }, apply),
           msg
+        ));
+      }
+      if (s.last?.vectors === "fallback") {
+        cards.splice(1, 0, el(
+          "div",
+          { class: "card" },
+          el("h2", { class: "warn", text: L("vectors.title") }),
+          el("p", { class: "sub", text: L("vectors.text") })
         ));
       }
       const problem = deps.hud.problem();

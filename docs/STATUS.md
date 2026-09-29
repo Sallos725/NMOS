@@ -8,7 +8,7 @@
 `<Cast>`, owner repairs and the lock, canon sources, names and facts. Extractor `extract-v13`, normalizer `clean-v3`,
 packet policy `packet-v8`, migrations 0021–0026. Phase 14 step 6 (canon facts measured, real-host smoke) followed on
 `main`; Phase 15 is in progress (step 2: evaluations with vectors; step 3: `packet-v9` and a 4,000-token default budget,
-ADR 0049).
+ADR 0049; step 4: 70 % of production recalls went without vectors (K34), now shown in the Status tab).
 
 **Phase 14 — Verification and Repair, part 2: canon sources (Stage 6): approved 2026-09-28, complete 2026-09-29.** Spec
 `docs/phases/PHASE-14.md`: the character card, the lorebooks, the persona and the author's note as

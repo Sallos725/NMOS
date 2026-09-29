@@ -116,7 +116,11 @@ sample 2, with vectors on.
 3. `packet-v9`, ADR 0049, the default budget, and a plugin build. **Done** (ADR 0049, D59): `packet-v9` the default;
    excerpts, their length and facts grow from the request's own limits; `FIT_CAP` 8,000; the plugin's default budget
    4,000, saved up to 8,000 (build 8e38edbf7a82); deterministic tests (`tests/test_packet_fill.py`).
-4. Cold embeddings: measure, then the note and notice if warranted.
+4. Cold embeddings: measure, then the note and notice if warranted. **Done** (owner's OK, 2026-09-29; K34): on the
+   owner's production 141 of 201 recalls (70 %) went without vectors, all timeouts, every day. The retrieve answer now
+   says `vectors` (on, off, fallback), the Status tab shows a notice after a fallback, and the guide, README and K34
+   say how to keep the model loaded and raise `NMOS_EMBED_TIMEOUT_MS`; a new plugin build. No worker warm-up ping:
+   warm requests were slow too (280 ms median), so a ping would not have saved most of them.
 5. Evaluation, the owner's traces, real-host smoke, latency, review, documentation.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).

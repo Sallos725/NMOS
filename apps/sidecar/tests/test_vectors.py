@@ -80,7 +80,7 @@ def test_paraphrase_recalled_through_vectors(vec_client, migrated, db):
     out = recall(vec_client, chat, query, in_context=[m["chatId"] for m in chat.messages[-3:]])
     assert "등대 지하에 숨겼다" in out["packet"]["text"]
     trace = vec_client.get(f"/v1/trace/{out['trace_id']}").json()
-    assert trace["latency_ms"]["vector_mode"] == "on"
+    assert trace["latency_ms"]["vector_mode"] == "on" and out["vectors"] == "on"  # the plugin is told (PHASE-15 Q5)
     assert any(c["sim"] and c["user_score"] < 0.4 for c in trace["candidates"])  # vector-only hit
 
 
@@ -104,4 +104,7 @@ def test_embedding_outage_falls_back_to_lexical(migrated):
         out = recall(down, chat, "은빛 열쇠를 등대에 숨겼지?", in_context=[m["chatId"] for m in chat.messages[-3:]])
         trace = down.get(f"/v1/trace/{out['trace_id']}").json()
     assert trace["latency_ms"]["vector_mode"].startswith("fallback")
+    assert out["vectors"] == "fallback"  # the plugin's Status tab says so (PHASE-15 Q5, K34)
     assert "등대 지하에 숨겼다" in out["packet"]["text"]  # lexical still works
+    with make_client(migrated) as none:  # no embedder configured
+        assert recall(none, chat, "은빛 열쇠를 등대에 숨겼지?")["vectors"] == "off"

@@ -72,7 +72,12 @@ interface CacheEntry {
   expires: number;
   failed?: boolean;
   memory?: MemoryFit | null;
+  vectors?: Vectors | null;
 }
+
+/** Whether the sidecar's recall searched vectors (PHASE-15 Q5, K34): "fallback" is lexical only because the embedder
+ *  failed or did not answer in time. Older sidecars send none. */
+export type Vectors = 'on' | 'off' | 'fallback';
 
 const SUCCESS_TTL_MS = 10 * 60_000;
 const FAILURE_TTL_MS = 30_000;
@@ -94,6 +99,7 @@ export interface LastRequest {
   /** The memory budget this request had, and what it left out (ADR 0036). */
   budgetTokens?: number;
   memory?: MemoryFit | null;
+  vectors?: Vectors | null;
 }
 
 export interface StatusInfo {
@@ -287,8 +293,9 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     return personas?.value ? personaOf(chat, personas.value) : null;
   }
 
-  function remember(key: string, packet: string, ttl: number, failed = false, memory: MemoryFit | null = null): void {
-    cache.set(key, { packet, expires: host.now() + ttl, failed, memory });
+  function remember(key: string, packet: string, ttl: number, failed = false, memory: MemoryFit | null = null,
+    vectors: Vectors | null = null): void {
+    cache.set(key, { packet, expires: host.now() + ttl, failed, memory, vectors });
     while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
   }
 
@@ -413,7 +420,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         // A retry served from the miss cache keeps the failure on the status tab.
         if (!cached.failed) last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: cached.packet.length,
           packet: cached.packet, outcome, deadlineMs: settings.deadlineMs, budgetTokens: settings.reservedMemoryTokens,
-          memory: cached.memory ?? null };
+          memory: cached.memory ?? null, vectors: cached.vectors ?? null };
         emit({ type: 'request-end', outcome, chars: cached.packet.length,
           conversationId: conversations.get(chat.id) ?? null });
         return injectPacket(prompt, cached.packet, settings.injectPosition, turn);
@@ -430,7 +437,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
 
       const { query, previousAi } = queryTexts(messages);
       const t2 = host.now();
-      const retrieved = await call<{ freshness: string; packet: { text: string }; memory?: MemoryFit | null }>(settings, '/v1/retrieve', {
+      const retrieved = await call<{ freshness: string; packet: { text: string }; memory?: MemoryFit | null;
+        vectors?: Vectors | null }>(settings, '/v1/retrieve', {
         host: 'pocketrisu',
         chat_id: chat.id,
         active_commit: synced.active_commit,
@@ -446,12 +454,13 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       if (canon?.snapshot && synced.conversation_id) syncCanon(settings, synced.conversation_id, chat.id, canon.snapshot);
       const packet = retrieved.freshness === 'fresh' ? retrieved.packet.text : '';
       const memory = retrieved.freshness === 'fresh' ? retrieved.memory ?? null : null; // older sidecars send none
-      remember(key, packet, SUCCESS_TTL_MS, false, memory);
+      const vectors = retrieved.freshness === 'fresh' ? retrieved.vectors ?? null : null;
+      remember(key, packet, SUCCESS_TTL_MS, false, memory, vectors);
       host.debug('[NMOS] request done', { ms: Math.round(host.now() - started), manifestMs: Math.round(manifestMs),
         syncMs: Math.round(syncMs), retrieveMs: Math.round(host.now() - t2), packetChars: packet.length });
       const outcome = packet ? 'injected' : 'nothing-relevant';
       last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, packet, outcome,
-        deadlineMs: settings.deadlineMs, budgetTokens: settings.reservedMemoryTokens, memory };
+        deadlineMs: settings.deadlineMs, budgetTokens: settings.reservedMemoryTokens, memory, vectors };
       emit({ type: 'request-end', outcome, chars: packet.length, conversationId: synced.conversation_id ?? null });
       return injectPacket(prompt, packet, settings.injectPosition, turn);
     } catch (error) {
