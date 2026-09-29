@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DONE_MS } from '../src/hud';
 import { NMOS_ICON } from '../src/icon';
+import { PALETTE } from '../src/palette';
 import { createHud, MAX_POLL_ERRORS, MIN_POLL_GAP_MS, POLL_MS, type HudDeps, type HudDocument, type HudElement } from '../src/hud-host';
 
 interface FakeElement extends HudElement { tag: string; text: string; html: string; styles: Record<string, string>;
@@ -122,7 +123,7 @@ describe('createHud', () => {
     await advance(0);
     expect(page.text()).toBe('✓ 기억 주입 (10자)');
     expect(icon?.styles.display).toBe('none');
-    expect(page.pill()?.children[0]?.styles.color).toBe('#8ce99a');
+    expect(page.pill()?.children[0]?.styles.color).toBe(PALETTE.ok);
   });
 
   it('opens the panel only for clicks on the pill', async () => {
