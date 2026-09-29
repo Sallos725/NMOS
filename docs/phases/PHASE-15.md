@@ -13,8 +13,8 @@ Each answer in bold was NMOS's proposal; the owner approved the document with th
 |---|---|---|---|
 | Q0 | Before or after export/restore? | **Before** (owner, 2026-09-29): small, already measured, and it improves every later measurement. Export and restore becomes Phase 16, still before any install for other users (proposal P4). | Export/restore first. |
 | Q1 | What grows with the budget? | **Raw excerpts, in number and length, and facts up to twice today's limit.** Open threads, events, secrets (`<Private>`), `<Cast>` and `<Story>` keep today's limits. Measured: growing everything placed stale threads and secrets above ≈8,000 tokens (forbidden 8–10 of 16 at 16,000). Growing excerpts and facts only held forbidden at 1 of 16 up to 16,000 with the same gains. | Grow every section; excerpts only. |
-| Q2 | How much, exactly? | **Scale with `budget / 2,000`:** excerpts `5 × f` (the `top_k`), each up to `480 × f` characters and at most 2,400; facts `8 × min(f, 2)`. At 2,000 the packet is exactly `packet-v8`'s. The packet still stops at the budget, and ranking decides what fits. | A fixed larger set; per-section budgets. |
-| Q3 | The default budget? | **4,000 tokens (from 2,000), fixed.** The panel accepts up to 8,000, the range the measurements cover. The host's context size is not followed (owner, 2026-09-29): a share of a 500,000-token preset would be ≈20,000 tokens, past the measured range. The reminder stays: lower the host's max context by the budget (D2). The prompt then keeps its size, and older raw messages give way to memory. | Follow the host's context; keep 2,000. |
+| Q2 | How much, exactly? | **Scale the request's own limits by `f = min(max(budget / 2,000, 1), 4)`.** These are the panel's 발췌 수 / Excerpts (`recall_top_k`, default 5) and facts (`facts_limit`, default 8) settings, which each request records (ADR 0027). Excerpts become `floor(top_k × f)`, each up to `floor(480 × f)` characters (1,920 at 8,000). Facts become `floor(facts_limit × min(f, 2))`. A limit set to 0 stays 0. Below 2,000, today's limits apply. The candidate pool (`CANDIDATE_LIMIT`, 50) still bounds excerpts. At 2,000, and for every recorded `packet-v8` request, the packet is exactly `packet-v8`'s. The packet still stops at the budget, and ranking decides what fits. | A fixed larger set that ignores the settings; per-section budgets. |
+| Q3 | The default budget? | **4,000 tokens (from 2,000), fixed.** Recall stops growing at 8,000 (`f` ≤ 4), the range the measurements cover. A larger budget is still accepted, since the API and stored settings allow up to 20,000 and none of them may start failing. It compiles with the limits of 8,000, and the other sections may use the rest of the room as today. The panel suggests up to 8,000. The host's context size is not followed (owner, 2026-09-29): a share of a 500,000-token preset would be ≈20,000 tokens, past the measured range. The reminder stays: lower the host's max context by the budget (D2). The prompt then keeps its size, and older raw messages give way to memory. | Follow the host's context; keep 2,000. |
 | Q4 | New policy or a change to `packet-v8`? | **A new policy, `packet-v9`**, the default once accepted. `packet-v8` stays for replays of recorded requests (ADR 0027), and `tools/replay_packets.py` compares the two on the owner's recorded traces. | Change `packet-v8` in place. |
 | Q5 | The cold embedding model (K34)? | **Measure, then decide.** First, how often production requests fell back to lexical recall, counted read-only from the owner's traces with the owner's OK. If it is frequent, add a keep-alive note in the guide and a Status-tab notice when a request recalled without vectors. A worker warm-up ping only if the notice is not enough. | Ignore it; always warm up. |
 | Q6 | The evaluation tool? | **Fix it first.** `tools/eval_rp.py` names the embedding projection to search, embeds a warm-up query, and reports per case whether vectors ran. A replay that fell back to lexical is not scored silently (the first numbers of the what-if were lexical-only by accident, `docs/perf/packet-fill.md`). | Keep `--no-vectors` evaluations. |
@@ -62,7 +62,8 @@ sample 2, with vectors on.
 2. **Evaluation tooling (Q6).** `tools/eval_rp.py` searches a named projection, warms the embedder, and reports
    vectors per case. The `packet-v8` baseline is recorded with vectors on both chats and both extractions.
 3. **`packet-v9` (Q1, Q2, Q4; ADR 0049, D59).**
-   - Excerpt count, excerpt length and the fact limit scale with the budget; every other section keeps its limits.
+   - Excerpt count, excerpt length and the fact limit scale with the budget from the request's own settings (Q2); every
+     other section keeps its limits.
    - `packet-v8` stays replayable.
    - The budget-pressure advice (ADR 0036) and `FIT_CAP` follow the new range.
 4. **Default budget (Q3).** The plugin's default becomes 4,000 and the panel accepts up to 8,000. The reminder to lower
@@ -74,7 +75,8 @@ sample 2, with vectors on.
 
 - Export and restore (Phase 16).
 - Following the host's context size (Q3). Reading the preset's context is a later option, as a ceiling only.
-- Budgets above 8,000, and a different ranking of facts, threads or secrets.
+- Recall growth past 8,000: larger budgets are accepted and compile with the limits of 8,000 (Q3). A different
+  ranking of facts, threads or secrets.
 - The story's input cap (K35): recorded, not scheduled.
 - Importing another plugin's memory (proposal P4).
 
@@ -82,8 +84,11 @@ sample 2, with vectors on.
 
 - [ ] Every existing test and memory-evaluation case passes; recorded `packet-v8` requests replay as they were.
 - [ ] Deterministic cases:
-  - `packet-v9` at 2,000 equals `packet-v8`;
-  - excerpts and facts grow with the budget, and threads, events, secrets, `<Cast>` and `<Story>` do not;
+  - `packet-v9` at 2,000, and below it, equals `packet-v8`, for default and non-default `recall_top_k` and
+    `facts_limit`, and a recorded `packet-v8` request replays as it was;
+  - excerpts and facts grow from the configured limits (`floor`, `f` at most 4, a limit of 0 stays 0), and threads,
+    events, secrets, `<Cast>` and `<Story>` do not;
+  - a budget of 20,000 compiles with the limits of 8,000 and within its budget;
   - the packet never exceeds its budget;
   - an excerpt is cut at its sentence, as today.
 - [ ] M0 with vectors, `packet-v9` at 4,000 against `packet-v8` at 2,000, on both chats and both extractions:
@@ -92,7 +97,8 @@ sample 2, with vectors on.
   - no category worse by more than one case.
 - [ ] The owner's recorded traces replayed with both policies: the lines only `packet-v9` places, by kind, and no
       secret or closed thread among them.
-- [ ] Retrieve latency at 10,000 messages at 4,000 within +10 ms p50 of `packet-v8` at 2,000 (`tools/bench_story.py`).
+- [ ] Retrieve latency at 10,000 messages within +10 ms p50 of `packet-v8` at 2,000 at 4,000, and within +25 ms at 8,000
+      and above (the largest recall, `tools/bench_story.py`).
 - [ ] Real-host smoke on an isolated PocketRisu v1.13.0: the new default applies, the packet grows to it, and the
       budget advice suggests values inside the range.
 - [ ] K34 measured on the owner's traces (read-only, with the owner's OK), with the result and any change in
