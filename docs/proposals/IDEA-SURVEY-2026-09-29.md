@@ -50,6 +50,10 @@ them apart. `docs/HOST-FACTS.md` Q1 already records from source that trigger/Lua
 whether they also pass D13's test "was not observed". If they do, NMOS syncs, recalls and injects a packet into a
 side call: wasted work and a misleading trace. *Cost:* one run of the local harness with a bot whose trigger calls
 the model. *Kind:* host evidence, then a correctness fix if needed; no phase.
+*Measured 2026-09-29 (no change):* this is K14, already accepted. The host source confirms the path (HOST-FACTS
+Q1). The owner's production request log, read from a copy (2026-09-23 to 09-29), has none: all 751 `model` requests
+carried chat history with the model's replies, and all 560 packets went into those. Tightening the gate would risk
+dropping memory from real requests for a case not seen; K14 records the numbers.
 
 **C2 — Every assertion's evidence found in its turn.** That plugin rejects a score change unless its quote is an
 exact substring of the reply. NMOS checks quoted evidence only for reveals (trigram containment 0.7, PHASE-10). The
@@ -120,9 +124,9 @@ the "db" permission (H17), not measured for cost. *Cost:* host evidence first. *
 
 ## 6. Recommended order (owner decision)
 
-1. **C1 now** (host evidence on the local harness; correctness, no phase).
+1. **C1** measured: not seen in production, K14 updated, the gate unchanged.
 2. **C6** only with P4 (importing another plugin's memory), if that is ever taken.
-3. **C4 + C5** as one small ops/UI step (a migration and a plugin build), with the owner's go.
+3. **C4 + C5** as Phase 17, after Phase 16 (owner, 2026-09-29); a draft spec follows.
 4. **C2** on the queued list for the next extractor generation (queued in `docs/STATUS.md`, 2026-09-29); **C3**
    measured and dropped (§4).
 5. **C7 and C10** with Stage 6's remaining items; **C8** with Stage 7; **C9** only with an approved spend.

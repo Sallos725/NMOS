@@ -279,7 +279,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K37 (K10 resolved; K33–K37 recorded 2026-09-29) current as of `v0.2.0` and Phase 14, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–8 of the original roadmap, one release each (draft, R1–R6 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0049` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair; Phase 14: canon sources, names from canon, canon facts and lock; NMOS off for one chat; Phase 15: a packet that fills its budget |
-| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-16.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 approved, in progress (export and restore) |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-17.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 approved, in progress (export and restore); 17 draft |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 | Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11`, and A-12's markup half in `clean-v3` (both unreleased) |
 
@@ -337,8 +337,10 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
   2026-09-29 with the proposed answers (Q0–Q8, `docs/phases/PHASE-15.md`); before export/restore, after Phase 14
   step 6; default budget 4,000, fixed; no release.
 - Phase 16 (Stage 6, part 3: export and restore): approved 2026-09-29 with every proposed answer (Q0–Q9,
-  `docs/phases/PHASE-16.md`); an Export button in the panel too (owner); no release. Phase 17+ (Stages 7–8):
-  not authorized.
+  `docs/phases/PHASE-16.md`); an Export button in the panel too (owner); no release.
+- Phase 17 (model-call cost and fallback outcomes; C4 and C5 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`): the
+  owner chose 2026-09-29 to run it after Phase 16; `docs/phases/PHASE-17.md` is a draft awaiting approval.
+  Phase 18+ (Stages 7–8): not authorized.
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600. Raised to 800 on 2026-09-27 (owner; ADR 0035).
 - Release cadence — decided 2026-09-26, revised 2026-09-27: one release per roadmap stage, urgent patches

@@ -29,7 +29,7 @@ Observed values:
 | each retry after a failed request (S12) | `model` | 3× `F/*S12__beforeRequest*` |
 | "Auto Suggest" (S11, and automatically after each reply once enabled) | `submodel` | `F/*S11__beforeRequest*`, 4th `F/*S12__beforeRequest*`, 2nd `F/*S14-1000-send__beforeRequest*` |
 
-Not observed at runtime: `memory`, `emotion`, `otherAx`, `translate`. **Source reading:** `ModelModeExtended = 'model' | 'submodel' | 'memory' | 'emotion' | 'otherAx' | 'translate'` (`src/ts/process/request/shared.ts`). Trigger and Lua scripting LLM calls also pass `'model'` (`src/ts/process/triggers.ts`, `src/ts/process/scriptings.ts`), so `mode === 'model'` alone does not guarantee a main chat generation.
+Not observed at runtime: `memory`, `emotion`, `otherAx`, `translate`. **Source reading:** `ModelModeExtended = 'model' | 'submodel' | 'memory' | 'emotion' | 'otherAx' | 'translate'` (`src/ts/process/request/shared.ts`). Trigger and Lua scripting LLM calls also pass `'model'` (`src/ts/process/triggers.ts`, `src/ts/process/scriptings.ts`), so `mode === 'model'` alone does not guarantee a main chat generation. Re-read on v1.13.0 (2026-09-29, the image's source map): Lua `LLM(id, prompt)` and `simpleLLM` call `requestChatData(…, 'model')` with the prompt the script built, Lua `axLLM` uses `'otherAx'`, the trigger effect `runLLM` uses `'model'` and the other LLM effect its own `model`/`submodel` choice; `requestChatData` runs every `beforeRequest` replacer on each call. In the owner's production request log (2026-09-23 to 09-29) no such call occurred (K14).
 
 Prompt shape observed alongside `mode`:
 
