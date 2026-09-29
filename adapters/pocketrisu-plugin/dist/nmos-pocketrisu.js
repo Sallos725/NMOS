@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:b0047b93aa09".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:f371c057201b".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -344,6 +344,17 @@
       "\uCD94\uCD9C {d}\uAC74\uC744 \uBC84\uB9AC\uACE0 \uD134 {t}\uAC1C\uB97C \uB2E4\uC2DC \uCD94\uCD9C\uD569\uB2C8\uB2E4. \uB05D\uB0A0 \uB54C\uAE4C\uC9C0 \uC774 \uCC44\uD305\uC758 \uC0AC\uC2E4\uC774 \uBE44\uC5B4 \uC788\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
       "Discarded {d} extractions; {t} turns are extracted again. Facts of this chat may be missing until then."
     ],
+    // export (ADR 0050)
+    "exp.chat": ["\uC774 \uB300\uD654 \uB0B4\uBCF4\uB0B4\uAE30", "Export this chat"],
+    "exp.title": ["\uB0B4\uBCF4\uB0B4\uAE30", "Export"],
+    "exp.sub": [
+      "NMOS\uAC00 \uAE30\uC5B5\uD558\uB294 \uBAA8\uB4E0 \uB300\uD654\uC640 \uC124\uC815(API \uD0A4\uB294 \uBE7C\uACE0)\uC744 .nmos.zip \uD30C\uC77C \uD558\uB098\uB85C \uC800\uC7A5\uD569\uB2C8\uB2E4. \uCC44\uD305 \uC6D0\uBB38\uC774 \uB4E4\uC5B4 \uC788\uC73C\uB2C8 \uCC44\uD305\uCC98\uB7FC \uBCF4\uAD00\uD558\uC138\uC694.",
+      "Saves every conversation NMOS keeps and its settings (never an API key) as one .nmos.zip file. It holds the chat text: keep it as you keep the chat."
+    ],
+    "exp.embeddings": ["\uC784\uBCA0\uB529\uB3C4 \uB123\uAE30 (\uD30C\uC77C\uC774 \uCEE4\uC9C0\uC9C0\uB9CC \uBCF5\uC6D0 \uB4A4 \uB2E4\uC2DC \uACC4\uC0B0\uD558\uC9C0 \uC54A\uC74C)", "Include embeddings (a larger file, not recomputed after a restore)"],
+    "exp.all": ["\uC804\uBD80 \uB0B4\uBCF4\uB0B4\uAE30", "Export everything"],
+    "exp.working": ["\uD30C\uC77C\uC744 \uC900\uBE44\uD558\uB294 \uC911\u2026", "Preparing the file\u2026"],
+    "exp.saved": ["{mb} MB\uB97C \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. \uBE0C\uB77C\uC6B0\uC800\uC758 \uB2E4\uC6B4\uB85C\uB4DC\uB97C \uD655\uC778\uD558\uC138\uC694.", "Saved {mb} MB. Check the browser's downloads."],
     "act.delete_done": ["\uB300\uD654\uB97C \uC0AD\uC81C\uD588\uC2B5\uB2C8\uB2E4 (\uBA54\uC2DC\uC9C0 {m}\uAC1C\uC758 \uAE30\uB85D).", "Conversation deleted (records of {m} messages)."],
     "link.title": ["\uAC19\uC740 \uB300\uC0C1\uC73C\uB85C \uD569\uCE58\uAE30", "Same as another entity"],
     "link.sub": [
@@ -1229,7 +1240,19 @@ ${revisionHash}`;
       if (method !== "GET") cache.clear();
       return out;
     }
-    return { beforeRequest, onOutput, status, api, warmPersonas };
+    async function file(path, timeoutMs = 3e5) {
+      if (!host.requestFile) throw new Error("this host cannot fetch a file");
+      const settings = await host.settings();
+      const headers = {};
+      if (settings.authToken) headers.Authorization = `Bearer ${settings.authToken}`;
+      const res = await host.requestFile(settings.sidecarUrl.replace(/\/+$/, "") + path, headers, timeoutMs, settings.route);
+      if (res.status < 200 || res.status >= 300 || !res.bytes) {
+        const detail = res.json?.detail;
+        throw new Error(`${path.split("?")[0]} -> HTTP ${res.status}${detail ? `: ${String(detail)}` : ""}`);
+      }
+      return res.bytes;
+    }
+    return { beforeRequest, onOutput, status, api, file, warmPersonas };
   }
   function firstSaying(messages) {
     for (const m of messages) if (m.role === "char" && m.saying) return m.saying;
@@ -1863,6 +1886,11 @@ html,body{margin:0;background:${PALETTE.bg}}
     for (const child of children) node.append(child);
     return node;
   }
+  function archiveName(kind, at) {
+    const p = (n) => String(n).padStart(2, "0");
+    const stamp = `${at.getFullYear()}${p(at.getMonth() + 1)}${p(at.getDate())}-${p(at.getHours())}${p(at.getMinutes())}${p(at.getSeconds())}`;
+    return `nmos-${kind}-${stamp}.nmos.zip`;
+  }
   function say(target, text2, kind = "muted") {
     target.className = `${target.classList.contains("text") ? "text" : "msg"} ${kind}`;
     target.textContent = text2;
@@ -2127,11 +2155,12 @@ html,body{margin:0;background:${PALETTE.bg}}
     const historyButton = el("button", { text: L("act.history") });
     const rebuildButton = el("button", { text: L("act.rebuild") });
     const deleteButton = el("button", { text: L("act.delete") });
+    const exportButton = el("button", { text: L("exp.chat") });
     const actionMsg = el("div", { class: "msg" });
     const actions = el(
       "div",
       {},
-      el("div", { class: "btns" }, historyButton, rebuildButton, deleteButton),
+      el("div", { class: "btns" }, historyButton, rebuildButton, exportButton, deleteButton),
       el("details", { class: "sub help" }, el("summary", { text: L("act.help") }), el("p", { text: L("act.sub") }))
     );
     const linkCard = el("div", { class: "card", style: "display:none" });
@@ -2633,6 +2662,23 @@ html,body{margin:0;background:${PALETTE.bg}}
         deleteButton.disabled = false;
       }
     });
+    exportButton.addEventListener("click", async () => {
+      const conversation = actionConversation;
+      if (!conversation) return;
+      await exportTo(exportButton, actionMsg, `/v1/archive?conversation=${conversation}`, "chat");
+    });
+    async function exportTo(button, msg, path, kind) {
+      button.disabled = true;
+      say(msg, L("exp.working"));
+      try {
+        const size = await deps.download(path, archiveName(kind, /* @__PURE__ */ new Date()));
+        say(msg, L("exp.saved", { mb: (size / 1048576).toFixed(1) }), "ok");
+      } catch (error) {
+        say(msg, errorText(lang, error), "err");
+      } finally {
+        button.disabled = false;
+      }
+    }
     const hudBox = el("input", { type: "checkbox" });
     const hudMsg = el("div", { class: "msg" });
     hudBox.addEventListener("change", async () => {
@@ -2796,6 +2842,24 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("p", { class: "sub", text: L("rules.sub") }),
       rules,
       el("div", { class: "btns" }, example)
+    ));
+    const exportEmbeddings = el("input", { type: "checkbox" });
+    const exportAll = el("button", { text: L("exp.all") });
+    const exportMsg = el("div", { class: "msg" });
+    exportAll.addEventListener("click", () => void exportTo(
+      exportAll,
+      exportMsg,
+      `/v1/archive${exportEmbeddings.checked ? "?embeddings=true" : ""}`,
+      "all"
+    ));
+    settingsView.append(el(
+      "div",
+      { class: "card" },
+      el("h2", { text: L("exp.title") }),
+      el("p", { class: "sub", text: L("exp.sub") }),
+      el("div", { class: "check" }, exportEmbeddings, el("span", { text: L("exp.embeddings") })),
+      el("div", { class: "btns" }, exportAll),
+      exportMsg
     ));
     const barText = el("span", { class: "text muted" });
     const revert = el("button", { text: L("revert") });
@@ -3041,6 +3105,23 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       return { status: res.status, json };
     },
+    async requestFile(url, headers, timeoutMs, route) {
+      const res = await risuai.nativeFetch(url, {
+        method: "GET",
+        headers,
+        requestTimeoutMs: Math.max(1, Math.floor(timeoutMs)),
+        ...fetchOptions(route)
+      });
+      const bytes = await res.arrayBuffer();
+      if (res.status >= 200 && res.status < 300) return { status: res.status, bytes, json: null };
+      let json = null;
+      try {
+        json = JSON.parse(new TextDecoder().decode(bytes));
+      } catch {
+        json = null;
+      }
+      return { status: res.status, bytes: null, json };
+    },
     warn: (...args) => console.warn(...args),
     debug: (...args) => console.debug(...args),
     now: () => performance.now(),
@@ -3104,7 +3185,18 @@ html,body{margin:0;background:${PALETTE.bg}}
     if (state.off) return t(lang, "chat.switched_off");
     return t(lang, enabled ? "chat.switched_on" : "chat.switched_on_all_off");
   }
-  async function registerHooks(beforeRequest, onOutput, status, api, hud) {
+  function saveFile(bytes, name, type = "application/zip") {
+    const url = URL.createObjectURL(new Blob([bytes], { type }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.style.display = "none";
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 6e4);
+  }
+  async function registerHooks(beforeRequest, onOutput, status, api, file, hud) {
     await risuai.addRisuReplacer("beforeRequest", beforeRequest);
     await risuai.addRisuChatListener("output", onOutput);
     const deps = {
@@ -3115,7 +3207,12 @@ html,body{margin:0;background:${PALETTE.bg}}
       show: () => risuai.showContainer("fullscreen"),
       hide: () => risuai.hideContainer(),
       hud,
-      chat: risuChatSwitch
+      chat: risuChatSwitch,
+      async download(path, name) {
+        const bytes = await file(path);
+        saveFile(bytes, name);
+        return bytes.byteLength;
+      }
     };
     const open = (tab) => openPanel(deps, tab);
     const lang = langOf(await arg("language"));
@@ -3163,6 +3260,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       (arg2) => adapter.onOutput(arg2),
       () => adapter.status(),
       (method, path, body, timeoutMs) => adapter.api(method, path, body, timeoutMs),
+      (path) => adapter.file(path),
       hud
     );
     adapter.warmPersonas();

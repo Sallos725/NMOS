@@ -33,6 +33,13 @@ export interface HttpResult {
   json: unknown;
 }
 
+/** A file's bytes as the sidecar sent them (an archive, ADR 0050); `json` only for an error answer. */
+export interface FileResult {
+  status: number;
+  bytes: ArrayBuffer | null;
+  json: unknown;
+}
+
 export interface HostPort {
   settings(): Promise<Settings>;
   currentChat(): Promise<HostChat | null>;
@@ -50,6 +57,9 @@ export interface HostPort {
   personas?(): Promise<HostPersonas | null>;
   request(method: 'GET' | 'POST' | 'PUT', url: string, body: unknown, headers: Record<string, string>,
           timeoutMs: number, route: Settings['route']): Promise<HttpResult>;
+  /** A GET whose answer is a file, as bytes (the panel's Export, H21). */
+  requestFile?(url: string, headers: Record<string, string>, timeoutMs: number,
+               route: Settings['route']): Promise<FileResult>;
   warn(...args: unknown[]): void;
   debug(...args: unknown[]): void;
   now(): number;
@@ -535,7 +545,21 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     return out;
   }
 
-  return { beforeRequest, onOutput, status, api, warmPersonas };
+  /** A file from the sidecar (an archive, ADR 0050), as bytes; an error answer throws with the sidecar's detail. */
+  async function file(path: string, timeoutMs = 300_000): Promise<ArrayBuffer> {
+    if (!host.requestFile) throw new Error('this host cannot fetch a file');
+    const settings = await host.settings();
+    const headers: Record<string, string> = {};
+    if (settings.authToken) headers.Authorization = `Bearer ${settings.authToken}`;
+    const res = await host.requestFile(settings.sidecarUrl.replace(/\/+$/, '') + path, headers, timeoutMs, settings.route);
+    if (res.status < 200 || res.status >= 300 || !res.bytes) {
+      const detail = (res.json as { detail?: unknown } | null)?.detail;
+      throw new Error(`${path.split('?')[0]} -> HTTP ${res.status}${detail ? `: ${String(detail)}` : ''}`);
+    }
+    return res.bytes;
+  }
+
+  return { beforeRequest, onOutput, status, api, file, warmPersonas };
 }
 
 function firstSaying(messages: HostMessage[]): string | null {

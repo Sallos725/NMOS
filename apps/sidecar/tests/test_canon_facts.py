@@ -422,3 +422,58 @@ def test_the_names_tag_and_the_macro_test_are_the_same_in_python_and_sql(migrate
         for text in texts:
             sql = conn.execute("SELECT %s ~* %s AS named", (text, canon.MACRO_SQL)).fetchone()["named"]
             assert sql == bool(canon.MACRO.search(text)), text
+
+
+def test_the_host_blocks_that_hide_their_body_and_those_that_show_it():
+    """H20: `#if`, `#if_pure`, `#when`, `#each` and `#func name` hide their body unless the chat's variables show it;
+    `#pure`, `#pure_display`, `#code` and `#escape` show it; `{{/…}}` closes the innermost block."""
+    text = ("A. {{#if {{equal::{{getvar::lang}}::en}}}}B.{{#pure}}C.{{/}}{{/if}} D. {{#pure}}E.{{/pure}} "
+            "{{#when::x::is::1}}F.{{:else}}G.{{/when}} {{#each [1,2] as n}}H.{{/each}} {{#func}}I. "
+            "{{#pure x}}J. {{#escape::keep}}K.{{/}} {{#func f a}}L.{{/}} {{#if_pure 1}}M.")
+    spans = canonfacts.conditional_spans(text)
+    inside = {ch for ch in "ABCDEFGHIJKLM" if any(a <= text.index(ch + ".") < b for a, b in spans)}
+    # `#func` without a name and `#pure x` are no blocks for the host; an unclosed block runs to the end.
+    assert inside == {"B", "C", "F", "G", "H", "L", "M"}
+    # The host tests a tag's start, case-sensitive: any separator after `#if` opens it; `#IF` is plain text.
+    for text, hidden in [("{{#if\ttrue}}X{{/}}", True), ("{{#iffy}}X{{/}}", True), ("{{#IF 1}}X{{/}}", False),
+                         ("{{#if_pure {{getvar::a}}}}X{{/if_pure}}", True), ("{{#pure}}X{{/}}", False),
+                         ("{{#code}}{{#if 0}}X{{/}}{{/}}", True)]:
+        assert bool(canonfacts.conditional_spans(text)) is hidden, text
+
+
+def test_which_evidence_is_served_from_a_text_with_blocks():
+    text = ("Hana is a keeper.\n{{#if {{equal::{{getvar::lang}}::en}}}}Hana is a spy.{{/if}}\n"
+            "The bell rings at dawn. {{#when::x::is::1}}The bell rings at dawn. The bell is cursed.{{/when}}")
+    blocks = canonfacts.blocks_of(text)
+    rid = __import__("uuid").uuid4()
+    served = {ev: canonfacts.shown(blocks, rid, ev) for ev in [
+        "Hana is a keeper.", "HANA  is a\nkeeper", "Hana is a spy.", "The bell rings at dawn.",
+        "The bell is cursed.", "Nothing like it.", "", None]}
+    assert served == {"Hana is a keeper.": True, "HANA  is a\nkeeper": True, "Hana is a spy.": False,
+                      "The bell rings at dawn.": True,  # also outside the block
+                      "The bell is cursed.": False, "Nothing like it.": False, "": False, None: False}
+    assert canonfacts.shown(None, rid, "anything") is True  # a text without blocks
+
+
+def test_a_fact_read_inside_a_conditional_block_is_not_served(migrated):
+    chat, model = story(), Model()
+    lore = ("Kaito is a squire.\n{{#if {{equal::{{getvar::route}}::north}}}}\nKaito is in the northern keep.\n"
+            "{{:else}}\nKaito is a deserter.\n{{/if}}")
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        out = push(c, chat, {**canon_texts(), "lore:kaito": (lore, {"keys": ["Kaito"], "scope": "character",
+                                                                    "mode": "normal"})})
+        mid = out["manifest_id"]
+        recall(c, chat, "Who is Kaito?", canon_manifest_id=mid, canon_held=["card:desc", "persona", "lore:kaito"])
+        drain(migrated, model)
+        # The model read every branch; only the fact outside the block reaches memory and the packet.
+        assert any("Kaito is a deserter." in u for u in model.canon_calls())
+        free = recall(c, chat, "Who is Kaito?", budget=2000, canon_manifest_id=mid, canon_held=["card:desc", "persona"])
+        text = free["packet"]["text"]
+        assert "Kaito identity: squire" in text
+        assert "deserter" not in text and "northern keep" not in text
+        v = view(migrated, chat)
+        kaito = {(f["predicate"], f.get("value") or f.get("object")) for f in v["assertions"]
+                 if f.get("canon") and f["subject"] == "Kaito"}
+        assert kaito == {("identity", "squire")}
+        assert c.get(f"/v1/trace/{free['trace_id']}/replay").json()["reproduced"] is True

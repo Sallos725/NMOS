@@ -90,6 +90,7 @@ Evidence for every runtime claim is in `docs/HOST-FACTS.md`.
 | H17 | The V3 API has no user-name call. `getDatabase(['personas', 'selectedPersona'])` returns the personas (`id`, `name`, …) and the selected index behind the host's "db" permission, asked once (a denial returns `null` and is permanent until reset). The host names the user after the chat's `bindedPersona` (in the `getChatFromIndex` snapshot), else the selected persona. A typed `{{user}}` is stored with the name in place. | The plugin reads the persona name at load and in the background, never on the request path; the sidecar resolves it as the persona (ADR 0023, D34). |
 | H18 | The V3 `alert(message)` is PocketRisu's `alertNormal`: it sets the one global alert store (a later alert replaces the one on screen) and shows a modal with a Confirm button. Shown after a reply it appears over the chat and leaves the reply as it is. | The plugin alerts only from the output listener, after a reply, at most once per page (deadline advice, audit A-09); never on the request path. The one other alert answers the owner's own tap on the chat-menu switch, once per tap (ADR 0048). |
 | H19 | The V3 API exposes canon (v1.13.0): `getCharacter()` (the card: `name`, `desc`, `personality`, `scenario`, greetings, `globalLore`), `getCurrentLorebookEntries()` (the character's, the chat's and the enabled modules' entries, every one, activated or not), the chat's `note` and `localLore` in `getChatFromIndex`, and `personaPrompt` through `getDatabase` (H17's permission). An activated entry's `content`, the card's `desc`/`personality`/`scenario`, the note and the persona prompt are in the outgoing prompt verbatim (the greeting only while the host's context still reaches it). `getCharacter()` clones the current chat's messages (82–93 ms at 10,000 messages); the lorebook and persona calls take about 1 ms. | The plugin reads lorebooks, the note and the persona at each request, and the card off the request path; activated entries are known by their text in the prompt (PHASE-14, ADR 0045). |
+| H20 | Card and lorebook texts can hold the host's CBS blocks, rendered in the prompt, not sent verbatim (v1.13.0, source reading): `{{#if …}}`, `{{#if_pure …}}`, `{{#when …}}`, `{{#each …}}` and `{{#func name …}}` show their body only for some values of the chat's variables, or not as written; `{{#pure}}`, `{{#pure_display}}`, `{{#code}}` and `{{#escape…}}` show it; `{{/…}}` closes the innermost block; any other `{{#…}}` is no block. | NMOS reads a canon text raw, with every branch; a canon fact whose evidence is only inside a conditional block is not served (ADR 0047 amendment 2). |
 | H21 | A V3 plugin's frame can save a file (v1.13.0, Chromium and Firefox; mobile not observed): a Blob on an `<a download>` clicked by script, even seconds after the owner's tap, is saved under its name. `nativeFetch` returns binary bodies whole on both routes (30 MB: ≈0.15–0.26 s). A link from the frame to a file on another origin does not download; it navigates the frame to an error page. | The panel's Export fetches the archive through `nativeFetch` and saves it as a Blob, never by a link (PHASE-16 Q6). |
 
 ## 5. Key decisions
@@ -499,6 +500,14 @@ count, excerpt length and fact limit grow with the budget, from the request's ow
 and `<Story>` keep their limits. At 2,000 and below
 it is `packet-v8`; recall stops growing at 8,000, the panel's largest suggestion. The plugin's default budget is 4,000,
 fixed; the user still lowers the host's max context by it (D2).
+
+**D60 — NMOS Archive (Phase 16, ADR 0050).** An archive is one `.nmos.zip`: a JSON Lines file per table, rows from
+PostgreSQL's `row_to_json` (exact timestamps, jsonb, reals and vectors), then a manifest with the format version, the
+schema's migrations, what it holds and each file's rows and SHA-256. It always holds the ledger, canon, the owner's
+input, the recorded requests and every generation; the settings without keys for the whole install; the model's work
+by default; embeddings when asked; never jobs, derived text or a credential (any credential found refuses it). It is
+written from one read-only snapshot by `GET /v1/archive`, `python -m nmos_sidecar.archive export` and the panel's
+Export buttons, which save it as a Blob (H21).
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
