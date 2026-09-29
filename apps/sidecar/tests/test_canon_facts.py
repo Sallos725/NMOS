@@ -434,6 +434,25 @@ def test_the_host_blocks_that_hide_their_body_and_those_that_show_it():
     inside = {ch for ch in "ABCDEFGHIJKLM" if any(a <= text.index(ch + ".") < b for a, b in spans)}
     # `#func` without a name and `#pure x` are no blocks for the host; an unclosed block runs to the end.
     assert inside == {"B", "C", "F", "G", "H", "L", "M"}
+    # The host tests a tag's start, case-sensitive: any separator after `#if` opens it; `#IF` is plain text.
+    for text, hidden in [("{{#if\ttrue}}X{{/}}", True), ("{{#iffy}}X{{/}}", True), ("{{#IF 1}}X{{/}}", False),
+                         ("{{#if_pure {{getvar::a}}}}X{{/if_pure}}", True), ("{{#pure}}X{{/}}", False),
+                         ("{{#code}}{{#if 0}}X{{/}}{{/}}", True)]:
+        assert bool(canonfacts.conditional_spans(text)) is hidden, text
+
+
+def test_which_evidence_is_served_from_a_text_with_blocks():
+    text = ("Hana is a keeper.\n{{#if {{equal::{{getvar::lang}}::en}}}}Hana is a spy.{{/if}}\n"
+            "The bell rings at dawn. {{#when::x::is::1}}The bell rings at dawn. The bell is cursed.{{/when}}")
+    blocks = canonfacts.blocks_of(text)
+    rid = __import__("uuid").uuid4()
+    served = {ev: canonfacts.shown(blocks, rid, ev) for ev in [
+        "Hana is a keeper.", "HANA  is a\nkeeper", "Hana is a spy.", "The bell rings at dawn.",
+        "The bell is cursed.", "Nothing like it.", "", None]}
+    assert served == {"Hana is a keeper.": True, "HANA  is a\nkeeper": True, "Hana is a spy.": False,
+                      "The bell rings at dawn.": True,  # also outside the block
+                      "The bell is cursed.": False, "Nothing like it.": False, "": False, None: False}
+    assert canonfacts.shown(None, rid, "anything") is True  # a text without blocks
 
 
 def test_a_fact_read_inside_a_conditional_block_is_not_served(migrated):

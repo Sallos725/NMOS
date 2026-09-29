@@ -124,14 +124,17 @@ a block. The rendered text is also never "held" by the 80 % line test (item 5), 
    conditional blocks at least as often as only inside them. The evidence is looked for in pieces of 12 characters,
    spaces and case ignored (the model quotes the text with names in place of the macros). Evidence found nowhere in a
    text with blocks is not served: fail closed, as the host shows nothing it cannot resolve.
-2. Which blocks hide their body and which show it follows the host (H20). The check reads the normalized text the
-   model read; a revision's spans and each verdict are kept in memory, since a revision never changes.
+2. Which blocks hide their body and which show it follows the host (H20). The check reads the revision's raw
+   content, not a normalized text, so a verdict does not depend on the normalizer and a replay of an older generation
+   reads the same. A revision's spans and each verdict are kept in memory, since a revision never changes; a request
+   takes its revisions' blocks whole before it reads any, so a concurrent first read never sees half of them.
 3. The rule applies where canon facts are read (`canonfacts.rows`): the packet, the facts view, conflicts and locks.
    Nothing is re-extracted and nothing stored changes: the facts stay in the extraction for audit.
 
 **Consequences.**
 - On sample 2's copy, 125 of 323 served canon facts leave (each quoted only inside a block); the main chat's canon has
-  no block and is unchanged. The read takes about 1 ms more with a warm cache (7.0 → 8.0 ms, the median of 15).
+  no block and is unchanged. With a warm cache the read costs no measurable time (medians of 15 reads, 5.7–6.4 ms with the check and
+  6.2–8.2 ms without, in two runs); the first read of a revision in a process takes about 20 ms more on that chat.
 - A fact from the branch the host does show is not served either: the variables are not read, so NMOS cannot tell
   which branch is live. The host sends that branch's text whenever it holds the entry.
 - A lock on a canon fact read inside a block matches nothing and is listed as such (item 4).

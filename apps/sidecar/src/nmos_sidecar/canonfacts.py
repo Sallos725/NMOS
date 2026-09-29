@@ -367,26 +367,31 @@ ORDER BY l.ord, l.window_hash, a.id
 
 
 # The host's blocks (H20, ADR 0047 amendment 2): `{{#if …}}`, `{{#if_pure …}}`, `{{#when …}}`, `{{#each …}}` and
-# `{{#func …}}` show their body only for some values of the chat's variables, or not as written; `{{#pure}}`,
-# `{{#pure_display}}`, `{{#code}}` and `{{#escape}}` show it; `{{/…}}` closes the innermost block. The model reads a
+# `{{#func name …}}` show their body only for some values of the chat's variables, or not as written; `{{#pure}}`,
+# `{{#pure_display}}`, `{{#code}}` and `{{#escape…}}` show it; `{{/…}}` closes the innermost block. The model reads a
 # text with every branch, so a fact read inside a conditional body may come from a branch the host never shows.
-BLOCK = re.compile(r"\{\{#([a-z_]+)( |::|\}\})|\{\{/(?!/)[^{}]*\}\}", re.IGNORECASE)
-SHOWN = frozenset({"pure", "pure_display", "puredisplay", "code"})  # blocks only as the whole tag, as the host reads them
+TAG = re.compile(r"\{\{#([^{}]*)(\}\})?|\{\{/(?!/)[^{}]*\}\}")  # an opener's head (to a brace), or a closer
 CHUNK = 12  # characters of evidence (spaces removed) looked for at a time
 CACHED = 4096
-# Per revision, its text without spaces, where each of its characters stands and its conditional spans (None: none);
-# per revision and evidence, the verdict. A revision's text never changes.
-_texts: dict[UUID, tuple[str, list[int], list[tuple[int, int]]] | None] = {}
+# Per revision: its raw text without spaces (casefolded), where each of those characters stands, and its conditional
+# spans; None for a text without them. Per revision and evidence: the verdict. A revision's content never changes.
+Blocks = tuple[str, list[int], list[tuple[int, int]]]
+_texts: dict[UUID, Blocks | None] = {}
 _verdicts: dict[tuple[UUID, str], bool] = {}
 
 
-def _opens(name: str, after: str) -> bool | None:
-    """Whether `{{#name…` opens a block that hides its body (True) or shows it (False); None: not a block."""
-    name = name.lower()
-    if name.startswith(("if", "when", "each")) or (name == "func" and after == " "):
+def _opens(head: str, whole: bool) -> bool | None:
+    """Whether a tag `{{#head…` opens a block that hides its body (True) or shows it (False), as the host's
+    `blockStartMatcher` decides (case-sensitive, in its order); None: no block. `whole`: the tag ends right after
+    `head` (no nested macro follows)."""
+    if head.startswith(("if", "when")):
         return True
-    if (name in SHOWN and after == "}}") or name.startswith("escape"):
+    if whole and head in ("pure", "pure_display", "puredisplay", "code"):
         return False
+    if head.startswith("escape"):
+        return False
+    if head.startswith("each") or (head.startswith("func") and " " in head):
+        return True
     return None
 
 
@@ -394,9 +399,9 @@ def conditional_spans(text: str) -> list[tuple[int, int]]:
     """The spans of `text` inside a block that shows its body only conditionally (an unclosed one runs to the end)."""
     stack: list[tuple[int, bool]] = []
     spans: list[tuple[int, int]] = []
-    for m in BLOCK.finditer(text):
+    for m in TAG.finditer(text):
         if m[1] is not None:
-            hides = _opens(m[1], m[2])
+            hides = _opens(m[1], m[2] is not None)
             if hides is not None:
                 stack.append((m.start(), hides))
         elif stack:
@@ -407,42 +412,46 @@ def conditional_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def _blocks(conn: psycopg.Connection, rids: set[UUID]) -> None:
-    """Remember the conditional spans of each revision in `rids` not seen yet (None for a text without them)."""
-    missing = [r for r in rids if r not in _texts]
-    if not missing:
-        return
-    found = conn.execute(
-        "SELECT sr.id, coalesce(rt.clean_content, sr.content) AS text FROM source_revision sr"
-        " LEFT JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %s"
-        " WHERE sr.id = ANY(%s) AND sr.content LIKE '%%{{#%%'", (normtext.NORMALIZER_VERSION, missing)).fetchall()
-    for rid in missing:
-        _texts[rid] = None
-    for row in found:
-        spans = conditional_spans(row["text"])
-        if spans:
-            flat: list[str] = []
-            index: list[int] = []
-            for i, ch in enumerate(row["text"]):
-                if not ch.isspace():
-                    folded = ch.casefold()  # may be longer than the character (ß → ss)
-                    flat.append(folded)
-                    index += [i] * len(folded)
-            _texts[row["id"]] = ("".join(flat), index, spans)
-    while len(_texts) > CACHED:
-        _texts.pop(next(iter(_texts)))
+def blocks_of(text: str) -> Blocks | None:
+    spans = conditional_spans(text)
+    if not spans:
+        return None
+    flat: list[str] = []
+    index: list[int] = []
+    for i, ch in enumerate(text):
+        if not ch.isspace():
+            folded = ch.casefold()  # may be longer than the character (ß → ss)
+            flat.append(folded)
+            index += [i] * len(folded)
+    return "".join(flat), index, spans
 
 
-def shown(rid: UUID, evidence: str | None) -> bool:
-    """Whether a canon fact of revision `rid` is served: its text has no conditional block, or its evidence is found
-    outside them at least as often as only inside (in pieces of CHUNK characters, spaces ignored, since the model
-    quotes the text with names in place of the macros). Evidence found nowhere is not served (fail closed)."""
-    known = _texts.get(rid)
-    if known is None:
+def _blocks(conn: psycopg.Connection, rids: set[UUID]) -> dict[UUID, Blocks | None]:
+    """The blocks of each revision in `rids`, read once per process. The raw content is read, not a normalized text,
+    so a verdict does not depend on the normalizer (a replay of an older generation reads the same)."""
+    known = {r: _texts[r] for r in rids if r in _texts}
+    missing = [r for r in rids if r not in known]
+    if missing:
+        found = {row["id"]: blocks_of(row["content"]) for row in conn.execute(
+            "SELECT id, content FROM source_revision WHERE id = ANY(%s) AND content LIKE '%%{{#%%'",
+            (missing,)).fetchall()}
+        fresh = {r: found.get(r) for r in missing}
+        _texts.update(fresh)  # published whole: another request sees a revision's blocks or nothing
+        known.update(fresh)
+        for old in list(_texts)[:max(0, len(_texts) - CACHED)]:
+            _texts.pop(old, None)
+    return known
+
+
+def shown(blocks: Blocks | None, rid: UUID, evidence: str | None) -> bool:
+    """Whether a canon fact is served: its text has no conditional block, or its evidence is found outside them at
+    least as often as only inside (in pieces of CHUNK characters, spaces and case ignored, since the model quotes the
+    text with names in place of the macros). Evidence found nowhere is not served (fail closed)."""
+    if blocks is None:
         return True
     verdict = _verdicts.get((rid, evidence or ""))
     if verdict is None:
-        flat, index, spans = known
+        flat, index, spans = blocks
         quote = "".join((evidence or "").split()).casefold()
         pieces = [quote] if len(quote) <= CHUNK else [quote[i:i + CHUNK] for i in range(0, len(quote) - CHUNK + 1, 4)]
         outside = inside = 0
@@ -458,8 +467,8 @@ def shown(rid: UUID, evidence: str | None) -> bool:
                 inside += 1
         verdict = outside > 0 and outside >= inside
         _verdicts[(rid, evidence or "")] = verdict
-        while len(_verdicts) > CACHED * 4:
-            _verdicts.pop(next(iter(_verdicts)))
+        for old in list(_verdicts)[:max(0, len(_verdicts) - CACHED * 4)]:
+            _verdicts.pop(old, None)
     return verdict
 
 
@@ -472,8 +481,8 @@ def rows(conn: psycopg.Connection, conv: UUID, mid: str | None, key: str | None,
     # Prepared at its first use on a connection: planning it takes longer than running it (PHASE-14 step 6).
     out = conn.execute(ROWS, {"conv": conv, "mid": mid, "gen": key, "macro": MACRO_SQL,
                               "at": known_at or datetime.now(timezone.utc)}, prepare=True).fetchall()
-    _blocks(conn, {a["rid"] for a in out})
-    out = [a for a in out if shown(a.pop("rid"), a["evidence"])]
+    blocks = _blocks(conn, {a["rid"] for a in out})
+    out = [a for a in out if shown(blocks[a["rid"]], a.pop("rid"), a["evidence"])]
     for i, a in enumerate(out):
         a.update(position=POSITION_BASE + i, turn=-1, turn_hash=f"canon:{a['canon']}",
                  host_logical_id=f"canon:{a['canon']}", listed_hash=None, participants=None)
