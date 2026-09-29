@@ -12,6 +12,14 @@ names that canon and holds a quarter of the entries, the card and the persona in
     cd apps/sidecar && BENCH_SUMMARIES=0 uv run python ../../tools/bench_story.py 10000  # summaries off
     cd apps/sidecar && BENCH_REPAIRS=100 uv run python ../../tools/bench_story.py 10000  # with 100 repairs
     cd apps/sidecar && BENCH_CANON=200 uv run python ../../tools/bench_story.py 10000  # with a 200-entry lorebook
+    cd apps/sidecar && BENCH_BUDGET=4000 uv run python ../../tools/bench_story.py 10000  # another memory budget
+    cd apps/sidecar && NMOS_PACKET_POLICY=packet-v8 uv run python ../../tools/bench_story.py 10000  # another policy
+    cd apps/sidecar && BENCH_RECALL=wide BENCH_BUDGET=8000 uv run python ../../tools/bench_story.py 10000
+
+With BENCH_RECALL=wide (Phase 15) every message has a vector near the query's (a stub embedder answers at once) and
+each request asks for the scenes of a place with no previous reply, so recall has more excerpts and facts to offer than
+any budget takes: a larger budget's recall is the largest. The default questions match the chat's repeated sentence,
+whose excerpts all say the same thing, and there is no embedder.
 """
 
 from __future__ import annotations
@@ -19,6 +27,7 @@ from __future__ import annotations
 import gc
 import json
 import os
+import random
 import sys
 import time
 import uuid
@@ -30,12 +39,13 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bench_scale import ADMIN_URL, PLACES, QUERIES, SENTENCE, build_chat, p, post, sync  # noqa: E402
+from bench_scale import ADMIN_URL, DIM, PLACES, QUERIES, SENTENCE, build_chat, p, post, sync  # noqa: E402
 from nmos_sidecar import generations  # noqa: E402
 from nmos_sidecar.api import create_app  # noqa: E402
 from nmos_sidecar.config import Settings  # noqa: E402
 from nmos_sidecar.ids import uuid7  # noqa: E402
 from nmos_sidecar.migrate import apply_migrations  # noqa: E402
+from nmos_sidecar.vectors import projection, vector_literal  # noqa: E402
 
 try:
     from nmos_sidecar import summaries
@@ -52,7 +62,7 @@ except ImportError:  # before Phase 14
     canon = None
 
 SECRETS = 6  # about what the owner's longest chat keeps
-BUDGET = 2000  # the default since Phase 12 step 5; the same in both checkouts
+BUDGET = int(os.environ.get("BENCH_BUDGET", "2000"))  # 2,000: Phase 12's default; Phase 15 compares 4,000 and 8,000
 SCENE = "하나와 카이토는 등대 아래에서 만나 편지 이야기를 나누었다. " * 8  # ≈ 250 characters, as the owner's
 STORY = "하나는 항구 마을에서 카이토를 만나 등대와 도서관을 오가며 오래된 약속을 되짚었다. " * 6  # ≈ 280 characters
 
@@ -183,6 +193,30 @@ def add_canon(client: TestClient, db: psycopg.Connection, chat, count: int) -> d
     return {"manifest": out["manifest_id"], "held": held, "texts": len(revs), "facts": len(facts)}
 
 
+class Near:
+    """BENCH_RECALL=wide: a query embedder that answers at once with the vector every message is near (`add_vectors`),
+    so vector search has more relevant candidates than any budget takes, as on a long real chat."""
+
+    def __init__(self) -> None:
+        self.base = [random.Random(11).gauss(0, 1) for _ in range(DIM)]
+
+    def embed(self, texts, timeout_s):
+        return [self.base for _ in texts]
+
+
+def add_vectors(db: psycopg.Connection, key: str, base: list[float]) -> int:
+    """One vector per revision under the active projection, each the shared base plus noise (cosine ≈ 0.78 to it)."""
+    rnd = random.Random(7)
+    rows = db.execute("SELECT id FROM source_revision").fetchall()
+    with db.cursor() as cur:
+        cur.executemany(
+            "INSERT INTO revision_embedding (source_revision_id, projection, model, chunk, dim, text_start, text_end,"
+            " embedding) VALUES (%s, %s, 'bench', 0, %s, 0, 10, %s::vector)",
+            [(r["id"], key, DIM, vector_literal([b + rnd.gauss(0, 0.8) for b in base])) for r in rows])
+    db.execute("ANALYZE revision_embedding")
+    return len(rows)
+
+
 def bench(n: int) -> dict:
     name = f"nmos_bench_{uuid.uuid4().hex[:8]}"
     with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
@@ -190,7 +224,10 @@ def bench(n: int) -> dict:
     url = ADMIN_URL.rpartition("/")[0] + f"/{name}"
     result: dict = {"messages": n, "summaries": summaries is not None and os.environ.get("BENCH_SUMMARIES") != "0"}
     off = {"summaries": False} if os.environ.get("BENCH_SUMMARIES") == "0" else {}  # the same code with them off
-    settings = Settings(database_url=url, llm_url="http://bench/v1", llm_model="bench", **off)  # no worker runs
+    wide = os.environ.get("BENCH_RECALL") == "wide"
+    embed = {"embed_url": "http://bench/v1", "embed_model": "bench"} if wide else {}
+    settings = Settings(database_url=url, llm_url="http://bench/v1", llm_model="bench", **off, **embed)  # no worker runs
+    near = Near() if wide else None
     try:
         apply_migrations(url)
         chat = build_chat(n)
@@ -203,6 +240,8 @@ def bench(n: int) -> dict:
             conv = db.execute("SELECT id FROM conversation").fetchone()["id"]
             db.execute("UPDATE job SET status = 'obsolete' WHERE status = 'queued'")  # no worker in this run
             result["facts"] = add_facts(db, head, generations.active(db, "extract"))
+            if wide:
+                result["vectors"] = add_vectors(db, projection(settings).key, near.base)
             if result["summaries"]:
                 result["scenes"] = add_summaries(db, conv, head, generations.active(db, "summarize"))
             wanted = int(os.environ.get("BENCH_REPAIRS", "0"))
@@ -213,24 +252,29 @@ def bench(n: int) -> dict:
                                    "held": len(held["held"])}
             extra = {"canon_manifest_id": held["manifest"], "canon_held": held["held"]} if held else {}
             db.execute("ANALYZE")
-            with TestClient(create_app(settings)) as client:
+            with TestClient(create_app(settings, embedder=near)) as client:
                 # The harness holds the 10,000-message chat in this process; a full collection during a request
                 # would scan it too, which the sidecar alone never does. Its objects are frozen out of collection.
                 gc.collect()
                 gc.freeze()
-                retrieves, story = [], 0
+                retrieves, story, sizes = [], 0, []
                 for i in range(15):
                     chat.reply(SENTENCE * 20 + f"새 장면 {i}.")
                     chat.user(f"새 대사 {i}: {PLACES[i % len(PLACES)]}에 다시 가자.")
                     sync(client, chat)
-                    q = QUERIES[i % len(QUERIES)]
-                    out, ms = post(client, "/v1/retrieve", {"chat_id": chat.id, "query": q, "previous_ai": SENTENCE,
+                    q = f"{PLACES[i % len(PLACES)]} 장면" if wide else QUERIES[i % len(QUERIES)]
+                    out, ms = post(client, "/v1/retrieve", {"chat_id": chat.id, "query": q,
+                                                             "previous_ai": "" if wide else SENTENCE,
                                                              "in_context_ids": [m["chatId"] for m in chat.messages[-40:]],
                                                              "budget_tokens": BUDGET, **extra})
                     retrieves.append(ms)
                     story += "<Story>" in out["packet"]["text"]
+                    sizes.append((out["packet"]["token_estimate"], out["packet"]["excerpt_count"]))
             result["retrieve_ms"] = {"p50": p(retrieves, 0.5), "p95": p(retrieves, 0.95)}
             result["packets_with_story"] = story
+            result["budget"], result["policy"] = BUDGET, settings.packet_policy or "default"
+            result["packet_tokens_mean"] = round(sum(t for t, _ in sizes) / len(sizes))
+            result["excerpts_mean"] = round(sum(e for _, e in sizes) / len(sizes), 1)
             if held:  # the requests read the canon's names and facts (ADR 0046, 0047)
                 result["canon"]["requests_read"] = db.execute(
                     "SELECT count(*) AS n FROM retrieval_trace WHERE recall_options->>'canon_facts' = %s",

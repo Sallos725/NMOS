@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 15 (a packet that fills its budget) is complete** (`docs/phases/PHASE-15.md`, `docs/perf/packet-fill.md`):
+  on the owner's two chats with both extraction models, `packet-v9` at 4,000 answered 6 more cases needing memory than
+  `packet-v8` at 2,000, with 2 more forbidden phrases (one old excerpt); on 38 recorded requests it added only facts,
+  claims and excerpts; retrieve latency unchanged at 10,000 messages. Fixed: after saving a budget above 8,000 the
+  panel kept showing the typed value. `tools/bench_story.py` takes `BENCH_BUDGET` and `BENCH_RECALL=wide`.
 - **Phase 15 step 4: memory recalled without vectors is no longer silent** (K34). On the owner's production 70 % of
   recalls went without vectors because the query's embedding took longer than 300 ms. The retrieve answer now says
   whether vectors ran (`vectors`: on, off, fallback), and the panel's Status tab says so after a request that fell

@@ -1018,8 +1018,12 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const v = values();
     if (d.includes('conn')) {
       // First, so the server update below already goes to a changed sidecar address.
-      for (const [k, value] of Object.entries(connArgs(v.conn))) await deps.setArg(k, value);
-      baseline = { ...baseline, conn: v.conn };
+      const args = connArgs(v.conn);
+      for (const [k, value] of Object.entries(args)) await deps.setArg(k, value);
+      // Show what was stored: the budget is capped at PANEL_MAX_RESERVED_TOKENS, the deadline kept in range.
+      reserved.value = String(args.reserved_memory_tokens);
+      deadline.value = String(args.deadline_ms);
+      baseline = { ...baseline, conn: values().conn };
     }
     const body = configBody(d, v);
     if (!Object.keys(body).length) { update({ text: L('saved'), kind: 'ok' }); return true; }

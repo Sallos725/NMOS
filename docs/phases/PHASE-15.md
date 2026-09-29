@@ -1,6 +1,6 @@
 # Phase 15 — A packet that fills its budget
 
-> **Status: approved 2026-09-29 (owner), in progress.** P1 of `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`.
+> **Status: approved 2026-09-29 (owner), complete 2026-09-29.** P1 of `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`.
 > The owner chose on 2026-09-29 to do this before export and restore, which is now Phase 16 (`docs/ROADMAP-1.0.md`,
 > `docs/STATUS.md`, AGENTS.md §2). It starts after Phase 14 step 6.
 > On 2026-09-29 the owner also chose a fixed default budget over one that follows the host's context (Q3).
@@ -82,8 +82,8 @@ sample 2, with vectors on.
 
 ## Acceptance criteria
 
-- [ ] Every existing test and memory-evaluation case passes; recorded `packet-v8` requests replay as they were.
-- [ ] Deterministic cases:
+- [x] Every existing test and memory-evaluation case passes; recorded `packet-v8` requests replay as they were.
+- [x] Deterministic cases:
   - `packet-v9` at 2,000, and below it, equals `packet-v8`, for default and non-default `recall_top_k` and
     `facts_limit`, and a recorded `packet-v8` request replays as it was;
   - excerpts and facts grow from the configured limits (`floor`, `f` at most 4, a limit of 0 stays 0), and threads,
@@ -91,20 +91,21 @@ sample 2, with vectors on.
   - a budget of 20,000 compiles with the limits of 8,000 and within its budget;
   - the packet never exceeds its budget;
   - an excerpt is cut at its sentence, as today.
-- [ ] M0 with vectors, `packet-v9` at 4,000 against `packet-v8` at 2,000, on both chats and both extractions:
+- [x] M0 with vectors, `packet-v9` at 4,000 against `packet-v8` at 2,000, on both chats and both extractions:
   - cases needing memory: at least +6 in total over the four runs (the measurements gave +9);
   - forbidden phrases placed: at most +2 in total, none of them from a thread or a secret;
   - no category worse by more than one case.
-- [ ] The owner's recorded traces replayed with both policies: the lines only `packet-v9` places, by kind, and no
-      secret or closed thread among them.
-- [ ] Retrieve latency at 10,000 messages within +10 ms p50 of `packet-v8` at 2,000 at 4,000, and within +25 ms at 8,000
-      and above (the largest recall, `tools/bench_story.py`).
-- [ ] Real-host smoke on an isolated PocketRisu v1.13.0: the new default applies, the packet grows to it, and the
+  Met: +6, +2 (both an old excerpt), address −1 per extraction on the longest chat (`docs/perf/packet-fill.md`).
+- [x] The owner's recorded traces replayed with both policies: the lines only `packet-v9` places, by kind, and no
+      secret or closed thread among them. Met: facts, claims and excerpts only, on 38 requests.
+- [x] Retrieve latency at 10,000 messages within +10 ms p50 of `packet-v8` at 2,000 at 4,000, and within +25 ms at 8,000
+      and above (the largest recall, `tools/bench_story.py`). Met: −4.7 and −2.9 ms (`docs/perf/packet-fill.md`).
+- [x] Real-host smoke on an isolated PocketRisu v1.13.0: the new default applies, the packet grows to it, and the
       budget advice suggests values inside the range.
-- [ ] K34 measured on the owner's traces (read-only, with the owner's OK), with the result and any change in
+- [x] K34 measured on the owner's traces (read-only, with the owner's OK), with the result and any change in
       KNOWN-ISSUES.
-- [ ] Review per AGENTS.md §14.
-- [ ] `ARCHITECTURE.md` (D59), ADR 0049, README, the Korean guide, KNOWN-ISSUES (K33, K34), CHANGELOG.
+- [x] Review per AGENTS.md §14.
+- [x] `ARCHITECTURE.md` (D59), ADR 0049, README, the Korean guide, KNOWN-ISSUES (K33, K34), CHANGELOG.
 
 ## Steps (one pull request each)
 
@@ -121,7 +122,12 @@ sample 2, with vectors on.
    says `vectors` (on, off, fallback), the Status tab shows a notice after a fallback, and the guide, README and K34
    say how to keep the model loaded and raise `NMOS_EMBED_TIMEOUT_MS`; a new plugin build. No worker warm-up ping:
    warm requests were slow too (280 ms median), so a ping would not have saved most of them.
-5. Evaluation, the owner's traces, real-host smoke, latency, review, documentation.
+5. Evaluation, the owner's traces, real-host smoke, latency, review, documentation. **Done**
+   (`docs/perf/packet-fill.md`, "Evaluation of `packet-v9`"): M0 +6 needing memory, +2 forbidden (an old excerpt),
+   no category worse by more than one case; on 38 recorded requests `packet-v9` adds facts, claims and excerpts only;
+   latency within the criteria; the real-host smoke passed and found a display bug in the panel (fixed);
+   `tools/bench_story.py` takes `BENCH_BUDGET` and `BENCH_RECALL=wide`. The review of this step (tools, a display
+   fix, docs) was scoped self-review; the policy itself had its Codex review in step 3.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).
 

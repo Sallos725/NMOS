@@ -152,6 +152,7 @@ describe('panel', () => {
     expect(calls.filter(([method]) => method === 'PUT')).toEqual([['PUT', '/v1/config',
       { llm_url: 'https://llm.example/v2', llm_model: 'm' }]]);  // no key typed: none sent
     expect(args.reserved_memory_tokens).toBe('8000');  // the panel saves up to 8,000 (ADR 0049)
+    expect(reserved.value).toBe('8000');  // and shows what it stored (Phase 15 real-host smoke)
   });
 
   it('turns summaries off from the settings (ADR 0042, 0043)', async () => {
