@@ -7,10 +7,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 - **Fixed: a reroll could reuse a packet built for another sidecar or with old canon** (Codex security review of
   Phase 16 step 3). The plugin keeps a packet for 10 minutes for the same chat state; it was reused after
-  `sidecar_url`, the token or the memory budget changed (the new sidecar was never asked), and after a lorebook entry,
-  the card, the persona or the author's note changed without a new message. The sidecar, the token (hashed) and the
-  budget are now part of the key, and a packet built with other canon (its manifest or what the prompt held) is not
-  reused. A new plugin build; nothing changes in the sidecar.
+  `sidecar_url`, the route, the token or the memory budget changed (the new sidecar was never asked), after a lorebook
+  entry, the card, the persona or the author's note changed without a new message, and for a prompt of the same length
+  holding other messages. These are now part of the key (the token hashed), and a packet built with other canon (its
+  manifest or what the prompt held) is not reused. A panel action (a delete, a repair, a settings save) now empties
+  the cache also when its answer failed or came late, since the sidecar may have applied it. A new plugin build;
+  nothing changes in the sidecar.
 - **Phase 16 step 3: export** (NMOS Archive, ADR 0050, D60). **Export everything** in the panel's Settings tab and
   **Export this chat** on a conversation's Inspector page save a `.nmos.zip`: every conversation's history, canon,
   your repairs and links, the recorded requests, and by default the model's extractions and summaries (embeddings when

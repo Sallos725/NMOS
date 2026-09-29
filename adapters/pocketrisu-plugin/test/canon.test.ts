@@ -175,12 +175,14 @@ describe('canon sync', () => {
   });
 
   it('never reuses a cached packet after the canon changed or the prompt holds other canon', async () => {
-    const { h, posts } = host(sidecar(new Set()));
+    const { h, posts } = host(sidecar(new Set()), { delay: 30 });
     const adapter = createAdapter(h);
     const retrieves = () => posts.filter((p) => p.path === '/v1/retrieve').map((p) => p.body);
     const reroll = async (p = prompt) => { await adapter.beforeRequest(structuredClone(p), 'model'); await settle(); };
-    await reroll();
-    await reroll(); // the card is known by now
+    await reroll(); // the card is still being read: no manifest
+    await settle(40);
+    await reroll(); // the same prompt once the card is known: its manifest, not the packet built without one
+    expect(retrieves().map((b) => b.canon_manifest_id === null)).toEqual([true, false]);
     const n = retrieves().length;
     await reroll(); // unchanged: the cached packet
     expect(retrieves()).toHaveLength(n);

@@ -347,9 +347,22 @@ describe('packet cache', () => {
     await reroll();
     expect(retrieves).toEqual(['http://sidecar Bearer t 600', 'http://other-sidecar Bearer t 600',
       'http://other-sidecar Bearer u 600', 'http://other-sidecar Bearer u 900']);
+    settings = { ...settings, route: 'server' };  // the PocketRisu server's localhost is not the browser's
+    await reroll();
+    expect(retrieves).toHaveLength(5);
     settings = { ...settings, injectPosition: 'end', deadlineMs: 300 };  // where it goes and how long it may take: cached
     await reroll();
-    expect(retrieves).toHaveLength(4);
+    expect(retrieves).toHaveLength(5);
+  });
+
+  it('never reuses a packet for a prompt of the same length that holds other messages', async () => {
+    const { host, calls } = fakeHost((path, body) => path === '/v1/retrieve'
+      ? { status: 200, json: { freshness: 'fresh', packet: { text: PACKET } } } : happy(path, body));
+    const adapter = createAdapter(host);
+    const older = chat.message[0]!.data as string;
+    await adapter.beforeRequest([{ role: 'system', content: 'narrator' }, prompt[1]!], 'model');
+    await adapter.beforeRequest([{ role: 'system', content: older }, prompt[1]!], 'model');  // an older turn now in it
+    expect(calls.filter((c) => c === '/v1/retrieve')).toHaveLength(2);
   });
 
   it('is emptied by a panel action, so a reroll after deleting the chat gets no old memory', async () => {
@@ -360,6 +373,15 @@ describe('packet cache', () => {
     await adapter.beforeRequest(structuredClone(prompt), 'model');  // a read changes nothing: cached
     expect(calls.filter((c) => c === '/v1/retrieve')).toHaveLength(1);
     await adapter.api('POST', '/v1/conversations/x/delete', {});
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    expect(calls.filter((c) => c === '/v1/retrieve')).toHaveLength(2);
+  });
+
+  it('is emptied by a panel action whose answer failed, since the sidecar may have applied it', async () => {
+    const { host, calls } = fakeHost((path, body) => path.startsWith('/v1/conversations') ? { status: 502, json: null } : happy(path, body));
+    const adapter = createAdapter(host);
+    await adapter.beforeRequest(structuredClone(prompt), 'model');
+    await expect(adapter.api('POST', '/v1/conversations/x/delete', {})).rejects.toThrow(/HTTP 502/);
     await adapter.beforeRequest(structuredClone(prompt), 'model');
     expect(calls.filter((c) => c === '/v1/retrieve')).toHaveLength(2);
   });

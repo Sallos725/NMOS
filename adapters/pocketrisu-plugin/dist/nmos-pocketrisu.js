@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:9d6a0f3c6fb0".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:247e450c04a6".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -1077,12 +1077,15 @@ ${revisionHash}`;
           { characterName: characterName(chat.id), personaName: personaName(chat) }
         ), deadline, "the manifest");
         const manifestMs = host.now() - t0;
+        const inContext = inContextIds(prompt, messages);
         key = await within(sha256Hex(JSON.stringify([
           chat.id,
           mode,
           prompt.length,
           request.messages.map((m) => [m.host_logical_id, m.revision_hash]),
+          inContext,
           settings.sidecarUrl.replace(/\/+$/, ""),
+          settings.route,
           settings.authToken,
           settings.reservedMemoryTokens
         ])), deadline, "the cache key");
@@ -1129,7 +1132,7 @@ ${revisionHash}`;
           manifest_hash: synced.manifest_hash,
           query,
           previous_ai: previousAi,
-          in_context_ids: inContextIds(prompt, messages),
+          in_context_ids: inContext,
           budget_tokens: settings.reservedMemoryTokens,
           client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started },
           canon_manifest_id: canon?.snapshot?.id ?? null,
@@ -1240,9 +1243,11 @@ ${revisionHash}`;
     }
     async function api(method, path, body, timeoutMs = 9e4) {
       const settings = await host.settings();
-      const out = await call(settings, path, body, host.now() + timeoutMs, method);
-      if (method !== "GET") cache.clear();
-      return out;
+      try {
+        return await call(settings, path, body, host.now() + timeoutMs, method);
+      } finally {
+        if (method !== "GET") cache.clear();
+      }
     }
     async function file(path, timeoutMs = 3e5) {
       if (!host.requestFile) throw new Error("this host cannot fetch a file");

@@ -410,19 +410,20 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         return prompt;
       }
 
-      // Cache key = exact chat state (every message id + revision hash) + prompt shape + the sidecar, token and budget
-      // it was asked with, so a cached packet is reused only for the same state (host retries, reroll of an unchanged
+      // Cache key = exact chat state (every message id + revision hash) + prompt shape and the messages it holds + the
+      // sidecar, route, token and budget it was asked with, so a cached packet is reused only for the same state (host retries, reroll of an unchanged
       // chat) and never survives an edit anywhere in the chat or a switch to another sidecar. The canon is checked
       // against the entry below (it is observed after the key).
       const t0 = host.now();
       const { request, bodies } = await within(buildManifest(chat, firstSaying(messages),
         { characterName: characterName(chat.id), personaName: personaName(chat) }), deadline, 'the manifest');
       const manifestMs = host.now() - t0;
+      const inContext = inContextIds(prompt, messages);
       // Internal key only (not a cross-language hash): plain JSON keeps it linear and cheap.
       // The token is hashed with the rest, never kept as it is.
       key = await within(sha256Hex(JSON.stringify([
-        chat.id, mode, prompt.length, request.messages.map((m) => [m.host_logical_id, m.revision_hash]),
-        settings.sidecarUrl.replace(/\/+$/, ''), settings.authToken, settings.reservedMemoryTokens,
+        chat.id, mode, prompt.length, request.messages.map((m) => [m.host_logical_id, m.revision_hash]), inContext,
+        settings.sidecarUrl.replace(/\/+$/, ''), settings.route, settings.authToken, settings.reservedMemoryTokens,
       ])), deadline, 'the cache key');
       // Canon (ADR 0045): which of it this prompt holds and its manifest go with the request; the texts follow in the
       // background. Observed for a cached packet too, whose canon may have changed.
@@ -462,7 +463,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         manifest_hash: synced.manifest_hash,
         query,
         previous_ai: previousAi,
-        in_context_ids: inContextIds(prompt, messages),
+        in_context_ids: inContext,
         budget_tokens: settings.reservedMemoryTokens,
         client_timings_ms: { manifest: manifestMs, sync: syncMs, before_retrieve: t2 - started },
         canon_manifest_id: canon?.snapshot?.id ?? null,
@@ -545,11 +546,14 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   /** Sidecar API for the settings UI (longer timeout: connection tests call real models). */
   async function api<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeoutMs = 90_000): Promise<T> {
     const settings = await host.settings();
-    const out = await call<T>(settings, path, body, host.now() + timeoutMs, method);
-    // A settings save, rebuild or delete changes what a packet would contain: a reroll of an unchanged
-    // chat must not reuse a packet built before it (a deleted chat's memory, old facts).
-    if (method !== 'GET') cache.clear();
-    return out;
+    try {
+      return await call<T>(settings, path, body, host.now() + timeoutMs, method);
+    } finally {
+      // A settings save, rebuild or delete changes what a packet would contain: a reroll of an unchanged
+      // chat must not reuse a packet built before it (a deleted chat's memory, old facts). Also when the
+      // answer failed or came late: the sidecar may have applied it.
+      if (method !== 'GET') cache.clear();
+    }
   }
 
   /** A file from the sidecar (an archive, ADR 0050), as bytes; an error answer throws with the sidecar's detail. */
