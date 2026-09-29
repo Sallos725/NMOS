@@ -48,13 +48,13 @@ describe('batch save', () => {
     expect(dirtySections(base, edited)).toEqual(['conn']);
     expect(configBody(['conn'], edited)).toEqual({});
     expect(connArgs(edited.conn)).toEqual({ sidecar_url: 'http://10.0.0.2:8790', route: 'server', disabled: 1,
-      reserved_memory_tokens: 2000, deadline_ms: 1200 });
+      reserved_memory_tokens: 4000, deadline_ms: 1200 });
   });
 
   it('keeps the memory budget within what the sidecar accepts', () => {
     const reserved = (value: string) => connArgs({ ...base.conn, reserved: value }).reserved_memory_tokens;
     expect([reserved(''), reserved('abc'), reserved('-5'), reserved('1200.6'), reserved('99999')])
-      .toEqual([2000, 2000, 2000, 1200, 20000]);
+      .toEqual([4000, 4000, 4000, 1200, 20000]);
   });
 
   it('defaults the deadline to 3 s and keeps it between 200 ms and 30 s', () => {

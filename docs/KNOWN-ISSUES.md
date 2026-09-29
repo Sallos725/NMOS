@@ -41,7 +41,7 @@ without a PocketRisu change.
 | K30 | A summary can say a secret in other words | Memory | since 0.2.0 (Phase 12, ADR 0042, 0043); summaries off for a chat where it matters |
 | K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases) |
 | K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | recorded, not scheduled (`docs/perf/m0-sample2.md`); canon did not change it |
-| K33 | The packet stops at ≈2,000–3,000 tokens whatever the memory budget | Recall | proposal: budget-scaled recall ("fill", `docs/perf/packet-fill.md`) |
+| K33 | The packet stops at ≈2,000–3,000 tokens whatever the memory budget | Recall | `packet-v9` on `main` (Phase 15, ADR 0049): excerpts and facts grow with the budget; measured in step 5 |
 | K34 | A request right after the embedding model was unloaded recalls without vectors | Recall | evidence (production rate not measured) |
 | K35 | "The story so far" is written from every scene summary, with no cap on its input | Memory | recorded, not scheduled |
 | K36 | A chat whose large lorebook NMOS has read almost whole recalls more slowly | Performance | measured, accepted (Phase 14, owner 2026-09-29) |
@@ -289,6 +289,8 @@ the room unused: on the owner's two M0 chats, budgets from 4,000 to 20,000 all c
 tokens. A what-if that scales the limits with the budget answered more cases (sample 2: 9 → 12 of 15 at ≈3,900
 tokens; main chat: 30 → 33 of 40 at ≈5,900), and above ≈8,000 tokens it placed stale facts (forbidden phrases 8–10 of
 16). Evidence: `docs/perf/packet-fill.md`. *Workaround:* none; raising the budget above ≈3,000 changes little today.
+*On `main` (Phase 15, ADR 0049):* `packet-v9` grows the excerpts (count and length) and facts with the budget up to
+8,000, from the request's own settings; threads, events, secrets, `<Cast>` and `<Story>` keep their limits.
 
 **K34 — A cold embedding model means no vectors for that request.** The request path gives the query embedding
 300 ms and then recalls lexically (PHASE-3). A local Ollama unloads an idle model (5 minutes by default), and

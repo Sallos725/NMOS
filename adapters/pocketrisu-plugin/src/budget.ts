@@ -9,7 +9,7 @@ export interface MemoryFit {
   fits_at: number | null;
 }
 
-export const FIT_CAP = 6000;  // as the sidecar's (packet.FIT_CAP)
+export const FIT_CAP = 8000;  // as the sidecar's (packet.FIT_CAP): the panel's largest suggestion (ADR 0049)
 
 export interface BudgetAdvice {
   cut: number;

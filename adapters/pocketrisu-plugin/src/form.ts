@@ -9,8 +9,9 @@ export const MAX_DEADLINE_MS = 30_000;
 /** Memory tokens reserved when the plugin arg is unset (0); the user lowers the host's max context by it (D2).
  *  800 since Phase 10 step 5 (was 600): Korean packets with a Private section pushed facts out at 600.
  *  2000 since Phase 12 step 5 (owner): the story so far did not fit 30 % of 800, and presets keep ~50,000 tokens of
- *  context. */
-export const DEFAULT_RESERVED_TOKENS = 2000;
+ *  context. 4000 since Phase 15 (owner, ADR 0049): packet-v9's recall grows with the budget, and at 4,000 it answered
+ *  more of the owner's cases than at 2,000; fixed, not the host's context. */
+export const DEFAULT_RESERVED_TOKENS = 4000;
 /** The largest memory budget the sidecar accepts (`RetrieveRequest.budget_tokens`); above it every request fails. */
 export const MAX_RESERVED_TOKENS = 20_000;
 export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune', 'rules'];

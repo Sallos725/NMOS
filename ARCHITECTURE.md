@@ -490,6 +490,12 @@ read: nothing is synced, uploaded or retrieved, and no output notice is sent. Wh
 off the list, its next generation syncs as usual. It is switched from the chat input's ☰ menu or the panel's "This
 chat" card; the sidebar's ☰ menu opens the panel.
 
+**D59 — A packet that fills its budget (Phase 15, ADR 0049).** `packet-v9`, the default, is `packet-v8` whose excerpt
+count, excerpt length and fact limit grow with the budget, from the request's own settings: by the budget's share of
+2,000, up to 4 (facts up to 2). Threads, events, secrets, `<Cast>` and `<Story>` keep their limits. At 2,000 and below
+it is `packet-v8`; recall stops growing at 8,000, the panel's largest suggestion. The plugin's default budget is 4,000,
+fixed; the user still lowers the host's max context by it (D2).
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

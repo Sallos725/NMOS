@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:46dee5cf2d20".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:09f83f37e6df".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -127,7 +127,7 @@
   // src/form.ts
   var DEFAULT_DEADLINE_MS = 3e3;
   var MAX_DEADLINE_MS = 3e4;
-  var DEFAULT_RESERVED_TOKENS = 2e3;
+  var DEFAULT_RESERVED_TOKENS = 4e3;
   var MAX_RESERVED_TOKENS = 2e4;
   var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
   var VERTEX_URL = "https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi";
@@ -1565,7 +1565,7 @@ ${revisionHash}`;
   }
 
   // src/budget.ts
-  var FIT_CAP = 6e3;
+  var FIT_CAP = 8e3;
   function budgetAdvice(r, current2) {
     if (!r || r.outcome === "failed" || !r.memory || !(r.memory.cut > 0) || !(r.budgetTokens && r.budgetTokens > 0)) return null;
     const all = typeof r.memory.fits_at === "number";

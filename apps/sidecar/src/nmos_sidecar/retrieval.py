@@ -6,6 +6,7 @@ Also assembles the packet sections: state (Phase 1), facts (Phase 2), excerpts.
 from __future__ import annotations
 
 import dataclasses
+import math
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -23,9 +24,10 @@ from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
-from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, DEFAULT_POLICY, MEMORY_KINDS, REPEATS,
-                     STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line, StateItem, clean_text, compile_lines,
-                     cut_lines, excerpt, fits_at, kept_counts, secret_line, secret_text)
+from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, DEFAULT_POLICY, FILL_FACTS_MAX,
+                     MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
+                     StateItem, clean_text, compile_lines, cut_lines, excerpt, fill, fits_at, kept_counts, secret_line,
+                     secret_text)
 from .state import current_state
 from .threads import relevant_threads, similarity
 from .vectors import vector_candidates
@@ -63,6 +65,7 @@ class RecallOptions:
     narrator: str | None = None  # this chat is told in this character's first person (ADR 0035)
     summarize_key: str | None = None  # summaries of this generation in <Story> (packet-v8, ADR 0043); None: off
     canon_key: str | None = None  # canon facts of this generation (ADR 0047); None: off
+    excerpt_chars: int = MAX_EXCERPT_CHARS  # an excerpt's length at most; derived from the budget (`filled`), not recorded
 
 
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
@@ -75,6 +78,19 @@ CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
 
 def recorded_options(options: RecallOptions) -> dict[str, Any]:
     return {k: getattr(options, k) for k in RECORDED}
+
+
+def filled(options: RecallOptions, budget: int) -> RecallOptions:
+    """The recall a budget buys under the options' policy (packet-v9, ADR 0049): the configured excerpt count and each
+    excerpt's length times `packet.fill`, the fact limit times that factor up to FILL_FACTS_MAX; a limit of 0 stays 0.
+    Every other limit, and every policy before packet-v9, is left as it is. A request records its configured limits,
+    so its replay grows them again from the budget it compiles at."""
+    f = fill(budget, options.policy)
+    if f == 1.0:
+        return options
+    return dataclasses.replace(options, top_k=math.floor(options.top_k * f),
+                               facts_limit=math.floor(options.facts_limit * min(f, FILL_FACTS_MAX)),
+                               excerpt_chars=math.floor(MAX_EXCERPT_CHARS * f))
 
 
 def query_prefix(model: str, setting: str) -> str:
@@ -265,8 +281,10 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         clean = c["clean"] if c.get("user_score") else c["clean"][c["text_start"]:c["text_end"]]
         g.ranked.append(Excerpt(turn=c["turn"] if by_turn else c["position"],
                                 speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
-                                text=excerpt(clean, focus), score=float(c["rrf"]), revision_id=str(c["id"]),
-                                short=excerpt(clean, focus, window=1), position=c["position"]))
+                                text=excerpt(clean, focus, max_chars=options.excerpt_chars), score=float(c["rrf"]),
+                                revision_id=str(c["id"]), short=excerpt(clean, focus, window=1,
+                                                                        max_chars=options.excerpt_chars),
+                                position=c["position"]))
     if options.rules_version != "none":
         g.state = [StateItem(key=r["key"], value=r["value"], turn=r["turn"] if by_turn else r["position"])
                    for r in current_state(conn, head, options.rules_version, upto)
@@ -459,7 +477,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     previous_ai = clean_text(request.previous_ai or "")
     options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator)
     in_context = set(request.in_context_ids)
-    g = (gather(conn, head, query, previous_ai, in_context, options, upto,
+    g = (gather(conn, head, query, previous_ai, in_context, filled(options, request.budget_tokens), upto,
                 canon_manifest=getattr(request, "canon_manifest_id", None),
                 canon_held=getattr(request, "canon_held", None) or ()) if fresh else Gathered())
     def compile_at(budget: int) -> Compiled:
@@ -510,7 +528,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             options.policy, request.budget_tokens, upto if fresh else None, previous_ai,
             Jsonb(sorted(in_context)), options.extractor_key,
             options.embed_projection if options.embedder else None, options.rules_version,
-            Jsonb({**recorded_options(options), "canon_names": g.canon_names, "canon_facts": g.canon_facts}),
+            Jsonb({**recorded_options(options), "canon_names": g.canon_names, "canon_facts": g.canon_facts,
+                   "fill": fill(request.budget_tokens, options.policy)}),  # the growth its budget bought (ADR 0049)
             Jsonb(compiled.ledger),
             getattr(request, "canon_manifest_id", None),  # ADR 0045
             Jsonb(sorted(set(getattr(request, "canon_held", None) or []))),

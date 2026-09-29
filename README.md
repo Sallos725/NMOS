@@ -47,7 +47,7 @@ continues without memory.
 3. Set the plugin argument `sidecar_url` to `http://127.0.0.1:8790`.
 4. **Reload the PocketRisu page.** Always reload after installing, updating or disabling a plugin —
    otherwise PocketRisu can hang on the next message (a PocketRisu bug, see ARCHITECTURE H13).
-5. Lower PocketRisu's max context by `reserved_memory_tokens` (default 2000) so the packet fits.
+5. Lower PocketRisu's max context by `reserved_memory_tokens` (default 4000 since Phase 15; 2000 before) so the packet fits.
 
 That's it: raw recall works with no model configured. The panel's **Inspector** tab shows what NMOS
 stored and what it injected.
@@ -207,7 +207,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_VECTOR_MIN_SIM` | `0.42` | Minimum cosine similarity for semantic recall (model-dependent) |
 | `NMOS_EMBED_QUERY_INSTRUCTION` | `auto` | Query instruction for instruction-tuned embedders (`auto` = Qwen3 format for `qwen3-embedding`; `none`; or your text) |
 | `NMOS_TRACE_RETENTION_DAYS` | `30` | How long retrieval traces (with each packet's ledger) are kept |
-| `NMOS_PACKET_POLICY` | `packet-v8` | Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0041, 0043): `packet-v8` adds `<Story>` (the story so far and the scene the message is about, at most 30 % of the budget) and `<Cast>` (each scene character's place, condition, feeling, what they carry and, when named, open goals); `packet-v7` numbers excerpts and state by the turn of their message, as facts are numbered; `packet-v6` numbers them by message position and also shows the cause the story states on a fact (`; because: …`); `packet-v5` names what a relationship, feeling or speech level replaced, with its turn; `packet-v4` leaves out lines that say an earlier line again (a fact extracted twice, a character's claim of what the narration states); `packet-v3` puts facts only some characters in the scene know in a `<Private>` section with a rule for them; `packet-v2` is the same without it (room kept for the best excerpt, Korean counted at 1.2 tokens a character); `packet-v1` counts 1.5, `packet-v0` the one before |
+| `NMOS_PACKET_POLICY` | `packet-v9` | Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0041, 0043, 0049): `packet-v9` is `packet-v8` whose excerpts (count and length) and facts grow with the memory budget above 2,000 tokens, up to 8,000; `packet-v8` adds `<Story>` (the story so far and the scene the message is about, at most 30 % of the budget) and `<Cast>` (each scene character's place, condition, feeling, what they carry and, when named, open goals); `packet-v7` numbers excerpts and state by the turn of their message, as facts are numbered; `packet-v6` numbers them by message position and also shows the cause the story states on a fact (`; because: …`); `packet-v5` names what a relationship, feeling or speech level replaced, with its turn; `packet-v4` leaves out lines that say an earlier line again (a fact extracted twice, a character's claim of what the narration states); `packet-v3` puts facts only some characters in the scene know in a `<Private>` section with a rule for them; `packet-v2` is the same without it (room kept for the best excerpt, Korean counted at 1.2 tokens a character); `packet-v1` counts 1.5, `packet-v0` the one before |
 | `NMOS_AUTH_TOKEN` | off | Required if you expose the sidecar beyond loopback (`NMOS_SIDECAR_BIND`); set the plugin's `auth_token` too. See [Security](#security) |
 | `NMOS_ALLOWED_HOSTS` | (empty) | Without a token, domain names the sidecar answers to besides IP addresses, `localhost` and single-label names such as `nmos`: e.g. `risu.example.com,*.ts.net`; `*` turns the check off. See [Security](#security) |
 | `NMOS_SIDECAR_BIND` / `NMOS_SIDECAR_PORT` | `127.0.0.1` / `8790` | Where the sidecar listens |
@@ -257,6 +257,12 @@ A system message right before your latest message, marked as reference data (not
 
 On the tested PocketRisu build, only main generations get a packet (not summaries, translations or
 suggestions), retries inject once, and excerpts already in the prompt are not repeated.
+
+The memory budget buys memory (`packet-v9`, Phase 15, ADR 0049): above 2,000 tokens, the number of excerpts, each
+excerpt's length and the number of facts grow with it, from your own excerpt and fact settings, up to four times the
+excerpts and twice the facts at 8,000. At 4,000 (the default) a packet holds up to 10 excerpts of up to 960
+characters and 16 facts. Open threads, events, secrets, `<Cast>` and `<Story>` do not grow: growing them brought back
+stale business. A budget above 8,000 is accepted and recalls as 8,000 does.
 
 Facts come only from what the story narrates as happening (since 0.1.0-beta.12, ADR 0013). "Hana lost the map"
 ends Hana's holding and shows as `<Fact … negated="true">Hana possesses map</Fact>`. What a character

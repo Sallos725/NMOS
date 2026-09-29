@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 15 step 3: a packet that fills its budget** (`packet-v9`, ADR 0049, D59), the new default policy: above
+  2,000 tokens the excerpt count, each excerpt's length and the fact limit grow with the memory budget, from your own
+  settings (up to 4× excerpts and 2× facts at 8,000); threads, events, secrets, `<Cast>` and `<Story>` do not. At 2,000
+  and below it is `packet-v8`; recorded `packet-v8` requests replay as they were. The plugin's default budget is
+  **4,000** (was 2,000): lower PocketRisu's max context by 2,000 more if you never set the budget. The budget advice
+  suggests up to 8,000. A new plugin build; no migration, nothing re-extracted.
 - **Phase 15 step 2: evaluations that cannot drop vectors silently** (PHASE-15 Q6): `tools/eval_rp.py --projection`
   searches a named embedding projection (its recorded endpoint only when local, else `--embed-url`), warms the
   embedder, and reports per case whether vectors ran; a run that asked for vectors and lacked them exits with status 2.
