@@ -385,6 +385,8 @@ def check_archive(path: str) -> Checked:
             raise ArchiveError("not an NMOS archive")
         if manifest.get("format_version") != FORMAT_VERSION:
             raise ArchiveError(f"archive format {manifest.get('format_version')!r}; this NMOS reads {FORMAT_VERSION}")
+        if manifest.get("scope") not in ("install", "conversations"):
+            raise ArchiveError(f"the manifest's scope {manifest.get('scope')!r} is not one NMOS writes")
         files = _entries(manifest)
         if set(names) != {f["path"] for f in files.values()} | {"manifest.json"}:
             extra = sorted(set(names) - {f["path"] for f in files.values()} - {"manifest.json"})
@@ -464,6 +466,8 @@ def restore_archive(database_url: str, checked: Checked) -> Restored:
                 _restore_in(conn, zf, checked, scratch, before, after, out)
     except psycopg.Error as error:
         raise ArchiveError(f"the archive's rows could not be restored here; none were written: {error}") from None
+    except (OSError, zipfile.BadZipFile, KeyError) as error:  # the file changed or went since its check
+        raise ArchiveError(f"the archive can no longer be read as checked; none of it was written: {error}") from None
     return out
 
 
@@ -598,6 +602,13 @@ def _copy_in(conn: psycopg.Connection, scratch: str, checked: Checked, out: Rest
     conn.execute(f'UPDATE public.conversation c SET branched_from_conversation_id = s.branched_from_conversation_id'
                  f' FROM "{scratch}".conversation s WHERE c.id = s.id AND s.branched_from_conversation_id IN'
                  " (SELECT id FROM public.conversation)")
+    # An origin here under another id (each install makes its own conversation ids): found by its host chat, as a
+    # branch is linked when it is first seen (ledger.py).
+    conn.execute(f'UPDATE public.conversation c SET branched_from_conversation_id = o.id'
+                 f' FROM "{scratch}".conversation s, public.conversation o'
+                 " WHERE c.id = s.id AND c.branched_from_conversation_id IS NULL"
+                 " AND s.branched_from_conversation_id IS NOT NULL AND s.branched_from_host_chat_ref IS NOT NULL"
+                 " AND o.host = c.host AND o.host_chat_ref = s.branched_from_host_chat_ref AND o.id <> c.id")
     out.links_cleared = [r[0] for r in _q(conn, f'SELECT s.id::text FROM "{scratch}".conversation s'
                                                 " JOIN public.conversation c ON c.id = s.id"
                                                 " WHERE s.branched_from_conversation_id IS NOT NULL"

@@ -106,8 +106,8 @@ normalized text and the parsed state are recomputed from the rest.
    corrections) moved with them, so its replay still compares. The sequences are set past the largest id.
 6. **Rows of no conversation:** a generation already here keeps its own row (the same key is the same generation);
    a setting already set here stays and is reported, the rest are the archive's.
-7. **Branches:** a restored branch whose origin is restored with it or already here keeps its link; else the link is
-   cleared (host refs kept, reported), as deleting the origin clears it (ADR 0009). A branch already here whose origin
+7. **Branches:** a restored branch whose origin is restored with it or already here (by id, or by its host chat under
+   this install's own id, as a branch is linked when first seen) keeps its link; else the link is cleared (host refs kept, reported), as deleting the origin clears it (ADR 0009). A branch already here whose origin
    was deleted and is now restored keeps its cleared link (a restore changes no conversation already here); its host
    refs still name the origin.
 8. **Derived data follows:** jobs, the normalized text and the parsed state are not archived; the sidecar's startup

@@ -350,3 +350,41 @@ def test_a_forged_commit_parent_a_duplicate_file_or_a_wrong_level_is_refused(mig
     with pytest.raises(archive.ArchiveError, match="not its last migration"):
         archive.check_archive(str(rewrite(source, tmp_path / f"level{archive.SUFFIX}", level)))
     assert set(counts(target).values()) == {0}
+
+
+def test_a_branch_finds_its_origin_here_by_host_chat(migrated, database_url_factory, tmp_path):
+    with client(migrated) as c:
+        chat, branch = play(c, migrated)
+        bid = conv_id(c, branch)
+    source = export_to(tmp_path, migrated, "branch", conversations=[bid])
+    target = database_url_factory()
+    with client(target) as c:
+        sync(c, chat)  # the origin, synced here on its own: another conversation id
+        here = conv_id(c, chat)
+    done = archive.restore_file(target, str(source))
+    assert done.links_cleared == []
+    with psycopg.connect(target) as conn:
+        assert str(conn.execute("SELECT branched_from_conversation_id FROM conversation WHERE id = %s",
+                                (bid,)).fetchone()[0]) == here
+
+
+def test_a_scope_not_written_by_nmos_or_a_file_gone_since_its_check_is_refused(migrated, database_url_factory,
+                                                                              tmp_path):
+    with client(migrated) as c:
+        play(c, migrated)
+    source = export_to(tmp_path, migrated, "a")
+
+    def scope(name, data):
+        if name != "manifest.json":
+            return data
+        m = json.loads(data)
+        m.pop("scope")
+        return json.dumps(m).encode()
+    with pytest.raises(archive.ArchiveError, match="scope"):
+        archive.check_archive(str(rewrite(source, tmp_path / f"scope{archive.SUFFIX}", scope)))
+    checked = archive.check_archive(str(source))
+    source.unlink()
+    target = database_url_factory()
+    with pytest.raises(archive.ArchiveError, match="no longer be read"):
+        archive.restore_archive(target, checked)
+    assert set(counts(target).values()) == {0}
