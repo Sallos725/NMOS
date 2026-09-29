@@ -232,3 +232,11 @@ def test_an_install_without_migrations_is_refused(database_url):
         conn.commit()
         with pytest.raises(archive.ArchiveError, match="no applied migrations"):
             archive.write_archive(conn, io.BytesIO())
+
+
+def test_the_command_names_the_file_when_not_told(migrated, tmp_path, monkeypatch):
+    monkeypatch.setenv("NMOS_DATABASE_URL", migrated)
+    monkeypatch.chdir(tmp_path)
+    assert archive.main(["export"]) == 0
+    [written] = list(tmp_path.iterdir())
+    assert written.name.startswith("nmos-all-") and written.name.endswith(archive.SUFFIX)

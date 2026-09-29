@@ -88,6 +88,10 @@ class ArchiveError(Exception):
     """An archive that cannot be written (or read) as asked; the message says why."""
 
 
+class NoSuchConversation(ArchiveError):
+    """A chosen conversation is not in this install."""
+
+
 @dataclass
 class Written:
     path: str
@@ -147,7 +151,7 @@ def _conversations(conn: psycopg.Connection, wanted: list[str] | None) -> list[U
     found = {r[0] for r in _q(conn, "SELECT id FROM conversation WHERE id = ANY(%s)", (ids,))}
     missing = [str(i) for i in ids if i not in found]
     if missing:
-        raise ArchiveError(f"no such conversation: {', '.join(missing)}")
+        raise NoSuchConversation(f"no such conversation: {', '.join(missing)}")
     return list(dict.fromkeys(ids))
 
 
@@ -241,7 +245,10 @@ def write_archive(conn: psycopg.Connection, out: IO[bytes], conversations: list[
                 "files": [{"path": w.path, "table": w.table, "rows": w.rows, "bytes": w.bytes, "sha256": w.sha256}
                           for w in export.files],
             }
-            zf.writestr("manifest.json", json.dumps(export.manifest, ensure_ascii=False, indent=2) + "\n")
+            text = json.dumps(export.manifest, ensure_ascii=False, indent=2) + "\n"
+            if any(s in text for s in secrets):  # a chat or character named after a key
+                raise ArchiveError("the manifest holds a credential NMOS keeps; an archive never holds one (K21)")
+            zf.writestr("manifest.json", text)
     return export
 
 
@@ -259,9 +266,10 @@ def export_file(database_url: str, path: str, **kwargs: Any) -> Export:
         raise
 
 
-def default_name(export: Export, when: datetime | None = None) -> str:
+def default_name(conversations: int | None, when: datetime | None = None) -> str:
+    """`nmos-all-<UTC time>.nmos.zip` for the whole install, `nmos-<n>-chat-…` for chosen conversations."""
     stamp = (when or datetime.now(timezone.utc)).strftime("%Y%m%d-%H%M%S")
-    scope = "all" if export.manifest["scope"] == "install" else f"{len(export.manifest['conversations'])}-chat"
+    scope = "all" if conversations is None else f"{conversations}-chat"
     return f"nmos-{scope}-{stamp}{SUFFIX}"
 
 
@@ -288,12 +296,8 @@ def main(argv: list[str] | None = None) -> int:
             shutil.copyfileobj(buffer, sys.stdout.buffer)
             sys.stdout.buffer.flush()
         else:
-            path = args.output or os.path.join(os.getcwd(), "nmos-archive" + SUFFIX)
+            path = args.output or default_name(len(set(args.conversation)) if args.conversation else None)
             result = export_file(settings.database_url, path, **kwargs)
-            if not args.output:
-                final = os.path.join(os.path.dirname(path), default_name(result))
-                os.replace(path, final)
-                path = final
             print(f"wrote {path}", file=sys.stderr)
     except ArchiveError as error:
         print(f"export refused: {error}", file=sys.stderr)

@@ -797,7 +797,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                                settings=rt["settings"])
         except archive.ArchiveError as error:
             os.unlink(tmp.name)
-            missing = str(error).startswith("no such conversation")
+            missing = isinstance(error, archive.NoSuchConversation)
             raise HTTPException(status_code=404 if missing else 409, detail=str(error)) from None
         except BaseException:
             os.unlink(tmp.name)
@@ -805,7 +805,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         background.add_task(os.unlink, tmp.name)
         log.info("archive scope=%s conversations=%d bytes=%d", result.manifest["scope"],
                  len(result.manifest["conversations"]), os.path.getsize(tmp.name))
-        return FileResponse(tmp.name, media_type="application/zip", filename=archive.default_name(result))
+        chosen = None if result.manifest["scope"] == "install" else len(result.manifest["conversations"])
+        return FileResponse(tmp.name, media_type="application/zip", filename=archive.default_name(chosen))
 
     @app.get("/v1/config", dependencies=[Depends(auth)])
     def get_config():
