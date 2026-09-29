@@ -23,7 +23,9 @@
 Stages 0–3 are the foundation and are done. Stages 4 and 5 are done. Stages 6–8 are what remains before 1.0.
 Phase 15 (a packet that fills its budget, `docs/phases/PHASE-15.md`) is not a stage of this roadmap: it is P1 of
 `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`, approved 2026-09-29, and was done after Phase 14 and before Phase 16
-(complete 2026-09-29).
+(complete 2026-09-29). Phase 17 (the cost of NMOS's own model calls and fallbacks told apart in the HUD,
+`docs/phases/PHASE-17.md`, approved 2026-09-29) is not a stage either: C4 and C5 of
+`docs/proposals/IDEA-SURVEY-2026-09-29.md`.
 
 ## Versions
 

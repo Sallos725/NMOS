@@ -1,8 +1,7 @@
 # Phase 17 — What NMOS's own model calls cost, and fallbacks told from failures
 
-> **Status: draft (2026-09-29), not authorized.** The owner chose to run it after Phase 16 (2026-09-29). Source:
-> C4 and C5 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`. The owner approves this document, with or without the
-> proposed answers, before any step starts.
+> **Status: approved (2026-09-29) with every proposed answer (Q1–Q7); current.** The owner chose to run it after
+> Phase 16 (2026-09-29). Source: C4 and C5 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`. No release.
 
 ## Questions and proposed answers
 
