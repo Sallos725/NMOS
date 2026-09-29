@@ -97,7 +97,8 @@ outside the prompt window 2 → 5 of 12 with the story covering every scene with
 Inspector, owner entity links. Part 1 on `main` (Phase 13, ADR 0044): owner repair (close or reopen a thread, retract or
 correct a fact, a secret found out or kept, split two names) in the panel, audited and surviving rebuilds, and a
 "Needs attention" list per chat; K8 and K23 rewritten to what remains (`docs/perf/repair.md`). Part 2, Phase 14
-(approved 2026-09-28): canon as sources. Phase 15: export and restore. Open beyond them: transition rules.
+(approved 2026-09-28): canon as sources. Phase 16: export and restore (Phase 15, approved 2026-09-29, is the packet
+that fills its budget, `docs/phases/PHASE-15.md`). Open beyond them: transition rules.
 
 Scope (draft):
 - transition rules for status and identity and for relationships, with pending, conflicting and

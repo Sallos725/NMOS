@@ -60,7 +60,7 @@ Passed / needing memory / forbidden placed (tokens):
   (`docs/proposals/ACCOUNTABLE-MEMORY.md` §2).
 - **gemma4 extraction beats deepseek flash for NMOS** on the main chat at every budget.
 
-Proposed as Phase 15 (`docs/phases/PHASE-15.md`).
+Phase 15 (`docs/phases/PHASE-15.md`, approved 2026-09-29).
 
 ## PocketRisu v1.13.0 (5,000 messages, stubs)
 
