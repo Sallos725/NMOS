@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:f688bc7f36c7".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:b0047b93aa09".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2872,8 +2872,11 @@ html,body{margin:0;background:${PALETTE.bg}}
       say(barText, L("saving"));
       const v = values();
       if (d.includes("conn")) {
-        for (const [k, value] of Object.entries(connArgs(v.conn))) await deps.setArg(k, value);
-        baseline = { ...baseline, conn: v.conn };
+        const args = connArgs(v.conn);
+        for (const [k, value] of Object.entries(args)) await deps.setArg(k, value);
+        reserved.value = String(args.reserved_memory_tokens);
+        deadline.value = String(args.deadline_ms);
+        baseline = { ...baseline, conn: values().conn };
       }
       const body = configBody(d, v);
       if (!Object.keys(body).length) {

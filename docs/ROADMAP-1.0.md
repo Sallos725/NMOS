@@ -22,7 +22,8 @@
 
 Stages 0–3 are the foundation and are done. Stages 4 and 5 are done. Stages 6–8 are what remains before 1.0.
 Phase 15 (a packet that fills its budget, `docs/phases/PHASE-15.md`) is not a stage of this roadmap: it is P1 of
-`docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`, approved 2026-09-29, and runs after Phase 14 step 6 and before Phase 16.
+`docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`, approved 2026-09-29, and was done after Phase 14 and before Phase 16
+(complete 2026-09-29).
 
 ## Versions
 
@@ -100,7 +101,8 @@ Inspector, owner entity links. Part 1 on `main` (Phase 13, ADR 0044): owner repa
 correct a fact, a secret found out or kept, split two names) in the panel, audited and surviving rebuilds, and a
 "Needs attention" list per chat; K8 and K23 rewritten to what remains (`docs/perf/repair.md`). Part 2, Phase 14
 (approved 2026-09-28, complete 2026-09-29): canon as sources. Then Phase 15, the packet that fills its
-budget (approved 2026-09-29, `docs/phases/PHASE-15.md`; not a Stage 6 item), and Phase 16: export and restore.
+budget (approved and complete 2026-09-29, `docs/phases/PHASE-15.md`; not a Stage 6 item), and Phase 16: export and
+restore (not authorized yet).
 Open beyond them: transition rules, not yet assigned to a phase.
 
 Scope (draft):

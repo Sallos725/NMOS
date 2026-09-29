@@ -108,3 +108,80 @@ model's query prefix (the rest of the request as of its time). `packet-v8` at 2,
 These are the what-if's baselines to the case, now with every case confirmed to have run with vectors. Without
 `--projection`, the same copies ran without vectors in every case (the settings of a copy name no embedder), and the
 tool said so and exited with status 2.
+
+## Evaluation of `packet-v9` (Phase 15 step 5)
+
+### M0, with vectors, `packet-v9` at 4,000 against `packet-v8` at 2,000
+
+The same copies, cases, generations and projection as the baseline above (`tools/eval_rp.py --projection`; every case
+ran with vectors).
+
+| Chat, extraction | `packet-v8` at 2,000 | `packet-v9` at 4,000 | Needing memory | Forbidden placed | Mean tokens |
+|---|---|---|---:|---:|---|
+| main, gemma4 | 32/40, 13/21 | 34/40, 15/21 | +2 | 0 → 1 | 1,904 → 2,767 |
+| main, deepseek | 30/40, 11/21 | 30/40, 11/21 | +0 | 0 → 1 | 1,910 → 2,933 |
+| sample 2, deepseek | 9/15, 8/13 | 12/15, 11/13 | +3 | 1 → 1 | 1,755 → 3,811 |
+| sample 2, gemma4 | 10/15, 8/13 | 11/15, 9/13 | +1 | 0 → 0 | 1,743 → 2,648 |
+| **Total** | | | **+6** | **+2** | |
+
+Against the criteria (PHASE-15): cases needing memory +6 (at least +6); forbidden phrases +2 (at most +2), both an
+excerpt, none from a thread or a secret; no category worse by more than one case. The two new forbidden phrases are the
+same old excerpt on the longest chat under both extractions: an early message in the speech level two characters used
+before they changed it, which the case forbids as current. It cost that case (address, one per extraction). Over the
+four runs the cases gained are early scenes (+4), the cast (+3) and state (+1); address lost 2.
+
+The what-if gave +9. The difference is the Codex finding of step 3: the added fact slots go only to facts kept from no
+one, where the what-if grew every fact.
+
+### The owner's recorded requests
+
+Every recorded request of the two copies that still replays (13 and 25; 10 are on a chat edited since), as of its own
+time, with vectors of the full projection (`~/nmos-eval/phase15-fill/traces_v9.py`, outside the repository).
+
+| | Longest chat's copy | Sample 2's copy |
+|---|---:|---:|
+| Lines only `packet-v9` places (both at 4,000) | 26 facts, 22 claims, 20 excerpts | 26 facts, 22 claims, 6 excerpts |
+| … of them secrets, private lines or threads | **0** | **0** |
+| Mean excerpts placed (`packet-v8` → `packet-v9`, both at 4,000) | 2.0 → 3.5 | 0.4 → 0.6 |
+| Mean facts and claims placed | 12.0 → 15.7 | 7.1 → 9.0 |
+| Mean private lines, threads | 2.3, 1.4 → the same | 1.4, 0.9 → the same |
+| Lines the next reply echoed, placed at 4,000 (`packet-v9`) | 4 of 4 | 3 of 4 |
+
+The lines the replies echoed had all been cut for the budget when recorded (the plugin's default was then 600), so the
+larger packet crowds out none of them; it places 7 of the 8. Against each request's own recorded budget instead of
+4,000, `packet-v9` at 4,000 also places private lines and threads the small packets had no room for (30 and 18): that is
+the larger budget, not the policy, and a budget the user raised under `packet-v8` placed them too.
+
+### Latency (`tools/bench_story.py`, 10,000 messages)
+
+Retrieve p50, the median of five rounds, each round running `packet-v8` at 2,000, `packet-v9` at 4,000 and `packet-v9`
+at 8,000 in turn, pinned to two cores. The largest recall (`BENCH_RECALL=wide`): every message has a vector near the
+query's, and each request asks for a place's scenes, so recall offers more than any budget takes.
+
+| | retrieve p50, ms | against `packet-v8` at 2,000 | excerpts placed | packet tokens |
+|---|---:|---:|---:|---:|
+| `packet-v8`, 2,000 | 315.1 | | 5 | 645 |
+| `packet-v9`, 4,000 | 310.4 | −4.7 (criterion +10) | 10 | 1,056 |
+| `packet-v9`, 8,000 | 312.2 | −2.9 (criterion +25) | 20 | 1,276 |
+
+The rounds spread by ±15 ms; the policy adds nothing measurable. The absolute time is high because this question makes
+lexical recall run to its 300 ms timeout in every configuration (the default bench, whose questions do not, is
+≈120 ms): ranking every fact once, 15 more excerpts and a larger packet cost less than the spread.
+
+### Real host
+
+An isolated PocketRisu v1.13.0 with stub models (2026-09-29), the plugin of steps 3 and 4. Each check passed:
+
+- **The new default applies.** A freshly installed plugin with no budget set shows 4,000 in the panel, and requests
+  carry 4,000 (`packet-v9`, `fill` 2.0). 99999 typed in the panel is stored as 8,000.
+- **The packet grows to it.** With a short-window preset and 34 synthetic logbook entries, the same kind of question
+  at 2,000, 4,000 and 8,000 got 3, 7 and 19 excerpts and 8, 16 and 16 facts; token estimates 1,916, 3,868 and 7,940,
+  each within its budget. Excerpts were bounded by the budget, not their limits (5, 10, 20); 31–40 candidates.
+  Excerpts of 623 and 619 characters (over `packet-v8`'s 480) came into the 8,000 packet from long entries.
+- **The budget advice is inside the range.** At 300 tokens with about 100 facts, 7 lines were cut and the Status tab
+  offered 1,200 (above 300, at most 8,000); the button set it.
+- **Recall without vectors is shown** (step 4). An embedding stub delayed by 1 s gave `vectors: fallback` and the
+  Status tab's notice; the next request with vectors cleared it.
+
+It found one display bug, fixed in this step: after saving a budget above 8,000, the field kept showing what was
+typed although 8,000 was stored.

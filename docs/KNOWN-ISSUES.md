@@ -41,7 +41,7 @@ without a PocketRisu change.
 | K30 | A summary can say a secret in other words | Memory | since 0.2.0 (Phase 12, ADR 0042, 0043); summaries off for a chat where it matters |
 | K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases) |
 | K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | recorded, not scheduled (`docs/perf/m0-sample2.md`); canon did not change it |
-| K33 | The packet stops at ≈2,000–3,000 tokens whatever the memory budget | Recall | `packet-v9` on `main` (Phase 15, ADR 0049): excerpts and facts grow with the budget; measured in step 5 |
+| K33 | The packet stops at ≈2,000–3,000 tokens whatever the memory budget | Recall | resolved on `main` by `packet-v9` (Phase 15, ADR 0049): excerpts and facts grow with the budget up to 8,000 |
 | K34 | A request whose query embedding does not answer in 300 ms recalls without vectors | Recall | measured (Phase 15): 70 % of the owner's production requests; the Status tab says so since Phase 15 |
 | K35 | "The story so far" is written from every scene summary, with no cap on its input | Memory | recorded, not scheduled |
 | K36 | A chat whose large lorebook NMOS has read almost whole recalls more slowly | Performance | measured, accepted (Phase 14, owner 2026-09-29) |
