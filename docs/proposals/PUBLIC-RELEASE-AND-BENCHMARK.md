@@ -33,8 +33,9 @@ Documentation first (this page, the measurements and K33–K35), then the packet
 
 ### P1 — A packet that fills its budget (next)
 
-Scale recall with the budget: excerpts, facts, events and threads, and excerpt length. Guard against stale facts,
-the failure seen above ≈8,000 tokens. Choose the default budget from the host context. The owner's preset has
+Scale recall with the budget: raw excerpts in number and length, and facts up to twice today's limit. Open threads,
+events and secrets keep their limits; growing them placed stale lines above ≈8,000 tokens. Spec draft:
+`docs/phases/PHASE-15.md`. Choose the default budget from the host context. The owner's preset has
 150,000 tokens of context; 4,000–8,000 tokens is 3–5 % of it.
 
 - **Form.** A new packet policy (`packet-v9`) with its ADR, replayable against `packet-v8` on recorded traces.
