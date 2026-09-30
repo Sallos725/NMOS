@@ -42,17 +42,19 @@ All in the injected style, none as a warning. The Status tab's "This chat" card 
 
 Work that finishes before the display's first coverage poll is not shown at all, as before Phase 17.
 
-This check ran on plugin build `22437aea8160`. The review fixes after it (#185, #186: the card drawn before its usage
-line, the chat found by host chat ref, the done summary waiting for summary jobs and counting what the head holds)
+This check ran on plugin build `22437aea8160`. The review fixes after it (#185, #186 and their re-reviews: the card drawn before
+its usage line, the chat found by host chat ref, a side no call reported left out, the done summary waiting for the
+head's summary jobs, counting what the head holds and saying "⚠ N failed" when the work added failures)
 are covered by the plugin and sidecar tests, not re-run on the host; the lexical-only and reused texts did not change.
 
 ## Cost of the new reads
 
 On an evaluation copy (151 messages, 1,511 model-work rows): the Inspector's per-generation totals 2.1 ms. The
 coverage view's `produced` counts, which the display reads every 3 s while background work is pending (off the
-request path): 3.0 ms there, 42 ms on a 10,000-message bench chat with 625 scene summaries (it reads the head's
-current summaries as `summaries.current` does, since the Copilot review of #186; counting every row was ≈1 ms but
-counted a fact or summary an edit had only replaced).
+request path), with the head's summary jobs found by their job keys: 2.3 ms there, 47 ms on a 10,000-message bench
+chat with 625 summaries. It reads the head's current summaries as `summaries.current` does (since the Copilot reviews
+of #186; counting every row was ≈1 ms but counted a fact or summary an edit had only replaced, and every summary job
+ever made for the chat).
 
 ## Request-path latency
 
