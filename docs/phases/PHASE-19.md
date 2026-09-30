@@ -87,7 +87,7 @@ The noise below is estimated from three runs of today's prompt and is itself rou
       valid, a quote found only in a context turn parks it with its reason, a quote under 12 characters and a row
       without a quote are unchanged, a reveal behaves as before, a canon read does not apply the check; the extractor
       generation key changes, and the canon generation key changes only through Q2's `addresses` description.
-- [ ] Step 2 (offline, no model call), on the evaluation copies' `extract-v13` rows and on the sampled-turn runs of
+- [x] Step 2 (offline, no model call; met 2026-09-30, `docs/perf/extract-v14.md`), on the evaluation copies' `extract-v13` rows and on the sampled-turn runs of
       the shorter context, reported per extraction model, per predicate and per `epistemic`: **the share of valid rows
       the Q3 check would park is at most 10 %, and leaving them out lowers the cases passed of no M0 v2 run by more
       than one** (Phase 18's `packet-v10` runs, `docs/perf/lexical-recall.md`; amended 2026-09-30 by the owner from

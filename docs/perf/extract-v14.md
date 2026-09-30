@@ -37,24 +37,36 @@ Every valid row carries a quote. By `epistemic`: deepseek 9 of 1,893 `stated` an
 1,059 `stated` and 5 of 86 `implied`. By quote length, of the rows checked: 12–29 characters 5/644 (deepseek) and
 32/468 (gemma), 30–59 characters 4/1,066 and 20/494, 60 or more 0/213 and 5/134.
 
-By predicate (would be parked / valid; predicates with none parked in either model left out):
+By predicate (would be parked / valid), on the copies and on the sampled turns (`gemma4:31b`, synthetic and
+main chat together):
 
-| Predicate | deepseek | gemma |
-|---|---:|---:|
-| `event` | 1 / 513 | 10 / 276 |
-| `resolved` | 1 / 114 | 12 / 50 |
-| `located_in` | 0 / 142 | 9 / 120 |
-| `addresses` | 1 / 52 | 9 / 49 |
-| `feels_toward` | 0 / 72 | 5 / 68 |
-| `goal` | 0 / 164 | 4 / 139 |
-| `knows` | 2 / 162 | 2 / 115 |
-| `has_trait` | 1 / 71 | 2 / 26 |
-| `has_status` | 1 / 61 | 1 / 61 |
-| `possesses` | 0 / 113 | 1 / 83 |
-| `identity` | 0 / 64 | 1 / 42 |
-| `fulfilled` | 0 / 15 | 1 / 8 |
-| `promised` | 1 / 68 | 0 / 24 |
-| `relationship` | 1 / 40 | 0 / 13 |
+| Predicate | copies, deepseek | copies, gemma | sampled, today (3 runs) | sampled, context 1,000 (3 runs) |
+|---|---:|---:|---:|---:|
+| `event` | 1 / 513 | 10 / 276 | 4 / 273 | 1 / 277 |
+| `goal` | 0 / 164 | 4 / 139 | 1 / 107 | 0 / 112 |
+| `knows` | 2 / 162 | 2 / 115 | 1 / 109 | 2 / 114 |
+| `located_in` | 0 / 142 | 9 / 120 | 3 / 74 | 2 / 91 |
+| `possesses` | 0 / 113 | 1 / 83 | 1 / 82 | 0 / 96 |
+| `resolved` | 1 / 114 | 12 / 50 | 5 / 77 | 0 / 85 |
+| `feels_toward` | 0 / 72 | 5 / 68 | 0 / 45 | 0 / 48 |
+| `world_fact` | 0 / 110 | 0 / 19 | 0 / 64 | 0 / 67 |
+| `has_status` | 1 / 61 | 1 / 61 | 0 / 30 | 3 / 29 |
+| `question` | 0 / 96 | 0 / 25 | 0 / 5 | 0 / 7 |
+| `identity` | 0 / 64 | 1 / 42 | 0 / 51 | 0 / 60 |
+| `addresses` | 1 / 52 | 9 / 49 | 0 / 46 | 0 / 61 |
+| `has_trait` | 1 / 71 | 2 / 26 | 3 / 39 | 1 / 43 |
+| `promised` | 1 / 68 | 0 / 24 | 0 / 35 | 0 / 37 |
+| `relationship` | 1 / 40 | 0 / 13 | 0 / 24 | 0 / 33 |
+| `threat` | 0 / 49 | 0 / 3 | 0 / 3 | 0 / 4 |
+| `learned` | 0 / 37 | 0 / 15 | 0 / 12 | 0 / 11 |
+| `fulfilled` | 0 / 15 | 1 / 8 | 3 / 14 | 0 / 12 |
+| `also_called` | 0 / 12 | 0 / 5 | 0 / 5 | 0 / 6 |
+| `owes` | 0 / 9 | 0 / 0 | 0 / 13 | 0 / 16 |
+| `destroyed` | 0 / 5 | 0 / 3 | 0 / 5 | 0 / 10 |
+| `member_of` | 0 / 3 | 0 / 1 | 2 / 7 | 1 / 7 |
+
+On the sampled turns by `epistemic`: `stated` 23 of 1,080 today and 10 of 1,179 with the shorter context,
+`implied` 0 of 40 and 0 of 47.
 
 Where the 66 quotes are: 55 are found (at the same 0.7) in one of the three context turns the model was shown, so the
 row is stated there, not in its target turn; 11 are in none of the four turns. A `resolved` row whose quote comes from
