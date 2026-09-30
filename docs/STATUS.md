@@ -87,8 +87,8 @@ whole install or chosen chats, with the ledger, canon, the owner's input, record
 secrets, by default the model's work too (embeddings optional); restore into an install without those chats, same or
 newer NMOS, never merged; export from the panel as well as a command, restore a command. Host evidence first (can the
 plugin's frame save a file). The owner accepted every proposed answer; no release. Step 2 done (`docs/HOST-FACTS.md`
-"Saving a file from the plugin frame", H21): on v1.13.0 the frame saves a Blob (Chromium and Firefox; mobile not yet
-observed) and `nativeFetch` carries a 30 MB binary body whole on both routes; a link to the file breaks the panel, so
+"Saving a file from the plugin frame", H21): on v1.13.0 the frame saves a Blob (Chromium and Firefox in that probe;
+the owner's iPhone checked later, K38) and `nativeFetch` carries a 30 MB binary body whole on both routes; a link to the file breaks the panel, so
 Export saves a Blob. Step 3 (ADR 0050, D60): the NMOS Archive and its export: `GET /v1/archive`, `python -m
 nmos_sidecar.archive export`, and the panel's **Export this chat** (Inspector) and **Export everything** (Settings);
 one read-only snapshot, the ledger, canon, the owner's input, recorded requests and generations always, settings
