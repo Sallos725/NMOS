@@ -106,3 +106,8 @@ refused; a retraction's restored version did not name the repair.
   excerpt (invariant 1: raw text is evidence, never repaired).
 - The owner can close a thread that is not over, or mark a secret found out that is not. Each repair is visible,
   undoable and audited; nothing is deleted.
+
+## Amendment (2026-10-01, Phase 20, ADR 0055)
+
+A name split and its undo are previewed like a join (ADR 0055); `expect` on the split and on its removal checks the
+preview's fingerprint. Other repair kinds have no preview.

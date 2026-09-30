@@ -84,7 +84,7 @@ counts only), each of the owner's seven joins read with and without it:
 ## Steps (one pull request each)
 
 1. This document, approved; AGENTS §2 and STATUS name Phase 20 current. **Done** (2026-10-01).
-2. The preview and the fingerprint check (sidecar), with the deterministic cases.
+2. The preview and the fingerprint check (sidecar), with the deterministic cases. **Done** (ADR 0055, D65).
 3. Re-extracting the turns extracted under a join (Q7).
 4. The panel, the plugin build and the real-host smoke.
 5. The restored copies, latency, docs; Phase 20 complete.
