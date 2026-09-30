@@ -286,3 +286,74 @@ def test_a_join_with_the_persona_is_undone_as_persona_gone():
     names = [("character", "Rin"), ("character", "{{user}}")]
     joined = view(rows, [{**LINK, "same_as": "{{user}}"}])
     assert {"kind": "persona_gone"} in preview.diff(joined, view(rows), names)["lines"]
+
+
+# --- step 3: re-extracting the turns a join covered (Q7) -------------------------------------------------------------
+
+MORE = ("Rin is in the garden.", "Mina is a scholar.", "Rin is Mina's classmate.")
+
+
+def carry_on(chat: SimChat, texts=MORE) -> None:
+    for text in texts:
+        chat.user(text)
+        chat.reply("Noted.")
+    chat.user("Go on.")
+
+
+def hints_by_turn(db, cid: str) -> dict[int, list]:
+    """Each turn's served extraction hints, names only, as KNOWN ENTITIES listed them."""
+    rows = db.execute(
+        "SELECT am.turn, x.hints FROM conversation c JOIN active_membership am ON am.commit_id = c.head_commit_id"
+        " JOIN extraction x ON x.source_revision_id = am.source_revision_id AND x.window_hash = am.turn_hash"
+        " WHERE c.id = %s AND x.discarded_at IS NULL AND am.turn_hash IS NOT NULL", (cid,)).fetchall()
+    return {r["turn"]: sorted(sorted([h["name"], *(h.get("also") or ())]) for h in r["hints"]["entities"])
+            for r in rows}
+
+
+def test_an_undo_re_extracts_the_turns_the_join_covered_as_if_it_never_held(migrated, db):
+    chat, twin = two_names(), two_names()
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        tid = setup(c, migrated, twin)
+        link = c.post(f"/v1/conversations/{cid}/entity-links", json=JOIN).json()["link"]["id"]
+        carry_on(chat)
+        carry_on(twin)
+        for x in (chat, twin):
+            sync(c, x)
+        drain(migrated, stub_extractor)
+        covered = [t for t, names in hints_by_turn(db, cid).items() if ["Mina", "Rin"] in names]
+        assert covered and hints_by_turn(db, cid) != hints_by_turn(db, tid)  # extracted with the names as one
+        early = c.post(f"/v1/conversations/{cid}/entity-links/{link}/reextract")
+        assert early.status_code == 422  # the join still holds
+        undo = c.post(f"/v1/conversations/{cid}/entity-links/{link}/remove/preview").json()
+        assert undo["reextract"] == {"turns": len(covered)}
+        assert c.post(f"/v1/conversations/{cid}/entity-links/{link}/remove").status_code == 200
+        res = c.post(f"/v1/conversations/{cid}/entity-links/{link}/reextract")
+        assert res.status_code == 200, res.text
+        out = res.json()
+        assert out["turns"] == sorted(covered) and out["discarded"] >= len(covered) and out["queued"] == len(covered)
+        drain(migrated, stub_extractor)
+        # No served extraction lists the names as one any more (the re-extraction reads the chat as it is now, so
+        # a turn may list entities its first extraction had not seen yet), and memory is the never-joined chat's.
+        assert not [t for t, names in hints_by_turn(db, cid).items() if ["Mina", "Rin"] in names]
+        assert {(f["subject"], f["predicate"], f["object"], f["value"]) for f in c.get(
+            f"/v1/conversations/{cid}/facts").json()} == {(f["subject"], f["predicate"], f["object"], f["value"])
+                                                          for f in c.get(f"/v1/conversations/{tid}/facts").json()}
+        again = c.post(f"/v1/conversations/{cid}/entity-links/{link}/reextract").json()
+        assert again["turns"] == [] and again["queued"] == 0  # nothing left to redo
+
+
+def test_no_re_extraction_while_the_names_are_one_entity_anyway(migrated):
+    chat = SimChat()
+    for text in ("Mina is in the chapel.", "Mina is also called Mi."):
+        chat.user(text)
+        chat.reply("Noted.")
+    chat.user("Go on.")
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat, aliased)
+        link = c.post(f"/v1/conversations/{cid}/entity-links",
+                      json={"entity_type": "character", "name": "Mi", "same_as": "Mina"}).json()["link"]["id"]
+        c.post(f"/v1/conversations/{cid}/entity-links/{link}/remove")
+        res = c.post(f"/v1/conversations/{cid}/entity-links/{link}/reextract")
+        assert res.status_code == 422 and "one entity now" in res.json()["detail"]
+        assert c.post(f"/v1/conversations/{cid}/entity-links/{uuid.uuid4()}/reextract").status_code == 404

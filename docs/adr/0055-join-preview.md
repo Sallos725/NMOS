@@ -36,7 +36,13 @@ a fact of one name replaced by a fact of the other, in the story's order, shown 
    removes accept it as `expect`; in the action's transaction the sidecar locks the chat's row (`FOR UPDATE`, as a
    sync does), reads the head under the lock, computes the preview again and answers 409 with the fresh preview when
    it differs, writing nothing. Without `expect` the endpoints behave as before.
-5. **No side is chosen (Q5).** The story's order decides which version holds, as it did; the preview says which.
+5. **Re-extracting the turns a join covered (Q7).** `POST …/entity-links/{link}/reextract`, after the join is taken
+   back (422 while it holds, or while the two names are one entity through the story or another link; 409 with
+   extraction off): the head's turns served by an extraction made between the link's `created_at` and `removed_at`
+   whose KNOWN ENTITIES listed the two names as one entity (`extraction.hints`), of any generation. Their extractions
+   of every generation are discarded (kept for audit) and just those turns queued, as a rebuild does for a whole
+   chat (D22); the undo's preview carries their count (`reextract.turns`). A second call finds nothing.
+6. **No side is chosen (Q5).** The story's order decides which version holds, as it did; the preview says which.
    A wrong winner is repaired with ADR 0044's retraction or correction.
 
 ## Consequences
@@ -47,5 +53,7 @@ a fact of one name replaced by a fact of the other, in the story's order, shown 
 - A sync, a join or a repair of the same chat waits for the checked action; the extraction worker does not take the
   chat's lock, so an extraction committed within the few milliseconds between the check and the write is not
   refused. Its rows are read at the next read like any other.
-- The turns extracted while a join held still carry the joined names after an undo; Phase 20 step 3 re-extracts
-  them on the owner's click.
+- A re-extraction is a new model call: it reads the names apart and the chat as it is now (so a turn may list
+  entities its first extraction had not seen yet), and a real model may word its facts differently. Later turns keep
+  their extractions, whose hints were built from the earlier rows (PHASE-20 Q7, kept by the owner); the chat's full
+  rebuild re-reads everything.

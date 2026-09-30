@@ -914,3 +914,46 @@ def coverage(conn: psycopg.Connection, key: str | None, conv: UUID | None = None
         stats["complete"] = r["compiled"] == r["eligible"]
         out[r["conv"]] = stats
     return out
+
+
+JOINED_CANDIDATES = """
+SELECT DISTINCT am.turn, am.source_revision_id AS rid, am.turn_hash, x.hints
+FROM conversation c
+JOIN active_membership am ON am.commit_id = c.head_commit_id AND am.turn_hash IS NOT NULL
+JOIN extraction x ON x.source_revision_id = am.source_revision_id AND x.window_hash = am.turn_hash
+WHERE c.id = %(conv)s AND x.discarded_at IS NULL AND jsonb_typeof(x.hints) = 'object'
+  AND x.created_at >= %(since)s AND (%(until)s::timestamptz IS NULL OR x.created_at < %(until)s::timestamptz)
+"""
+
+
+def joined_turns(conn: psycopg.Connection, conv: UUID, link: dict[str, Any]) -> list[dict[str, Any]]:
+    """Turns of the head served by an extraction made while the owner's join held (ADR 0025 item 5, PHASE-20 Q7):
+    made between the link's `created_at` and `removed_at` (now, while it holds), whose KNOWN ENTITIES listed the two
+    names as one entity. Any generation's extraction counts: the one serving a turn may be an older one (ADR 0014)."""
+    pair = {norm(link["name"]), norm(link["same_as"])}
+    turns: dict[int, dict[str, Any]] = {}
+    for row in conn.execute(JOINED_CANDIDATES, {"conv": conv, "since": link["created_at"],
+                                                "until": link.get("removed_at")}).fetchall():
+        for h in row["hints"].get("entities") or ():
+            if h.get("type", "character") == link["entity_type"] and pair <= {
+                    norm(n) for n in [h.get("name"), *(h.get("also") or ())] if n}:
+                turns.setdefault(row["turn"], {"turn": row["turn"], "rid": row["rid"], "turn_hash": row["turn_hash"]})
+                break
+    return sorted(turns.values(), key=lambda t: t["turn"])
+
+
+def discard_turns(conn: psycopg.Connection, turns: list[dict[str, Any]]) -> int:
+    """These turns' extractions of every generation stop counting (kept for audit) and their extract jobs become
+    obsolete, as a rebuild does for a whole chat (D22): `schedule_generation` then queues just these turns again
+    (REBUILD_PENDING), and no older generation serves them meanwhile (ADR 0014)."""
+    if not turns:
+        return 0
+    rids, hashes = [t["rid"] for t in turns], [t["turn_hash"] for t in turns]
+    with conn.transaction():
+        n = conn.execute(
+            "UPDATE extraction x SET discarded_at = now() FROM unnest(%s::uuid[], %s::text[]) AS t(rid, h)"
+            " WHERE x.source_revision_id = t.rid AND x.window_hash = t.h AND x.discarded_at IS NULL",
+            (rids, hashes)).rowcount
+        conn.execute("UPDATE job SET status = 'obsolete', locked_at = NULL, updated_at = now() WHERE kind = 'extract'"
+                     " AND payload->>'revision_id' = ANY(%s)", ([str(r) for r in rids],))
+    return n

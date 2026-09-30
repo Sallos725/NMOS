@@ -601,7 +601,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             raise HTTPException(status_code=422, detail="the two names are the same")
 
     def in_force(conn, table: str, conv_id: UUID, row_id: UUID) -> dict[str, Any] | None:
-        cols = "id, entity_type, name, same_as" if table == "entity_link" else "id, kind, target"
+        cols = "id, entity_type, name, same_as, created_at" if table == "entity_link" else "id, kind, target"
         return conn.execute(f"SELECT {cols} FROM {table} WHERE id = %s AND conversation_id = %s AND removed_at IS NULL",
                             (row_id, conv_id)).fetchone()
 
@@ -644,6 +644,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             exclude = {str(rep["id"])}
         then = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), what_if=what_if)
         out = preview.diff(now, then, names, exclude)
+        if action == "unlink":  # the turns an undo leaves as the join had them extracted (Q7)
+            out["reextract"] = {"turns": len(extraction.joined_turns(conn, conv_id, link))}
         state = {"head": head, "links": sorted(str(x["id"]) for x in facts_links_of(conn, conv_id)),
                  "repairs": sorted(str(x["id"]) for x in now["repairs"]), "extractor": rt["active_extractor"],
                  "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names")}
@@ -708,6 +710,35 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             raise HTTPException(status_code=404, detail="link not found")
         log.info("entity link removed conversation=%s link=%s", conv_id, link_id)
         return {"removed": str(link_id)}
+
+    @app.post("/v1/conversations/{conv_id}/entity-links/{link_id}/reextract", dependencies=[Depends(auth)])
+    def reextract_joined(conv_id: UUID, link_id: UUID, request: Request):
+        """After the owner takes a join back (PHASE-20 Q7): extract again, with the names apart, the turns extracted
+        while the join held. Their extractions of every generation are discarded (kept for audit) and just those
+        turns queued; model calls at the owner's provider. A new call, not the old result brought back."""
+        ex, cur = rt["extractor"], rt["settings"]
+        with request.app.state.pool.connection() as conn:
+            head = head_of(conn, conv_id)
+            link = conn.execute("SELECT id, entity_type, name, same_as, created_at, removed_at FROM entity_link"
+                                " WHERE id = %s AND conversation_id = %s", (link_id, conv_id)).fetchone()
+            if link is None:
+                raise HTTPException(status_code=404, detail="link not found")
+            if link["removed_at"] is None:
+                raise HTTPException(status_code=422, detail="take the join back first")
+            if ex is None:
+                raise HTTPException(status_code=409, detail="fact extraction is off")
+            r = view_of(conn, head)["resolution"]
+            a, b = r.entity(link["entity_type"], link["name"]), r.entity(link["entity_type"], link["same_as"])
+            if a is not None and b is not None and a["id"] == b["id"]:
+                raise HTTPException(status_code=422, detail="the two names are one entity now")
+            turns = extraction.joined_turns(conn, conv_id, link)
+            with conn.transaction():
+                discarded = extraction.discard_turns(conn, turns)
+                queued = extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id)
+            log.info("reextract joined turns conversation=%s link=%s turns=%d discarded=%d queued=%d", conv_id,
+                     link_id, len(turns), discarded, queued)
+            return {"turns": [t["turn"] for t in turns], "discarded": discarded, "queued": queued,
+                    "coverage": coverage_view(conn, conv_id)}
 
     def repair_rows(conn, conv_id: UUID, live: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Every repair of a chat, newest first, with the item each in force applies to now (ADR 0044)."""
