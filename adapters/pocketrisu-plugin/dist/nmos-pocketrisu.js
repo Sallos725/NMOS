@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:a499adc4850f".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:226f9349ff14".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -259,16 +259,16 @@
     ],
     "chat.turn_off": ["\uC774 \uCC44\uD305\uC5D0\uC11C \uB044\uAE30", "Turn off for this chat"],
     // what this chat's memory cost in NMOS's own model calls (PHASE-17 Q4)
-    "usage.line": ["NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uD638\uCD9C {calls}\uD68C \xB7 {sides} \uD1A0\uD070{cached}", "NMOS model use: {calls} calls \xB7 {sides} tokens{cached}"],
-    "usage.calls": ["NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uD638\uCD9C {calls}\uD68C", "NMOS model use: {calls} calls"],
+    "usage.line": ["NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uD638\uCD9C {calls}\uD68C \xB7 {sides} \uD1A0\uD070{cached}", "NMOS model use: {calls} \xB7 {sides} tokens{cached}"],
+    "usage.calls": ["NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uD638\uCD9C {calls}\uD68C", "NMOS model use: {calls}"],
     "usage.cached_side": ["\uCE90\uC2DC \uC785\uB825 {n} \uD1A0\uD070", "{n} cached input tokens"],
     "usage.input": ["\uC785\uB825 {n}", "{n} input"],
     "usage.output": ["\uCD9C\uB825 {n}", "{n} output"],
     "usage.cached": [" (\uC785\uB825 \uC911 \uCE90\uC2DC {n})", " ({n} of the input cached)"],
-    "usage.partial": [" \xB7 {calls}\uD68C \uC911 {r}\uD68C\uB9CC \uBCF4\uACE0\uB428", " \xB7 {r} of {calls} calls reported"],
+    "usage.partial": [" \xB7 {calls}\uD68C \uC911 {r}\uD68C\uB9CC \uBCF4\uACE0\uB428", " \xB7 {r} of {calls} reported"],
     "usage.unreported": [
       "NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uD638\uCD9C {calls}\uD68C (\uC81C\uACF5\uC790\uAC00 \uD1A0\uD070\uC744 \uBCF4\uACE0\uD558\uC9C0 \uC54A\uC74C)",
-      "NMOS model use: {calls} calls (the provider reported no tokens)"
+      "NMOS model use: {calls} (the provider reported no tokens)"
     ],
     "usage.none": ["NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uC544\uC9C1 \uAE30\uB85D \uC5C6\uC74C", "NMOS model use: none recorded yet"],
     "usage.older_only": [
@@ -1814,22 +1814,23 @@ ${revisionHash}`;
 
   // src/usage.ts
   var count = (n) => n.toLocaleString("en-US");
+  var calls = (n, lang) => lang === "en" ? `${count(n)} call${n === 1 ? "" : "s"}` : count(n);
   function usageText(u, lang) {
     const older = u.not_recorded ?? 0;
     if (!u.calls) return t(lang, older ? "usage.older_only" : "usage.none");
     const before = older ? t(lang, "usage.older", { n: count(older) }) : "";
-    if (!u.reported) return t(lang, "usage.unreported", { calls: count(u.calls) }) + before;
+    if (!u.reported) return t(lang, "usage.unreported", { calls: calls(u.calls, lang) }) + before;
     const cached = u.cached ? t(lang, "usage.cached", { n: count(u.cached) }) : "";
-    const partial = u.reported < u.calls ? t(lang, "usage.partial", { r: count(u.reported), calls: count(u.calls) }) : "";
+    const partial = u.reported < u.calls ? t(lang, "usage.partial", { r: count(u.reported), calls: calls(u.calls, lang) }) : "";
     const sides = [
       u.input_reported === 0 ? "" : t(lang, "usage.input", { n: count(u.input) }),
       u.output_reported === 0 ? "" : t(lang, "usage.output", { n: count(u.output) })
     ].filter(Boolean).join(" \xB7 ");
     if (!sides) {
       const only = u.cached ? ` \xB7 ${t(lang, "usage.cached_side", { n: count(u.cached) })}` : "";
-      return t(lang, "usage.calls", { calls: count(u.calls) }) + only + partial + before;
+      return t(lang, "usage.calls", { calls: calls(u.calls, lang) }) + only + partial + before;
     }
-    return t(lang, "usage.line", { calls: count(u.calls), sides, cached }) + partial + before;
+    return t(lang, "usage.line", { calls: calls(u.calls, lang), sides, cached }) + partial + before;
   }
 
   // src/ui.ts
