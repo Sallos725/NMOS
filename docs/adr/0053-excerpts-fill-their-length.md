@@ -17,7 +17,8 @@ sentence naming the pet).
    most four sentences (`GROW_MAX_SENTENCES`, owner, 2026-09-30) (`packet.grown_excerpt`). Every other section and limit
    is `packet-v9`'s. Growing to the whole length was measured too: it answered 4 more M0 cases needing memory without
    vectors, and placed values the story had since replaced far more often on the synthetic chat (29 against 17 with
-   vectors); the owner chose the four-sentence cap.
+   vectors); the owner chose the four-sentence cap. Against `packet-v9` the cap still places replaced values more often
+   there (17 against 12 with vectors, 12 against 5 without; none a secret), while on M0 forbidden phrases fell 6 → 2.
 2. **The best sentence** holds most of the user message's keywords (`keywords.py`, ADR 0052), then shares most trigrams
    with the query and the previous AI turn, the earlier sentence on a tie. The one-sentence form the packet fitter
    falls back to is that sentence.
