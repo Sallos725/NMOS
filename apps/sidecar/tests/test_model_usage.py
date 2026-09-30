@@ -7,7 +7,8 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from conftest import make_client
+from conftest import active_generation, make_client
+from nmos_sidecar import summaries
 from nmos_sidecar import llm
 from simchat import SimChat
 from test_canon import push
@@ -295,3 +296,10 @@ def test_summary_counts_and_jobs_are_the_heads_own(migrated):
         with psycopg.connect(migrated, autocommit=True) as conn:
             conn.execute("UPDATE summary SET text = '' WHERE level = 'scene' AND first_turn = 8 AND discarded_at IS NULL")
         assert cov()["produced"]["summaries"] == 3
+        # A rewrite with a secret the summary was not told about (`schedule_stale`, a suffixed job key) is work too.
+        with psycopg.connect(migrated, autocommit=True, row_factory=dict_row) as conn:
+            gen = active_generation(conn, "summarize")
+            head = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (conv,)).fetchone()["head_commit_id"]
+            w = summaries.windows(conn, head)[1]
+            conn.execute(summaries._INSERT, summaries._scene_job(conv, gen.key, w, 100, ":abc123"))
+        assert cov()["summaries"] == {"pending": 1, "failed": 0}

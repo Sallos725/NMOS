@@ -142,6 +142,14 @@ describe('what the display says about served memory and finished work (PHASE-17 
     s = reduce(s, { type: 'coverage', coverage: c(0, 0, { facts: 10, summaries: 3 }) }, 1);
     expect(view(s, 2, 'en')).toMatchObject({ kind: 'ok', text: '✓ summaries +1' });  // the old failure is not news
   });
+  it('does not lose a new failure when an old one left the head meanwhile (Copilot re-review)', () => {
+    const c = (sums: number, failed: number) => ({ extract: null, embed: null, produced: { facts: 1, summaries: 1 },
+      summarize: { pending: sums, failed } } as Coverage);
+    let s = reduce(EMPTY, { type: 'coverage', coverage: c(2, 1) }, 0);  // an old dead job
+    s = reduce(s, { type: 'coverage', coverage: c(1, 0) }, 1);  // an edit replaced its window
+    s = reduce(s, { type: 'coverage', coverage: c(0, 1) }, 2);  // the new window's job died
+    expect(view(s, 3, 'en')).toMatchObject({ kind: 'warn', text: '⚠ 1 failed' });
+  });
   it('says only "done" when nothing was added or an older sidecar does not count', () => {
     let s = reduce(EMPTY, { type: 'coverage', coverage: cov(1, { facts: 40, summaries: 2 }) }, 0);
     s = reduce(s, { type: 'coverage', coverage: cov(0, { facts: 38, summaries: 2 }) }, 1);  // a turn re-extracted

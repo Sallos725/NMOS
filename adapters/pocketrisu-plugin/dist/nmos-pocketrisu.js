@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:ea1453074172".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:f4295d1e339c".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -1371,7 +1371,8 @@ ${revisionHash}`;
           return { ...state, progress: {
             coverage: event.coverage,
             since: shown ? shown.since : event.coverage.produced ?? null,
-            failedSince: shown ? shown.failedSince : failures(event.coverage)
+            // The fewest seen: a failure of an old window that leaves the head must not hide a new one.
+            failedSince: Math.min(shown ? shown.failedSince : Infinity, failures(event.coverage))
           } };
         }
         return shown ? { ...state, progress: {
