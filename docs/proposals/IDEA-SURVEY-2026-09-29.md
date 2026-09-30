@@ -110,6 +110,9 @@ calls. *Kind:* packet policy, owner OK for the spend.
 chat is gone. NMOS keeps a deleted chat's memory until the owner deletes the conversation (ADR 0009). A panel list of
 conversations whose chat the host no longer has would need to list the host's chats: `getDatabase` characters behind
 the "db" permission (H17), not measured for cost. *Cost:* host evidence first. *Kind:* UI, Stage 6.
+*Host evidence (2026-10-01, H22):* `getDatabase(['characters'])` lists every active chat's id. It takes ≈0.5 ms
+with no chat opened and ≈100–150 ms with 10,000–15,000 opened messages, which stay loaded until the page reloads.
+A chat whose character was moved to the trash or deactivated (restorable) leaves the list just as a deleted one does.
 
 ## 5. Not recommended
 

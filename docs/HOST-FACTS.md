@@ -486,8 +486,8 @@ and output: `fixtures/host/download-v1.13.0-2026-09-29/` (`results.txt`); the nu
    attachment) saved nothing and navigated the plugin frame to an error page (`chrome-error://chromewebdata/`): the
    panel was gone until reopened.
 
-Not observed: mobile browsers (Safari on iOS, Chrome on Android) and WebKit (Playwright's WebKit build does not start
-on this machine). The owner's phone was to be part of the real-host smoke (Phase 16 step 5); it is still open (K38).
+Not observed here: mobile browsers (Safari on iOS, Chrome on Android) and WebKit (Playwright's WebKit build does not
+start on this machine). The owner's iPhone was checked later (below, K38).
 
 Conclusion: H21. What NMOS does with it: the panel's Export fetches the archive through `nativeFetch` on the chosen
 route and saves it as a Blob (Phase 16 Q6); the Inspector link stays the fallback.
@@ -495,7 +495,70 @@ route and saves it as a Blob (Phase 16 Q6); the Inspector link stays the fallbac
 **Runtime, NMOS's own buttons (Phase 16 step 5):** on the same isolated v1.13.0 with the NMOS plugin build
 `f371c057201b` and a sidecar on the `server` route, **Export everything** (Settings) and **Export this chat**
 (Inspector) each saved a `.nmos.zip` through the browser and said its size; the first held the same table bytes as
-the command's archive of the same database (`fixtures/host/export-smoke-v1.13.0-2026-09-29/`). Not on a phone (K38).
+the command's archive of the same database (`fixtures/host/export-smoke-v1.13.0-2026-09-29/`).
+
+**The owner's iPhone (2026-10-01, K38):** in the owner's production PocketRisu v1.13.0, opened from an iPhone as a
+home-screen app, the panel's **Export everything** saved its file. The sidecar's log shows the two taps
+(`GET /v1/archive` 200, `scope=install`, 3.38 MB and 3.40 MB, 38 s apart). After the file was saved the host showed
+its own alert "The server has been updated or the network connection has been lost. Please refresh the page.", and
+the host server logged a fresh page boot between the two exports. The source, read from the v1.13.0 image's source
+maps, explains the alert. `src/main.ts` shows it on every `vite:preloadError`, that is, any failed dynamic import.
+`src/ts/globalApi.svelte.ts` listens for `focus` and `visibilitychange` and, on return, dynamically imports
+`./process/index.svelte` for its writer-lock check. That import is a 74-byte re-export chunk that no page load fetches
+before, so the first return in a page's life fetches it from the network. The host's `.catch` does not stop the alert,
+because Vite dispatches the event first. On iOS, closing the download sheet is such a return, and here that fetch
+failed. Why it failed (for example, network paused while the sheet was open) was not observed. The plugin cannot
+avoid it, because its sandboxed frame cannot load the host's modules. **Export this chat** (same save code) was not
+tapped on the phone, and Chrome on Android was not tried.
+
+## The host's chat list (2026-10-01, C10 host evidence, H22)
+
+**Source reading** of `ghcr.io/pocketrisu/pocketrisu:latest` (v1.13.0, image `e3fc431541a9`) from the image's source
+maps: `src/ts/plugins/plugins.svelte.ts` (`allowedDbKeys`), `src/ts/plugins/apiV3/v3.svelte.ts` (`getDatabase`,
+`getCharacterFromIndex`, `getChatFromIndex`), `src/ts/storage/chatStorage.ts`, `src/ts/characterArchive.ts`,
+`src/ts/characters.ts` (`removeChar`) and `src/lib/SideBars/SideChatList.svelte`. **Runtime** on an isolated container
+(port 6311) with a synthetic save: three characters and seven chats, one of 10,000 and one of 5,000 messages. A probe
+plugin (`//@api 3.0`, not NMOS) timed each call from inside its frame. The owner's instance was not touched. Probe,
+scripts and output: `fixtures/host/chatlist-v1.13.0-2026-10-01/` (`results.txt`). The machine carried another
+evaluation's load during the run, so the timings are indicative.
+
+1. **No chat-list call.** The V3 API has no call that lists chats. `getDatabase(['characters'])` returns every active
+   character with its whole `chats` array, behind the "db" permission that H17 already asks for (NMOS has it, so no
+   new prompt). `getCharacterFromIndex(i)` returns the same copy of one character, `getChatFromIndex` returns one
+   chat, and `getDatabase(['characterOrder'])` returns only the characters' ids.
+2. **Opened chats come with every message, and stay.** The host keeps a chat it has not opened since the page loaded
+   as a placeholder (`_placeholder: true`, `message: []`, with `id` and `name`). Opening one loads all its messages,
+   and nothing turns it back into a placeholder before the page reloads. Observed: right after load, all seven chats
+   came back as placeholders with 0 messages. After the 10,000-message chat and then the 5,000-message chat were
+   opened in one page load, both came back with all their messages.
+3. **Cost** (from the plugin frame; five calls per state, plus two more with nothing opened after the deletes of
+   item 4):
+
+   | Loaded in the page | `getDatabase(['characters'])` | `getCharacterFromIndex` loop | `getDatabase(['characterOrder'])` | Host long tasks per round |
+   |---|---|---|---|---|
+   | nothing opened | 0.4–0.6 ms | 1.0–1.4 ms | 0.2–0.3 ms | none |
+   | 10,040 messages (1.68 M characters) | 94–110 ms | 80–112 ms | 0.6–1.0 ms | none over 50 ms |
+   | 15,000 messages (2.50 M characters) | 127–154 ms | 122–146 ms | 0.5–3.9 ms | ten over five rounds, 50–66 ms each |
+
+   A round is one probe pass: both `getDatabase` calls, a walk over the returned messages and the
+   `getCharacterFromIndex` loop. The long tasks were recorded over whole rounds, so they cannot be split between the two
+   full copies (`getDatabase(['characters'])` and the loop). The run's first call (966 ms) included the time to answer
+   the permission prompt.
+4. **A deleted chat and a trashed character look the same.** The chat list's trash icon removes the chat from its
+   character's `chats` for good: one confirm, then a splice, with no trash and no hook (H10). A character's default
+   delete (**Move to trash**) and **Deactivate Character** both move the character out of `db.characters` into
+   `nodeOnlyArchivedCharacters`, a key plugins cannot read. What moves is a stub with its `chatIds`; the body stays
+   on the server, and activating the character brings the same chats back with the same ids (source reading; the
+   activation was not run). Observed: after the
+   synthetic character 유이 went to the trash and the chat 카이토 2 was deleted, both chats were simply missing from
+   `getDatabase(['characters'])`, and 유이 was missing from `characterOrder`.
+
+**On NMOS's side** (this repository, not the host): a conversation is keyed by `host = 'pocketrisu'` and the host
+chat's `id`. `host_character_ref` is the first speaker's name, not the character's id, and nothing records which
+PocketRisu install a conversation came from. If one sidecar served two installs, each install would see the other's
+chats as missing from its list.
+
+Conclusion: H22. What NMOS does with it: nothing yet. C10 (Linear AGE-4) gets designed after Phase 20.
 
 ## Scenario evidence index
 

@@ -17,4 +17,4 @@ instance was not touched.
   bytes as `python -m nmos_sidecar.archive export` of the same database; it restored into a fresh database, which
   exported the same bytes again; the chat's file passed `restore --check` (one conversation).
 
-Not observed: phones (K38).
+Not observed in this run: phones. The owner's iPhone was checked on 2026-10-01 (`docs/HOST-FACTS.md`, K38).

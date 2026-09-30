@@ -76,7 +76,7 @@ If two normative documents appear to conflict:
 | 13 — verification and repair, part 1 (Stage 6: owner repair, needs-attention queue) | complete (2026-09-28), not released; the latency criterion missed by 2 ms (owner accepted) | `PHASE-13.md`, ADR 0044 |
 | 14 — verification and repair, part 2 (Stage 6: canon sources) | complete (2026-09-29), not released; the latency criterion missed with a 200-entry lorebook read whole (owner accepted) | `PHASE-14.md`, ADRs 0045–0047 |
 | 15 — a packet that fills its budget (P1 of `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`) | complete (2026-09-29), not released | `PHASE-15.md`, ADR 0049 |
-| 16 — export and restore (Stage 6, part 3) | complete (2026-09-29) but for the owner's phone check of the panel's Export (K38, open); not released | `PHASE-16.md`, ADR 0050 |
+| 16 — export and restore (Stage 6, part 3) | complete (2026-09-29); the owner's iPhone check done 2026-10-01 (saved; host alert, K38); not released | `PHASE-16.md`, ADR 0050 |
 | 17 — model-call cost and fallback outcomes (C4, C5 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`) | complete (2026-09-30), not released | `PHASE-17.md`, ADR 0051 |
 | 18 — recall by the words that matter (keyword lexical recall, `packet-v10` excerpts) | complete (2026-09-30), not released | `PHASE-18.md`, ADR 0052, 0053 |
 | 19 — one extractor generation, `extract-v14` (shorter context, synthetic examples, evidence in the turn) | complete (2026-10-01), not released; `deepseek-v4.1-flash`'s M0 criterion missed (owner accepted, K41) | `PHASE-19.md`, ADR 0054 |
