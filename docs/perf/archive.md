@@ -75,4 +75,5 @@ summaries, embeddings, recorded requests, an append and a branch:
 
 On PocketRisu v1.13.0 (isolated, synthetic), the panel's **Export everything** and **Export this chat** saved their
 files through the browser; the first held the same table bytes as the command's archive of the same database and
-restored into a fresh one (`fixtures/host/export-smoke-v1.13.0-2026-09-29/`). Phones are not observed (K38).
+restored into a fresh one (`fixtures/host/export-smoke-v1.13.0-2026-09-29/`). On the owner's iPhone (2026-10-01)
+**Export everything** saved its file; the host may alert afterwards (K38).

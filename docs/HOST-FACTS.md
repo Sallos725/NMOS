@@ -486,8 +486,8 @@ and output: `fixtures/host/download-v1.13.0-2026-09-29/` (`results.txt`); the nu
    attachment) saved nothing and navigated the plugin frame to an error page (`chrome-error://chromewebdata/`): the
    panel was gone until reopened.
 
-Not observed: mobile browsers (Safari on iOS, Chrome on Android) and WebKit (Playwright's WebKit build does not start
-on this machine). The owner's phone was to be part of the real-host smoke (Phase 16 step 5); it is still open (K38).
+Not observed here: mobile browsers (Safari on iOS, Chrome on Android) and WebKit (Playwright's WebKit build does not
+start on this machine). The owner's iPhone was checked later (below, K38).
 
 Conclusion: H21. What NMOS does with it: the panel's Export fetches the archive through `nativeFetch` on the chosen
 route and saves it as a Blob (Phase 16 Q6); the Inspector link stays the fallback.
@@ -495,7 +495,21 @@ route and saves it as a Blob (Phase 16 Q6); the Inspector link stays the fallbac
 **Runtime, NMOS's own buttons (Phase 16 step 5):** on the same isolated v1.13.0 with the NMOS plugin build
 `f371c057201b` and a sidecar on the `server` route, **Export everything** (Settings) and **Export this chat**
 (Inspector) each saved a `.nmos.zip` through the browser and said its size; the first held the same table bytes as
-the command's archive of the same database (`fixtures/host/export-smoke-v1.13.0-2026-09-29/`). Not on a phone (K38).
+the command's archive of the same database (`fixtures/host/export-smoke-v1.13.0-2026-09-29/`).
+
+**The owner's iPhone (2026-10-01, K38):** in the owner's production PocketRisu v1.13.0, opened from an iPhone as a
+home-screen app, the panel's **Export everything** saved its file. The sidecar's log shows the two taps
+(`GET /v1/archive` 200, `scope=install`, 3.38 MB and 3.40 MB, 38 s apart). After the file was saved the host showed
+its own alert "The server has been updated or the network connection has been lost. Please refresh the page.", and
+the host server logged a fresh page boot between the two exports. The source, read from the v1.13.0 image's source
+maps, explains the alert. `src/main.ts` shows it on every `vite:preloadError`, that is, any failed dynamic import.
+`src/ts/globalApi.svelte.ts` listens for `focus` and `visibilitychange` and, on return, dynamically imports
+`./process/index.svelte` for its writer-lock check. That import is a 74-byte re-export chunk that no page load fetches
+before, so the first return in a page's life fetches it from the network. The host's `.catch` does not stop the alert,
+because Vite dispatches the event first. On iOS, closing the download sheet is such a return, and here that fetch
+failed. Why it failed (for example, network paused while the sheet was open) was not observed. The plugin cannot
+avoid it, because its sandboxed frame cannot load the host's modules. **Export this chat** (same save code) was not
+tapped on the phone, and Chrome on Android was not tried.
 
 ## The host's chat list (2026-10-01, C10 host evidence, H22)
 
