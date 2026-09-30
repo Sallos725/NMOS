@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:22437aea8160".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:913e93404839".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -270,6 +270,15 @@
       "NMOS model use: {calls} calls (the provider reported no tokens)"
     ],
     "usage.none": ["NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uC544\uC9C1 \uAE30\uB85D \uC5C6\uC74C", "NMOS model use: none recorded yet"],
+    "usage.line_input": [
+      "NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uD638\uCD9C {calls}\uD68C \xB7 \uC785\uB825 {input} \uD1A0\uD070{cached}",
+      "NMOS model use: {calls} calls \xB7 {input} input tokens{cached}"
+    ],
+    "usage.older_only": [
+      "NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uC774\uC804 \uBC84\uC804\uC5D0\uC11C \uB9CC\uB4E0 \uAE30\uC5B5\uC774\uB77C \uC0AC\uC6A9\uB7C9\uC774 \uAE30\uB85D\uB418\uC9C0 \uC54A\uC558\uC74C",
+      "NMOS model use: not recorded (this memory was made by an older version)"
+    ],
+    "usage.older": [" \xB7 \uC774\uC804 \uBC84\uC804 \uACB0\uACFC {n}\uAC1C\uB294 \uAE30\uB85D \uC5C6\uC74C", " \xB7 {n} results from an older version not recorded"],
     "chat.turn_on": ["\uC774 \uCC44\uD305\uC5D0\uC11C \uB2E4\uC2DC \uCF1C\uAE30", "Turn back on for this chat"],
     "chat.switched_off": [
       "\uC774 \uCC44\uD305\uC5D0\uC11C NMOS\uB97C \uAED0\uC2B5\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uB85C \uBCF4\uB0B4\uC9C0 \uC54A\uACE0 \uAE30\uC5B5\uB3C4 \uB123\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC774\uBBF8 \uC313\uC778 \uAE30\uC5B5\uC740 \uADF8\uB300\uB85C\uC785\uB2C8\uB2E4.",
@@ -549,6 +558,7 @@
     "hud.reason.error": ["\uC0AC\uC774\uB4DC\uCE74 \uC624\uB958", "sidecar error"],
     "hud.extract": ["\uCD94\uCD9C {d}/{n}", "Facts {d}/{n}"],
     "hud.embed": ["\uC784\uBCA0\uB529 {d}/{n}", "Embeddings {d}/{n}"],
+    "hud.summarize": ["\uC694\uC57D {n}\uAC1C \uB0A8\uC74C", "summaries to write: {n}"],
     "hud.failed": ["\u26A0 \uC2E4\uD328 {n}", "\u26A0 {n} failed"],
     "hud.done": ["\u2713 \uCC98\uB9AC \uC644\uB8CC", "\u2713 Processing done"],
     "hud.reused": [" \xB7 \uC7AC\uC0AC\uC6A9", " \xB7 reused"],
@@ -1341,7 +1351,7 @@ ${revisionHash}`;
   var DONE_MS = 3e3;
   var EMPTY = { request: null, progress: null };
   function pending(c) {
-    return (c.extract?.pending ?? 0) + (c.embed?.pending ?? 0);
+    return (c.extract?.pending ?? 0) + (c.embed?.pending ?? 0) + (c.summarize?.pending ?? 0);
   }
   function reduce(state, event, now) {
     switch (event.type) {
@@ -1414,6 +1424,8 @@ ${revisionHash}`;
       total += counts.total;
       failed += counts.failed;
     }
+    if (c.summarize?.pending) parts.push(t(lang, "hud.summarize", { n: c.summarize.pending }));
+    failed += c.summarize?.failed ?? 0;
     if (failed) parts.push(t(lang, "hud.failed", { n: failed }));
     return { kind: "busy", text: parts.join(" \xB7 "), fraction: total ? done / total : null };
   }
@@ -1432,9 +1444,11 @@ ${revisionHash}`;
       pending: Number(section.pending) || 0,
       failed: Number(section.failed) || 0
     } : null;
+    const jobs = body.summaries;
+    const summarize = jobs && typeof jobs.pending === "number" ? { pending: jobs.pending, failed: Number(jobs.failed) || 0 } : null;
     const made = body.produced;
     const produced = made && typeof made.facts === "number" && typeof made.summaries === "number" ? { facts: made.facts, summaries: made.summaries } : null;
-    return { extract: counts(body.extraction, "compiled"), embed: counts(body.embeddings, "embedded"), produced };
+    return { extract: counts(body.extraction, "compiled"), embed: counts(body.embeddings, "embedded"), produced, summarize };
   }
 
   // src/icon.ts
@@ -1837,11 +1851,15 @@ ${revisionHash}`;
   // src/usage.ts
   var count = (n) => n.toLocaleString("en-US");
   function usageText(u, lang) {
-    if (!u.calls) return t(lang, "usage.none");
-    if (!u.reported) return t(lang, "usage.unreported", { calls: count(u.calls) });
+    const older = u.not_recorded ?? 0;
+    if (!u.calls) return t(lang, older ? "usage.older_only" : "usage.none");
+    const before = older ? t(lang, "usage.older", { n: count(older) }) : "";
+    if (!u.reported) return t(lang, "usage.unreported", { calls: count(u.calls) }) + before;
     const cached = u.cached ? t(lang, "usage.cached", { n: count(u.cached) }) : "";
     const partial = u.reported < u.calls ? t(lang, "usage.partial", { r: count(u.reported), calls: count(u.calls) }) : "";
-    return t(lang, "usage.line", { calls: count(u.calls), input: count(u.input), output: count(u.output), cached }) + partial;
+    const vars = { calls: count(u.calls), input: count(u.input), output: count(u.output), cached };
+    const line = u.output_reported === 0 ? t(lang, "usage.line_input", vars) : t(lang, "usage.line", vars);
+    return line + partial + before;
   }
 
   // src/ui.ts
@@ -2014,6 +2032,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     const settingsView = el("div");
     wrap.append(statusView, inspectorView, settingsView);
     let shown = tab;
+    let usageRound = 0;
     async function refreshStatus() {
       statusView.replaceChildren(el("div", { class: "card muted", text: L("status.checking") }));
       const s = await deps.status();
@@ -2206,8 +2225,12 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("div", { class: "btns" }, flip),
         msg
       );
-      const spent = connected ? await usageLine(id) : null;
-      if (spent) card.insertBefore(spent, card.querySelector("p.sub"));
+      if (connected) {
+        const shownFor = ++usageRound;
+        void usageLine(id).then((spent) => {
+          if (spent && shownFor === usageRound && card.isConnected) card.insertBefore(spent, card.querySelector("p.sub"));
+        });
+      }
       if (!enabled2) card.insertBefore(el(
         "div",
         { class: "line warn" },
@@ -2218,7 +2241,12 @@ html,body{margin:0;background:${PALETTE.bg}}
     }
     async function usageLine(hostChatId) {
       try {
-        const chats = await deps.api("GET", "/v1/conversations", void 0, 5e3);
+        const chats = await deps.api(
+          "GET",
+          `/v1/conversations?host_chat_ref=${encodeURIComponent(hostChatId)}`,
+          void 0,
+          5e3
+        );
         const chat = chats.find((c) => c.host_chat_ref === hostChatId);
         if (!chat) return null;
         const cov = await deps.api(

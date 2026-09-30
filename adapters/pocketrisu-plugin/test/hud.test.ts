@@ -123,6 +123,15 @@ describe('what the display says about served memory and finished work (PHASE-17 
     expect(view(s, 3, 'ko')?.text).toBe('✓ 사실 7개 추가 · 요약 1개 추가');
     expect(view(s, 3, 'en')?.text).toBe('✓ facts +7 · summaries +1');
   });
+  it('waits for summaries, which run last, before it says what was made (Copilot review)', () => {
+    const c = (pendingN: number, sums: number, produced: object) => ({ extract: { done: 5, total: 5, pending: pendingN,
+      failed: 0 }, embed: null, produced, summarize: { pending: sums, failed: 0 } } as Coverage);
+    let s = reduce(EMPTY, { type: 'coverage', coverage: c(1, 0, { facts: 10, summaries: 2 }) }, 0);
+    s = reduce(s, { type: 'coverage', coverage: c(0, 1, { facts: 12, summaries: 2 }) }, 1);
+    expect(view(s, 2, 'en')?.text).toBe('Facts 5/5 · summaries to write: 1');
+    s = reduce(s, { type: 'coverage', coverage: c(0, 0, { facts: 12, summaries: 3 }) }, 3);
+    expect(view(s, 4, 'en')?.text).toBe('✓ facts +2 · summaries +1');
+  });
   it('says only "done" when nothing was added or an older sidecar does not count', () => {
     let s = reduce(EMPTY, { type: 'coverage', coverage: cov(1, { facts: 40, summaries: 2 }) }, 0);
     s = reduce(s, { type: 'coverage', coverage: cov(0, { facts: 38, summaries: 2 }) }, 1);  // a turn re-extracted
@@ -140,14 +149,15 @@ describe('parseCoverage', () => {
       embeddings: { generation: null },
     };
     expect(parseCoverage(json)).toEqual({ extract: { done: 10, total: 40, pending: 27, failed: 3 }, embed: null,
-      produced: null });
+      produced: null, summarize: null });
+    expect(parseCoverage({ ...json, summaries: { pending: 2, failed: 1 } }).summarize).toEqual({ pending: 2, failed: 1 });
     expect(parseCoverage({ ...json, produced: { facts: 12, summaries: 1 } }).produced).toEqual({ facts: 12, summaries: 1 });
   });
 
   it('treats a chat without rows or a malformed body as nothing', () => {
     expect(parseCoverage({ extraction: { generation: { key: 'x' } }, embeddings: { generation: { key: 'y' } } }))
-      .toEqual({ extract: null, embed: null, produced: null });
-    expect(parseCoverage(null)).toEqual({ extract: null, embed: null, produced: null });
+      .toEqual({ extract: null, embed: null, produced: null, summarize: null });
+    expect(parseCoverage(null)).toEqual({ extract: null, embed: null, produced: null, summarize: null });
     expect(parseCoverage({ produced: { facts: '3' } }).produced).toBeNull();
   });
 });

@@ -258,6 +258,8 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "us.h.output": ("출력 토큰", "Output tokens"), "us.h.cached": ("캐시 입력", "Cached input"),
     "us.h.reported": ("보고된 호출", "Calls reported"),
     "us.not_reported": ("보고 없음", "not reported"),
+    "us.partial": ("일부", "partly"),
+    "us.no_generation": ("세대 없음 (이전 버전)", "no generation (older version)"),
     "us.not_recorded": ("기록 이전 결과 {n}개", "{n} results from before recording"),
     "canon_detail": ("모델 호출 {calls} · 대기 {pending} · 실패 {failed} · 안 읽은 글자 {unread}",
                      "model calls {calls} · pending {pending} · failed {failed} · characters not read {unread}"),
@@ -519,13 +521,17 @@ def _usage_section(usage: dict[str, Any], lang: str) -> str:
     t = lambda k: _t(lang, k)
 
     def cells(u: dict[str, Any]) -> list[str]:
-        tokens = [f"{u[k]:,}" if u["reported"] else "—" for k in ("input", "output", "cached")]
+        def tokens(k: str) -> str:  # a count no call reported is "—", never a reported 0
+            n = u[f"{k}_reported"]
+            if not n:
+                return "—"
+            return f"{u[k]:,}" + (f" <span class=\"muted\">({t('us.partial')})</span>" if n < u["calls"] else "")
         share = f"{u['reported']:,}/{u['calls']:,}" if u["calls"] else "—"
         if u["calls"] and not u["reported"]:
             share = f"<span class=\"chip\">{t('us.not_reported')}</span> {share}"
         if u["not_recorded"]:
             share += f" <span class=\"muted\">· {t('us.not_recorded').format(n=f'{u['not_recorded']:,}')}</span>"
-        return [f"{u['calls']:,}", *tokens, share]
+        return [f"{u['calls']:,}", *(tokens(k) for k in ("input", "output", "cached")), share]
 
     rows = []
     for g in usage.get("generations") or []:
@@ -533,8 +539,9 @@ def _usage_section(usage: dict[str, Any], lang: str) -> str:
         name = _v(t(kind) if kind in T else g["kind"])
         if g["active"]:
             name += f" <span class=\"chip\">{t('us.active')}</span>"
-        rows.append([name, f"<span class=\"mono\" title=\"{_v(g['key'])}\">{_v(g['key'][:20])}</span> {_v(g['model'])}",
-                     *cells(g)])
+        gen = (f"<span class=\"mono\" title=\"{_v(g['key'])}\">{_v(g['key'][:20])}</span> {_v(g['model'] or '')}"
+               if g["key"] else f"<span class=\"muted\">{t('us.no_generation')}</span>")
+        rows.append([name, gen, *cells(g)])
     head = f"<p class=\"muted\">{t('us.intro')}</p>"
     if not rows:
         return head + f"<p class=\"muted\">{t('us.none')}</p>"

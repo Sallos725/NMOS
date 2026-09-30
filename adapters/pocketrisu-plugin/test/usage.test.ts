@@ -16,6 +16,16 @@ describe('usageText (PHASE-17 Q4)', () => {
     expect(usageText({ calls: 3, reported: 0, input: 0, output: 0, cached: 0 }, 'ko'))
       .toBe('NMOS 모델 사용: 호출 3회 (제공자가 토큰을 보고하지 않음)');
   });
+  it('tells memory an older version made, whose usage was not recorded, from memory with no model work', () => {
+    const none = { calls: 0, reported: 0, input: 0, output: 0, cached: 0 };
+    expect(usageText({ ...none, not_recorded: 40 }, 'en')).toBe('NMOS model use: not recorded (this memory was made by an older version)');
+    expect(usageText({ ...total, cached: 0, not_recorded: 40 }, 'en'))
+      .toBe('NMOS model use: 12 calls · 48,210 input · 3,105 output tokens · 40 results from an older version not recorded');
+  });
+  it('leaves out output tokens no call reported, rather than show 0', () => {
+    expect(usageText({ calls: 30, reported: 30, input: 900, output: 0, cached: 0, output_reported: 0 }, 'ko'))
+      .toBe('NMOS 모델 사용: 호출 30회 · 입력 900 토큰');
+  });
   it('says nothing was recorded yet', () => {
     expect(usageText({ calls: 0, reported: 0, input: 0, output: 0, cached: 0 }, 'en')).toBe('NMOS model use: none recorded yet');
   });

@@ -227,4 +227,48 @@ def test_coverage_counts_the_facts_and_summaries_the_chat_holds(migrated):
         produced = c.get(f"/v1/conversations/{conv}/coverage").json()["produced"]
     with psycopg.connect(migrated) as conn:
         valid = conn.execute("SELECT count(*) FROM assertion WHERE status = 'valid'").fetchone()[0]
-    assert produced == {"facts": valid, "summaries": 4} and valid > 0
+    assert produced == {"facts": valid, "summaries": 4} and valid > 0  # 3 scenes and the story covering them
+    # An edit replaces one turn's fact and its scene's summary: the head holds as many as before (Copilot review).
+    chat.edit(3, "Reply 1 follows, edited.")
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        drain_extract(migrated, lambda s, u: ({"assertions": [
+            {"subject": "Hana", "subject_type": "character", "predicate": "located_in", "object": "the mill",
+             "object_type": "place", "epistemic": "stated", "confidence": 0.9, "evidence": u[-40:],
+             "modality": "actual"}]}, "{}"))
+        drain_summaries(migrated)
+        again = c.get(f"/v1/conversations/{conv}/coverage").json()
+    with psycopg.connect(migrated) as conn:
+        assert conn.execute("SELECT count(*) FROM assertion WHERE status = 'valid'").fetchone()[0] > valid
+    assert again["produced"] == produced and again["summaries"] == {"pending": 0, "failed": 0}
+
+
+def test_older_rows_count_under_their_kind_and_unreported_fields_are_not_zeros(migrated):
+    chat = story_chat(30)
+    with make_client(migrated, **ON, embedder=FakeEmbedder(), embed_url="http://fake/v1", embed_model="fake-embed") as c:
+        sync(c, chat)
+        drain_extract(migrated, metered(fake_complete, {"input": 900, "output": 40}))  # no `cached` reported
+        drain_embeddings(migrated, MeteredEmbedder())
+        with psycopg.connect(migrated, autocommit=True) as conn:  # as rows from before generations would be
+            conn.execute("UPDATE extraction SET extractor_key = NULL, usage = NULL WHERE id = (SELECT id FROM extraction"
+                         " ORDER BY id LIMIT 1)")
+            conn.execute("UPDATE revision_embedding SET projection = 'legacy:old-embed', usage = NULL WHERE"
+                         " (source_revision_id, chunk) = (SELECT source_revision_id, chunk FROM revision_embedding LIMIT 1)")
+        conv = c.get("/v1/conversations", params={"host_chat_ref": chat.id}).json()
+        assert [x["host_chat_ref"] for x in conv] == [chat.id]
+        assert c.get("/v1/conversations", params={"host_chat_ref": "no-such-chat"}).json() == []
+        conv = conv[0]["id"]
+        usage = c.get(f"/v1/conversations/{conv}/coverage", params={"usage": True}).json()["usage"]
+        old = [g for g in usage["generations"] if g["key"] in (None, "legacy:old-embed")]
+        assert sorted((g["kind"], g["rows"], g["not_recorded"], g["calls"]) for g in old) == [
+            ("embed", 1, 1, 0), ("extract", 1, 1, 0)]
+        assert usage["generations"][-2:] == sorted(old, key=lambda g: g["key"] is None)  # without a generation: last
+        ex = next(g for g in usage["generations"] if g["kind"] == "extract" and g["key"])
+        assert ex["input_reported"] == ex["calls"] and ex["cached_reported"] == 0
+        emb = next(g for g in usage["generations"] if g["kind"] == "embed" and g["active"])
+        assert emb["output_reported"] == 0 and emb["input_reported"] == emb["calls"]
+        page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
+        section = page[page.index('id="s-usage"'):]
+        assert "no generation (older version)" in section and "legacy:old-embed" in section
+        embed_row = section[section.index("Embeddings"):].split("</tr>")[0]
+        assert embed_row.count("<td>—</td>") == 2  # output and cached input: not reported, not 0
