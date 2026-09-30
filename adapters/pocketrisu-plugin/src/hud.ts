@@ -15,7 +15,9 @@ export interface Counts { done: number; total: number; pending: number; failed: 
 /** Facts and summaries the active generations hold for the chat (PHASE-17 Q6); `null` from older sidecars. */
 export interface Produced { facts: number; summaries: number }
 /** Coverage of the active extraction and embedding generations; `null` when one is off or has no rows. */
-export interface Coverage { extract: Counts | null; embed: Counts | null; produced?: Produced | null }
+/** Summary jobs of the chat still to run and dead (PHASE-17 Q6: they run last, so "done" waits for them). */
+export interface Jobs { pending: number; failed: number }
+export interface Coverage { extract: Counts | null; embed: Counts | null; produced?: Produced | null; summarize?: Jobs | null }
 
 /** Request-path activity, emitted by core.ts and never awaited there. */
 export type ActivityEvent =
@@ -42,7 +44,7 @@ export const EMPTY: HudState = { request: null, progress: null };
 export interface HudView { kind: 'busy' | 'ok' | 'muted' | 'warn'; text: string; fraction: number | null; icon?: true }
 
 export function pending(c: Coverage): number {
-  return (c.extract?.pending ?? 0) + (c.embed?.pending ?? 0);
+  return (c.extract?.pending ?? 0) + (c.embed?.pending ?? 0) + (c.summarize?.pending ?? 0);
 }
 
 export function reduce(state: HudState, event: HudEvent, now: number): HudState {
@@ -118,6 +120,8 @@ function progressView(c: Coverage, lang: Lang): HudView {
     total += counts.total;
     failed += counts.failed;
   }
+  if (c.summarize?.pending) parts.push(t(lang, 'hud.summarize', { n: c.summarize.pending }));
+  failed += c.summarize?.failed ?? 0;
   if (failed) parts.push(t(lang, 'hud.failed', { n: failed }));
   return { kind: 'busy', text: parts.join(' · '), fraction: total ? done / total : null };
 }
@@ -139,8 +143,11 @@ export function parseCoverage(json: unknown): Coverage {
       ? { done: Number(section[doneKey]) || 0, total: section.eligible, pending: Number(section.pending) || 0,
           failed: Number(section.failed) || 0 }
       : null;
+  const jobs = body.summaries;
+  const summarize = jobs && typeof jobs.pending === 'number'
+    ? { pending: jobs.pending, failed: Number(jobs.failed) || 0 } : null;
   const made = body.produced;
   const produced = made && typeof made.facts === 'number' && typeof made.summaries === 'number'
     ? { facts: made.facts, summaries: made.summaries } : null;
-  return { extract: counts(body.extraction, 'compiled'), embed: counts(body.embeddings, 'embedded'), produced };
+  return { extract: counts(body.extraction, 'compiled'), embed: counts(body.embeddings, 'embedded'), produced, summarize };
 }

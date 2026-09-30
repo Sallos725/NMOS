@@ -524,9 +524,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return out
 
     @app.get("/v1/conversations", dependencies=[Depends(auth)])
-    def conversations(request: Request):
+    def conversations(request: Request, host_chat_ref: str | None = None):
         with request.app.state.pool.connection() as conn:
-            return readmodel.list_conversations(conn)
+            return readmodel.list_conversations(conn, host_chat_ref=host_chat_ref)
 
     @app.get("/v1/conversations/{conv_id}/state", dependencies=[Depends(auth)])
     def conversation_state(conv_id: UUID, request: Request):
@@ -730,6 +730,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             "canon": {"generation": generations.describe(conn, rt.get("active_canon")),
                       **canonfacts.coverage(conn, rt.get("active_canon"), conv_id)},
             "produced": model_usage.produced(conn, conv_id, ex_key, rt.get("active_summarizer")),
+            "summaries": model_usage.summary_jobs(conn, conv_id, rt.get("active_summarizer")),
             **spent,
         }
 
