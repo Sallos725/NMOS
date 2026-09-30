@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from conftest import make_client
 from nmos_sidecar.packet import MAX_EXCERPT_CHARS, excerpt, grown_excerpt
 from simchat import SimChat
 from test_sidecar_integration import recall, sync
@@ -37,6 +40,15 @@ def test_keywords_choose_the_sentence_before_shared_trigrams():
     assert grown_excerpt(msg, "captain harbor weather parrot", ["parrot"], max_chars=20)[1] == "…The parrot sleeps."
 
 
+@pytest.mark.parametrize("content, words, max_chars, expected", [
+    ("", ["parrot"], 40, ("", "")),  # nothing to excerpt
+    ("The parrot sleeps.", [], 40, ("The parrot sleeps.", "The parrot sleeps.")),  # one sentence, no ellipsis
+    ("Alpha beta. Gamma delta.", [], 15, ("Alpha beta.…", "Alpha beta.…")),  # a tie keeps the earlier sentence
+])
+def test_edge_cases(content, words, max_chars, expected):
+    assert grown_excerpt(content, "unrelated", words, max_chars=max_chars) == expected
+
+
 def parrot_chat() -> SimChat:
     chat = SimChat()
     chat.user("Let us begin.")
@@ -52,8 +64,6 @@ QUESTION = "Hey, I forgot something from way back when we first met: what did ev
 
 
 def test_packet_v10_grows_the_excerpt_and_packet_v9_keeps_two_sentences(migrated):
-    from conftest import make_client
-
     texts = {}
     for policy in ("packet-v10", "packet-v9"):
         with make_client(migrated, packet_policy=policy) as c:
@@ -75,20 +85,52 @@ def test_a_grown_excerpt_never_takes_the_packet_past_its_budget(client):
     assert out["packet"]["token_estimate"] <= 200
 
 
-def test_a_request_recorded_with_packet_v9_replays_as_it_was(migrated):
-    """Requests recorded while packet-v9 was the default keep compiling with it (ADR 0027, 0053)."""
+@pytest.mark.parametrize("before_keywords", [False, True])
+def test_a_request_recorded_with_packet_v9_replays_as_it_was(migrated, monkeypatch, before_keywords):
+    """Requests recorded while packet-v9 was the default keep compiling with it (ADR 0027, 0053), also those recorded
+    before the keyword route, whose options do not name it (ADR 0052)."""
     from uuid import UUID
 
-    from conftest import make_client
-    from nmos_sidecar import audit
+    from nmos_sidecar import audit, retrieval
     from nmos_sidecar.retrieval import RecallOptions
     from test_packet_ledger import db
 
     with make_client(migrated, packet_policy="packet-v9") as c:
         chat = parrot_chat()
         sync(c, chat)
+        if before_keywords:
+            monkeypatch.setattr(retrieval, "keywords", lambda query: [])
         out = recall(c, chat, QUESTION, in_context=[])
+        monkeypatch.undo()
     with db(migrated) as conn:
+        if before_keywords:
+            conn.execute("UPDATE retrieval_trace SET recall_options = recall_options - 'lexical_keywords' "
+                         "WHERE id = %s", (out["trace_id"],))
         again = audit.replay(conn, UUID(out["trace_id"]), RecallOptions())
     assert again["policy"] == again["recorded_policy"] == "packet-v9"
     assert again["reproduced"] is True and again["text"] == out["packet"]["text"]
+
+
+def test_a_vector_only_hit_grows_within_its_chunk_only(migrated):
+    """A lexical or keyword hit is the whole message; a vector-only hit stays in the chunk the vector matched."""
+    from nmos_sidecar.vectors import chunks
+    from test_vectors import FakeEmbedder, drain_embeddings
+
+    filler = " ".join(f"Plain filler line {i:02d}." for i in range(31))
+    long = f"{filler} The lighthouse beam sweeps the dark bay tonight. Tail words 01. Tail words 02."
+    spans = chunks(long)
+    assert long[spans[1][0]:].startswith("The lighthouse")  # the sentence before it is in another chunk
+    chat = SimChat()
+    chat.user("Let us begin.")
+    chat.reply(long)
+    for i in range(8):
+        chat.user(f"Idle chatter {i}.")
+        chat.reply(f"Idle reply {i}.")
+    chat.user("next")
+    with make_client(migrated, embedder=FakeEmbedder(), embed_url="http://fake/v1", embed_model="fake-embed") as c:
+        sync(c, chat)
+        drain_embeddings(migrated)
+        out = recall(c, chat, "등대 불빛 기억나?", in_context=[])  # no word of it is in the message
+    text = out["packet"]["text"]
+    assert "The lighthouse beam" in text and "Tail words 01." in text  # grown after, inside the chunk
+    assert "filler line 30" not in text  # not before it, across the chunk's start
