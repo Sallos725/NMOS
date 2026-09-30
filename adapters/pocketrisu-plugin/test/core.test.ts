@@ -643,7 +643,7 @@ describe('activity events (progress display)', () => {
     const events: ActivityEvent[] = [];
     await createAdapter(host, (e) => events.push(e)).beforeRequest(prompt, 'model');
     expect(events).toEqual([{ type: 'request-start' },
-      { type: 'request-end', outcome: 'injected', chars: PACKET.length, conversationId: 'conv-1' }]);
+      { type: 'request-end', outcome: 'injected', chars: PACKET.length, conversationId: 'conv-1', vectors: null }]);
   });
 
   it('says nothing for auxiliary requests or when memory is off', async () => {
@@ -674,7 +674,7 @@ describe('activity events (progress display)', () => {
     await adapter.beforeRequest(prompt, 'model');
     await adapter.beforeRequest(structuredClone(prompt), 'model');
     expect(events.slice(2)).toEqual([{ type: 'request-start' },
-      { type: 'request-end', outcome: 'injected', chars: PACKET.length, conversationId: 'conv-1' }]);
+      { type: 'request-end', outcome: 'injected', chars: PACKET.length, conversationId: 'conv-1', reused: true, vectors: null }]);
     events.length = 0;
     await adapter.beforeRequest([{ role: 'system', content: 'narrator' }, { role: 'user', content: 'unrelated text' }], 'model');
     expect(events).toEqual([{ type: 'request-start' }, { type: 'request-abandon' }]);

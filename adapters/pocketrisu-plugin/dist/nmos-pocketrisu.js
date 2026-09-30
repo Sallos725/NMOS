@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:787450666b4a".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:22437aea8160".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -551,6 +551,10 @@
     "hud.embed": ["\uC784\uBCA0\uB529 {d}/{n}", "Embeddings {d}/{n}"],
     "hud.failed": ["\u26A0 \uC2E4\uD328 {n}", "\u26A0 {n} failed"],
     "hud.done": ["\u2713 \uCC98\uB9AC \uC644\uB8CC", "\u2713 Processing done"],
+    "hud.reused": [" \xB7 \uC7AC\uC0AC\uC6A9", " \xB7 reused"],
+    "hud.lexical": [" \xB7 \uC5B4\uD718 \uAC80\uC0C9\uB9CC", " \xB7 lexical only"],
+    "hud.made.facts": ["\uC0AC\uC2E4 {n}\uAC1C \uCD94\uAC00", "facts +{n}"],
+    "hud.made.summaries": ["\uC694\uC57D {n}\uAC1C \uCD94\uAC00", "summaries +{n}"],
     // progress display: panel
     "hud.title": ["\uC9C4\uD589 \uD45C\uC2DC", "Progress display"],
     "hud.sub": [
@@ -1131,6 +1135,8 @@ ${revisionHash}`;
             type: "request-end",
             outcome: outcome2,
             chars: cached.packet.length,
+            reused: true,
+            vectors: cached.vectors ?? null,
             conversationId: conversations.get(chat.id) ?? null
           });
           return injectPacket(prompt, cached.packet, settings.injectPosition, turn);
@@ -1183,7 +1189,7 @@ ${revisionHash}`;
           memory,
           vectors
         };
-        emit({ type: "request-end", outcome, chars: packet.length, conversationId: synced.conversation_id ?? null });
+        emit({ type: "request-end", outcome, chars: packet.length, vectors, conversationId: synced.conversation_id ?? null });
         return injectPacket(prompt, packet, settings.injectPosition, turn);
       } catch (error) {
         if (key && epoch === since) remember(key, "", FAILURE_TTL_MS, true);
@@ -1350,11 +1356,17 @@ ${revisionHash}`;
           chars: event.chars,
           error: event.error,
           deadlineMs: event.deadlineMs,
-          until: now + OUTCOME_MS
+          until: now + OUTCOME_MS,
+          reused: event.reused,
+          vectors: event.vectors
         } };
-      case "coverage":
-        if (pending(event.coverage) > 0) return { ...state, progress: { coverage: event.coverage } };
-        return state.progress && "coverage" in state.progress ? { ...state, progress: { finishedUntil: now + DONE_MS } } : state;
+      case "coverage": {
+        const shown = state.progress && "coverage" in state.progress ? state.progress : null;
+        if (pending(event.coverage) > 0) {
+          return { ...state, progress: { coverage: event.coverage, since: shown ? shown.since : event.coverage.produced ?? null } };
+        }
+        return shown ? { ...state, progress: { finishedUntil: now + DONE_MS, made: added(shown.since, event.coverage.produced) } } : state;
+      }
       case "reset":
         return EMPTY;
       case "background":
@@ -1365,7 +1377,10 @@ ${revisionHash}`;
     const r = state.request;
     if (r?.phase === "running") return { kind: "busy", text: t(lang, "hud.recalling"), fraction: null, icon: true };
     if (r?.phase === "done" && now < r.until) {
-      if (r.outcome === "injected") return { kind: "ok", text: t(lang, "hud.injected", { n: r.chars }), fraction: null };
+      if (r.outcome === "injected") {
+        const how = [r.reused ? t(lang, "hud.reused") : "", r.vectors === "fallback" ? t(lang, "hud.lexical") : ""].filter(Boolean).join("");
+        return { kind: "ok", text: t(lang, "hud.injected", { n: r.chars }) + how, fraction: null };
+      }
       if (r.outcome === "nothing-relevant") return { kind: "muted", text: t(lang, "hud.nothing"), fraction: null };
       if (r.outcome === "chat-off") return { kind: "muted", text: t(lang, "hud.chat_off"), fraction: null };
       const reason = r.error?.startsWith("deadline") ? t(lang, "hud.reason.deadline", { s: Math.round((r.deadlineMs ?? 0) / 100) / 10 }) : t(lang, "hud.reason.error");
@@ -1373,8 +1388,19 @@ ${revisionHash}`;
     }
     const p = state.progress;
     if (p && "coverage" in p) return progressView(p.coverage, lang);
-    if (p && now < p.finishedUntil) return { kind: "ok", text: t(lang, "hud.done"), fraction: 1 };
+    if (p && now < p.finishedUntil) return { kind: "ok", text: doneText(p.made, lang), fraction: 1 };
     return null;
+  }
+  function added(since, now) {
+    if (!since || !now) return null;
+    return { facts: Math.max(0, now.facts - since.facts), summaries: Math.max(0, now.summaries - since.summaries) };
+  }
+  function doneText(made, lang) {
+    const parts = [
+      made?.facts ? t(lang, "hud.made.facts", { n: made.facts }) : "",
+      made?.summaries ? t(lang, "hud.made.summaries", { n: made.summaries }) : ""
+    ].filter(Boolean);
+    return parts.length ? `\u2713 ${parts.join(" \xB7 ")}` : t(lang, "hud.done");
   }
   function progressView(c, lang) {
     const parts = [];
@@ -1406,7 +1432,9 @@ ${revisionHash}`;
       pending: Number(section.pending) || 0,
       failed: Number(section.failed) || 0
     } : null;
-    return { extract: counts(body.extraction, "compiled"), embed: counts(body.embeddings, "embedded") };
+    const made = body.produced;
+    const produced = made && typeof made.facts === "number" && typeof made.summaries === "number" ? { facts: made.facts, summaries: made.summaries } : null;
+    return { extract: counts(body.extraction, "compiled"), embed: counts(body.embeddings, "embedded"), produced };
   }
 
   // src/icon.ts

@@ -211,3 +211,20 @@ def test_a_chat_without_model_work_says_so(llm_client, migrated):
     usage = llm_client.get(f"/v1/conversations/{conv}/coverage", params={"usage": True}).json()["usage"]
     assert usage == {"generations": [], "total": {k: 0 for k in usage["total"]}}
     assert "No model calls recorded yet." in llm_client.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
+
+
+def test_coverage_counts_the_facts_and_summaries_the_chat_holds(migrated):
+    chat = story_chat(30)
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        conv = c.get("/v1/conversations").json()[0]["id"]
+        assert c.get(f"/v1/conversations/{conv}/coverage").json()["produced"] == {"facts": 0, "summaries": 0}
+        drain_extract(migrated, lambda s, u: ({"assertions": [
+            {"subject": "Hana", "subject_type": "character", "predicate": "located_in", "object": "the mill",
+             "object_type": "place", "epistemic": "stated", "confidence": 0.9, "evidence": u[-40:],
+             "modality": "actual"}]}, "{}"))
+        drain_summaries(migrated)
+        produced = c.get(f"/v1/conversations/{conv}/coverage").json()["produced"]
+    with psycopg.connect(migrated) as conn:
+        valid = conn.execute("SELECT count(*) FROM assertion WHERE status = 'valid'").fetchone()[0]
+    assert produced == {"facts": valid, "summaries": 4} and valid > 0

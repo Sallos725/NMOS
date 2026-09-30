@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 17 step 4: the progress display says how memory was served and what background work made.** "✓ Memory
+  injected (… chars) · lexical only" when recall had to go without vectors (the embedding model did not answer in
+  time, K34), "· reused" when a reroll reused the packet already built; neither is shown as a warning. When
+  background work finishes it says what it added ("✓ facts +3 · summaries +1"), or "✓ Processing done" as before. A
+  new plugin build.
 - **Phase 17 step 3: what a chat's memory cost, shown.** A conversation's Inspector page has a **Model usage**
   section: per generation (fact extraction, canon reads, summaries, embeddings) the model calls NMOS made and the
   input, output and cached input tokens the provider reported, with how many calls reported them. The panel's

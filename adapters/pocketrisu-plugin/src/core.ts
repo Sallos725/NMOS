@@ -448,7 +448,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
         if (!cached.failed) last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: cached.packet.length,
           packet: cached.packet, outcome, deadlineMs: settings.deadlineMs, budgetTokens: settings.reservedMemoryTokens,
           memory: cached.memory ?? null, vectors: cached.vectors ?? null };
-        emit({ type: 'request-end', outcome, chars: cached.packet.length,
+        emit({ type: 'request-end', outcome, chars: cached.packet.length, reused: true, vectors: cached.vectors ?? null,
           conversationId: conversations.get(chat.id) ?? null });
         return injectPacket(prompt, cached.packet, settings.injectPosition, turn);
       }
@@ -490,7 +490,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const outcome = packet ? 'injected' : 'nothing-relevant';
       last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, packet, outcome,
         deadlineMs: settings.deadlineMs, budgetTokens: settings.reservedMemoryTokens, memory, vectors };
-      emit({ type: 'request-end', outcome, chars: packet.length, conversationId: synced.conversation_id ?? null });
+      emit({ type: 'request-end', outcome, chars: packet.length, vectors, conversationId: synced.conversation_id ?? null });
       return injectPacket(prompt, packet, settings.injectPosition, turn);
     } catch (error) {
       // Cache the miss briefly so host retries of this request (H2) do not wait out the deadline again.

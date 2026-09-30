@@ -48,3 +48,17 @@ def totals(conn: psycopg.Connection, conv: UUID, active: set[str] | None = None)
     gens = [{"kind": r["kind"], "key": r["key"], "model": r["model"], "active": r["key"] in (active or set()),
              **{k: int(r[k]) for k in COUNTS}} for r in rows]
     return {"generations": gens, "total": {k: sum(g[k] for g in gens) for k in COUNTS}}
+
+
+def produced(conn: psycopg.Connection, conv: UUID, extractor: str | None, summarizer: str | None) -> dict[str, int]:
+    """How many facts (valid assertions) and summaries the active generations hold for the chat now. The HUD compares
+    two of these to say what background work made (PHASE-17 Q6); cheap enough for its polls."""
+    facts = conn.execute(
+        "SELECT count(*) AS n FROM assertion a JOIN extraction x ON x.id = a.extraction_id"
+        " JOIN source_revision sr ON sr.id = x.source_revision_id JOIN source_object so ON so.id = sr.source_object_id"
+        " WHERE so.conversation_id = %s AND x.extractor_key = %s AND x.discarded_at IS NULL AND a.status = 'valid'",
+        (conv, extractor)).fetchone()["n"] if extractor else 0
+    summaries = conn.execute(
+        "SELECT count(*) AS n FROM summary WHERE conversation_id = %s AND generation = %s AND discarded_at IS NULL"
+        " AND text <> ''", (conv, summarizer)).fetchone()["n"] if summarizer else 0
+    return {"facts": int(facts), "summaries": int(summaries)}
