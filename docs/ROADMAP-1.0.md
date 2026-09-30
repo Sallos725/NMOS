@@ -26,7 +26,7 @@ Phase 15 (a packet that fills its budget, `docs/phases/PHASE-15.md`) is not a st
 (complete 2026-09-29). Phase 17 (the cost of NMOS's own model calls and fallbacks told apart in the HUD,
 `docs/phases/PHASE-17.md`, approved 2026-09-29, complete 2026-09-30) is not a stage either: C4 and C5 of
 `docs/proposals/IDEA-SURVEY-2026-09-29.md`. Phase 18 (keyword lexical recall and excerpts that fill their length,
-`docs/phases/PHASE-18.md`, approved 2026-09-30) is not a stage either: it follows Phase 17, before Stage 7.
+`docs/phases/PHASE-18.md`, approved and complete 2026-09-30) is not a stage either: it follows Phase 17, before Stage 7.
 
 ## Versions
 

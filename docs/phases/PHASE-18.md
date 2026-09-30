@@ -1,10 +1,10 @@
 # Phase 18 — Recall by the words that matter
 
-> **Status: approved 2026-09-30 (owner), next after Phase 17.** It starts when Phase 17 is complete; until then only
-> step 2's evaluation tooling and baseline, which change no recall, may land (AGENTS.md §0, §7).
+> **Status: complete 2026-09-30** (approved 2026-09-30 by the owner, after Phase 17). Not released.
 > Amended 2026-09-30 after the spec PR's review: five boundary cases made explicit (Q1–Q4, criteria); the intent is
 > unchanged. Amended again 2026-09-30 by the owner after step 4's measurements: excerpts grow to at most four
-> sentences (Q3), and the excerpt-length criterion is restated (below).
+> sentences (Q3), and the excerpt-length criterion is restated (below). At step 5 the owner accepted the latency
+> criterion as measured over the benchmark's questions with the four-common-keyword question among them (below).
 
 ## Questions and proposed answers
 
@@ -70,30 +70,32 @@ Measured 2026-09-29/30 outside the repository (numbers only; step 2 records the 
 
 ## Acceptance criteria
 
-- [ ] Every existing test and memory-evaluation case passes; recorded `packet-v9` requests replay as they were.
-- [ ] Deterministic cases: keyword extraction (particles, endings, stop words, names, Latin words, a query of stop
+- [x] Every existing test and memory-evaluation case passes; recorded `packet-v9` requests replay as they were.
+- [x] Deterministic cases: keyword extraction (particles, endings, stop words, names, Latin words, a query of stop
       words only, a name that an ending rule would shorten below two syllables, more than four keywords); a keyword
       too broad is dropped; a keyword-only hit is kept with vectors off and under the whole-message threshold; a
       message found by both routes is fused once; the route abstains when its time budget runs out; a trace without
       `lexical_keywords` replays with it off; `packet-v10` excerpts grow to `excerpt_chars` and stop at a sentence,
       a best sentence longer than `excerpt_chars` is cut there, and the fitter's shortening and omission still work
       when room runs out; nothing past the budget; at `packet-v9` nothing changes.
-- [ ] Lexical recall returns a candidate for at least 80 % of M0 v2 and synthetic queries (from 13–50 %).
-- [ ] M0 v2, `packet-v10` with keywords at 4,000 against `packet-v9` at 4,000, both chats, both extractions:
+- [x] Lexical recall returns a candidate for at least 80 % of M0 v2 and synthetic queries (from 13–50 %).
+- [x] M0 v2, `packet-v10` with keywords at 4,000 against `packet-v9` at 4,000, both chats, both extractions:
   - vectors off: cases needing memory at least +4 in total over the four runs;
   - vectors on: no run worse by more than one case;
   - forbidden phrases placed: at most +2 in total, none of them from a thread or a secret.
-- [ ] Synthetic set (4 cuts, 32k context), vectors on: the one-off detail category at least +3 over the cuts, and no
+- [x] Synthetic set (4 cuts, 32k context), vectors on: the one-off detail category at least +3 over the cuts, and no
       category worse by more than one case per cut (the owner accepted one exception on 2026-09-30: "count" at the
       60 cut, −2, with the four-sentence cap).
-- [ ] Excerpts grow: the median placed excerpt at 4,000 on M0 v2 at least 1.3 times `packet-v9`'s (restated by the owner,
+- [x] Excerpts grow: the median placed excerpt at 4,000 on M0 v2 at least 1.3 times `packet-v9`'s (restated by the owner,
       2026-09-30: with ten excerpts at 4,000 no growth rule reached a 250-character median, since the fitter falls
       back to one sentence under budget pressure).
-- [ ] Retrieve latency at 10,000 messages within +15 ms p50 of `packet-v9` at 4,000 (`tools/bench_story.py`),
-      including a question of four common keywords (each in more than 200 messages, `docs/perf/scale.md`).
-- [ ] Real-host smoke on an isolated PocketRisu v1.13.0.
-- [ ] Review per AGENTS.md §14 (retrieval semantics: high risk, one independent review).
-- [ ] `ARCHITECTURE.md` (D15 amended, D62), ADR 0052, README, the Korean guide, KNOWN-ISSUES, CHANGELOG.
+- [x] Retrieve latency at 10,000 messages within +15 ms p50 of `packet-v9` at 4,000 (`tools/bench_story.py`),
+      including a question of four common keywords (each in more than 200 messages, `docs/perf/scale.md`). Met as
+      measured with that question among the benchmark's (+11.9 ms); asked alone every time it adds 29 ms (421 → 450 ms,
+      `packet-v9` already hits the whole-message timeout there): accepted by the owner, 2026-09-30.
+- [x] Real-host smoke on an isolated PocketRisu v1.13.0.
+- [x] Review per AGENTS.md §14 (retrieval semantics: high risk, one independent review).
+- [x] `ARCHITECTURE.md` (D15 amended, D62), ADR 0052, README, the Korean guide, KNOWN-ISSUES, CHANGELOG.
 
 ## Steps (one pull request each)
 
@@ -109,7 +111,10 @@ Measured 2026-09-29/30 outside the repository (numbers only; step 2 records the 
 4. `packet-v10` excerpts, tests, plugin build if the panel's budget advice changes. **Done** (ADR 0053, D63, `docs/perf/lexical-recall.md` "Step 4"): excerpts
    grow from the sentence holding most keywords by up to four sentences (owner's choice over the whole length); the
    phase's M0, synthetic and latency criteria met as restated; no plugin build (the budget advice is unchanged).
-5. Evaluation, the owner's traces, real-host smoke, latency, review, documentation; Phase 18 complete.
+5. Evaluation, the owner's traces, real-host smoke, latency, review, documentation; Phase 18 complete. **Done**
+   (`docs/perf/lexical-recall.md` "Step 5"): on 34 of the owner's recorded requests `packet-v10` with keywords placed 24
+   excerpts without vectors where `packet-v9` placed none, and no secret, thread or line past the budget that
+   `packet-v9` would not; the real host injected a grown excerpt the keyword route found; K39 and K40 recorded.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).
 

@@ -20,7 +20,7 @@ without a PocketRisu change.
 | K8 | A new name with no stated alias is a new entity, and a wrong alias joins two, until the owner joins or splits them | Memory | reduced in beta.12 (ADR 0012); the owner joins (ADR 0025) and splits (ADR 0044, 0.2.0) in the panel |
 | K9 | A destroyed or used-up item keeps its last holder in turns not extracted by `extract-v6` | Memory | fixed for new turns in beta.13 (ADR 0017); older turns: "extract all history" |
 | K11 | A secret is kept by instruction, not isolation: the model can still voice it | Memory | 0.2.0: Private section, strict and narrator modes (Phase 10); hard POV not planned |
-| K12 | A word in more than 200 messages brings no lexical excerpts | Recall | accepted trade-off (A3) |
+| K12 | A word in more than 200 messages brings no lexical excerpts | Recall | reduced on `main` (Phase 18, ADR 0052): each keyword is looked up alone and only a broad one is dropped |
 | K13 | Very long messages are only partly embedded and extracted | Recall | accepted limit (#13) |
 | K14 | Rare over-injection into an auxiliary call; transformed input gets no memory | Gating | accepted (ADR 0001) |
 | K15 | Thresholds and extraction quality are checked on limited data | Quality | evaluation (A5 baseline) |
@@ -47,6 +47,8 @@ without a PocketRisu change.
 | K36 | A chat whose large lorebook NMOS has read almost whole recalls more slowly | Performance | measured, accepted (Phase 14, owner 2026-09-29) |
 | K37 | A story that changes who someone is, against the card or a lorebook, is not flagged | Memory | by decision (ADR 0047 amendment 1); needs a model check |
 | K38 | The panel's Export was not tried on a phone | Host | evidence (owner's phone) |
+| K39 | A grown excerpt can carry a value the story has since replaced | Recall | measured, accepted (Phase 18, owner 2026-09-30) |
+| K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | measured; a lower threshold to be measured separately (owner, 2026-09-30) |
 
 ## Performance
 
@@ -246,6 +248,9 @@ character, `NMOS_PACKET_POLICY=packet-v1` restores the old estimate.
 trace `too_broad`) instead of scoring most of the chat. Vectors, state and facts still answer; with
 embeddings off, such a query gets no excerpts. Accepted trade-off of Track A, A3
 (`docs/perf/scale.md`).
+*On `main` (Phase 18, ADR 0052):* lexical recall also looks each of the message's keywords up alone (up to four) and
+drops only a keyword in more than 200 messages or half the chat, so a question with one rare word finds its message
+even when its other words are broad. A question whose every keyword is broad still gets no lexical excerpts.
 
 **K13 — Very long messages are partly processed.** Embeddings cover at most the first 8 chunks of
 ≤700 normalized characters (≤5,600); extraction reads the first 6,000 characters of each message in
@@ -315,6 +320,22 @@ since Phase 17 the progress display says "· lexical only" on that request's out
 `NMOS_EMBED_TIMEOUT_MS` (e.g. 1000) for a remote or slow embedder; it is not part of the projection, so nothing is
 embedded again. Pointing the embedding URL at a closer address would help too, but a new endpoint is a new projection
 and re-embeds every chat (K18).
+
+**K39 — A grown excerpt can carry a value the story has since replaced.** Since `packet-v10` (Phase 18, ADR 0053)
+an excerpt is up to four sentences of raw text around its best sentence, and raw text says what was true then: an old
+amount of money, an earlier name for someone, a promise before it changed. On a synthetic chat whose facts change
+often, `packet-v10` placed such replaced values 17 times over four cuts against `packet-v9`'s 12 (with vectors; none a
+secret), and growing to the whole length 29 (`docs/perf/lexical-recall.md`, Step 4). Facts and `<Cast>` still say
+the current value, and each excerpt carries its turn. Accepted with the four-sentence cap (owner, 2026-09-30).
+*Workaround:* `NMOS_PACKET_POLICY=packet-v9` keeps two-sentence excerpts.
+
+**K40 — A short keyword is not found where a particle is attached to it.** The keyword route (ADR 0052) matches a
+keyword at trigram word similarity 0.8. Korean attaches particles to the word, and a keyword of two syllables scores
+0.67 against it with a particle ("창가" in "창가에"), one of three syllables 0.75 ("서도윤" in "서도윤이"); four
+syllables reach 0.8. Such keywords are found only where the word stands alone (before a space, a comma, a quote), so
+the route finds less than it could. A threshold near 0.65 would match a word that starts with the keyword; it changes
+what is recalled and what is dropped as broad, so it is to be measured before any change (owner, 2026-09-30).
+*Workaround:* none needed; vectors and the whole-message route still answer.
 
 ## Data and lifecycle
 
