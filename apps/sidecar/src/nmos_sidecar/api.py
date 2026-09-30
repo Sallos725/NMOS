@@ -27,6 +27,7 @@ from psycopg_pool import ConnectionPool
 
 from . import (__version__, archive, audit, canon, canonfacts, extraction, generations, inspector, ledger, normtext, plugin,
                readmodel, retention, repairs, runtime, summaries, vectors)
+from . import usage as model_usage
 from .config import Settings
 from .db import make_pool
 from .extraction import enqueue_after_apply, job_counts
@@ -523,9 +524,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return out
 
     @app.get("/v1/conversations", dependencies=[Depends(auth)])
-    def conversations(request: Request):
+    def conversations(request: Request, host_chat_ref: str | None = None, host: str | None = None):
         with request.app.state.pool.connection() as conn:
-            return readmodel.list_conversations(conn)
+            return readmodel.list_conversations(conn, host_chat_ref=host_chat_ref, host=host)
 
     @app.get("/v1/conversations/{conv_id}/state", dependencies=[Depends(auth)])
     def conversation_state(conv_id: UUID, request: Request):
@@ -708,16 +709,19 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return {"removed": str(repair_id)}
 
     @app.get("/v1/conversations/{conv_id}/coverage", dependencies=[Depends(auth)])
-    def conversation_coverage(conv_id: UUID, request: Request):
-        """How completely the active generations cover this chat's head (#8, #13)."""
+    def conversation_coverage(conv_id: UUID, request: Request, usage: bool = False):
+        """How completely the active generations cover this chat's head (#8, #13); with `usage`, what its model
+        calls used (ADR 0051), which the HUD's frequent polls leave out."""
         with request.app.state.pool.connection() as conn:
             if readmodel.conversation(conn, conv_id) is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
-            return coverage_view(conn, conv_id)
+            return coverage_view(conn, conv_id, usage)
 
-    def coverage_view(conn, conv_id: UUID) -> dict[str, Any]:
+    def coverage_view(conn, conv_id: UUID, usage: bool = False) -> dict[str, Any]:
         ex_key = rt["active_extractor"]
         pj_key = rt["projection"].key if rt["projection"] else None
+        spent = {"usage": model_usage.totals(conn, conv_id, {ex_key, pj_key, rt.get("active_summarizer"),
+                                                              rt.get("active_canon")} - {None})} if usage else {}
         return {
             "extraction": {"generation": generations.describe(conn, ex_key),
                            **extraction.coverage(conn, ex_key, conv_id).get(conv_id, {})},
@@ -725,6 +729,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                            **vectors.coverage(conn, pj_key, conv_id).get(conv_id, {})},
             "canon": {"generation": generations.describe(conn, rt.get("active_canon")),
                       **canonfacts.coverage(conn, rt.get("active_canon"), conv_id)},
+            **spent,
         }
 
     # Per-chat actions (D22, ADR 0008). Only for chats NMOS has seen: NMOS never ingests a chat itself.
@@ -891,7 +896,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             pj_key = rt["projection"].key if rt["projection"] else None
             view = inspector.with_participants(view_of(conn, head))
             traces = readmodel.traces(conn, conv_id)
-            cov = coverage_view(conn, conv_id)
+            cov = coverage_view(conn, conv_id, usage=True)
             return inspector.detail(conv, current_state(conn, head, rt["rules"].version),
                                     readmodel.membership(conn, head, ex_key, pj_key),
                                     readmodel.commits(conn, conv_id), traces,

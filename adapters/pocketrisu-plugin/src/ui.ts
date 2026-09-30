@@ -15,6 +15,7 @@ import { closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, in
 import type { EntityRow, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
+import { usageText, type UsageTotal } from './usage';
 
 export type Tab = 'status' | 'inspector' | 'settings';
 
@@ -237,6 +238,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   let shown: Tab = tab;
 
   // --- status tab ------------------------------------------------------------------------------
+  let usageRound = 0; // a refresh or another chat's card makes an older answer stale
   async function refreshStatus(): Promise<void> {
     statusView.replaceChildren(el('div', { class: 'card muted', text: L('status.checking') }));
     const s = await deps.status();
@@ -339,14 +341,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         el('div', { class: 'warn', text: L('hud.broken', { e: problem }) })));
     }
     // This chat first (ADR 0048): the switch is what the owner opened the panel for, often from the sidebar.
-    cards.unshift(await chatCard(s.enabled));
+    cards.unshift(await chatCard(s.enabled, s.connected));
     const refresh = el('button', { text: L('refresh') });
     refresh.addEventListener('click', () => void refreshStatus());
     statusView.replaceChildren(...cards, el('div', { class: 'btns' }, refresh));
   }
 
   /** "This chat": whether NMOS is on for the chat open now, and the switch. */
-  async function chatCard(enabled: boolean): Promise<HTMLElement> {
+  async function chatCard(enabled: boolean, connected: boolean): Promise<HTMLElement> {
     const card = el('div', { class: 'card' }, el('h2', { text: L('chat.title') }));
     let state;
     try {
@@ -373,10 +375,33 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     card.append(el('div', { class: off ? 'line warn' : 'line' }, el('span', { class: off ? 'dot warn' : 'dot ok' }),
       el('span', { text: L(off ? 'chat.off' : 'chat.on') })),
     el('p', { class: 'sub', text: L(off ? 'chat.off_sub' : 'chat.on_sub') }), el('div', { class: 'btns' }, flip), msg);
+    // What this chat's memory cost (PHASE-17 Q4) arrives after the card: the switch is never kept waiting for it.
+    if (connected) {
+      const shownFor = ++usageRound;
+      void usageLine(id).then((spent) => {
+        if (spent && shownFor === usageRound && card.isConnected) card.insertBefore(spent, card.querySelector('p.sub'));
+      });
+    }
     // The global switch wins (ADR 0048 §5): say so rather than show this chat as working.
     if (!enabled) card.insertBefore(el('div', { class: 'line warn' }, el('span', { class: 'dot warn' }),
       el('span', { text: L('chat.all_off') })), card.children[1] ?? null);
     return card;
+  }
+
+  /** One line: what this chat's memory cost in NMOS's own model calls (PHASE-17 Q4). Nothing when the sidecar
+   * does not know the chat or does not answer: the card is about the switch. */
+  async function usageLine(hostChatId: string): Promise<HTMLElement | null> {
+    try {
+      const chats = await deps.api<{ id: string; host_chat_ref: string }[]>('GET',
+        `/v1/conversations?host=pocketrisu&host_chat_ref=${encodeURIComponent(hostChatId)}`, undefined, 5000);
+      const chat = chats.find((c) => c.host_chat_ref === hostChatId);
+      if (!chat) return null;
+      const cov = await deps.api<{ usage?: { total?: UsageTotal } }>('GET',
+        `/v1/conversations/${encodeURIComponent(chat.id)}/coverage?usage=true`, undefined, 5000);
+      return cov.usage?.total ? el('div', { class: 'muted', text: usageText(cov.usage.total, lang) }) : null;
+    } catch {
+      return null;
+    }
   }
 
   // --- inspector tab ---------------------------------------------------------------------------

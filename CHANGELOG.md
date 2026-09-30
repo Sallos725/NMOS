@@ -10,6 +10,10 @@ later, is `docs/KNOWN-ISSUES.md`.
   each excerpt was, and marks runs without vectors. Fixed in the tool: an older request's prompt window read empty once
   the chat had moved on (so answers the prompt already held counted as memory's), and a probe could not replay after
   the request's own message was deleted. Nothing changes in what a request recalls.
+- **Phase 17 step 3: what a chat's memory cost, shown.** A conversation's Inspector page has a **Model usage**
+  section: per generation (fact extraction, canon reads, summaries, embeddings) the model calls NMOS made and the
+  input, output and cached input tokens the provider reported, with how many calls reported them. The panel's
+  "This chat" card says the chat's totals in one line. No prices. A new plugin build.
 - **Phase 17 step 2: what NMOS's own model calls used** (ADR 0051, D61, migration 0027). Each extraction, canon read,
   summary and embedded chunk now keeps the tokens its model call used, exactly as the provider reported them (input,
   output, cached input and reasoning tokens, when reported), with the call's duration and model. Nothing is estimated:

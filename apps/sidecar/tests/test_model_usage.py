@@ -174,3 +174,111 @@ def test_a_call_that_reported_nothing_is_kept_as_a_call(llm_client, migrated):
     drain_extract(migrated, lambda s, u: (*fake_complete(s, u), llm.usage_of({"model": "local"}, 0.0)))
     (usage,) = usages(migrated, "SELECT usage FROM extraction")
     assert set(usage) == {"calls", "ms", "model"} and usage["calls"] == 1 and not llm.reported(usage)
+
+
+def test_the_chat_totals_per_generation_and_the_inspector(migrated):
+    chat = story_chat(30)
+    with make_client(migrated, **ON, embedder=FakeEmbedder(), embed_url="http://fake/v1", embed_model="fake-embed") as c:
+        sync(c, chat)
+        drain_extract(migrated, metered(fake_complete, {"input": 900, "output": 40, "cached": 100}))
+        drain_summaries(migrated, metered(stub, {"input": 300, "output": 60}))
+        drain_embeddings(migrated, MeteredEmbedder())
+        with psycopg.connect(migrated, autocommit=True) as conn:  # one result from before usage was recorded
+            conn.execute("UPDATE summary SET usage = NULL WHERE id = (SELECT id FROM summary WHERE level = 'scene' ORDER BY id LIMIT 1)")
+        conv = c.get("/v1/conversations").json()[0]["id"]
+        assert "usage" not in c.get(f"/v1/conversations/{conv}/coverage").json()  # the HUD's polls stay cheap
+        usage = c.get(f"/v1/conversations/{conv}/coverage", params={"usage": True}).json()["usage"]
+        by = {g["kind"]: g for g in usage["generations"]}
+        assert set(by) == {"extract", "summarize", "embed"} and all(g["active"] for g in by.values())
+        ex = by["extract"]
+        assert ex["calls"] == ex["reported"] == ex["rows"] and ex["input"] == 900 * ex["calls"]
+        assert ex["cached"] == 100 * ex["calls"] and ex["not_recorded"] == 0
+        sm = by["summarize"]
+        assert (sm["rows"], sm["not_recorded"], sm["calls"], sm["input"]) == (4, 1, 3, 900)
+        assert by["embed"]["input"] == 7 * by["embed"]["calls"] and by["embed"]["output"] == 0
+        assert usage["total"]["calls"] == sum(g["calls"] for g in by.values())
+        page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
+        assert "Model usage" in page and f"{ex['input']:,}" in page and "1 results from before recording" in page
+        page = c.get(f"/inspector/c/{conv}", params={"lang": "ko"}).text
+        assert "모델 사용량" in page and "기록 이전 결과 1개" in page
+
+
+def test_a_chat_without_model_work_says_so(llm_client, migrated):
+    chat = SimChat()
+    chat.user("Where is Mina?")
+    sync(llm_client, chat)
+    conv = llm_client.get("/v1/conversations").json()[0]["id"]
+    usage = llm_client.get(f"/v1/conversations/{conv}/coverage", params={"usage": True}).json()["usage"]
+    assert usage == {"generations": [], "total": {k: 0 for k in usage["total"]}}
+    assert "No model calls recorded yet." in llm_client.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
+
+
+def test_older_rows_count_under_their_kind_and_unreported_fields_are_not_zeros(migrated):
+    chat = story_chat(30)
+    with make_client(migrated, **ON, embedder=FakeEmbedder(), embed_url="http://fake/v1", embed_model="fake-embed") as c:
+        sync(c, chat)
+        drain_extract(migrated, metered(fake_complete, {"input": 900, "output": 40}))  # no `cached` reported
+        drain_embeddings(migrated, MeteredEmbedder())
+        with psycopg.connect(migrated, autocommit=True) as conn:  # as rows from before generations would be
+            conn.execute("UPDATE extraction SET extractor_key = NULL, usage = NULL WHERE id = (SELECT id FROM extraction"
+                         " ORDER BY id LIMIT 1)")
+            conn.execute("UPDATE revision_embedding SET projection = 'legacy:old-embed', usage = NULL WHERE"
+                         " (source_revision_id, chunk) = (SELECT source_revision_id, chunk FROM revision_embedding LIMIT 1)")
+        conv = c.get("/v1/conversations", params={"host_chat_ref": chat.id}).json()
+        assert [x["host_chat_ref"] for x in conv] == [chat.id]
+        assert c.get("/v1/conversations", params={"host_chat_ref": chat.id, "host": "other-host"}).json() == []
+        assert len(c.get("/v1/conversations", params={"host_chat_ref": chat.id, "host": "pocketrisu"}).json()) == 1
+        assert c.get("/v1/conversations", params={"host_chat_ref": "no-such-chat"}).json() == []
+        conv = conv[0]["id"]
+        usage = c.get(f"/v1/conversations/{conv}/coverage", params={"usage": True}).json()["usage"]
+        old = [g for g in usage["generations"] if g["key"] in (None, "legacy:old-embed")]
+        assert sorted((g["kind"], g["rows"], g["not_recorded"], g["calls"]) for g in old) == [
+            ("embed", 1, 1, 0), ("extract", 1, 1, 0)]
+        assert usage["generations"][-2:] == sorted(old, key=lambda g: g["key"] is None)  # without a generation: last
+        ex = next(g for g in usage["generations"] if g["kind"] == "extract" and g["key"])
+        assert ex["input_reported"] == ex["calls"] and ex["cached_reported"] == 0
+        emb = next(g for g in usage["generations"] if g["kind"] == "embed" and g["active"])
+        assert emb["output_reported"] == 0 and emb["input_reported"] == emb["calls"]
+        page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
+        section = page[page.index('id="s-usage"'):]
+        assert "no generation (older version)" in section and "legacy:old-embed" in section
+        embed_row = section[section.index("Embeddings"):].split("</tr>")[0]
+        assert embed_row.count("<td>—</td>") == 2  # output and cached input: not reported, not 0
+
+
+def test_the_totals_keep_canon_apart_and_count_a_rebuild_s_old_and_new_calls(migrated):
+    """Copilot re-review: the totals the owner reads as cost, per generation, with nothing lost or counted twice."""
+    chat, model = story(), Model()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        push(c, chat, canon_texts())
+        drain_canon(migrated, metered(model, {"input": 500, "output": 20}))
+        conv = c.get("/v1/conversations").json()[0]["id"]
+        get = lambda: c.get(f"/v1/conversations/{conv}/coverage", params={"usage": True}).json()["usage"]
+        before = get()
+        by = {g["kind"]: g for g in before["generations"]}
+        n_canon, n_turns = by["canon"]["calls"], by["extract"]["calls"]
+        assert n_canon == 2 and by["canon"]["input"] == 500 * n_canon and by["canon"]["key"] != by["extract"]["key"]
+        assert n_turns > 0 and by["extract"]["input"] == 500 * n_turns
+        assert before["total"]["calls"] == n_canon + n_turns and before["total"]["output"] == 20 * (n_canon + n_turns)
+        assert c.post(f"/v1/conversations/{conv}/rebuild").status_code == 200
+        drain_canon(migrated, metered(model, {"input": 700, "output": 30}))
+        after = {g["kind"]: g for g in get()["generations"]}
+    # The rebuild read everything again: the old calls stay counted (their results discarded), the new ones added.
+    assert after["canon"]["calls"] == 2 * n_canon and after["canon"]["input"] == (500 + 700) * n_canon
+    assert after["extract"]["calls"] == 2 * n_turns and after["extract"]["output"] == (20 + 30) * n_turns
+
+
+def test_a_call_that_reported_only_cached_tokens_counts_as_reported(migrated):
+    assert llm.reported({"calls": 1, "cached": 31}) and llm.reported({"calls": 1, "reasoning": 4})
+    chat = SimChat()
+    chat.user("Where is Mina?")
+    chat.reply("Mina is in the library.")
+    chat.user("And then?")
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        drain_extract(migrated, metered(fake_complete, {"cached": 31}))
+        conv = c.get("/v1/conversations").json()[0]["id"]
+        total = c.get(f"/v1/conversations/{conv}/coverage", params={"usage": True}).json()["usage"]["total"]
+    assert total["reported"] == total["calls"] > 0 and total["cached"] == 31 * total["calls"]
+    assert total["input_reported"] == total["output_reported"] == 0

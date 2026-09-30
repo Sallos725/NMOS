@@ -22,7 +22,10 @@ read, summary and embedded chunk keeps its call's usage (NULL before the migrati
 the archive carries it. Nothing is shown yet (step 3). The hosted check (Q7, `gemma4:31b-cloud` through Ollama, the owner's choice): three
 calls recorded the input and output tokens of each response's `usage` exactly, and Ollama's own count of the same
 prompts agreed (46/51, 50/86, 55/150); the provider names the model `gemma4:31b`. The local embedding check waits
-for a model that is not production's request-path embedder.
+for a model that is not production's request-path embedder. Step 3: `GET /v1/conversations/{id}/coverage?usage=true`
+totals the chat's usage per generation (calls, calls reported, input / output / cached / reasoning tokens, results
+from before recording), discarded results included; the HUD's polls leave it out. A "Model usage" section on the
+Inspector's conversation page, and one line in the panel's "This chat" card. A new plugin build.
 
 **Phase 18 — Recall by the words that matter: approved 2026-09-30, next after Phase 17.** Spec
 `docs/phases/PHASE-18.md`: a keyword lexical route beside the whole-message one (ADR 0004 / D15 to be amended) and

@@ -11,7 +11,10 @@ from .extraction import TARGET_CHARS
 from .normtext import NORMALIZER_VERSION
 
 
-def list_conversations(conn: psycopg.Connection, limit: int = 200) -> list[dict[str, Any]]:
+def list_conversations(conn: psycopg.Connection, limit: int = 200, host_chat_ref: str | None = None,
+                       host: str | None = None) -> list[dict[str, Any]]:
+    """The most recently used chats first; with `host_chat_ref` (and `host`: a chat ref is unique per host only), that
+    host chat only, however old."""
     return conn.execute(
         """
         SELECT c.id, c.host_chat_ref, c.host_character_ref, c.host_character_name, c.host_chat_name, c.created_at, c.head_commit_id,
@@ -20,11 +23,12 @@ def list_conversations(conn: psycopg.Connection, limit: int = 200) -> list[dict[
                (SELECT count(*) FROM worldline_commit w WHERE w.conversation_id = c.id) AS commits,
                (SELECT max(t.created_at) FROM retrieval_trace t WHERE t.conversation_id = c.id) AS last_retrieval
         FROM conversation c
-        WHERE c.head_commit_id IS NOT NULL
+        WHERE c.head_commit_id IS NOT NULL AND (%s::text IS NULL OR c.host_chat_ref = %s)
+          AND (%s::text IS NULL OR c.host = %s)
         ORDER BY coalesce((SELECT max(t.created_at) FROM retrieval_trace t WHERE t.conversation_id = c.id), c.created_at) DESC
         LIMIT %s
         """,
-        (limit,),
+        (host_chat_ref, host_chat_ref, host, host, limit),
     ).fetchall()
 
 

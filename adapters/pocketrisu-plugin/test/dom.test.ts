@@ -110,6 +110,43 @@ describe('panel', () => {
     expect(args.disabled_chats).toBe('chat-0');
   });
 
+  it("says in this chat's card what its memory cost in NMOS's model calls (PHASE-17 Q4)", async () => {
+    const { d, calls } = deps();
+    const total = { calls: 12, reported: 12, input: 48210, output: 3105, cached: 0 };
+    d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string) => {
+      calls.push([method, path, undefined]);
+      if (path === '/v1/conversations?host=pocketrisu&host_chat_ref=chat-1') return [{ id: 'conv-9', host_chat_ref: 'chat-1' }] as T;
+      if (path.startsWith('/v1/conversations/conv-9/coverage')) return { usage: { total } } as T;
+      return config as T;
+    };
+    await openPanel(d, 'status');
+    await vi.waitFor(() => expect(document.querySelector('#nmos-panel .card')!.textContent)
+      .toContain('NMOS model use: 12 calls · 48,210 input · 3,105 output tokens'));
+    expect(calls.map((c) => c[1])).toContain('/v1/conversations/conv-9/coverage?usage=true');
+  });
+
+  it('leaves the usage line out when the sidecar does not know the chat', async () => {
+    const { d } = deps();
+    d.api = async <T>(_method: 'GET' | 'POST' | 'PUT', path: string) =>
+      (path.startsWith('/v1/conversations?') ? [] : config) as T;
+    await openPanel(d, 'status');
+    await settle();
+    await vi.waitFor(() => expect(document.querySelector('#nmos-panel .card')!.textContent).toContain('NMOS on'));
+    expect(document.querySelector('#nmos-panel .card')!.textContent).not.toContain('NMOS model use');
+  });
+
+  it('draws this chat first and adds the usage line when it comes (Copilot review)', async () => {
+    const { d } = deps();
+    let answer: (v: unknown) => void = () => {};
+    d.api = <T>(_method: 'GET' | 'POST' | 'PUT', path: string) => (path.startsWith('/v1/conversations?')
+      ? new Promise<T>((resolve) => { answer = resolve as (v: unknown) => void; }) : Promise.resolve(config as T));
+    await openPanel(d, 'status');
+    const card = () => document.querySelector('#nmos-panel .card')!;
+    await vi.waitFor(() => expect(card().textContent).toContain('NMOS on'));  // not held back by the slow sidecar
+    expect(card().textContent).not.toContain('NMOS model use');
+    answer([]);
+  });
+
   it('says when NMOS is off for every chat', async () => {
     const { d } = deps({ enabled: false });
     await openPanel(d, 'status');
