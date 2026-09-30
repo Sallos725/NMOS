@@ -238,6 +238,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   let shown: Tab = tab;
 
   // --- status tab ------------------------------------------------------------------------------
+  let usageRound = 0; // a refresh or another chat's card makes an older answer stale
   async function refreshStatus(): Promise<void> {
     statusView.replaceChildren(el('div', { class: 'card muted', text: L('status.checking') }));
     const s = await deps.status();
@@ -374,8 +375,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     card.append(el('div', { class: off ? 'line warn' : 'line' }, el('span', { class: off ? 'dot warn' : 'dot ok' }),
       el('span', { text: L(off ? 'chat.off' : 'chat.on') })),
     el('p', { class: 'sub', text: L(off ? 'chat.off_sub' : 'chat.on_sub') }), el('div', { class: 'btns' }, flip), msg);
-    const spent = connected ? await usageLine(id) : null;
-    if (spent) card.insertBefore(spent, card.querySelector('p.sub'));
+    // What this chat's memory cost (PHASE-17 Q4) arrives after the card: the switch is never kept waiting for it.
+    if (connected) {
+      const shownFor = ++usageRound;
+      void usageLine(id).then((spent) => {
+        if (spent && shownFor === usageRound && card.isConnected) card.insertBefore(spent, card.querySelector('p.sub'));
+      });
+    }
     // The global switch wins (ADR 0048 §5): say so rather than show this chat as working.
     if (!enabled) card.insertBefore(el('div', { class: 'line warn' }, el('span', { class: 'dot warn' }),
       el('span', { text: L('chat.all_off') })), card.children[1] ?? null);
@@ -386,7 +392,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
    * does not know the chat or does not answer: the card is about the switch. */
   async function usageLine(hostChatId: string): Promise<HTMLElement | null> {
     try {
-      const chats = await deps.api<{ id: string; host_chat_ref: string }[]>('GET', '/v1/conversations', undefined, 5000);
+      const chats = await deps.api<{ id: string; host_chat_ref: string }[]>('GET',
+        `/v1/conversations?host_chat_ref=${encodeURIComponent(hostChatId)}`, undefined, 5000);
       const chat = chats.find((c) => c.host_chat_ref === hostChatId);
       if (!chat) return null;
       const cov = await deps.api<{ usage?: { total?: UsageTotal } }>('GET',
