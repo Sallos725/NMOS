@@ -39,9 +39,11 @@ them, the tool says so and exits with status 2: a lexical-only number is never p
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import re
+import statistics
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -87,13 +89,23 @@ def score(case: dict[str, Any], text: str, prompt: str = "") -> dict[str, Any]:
             "placed": sum(placed), "passed": all(held) and not any(placed), "needs_memory": needs}
 
 
-def prompt_window(conn: psycopg.Connection, trace: UUID) -> str:
-    """The text of the messages the request's prompt already held (its `in_context` ids, at its head)."""
-    rows = conn.execute(
-        "SELECT sr.content FROM retrieval_trace t JOIN active_membership am ON am.commit_id = t.commit_id"
-        " JOIN source_revision sr ON sr.id = am.source_revision_id JOIN source_object so ON so.id = sr.source_object_id"
-        " WHERE t.id = %s AND so.host_logical_id = ANY(SELECT jsonb_array_elements_text(t.in_context))"
-        " AND am.position <= t.upto_position", (trace,)).fetchall()
+WINDOW = ("SELECT sr.content FROM retrieval_trace t JOIN active_membership am ON am.commit_id = {commit}"
+          " JOIN source_revision sr ON sr.id = am.source_revision_id JOIN source_object so ON so.id = sr.source_object_id"
+          " WHERE t.id = %s AND so.host_logical_id = ANY(SELECT jsonb_array_elements_text(t.in_context))"
+          " AND am.position {upto} t.upto_position ORDER BY am.position")
+
+
+def prompt_window(conn: psycopg.Connection, trace: UUID, probe: bool = False) -> str:
+    """The text of the messages the request's prompt already held (its `in_context` ids). Membership is kept for the
+    head commit only, so once the chat moved on, the request's own commit has none: then the same messages are read at
+    the conversation's head (PHASE-18 step 2; an empty window scored answers the prompt held as memory's). A `probe`
+    takes the place of the request's own message, so that message is not part of the window."""
+    upto = "<" if probe else "<="
+    rows = conn.execute(WINDOW.format(commit="t.commit_id", upto=upto), (trace,)).fetchall()
+    if not rows:
+        rows = conn.execute(WINDOW.format(
+            commit="(SELECT c.head_commit_id FROM conversation c WHERE c.id = t.conversation_id)", upto=upto),
+            (trace,)).fetchall()
     return "\n".join(r["content"] or "" for r in rows)
 
 
@@ -151,8 +163,9 @@ def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: Recall
             results.append({**row, "status": "missing" if out is None else out["status"]})
             continue
         results.append({**row, "status": "ok", "tokens": out["tokens"], "policy": out["policy"],
-                        "vectors": out.get("vectors") == "on",
-                        **score(case, out["text"], prompt_window(conn, UUID(case["trace"])))})
+                        "vectors": out.get("vectors") == "on", "lexical_found": out.get("lexical_found", 0) > 0,
+                        "excerpt_chars": excerpt_lengths(out["text"]),
+                        **score(case, out["text"], prompt_window(conn, UUID(case["trace"]), case.get("query") is not None))})
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in results:
         groups[r["category"]].append(r)
@@ -167,20 +180,35 @@ def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: Recall
                          "in_prompt": sum(r["in_prompt"] for r in ok),
                          "forbidden": sum(r["forbidden"] for r in ok), "placed": sum(r["placed"] for r in ok),
                          "tokens_mean": round(sum(r["tokens"] for r in ok) / len(ok)) if ok else None,
-                         "vectors": sum(r["vectors"] for r in ok)}
+                         "vectors": sum(r["vectors"] for r in ok),
+                         "lexical_found": sum(r["lexical_found"] for r in ok),
+                         "excerpt_median": _median([n for r in ok for n in r["excerpt_chars"]])}
     return {"cases": results, "summary": summary}
+
+
+EXCERPT = re.compile(r"<Excerpt\b[^>]*>(.*?)</Excerpt>", re.S)
+
+
+def excerpt_lengths(text: str) -> list[int]:
+    """The length, in characters, of each raw excerpt a packet placed (PHASE-18 step 2)."""
+    return [len(html.unescape(m)) for m in EXCERPT.findall(text)]
+
+
+def _median(values: list[int]) -> float | None:
+    return statistics.median(values) if values else None
 
 
 def table(report: dict[str, Any]) -> str:
     """The summary as a markdown table: numbers only, no phrase of any case."""
     rows = ["| Category | cases | passed | needing memory: passed | gold held | of it in the prompt | forbidden placed"
-            " | skipped | mean tokens | with vectors |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+            " | skipped | mean tokens | with vectors | lexical found | excerpt median chars |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for name, s in sorted(report["summary"].items(), key=lambda kv: (kv[0] == "all", kv[0])):
         rows.append(f"| {name} | {s['cases']} | {s['passed']} | {s['memory_passed']}/{s['memory_cases']}"
                     f" | {s['held']}/{s['gold']} | {s['in_prompt']} | {s['placed']}/{s['forbidden']} | {s['skipped']}"
                     f" | {s['tokens_mean'] if s['tokens_mean'] is not None else '—'}"
-                    f" | {s['vectors']}/{s['cases'] - s['skipped']} |")
+                    f" | {s['vectors']}/{s['cases'] - s['skipped']} | {s['lexical_found']}/{s['cases'] - s['skipped']}"
+                    f" | {s['excerpt_median'] if s['excerpt_median'] is not None else '—'} |")
     return "\n".join(rows)
 
 
@@ -210,6 +238,8 @@ def main() -> None:
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:
+        if args.no_vectors:  # asked for explicitly: production recalls mostly without vectors (K34, PHASE-18 Q5)
+            print("Vectors off (--no-vectors): lexical recall only.\n")
         print(table(report))
     lexical = [r["name"] for r in report["cases"] if r["status"] == "ok" and not r["vectors"]]
     if not args.no_vectors and lexical:

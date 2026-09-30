@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:cd493c2fc71c".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:8d2683196822".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2207,7 +2207,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       try {
         const chats = await deps.api(
           "GET",
-          `/v1/conversations?host_chat_ref=${encodeURIComponent(hostChatId)}`,
+          `/v1/conversations?host=pocketrisu&host_chat_ref=${encodeURIComponent(hostChatId)}`,
           void 0,
           5e3
         );

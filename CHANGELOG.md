@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 18 step 2: recall measured by what lexical recall finds and how long excerpts are**
+  (`docs/perf/lexical-recall.md`). The evaluation tool says per case whether lexical recall found anything and how long
+  each excerpt was, and marks runs without vectors. Fixed in the tool: an older request's prompt window read empty once
+  the chat had moved on (so answers the prompt already held counted as memory's), and a probe could not replay after
+  the request's own message was deleted. Nothing changes in what a request recalls.
 - **Phase 17 step 3: what a chat's memory cost, shown.** A conversation's Inspector page has a **Model usage**
   section: per generation (fact extraction, canon reads, summaries, embeddings) the model calls NMOS made and the
   input, output and cached input tokens the provider reported, with how many calls reported them. The panel's
