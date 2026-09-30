@@ -17,7 +17,11 @@ re-extraction is paid once: each context message cut at 1,000 characters instead
 synthetic ones, and a turn extraction's assertion parked when its quote (12 characters or more) is not in the target
 turn. Offline measurements first, then a paid evaluation from the implementation branch after the owner's OK for its
 estimate; the implementation merges only when that evaluation meets the criteria. The owner accepted every proposed
-answer (Q1–Q6); no release. Step 1 (the spec) done.
+answer (Q1–Q6); no release. Step 1 (the spec) done. Step 2 (`docs/perf/extract-v14.md`, no model call): the
+evidence check would park 0.5 % (`deepseek`) and 5.0 % (`gemma`) of the evaluation copies' valid `extract-v13` rows,
+55 of 66 quoting a context turn; six of them are placed in passed M0 v2 packets and answer none, and leaving them all
+out loses one case (`gemma`, main chat, through a thread a misplaced `resolved` closed), which the owner accepted as
+the criterion (at most one case per run); the shorter context repeats a pair's current value no more often.
 
 **Phase 17 — Model-call cost and fallback outcomes: approved 2026-09-29, complete 2026-09-30, not released.** Spec
 `docs/phases/PHASE-17.md` (C4 and C5 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`): the tokens each model call of
