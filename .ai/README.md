@@ -71,7 +71,8 @@ sandbox cannot start either, and `claude -p` needs the network: Codex runs the s
 approves outside its sandbox.
 
 The Claude Code `codex` plugin (`/codex:rescue`) is not this review: it hands Codex the task, and Codex may
-edit. A §14 review goes through this script, read-only.
+edit. An external review the owner asks for under §14 goes through this script, read-only; the lead's
+self-review does not use it.
 
 ## Cost
 
