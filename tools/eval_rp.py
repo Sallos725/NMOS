@@ -144,7 +144,7 @@ def warm(opts: RecallOptions) -> None:
 def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: RecallOptions, policy: str | None = None,
              extractor: str | None = None, budget: int | None = None, summarizer: str | None = None,
              canon: str | None = None, projection: str | None = None,
-             embed_timeout_ms: int | None = None) -> dict[str, Any]:
+             embed_timeout_ms: int | None = None, keywords: bool | None = None) -> dict[str, Any]:
     """Every case's numbers, and a summary per category and overall. Read-only."""
     results: list[dict[str, Any]] = []
     overrides: dict[str, Any] = {"extractor_key": extractor} if extractor else {}
@@ -154,6 +154,8 @@ def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: Recall
         overrides["summarize_key"] = summarizer
     if canon:  # canon facts of this generation (ADR 0047), as of now
         overrides["canon_key"] = canon
+    if keywords is not None:  # the keyword route on or off whatever the request recorded (ADR 0052)
+        overrides["lexical_keywords"] = keywords
     known_at = datetime.now(timezone.utc) if extractor or summarizer or canon else None
     for case in cases:
         out = audit.replay(conn, UUID(case["trace"]), opts, policy, known_at=known_at, query=case.get("query"),
@@ -226,6 +228,8 @@ def main() -> None:
     ap.add_argument("--projection", help="search this embedding projection's vectors in place of each request's own")
     ap.add_argument("--embed-url", help="the embedding endpoint for --projection (needed when it was not this machine's)")
     ap.add_argument("--embed-timeout-ms", type=int, default=5000, help="each replay's query embedding timeout")
+    ap.add_argument("--keywords", choices=("on", "off"),
+                    help="the keyword route (ADR 0052) in place of what each request recorded (before it: off)")
     ap.add_argument("--json", action="store_true", help="per-case numbers as JSON (names and counts only)")
     args = ap.parse_args()
     cases = json.loads((args.dir / "cases.json").read_text(encoding="utf-8"))
@@ -234,7 +238,8 @@ def main() -> None:
         opts = options(conn, not args.no_vectors, args.projection, args.embed_url)
         warm(opts)
         report = evaluate(conn, cases, opts, args.policy, args.extractor, args.budget, args.summarizer, args.canon,
-                          args.projection, args.embed_timeout_ms)
+                          args.projection, args.embed_timeout_ms,
+                          None if args.keywords is None else args.keywords == "on")
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:

@@ -99,7 +99,9 @@ Measured 2026-09-29/30 outside the repository (numbers only; step 2 records the 
    lengths, labels runs without vectors, reads an older request's prompt window at the head (membership is kept for
    the head only), and a probe replays although the request's own message was since deleted. Baseline: lexical recall
    found a candidate for 43 of 145 queries (30 %); excerpt median 69–101 characters.
-3. Keyword lexical recall, ADR 0052, tests.
+3. Keyword lexical recall, ADR 0052, tests. **Done** (ADR 0052, D62, `docs/perf/lexical-recall.md` "Step 3"):
+   lexical recall found a candidate for 134 of 145 queries (92 %); an excerpt only the keyword route found is left out
+   when it repeats a secret still kept from someone (owner, 2026-09-30).
 4. `packet-v10` excerpts, tests, plugin build if the panel's budget advice changes.
 5. Evaluation, the owner's traces, real-host smoke, latency, review, documentation; Phase 18 complete.
 

@@ -72,23 +72,25 @@ def test_normalizer_generation_can_be_rebuilt(client, db):
 
 
 def test_lexical_recall_that_exceeds_its_budget_abstains_instead_of_blocking(migrated, monkeypatch):
-    """#12: a query matching nearly every message is cancelled; the request still succeeds."""
+    """#12: a query matching nearly every message is cancelled; the request still succeeds. The keyword route
+    (ADR 0052) runs under the same budget and abstains the same way."""
     from nmos_sidecar import retrieval
 
-    def slow(conn, *args):
-        conn.execute("SELECT pg_sleep(2)")  # stands in for scoring every message of a huge chat
+    def slow(conn, *args, **kwargs):
+        conn.execute("SELECT pg_sleep(2)")  # stands in for matching every message of a huge chat
         return []
 
     with make_client(migrated, lexical_timeout_ms=50) as c:
         chat = build()
         sync(c, chat)
-        monkeypatch.setattr(retrieval, "_lexical_candidates", slow)
+        monkeypatch.setattr(retrieval, "_lexical_matches", slow)
         started = time.perf_counter()
         out = recall(c, chat, "Hana looked out the window?", in_context=[])
         assert time.perf_counter() - started < 1.5
         trace = c.get(f"/v1/trace/{out['trace_id']}").json()
         monkeypatch.undo()
-        assert trace["latency_ms"]["lexical_mode"] == "timeout" and out["packet"]["text"] == ""
+        assert trace["latency_ms"]["lexical_mode"] == "timeout" and trace["latency_ms"]["keyword_mode"] == "timeout"
+        assert out["packet"]["text"] == ""
         # The setting does not leak into later statements of the same connection.
         assert "Hana looked out" in recall(c, chat, "Hana looked out the window?", in_context=[])["packet"]["text"]
 

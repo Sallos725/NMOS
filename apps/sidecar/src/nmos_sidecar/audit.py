@@ -154,6 +154,7 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     notes: list[str] = []
     recorded = {k: v for k, v in (t.get("recall_options") or {}).items() if k in RECORDED}
     recorded.setdefault("canon_key", None)  # a request from before canon facts read none (ADR 0047)
+    recorded.setdefault("lexical_keywords", False)  # nor did one from before the keyword route (ADR 0052)
     opts = dataclasses.replace(options, **recorded, extractor_key=t["extractor_key"],
                                rules_version=t["rules_version"] or "none", policy=policy)
     wanted = projection or t["embed_projection"]
@@ -184,10 +185,11 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     out = {"trace": str(t["id"]), "status": "ok", "policy": policy, "recorded_policy": t["policy"],
            "text": c.text, "tokens": c.tokens, "lines": c.ledger, "notes": notes,
            "vectors": g.vector_note if opts.embedder is not None else "off",
-           # lexical recall's outcome (PHASE-18 step 2): its mode ("on", "too_broad", "timeout", "off") and how many
-           # candidates it found; a candidate found by vectors only has no lexical score
-           "lexical": g.lexical_note,
-           "lexical_found": sum(1 for x in g.candidates if float(x.get("user_score") or 0) > 0)}
+           # lexical recall's outcome (PHASE-18): the whole-message and keyword routes' modes, and how many candidates
+           # either found; a candidate found by vectors only has neither score
+           "lexical": g.lexical_note, "keywords": g.keyword_note,
+           "lexical_found": sum(1 for x in g.candidates
+                                if float(x.get("user_score") or 0) > 0 or float(x.get("keyword_score") or 0) > 0)}
     if policy == t["policy"] and not notes:
         out["reproduced"] = _same(c.ledger, t["lines"])
     return out

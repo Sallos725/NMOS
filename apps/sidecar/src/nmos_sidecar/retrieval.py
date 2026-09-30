@@ -31,6 +31,7 @@ from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLIC
 from .state import current_state
 from .threads import relevant_threads, similarity
 from .vectors import vector_candidates
+from .keywords import keywords
 
 CANDIDATE_LIMIT = 50
 # A query that matches more head messages than this is too broad to score (a character's name alone,
@@ -38,6 +39,10 @@ CANDIDATE_LIMIT = 50
 # (Track A, A3; docs/perf/scale.md). Vectors, state and facts still run.
 BROAD_LIMIT = 200
 RRF_K = 60
+# The keyword route (PHASE-18, ADR 0052): each keyword of the user's message (keywords.py) is looked up on its own at
+# this word_similarity bar, near an exact match of the word. A keyword in more than BROAD_LIMIT head messages, or in
+# more than half of them, names what every scene holds (a main character) and is dropped.
+KEYWORD_THRESHOLD = 0.8
 QWEN3_QUERY_INSTRUCTION = ("Instruct: Given a question or remark from a role-play chat, retrieve the earlier story "
                            "passage that answers or relates to it\nQuery: ")
 # Candidates must match the user's message; the previous AI turn only breaks ties in ranking
@@ -65,13 +70,15 @@ class RecallOptions:
     narrator: str | None = None  # this chat is told in this character's first person (ADR 0035)
     summarize_key: str | None = None  # summaries of this generation in <Story> (packet-v8, ADR 0043); None: off
     canon_key: str | None = None  # canon facts of this generation (ADR 0047); None: off
+    lexical_keywords: bool = True  # the keyword route (ADR 0052); a trace that did not record it replays with it off
     excerpt_chars: int = MAX_EXCERPT_CHARS  # an excerpt's length at most; derived from the budget (`filled`), not recorded
     fill_facts: int = 0  # fact slots the budget adds, for facts kept from no one (`filled`, ADR 0049), not recorded
 
 
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
 RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit", "vector_min_sim", "query_prefix",
-            "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator", "summarize_key", "canon_key")
+            "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator", "summarize_key", "canon_key",
+            "lexical_keywords")
 CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
@@ -207,12 +214,69 @@ def _lexical_candidates(conn: psycopg.Connection, head: UUID, ids: list[UUID], q
     ).fetchall()
 
 
+def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut: int, timeout_ms: int,
+                     upto: int | None = None) -> tuple[list[dict[str, Any]], str]:
+    """The keyword route (ADR 0052): messages holding the message's keywords, scored by the keywords' rarity
+    (log of messages over matches, summed), best first, and the trace mode: "on", "none" (no keyword), "too_broad"
+    (every keyword dropped as too common) or "timeout". All keywords share one budget of `timeout_ms`."""
+    if not words:
+        return [], "none"
+    total = conn.execute(
+        "SELECT count(*) AS n FROM active_membership WHERE commit_id = %s AND position > %s AND position <= %s",
+        (head, cut, 2**31 - 1 if upto is None else upto)).fetchone()["n"]
+    started = time.perf_counter()
+    weights: dict[Any, float] = {}
+    kept = 0
+    try:
+        with conn.transaction():  # savepoint: a cancelled statement does not abort the request
+            previous = conn.execute("SELECT " + ", ".join(f"current_setting('{k}') AS \"{k}\""
+                                                          for k in _RESTORED)).fetchone()
+            for word in words:
+                left = timeout_ms - (time.perf_counter() - started) * 1000
+                if left < 1:
+                    raise psycopg.errors.QueryCanceled()
+                _apply(conn, {"pg_trgm.word_similarity_threshold": str(KEYWORD_THRESHOLD), "enable_seqscan": "off",
+                              "enable_indexscan": "off", "statement_timeout": str(max(1, int(left)))})
+                ids = _lexical_matches(conn, head, word, cut, BROAD_LIMIT + 1, upto)
+                if not ids or len(ids) > BROAD_LIMIT or len(ids) * 2 > total:
+                    continue
+                kept += 1
+                weight = math.log((total + 1) / len(ids))
+                for i in ids:
+                    weights[i] = weights.get(i, 0.0) + weight
+            _apply(conn, dict(previous))
+    except psycopg.errors.QueryCanceled:
+        return [], "timeout"
+    if not weights:
+        return [], "too_broad" if kept == 0 and total else "on"
+    best = sorted(weights, key=weights.get, reverse=True)[:CANDIDATE_LIMIT]
+    rows = conn.execute(
+        """
+        SELECT sr.id, am.position, am.turn, so.host_logical_id, rt.clean_content AS clean, sr.metadata->>'role' AS role,
+               sr.metadata->>'name' AS name
+        FROM active_membership am
+        JOIN source_revision sr ON sr.id = am.source_revision_id
+        JOIN source_object so ON so.id = sr.source_object_id
+        JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+        WHERE am.commit_id = %(head)s AND sr.id = ANY(%(ids)s)
+        """, {"head": head, "ids": best, "norm": NORMALIZER_VERSION}).fetchall()
+    for r in rows:
+        r["keyword_score"] = round(weights[r["id"]], 4)
+    rows.sort(key=lambda r: (r["keyword_score"], r["position"]), reverse=True)
+    return rows, "on"
+
+
 def fuse(lexical: list[dict[str, Any]], vector: list[dict[str, Any]], threshold: float,
-         min_sim: float) -> list[dict[str, Any]]:
-    """Reciprocal-rank fusion with abstention: a candidate needs a lexical or a vector signal above its bar."""
+         min_sim: float, keyword: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Reciprocal-rank fusion with abstention: a candidate needs a lexical or a vector signal above its bar, or a
+    keyword hit (ADR 0052: the keyword route has its own bar, so a keyword-only hit is kept with vectors off)."""
     merged: dict[Any, dict[str, Any]] = {}
     for rank, row in enumerate(lexical):
         item = merged.setdefault(row["id"], {**row, "sim": None, "rrf": 0.0})
+        item["rrf"] += 1 / (RRF_K + rank + 1)
+    for rank, row in enumerate(keyword or []):
+        item = merged.setdefault(row["id"], {**row, "sim": None, "user_score": 0.0, "score": 0.0, "rrf": 0.0})
+        item["keyword_score"] = row["keyword_score"]
         item["rrf"] += 1 / (RRF_K + rank + 1)
     for rank, row in enumerate(vector):
         item = merged.setdefault(row["id"], {**row, "user_score": 0.0, "score": 0.0, "rrf": 0.0})
@@ -220,7 +284,8 @@ def fuse(lexical: list[dict[str, Any]], vector: list[dict[str, Any]], threshold:
         item["text_start"], item["text_end"] = row["text_start"], row["text_end"]
         item["rrf"] += 1 / (RRF_K + rank + 1)
     kept = [m for m in merged.values()
-            if float(m.get("user_score") or 0) >= threshold or (m.get("sim") is not None and m["sim"] >= min_sim)]
+            if float(m.get("user_score") or 0) >= threshold or (m.get("sim") is not None and m["sim"] >= min_sim)
+            or float(m.get("keyword_score") or 0) > 0]
     kept.sort(key=lambda m: (m["rrf"], m["position"]), reverse=True)
     return kept
 
@@ -237,6 +302,8 @@ class Gathered:
     excluded: list[dict[str, Any]] = field(default_factory=list)
     timings: dict[str, float] = field(default_factory=dict)
     lexical_note: str = "off"
+    keyword_note: str = "off"  # the keyword route (ADR 0052): "on", "none", "too_broad", "timeout" or "off"
+    keyword_withheld: int = 0  # excerpts only the keyword route found, left out for repeating a secret (ADR 0052)
     vector_note: str = "off"
     cast: dict[str, str] = field(default_factory=dict)  # scene cast, entity key → name (ADR 0034)
     note: str = ""  # added to the packet's Note (a first-person narrator, ADR 0035)
@@ -268,12 +335,18 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     if (last := _head_last(conn, head, upto)) is not None:
         in_context = in_context | {last}
     lexical: list[dict[str, Any]] = []
+    keyword: list[dict[str, Any]] = []
     vector: list[dict[str, Any]] = []
     if query.strip():
         cut = _cut(conn, head, upto)
         lexical, g.lexical_note = _lexical(conn, head, query, previous_ai, cut, options.threshold,
                                            options.lexical_timeout_ms, upto)
         g.timings["lexical"] = round((time.perf_counter() - started) * 1000, 2)
+        if options.lexical_keywords:
+            t0 = time.perf_counter()
+            keyword, g.keyword_note = _keyword_lexical(conn, head, keywords(query), cut, options.lexical_timeout_ms,
+                                                       upto)
+            g.timings["keywords"] = round((time.perf_counter() - t0) * 1000, 2)
         if options.embedder is not None:
             t0 = time.perf_counter()
             try:
@@ -286,14 +359,16 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 g.vector_note = "on"
             except (LLMError, ValueError) as exc:  # fail open to lexical-only
                 g.vector_note = f"fallback: {exc}"[:200]
-    g.candidates = fuse(lexical, vector, options.threshold, options.vector_min_sim)
+    g.candidates = fuse(lexical, vector, options.threshold, options.vector_min_sim, keyword)
     g.excluded = [c for c in g.candidates if c["host_logical_id"] in in_context]
     eligible = [c for c in g.candidates if c["host_logical_id"] not in in_context][: options.top_k]
     focus = f"{query} {previous_ai}"
     # The turn the packet shows: the message's turn index since packet-v7, as facts have it (ADR 0041).
     by_turn = options.policy in TURN_POLICIES
     for c in eligible:
-        clean = c["clean"] if c.get("user_score") else c["clean"][c["text_start"]:c["text_end"]]
+        # a lexical or keyword hit is the whole message; a vector-only hit is its chunk
+        clean = (c["clean"] if c.get("user_score") or c.get("keyword_score")
+                 else c["clean"][c["text_start"]:c["text_end"]])
         g.ranked.append(Excerpt(turn=c["turn"] if by_turn else c["position"],
                                 speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
                                 text=excerpt(clean, focus, max_chars=options.excerpt_chars), score=float(c["rrf"]),
@@ -372,7 +447,27 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.story = summaries.packet_lines(conn, head, options.summarize_key, view["secrets"] if view else [], query,
                                          in_context, upto, known_at,
                                          scene.names(g.cast, r) if r is not None else frozenset())
+    # The keyword route adds no raw text that repeats a secret still kept from someone (ADR 0052, owner 2026-09-30):
+    # an excerpt only it found is left out when it does, so it places no secret the other routes would not. The same
+    # test as a summary's (PHASE-12 Q3), stricter when someone it is kept from is in the scene.
+    keyword_only = {str(c["id"]) for c in g.candidates if _keyword_only(c, options)}
+    if keyword_only and any(e.revision_id in keyword_only for e in g.ranked) and options.extractor_key:
+        if view is None:
+            view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
+                               options.canon_key, canon_facts)
+        r = view["resolution"]
+        present = scene.names(g.cast, r) if r is not None else frozenset()
+        kept = [e for e in g.ranked
+                if e.revision_id not in keyword_only or not summaries.leaks(e.text, view["secrets"], present)]
+        g.keyword_withheld = len(g.ranked) - len(kept)
+        g.ranked = kept
     return g
+
+
+def _keyword_only(c: dict[str, Any], options: RecallOptions) -> bool:
+    """A candidate that only the keyword route admitted (fuse's other two bars not met)."""
+    return (float(c.get("keyword_score") or 0) > 0 and float(c.get("user_score") or 0) < options.threshold
+            and not (c.get("sim") is not None and c["sim"] >= options.vector_min_sim))
 
 
 def cast_facts(facts: list[dict[str, Any]], to_persona: Callable[[dict[str, Any]], bool]) -> list[dict[str, Any]]:
@@ -521,7 +616,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
         return {"revision_id": str(c["id"]), "position": c["position"], "host_logical_id": c["host_logical_id"],
                 "score": round(float(c.get("score") or 0), 4), "user_score": round(float(c.get("user_score") or 0), 4),
                 "sim": None if c.get("sim") is None else round(float(c["sim"]), 4),
-                "rrf": round(float(c.get("rrf") or 0), 5)}
+                "keyword_score": round(float(c.get("keyword_score") or 0), 4), "rrf": round(float(c.get("rrf") or 0), 5)}
 
     placed = [e for e in compiled.ledger if e["placed"]]
     trace_id: UUID = uuid7()
@@ -536,7 +631,9 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             Jsonb([{"revision_id": e.revision_id, "turn": e.turn, "score": round(e.score, 5)} for e in compiled.excerpts]),
             Jsonb([brief(c) for c in g.excluded]),
             compiled.tokens,
-            Jsonb({**timings, "lexical_mode": g.lexical_note, "vector_mode": g.vector_note,
+            Jsonb({**timings, "lexical_mode": g.lexical_note, "keyword_mode": g.keyword_note,
+                   "keyword_withheld": g.keyword_withheld,
+                   "vector_mode": g.vector_note,
                    "state_items": len(g.state), "facts": len(g.lead) + len(g.facts), "threads": len(g.threads),
                    "kept_state": kept["state"], "kept_facts": kept["facts"], "kept_threads": kept["threads"],
                    "placed": {k: sum(1 for e in placed if e["kind"] == k)
