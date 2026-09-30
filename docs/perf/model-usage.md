@@ -51,8 +51,9 @@ are covered by the plugin and sidecar tests, not re-run on the host; the lexical
 
 On an evaluation copy (151 messages, 1,511 model-work rows): the Inspector's per-generation totals 2.1 ms. The
 coverage view's `produced` counts, which the display reads every 3 s while background work is pending (off the
-request path), with the head's summary jobs found by their job keys: 2.3 ms there, 47 ms on a 10,000-message bench
-chat with 625 summaries. It reads the head's current summaries as `summaries.current` does (since the Copilot reviews
+request path), with the head's summary jobs found by its window keys: 3.3 ms there, 46 ms on a 10,000-message bench
+chat with 625 summaries; the job lookup alone scans the chat's open and dead jobs without an index (9.7 ms with 50,000
+jobs in the table; production held 2,100 in all on 2026-09-30, finished jobs being pruned after 7 days). It reads the head's current summaries as `summaries.current` does (since the Copilot reviews
 of #186; counting every row was ≈1 ms but counted a fact or summary an edit had only replaced, and every summary job
 ever made for the chat).
 
