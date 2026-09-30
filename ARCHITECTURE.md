@@ -542,6 +542,8 @@ that stop or start being current and which version takes their place, relations 
 itself, threads, secrets, repairs whose match changes, conflicts, the persona and canon aliases. Nothing is written.
 Its fingerprint (head, links and repairs in force, generations, the difference) makes the action answer 409 when
 memory changed since; without one the action works as before. The story's order still decides between two facts.
+After an undo the owner may re-extract the turns extracted while the join held (their hints list the two names as
+one): those turns' extractions are discarded and just they are queued, at the owner's provider's cost.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

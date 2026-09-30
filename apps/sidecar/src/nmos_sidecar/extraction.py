@@ -285,10 +285,12 @@ def claim(conn: psycopg.Connection, handled: dict[str, str]) -> dict[str, Any] |
         ).fetchone()
 
 
-def finish(conn: psycopg.Connection, job_id: int, status: str) -> None:
+def finish(conn: psycopg.Connection, job_id: int, status: str, locked_at: Any = None) -> None:
+    """End a claimed job; with `locked_at`, only the claim that ran it (a reclaimed job belongs to its new worker)."""
     with conn.transaction():
         conn.execute("UPDATE job SET status = %s, locked_at = NULL, updated_at = now() WHERE id = %s"
-                     " AND status = 'running'", (status, job_id))
+                     " AND status = 'running' AND (%s::timestamptz IS NULL OR locked_at = %s::timestamptz)",
+                     (status, job_id, locked_at, locked_at))
 
 
 def fail(conn: psycopg.Connection, job: dict[str, Any], error: str) -> None:
@@ -697,6 +699,13 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     turn_text = "\n".join(r["content"] for r in ctx["members"])
     items += revealed(parsed, secrets, turn_text)
     with conn.transaction():
+        # Still this worker's job? A rebuild or a re-extraction (PHASE-20 Q7) makes it obsolete, and a stale claim is
+        # taken back after 10 minutes, while the model answers: a row built from the context loaded before must not
+        # become the turn's live extraction.
+        if job.get("locked_at") is not None and conn.execute(
+                "SELECT 1 FROM job WHERE id = %s AND status = 'running' AND locked_at = %s FOR UPDATE",
+                (job["id"], job["locked_at"])).fetchone() is None:
+            return "obsolete"
         extraction_id = uuid7()
         inserted = conn.execute(
             "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model, raw,"
@@ -914,3 +923,51 @@ def coverage(conn: psycopg.Connection, key: str | None, conv: UUID | None = None
         stats["complete"] = r["compiled"] == r["eligible"]
         out[r["conv"]] = stats
     return out
+
+
+# The extraction serving each turn of the head, chosen as `facts.served_assertions` chooses it: the active generation
+# first, then the most recently activated.
+SERVING_EXTRACTIONS = """
+SELECT DISTINCT ON (am.turn) am.turn, am.source_revision_id AS rid, am.turn_hash, x.hints, x.created_at
+FROM conversation c
+JOIN active_membership am ON am.commit_id = c.head_commit_id AND am.turn_hash IS NOT NULL
+JOIN extraction x ON x.source_revision_id = am.source_revision_id AND x.window_hash = am.turn_hash
+JOIN projection_generation g ON g.key = x.extractor_key
+WHERE c.id = %(conv)s AND x.discarded_at IS NULL
+ORDER BY am.turn, x.extractor_key = %(key)s DESC, g.activated_at DESC, g.key
+"""
+
+
+def joined_turns(conn: psycopg.Connection, conv: UUID, link: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    """Turns of the head whose serving extraction (`key` the active generation; an older one may serve, ADR 0014) was
+    made since the owner's join and listed the two names as one entity in KNOWN ENTITIES (ADR 0025 item 5, PHASE-20
+    Q7). No upper bound at the undo: a job the model was still answering then stores its row later, and a second
+    call must find it too. The caller checks that the names are apart now."""
+    pair = {norm(link["name"]), norm(link["same_as"])}
+    turns: dict[int, dict[str, Any]] = {}
+    for row in conn.execute(SERVING_EXTRACTIONS, {"conv": conv, "key": key}).fetchall():
+        if row["created_at"] < link["created_at"] or not isinstance(row["hints"], dict):
+            continue
+        for h in row["hints"].get("entities") or ():
+            if h.get("type", "character") == link["entity_type"] and pair <= {
+                    norm(n) for n in [h.get("name"), *(h.get("also") or ())] if n}:
+                turns.setdefault(row["turn"], {"turn": row["turn"], "rid": row["rid"], "turn_hash": row["turn_hash"]})
+                break
+    return sorted(turns.values(), key=lambda t: t["turn"])
+
+
+def discard_turns(conn: psycopg.Connection, turns: list[dict[str, Any]]) -> int:
+    """These turns' extractions of every generation stop counting (kept for audit) and their extract jobs become
+    obsolete, as a rebuild does for a whole chat (D22): `schedule_generation` then queues just these turns again
+    (REBUILD_PENDING), and no older generation serves them meanwhile (ADR 0014)."""
+    if not turns:
+        return 0
+    rids, hashes = [t["rid"] for t in turns], [t["turn_hash"] for t in turns]
+    with conn.transaction():
+        n = conn.execute(
+            "UPDATE extraction x SET discarded_at = now() FROM unnest(%s::uuid[], %s::text[]) AS t(rid, h)"
+            " WHERE x.source_revision_id = t.rid AND x.window_hash = t.h AND x.discarded_at IS NULL",
+            (rids, hashes)).rowcount
+        conn.execute("UPDATE job SET status = 'obsolete', locked_at = NULL, updated_at = now() WHERE kind = 'extract'"
+                     " AND payload->>'revision_id' = ANY(%s)", ([str(r) for r in rids],))
+    return n

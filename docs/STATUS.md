@@ -18,7 +18,9 @@ no side chosen per fact (Q5) and re-extraction of just the turns a join covered,
 release. Step 1 (the spec) done. Step 2 (ADR 0055, D65): a preview of a join, a split and the undo of either
 (`POST …/entity-links/preview`, `…/entity-links/{link}/remove/preview`, `…/repairs/preview`,
 `…/repairs/{repair}/remove/preview`), the difference of two reads of the head, nothing written; the action answers
-409 with a fresh preview when its `expect` fingerprint no longer matches. No panel yet (step 4).
+409 with a fresh preview when its `expect` fingerprint no longer matches. No panel yet (step 4). Step 3: after an
+undo, `POST …/entity-links/{link}/reextract` discards the extractions of the turns extracted while the join held
+(their hints list the two names as one) and queues just those turns; the undo's preview counts them.
 
 **Phase 19 — One extractor generation, `extract-v14`: approved 2026-09-30, complete 2026-10-01, not released.** Spec `docs/phases/PHASE-19.md`:
 the changes queued for the next extractor generation (below) and a shorter context shipped together, so each chat's
