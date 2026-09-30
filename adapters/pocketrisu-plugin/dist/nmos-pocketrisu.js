@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:65a007de672e".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:cd493c2fc71c".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -259,10 +259,9 @@
     ],
     "chat.turn_off": ["\uC774 \uCC44\uD305\uC5D0\uC11C \uB044\uAE30", "Turn off for this chat"],
     // what this chat's memory cost in NMOS's own model calls (PHASE-17 Q4)
-    "usage.line": [
-      "NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uD638\uCD9C {calls}\uD68C \xB7 \uC785\uB825 {input} \xB7 \uCD9C\uB825 {output} \uD1A0\uD070{cached}",
-      "NMOS model use: {calls} calls \xB7 {input} input \xB7 {output} output tokens{cached}"
-    ],
+    "usage.line": ["NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uD638\uCD9C {calls}\uD68C \xB7 {sides} \uD1A0\uD070{cached}", "NMOS model use: {calls} calls \xB7 {sides} tokens{cached}"],
+    "usage.input": ["\uC785\uB825 {n}", "{n} input"],
+    "usage.output": ["\uCD9C\uB825 {n}", "{n} output"],
     "usage.cached": [" (\uC785\uB825 \uC911 \uCE90\uC2DC {n})", " ({n} of the input cached)"],
     "usage.partial": [" \xB7 {calls}\uD68C \uC911 {r}\uD68C\uB9CC \uBCF4\uACE0\uB428", " \xB7 {r} of {calls} calls reported"],
     "usage.unreported": [
@@ -270,10 +269,6 @@
       "NMOS model use: {calls} calls (the provider reported no tokens)"
     ],
     "usage.none": ["NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uC544\uC9C1 \uAE30\uB85D \uC5C6\uC74C", "NMOS model use: none recorded yet"],
-    "usage.line_input": [
-      "NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uD638\uCD9C {calls}\uD68C \xB7 \uC785\uB825 {input} \uD1A0\uD070{cached}",
-      "NMOS model use: {calls} calls \xB7 {input} input tokens{cached}"
-    ],
     "usage.older_only": [
       "NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uC774\uC804 \uBC84\uC804\uC5D0\uC11C \uB9CC\uB4E0 \uAE30\uC5B5\uC774\uB77C \uC0AC\uC6A9\uB7C9\uC774 \uAE30\uB85D\uB418\uC9C0 \uC54A\uC558\uC74C",
       "NMOS model use: not recorded (this memory was made by an older version)"
@@ -1824,9 +1819,11 @@ ${revisionHash}`;
     if (!u.reported) return t(lang, "usage.unreported", { calls: count(u.calls) }) + before;
     const cached = u.cached ? t(lang, "usage.cached", { n: count(u.cached) }) : "";
     const partial = u.reported < u.calls ? t(lang, "usage.partial", { r: count(u.reported), calls: count(u.calls) }) : "";
-    const vars = { calls: count(u.calls), input: count(u.input), output: count(u.output), cached };
-    const line = u.output_reported === 0 ? t(lang, "usage.line_input", vars) : t(lang, "usage.line", vars);
-    return line + partial + before;
+    const sides = [
+      u.input_reported === 0 ? "" : t(lang, "usage.input", { n: count(u.input) }),
+      u.output_reported === 0 ? "" : t(lang, "usage.output", { n: count(u.output) })
+    ].filter(Boolean).join(" \xB7 ");
+    return t(lang, "usage.line", { calls: count(u.calls), sides, cached }) + partial + before;
   }
 
   // src/ui.ts
