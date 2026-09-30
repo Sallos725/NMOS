@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 18 step 2: recall measured by what lexical recall finds and how long excerpts are**
+  (`docs/perf/lexical-recall.md`). The evaluation tool says per case whether lexical recall found anything and how long
+  each excerpt was, and marks runs without vectors. Fixed in the tool: an older request's prompt window read empty once
+  the chat had moved on (so answers the prompt already held counted as memory's), and a probe could not replay after
+  the request's own message was deleted. Nothing changes in what a request recalls.
 - **Phase 17 step 4: the progress display says how memory was served and what background work made.** "✓ Memory
   injected (… chars) · lexical only" when recall had to go without vectors (the embedding model did not answer in
   time, K34), "· reused" when a reroll reused the packet already built; neither is shown as a warning. When

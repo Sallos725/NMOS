@@ -257,6 +257,8 @@ def test_older_rows_count_under_their_kind_and_unreported_fields_are_not_zeros(m
                          " (source_revision_id, chunk) = (SELECT source_revision_id, chunk FROM revision_embedding LIMIT 1)")
         conv = c.get("/v1/conversations", params={"host_chat_ref": chat.id}).json()
         assert [x["host_chat_ref"] for x in conv] == [chat.id]
+        assert c.get("/v1/conversations", params={"host_chat_ref": chat.id, "host": "other-host"}).json() == []
+        assert len(c.get("/v1/conversations", params={"host_chat_ref": chat.id, "host": "pocketrisu"}).json()) == 1
         assert c.get("/v1/conversations", params={"host_chat_ref": "no-such-chat"}).json() == []
         conv = conv[0]["id"]
         usage = c.get(f"/v1/conversations/{conv}/coverage", params={"usage": True}).json()["usage"]
@@ -303,3 +305,26 @@ def test_summary_counts_and_jobs_are_the_heads_own(migrated):
             w = summaries.windows(conn, head)[1]
             conn.execute(summaries._INSERT, summaries._scene_job(conv, gen.key, w, 100, ":abc123"))
         assert cov()["summaries"] == {"pending": 1, "failed": 0}
+
+
+def test_the_totals_keep_canon_apart_and_count_a_rebuild_s_old_and_new_calls(migrated):
+    """Copilot re-review: the totals the owner reads as cost, per generation, with nothing lost or counted twice."""
+    chat, model = story(), Model()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        push(c, chat, canon_texts())
+        drain_canon(migrated, metered(model, {"input": 500, "output": 20}))
+        conv = c.get("/v1/conversations").json()[0]["id"]
+        get = lambda: c.get(f"/v1/conversations/{conv}/coverage", params={"usage": True}).json()["usage"]
+        before = get()
+        by = {g["kind"]: g for g in before["generations"]}
+        n_canon, n_turns = by["canon"]["calls"], by["extract"]["calls"]
+        assert n_canon == 2 and by["canon"]["input"] == 500 * n_canon and by["canon"]["key"] != by["extract"]["key"]
+        assert n_turns > 0 and by["extract"]["input"] == 500 * n_turns
+        assert before["total"]["calls"] == n_canon + n_turns and before["total"]["output"] == 20 * (n_canon + n_turns)
+        assert c.post(f"/v1/conversations/{conv}/rebuild").status_code == 200
+        drain_canon(migrated, metered(model, {"input": 700, "output": 30}))
+        after = {g["kind"]: g for g in get()["generations"]}
+    # The rebuild read everything again: the old calls stay counted (their results discarded), the new ones added.
+    assert after["canon"]["calls"] == 2 * n_canon and after["canon"]["input"] == (500 + 700) * n_canon
+    assert after["extract"]["calls"] == 2 * n_turns and after["extract"]["output"] == (20 + 30) * n_turns
