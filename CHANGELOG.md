@@ -5,6 +5,10 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 18 complete** (`docs/perf/lexical-recall.md` "Step 5"). Replayed on the owner's recorded requests (read-only,
+  counts only), `packet-v10` with keywords placed excerpts in 10 of 34 requests that had none without vectors, and no
+  secret or thread that `packet-v9` would not. Known issues K39 (a grown excerpt can carry a value the story has since
+  replaced) and K40 (a keyword of two or three syllables is not found where a particle is attached to it).
 - **Phase 18 step 4: `packet-v10`, excerpts that grow** (ADR 0053, D63), the new default. An excerpt starts from the
   sentence holding most of your message's keywords and adds its neighbouring sentences, after then before, up to four
   and within the length the memory budget gives it; before, it was always two sentences (about 70 characters) whatever

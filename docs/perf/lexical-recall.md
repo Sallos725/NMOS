@@ -117,3 +117,62 @@ All runs at 4,000 with the keyword route on except the first column. "Whole leng
   one of the three `main` runs the whole-message timeout did not occur (p95 161.6 ms), so it is intermittent.
 - Two runs of the same code differ in a few cases (e.g. lexical found 37 or 36 on one run): a keyword whose lookup
   ends near its 25 ms slice is kept in one run and dropped in another.
+
+
+## Step 5: the owner's recorded requests, latency, real host (2026-09-30)
+
+### Recorded requests replayed (read-only, counts only)
+
+The owner's production requests with a ledger (45, 2026-09-23 to 09-30; 11 could not replay because their chat has
+changed since) replayed read-only against the production database with `main`'s code: `packet-v9` without the keyword
+route (A) against `packet-v10` with it (B), each at its recorded budget (≈600–2,000). Nothing was sent to a model:
+first without vectors, as 70 % of those requests ran (K34), then with the query embedded by a separate CPU instance of
+the same embedding model (only 7 requests were of the current projection; the others replayed lexical only). Only
+counts were kept.
+
+| 34 requests | A: `packet-v9`, no keywords | B: `packet-v10` + keywords |
+|---|---|---|
+| excerpts placed, vectors off | 0 | 24 (in 10 requests; median 140 characters) |
+| excerpts placed, vectors where available | 31 (median 95) | 43 (median 115) |
+| facts / threads / claims placed | 138 / 9 / 4 | 132 / 9 / 4 |
+| mean tokens (vectors off) | 321 | 410 |
+| placed lines only B has | — | 24 excerpts, 1 fact (vectors off) |
+| placed lines only A has | 7 facts (the budget went to excerpts) | — |
+| keyword route | — | on 29, every keyword too broad 5; 2 keyword-only excerpts left out for a secret |
+
+- No line only B places is a secret (a Private line) or a thread: the thread lines are the same nine, and a closed
+  thread is never offered. No placed excerpt of either side repeats a secret kept from someone (the summaries'
+  test, ADR 0042, with the scene's cast). No packet went past its budget.
+- Without vectors `packet-v9` placed no excerpt at all on these requests: the whole-message route found nothing above
+  its bar. The keyword route gave excerpts to 10 of the 34.
+- Replayed with their own policy and vectors, 5 of the 7 requests of the current projection reproduced exactly; one
+  differed in one excerpt (the CPU instance's vectors differ slightly from the GPU's, cosine 0.995–0.998), and one
+  lacked one canon fact line. Replayed with the production build's code (before this phase), all seven give the same
+  ledgers, differences included: this phase changed no `packet-v9` replay. The missing canon line predates it and is
+  recorded for a separate look.
+
+### Latency
+
+`tools/bench_story.py` at 10,000 messages, budget 4,000, three runs alternating with `packet-v9` (the code before
+step 3), retrieve p50 / p95 in ms:
+
+| Questions | `packet-v9` | `packet-v10` + keywords |
+|---|---|---|
+| the benchmark's eight and one of four common keywords (「창가 등대 바람 오늘 기억나?」, each in every reply) | 122.5, 126.7, 123.7 / 419–451 | 133.8, 135.6, 147.5 / 451–457 |
+| that question alone, every request | 418.1, 421.3, 425.1 / 441–452 | 454.9, 449.0, 450.5 / 482–485 |
+
+- Over the benchmark's questions the median run is +11.9 ms (criterion +15). Asked alone every time, the question
+  adds 29 ms: one of its words is in every reply and uses its whole 25 ms slice before it is dropped; the other three
+  take ≈2 ms each. `packet-v9` already takes 421 ms there, the whole-message route running to its 300 ms timeout. A
+  10 ms slice would bring it to +16 ms and drop more words of middling frequency in long messages; the owner accepted
+  the criterion as measured over the benchmark's questions (2026-09-30).
+- Profiling that question showed K40: three of its four words matched no message at 0.8, since each stands with a
+  particle in the text ("창가에", "바람이", "오늘은").
+
+### Real host
+
+The isolated PocketRisu v1.13.0 with stub models (chat, extraction, and an embedder slower than the 150 ms timeout
+for queries), `main`'s plugin build and sidecar: a chat whose second message says "앵무새, 그 녀석 이름은 …" followed by
+88 messages of other talk, then the question "처음 만났을 때 다들 그 늙은 앵무새를 뭐라고 불렀는지 기억나?". The
+request took 252 ms (retrieve 82 ms); the trace says `packet-v10`, `keyword_mode` on; the prompt the stub received held
+that message as a four-sentence excerpt ending in "…", and the progress display said "✓ 기억 주입 (551자)".
