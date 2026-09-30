@@ -11,8 +11,9 @@ After any non-trivial implementation change, use the project `peer-review` skill
 work done. The default review is scoped to the diff against the task base; do not perform a repository-wide
 audit unless the owner explicitly requests one.
 
-Only changes classified as high risk by `AGENTS.md §14` require an independent Codex review. For other
-non-trivial changes, the scoped Claude self-review is sufficient. On the owner's host, a required Codex
-review needs `--inline` because Codex's sandbox cannot start with the current user-namespace restriction.
+The scoped Claude self-review is the review; no change requires an independent Codex review. Mark a change
+the `AGENTS.md §14` list calls high risk as such in the report and PR (the owner tracks those in Linear).
+Run a Codex review only when the owner asks for one; on the owner's host it needs `--inline` because
+Codex's sandbox cannot start with the current user-namespace restriction.
 
 The original Claude-generated operating draft is retained at `docs/reference/CLAUDE-original.md` for provenance only.
