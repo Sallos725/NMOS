@@ -73,3 +73,22 @@ def test_a_grown_excerpt_never_takes_the_packet_past_its_budget(client):
     sync(client, chat)
     out = recall(client, chat, "what did the parrot say?", in_context=[], budget=200)
     assert out["packet"]["token_estimate"] <= 200
+
+
+def test_a_request_recorded_with_packet_v9_replays_as_it_was(migrated):
+    """Requests recorded while packet-v9 was the default keep compiling with it (ADR 0027, 0053)."""
+    from uuid import UUID
+
+    from conftest import make_client
+    from nmos_sidecar import audit
+    from nmos_sidecar.retrieval import RecallOptions
+    from test_packet_ledger import db
+
+    with make_client(migrated, packet_policy="packet-v9") as c:
+        chat = parrot_chat()
+        sync(c, chat)
+        out = recall(c, chat, QUESTION, in_context=[])
+    with db(migrated) as conn:
+        again = audit.replay(conn, UUID(out["trace_id"]), RecallOptions())
+    assert again["policy"] == again["recorded_policy"] == "packet-v9"
+    assert again["reproduced"] is True and again["text"] == out["packet"]["text"]
