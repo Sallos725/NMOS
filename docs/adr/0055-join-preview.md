@@ -19,18 +19,22 @@ a fact of one name replaced by a fact of the other, in the story's order, shown 
 2. **What it lists (PHASE-20 Q1).** The entities of the two names before and after; current facts that stop being
    current (`fact_replaced` by a different value of the same version, `fact_merged` into the same value,
    `fact_ended` with no successor) or start being current (`fact_back`, with the version it takes over); a
-   relationship or promise whose two sides become one entity (`self_relation`, `self_thread`; kept, Q6); threads
-   that change status, become another thread's restatement or come back; secrets whose holders, kept-from or open
-   names change, flagged when a character it is kept from now holds it; repairs in force whose match changes;
-   conflicts (disputed whereabouts, canon, locked) that appear or go; a join with the persona; canon aliases that
-   come with the join. `changes` is false when the entities and every list are unchanged.
+   relationship or promise whose two sides become one entity (`self_relation`, `self_thread`; kept, Q6) or stop
+   being one (`…_gone`); threads that change status, become another thread's restatement (`thread_merged`) or come
+   back; secrets whose holders, kept-from or open names change (`secret`, flagged `kept_from_holder` when a
+   character it is kept from now holds it, `kept_from_holder_gone` when no longer), merge or come back; repairs in
+   force whose match changes; conflicts (disputed whereabouts, canon, locked) that appear or go; a join with the
+   persona and its undo (`persona`, `persona_gone`); canon aliases that come or go with it. Every kind has its mirror,
+   so an undo's preview is the join's read backwards. `changes` is false when the entities and every list are
+   unchanged.
 3. **Endpoints.** `POST /v1/conversations/{id}/entity-links/preview` (a join, the body of the join),
    `POST …/entity-links/{link}/remove/preview`, `POST …/repairs/preview` (`name_split` only; other kinds 422) and
    `POST …/repairs/{repair}/remove/preview` (a split's). Each answers `{action, changes, before, after, lines, counts,
    fingerprint}`, with the checks of the action itself (422, 404).
 4. **The fingerprint (Q4).** A hash of the head, the owner links and repairs in force, the extractor and canon
    generations, the canon manifest the read used, and the preview's entities and lines. The join, a split and both
-   removes accept it as `expect`; the sidecar computes the preview again and answers 409 with the fresh preview when
+   removes accept it as `expect`; in the action's transaction the sidecar locks the chat's row (`FOR UPDATE`, as a
+   sync does), reads the head under the lock, computes the preview again and answers 409 with the fresh preview when
    it differs, writing nothing. Without `expect` the endpoints behave as before.
 5. **No side is chosen (Q5).** The story's order decides which version holds, as it did; the preview says which.
    A wrong winner is repaired with ADR 0044's retraction or correction.
@@ -40,5 +44,8 @@ a fact of one name replaced by a fact of the other, in the story's order, shown 
 - A preview costs two memory reads (about 15 ms each on the 147-message restored chat).
 - The fingerprint refuses an action after any new turn or extraction that changes the difference, and after any new
   head at all; the panel shows the fresh preview it gets with the 409.
+- A sync, a join or a repair of the same chat waits for the checked action; the extraction worker does not take the
+  chat's lock, so an extraction committed within the few milliseconds between the check and the write is not
+  refused. Its rows are read at the next read like any other.
 - The turns extracted while a join held still carry the joined names after an undo; Phase 20 step 3 re-extracts
   them on the owner's click.

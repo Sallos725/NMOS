@@ -59,20 +59,24 @@ def _facts(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str, Any]
     return sorted(lines, key=lambda x: (x["fact"]["turn"] or 0, x["fact"]["id"]))
 
 
+def _selves(view: dict[str, Any], r: Any) -> tuple[dict[int, dict[str, Any]], dict[int, dict[str, Any]]]:
+    """Relationships and threads of `view` whose two sides are one entity under `r`."""
+    rels = {f["id"]: f for f in view["facts"] if f["predicate"] == "relationship" and f.get("object")
+            and r.key(f.get("subject_type"), f["subject"]) == r.key(f.get("object_type"), f["object"])}
+    threads = {t["id"]: t for t in view["threads"]
+               if t.get("to") and r.key("character", t["by"]) == r.key("character", t["to"])}
+    return rels, threads
+
+
 def _self_relations(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str, Any]]:
-    """A relationship, promise or thread whose two sides become one entity (PHASE-20 Q6: shown, kept)."""
-    rb, ra = before["resolution"], after["resolution"]
-    lines = []
-    for f in after["facts"]:
-        if f["predicate"] == "relationship" and f.get("object"):
-            ends = ((f.get("subject_type"), f["subject"]), (f.get("object_type"), f["object"]))
-            if ra.key(*ends[0]) == ra.key(*ends[1]) and rb.key(*ends[0]) != rb.key(*ends[1]):
-                lines.append({"kind": "self_relation", "fact": _fact(f)})
-    for t in after["threads"]:
-        if t.get("to") and ra.key("character", t["by"]) == ra.key("character", t["to"]) and (
-                rb.key("character", t["by"]) != rb.key("character", t["to"])):
-            lines.append({"kind": "self_thread", "thread": _thread(t)})
-    return lines
+    """A relationship, promise or thread whose two sides become one entity (PHASE-20 Q6: shown, kept), or stop
+    being one (an undo or a split)."""
+    rels_b, threads_b = _selves(before, before["resolution"])
+    rels_a, threads_a = _selves(after, after["resolution"])
+    return ([{"kind": "self_relation", "fact": _fact(f)} for i, f in rels_a.items() if i not in rels_b]
+            + [{"kind": "self_relation_gone", "fact": _fact(f)} for i, f in rels_b.items() if i not in rels_a]
+            + [{"kind": "self_thread", "thread": _thread(t)} for i, t in threads_a.items() if i not in threads_b]
+            + [{"kind": "self_thread_gone", "thread": _thread(t)} for i, t in threads_b.items() if i not in threads_a])
 
 
 def _thread(t: dict[str, Any]) -> dict[str, Any]:
@@ -113,10 +117,13 @@ def _secrets(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str, An
     lines = []
     for s in after["secrets"]:
         old = was.get(s["id"])
-        flagged = kept_from_holder(s, ra) and not kept_from_holder(old, rb)
-        if old is None or names(old) != names(s) or flagged:
-            lines.append({"kind": "secret", "secret": _secret(s), **({"before": _secret(old)} if old else {}),
-                          "kept_from_holder": flagged})
+        if old is None:
+            lines.append({"kind": "secret_back", "secret": _secret(s)})
+            continue
+        new, gone = kept_from_holder(s, ra), kept_from_holder(old, rb)
+        if names(old) != names(s) or new != gone:
+            lines.append({"kind": "secret", "secret": _secret(s), "before": _secret(old),
+                          "kept_from_holder": new and not gone, "kept_from_holder_gone": gone and not new})
     kept = {x["id"] for x in after["secrets"]}
     lines += [{"kind": "secret_merged", "secret": _secret(s)} for sid, s in was.items() if sid not in kept]
     return lines
@@ -147,6 +154,15 @@ def _conflicts(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str, 
             + [{"kind": "conflict_gone", "conflict": brief(c)} for k, c in was.items() if k not in now])
 
 
+def _canon_aliases(r: Any, names: Names) -> dict[tuple[str, str], dict[str, Any]]:
+    out = {}
+    for t, n in names:
+        for x in (r.entity(t, n) or {}).get("aliases", ()):
+            if x.get("canon"):
+                out.setdefault((norm(x["name"]), norm(x["other"])), x)
+    return out
+
+
 def _entities(before: dict[str, Any], after: dict[str, Any], names: Names) -> tuple[list, list, list]:
     rb, ra = before["resolution"], after["resolution"]
     b = {e["id"]: _entity(e) for t, n in names if (e := rb.entity(t, n))}
@@ -154,13 +170,11 @@ def _entities(before: dict[str, Any], after: dict[str, Any], names: Names) -> tu
     lines = []
     if any(e["persona"] for e in a.values()) and not all(e["persona"] for e in b.values()):
         lines.append({"kind": "persona"})
-    seen = {(norm(x["name"]), norm(x["other"])) for t, n in names if (e := rb.entity(t, n)) for x in e["aliases"]}
-    for t, n in names:
-        e = ra.entity(t, n)
-        for x in (e or {}).get("aliases", ()):
-            if x.get("canon") and (norm(x["name"]), norm(x["other"])) not in seen:
-                lines.append({"kind": "canon_alias", "name": x["name"], "other": x["other"]})
-                seen.add((norm(x["name"]), norm(x["other"])))
+    elif any(e["persona"] for e in b.values()) and not all(e["persona"] for e in a.values()):
+        lines.append({"kind": "persona_gone"})
+    was, now = _canon_aliases(rb, names), _canon_aliases(ra, names)
+    lines += [{"kind": "canon_alias", "name": x["name"], "other": x["other"]} for k, x in now.items() if k not in was]
+    lines += [{"kind": "canon_alias_gone", "name": x["name"], "other": x["other"]} for k, x in was.items() if k not in now]
     return list(b.values()), list(a.values()), lines
 
 

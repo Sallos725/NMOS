@@ -649,11 +649,16 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                  "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names")}
         return {"action": action, **out, "fingerprint": preview.fingerprint(out, state)}
 
-    def expect_same(conn, conv_id: UUID, head: UUID, expect: str | None, action: str, **a: Any) -> None:
-        """An action made from a preview (Q4): 409 with a fresh preview when memory changed since."""
+    def expect_same(conn, conv_id: UUID, expect: str | None, action: str, **a: Any) -> None:
+        """An action made from a preview (Q4): 409 with a fresh preview when memory changed since. Called inside the
+        action's transaction: the chat's row is locked first and its head read under the lock, so a sync, a join or a
+        repair of the same chat waits until the action is written (ADR 0055)."""
         if expect is None:
             return
-        fresh = preview_of(conn, conv_id, head, action, **a)
+        head = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s FOR UPDATE", (conv_id,)).fetchone()
+        if head is None or head["head_commit_id"] is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        fresh = preview_of(conn, conv_id, head["head_commit_id"], action, **a)
         if fresh["fingerprint"] != expect:
             raise HTTPException(status_code=409, detail={"message": "memory changed since the preview",
                                                          "preview": jsonable_encoder(fresh)})
@@ -673,9 +678,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         with request.app.state.pool.connection() as conn:
             head = head_of(conn, conv_id)
             check_join(view_of(conn, head)["resolution"], body.entity_type, body.name, body.same_as)
-            expect_same(conn, conv_id, head, body.expect, "join", entity_type=body.entity_type, name=body.name,
-                        same_as=body.same_as)
             with conn.transaction():
+                expect_same(conn, conv_id, body.expect, "join", entity_type=body.entity_type, name=body.name,
+                            same_as=body.same_as)
                 link = conn.execute(
                     "INSERT INTO entity_link (id, conversation_id, entity_type, name, same_as) VALUES (%s, %s, %s, %s, %s)"
                     " RETURNING id, entity_type, name, same_as, created_at",
@@ -695,9 +700,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         """The owner takes a link back (ADR 0025): the next read resolves the names as the story alone
         does. The row stays with `removed_at` for audit. With `expect`, as a join (PHASE-20 Q4)."""
         with request.app.state.pool.connection() as conn:
-            if body is not None and body.expect is not None:
-                expect_same(conn, conv_id, head_of(conn, conv_id), body.expect, "unlink", row=link_id)
             with conn.transaction():
+                expect_same(conn, conv_id, body.expect if body else None, "unlink", row=link_id)
                 n = conn.execute("UPDATE entity_link SET removed_at = now() WHERE id = %s AND conversation_id = %s"
                                  " AND removed_at IS NULL", (link_id, conv_id)).rowcount
         if not n:
@@ -774,10 +778,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                              version_key)
             except repairs.RepairError as e:
                 raise HTTPException(status_code=422, detail=str(e)) from e
-            if body.kind == "name_split":
-                expect_same(conn, conv_id, head, body.expect, "split", entity_type=body.entity_type, name=body.item,
-                            other=body.other)
             with conn.transaction():
+                if body.kind == "name_split":
+                    expect_same(conn, conv_id, body.expect, "split", entity_type=body.entity_type, name=body.item,
+                                other=body.other)
                 row = conn.execute(
                     "INSERT INTO owner_repair (id, conversation_id, kind, target, value, note) VALUES (%s, %s, %s, %s, %s, %s)"
                     " RETURNING id, kind, target, value, note, created_at",
@@ -799,9 +803,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         """The owner takes a repair back (ADR 0044): the next read is as the story alone says. The row stays with
         `removed_at` for audit. With `expect`, a split's undo made from its preview (PHASE-20 Q4)."""
         with request.app.state.pool.connection() as conn:
-            if body is not None and body.expect is not None:
-                expect_same(conn, conv_id, head_of(conn, conv_id), body.expect, "unsplit", row=repair_id)
             with conn.transaction():
+                expect_same(conn, conv_id, body.expect if body else None, "unsplit", row=repair_id)
                 n = conn.execute("UPDATE owner_repair SET removed_at = now() WHERE id = %s AND conversation_id = %s"
                                  " AND removed_at IS NULL", (repair_id, conv_id)).rowcount
         if not n:
