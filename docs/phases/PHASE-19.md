@@ -1,6 +1,7 @@
 # Phase 19 — One new extractor generation: shorter context, synthetic examples, evidence in the turn
 
-> **Status: approved (2026-09-30) as proposed, current.** Not a stage of `docs/ROADMAP-1.0.md`: it ships the
+> **Status: approved (2026-09-30) as proposed; complete (2026-10-01).** `deepseek-v4.1-flash`'s M0 criterion was missed
+> and accepted by the owner (K41). Not a stage of `docs/ROADMAP-1.0.md`: it ships the
 > changes queued for the next extractor generation (`docs/STATUS.md`, "Queued for the next extractor generation") and
 > the owner's request of 2026-09-30 to cut what extraction costs without losing quality. Stages 7–8 become Phase 20+.
 > No release.
@@ -82,7 +83,7 @@ itself.
 
 The noise below is estimated from three runs of today's prompt and is itself rough.
 
-- [ ] Every existing test passes; new deterministic cases: a context message is cut at 1,000 characters and the target
+- [x] Every existing test passes; new deterministic cases (`tests/test_extract_v14.py`, `tests/test_eval_extract_sample.py`): a context message is cut at 1,000 characters and the target
       is not; the prompt's examples use only the synthetic names; a quote found in the target turn keeps an assertion
       valid, a quote found only in a context turn parks it with its reason, a quote under 12 characters and a row
       without a quote are unchanged, a reveal behaves as before, a canon read does not apply the check; the extractor
@@ -103,7 +104,7 @@ The noise below is estimated from three runs of today's prompt and is itself rou
       `extract-v13` numbers: cases passed and needing memory not lower by more than one per run; forbidden phrases
       placed not higher in total; the Q3 check parks at most 10 % of each model's valid rows.
 - [x] Review per AGENTS.md §14 (one Codex review of step 3, its finding fixed) (high risk, one independent review).
-- [ ] Documentation listed in scope.
+- [x] Documentation listed in scope (step 5, 2026-10-01).
 
 ## Steps (one pull request each)
 
