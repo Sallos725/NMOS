@@ -122,7 +122,7 @@ correct a fact, a secret found out or kept, split two names) in the panel, audit
 (approved 2026-09-28, complete 2026-09-29): canon as sources. Then Phase 15, the packet that fills its
 budget (approved and complete 2026-09-29, `docs/phases/PHASE-15.md`; not a Stage 6 item), and Phase 16: export and
 restore (approved and complete 2026-09-29, `docs/phases/PHASE-16.md`, ADR 0050, `docs/perf/archive.md`).
-Phase 20 (approved 2026-10-01, `docs/phases/PHASE-20.md`): a name join, split or undo shown before it is made, and an
+Phase 20 (approved and complete 2026-10-01, `docs/phases/PHASE-20.md`, `docs/perf/join-preview.md`): a name join, split or undo shown before it is made, and an
 undo that re-extracts the turns a join covered (C7 of the idea survey). Open beyond them: transition rules, not yet
 assigned to a phase.
 

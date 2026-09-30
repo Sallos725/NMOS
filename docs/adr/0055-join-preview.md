@@ -42,8 +42,9 @@ a fact of one name replaced by a fact of the other, in the story's order, shown 
    activated, as every read chooses) was made since the link's `created_at` and listed the two names as one entity in
    KNOWN ENTITIES (`extraction.hints`). No upper bound at the undo: a job the model was still answering stores its
    row later, and the next call finds it. Their extractions of every generation are discarded (kept for audit) and
-   just those turns queued, as a rebuild does for a whole chat (D22); the undo's preview carries their count
-   (`reextract.turns`). A second call finds nothing.
+   just those turns queued, as a rebuild does for a whole chat (D22). The undo's preview lists them
+   (`reextract.turns`, `reextract.list`) only when the names end up apart, its fingerprint covers the list, and the
+   panel sends it as `turns`: no more turns are queued than the owner saw. A second call finds nothing.
 7. **A job made obsolete while the model answers stores nothing.** Before its row is written the worker locks its
    job and checks that it is still running under its own claim (`locked_at`); a rebuild, a re-extraction or a claim
    taken back after 10 minutes makes it store nothing, and `finish` ends only the claim that ran it. This closes the
@@ -53,7 +54,8 @@ a fact of one name replaced by a fact of the other, in the story's order, shown 
 
 ## Consequences
 
-- A preview costs two memory reads (about 15 ms each on the 147-message restored chat).
+- A preview costs two memory reads: at most 35.4 ms with the re-extraction count on the 147-message restored chat
+  (`docs/perf/join-preview.md`).
 - The fingerprint refuses an action after any new turn or extraction that changes the difference, and after any new
   head at all; the panel shows the fresh preview it gets with the 409.
 - A sync, a join or a repair of the same chat waits for the checked action; the extraction worker does not take the

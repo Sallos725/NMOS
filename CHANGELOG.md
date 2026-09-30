@@ -5,6 +5,16 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 20 complete: a name join shown before it is made** (ADR 0055, D65, `docs/perf/join-preview.md`). Joining
+  two names, splitting them, or undoing either now shows first what changes in the chat's memory: which current
+  fact replaces which (the story's order decides), facts that merge, a relationship, promise or thread of a character
+  with themself, a secret kept from someone who holds it, repairs whose match changes, conflicts, the persona and
+  canon names; "nothing changes" when nothing does. The action is made from the preview and refused (a fresh preview)
+  when memory changed since. Undoing a join offers to re-extract the turns extracted while it held, off by default,
+  one extraction call a turn. Also fixed: a rebuild's or re-extraction's job that the model was still answering no
+  longer stores its old result. New API: `…/entity-links/preview`, `…/entity-links/{id}/remove/preview`,
+  `…/entity-links/{id}/reextract`, `…/repairs/preview`, `…/repairs/{id}/remove/preview`, and `expect` on the join,
+  a split and both removes. A new plugin build.
 - **Phase 19 complete: `extract-v14`** (ADR 0054, D64, `docs/perf/extract-v14.md`), a new extractor generation. The
   model sees each previous turn's messages up to 1,000 characters instead of 2,000, so an extraction reads about a sixth
   fewer input tokens; on sampled turns it found more of a synthetic chat's facts (115 against 106–109 of 167). The

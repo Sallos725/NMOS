@@ -1,6 +1,7 @@
 # Phase 20 — A name join shown before it is made, and an undo that restores what it changed
 
-> **Status: approved (2026-10-01) with every proposed answer (Q1–Q10); current.** Stage 6 of `docs/ROADMAP-1.0.md`, remaining
+> **Status: approved (2026-10-01) with every proposed answer (Q1–Q10); complete (2026-10-01),
+> `docs/perf/join-preview.md`.** Stage 6 of `docs/ROADMAP-1.0.md`, remaining
 > items ("edit aliases"; the entity merge and split of the original §20): C7 of
 > `docs/proposals/IDEA-SURVEY-2026-09-29.md`, which the survey's recommended order puts with Stage 6's remaining items
 > (owner, 2026-09-29). Tracked as AGE-3. No release; it ships with the Stage 6 milestone.
@@ -37,7 +38,9 @@ counts only), each of the owner's seven joins read with and without it:
 - **Three joined two entities into one.** Two of them left one current fact fewer: two statements about the two names
   now share one version, and one replaces the other without a line anywhere. None made a relationship or thread of a
   character with itself; thread, secret and conflict counts did not change.
-- **72 turns** (52 and 20, two joins) were extracted with the two names listed as one entity. Removing those joins
+- **72 turns** (52 and 20, two joins) were extracted with the two names listed as one entity. *Corrected in step 5:
+  125 turns (52, 53 and 20); this count read only the active generation's extractions, and one chat's turns are served
+  by an older generation (`docs/perf/join-preview.md`).* Removing those joins
   today would bring back two entities, but those turns' facts would keep the names as the extractor wrote them under
   the join.
 - A memory read of the longest chat (147 messages) takes about 15 ms (median of seven), so a preview of two reads is
@@ -66,20 +69,25 @@ counts only), each of the owner's seven joins read with and without it:
 
 ## Acceptance criteria
 
-- [ ] Every existing test and memory-evaluation case passes; recorded packets replay as they were.
-- [ ] Deterministic cases for each line kind of Q1, for a join, a split and an undo; in each, the preview equals the
+Met (2026-10-01, `docs/perf/join-preview.md`):
+
+- [x] Every existing test and memory-evaluation case passes; recorded packets replay as they were. *(Sidecar 754,
+      plugin 193; no packet or request-path change.)*
+- [x] Deterministic cases for each line kind of Q1, for a join, a split and an undo; in each, the preview equals the
       difference read after the action, and "nothing changes" is shown when nothing does.
-- [ ] A stale fingerprint gets 409 and changes nothing (a new turn, and an extraction landing on the same head, that
+- [x] A stale fingerprint gets 409 and changes nothing (a new turn, and an extraction landing on the same head, that
       change the difference); a request without one behaves as today.
-- [ ] Undo of a join followed by re-extraction of the turns it covered gives the same memory as a chat that never had
-      the join (deterministic, stub model).
-- [ ] On the restored copies, for each of the owner's seven joins: the preview matches the result of undoing and
-      redoing it on the copy.
-- [ ] Real-host smoke on an isolated PocketRisu: a join previewed and made in the panel, then undone.
-- [ ] A preview of the longest measured chat within 200 ms.
-- [ ] The change marked high risk where it touches identity (AGENTS.md §14: the join, split and undo endpoints) and
-      extraction (the re-extraction), in the report and the PR.
-- [ ] ADR, `ARCHITECTURE.md`, README, the Korean guide, KNOWN-ISSUES, CHANGELOG.
+- [x] Undo of a join followed by re-extraction of the turns it covered gives the same memory as a chat that never had
+      the join (deterministic, stub model). *(The facts equal the twin's; no served extraction lists the names as one.
+      A job made obsolete while the model answers stores nothing, found in review.)*
+- [x] On the restored copies, for each of the owner's seven joins: the preview matches the result of undoing and
+      redoing it on the copy. *(14 of 14.)*
+- [x] Real-host smoke on an isolated PocketRisu: a join previewed and made in the panel, then undone. *(v1.13.0, with
+      the covered turns re-extracted.)*
+- [x] A preview of the longest measured chat within 200 ms. *(At most 35.4 ms, 147 messages.)*
+- [x] The change marked high risk where it touches identity (AGENTS.md §14: the join, split and undo endpoints) and
+      extraction (the re-extraction), in the report and the PR. *(#202, #204.)*
+- [x] ADR, `ARCHITECTURE.md`, README, the Korean guide, KNOWN-ISSUES, CHANGELOG.
 
 ## Steps (one pull request each)
 
@@ -87,7 +95,7 @@ counts only), each of the owner's seven joins read with and without it:
 2. The preview and the fingerprint check (sidecar), with the deterministic cases. **Done** (ADR 0055, D65).
 3. Re-extracting the turns extracted under a join (Q7). **Done** (ADR 0055 item 5).
 4. The panel, the plugin build and the real-host smoke. **Done** (isolated PocketRisu v1.13.0, stub models).
-5. The restored copies, latency, docs; Phase 20 complete.
+5. The restored copies, latency, docs; Phase 20 complete. **Done** (`docs/perf/join-preview.md`).
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).
 

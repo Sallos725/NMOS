@@ -142,7 +142,8 @@ marks (`known_by`, `hidden_from`) stay free text. *Since 0.1.0-beta.17 (`extract
 shown without a name is written as a `?` description and joined to its name when a later turn reveals it
 (3/3 on the owner's reveal turn; ADR 0024), and the owner can join any two names of a chat in the panel
 (entity page → "Same as another entity"; ADR 0025). *On `main` (Phase 13, ADR 0044):* the owner can split two
-names a wrong automatic alias joined (entity page → "Split names joined by mistake"). *What remains:* NMOS finds
+names a wrong automatic alias joined (entity page → "Split names joined by mistake"). *Phase 20 (ADR 0055):* each
+join, split and undo is previewed first, and an undo can re-extract the turns extracted while the join held. *What remains:* NMOS finds
 neither case by itself; each chat's "Needs attention" lists ambiguous names and a split whose names another name still
 joins, and the owner fixes them in the panel. *Closed 2026-10-01 (owner decision):* the panel is the fix; NMOS
 finding these by itself is not planned.

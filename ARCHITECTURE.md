@@ -543,7 +543,8 @@ itself, threads, secrets, repairs whose match changes, conflicts, the persona an
 Its fingerprint (head, links and repairs in force, generations, the difference) makes the action answer 409 when
 memory changed since; without one the action works as before. The story's order still decides between two facts.
 After an undo the owner may re-extract the turns extracted while the join held (their hints list the two names as
-one): those turns' extractions are discarded and just they are queued, at the owner's provider's cost.
+one): those turns' extractions are discarded and just they are queued, at the owner's provider's cost. A worker
+whose job a rebuild or a re-extraction made obsolete while the model answered stores nothing.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
