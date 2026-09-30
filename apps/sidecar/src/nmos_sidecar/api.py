@@ -37,7 +37,7 @@ from .models import (
     BodiesRequest,
     BodiesResponse,
     CanonSyncRequest, CanonSyncResponse,
-    EntityLinkRequest, ExpectRequest, MemoryModeRequest, RepairRequest,
+    EntityLinkRequest, ExpectRequest, MemoryModeRequest, ReextractRequest, RepairRequest,
     OutputRequest,
     Packet,
     ReconcileRequest,
@@ -645,8 +645,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         then = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), what_if=what_if)
         out = preview.diff(now, then, names, exclude)
         if action == "unlink":  # the turns an undo leaves as the join had them extracted (Q7)
-            turns = extraction.joined_turns(conn, conv_id, link, rt["active_extractor"])
-            out["reextract"] = {"turns": len(turns)}
+            ra = then["resolution"]
+            one = ra.entity(link["entity_type"], link["name"]), ra.entity(link["entity_type"], link["same_as"])
+            apart = not (one[0] is not None and one[1] is not None and one[0]["id"] == one[1]["id"])
+            found = extraction.joined_turns(conn, conv_id, link, rt["active_extractor"]) if apart else []
+            turns = [t["turn"] for t in found]
+            out["reextract"] = {"turns": len(turns), "list": turns}  # none while the names stay one entity anyway
         state = {"head": head, "links": sorted(str(x["id"]) for x in facts_links_of(conn, conv_id)),
                  "repairs": sorted(str(x["id"]) for x in now["repairs"]), "extractor": rt["active_extractor"],
                  "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names")}
@@ -713,10 +717,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return {"removed": str(link_id)}
 
     @app.post("/v1/conversations/{conv_id}/entity-links/{link_id}/reextract", dependencies=[Depends(auth)])
-    def reextract_joined(conv_id: UUID, link_id: UUID, request: Request):
+    def reextract_joined(conv_id: UUID, link_id: UUID, request: Request, body: ReextractRequest | None = None):
         """After the owner takes a join back (PHASE-20 Q7): extract again, with the names apart, the turns extracted
         while the join held. Their extractions of every generation are discarded (kept for audit) and just those
-        turns queued; model calls at the owner's provider. A new call, not the old result brought back."""
+        turns queued; model calls at the owner's provider. A new call, not the old result brought back. With `turns`
+        (the undo's preview listed them), only those of them still found: never more calls than the owner saw."""
         ex, cur = rt["extractor"], rt["settings"]
         with request.app.state.pool.connection() as conn:
             head = head_of(conn, conv_id)
@@ -733,6 +738,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if a is not None and b is not None and a["id"] == b["id"]:
                 raise HTTPException(status_code=422, detail="the two names are one entity now")
             turns = extraction.joined_turns(conn, conv_id, link, ex.key)
+            if body is not None and body.turns is not None:
+                turns = [t for t in turns if t["turn"] in set(body.turns)]
             with conn.transaction():
                 discarded = extraction.discard_turns(conn, turns)
                 queued = extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id)

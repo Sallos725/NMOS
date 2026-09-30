@@ -129,9 +129,9 @@ describe('owner links on an entity page (ADR 0025)', () => {
 
 describe('join preview (PHASE-20)', () => {
   const en = (key: StringKey, vars?: Record<string, string | number>) => t('en', key, vars);
-  const entity = (name: string, persona = false) => ({ id: name, name, names: [name], persona });
-  const base: Preview = { action: 'join', changes: true, before: [entity('Rin'), entity('Mina')], after: [entity('Mina')],
-    lines: [], counts: {}, fingerprint: 'f' };
+  const entity = (name: string, names = [name], persona = false) => ({ id: name, name, names, persona });
+  const base: Preview = { action: 'join', changes: true, before: [entity('Rin'), entity('Mina')],
+    after: [entity('Mina', ['Mina', 'Rin'])], lines: [], counts: {}, fingerprint: 'f' };
 
   it('says nothing changes when nothing does', () => {
     expect(previewText({ ...base, changes: false }, en)).toEqual([en('pv.nothing')]);
@@ -139,21 +139,23 @@ describe('join preview (PHASE-20)', () => {
 
   it('puts the entities first and the warnings before the rest, with how many more', () => {
     const lines: Preview['lines'] = [
-      { kind: 'fact_merged', fact: { text: 'Mina identity knight' }, by: { text: 'Rin identity knight' } },
+      { kind: 'secret', secret: { text: 'who holds the key', turn: 1 } },  // an ordinary secret line first
+      { kind: 'fact_merged', fact: { text: 'Mina identity knight', turn: 3 }, by: { text: 'Rin identity knight' } },
       { kind: 'fact_replaced', fact: { text: 'Mina located in chapel' }, by: { text: 'Rin located in harbor', turn: 2 } },
-      { kind: 'self_thread', thread: { text: 'wait', by: 'Mina' } },
-      { kind: 'secret', secret: { text: 'the letter is forged' }, kept_from_holder: true },
+      { kind: 'self_thread', thread: { text: 'wait', by: 'Mina', turn: 5 } },
+      { kind: 'secret', secret: { text: 'the letter is forged', turn: 4 }, kept_from_holder: true },
       { kind: 'repair', repair: { kind: 'fact_retract' }, before: '1', after: null },
       { kind: 'something_new' },
     ];
     const out = previewText({ ...base, lines }, en, (s) => s, 3);
-    expect(out[0]).toBe('Rin, Mina → Mina');
-    expect(out.slice(1, 4)).toEqual([
-      "Note: Mina's promise \"wait\" becomes one to themselves",
-      'Note: the secret "the letter is forged" is kept from someone who holds it',
-      '"Rin located in harbor" replaces "Mina located in chapel" (turn 2)',
+    expect(out.slice(0, 3)).toEqual(['Rin, Mina → Mina', '"Mina" also goes by: Rin',
+      '"Mina"\'s Inspector page stays; the other one goes']);
+    expect(out.slice(3, 6)).toEqual([  // the warnings first, whatever their kind, each with its turn (Q1)
+      "Note: Mina's promise \"wait\" becomes one to themselves (turn 5)",
+      'Note: the secret "the letter is forged" is kept from someone who holds it (turn 4)',
+      'Who holds or is kept from the secret "who holds the key" changes (turn 1)',  // then the kinds' order
     ]);
-    expect(out[4]).toBe(en('pv.more', { n: 3 })); // two worded lines left, and the kind this panel does not know
+    expect(out[6]).toBe(en('pv.more', { n: 4 })); // three worded lines left, and the kind this panel does not know
   });
 
   it('words every mirror kind of an undo', () => {
@@ -163,7 +165,7 @@ describe('join preview (PHASE-20)', () => {
     const lines = kinds.map((kind) => ({ kind, fact: { text: 'x' }, thread: { text: 'x', by: 'A' }, secret: { text: 'x' },
       conflict: { text: 'x' }, name: 'A', other: 'B', status: 'kept' }));
     const out = previewText({ ...base, lines }, en, (s) => s, 99);
-    expect(out).toHaveLength(kinds.length + 1);
+    expect(out).toHaveLength(kinds.length + 3); // the entities, the other name, the page that stays
     expect(out.every((x) => x && !x.includes('{'))).toBe(true);
   });
 

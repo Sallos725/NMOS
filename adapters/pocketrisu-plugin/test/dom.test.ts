@@ -274,7 +274,8 @@ describe('owner repairs in the panel (ADR 0044)', () => {
 
   function deps(entities: unknown[] = []) {
     const calls: [string, string, unknown][] = [];
-    const state = { html: page(goal + promise), refuse: new Set<string>(), stale: 0, turns: 0 };
+    const state = { html: page(goal + promise), refuse: new Set<string>(), stale: 0, turns: 0, failReextract: 0,
+      hold: null as Promise<void> | null };
     const d: PanelDeps = {
       api: async <T>(method: 'GET' | 'POST' | 'PUT', address: string, body?: unknown) => {
         const path = address.replace(/\?lang=en$/, '');
@@ -290,16 +291,24 @@ describe('owner repairs in the panel (ADR 0044)', () => {
         if (path.endsWith('/memory-mode')) throw new Error('404');
         if (path.endsWith('/preview')) {  // PHASE-20: one fingerprint per preview asked
           const n = calls.filter(([, p]) => p.endsWith('/preview')).length;
-          return { action: 'join', changes: true, before: [{ id: 'a', name: '하나', names: ['하나'], persona: false },
-            { id: 'b', name: '유이', names: ['유이'], persona: false }], after: [{ id: 'a', name: '하나', names: ['하나', '유이'],
-            persona: false }], lines: [{ kind: 'fact_replaced', fact: { text: '하나 at chapel' }, by: { text: '유이 at harbor',
-            turn: 2 } }], counts: {}, fingerprint: `fp${n}`, ...(state.turns ? { reextract: { turns: state.turns } } : {}) } as T;
+          if (state.hold) await state.hold;  // an answer that arrives late
+          const one = [{ id: 'a', name: '하나', names: ['하나', '유이'], persona: false }];
+          const two = [{ id: 'a', name: '하나', names: ['하나'], persona: false }, { id: 'b', name: '유이', names: ['유이'],
+            persona: false }];
+          const undo = path.endsWith('/remove/preview');
+          return { action: undo ? 'unlink' : 'join', changes: true, before: undo ? one : two, after: undo ? two : one,
+            lines: [{ kind: 'fact_replaced', fact: { text: '하나 at chapel' }, by: { text: '유이 at harbor', turn: 2 } }],
+            counts: {}, fingerprint: `fp${n}`,
+            ...(state.turns ? { reextract: { turns: state.turns, list: [4, 5].slice(0, state.turns) } } : {}) } as T;
         }
         if (state.stale > 0 && (body as { expect?: string } | undefined)?.expect) {
           state.stale -= 1;
           throw new Error(`${path} -> HTTP 409: [object Object]`);
         }
-        if (path.endsWith('/reextract')) return { turns: [4, 5] } as T;
+        if (path.endsWith('/reextract')) {
+          if (state.failReextract > 0) { state.failReextract -= 1; throw new Error(`${path} -> HTTP 409: fact extraction is off`); }
+          return { turns: (body as { turns?: number[] }).turns ?? [4, 5] } as T;
+        }
         return {} as T;
       },
       status: async () => ({ enabled: true, sidecarUrl: 'http://127.0.0.1:8790', language: 'en', connected: true,
@@ -503,7 +512,49 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     await settle();
     const base = `/v1/conversations/${id}/entity-links/${link}`;
     expect(posts(calls).map(([, p, b]) => [p, b])).toEqual([[`${base}/remove/preview`, {}],
-      [`${base}/remove`, { expect: 'fp1' }], [`${base}/reextract`, {}]]);
+      [`${base}/remove`, { expect: 'fp1' }], [`${base}/reextract`, { turns: [4, 5] }]]);  // only the turns shown
     expect(panel().textContent).toContain('Queued 2 turns for re-extraction.');
+  });
+
+  it('keeps an undo made when its re-extraction fails, and offers to retry only the re-extraction', async () => {
+    const link = '0190f3a4-1b2c-7d3e-8f40-00000000beef';
+    const rows = joinable();
+    rows[0] = { ...rows[0]!, names: ['하나', '유이'], links: [{ id: link, name: '하나', same_as: '유이' }] } as typeof rows[0];
+    const { d, calls, state } = deps(rows);
+    state.turns = 2;
+    state.failReextract = 1;
+    await openChat(d, `/inspector/c/${id}/e/${who}`);
+    button('Undo').click();
+    await settle();
+    panel().querySelector<HTMLInputElement>('.preview input[type=checkbox]')!.checked = true;
+    button('Undo as shown').click();
+    await settle();
+    await settle();
+    const base = `/v1/conversations/${id}/entity-links/${link}`;
+    expect(posts(calls).filter(([, p]) => p === `${base}/remove/preview`)).toHaveLength(1);  // no stale-undo re-preview
+    expect(panel().textContent).toContain('The join was undone, but the re-extraction failed');
+    button('Retry the re-extraction').click();
+    await settle();
+    expect(posts(calls).at(-1)).toEqual(['POST', `${base}/reextract`, { turns: [4, 5] }]);
+    expect(panel().textContent).toContain('Queued 2 turns for re-extraction.');
+  });
+
+  it('drops a preview answer that arrives after the owner picked another name', async () => {
+    const rows = [...joinable(), { id: 'c3', type: 'character', name: '소라', names: ['소라'], mentions: 2, links: [] }];
+    const { d, state } = deps(rows);
+    await openChat(d, `/inspector/c/${id}/e/${who}`);
+    let release!: () => void;
+    state.hold = new Promise<void>((r) => { release = r; });
+    button('Join').click();
+    await settle();
+    const pick = panel().querySelector<HTMLSelectElement>('select[aria-label="Same as"]')!;
+    pick.value = '소라';
+    pick.dispatchEvent(new Event('change', { bubbles: true }));
+    state.hold = null;
+    release();
+    await settle();
+    await settle();
+    expect(panel().querySelector('.preview')).toBeNull();  // the late answer for 유이 is not shown
+    expect(button('Join')?.disabled).toBe(false);
   });
 });

@@ -203,6 +203,11 @@ class EntityLinkRequest(BaseModel):
     expect: str | None = Field(default=None, max_length=64)  # the preview's fingerprint (PHASE-20 Q4)
 
 
+class ReextractRequest(BaseModel):
+    """The turns an undo's preview listed for re-extraction (PHASE-20 Q7): at most these are queued."""
+    turns: list[int] | None = Field(default=None, max_length=10_000)
+
+
 class ExpectRequest(BaseModel):
     """An undo of a join or a split, made from its preview (PHASE-20 Q4): the preview's fingerprint."""
     expect: str | None = Field(default=None, max_length=64)
