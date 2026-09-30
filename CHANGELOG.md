@@ -5,6 +5,10 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 17 (what NMOS's own model calls cost, and fallbacks told from failures) is complete**
+  (`docs/phases/PHASE-17.md`, `docs/perf/model-usage.md`): the recorded tokens equal the provider's on a hosted model
+  and on local chat and embedding models; generation latency is unchanged; archives from before carry over, their
+  usage "not recorded".
 - **Phase 17 step 4: the progress display says how memory was served and what background work made.** "✓ Memory
   injected (… chars) · lexical only" when recall had to go without vectors (the embedding model did not answer in
   time, K34), "· reused" when a reroll reused the packet already built; neither is shown as a warning. When

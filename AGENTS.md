@@ -32,8 +32,8 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-17.md` is the latest and current;
-   `PHASE-0.md`…`PHASE-16.md` still define the behavior they introduced).
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-17.md` is the latest; no phase is
+   current; `PHASE-0.md`…`PHASE-17.md` still define the behavior they introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
 6. Relevant ADRs in `docs/adr/`.
 
@@ -77,7 +77,7 @@ If two normative documents appear to conflict:
 | 14 — verification and repair, part 2 (Stage 6: canon sources) | complete (2026-09-29), not released; the latency criterion missed with a 200-entry lorebook read whole (owner accepted) | `PHASE-14.md`, ADRs 0045–0047 |
 | 15 — a packet that fills its budget (P1 of `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`) | complete (2026-09-29), not released | `PHASE-15.md`, ADR 0049 |
 | 16 — export and restore (Stage 6, part 3) | complete (2026-09-29) but for the owner's phone check of the panel's Export (K38, open); not released | `PHASE-16.md`, ADR 0050 |
-| 17 — model-call cost and fallback outcomes (C4, C5 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`) | **current** (approved 2026-09-29) | `PHASE-17.md` |
+| 17 — model-call cost and fallback outcomes (C4, C5 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`) | complete (2026-09-30), not released | `PHASE-17.md`, ADR 0051 |
 | 18+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
