@@ -1,0 +1,13 @@
+import { open, yesAll } from './lib.mjs';
+const { ctx, p } = await open();
+await p.waitForTimeout(3000);
+await p.mouse.click(40, 133 + 72 * 1); await p.waitForTimeout(5000);
+const bb = await p.getByText('카이토 2', { exact: true }).first().boundingBox();
+console.log('row', JSON.stringify(bb));
+await p.mouse.move(300, bb.y + bb.height / 2); await p.waitForTimeout(600);
+await p.mouse.click(431, bb.y + bb.height / 2); await p.waitForTimeout(1500);
+await p.screenshot({ path: 'delchat-confirm.png' });
+console.log(await p.evaluate(() => document.body.innerText.match(/remove:[^\n]*/)?.[0] ?? 'no confirm text'));
+await yesAll(p, 2); await p.waitForTimeout(4000);
+await p.screenshot({ path: 'delchat-done.png' });
+await ctx.close();
