@@ -66,9 +66,10 @@ def work(conn: psycopg.Connection, conv: UUID, extractor: str | None, summarizer
     summaries (current scene summaries with text, and the story when it covers them all), so an edit that only
     replaces a fact or a summary, or a window too short to summarize, adds nothing.
 
-    `summaries`: the summary jobs of the head's windows still without a summary, and of its story, still to run or
-    dead. Found by their exact job keys (the unique index), as extraction's coverage finds its jobs: a job of a window
-    an edit replaced is not counted."""
+    `summaries`: the summary jobs of the head's windows and of its story, still to run or dead, first writes and
+    rewrites with a secret alike (`schedule_stale`): found by the window keys in their payload, so a job of a window an
+    edit replaced is not counted. The chat's open and dead jobs are few (finished ones are pruned after 7 days;
+    production held 2,100 jobs in all on 2026-09-30), so no index is needed."""
     from . import summaries
 
     row = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (conv,)).fetchone()
@@ -87,12 +88,14 @@ def work(conn: psycopg.Connection, conv: UUID, extractor: str | None, summarizer
     view = summaries.current(conn, conv, head, summarizer)
     written = [x["summary"] for x in view["scenes"] if x["summary"]]
     made = sum(1 for x in written if x["text"]) + (1 if view["story_current"] and view["story"]["text"] else 0)
-    keys = [f"summarize:{summarizer}:{conv}:scene:{x['window'].key}" for x in view["scenes"] if not x["summary"]]
-    if written and len(written) == view["due"] and not view["story_current"]:
-        keys.append(f"summarize:{summarizer}:{conv}:story:{summaries.members_key([x['id'] for x in written])}")
+    keys = [x["window"].key for x in view["scenes"]]
+    if written and len(written) == view["due"]:
+        keys.append(summaries.members_key([x["id"] for x in written]))  # the story of these scenes
     jobs = conn.execute(
         "SELECT count(*) FILTER (WHERE status IN ('queued', 'running')) AS pending,"
-        " count(*) FILTER (WHERE status = 'dead') AS failed FROM job WHERE dedupe_key = ANY(%s)",
-        (keys,)).fetchone() if keys else {"pending": 0, "failed": 0}
+        " count(*) FILTER (WHERE status = 'dead') AS failed FROM job"
+        " WHERE conversation_id = %s AND kind = 'summarize' AND status IN ('queued', 'running', 'dead')"
+        " AND payload->>'generation' = %s AND payload->>'window_key' = ANY(%s)",
+        (conv, summarizer, keys)).fetchone() if keys else {"pending": 0, "failed": 0}
     return {"produced": {"facts": int(facts), "summaries": made},
             "summaries": {"pending": int(jobs["pending"]), "failed": int(jobs["failed"])}}

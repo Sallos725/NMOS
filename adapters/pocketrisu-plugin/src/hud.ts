@@ -62,7 +62,8 @@ export function reduce(state: HudState, event: HudEvent, now: number): HudState 
       const shown = state.progress && 'coverage' in state.progress ? state.progress : null;
       if (pending(event.coverage) > 0) {
         return { ...state, progress: { coverage: event.coverage, since: shown ? shown.since : event.coverage.produced ?? null,
-          failedSince: shown ? shown.failedSince : failures(event.coverage) } };
+          // The fewest seen: a failure of an old window that leaves the head must not hide a new one.
+          failedSince: Math.min(shown ? shown.failedSince : Infinity, failures(event.coverage)) } };
       }
       // Work that was on screen has finished: say briefly what it made, and what of it failed (the last job may have).
       // Nothing was pending: stay hidden.
