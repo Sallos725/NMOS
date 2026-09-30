@@ -11,7 +11,8 @@ export interface UsageTotal {
   cached: number;
   /** Results from before usage was recorded (NMOS 0.2.0 and earlier); older sidecars send none. */
   not_recorded?: number;
-  /** Calls that reported output tokens; embeddings report input only. Older sidecars send none. */
+  /** Calls that reported input / output tokens (embeddings report input only). Older sidecars send none. */
+  input_reported?: number;
   output_reported?: number;
 }
 
@@ -24,8 +25,8 @@ export function usageText(u: UsageTotal, lang: Lang): string {
   if (!u.reported) return t(lang, 'usage.unreported', { calls: count(u.calls) }) + before;
   const cached = u.cached ? t(lang, 'usage.cached', { n: count(u.cached) }) : '';
   const partial = u.reported < u.calls ? t(lang, 'usage.partial', { r: count(u.reported), calls: count(u.calls) }) : '';
-  const vars = { calls: count(u.calls), input: count(u.input), output: count(u.output), cached };
-  // Output tokens nobody reported (embeddings only) are left out rather than shown as 0.
-  const line = u.output_reported === 0 ? t(lang, 'usage.line_input', vars) : t(lang, 'usage.line', vars);
-  return line + partial + before;
+  // A count no call reported (an embedding's output; a provider that gives only one side) is left out, never 0.
+  const sides = [u.input_reported === 0 ? '' : t(lang, 'usage.input', { n: count(u.input) }),
+    u.output_reported === 0 ? '' : t(lang, 'usage.output', { n: count(u.output) })].filter(Boolean).join(' · ');
+  return t(lang, 'usage.line', { calls: count(u.calls), sides, cached }) + partial + before;
 }

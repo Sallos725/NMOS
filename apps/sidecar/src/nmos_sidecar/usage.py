@@ -59,37 +59,40 @@ def totals(conn: psycopg.Connection, conv: UUID, active: set[str] | None = None)
     return {"generations": gens, "total": {k: sum(g[k] for g in gens) for k in COUNTS}}
 
 
-def produced(conn: psycopg.Connection, conv: UUID, extractor: str | None, summarizer: str | None) -> dict[str, int]:
-    """What the chat's current head holds of the active generations' work: facts (valid assertions of extractions that
-    match a turn of the head, as recall's facts must) and summaries (the current scene summaries, and the story when it
-    covers them all). The HUD compares two of these to say what background work made (PHASE-17 Q6), so an edit that
-    only replaces a fact or a summary adds nothing. Cheap enough for its polls."""
+def work(conn: psycopg.Connection, conv: UUID, extractor: str | None, summarizer: str | None) -> dict[str, Any]:
+    """For the HUD's polls (PHASE-17 Q6), both about the chat's current head only:
+
+    `produced`: facts (valid assertions of extractions that match a turn of the head, as recall's facts must) and
+    summaries (current scene summaries with text, and the story when it covers them all), so an edit that only
+    replaces a fact or a summary, or a window too short to summarize, adds nothing.
+
+    `summaries`: the summary jobs of the head's windows still without a summary, and of its story, still to run or
+    dead. Found by their exact job keys (the unique index), as extraction's coverage finds its jobs: a job of a window
+    an edit replaced is not counted."""
     from . import summaries
 
-    head = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (conv,)).fetchone()
-    head = head["head_commit_id"] if head else None
+    row = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (conv,)).fetchone()
+    head = row["head_commit_id"] if row else None
+    none = {"produced": {"facts": 0, "summaries": 0}, "summaries": {"pending": 0, "failed": 0}}
     if head is None:
-        return {"facts": 0, "summaries": 0}
+        return none
     facts = conn.execute(
         "SELECT count(*) AS n FROM active_membership am"
         " JOIN extraction x ON x.source_revision_id = am.source_revision_id AND x.window_hash = am.turn_hash"
         " JOIN assertion a ON a.extraction_id = x.id"
         " WHERE am.commit_id = %s AND x.extractor_key = %s AND x.discarded_at IS NULL AND a.status = 'valid'",
         (head, extractor)).fetchone()["n"] if extractor else 0
-    made = 0
-    if summarizer:
-        view = summaries.current(conn, conv, head, summarizer)
-        made = view["done"] + (1 if view["story_current"] else 0)
-    return {"facts": int(facts), "summaries": made}
-
-
-def summary_jobs(conn: psycopg.Connection, conv: UUID, summarizer: str | None) -> dict[str, int]:
-    """The active summarizer's jobs for the chat still to run and dead: the HUD waits for them too (they run after
-    extraction and embedding), so a summary written last is counted."""
     if not summarizer:
-        return {"pending": 0, "failed": 0}
-    row = conn.execute(
+        return {**none, "produced": {"facts": int(facts), "summaries": 0}}
+    view = summaries.current(conn, conv, head, summarizer)
+    written = [x["summary"] for x in view["scenes"] if x["summary"]]
+    made = sum(1 for x in written if x["text"]) + (1 if view["story_current"] and view["story"]["text"] else 0)
+    keys = [f"summarize:{summarizer}:{conv}:scene:{x['window'].key}" for x in view["scenes"] if not x["summary"]]
+    if written and len(written) == view["due"] and not view["story_current"]:
+        keys.append(f"summarize:{summarizer}:{conv}:story:{summaries.members_key([x['id'] for x in written])}")
+    jobs = conn.execute(
         "SELECT count(*) FILTER (WHERE status IN ('queued', 'running')) AS pending,"
-        " count(*) FILTER (WHERE status = 'dead') AS failed FROM job"
-        " WHERE conversation_id = %s AND kind = 'summarize' AND payload->>'generation' = %s", (conv, summarizer)).fetchone()
-    return {"pending": int(row["pending"]), "failed": int(row["failed"])}
+        " count(*) FILTER (WHERE status = 'dead') AS failed FROM job WHERE dedupe_key = ANY(%s)",
+        (keys,)).fetchone() if keys else {"pending": 0, "failed": 0}
+    return {"produced": {"facts": int(facts), "summaries": made},
+            "summaries": {"pending": int(jobs["pending"]), "failed": int(jobs["failed"])}}

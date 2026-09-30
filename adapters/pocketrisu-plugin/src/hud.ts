@@ -35,7 +35,9 @@ export interface HudState {
     | { phase: 'done'; outcome: Outcome; chars: number; error?: string; deadlineMs?: number; until: number;
         reused?: boolean; vectors?: Vectors | null };
   /** `since`: what the chat held when the work was first seen; `made`: what it added by the end (PHASE-17 Q6). */
-  progress: null | { coverage: Coverage; since: Produced | null } | { finishedUntil: number; made: Produced | null };
+  // `failedSince`: failures already there when the work was first seen; `failed`: the ones it added.
+  progress: null | { coverage: Coverage; since: Produced | null; failedSince: number }
+    | { finishedUntil: number; made: Produced | null; failed: number };
 }
 
 export const EMPTY: HudState = { request: null, progress: null };
@@ -59,11 +61,13 @@ export function reduce(state: HudState, event: HudEvent, now: number): HudState 
     case 'coverage': {
       const shown = state.progress && 'coverage' in state.progress ? state.progress : null;
       if (pending(event.coverage) > 0) {
-        return { ...state, progress: { coverage: event.coverage, since: shown ? shown.since : event.coverage.produced ?? null } };
+        return { ...state, progress: { coverage: event.coverage, since: shown ? shown.since : event.coverage.produced ?? null,
+          failedSince: shown ? shown.failedSince : failures(event.coverage) } };
       }
-      // Work that was on screen has finished: say briefly what it made. Nothing was pending: stay hidden.
-      return shown ? { ...state, progress: { finishedUntil: now + DONE_MS, made: added(shown.since, event.coverage.produced) } }
-        : state;
+      // Work that was on screen has finished: say briefly what it made, and what of it failed (the last job may have).
+      // Nothing was pending: stay hidden.
+      return shown ? { ...state, progress: { finishedUntil: now + DONE_MS, made: added(shown.since, event.coverage.produced),
+        failed: Math.max(0, failures(event.coverage) - shown.failedSince) } } : state;
     }
     case 'reset':
       return EMPTY;
@@ -92,7 +96,10 @@ export function view(state: HudState, now: number, lang: Lang): HudView | null {
   }
   const p = state.progress;
   if (p && 'coverage' in p) return progressView(p.coverage, lang);
-  if (p && now < p.finishedUntil) return { kind: 'ok', text: doneText(p.made, lang), fraction: 1 };
+  if (p && now < p.finishedUntil) {
+    return p.failed ? { kind: 'warn', text: doneText(p.made, lang, p.failed), fraction: 1 }
+      : { kind: 'ok', text: doneText(p.made, lang), fraction: 1 };
+  }
   return null;
 }
 
@@ -102,9 +109,14 @@ function added(since: Produced | null, now: Produced | null | undefined): Produc
   return { facts: Math.max(0, now.facts - since.facts), summaries: Math.max(0, now.summaries - since.summaries) };
 }
 
-function doneText(made: Produced | null, lang: Lang): string {
+function failures(c: Coverage): number {
+  return (c.extract?.failed ?? 0) + (c.embed?.failed ?? 0) + (c.summarize?.failed ?? 0);
+}
+
+function doneText(made: Produced | null, lang: Lang, failed = 0): string {
   const parts = [made?.facts ? t(lang, 'hud.made.facts', { n: made.facts }) : '',
     made?.summaries ? t(lang, 'hud.made.summaries', { n: made.summaries }) : ''].filter(Boolean);
+  if (failed) return [t(lang, 'hud.failed', { n: failed }), ...parts].join(' · ');
   return parts.length ? `✓ ${parts.join(' · ')}` : t(lang, 'hud.done');
 }
 
