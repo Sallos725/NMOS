@@ -720,32 +720,45 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   /** A join, split or undo shown before it is made (PHASE-20 Q9): the preview in `spot`, then the owner's confirm
    * sends the preview's fingerprint; a 409 (memory changed since) shows the new preview instead. `reextract`, for an
    * undo of a join: a box to re-extract the turns extracted while it held (Q7, off by default). */
+  const previewRound = new WeakMap<HTMLElement, number>();
+  /** A new preview round for `spot`: an answer of an earlier round (the owner picked another name, or cancelled)
+   * is dropped instead of replacing what is shown. */
+  function nextRound(spot: HTMLElement): number {
+    const n = (previewRound.get(spot) ?? 0) + 1;
+    previewRound.set(spot, n);
+    return n;
+  }
   async function withPreview(spot: HTMLElement, button: HTMLButtonElement, previewPath: string,
     previewBody: Record<string, unknown>, confirmKey: StringKey,
-    commit: (expect: string, reextract: boolean) => Promise<void>, changed = false): Promise<void> {
+    commit: (expect: string, reextract: number[] | null) => Promise<void>, changed = false): Promise<void> {
+    const round = nextRound(spot);
     button.disabled = true;
     let p: Preview;
     try {
       p = await deps.api<Preview>('POST', previewPath, previewBody, 15_000);
     } catch (error) {
+      if (previewRound.get(spot) !== round) return;
       say(actionMsg, errorText(lang, error), 'err');
       button.disabled = false;
       return;
     }
+    if (previewRound.get(spot) !== round) return;
     const lines = previewText(p, (key, vars) => L(key, vars), outcomeLabel);
     const box = el('div', { class: 'preview' }, el('b', { text: L('pv.title') }),
       ...(changed ? [el('div', { class: 'warn', text: L('pv.changed') })] : []),
       ...lines.map((text) => el('div', { class: /^(주의|Note):/.test(text) ? 'warn' : '', text })));
-    const turns = p.reextract?.turns ?? 0;
+    // Offered only when the undo leaves two entities (else the names stay one and nothing is re-extracted).
+    const list = p.after.length > 1 ? p.reextract?.list ?? [] : [];
+    const turns = list.length;
     const again = el('input', { type: 'checkbox', 'aria-label': L('pv.reextract', { n: turns }) });
     if (turns > 0) box.append(el('div', { class: 'check' }, again, el('span', { text: L('pv.reextract', { n: turns }) })));
     const ok = el('button', { class: 'mini', text: L(confirmKey) });
     const cancel = el('button', { class: 'mini', text: L('cancel') });
-    cancel.addEventListener('click', () => { spot.replaceChildren(); button.disabled = false; });
+    cancel.addEventListener('click', () => { nextRound(spot); spot.replaceChildren(); button.disabled = false; });
     ok.addEventListener('click', async () => {
       ok.disabled = true;
       try {
-        await commit(p.fingerprint, again.checked);
+        await commit(p.fingerprint, again.checked ? list : null);
         spot.replaceChildren();
       } catch (error) {
         if (/HTTP 409\b/.test(String((error as Error)?.message ?? error))) {
@@ -781,17 +794,40 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       const base = `/v1/conversations/${conversation}/entity-links/${link.id}`;
       undo.addEventListener('click', () => void withPreview(spot, undo, `${base}/remove/preview`, {}, 'pv.confirm_undo',
         async (expect, reextract) => {
-          await deps.api('POST', `${base}/remove`, { expect }, 15_000);
-          let done = L('link.removed');
+          await deps.api('POST', `${base}/remove`, { expect }, 15_000);  // a 409 here re-previews the undo
+          // The undo is made: from here on nothing may look like a stale undo (Copilot review of step 4).
+          let failed: unknown = null;
+          let queued = 0;
           if (reextract) {
-            const r = await deps.api<{ turns: number[] }>('POST', `${base}/reextract`, {}, 15_000);
-            done += ` ${L('pv.reextracted', { n: r.turns.length })}`;
+            try {
+              queued = (await deps.api<{ turns: number[] }>('POST', `${base}/reextract`, { turns: reextract }, 15_000))
+                .turns.length;
+            } catch (error) { failed = error; }
           }
-          const now = await deps.api<EntityRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
-          const next = entityNamed(now, self.type, self.name);
-          say(actionMsg, done, 'ok');
-          if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
-          else await showInspector();
+          try {
+            const now = await deps.api<EntityRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
+            const next = entityNamed(now, self.type, self.name);
+            if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+            else await showInspector();
+          } catch { /* the undo stands; the page reports a failing sidecar itself */ }
+          if (failed && reextract) {
+            say(actionMsg, L('pv.reextract_failed', { e: errorText(lang, failed) }), 'err');
+            const retry = el('button', { class: 'mini', text: L('pv.retry') });
+            retry.addEventListener('click', async () => {
+              retry.disabled = true;
+              try {
+                const r = await deps.api<{ turns: number[] }>('POST', `${base}/reextract`, { turns: reextract }, 15_000);
+                say(actionMsg, L('pv.reextracted', { n: r.turns.length }), 'ok');
+              } catch (error) {
+                say(actionMsg, L('pv.reextract_failed', { e: errorText(lang, error) }), 'err');
+                actionMsg.append(' ', retry);
+                retry.disabled = false;
+              }
+            });
+            actionMsg.append(' ', retry);
+          } else {
+            say(actionMsg, reextract ? `${L('link.removed')} ${L('pv.reextracted', { n: queued })}` : L('link.removed'), 'ok');
+          }
         }));
       rows.push(el('div', { class: 'btns' }, el('span', { text: `${link.name} = ${link.same_as}` }), undo), spot);
     }
@@ -827,7 +863,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
           else await showInspector();
         });
       });
-      pick.addEventListener('change', () => { spot.replaceChildren(); join.disabled = false; });
+      pick.addEventListener('change', () => { nextRound(spot); spot.replaceChildren(); join.disabled = false; });
       card.push(el('div', { class: 'row' }, field(L('link.pick'), pick), el('div', { class: 'btns' }, join)), spot);
     } else {
       card.push(el('div', { class: 'muted', text: L('link.none') }));

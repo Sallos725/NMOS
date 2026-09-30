@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:141e7d17238a".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:566605159526".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -437,7 +437,12 @@
     "pv.confirm_join": ["\uC774\uB300\uB85C \uD569\uCE58\uAE30", "Join as shown"],
     "pv.confirm_split": ["\uC774\uB300\uB85C \uB098\uB204\uAE30", "Split as shown"],
     "pv.confirm_undo": ["\uC774\uB300\uB85C \uB418\uB3CC\uB9AC\uAE30", "Undo as shown"],
-    "pv.fact_replaced": ['"{a}" \uB300\uC2E0 "{b}"\uAC00 \uD604\uC7AC \uC0AC\uC2E4\uC774 \uB429\uB2C8\uB2E4 ({t}\uD134)', '"{b}" replaces "{a}" (turn {t})'],
+    "pv.fact_replaced": ['"{a}" \uB300\uC2E0 "{b}"\uAC00 \uD604\uC7AC \uC0AC\uC2E4\uC774 \uB429\uB2C8\uB2E4', '"{b}" replaces "{a}"'],
+    "pv.turn": [" ({t}\uD134)", " (turn {t})"],
+    "pv.names": ['"{a}"\uC758 \uB2E4\uB978 \uC774\uB984: {n}', '"{a}" also goes by: {n}'],
+    "pv.kept": ['"{a}"\uC758 \uC778\uC2A4\uD399\uD130 \uD398\uC774\uC9C0\uAC00 \uB0A8\uACE0, \uB2E4\uB978 \uCABD \uD398\uC774\uC9C0\uB294 \uC0AC\uB77C\uC9D1\uB2C8\uB2E4', `"{a}"'s Inspector page stays; the other one goes`],
+    "pv.reextract_failed": ["\uC5F0\uACB0\uC740 \uD574\uC81C\uD588\uC9C0\uB9CC \uB2E4\uC2DC \uCD94\uCD9C\uC740 \uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: {e}", "The join was undone, but the re-extraction failed: {e}"],
+    "pv.retry": ["\uB2E4\uC2DC \uCD94\uCD9C \uC7AC\uC2DC\uB3C4", "Retry the re-extraction"],
     "pv.fact_merged": ['"{a}"\uAC00 \uAC19\uC740 \uC0AC\uC2E4 "{b}"\uB85C \uD569\uCCD0\uC9D1\uB2C8\uB2E4', '"{a}" merges into the same fact "{b}"'],
     "pv.fact_ended": ['"{a}"\uAC00 \uB354\uB294 \uD604\uC7AC \uC0AC\uC2E4\uC774 \uC544\uB2D9\uB2C8\uB2E4', '"{a}" is no longer current'],
     "pv.fact_back": ['"{a}"\uAC00 \uB2E4\uC2DC \uD604\uC7AC \uC0AC\uC2E4\uC774 \uB429\uB2C8\uB2E4', '"{a}" is current again'],
@@ -1924,11 +1929,24 @@ ${revisionHash}`;
     "persona_gone",
     "canon_alias_gone"
   ];
+  function previewWarning(x) {
+    return x.kind === "persona" || x.kind === "self_relation" || x.kind === "self_thread" || x.kind === "secret" && !!x.kept_from_holder;
+  }
+  function previewSubject(x) {
+    if (x.kind === "fact_replaced") return x.by;
+    return x.fact ?? x.thread ?? x.secret ?? x.conflict;
+  }
   function previewLine(x, say2, status) {
+    const text2 = previewWords(x, say2, status);
+    if (text2 === null) return null;
+    const turn = previewSubject(x)?.turn;
+    return typeof turn === "number" && turn >= 0 ? `${text2}${say2("pv.turn", { t: turn })}` : text2;
+  }
+  function previewWords(x, say2, status) {
     const a = (i) => i?.text ?? "";
     switch (x.kind) {
       case "fact_replaced":
-        return say2("pv.fact_replaced", { a: a(x.fact), b: a(x.by), t: x.by?.turn ?? "" });
+        return say2("pv.fact_replaced", { a: a(x.fact), b: a(x.by) });
       case "fact_merged":
         return say2("pv.fact_merged", { a: a(x.fact), b: a(x.by) });
       case "fact_ended":
@@ -1975,11 +1993,17 @@ ${revisionHash}`;
     if (!p.changes) return [say2("pv.nothing")];
     const names = (es) => es.map((e) => e.name).join(", ");
     const out = [say2("pv.entities", { a: names(p.before), b: names(p.after) })];
-    const rank = (k) => {
-      const i = PREVIEW_ORDER.indexOf(k);
-      return i < 0 ? PREVIEW_ORDER.length : i;
+    for (const e of p.after) {
+      const others = e.names.filter((n) => n !== e.name);
+      if (others.length) out.push(say2("pv.names", { a: e.name, n: others.join(", ") }));
+    }
+    const kept = p.after.length === 1 && p.before.length > 1 ? p.before.find((e) => e.id === p.after[0].id) : void 0;
+    if (kept) out.push(say2("pv.kept", { a: kept.name }));
+    const rank = (x) => {
+      const i = PREVIEW_ORDER.indexOf(x.kind);
+      return (previewWarning(x) ? 0 : 1e3) + (i < 0 ? PREVIEW_ORDER.length : i);
     };
-    const lines = [...p.lines].sort((x, y) => rank(x.kind) - rank(y.kind)).map((x) => previewLine(x, say2, status)).filter((x) => x !== null);
+    const lines = [...p.lines].sort((x, y) => rank(x) - rank(y)).map((x) => previewLine(x, say2, status)).filter((x) => x !== null);
     out.push(...lines.slice(0, max));
     const rest = p.lines.length - Math.min(lines.length, max);
     if (rest > 0) out.push(say2("pv.more", { n: rest }));
@@ -2746,16 +2770,25 @@ html,body{margin:0;background:${PALETTE.bg}}
       );
       modeCard.style.display = "";
     }
+    const previewRound = /* @__PURE__ */ new WeakMap();
+    function nextRound(spot) {
+      const n = (previewRound.get(spot) ?? 0) + 1;
+      previewRound.set(spot, n);
+      return n;
+    }
     async function withPreview(spot, button, previewPath, previewBody, confirmKey, commit, changed = false) {
+      const round = nextRound(spot);
       button.disabled = true;
       let p;
       try {
         p = await deps.api("POST", previewPath, previewBody, 15e3);
       } catch (error) {
+        if (previewRound.get(spot) !== round) return;
         say(actionMsg, errorText(lang, error), "err");
         button.disabled = false;
         return;
       }
+      if (previewRound.get(spot) !== round) return;
       const lines = previewText(p, (key, vars) => L(key, vars), outcomeLabel);
       const box = el(
         "div",
@@ -2764,19 +2797,21 @@ html,body{margin:0;background:${PALETTE.bg}}
         ...changed ? [el("div", { class: "warn", text: L("pv.changed") })] : [],
         ...lines.map((text2) => el("div", { class: /^(주의|Note):/.test(text2) ? "warn" : "", text: text2 }))
       );
-      const turns = p.reextract?.turns ?? 0;
+      const list = p.after.length > 1 ? p.reextract?.list ?? [] : [];
+      const turns = list.length;
       const again = el("input", { type: "checkbox", "aria-label": L("pv.reextract", { n: turns }) });
       if (turns > 0) box.append(el("div", { class: "check" }, again, el("span", { text: L("pv.reextract", { n: turns }) })));
       const ok = el("button", { class: "mini", text: L(confirmKey) });
       const cancel = el("button", { class: "mini", text: L("cancel") });
       cancel.addEventListener("click", () => {
+        nextRound(spot);
         spot.replaceChildren();
         button.disabled = false;
       });
       ok.addEventListener("click", async () => {
         ok.disabled = true;
         try {
-          await commit(p.fingerprint, again.checked);
+          await commit(p.fingerprint, again.checked ? list : null);
           spot.replaceChildren();
         } catch (error) {
           if (/HTTP 409\b/.test(String(error?.message ?? error))) {
@@ -2818,16 +2853,40 @@ html,body{margin:0;background:${PALETTE.bg}}
           "pv.confirm_undo",
           async (expect, reextract) => {
             await deps.api("POST", `${base}/remove`, { expect }, 15e3);
-            let done = L("link.removed");
+            let failed = null;
+            let queued = 0;
             if (reextract) {
-              const r = await deps.api("POST", `${base}/reextract`, {}, 15e3);
-              done += ` ${L("pv.reextracted", { n: r.turns.length })}`;
+              try {
+                queued = (await deps.api("POST", `${base}/reextract`, { turns: reextract }, 15e3)).turns.length;
+              } catch (error) {
+                failed = error;
+              }
             }
-            const now = await deps.api("GET", `/v1/conversations/${conversation}/entities`, void 0, 15e3);
-            const next = entityNamed(now, self.type, self.name);
-            say(actionMsg, done, "ok");
-            if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
-            else await showInspector();
+            try {
+              const now = await deps.api("GET", `/v1/conversations/${conversation}/entities`, void 0, 15e3);
+              const next = entityNamed(now, self.type, self.name);
+              if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
+              else await showInspector();
+            } catch {
+            }
+            if (failed && reextract) {
+              say(actionMsg, L("pv.reextract_failed", { e: errorText(lang, failed) }), "err");
+              const retry = el("button", { class: "mini", text: L("pv.retry") });
+              retry.addEventListener("click", async () => {
+                retry.disabled = true;
+                try {
+                  const r = await deps.api("POST", `${base}/reextract`, { turns: reextract }, 15e3);
+                  say(actionMsg, L("pv.reextracted", { n: r.turns.length }), "ok");
+                } catch (error) {
+                  say(actionMsg, L("pv.reextract_failed", { e: errorText(lang, error) }), "err");
+                  actionMsg.append(" ", retry);
+                  retry.disabled = false;
+                }
+              });
+              actionMsg.append(" ", retry);
+            } else {
+              say(actionMsg, reextract ? `${L("link.removed")} ${L("pv.reextracted", { n: queued })}` : L("link.removed"), "ok");
+            }
           }
         ));
         rows.push(el("div", { class: "btns" }, el("span", { text: `${link.name} = ${link.same_as}` }), undo), spot);
@@ -2874,6 +2933,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           });
         });
         pick.addEventListener("change", () => {
+          nextRound(spot);
           spot.replaceChildren();
           join.disabled = false;
         });

@@ -194,7 +194,9 @@ def diff(before: dict[str, Any], after: dict[str, Any], names: Names, exclude_re
 
 def fingerprint(preview: dict[str, Any], state: dict[str, Any]) -> str:
     """What a preview read (Q4): the head, the owner links and repairs in force, the generations, and the difference
-    itself. An action whose fingerprint differs from the preview's was previewed on other memory."""
-    body = json.dumps({"state": state, "preview": {k: preview[k] for k in ("before", "after", "lines")}},
+    itself, with the turns an undo would re-extract. An action whose fingerprint differs from the preview's was
+    previewed on other memory."""
+    shown = {k: preview.get(k) for k in ("before", "after", "lines", "reextract")}
+    body = json.dumps({"state": state, "preview": shown},
                       sort_keys=True, default=str, ensure_ascii=False)
     return hashlib.sha256(body.encode()).hexdigest()[:32]

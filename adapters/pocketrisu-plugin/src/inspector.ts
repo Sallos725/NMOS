@@ -172,7 +172,7 @@ export interface PreviewLine {
 }
 export interface Preview {
   action: string; changes: boolean; before: PreviewEntity[]; after: PreviewEntity[]; lines: PreviewLine[];
-  counts: Record<string, number>; fingerprint: string; reextract?: { turns: number };
+  counts: Record<string, number>; fingerprint: string; reextract?: { turns: number; list?: number[] };
 }
 type Say = (key: StringKey, vars?: Record<string, string | number>) => string;
 
@@ -181,10 +181,29 @@ const PREVIEW_ORDER = ['persona', 'self_relation', 'self_thread', 'secret', 'fac
   'fact_back', 'thread_back', 'secret_back', 'self_relation_gone', 'self_thread_gone', 'conflict_gone',
   'persona_gone', 'canon_alias_gone'];
 
+/** A warning the owner should read before confirming (PHASE-20 Q1, Q6): it goes first, whatever its kind. */
+export function previewWarning(x: PreviewLine): boolean {
+  return x.kind === 'persona' || x.kind === 'self_relation' || x.kind === 'self_thread'
+    || (x.kind === 'secret' && !!x.kept_from_holder);
+}
+
+/** The item a line is about, whose turn it shows. */
+function previewSubject(x: PreviewLine): PreviewItem | undefined {
+  if (x.kind === 'fact_replaced') return x.by; // the version that becomes current
+  return x.fact ?? x.thread ?? x.secret ?? x.conflict;
+}
+
 function previewLine(x: PreviewLine, say: Say, status: (s: string) => string): string | null {
+  const text = previewWords(x, say, status);
+  if (text === null) return null;
+  const turn = previewSubject(x)?.turn;
+  return typeof turn === 'number' && turn >= 0 ? `${text}${say('pv.turn', { t: turn })}` : text;
+}
+
+function previewWords(x: PreviewLine, say: Say, status: (s: string) => string): string | null {
   const a = (i?: PreviewItem) => i?.text ?? '';
   switch (x.kind) {
-    case 'fact_replaced': return say('pv.fact_replaced', { a: a(x.fact), b: a(x.by), t: x.by?.turn ?? '' });
+    case 'fact_replaced': return say('pv.fact_replaced', { a: a(x.fact), b: a(x.by) });
     case 'fact_merged': return say('pv.fact_merged', { a: a(x.fact), b: a(x.by) });
     case 'fact_ended': return say('pv.fact_ended', { a: a(x.fact) });
     case 'fact_back': return x.instead_of ? say('pv.fact_back_instead', { a: a(x.fact), b: a(x.instead_of) })
@@ -216,8 +235,17 @@ export function previewText(p: Preview, say: Say, status: (s: string) => string 
   if (!p.changes) return [say('pv.nothing')];
   const names = (es: PreviewEntity[]) => es.map((e) => e.name).join(', ');
   const out = [say('pv.entities', { a: names(p.before), b: names(p.after) })];
-  const rank = (k: string) => { const i = PREVIEW_ORDER.indexOf(k); return i < 0 ? PREVIEW_ORDER.length : i; };
-  const lines = [...p.lines].sort((x, y) => rank(x.kind) - rank(y.kind))
+  for (const e of p.after) {  // the entity after, with every name it goes by and whose page stays (Q1)
+    const others = e.names.filter((n) => n !== e.name);
+    if (others.length) out.push(say('pv.names', { a: e.name, n: others.join(', ') }));
+  }
+  const kept = p.after.length === 1 && p.before.length > 1 ? p.before.find((e) => e.id === p.after[0]!.id) : undefined;
+  if (kept) out.push(say('pv.kept', { a: kept.name }));
+  const rank = (x: PreviewLine) => {
+    const i = PREVIEW_ORDER.indexOf(x.kind);
+    return (previewWarning(x) ? 0 : 1000) + (i < 0 ? PREVIEW_ORDER.length : i);
+  };
+  const lines = [...p.lines].sort((x, y) => rank(x) - rank(y))
     .map((x) => previewLine(x, say, status)).filter((x): x is string => x !== null);
   out.push(...lines.slice(0, max));
   const rest = p.lines.length - Math.min(lines.length, max);
