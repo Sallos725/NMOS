@@ -9,7 +9,7 @@ from uuid import UUID
 
 from nmos_sidecar import audit
 from nmos_sidecar.retrieval import RecallOptions
-from test_packet_ledger import ask, db, full, story  # noqa: F401  (`full` is a fixture)
+from test_packet_ledger import _sync, ask, db, full, story  # noqa: F401  (`full` is a fixture)
 
 TOOL = Path(__file__).resolve().parents[3] / "tools/eval_rp.py"
 _spec = importlib.util.spec_from_file_location("eval_rp", TOOL)
@@ -69,11 +69,13 @@ def test_cases_replay_their_request_and_the_report_holds_numbers_only(full):
     assert by["gone"]["status"] == "missing"
     assert report["summary"]["all"] | {"tokens_mean": None} == {
         "cases": 4, "skipped": 1, "passed": 2, "memory_cases": 3, "memory_passed": 2, "gold": 3, "held": 2,
-        "in_prompt": 0, "forbidden": 2, "placed": 0, "tokens_mean": None, "vectors": 0}
+        "in_prompt": 0, "forbidden": 2, "placed": 0, "tokens_mean": None, "vectors": 0, "lexical_found": 3,
+        "excerpt_median": 40.5}
     assert report["summary"]["state"]["passed"] == 0 and report["summary"]["secret"]["passed"] == 1
     text = eval_rp.table(report)
     assert text.splitlines()[-1].startswith("| all | 4 | 2 | 2/3 | 2/3 | 0 | 0/2 | 1 |")
-    assert text.splitlines()[-1].endswith("| 0/3 |")  # no case ran with vectors (PHASE-15 Q6)
+    # no case ran with vectors (PHASE-15 Q6); lexical recall found candidates for every case (PHASE-18 step 2)
+    assert text.splitlines()[-1].endswith("| 0/3 | 3/3 | 40.5 |")
     for phrase in ("forged", "dragon", "chatter", "clouds"):
         assert phrase not in text
 
@@ -122,3 +124,59 @@ def test_each_case_says_whether_vectors_ran_and_a_named_projection_is_searched(m
     seen.clear()
     eval_rp.evaluate(None, cases[:1], RecallOptions(), embed_timeout_ms=5000)
     assert seen == [{"projection": None}]
+
+
+def test_excerpt_lengths_count_characters_of_each_placed_excerpt():
+    text = ('<Excerpt turn="3" speaker="char">하나는 &quot;안녕&quot; 했다.</Excerpt>\n<Fact>not an excerpt</Fact>\n'
+            '  <Excerpt speaker="user">A &amp; B</Excerpt>')
+    assert eval_rp.excerpt_lengths(text) == [len('하나는 "안녕" 했다.'), len("A & B")]
+    assert eval_rp.excerpt_lengths("<NarrativeMemory/>") == []
+
+
+def test_a_replay_says_whether_lexical_recall_found_candidates(full):
+    client, url = full
+    chat = story(client, url)
+    trace = UUID(ask(client, chat, "Kaito, what do you know about the letter?")["trace_id"])
+    with db(url) as conn:
+        found = audit.replay(conn, trace, RecallOptions(), query="What about the clouds?")
+        none = audit.replay(conn, trace, RecallOptions(), query="zzqx")
+    assert found["lexical"] == "on" and found["lexical_found"] >= 1
+    assert none["lexical"] == "on" and none["lexical_found"] == 0
+
+
+def test_the_prompt_window_of_an_older_request_is_read_at_the_head(full):
+    client, url = full
+    chat = story(client, url)
+    first = UUID(ask(client, chat, "Kaito, what do you know about the letter?")["trace_id"])
+    with db(url) as conn:
+        before = eval_rp.prompt_window(conn, first)
+    chat.user("(go on)")  # a probe sent and deleted, as an evaluation harness does: the deletion is a new head commit
+    _sync(client, chat)
+    chat.messages.pop()
+    _sync(client, chat)
+    with db(url) as conn:
+        assert conn.execute(eval_rp.WINDOW.format(commit="t.commit_id"), (first,)).fetchall() == []  # head-only
+        assert eval_rp.prompt_window(conn, first) == before != ""
+
+
+def test_a_probe_replays_after_the_requests_own_message_was_deleted(full):
+    client, url = full
+    chat = story(client, url)
+    trace = UUID(ask(client, chat, "Kaito, what do you know about the letter?")["trace_id"])
+    chat.messages.pop()  # the request's message deleted, another sent in its place
+    chat.user("Hana walks to the harbor.")
+    _sync(client, chat)
+    with db(url) as conn:
+        assert audit.replay(conn, trace, RecallOptions())["status"] == "changed"  # the recorded request is gone
+        probe = audit.replay(conn, trace, RecallOptions(), query="What about the clouds?")
+    assert probe["status"] == "ok" and "Idle chatter" in probe["text"]
+
+
+def test_a_probe_does_not_replay_over_an_earlier_edit(full):
+    client, url = full
+    chat = story(client, url)
+    trace = UUID(ask(client, chat, "Kaito, what do you know about the letter?")["trace_id"])
+    chat.messages[1]["data"] = "Hana keeps nothing from Kaito."  # an edit before the request's message
+    _sync(client, chat)
+    with db(url) as conn:
+        assert audit.replay(conn, trace, RecallOptions(), query="What about the clouds?")["status"] == "changed"

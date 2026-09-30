@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 18 step 2: recall measured by what lexical recall finds and how long excerpts are**
+  (`docs/perf/lexical-recall.md`). The evaluation tool says per case whether lexical recall found anything and how long
+  each excerpt was, and marks runs without vectors. Fixed in the tool: an older request's prompt window read empty once
+  the chat had moved on (so answers the prompt already held counted as memory's), and a probe could not replay after
+  the request's own message was deleted. Nothing changes in what a request recalls.
 - **Phase 17 step 2: what NMOS's own model calls used** (ADR 0051, D61, migration 0027). Each extraction, canon read,
   summary and embedded chunk now keeps the tokens its model call used, exactly as the provider reported them (input,
   output, cached input and reasoning tokens, when reported), with the call's duration and model. Nothing is estimated:

@@ -27,7 +27,8 @@ for a model that is not production's request-path embedder.
 **Phase 18 — Recall by the words that matter: approved 2026-09-30, next after Phase 17.** Spec
 `docs/phases/PHASE-18.md`: a keyword lexical route beside the whole-message one (ADR 0004 / D15 to be amended) and
 `packet-v10` excerpts that grow to their budgeted length (today two sentences, a median of 69 characters at every
-budget). Until Phase 17 is complete only its step 2 (evaluation tooling and baseline) may land.
+budget). Until Phase 17 is complete only its step 2 (evaluation tooling and baseline) may land. Step 2 done:
+lexical recall found a candidate for 30 % of evaluation queries (`docs/perf/lexical-recall.md`).
 
 **Phase 16 — Export and restore (Stage 6, part 3): approved and complete 2026-09-29 but for the owner's phone check (K38), not released.** Spec
 `docs/phases/PHASE-16.md`: an "NMOS Archive" (`.nmos.zip`: a manifest and one JSON Lines file per table) of the

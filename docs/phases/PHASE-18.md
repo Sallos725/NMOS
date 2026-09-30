@@ -85,7 +85,11 @@ Measured 2026-09-29/30 outside the repository (numbers only; step 2 records the 
 ## Steps (one pull request each)
 
 1. This document, approved; AGENTS §2, STATUS and the roadmap name Phase 18 next. **Done** (2026-09-30).
-2. Evaluation tooling and the `packet-v9` baseline (vectors on and off).
+2. Evaluation tooling and the `packet-v9` baseline (vectors on and off). **Done** (`docs/perf/lexical-recall.md`): `audit.replay` reports lexical
+   recall's outcome; `tools/eval_rp.py` reports per case whether lexical recall found a candidate and the excerpt
+   lengths, labels runs without vectors, reads an older request's prompt window at the head (membership is kept for
+   the head only), and a probe replays although the request's own message was since deleted. Baseline: lexical recall
+   found a candidate for 43 of 145 queries (30 %); excerpt median 69–101 characters.
 3. Keyword lexical recall, ADR 0052, tests.
 4. `packet-v10` excerpts, tests, plugin build if the panel's budget advice changes.
 5. Evaluation, the owner's traces, real-host smoke, latency, review, documentation; Phase 18 complete.

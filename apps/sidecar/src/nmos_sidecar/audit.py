@@ -141,8 +141,12 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
         return None
     if t.get("lines") is None or t.get("upto_position") is None:
         return {"trace": str(t["id"]), "status": "not_recorded"}
+    # A probe (`query`) takes the place of the request's own message, so only the story before it must be intact, and
+    # only that story is gathered: a harness that sends a probe and deletes it again changes that one position, and
+    # whatever stands there now must not reach the replay (PHASE-18 step 2).
+    kept = t["upto_position"] - 1 if query is not None else t["upto_position"]
     if t["head_commit_id"] is None or not prefix_intact(conn, t["conversation_id"], t["commit_id"],
-                                                         t["head_commit_id"], t["upto_position"]):
+                                                         t["head_commit_id"], kept):
         return {"trace": str(t["id"]), "status": "changed"}
     policy = policy or t["policy"]
     if policy not in POLICIES:
@@ -170,7 +174,7 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
         notes.append("query replaced")
     g = gather(conn, t["head_commit_id"], t["query"] if query is None else query, t["previous_ai"] or "",
                set(t["in_context"] or []), filled(opts, t["budget_tokens"] if budget is None else budget),
-               upto=t["upto_position"], known_at=known_at or t["created_at"],
+               upto=kept, known_at=known_at or t["created_at"],
                canon_held=t.get("canon_held") or (), vectors_now=other, **_canon_of(t))
     if opts.embedder is not None and g.vector_note != "on":
         notes.append(f"vectors {g.vector_note}")  # an embedder that failed now cannot reproduce the request
@@ -179,7 +183,11 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     c = compile_gathered(g, t["budget_tokens"] if budget is None else budget, policy)
     out = {"trace": str(t["id"]), "status": "ok", "policy": policy, "recorded_policy": t["policy"],
            "text": c.text, "tokens": c.tokens, "lines": c.ledger, "notes": notes,
-           "vectors": g.vector_note if opts.embedder is not None else "off"}
+           "vectors": g.vector_note if opts.embedder is not None else "off",
+           # lexical recall's outcome (PHASE-18 step 2): its mode ("on", "too_broad", "timeout", "off") and how many
+           # candidates it found; a candidate found by vectors only has no lexical score
+           "lexical": g.lexical_note,
+           "lexical_found": sum(1 for x in g.candidates if float(x.get("user_score") or 0) > 0)}
     if policy == t["policy"] and not notes:
         out["reproduced"] = _same(c.ledger, t["lines"])
     return out
