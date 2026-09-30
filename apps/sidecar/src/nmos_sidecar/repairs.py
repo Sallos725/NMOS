@@ -119,6 +119,27 @@ def quoted(a: str | None, b: str | None) -> bool:
     return any(b[i:i + QUOTE_MIN_CHARS] in runs for i in range(len(b) - QUOTE_MIN_CHARS + 1))
 
 
+def unedited_quotes(repairs: list[dict[str, Any]], turn_hashes: dict[int, str | None]) -> list[dict[str, Any]]:
+    """The repairs a read applies, without the quote of one whose target turn no longer reads as it did (`turn_hashes`:
+    the head's hash of each turn a quote names): an edit makes a repair match nothing (item 3), so its quote must not
+    find the item at another turn."""
+    out = []
+    for rep in repairs:
+        t = rep.get("target") or {}
+        turn = t.get("turn")
+        if t.get("evidence") and t.get("turn_hash") and turn is not None and turn >= 0 \
+                and turn_hashes.get(turn) != t["turn_hash"]:
+            rep = {**rep, "target": {**t, "evidence": None}}
+        out.append(rep)
+    return out
+
+
+def quoted_turns(repairs: list[dict[str, Any]]) -> list[int]:
+    """The story turns whose hash a read needs for `unedited_quotes`."""
+    return sorted({t["turn"] for rep in repairs if (t := rep.get("target") or {}).get("evidence")
+                   and t.get("turn") is not None and t["turn"] >= 0})
+
+
 def _by_quote(target: dict[str, Any], items: list[dict[str, Any]], same: Callable[[dict[str, Any]], bool],
               quote_of: Callable[[dict[str, Any]], str | None]) -> dict[str, Any] | None:
     """The one item of the same head whose quote shares a run with the target's (ADR 0044 amendment 2), at any turn
@@ -251,7 +272,8 @@ def fact_target(f: dict[str, Any]) -> dict[str, Any]:
             "evidence": f.get("evidence")}
 
 
-def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution | None) -> dict[str, Any] | None:
+def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution | None,
+               quote: bool = True) -> dict[str, Any] | None:
     """The assertion a fact repair names: same predicate, source, subject and object (as entities), and the closest
     line of its turn, or else the one quote among `rows` that shares a run with its own."""
     subject = _ekey(r, target.get("subject_type"), target.get("subject"))
@@ -264,7 +286,7 @@ def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution
                 and _ekey(r, a.get("subject_type"), a["subject"]) == subject
                 and _ekey(r, a.get("object_type"), a.get("object")) == obj)
     return (_closest(target, [a for a in rows if _same_turn(target, a) and same(a)], secret_text)
-            or _by_quote(target, rows, same, lambda a: a.get("evidence")))
+            or (_by_quote(target, rows, same, lambda a: a.get("evidence")) if quote else None))
 
 
 def _owner_id(rep: dict[str, Any]) -> int:
@@ -300,8 +322,9 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
     later: list[dict[str, Any]] = []  # owner's versions from a later turn, in the order made
     retracted: dict[str, dict[str, Any]] = {}
     for rep in mine:
-        a = match_fact(rep["target"], [x for x in by_turn.get(rep["target"].get("turn"), ()) if id(x) not in gone], r)
-        if a is None and rep["target"].get("evidence"):  # a new generation's fact at another turn, by its quote
+        a = match_fact(rep["target"], [x for x in by_turn.get(rep["target"].get("turn"), ()) if id(x) not in gone], r,
+                       quote=False)
+        if a is None and rep["target"].get("evidence"):  # by its quote, among every row: a quote names one or none
             a = match_fact(rep["target"], [x for x in rows if not x.get("owner") and id(x) not in gone], r)
         if a is None:
             continue

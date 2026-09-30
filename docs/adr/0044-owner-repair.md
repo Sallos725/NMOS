@@ -125,7 +125,10 @@ quotes the same message, and `extract-v14` checks that a quote is in its turn (A
     item of the same head (kind, maker and counterpart for a thread; predicate, subject and object for a secret or a
     fact) at any turn whose quote shares a run of at least 12 characters (`QUOTE_MIN_CHARS`, extract-v14's own
     minimum for a quote) with the stored one, case and spacing aside. Two such items: none. An item of the target's
-    own turn counts only while that turn reads as it did, so an edit still makes the repair match nothing (item 3).
+    own turn counts only while that turn reads as it did, and a repair whose turn was edited or deleted keeps no quote
+    at all (a read looks up the head's hash of each turn a quote names), so an edit still makes the repair match
+    nothing (item 3). A quote is compared among every item of the head at once: one in the target's turn and one
+    elsewhere are two, so neither.
     A story fact's repair never takes a canon fact, nor a canon fact's repair a story fact. A correction made at the
     fact's own turn stays in place at the turn where the new generation states the fact.
 14. **Older repairs** have no stored quote and match as before. Production had none on 2026-10-01.

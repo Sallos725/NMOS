@@ -141,5 +141,5 @@ reads them. No worker, no model call; counts only (scripts in `~/nmos-eval/stage
 - Of the 28 not found, 19 have no item of that maker at the repair's turn (v14 did not state the thread or secret
   there, or at all), and 9 have one that quotes another sentence of the turn; they are listed as matching nothing.
 - A memory read of the longest chat with its 58 repairs (24 matching nothing, so compared by quote on every read)
-  takes 13.5–14.5 ms against 12.6–12.7 without the quote (medians of 31, three rounds); the head is checked before
-  the quote, and a stored quote's runs of 12 characters are cached.
+  takes 14.0–14.8 ms against 12.2–12.6 without the quote (medians of 31, three rounds), the look-up of the quoted
+  turns' hashes included; the head is checked before the quote, and a stored quote's runs of 12 characters are cached.

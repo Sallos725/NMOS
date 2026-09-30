@@ -824,3 +824,46 @@ def test_a_quote_is_as_long_as_extraction_asks_of_a_quote():
     from nmos_sidecar.extraction import EVIDENCE_MIN_CHARS
     assert repairs.QUOTE_MIN_CHARS == EVIDENCE_MIN_CHARS
     assert repairs.quoted("the keeper waits", "THE  KEEPER waits here") and not repairs.quoted("the keeper", "the keeper")
+
+
+def test_an_edited_target_turn_keeps_its_repair_from_the_same_quote_at_another_turn(migrated):
+    """Copilot review of #210: the quote must not carry a repair past an edit of its turn (PHASE-13 Q3)."""
+    chat = SimChat()
+    for text in ("Hana wants to find the keeper.", "Kaito is in the garden.", "Hana wants to find the keeper."):
+        chat.user(text)
+        chat.reply("Noted.")
+    chat.user("Go on.")
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        t = thread(c, cid)
+        assert t["turn"] == 0 and [x["turn"] for x in t["restated"]] == [2]
+        repair(c, cid, kind="thread_close", item=str(t["id"]))
+        chat.edit(0, "Hana wants to sail away.")  # the repair's turn changed; turn 2 still quotes the same words
+        sync(c, chat)
+        drain(migrated, stub_extractor)
+        assert thread(c, cid)["turn"] == 2 and thread(c, cid)["status"] == "open"
+        assert c.get(f"/v1/conversations/{cid}/repairs").json()["repairs"][0]["applied"] is None
+
+
+def test_a_quote_names_one_fact_among_every_turn_not_the_first_it_meets():
+    """Copilot review of #210: a quote in the target's turn and another elsewhere are two, so neither."""
+    a = {**row(3, "Hana", "identity", None, "keeper of the northern lighthouse", subject_type="character"),
+         "turn_hash": "h3", "evidence": QUOTE}
+    target = repairs.fact_target(a)
+    here = {**a, "id": 8, "value": "a guardian who tends the beacon"}  # the target's turn, words past the text match
+    there = {**a, "id": 9, "turn": 4, "turn_hash": "h4", "value": "the warden of a signal tower"}
+    assert repairs.match_fact(target, [here], None, quote=False) is None  # the text match alone finds neither
+    rep = {"id": uuid.uuid4(), "kind": "fact_retract", "target": target, "value": {}, "note": None}
+    applied: dict = {}
+    out, _ = repairs.apply_facts([here, there], [rep], None, applied)
+    assert applied == {str(rep["id"]): None} and out == [here, there]
+
+
+def test_a_repair_keeps_its_quote_only_while_its_turn_reads_as_it_did():
+    rep = {"id": 1, "kind": "thread_close", "target": {"turn": 3, "turn_hash": "h3", "evidence": QUOTE}}
+    canon = {"id": 2, "kind": "fact_lock", "target": {"turn": -1, "turn_hash": "card:desc", "evidence": QUOTE}}
+    assert repairs.quoted_turns([rep, canon]) == [3]
+    assert repairs.unedited_quotes([rep, canon], {3: "h3"}) == [rep, canon]
+    edited, same = repairs.unedited_quotes([rep, canon], {3: "changed"})
+    assert edited["target"]["evidence"] is None and same is canon
+    assert repairs.unedited_quotes([rep], {})[0]["target"]["evidence"] is None  # the turn is gone
