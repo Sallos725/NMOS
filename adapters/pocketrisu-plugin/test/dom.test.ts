@@ -274,7 +274,8 @@ describe('owner repairs in the panel (ADR 0044)', () => {
 
   function deps(entities: unknown[] = []) {
     const calls: [string, string, unknown][] = [];
-    const state = { html: page(goal + promise), refuse: new Set<string>() };
+    const state = { html: page(goal + promise), refuse: new Set<string>(), stale: 0, turns: 0, failReextract: 0,
+      hold: null as Promise<void> | null };
     const d: PanelDeps = {
       api: async <T>(method: 'GET' | 'POST' | 'PUT', address: string, body?: unknown) => {
         const path = address.replace(/\?lang=en$/, '');
@@ -288,6 +289,26 @@ describe('owner repairs in the panel (ADR 0044)', () => {
         if (path.startsWith(`/v1/inspector/c/${id}`)) return { html: state.html } as T;
         if (path.endsWith('/entities')) return entities as T;
         if (path.endsWith('/memory-mode')) throw new Error('404');
+        if (path.endsWith('/preview')) {  // PHASE-20: one fingerprint per preview asked
+          const n = calls.filter(([, p]) => p.endsWith('/preview')).length;
+          if (state.hold) await state.hold;  // an answer that arrives late
+          const one = [{ id: 'a', name: '하나', names: ['하나', '유이'], persona: false }];
+          const two = [{ id: 'a', name: '하나', names: ['하나'], persona: false }, { id: 'b', name: '유이', names: ['유이'],
+            persona: false }];
+          const undo = path.endsWith('/remove/preview');
+          return { action: undo ? 'unlink' : 'join', changes: true, before: undo ? one : two, after: undo ? two : one,
+            lines: [{ kind: 'fact_replaced', fact: { text: '하나 at chapel' }, by: { text: '유이 at harbor', turn: 2 } }],
+            counts: {}, fingerprint: `fp${n}`,
+            ...(state.turns ? { reextract: { turns: state.turns, list: [4, 5].slice(0, state.turns) } } : {}) } as T;
+        }
+        if (state.stale > 0 && (body as { expect?: string } | undefined)?.expect) {
+          state.stale -= 1;
+          throw new Error(`${path} -> HTTP 409: [object Object]`);
+        }
+        if (path.endsWith('/reextract')) {
+          if (state.failReextract > 0) { state.failReextract -= 1; throw new Error(`${path} -> HTTP 409: fact extraction is off`); }
+          return { turns: (body as { turns?: number[] }).turns ?? [4, 5] } as T;
+        }
         return {} as T;
       },
       status: async () => ({ enabled: true, sidecarUrl: 'http://127.0.0.1:8790', language: 'en', connected: true,
@@ -429,8 +450,111 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     expect(panel().textContent).toContain('하나 ~ 유이');
     button('Split').click();
     await settle();
-    expect(posts(calls)).toEqual([['POST', `/v1/conversations/${id}/repairs`,
-      { kind: 'name_split', item: '하나', other: '유이', entity_type: 'character' }]]);
+    const body = { kind: 'name_split', item: '하나', other: '유이', entity_type: 'character' };
+    expect(posts(calls)).toEqual([['POST', `/v1/conversations/${id}/repairs/preview`, body]]);  // shown first (PHASE-20)
+    expect(panel().textContent).toContain('"유이 at harbor" replaces "하나 at chapel" (turn 2)');
+    button('Split as shown').click();
+    await settle();
+    expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/repairs`, { ...body, expect: 'fp1' }]);
     expect(panel().textContent).toContain('Split "하나" and "유이".');
+  });
+
+  const joinable = () => [
+    { id: who, type: 'character', name: '하나', names: ['하나'], mentions: 9, links: [], aliases: [] },
+    { id: t2, type: 'character', name: '유이', names: ['유이'], mentions: 4, links: [] }];
+
+  it('previews a join, and shows the new preview when memory changed since (PHASE-20 Q4)', async () => {
+    const { d, calls, state } = deps(joinable());
+    await openChat(d, `/inspector/c/${id}/e/${who}`);
+    button('Join').click();
+    await settle();
+    expect(posts(calls)).toEqual([['POST', `/v1/conversations/${id}/entity-links/preview`,
+      { entity_type: 'character', name: '하나', same_as: '유이' }]]);
+    expect(panel().textContent).toContain('하나, 유이 → 하나');
+    state.stale = 1;
+    button('Join as shown').click();
+    await settle();
+    await settle();
+    expect(panel().textContent).toContain('Memory changed since the preview');
+    button('Join as shown').click();
+    await settle();
+    expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/entity-links`,
+      { entity_type: 'character', name: '하나', same_as: '유이', expect: 'fp2' }]);
+    expect(panel().textContent).toContain('Joined "하나" and "유이".');
+  });
+
+  it('cancels a preview without writing anything', async () => {
+    const { d, calls } = deps(joinable());
+    await openChat(d, `/inspector/c/${id}/e/${who}`);
+    button('Join').click();
+    await settle();
+    button('Cancel').click();
+    await settle();
+    expect(posts(calls).map(([, p]) => p)).toEqual([`/v1/conversations/${id}/entity-links/preview`]);
+    expect(button('Join')?.disabled).toBe(false);
+  });
+
+  it('undoes a join and re-extracts the turns it covered only when asked (Q7)', async () => {
+    const link = '0190f3a4-1b2c-7d3e-8f40-00000000beef';
+    const rows = joinable();
+    rows[0] = { ...rows[0]!, names: ['하나', '유이'], links: [{ id: link, name: '하나', same_as: '유이' }] } as typeof rows[0];
+    const { d, calls, state } = deps(rows);
+    state.turns = 2;
+    await openChat(d, `/inspector/c/${id}/e/${who}`);
+    button('Undo').click();
+    await settle();
+    expect(panel().textContent).toContain('Re-extract the 2 turns extracted while joined');
+    const box = panel().querySelector<HTMLInputElement>('.preview input[type=checkbox]')!;
+    expect(box.checked).toBe(false);  // off by default: it costs model calls
+    box.checked = true;
+    button('Undo as shown').click();
+    await settle();
+    await settle();
+    const base = `/v1/conversations/${id}/entity-links/${link}`;
+    expect(posts(calls).map(([, p, b]) => [p, b])).toEqual([[`${base}/remove/preview`, {}],
+      [`${base}/remove`, { expect: 'fp1' }], [`${base}/reextract`, { turns: [4, 5] }]]);  // only the turns shown
+    expect(panel().textContent).toContain('Queued 2 turns for re-extraction.');
+  });
+
+  it('keeps an undo made when its re-extraction fails, and offers to retry only the re-extraction', async () => {
+    const link = '0190f3a4-1b2c-7d3e-8f40-00000000beef';
+    const rows = joinable();
+    rows[0] = { ...rows[0]!, names: ['하나', '유이'], links: [{ id: link, name: '하나', same_as: '유이' }] } as typeof rows[0];
+    const { d, calls, state } = deps(rows);
+    state.turns = 2;
+    state.failReextract = 1;
+    await openChat(d, `/inspector/c/${id}/e/${who}`);
+    button('Undo').click();
+    await settle();
+    panel().querySelector<HTMLInputElement>('.preview input[type=checkbox]')!.checked = true;
+    button('Undo as shown').click();
+    await settle();
+    await settle();
+    const base = `/v1/conversations/${id}/entity-links/${link}`;
+    expect(posts(calls).filter(([, p]) => p === `${base}/remove/preview`)).toHaveLength(1);  // no stale-undo re-preview
+    expect(panel().textContent).toContain('The join was undone, but the re-extraction failed');
+    button('Retry the re-extraction').click();
+    await settle();
+    expect(posts(calls).at(-1)).toEqual(['POST', `${base}/reextract`, { turns: [4, 5] }]);
+    expect(panel().textContent).toContain('Queued 2 turns for re-extraction.');
+  });
+
+  it('drops a preview answer that arrives after the owner picked another name', async () => {
+    const rows = [...joinable(), { id: 'c3', type: 'character', name: '소라', names: ['소라'], mentions: 2, links: [] }];
+    const { d, state } = deps(rows);
+    await openChat(d, `/inspector/c/${id}/e/${who}`);
+    let release!: () => void;
+    state.hold = new Promise<void>((r) => { release = r; });
+    button('Join').click();
+    await settle();
+    const pick = panel().querySelector<HTMLSelectElement>('select[aria-label="Same as"]')!;
+    pick.value = '소라';
+    pick.dispatchEvent(new Event('change', { bubbles: true }));
+    state.hold = null;
+    release();
+    await settle();
+    await settle();
+    expect(panel().querySelector('.preview')).toBeNull();  // the late answer for 유이 is not shown
+    expect(button('Join')?.disabled).toBe(false);
   });
 });

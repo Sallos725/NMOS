@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, keepAttribute, linkChoices,
-  localTime, repairAction, sectionTarget, splitChoices } from '../src/inspector';
-import type { EntityRow } from '../src/inspector';
+  localTime, previewText, repairAction, sectionTarget, splitChoices } from '../src/inspector';
+import type { EntityRow, Preview } from '../src/inspector';
+import { t, type StringKey } from '../src/i18n';
 
 const id = '0190f3a4-1b2c-7d3e-8f40-123456789abc';
 const who = '5c6d7e8f-9a0b-5c2d-8e3f-0123456789ab';
@@ -123,5 +124,52 @@ describe('owner links on an entity page (ADR 0025)', () => {
     ] });
     expect(splitChoices(hana)).toEqual([{ name: '하나', other: '하나 씨' }, { name: '하나', other: '유이' }]);
     expect(splitChoices(row('b', '카이토', 3))).toEqual([]); // an older sidecar: no aliases
+  });
+});
+
+describe('join preview (PHASE-20)', () => {
+  const en = (key: StringKey, vars?: Record<string, string | number>) => t('en', key, vars);
+  const entity = (name: string, names = [name], persona = false) => ({ id: name, name, names, persona });
+  const base: Preview = { action: 'join', changes: true, before: [entity('Rin'), entity('Mina')],
+    after: [entity('Mina', ['Mina', 'Rin'])], lines: [], counts: {}, fingerprint: 'f' };
+
+  it('says nothing changes when nothing does', () => {
+    expect(previewText({ ...base, changes: false }, en)).toEqual([en('pv.nothing')]);
+  });
+
+  it('puts the entities first and the warnings before the rest, with how many more', () => {
+    const lines: Preview['lines'] = [
+      { kind: 'secret', secret: { text: 'who holds the key', turn: 1 } },  // an ordinary secret line first
+      { kind: 'fact_merged', fact: { text: 'Mina identity knight', turn: 3 }, by: { text: 'Rin identity knight' } },
+      { kind: 'fact_replaced', fact: { text: 'Mina located in chapel' }, by: { text: 'Rin located in harbor', turn: 2 } },
+      { kind: 'self_thread', thread: { text: 'wait', by: 'Mina', turn: 5 } },
+      { kind: 'secret', secret: { text: 'the letter is forged', turn: 4 }, kept_from_holder: true },
+      { kind: 'repair', repair: { kind: 'fact_retract' }, before: '1', after: null },
+      { kind: 'something_new' },
+    ];
+    const out = previewText({ ...base, lines }, en, (s) => s, 3);
+    expect(out.slice(0, 3)).toEqual(['Rin, Mina → Mina', '"Mina" also goes by: Rin',
+      '"Mina"\'s Inspector page stays; the other one goes']);
+    expect(out.slice(3, 6)).toEqual([  // the warnings first, whatever their kind, each with its turn (Q1)
+      "Note: Mina's promise \"wait\" becomes one to themselves (turn 5)",
+      'Note: the secret "the letter is forged" is kept from someone who holds it (turn 4)',
+      'Who holds or is kept from the secret "who holds the key" changes (turn 1)',  // then the kinds' order
+    ]);
+    expect(out[6]).toBe(en('pv.more', { n: 4 })); // three worded lines left, and the kind this panel does not know
+  });
+
+  it('words every mirror kind of an undo', () => {
+    const kinds = ['fact_back', 'self_relation_gone', 'self_thread_gone', 'thread_back', 'secret_back', 'conflict_gone',
+      'persona_gone', 'canon_alias_gone', 'thread_status', 'thread_merged', 'secret_merged', 'fact_ended',
+      'conflict_new', 'persona', 'canon_alias', 'self_relation'];
+    const lines = kinds.map((kind) => ({ kind, fact: { text: 'x' }, thread: { text: 'x', by: 'A' }, secret: { text: 'x' },
+      conflict: { text: 'x' }, name: 'A', other: 'B', status: 'kept' }));
+    const out = previewText({ ...base, lines }, en, (s) => s, 99);
+    expect(out).toHaveLength(kinds.length + 3); // the entities, the other name, the page that stays
+    expect(out.every((x) => x && !x.includes('{'))).toBe(true);
+  });
+
+  it('parses the undo mark of a name split', () => {
+    expect(repairAction(`undo:${id}:name_split`)).toEqual({ kind: 'undo', item: id, extra: 'name_split' });
   });
 });

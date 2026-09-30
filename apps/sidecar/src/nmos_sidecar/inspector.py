@@ -808,6 +808,11 @@ def _act(kind: str, item: Any, extra: str | None = None) -> str:
     return f"<span class=\"rp\" data-repair=\"{_v(value)}\"></span>"
 
 
+def _undo(rep: dict[str, Any]) -> str:
+    """An undo; a name split's is marked so the panel previews it like a join (PHASE-20 Q2)."""
+    return _act("undo", rep["id"], "name_split" if rep.get("kind") == "name_split" else None)
+
+
 def _close(th: dict[str, Any]) -> str:
     """A close button with the outcomes of the thread's kind, its default first (ADR 0044 item 3)."""
     first = default_outcome(th["kind"])
@@ -863,9 +868,9 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
         if rep.get("removed_at"):
             continue
         if rep.get("via"):
-            rows.append([_v(_t(lang, "at.split")), _repair_target(rep), "", _act("undo", rep["id"])])
+            rows.append([_v(_t(lang, "at.split")), _repair_target(rep), "", _undo(rep)])
         elif not rep.get("applied"):
-            rows.append([_v(_t(lang, "at.repair")), _repair_target(rep), "", _act("undo", rep["id"])])
+            rows.append([_v(_t(lang, "at.repair")), _repair_target(rep), "", _undo(rep)])
     for a in view.get("ambiguous", []):
         rows.append([_v(_t(lang, "at.ambiguous")), _v(f"{a['name']}: " + ", ".join(a.get("candidates") or [])), "", ""])
     return rows
@@ -905,7 +910,7 @@ def _repairs_table(repairs: list[dict[str, Any]], lang: str) -> str:
     def state(rep: dict[str, Any]) -> str:
         if rep.get("removed_at"):
             return chip(lang, "rs", "removed")
-        undo = _act("undo", rep["id"])
+        undo = _undo(rep)
         if rep.get("via"):
             return f"<span class=\"warn\">{_v(_t(lang, 'rs.via').format(names=', '.join(rep['via'])))}</span>" + undo
         return (chip(lang, "rs", "applied") if rep.get("applied")

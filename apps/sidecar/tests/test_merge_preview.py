@@ -165,6 +165,8 @@ def test_a_split_and_its_undo_are_previewed_like_a_join(migrated, db):
         assert rep.status_code == 200, rep.text
         rid = rep.json()["repair"]["id"]
         split = read(db, cid)
+        page = c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
+        assert f'data-repair="undo:{rid}:name_split"' in page  # the panel previews this undo (Q2)
         same_as_done(p, was, split, [("character", "Mina"), ("character", "Rin")], {"preview", rid})
         undo = c.post(f"/v1/conversations/{cid}/repairs/{rid}/remove/preview").json()
         assert undo["action"] == "unsplit" and len(undo["after"]) == 1
@@ -216,6 +218,9 @@ def test_the_fingerprint_changes_with_what_the_preview_read():
     assert preview.fingerprint(p, state) == preview.fingerprint(p, dict(state))
     assert preview.fingerprint(p, {**state, "head": "h2"}) != preview.fingerprint(p, state)
     assert preview.fingerprint({**p, "lines": [{"kind": "persona"}]}, state) != preview.fingerprint(p, state)
+    undo = {**p, "reextract": {"turns": 2, "list": [4, 5]}}
+    assert preview.fingerprint({**undo, "reextract": {"turns": 3, "list": [4, 5, 6]}}, state) != preview.fingerprint(
+        undo, state)  # more turns to re-extract than the owner saw
 
 
 PAIRS = [("self_relation", "self_relation_gone"), ("self_thread", "self_thread_gone"), ("thread_merged", "thread_back"),
@@ -326,12 +331,16 @@ def test_an_undo_re_extracts_the_turns_the_join_covered_as_if_it_never_held(migr
         early = c.post(f"/v1/conversations/{cid}/entity-links/{link}/reextract")
         assert early.status_code == 422  # the join still holds
         undo = c.post(f"/v1/conversations/{cid}/entity-links/{link}/remove/preview").json()
-        assert undo["reextract"] == {"turns": len(covered)}
+        assert undo["reextract"] == {"turns": len(covered), "list": sorted(covered)}
         assert c.post(f"/v1/conversations/{cid}/entity-links/{link}/remove").status_code == 200
+        # The panel sends the turns its preview listed: never more than the owner saw (Copilot review of step 4).
+        first = c.post(f"/v1/conversations/{cid}/entity-links/{link}/reextract", json={"turns": sorted(covered)[:1]})
+        assert first.status_code == 200 and first.json()["turns"] == sorted(covered)[:1]
         res = c.post(f"/v1/conversations/{cid}/entity-links/{link}/reextract")
         assert res.status_code == 200, res.text
         out = res.json()
-        assert out["turns"] == sorted(covered) and out["discarded"] >= len(covered) and out["queued"] == len(covered)
+        rest = sorted(covered)[1:]
+        assert out["turns"] == rest and out["discarded"] >= len(rest) and out["queued"] == len(rest)
         drain(migrated, stub_extractor)
         # No served extraction lists the names as one any more (the re-extraction reads the chat as it is now, so
         # a turn may list entities its first extraction had not seen yet), and memory is the never-joined chat's.
@@ -353,6 +362,13 @@ def test_no_re_extraction_while_the_names_are_one_entity_anyway(migrated):
         cid = setup(c, migrated, chat, aliased)
         link = c.post(f"/v1/conversations/{cid}/entity-links",
                       json={"entity_type": "character", "name": "Mi", "same_as": "Mina"}).json()["link"]["id"]
+        chat.user("Mi is a knight.")  # a turn extracted while the join holds, listing Mi and Mina as one
+        chat.reply("Noted.")
+        chat.user("Go on.")
+        sync(c, chat)
+        drain(migrated, aliased)
+        undo = c.post(f"/v1/conversations/{cid}/entity-links/{link}/remove/preview").json()
+        assert undo["reextract"] == {"turns": 0, "list": []}  # the story keeps them one: nothing to offer
         c.post(f"/v1/conversations/{cid}/entity-links/{link}/remove")
         res = c.post(f"/v1/conversations/{cid}/entity-links/{link}/reextract")
         assert res.status_code == 422 and "one entity now" in res.json()["detail"]
