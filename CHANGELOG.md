@@ -5,6 +5,13 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 18 step 4: `packet-v10`, excerpts that grow** (ADR 0053, D63), the new default. An excerpt starts from the
+  sentence holding most of your message's keywords and adds its neighbouring sentences, after then before, up to four
+  and within the length the memory budget gives it; before, it was always two sentences (about 70 characters) whatever
+  the budget. On the owner's chats without vectors it answered 6 more questions needing memory, and with vectors placed
+  2 forbidden phrases instead of 6. On the synthetic chat, whose facts change often, it places values the story has
+  since replaced more often than `packet-v9` (17 against 12 with vectors, 12 against 5 without; none a secret), though
+  far less often than growing to the whole length (29). Requests recorded before replay with `packet-v9`.
 - **Phase 18 step 3: keyword lexical recall** (ADR 0052, D62). Lexical recall also looks up the message's keywords one
   by one (up to four; Korean particles and question endings taken off, names kept whole, question and stop words
   left out), so a natural question finds the message that says what it names even when the question as a whole is

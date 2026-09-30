@@ -524,6 +524,11 @@ a keyword in more than 200 or more than half of the head messages, or not found 
 scores sum `log(messages / matches)` under the lexical timeout. A keyword hit is its own admission signal in fusion. An excerpt only this route found is
 left out when it repeats a secret still kept from someone. Recorded as `lexical_keywords`; older traces replay without it.
 
+**D63 — Excerpts that fill their length (Phase 18, ADR 0053).** `packet-v10`, the default, is `packet-v9` whose excerpt
+starts from the sentence holding most of the message's keywords (then most shared trigrams) and adds whole neighbouring
+sentences, after then before, within `excerpt_chars` and at most four sentences; a longer best sentence is cut there.
+`packet-v9` stays for replays.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

@@ -3,7 +3,8 @@
 > **Status: approved 2026-09-30 (owner), next after Phase 17.** It starts when Phase 17 is complete; until then only
 > step 2's evaluation tooling and baseline, which change no recall, may land (AGENTS.md §0, §7).
 > Amended 2026-09-30 after the spec PR's review: five boundary cases made explicit (Q1–Q4, criteria); the intent is
-> unchanged.
+> unchanged. Amended again 2026-09-30 by the owner after step 4's measurements: excerpts grow to at most four
+> sentences (Q3), and the excerpt-length criterion is restated (below).
 
 ## Questions and proposed answers
 
@@ -16,7 +17,7 @@ Each answer in bold was NMOS's proposal; the owner approved the document with th
 its original form (민지, 사과), and where an ending may belong to a name both the word and its stem are kept. At most
 four keywords per request, longest first. No morphological analyzer (that would be a new runtime dependency, AGENTS.md §8). | A morphological analyzer; the extractor's entity names only. |
 | Q2 | How does a keyword recall a message? | **A second lexical route beside today's.** Each keyword matches a message when `word_similarity(keyword, clean_content) ≥ 0.8` on the normalized projection (D11, D21; the trigram index still serves it). A keyword matching more than 200 head messages is too broad and is dropped, as D15 does for a whole query. A message's keyword score is the sum of its keywords' rarity weights (`log(N / matches)`). Today's whole-message route stays unchanged; both lists join the vector list in the same reciprocal-rank fusion, and a keyword hit is its own admission signal there (today `fuse` admits only a whole-message score above the threshold or a vector above its minimum, which would drop a keyword-only hit with vectors off). The keyword route shares one time budget (`NMOS_LEXICAL_TIMEOUT_MS`) across its keywords and abstains, recorded, when it runs out. | Replace the whole-message route; keywords only when the whole message finds nothing. |
-| Q3 | How long is an excerpt? | **As long as its budget says.** Today an excerpt is the two consecutive sentences that share most trigrams with the query, cut at `excerpt_chars`: measured, excerpts are 69–80 characters (median) at every budget from 2,000 to 16,000 and never longer than 175, so packet-v9's longer excerpts (ADR 0049) never happen. Proposed: start from the best sentence (keyword hits first, then trigrams) and add neighbouring sentences, alternating after and before, until `excerpt_chars`. A best sentence longer than `excerpt_chars` is cut there with "…", as today; under budget pressure the packet fitter still shortens or omits excerpts as it does now. | Keep two sentences; a fixed three. |
+| Q3 | How long is an excerpt? | **As long as its budget says.** Today an excerpt is the two consecutive sentences that share most trigrams with the query, cut at `excerpt_chars`: measured, excerpts are 69–80 characters (median) at every budget from 2,000 to 16,000 and never longer than 175, so packet-v9's longer excerpts (ADR 0049) never happen. Proposed: start from the best sentence (keyword hits first, then trigrams) and add neighbouring sentences, alternating after and before, until `excerpt_chars` — **at most four sentences (owner, 2026-09-30: growing to the whole length placed replaced values much more often, `docs/perf/lexical-recall.md` "Step 4")**. A best sentence longer than `excerpt_chars` is cut there with "…", as today; under budget pressure the packet fitter still shortens or omits excerpts as it does now. | Keep two sentences; a fixed three. |
 | Q4 | Versioning? | **`packet-v10`** (the excerpt rule) as the new default, and the keyword route as a recorded recall option (`lexical_keywords`). Recorded requests replay as they were (ADR 0027): `packet-v9` and the whole-message route alone stay available. A trace that did not record `lexical_keywords` replays with it off (a replay overlays recorded options on today's defaults, so a missing value must not mean the new default). | Change `packet-v9` in place. |
 | Q5 | Measured on what? | **The owner's M0 chats with the blind re-annotated case set (2026-09-30: gold written from the raw chat only, several wordings per phrase) as M0 v2, and a synthetic 240-turn Korean role-play written for benchmarking, with 100 cases derived from its fact ledger.** Both stay outside the repository for now (the owner's chats are private; publishing the synthetic set is proposal P3's decision). Runs with vectors on and off, since production mostly runs without them. | M0 v1 only. |
 | Q6 | Release? | **None until the owner asks**, as for Phases 10–17. | A tag after merge. |
@@ -83,8 +84,11 @@ Measured 2026-09-29/30 outside the repository (numbers only; step 2 records the 
   - vectors on: no run worse by more than one case;
   - forbidden phrases placed: at most +2 in total, none of them from a thread or a secret.
 - [ ] Synthetic set (4 cuts, 32k context), vectors on: the one-off detail category at least +3 over the cuts, and no
-      category worse by more than one case per cut.
-- [ ] Median excerpt length at 4,000 of at least 250 characters on M0 v2.
+      category worse by more than one case per cut (the owner accepted one exception on 2026-09-30: "count" at the
+      60 cut, −2, with the four-sentence cap).
+- [ ] Excerpts grow: the median placed excerpt at 4,000 on M0 v2 at least 1.3 times `packet-v9`'s (restated by the owner,
+      2026-09-30: with ten excerpts at 4,000 no growth rule reached a 250-character median, since the fitter falls
+      back to one sentence under budget pressure).
 - [ ] Retrieve latency at 10,000 messages within +15 ms p50 of `packet-v9` at 4,000 (`tools/bench_story.py`),
       including a question of four common keywords (each in more than 200 messages, `docs/perf/scale.md`).
 - [ ] Real-host smoke on an isolated PocketRisu v1.13.0.
@@ -102,7 +106,9 @@ Measured 2026-09-29/30 outside the repository (numbers only; step 2 records the 
 3. Keyword lexical recall, ADR 0052, tests. **Done** (ADR 0052, D62, `docs/perf/lexical-recall.md` "Step 3"):
    lexical recall found a candidate for 131 of 145 queries (90 %); an excerpt only the keyword route found is left out
    when it repeats a secret still kept from someone (owner, 2026-09-30).
-4. `packet-v10` excerpts, tests, plugin build if the panel's budget advice changes.
+4. `packet-v10` excerpts, tests, plugin build if the panel's budget advice changes. **Done** (ADR 0053, D63, `docs/perf/lexical-recall.md` "Step 4"): excerpts
+   grow from the sentence holding most keywords by up to four sentences (owner's choice over the whole length); the
+   phase's M0, synthetic and latency criteria met as restated; no plugin build (the budget advice is unchanged).
 5. Evaluation, the owner's traces, real-host smoke, latency, review, documentation; Phase 18 complete.
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).

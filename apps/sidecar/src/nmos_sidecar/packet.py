@@ -124,6 +124,45 @@ def excerpt(content: str, query: str, window: int = 2, max_chars: int = MAX_EXCE
     return f"{prefix}{text}{suffix}"
 
 
+def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = MAX_EXCERPT_CHARS) -> tuple[str, str]:
+    """packet-v10 (ADR 0053): the excerpt and its one-sentence form. The best sentence holds most of `words` (the
+    message's keywords), then shares most trigrams with `query`, the earlier one on a tie; the excerpt adds whole
+    neighbouring sentences, after then before in turn, while the text stays within `max_chars` and holds at most
+    GROW_MAX_SENTENCES. A best sentence longer than `max_chars` is cut there, as `excerpt` does."""
+    parts = sentences(content) or [content.strip()]
+    query_grams = _trigrams(query)
+    lowered = [p.casefold() for p in parts]
+
+    def rank(i: int) -> tuple[int, int, int]:
+        return (sum(1 for w in words if w.casefold() in lowered[i]), len(_trigrams(parts[i]) & query_grams), -i)
+
+    best = max(range(len(parts)), key=rank)
+
+    def framed(lo: int, hi: int, text: str) -> str:
+        after = "…" if hi < len(parts) - 1 else ""
+        if len(text) > max_chars:  # cut: one ellipsis says the rest is left out
+            text, after = text[: max_chars - 1].rstrip(), "…"
+        return f"{'…' if lo > 0 else ''}{text}{after}"
+
+    short = framed(best, best, parts[best])
+    lo = hi = best
+    length = len(parts[best])
+    after = True
+    while length <= max_chars and hi - lo + 1 < GROW_MAX_SENTENCES:
+        fits_after = hi + 1 < len(parts) and length + 1 + len(parts[hi + 1]) <= max_chars
+        fits_before = lo > 0 and length + 1 + len(parts[lo - 1]) <= max_chars
+        if not (fits_after or fits_before):
+            break
+        if fits_after and (after or not fits_before):
+            hi += 1
+            length += 1 + len(parts[hi])
+        else:
+            lo -= 1
+            length += 1 + len(parts[lo])
+        after = not after
+    return framed(lo, hi, " ".join(parts[lo: hi + 1])), short
+
+
 # Packet compilers (ADR 0027). A trace records which one built its packet, and a replay can compile the
 # same inputs with another. packet-v0 fills the budget strictly in section order (state, threads, facts,
 # excerpts): on the owner's chats it spent the whole default reserve on fact lines and placed an excerpt
@@ -145,17 +184,21 @@ def excerpt(content: str, query: str, window: int = 2, max_chars: int = MAX_EXCE
 # ADR 0042) in at most STORY_SHARE of the budget, and a <Cast> section: each scene character's place, condition,
 # feeling toward the persona, open goals and what they carry, as the lines they are, grouped (PHASE-12 step 5,
 # ADR 0043).
+# packet-v10 is packet-v9 whose excerpts use the length the budget gives them (PHASE-18, ADR 0053): packet-v9's excerpt
+# was the two sentences sharing most trigrams with the query, so it stayed ≈70 characters whatever `excerpt_chars`
+# allowed; packet-v10 starts from the sentence holding most of the message's keywords and adds the neighbouring ones,
+# after then before, while they fit, up to four sentences (`grown_excerpt`).
 # packet-v9 is packet-v8 whose recall grows with the budget (PHASE-15, ADR 0049): above FILL_BASE tokens, the request's
 # own excerpt count and fact limit, and each excerpt's length, scale by the budget's share of FILL_BASE, up to
 # FILL_MAX; facts to twice their limit at most. Threads, events, secrets, <Cast> and <Story> keep packet-v8's limits:
 # growing them placed stale business above ≈8,000 tokens (docs/perf/packet-fill.md). At FILL_BASE and below it is
 # packet-v8.
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
-            "packet-v8", "packet-v9")
-DEFAULT_POLICY = "packet-v9"
+            "packet-v8", "packet-v9", "packet-v10")
+DEFAULT_POLICY = "packet-v10"
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
-             "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2}  # estimated tokens per non-ASCII char
-_V8 = ("packet-v8", "packet-v9")  # packet-v8 and what builds on it
+             "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2}  # estimated tokens per non-ASCII char
+_V8 = ("packet-v8", "packet-v9", "packet-v10")  # packet-v8 and what builds on it
 PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})  # promises the message is about first (ADR 0019 am. 1)
@@ -164,7 +207,11 @@ CAUSE_POLICIES = frozenset({"packet-v6", "packet-v7", *_V8})  # facts and claims
 TURN_POLICIES = frozenset({"packet-v7", *_V8})  # excerpts and state carry their message's turn index (ADR 0041)
 STORY_POLICIES = frozenset(_V8)  # summaries in a <Story> section (ADR 0043)
 CAST_POLICIES = frozenset(_V8)  # each scene character's state in a <Cast> section (ADR 0043)
-FILL_POLICIES = frozenset({"packet-v9"})  # recall grows with the budget (ADR 0049)
+FILL_POLICIES = frozenset({"packet-v9", "packet-v10"})  # recall grows with the budget (ADR 0049)
+GROW_POLICIES = frozenset({"packet-v10"})  # an excerpt grows to its length from its best sentence (ADR 0053)
+# ... to at most this many sentences (owner, 2026-09-30): growing to the whole length brought back more values the
+# story had since replaced (docs/perf/lexical-recall.md, "Step 4")
+GROW_MAX_SENTENCES = 4
 FILL_BASE, FILL_MAX, FILL_FACTS_MAX = 2000, 4.0, 2.0  # the budget recall is sized for, and the largest factors
 STORY_SHARE = 0.3  # packet-v8: <Story> may take at most this share of the budget inside the frame (PHASE-12 Q5)
 RESTATES = 0.6  # packet-v4: a claim this close to a fact of the same head says it again (ADR 0019's match)
