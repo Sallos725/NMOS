@@ -6,8 +6,10 @@ import httpx
 import psycopg
 import pytest
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
-from conftest import make_client
+from conftest import active_generation, make_client
+from nmos_sidecar import summaries
 from nmos_sidecar import llm
 from simchat import SimChat
 from test_canon import push
@@ -213,6 +215,36 @@ def test_a_chat_without_model_work_says_so(llm_client, migrated):
     assert "No model calls recorded yet." in llm_client.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
 
 
+def test_coverage_counts_the_facts_and_summaries_the_chat_holds(migrated):
+    chat = story_chat(30)
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        conv = c.get("/v1/conversations").json()[0]["id"]
+        assert c.get(f"/v1/conversations/{conv}/coverage").json()["produced"] == {"facts": 0, "summaries": 0}
+        drain_extract(migrated, lambda s, u: ({"assertions": [
+            {"subject": "Hana", "subject_type": "character", "predicate": "located_in", "object": "the mill",
+             "object_type": "place", "epistemic": "stated", "confidence": 0.9, "evidence": u[-40:],
+             "modality": "actual"}]}, "{}"))
+        drain_summaries(migrated)
+        produced = c.get(f"/v1/conversations/{conv}/coverage").json()["produced"]
+    with psycopg.connect(migrated) as conn:
+        valid = conn.execute("SELECT count(*) FROM assertion WHERE status = 'valid'").fetchone()[0]
+    assert produced == {"facts": valid, "summaries": 4} and valid > 0  # 3 scenes and the story covering them
+    # An edit replaces one turn's fact and its scene's summary: the head holds as many as before (Copilot review).
+    chat.edit(3, "Reply 1 follows, edited.")
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        drain_extract(migrated, lambda s, u: ({"assertions": [
+            {"subject": "Hana", "subject_type": "character", "predicate": "located_in", "object": "the mill",
+             "object_type": "place", "epistemic": "stated", "confidence": 0.9, "evidence": u[-40:],
+             "modality": "actual"}]}, "{}"))
+        drain_summaries(migrated)
+        again = c.get(f"/v1/conversations/{conv}/coverage").json()
+    with psycopg.connect(migrated) as conn:
+        assert conn.execute("SELECT count(*) FROM assertion WHERE status = 'valid'").fetchone()[0] > valid
+    assert again["produced"] == produced and again["summaries"] == {"pending": 0, "failed": 0}
+
+
 def test_older_rows_count_under_their_kind_and_unreported_fields_are_not_zeros(migrated):
     chat = story_chat(30)
     with make_client(migrated, **ON, embedder=FakeEmbedder(), embed_url="http://fake/v1", embed_model="fake-embed") as c:
@@ -244,6 +276,43 @@ def test_older_rows_count_under_their_kind_and_unreported_fields_are_not_zeros(m
         assert "no generation (older version)" in section and "legacy:old-embed" in section
         embed_row = section[section.index("Embeddings"):].split("</tr>")[0]
         assert embed_row.count("<td>—</td>") == 2  # output and cached input: not reported, not 0
+
+
+def test_summary_counts_and_jobs_are_the_heads_own(migrated):
+    """Copilot re-review: an empty summary is not "made", and a dead job of a window an edit replaced is not a failure
+    of the chat now."""
+    chat = story_chat(30)
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        conv = c.get("/v1/conversations").json()[0]["id"]
+        cov = lambda: c.get(f"/v1/conversations/{conv}/coverage").json()
+        assert cov()["summaries"] == {"pending": 3, "failed": 0}  # three due scenes
+        with psycopg.connect(migrated, autocommit=True) as conn:
+            conn.execute("UPDATE job SET status = 'dead' WHERE kind = 'summarize' AND payload->>'first_turn' = '0'")
+        drain_summaries(migrated)
+        assert cov()["summaries"] == {"pending": 0, "failed": 1} and cov()["produced"]["summaries"] == 2  # no story yet
+        chat.edit(2, "Reply 0 follows, edited.")  # turn 0's window gets a new key; its dead job is history
+        sync(c, chat)
+        assert cov()["summaries"] == {"pending": 1, "failed": 0}
+        drain_summaries(migrated)
+        assert cov()["summaries"] == {"pending": 0, "failed": 0} and cov()["produced"]["summaries"] == 4
+        with psycopg.connect(migrated, autocommit=True) as conn:
+            conn.execute("UPDATE summary SET text = '' WHERE level = 'scene' AND first_turn = 8 AND discarded_at IS NULL")
+        assert cov()["produced"]["summaries"] == 3
+        # A rewrite with a secret the summary was not told about (`schedule_stale`, a suffixed job key) is work too.
+        with psycopg.connect(migrated, autocommit=True, row_factory=dict_row) as conn:
+            gen = active_generation(conn, "summarize")
+            head = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (conv,)).fetchone()["head_commit_id"]
+            w = summaries.windows(conn, head)[1]
+            conn.execute(summaries._INSERT, summaries._scene_job(conv, gen.key, w, 100, ":abc123"))
+        assert cov()["summaries"] == {"pending": 1, "failed": 0}
+        # A story job queued for scenes the poll did not see written yet still counts (Copilot review of #186).
+        with psycopg.connect(migrated, autocommit=True) as conn:
+            conn.execute("UPDATE job SET status = 'done' WHERE kind = 'summarize' AND status = 'queued'")
+            conn.execute(summaries._INSERT, ("summarize", f"summarize:{gen.key}:{conv}:story:not-yet-seen", conv,
+                                             Jsonb({"generation": gen.key, "level": "story", "window_key": "not-yet-seen",
+                                                    "members": []}), 100))
+        assert cov()["summaries"] == {"pending": 1, "failed": 0}
 
 
 def test_the_totals_keep_canon_apart_and_count_a_rebuild_s_old_and_new_calls(migrated):

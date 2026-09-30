@@ -10,6 +10,11 @@ later, is `docs/KNOWN-ISSUES.md`.
   each excerpt was, and marks runs without vectors. Fixed in the tool: an older request's prompt window read empty once
   the chat had moved on (so answers the prompt already held counted as memory's), and a probe could not replay after
   the request's own message was deleted. Nothing changes in what a request recalls.
+- **Phase 17 step 4: the progress display says how memory was served and what background work made.** "✓ Memory
+  injected (… chars) · lexical only" when recall had to go without vectors (the embedding model did not answer in
+  time, K34), "· reused" when a reroll reused the packet already built; neither is shown as a warning. When
+  background work finishes it says what it added ("✓ facts +3 · summaries +1"), or "✓ Processing done" as before. A
+  new plugin build.
 - **Phase 17 step 3: what a chat's memory cost, shown.** A conversation's Inspector page has a **Model usage**
   section: per generation (fact extraction, canon reads, summaries, embeddings) the model calls NMOS made and the
   input, output and cached input tokens the provider reported, with how many calls reported them. The panel's

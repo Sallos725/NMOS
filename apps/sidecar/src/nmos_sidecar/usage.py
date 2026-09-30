@@ -59,3 +59,49 @@ def totals(conn: psycopg.Connection, conv: UUID, active: set[str] | None = None)
     gens = [{"kind": r["kind"], "key": r["key"], "model": r["model"], "active": r["key"] in (active or set()),
              **{k: int(r[k]) for k in COUNTS}} for r in rows]
     return {"generations": gens, "total": {k: sum(g[k] for g in gens) for k in COUNTS}}
+
+
+def work(conn: psycopg.Connection, conv: UUID, extractor: str | None, summarizer: str | None) -> dict[str, Any]:
+    """For the HUD's polls (PHASE-17 Q6), both about the chat's current head only:
+
+    `produced`: facts (valid assertions of extractions that match a turn of the head, as recall's facts must) and
+    summaries (current scene summaries with text, and the story when it covers them all), so an edit that only
+    replaces a fact or a summary, or a window too short to summarize, adds nothing.
+
+    `summaries`: the summary jobs of the head's windows and of its story, still to run or dead, first writes and
+    rewrites with a secret alike (`schedule_stale`): found by the window keys in their payload, so a job of a window an
+    edit replaced is not counted. The chat's open and dead jobs are few (finished ones are pruned after 7 days;
+    production held 2,100 jobs in all on 2026-09-30), so no index is needed."""
+    from . import summaries
+
+    row = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (conv,)).fetchone()
+    head = row["head_commit_id"] if row else None
+    none = {"produced": {"facts": 0, "summaries": 0}, "summaries": {"pending": 0, "failed": 0}}
+    if head is None:
+        return none
+    facts = conn.execute(
+        "SELECT count(*) AS n FROM active_membership am"
+        " JOIN extraction x ON x.source_revision_id = am.source_revision_id AND x.window_hash = am.turn_hash"
+        " JOIN assertion a ON a.extraction_id = x.id"
+        " WHERE am.commit_id = %s AND x.extractor_key = %s AND x.discarded_at IS NULL AND a.status = 'valid'",
+        (head, extractor)).fetchone()["n"] if extractor else 0
+    if not summarizer:
+        return {**none, "produced": {"facts": int(facts), "summaries": 0}}
+    view = summaries.current(conn, conv, head, summarizer)
+    written = [x["summary"] for x in view["scenes"] if x["summary"]]
+    made = sum(1 for x in written if x["text"]) + (1 if view["story_current"] and view["story"]["text"] else 0)
+    keys = [x["window"].key for x in view["scenes"]]  # may be empty: a story job can still be pending
+    if written and len(written) == view["due"]:
+        keys.append(summaries.members_key([x["id"] for x in written]))  # the story of these scenes
+    # Any story job still to run counts as pending, whatever scenes it was queued for: the worker writes the last
+    # scene, queues the story and only then marks the scene job done, so a poll that read the scenes before and the
+    # jobs after would otherwise see neither (Copilot review of #186). A stale one is obsolete at once when it runs.
+    jobs = conn.execute(
+        "SELECT count(*) FILTER (WHERE status IN ('queued', 'running')) AS pending,"
+        " count(*) FILTER (WHERE status = 'dead' AND payload->>'window_key' = ANY(%s)) AS failed FROM job"
+        " WHERE conversation_id = %s AND kind = 'summarize' AND status IN ('queued', 'running', 'dead')"
+        " AND payload->>'generation' = %s"
+        " AND (payload->>'window_key' = ANY(%s) OR (payload->>'level' = 'story' AND status <> 'dead'))",
+        (keys, conv, summarizer, keys)).fetchone()
+    return {"produced": {"facts": int(facts), "summaries": made},
+            "summaries": {"pending": int(jobs["pending"]), "failed": int(jobs["failed"])}}

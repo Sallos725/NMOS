@@ -268,8 +268,13 @@ const STRINGS = {
   'hud.reason.error': ['사이드카 오류', 'sidecar error'],
   'hud.extract': ['추출 {d}/{n}', 'Facts {d}/{n}'],
   'hud.embed': ['임베딩 {d}/{n}', 'Embeddings {d}/{n}'],
+  'hud.summarize': ['요약 {n}개 남음', 'summaries to write: {n}'],
   'hud.failed': ['⚠ 실패 {n}', '⚠ {n} failed'],
   'hud.done': ['✓ 처리 완료', '✓ Processing done'],
+  'hud.reused': [' · 재사용', ' · reused'],
+  'hud.lexical': [' · 어휘 검색만', ' · lexical only'],
+  'hud.made.facts': ['사실 {n}개 추가', 'facts +{n}'],
+  'hud.made.summaries': ['요약 {n}개 추가', 'summaries +{n}'],
   // progress display: panel
   'hud.title': ['진행 표시', 'Progress display'],
   'hud.sub': ['채팅 화면 오른쪽 위에 기억이 들어갔는지와 백그라운드 처리 진행을 작게 띄웁니다. 켜면 PocketRisu가 "메인 Document 접근" 권한을 묻습니다. NMOS는 이 권한으로 표시 하나만 그리고 화면 내용은 읽지 않습니다. 누르면 이 패널이 열립니다.',

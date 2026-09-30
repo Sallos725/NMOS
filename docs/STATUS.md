@@ -25,7 +25,13 @@ prompts agreed (46/51, 50/86, 55/150); the provider names the model `gemma4:31b`
 for a model that is not production's request-path embedder. Step 3: `GET /v1/conversations/{id}/coverage?usage=true`
 totals the chat's usage per generation (calls, calls reported, input / output / cached / reasoning tokens, results
 from before recording), discarded results included; the HUD's polls leave it out. A "Model usage" section on the
-Inspector's conversation page, and one line in the panel's "This chat" card. A new plugin build.
+Inspector's conversation page, and one line in the panel's "This chat" card. A new plugin build. Step 4: the HUD
+says "· lexical only" when the recall's vectors fell back (K34) and "· reused" for a cached packet, in the injected
+style; background work that added facts or summaries ends with "✓ facts +N · summaries +M" (the coverage view's new
+`produced` counts, compared from when the work was first seen), else "✓ Processing done". On the isolated PocketRisu
+v1.13.0 (stub models; the query embedding held past a 150 ms timeout): "✓ 기억 주입 (639자) · 어휘 검색만", on the
+second reroll "… · 재사용 · 어휘 검색만", "✓ 사실 1개 추가" after a turn's extraction, and the Status-tab and Inspector
+usage. A new plugin build.
 
 **Phase 18 — Recall by the words that matter: approved 2026-09-30, next after Phase 17.** Spec
 `docs/phases/PHASE-18.md`: a keyword lexical route beside the whole-message one (ADR 0004 / D15 to be amended) and
