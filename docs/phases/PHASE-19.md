@@ -94,15 +94,15 @@ The noise below is estimated from three runs of today's prompt and is itself rou
       "none of them is a fact line placed in the packet of an M0 v2 case that passed": six such rows were placed and
       none answered its case, `docs/perf/extract-v14.md`); and the shorter context's
       `addresses` and `relationship` rows that only repeat the pair's current value are not more frequent than today's.
-- [ ] Sampled turns, the first 60 and the remaining 31 ledger turns (three runs of `extract-v14` against three of
+- [x] Sampled turns (met 2026-09-30, `docs/perf/extract-v14.md`), the first 60 and the remaining 31 ledger turns (three runs of `extract-v14` against three of
       today's prompt): ledger facts found among valid rows, mean not below the lowest of today's runs; the Q3 check
       parks at most 10 % of valid rows and no row that finds a ledger fact; each ledger kind of secrets and reveals
       that today's prompt finds is still found; input tokens at most 85 % of today's.
-- [ ] M0 v2 re-extracted with `extract-v14` on its evaluation copies with both extraction models of Phase 18, and the
+- [ ] M0 v2 re-extracted with `extract-v14` (met by `gemma4:31b` and the synthetic cuts; missed by `deepseek-v4.1-flash` on M0 v2, accepted by the owner 2026-09-30, K41) on its evaluation copies with both extraction models of Phase 18, and the
       synthetic cuts with `deepseek-v4.1-flash` (the only model of their Phase 18 baseline), evaluated at `packet-v10`, 4,000, vectors on and off, against `docs/perf/lexical-recall.md`'s
       `extract-v13` numbers: cases passed and needing memory not lower by more than one per run; forbidden phrases
       placed not higher in total; the Q3 check parks at most 10 % of each model's valid rows.
-- [ ] Review per AGENTS.md §14 (high risk, one independent review).
+- [x] Review per AGENTS.md §14 (one Codex review of step 3, its finding fixed) (high risk, one independent review).
 - [ ] Documentation listed in scope.
 
 ## Steps (one pull request each)
