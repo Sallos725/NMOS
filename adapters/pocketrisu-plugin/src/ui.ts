@@ -11,8 +11,8 @@ import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dir
   PANEL_MAX_RESERVED_TOKENS, presetMatches, VERTEX_URL, type FormValues, type Section } from './form';
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
 import { closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices, localTime,
-  repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
-import type { EntityRow, RepairAction } from './inspector';
+  previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
+import type { EntityRow, Preview, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
 import { usageText, type UsageTotal } from './usage';
@@ -119,6 +119,7 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .msg{margin-top:10px;font-size:12.5px;white-space:pre-wrap}
 .nmos .ok{color:var(--c-ok)}.nmos .err{color:var(--c-err)}.nmos .warn{color:var(--c-warn)}.nmos .muted{color:var(--c-text-muted)}
 .nmos .check{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--c-text-soft)}.nmos .check input{width:auto}
+.nmos .preview{margin:8px 0;padding:8px 10px;border-left:3px solid var(--c-line);font-size:12.5px;line-height:1.6}.nmos .preview>b{display:block;margin-bottom:4px}
 .nmos .line{display:flex;align-items:baseline;gap:8px;margin:5px 0}
 .nmos .dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--c-text-ghost);transform:translateY(-1px)}
 .nmos .dot.ok{background:var(--c-ok)}.nmos .dot.err{background:var(--c-err)}.nmos .dot.warn{background:var(--c-warn)}
@@ -456,11 +457,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const n = action.kind === 'fact_correct' ? L(action.extra === 'object' ? 'rp.field_object' : 'rp.field_value')
       : action.extra ?? '';
     const button = el('button', { class: 'mini', text: L(`rp.${action.kind}` as StringKey, { n }) });
+    const spot = el('div');
     button.addEventListener('click', () => {
       if (action.kind === 'fact_correct') correctForm(action, button);
+      else if (action.kind === 'undo' && action.extra === 'name_split') void undoSplit(action, button, spot);
       else void repairNow(action, button);
     });
-    return [button];
+    return [button, spot];
   }
   /** A close: the outcomes of the thread's kind (the default first), a box to close several at once, the button. */
   function closeControls(action: RepairAction): Node[] {
@@ -527,6 +530,17 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     });
     spot.replaceChildren(el('span', { class: 'rpform' }, text, turn, save, cancel));
     text.focus();
+  }
+  /** The undo of a name split, previewed like a join (PHASE-20 Q2). */
+  async function undoSplit(action: RepairAction, button: HTMLButtonElement, spot: HTMLElement): Promise<void> {
+    const conversation = inspectorConversation(inspectorPath);
+    if (!conversation) return;
+    const base = `/v1/conversations/${conversation}/repairs/${action.item}`;
+    await withPreview(spot, button, `${base}/remove/preview`, {}, 'pv.confirm_undo', async (expect) => {
+      await deps.api('POST', `${base}/remove`, { expect }, 15_000);
+      say(actionMsg, L('rp.undone'), 'ok');
+      await showInspector();
+    });
   }
   async function repairNow(action: RepairAction, button: HTMLButtonElement, extra: Record<string, unknown> = {}):
     Promise<void> {
@@ -703,6 +717,48 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       el('div', { class: 'btns' }, save), msg);
     modeCard.style.display = '';
   }
+  /** A join, split or undo shown before it is made (PHASE-20 Q9): the preview in `spot`, then the owner's confirm
+   * sends the preview's fingerprint; a 409 (memory changed since) shows the new preview instead. `reextract`, for an
+   * undo of a join: a box to re-extract the turns extracted while it held (Q7, off by default). */
+  async function withPreview(spot: HTMLElement, button: HTMLButtonElement, previewPath: string,
+    previewBody: Record<string, unknown>, confirmKey: StringKey,
+    commit: (expect: string, reextract: boolean) => Promise<void>, changed = false): Promise<void> {
+    button.disabled = true;
+    let p: Preview;
+    try {
+      p = await deps.api<Preview>('POST', previewPath, previewBody, 15_000);
+    } catch (error) {
+      say(actionMsg, errorText(lang, error), 'err');
+      button.disabled = false;
+      return;
+    }
+    const lines = previewText(p, (key, vars) => L(key, vars), outcomeLabel);
+    const box = el('div', { class: 'preview' }, el('b', { text: L('pv.title') }),
+      ...(changed ? [el('div', { class: 'warn', text: L('pv.changed') })] : []),
+      ...lines.map((text) => el('div', { class: /^(주의|Note):/.test(text) ? 'warn' : '', text })));
+    const turns = p.reextract?.turns ?? 0;
+    const again = el('input', { type: 'checkbox', 'aria-label': L('pv.reextract', { n: turns }) });
+    if (turns > 0) box.append(el('div', { class: 'check' }, again, el('span', { text: L('pv.reextract', { n: turns }) })));
+    const ok = el('button', { class: 'mini', text: L(confirmKey) });
+    const cancel = el('button', { class: 'mini', text: L('cancel') });
+    cancel.addEventListener('click', () => { spot.replaceChildren(); button.disabled = false; });
+    ok.addEventListener('click', async () => {
+      ok.disabled = true;
+      try {
+        await commit(p.fingerprint, again.checked);
+        spot.replaceChildren();
+      } catch (error) {
+        if (/HTTP 409\b/.test(String((error as Error)?.message ?? error))) {
+          void withPreview(spot, button, previewPath, previewBody, confirmKey, commit, true);
+          return;
+        }
+        say(actionMsg, errorText(lang, error), 'err');
+        ok.disabled = false;
+      }
+    });
+    box.append(el('div', { class: 'btns' }, ok, cancel));
+    spot.replaceChildren(box);
+  }
   async function showLinks(conversation: string, entity: string, load: number): Promise<void> {
     let entities: EntityRow[];
     try {
@@ -721,52 +777,58 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const rows: HTMLElement[] = [];
     for (const link of self.links ?? []) {
       const undo = el('button', { text: L('link.remove') });
-      undo.addEventListener('click', async () => {
-        undo.disabled = true;
-        try {
-          await deps.api('POST', `/v1/conversations/${conversation}/entity-links/${link.id}/remove`, {}, 15_000);
+      const spot = el('div');
+      const base = `/v1/conversations/${conversation}/entity-links/${link.id}`;
+      undo.addEventListener('click', () => void withPreview(spot, undo, `${base}/remove/preview`, {}, 'pv.confirm_undo',
+        async (expect, reextract) => {
+          await deps.api('POST', `${base}/remove`, { expect }, 15_000);
+          let done = L('link.removed');
+          if (reextract) {
+            const r = await deps.api<{ turns: number[] }>('POST', `${base}/reextract`, {}, 15_000);
+            done += ` ${L('pv.reextracted', { n: r.turns.length })}`;
+          }
           const now = await deps.api<EntityRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
           const next = entityNamed(now, self.type, self.name);
-          say(actionMsg, L('link.removed'), 'ok');
+          say(actionMsg, done, 'ok');
           if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
           else await showInspector();
-        } catch (error) { say(msg, errorText(lang, error), 'err'); undo.disabled = false; }
-      });
-      rows.push(el('div', { class: 'btns' }, el('span', { text: `${link.name} = ${link.same_as}` }), undo));
+        }));
+      rows.push(el('div', { class: 'btns' }, el('span', { text: `${link.name} = ${link.same_as}` }), undo), spot);
     }
     const card: (Node | string)[] = [el('h2', { text: L('link.title') }), el('p', { class: 'sub', text: L('link.sub') }), ...rows];
     const splits: HTMLElement[] = [];
     for (const alias of splitChoices(self)) {
       const split = el('button', { text: L('split.do') });
-      split.addEventListener('click', async () => {
-        split.disabled = true;
-        try {
-          await deps.api('POST', `/v1/conversations/${conversation}/repairs`,
-            { kind: 'name_split', item: alias.name, other: alias.other, entity_type: self.type }, 15_000);
+      const spot = el('div');
+      const body = { kind: 'name_split', item: alias.name, other: alias.other, entity_type: self.type };
+      split.addEventListener('click', () => void withPreview(spot, split, `/v1/conversations/${conversation}/repairs/preview`,
+        body, 'pv.confirm_split', async (expect) => {
+          await deps.api('POST', `/v1/conversations/${conversation}/repairs`, { ...body, expect }, 15_000);
           const now = await deps.api<EntityRow[]>('GET', `/v1/conversations/${conversation}/entities`, undefined, 15_000);
           const next = entityNamed(now, self.type, self.name);
           say(actionMsg, L('split.done', { a: alias.name, b: alias.other }), 'ok');
           if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
           else await showInspector();
-        } catch (error) { say(msg, errorText(lang, error), 'err'); split.disabled = false; }
-      });
-      splits.push(el('div', { class: 'btns' }, el('span', { text: `${alias.name} ~ ${alias.other}` }), split));
+        }));
+      splits.push(el('div', { class: 'btns' }, el('span', { text: `${alias.name} ~ ${alias.other}` }), split), spot);
     }
     if (others.length) {
       const pick = el('select', { 'aria-label': L('link.pick') },
         ...others.map((e) => el('option', { value: e.name, text: `${e.name} (${e.mentions})` })));
       const join = el('button', { text: L('link.join') });
-      join.addEventListener('click', async () => {
-        join.disabled = true;
-        try {
-          const r = await deps.api<{ entity: EntityRow | null }>('POST', `/v1/conversations/${conversation}/entity-links`,
-            { entity_type: self.type, name: self.name, same_as: pick.value }, 15_000);
-          say(actionMsg, L('link.done', { a: self.name, b: pick.value }), 'ok');
+      const spot = el('div');
+      const path = `/v1/conversations/${conversation}/entity-links`;
+      join.addEventListener('click', () => {
+        const body = { entity_type: self.type, name: self.name, same_as: pick.value };
+        void withPreview(spot, join, `${path}/preview`, body, 'pv.confirm_join', async (expect) => {
+          const r = await deps.api<{ entity: EntityRow | null }>('POST', path, { ...body, expect }, 15_000);
+          say(actionMsg, L('link.done', { a: body.name, b: body.same_as }), 'ok');
           if (r.entity && r.entity.id !== entity) go(`/v1/inspector/c/${conversation}/e/${r.entity.id}`);
           else await showInspector();
-        } catch (error) { say(msg, errorText(lang, error), 'err'); join.disabled = false; }
+        });
       });
-      card.push(el('div', { class: 'row' }, field(L('link.pick'), pick), el('div', { class: 'btns' }, join)));
+      pick.addEventListener('change', () => { spot.replaceChildren(); join.disabled = false; });
+      card.push(el('div', { class: 'row' }, field(L('link.pick'), pick), el('div', { class: 'btns' }, join)), spot);
     } else {
       card.push(el('div', { class: 'muted', text: L('link.none') }));
     }

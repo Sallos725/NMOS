@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:8d9d6cfed4bb".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:141e7d17238a".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -426,6 +426,48 @@
     ],
     "split.do": ["\uBD84\uB9AC", "Split"],
     "split.done": ['"{a}"\uC640(\uACFC) "{b}"\uB97C \uB098\uB234\uC2B5\uB2C8\uB2E4.', 'Split "{a}" and "{b}".'],
+    "pv.title": ["\uBC14\uB00C\uB294 \uAC83", "What changes"],
+    "pv.nothing": [
+      "\uAE30\uC5B5\uC740 \uADF8\uB300\uB85C\uC785\uB2C8\uB2E4. \uB450 \uC774\uB984\uC740 \uC774\uBBF8 \uAC19\uC740 \uB300\uC0C1\uC774\uAC70\uB098, \uC774 \uCC44\uD305\uC5D0 \uB458 \uB2E4 \uB098\uC624\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "Memory stays as it is: the two names are one entity already, or not both mentioned in this chat."
+    ],
+    "pv.entities": ["{a} \u2192 {b}", "{a} \u2192 {b}"],
+    "pv.more": ["\uC678 {n}\uAC74", "{n} more"],
+    "pv.changed": ["\uBBF8\uB9AC\uBCF4\uAE30 \uB4A4\uC5D0 \uAE30\uC5B5\uC774 \uBC14\uB00C\uC5C8\uC2B5\uB2C8\uB2E4. \uC0C8\uB85C \uBCF8 \uB0B4\uC6A9\uC785\uB2C8\uB2E4.", "Memory changed since the preview. Here is the new one."],
+    "pv.confirm_join": ["\uC774\uB300\uB85C \uD569\uCE58\uAE30", "Join as shown"],
+    "pv.confirm_split": ["\uC774\uB300\uB85C \uB098\uB204\uAE30", "Split as shown"],
+    "pv.confirm_undo": ["\uC774\uB300\uB85C \uB418\uB3CC\uB9AC\uAE30", "Undo as shown"],
+    "pv.fact_replaced": ['"{a}" \uB300\uC2E0 "{b}"\uAC00 \uD604\uC7AC \uC0AC\uC2E4\uC774 \uB429\uB2C8\uB2E4 ({t}\uD134)', '"{b}" replaces "{a}" (turn {t})'],
+    "pv.fact_merged": ['"{a}"\uAC00 \uAC19\uC740 \uC0AC\uC2E4 "{b}"\uB85C \uD569\uCCD0\uC9D1\uB2C8\uB2E4', '"{a}" merges into the same fact "{b}"'],
+    "pv.fact_ended": ['"{a}"\uAC00 \uB354\uB294 \uD604\uC7AC \uC0AC\uC2E4\uC774 \uC544\uB2D9\uB2C8\uB2E4', '"{a}" is no longer current'],
+    "pv.fact_back": ['"{a}"\uAC00 \uB2E4\uC2DC \uD604\uC7AC \uC0AC\uC2E4\uC774 \uB429\uB2C8\uB2E4', '"{a}" is current again'],
+    "pv.fact_back_instead": ['"{b}" \uB300\uC2E0 "{a}"\uAC00 \uB2E4\uC2DC \uD604\uC7AC \uC0AC\uC2E4\uC774 \uB429\uB2C8\uB2E4', '"{a}" is current again instead of "{b}"'],
+    "pv.self_relation": ['\uC8FC\uC758: \uAD00\uACC4 "{a}"\uAC00 \uD55C \uC778\uBB3C\uACFC \uADF8 \uC790\uC2E0\uC758 \uAD00\uACC4\uAC00 \uB429\uB2C8\uB2E4', 'Note: the relationship "{a}" becomes one with itself'],
+    "pv.self_relation_gone": ['\uAD00\uACC4 "{a}"\uAC00 \uB2E4\uC2DC \uB450 \uC778\uBB3C \uC0AC\uC774\uC758 \uAD00\uACC4\uAC00 \uB429\uB2C8\uB2E4', 'The relationship "{a}" is between two again'],
+    "pv.self_thread": ['\uC8FC\uC758: {w}\uC758 \uC57D\uC18D "{a}"\uAC00 \uC790\uAE30 \uC790\uC2E0\uACFC\uC758 \uC57D\uC18D\uC774 \uB429\uB2C8\uB2E4', `Note: {w}'s promise "{a}" becomes one to themselves`],
+    "pv.self_thread_gone": ['{w}\uC758 \uC57D\uC18D "{a}"\uAC00 \uB2E4\uC2DC \uB450 \uC778\uBB3C \uC0AC\uC774\uC758 \uC57D\uC18D\uC774 \uB429\uB2C8\uB2E4', `{w}'s promise "{a}" is between two again`],
+    "pv.thread_status": ['"{a}": {s}', '"{a}": {s}'],
+    "pv.thread_merged": ['"{a}"\uAC00 \uB2E4\uB978 \uD560 \uC77C\uC758 \uBC18\uBCF5\uC73C\uB85C \uD569\uCCD0\uC9D1\uB2C8\uB2E4', '"{a}" becomes a restatement of another thread'],
+    "pv.thread_back": ['"{a}"\uAC00 \uB2E4\uC2DC \uB530\uB85C \uBCF4\uC785\uB2C8\uB2E4', '"{a}" is its own thread again'],
+    "pv.secret": ['\uBE44\uBC00 "{a}"\uB97C \uC544\uB294 \uC0AC\uB78C\xB7\uBAA8\uB974\uB294 \uC0AC\uB78C\uC774 \uBC14\uB01D\uB2C8\uB2E4', 'Who holds or is kept from the secret "{a}" changes'],
+    "pv.secret_holder": ['\uC8FC\uC758: \uBE44\uBC00 "{a}"\uAC00 \uADF8\uAC83\uC744 \uC544\uB294 \uC778\uBB3C\uC5D0\uAC8C\uC11C \uC228\uACA8\uC9D1\uB2C8\uB2E4', 'Note: the secret "{a}" is kept from someone who holds it'],
+    "pv.secret_holder_gone": ['\uBE44\uBC00 "{a}"\uAC00 \uB354\uB294 \uC544\uB294 \uC778\uBB3C\uC5D0\uAC8C\uC11C \uC228\uACA8\uC9C0\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4', 'The secret "{a}" is no longer kept from someone who holds it'],
+    "pv.secret_merged": ['\uBE44\uBC00 "{a}"\uAC00 \uB2E4\uB978 \uBE44\uBC00\uACFC \uD569\uCCD0\uC9D1\uB2C8\uB2E4', 'The secret "{a}" merges with another'],
+    "pv.secret_back": ['\uBE44\uBC00 "{a}"\uAC00 \uB2E4\uC2DC \uB530\uB85C \uBCF4\uC785\uB2C8\uB2E4', 'The secret "{a}" is its own again'],
+    "pv.repair_stops": ["\uC218\uB9AC \uD558\uB098({k})\uAC00 \uB354\uB294 \uC801\uC6A9\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4", "A repair ({k}) stops applying"],
+    "pv.repair_starts": ["\uC218\uB9AC \uD558\uB098({k})\uAC00 \uB2E4\uC2DC \uC801\uC6A9\uB429\uB2C8\uB2E4", "A repair ({k}) applies again"],
+    "pv.repair_moves": ["\uC218\uB9AC \uD558\uB098({k})\uAC00 \uB2E4\uB978 \uD56D\uBAA9\uC5D0 \uC801\uC6A9\uB429\uB2C8\uB2E4", "A repair ({k}) applies to another item"],
+    "pv.conflict_new": ['\uC0C8 \uCDA9\uB3CC: "{a}"', 'New conflict: "{a}"'],
+    "pv.conflict_gone": ['\uCDA9\uB3CC\uC774 \uC0AC\uB77C\uC9D1\uB2C8\uB2E4: "{a}"', 'Conflict gone: "{a}"'],
+    "pv.persona": ["\uC8FC\uC758: \uD398\uB974\uC18C\uB098(\uC720\uC800)\uC640 \uD569\uCCD0\uC9D1\uB2C8\uB2E4", "Note: joins the persona (the user)"],
+    "pv.persona_gone": ["\uD398\uB974\uC18C\uB098(\uC720\uC800)\uC640 \uB2E4\uC2DC \uB098\uB269\uB2C8\uB2E4", "Parts from the persona (the user) again"],
+    "pv.canon_alias": ['\uCE90\uB17C\uC758 "{b}"\uB3C4 "{a}"\uC758 \uB2E4\uB978 \uC774\uB984\uC774 \uB429\uB2C8\uB2E4', `Canon's "{b}" also becomes a name of "{a}"`],
+    "pv.canon_alias_gone": ['\uCE90\uB17C\uC758 "{b}"\uAC00 \uB354\uB294 "{a}"\uC758 \uB2E4\uB978 \uC774\uB984\uC774 \uC544\uB2D9\uB2C8\uB2E4', `Canon's "{b}" is no longer a name of "{a}"`],
+    "pv.reextract": [
+      "\uD569\uCCD0\uC838 \uC788\uB358 \uB3D9\uC548 \uCD94\uCD9C\uB41C {n}\uAC1C \uD134\uC744 \uC774\uB984\uC744 \uB098\uB220 \uB2E4\uC2DC \uCD94\uCD9C (\uCD94\uCD9C \uBAA8\uB378 \uD638\uCD9C {n}\uD68C)",
+      "Re-extract the {n} turns extracted while joined, with the names apart ({n} extraction calls)"
+    ],
+    "pv.reextracted": ["{n}\uAC1C \uD134\uC744 \uB2E4\uC2DC \uCD94\uCD9C\uD558\uB3C4\uB85D \uB123\uC5C8\uC2B5\uB2C8\uB2E4.", "Queued {n} turns for re-extraction."],
     "mode.title": ["\uAE30\uC5B5 \uBAA8\uB4DC (\uC774 \uCC44\uD305)", "Memory mode (this chat)"],
     "mode.sub": [
       '\uBE44\uBC00\uCC98\uB7FC \uC77C\uBD80 \uC778\uBB3C\uB9CC \uC544\uB294 \uAE30\uC5B5\uC744 \uC5B4\uB5BB\uAC8C \uB123\uC744\uC9C0 \uC815\uD569\uB2C8\uB2E4. \uAE30\uBCF8\uAC12\uC740 "\uC544\uB294 \uC778\uBB3C\uB9CC \uC548\uB2E4"\uB294 \uADDC\uCE59\uACFC \uD568\uAED8 \uB123\uB294 \uAC83\uC785\uB2C8\uB2E4.',
@@ -1859,6 +1901,90 @@ ${revisionHash}`;
     const [value, unit] = ago < 45 ? [0, "second"] : ago < 2700 ? [Math.round(seconds / 60), "minute"] : ago < 79200 ? [Math.round(seconds / 3600), "hour"] : [Math.round(seconds / 86400), "day"];
     return { text: rtf.format(value, unit), title };
   }
+  var PREVIEW_ORDER = [
+    "persona",
+    "self_relation",
+    "self_thread",
+    "secret",
+    "fact_replaced",
+    "fact_ended",
+    "conflict_new",
+    "repair",
+    "canon_alias",
+    "fact_merged",
+    "thread_status",
+    "thread_merged",
+    "secret_merged",
+    "fact_back",
+    "thread_back",
+    "secret_back",
+    "self_relation_gone",
+    "self_thread_gone",
+    "conflict_gone",
+    "persona_gone",
+    "canon_alias_gone"
+  ];
+  function previewLine(x, say2, status) {
+    const a = (i) => i?.text ?? "";
+    switch (x.kind) {
+      case "fact_replaced":
+        return say2("pv.fact_replaced", { a: a(x.fact), b: a(x.by), t: x.by?.turn ?? "" });
+      case "fact_merged":
+        return say2("pv.fact_merged", { a: a(x.fact), b: a(x.by) });
+      case "fact_ended":
+        return say2("pv.fact_ended", { a: a(x.fact) });
+      case "fact_back":
+        return x.instead_of ? say2("pv.fact_back_instead", { a: a(x.fact), b: a(x.instead_of) }) : say2("pv.fact_back", { a: a(x.fact) });
+      case "self_relation":
+      case "self_relation_gone":
+        return say2(`pv.${x.kind}`, { a: a(x.fact) });
+      case "self_thread":
+      case "self_thread_gone":
+        return say2(`pv.${x.kind}`, { a: a(x.thread), w: x.thread?.by ?? "" });
+      case "thread_status":
+        return say2("pv.thread_status", { a: a(x.thread), s: status(x.status ?? "") });
+      case "thread_merged":
+      case "thread_back":
+        return say2(`pv.${x.kind}`, { a: a(x.thread) });
+      case "secret":
+        if (x.kept_from_holder) return say2("pv.secret_holder", { a: a(x.secret) });
+        if (x.kept_from_holder_gone) return say2("pv.secret_holder_gone", { a: a(x.secret) });
+        return say2("pv.secret", { a: a(x.secret) });
+      case "secret_merged":
+      case "secret_back":
+        return say2(`pv.${x.kind}`, { a: a(x.secret) });
+      case "repair": {
+        const k = x.repair?.kind ?? "";
+        if (x.after == null) return say2("pv.repair_stops", { k });
+        return say2(x.before == null ? "pv.repair_starts" : "pv.repair_moves", { k });
+      }
+      case "conflict_new":
+      case "conflict_gone":
+        return say2(`pv.${x.kind}`, { a: a(x.conflict) });
+      case "persona":
+      case "persona_gone":
+        return say2(`pv.${x.kind}`);
+      case "canon_alias":
+      case "canon_alias_gone":
+        return say2(`pv.${x.kind}`, { a: x.name ?? "", b: x.other ?? "" });
+      default:
+        return null;
+    }
+  }
+  function previewText(p, say2, status = (s) => s, max = 8) {
+    if (!p.changes) return [say2("pv.nothing")];
+    const names = (es) => es.map((e) => e.name).join(", ");
+    const out = [say2("pv.entities", { a: names(p.before), b: names(p.after) })];
+    const rank = (k) => {
+      const i = PREVIEW_ORDER.indexOf(k);
+      return i < 0 ? PREVIEW_ORDER.length : i;
+    };
+    const lines = [...p.lines].sort((x, y) => rank(x.kind) - rank(y.kind)).map((x) => previewLine(x, say2, status)).filter((x) => x !== null);
+    out.push(...lines.slice(0, max));
+    const rest = p.lines.length - Math.min(lines.length, max);
+    if (rest > 0) out.push(say2("pv.more", { n: rest }));
+    return out;
+  }
 
   // src/usage.ts
   var count = (n) => n.toLocaleString("en-US");
@@ -1943,6 +2069,7 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .msg{margin-top:10px;font-size:12.5px;white-space:pre-wrap}
 .nmos .ok{color:var(--c-ok)}.nmos .err{color:var(--c-err)}.nmos .warn{color:var(--c-warn)}.nmos .muted{color:var(--c-text-muted)}
 .nmos .check{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--c-text-soft)}.nmos .check input{width:auto}
+.nmos .preview{margin:8px 0;padding:8px 10px;border-left:3px solid var(--c-line);font-size:12.5px;line-height:1.6}.nmos .preview>b{display:block;margin-bottom:4px}
 .nmos .line{display:flex;align-items:baseline;gap:8px;margin:5px 0}
 .nmos .dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--c-text-ghost);transform:translateY(-1px)}
 .nmos .dot.ok{background:var(--c-ok)}.nmos .dot.err{background:var(--c-err)}.nmos .dot.warn{background:var(--c-warn)}
@@ -2328,11 +2455,13 @@ html,body{margin:0;background:${PALETTE.bg}}
       if (action.kind === "thread_close") return closeControls(action);
       const n = action.kind === "fact_correct" ? L(action.extra === "object" ? "rp.field_object" : "rp.field_value") : action.extra ?? "";
       const button = el("button", { class: "mini", text: L(`rp.${action.kind}`, { n }) });
+      const spot = el("div");
       button.addEventListener("click", () => {
         if (action.kind === "fact_correct") correctForm(action, button);
+        else if (action.kind === "undo" && action.extra === "name_split") void undoSplit(action, button, spot);
         else void repairNow(action, button);
       });
-      return [button];
+      return [button, spot];
     }
     function closeControls(action) {
       const item = action.item;
@@ -2409,6 +2538,16 @@ html,body{margin:0;background:${PALETTE.bg}}
       });
       spot.replaceChildren(el("span", { class: "rpform" }, text2, turn, save2, cancel));
       text2.focus();
+    }
+    async function undoSplit(action, button, spot) {
+      const conversation = inspectorConversation(inspectorPath);
+      if (!conversation) return;
+      const base = `/v1/conversations/${conversation}/repairs/${action.item}`;
+      await withPreview(spot, button, `${base}/remove/preview`, {}, "pv.confirm_undo", async (expect) => {
+        await deps.api("POST", `${base}/remove`, { expect }, 15e3);
+        say(actionMsg, L("rp.undone"), "ok");
+        await showInspector();
+      });
     }
     async function repairNow(action, button, extra = {}) {
       const conversation = inspectorConversation(inspectorPath);
@@ -2607,6 +2746,50 @@ html,body{margin:0;background:${PALETTE.bg}}
       );
       modeCard.style.display = "";
     }
+    async function withPreview(spot, button, previewPath, previewBody, confirmKey, commit, changed = false) {
+      button.disabled = true;
+      let p;
+      try {
+        p = await deps.api("POST", previewPath, previewBody, 15e3);
+      } catch (error) {
+        say(actionMsg, errorText(lang, error), "err");
+        button.disabled = false;
+        return;
+      }
+      const lines = previewText(p, (key, vars) => L(key, vars), outcomeLabel);
+      const box = el(
+        "div",
+        { class: "preview" },
+        el("b", { text: L("pv.title") }),
+        ...changed ? [el("div", { class: "warn", text: L("pv.changed") })] : [],
+        ...lines.map((text2) => el("div", { class: /^(주의|Note):/.test(text2) ? "warn" : "", text: text2 }))
+      );
+      const turns = p.reextract?.turns ?? 0;
+      const again = el("input", { type: "checkbox", "aria-label": L("pv.reextract", { n: turns }) });
+      if (turns > 0) box.append(el("div", { class: "check" }, again, el("span", { text: L("pv.reextract", { n: turns }) })));
+      const ok = el("button", { class: "mini", text: L(confirmKey) });
+      const cancel = el("button", { class: "mini", text: L("cancel") });
+      cancel.addEventListener("click", () => {
+        spot.replaceChildren();
+        button.disabled = false;
+      });
+      ok.addEventListener("click", async () => {
+        ok.disabled = true;
+        try {
+          await commit(p.fingerprint, again.checked);
+          spot.replaceChildren();
+        } catch (error) {
+          if (/HTTP 409\b/.test(String(error?.message ?? error))) {
+            void withPreview(spot, button, previewPath, previewBody, confirmKey, commit, true);
+            return;
+          }
+          say(actionMsg, errorText(lang, error), "err");
+          ok.disabled = false;
+        }
+      });
+      box.append(el("div", { class: "btns" }, ok, cancel));
+      spot.replaceChildren(box);
+    }
     async function showLinks(conversation, entity, load) {
       let entities;
       try {
@@ -2625,46 +2808,52 @@ html,body{margin:0;background:${PALETTE.bg}}
       const rows = [];
       for (const link of self.links ?? []) {
         const undo = el("button", { text: L("link.remove") });
-        undo.addEventListener("click", async () => {
-          undo.disabled = true;
-          try {
-            await deps.api("POST", `/v1/conversations/${conversation}/entity-links/${link.id}/remove`, {}, 15e3);
+        const spot = el("div");
+        const base = `/v1/conversations/${conversation}/entity-links/${link.id}`;
+        undo.addEventListener("click", () => void withPreview(
+          spot,
+          undo,
+          `${base}/remove/preview`,
+          {},
+          "pv.confirm_undo",
+          async (expect, reextract) => {
+            await deps.api("POST", `${base}/remove`, { expect }, 15e3);
+            let done = L("link.removed");
+            if (reextract) {
+              const r = await deps.api("POST", `${base}/reextract`, {}, 15e3);
+              done += ` ${L("pv.reextracted", { n: r.turns.length })}`;
+            }
             const now = await deps.api("GET", `/v1/conversations/${conversation}/entities`, void 0, 15e3);
             const next = entityNamed(now, self.type, self.name);
-            say(actionMsg, L("link.removed"), "ok");
+            say(actionMsg, done, "ok");
             if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
             else await showInspector();
-          } catch (error) {
-            say(msg, errorText(lang, error), "err");
-            undo.disabled = false;
           }
-        });
-        rows.push(el("div", { class: "btns" }, el("span", { text: `${link.name} = ${link.same_as}` }), undo));
+        ));
+        rows.push(el("div", { class: "btns" }, el("span", { text: `${link.name} = ${link.same_as}` }), undo), spot);
       }
       const card = [el("h2", { text: L("link.title") }), el("p", { class: "sub", text: L("link.sub") }), ...rows];
       const splits = [];
       for (const alias of splitChoices(self)) {
         const split = el("button", { text: L("split.do") });
-        split.addEventListener("click", async () => {
-          split.disabled = true;
-          try {
-            await deps.api(
-              "POST",
-              `/v1/conversations/${conversation}/repairs`,
-              { kind: "name_split", item: alias.name, other: alias.other, entity_type: self.type },
-              15e3
-            );
+        const spot = el("div");
+        const body = { kind: "name_split", item: alias.name, other: alias.other, entity_type: self.type };
+        split.addEventListener("click", () => void withPreview(
+          spot,
+          split,
+          `/v1/conversations/${conversation}/repairs/preview`,
+          body,
+          "pv.confirm_split",
+          async (expect) => {
+            await deps.api("POST", `/v1/conversations/${conversation}/repairs`, { ...body, expect }, 15e3);
             const now = await deps.api("GET", `/v1/conversations/${conversation}/entities`, void 0, 15e3);
             const next = entityNamed(now, self.type, self.name);
             say(actionMsg, L("split.done", { a: alias.name, b: alias.other }), "ok");
             if (next && next.id !== entity) go(`/v1/inspector/c/${conversation}/e/${next.id}`);
             else await showInspector();
-          } catch (error) {
-            say(msg, errorText(lang, error), "err");
-            split.disabled = false;
           }
-        });
-        splits.push(el("div", { class: "btns" }, el("span", { text: `${alias.name} ~ ${alias.other}` }), split));
+        ));
+        splits.push(el("div", { class: "btns" }, el("span", { text: `${alias.name} ~ ${alias.other}` }), split), spot);
       }
       if (others.length) {
         const pick = el(
@@ -2673,24 +2862,22 @@ html,body{margin:0;background:${PALETTE.bg}}
           ...others.map((e) => el("option", { value: e.name, text: `${e.name} (${e.mentions})` }))
         );
         const join = el("button", { text: L("link.join") });
-        join.addEventListener("click", async () => {
-          join.disabled = true;
-          try {
-            const r = await deps.api(
-              "POST",
-              `/v1/conversations/${conversation}/entity-links`,
-              { entity_type: self.type, name: self.name, same_as: pick.value },
-              15e3
-            );
-            say(actionMsg, L("link.done", { a: self.name, b: pick.value }), "ok");
+        const spot = el("div");
+        const path = `/v1/conversations/${conversation}/entity-links`;
+        join.addEventListener("click", () => {
+          const body = { entity_type: self.type, name: self.name, same_as: pick.value };
+          void withPreview(spot, join, `${path}/preview`, body, "pv.confirm_join", async (expect) => {
+            const r = await deps.api("POST", path, { ...body, expect }, 15e3);
+            say(actionMsg, L("link.done", { a: body.name, b: body.same_as }), "ok");
             if (r.entity && r.entity.id !== entity) go(`/v1/inspector/c/${conversation}/e/${r.entity.id}`);
             else await showInspector();
-          } catch (error) {
-            say(msg, errorText(lang, error), "err");
-            join.disabled = false;
-          }
+          });
         });
-        card.push(el("div", { class: "row" }, field(L("link.pick"), pick), el("div", { class: "btns" }, join)));
+        pick.addEventListener("change", () => {
+          spot.replaceChildren();
+          join.disabled = false;
+        });
+        card.push(el("div", { class: "row" }, field(L("link.pick"), pick), el("div", { class: "btns" }, join)), spot);
       } else {
         card.push(el("div", { class: "muted", text: L("link.none") }));
       }

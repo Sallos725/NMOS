@@ -165,6 +165,8 @@ def test_a_split_and_its_undo_are_previewed_like_a_join(migrated, db):
         assert rep.status_code == 200, rep.text
         rid = rep.json()["repair"]["id"]
         split = read(db, cid)
+        page = c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
+        assert f'data-repair="undo:{rid}:name_split"' in page  # the panel previews this undo (Q2)
         same_as_done(p, was, split, [("character", "Mina"), ("character", "Rin")], {"preview", rid})
         undo = c.post(f"/v1/conversations/{cid}/repairs/{rid}/remove/preview").json()
         assert undo["action"] == "unsplit" and len(undo["after"]) == 1
