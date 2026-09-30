@@ -176,7 +176,8 @@ cross-conversation revision linking.
 **D15 — Raw recall scoring (ADR 0004).** Candidates must match the latest user message
 (`word_similarity ≥ 0.4`); the previous AI turn only breaks ties; `disabled` and `allBefore`-cut
 ranges are inactive and never recalled. A query matching more than 200 head messages is too broad to
-score: lexical recall abstains for it (trace `too_broad`), other routes still run (Track A, A3).
+score: lexical recall abstains for it (trace `too_broad`), other routes still run (Track A, A3). Amended by ADR 0052:
+a second lexical route looks up the message's keywords one by one (D62).
 
 **D16 — Deterministic state via parser rules (Phase 1).** JSON rules → `state_observation`
 projection; current state read through head membership (inherits D8 invalidation).
@@ -516,6 +517,12 @@ sequenced ids moved past the install's own when taken, recorded requests' assert
 part's extraction, a scene or story summary, an embedded chunk) keeps that call's usage as the provider reported it,
 never estimated: `calls`, `ms`, the provider's `model`, and `input` / `output` / `cached` / `reasoning` tokens only
 when the response carried them. NULL is a row from before migration 0027, `{"calls": 0}` a row written without a call.
+
+**D62 — Keyword lexical recall (Phase 18, ADR 0052).** Up to four keywords of the user's message (particles and
+question endings off, names kept whole, question and stop words out) are each looked up at `word_similarity ≥ 0.8`;
+a keyword in more than 200 or more than half of the head messages, or not found within its 25 ms slice, is dropped;
+scores sum `log(messages / matches)` under the lexical timeout. A keyword hit is its own admission signal in fusion. An excerpt only this route found is
+left out when it repeats a secret still kept from someone. Recorded as `lexical_keywords`; older traces replay without it.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

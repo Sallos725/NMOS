@@ -356,8 +356,12 @@ def test_traces_from_before_the_ledger_are_not_replayed(full):
     assert client.get(f"/v1/trace/{out['trace_id']}/audit").json()["summary"]["reply"] == "not_recorded"
 
 
-def test_replay_ignores_vectors_and_facts_derived_after_the_request(migrated):
-    """Bitemporal: the turn is on the head before the request, but embedded and extracted only after it."""
+def test_replay_ignores_vectors_and_facts_derived_after_the_request(migrated, monkeypatch):
+    """Bitemporal: the turn is on the head before the request, but embedded and extracted only after it. Raw text on
+    the head is lexically searchable at once, so the keyword route (ADR 0052), which would find "은빛", stays out."""
+    from nmos_sidecar import retrieval
+
+    monkeypatch.setattr(retrieval, "keywords", lambda query: [])
     with make_client(migrated, embedder=StubEmbedder(), **settings_for("full")) as client:
         chat = story(client, migrated, vectors=True)
         chat.user("하나는 은빛 열쇠를 등대 지하에 숨겼다.")

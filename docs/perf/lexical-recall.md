@@ -48,3 +48,42 @@ synthetic set is not published yet, Q5).
 
 Reproduce: `tools/eval_rp.py <cases dir> --db <copy> --extractor <key> --summarizer <key> --policy packet-v9
 --budget 4000 --projection <key> --embed-url <evaluation Ollama> [--no-vectors] --json`.
+
+## Step 3: keyword lexical recall (`packet-v9` at 4,000, keywords on) (2026-09-30)
+
+The same runs with the keyword route forced on (`--keywords on`; these requests were recorded before it, so a plain
+replay runs without it, ADR 0052). Baseline → with keywords (after the reviews' fixes, the 25 ms keyword slice and one deadline for the route):
+
+| Run | passed | needing memory | forbidden placed | lexical found a candidate | mean tokens |
+|---|---:|---:|---:|---:|---:|
+| M0 main, deepseek, vectors on | 26 → 26 | 10 → 10 | 1 → 1 | 18 → 37 | 2,933 → 3,023 |
+| M0 main, deepseek, vectors off | 25 → 26 | 8 → 9 | 0 → 0 | 18 → 37 | 2,350 → 2,871 |
+| M0 main, gemma, vectors on | 31 → 30 | 15 → 14 | 1 → 1 | 18 → 37 | 2,767 → 2,857 |
+| M0 main, gemma, vectors off | 30 → 30 | 13 → 13 | 0 → 0 | 18 → 37 | 2,184 → 2,664 |
+| M0 sample 2, deepseek, vectors on | 11 → 11 | 9 → 8 | 2 → 0 | 2 → 15 | 3,816 → 3,909 |
+| M0 sample 2, deepseek, vectors off | 11 → 11 | 8 → 8 | 0 → 0 | 2 → 15 | 2,843 → 3,898 |
+| M0 sample 2, gemma, vectors on | 8 → 9 | 6 → 6 | 2 → 0 | 2 → 15 | 2,625 → 3,421 |
+| M0 sample 2, gemma, vectors off | 5 → 7 | 2 → 4 | 0 → 0 | 2 → 15 | 1,449 → 3,335 |
+| synthetic 30, vectors on | 23 → 23 | 2 → 2 | 0 → 0 | 4 → 18 | 1,286 → 1,294 |
+| synthetic 30, vectors off | 22 → 22 | 1 → 1 | 0 → 0 | 4 → 19 | 505 → 667 |
+| synthetic 60, vectors on | 17 → 16 | 1 → 1 | 2 → 3 | 4 → 20 | 2,036 → 2,047 |
+| synthetic 60, vectors off | 18 → 17 | 1 → 1 | 1 → 2 | 4 → 20 | 1,289 → 1,783 |
+| synthetic 120, vectors on | 13 → 16 | 0 → 1 | 8 → 4 | 6 → 20 | 2,540 → 2,627 |
+| synthetic 120, vectors off | 16 → 17 | 0 → 1 | 3 → 3 | 6 → 20 | 1,782 → 2,507 |
+| synthetic 240, vectors on | 13 → 13 | 3 → 2 | 2 → 1 | 9 → 21 | 3,455 → 3,470 |
+| synthetic 240, vectors off | 13 → 13 | 2 → 2 | 1 → 1 | 9 → 21 | 2,733 → 3,404 |
+
+- **Lexical recall found a candidate for 131 of 145 queries (90 %)**, from 43 (30 %): the step's 80 % criterion.
+  On the synthetic 30 cut the count differs by one between the two runs (18 and 19): a word whose lookup lands near
+  its 25 ms slice can be dropped in one run and kept in another.
+- Without vectors, cases needing memory +3 over the four M0 runs (main deepseek +1, sample 2 gemma +2); with vectors,
+  −1 on two runs (main gemma, sample 2 deepseek), inside "no run worse by more than one case". The phase's +4 is
+  measured with `packet-v10` (step 4).
+- Forbidden phrases placed fell on M0 (6 → 2 with vectors) and on the synthetic 120 and 240 cuts (8 → 4, 2 → 1); the
+  synthetic 60 cut gained one each way. Passed rose on the synthetic 120 cut (13 → 16 with vectors, 16 → 17 without).
+- Latency at 10,000 messages (`tools/bench_story.py`, budget 4,000, three alternating runs against `main`): retrieve
+  p50 119.9 → 129.9 ms (+10.0), p95 422.7 → 219.3 ms. The p95 is not this change's doing: in every run on `main`
+  one of the 15 requests (a repeated question) hit the whole-message route's 300 ms timeout, and in no run of this
+  branch did it; the whole-message route is unchanged, and why it did not time out here is not known yet (a cache or
+  index warmed by the keyword lookups is a guess). The keyword route itself adds 5–60 ms to a request (per request,
+  measured in `gather`: ≈5–7 ms when its keywords are rare, 29–60 ms when some are too common).

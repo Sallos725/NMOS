@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 18 step 3: keyword lexical recall** (ADR 0052, D62). Lexical recall also looks up the message's keywords one
+  by one (up to four; Korean particles and question endings taken off, names kept whole, question and stop words
+  left out), so a natural question finds the message that says what it names even when the question as a whole is
+  too unlike it, and without vectors. A keyword in most of the chat is ignored. An excerpt only this route found is
+  left out when it repeats a secret still kept from someone (owner, 2026-09-30). Requests recorded before this version
+  replay without it. The trace shows `keyword_mode`, each candidate's `keyword_score` and `keyword_withheld`.
 - **Phase 17 (what NMOS's own model calls cost, and fallbacks told from failures) is complete**
   (`docs/phases/PHASE-17.md`, `docs/perf/model-usage.md`): the recorded tokens equal the provider's on a hosted model
   and on local chat and embedding models; generation latency is unchanged; archives from before carry over, their
