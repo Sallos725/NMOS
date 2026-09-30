@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 
 from conftest import make_client
-from memeval import stub_extractor
+from memeval import FOUND, stub_extractor
 from nmos_sidecar import repairs
 from nmos_sidecar.rebuild import rebuild_all
 from simchat import SimChat
@@ -616,3 +616,140 @@ def test_the_inspector_marks_where_each_repair_can_be_made_and_lists_what_needs_
         page = c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
         assert f'data-repair="undo:{out["repair"]["id"]}"' in page and f'data-repair="thread_close:{t["id"]}' not in page
         assert "Nothing needs a look." in page
+
+
+# --- Stage 6's done criterion (docs/ROADMAP-1.0.md): every repair kind survives a rebuild and a new generation --------
+
+
+def surviving(c, cid: str) -> dict[str, str | None]:
+    """{repair kind: the id of what it applies to now} for the chat's repairs in force (one of each kind)."""
+    return {r["kind"]: r["applied"] for r in c.get(f"/v1/conversations/{cid}/repairs").json()["repairs"]
+            if r["removed_at"] is None}
+
+
+def rebuild(c, migrated, cid: str, complete) -> None:
+    """The chat's rebuild (every extraction discarded, every turn extracted again) and the membership rebuild."""
+    assert c.post(f"/v1/conversations/{cid}/rebuild").status_code == 200
+    assert drain(migrated, complete) > 0  # every turn extracted again
+    assert rebuild_all(migrated)
+
+
+# A new model's words: a word inside the text, so neither text contains the other (a suffix would match exactly).
+ANEW = {"find the keeper": "find the old keeper", "bake bread": "bake fresh bread",
+        "the letter is forged": "the letter is surely forged", "the key is lost": "the key is surely lost",
+        "겁이 많다": "겁이 꽤 많다", "knight": "sworn knight"}
+
+
+def worded_anew(system: str, user: str) -> tuple[dict, str]:
+    """A new model that words every goal, end, secret, trait and identity differently; a reveal names the secret
+    in the new words."""
+    out, raw = stub_extractor(system, user)
+    before, target = user.split("TARGET", 1)
+    listed = [line.split(". ", 1) for line in before.splitlines() if re.match(r"S\d+\. ", line)]
+    secrets = [{"secret": number, "found_out_by": [m["who"]], "evidence": m.group(0)}
+               for m in FOUND.finditer(target) for number, text in listed if ANEW.get(m["what"], m["what"]) in text]
+    return {"assertions": [{**a, "value": ANEW.get(a["value"], a["value"])} if isinstance(a.get("value"), str) else a
+                           for a in out["assertions"]], "secrets": secrets}, raw
+
+
+def test_every_thread_and_secret_repair_survives_a_rebuild_and_a_new_generation(migrated):
+    chat = SimChat()
+    for text in ("Hana wants to find the keeper.", "Kaito wants to bake bread.", "Kaito's goal is achieved: bake bread.",
+                 "Hana keeps a secret from Kaito: the letter is forged.", "Mira keeps a secret from Sena: the key is lost."):
+        chat.user(text)
+        chat.reply("Noted.")
+    chat.user("Go on.")
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        chat.reply("Sena found out that the key is lost.")  # after the secret's turn was extracted (K29)
+        chat.user("Go on.")
+        setup(c, migrated, chat)
+        letter = secret(c, cid)
+        key = next(s for s in c.get(f"/v1/conversations/{cid}/secrets").json() if "key is lost" in s["text"])
+        assert key["open"] == [] and "Sena" in key["ended"]  # the story's reveal
+        made = {
+            "thread_close": repair(c, cid, kind="thread_close", item=str(thread(c, cid)["id"])),
+            "thread_reopen": repair(c, cid, kind="thread_reopen", item=str(thread(c, cid, "bake bread")["id"])),
+            "secret_found_out": repair(c, cid, kind="secret_found_out", item=str(letter["id"]), character="Kaito"),
+            "secret_keep": repair(c, cid, kind="secret_keep", item=str(key["id"]), character="Sena"),
+        }
+
+        def holds(words: dict[str, str]) -> None:
+            applied = surviving(c, cid)
+            ids = {kind: out["repair"]["id"] for kind, out in made.items()}
+            hana, kaito = thread(c, cid, words.get(GOAL, GOAL)), thread(c, cid, words.get("bake bread", "bake bread"))
+            assert (hana["status"], hana["repair"]) == ("achieved", ids["thread_close"])
+            assert (kaito["status"], kaito["repair"]) == ("open", ids["thread_reopen"])
+            assert applied["thread_close"] == str(hana["id"]) and applied["thread_reopen"] == str(kaito["id"])
+            secrets = {s["text"]: s for s in c.get(f"/v1/conversations/{cid}/secrets").json()}
+            found = secrets["Hana knows: " + words.get("the letter is forged", "the letter is forged")]
+            kept = secrets["Mira knows: " + words.get("the key is lost", "the key is lost")]
+            assert found["open"] == [] and found["ended"]["Kaito"]["owner"] == ids["secret_found_out"]
+            assert kept["open"] == ["Sena"] and kept["repair"] == ids["secret_keep"]
+            assert applied["secret_found_out"] == str(found["id"]) and applied["secret_keep"] == str(kept["id"])
+
+        holds({})
+        before = surviving(c, cid)
+        rebuild(c, migrated, cid, stub_extractor)
+        holds({})
+        assert set(surviving(c, cid).values()).isdisjoint(before.values())  # new rows, found again by what they say
+    with make_client(migrated, extract_backfill=100, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+        assert drain(migrated, worded_anew) > 0  # the new generation extracted every turn
+        holds(ANEW)
+
+
+def test_every_fact_repair_survives_a_rebuild_and_a_new_generation(migrated):
+    chat = place_chat()
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        retract = repair(c, cid, kind="fact_retract", item=str(fact(c, cid, "Hana", "located_in")["id"]))
+        repair(c, cid, kind="fact_correct", item=str(fact(c, cid, "Kaito", "located_in")["id"]), new_object="library",
+               turn=3)
+        trait = repair(c, cid, kind="fact_correct", item=str(fact(c, cid, "하나", "has_trait")["id"]), new_value="용감하다")
+
+        def holds() -> None:
+            repairs_now = {r["id"]: r["applied"] for r in c.get(f"/v1/conversations/{cid}/repairs").json()["repairs"]}
+            assert all(repairs_now.values()), repairs_now  # each found its target again
+            hana, kaito = fact(c, cid, "Hana", "located_in"), fact(c, cid, "Kaito", "located_in")
+            assert (hana["object"], hana["repair"]) == ("chapel", retract["repair"]["id"])
+            assert (kaito["object"], kaito["turn"], kaito["owner"]) == ("library", 3, True)
+            traits = [f for f in c.get(f"/v1/conversations/{cid}/facts").json() if f["predicate"] == "has_trait"]
+            assert [(f["value"], f["repair"]) for f in traits] == [("용감하다", trait["repair"]["id"])]
+
+        holds()
+        rebuild(c, migrated, cid, stub_extractor)
+        holds()
+    with make_client(migrated, extract_backfill=100, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+        assert drain(migrated, worded_anew) > 0  # the new generation extracted every turn
+        assert fact(c, cid, "Hana", "identity")["value"] == "sworn knight"  # the new generation's words
+        holds()
+
+
+def test_a_name_split_and_an_owner_join_survive_a_rebuild_and_a_new_generation(migrated):
+    chat = SimChat()
+    for text in ("Mina is in the chapel.", "Rin is in the harbor.", "Mina is also called Rin.", "Kai is in the tower.",
+                 "Kaito is in the tower."):
+        chat.user(text)
+        chat.reply("Noted.")
+    chat.user("Go on.")
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat, aliased)
+        split = repair(c, cid, kind="name_split", item="Mina", other="Rin")
+        join = c.post(f"/v1/conversations/{cid}/entity-links",
+                      json={"entity_type": "character", "name": "Kai", "same_as": "Kaito"})
+        assert join.status_code == 200, join.text
+
+        def holds() -> None:
+            names = [set(e["names"]) for e in c.get(f"/v1/conversations/{cid}/entities").json()]
+            assert not any({"Mina", "Rin"} <= n for n in names) and any({"Kai", "Kaito"} <= n for n in names)
+            places = {f["subject"]: f["object"] for f in c.get(f"/v1/conversations/{cid}/facts").json()
+                      if f["predicate"] == "located_in"}
+            assert places["Mina"] == "chapel" and places["Rin"] == "harbor"
+            assert surviving(c, cid)["name_split"] == split["applied"]
+
+        holds()
+        rebuild(c, migrated, cid, aliased)
+        holds()
+    with make_client(migrated, extract_backfill=100, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+        assert drain(migrated, aliased) > 0  # the new generation extracted every turn
+        holds()
