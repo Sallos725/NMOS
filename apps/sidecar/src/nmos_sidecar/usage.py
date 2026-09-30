@@ -1,5 +1,7 @@
 """What one chat's memory cost in model calls (Phase 17 Q4, ADR 0051): the usage kept with each extraction, canon
-read, summary and embedded chunk, totalled per generation. Discarded rows count too: their calls were made."""
+read, summary and embedded chunk, totalled per generation. Discarded rows count too: their calls were made. The
+totals are of the rows NMOS still holds: embeddings of a projection another replaced are pruned (retention, O5) and
+their usage with them (owner decision 2026-09-30, the Copilot review of #185)."""
 
 from __future__ import annotations
 
@@ -41,7 +43,7 @@ def totals(conn: psycopg.Connection, conv: UUID, active: set[str] | None = None)
                count(*) AS rows,
                count(*) FILTER (WHERE r.usage IS NULL) AS not_recorded,
                coalesce(sum((r.usage->>'calls')::int), 0) AS calls,
-               count(*) FILTER (WHERE r.usage ? 'input' OR r.usage ? 'output') AS reported,
+               count(*) FILTER (WHERE r.usage ?| array['input', 'output', 'cached', 'reasoning']) AS reported,
                coalesce(sum((r.usage->>'input')::bigint), 0) AS input,
                coalesce(sum((r.usage->>'output')::bigint), 0) AS output,
                coalesce(sum((r.usage->>'cached')::bigint), 0) AS cached,

@@ -267,3 +267,18 @@ def test_the_totals_keep_canon_apart_and_count_a_rebuild_s_old_and_new_calls(mig
     # The rebuild read everything again: the old calls stay counted (their results discarded), the new ones added.
     assert after["canon"]["calls"] == 2 * n_canon and after["canon"]["input"] == (500 + 700) * n_canon
     assert after["extract"]["calls"] == 2 * n_turns and after["extract"]["output"] == (20 + 30) * n_turns
+
+
+def test_a_call_that_reported_only_cached_tokens_counts_as_reported(migrated):
+    assert llm.reported({"calls": 1, "cached": 31}) and llm.reported({"calls": 1, "reasoning": 4})
+    chat = SimChat()
+    chat.user("Where is Mina?")
+    chat.reply("Mina is in the library.")
+    chat.user("And then?")
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        drain_extract(migrated, metered(fake_complete, {"cached": 31}))
+        conv = c.get("/v1/conversations").json()[0]["id"]
+        total = c.get(f"/v1/conversations/{conv}/coverage", params={"usage": True}).json()["usage"]["total"]
+    assert total["reported"] == total["calls"] > 0 and total["cached"] == 31 * total["calls"]
+    assert total["input_reported"] == total["output_reported"] == 0
