@@ -393,7 +393,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   async function usageLine(hostChatId: string): Promise<HTMLElement | null> {
     try {
       const chats = await deps.api<{ id: string; host_chat_ref: string }[]>('GET',
-        `/v1/conversations?host_chat_ref=${encodeURIComponent(hostChatId)}`, undefined, 5000);
+        `/v1/conversations?host=pocketrisu&host_chat_ref=${encodeURIComponent(hostChatId)}`, undefined, 5000);
       const chat = chats.find((c) => c.host_chat_ref === hostChatId);
       if (!chat) return null;
       const cov = await deps.api<{ usage?: { total?: UsageTotal } }>('GET',

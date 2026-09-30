@@ -115,7 +115,7 @@ describe('panel', () => {
     const total = { calls: 12, reported: 12, input: 48210, output: 3105, cached: 0 };
     d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string) => {
       calls.push([method, path, undefined]);
-      if (path === '/v1/conversations?host_chat_ref=chat-1') return [{ id: 'conv-9', host_chat_ref: 'chat-1' }] as T;
+      if (path === '/v1/conversations?host=pocketrisu&host_chat_ref=chat-1') return [{ id: 'conv-9', host_chat_ref: 'chat-1' }] as T;
       if (path.startsWith('/v1/conversations/conv-9/coverage')) return { usage: { total } } as T;
       return config as T;
     };
