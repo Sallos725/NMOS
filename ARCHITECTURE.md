@@ -520,8 +520,8 @@ when the response carried them. NULL is a row from before migration 0027, `{"cal
 
 **D62 — Keyword lexical recall (Phase 18, ADR 0052).** Up to four keywords of the user's message (particles and
 question endings off, names kept whole, question and stop words out) are each looked up at `word_similarity ≥ 0.8`;
-a keyword in more than 200 or more than half of the head messages is dropped; scores sum `log(messages / matches)`
-under the lexical timeout. A keyword hit is its own admission signal in fusion. An excerpt only this route found is
+a keyword in more than 200 or more than half of the head messages, or not found within its 25 ms slice, is dropped;
+scores sum `log(messages / matches)` under the lexical timeout. A keyword hit is its own admission signal in fusion. An excerpt only this route found is
 left out when it repeats a secret still kept from someone. Recorded as `lexical_keywords`; older traces replay without it.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only

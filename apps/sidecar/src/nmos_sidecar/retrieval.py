@@ -43,6 +43,10 @@ RRF_K = 60
 # this word_similarity bar, near an exact match of the word. A keyword in more than BROAD_LIMIT head messages, or in
 # more than half of them, names what every scene holds (a main character) and is dropped.
 KEYWORD_THRESHOLD = 0.8
+# Each keyword's lookup gets at most this long; a word that takes longer is as common as a dropped one (a two-syllable
+# word's three trigrams can leave the index thousands of long messages to recheck), so it is dropped and the other
+# keywords still run (measured at 10,000 messages: 2–3 ms for a rare word, 37 ms for one capped at 201 matches).
+KEYWORD_SLICE_MS = 25
 QWEN3_QUERY_INSTRUCTION = ("Instruct: Given a question or remark from a role-play chat, retrieve the earlier story "
                            "passage that answers or relates to it\nQuery: ")
 # Candidates must match the user's message; the previous AI turn only breaks ties in ranking
@@ -221,35 +225,58 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
     (every keyword dropped as too common) or "timeout". All keywords share one budget of `timeout_ms`."""
     if not words:
         return [], "none"
-    total = conn.execute(
-        "SELECT count(*) AS n FROM active_membership WHERE commit_id = %s AND position > %s AND position <= %s",
-        (head, cut, 2**31 - 1 if upto is None else upto)).fetchone()["n"]
+    counted: list[int] = []
+
+    def total() -> int:
+        """The messages a keyword may be found in, counted as _lexical_matches filters them, once and only when a
+        keyword matched (every revision has its normalized text, so that join is left out: 5–9 ms at 10,000)."""
+        if not counted:
+            counted.append(conn.execute(
+                """
+                SELECT count(*) AS n
+                FROM active_membership am
+                JOIN source_revision sr ON sr.id = am.source_revision_id
+                WHERE am.commit_id = %(head)s AND sr.lifecycle = 'accepted'
+                  AND am.position > %(cut)s AND am.position <= %(upto)s
+                  AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+                  AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
+                """, {"head": head, "cut": cut, "upto": 2**31 - 1 if upto is None else upto}).fetchone()["n"])
+        return counted[0]
+
     started = time.perf_counter()
     weights: dict[Any, float] = {}
-    kept = 0
+    found = dropped = 0
     try:
         with conn.transaction():  # savepoint: a cancelled statement does not abort the request
             previous = conn.execute("SELECT " + ", ".join(f"current_setting('{k}') AS \"{k}\""
                                                           for k in _RESTORED)).fetchone()
+            _apply(conn, {"pg_trgm.word_similarity_threshold": str(KEYWORD_THRESHOLD), "enable_seqscan": "off",
+                          "enable_indexscan": "off", "statement_timeout": str(KEYWORD_SLICE_MS)})
             for word in words:
-                left = timeout_ms - (time.perf_counter() - started) * 1000
-                if left < 1:
-                    raise psycopg.errors.QueryCanceled()
-                _apply(conn, {"pg_trgm.word_similarity_threshold": str(KEYWORD_THRESHOLD), "enable_seqscan": "off",
-                              "enable_indexscan": "off", "statement_timeout": str(max(1, int(left)))})
-                ids = _lexical_matches(conn, head, word, cut, BROAD_LIMIT + 1, upto)
-                if not ids or len(ids) > BROAD_LIMIT or len(ids) * 2 > total:
+                if timeout_ms - (time.perf_counter() - started) * 1000 < KEYWORD_SLICE_MS:
+                    raise psycopg.errors.QueryCanceled()  # the route's budget cannot hold another word's slice
+                try:
+                    with conn.transaction():  # a word past its slice is dropped; the others still run
+                        ids = _lexical_matches(conn, head, word, cut, BROAD_LIMIT + 1, upto)
+                except psycopg.errors.QueryCanceled:
+                    found += 1
+                    dropped += 1
                     continue
-                kept += 1
-                weight = math.log((total + 1) / len(ids))
+                if not ids:
+                    continue
+                found += 1
+                n = total()
+                if len(ids) > BROAD_LIMIT or len(ids) * 2 > n:
+                    dropped += 1
+                    continue
+                weight = math.log((n + 1) / len(ids))
                 for i in ids:
                     weights[i] = weights.get(i, 0.0) + weight
             _apply(conn, dict(previous))
     except psycopg.errors.QueryCanceled:
         return [], "timeout"
     if not weights:
-        return [], "too_broad" if kept == 0 and total else "on"
-    best = sorted(weights, key=weights.get, reverse=True)[:CANDIDATE_LIMIT]
+        return [], "too_broad" if found and dropped == found else "on"
     rows = conn.execute(
         """
         SELECT sr.id, am.position, am.turn, so.host_logical_id, rt.clean_content AS clean, sr.metadata->>'role' AS role,
@@ -259,11 +286,12 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
         JOIN source_object so ON so.id = sr.source_object_id
         JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
         WHERE am.commit_id = %(head)s AND sr.id = ANY(%(ids)s)
-        """, {"head": head, "ids": best, "norm": NORMALIZER_VERSION}).fetchall()
+        """, {"head": head, "ids": list(weights), "norm": NORMALIZER_VERSION}).fetchall()
     for r in rows:
         r["keyword_score"] = round(weights[r["id"]], 4)
-    rows.sort(key=lambda r: (r["keyword_score"], r["position"]), reverse=True)
-    return rows, "on"
+    # deterministic whatever order the index returned matches in: score, then the later message, then the id
+    rows.sort(key=lambda r: (-r["keyword_score"], -r["position"], str(r["id"])))
+    return rows[:CANDIDATE_LIMIT], "on"
 
 
 def fuse(lexical: list[dict[str, Any]], vector: list[dict[str, Any]], threshold: float,
@@ -456,9 +484,17 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
                                options.canon_key, canon_facts)
         r = view["resolution"]
-        present = scene.names(g.cast, r) if r is not None else frozenset()
-        kept = [e for e in g.ranked
-                if e.revision_id not in keyword_only or not summaries.leaks(e.text, view["secrets"], present)]
+        cast = g.cast
+        if not cast and r is not None:  # facts, threads and summaries off: the scene still sets the bar
+            cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
+                              _head_turn(conn, head, upto))
+        present = scene.names(cast, r) if r is not None else frozenset()
+        kept = []
+        for e in g.ranked:
+            if e.revision_id not in keyword_only:
+                kept.append(e)
+            elif not any(summaries.leaks(form, view["secrets"], present) for form in (e.text, e.short) if form):
+                kept.append(dataclasses.replace(e, cut_ok=False))  # the forms checked are the only ones placed
         g.keyword_withheld = len(g.ranked) - len(kept)
         g.ranked = kept
     return g

@@ -52,30 +52,35 @@ Reproduce: `tools/eval_rp.py <cases dir> --db <copy> --extractor <key> --summari
 ## Step 3: keyword lexical recall (`packet-v9` at 4,000, keywords on) (2026-09-30)
 
 The same runs with the keyword route forced on (`--keywords on`; these requests were recorded before it, so a plain
-replay runs without it, ADR 0052). Baseline → with keywords:
+replay runs without it, ADR 0052). Baseline → with keywords (after the review's fixes and the 25 ms keyword slice):
 
 | Run | passed | needing memory | forbidden placed | lexical found a candidate | mean tokens |
 |---|---:|---:|---:|---:|---:|
-| M0 main, deepseek, vectors on | 26 → 26 | 10 → 10 | 1 → 1 | 18 → 38 | 2,933 → 3,069 |
-| M0 main, deepseek, vectors off | 25 → 26 | 8 → 9 | 0 → 0 | 18 → 38 | 2,350 → 3,059 |
-| M0 main, gemma, vectors on | 31 → 30 | 15 → 14 | 1 → 1 | 18 → 38 | 2,767 → 2,903 |
-| M0 main, gemma, vectors off | 30 → 30 | 13 → 13 | 0 → 0 | 18 → 38 | 2,184 → 2,880 |
+| M0 main, deepseek, vectors on | 26 → 26 | 10 → 10 | 1 → 1 | 18 → 37 | 2,933 → 3,023 |
+| M0 main, deepseek, vectors off | 25 → 26 | 8 → 9 | 0 → 0 | 18 → 37 | 2,350 → 2,871 |
+| M0 main, gemma, vectors on | 31 → 30 | 15 → 14 | 1 → 1 | 18 → 37 | 2,767 → 2,857 |
+| M0 main, gemma, vectors off | 30 → 30 | 13 → 13 | 0 → 0 | 18 → 37 | 2,184 → 2,665 |
 | M0 sample 2, deepseek, vectors on | 11 → 11 | 9 → 8 | 2 → 0 | 2 → 15 | 3,816 → 3,902 |
-| M0 sample 2, deepseek, vectors off | 11 → 11 | 8 → 8 | 0 → 0 | 2 → 15 | 2,843 → 3,898 |
-| M0 sample 2, gemma, vectors on | 8 → 9 | 6 → 6 | 2 → 0 | 2 → 15 | 2,625 → 3,421 |
+| M0 sample 2, deepseek, vectors off | 11 → 11 | 8 → 8 | 0 → 0 | 2 → 15 | 2,843 → 3,896 |
+| M0 sample 2, gemma, vectors on | 8 → 9 | 6 → 6 | 2 → 0 | 2 → 15 | 2,625 → 3,424 |
 | M0 sample 2, gemma, vectors off | 5 → 7 | 2 → 4 | 0 → 0 | 2 → 15 | 1,449 → 3,335 |
-| synthetic 30, vectors on | 23 → 23 | 2 → 2 | 0 → 0 | 4 → 22 | 1,286 → 1,311 |
-| synthetic 30, vectors off | 22 → 22 | 1 → 1 | 0 → 0 | 4 → 22 | 505 → 866 |
-| synthetic 60, vectors on | 17 → 16 | 1 → 1 | 2 → 3 | 4 → 21 | 2,036 → 2,117 |
-| synthetic 60, vectors off | 18 → 17 | 1 → 1 | 1 → 2 | 4 → 21 | 1,289 → 2,083 |
-| synthetic 120, vectors on | 13 → 16 | 0 → 1 | 8 → 4 | 6 → 21 | 2,540 → 2,646 |
-| synthetic 120, vectors off | 16 → 16 | 0 → 0 | 3 → 3 | 6 → 21 | 1,782 → 2,664 |
-| synthetic 240, vectors on | 13 → 12 | 3 → 2 | 2 → 2 | 9 → 17 | 3,455 → 3,476 |
-| synthetic 240, vectors off | 13 → 13 | 2 → 2 | 1 → 1 | 9 → 17 | 2,733 → 3,284 |
+| synthetic 30, vectors on | 23 → 23 | 2 → 2 | 0 → 0 | 4 → 18 | 1,286 → 1,294 |
+| synthetic 30, vectors off | 22 → 22 | 1 → 1 | 0 → 0 | 4 → 19 | 505 → 667 |
+| synthetic 60, vectors on | 17 → 16 | 1 → 1 | 2 → 3 | 4 → 20 | 2,036 → 2,082 |
+| synthetic 60, vectors off | 18 → 17 | 1 → 1 | 1 → 2 | 4 → 20 | 1,289 → 1,783 |
+| synthetic 120, vectors on | 13 → 16 | 0 → 1 | 8 → 4 | 6 → 20 | 2,540 → 2,627 |
+| synthetic 120, vectors off | 16 → 16 | 0 → 0 | 3 → 3 | 6 → 20 | 1,782 → 2,509 |
+| synthetic 240, vectors on | 13 → 13 | 3 → 2 | 2 → 1 | 9 → 21 | 3,455 → 3,470 |
+| synthetic 240, vectors off | 13 → 13 | 2 → 2 | 1 → 1 | 9 → 21 | 2,733 → 3,404 |
 
-- **Lexical recall found a candidate for 134 of 145 queries (92 %)**, from 43 (30 %): the step's 80 % criterion.
+- **Lexical recall found a candidate for 131 of 145 queries (90 %)**, from 43 (30 %): the step's 80 % criterion.
+  On the synthetic 30 cut the count differs by one between the two runs (18 and 19): a word whose lookup lands near
+  its 25 ms slice can be dropped in one run and kept in another.
 - Without vectors, cases needing memory +3 over the four M0 runs (main deepseek +1, sample 2 gemma +2); with vectors,
   −1 on two runs (main gemma, sample 2 deepseek), inside "no run worse by more than one case". The phase's +4 is
   measured with `packet-v10` (step 4).
-- Forbidden phrases placed fell on M0 (6 → 2 with vectors) and on the synthetic 120 cut (8 → 4); the synthetic 60 cut
-  gained one each way. The packets fill more of their budget without vectors (mean tokens up by 0.7–1.9k).
+- Forbidden phrases placed fell on M0 (6 → 2 with vectors) and on the synthetic 120 and 240 cuts (8 → 4, 2 → 1); the
+  synthetic 60 cut gained one each way.
+- Latency at 10,000 messages (`tools/bench_story.py`, budget 4,000, three alternating runs against `main`): retrieve
+  p50 122.5 → 136.7 ms (+14.2), p95 421 → 218 ms. Before the slice a two-syllable word could keep the index busy until
+  the lexical budget ran out (≈300 ms, twice in 15 requests).

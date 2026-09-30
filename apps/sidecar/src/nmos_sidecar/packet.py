@@ -191,6 +191,7 @@ class Excerpt:
     revision_id: str
     short: str = ""  # one-sentence form, used by packet-v1 when the full excerpt does not fit
     position: int | None = None  # the message's head position, for story order (None: `turn` is the position)
+    cut_ok: bool = True  # False: placed whole or as `short`, never cut to fit (keyword-only excerpts, ADR 0052)
 
 
 def _turn(name: str, turn: int | None) -> str:
@@ -271,6 +272,8 @@ def _fit_excerpt(item: Excerpt, room: int, estimate: Callable[[str], int] = esti
     for form, text in (("full", item.text), ("short", item.short)):
         if text and estimate(excerpt_line(item, text) + "\n") <= room:
             return form, text
+    if not item.cut_ok:  # its forms were checked for secrets as a whole; a cut was not (ADR 0052)
+        return None
     base = item.short or item.text
     lo, hi = MIN_EXCERPT_CHARS, len(base) - 1
     best = None
