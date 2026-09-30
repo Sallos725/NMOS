@@ -84,7 +84,7 @@ Met (2026-10-01, `docs/perf/join-preview.md`):
       redoing it on the copy. *(14 of 14.)*
 - [x] Real-host smoke on an isolated PocketRisu: a join previewed and made in the panel, then undone. *(v1.13.0, with
       the covered turns re-extracted.)*
-- [x] A preview of the longest measured chat within 200 ms. *(At most 35 ms, 147 messages.)*
+- [x] A preview of the longest measured chat within 200 ms. *(At most 35.4 ms, 147 messages.)*
 - [x] The change marked high risk where it touches identity (AGENTS.md §14: the join, split and undo endpoints) and
       extraction (the re-extraction), in the report and the PR. *(#202, #204.)*
 - [x] ADR, `ARCHITECTURE.md`, README, the Korean guide, KNOWN-ISSUES, CHANGELOG.

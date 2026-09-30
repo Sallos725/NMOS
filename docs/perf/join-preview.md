@@ -31,7 +31,7 @@ would re-extract (no model call).
   one entity; the undo's preview offers to re-extract them. The spec's evidence said 72: that first count read only the
   active generation's extractions, and one chat's turns are served by an older generation (ADR 0014).
 - **Preview time**: two memory reads, the difference and the re-extraction count, in process on the database host.
-  At most 35 ms on the longest measured chat (147 messages), within the criterion of 200 ms. The request path is
+  At most 35.4 ms on the longest measured chat (147 messages), within the criterion of 200 ms. The request path is
   unchanged: a preview runs only on the owner's click.
 
 ## Deterministic cases and the real host
