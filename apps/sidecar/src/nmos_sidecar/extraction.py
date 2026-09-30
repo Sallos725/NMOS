@@ -33,7 +33,7 @@ from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
 
-COMPILER_VERSION = "extract-v13"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
+COMPILER_VERSION = "extract-v14"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
 #                                 v5: polarity, modality, source, also_called (ADR 0012, ADR 0013);
 #                                 v6: destroyed (PHASE-6, ADR 0017);
 #                                 v7: promises actual, fulfilled, OPEN PROMISES, event salience (PHASE-7);
@@ -45,11 +45,13 @@ COMPILER_VERSION = "extract-v13"  # v2: known_by / hidden_from; v3: knowledge sc
 #                                 v12: hidden_from only for what is kept from someone, OPEN SECRETS and
 #                                 `learned` (PHASE-10, ADR 0033);
 #                                 v13: goal, question, threat and owes as open business, OPEN THREADS and
-#                                 `resolved` with an outcome, `because` (PHASE-11, ADR 0039)
+#                                 `resolved` with an outcome, `because` (PHASE-11, ADR 0039);
+#                                 v14: context messages cut at 1,000 characters, synthetic examples, a quote
+#                                 not in the target turn parks the assertion (PHASE-19, ADR 0054)
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
 TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
-CONTEXT_CHARS = 2000  # per context message
+CONTEXT_CHARS = 1000  # per context message (2,000 before extract-v14: PHASE-19 Q1)
 RECENT_PRIORITY, HISTORY_PRIORITY = 250, 900  # generation rebuild: recent window first, then history
 OPEN_PROMISES = 8  # open promise threads shown to the model (PHASE-7 Q3)
 OPEN_SECRETS = 8  # open secrets shown to the model (PHASE-10)
@@ -120,7 +122,7 @@ Rules:
   debt, "abandoned" when it is forgiven or dropped. Not when a thread is only mentioned, remembered, worked on or
   still under way.
 - `because`, for `event`, `feels_toward`, `relationship`, `has_status` and `goal` only: the cause, when the
-  TARGET turn or CONTEXT states it (e.g. "블랑에게만 손등에 입맞춤해서"), as a short phrase in the chat's language;
+  TARGET turn or CONTEXT states it (e.g. "노엘에게만 우산을 빌려줘서"), as a short phrase in the chat's language;
   null otherwise. Never guess a cause.
 - If OPEN SECRETS are listed (S1, S2, …), report in `secrets` each one that a character it is kept from finds
   out in the TARGET turn: told it, overhearing it, seeing it happen, catching the holders at it, or plainly
@@ -130,7 +132,7 @@ Rules:
 - `addresses` when the TARGET turn settles how one character speaks to or calls another from now on:
   they agree or decide to speak informally or formally, someone asks for or allows a form of address,
   or a new form of address is used for the first time and taken up. `value`: the speech level and the
-  form of address in the chat's language (e.g. "반말, '유우마'라고 부름", "존댓말(해요체), '유우마 씨'라고
+  form of address in the chat's language (e.g. "반말, '타쿠미'라고 부름", "존댓말(해요체), '타쿠미 씨'라고
   부름"). One assertion per direction (A to B and B to A are separate). It is narration when the TARGET
   turn shows it, although the evidence is dialogue. Not for a reply that merely uses some speech level
   without anyone deciding, asking or remarking on it: a slip is not a change. A change back is a new
@@ -567,6 +569,9 @@ def coverage_of(ctx: dict[str, Any]) -> dict[str, int]:
 
 
 EVIDENCE_MIN = 0.7  # trigram containment of a reveal's quoted evidence in the target turn (PHASE-10)
+# ... and of every assertion's quote in a turn extraction (extract-v14, ADR 0054), from this length on: a shorter
+# quote shares its few trigrams with most turns, so it would pass or fail by accident.
+EVIDENCE_MIN_CHARS = 12
 
 
 def revealed(answer: dict[str, Any], secrets: list[dict[str, Any]], turn_text: str) -> list[dict[str, Any]]:
@@ -602,11 +607,13 @@ ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_t
                      "polarity", "modality", "source", "asserted_by", "salience", "participants", "outcome", "because")
 
 
-def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None,
+              check_evidence: bool = False) -> list[dict[str, Any]]:
     """Model output → assertion rows (at most 40): missing entity types filled from the reply or the
     hints (`fill_types`), registry validation (D6), knowledge scope (D19), polarity/modality/source
-    (ADR 0013) and the alias evidence check (ADR 0012, ADR 0024). Pure, so the real-model evaluation
-    (`tools/eval_extraction_model.py`) applies exactly what the worker does."""
+    (ADR 0013) and the alias evidence check (ADR 0012, ADR 0024). `check_evidence` (the turn worker, since
+    extract-v14, ADR 0054): a quote of EVIDENCE_MIN_CHARS or more that is not in `turn_text` parks the row. Pure,
+    so the real-model evaluation (`tools/eval_extraction_model.py`) applies exactly what the worker does."""
     out = []
     for item, inferred in fill_types(items[:40], hints):
         if not isinstance(item, dict):
@@ -629,6 +636,10 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
             status, reason = "pending", unclaimed
         if status == "valid" and item.get("predicate") == "resolved" and outcome(item) is None:
             status, reason = "pending", "resolved without an outcome"
+        quote = text("evidence")
+        if (status == "valid" and check_evidence and quote and len(quote) >= EVIDENCE_MIN_CHARS
+                and similarity(quote, turn_text) < EVIDENCE_MIN):
+            status, reason = "pending", "evidence not in the turn"
         for extra in (note, inferred):
             if extra:
                 reason = f"{reason}; {extra}" if reason else extra
@@ -694,7 +705,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
             return "done"
         rows = [(extraction_id, revision_id, *(Jsonb(a[c]) if c == "participants" and a[c] is not None else a[c]
                                                for c in ASSERTION_COLUMNS))
-                for a in normalize(items, turn_text, hints)]
+                for a in normalize(items, turn_text, hints, check_evidence=True)]
         if rows:
             with conn.cursor() as cur:
                 cur.executemany(

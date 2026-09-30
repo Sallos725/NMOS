@@ -529,6 +529,11 @@ starts from the sentence holding most of the message's keywords (then most share
 sentences, after then before, within `excerpt_chars` and at most four sentences; a longer best sentence is cut there.
 `packet-v9` stays for replays.
 
+**D64 — `extract-v14` (Phase 19, ADR 0054).** A turn extraction's context messages are cut at 1,000 characters (the
+target's at 6,000), its prompt's examples are synthetic, and a row whose quote (12 characters or more) is not in its
+target turn (`threads.similarity < 0.7` against the members' normalized text) is stored `pending`, "evidence not in the
+turn". Only the turn worker applies that check; canon reads do not. Reveals are unchanged.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
