@@ -89,8 +89,10 @@ The noise below is estimated from three runs of today's prompt and is itself rou
       generation key changes, and the canon generation key changes only through Q2's `addresses` description.
 - [ ] Step 2 (offline, no model call), on the evaluation copies' `extract-v13` rows and on the sampled-turn runs of
       the shorter context, reported per extraction model, per predicate and per `epistemic`: **the share of valid rows
-      the Q3 check would park is at most 10 %, and none of them is a fact line placed in the packet of an M0 v2 case
-      that passed** (Phase 18's `packet-v10` runs, `docs/perf/lexical-recall.md`); and the shorter context's
+      the Q3 check would park is at most 10 %, and leaving them out lowers the cases passed of no M0 v2 run by more
+      than one** (Phase 18's `packet-v10` runs, `docs/perf/lexical-recall.md`; amended 2026-09-30 by the owner from
+      "none of them is a fact line placed in the packet of an M0 v2 case that passed": six such rows were placed and
+      none answered its case, `docs/perf/extract-v14.md`); and the shorter context's
       `addresses` and `relationship` rows that only repeat the pair's current value are not more frequent than today's.
 - [ ] Sampled turns, the first 60 and the remaining 31 ledger turns (three runs of `extract-v14` against three of
       today's prompt): ledger facts found among valid rows, mean not below the lowest of today's runs; the Q3 check
@@ -122,8 +124,8 @@ Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).
 
 Stop and ask the owner when:
 
-- the evidence check would park more than 10 % of valid rows, or any row that finds a ledger fact or answers an M0 v2
-  case;
+- the evidence check would park more than 10 % of valid rows, or any row that finds a ledger fact, or leaving the
+  parked rows out would lower an M0 v2 run's cases passed by more than one;
 - `extract-v14` misses a criterion above, or its gain holds for one extraction model only;
 - a schema change or migration looks necessary;
 - a paid run would go beyond its estimate by more than a quarter.
