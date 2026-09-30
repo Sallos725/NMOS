@@ -20,11 +20,11 @@ names a pet scored 0.32 against the message that answers it; each of its two nou
 2. **A second lexical route** (Q2). Each keyword matches a head message at `word_similarity(keyword, text) ≥ 0.8`
    (`KEYWORD_THRESHOLD`, the trigram index still serves it). A keyword in more than 200 head messages (D15's bar), or in
    more than half of them, names what every scene holds and is dropped. A message's score is the sum of its keywords'
-   `log((messages + 1) / matches)`, messages counted as the lookup filters them (accepted, not hidden, not a comment,
+   `log(messages / matches)` (at least log 2, since a keyword in more than half is dropped), messages counted as the lookup filters them (accepted, not hidden, not a comment,
    after the last cut). Each keyword's lookup gets at most `KEYWORD_SLICE_MS` (25 ms): a word that takes longer is as
    common as a dropped one (a two-syllable word's three trigrams can leave the index thousands of long messages to
    recheck) and is dropped, the others still count. All keywords share one budget, `NMOS_LEXICAL_TIMEOUT_MS`; when it
-   cannot hold another slice the route abstains. Candidates are ordered by score, then the later message, then the id,
+   runs out, before any statement of the route (a lookup, the count, the final read), the route abstains. Candidates are ordered by score, then the later message, then the id,
    before the first CANDIDATE_LIMIT are kept, so a replay picks the same ones. The trace records `keyword_mode` ("on", "none", "too_broad", "timeout", "off") and each candidate's
    `keyword_score`.
 3. **Fusion** (Q2). The keyword list joins the whole-message and vector lists in the same reciprocal-rank fusion, and a
@@ -46,6 +46,6 @@ names a pet scored 0.32 against the message that answers it; each of its two nou
 - More raw passages reach the packet for natural questions, with or without vectors.
 - A chat's main names are dropped as too common on short chats too (the half rule); a question about them relies on
   facts, vectors and the other keywords.
-- Latency at 10,000 messages (`tools/bench_story.py`, budget 4,000, three alternating runs): p50 +14.2 ms, p95
+- Latency at 10,000 messages (`tools/bench_story.py`, budget 4,000, three alternating runs): p50 +10.0 ms, p95
   −203 ms (slow words used to take the whole lexical budget). Measured again in step 5.
 - Verbs and one-syllable-particle forms can still take a slot; the rules are fixed lists and can be retuned.

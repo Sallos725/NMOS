@@ -243,7 +243,15 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
                 """, {"head": head, "cut": cut, "upto": 2**31 - 1 if upto is None else upto}).fetchone()["n"])
         return counted[0]
 
-    started = time.perf_counter()
+    deadline = time.perf_counter() + timeout_ms / 1000  # every statement of the route runs before it
+
+    def within(most: float | None = None) -> None:
+        """This connection's statement timeout: what is left of the route's budget (at most `most` ms)."""
+        left = (deadline - time.perf_counter()) * 1000
+        if left < 1:
+            raise psycopg.errors.QueryCanceled()
+        _apply(conn, {"statement_timeout": str(max(1, int(left if most is None else min(left, most))))})
+
     weights: dict[Any, float] = {}
     found = dropped = 0
     try:
@@ -251,42 +259,47 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
             previous = conn.execute("SELECT " + ", ".join(f"current_setting('{k}') AS \"{k}\""
                                                           for k in _RESTORED)).fetchone()
             _apply(conn, {"pg_trgm.word_similarity_threshold": str(KEYWORD_THRESHOLD), "enable_seqscan": "off",
-                          "enable_indexscan": "off", "statement_timeout": str(KEYWORD_SLICE_MS)})
+                          "enable_indexscan": "off"})
             for word in words:
-                if timeout_ms - (time.perf_counter() - started) * 1000 < KEYWORD_SLICE_MS:
-                    raise psycopg.errors.QueryCanceled()  # the route's budget cannot hold another word's slice
                 try:
                     with conn.transaction():  # a word past its slice is dropped; the others still run
+                        within(KEYWORD_SLICE_MS)
                         ids = _lexical_matches(conn, head, word, cut, BROAD_LIMIT + 1, upto)
                 except psycopg.errors.QueryCanceled:
+                    if (deadline - time.perf_counter()) * 1000 < 1:
+                        raise  # the route's budget, not the word's slice, ran out
                     found += 1
                     dropped += 1
                     continue
                 if not ids:
                     continue
                 found += 1
+                within()
                 n = total()
                 if len(ids) > BROAD_LIMIT or len(ids) * 2 > n:
                     dropped += 1
                     continue
-                weight = math.log((n + 1) / len(ids))
+                weight = math.log(n / len(ids))  # at least log 2: a keyword in more than half is dropped above
                 for i in ids:
                     weights[i] = weights.get(i, 0.0) + weight
+            rows = []
+            if weights:
+                within()
+                rows = conn.execute(
+                    """
+                    SELECT sr.id, am.position, am.turn, so.host_logical_id, rt.clean_content AS clean,
+                           sr.metadata->>'role' AS role, sr.metadata->>'name' AS name
+                    FROM active_membership am
+                    JOIN source_revision sr ON sr.id = am.source_revision_id
+                    JOIN source_object so ON so.id = sr.source_object_id
+                    JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+                    WHERE am.commit_id = %(head)s AND sr.id = ANY(%(ids)s)
+                    """, {"head": head, "ids": list(weights), "norm": NORMALIZER_VERSION}).fetchall()
             _apply(conn, dict(previous))
     except psycopg.errors.QueryCanceled:
         return [], "timeout"
     if not weights:
         return [], "too_broad" if found and dropped == found else "on"
-    rows = conn.execute(
-        """
-        SELECT sr.id, am.position, am.turn, so.host_logical_id, rt.clean_content AS clean, sr.metadata->>'role' AS role,
-               sr.metadata->>'name' AS name
-        FROM active_membership am
-        JOIN source_revision sr ON sr.id = am.source_revision_id
-        JOIN source_object so ON so.id = sr.source_object_id
-        JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
-        WHERE am.commit_id = %(head)s AND sr.id = ANY(%(ids)s)
-        """, {"head": head, "ids": list(weights), "norm": NORMALIZER_VERSION}).fetchall()
     for r in rows:
         r["keyword_score"] = round(weights[r["id"]], 4)
     # deterministic whatever order the index returned matches in: score, then the later message, then the id
