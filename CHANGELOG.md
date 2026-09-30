@@ -68,7 +68,8 @@ later, is `docs/KNOWN-ISSUES.md`.
   on copies of the owner's two measured chats an archive restored into a fresh database (migrating it one level on
   the way) held every table the same, compiled every recorded request the same, and gave the same M0 and secret-gate
   results and the same rebuild. A production-sized install exports in about 3 s (15 MB with embeddings, 2 MB without)
-  and restores in about 3 s. Both Export buttons were smoke-tested on PocketRisu v1.13.0; not yet on a phone (K38).
+  and restores in about 3 s. Both Export buttons were smoke-tested on PocketRisu v1.13.0. On an iPhone, **Export everything** saved its file,
+  but PocketRisu may then show its own "server has been updated" alert, which is safe to dismiss (K38).
 - **Phase 16 step 4: restore** (ADR 0050 amendment 1): `python -m nmos_sidecar.archive restore FILE` (or `-` for
   stdin; `--check` to verify only), with the sidecar and worker stopped. Every file's size and hash is checked before
   anything is written; an archive from a newer NMOS, or a chat this install already holds, is refused (nothing is

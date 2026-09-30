@@ -46,7 +46,7 @@ without a PocketRisu change.
 | K35 | "The story so far" is written from every scene summary, with no cap on its input | Memory | recorded, not scheduled |
 | K36 | A chat whose large lorebook NMOS has read almost whole recalls more slowly | Performance | measured, accepted (Phase 14, owner 2026-09-29) |
 | K37 | A story that changes who someone is, against the card or a lorebook, is not flagged | Memory | by decision (ADR 0047 amendment 1); needs a model check |
-| K38 | The panel's Export was not tried on a phone | Host | evidence (owner's phone) |
+| K38 | On an iPhone the host may alert "The server has been updated…" after the panel's Export saved its file; Android not tried | Host | host (the alert); evidence (Android) |
 | K39 | A grown excerpt can carry a value the story has since replaced | Recall | measured, accepted (Phase 18, owner 2026-09-30) |
 | K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | measured; a lower threshold found less, 0.8 kept (2026-09-30) |
 | K41 | Re-extracted with `extract-v14`, `deepseek-v4.1-flash` passed fewer M0 cases | Memory | measured, accepted (Phase 19, owner 2026-09-30) |
@@ -117,10 +117,17 @@ tunnel to `http://localhost:6001` (README "Requirements").
 (v1.12.0) only. Upstream RisuAI uses the same V3 plugin API but is untested. That build has no
 group-chat type (H11), so group-chat scenarios (S13) could not be run.
 
-**K38 — Export from the panel not tried on a phone.** The panel's Export buttons save the file as a Blob from the
-plugin's frame (H21): NMOS's buttons were observed in Chromium on a desktop, and saving a Blob from the frame in
-Chromium and Firefox; not on a phone's browser (Safari on iOS, Chrome on Android). *Workaround:* where the button saves nothing, open `/v1/archive` on the sidecar in a browser that reaches it,
-or run `python -m nmos_sidecar.archive export` (README "Export").
+**K38 — On an iPhone the host may alert after Export.** The panel's Export buttons save the file as a Blob from the
+plugin's frame (H21). On the owner's iPhone (PocketRisu v1.13.0 added to the home screen, 2026-10-01) **Export
+everything** saved its file, and PocketRisu then showed its own alert "The server has been updated or the network
+connection has been lost. Please refresh the page." This alert is PocketRisu's, not NMOS's: the host shows it for any
+failed lazy chunk load, and the first time the page regains focus it lazily loads a small chunk for its writer-lock
+check. On iOS, closing the download sheet is such a return (`docs/HOST-FACTS.md` "Saving a file from the plugin
+frame"). The file is saved, and after **닫기** the page keeps working. The plugin cannot prevent the alert because its
+sandboxed frame cannot load the host's chunks. **Export this chat** saves through the same code but was not tapped
+on the phone, and Chrome on Android was not tried. *Workaround:* dismiss the alert or reload. Where a button saves
+nothing, open `/v1/archive` on the sidecar in a browser that reaches it, or run
+`python -m nmos_sidecar.archive export` (README "Export").
 
 ## Memory
 
