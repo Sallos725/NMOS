@@ -136,7 +136,8 @@ function progressView(c: Coverage, lang: Lang): HudView {
   if (c.summarize?.pending) parts.push(t(lang, 'hud.summarize', { n: c.summarize.pending }));
   failed += c.summarize?.failed ?? 0;
   if (failed) parts.push(t(lang, 'hud.failed', { n: failed }));
-  return { kind: 'busy', text: parts.join(' · '), fraction: total ? done / total : null };
+  // Summaries have no count to show a fraction of: while any is left, no bar (a full one would read as done).
+  return { kind: 'busy', text: parts.join(' · '), fraction: total && !c.summarize?.pending ? done / total : null };
 }
 
 /** When the view next changes by itself (an outcome or "done" expiring), or `null`. */

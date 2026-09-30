@@ -36,6 +36,9 @@ OpenAI-compatible API report it in the response: `usage.prompt_tokens`, `complet
   bill it; retries of a failing job are invisible here. An embedding job embeds every chunk of a message before it
   stores any, so when a later chunk fails the earlier chunks' calls are not kept either, and the retry calls them
   again (as before this ADR: which chunks count as embedded is not Phase 17's to change).
+- Totals are of the rows NMOS still holds. Embeddings of a projection another replaced are pruned (retention, O5,
+  ADR 0015) and their usage with them, so a chat's embedding total drops after the embedding model changes; the owner
+  chose to say so rather than keep usage apart from the rows (2026-09-30, Copilot review of #185).
 - The reply model's usage is not NMOS's (the host logs it); money is not computed (prices vary, the owner's are local
   or flat).
 - The request path is unchanged: it writes no usage (a query embedding is not stored).

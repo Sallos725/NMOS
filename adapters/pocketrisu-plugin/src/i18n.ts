@@ -41,6 +41,8 @@ const STRINGS = {
   'chat.turn_off': ['이 채팅에서 끄기', 'Turn off for this chat'],
   // what this chat's memory cost in NMOS's own model calls (PHASE-17 Q4)
   'usage.line': ['NMOS 모델 사용: 호출 {calls}회 · {sides} 토큰{cached}', 'NMOS model use: {calls} calls · {sides} tokens{cached}'],
+  'usage.calls': ['NMOS 모델 사용: 호출 {calls}회', 'NMOS model use: {calls} calls'],
+  'usage.cached_side': ['캐시 입력 {n} 토큰', '{n} cached input tokens'],
   'usage.input': ['입력 {n}', '{n} input'],
   'usage.output': ['출력 {n}', '{n} output'],
   'usage.cached': [' (입력 중 캐시 {n})', ' ({n} of the input cached)'],

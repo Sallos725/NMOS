@@ -247,9 +247,11 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "canon_row": ("원전 사실", "Canon facts"),
     "us.title": ("모델 사용량", "Model usage"), "toc.usage": ("사용량", "Usage"),
     "us.intro": ("이 채팅의 기억에 NMOS가 부른 모델 호출과, 제공자가 보고한 토큰이에요. 추정하지 않아요. 다시 만들면서 버린 결과의 "
-                 "호출도 셉니다.",
+                 "호출도 셉니다. NMOS가 지금 가진 결과 기준이라, 임베딩 모델을 바꾸면 정리된 이전 임베딩의 호출은 빠져요.",
                  "The model calls NMOS made for this chat's memory, and the tokens the provider reported; nothing is "
-                 "estimated. Calls whose results were discarded by a rebuild count too."),
+                 "estimated. Calls whose results were discarded by a rebuild count too. It counts the results NMOS "
+                 "still holds: after the embedding model changes, the earlier embeddings are cleaned up and their calls "
+                 "no longer count."),
     "us.none": ("아직 기록된 모델 호출이 없어요.", "No model calls recorded yet."),
     "us.kind.extract": ("사실 추출", "Fact extraction"), "us.kind.canon": ("원전 읽기", "Canon reads"),
     "us.kind.summarize": ("요약", "Summaries"), "us.kind.embed": ("임베딩", "Embeddings"),
