@@ -1,7 +1,8 @@
 # Phase 17 — What NMOS's own model calls cost, and fallbacks told from failures
 
-> **Status: approved (2026-09-29) with every proposed answer (Q1–Q7); current.** The owner chose to run it after
-> Phase 16 (2026-09-29). Source: C4 and C5 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`. No release.
+> **Status: approved (2026-09-29) with every proposed answer (Q1–Q7); complete (2026-09-30),
+> `docs/perf/model-usage.md`.** The owner chose to run it after Phase 16 (2026-09-29). Source: C4 and C5 of
+> `docs/proposals/IDEA-SURVEY-2026-09-29.md`. No release.
 
 ## Questions and proposed answers
 
@@ -37,15 +38,18 @@ cost in tokens, from the provider's own numbers, and the HUD says when memory wa
 
 ## Acceptance criteria
 
-- [ ] Usage recorded for extraction, summaries and canon reads matches the provider's numbers on the local model and
-      on one hosted endpoint (Q7); a response without `usage` records none and shows "not reported".
-- [ ] Old rows (before the migration) show "not recorded", and a rebuild keeps each row's own usage.
-- [ ] The Inspector shows totals per chat and per generation; the Status tab shows this chat's line.
-- [ ] On the isolated real host: "lexical only" appears when vectors fell back, "reused" on a cached reroll, and
-      neither appears as a warning.
-- [ ] Request-path latency at 10,000 messages unchanged (`tools/bench_story.py`, as Phase 15).
-- [ ] Phase 16's archive exports and restores the new column (a round trip on a copy).
-- [ ] A review per AGENTS.md §14 (a migration: high risk).
+Met (2026-09-30, `docs/perf/model-usage.md`):
+
+- [x] Usage recorded for extraction, summaries and canon reads matches the provider's numbers on the local model and
+      on one hosted endpoint (Q7); a response without `usage` records none and shows "not reported". *(`gemma4:31b-cloud`
+      and an isolated CPU Ollama with `qwen2.5:0.5b` and `all-minilm`: every count equal to the response's and Ollama's.)*
+- [x] Old rows (before the migration) show "not recorded", and a rebuild keeps each row's own usage.
+- [x] The Inspector shows totals per chat and per generation; the Status tab shows this chat's line.
+- [x] On the isolated real host: "lexical only" appears when vectors fell back, "reused" on a cached reroll, and
+      neither appears as a warning. *(Also the done summary, Q6.)*
+- [x] Request-path latency at 10,000 messages unchanged (`tools/bench_story.py`, as Phase 15). *(p50 301.6 → 301.1 ms.)*
+- [x] Phase 16's archive exports and restores the new column (a round trip on a copy).
+- [x] A review per AGENTS.md §14 (a migration: high risk). *(One Codex review of step 2; steps 3–4 scoped self-review.)*
 
 ## Steps (one pull request each)
 

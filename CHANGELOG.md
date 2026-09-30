@@ -5,6 +5,10 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 17 (what NMOS's own model calls cost, and fallbacks told from failures) is complete**
+  (`docs/phases/PHASE-17.md`, `docs/perf/model-usage.md`): the recorded tokens equal the provider's on a hosted model
+  and on local chat and embedding models; generation latency is unchanged; archives from before carry over, their
+  usage "not recorded".
 - **Phase 18 step 2: recall measured by what lexical recall finds and how long excerpts are**
   (`docs/perf/lexical-recall.md`). The evaluation tool says per case whether lexical recall found anything and how long
   each excerpt was, and marks runs without vectors. Fixed in the tool: an older request's prompt window read empty once
