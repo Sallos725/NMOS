@@ -20,7 +20,8 @@ from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
 from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
 from . import canon, canonfacts
-from .repairs import IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, live, secret_events, splits_of, thread_events
+from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, live, quoted_turns, secret_events,
+                      splits_of, thread_events, unedited_quotes)
 from .secrets import fold as fold_secrets
 from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 
@@ -437,6 +438,11 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     turn_positions = {x["turn"]: x["p"] for x in conn.execute(
         "SELECT turn, max(position) AS p FROM active_membership WHERE commit_id = %s AND turn = ANY(%s) GROUP BY turn",
         (head, corrected_at)).fetchall()} if corrected_at else {}
+    quoting = quoted_turns(in_force)  # ADR 0044 amendment 2: a quote counts only while its turn reads as it did
+    if quoting:
+        in_force = unedited_quotes(in_force, {x["turn"]: x["h"] for x in conn.execute(
+            "SELECT turn, max(turn_hash) AS h FROM active_membership WHERE commit_id = %s AND turn = ANY(%s)"
+            " GROUP BY turn", (head, quoting)).fetchall()})
     rows, retracted = apply_facts(rows, in_force, r, applied, _annotate, turn_positions)
     locks = apply_locks(rows, in_force, r, applied)  # PHASE-14 Q7
     # Secrets (PHASE-10, ADR 0033): a reveal ends a secret for the character who found it out, from its

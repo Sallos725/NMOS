@@ -117,3 +117,29 @@ three rounds).
   showed the close controls (a box, the outcomes of the thread's kind, the button) on open threads, reopen on closed
   ones, "Needs attention" with a promise not restated for more than 30 turns, and the repair as taken back.
 
+
+## Across a new generation (2026-10-01, ADR 0044 amendment 2)
+
+Stage 6's criterion "every repair survives a rebuild and a new extractor generation", on real data. Production was
+re-extracted with `extract-v14` (the owner, 2026-10-01) and restored as a copy on the test PostgreSQL; the owner's 68
+repairs of step 6 (made on the `extract-v13` copies) were copied in with their stored targets and read as the panel
+reads them. No worker, no model call; counts only (scripts in `~/nmos-eval/stage6-v14-repairs/`). The reference for
+"the same item" is a v14 item of the same head whose quote shares a run of 12 characters or more with the v13 item's.
+
+| | Longest chat (58) | Sample 2 (10) | Together |
+|---|---:|---:|---:|
+| Found again, by text only (before the amendment) | 23 | 6 | 29 |
+| Found again, text then quote (the amendment) | 34 | 6 | **40** |
+| Not found, though v14 has an item with the same quote | 0 | 0 | 0 |
+| Not found: v14 has no item of that head with that quote | 24 | 4 | 28 |
+
+- Of the 29 found by text before, 28 are the item the quotes name; one is found by its text in a turn where the two
+  generations quote different sentences.
+- Candidate rules on the 59 thread repairs (31 with a v14 thread of the same quote): the text match found 21 of those
+  31; adding "the only item of that turn, kind and maker" found 29 but paired 15 threads with no quote in common;
+  the quote alone found 31 with none paired otherwise. The amendment keeps the text match first, then the quote.
+- Of the 28 not found, 19 have no item of that maker at the repair's turn (v14 did not state the thread or secret
+  there, or at all), and 9 have one that quotes another sentence of the turn; they are listed as matching nothing.
+- A memory read of the longest chat with its 58 repairs (24 matching nothing, so compared by quote on every read)
+  takes 14.0–14.8 ms against 12.2–12.6 without the quote (medians of 31, three rounds), the look-up of the quoted
+  turns' hashes included; the head is checked before the quote, and a stored quote's runs of 12 characters are cached.

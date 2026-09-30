@@ -464,8 +464,10 @@ summaries are on by default.
 
 **D54 — The owner repairs memory (Phase 13, ADR 0044).** Owner repairs are owner input (`owner_repair`), never edits of
 an assertion or a message: close or reopen a thread, mark a secret found out or kept (and, from step 4, retract or
-correct a fact, split two names). A repair names its target by what it says (turn, the turn's hash, kind, maker, text),
-so it survives rebuilds and new extractor generations; an edit of that turn makes it match nothing, and it is listed.
+correct a fact, split two names). A repair names its target by what it says (turn, the turn's hash, kind, maker, text,
+and since ADR 0044 amendment 2 its quote of the raw text), so it survives rebuilds and new extractor generations: a
+generation that words the item past the text match is found by the quote, at any turn; an edit of that turn makes it
+match nothing, and it is listed.
 It applies from its turn, in the order repairs were made; a replay reads the repairs in force at its time.
 
 **D55 — Canon is source (Phase 14, ADR 0045).** The card's story fields, the greeting a chat started from, its author's

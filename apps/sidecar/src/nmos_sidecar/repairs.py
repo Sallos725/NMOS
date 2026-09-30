@@ -6,8 +6,11 @@ extractor generation keep it, and nothing here edits an assertion or a message (
 A repair names its target by what the target says, not by its assertion id, which a new generation replaces: the turn
 it was stated in, that turn's hash (ADR 0008) while the turn reads as it did, its kind and maker, and its text. A read
 applies it to the one current item of that turn whose kind and maker match and whose text is closest, at least as
-close as a thread match (ADR 0019, `MATCH_MIN`). One that matches nothing does nothing and is reported, so the owner
-can see it; an edit of the target's turn makes that happen (as reveals, ADR 0033 amendment 2).
+close as a thread match (ADR 0019, `MATCH_MIN`). A new generation words an item its own way but quotes the same
+message, so when no item of that turn is close enough, a read takes the one item of that kind and maker, at any turn,
+whose quote of the raw text shares at least `QUOTE_MIN_CHARS` characters with the quote the repair stored (ADR 0044
+amendment 2). One that matches nothing does nothing and is reported, so the owner can see it; an edit of the target's
+turn makes that happen (as reveals, ADR 0033 amendment 2).
 
 A repair takes effect at a turn (by default the head's last turn when it was made): it is an event of the thread or
 secret fold after every row of that turn, so what the story says later still counts (PHASE-13 Q4): the same aim stated
@@ -22,6 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime
+from functools import lru_cache
 from typing import Any
 from uuid import UUID
 
@@ -36,6 +40,9 @@ KINDS = ("thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fa
          "name_split", "fact_lock")
 ENABLED = frozenset(KINDS)  # threads and secrets since step 3, facts and names since step 4, locks since Phase 14
 PROMISE_OUTCOMES = ("kept", "broken")
+# A quote names the same item when it shares this many characters with the stored one: extract-v14's own minimum for
+# a quote (extraction.EVIDENCE_MIN_CHARS); a shorter run is shared by most turns.
+QUOTE_MIN_CHARS = 12
 
 
 def outcomes(kind: str) -> tuple[str, ...]:
@@ -72,14 +79,14 @@ def _key(r: Resolution | None, name: str | None) -> str:
 def thread_target(t: dict[str, Any]) -> dict[str, Any]:
     """What a repair stores to find this thread again."""
     return {"turn": t.get("turn"), "turn_hash": t.get("turn_hash"), "kind": t["kind"], "by": t["by"],
-            "to": t.get("to"), "text": t.get("text") or ""}
+            "to": t.get("to"), "text": t.get("text") or "", "evidence": t.get("evidence")}
 
 
-def secret_target(s: dict[str, Any]) -> dict[str, Any]:
-    """What a repair stores to find this secret again: its head (subject and predicate) and text."""
+def secret_target(s: dict[str, Any], evidence: str | None = None) -> dict[str, Any]:
+    """What a repair stores to find this secret again: its head (subject and predicate), text and quote."""
     return {"turn": s.get("turn"), "turn_hash": s.get("turn_hash"), "subject": s.get("subject"),
             "predicate": s.get("predicate"), "object": s.get("object"), "holders": list(s.get("holders") or []),
-            "text": s["text"]}
+            "text": s["text"], "evidence": evidence}
 
 
 def _closest(target: dict[str, Any], items: list[dict[str, Any]], text_of) -> dict[str, Any] | None:
@@ -97,26 +104,78 @@ def _same_turn(target: dict[str, Any], item: dict[str, Any]) -> bool:
     return target.get("turn_hash") is None or item.get("turn_hash") == target["turn_hash"]
 
 
+@lru_cache(maxsize=4096)
+def _runs(text: str) -> frozenset[str]:
+    """Every QUOTE_MIN_CHARS-character run of a normalized quote (a stored quote is compared on every read)."""
+    return frozenset(text[i:i + QUOTE_MIN_CHARS] for i in range(len(text) - QUOTE_MIN_CHARS + 1))
+
+
+def quoted(a: str | None, b: str | None) -> bool:
+    """Two quotes of the raw text share a run of at least QUOTE_MIN_CHARS characters (case and spacing aside)."""
+    a, b = norm(a), norm(b)
+    if len(a) < QUOTE_MIN_CHARS or len(b) < QUOTE_MIN_CHARS:
+        return False
+    runs = _runs(a)
+    return any(b[i:i + QUOTE_MIN_CHARS] in runs for i in range(len(b) - QUOTE_MIN_CHARS + 1))
+
+
+def unedited_quotes(repairs: list[dict[str, Any]], turn_hashes: dict[int, str | None]) -> list[dict[str, Any]]:
+    """The repairs a read applies, without the quote of one whose target turn no longer reads as it did (`turn_hashes`:
+    the head's hash of each turn a quote names): an edit makes a repair match nothing (item 3), so its quote must not
+    find the item at another turn."""
+    out = []
+    for rep in repairs:
+        t = rep.get("target") or {}
+        turn = t.get("turn")
+        if t.get("evidence") and t.get("turn_hash") and turn is not None and turn >= 0 \
+                and turn_hashes.get(turn) != t["turn_hash"]:
+            rep = {**rep, "target": {**t, "evidence": None}}
+        out.append(rep)
+    return out
+
+
+def quoted_turns(repairs: list[dict[str, Any]]) -> list[int]:
+    """The story turns whose hash a read needs for `unedited_quotes`."""
+    return sorted({t["turn"] for rep in repairs if (t := rep.get("target") or {}).get("evidence")
+                   and t.get("turn") is not None and t["turn"] >= 0})
+
+
+def _by_quote(target: dict[str, Any], items: list[dict[str, Any]], same: Callable[[dict[str, Any]], bool],
+              quote_of: Callable[[dict[str, Any]], str | None]) -> dict[str, Any] | None:
+    """The one item of the same head whose quote shares a run with the target's (ADR 0044 amendment 2), at any turn
+    but an edited target turn (an edit still makes the repair match nothing there); None without a stored quote or
+    when two do."""
+    if not target.get("evidence"):
+        return None
+    hits = [x for x in items if (x.get("turn") != target.get("turn") or _same_turn(target, x)) and same(x)
+            and quoted(target["evidence"], quote_of(x))]
+    return hits[0] if len(hits) == 1 else None
+
+
 def match_thread(target: dict[str, Any], threads: list[dict[str, Any]], r: Resolution | None) -> dict[str, Any] | None:
-    """The thread a repair names: same turn, kind and maker, the same counterpart for a promise or a debt (as a
-    restatement, ADR 0019), and the closest text."""
+    """The thread a repair names: same kind and maker, the same counterpart for a promise or a debt (as a
+    restatement, ADR 0019), and the closest text of its turn, or else the one quote that shares a run with its own."""
     maker = _key(r, target.get("by"))
     to = _key(r, target.get("to")) if target.get("kind") in ("promise", "debt") else None
-    pool = [t for t in threads if _same_turn(target, t) and t["kind"] == target.get("kind") and _key(r, t["by"]) == maker
-            and (to is None or _key(r, t.get("to")) == to)]
-    return _closest(target, pool, lambda t: t.get("text"))
+
+    def same(t: dict[str, Any]) -> bool:
+        return t["kind"] == target.get("kind") and _key(r, t["by"]) == maker and (to is None or _key(r, t.get("to")) == to)
+    return (_closest(target, [t for t in threads if _same_turn(target, t) and same(t)], lambda t: t.get("text"))
+            or _by_quote(target, threads, same, lambda t: t.get("evidence")))
 
 
 def match_secret(target: dict[str, Any], secrets: list[dict[str, Any]], r: Resolution | None = None) -> dict[str, Any] | None:
-    """The secret a repair names: same turn, head (predicate, subject and object, as entities), and the closest
-    text."""
+    """The secret a repair names: same head (predicate, subject and object, as entities), and the closest text of its
+    turn, or else the one quote that shares a run with its own (the fold's `_evidence`)."""
     subject = _key(r, target.get("subject")) if target.get("subject") else None
     obj = _key(r, target.get("object")) if target.get("object") else None
-    pool = [s for s in secrets if _same_turn(target, s)
-            and (target.get("predicate") is None or s.get("predicate") == target["predicate"])
-            and (subject is None or _key(r, s.get("subject")) == subject)
-            and (obj is None or _key(r, s.get("object")) == obj)]
-    return _closest(target, pool, lambda s: s["text"])
+
+    def same(s: dict[str, Any]) -> bool:
+        return ((target.get("predicate") is None or s.get("predicate") == target["predicate"])
+                and (subject is None or _key(r, s.get("subject")) == subject)
+                and (obj is None or _key(r, s.get("object")) == obj))
+    return (_closest(target, [s for s in secrets if _same_turn(target, s) and same(s)], lambda s: s["text"])
+            or _by_quote(target, secrets, same, lambda s: s.get("_evidence")))
 
 
 def _named(names: list[str] | dict[str, Any], character: str, r: Resolution | None) -> str | None:
@@ -206,22 +265,28 @@ def _ekey(r: Resolution | None, entity_type: str | None, name: str | None) -> st
 
 
 def fact_target(f: dict[str, Any]) -> dict[str, Any]:
-    """What a repair stores to find this fact again: its turn, the turn's hash, its head and its line."""
+    """What a repair stores to find this fact again: its turn, the turn's hash, its head, its line and its quote."""
     return {"turn": f.get("turn"), "turn_hash": f.get("turn_hash"), "predicate": f["predicate"],
             "source": f.get("source"), "subject": f["subject"], "subject_type": f.get("subject_type"),
-            "object": f.get("object"), "object_type": f.get("object_type"), "text": secret_text(f)}
+            "object": f.get("object"), "object_type": f.get("object_type"), "text": secret_text(f),
+            "evidence": f.get("evidence")}
 
 
-def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution | None) -> dict[str, Any] | None:
-    """The assertion a fact repair names: same turn, predicate, source, subject and object (as entities), and the
-    closest line."""
+def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution | None,
+               quote: bool = True) -> dict[str, Any] | None:
+    """The assertion a fact repair names: same predicate, source, subject and object (as entities), and the closest
+    line of its turn, or else the one quote among `rows` that shares a run with its own."""
     subject = _ekey(r, target.get("subject_type"), target.get("subject"))
     obj = _ekey(r, target.get("object_type"), target.get("object"))
-    pool = [a for a in rows if not a.get("owner") and _same_turn(target, a) and a["predicate"] == target.get("predicate")
-            and (a.get("source") or "narration") == (target.get("source") or "narration")
-            and _ekey(r, a.get("subject_type"), a["subject"]) == subject
-            and _ekey(r, a.get("object_type"), a.get("object")) == obj]
-    return _closest(target, pool, secret_text)
+    canon = target.get("turn") == -1  # a canon fact's turn (apply_locks); the story's and canon's never cross
+
+    def same(a: dict[str, Any]) -> bool:
+        return (not a.get("owner") and bool(a.get("canon")) == canon and a["predicate"] == target.get("predicate")
+                and (a.get("source") or "narration") == (target.get("source") or "narration")
+                and _ekey(r, a.get("subject_type"), a["subject"]) == subject
+                and _ekey(r, a.get("object_type"), a.get("object")) == obj)
+    return (_closest(target, [a for a in rows if _same_turn(target, a) and same(a)], secret_text)
+            or (_by_quote(target, rows, same, lambda a: a.get("evidence")) if quote else None))
 
 
 def _owner_id(rep: dict[str, Any]) -> int:
@@ -257,7 +322,10 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
     later: list[dict[str, Any]] = []  # owner's versions from a later turn, in the order made
     retracted: dict[str, dict[str, Any]] = {}
     for rep in mine:
-        a = match_fact(rep["target"], [x for x in by_turn.get(rep["target"].get("turn"), ()) if id(x) not in gone], r)
+        a = match_fact(rep["target"], [x for x in by_turn.get(rep["target"].get("turn"), ()) if id(x) not in gone], r,
+                       quote=False)
+        if a is None and rep["target"].get("evidence"):  # by its quote, among every row: a quote names one or none
+            a = match_fact(rep["target"], [x for x in rows if not x.get("owner") and id(x) not in gone], r)
         if a is None:
             continue
         applied[str(rep["id"])] = str(a["id"])
@@ -266,9 +334,11 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
             gone.add(id(a))
             retracted[str(rep["id"])] = a
             continue
-        at = value.get("turn", a.get("turn"))
+        own = rep["target"].get("turn", a.get("turn"))  # the fact's turn when the repair was made
+        at = value.get("turn", own)
         pred = REGISTRY.get(a["predicate"])
-        in_place = at == a.get("turn") or (pred is not None and pred.cardinality == "multi")
+        # at the fact's own turn: in place, at the turn the (maybe new generation's) fact is stated now
+        in_place = at == own or (pred is not None and pred.cardinality == "multi")
         new = {k: v for k, v in a.items() if k not in ANNOTATIONS}
         new.update({"id": _owner_id(rep), "host_logical_id": None, "object": value.get("object", a.get("object")),
                     "value": value.get("value", a.get("value")), "source": "narration", "asserted_by": None,
@@ -378,7 +448,7 @@ def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outc
                           else "the secret is not kept from that character now")
     revealed_at = s["ended"][name].get("turn") if kind == "secret_keep" else None
     _check_turn(at, revealed_at if revealed_at is not None else s.get("turn"), last_turn, "secret")
-    target = secret_target(s)
+    target = secret_target(s, next((a.get("evidence") for a in view.get("assertions") or () if a["id"] == s["id"]), None))
     if match_secret(target, view["secrets"], r) is not s:
         raise RepairError("the secret cannot be told apart from another one of its turn")
     return target, {"character": name, "turn": at}
