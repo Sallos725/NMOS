@@ -477,3 +477,91 @@ def test_a_fact_read_inside_a_conditional_block_is_not_served(migrated):
                  if f.get("canon") and f["subject"] == "Kaito"}
         assert kaito == {("identity", "squire")}
         assert c.get(f"/v1/trace/{free['trace_id']}/replay").json()["reproduced"] is True
+
+
+# --- Stage 6's done criteria (docs/ROADMAP-1.0.md): a conflict fixture per canon source, locks that survive ---------
+
+
+def test_a_contradiction_is_listed_whichever_canon_source_states_it(migrated):
+    """PHASE-14 Q9: the card has its case above; here a lorebook entry (read once a prompt held it), the persona and
+    the author's note, each contradicted by the story."""
+    chat, model = SimChat("canon-sources"), Model()
+    chat.user("Go on.")
+    for text in ("Kaito is Mira's rival.", "Taku is Hana's friend.", "Sena is Kaito's neighbor."):
+        chat.reply(text)
+        chat.user("And?")
+    texts = {"card:name": ("Hana", {"field": "name"}), "card:desc": ("{{char}} is in the harbor town.", {"field": "desc"}),
+             "persona": ("{{user}} is Hana's brother.", {"name": "Taku"}), "note": ("Sena is Kaito's aunt.", {}),
+             "lore:kaito": ("Kaito is Mira's friend.", {"keys": ["Kaito"], "scope": "character", "mode": "normal"})}
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        out = push(c, chat, texts)
+        drain(migrated, model)
+        listed = {x["against"]["canon"] for x in view(migrated, chat)["conflicts"] if x["kind"] == "canon"}
+        assert listed == {"persona", "note"}  # the entry waits for a prompt that holds it
+        recall(c, chat, "Who is Kaito?", canon_manifest_id=out["manifest_id"], canon_held=["lore:kaito"])
+        drain(migrated, model)
+        v = view(migrated, chat)
+    conflicts = {x["against"]["canon"]: x for x in v["conflicts"] if x["kind"] == "canon"}
+    assert set(conflicts) == {"lore:kaito", "persona", "note"}
+    story = {key: (x["text"], x["against"]["value"]) for key, x in conflicts.items()}
+    assert story == {"lore:kaito": ("Kaito relationship Mira: rival", "friend"),
+                     "persona": ("Taku relationship Hana: friend", "brother"),
+                     "note": ("Sena relationship Kaito: neighbor", "aunt")}
+    # read after the story's turns, the entry's fact is still before turn 0: the story's statement is current
+    assert [f["value"] for f in current(v, "Kaito", "relationship")] == ["rival"]
+
+
+class NewWords(Model):
+    """A new model that words the canon's relationships differently (a word inside, so neither text contains the
+    other)."""
+
+    def __call__(self, system: str, user: str) -> tuple[dict, str]:
+        out, raw = super().__call__(system, user)
+        if "CANON" in system:
+            out["assertions"] = [{**a, "value": "elder " + a["value"]} if a["predicate"] == "relationship" else a
+                                 for a in out["assertions"]]
+        return out, raw
+
+
+def test_a_lock_on_canon_and_on_a_correction_survives_a_rebuild_and_a_new_canon_generation(migrated):
+    chat, model = story(), Model()
+    chat.reply("Hana is Kaito's rival.")
+    chat.user("How are Hana and Kaito?")
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        push(c, chat, canon_texts())
+        drain(migrated, model)
+        v = view(migrated, chat)
+        cid = v["conversation"]
+        (canon_rel,) = [a for a in v["assertions"] if a.get("canon") and a["predicate"] == "relationship"]
+        (place,) = current(v, "Hana", "located_in")
+
+        def made(body: dict) -> str:
+            res = c.post(f"/v1/conversations/{cid}/repairs", json=body)
+            assert res.status_code == 200, res.text
+            return res.json()["repair"]["id"]
+
+        on_canon = made({"kind": "fact_lock", "item": str(canon_rel["id"])})
+        correction = made({"kind": "fact_correct", "item": str(place["id"]), "new_object": "mill cellar"})
+        (fixed,) = current(view(migrated, chat), "Hana", "located_in")
+        on_correction = made({"kind": "fact_lock", "item": str(fixed["id"])})
+
+        def holds(sister: str) -> None:
+            applied = {r["id"]: r["applied"] for r in c.get(f"/v1/conversations/{cid}/repairs").json()["repairs"]}
+            assert all(applied[i] for i in (on_canon, correction, on_correction)), applied
+            v = view(migrated, chat)
+            (rel,) = current(v, "Hana", "relationship")
+            assert (rel["value"], rel["locked"], rel["held_off"]) == (sister, on_canon, 1)  # the story's rival held off
+            (where,) = current(v, "Hana", "located_in")
+            assert (where["object"], where["locked"]) == ("mill cellar", on_correction)
+
+        holds("sister")
+        assert c.post(f"/v1/conversations/{cid}/rebuild").json()["queued"]["canon"] == 2
+        assert drain(migrated, model) > 0
+        holds("sister")
+    anew = NewWords()
+    with make_client(migrated, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+        drain(migrated, anew)
+        assert anew.canon_calls()  # the new canon generation read the canon again
+        holds("elder sister")
