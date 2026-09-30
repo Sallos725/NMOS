@@ -78,7 +78,8 @@ If two normative documents appear to conflict:
 | 15 — a packet that fills its budget (P1 of `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`) | complete (2026-09-29), not released | `PHASE-15.md`, ADR 0049 |
 | 16 — export and restore (Stage 6, part 3) | complete (2026-09-29) but for the owner's phone check of the panel's Export (K38, open); not released | `PHASE-16.md`, ADR 0050 |
 | 17 — model-call cost and fallback outcomes (C4, C5 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`) | **current** (approved 2026-09-29) | `PHASE-17.md` |
-| 18+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
+| 18 — recall by the words that matter (keyword lexical recall, `packet-v10` excerpts) | **next** (approved 2026-09-30; starts when Phase 17 is complete) | `PHASE-18.md` |
+| 19+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
 ADR 0006/0007, `docs/perf/scale.md`).

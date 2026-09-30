@@ -1,11 +1,11 @@
 # Phase 18 — Recall by the words that matter
 
-> **Status: draft, 2026-09-30 — awaiting the owner's approval.** Proposed to follow Phase 17. Nothing here is
-> authorized until the owner approves this document (AGENTS.md §7).
+> **Status: approved 2026-09-30 (owner), next after Phase 17.** It starts when Phase 17 is complete; until then only
+> step 2's evaluation tooling and baseline, which change no recall, may land (AGENTS.md §0, §7).
 
 ## Questions and proposed answers
 
-Each answer in bold is NMOS's proposal; the owner decides.
+Each answer in bold was NMOS's proposal; the owner approved the document with them (2026-09-30).
 
 | # | Question | Proposed answer | Alternatives |
 |---|---|---|---|
@@ -84,7 +84,7 @@ Measured 2026-09-29/30 outside the repository (numbers only; step 2 records the 
 
 ## Steps (one pull request each)
 
-1. This document, approved; AGENTS §2 and STATUS name Phase 18 current.
+1. This document, approved; AGENTS §2, STATUS and the roadmap name Phase 18 next. **Done** (2026-09-30).
 2. Evaluation tooling and the `packet-v9` baseline (vectors on and off).
 3. Keyword lexical recall, ADR 0052, tests.
 4. `packet-v10` excerpts, tests, plugin build if the panel's budget advice changes.
