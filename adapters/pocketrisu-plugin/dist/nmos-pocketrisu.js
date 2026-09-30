@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:84c42aca1950".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:663834844fc1".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -260,6 +260,8 @@
     "chat.turn_off": ["\uC774 \uCC44\uD305\uC5D0\uC11C \uB044\uAE30", "Turn off for this chat"],
     // what this chat's memory cost in NMOS's own model calls (PHASE-17 Q4)
     "usage.line": ["NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uD638\uCD9C {calls}\uD68C \xB7 {sides} \uD1A0\uD070{cached}", "NMOS model use: {calls} calls \xB7 {sides} tokens{cached}"],
+    "usage.calls": ["NMOS \uBAA8\uB378 \uC0AC\uC6A9: \uD638\uCD9C {calls}\uD68C", "NMOS model use: {calls} calls"],
+    "usage.cached_side": ["\uCE90\uC2DC \uC785\uB825 {n} \uD1A0\uD070", "{n} cached input tokens"],
     "usage.input": ["\uC785\uB825 {n}", "{n} input"],
     "usage.output": ["\uCD9C\uB825 {n}", "{n} output"],
     "usage.cached": [" (\uC785\uB825 \uC911 \uCE90\uC2DC {n})", " ({n} of the input cached)"],
@@ -1437,7 +1439,7 @@ ${revisionHash}`;
     if (c.summarize?.pending) parts.push(t(lang, "hud.summarize", { n: c.summarize.pending }));
     failed += c.summarize?.failed ?? 0;
     if (failed) parts.push(t(lang, "hud.failed", { n: failed }));
-    return { kind: "busy", text: parts.join(" \xB7 "), fraction: total ? done / total : null };
+    return { kind: "busy", text: parts.join(" \xB7 "), fraction: total && !c.summarize?.pending ? done / total : null };
   }
   function nextChange(state, now) {
     const times = [
@@ -1871,6 +1873,10 @@ ${revisionHash}`;
       u.input_reported === 0 ? "" : t(lang, "usage.input", { n: count(u.input) }),
       u.output_reported === 0 ? "" : t(lang, "usage.output", { n: count(u.output) })
     ].filter(Boolean).join(" \xB7 ");
+    if (!sides) {
+      const only = u.cached ? ` \xB7 ${t(lang, "usage.cached_side", { n: count(u.cached) })}` : "";
+      return t(lang, "usage.calls", { calls: count(u.calls) }) + only + partial + before;
+    }
     return t(lang, "usage.line", { calls: count(u.calls), sides, cached }) + partial + before;
   }
 

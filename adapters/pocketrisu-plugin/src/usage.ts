@@ -28,5 +28,10 @@ export function usageText(u: UsageTotal, lang: Lang): string {
   // A count no call reported (an embedding's output; a provider that gives only one side) is left out, never 0.
   const sides = [u.input_reported === 0 ? '' : t(lang, 'usage.input', { n: count(u.input) }),
     u.output_reported === 0 ? '' : t(lang, 'usage.output', { n: count(u.output) })].filter(Boolean).join(' · ');
+  // Neither side reported, only cached (or reasoning) tokens: say those, not an empty "· tokens".
+  if (!sides) {
+    const only = u.cached ? ` · ${t(lang, 'usage.cached_side', { n: count(u.cached) })}` : '';
+    return t(lang, 'usage.calls', { calls: count(u.calls) }) + only + partial + before;
+  }
   return t(lang, 'usage.line', { calls: count(u.calls), sides, cached }) + partial + before;
 }

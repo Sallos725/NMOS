@@ -128,7 +128,7 @@ describe('what the display says about served memory and finished work (PHASE-17 
       failed: 0 }, embed: null, produced, summarize: { pending: sums, failed: 0 } } as Coverage);
     let s = reduce(EMPTY, { type: 'coverage', coverage: c(1, 0, { facts: 10, summaries: 2 }) }, 0);
     s = reduce(s, { type: 'coverage', coverage: c(0, 1, { facts: 12, summaries: 2 }) }, 1);
-    expect(view(s, 2, 'en')?.text).toBe('Facts 5/5 · summaries to write: 1');
+    expect(view(s, 2, 'en')).toMatchObject({ text: 'Facts 5/5 · summaries to write: 1', fraction: null });
     s = reduce(s, { type: 'coverage', coverage: c(0, 0, { facts: 12, summaries: 3 }) }, 3);
     expect(view(s, 4, 'en')?.text).toBe('✓ facts +2 · summaries +1');
   });

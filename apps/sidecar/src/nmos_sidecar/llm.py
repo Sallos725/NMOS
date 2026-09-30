@@ -92,8 +92,12 @@ def embedded(embedder: Any, text: str) -> tuple[list[float], dict[str, Any] | No
     return embedder.embed([text], timeout_s=60)[0], None
 
 
+TOKEN_FIELDS = ("input", "output", "cached", "reasoning")
+
+
 def reported(usage: dict[str, Any] | None) -> bool:
-    return bool(usage) and ("input" in usage or "output" in usage)
+    """The provider reported some token count for the call (any of them: one may come without the others)."""
+    return bool(usage) and any(k in usage for k in TOKEN_FIELDS)
 
 
 class ChatModel:

@@ -30,6 +30,12 @@ describe('usageText (PHASE-17 Q4)', () => {
     expect(usageText({ calls: 2, reported: 2, input: 0, output: 50, cached: 0, input_reported: 0, output_reported: 2 }, 'en'))
       .toBe('NMOS model use: 2 calls · 50 output tokens');
   });
+  it('says cached tokens a provider reported without input or output (Copilot re-review)', () => {
+    expect(usageText({ calls: 1, reported: 1, input: 0, output: 0, cached: 31, input_reported: 0, output_reported: 0 }, 'en'))
+      .toBe('NMOS model use: 1 calls · 31 cached input tokens');
+    expect(usageText({ calls: 1, reported: 1, input: 0, output: 0, cached: 0, input_reported: 0, output_reported: 0 }, 'ko'))
+      .toBe('NMOS 모델 사용: 호출 1회');
+  });
   it('says nothing was recorded yet', () => {
     expect(usageText({ calls: 0, reported: 0, input: 0, output: 0, cached: 0 }, 'en')).toBe('NMOS model use: none recorded yet');
   });

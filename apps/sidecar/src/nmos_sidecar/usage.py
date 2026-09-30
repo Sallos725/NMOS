@@ -1,5 +1,7 @@
 """What one chat's memory cost in model calls (Phase 17 Q4, ADR 0051): the usage kept with each extraction, canon
-read, summary and embedded chunk, totalled per generation. Discarded rows count too: their calls were made."""
+read, summary and embedded chunk, totalled per generation. Discarded rows count too: their calls were made. The
+totals are of the rows NMOS still holds: embeddings of a projection another replaced are pruned (retention, O5) and
+their usage with them (owner decision 2026-09-30, the Copilot review of #185)."""
 
 from __future__ import annotations
 
@@ -41,7 +43,7 @@ def totals(conn: psycopg.Connection, conv: UUID, active: set[str] | None = None)
                count(*) AS rows,
                count(*) FILTER (WHERE r.usage IS NULL) AS not_recorded,
                coalesce(sum((r.usage->>'calls')::int), 0) AS calls,
-               count(*) FILTER (WHERE r.usage ? 'input' OR r.usage ? 'output') AS reported,
+               count(*) FILTER (WHERE r.usage ?| array['input', 'output', 'cached', 'reasoning']) AS reported,
                coalesce(sum((r.usage->>'input')::bigint), 0) AS input,
                coalesce(sum((r.usage->>'output')::bigint), 0) AS output,
                coalesce(sum((r.usage->>'cached')::bigint), 0) AS cached,
@@ -88,14 +90,18 @@ def work(conn: psycopg.Connection, conv: UUID, extractor: str | None, summarizer
     view = summaries.current(conn, conv, head, summarizer)
     written = [x["summary"] for x in view["scenes"] if x["summary"]]
     made = sum(1 for x in written if x["text"]) + (1 if view["story_current"] and view["story"]["text"] else 0)
-    keys = [x["window"].key for x in view["scenes"]]
+    keys = [x["window"].key for x in view["scenes"]]  # may be empty: a story job can still be pending
     if written and len(written) == view["due"]:
         keys.append(summaries.members_key([x["id"] for x in written]))  # the story of these scenes
+    # Any story job still to run counts as pending, whatever scenes it was queued for: the worker writes the last
+    # scene, queues the story and only then marks the scene job done, so a poll that read the scenes before and the
+    # jobs after would otherwise see neither (Copilot review of #186). A stale one is obsolete at once when it runs.
     jobs = conn.execute(
         "SELECT count(*) FILTER (WHERE status IN ('queued', 'running')) AS pending,"
-        " count(*) FILTER (WHERE status = 'dead') AS failed FROM job"
+        " count(*) FILTER (WHERE status = 'dead' AND payload->>'window_key' = ANY(%s)) AS failed FROM job"
         " WHERE conversation_id = %s AND kind = 'summarize' AND status IN ('queued', 'running', 'dead')"
-        " AND payload->>'generation' = %s AND payload->>'window_key' = ANY(%s)",
-        (conv, summarizer, keys)).fetchone() if keys else {"pending": 0, "failed": 0}
+        " AND payload->>'generation' = %s"
+        " AND (payload->>'window_key' = ANY(%s) OR (payload->>'level' = 'story' AND status <> 'dead'))",
+        (keys, conv, summarizer, keys)).fetchone()
     return {"produced": {"facts": int(facts), "summaries": made},
             "summaries": {"pending": int(jobs["pending"]), "failed": int(jobs["failed"])}}
