@@ -10,7 +10,7 @@ packet policy `packet-v8`, migrations 0021–0026. Phase 14 step 6 (canon facts 
 `main`, then Phase 15 (complete 2026-09-29): `packet-v9` and a 4,000-token default budget (ADR 0049), M0 +6 cases
 needing memory; 70 % of production recalls went without vectors (K34), now shown in the Status tab.
 
-**Phase 20 — A name join shown before it is made: approved 2026-10-01, current.** Spec
+**Phase 20 — A name join shown before it is made: approved and complete 2026-10-01, not released.** Spec
 `docs/phases/PHASE-20.md` (C7 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`, Stage 6's remaining items): a preview
 of what a join, a split or an undo changes in the chat's memory, a check that memory did not change since, and the
 re-extraction of turns extracted while a join held. The owner accepted every proposed answer (Q1–Q10), among them
@@ -24,7 +24,10 @@ undo, `POST …/entity-links/{link}/reextract` discards the extractions of the t
 panel shows the preview in place before a join, a split, or the undo of either (warnings first; a 409 shows the new
 preview), and an undo of a join offers the re-extraction as a box, off by default. On an isolated PocketRisu v1.13.0
 (stub models): a join previewed and made, then undone with its three covered turns re-extracted, none left joined.
-A new plugin build.
+A new plugin build. Step 5 (`docs/perf/join-preview.md`): on the restored copies each of the owner's seven joins,
+undone and joined again, did exactly what its preview said (14 of 14); four change nothing, two replace a current fact;
+125 turns would be re-extracted by their undos (the spec's 72 read only the active generation); a preview takes at most
+35 ms on the 147-message chat. Phase 20 complete.
 
 **Phase 19 — One extractor generation, `extract-v14`: approved 2026-09-30, complete 2026-10-01, not released.** Spec `docs/phases/PHASE-19.md`:
 the changes queued for the next extractor generation (below) and a shorter context shipped together, so each chat's
@@ -364,12 +367,12 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Schema | `migrations/0001`–`0027` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode, thread outcome and cause, summaries, owner repairs, canon, canon facts and lock, model-call usage |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
-| Tests | `apps/sidecar/tests` (722), `adapters/pocketrisu-plugin/test` (162; DOM code under `happy-dom`) | all passing; the M0 real-chat evaluation is `docs/perf/m0-baseline.md` (28 owner-confirmed cases; 9 need memory: 5 before Phase 11, 7 now) and, on a second chat, `docs/perf/m0-sample2.md` (17 cases; 8 of the 13 that need memory); deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
+| Tests | `apps/sidecar/tests` (754), `adapters/pocketrisu-plugin/test` (193; DOM code under `happy-dom`) | all passing; the M0 real-chat evaluation is `docs/perf/m0-baseline.md` (28 owner-confirmed cases; 9 need memory: 5 before Phase 11, 7 now) and, on a second chat, `docs/perf/m0-sample2.md` (17 cases; 8 of the 13 that need memory); deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k without extraction and embeddings (D24); with both on (15k facts, 15k vectors) 10k takes ≈3.2 s (A-09); K3 on the real host (2026-09-27): rerolls and last-reply swipes stay on the fast path, an edit of an older message at 10k takes 3.6–3.8 s |
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K41 (K10 resolved; K33–K38 recorded 2026-09-29, K39–K40 in Phase 18, K41 in Phase 19) current as of `v0.2.0` and Phase 19, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–8 of the original roadmap, one release each (draft; R1 and R5 decided, R2–R4 and R6 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0055` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair; Phase 14: canon sources, names from canon, canon facts and lock; NMOS off for one chat; Phase 15: a packet that fills its budget; Phase 16: NMOS Archive; Phase 17: model-call usage; Phase 18: keyword lexical recall, excerpts that fill their length; Phase 19: `extract-v14`; Phase 20: join preview |
-| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-20.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 met (the owner's iPhone check 2026-10-01; the host's alert is K38); 17 met; 18 met (latency measured over the benchmark's questions, owner accepted); 19 met but for `deepseek-v4.1-flash`'s M0 criterion (owner accepted, K41); 20 current |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-20.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 met (the owner's iPhone check 2026-10-01; the host's alert is K38); 17 met; 18 met (latency measured over the benchmark's questions, owner accepted); 19 met but for `deepseek-v4.1-flash`'s M0 criterion (owner accepted, K41); 20 met |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 | Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11`, and A-12's markup half in `clean-v3` (both unreleased) |
 
@@ -439,7 +442,8 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
   its estimate; the step-2 criterion amended and `deepseek`'s M0 miss accepted (K41) by the owner; complete 2026-10-01;
   no release.
 - Phase 20 (a name join shown before it is made; C7, Stage 6's remaining items): approved 2026-10-01 with every
-  proposed answer (Q1–Q10, `docs/phases/PHASE-20.md`); no release. Phase 21+ (Stages 7–8): not authorized.
+  proposed answer (Q1–Q10, `docs/phases/PHASE-20.md`); the owner kept Q7 knowing its limit; complete 2026-10-01; no
+  release. Phase 21+ (Stages 7–8): not authorized.
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600. Raised to 800 on 2026-09-27 (owner; ADR 0035).
 - Release cadence — decided 2026-09-26, revised 2026-09-27: one release per roadmap stage, urgent patches
