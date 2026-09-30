@@ -25,8 +25,8 @@ the criterion (at most one case per run); the shorter context repeats a pair's c
 (ADR 0054, D64): `extract-v14` implemented on its branch (context messages at 1,000 characters, synthetic examples, a
 quote not in the target turn parks its row; the canon generation changes through the `addresses` description), with
 `tools/eval_extract_sample.py` for step 4. Step 4 (`docs/perf/extract-v14.md`, 880 paid calls, about 7.9M input
-and 2.9M output tokens): on sampled turns `extract-v14` found more ledger facts (mean 115 against 106–109) with 16–18 %
-less input, the check parking 0.4–3.6 % of valid rows and no fact; re-extracted, `gemma4:31b` kept the M0 cases within
+and 2.9M output tokens): on sampled turns `extract-v14` found more ledger facts (mean 115 against 106–109) with 16 %
+less input, the check parking 0.4–0.9 % of valid rows and no fact; re-extracted, `gemma4:31b` kept the M0 cases within
 one per run and the synthetic cuts passed one more, but `deepseek-v4.1-flash` passed two fewer M0 cases on three runs
 (K41), not through the check. The owner accepted `extract-v14` (2026-09-30).
 

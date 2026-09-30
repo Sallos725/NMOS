@@ -48,11 +48,25 @@ QUOTE_MIN = X.EVIDENCE_MIN  # the reveal test (PHASE-10), applied to every quote
 QUOTE_MIN_CHARS = getattr(X, "EVIDENCE_MIN_CHARS", 12)  # a checkout from before extract-v14 has no floor of its own
 
 
-def anchors(conn: psycopg.Connection) -> list[dict[str, Any]]:
+def conversation_of(conn: psycopg.Connection, given: str | None) -> str:
+    """The chat to sample: the one given, or the copy's only chat with turns (a copy often holds several)."""
+    if given:
+        return given
+    chats = [r["id"] for r in conn.execute("""
+        SELECT DISTINCT c.id FROM conversation c JOIN active_membership am ON am.commit_id = c.head_commit_id
+        WHERE am.turn_hash IS NOT NULL""").fetchall()]
+    if len(chats) != 1:
+        raise SystemExit(f"this database holds {len(chats)} chats with turns: give --conversation")
+    return str(chats[0])
+
+
+def anchors(conn: psycopg.Connection, conversation: str) -> list[dict[str, Any]]:
+    """One anchor per turn of that chat's head, in turn order."""
     return conn.execute("""
         SELECT DISTINCT ON (am.turn) am.source_revision_id AS id, am.turn_hash, am.turn
         FROM conversation c JOIN active_membership am ON am.commit_id = c.head_commit_id
-        WHERE am.turn IS NOT NULL AND am.turn_hash IS NOT NULL ORDER BY am.turn, am.position""").fetchall()
+        WHERE c.id = %s AND am.turn IS NOT NULL AND am.turn_hash IS NOT NULL
+        ORDER BY am.turn, am.position""", (conversation,)).fetchall()
 
 
 def ledger_turns(path: Path) -> set[int]:
@@ -62,7 +76,7 @@ def ledger_turns(path: Path) -> set[int]:
 
 
 def chosen(conn: psycopg.Connection, args: argparse.Namespace) -> list[dict[str, Any]]:
-    rows = anchors(conn)
+    rows = anchors(conn, conversation_of(conn, args.conversation))
     if args.ledger:
         wanted = ledger_turns(args.ledger)
         rows = [a for a in rows if a["turn"] in wanted]
@@ -221,6 +235,7 @@ def main() -> None:
     r.add_argument("--db", required=True, help="an evaluation copy (read-only connection)")
     r.add_argument("--hints", required=True, help="the copy's generation whose earlier facts give every prompt's hints")
     r.add_argument("--label", required=True, help="the name of what is measured, e.g. v13 or v14")
+    r.add_argument("--conversation", help="the chat to sample (required when the copy holds several)")
     r.add_argument("--name", default="chat", help="the copy's name in the result files")
     r.add_argument("--ledger", type=Path, help="choose the turns a fact ledger names")
     r.add_argument("--sample", type=int, help="else this many turns, evenly spaced")

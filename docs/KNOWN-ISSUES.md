@@ -235,8 +235,8 @@ replaced each other (2). Telling a new identity from the same one in other words
 fewer than with `extract-v13` on three of four `deepseek-v4.1-flash` runs, and placed four more forbidden phrases on
 the main chat, through character claims the new extraction states. `gemma4:31b`, the owner's production extraction
 model, stayed within one case per run with no more forbidden phrases, and `deepseek` on the synthetic chat passed one
-case more. The evidence check is not the cause (restoring its parked rows changes nothing); whether the new prompt or
-run-to-run variance is was not measured. *Workaround:* none; a chat extracted with `deepseek` keeps its
+case more. The evidence check is not the cause (restoring its parked rows changes nothing). Whether the new prompt or
+run-to-run variance caused the drop was not measured. *Workaround:* none; a chat extracted with `deepseek` keeps its
 `extract-v13` rows until its recent window is extracted again.
 
 ## Recall and gating

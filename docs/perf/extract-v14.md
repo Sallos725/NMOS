@@ -14,8 +14,11 @@
   what the worker gave the model: the extraction's members' normalized text at the extraction's normalizer, joined by
   line breaks. Rows without a quote and shorter quotes are not checked.
 - **Sampled turns**: the runs measured before the spec (its "Evidence behind Q1 and Q3"): today's prompt three times,
-  the 1,000-character context three times, `gemma4:31b`, on 60 synthetic turns and 20 turns of the main M0 chat. The
-  check is applied to their stored rows.
+  the 1,000-character context three times, `gemma4:31b`, on 60 synthetic turns and 20 turns of the main M0 chat's
+  copy. The check is applied to their stored rows. Those 20 turns were chosen by turn number across every chat of the
+  copy, not the main chat's alone: four of them are the second M0 chat's, and at early turns several chats tie, so a
+  run may take another chat's turn (found in step 4's review, `tools/eval_extract_sample.py` now takes one chat). Their
+  numbers ("main") are indicative only; the synthetic copy holds one chat.
 - **M0 v2 replays** as Phase 18's `extract-v13` baseline: `packet-v10`, 4,000 tokens, keyword route on, each run's
   own summaries, vectors on and off. Every case passed or failed as in Phase 18's runs (vectors on and off, all 16
   runs); one run (sample 2, `gemma`, vectors on) passed one case more on one of four later replays, so a single case
@@ -109,7 +112,7 @@ for deepseek, 1 for gemma on the main chat (vectors on and off), 0 elsewhere.
 | context 1,000 3 | 408 | 12 | 5 | 1.2 % | 31 | 22 | 6 | 3 |
 
 With the 12-character floor, the check parks 0.5–1.2 % of the shorter context's valid rows (1.6–2.4 % of today's; the
-main chat's turns 1.0–4.6 % and 1.7–3.6 %). Today's prompt parks five `resolved` rows over three runs, the shorter
+turns of the main chat's copy 1.0–4.6 % and 1.7–3.6 %, indicative). Today's prompt parks five `resolved` rows over three runs, the shorter
 context none. A pair's current value is the copy's own generation's latest valid row for that pair before the turn
 (pairs as the read side keys them, by name); rows the check would park are left out. The shorter context extracts
 more `addresses` and `relationship` rows, and they are new pairs or changed values: repeats of the current value are
@@ -133,8 +136,8 @@ turn (its reasoning, not reported separately), five to seven times `gemma4:31b`'
 ### Sampled turns
 
 `tools/eval_extract_sample.py`, `gemma4:31b` through the provider's API, three runs each: the 91 turns of the synthetic
-chat its ledger names (167 facts; the first 60 are the runs measured before the spec) and 20 turns of the main M0
-chat. Today's prompt ran from a `main` checkout (`PYTHONPATH`), `extract-v14` from the branch; the check is scored
+chat its ledger names (167 facts; the first 60 are the runs measured before the spec) and the 20 turns of the main M0
+chat's copy measured before the spec (chosen across the copy's chats, see step 2's setup: indicative only). Today's prompt ran from a `main` checkout (`PYTHONPATH`), `extract-v14` from the branch; the check is scored
 against the text the model saw.
 
 | | today 1 | today 2 | today 3 | `extract-v14` 1 | `extract-v14` 2 | `extract-v14` 3 |
@@ -143,14 +146,14 @@ against the text the model saw.
 | ledger facts found, valid rows after the check | 107 | 109 | 106 | 113 | 117 | 115 |
 | ledger facts lost to the check | 0 | 0 | 0 | 0 | 0 | 0 |
 | valid rows the check parks (synthetic) | 2.1 % | 2.6 % | 2.5 % | 0.4 % | 0.9 % | 0.4 % |
-| valid rows the check parks (main chat) | 4.6 % | 2.8 % | 1.0 % | 2.7 % | 1.0 % | 3.6 % |
+| valid rows the check parks (main chat's copy, indicative) | 4.6 % | 2.8 % | 1.0 % | 2.7 % | 1.0 % | 3.6 % |
 | `addresses` + `relationship` rows kept (synthetic) | 27 | 29 | 27 | 36 | 33 | 35 |
 | input tokens (synthetic, 91 turns) | 914k | 914k | 914k | 764k | 764k | 764k |
-| input tokens (main chat, 20 turns) | 198k | 198k | 198k | 163k | 163k | 163k |
+| input tokens (main chat's copy, 20 turns, indicative) | 198k | 198k | 198k | 163k | 163k | 163k |
 | output tokens, median per turn (synthetic) | 1,062 | 1,025 | 1,071 | 1,141 | 1,150 | 1,114 |
 
 Every ledger kind today's prompt finds is found in each `extract-v14` run, secrets included (5, 7, 6 against 6, 7, 6).
-Input is 83.6 % (synthetic) and 82.3 % (main chat) of today's; output rises about 8 %.
+Input is 83.6 % of today's on the synthetic turns (82.3 % on the main chat's copy); output rises about 8 %.
 
 ### M0 v2 and the synthetic cuts re-extracted
 
@@ -179,8 +182,8 @@ prompt share about half their rows) was not measured: that would take a second `
 ### Step 4 criteria
 
 - [x] Sampled turns: ledger facts found among valid rows (mean 115) not below the lowest of today's runs (106); the
-      check parks at most 3.6 % of valid rows and no row that finds a ledger fact; every ledger kind today's prompt
-      finds is still found; input 83.6 % and 82.3 % of today's.
+      check parks at most 0.9 % of valid rows (3.6 % on the main chat's copy, indicative) and no row that finds a
+      ledger fact; every ledger kind today's prompt finds is still found; input 83.6 % of today's.
 - [x] The check parks at most 10 % of each model's valid rows: 0.2 % (`deepseek`), 2.7 % (`gemma`).
 - [ ] M0 v2 and the synthetic cuts: cases passed and needing memory not lower by more than one per run, forbidden
       phrases not higher in total. **Met by `gemma`** (the owner's production extraction model) and on the synthetic

@@ -67,3 +67,33 @@ def test_score_counts_the_check_the_same_way_with_and_without_it(tmp_path, capsy
     lines = [x for x in capsys.readouterr().out.splitlines() if x.startswith("| v1")]
     assert lines[0].startswith("| v13 | 1 | 1 | 3 | 1 | 1 | 33.3 % | 1/1 | 1/1 | 0 | 0 | 1k | 90 |")
     assert lines[1].startswith("| v14 | 1 | 1 | 2 | 0 | 1 | 50.0 % | 1/1 | 1/1 | 0 | 0 | 1k | 95 |")
+
+
+def test_turns_are_chosen_from_one_chat(migrated):
+    import psycopg
+    import pytest
+    from psycopg.rows import dict_row
+
+    from conftest import make_client
+    from simchat import SimChat
+    from test_generations import LLM
+    from test_sidecar_integration import sync
+
+    chats = [SimChat("sample-a"), SimChat("sample-b")]
+    with make_client(migrated, **LLM) as c:
+        for n, chat in enumerate(chats):
+            for i in range(3 + n):
+                chat.user(f"Question {i} of chat {n}.")
+                chat.reply(f"Answer {i} of chat {n}.")
+            chat.user("Next.")
+            sync(c, chat)
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        ids = {r["host_chat_ref"]: str(r["id"]) for r in conn.execute("SELECT id, host_chat_ref FROM conversation")}
+        with pytest.raises(SystemExit, match="give --conversation"):
+            tool.conversation_of(conn, None)
+        rows = tool.anchors(conn, ids["sample-b"])
+        members = conn.execute("SELECT DISTINCT so.conversation_id FROM source_revision sr"
+                               " JOIN source_object so ON so.id = sr.source_object_id WHERE sr.id = ANY(%s)",
+                               ([r["id"] for r in rows],)).fetchall()
+    assert [r["turn"] for r in rows] == list(range(len(rows))) and len(rows) >= 4
+    assert [str(m["conversation_id"]) for m in members] == [ids["sample-b"]]
