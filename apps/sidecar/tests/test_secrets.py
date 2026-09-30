@@ -131,7 +131,7 @@ def test_the_prompt_lists_open_secrets_and_the_rules():
     assert "Someone who was simply not there is not `hidden_from`" in system
     assert "report in `secrets` each one" in system and '"secrets": [{"secret": "S1"' in system
     assert "- learned" not in system  # filled from `secrets`, never asked for directly
-    assert extraction.COMPILER_VERSION == "extract-v13"
+    assert extraction.COMPILER_VERSION == "extract-v14"
 
 
 def test_the_secrets_check_becomes_learned_only_with_a_kept_name_and_quoted_evidence():

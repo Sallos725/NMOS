@@ -223,7 +223,7 @@ def test_coverage_counts_the_facts_and_summaries_the_chat_holds(migrated):
         assert c.get(f"/v1/conversations/{conv}/coverage").json()["produced"] == {"facts": 0, "summaries": 0}
         drain_extract(migrated, lambda s, u: ({"assertions": [
             {"subject": "Hana", "subject_type": "character", "predicate": "located_in", "object": "the mill",
-             "object_type": "place", "epistemic": "stated", "confidence": 0.9, "evidence": u[-40:],
+             "object_type": "place", "epistemic": "stated", "confidence": 0.9, "evidence": u.rsplit(": ", 1)[1][-40:],
              "modality": "actual"}]}, "{}"))
         drain_summaries(migrated)
         produced = c.get(f"/v1/conversations/{conv}/coverage").json()["produced"]
@@ -236,7 +236,7 @@ def test_coverage_counts_the_facts_and_summaries_the_chat_holds(migrated):
         sync(c, chat)
         drain_extract(migrated, lambda s, u: ({"assertions": [
             {"subject": "Hana", "subject_type": "character", "predicate": "located_in", "object": "the mill",
-             "object_type": "place", "epistemic": "stated", "confidence": 0.9, "evidence": u[-40:],
+             "object_type": "place", "epistemic": "stated", "confidence": 0.9, "evidence": u.rsplit(": ", 1)[1][-40:],
              "modality": "actual"}]}, "{}"))
         drain_summaries(migrated)
         again = c.get(f"/v1/conversations/{conv}/coverage").json()

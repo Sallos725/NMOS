@@ -49,6 +49,7 @@ without a PocketRisu change.
 | K38 | The panel's Export was not tried on a phone | Host | evidence (owner's phone) |
 | K39 | A grown excerpt can carry a value the story has since replaced | Recall | measured, accepted (Phase 18, owner 2026-09-30) |
 | K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | measured; a lower threshold found less, 0.8 kept (2026-09-30) |
+| K41 | Re-extracted with `extract-v14`, `deepseek-v4.1-flash` passed fewer M0 cases | Memory | measured, accepted (Phase 19, owner 2026-09-30) |
 
 ## Performance
 
@@ -228,6 +229,15 @@ relationship conflicts were listed, and about one was a contradiction. A loreboo
 the Korean story's same statement did not match (6), and `identity` holds one value, so a job and where someone lives
 replaced each other (2). Telling a new identity from the same one in other words needs a model.
 *Workaround:* the canon version stays in the fact's history (the Inspector's fact line); lock it there to keep it.
+
+**K41 — Re-extracted with `extract-v14`, `deepseek-v4.1-flash` passed fewer M0 cases.** On the evaluation copies
+(`docs/perf/extract-v14.md`, "Step 4"), the owner's two M0 chats extracted again with `extract-v14` passed two cases
+fewer than with `extract-v13` on three of four `deepseek-v4.1-flash` runs, and placed four more forbidden phrases on
+the main chat, through character claims the new extraction states. `gemma4:31b`, the owner's production extraction
+model, stayed within one case per run with no more forbidden phrases, and `deepseek` on the synthetic chat passed one
+case more. The evidence check is not the cause (restoring its parked rows changes nothing). Whether the new prompt or
+run-to-run variance caused the drop was not measured. *Workaround:* none; a chat extracted with `deepseek` keeps its
+`extract-v13` rows until its recent window is extracted again.
 
 ## Recall and gating
 
