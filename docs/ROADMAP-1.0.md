@@ -41,7 +41,7 @@ approved 2026-09-30, complete 2026-10-01) is not a stage either: it ships the ch
 Every version before 1.0.0 is a GitHub pre-release. Between versions the owner runs `:edge` (a build of
 every `main` merge; `AGENTS.md` §13). Each stage ships at most one new extractor generation.
 
-**R1 — order.** Decided 2026-09-27: **Stage 4 first** (Phase 10); the order after it is decided when it is done. The owner then chose Stage 5 (2026-09-28) and Stage 6 (2026-09-28); the order of 7 and 8 is open. The earlier recommendation was 5 → 6 → 4 → 7 → 8:
+**R1 — order.** Decided 2026-09-27: **Stage 4 first** (Phase 10); the order after it is decided when it is done. The owner then chose Stage 5 (2026-09-28) and Stage 6 (2026-09-28); on 2026-10-01 **Stage 7 before Stage 8** (forensic recall first). The earlier recommendation was 5 → 6 → 4 → 7 → 8:
 - 5 first: knowledge (stage 4) is acquired through events someone observed or was told, which stage 5 adds.
 - 6 before 4: per-character filtering is only as good as the state it filters; repair tools let the
   owner fix that state by hand.
@@ -123,7 +123,9 @@ Scope (draft):
 - export and restore of the ledger, repairs and settings (§89).
 
 Done when:
-- K8 and K23 are closed;
+- K8 and K23 are closed; closed 2026-10-01 by owner decision: the owner's repair in the panel is the fix,
+  and NMOS finding a split name or an ended thread by itself is not planned (reading the context for it costs
+  too much per turn);
 - every repair survives a rebuild and a new extractor generation;
 - export, restore into a fresh install and replay give the same packets;
 - each canon source has recorded host evidence and a conflict fixture.
@@ -169,13 +171,13 @@ Scope (draft):
 - an exact-quote path that prefers raw text;
 - labels for candidates (required, supportive, risky, hidden) and a penalty for overused memory;
 - evidence traversal in the Inspector;
-- read-only MCP only if host evidence shows PocketRisu lets the response model call tools. **R5**: if
-  it does not, MCP leaves the 1.0 scope (recorded, not built).
+- no read-only MCP. **R5**, decided 2026-10-01 (owner): MCP leaves the 1.0 scope (recorded, not built). The
+  packet already carries memory into the prompt and forensic recall is reached through the panel, so a tool the
+  response model calls adds nothing the stage needs.
 
 Done when:
 - an exact-quote case set ("what did Hana say the first night?") is answered with the source turn;
-- overuse is measured by echo before and after;
-- the MCP question is answered by recorded host evidence.
+- overuse is measured by echo before and after.
 
 ## Stage 8 — PocketRisu bridge
 
