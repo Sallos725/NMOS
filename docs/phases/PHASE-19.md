@@ -1,6 +1,6 @@
 # Phase 19 — One new extractor generation: shorter context, synthetic examples, evidence in the turn
 
-> **Status: proposed (2026-09-30), awaiting the owner's approval.** Not a stage of `docs/ROADMAP-1.0.md`: it ships the
+> **Status: approved (2026-09-30) as proposed, current.** Not a stage of `docs/ROADMAP-1.0.md`: it ships the
 > changes queued for the next extractor generation (`docs/STATUS.md`, "Queued for the next extractor generation") and
 > the owner's request of 2026-09-30 to cut what extraction costs without losing quality. Stages 7–8 become Phase 20+.
 > No release.
