@@ -63,8 +63,9 @@ class Settings:
     # model name contains "qwen3-embedding", none otherwise. Documents are embedded without it.
     embed_query_instruction: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_QUERY_INSTRUCTION", "auto"))
     trace_retention_days: int = field(default_factory=lambda: int(os.environ.get("NMOS_TRACE_RETENTION_DAYS", "30")))
-    # Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0041, 0043, 0049). Empty or unknown:
-    # `packet.DEFAULT_POLICY` (packet-v9: packet-v8, whose excerpts and facts grow with the budget; packet-v8: room kept
+    # Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0041, 0043, 0049, 0053). Empty or unknown:
+    # `packet.DEFAULT_POLICY` (packet-v10: packet-v9, whose excerpts grow from the sentence holding most keywords by up
+    # to four sentences; packet-v9: packet-v8, whose excerpts and facts grow with the budget; packet-v8: room kept
     # for the best excerpt, Korean estimate 1.2, a <Private> section, no line that says an earlier line again, what
     # standing facts replaced, stated causes, excerpts and state numbered by turn, and summaries in <Story> and each
     # scene character's state in <Cast>); v7 … v0 are earlier. The compose files pass

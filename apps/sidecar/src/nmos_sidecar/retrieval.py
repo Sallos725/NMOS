@@ -25,6 +25,7 @@ from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
 from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, DEFAULT_POLICY, FILL_FACTS_MAX,
+                     GROW_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
                      StateItem, clean_text, compile_lines, cut_lines, excerpt, fill, fits_at, kept_counts, secret_line,
                      secret_text)
@@ -406,15 +407,19 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     focus = f"{query} {previous_ai}"
     # The turn the packet shows: the message's turn index since packet-v7, as facts have it (ADR 0041).
     by_turn = options.policy in TURN_POLICIES
+    words = keywords(query) if options.policy in GROW_POLICIES else []
     for c in eligible:
         # a lexical or keyword hit is the whole message; a vector-only hit is its chunk
         clean = (c["clean"] if c.get("user_score") or c.get("keyword_score")
                  else c["clean"][c["text_start"]:c["text_end"]])
+        if options.policy in GROW_POLICIES:  # packet-v10: grown to its length from the best sentence (ADR 0053)
+            text, short = grown_excerpt(clean, focus, words, options.excerpt_chars)
+        else:
+            text = excerpt(clean, focus, max_chars=options.excerpt_chars)
+            short = excerpt(clean, focus, window=1, max_chars=options.excerpt_chars)
         g.ranked.append(Excerpt(turn=c["turn"] if by_turn else c["position"],
                                 speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
-                                text=excerpt(clean, focus, max_chars=options.excerpt_chars), score=float(c["rrf"]),
-                                revision_id=str(c["id"]), short=excerpt(clean, focus, window=1,
-                                                                        max_chars=options.excerpt_chars),
+                                text=text, score=float(c["rrf"]), revision_id=str(c["id"]), short=short,
                                 position=c["position"]))
     if options.rules_version != "none":
         g.state = [StateItem(key=r["key"], value=r["value"], turn=r["turn"] if by_turn else r["position"])

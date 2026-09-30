@@ -87,3 +87,33 @@ replay runs without it, ADR 0052). Baseline → with keywords (after the reviews
   branch did it; the whole-message route is unchanged, and why it did not time out here is not known yet (a cache or
   index warmed by the keyword lookups is a guess). The keyword route itself adds 5–60 ms to a request (per request,
   measured in `gather`: ≈5–7 ms when its keywords are rare, 29–60 ms when some are too common).
+
+
+## Step 4: `packet-v10`, excerpts that grow (2026-09-30)
+
+All runs at 4,000 with the keyword route on except the first column. "Whole length" grew each excerpt to `excerpt_chars`
+(960 at 4,000); `packet-v10` as merged caps the growth at four sentences (owner, 2026-09-30, ADR 0053).
+
+| Runs (passed / needing memory / forbidden placed) | `packet-v9` | v9 + keywords | whole length | **`packet-v10` (≤ 4 sentences)** |
+|---|---|---|---|---|
+| M0 v2, four runs, vectors off | 71 / 31 / 0 | 74 / 34 / 0 | 79 / 41 / 2 | 77 / 37 / 0 |
+| M0 v2, four runs, vectors on | 76 / 40 / 6 | 76 / 38 / 2 | 80 / 43 / 4 | 80 / 42 / 2 |
+| synthetic, four cuts, vectors off | 69 / 4 / 5 | 69 / 5 / 6 | 69 / 11 / 13 | 70 / 10 / 12 |
+| synthetic, four cuts, vectors on | 66 / 6 / 12 | 68 / 6 / 8 | 64 / 14 / 29 | 66 / 10 / 17 |
+| excerpt median, M0 main (gemma, vectors on) | 69.0 | 75.0 | 60.0 | 98.0 |
+
+- Growing to the whole length answered the most (vectors off, M0: 41 needing memory against 31 for `packet-v9`) but
+  placed replaced values much more often on the synthetic chat, whose facts change often (29 with vectors against 12).
+  With ten excerpts at 4,000 the fitter fell back to the one-sentence form for most of them (88 of 158 placed on 20 M0
+  cases), so the median excerpt even shrank. Keeping five excerpts changed little (tried; 31 forbidden with vectors).
+- The four-sentence cap keeps most of the gain on M0 (42 of whole length's 43 with vectors) and cuts the replaced values
+  on the synthetic chat from 29 to 17 (`packet-v9`: 12, keywords alone: 8).
+- Against the criteria (`packet-v10` with keywords vs `packet-v9`, 4,000): without vectors +6 cases needing memory over
+  the four M0 runs (≥ +4); with vectors +3, +1, −1, −1 (no run worse than one); forbidden placed on M0 6 → 2 (≤ +2);
+  median excerpt 69 → 98 characters (1.42×, restated criterion ≥ 1.3×); lexical recall found a candidate for 131 of 145
+  queries (≥ 80 %); one-off details on the synthetic chat 5 → 9 (≥ +3); one category worse by more than one case,
+  "count" at the 60 cut (3 → 1), accepted by the owner.
+- Latency at 10,000 messages (budget 4,000, three alternating runs against `main`): p50 123.2 → 135.3 ms (+12.1). In
+  one of the three `main` runs the whole-message timeout did not occur (p95 161.6 ms), so it is intermittent.
+- Two runs of the same code differ in a few cases (e.g. lexical found 37 or 36 on one run): a keyword whose lookup
+  ends near its 25 ms slice is kept in one run and dropped in another.
