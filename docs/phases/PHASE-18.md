@@ -71,6 +71,10 @@ Measured 2026-09-29/30 outside the repository (numbers only; step 2 records the 
 ## Acceptance criteria
 
 - [x] Every existing test and memory-evaluation case passes; recorded `packet-v9` requests replay as they were.
+      Tests record under `packet-v9` (with and without the keyword option) and reproduce the ledger exactly. The
+      owner's 7 recorded requests of the current projection replayed with vectors give the same ledger with this
+      phase's code as with the production build's before it (5 exact; one excerpt differs through the CPU
+      embedder's vectors, one canon fact line is missing with either code): nothing here changed a replay.
 - [x] Deterministic cases: keyword extraction (particles, endings, stop words, names, Latin words, a query of stop
       words only, a name that an ending rule would shorten below two syllables, more than four keywords); a keyword
       too broad is dropped; a keyword-only hit is kept with vectors off and under the whole-message threshold; a
@@ -94,7 +98,9 @@ Measured 2026-09-29/30 outside the repository (numbers only; step 2 records the 
       measured with that question among the benchmark's (+11.9 ms); asked alone every time it adds 29 ms (421 → 450 ms,
       `packet-v9` already hits the whole-message timeout there): accepted by the owner, 2026-09-30.
 - [x] Real-host smoke on an isolated PocketRisu v1.13.0.
-- [x] Review per AGENTS.md §14 (retrieval semantics: high risk, one independent review).
+- [x] Review per AGENTS.md §14 (retrieval semantics: high risk, one independent review). Codex reviewed step 3
+      (Sallos725/NMOS#190: five findings, all confirmed and fixed) and step 4 (Sallos725/NMOS#191: three findings on
+      tests and STATUS, all fixed); steps 2 and 5 change no recall.
 - [x] `ARCHITECTURE.md` (D15 amended, D62), ADR 0052, README, the Korean guide, KNOWN-ISSUES, CHANGELOG.
 
 ## Steps (one pull request each)

@@ -147,8 +147,9 @@ counts were kept.
   its bar. The keyword route gave excerpts to 10 of the 34.
 - Replayed with their own policy and vectors, 5 of the 7 requests of the current projection reproduced exactly; one
   differed in one excerpt (the CPU instance's vectors differ slightly from the GPU's, cosine 0.995–0.998), and one
-  lacked one canon fact line. The production build's code (before this phase) leaves out the same line, so it is not
-  this phase's doing; it is recorded for a separate look.
+  lacked one canon fact line. Replayed with the production build's code (before this phase), all seven give the same
+  ledgers, differences included: this phase changed no `packet-v9` replay. The missing canon line predates it and is
+  recorded for a separate look.
 
 ### Latency
 
