@@ -48,7 +48,7 @@ without a PocketRisu change.
 | K37 | A story that changes who someone is, against the card or a lorebook, is not flagged | Memory | by decision (ADR 0047 amendment 1); needs a model check |
 | K38 | The panel's Export was not tried on a phone | Host | evidence (owner's phone) |
 | K39 | A grown excerpt can carry a value the story has since replaced | Recall | measured, accepted (Phase 18, owner 2026-09-30) |
-| K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | measured; a lower threshold to be measured separately (owner, 2026-09-30) |
+| K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | measured; a lower threshold found less, 0.8 kept (2026-09-30) |
 
 ## Performance
 
@@ -334,7 +334,11 @@ keyword at trigram word similarity 0.8. Korean attaches particles to the word, a
 0.67 against it with a particle ("창가" in "창가에"), one of three syllables 0.75 ("서도윤" in "서도윤이"); four
 syllables reach 0.8. Such keywords are found only where the word stands alone (before a space, a comma, a quote), so
 the route finds less than it could. A threshold near 0.65 would match a word that starts with the keyword; it changes
-what is recalled and what is dropped as broad, so it is to be measured before any change (owner, 2026-09-30).
+what is recalled and what is dropped as broad, so it was measured first (owner, 2026-09-30): at 0.65 lexical recall
+found fewer candidates (346 of 400 evaluation runs' queries against 366), passed fewer cases (283 against 291) and
+placed more forbidden phrases (42 against 33); 0.7 was the same as 0.8 (`docs/perf/lexical-recall.md`, "K40"). A
+main character's name matched almost every message once its particles counted, and was dropped as too broad; the
+rare words that answer questions stand alone often enough to be found at 0.8. The threshold stays 0.8.
 *Workaround:* none needed; vectors and the whole-message route still answer.
 
 ## Data and lifecycle

@@ -176,3 +176,24 @@ for queries), `main`'s plugin build and sidecar: a chat whose second message say
 88 messages of other talk, then the question "처음 만났을 때 다들 그 늙은 앵무새를 뭐라고 불렀는지 기억나?". The
 request took 252 ms (retrieve 82 ms); the trace says `packet-v10`, `keyword_mode` on; the prompt the stub received held
 that message as a four-sentence excerpt ending in "…", and the progress display said "✓ 기억 주입 (551자)".
+
+
+## K40: a lower keyword threshold (2026-09-30)
+
+`packet-v10` with keywords at 4,000, the same code (`main` after Phase 18) with `KEYWORD_THRESHOLD` changed, over the 16
+runs of steps 3–4 (M0 v2 two chats × two extractions, four synthetic cuts; vectors on and off):
+
+| Totals of 16 runs | 0.8 (kept) | 0.7 | 0.65 |
+|---|---|---|---|
+| passed | 291 | 293 | 283 |
+| cases needing memory passed | 98 | 99 | 96 |
+| forbidden phrases placed | 33 | 31 | 42 |
+| lexical recall found a candidate | 366 / 400 | 369 / 400 | 346 / 400 |
+
+- 0.7 admits a three-syllable keyword with a particle (0.75) and changed nothing measurable; 0.65 admits two
+  syllables too (0.67) and did worse on every count.
+- Why, on the synthetic chat's 484 messages: the main character's given name matched 102 messages at 0.8 and 480 at
+  0.65, so it was dropped as too broad; another name 53 → 159, a place 56 → 142. The rare words that answer
+  questions barely moved (26 → 26, 12 → 16, 1 → 5): they stand alone (before a space or punctuation) often enough.
+  At 0.8 the particle rule acts as a filter that keeps names selective. Matching a keyword with a list of particles
+  would make names as common again, so it was not tried. The threshold stays 0.8 (K40).
