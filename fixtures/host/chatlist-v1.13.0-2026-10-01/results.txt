@@ -1,0 +1,34 @@
+## boot
+[AGE4] {"tag":"boot","rep":0,"getDatabase_characters_ms":965.8,"chats":[{"cha":"cha-hana","chats":[{"id":"c-hana-s1","n":0,"ph":true},{"id":"c-hana-10k","n":0,"ph":true},{"id":"c-hana-5k","n":0,"ph":true},{"id":"c-hana-s2","n":0,"ph":true}]},{"cha":"cha-kaito","chats":[{"id":"c-kaito-1","n":0,"ph":true},{"id":"c-kaito-2","n":0,"ph":true}]},{"cha":"cha-yui","chats":[{"id":"c-yui-1","n":0,"ph":true}]}],"messages":0,"message_chars":0,"getDatabase_order_ms":0.4,"order":["cha-hana","cha-kaito","cha-yui"],"charLoop_ms":1.4,"charLoop_n":3}
+[AGE4] {"tag":"boot","rep":1,"getDatabase_characters_ms":0.5,"messages":0,"message_chars":0,"getDatabase_order_ms":0.3,"charLoop_ms":1.1,"charLoop_n":3}
+[AGE4] {"tag":"boot","rep":2,"getDatabase_characters_ms":0.5,"messages":0,"message_chars":0,"getDatabase_order_ms":0.3,"charLoop_ms":1.4,"charLoop_n":3}
+[AGE4] {"tag":"boot","rep":3,"getDatabase_characters_ms":0.5,"messages":0,"message_chars":0,"getDatabase_order_ms":0.2,"charLoop_ms":1,"charLoop_n":3}
+[AGE4] {"tag":"boot","rep":4,"getDatabase_characters_ms":0.4,"messages":0,"message_chars":0,"getDatabase_order_ms":0.2,"charLoop_ms":1,"charLoop_n":3}
+[AGE4] {"tag":"boot","done":true}
+[LONGTASKS] []
+
+## open10k
+opened 0 synthetic 10000 9005 ms
+[AGE4] {"tag":"open10k","rep":0,"getDatabase_characters_ms":107.5,"chats":[{"cha":"cha-hana","chats":[{"id":"c-hana-s1","n":40,"ph":false},{"id":"c-hana-10k","n":10000,"ph":false},{"id":"c-hana-5k","n":0,"ph":true},{"id":"c-hana-s2","n":0,"ph":true}]},{"cha":"cha-kaito","chats":[{"id":"c-kaito-1","n":0,"ph":true},{"id":"c-kaito-2","n":0,"ph":true}]},{"cha":"cha-yui","chats":[{"id":"c-yui-1","n":0,"ph":true}]}],"messages":10040,"message_chars":1675778,"getDatabase_order_ms":0.6,"order":["cha-hana","cha-kaito","cha-yui"],"charLoop_ms":112.4,"charLoop_n":3}
+[AGE4] {"tag":"open10k","rep":1,"getDatabase_characters_ms":109.6,"messages":10040,"message_chars":1675778,"getDatabase_order_ms":1,"charLoop_ms":100.5,"charLoop_n":3}
+[AGE4] {"tag":"open10k","rep":2,"getDatabase_characters_ms":94.1,"messages":10040,"message_chars":1675778,"getDatabase_order_ms":1,"charLoop_ms":85.7,"charLoop_n":3}
+[AGE4] {"tag":"open10k","rep":3,"getDatabase_characters_ms":96.2,"messages":10040,"message_chars":1675778,"getDatabase_order_ms":0.7,"charLoop_ms":87,"charLoop_n":3}
+[AGE4] {"tag":"open10k","rep":4,"getDatabase_characters_ms":105.2,"messages":10040,"message_chars":1675778,"getDatabase_order_ms":0.8,"charLoop_ms":79.8,"charLoop_n":3}
+[AGE4] {"tag":"open10k","done":true}
+[LONGTASKS] []
+
+## open15k
+opened 0 synthetic 10000 9007 ms
+opened 0 synthetic 5000 9003 ms
+[AGE4] {"tag":"open15k","rep":0,"getDatabase_characters_ms":153.6,"chats":[{"cha":"cha-hana","chats":[{"id":"c-hana-s1","n":0,"ph":true},{"id":"c-hana-10k","n":10000,"ph":false},{"id":"c-hana-5k","n":5000,"ph":false},{"id":"c-hana-s2","n":0,"ph":true}]},{"cha":"cha-kaito","chats":[{"id":"c-kaito-1","n":0,"ph":true},{"id":"c-kaito-2","n":0,"ph":true}]},{"cha":"cha-yui","chats":[{"id":"c-yui-1","n":0,"ph":true}]}],"messages":15000,"message_chars":2503007,"getDatabase_order_ms":0.7,"order":["cha-hana","cha-kaito","cha-yui"],"charLoop_ms":135.5,"charLoop_n":3}
+[AGE4] {"tag":"open15k","rep":1,"getDatabase_characters_ms":126.6,"messages":15000,"message_chars":2503007,"getDatabase_order_ms":0.6,"charLoop_ms":122.3,"charLoop_n":3}
+[AGE4] {"tag":"open15k","rep":2,"getDatabase_characters_ms":146.9,"messages":15000,"message_chars":2503007,"getDatabase_order_ms":0.5,"charLoop_ms":128.2,"charLoop_n":3}
+[AGE4] {"tag":"open15k","rep":3,"getDatabase_characters_ms":142.9,"messages":15000,"message_chars":2503007,"getDatabase_order_ms":0.8,"charLoop_ms":142.6,"charLoop_n":3}
+[AGE4] {"tag":"open15k","rep":4,"getDatabase_characters_ms":132.2,"messages":15000,"message_chars":2503007,"getDatabase_order_ms":3.9,"charLoop_ms":145.4,"charLoop_n":3}
+[AGE4] {"tag":"open15k","done":true}
+[LONGTASKS] [[31848,59],[32004,54],[32139,52],[32267,57],[32389,62],[32538,54],[32666,53],[32810,52],[32953,50],[33090,66]]
+
+## after
+[AGE4] {"tag":"after-delete","rep":0,"getDatabase_characters_ms":0.6,"chats":[{"cha":"cha-hana","chats":[{"id":"c-hana-s1","n":0,"ph":true},{"id":"c-hana-10k","n":0,"ph":true},{"id":"c-hana-5k","n":0,"ph":true},{"id":"c-hana-s2","n":0,"ph":true}]},{"cha":"cha-kaito","chats":[{"id":"c-kaito-1","n":0,"ph":true}]}],"messages":0,"message_chars":0,"getDatabase_order_ms":0.3,"order":["cha-hana","cha-kaito"],"charLoop_ms":1,"charLoop_n":2}
+[AGE4] {"tag":"after-delete","rep":1,"getDatabase_characters_ms":0.6,"messages":0,"message_chars":0,"getDatabase_order_ms":0.3,"charLoop_ms":1.3,"charLoop_n":2}
+
