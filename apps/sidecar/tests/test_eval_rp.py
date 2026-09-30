@@ -93,7 +93,7 @@ def test_a_newer_extractor_generation_is_read_as_of_now(monkeypatch):
         return {"status": "ok", "text": "", "tokens": 0, "policy": policy or "packet-v4", "vectors": "off"}
 
     monkeypatch.setattr(eval_rp.audit, "replay", replay)
-    monkeypatch.setattr(eval_rp, "prompt_window", lambda conn, trace: "")
+    monkeypatch.setattr(eval_rp, "prompt_window", lambda conn, trace, probe=False: "")
     case = [{"name": "c", "trace": "0190f3a4-1b2c-7d3e-8f40-123456789abc", "query": "probe"}]
     eval_rp.evaluate(None, case, RecallOptions())
     eval_rp.evaluate(None, case, RecallOptions(), extractor="extract-new", budget=800)
@@ -114,7 +114,7 @@ def test_each_case_says_whether_vectors_ran_and_a_named_projection_is_searched(m
                 "vectors": "on" if query == "a" else "fallback: timed out"}
 
     monkeypatch.setattr(eval_rp.audit, "replay", replay)
-    monkeypatch.setattr(eval_rp, "prompt_window", lambda conn, trace: "")
+    monkeypatch.setattr(eval_rp, "prompt_window", lambda conn, trace, probe=False: "")
     cases = [{"name": n, "trace": "0190f3a4-1b2c-7d3e-8f40-123456789abc", "query": n} for n in ("a", "b")]
     opts = RecallOptions(embedder=object(), embed_projection="embed-x")
     report = eval_rp.evaluate(None, cases, opts, projection="embed-x", embed_timeout_ms=5000)
@@ -155,7 +155,7 @@ def test_the_prompt_window_of_an_older_request_is_read_at_the_head(full):
     chat.messages.pop()
     _sync(client, chat)
     with db(url) as conn:
-        assert conn.execute(eval_rp.WINDOW.format(commit="t.commit_id"), (first,)).fetchall() == []  # head-only
+        assert conn.execute(eval_rp.WINDOW.format(commit="t.commit_id", upto="<="), (first,)).fetchall() == []  # head-only
         assert eval_rp.prompt_window(conn, first) == before != ""
 
 
@@ -180,3 +180,16 @@ def test_a_probe_does_not_replay_over_an_earlier_edit(full):
     _sync(client, chat)
     with db(url) as conn:
         assert audit.replay(conn, trace, RecallOptions(), query="What about the clouds?")["status"] == "changed"
+
+
+def test_a_probes_window_leaves_out_the_request_it_replaces(full):
+    client, url = full
+    chat = story(client, url)
+    trace = UUID(ask(client, chat, "Kaito, what do you know about the letter?")["trace_id"])
+    with db(url) as conn:
+        assert "what do you know about the letter" in eval_rp.prompt_window(conn, trace)
+        window = eval_rp.prompt_window(conn, trace, probe=True)
+        assert "what do you know about the letter" not in window and "Idle chatter 3" in window
+        report = eval_rp.evaluate(conn, [{"name": "p", "trace": str(trace), "query": "What about the clouds?",
+                                          "gold": ["know about the letter"]}], RecallOptions())
+    assert report["cases"][0]["in_prompt"] == 0  # the replaced request does not answer the probe

@@ -92,17 +92,20 @@ def score(case: dict[str, Any], text: str, prompt: str = "") -> dict[str, Any]:
 WINDOW = ("SELECT sr.content FROM retrieval_trace t JOIN active_membership am ON am.commit_id = {commit}"
           " JOIN source_revision sr ON sr.id = am.source_revision_id JOIN source_object so ON so.id = sr.source_object_id"
           " WHERE t.id = %s AND so.host_logical_id = ANY(SELECT jsonb_array_elements_text(t.in_context))"
-          " AND am.position <= t.upto_position ORDER BY am.position")
+          " AND am.position {upto} t.upto_position ORDER BY am.position")
 
 
-def prompt_window(conn: psycopg.Connection, trace: UUID) -> str:
+def prompt_window(conn: psycopg.Connection, trace: UUID, probe: bool = False) -> str:
     """The text of the messages the request's prompt already held (its `in_context` ids). Membership is kept for the
     head commit only, so once the chat moved on, the request's own commit has none: then the same messages are read at
-    the conversation's head (PHASE-18 step 2; an empty window scored answers the prompt held as memory's)."""
-    rows = conn.execute(WINDOW.format(commit="t.commit_id"), (trace,)).fetchall()
+    the conversation's head (PHASE-18 step 2; an empty window scored answers the prompt held as memory's). A `probe`
+    takes the place of the request's own message, so that message is not part of the window."""
+    upto = "<" if probe else "<="
+    rows = conn.execute(WINDOW.format(commit="t.commit_id", upto=upto), (trace,)).fetchall()
     if not rows:
         rows = conn.execute(WINDOW.format(
-            commit="(SELECT c.head_commit_id FROM conversation c WHERE c.id = t.conversation_id)"), (trace,)).fetchall()
+            commit="(SELECT c.head_commit_id FROM conversation c WHERE c.id = t.conversation_id)", upto=upto),
+            (trace,)).fetchall()
     return "\n".join(r["content"] or "" for r in rows)
 
 
@@ -162,7 +165,7 @@ def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: Recall
         results.append({**row, "status": "ok", "tokens": out["tokens"], "policy": out["policy"],
                         "vectors": out.get("vectors") == "on", "lexical_found": out.get("lexical_found", 0) > 0,
                         "excerpt_chars": excerpt_lengths(out["text"]),
-                        **score(case, out["text"], prompt_window(conn, UUID(case["trace"])))})
+                        **score(case, out["text"], prompt_window(conn, UUID(case["trace"]), case.get("query") is not None))})
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in results:
         groups[r["category"]].append(r)
