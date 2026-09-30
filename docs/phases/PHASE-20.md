@@ -1,6 +1,6 @@
 # Phase 20 — A name join shown before it is made, and an undo that restores what it changed
 
-> **Status: proposed (2026-10-01), awaiting the owner's approval.** Stage 6 of `docs/ROADMAP-1.0.md`, remaining
+> **Status: approved (2026-10-01) with every proposed answer (Q1–Q10); current.** Stage 6 of `docs/ROADMAP-1.0.md`, remaining
 > items ("edit aliases"; the entity merge and split of the original §20): C7 of
 > `docs/proposals/IDEA-SURVEY-2026-09-29.md`, which the survey's recommended order puts with Stage 6's remaining items
 > (owner, 2026-09-29). Tracked as AGE-3. No release; it ships with the Stage 6 milestone.
@@ -80,7 +80,7 @@ counts only), each of the owner's seven joins read with and without it:
 
 ## Steps (one pull request each)
 
-1. This document, approved; AGENTS §2 and STATUS name Phase 20 current.
+1. This document, approved; AGENTS §2 and STATUS name Phase 20 current. **Done** (2026-10-01).
 2. The preview and the fingerprint check (sidecar), with the deterministic cases.
 3. Re-extracting the turns extracted under a join (Q7).
 4. The panel, the plugin build and the real-host smoke.

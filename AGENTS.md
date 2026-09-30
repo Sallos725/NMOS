@@ -32,7 +32,7 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-20.md` is the latest, proposed; no phase is
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-20.md` is the latest and
    current; `PHASE-0.md`…`PHASE-19.md` still define the behavior they introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
 6. Relevant ADRs in `docs/adr/`.
@@ -80,7 +80,8 @@ If two normative documents appear to conflict:
 | 17 — model-call cost and fallback outcomes (C4, C5 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`) | complete (2026-09-30), not released | `PHASE-17.md`, ADR 0051 |
 | 18 — recall by the words that matter (keyword lexical recall, `packet-v10` excerpts) | complete (2026-09-30), not released | `PHASE-18.md`, ADR 0052, 0053 |
 | 19 — one extractor generation, `extract-v14` (shorter context, synthetic examples, evidence in the turn) | complete (2026-10-01), not released; `deepseek-v4.1-flash`'s M0 criterion missed (owner accepted, K41) | `PHASE-19.md`, ADR 0054 |
-| 20+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
+| 20 — a name join shown before it is made (C7 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`; Stage 6, remaining items) | **current** (approved 2026-10-01) | `PHASE-20.md` |
+| 21+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
 ADR 0006/0007, `docs/perf/scale.md`).
