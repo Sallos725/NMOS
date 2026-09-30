@@ -59,20 +59,29 @@ def test_the_prompt_examples_use_only_synthetic_names():
 
 
 def test_a_quote_found_in_the_target_turn_keeps_the_assertion_valid():
-    [row] = normalize([item("하나가 카이토에게 등대 열쇠를 건네주었다")], TURN, check_evidence=True)
+    [row] = normalize([item("하나가 카이토에게 등대 열쇠를 건네주었다")], TURN, shown=TURN)
     assert (row["status"], row["reason"]) == ("valid", None)
 
 
 def test_a_quote_found_only_in_a_context_turn_parks_the_assertion():
-    [row] = normalize([item(CONTEXT)], TURN, check_evidence=True)
+    [row] = normalize([item(CONTEXT)], TURN, shown=TURN)
     assert (row["status"], row["reason"]) == ("pending", "evidence not in the turn")
     assert row["evidence"] == CONTEXT  # stored as it came, for audit
+
+
+def test_a_quote_only_past_what_the_model_saw_parks_the_assertion():
+    tail = "마지막 줄에만 있는 등대지기의 고백"
+    ctx = {"target": {"turn": 3}, "context": [],
+           "members": [{"turn": 3, "metadata": {"role": "char"}, "content": "파" * extraction.TARGET_CHARS + tail}]}
+    assert tail not in extraction.build_prompt(ctx) and tail not in extraction.shown_target(ctx)
+    [row] = normalize([item(tail)], ctx["members"][0]["content"], shown=extraction.shown_target(ctx))
+    assert (row["status"], row["reason"]) == ("pending", "evidence not in the turn")
 
 
 def test_a_short_quote_and_a_row_without_a_quote_are_unchanged():
     short = "창고에서 지도를"  # under EVIDENCE_MIN_CHARS: trigram containment would pass or fail by accident
     assert len(short) < extraction.EVIDENCE_MIN_CHARS
-    rows = normalize([item(short), item(None), item("")], TURN, check_evidence=True)
+    rows = normalize([item(short), item(None), item("")], TURN, shown=TURN)
     assert [(r["status"], r["reason"]) for r in rows] == [("valid", None)] * 3
 
 
@@ -82,7 +91,7 @@ def test_without_the_check_a_quote_not_in_the_turn_is_unchanged():
 
 
 def test_a_row_already_parked_keeps_its_own_reason():
-    [row] = normalize([item(CONTEXT, predicate="resolved")], TURN, check_evidence=True)
+    [row] = normalize([item(CONTEXT, predicate="resolved")], TURN, shown=TURN)
     assert (row["status"], row["reason"]) == ("pending", "resolved without an outcome")
 
 
@@ -90,7 +99,7 @@ def test_a_reveal_behaves_as_before():
     listed = [{"text": "루카 goal: 등대 열쇠를 숨기기", "holders": ["루카"], "kept_from": ["카이토"], "turn": 2}]
     answer = {"secrets": [{"secret": "S1", "found_out_by": ["카이토"], "evidence": "카이토에게 등대 열쇠를 건네주었다"}]}
     items = revealed(answer, listed, TURN)
-    assert [(r["status"], r["predicate"]) for r in normalize(items, TURN, check_evidence=True)] == [("valid", "learned")]
+    assert [(r["status"], r["predicate"]) for r in normalize(items, TURN, shown=TURN)] == [("valid", "learned")]
     answer["secrets"][0]["evidence"] = CONTEXT  # evidence outside the turn: no reveal, as before
     assert revealed(answer, listed, TURN) == []
 

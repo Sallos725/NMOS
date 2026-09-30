@@ -574,6 +574,12 @@ EVIDENCE_MIN = 0.7  # trigram containment of a reveal's quoted evidence in the t
 EVIDENCE_MIN_CHARS = 12
 
 
+def shown_target(ctx: dict[str, Any]) -> str:
+    """The target turn's text as `build_prompt` shows it to the model: each member's normalized text up to TARGET_CHARS,
+    joined by line breaks. The evidence check of extract-v14 looks for a quote here, not in what the model never saw."""
+    return "\n".join(r["content"][:TARGET_CHARS] for r in ctx["members"])
+
+
 def revealed(answer: dict[str, Any], secrets: list[dict[str, Any]], turn_text: str) -> list[dict[str, Any]]:
     """The model's `secrets` check → `learned` items (ADR 0033): one per listed secret (S<n>) and each named
     character it was kept from, value the listed text with its turn (`reveal_value`), which the read side matches
@@ -608,11 +614,12 @@ ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_t
 
 
 def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None,
-              check_evidence: bool = False) -> list[dict[str, Any]]:
+              shown: str | None = None) -> list[dict[str, Any]]:
     """Model output → assertion rows (at most 40): missing entity types filled from the reply or the
     hints (`fill_types`), registry validation (D6), knowledge scope (D19), polarity/modality/source
-    (ADR 0013) and the alias evidence check (ADR 0012, ADR 0024). `check_evidence` (the turn worker, since
-    extract-v14, ADR 0054): a quote of EVIDENCE_MIN_CHARS or more that is not in `turn_text` parks the row. Pure,
+    (ADR 0013) and the alias evidence check (ADR 0012, ADR 0024). `shown` (the turn worker, since extract-v14,
+    ADR 0054: the target turn as the model saw it, `shown_target`): a quote of EVIDENCE_MIN_CHARS or more that is
+    not in it parks the row. Pure,
     so the real-model evaluation (`tools/eval_extraction_model.py`) applies exactly what the worker does."""
     out = []
     for item, inferred in fill_types(items[:40], hints):
@@ -637,8 +644,8 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
         if status == "valid" and item.get("predicate") == "resolved" and outcome(item) is None:
             status, reason = "pending", "resolved without an outcome"
         quote = text("evidence")
-        if (status == "valid" and check_evidence and quote and len(quote) >= EVIDENCE_MIN_CHARS
-                and similarity(quote, turn_text) < EVIDENCE_MIN):
+        if (status == "valid" and shown is not None and quote and len(quote) >= EVIDENCE_MIN_CHARS
+                and similarity(quote, shown) < EVIDENCE_MIN):
             status, reason = "pending", "evidence not in the turn"
         for extra in (note, inferred):
             if extra:
@@ -705,7 +712,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
             return "done"
         rows = [(extraction_id, revision_id, *(Jsonb(a[c]) if c == "participants" and a[c] is not None else a[c]
                                                for c in ASSERTION_COLUMNS))
-                for a in normalize(items, turn_text, hints, check_evidence=True)]
+                for a in normalize(items, turn_text, hints, shown_target(ctx))]
         if rows:
             with conn.cursor() as cur:
                 cur.executemany(

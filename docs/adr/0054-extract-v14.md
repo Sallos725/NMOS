@@ -27,10 +27,11 @@ stated there, and a `resolved` row stated at the wrong turn closes a thread ther
    example value of the `addresses` description use the persona 타쿠미 / Takumi and names already used in the tests,
    one for one, same shape. Canon reads show the same registry description and fingerprint it, so the canon generation
    changes too (its only change) and each chat's canon sources are read once more.
-3. **Evidence in the turn** (Q3). `normalize(…, check_evidence=True)`, passed by the turn worker only: a row still
+3. **Evidence in the turn** (Q3). `normalize(…, shown=shown_target(ctx))`, passed by the turn worker only: a row still
    valid after the other checks whose quote has at least `EVIDENCE_MIN_CHARS` (12) characters, and whose quote reaches
    less than `EVIDENCE_MIN` (0.7, the overlap of character trigrams over the quote's, as for reveals, PHASE-10) against
-   the target turn's text (the members' normalized text joined by line breaks, what the model was given), is stored
+   the target turn as the model saw it (`shown_target`: each member's normalized text up to `TARGET_CHARS`, joined by
+   line breaks; a quote from past that cut was not shown to the model), is stored
    `pending` with the reason "evidence not in the turn". Like any pending row it is never served (`facts.py` reads
    valid rows) and stays for audit. A shorter quote shares its few trigrams with most turns and would pass or fail by
    accident, so it is not checked; nor is a row without a quote. A row already parked keeps its own reason. Reveals are

@@ -93,13 +93,15 @@ def prompts(args: argparse.Namespace) -> list[dict[str, Any]]:
             secrets = X.secret_hints(ctx, earlier)
             user = X.build_prompt(ctx, hints, X.promise_hints(ctx, earlier), secrets, X.thread_hints(ctx, earlier))
             out.append({"turn": a["turn"], "user": user, "hints": hints, "secrets": secrets,
-                        "text": "\n".join(r["content"] for r in ctx["members"])})
+                        "text": "\n".join(r["content"] for r in ctx["members"]),
+                        # what the model saw of the target turn (extract-v14's `shown_target`)
+                        "shown": "\n".join(r["content"][:X.TARGET_CHARS] for r in ctx["members"])})
     return out
 
 
 def run(args: argparse.Namespace) -> None:
     system = X.SYSTEM_PROMPT.format(registry=registry_prompt())
-    checks = hasattr(X, "EVIDENCE_MIN_CHARS")  # extract-v14 or later: normalize parks a quote not in the turn
+    checks = hasattr(X, "shown_target")  # extract-v14 or later: normalize parks a quote not in the turn
     todo = []
     for p in prompts(args):
         for n in range(1, args.runs + 1):
@@ -125,10 +127,10 @@ def run(args: argparse.Namespace) -> None:
                     raise LLMError("model reply has no `assertions` list")
                 items = [x for x in items if not (isinstance(x, dict) and x.get("predicate") in X.DERIVED)]
                 items += X.revealed(parsed, p["secrets"], p["text"])
-                rows = (X.normalize(items, p["text"], p["hints"], check_evidence=True) if checks
+                rows = (X.normalize(items, p["text"], p["hints"], p["shown"]) if checks
                         else X.normalize(items, p["text"], p["hints"]))
                 for r in rows:
-                    r["quote_in_turn"] = in_turn(r.get("evidence"), p["text"])
+                    r["quote_in_turn"] = in_turn(r.get("evidence"), p["shown"])
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps({"turn": p["turn"], "compiler": X.COMPILER_VERSION, "usage": usage,
                                             "secs": round(time.monotonic() - t0, 1), "assertions": rows,
