@@ -190,8 +190,9 @@ runs of steps 3–4 (M0 v2 two chats × two extractions, four synthetic cuts; ve
 | forbidden phrases placed | 33 | 31 | 42 |
 | lexical recall found a candidate | 366 / 400 | 369 / 400 | 346 / 400 |
 
-- 0.7 admits a three-syllable keyword with a particle (0.75) and changed nothing measurable; 0.65 admits two
-  syllables too (0.67) and did worse on every count.
+- 0.7 admits a three-syllable keyword with a particle (0.75): +2 passed, +1 needing memory, −2 forbidden, +3 found,
+  no more than two runs of the same code at 0.8 differ (Step 4's run: 293, 99, 31, 366). 0.65 admits two syllables
+  too (0.67) and did worse on every count, by more than that noise.
 - Why, on the synthetic chat's 484 messages: the main character's given name matched 102 messages at 0.8 and 480 at
   0.65, so it was dropped as too broad; another name 53 → 159, a place 56 → 142. The rare words that answer
   questions barely moved (26 → 26, 12 → 16, 1 → 5): they stand alone (before a space or punctuation) often enough.

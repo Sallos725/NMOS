@@ -336,7 +336,8 @@ syllables reach 0.8. Such keywords are found only where the word stands alone (b
 the route finds less than it could. A threshold near 0.65 would match a word that starts with the keyword; it changes
 what is recalled and what is dropped as broad, so it was measured first (owner, 2026-09-30): at 0.65 lexical recall
 found fewer candidates (346 of 400 evaluation runs' queries against 366), passed fewer cases (283 against 291) and
-placed more forbidden phrases (42 against 33); 0.7 was the same as 0.8 (`docs/perf/lexical-recall.md`, "K40"). A
+placed more forbidden phrases (42 against 33); 0.7 differed from 0.8 by two or three at most, as much as two runs
+of 0.8 differ (`docs/perf/lexical-recall.md`, "K40"). A
 main character's name matched almost every message once its particles counted, and was dropped as too broad; the
 rare words that answer questions stand alone often enough to be found at 0.8. The threshold stays 0.8.
 *Workaround:* none needed; vectors and the whole-message route still answer.

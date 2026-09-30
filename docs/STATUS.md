@@ -395,7 +395,7 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
   `docs/phases/PHASE-17.md`); complete 2026-09-30 (`docs/perf/model-usage.md`); no release.
 - Phase 18 (recall by the words that matter): approved 2026-09-30, complete 2026-09-30
   (`docs/perf/lexical-recall.md`); no release. The owner accepted the latency criterion as measured over the
-  benchmark's questions and chose to measure a lower keyword threshold (K40) separately: measured 2026-09-30, it found less; 0.8 kept. Phase 19+ (Stages 7–8): not
+  benchmark's questions and chose to measure a lower keyword threshold (K40) separately: measured 2026-09-30, 0.65 found less and 0.7 differed only by run-to-run noise; 0.8 kept. Phase 19+ (Stages 7–8): not
   authorized.
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600. Raised to 800 on 2026-09-27 (owner; ADR 0035).
