@@ -366,7 +366,7 @@ as before; tags follow these rules.
 | Kind | Examples | Release |
 |---|---|---|
 | Urgent | memory lost for every request, a security fix, data loss or corruption | a patch release (`0.N.x`) right away |
-| Milestone | a roadmap stage meets its done criteria | the next minor version (`0.2.0` … `0.6.0`, then `1.0.0`) |
+| Milestone | a roadmap stage meets its done criteria | the next minor version (`0.2.0` … `0.4.0`, then `1.0.0`) |
 | Everything else | features of the stage in progress, UI, performance, docs, tests, defaults | no tag; ships with the next milestone |
 
 - **Every `main` merge publishes `ghcr.io/sallos725/nmos-sidecar:edge`** (and `:edge-<commit sha>`) after
