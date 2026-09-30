@@ -47,3 +47,8 @@ is who.
   would need its own rule for groups joined through several aliases; it waits for a case.
 - The owner can join names that are not the same person; the link is visible and undoable, and nothing
   is deleted.
+
+## Amendment (2026-10-01, Phase 20, ADR 0055)
+
+A join and its undo are previewed before they are made: what they change in the chat's memory, and a fingerprint
+the action checks (409 when memory changed since). The join itself is unchanged.

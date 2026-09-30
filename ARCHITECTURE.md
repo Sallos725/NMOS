@@ -347,7 +347,8 @@ from a listed description to a name in the turn is valid. KNOWN ENTITIES include
 (migration 0019) records that two names of one conversation and type are the same entity. It is owner
 input, kept by rebuilds and deleted with the conversation. Resolution (`resolve-v4`) joins the two
 names whenever the head mentions both; a linked name is never ambiguous. The panel adds and removes
-links on an entity's Inspector page; removal keeps the row (`removed_at`). There is no owner split.
+links on an entity's Inspector page; removal keeps the row (`removed_at`). The owner splits names since D54; each
+join, split and undo is previewed since D65.
 
 **D37 — How the cast stand with each other comes first (ADR 0026; owner report, not a phase feature).**
 Fact ranking gives a mentioned fact a prior among equal mentions: `+0.5` for `relationship` and
@@ -533,6 +534,13 @@ sentences, after then before, within `excerpt_chars` and at most four sentences;
 target's at 6,000), its prompt's examples are synthetic, and a row whose quote (12 characters or more) is not in its
 target turn as the model saw it (`threads.similarity < 0.7`, each member cut at 6,000 characters) is stored `pending`, "evidence not in the
 turn". Only the turn worker applies that check; canon reads do not. Reveals are unchanged.
+
+**D65 — A join, a split or an undo is shown before it is made (Phase 20, ADR 0055).** A preview is the difference of
+two reads of the head, as it is and as it would be (`memory_view(what_if=…)`): the entities of the two names, facts
+that stop or start being current and which version takes their place, relations and promises of a character with
+itself, threads, secrets, repairs whose match changes, conflicts, the persona and canon aliases. Nothing is written.
+Its fingerprint (head, links and repairs in force, generations, the difference) makes the action answer 409 when
+memory changed since; without one the action works as before. The story's order still decides between two facts.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

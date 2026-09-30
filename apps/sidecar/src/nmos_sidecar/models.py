@@ -192,6 +192,7 @@ class RepairRequest(BaseModel):
     new_value: Text | None = Field(default=None, max_length=500)
     other: Text | None = Field(default=None, max_length=120)
     entity_type: Literal["character", "place", "item", "group", "concept"] = "character"
+    expect: str | None = Field(default=None, max_length=64)  # a split's preview fingerprint (PHASE-20 Q4)
 
 
 class EntityLinkRequest(BaseModel):
@@ -199,3 +200,9 @@ class EntityLinkRequest(BaseModel):
     entity_type: Literal["character", "place", "item", "group", "concept"]
     name: Text = Field(min_length=1, max_length=120)
     same_as: Text = Field(min_length=1, max_length=120)
+    expect: str | None = Field(default=None, max_length=64)  # the preview's fingerprint (PHASE-20 Q4)
+
+
+class ExpectRequest(BaseModel):
+    """An undo of a join or a split, made from its preview (PHASE-20 Q4): the preview's fingerprint."""
+    expect: str | None = Field(default=None, max_length=64)

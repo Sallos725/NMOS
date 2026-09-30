@@ -26,18 +26,18 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from . import (__version__, archive, audit, canon, canonfacts, extraction, generations, inspector, ledger, normtext, plugin,
-               readmodel, retention, repairs, runtime, summaries, vectors)
+               preview, readmodel, retention, repairs, runtime, summaries, vectors)
 from . import usage as model_usage
 from .config import Settings
 from .db import make_pool
 from .extraction import enqueue_after_apply, job_counts
-from .facts import STANDING, memory_view, version_key
+from .facts import STANDING, links_of as facts_links_of, memory_view, version_key
 from .ids import uuid7
 from .models import (
     BodiesRequest,
     BodiesResponse,
     CanonSyncRequest, CanonSyncResponse,
-    EntityLinkRequest, MemoryModeRequest, RepairRequest,
+    EntityLinkRequest, ExpectRequest, MemoryModeRequest, RepairRequest,
     OutputRequest,
     Packet,
     ReconcileRequest,
@@ -588,35 +588,120 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                  "set" if row["memory_narrator"] else "none")
         return {"strict": row["memory_strict"], "narrator": row["memory_narrator"]}
 
+    def head_of(conn, conv_id: UUID) -> UUID:
+        conv = readmodel.conversation(conn, conv_id)
+        if conv is None or conv["head_commit_id"] is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        return conv["head_commit_id"]
+
+    def check_join(r, entity_type: str, name: str, same_as: str) -> None:
+        if r is None or any(r.status(entity_type, n) == "unresolved" for n in (name, same_as)):
+            raise HTTPException(status_code=422, detail="both names must be mentioned in this chat")
+        if r.node(entity_type, name) == r.node(entity_type, same_as):
+            raise HTTPException(status_code=422, detail="the two names are the same")
+
+    def in_force(conn, table: str, conv_id: UUID, row_id: UUID) -> dict[str, Any] | None:
+        cols = "id, entity_type, name, same_as" if table == "entity_link" else "id, kind, target"
+        return conn.execute(f"SELECT {cols} FROM {table} WHERE id = %s AND conversation_id = %s AND removed_at IS NULL",
+                            (row_id, conv_id)).fetchone()
+
+    def preview_of(conn, conv_id: UUID, head: UUID, action: str, **a: Any) -> dict[str, Any]:
+        """What a join, a split or the undo of either would change (PHASE-20 Q1–Q4): the chat's memory now and as it
+        would be, both read as every request reads them, and the difference; nothing is written."""
+        now = view_of(conn, head)
+        at = datetime.now(timezone.utc)
+        exclude: set[str] = set()
+        if action == "join":
+            check_join(now["resolution"], a["entity_type"], a["name"], a["same_as"])
+            names = [(a["entity_type"], a["name"]), (a["entity_type"], a["same_as"])]
+            what_if = {"add_links": [{"id": "preview", "entity_type": a["entity_type"], "name": a["name"].strip(),
+                                      "same_as": a["same_as"].strip(), "created_at": at}]}
+        elif action == "split":
+            try:
+                target, value = repairs.plan("name_split", a["name"], now, head_turn(conn, head), None, None, None,
+                                             None, None, a["other"], a["entity_type"], version_key)
+            except repairs.RepairError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
+            names = [(target["entity_type"], target["name"]), (target["entity_type"], target["other"])]
+            what_if = {"add_repairs": [{"id": "preview", "kind": "name_split", "target": target, "value": value,
+                                        "note": None, "created_at": at}]}
+            exclude = {"preview"}
+        elif action == "unlink":
+            link = in_force(conn, "entity_link", conv_id, a["row"])
+            if link is None:
+                raise HTTPException(status_code=404, detail="link not found")
+            names = [(link["entity_type"], link["name"]), (link["entity_type"], link["same_as"])]
+            what_if = {"drop_links": {str(link["id"])}}
+        else:  # "unsplit"
+            rep = in_force(conn, "owner_repair", conv_id, a["row"])
+            if rep is None:
+                raise HTTPException(status_code=404, detail="repair not found")
+            if rep["kind"] != "name_split":
+                raise HTTPException(status_code=422, detail="only a join or a split has a preview")
+            t = rep["target"]
+            names = [(t["entity_type"], t["name"]), (t["entity_type"], t["other"])]
+            what_if = {"drop_repairs": {str(rep["id"])}}
+            exclude = {str(rep["id"])}
+        then = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), what_if=what_if)
+        out = preview.diff(now, then, names, exclude)
+        state = {"head": head, "links": sorted(str(x["id"]) for x in facts_links_of(conn, conv_id)),
+                 "repairs": sorted(str(x["id"]) for x in now["repairs"]), "extractor": rt["active_extractor"],
+                 "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names")}
+        return {"action": action, **out, "fingerprint": preview.fingerprint(out, state)}
+
+    def expect_same(conn, conv_id: UUID, expect: str | None, action: str, **a: Any) -> None:
+        """An action made from a preview (Q4): 409 with a fresh preview when memory changed since. Called inside the
+        action's transaction: the chat's row is locked first and its head read under the lock, so a sync, a join or a
+        repair of the same chat waits until the action is written (ADR 0055)."""
+        if expect is None:
+            return
+        head = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s FOR UPDATE", (conv_id,)).fetchone()
+        if head is None or head["head_commit_id"] is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        fresh = preview_of(conn, conv_id, head["head_commit_id"], action, **a)
+        if fresh["fingerprint"] != expect:
+            raise HTTPException(status_code=409, detail={"message": "memory changed since the preview",
+                                                         "preview": jsonable_encoder(fresh)})
+
+    @app.post("/v1/conversations/{conv_id}/entity-links/preview", dependencies=[Depends(auth)])
+    def preview_entity_link(conv_id: UUID, body: EntityLinkRequest, request: Request):
+        """What joining two names would change in this chat's memory (PHASE-20), before the owner joins them."""
+        with request.app.state.pool.connection() as conn:
+            return preview_of(conn, conv_id, head_of(conn, conv_id), "join", entity_type=body.entity_type,
+                              name=body.name, same_as=body.same_as)
+
     @app.post("/v1/conversations/{conv_id}/entity-links", dependencies=[Depends(auth)])
     def add_entity_link(conv_id: UUID, body: EntityLinkRequest, request: Request):
         """The owner says two names of this chat are one entity (ADR 0025). Both must be mentioned on the
-        head now, with that type. The link joins them on every read until the owner removes it."""
+        head now, with that type. The link joins them on every read until the owner removes it. With `expect`, the
+        fingerprint of the preview the owner saw: 409 when memory changed since (PHASE-20 Q4)."""
         with request.app.state.pool.connection() as conn:
-            conv = readmodel.conversation(conn, conv_id)
-            if conv is None or conv["head_commit_id"] is None:
-                raise HTTPException(status_code=404, detail="conversation not found")
-            r = view_of(conn, conv["head_commit_id"])["resolution"]
-            if r is None or any(r.status(body.entity_type, n) == "unresolved" for n in (body.name, body.same_as)):
-                raise HTTPException(status_code=422, detail="both names must be mentioned in this chat")
-            if r.node(body.entity_type, body.name) == r.node(body.entity_type, body.same_as):
-                raise HTTPException(status_code=422, detail="the two names are the same")
+            head = head_of(conn, conv_id)
+            check_join(view_of(conn, head)["resolution"], body.entity_type, body.name, body.same_as)
             with conn.transaction():
+                expect_same(conn, conv_id, body.expect, "join", entity_type=body.entity_type, name=body.name,
+                            same_as=body.same_as)
                 link = conn.execute(
                     "INSERT INTO entity_link (id, conversation_id, entity_type, name, same_as) VALUES (%s, %s, %s, %s, %s)"
                     " RETURNING id, entity_type, name, same_as, created_at",
                     (uuid7(), conv_id, body.entity_type, body.name.strip(), body.same_as.strip())).fetchone()
             log.info("entity link conversation=%s link=%s", conv_id, link["id"])
-            entity = view_of(conn, conv["head_commit_id"])["resolution"].entity(
-                body.entity_type, body.name)
+            entity = view_of(conn, head)["resolution"].entity(body.entity_type, body.name)
             return {"link": link, "entity": entity}
 
+    @app.post("/v1/conversations/{conv_id}/entity-links/{link_id}/remove/preview", dependencies=[Depends(auth)])
+    def preview_remove_entity_link(conv_id: UUID, link_id: UUID, request: Request):
+        """What taking a join back would change (PHASE-20 Q2)."""
+        with request.app.state.pool.connection() as conn:
+            return preview_of(conn, conv_id, head_of(conn, conv_id), "unlink", row=link_id)
+
     @app.post("/v1/conversations/{conv_id}/entity-links/{link_id}/remove", dependencies=[Depends(auth)])
-    def remove_entity_link(conv_id: UUID, link_id: UUID, request: Request):
+    def remove_entity_link(conv_id: UUID, link_id: UUID, request: Request, body: ExpectRequest | None = None):
         """The owner takes a link back (ADR 0025): the next read resolves the names as the story alone
-        does. The row stays with `removed_at` for audit."""
+        does. The row stays with `removed_at` for audit. With `expect`, as a join (PHASE-20 Q4)."""
         with request.app.state.pool.connection() as conn:
             with conn.transaction():
+                expect_same(conn, conv_id, body.expect if body else None, "unlink", row=link_id)
                 n = conn.execute("UPDATE entity_link SET removed_at = now() WHERE id = %s AND conversation_id = %s"
                                  " AND removed_at IS NULL", (link_id, conv_id)).rowcount
         if not n:
@@ -667,6 +752,15 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             view = view_of(conn, conv["head_commit_id"])
             return {"repairs": repair_rows(conn, conv_id, view["repairs"])}
 
+    @app.post("/v1/conversations/{conv_id}/repairs/preview", dependencies=[Depends(auth)])
+    def preview_repair(conv_id: UUID, body: RepairRequest, request: Request):
+        """What splitting two names would change in this chat's memory (PHASE-20 Q2); other repairs have no preview."""
+        if body.kind != "name_split":
+            raise HTTPException(status_code=422, detail="only a join or a split has a preview")
+        with request.app.state.pool.connection() as conn:
+            return preview_of(conn, conv_id, head_of(conn, conv_id), "split", entity_type=body.entity_type,
+                              name=body.item, other=body.other)
+
     @app.post("/v1/conversations/{conv_id}/repairs", dependencies=[Depends(auth)])
     def add_repair(conv_id: UUID, body: RepairRequest, request: Request):
         """The owner repairs one item of this chat's memory (ADR 0044): `item` is the id the Inspector shows for a
@@ -685,6 +779,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             except repairs.RepairError as e:
                 raise HTTPException(status_code=422, detail=str(e)) from e
             with conn.transaction():
+                if body.kind == "name_split":
+                    expect_same(conn, conv_id, body.expect, "split", entity_type=body.entity_type, name=body.item,
+                                other=body.other)
                 row = conn.execute(
                     "INSERT INTO owner_repair (id, conversation_id, kind, target, value, note) VALUES (%s, %s, %s, %s, %s, %s)"
                     " RETURNING id, kind, target, value, note, created_at",
@@ -695,12 +792,19 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                  applied is not None)
         return {"repair": row, "applied": applied}
 
+    @app.post("/v1/conversations/{conv_id}/repairs/{repair_id}/remove/preview", dependencies=[Depends(auth)])
+    def preview_remove_repair(conv_id: UUID, repair_id: UUID, request: Request):
+        """What taking a split back would change (PHASE-20 Q2)."""
+        with request.app.state.pool.connection() as conn:
+            return preview_of(conn, conv_id, head_of(conn, conv_id), "unsplit", row=repair_id)
+
     @app.post("/v1/conversations/{conv_id}/repairs/{repair_id}/remove", dependencies=[Depends(auth)])
-    def remove_repair(conv_id: UUID, repair_id: UUID, request: Request):
+    def remove_repair(conv_id: UUID, repair_id: UUID, request: Request, body: ExpectRequest | None = None):
         """The owner takes a repair back (ADR 0044): the next read is as the story alone says. The row stays with
-        `removed_at` for audit."""
+        `removed_at` for audit. With `expect`, a split's undo made from its preview (PHASE-20 Q4)."""
         with request.app.state.pool.connection() as conn:
             with conn.transaction():
+                expect_same(conn, conv_id, body.expect if body else None, "unsplit", row=repair_id)
                 n = conn.execute("UPDATE owner_repair SET removed_at = now() WHERE id = %s AND conversation_id = %s"
                                  " AND removed_at IS NULL", (repair_id, conv_id)).rowcount
         if not n:

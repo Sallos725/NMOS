@@ -346,7 +346,7 @@ LIVE: Any = object()  # `canon_facts` of a live read: decided from the manifest 
 def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None, upto: int | None = None,
                 known_at: datetime | None = None, canon_manifest: str | None = None,
                 canon_exact: bool = False, canon_key: str | None = None,
-                canon_facts: Any = LIVE) -> dict[str, list[dict[str, Any]]]:
+                canon_facts: Any = LIVE, what_if: dict[str, Any] | None = None) -> dict[str, list[dict[str, Any]]]:
     """The head's assertions by what they may do (ADR 0013).
 
     - facts: current fact versions from actual narration (legacy rows without a source count as
@@ -365,6 +365,9 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
 
     `upto` and `known_at` read it as of an earlier request (ADR 0027): the head up to that position, the
     extractions and owner links NMOS had by that time.
+
+    `what_if` reads it as it would be after an owner's join, split or undo (PHASE-20 Q3): `add_links` and
+    `add_repairs` are rows as they would be stored, `drop_links` and `drop_repairs` ids taken back. Nothing is written.
 
     With `canon_key` (a canon generation, ADR 0047), the canon facts of the manifest the names come from are facts
     from before turn 0 (turn -1, `canon` set): the story supersedes them from the turn it says something new. A story
@@ -391,13 +394,20 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         " WHERE w.id = %(head)s ORDER BY r.created_at, r.id", {"head": head, "upto": upto, "at": known_at}).fetchall()
     conv = found[0]
     repairs = [{k: x[k] for k in REPAIR_COLUMNS} for x in found if x["id"] is not None]
+    if what_if:
+        repairs = [x for x in repairs if str(x["id"]) not in what_if.get("drop_repairs", ())] + list(
+            what_if.get("add_repairs", ()))
     last_turn = conv["last_turn"] if repairs else None
     in_force = live(repairs, last_turn)
     # Names from canon (PHASE-14 Q6): the request's own manifest, else the canon in force at the read.
     canon_names, canon_used = (canon.names(conn, conv["conversation_id"], known_at, canon_manifest, canon_exact)
                                if conv["canon_manifest_id"] or canon_manifest else ([], None))
-    r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]),
-                links_of(conn, conv["conversation_id"], known_at), splits_of(in_force), canon_names)
+    links = links_of(conn, conv["conversation_id"], known_at)
+    if what_if:
+        links = [x for x in links if str(x["id"]) not in what_if.get("drop_links", ())] + list(
+            what_if.get("add_links", ()))
+    r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]), links, splits_of(in_force),
+                canon_names)
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []
