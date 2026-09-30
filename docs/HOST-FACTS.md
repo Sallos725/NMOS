@@ -520,13 +520,16 @@ evaluation's load during the run, so the timings are indicative.
 3. **Cost** (from the plugin frame; five calls per state, plus two more with nothing opened after the deletes of
    item 4):
 
-   | Loaded in the page | `getDatabase(['characters'])` | `getCharacterFromIndex` loop | `getDatabase(['characterOrder'])` | Host long tasks per call |
+   | Loaded in the page | `getDatabase(['characters'])` | `getCharacterFromIndex` loop | `getDatabase(['characterOrder'])` | Host long tasks per round |
    |---|---|---|---|---|
    | nothing opened | 0.4–0.6 ms | 1.0–1.4 ms | 0.2–0.3 ms | none |
    | 10,040 messages (1.68 M characters) | 94–110 ms | 80–112 ms | 0.6–1.0 ms | none over 50 ms |
-   | 15,000 messages (2.50 M characters) | 127–154 ms | 122–146 ms | 0.5–3.9 ms | ten over five calls, 50–66 ms each |
+   | 15,000 messages (2.50 M characters) | 127–154 ms | 122–146 ms | 0.5–3.9 ms | ten over five rounds, 50–66 ms each |
 
-   The run's first call (966 ms) included the time to answer the permission prompt.
+   A round is one probe pass: both `getDatabase` calls, a walk over the returned messages and the
+   `getCharacterFromIndex` loop. The long tasks were recorded over whole rounds, so they cannot be split between the two
+   full copies (`getDatabase(['characters'])` and the loop). The run's first call (966 ms) included the time to answer
+   the permission prompt.
 4. **A deleted chat and a trashed character look the same.** The chat list's trash icon removes the chat from its
    character's `chats` for good: one confirm, then a splice, with no trash and no hook (H10). A character's default
    delete (**Move to trash**) and **Deactivate Character** both move the character out of `db.characters` into
