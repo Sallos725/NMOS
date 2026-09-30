@@ -372,7 +372,7 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
 - Phase 17 (model-call cost and fallback outcomes; C4 and C5 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`): the
   owner chose 2026-09-29 to run it after Phase 16; approved 2026-09-29 with every proposed answer (Q1–Q7,
   `docs/phases/PHASE-17.md`); no release.
-  Phase 18+ (Stages 7–8): not authorized.
+  Phase 18 (recall by the words that matter): approved 2026-09-30, next after Phase 17. Phase 19+ (Stages 7–8): not authorized.
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600. Raised to 800 on 2026-09-27 (owner; ADR 0035).
 - Release cadence — decided 2026-09-26, revised 2026-09-27: one release per roadmap stage, urgent patches
