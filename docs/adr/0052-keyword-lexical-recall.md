@@ -46,6 +46,8 @@ names a pet scored 0.32 against the message that answers it; each of its two nou
 - More raw passages reach the packet for natural questions, with or without vectors.
 - A chat's main names are dropped as too common on short chats too (the half rule); a question about them relies on
   facts, vectors and the other keywords.
-- Latency at 10,000 messages (`tools/bench_story.py`, budget 4,000, three alternating runs): p50 +10.0 ms, p95
-  −203 ms (slow words used to take the whole lexical budget). Measured again in step 5.
+- Latency at 10,000 messages (`tools/bench_story.py`, budget 4,000, three alternating runs): p50 +10.0 ms.
+  The route adds ≈5–7 ms when its keywords are rare and 29–60 ms when some are too common. (p95 fell on that bench
+  because a whole-message timeout seen in every run on `main` did not occur on this branch; not attributed to this
+  change.) Measured again in step 5.
 - Verbs and one-syllable-particle forms can still take a slot; the rules are fixed lists and can be retuned.

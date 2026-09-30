@@ -82,5 +82,8 @@ replay runs without it, ADR 0052). Baseline → with keywords (after the reviews
 - Forbidden phrases placed fell on M0 (6 → 2 with vectors) and on the synthetic 120 and 240 cuts (8 → 4, 2 → 1); the
   synthetic 60 cut gained one each way. Passed rose on the synthetic 120 cut (13 → 16 with vectors, 16 → 17 without).
 - Latency at 10,000 messages (`tools/bench_story.py`, budget 4,000, three alternating runs against `main`): retrieve
-  p50 119.9 → 129.9 ms (+10.0), p95 422.7 → 219.3 ms. Before the slice a two-syllable word could keep the index busy until
-  the lexical budget ran out (≈300 ms, twice in 15 requests).
+  p50 119.9 → 129.9 ms (+10.0), p95 422.7 → 219.3 ms. The p95 is not this change's doing: in every run on `main`
+  one of the 15 requests (a repeated question) hit the whole-message route's 300 ms timeout, and in no run of this
+  branch did it; the whole-message route is unchanged, and why it did not time out here is not known yet (a cache or
+  index warmed by the keyword lookups is a guess). The keyword route itself adds 5–60 ms to a request (per request,
+  measured in `gather`: ≈5–7 ms when its keywords are rare, 29–60 ms when some are too common).
