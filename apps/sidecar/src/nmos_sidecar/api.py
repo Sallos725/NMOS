@@ -729,8 +729,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                            **vectors.coverage(conn, pj_key, conv_id).get(conv_id, {})},
             "canon": {"generation": generations.describe(conn, rt.get("active_canon")),
                       **canonfacts.coverage(conn, rt.get("active_canon"), conv_id)},
-            "produced": model_usage.produced(conn, conv_id, ex_key, rt.get("active_summarizer")),
-            "summaries": model_usage.summary_jobs(conn, conv_id, rt.get("active_summarizer")),
+            **model_usage.work(conn, conv_id, ex_key, rt.get("active_summarizer")),
             **spent,
         }
 

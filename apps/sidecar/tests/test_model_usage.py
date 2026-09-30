@@ -272,3 +272,26 @@ def test_older_rows_count_under_their_kind_and_unreported_fields_are_not_zeros(m
         assert "no generation (older version)" in section and "legacy:old-embed" in section
         embed_row = section[section.index("Embeddings"):].split("</tr>")[0]
         assert embed_row.count("<td>—</td>") == 2  # output and cached input: not reported, not 0
+
+
+def test_summary_counts_and_jobs_are_the_heads_own(migrated):
+    """Copilot re-review: an empty summary is not "made", and a dead job of a window an edit replaced is not a failure
+    of the chat now."""
+    chat = story_chat(30)
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        conv = c.get("/v1/conversations").json()[0]["id"]
+        cov = lambda: c.get(f"/v1/conversations/{conv}/coverage").json()
+        assert cov()["summaries"] == {"pending": 3, "failed": 0}  # three due scenes
+        with psycopg.connect(migrated, autocommit=True) as conn:
+            conn.execute("UPDATE job SET status = 'dead' WHERE kind = 'summarize' AND payload->>'first_turn' = '0'")
+        drain_summaries(migrated)
+        assert cov()["summaries"] == {"pending": 0, "failed": 1} and cov()["produced"]["summaries"] == 2  # no story yet
+        chat.edit(2, "Reply 0 follows, edited.")  # turn 0's window gets a new key; its dead job is history
+        sync(c, chat)
+        assert cov()["summaries"] == {"pending": 1, "failed": 0}
+        drain_summaries(migrated)
+        assert cov()["summaries"] == {"pending": 0, "failed": 0} and cov()["produced"]["summaries"] == 4
+        with psycopg.connect(migrated, autocommit=True) as conn:
+            conn.execute("UPDATE summary SET text = '' WHERE level = 'scene' AND first_turn = 8 AND discarded_at IS NULL")
+        assert cov()["produced"]["summaries"] == 3
