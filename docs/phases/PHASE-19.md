@@ -83,7 +83,7 @@ itself.
 
 The noise below is estimated from three runs of today's prompt and is itself rough.
 
-- [ ] Every existing test passes; new deterministic cases: a context message is cut at 1,000 characters and the target
+- [x] Every existing test passes; new deterministic cases (`tests/test_extract_v14.py`, `tests/test_eval_extract_sample.py`): a context message is cut at 1,000 characters and the target
       is not; the prompt's examples use only the synthetic names; a quote found in the target turn keeps an assertion
       valid, a quote found only in a context turn parks it with its reason, a quote under 12 characters and a row
       without a quote are unchanged, a reveal behaves as before, a canon read does not apply the check; the extractor

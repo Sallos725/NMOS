@@ -345,10 +345,11 @@ know goes in a `<Private>` section with a rule: only its holders know it, and no
 those it is kept from (ADR 0034). The chat's memory mode can withhold it instead, or keep to a first-person
 narrator's knowledge (ADR 0035).
 
-A fact must quote its own turn (since `extract-v14`, Phase 19, ADR 0054). Each extracted fact comes with a short quote
-of its evidence; when a quote of 12 characters or more is not in the turn the fact was extracted from (the model
-restating what an earlier turn said, say), the fact is kept as pending, "evidence not in the turn": it is never
-injected; the fact is remembered from the turn that said it when that turn's extraction found it. The Inspector does not list pending facts yet. The model also
+A fact quoted from another turn is not injected (since `extract-v14`, Phase 19, ADR 0054). Each extracted fact comes
+with a short quote of its evidence; when a quote of 12 characters or more is not in the turn the fact was extracted
+from (the model restating what an earlier turn said, say), the fact is kept as pending, "evidence not in the turn": it is never
+injected; the fact is remembered from the turn that said it when that turn's extraction found it. A shorter quote, or a fact without one, is
+not checked. The Inspector does not list pending facts yet. The model also
 sees less of the previous turns (each message up to 1,000 characters instead of 2,000), so an extraction reads about a
 sixth fewer input tokens.
 
