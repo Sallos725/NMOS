@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **An owner's repair survives a new extractor generation** (ADR 0044 amendment 2, `docs/perf/repair.md`). A repair now
+  also stores its item's quote of the chat, and finds a re-extracted item by that quote when the new generation words
+  it differently or states it at another turn. On a copy of the owner's chats re-extracted with `extract-v14`, 40 of
+  68 repairs made on `extract-v13` found their item again (29 before); none whose item the new generation still quotes
+  was lost. Repairs made before this change have no quote and match as before; one that matches nothing is still
+  listed under "Needs attention".
 - **Phase 20 complete: a name join shown before it is made** (ADR 0055, D65, `docs/perf/join-preview.md`). Joining
   two names, splitting them, or undoing either now shows first what changes in the chat's memory: which current
   fact replaces which (the story's order decides), facts that merge, a relationship, promise or thread of a character

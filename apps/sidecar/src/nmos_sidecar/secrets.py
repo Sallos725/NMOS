@@ -129,7 +129,8 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
                             "subject": a["subject"], "predicate": a["predicate"], "object": a.get("object"),
                             "position": a["position"],
                             "host_logical_id": a.get("host_logical_id"), "holders": list(a.get("known_by") or []),
-                            "kept_from": list(kept.values()), "ended": {}, "_kept": kept})
+                            "kept_from": list(kept.values()), "ended": {}, "_kept": kept,
+                            "_evidence": a.get("evidence")})  # for a repair's quote (repairs.match_secret)
         elif reveals(a):
             used.add(a["id"])
             who = _who(r, a["subject"])
@@ -142,6 +143,7 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
     for s in secrets:
         s["open"] = [n for n in s["kept_from"] if n not in s["ended"]]
         s.pop("_kept")
+        s.pop("_evidence")
     secrets.sort(key=lambda s: s["position"], reverse=True)
     unmatched.sort(key=lambda u: u["position"], reverse=True)
     return secrets, unmatched, used

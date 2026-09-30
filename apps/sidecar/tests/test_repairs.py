@@ -753,3 +753,74 @@ def test_a_name_split_and_an_owner_join_survive_a_rebuild_and_a_new_generation(m
     with make_client(migrated, extract_backfill=100, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
         assert drain(migrated, aliased) > 0  # the new generation extracted every turn
         holds()
+
+
+# --- ADR 0044 amendment 2: a repair finds a new generation's item by its quote of the raw text ----------------------
+
+
+def quoted_anew(system: str, user: str) -> tuple[dict, str]:
+    """A new model that words a goal and a secret too differently for the text match, quoting the same message."""
+    out, raw = stub_extractor(system, user)
+    words = {"find the keeper": "locate a lighthouse warden", "the letter is forged": "a fake missive"}
+    return {**out, "assertions": [{**a, "value": words.get(a["value"], a["value"])} if isinstance(a.get("value"), str)
+                                  else a for a in out["assertions"]]}, raw
+
+
+def test_a_repair_finds_a_new_generation_s_item_by_its_quote_when_the_words_differ(migrated):
+    chat = repair_chat()
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = setup(c, migrated, chat)
+        closed = repair(c, cid, kind="thread_close", item=str(thread(c, cid)["id"]))
+        found = repair(c, cid, kind="secret_found_out", item=str(secret(c, cid)["id"]), character="Kaito")
+        stored = {r["kind"]: r["target"] for r in c.get(f"/v1/conversations/{cid}/repairs").json()["repairs"]}
+        assert stored["thread_close"]["evidence"] == "Hana wants to find the keeper."
+        assert stored["secret_found_out"]["evidence"] == "Hana keeps a secret from Kaito: the letter is forged."
+    with make_client(migrated, extract_backfill=100, llm_url=LLM["llm_url"], llm_model="fake-2") as c:
+        assert drain(migrated, quoted_anew) > 0
+        t = thread(c, cid, "locate a lighthouse warden")
+        assert repairs.similarity(GOAL, t["text"]) < repairs.MATCH_MIN  # the text match alone would miss it
+        assert (t["status"], t["repair"]) == ("achieved", closed["repair"]["id"])
+        s = next(s for s in c.get(f"/v1/conversations/{cid}/secrets").json() if "missive" in s["text"])
+        assert s["open"] == [] and s["ended"]["Kaito"]["owner"] == found["repair"]["id"]
+        assert all(r["applied"] for r in c.get(f"/v1/conversations/{cid}/repairs").json()["repairs"])
+
+
+QUOTE = "Hana swore she would find the keeper before dawn."
+
+
+def test_a_quote_names_one_item_at_any_turn_but_an_edited_target_turn():
+    target = {"turn": 3, "turn_hash": "h3", "kind": "goal", "by": "Hana", "to": None, "text": "find the keeper",
+              "evidence": QUOTE}
+    later = {"id": 1, "turn": 5, "turn_hash": "h5", "kind": "goal", "by": "Hana", "text": "reach the old tower",
+             "evidence": "she would find the keeper before dawn"}
+    assert repairs.match_thread(target, [later], None) is later  # another turn, other words, the same quote
+    assert repairs.match_thread({**target, "evidence": None}, [later], None) is None  # a repair made before the quote
+    assert repairs.match_thread(target, [later, {**later, "id": 2}], None) is None  # two quote it: neither
+    assert repairs.match_thread(target, [{**later, "by": "Kaito"}], None) is None  # another maker
+    edited = {**later, "turn": 3, "turn_hash": "edited"}
+    assert repairs.match_thread(target, [edited], None) is None  # the target's turn changed: still nothing (Q3)
+    assert repairs.match_thread(target, [{**later, "evidence": "Hana swore it."}], None) is None  # too short a run
+
+
+def test_a_fact_repair_finds_its_fact_by_its_quote_at_another_turn():
+    a = {**row(3, "Hana", "identity", None, "knight", subject_type="character"), "turn_hash": "h3", "evidence": QUOTE}
+    target = repairs.fact_target(a)
+    moved = {**a, "id": 9, "turn": 4, "turn_hash": "h4", "value": "a sworn blade"}
+    assert repairs.match_fact(target, [moved], None) is moved
+    applied: dict = {}
+    rep = {"id": uuid.uuid4(), "kind": "fact_retract", "target": target, "value": {}, "note": None}
+    out, _ = repairs.apply_facts([moved], [rep], None, applied)
+    assert out == [] and applied == {str(rep["id"]): "9"}
+    # a correction made at the fact's own turn stays in place where the new generation states the fact
+    fix = {**rep, "id": uuid.uuid4(), "kind": "fact_correct", "value": {"value": "squire", "turn": 3}}
+    (now,), _ = repairs.apply_facts([moved], [fix], None, {})
+    assert (now["value"], now["turn"], now["position"], now["owner"]) == ("squire", 4, moved["position"], True)
+    # the story's repair never takes a canon fact that quotes the same words
+    canon = {**moved, "turn": -1, "turn_hash": "card:desc", "canon": "card:desc"}
+    assert repairs.match_fact(target, [canon], None) is None
+
+
+def test_a_quote_is_as_long_as_extraction_asks_of_a_quote():
+    from nmos_sidecar.extraction import EVIDENCE_MIN_CHARS
+    assert repairs.QUOTE_MIN_CHARS == EVIDENCE_MIN_CHARS
+    assert repairs.quoted("the keeper waits", "THE  KEEPER waits here") and not repairs.quoted("the keeper", "the keeper")

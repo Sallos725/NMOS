@@ -111,3 +111,24 @@ refused; a retraction's restored version did not name the repair.
 
 A name split and its undo are previewed like a join (ADR 0055); `expect` on the split and on its removal checks the
 preview's fingerprint. Other repair kinds have no preview.
+
+## Amendment 2 (2026-10-01): a repair finds a new generation's item by its quote
+
+Measured on a copy of production re-extracted with `extract-v14` (`docs/perf/repair.md`, "Across a new generation"):
+the owner's 68 repairs, made on `extract-v13`, found 29 targets again. A new generation words an item its own way
+(threads of the same turn and maker fell below `MATCH_MIN`) and sometimes states it at a neighbouring turn, but it
+quotes the same message, and `extract-v14` checks that a quote is in its turn (ADR 0054).
+
+12. **The quote is part of the target.** A new repair stores its item's quote (`evidence`: the thread's, the secret's
+    or the fact's assertion) with the rest of its target.
+13. **A second way to the target.** When no item of the target's turn is close enough (item 3), a read takes the one
+    item of the same head (kind, maker and counterpart for a thread; predicate, subject and object for a secret or a
+    fact) at any turn whose quote shares a run of at least 12 characters (`QUOTE_MIN_CHARS`, extract-v14's own
+    minimum for a quote) with the stored one, case and spacing aside. Two such items: none. An item of the target's
+    own turn counts only while that turn reads as it did, so an edit still makes the repair match nothing (item 3).
+    A story fact's repair never takes a canon fact, nor a canon fact's repair a story fact. A correction made at the
+    fact's own turn stays in place at the turn where the new generation states the fact.
+14. **Older repairs** have no stored quote and match as before. Production had none on 2026-10-01.
+15. **Not done:** an item of the same turn and maker that quotes another sentence of the turn (9 of the 68) is left
+    unmatched and listed: nothing tells whether it is the same item, and a wrong match would close a thread the owner
+    never saw. A lock on an owner's correction still names the correction's repair.
