@@ -1,7 +1,8 @@
 # NMOS Roadmap to 1.0
 
 > Owner decision, 2026-09-27: NMOS is not called stable until stages 4–8 of the original roadmap
-> (`docs/reference/ultimate_narrative_memory_architecture.md` §84) are done. Each stage is one release;
+> (`docs/reference/ultimate_narrative_memory_architecture.md` §84) are done. Narrowed on 2026-10-01 (**R7**, below):
+> 1.0 needs stages 4–7; Stage 8 and Stage 6's transition rules and conflict queue move after 1.0. Each stage is one release;
 > 1.0.0 follows the last one. **This document is a draft**: the order and each stage's done criteria
 > wait for the owner decisions marked **R1…**; stage 4 has a draft design (`docs/proposals/STAGE-4-KNOWLEDGE.md`). A stage still needs its
 > own `docs/phases/PHASE-N.md`, approved by the owner, before implementation (`AGENTS.md` §2).
@@ -16,11 +17,12 @@
 | 3 — Retrieval core | SQL, lexical, vector, RRF, packet, traces | done |
 | 4 — Epistemic engine | observer model, knowledge projection, principal ACL, false beliefs, private thoughts | done, released in `v0.2.0` (Phase 10; K11 rewritten to what remains) |
 | 5 — Narrative engine | causal links, open threads, scenes, episodes, arcs, dynamic character state | done, released in `v0.2.0` (Phases 11–12) |
-| 6 — Verification and repair | transition verifier, conflict queue, inspector, entity merge/split, canon locking | in progress: owner repair (Phase 13), canon sources (Phase 14) and export and restore (Phase 16) on `main`; transition rules unscheduled |
+| 6 — Verification and repair | transition verifier, conflict queue, inspector, entity merge/split, canon locking | in progress: owner repair (Phase 13), canon sources (Phase 14) and export and restore (Phase 16) on `main`, Phase 20 the last phase; transition rules and conflict queue after 1.0 (R7) |
 | 7 — Forensic recall | raw-history search, evidence traversal, exact quotes | partial: packet ledger and as-of replay (Phase 9); not authorized |
-| 8 — PocketRisu bridge | partial chat reads, mutation events | not started; not authorized |
+| 8 — PocketRisu bridge | partial chat reads, mutation events | not started; after 1.0 (R7) |
 
-Stages 0–3 are the foundation and are done. Stages 4 and 5 are done. Stages 6–8 are what remains before 1.0.
+Stages 0–3 are the foundation and are done. Stages 4 and 5 are done. Stage 6 closes with Phase 20; Stage 7 is what
+remains before 1.0 (R7).
 Phase 15 (a packet that fills its budget, `docs/phases/PHASE-15.md`) is not a stage of this roadmap: it is P1 of
 `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`, approved 2026-09-29, and was done after Phase 14 and before Phase 16
 (complete 2026-09-29). Phase 17 (the cost of NMOS's own model calls and fallbacks told apart in the HUD,
@@ -35,7 +37,7 @@ approved 2026-09-30, complete 2026-10-01) is not a stage either: it ships the ch
 | Version | When |
 |---|---|
 | `0.1.x` | the feature set of the betas; `v0.1.0-beta.21` was the last, and only urgent fixes followed |
-| `0.2.0` … `0.6.0` | one per stage, in the order of R1, when that stage meets its done criteria. `v0.2.0` (2026-09-28) was cut early at the owner's request: it carries Stages 4 and 5 together, plus the Stage 6 work then on `main` |
+| `0.2.0` … `0.4.0` | one per stage, in the order of R1, when that stage meets its done criteria (`0.3.0` Stage 6, `0.4.0` Stage 7). `v0.2.0` (2026-09-28) was cut early at the owner's request: it carries Stages 4 and 5 together, plus the Stage 6 work then on `main` |
 | `1.0.0` | the 1.0 gate below |
 
 Every version before 1.0.0 is a GitHub pre-release. Between versions the owner runs `:edge` (a build of
@@ -49,6 +51,18 @@ every `main` merge; `AGENTS.md` §13). Each stage ships at most one new extracto
   (Track B, B6).
 - 8 is independent of the others (a host patch) and can move earlier if host latency (K1, K3) matters
   more than features.
+
+**R7 — scope of 1.0.** Decided 2026-10-01 (owner). The roadmap had no visible end: its finish line was the whole
+original design, and most recent phases (15, 17, 18, 19) were outside it. So:
+- **Stage 8 leaves the 1.0 scope.** It needs a deep PocketRisu patch that production would have to run; it is recorded
+  under "After 1.0", not built. R6 is moot until then.
+- **Stage 6 ends with Phase 20.** Transition rules and the conflict queue move after 1.0; the owner's repair in the
+  panel (Phase 13) and the "Needs attention" list stand in for them (an accepted trade-off).
+- **Until 1.0, a new phase is a Stage 7 item.** Urgent fixes (`AGENTS.md` §13) are the exception. Other ideas,
+  including C10 of `docs/proposals/IDEA-SURVEY-2026-09-29.md` (memory of chats deleted in the host; host evidence
+  H22 recorded), wait under "After 1.0" unless the owner pulls one in by name.
+
+The road left is Stage 7 (`0.4.0`) and two quiet weeks on production.
 
 ## Measuring progress (M0, before the first stage)
 
@@ -113,9 +127,9 @@ undo that re-extracts the turns a join covered (C7 of the idea survey). Open bey
 assigned to a phase.
 
 Scope (draft):
-- transition rules for status and identity and for relationships, with pending, conflicting and
-  rejected outcomes;
-- a conflict queue in the Inspector;
+- ~~transition rules for status and identity and for relationships, with pending, conflicting and
+  rejected outcomes~~ — after 1.0 (R7);
+- ~~a conflict queue in the Inspector~~ — after 1.0 (R7);
 - owner repair, stored as audited source entries so it survives every rebuild: correct or retract a
   fact, split a wrong alias (K8), close or reopen a promise (K23), edit aliases;
 - canon as sources: character card, lorebook, persona, author's note, with authority, canon lock, and
@@ -179,9 +193,9 @@ Done when:
 - an exact-quote case set ("what did Hana say the first night?") is answered with the source turn;
 - overuse is measured by echo before and after.
 
-## Stage 8 — PocketRisu bridge
+## Stage 8 — PocketRisu bridge (after 1.0)
 
-*Original §80–82.* Nothing exists yet.
+*Original §80–82.* Nothing exists yet. **Out of the 1.0 scope (R7, 2026-10-01).** The draft below is kept for after 1.0.
 
 Scope (draft):
 - a PocketRisu patch: partial chat reads (`getChatManifest`), mutation events, canon mutation events;
@@ -196,13 +210,16 @@ Done when:
 
 ## The 1.0 gate
 
-- stages 4–8 meet their done criteria;
+- stages 4–7 meet their done criteria (Stage 6 as narrowed by R7);
 - no evaluation category is worse than in `0.1.x`;
 - an upgrade from a `v0.1.0-beta.21` database and from each `0.x.0` works (`tests/test_upgrade.py`);
 - two weeks on the owner's production with no heavy change;
 - every open known issue is a host limit or an accepted trade-off.
 
 ## After 1.0
+
+Moved here by R7 (2026-10-01), in no order: Stage 8 (PocketRisu bridge); Stage 6's transition rules and conflict
+queue; C10 of the idea survey (memory of chats deleted in the host).
 
 The owner's longer aim is long-term memory for LLMs in general, not only role-play. The parts of NMOS
 that already carry over are the immutable ledger with rebuildable memory, provenance, hybrid recall
