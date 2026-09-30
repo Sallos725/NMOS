@@ -427,7 +427,9 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
 - Phase 19 (one extractor generation, `extract-v14`; the queue below and a shorter context): approved
   2026-09-30 with every proposed answer (Q1–Q6, `docs/phases/PHASE-19.md`); every paid run after the owner's OK for
   its estimate; the step-2 criterion amended and `deepseek`'s M0 miss accepted (K41) by the owner; complete 2026-10-01;
-  no release. Phase 20+ (Stages 7–8): not authorized.
+  no release.
+- Phase 20 (a name join shown before it is made; C7, Stage 6's remaining items): approved 2026-10-01 with every
+  proposed answer (Q1–Q10, `docs/phases/PHASE-20.md`); no release. Phase 21+ (Stages 7–8): not authorized.
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600. Raised to 800 on 2026-09-27 (owner; ADR 0035).
 - Release cadence — decided 2026-09-26, revised 2026-09-27: one release per roadmap stage, urgent patches
