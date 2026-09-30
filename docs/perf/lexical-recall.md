@@ -148,8 +148,11 @@ counts were kept.
 - Replayed with their own policy and vectors, 5 of the 7 requests of the current projection reproduced exactly; one
   differed in one excerpt (the CPU instance's vectors differ slightly from the GPU's, cosine 0.995–0.998), and one
   lacked one canon fact line. Replayed with the production build's code (before this phase), all seven give the same
-  ledgers, differences included: this phase changed no `packet-v9` replay. The missing canon line predates it and is
-  recorded for a separate look.
+  ledgers, differences included: this phase changed no `packet-v9` replay. The missing canon line is not a replay
+  fault but the consequence ADR 0047 amendment 2 lists: its request was recorded by a build from before the amendment,
+  and the fact, from the card's greeting, is quoted only inside that text's conditional blocks. The canon query as of
+  the request still returns it; the block check now leaves it out, in live reads and replays alike (ADR 0027: a replay
+  compiles with the code that runs it).
 
 ### Latency
 
