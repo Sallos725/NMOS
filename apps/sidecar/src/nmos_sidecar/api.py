@@ -645,7 +645,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         then = memory_view(conn, head, rt["active_extractor"], canon_key=rt.get("active_canon"), what_if=what_if)
         out = preview.diff(now, then, names, exclude)
         if action == "unlink":  # the turns an undo leaves as the join had them extracted (Q7)
-            out["reextract"] = {"turns": len(extraction.joined_turns(conn, conv_id, link))}
+            turns = extraction.joined_turns(conn, conv_id, link, rt["active_extractor"])
+            out["reextract"] = {"turns": len(turns)}
         state = {"head": head, "links": sorted(str(x["id"]) for x in facts_links_of(conn, conv_id)),
                  "repairs": sorted(str(x["id"]) for x in now["repairs"]), "extractor": rt["active_extractor"],
                  "canon": rt.get("active_canon"), "canon_manifest": now.get("canon_names")}
@@ -731,7 +732,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             a, b = r.entity(link["entity_type"], link["name"]), r.entity(link["entity_type"], link["same_as"])
             if a is not None and b is not None and a["id"] == b["id"]:
                 raise HTTPException(status_code=422, detail="the two names are one entity now")
-            turns = extraction.joined_turns(conn, conv_id, link)
+            turns = extraction.joined_turns(conn, conv_id, link, ex.key)
             with conn.transaction():
                 discarded = extraction.discard_turns(conn, turns)
                 queued = extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id)

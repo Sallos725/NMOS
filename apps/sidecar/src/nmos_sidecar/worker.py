@@ -69,7 +69,7 @@ def run_once(conn: psycopg.Connection, jobs: Handlers) -> bool:
         return False
     try:
         status = jobs[job["kind"]][1](conn, job)
-        finish(conn, job["id"], status)
+        finish(conn, job["id"], status, job.get("locked_at"))
     except Exception as exc:  # any job error fails that job only; it must not end the worker thread
         if conn.info.transaction_status != psycopg.pq.TransactionStatus.IDLE:
             conn.rollback()

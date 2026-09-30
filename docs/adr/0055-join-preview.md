@@ -38,10 +38,16 @@ a fact of one name replaced by a fact of the other, in the story's order, shown 
    it differs, writing nothing. Without `expect` the endpoints behave as before.
 5. **Re-extracting the turns a join covered (Q7).** `POST …/entity-links/{link}/reextract`, after the join is taken
    back (422 while it holds, or while the two names are one entity through the story or another link; 409 with
-   extraction off): the head's turns served by an extraction made between the link's `created_at` and `removed_at`
-   whose KNOWN ENTITIES listed the two names as one entity (`extraction.hints`), of any generation. Their extractions
-   of every generation are discarded (kept for audit) and just those turns queued, as a rebuild does for a whole
-   chat (D22); the undo's preview carries their count (`reextract.turns`). A second call finds nothing.
+   extraction off): the head's turns whose serving extraction (the active generation first, then the most recently
+   activated, as every read chooses) was made since the link's `created_at` and listed the two names as one entity in
+   KNOWN ENTITIES (`extraction.hints`). No upper bound at the undo: a job the model was still answering stores its
+   row later, and the next call finds it. Their extractions of every generation are discarded (kept for audit) and
+   just those turns queued, as a rebuild does for a whole chat (D22); the undo's preview carries their count
+   (`reextract.turns`). A second call finds nothing.
+7. **A job made obsolete while the model answers stores nothing.** Before its row is written the worker locks its
+   job and checks that it is still running under its own claim (`locked_at`); a rebuild, a re-extraction or a claim
+   taken back after 10 minutes makes it store nothing, and `finish` ends only the claim that ran it. This closes the
+   same gap for a whole-chat rebuild.
 6. **No side is chosen (Q5).** The story's order decides which version holds, as it did; the preview says which.
    A wrong winner is repaired with ADR 0044's retraction or correction.
 
