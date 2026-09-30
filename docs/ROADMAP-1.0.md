@@ -28,7 +28,7 @@ Phase 15 (a packet that fills its budget, `docs/phases/PHASE-15.md`) is not a st
 `docs/proposals/IDEA-SURVEY-2026-09-29.md`. Phase 18 (keyword lexical recall and excerpts that fill their length,
 `docs/phases/PHASE-18.md`, approved and complete 2026-09-30) is not a stage either: it follows Phase 17, before Stage 7. Phase 19 (one extractor
 generation with a shorter context, synthetic prompt examples and evidence in the turn, `docs/phases/PHASE-19.md`,
-approved 2026-09-30) is not a stage either: it ships the changes queued for the next extractor generation, before Stage 7.
+approved 2026-09-30, complete 2026-10-01) is not a stage either: it ships the changes queued for the next extractor generation, before Stage 7.
 
 ## Versions
 

@@ -5,6 +5,16 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 19 complete: `extract-v14`** (ADR 0054, D64, `docs/perf/extract-v14.md`), a new extractor generation. The
+  model sees each previous turn's messages up to 1,000 characters instead of 2,000, so an extraction reads about a sixth
+  fewer input tokens; on sampled turns it found more of a synthetic chat's facts (115 against 106–109 of 167). The
+  prompt's examples are synthetic. A fact whose quoted evidence (12 characters or more) is not in its own turn is kept
+  as pending, "evidence not in the turn", and never injected (0.2 % of `deepseek-v4.1-flash`'s facts and 2.7 % of
+  `gemma4:31b`'s when the evaluation chats were extracted again). **Upgrading re-extracts** each chat's recent turns
+  (`NMOS_EXTRACT_BACKFILL`, default 100) once at your provider's cost, and reads each chat's canon sources once more;
+  older turns keep their facts until **Extract all history**. Known issue K41: re-extracted with `deepseek-v4.1-flash`,
+  the owner's evaluation chats passed two fewer memory cases on three of four runs (`gemma4:31b` within one).
+  `tools/eval_extract_sample.py` compares extractor prompts on sampled turns.
 - **Phase 18 complete** (`docs/perf/lexical-recall.md` "Step 5"). Replayed on the owner's recorded requests (read-only,
   counts only), `packet-v10` with keywords placed excerpts in 10 of 34 requests that had none without vectors, and no
   secret or thread that `packet-v9` would not. Known issues K39 (a grown excerpt can carry a value the story has since

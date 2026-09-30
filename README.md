@@ -345,6 +345,13 @@ know goes in a `<Private>` section with a rule: only its holders know it, and no
 those it is kept from (ADR 0034). The chat's memory mode can withhold it instead, or keep to a first-person
 narrator's knowledge (ADR 0035).
 
+A fact must quote its own turn (since `extract-v14`, Phase 19, ADR 0054). Each extracted fact comes with a short quote
+of its evidence; when a quote of 12 characters or more is not in the turn the fact was extracted from (the model
+restating what an earlier turn said, say), the fact is kept as pending, "evidence not in the turn": it is never
+injected; the fact is remembered from the turn that said it when that turn's extraction found it. The Inspector does not list pending facts yet. The model also
+sees less of the previous turns (each message up to 1,000 characters instead of 2,000), so an extraction reads about a
+sixth fewer input tokens.
+
 ## Privacy
 
 Chat text is stored in the local Postgres volume. Text leaves your machine only if you configure an
@@ -402,7 +409,8 @@ The full list with workarounds is [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md)
   the Inspector shows coverage as partial until done). Changing the LLM model/endpoint re-extracts only
   each chat's recent turns (`NMOS_EXTRACT_BACKFILL`, default 100); older turns keep the previous model's
   facts, marked "older generation" in the Inspector, until you run **Extract all history** on that chat
-  (ADR 0014, since 0.1.0-beta.11).
+  (ADR 0014, since 0.1.0-beta.11). An update that brings a new extractor generation (such as `extract-v14`) does
+  the same once, and reads each chat's canon sources once more; the CHANGELOG says which updates do.
 - Item and character names are free text unless the story links them: "지도" and "해안 지도" are
   different items. An item lost or destroyed in turns extracted before 0.1.0-beta.13 still shows its
   last holder until **Extract all history**.
