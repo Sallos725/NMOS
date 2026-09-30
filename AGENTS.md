@@ -186,7 +186,7 @@ For every task:
 5. Add or update the test/fixture expectation first when feasible.
 6. Implement only that slice.
 7. Run the narrow test, then the current phase's full test set.
-   For a material change, run the scoped review workflow (§14); cross-model review is required only when §14 classifies the change as high risk.
+   For a material change, run the scoped review workflow (§14); cross-model review runs only when the owner asks for it.
 8. Update docs if a fact, decision, command, schema, or behavior changed.
 9. Update `docs/STATUS.md` truthfully.
 10. Stop at any evidence or owner-decision boundary.
@@ -382,11 +382,11 @@ as before; tags follow these rules.
 
 ---
 
-## 14. Scoped review and cross-model escalation
+## 14. Scoped review and optional cross-model review
 
-Every non-trivial change gets a review before the lead reports it done. The default is a **diff-scoped
-self-review by the lead**. An independent review by the other model is an escalation for high-risk changes,
-not a repository-wide second pass.
+Every non-trivial change gets a review before the lead reports it done. The review is a **diff-scoped
+self-review by the lead**. An independent review by the other model runs only when the owner asks for one;
+it is never a repository-wide second pass.
 
 ### Scope
 
@@ -398,7 +398,7 @@ not a repository-wide second pass.
   historical changelogs, or unrelated documentation unless a changed code path specifically requires it.
 - Do not perform a repository-wide audit unless the owner explicitly asks for one.
 
-### Risk and escalation
+### Risk classification
 
 A change is **high risk** when it can materially affect one or more of these guarantees:
 
@@ -408,19 +408,24 @@ A change is **high risk** when it can materially affect one or more of these gua
 - retrieval/injection semantics that change memory selection, isolation, provenance, or fail-open behavior;
 - deployment compatibility where a mistake can corrupt persisted state or weaken a security boundary.
 
-For a high-risk change, the lead gets **one** independent, read-only review through
-`.ai/scripts/peer-review` before reporting the change done (how-to: `.ai/README.md`; Claude's workflow:
-`.claude/skills/peer-review`). Use `architecture` for a design/invariant question and `security` for a
-sensitive flow.
+For a high-risk change, the lead's self-review names the guarantee at risk and checks it explicitly
+(tests or fixtures that pin it, upgrade and fail-open paths). The report and the PR description say
+**high risk** and name that guarantee, so the owner can track it outside the repository (Linear) and decide
+whether a cross-model review is wanted. No cross-model review is required before reporting the change done.
 
-For other non-trivial changes, the lead's scoped self-review is sufficient. Trivial edits (for example
-wording, typo fixes, or test-only renames with no behavior change) may skip review; say so in the report.
+For other non-trivial changes, the same scoped self-review applies without the high-risk note. Trivial edits
+(for example wording, typo fixes, or test-only renames with no behavior change) may skip review; say so in
+the report.
 
-### External reviewer rules
+### External reviewer rules (only when the owner asks)
+
+The owner may request one independent, read-only review through `.ai/scripts/peer-review` (how-to:
+`.ai/README.md`; Claude's workflow: `.claude/skills/peer-review`). Use `architecture` for a design/invariant
+question and `security` for a sensitive flow.
 
 - The lead names the reviewer: Claude leading calls `codex`; Codex leading calls `claude`.
 - Keep the external review scoped to the diff and the minimum dependency cone. On an inline run, attach
-  only the authority/spec files and touched files needed to validate the high-risk property; never attach
+  only the authority/spec files and touched files needed to validate the property in question; never attach
   the whole tree.
 - Findings are hypotheses. The lead verifies every cited line or reproduction, fixes what is confirmed,
   reruns the relevant tests, and reports what it rejected and why. An `ARCHITECTURE.md §9` decision goes

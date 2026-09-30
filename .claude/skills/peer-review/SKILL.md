@@ -1,6 +1,6 @@
 ---
 name: peer-review
-description: MUST use in NMOS after any non-trivial implementation change and before reporting it done or opening its PR. Review only the diff and minimum dependency cone. Use Claude self-review by default; invoke one read-only Codex review through .ai/scripts/peer-review only when AGENTS.md §14 classifies the change as high risk. Never perform a repository-wide audit unless the owner explicitly requests one.
+description: MUST use in NMOS after any non-trivial implementation change and before reporting it done or opening its PR. Review only the diff and minimum dependency cone. The review is a Claude self-review; mark high-risk changes (AGENTS.md §14) in the report and PR, and invoke one read-only Codex review through .ai/scripts/peer-review only when the owner asks for it. Never perform a repository-wide audit unless the owner explicitly requests one.
 ---
 
 # Scoped peer review
@@ -45,14 +45,15 @@ Treat the change as **high risk** when it can materially affect:
 - retrieval/injection semantics that change memory selection, isolation, provenance, or fail-open behavior;
 - deployment compatibility where a mistake can corrupt persisted state or weaken a security boundary.
 
-If none of those apply, perform the scoped Claude self-review, fix confirmed issues, rerun the relevant
-checks, and stop. Do not call Codex merely because the change is non-trivial.
+Perform the scoped Claude self-review either way, fix confirmed issues, rerun the relevant checks, and
+stop. For a high-risk change, name the guarantee at risk, check it explicitly (the tests or fixtures that
+pin it, upgrade and fail-open paths), and say **high risk** plus that guarantee in the report and the PR
+description; the owner tracks those in Linear. Do not call Codex on your own, whatever the risk.
 
-## 4. Escalate high-risk changes once
+## 4. Codex review only when the owner asks
 
-When Claude leads a high-risk change, run one independent Codex review from the checkout that holds the
-change. On the owner's host Codex's sandbox cannot start, so use `--inline` and attach only what the
-reviewer actually needs:
+When the owner asks for a Codex review, run one from the checkout that holds the change. On the owner's
+host Codex's sandbox cannot start, so use `--inline` and attach only what the reviewer actually needs:
 
 ```bash
 python3 .ai/scripts/peer-review codex review --base origin/main --inline \
@@ -77,7 +78,7 @@ the cited code or reproducing it. Fix confirmed defects, rerun the relevant test
 
 - the base and review scope;
 - whether the change was high risk;
-- whether Codex was invoked;
+- whether Codex was invoked (only on the owner's request);
 - what was fixed;
 - what was rejected and why;
 - remaining risk.

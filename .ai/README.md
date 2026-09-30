@@ -1,8 +1,8 @@
 # Cross-model review (Codex ⇄ Claude)
 
-One agent leads a change. For changes classified as high risk by `AGENTS.md §14`, the other model gives
-one read-only second opinion. Lower-risk changes stay with the lead's diff-scoped self-review; this file is
-the how-to for the external-review escalation.
+One agent leads a change and reviews its own diff (`AGENTS.md §14`). When the owner asks for it, the other
+model gives one read-only second opinion; no change requires one. This file is the how-to for that
+optional external review.
 
 ```text
 .ai/scripts/peer-review   runs the reviewer CLI read-only and prints its final answer
@@ -17,8 +17,8 @@ the how-to for the external-review escalation.
    task scope and the phase it belongs to.
 2. The lead implements in its own checkout. One writer per checkout; parallel work uses separate Git
    worktrees and is integrated deliberately.
-3. If `AGENTS.md §14` classifies the change as **high risk**, the lead runs one focused review with
-   the other model. Lower-risk material changes do not invoke the other model.
+3. If the owner asks for a cross-model review, the lead runs one focused review with the other model.
+   Otherwise the other model is not invoked, whatever the risk.
 
    ```bash
    python3 .ai/scripts/peer-review codex review --base origin/main "reroll and swipe invalidation in the fold"
@@ -71,11 +71,12 @@ sandbox cannot start either, and `claude -p` needs the network: Codex runs the s
 approves outside its sandbox.
 
 The Claude Code `codex` plugin (`/codex:rescue`) is not this review: it hands Codex the task, and Codex may
-edit. A §14 review goes through this script, read-only.
+edit. An external review the owner asks for under §14 goes through this script, read-only; the lead's
+self-review does not use it.
 
 ## Cost
 
 Each run uses the reviewer CLI's own login, not the NMOS model keys: the CLI gets only the system basics of the
 environment and its own login variables (Codex: `OPENAI_*`, `CODEX_*`; Claude: `ANTHROPIC_*`, `CLAUDE_*`), never
-the other CLI's, `NMOS_*`, `DATABASE_URL` or `PG*`. It still costs quota or money, so external review is
-reserved for high-risk changes and is limited to one run per change.
+the other CLI's, `NMOS_*`, `DATABASE_URL` or `PG*`. It still costs quota or money, so external review runs
+only when the owner asks for it and is limited to one run per change.
