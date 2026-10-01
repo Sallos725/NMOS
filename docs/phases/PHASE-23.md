@@ -1,4 +1,4 @@
-# Phase 23 — NMOS without Docker: a bundle for every PocketRisu target
+# Phase 23 — NMOS without Docker: a bundle for each PocketRisu portable target
 
 > **Status: approved 2026-10-01 (Q6 as amended below; every other proposed answer), current alongside Phase 22.**
 > Not a roadmap stage: the owner pulled it in before 1.0 by name (2026-10-01, an exception to R7 in
@@ -9,10 +9,11 @@
 
 - PocketRisu ships portable packages for **win-x64, macos-arm64, linux-x64 and linux-arm64** and a Termux build, as
   well as Docker. NMOS installs only with Docker Compose, so a PocketRisu user without Docker cannot attach NMOS. This
-  phase gives every one of those targets an NMOS that runs without Docker; the Docker install stays as it is.
+  phase gives the four portable targets an NMOS that runs without Docker; Termux follows separately (Q2). The Docker
+  install stays as it is.
 - **Windows ships as PocketRisu does: a zip with a double-click `NMOS.exe`** that sits in the notification area. No
   installer, no `.msi`. `NMOS.bat` and `start.sh` stay for servers and advanced users only.
-- **Storage stays PostgreSQL** (`ARCHITECTURE.md` §1 #9): each bundle carries a portable PostgreSQL 16 with `pg_trgm`
+- **Storage stays PostgreSQL** (`ARCHITECTURE.md` §2, invariant 9): each bundle carries a portable PostgreSQL 16 with `pg_trgm`
   and `pgvector`, a standalone Python with the sidecar, the migrations and the plugin of the same build.
 
 ## What the spike measured

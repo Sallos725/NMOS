@@ -18,7 +18,7 @@ re-extraction.
 
 **Phase 23 — NMOS without Docker: approved 2026-10-01, current alongside Phase 22.** Spec `docs/phases/PHASE-23.md`
 (AGE-29; the owner pulled it in before 1.0, an exception to R7): a bundle for each PocketRisu portable target
-(win-x64, macos-arm64, linux-x64, linux-arm64) with a portable PostgreSQL 16, Python, the sidecar and the plugin;
+(win-x64, macos-arm64, linux-x64, linux-arm64; Termux later) with a portable PostgreSQL 16, Python, the sidecar and the plugin;
 Windows as a zip with `NMOS.exe` in the notification area, macOS as a menu-bar app signed ad hoc and allowed once
 with Open Anyway. The spike (`spike/native-bundle`) ran on all four targets. Step 1 (the spec) done; next, step 2
 (builder, launcher, pinned sources, the CI smokes). Separate from Phase 22's code; neither waits on the other.
@@ -470,7 +470,7 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
 - Phase 22 (a re-extraction that keeps what it found: a reveal check instead of K29's re-extraction, and the narrated
   facts a re-extraction dropped, with a Restore repair; AGE-25, urgent): the owner chose the direction 2026-10-01
   (AGE-25); approved 2026-10-01 with every proposed answer (Q2–Q8, `docs/phases/PHASE-22.md`); current.
-- Phase 23 (NMOS without Docker: a bundle for every PocketRisu target; AGE-29): the owner pulled it in before 1.0
+- Phase 23 (NMOS without Docker: a bundle for each PocketRisu portable target; AGE-29): the owner pulled it in before 1.0
   (2026-10-01, an exception to R7) and chose zip + `NMOS.exe` for Windows; a spike on `spike/native-bundle` ran on all
   four targets; approved 2026-10-01 with every proposed answer but Q6, where the owner chose ad hoc signing and
   "Open Anyway" over `xattr -cr` and will check it on their Mac (`docs/phases/PHASE-23.md`); current alongside
