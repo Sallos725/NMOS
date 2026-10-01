@@ -61,6 +61,8 @@ original design, and most recent phases (15, 17, 18, 19) were outside it. So:
 - **Until 1.0, a new phase is a Stage 7 item.** Urgent fixes (`AGENTS.md` §13) are the exception. Other ideas,
   including C10 of `docs/proposals/IDEA-SURVEY-2026-09-29.md` (memory of chats deleted in the host; host evidence
   H22 recorded), wait under "After 1.0" unless the owner pulls one in by name.
+- **Pulled in by name (2026-10-01): NMOS without Docker** (AGE-29, Phase 23). PocketRisu's portable and Termux users
+  cannot run the Docker install, so a 1.0 they cannot attach misses part of the host's users.
 
 The road left is Stage 7 (`0.4.0`) and two quiet weeks on production.
 

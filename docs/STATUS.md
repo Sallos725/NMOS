@@ -462,7 +462,10 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
   (`docs/phases/PHASE-21.md`).
 - Phase 22 (a re-extraction that keeps what it found: a reveal check instead of K29's re-extraction, and the narrated
   facts a re-extraction dropped, with a Restore repair; AGE-25, urgent): the owner chose the direction 2026-10-01
-  (AGE-25); approved 2026-10-01 with every proposed answer (Q2–Q8, `docs/phases/PHASE-22.md`); current. Phase 23+ (Stages 7–8): not
+  (AGE-25); approved 2026-10-01 with every proposed answer (Q2–Q8, `docs/phases/PHASE-22.md`); current.
+- Phase 23 (NMOS without Docker: a bundle for every PocketRisu target; AGE-29): the owner pulled it in before 1.0
+  (2026-10-01, an exception to R7) and chose zip + `NMOS.exe` for Windows; a spike on `spike/native-bundle` ran on all
+  four targets; draft awaiting the owner's approval (`docs/phases/PHASE-23.md`). Phase 24+ (Stages 7–8): not
   authorized.
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600. Raised to 800 on 2026-09-27 (owner; ADR 0035).
