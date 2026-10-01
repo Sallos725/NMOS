@@ -1,6 +1,6 @@
 # Phase 24 — A name as the story says it: given names and romanized names
 
-> **Status: approved (2026-10-01) with every proposed answer; current, alongside Phase 23.** The owner approved it while
+> **Status: approved (2026-10-01) with every proposed answer; complete (2026-10-01), `docs/perf/name-variants.md`.** The owner approved it while
 > noting that the fixes keep adding rules for small gains; every rule sits behind the recorded option (Q5) and the
 > acceptance criteria let no set get worse. Q3 and the exact lists of Q1 and Q2 were settled in the spec's review,
 > before step 2: the new names count everywhere a message is matched against a character's names (a secret kept from a
@@ -88,18 +88,20 @@ Measured with read-only replays of recorded requests on the test database (vecto
 
 ## Acceptance criteria
 
-- [ ] Every existing test and memory-evaluation case passes; recorded `packet-v10` requests without `name_variants`
+- [x] Every existing test and memory-evaluation case passes; recorded `packet-v10` requests without `name_variants`
       replay as they were.
 - [x] The deterministic cases of In scope 2 (`test_name_variants.py`).
-- [ ] Q6's sets, three runs each: the synthetic first-cue cases at least +2; the restored copies' Hangul probes more
-      than today on each chat; no other set worse than today; no new forbidden phrase placed on any set.
-- [ ] Request-path latency unchanged within noise (`tools/bench_story.py`, 10,000 messages).
+- [x] Q6's sets, three runs each: the synthetic first-cue cases at least +2; the restored copies' Hangul probes more
+      than today on each chat; no other set worse than today; no new forbidden phrase placed on any set (5 → 8 of 15;
+      8 → 10 of 24 and 0 → 2 of 6; every other set unchanged in all three runs; `docs/perf/name-variants.md`).
+- [x] Request-path latency unchanged within noise (`tools/bench_story.py`, 10,000 messages: p50 −0.6 ms on the
+      bench's questions, +2.5 ms with every question naming a character; rounds spread ±5–10 ms).
 
 ## Steps (one pull request each)
 
 1. This document, approved; AGENTS §2 and STATUS name Phase 24 current (done).
 2. The given-name and spelling-key rules, the recorded option, the deterministic cases (ADR 0058).
-3. The evaluation and docs; Phase 24 complete.
+3. The evaluation and docs; Phase 24 complete (done).
 
 Every merge reaches the owner's `:edge`; no tag (AGENTS.md §13).
 

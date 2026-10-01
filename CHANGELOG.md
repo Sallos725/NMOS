@@ -6,12 +6,16 @@ later, is `docs/KNOWN-ISSUES.md`.
 ## Unreleased
 
 - **A character called by the given name alone, or in Hangul when the story spells the name in Latin letters, now
-  brings their memory** (Phase 24 step 2, ADR 0058, D68; AGE-28). "이안은 어디 있지?" now counts as a mention of 백이안
+  brings their memory** (Phase 24, ADR 0058, D68; AGE-28). "이안은 어디 있지?" now counts as a mention of 백이안
   (a three-syllable name with a common family name), and "하진은?" of a character the story calls Hajin (a fixed
   Hangul-to-Latin spelling key, with the usual family-name spellings such as Lee and Park). The persona gains no such
   name, and a name another character holds or two would share counts for no one. Where a secret is kept from a
   character addressed that way, it is still ranked and kept private as when the full name is used. The scene's
-  character groups now list the characters your message names first. Recorded requests replay as they were. Evaluation in Phase 24 step 3.
+  character groups now list the characters your message names first. Recorded requests replay as they were.
+  Phase 24 complete (`docs/perf/name-variants.md`): on a synthetic chat three more "at first" questions asked by the
+  given name pass (8 of 15), and on a copy of production more questions in Hangul about characters the story names in
+  Latin letters find their memory (10 of 24 and 2 of 6, from 8 and 0); every other set unchanged; no measurable
+  latency.
 
 - **A canon fact read just before a request is served on every system.** A request that does not replay an earlier
   one took "now" from the sidecar's clock to choose the canon facts in force, while those facts are stamped by the
