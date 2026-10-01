@@ -71,7 +71,7 @@ func lastLog(_ lines: Int = 6) -> String {
     return mine.suffix(lines).joined(separator: "\n")
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var item: NSStatusItem!
     var statusLine: NSMenuItem!
     var loginLine: NSMenuItem!
@@ -196,12 +196,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The Inspector's first page (PHASE-23 Q8), with the token when one is set (the page asks for it).
+    /// Only RFC 3986 unreserved characters stay as they are: `&`, `=` and `+` (a space to the server) are escaped.
     @objc func openDashboard() {
         var page = url + "/dashboard"
-        if let token, let q = token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+        let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        if let token, let q = token.addingPercentEncoding(withAllowedCharacters: unreserved) {
             page += "?token=\(q)"
         }
         if let target = URL(string: page) { NSWorkspace.shared.open(target) }
+    }
+
+    /// The menu enables items itself (autoenablesItems); the dashboard waits until NMOS answers, like the Windows tray.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        menuItem.action != #selector(openDashboard) || state == "running"
     }
 
     @objc func copyURL() {
