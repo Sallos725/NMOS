@@ -88,10 +88,12 @@ ACTIVE_ASSERTIONS = ACTIVE_ASSERTIONS_TEMPLATE.format(upto="", known="e.discarde
                                                       known_r="r.discarded_at IS NULL")
 # The same read "as of" an earlier request (ADR 0027): the head up to a position, and only what NMOS had
 # extracted by a time (an extraction discarded later still served then). A separate statement, so the
-# request path keeps its plan. With no time (a live request reads up to its own message), the extractions in force
-# now, by the database's clock: never the sidecar's, which may lag it (Python 3.12 on Windows ticks every 15.6 ms).
-_KNOWN = ("(%(known_at)s::timestamptz IS NULL OR {t}.created_at <= %(known_at)s::timestamptz) AND ({t}.discarded_at IS NULL"
-          " OR (%(known_at)s::timestamptz IS NOT NULL AND {t}.discarded_at > %(known_at)s::timestamptz))")
+# request path keeps its plan. With no time (a live request reads up to its own message), as of the request's own
+# transaction start, now(): the database's clock, never the sidecar's (Python 3.12 on Windows ticks every 15.6 ms), and
+# the instant its trace's created_at records, so an extraction committed while the request runs is read by neither
+# the request nor its replay.
+_KNOWN = ("{t}.created_at <= coalesce(%(known_at)s::timestamptz, now())"
+          " AND ({t}.discarded_at IS NULL OR {t}.discarded_at > coalesce(%(known_at)s::timestamptz, now()))")
 ACTIVE_ASSERTIONS_AS_OF = ACTIVE_ASSERTIONS_TEMPLATE.format(
     upto=" AND am.position <= %(upto)s", known=_KNOWN.format(t="e"), known_r=_KNOWN.format(t="r"))
 
