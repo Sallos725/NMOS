@@ -8,7 +8,12 @@ checkout for another (today's prompt from `main`, say). Every valid row also rec
 target turn (`quote_in_turn`, the evidence check of extract-v14, ADR 0054), so a generation without the check can be
 scored as if it had it. `--dry` makes no call and prints the calls and an estimate of their input tokens.
 
-`score` compares labels: rows, the evidence check, input and output tokens, `addresses` and `relationship` rows, and,
+`--turns-from` takes exactly the turns of a stored run's per-turn files instead of choosing again (PHASE-25 Q6 (b));
+with `--every-chat` they are found as the tool found them before it took one chat (Phase 19's main copy), and `--dry`
+then says how many of the stored run's checked quotes the chosen turns still contain.
+
+`score` compares labels: rows, the evidence check, input and output tokens, `addresses`, `relationship` and
+`role_toward` rows, and,
 with `--ledger` (a fact ledger of a synthetic chat: `must_appear_in_turn`, `subject`, `statement`, `kind`), how many
 ledger facts some row finds (one of the fact's characters named, its object or value overlapping the statement's
 character trigrams by at least 0.5): a recall measure with no precision check.
@@ -69,6 +74,21 @@ def anchors(conn: psycopg.Connection, conversation: str) -> list[dict[str, Any]]
         ORDER BY am.turn, am.position""", (conversation,)).fetchall()
 
 
+def anchors_every_chat(conn: psycopg.Connection) -> list[dict[str, Any]]:
+    """One anchor per turn number across every chat of the copy, as the tool chose before it took one chat (Phase 19
+    step 4's main copy): kept only to name those turns again."""
+    return conn.execute("""
+        SELECT DISTINCT ON (am.turn) am.source_revision_id AS id, am.turn_hash, am.turn
+        FROM conversation c JOIN active_membership am ON am.commit_id = c.head_commit_id
+        WHERE am.turn IS NOT NULL AND am.turn_hash IS NOT NULL
+        ORDER BY am.turn, am.position""").fetchall()
+
+
+def stored_turns(run_dir: Path, name: str) -> dict[int, Path]:
+    """The turns of a stored run's per-turn files `<name>-<turn>.json`."""
+    return {int(f.stem.rsplit("-", 1)[1]): f for f in run_dir.glob(f"{name}-*.json")}
+
+
 def ledger_turns(path: Path) -> set[int]:
     """The turns a ledger says a fact must appear in (1-based chat turns → NMOS's 0-based turns)."""
     return {x["must_appear_in_turn"] - 1 for x in json.loads(path.read_text(encoding="utf-8"))
@@ -76,6 +96,13 @@ def ledger_turns(path: Path) -> set[int]:
 
 
 def chosen(conn: psycopg.Connection, args: argparse.Namespace) -> list[dict[str, Any]]:
+    if args.turns_from:
+        wanted = stored_turns(args.turns_from, args.name)
+        rows = anchors_every_chat(conn) if args.every_chat else anchors(conn, conversation_of(conn, args.conversation))
+        rows = [a for a in rows if a["turn"] in wanted]
+        if len(rows) != len(wanted):
+            raise SystemExit(f"{len(wanted) - len(rows)} stored turns are not in this copy")
+        return rows
     rows = anchors(conn, conversation_of(conn, args.conversation))
     if args.ledger:
         wanted = ledger_turns(args.ledger)
@@ -122,6 +149,18 @@ def run(args: argparse.Namespace) -> None:
             path = args.out / args.label / str(n) / f"{args.name}-{p['turn']}.json"
             if not path.exists():
                 todo.append((path, p))
+    if args.turns_from:  # the same turns as the stored run: its checked quotes are in them
+        files = stored_turns(args.turns_from, args.name)
+        found = total = 0
+        missed = []
+        for p in {p["turn"]: p for _, p in todo}.values():
+            quotes = [a["evidence"] for a in json.loads(files[p["turn"]].read_text(encoding="utf-8"))["assertions"]
+                      if a.get("quote_in_turn")]
+            hits = sum(1 for q in quotes if in_turn(q, p["shown"]))
+            found, total = found + hits, total + len(quotes)
+            if hits < len(quotes):
+                missed.append(p["turn"])
+        print(f"stored quotes found in the chosen turns: {found}/{total}; turns with a miss: {sorted(missed)}", flush=True)
     tokens = sum(estimate_tokens(system + p["user"]) for _, p in todo)
     print(f"{args.label} ({X.COMPILER_VERSION}): {len(todo)} calls, about {tokens / 1e6:.2f}M input tokens (estimate)",
           flush=True)
@@ -189,8 +228,8 @@ def score(args: argparse.Namespace) -> None:
             if x.get("must_appear_in_turn") is not None:
                 gold.setdefault(x["must_appear_in_turn"] - 1, []).append(x)
     print("| label | run | turns | valid rows | quote < 12 | not in the turn | share | ledger facts: any row | valid, checked |"
-          " … lost to the check | addresses / relationship | input tokens (sum) | output (median) |")
-    print("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+          " … lost to the check | addresses | relationship | role_toward | input tokens (sum) | output (median) |")
+    print("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for label in args.labels.split(","):
         for run_dir in sorted((args.out / label).iterdir()):
             files = sorted(run_dir.glob(f"{args.name}-*.json"))
@@ -208,7 +247,8 @@ def score(args: argparse.Namespace) -> None:
                 c["valid"] += len(valid)
                 c["short"] += sum(1 for a in valid if a.get("evidence") and len(a["evidence"]) < QUOTE_MIN_CHARS)
                 c["out"] += len(valid) - len(kept)
-                c["pairs"] += sum(1 for a in kept if a["predicate"] in ("addresses", "relationship"))
+                for predicate in ("addresses", "relationship", "role_toward"):
+                    c[predicate] += sum(1 for a in kept if a["predicate"] == predicate)
                 for item in gold.get(r["turn"], []):
                     found = any(hit(a, item, args.persona) for a in r["assertions"])
                     found_kept = any(hit(a, item, args.persona) for a in kept)
@@ -221,10 +261,11 @@ def score(args: argparse.Namespace) -> None:
             tokens_in = sum(u.get("input", 0) for u in usage)
             out_median = st.median(u.get("output", 0) for u in usage)
             print(f"| {label} | {run_dir.name} | {len(files)} | {c['valid']} | {c['short']} | {c['out']} | {share:.1f} % |"
-                  f" {c['found']}/{c['gold']} | {c['kept']}/{c['gold']} | {c['lost']} | {c['pairs']} |"
+                  f" {c['found']}/{c['gold']} | {c['kept']}/{c['gold']} | {c['lost']} | {c['addresses']} | {c['relationship']} |"
+                  f" {c['role_toward']} |"
                   f" {tokens_in / 1e3:.0f}k | {out_median:.0f} |")
             if kinds:
-                print(f"|  | ledger kinds found (valid, checked): {dict(sorted(kinds.items()))} | | | | | | | | | | | |")
+                print(f"|  | ledger kinds found (valid, checked): {dict(sorted(kinds.items()))} | | | | | | | | | | | | | |")
 
 
 def main() -> None:
@@ -239,6 +280,9 @@ def main() -> None:
     r.add_argument("--name", default="chat", help="the copy's name in the result files")
     r.add_argument("--ledger", type=Path, help="choose the turns a fact ledger names")
     r.add_argument("--sample", type=int, help="else this many turns, evenly spaced")
+    r.add_argument("--turns-from", type=Path, help="exactly the turns of a stored run's files (a run directory)")
+    r.add_argument("--every-chat", action="store_true",
+                   help="with --turns-from: find them across every chat, as the tool did before it took one chat")
     r.add_argument("--turns", type=int, default=3, help="context turns (the worker's NMOS_EXTRACT_TURNS)")
     r.add_argument("--runs", type=int, default=3)
     r.add_argument("--workers", type=int, default=2)

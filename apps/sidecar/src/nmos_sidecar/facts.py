@@ -701,8 +701,9 @@ FIRST_PERSON = re.compile(r"(^|\s)(내|나는|나를|나한테|나에게|나의|
 LEXICAL_BAR = 0.35  # trigram overlap with the query that makes an unmentioned fact relevant
 # How two characters stand with each other (ADR 0026): one current value per pair, so a scene's cast has
 # few of them, and the reply goes wrong without them (a speech level or a form of address forgotten, ADR
-# 0028). Read side only, like HOLDER_PER_ITEM: outside REGISTRY, so changing it needs no new generation.
-STANDING = frozenset({"relationship", "feels_toward", "addresses"})
+# 0028), or a role one holds toward the other (ADR 0059). Read side only, like HOLDER_PER_ITEM: outside REGISTRY, so
+# changing it needs no new generation.
+STANDING = frozenset({"relationship", "role_toward", "feels_toward", "addresses"})
 # Added to the score of a mentioned fact (ADR 0026). Below the gap between a mention in the user's message
 # and one in the previous reply (1.0), so they order facts of equal mention only.
 PRIOR_STANDING = 0.5

@@ -65,8 +65,8 @@ def test_score_counts_the_check_the_same_way_with_and_without_it(tmp_path, capsy
                                    "kind": "event"}], ensure_ascii=False))
     tool.score(argparse.Namespace(out=tmp_path, labels="v13,v14", name="synth", ledger=ledger, persona=""))
     lines = [x for x in capsys.readouterr().out.splitlines() if x.startswith("| v1")]
-    assert lines[0].startswith("| v13 | 1 | 1 | 3 | 1 | 1 | 33.3 % | 1/1 | 1/1 | 0 | 0 | 1k | 90 |")
-    assert lines[1].startswith("| v14 | 1 | 1 | 2 | 0 | 1 | 50.0 % | 1/1 | 1/1 | 0 | 0 | 1k | 95 |")
+    assert lines[0].startswith("| v13 | 1 | 1 | 3 | 1 | 1 | 33.3 % | 1/1 | 1/1 | 0 | 0 | 0 | 0 | 1k | 90 |")
+    assert lines[1].startswith("| v14 | 1 | 1 | 2 | 0 | 1 | 50.0 % | 1/1 | 1/1 | 0 | 0 | 0 | 0 | 1k | 95 |")
 
 
 def test_turns_are_chosen_from_one_chat(migrated):
@@ -97,3 +97,48 @@ def test_turns_are_chosen_from_one_chat(migrated):
                                ([r["id"] for r in rows],)).fetchall()
     assert [r["turn"] for r in rows] == list(range(len(rows))) and len(rows) >= 4
     assert [str(m["conversation_id"]) for m in members] == [ids["sample-b"]]
+
+
+def test_score_counts_relationship_and_role_rows_apart(tmp_path, capsys):
+    rows = [{**row(None), "predicate": p, "object": "카이토", "quote_in_turn": None}
+            for p in ("relationship", "role_toward", "role_toward", "addresses")]
+    path = tmp_path / "v15" / "1" / "synth-4.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"turn": 4, "usage": {"input": 800, "output": 80}, "assertions": rows}, ensure_ascii=False))
+    tool.score(argparse.Namespace(out=tmp_path, labels="v15", name="synth", ledger=None, persona=""))
+    (line,) = [x for x in capsys.readouterr().out.splitlines() if x.startswith("| v15")]
+    assert line.startswith("| v15 | 1 | 1 | 4 | 0 | 0 | 0.0 % | 0/0 | 0/0 | 0 | 1 | 1 | 2 | 1k | 80 |")
+
+
+def test_turns_from_a_stored_run_are_those_turns_and_no_others(migrated, tmp_path):
+    import psycopg
+    import pytest
+    from psycopg.rows import dict_row
+
+    from conftest import make_client
+    from simchat import SimChat
+    from test_generations import LLM
+    from test_sidecar_integration import sync
+
+    chats = [SimChat("stored-a"), SimChat("stored-b")]
+    with make_client(migrated, **LLM) as c:
+        for n, chat in enumerate(chats):
+            for i in range(4 + 2 * n):
+                chat.user(f"Question {i} of chat {n}.")
+                chat.reply(f"Answer {i} of chat {n}.")
+            chat.user("Next.")
+            sync(c, chat)
+    run_dir = tmp_path / "v14" / "1"
+    run_dir.mkdir(parents=True)
+    for turn in (0, 2, 5):
+        (run_dir / f"main-{turn}.json").write_text("{}")
+    (run_dir / "synth-1.json").write_text("{}")
+    assert sorted(tool.stored_turns(run_dir, "main")) == [0, 2, 5]
+    args = argparse.Namespace(turns_from=run_dir, name="main", every_chat=True, conversation=None, ledger=None,
+                              sample=20)
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        assert [a["turn"] for a in tool.chosen(conn, args)] == [0, 2, 5]  # turn 5: only the longer chat has it
+        ids = {r["host_chat_ref"]: str(r["id"]) for r in conn.execute("SELECT id, host_chat_ref FROM conversation")}
+        with pytest.raises(SystemExit, match="1 stored turns are not in this copy"):
+            tool.chosen(conn, argparse.Namespace(**{**vars(args), "every_chat": False,
+                                                    "conversation": ids["stored-a"]}))

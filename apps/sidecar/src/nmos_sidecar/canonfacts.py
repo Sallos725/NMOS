@@ -46,8 +46,8 @@ VERSION = "canon-v1"
 # What canon states about how things stand. Open business (goals, promises, threats, debts, questions) and the
 # story's own moves (fulfilled, resolved, learned, destroyed) belong to the story; `also_called` too, since canon's
 # names come from the lorebook keys without a model (ADR 0046).
-PREDICATES = frozenset({"located_in", "has_status", "identity", "has_trait", "relationship", "feels_toward",
-                        "addresses", "possesses", "member_of", "knows", "event", "world_fact"})
+PREDICATES = frozenset({"located_in", "has_status", "identity", "has_trait", "relationship", "role_toward",
+                        "feels_toward", "addresses", "possesses", "member_of", "knows", "event", "world_fact"})
 PART_CHARS = 6000  # normalized characters per model call, as a turn's target (extraction.TARGET_CHARS)
 MAX_PARTS = 4  # a longer text is read in its first 24,000 characters; the rest is recorded as not read
 MIN_CHARS = 12

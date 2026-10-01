@@ -97,7 +97,8 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "claims": ("인물의 주장", "Claims by characters"), "h.by": ("말한 인물", "Said by"),
     "because": ("원인", "because"), "cause_event": ("그 사건", "that event"),
     "pairs": ("관계 (인물 쌍마다)", "Relationships"), "toc.pairs": ("관계", "Relationships"),
-    "h.pair": ("두 인물", "Pair"), "h.relationship": ("관계", "Relationship"), "h.feelings": ("감정", "Feelings"),
+    "h.pair": ("두 인물", "Pair"), "h.relationship": ("관계", "Relationship"),
+    "h.role": ("역할", "Role"), "h.feelings": ("감정", "Feelings"),
     "h.speech": ("말투·호칭", "Speech"), "before": ("이전", "before"), "first": ("처음", "first"),
     "summaries": ("요약 (장면·지금까지의 이야기)", "Summaries (scenes, story so far)"), "toc.summaries": ("요약", "Summaries"),
     "story": ("지금까지의 이야기", "Story so far"), "h.turns": ("턴", "Turns"), "h.summary": ("요약", "Summary"),
@@ -302,7 +303,8 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "lk.secret": ("비밀", "secret"),
     # stored values, shown translated (the raw value stays in the tooltip)
     "p.located_in": ("위치", "located in"), "p.has_status": ("상태", "status"), "p.identity": ("정체", "identity"),
-    "p.has_trait": ("특징", "trait"), "p.relationship": ("관계", "relationship"), "p.feels_toward": ("감정", "feels toward"),
+    "p.has_trait": ("특징", "trait"), "p.relationship": ("관계", "relationship"),
+    "p.role_toward": ("역할", "role toward"), "p.feels_toward": ("감정", "feels toward"),
     "p.addresses": ("말투·호칭", "addresses"),
     "p.possesses": ("소지", "possesses"), "p.member_of": ("소속", "member of"), "p.knows": ("앎", "knows"),
     "p.goal": ("목표", "goal"), "p.promised": ("약속", "promised"), "p.event": ("사건", "event"),
@@ -629,7 +631,8 @@ def _cause(f: dict[str, Any], lang: str) -> str:
 
 def pairs(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """How two characters stand, one entry per pair (PHASE-11 step 7, ADR 0038): the current relationship (one
-    history for both directions), and each direction's current feeling and speech level. Newest pair first."""
+    history for both directions), and each direction's current role (ADR 0059), feeling and speech level. Newest pair
+    first."""
     out: dict[tuple[str, str], dict[str, Any]] = {}
     for f in facts:
         if f["predicate"] not in STANDING or not f.get("object"):
@@ -639,10 +642,12 @@ def pairs(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             e = f.get(f"{role}_entity") or {}
             ends.append((e.get("id") or norm(f[role]), e.get("name") or f[role]))
         key = tuple(sorted(i for i, _ in ends))
-        p = out.setdefault(key, {"ids": key, "names": {}, "relationship": [], "feels": [], "speech": [], "position": -1})
+        p = out.setdefault(key, {"ids": key, "names": {}, "relationship": [], "role": [], "feels": [], "speech": [],
+                                    "position": -1})
         p["names"].update(dict(ends))
         p["position"] = max(p["position"], f["position"])
-        p[{"relationship": "relationship", "feels_toward": "feels", "addresses": "speech"}[f["predicate"]]].append(f)
+        p[{"relationship": "relationship", "role_toward": "role", "feels_toward": "feels",
+           "addresses": "speech"}[f["predicate"]]].append(f)
     return sorted(out.values(), key=lambda p: p["position"], reverse=True)
 
 
@@ -659,12 +664,13 @@ def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
                 text += f" <span class=\"muted\">· {_t(lang, key)}: {_v(was.get('value'))} ({_turn(was)})</span>"
         return text
 
-    return table([_t(lang, k) for k in ("h.pair", "h.relationship", "h.feelings", "h.speech")],
+    return table([_t(lang, k) for k in ("h.pair", "h.relationship", "h.role", "h.feelings", "h.speech")],
                  [[_v(" ↔ ".join(sorted(p["names"].values()))),
                    # a directed value ("엄마") says who is whose only with its direction; a symmetric one needs it
                    # only when both directions are current
                    "<br>".join(said(f, len(p["relationship"]) > 1 or not symmetric(f.get("value")))
                                for f in p["relationship"]),
+                   "<br>".join(said(f, True) for f in p["role"]),
                    "<br>".join(said(f, True) for f in p["feels"]),
                    "<br>".join(said(f, True) for f in p["speech"])] for p in entries[:100]])
 
