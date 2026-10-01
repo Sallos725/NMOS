@@ -99,7 +99,16 @@ class AlreadyRunning(SystemExit):
 def lock_data_dir(data: Path):
     """Hold an exclusive lock on data/launcher.lock for this process's lifetime; a second launcher on the same data
     would otherwise adopt the first one's Postgres and stop it on its way out."""
-    f = open(data / "launcher.lock", "a+")
+    running = AlreadyRunning(f"NMOS is already running on {data} (another start.sh, NMOS.bat or NMOS.exe).\n"
+                             f"NMOS가 이미 이 데이터 폴더({data})로 실행 중이에요.")
+    try:
+        f = open(data / "launcher.lock", "a+")
+    except PermissionError as e:
+        # Windows refuses even the open while the first launcher holds its byte lock (sharing or lock violation);
+        # any other permission error is a real one and is shown as it is.
+        if getattr(e, "winerror", None) in (32, 33):
+            raise running from None
+        raise
     try:
         if WINDOWS:
             import msvcrt
@@ -112,8 +121,7 @@ def lock_data_dir(data: Path):
             fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         f.close()
-        raise AlreadyRunning(f"NMOS is already running on {data} (another start.sh, NMOS.bat or NMOS.exe).\n"
-                             f"NMOS가 이미 이 데이터 폴더({data})로 실행 중이에요.") from None
+        raise running from None
     return f
 
 
