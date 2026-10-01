@@ -25,7 +25,7 @@ import hashlib
 import logging
 import re
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -355,7 +355,9 @@ live AS (
                ORDER BY x.extractor_key = %(gen)s DESC, g.activated_at DESC, g.key) AS chosen
     FROM r JOIN extraction x ON x.source_revision_id = r.rid AND split_part(x.window_hash, ':', 3) = r.wtag
     JOIN projection_generation g ON g.key = x.extractor_key AND g.kind = 'canon'
-    WHERE x.created_at <= %(at)s AND (x.discarded_at IS NULL OR x.discarded_at > %(at)s)
+    -- as of `at` for a replay; with no `at`, the extractions in force now by the database's clock (as summaries)
+    WHERE (%(at)s::timestamptz IS NULL OR x.created_at <= %(at)s::timestamptz)
+      AND (x.discarded_at IS NULL OR (%(at)s::timestamptz IS NOT NULL AND x.discarded_at > %(at)s::timestamptz))
 )
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.value, a.epistemic, a.confidence,
        a.evidence, a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,
@@ -481,7 +483,7 @@ def rows(conn: psycopg.Connection, conv: UUID, mid: str | None, key: str | None,
         return []
     # Prepared at its first use on a connection: planning it takes longer than running it (PHASE-14 step 6).
     out = conn.execute(ROWS, {"conv": conv, "mid": mid, "gen": key, "macro": MACRO_SQL,
-                              "at": known_at or datetime.now(timezone.utc)}, prepare=True).fetchall()
+                              "at": known_at}, prepare=True).fetchall()
     blocks = _blocks(conn, {a["rid"] for a in out})
     out = [a for a in out if shown(blocks[a["rid"]], a.pop("rid"), a["evidence"])]
     for i, a in enumerate(out):

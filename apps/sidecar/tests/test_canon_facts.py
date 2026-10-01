@@ -565,3 +565,27 @@ def test_a_lock_on_canon_and_on_a_correction_survives_a_rebuild_and_a_new_canon_
         drain(migrated, anew)
         assert anew.canon_calls()  # the new canon generation read the canon again
         holds("elder sister")
+
+
+def test_a_canon_fact_just_read_is_served_whatever_the_sidecar_clock_says(migrated, monkeypatch):
+    """A request with no time to read at takes the canon facts there are, by the database's clock: the sidecar's own
+    clock may lag the database's (Python 3.12 on Windows ticks every 15.6 ms), and a fact extracted just before the
+    request then compared newer than "now" and was left out, and the request's replay did not reproduce it."""
+    from datetime import datetime as real, timedelta
+
+    class Lagging(real):
+        @classmethod
+        def now(cls, tz=None):
+            return real.now(tz) - timedelta(seconds=1)
+
+    chat, model = story(), Model()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        out = push(c, chat, canon_texts())
+        mid = out["manifest_id"]
+        recall(c, chat, "Who is Kaito?", canon_manifest_id=mid, canon_held=["card:desc", "persona", "lore:kaito"])
+        drain(migrated, model)
+        monkeypatch.setattr(canonfacts, "datetime", Lagging, raising=False)
+        free = recall(c, chat, "Who is Kaito?", budget=2000, canon_manifest_id=mid, canon_held=["card:desc", "persona"])
+        assert "Kaito identity: squire" in free["packet"]["text"]
+        assert c.get(f"/v1/trace/{free['trace_id']}/replay").json()["reproduced"] is True

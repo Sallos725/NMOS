@@ -13,6 +13,13 @@ later, is `docs/KNOWN-ISSUES.md`.
   character addressed that way, it is still ranked and kept private as when the full name is used. The scene's
   character groups now list the characters your message names first. Recorded requests replay as they were. Evaluation in Phase 24 step 3.
 
+- **A canon fact read just before a request is served on every system.** A request that does not replay an earlier
+  one took "now" from the sidecar's clock to choose the canon facts in force, while those facts are stamped by the
+  database's. Where the sidecar's clock lags (Python 3.12 on Windows ticks every 15.6 ms, as in the Docker-free
+  Windows bundle of Phase 23), a fact extracted moments before was left out, and the request's replay then did not
+  reproduce it. The choice now follows the database's clock, as summaries already did; the name-join preview stamps
+  its link as the join would (the database's `now()`). Recorded requests replay as they were.
+
 - **A relationship's or feeling's earlier version kept from someone is no longer shown as known to all** (ADR 0038
   amendment 1, K42). Since `packet-v5` a relationship, feeling or form of address line also names what it replaced
   and how it started, under the current version's knowledge marks; a version only some characters knew read as known
