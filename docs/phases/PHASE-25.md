@@ -2,7 +2,8 @@
 
 > **Status: approved (2026-10-01): Q1 the alternative, a new predicate `role_toward` ("quality before time", owner);
 > the rest as proposed — Q2 restated for that choice, the draft's Q4–Q6 now Q5–Q7, and Q4 (what reads the new
-> predicate) added as that choice's consequence; current, alongside Phase 23.** Not a roadmap stage: a correction found
+> predicate) added as that choice's consequence. Complete 2026-10-01 (`docs/perf/extract-v15.md`): every criterion
+> met; the paid run's output tokens were 43 % above the estimate (owner accepted).** Not a roadmap stage: a correction found
 > by measurement, tracked as AGE-27 under AGE-24. The owner decided on 2026-10-01 that `0.3.0` waits for AGE-24's
 > fixes and that `extract-v15` replaces the unreleased `extract-v14` before the tag (`docs/STATUS.md`, Decisions;
 > AGENTS.md §13). No release in this phase; `0.3.0` follows it (the production rebuild, Stage 6's repair-survival
@@ -54,16 +55,16 @@ next to their relationship, so a question about it finds a fact rather than an e
 
 ## Acceptance criteria
 
-- [ ] Every existing test passes; the deterministic cases of In scope 3.
-- [ ] (a) A `role_toward` row with the tenancy for the AGE-27 pair in at least two of the three runs.
-- [ ] (b) Sampled turns, three runs: ledger facts found among valid rows, mean not below the lowest of `extract-v14`'s
+- [x] Every existing test passes; the deterministic cases of In scope 3.
+- [x] (a) A `role_toward` row with the tenancy for the AGE-27 pair in at least two of the three runs.
+- [x] (b) Sampled turns, three runs: ledger facts found among valid rows, mean not below the lowest of `extract-v14`'s
       runs; `relationship` rows found not fewer than `extract-v14`'s lowest run (roles do not take relationships'
       place); the evidence check parks at most 10 % of valid rows (Phase 19's bar); input tokens within 5 % of
       `extract-v14`'s.
-- [ ] (c) The M0 chats at `packet-v10`, 4,000, vectors off and on: cases passed and needing memory not lower than
+- [x] (c) The M0 chats at `packet-v10`, 4,000, vectors off and on: cases passed and needing memory not lower than
       `extract-v14`'s by more than one per run; forbidden phrases placed not higher in total; the AGE-27 case passes
       with vectors off.
-- [ ] Review per AGENTS.md §14 (high risk; the self-review, a Codex review only on the owner's request).
+- [x] Review per AGENTS.md §14 (high risk; the self-review, a Codex review only on the owner's request).
 
 ## Steps (one pull request each)
 

@@ -359,6 +359,11 @@ not checked. The Inspector does not list pending facts yet. The model also
 sees less of the previous turns (each message up to 1,000 characters instead of 2,000), so an extraction reads about a
 sixth fewer input tokens.
 
+A role between two people is its own fact (since `extract-v15`, Phase 25, ADR 0059): who rents from whom, works for,
+teaches or looks after whom is stored per direction as `role_toward`, beside the pair's relationship (kin, romance,
+rivalry, friendship); both can hold at once. It counts as how two characters stand, like the relationship, a feeling
+and a form of address, and the Inspector's Relationships section shows it in a Role column.
+
 ## Privacy
 
 Chat text is stored in the local Postgres volume. Text leaves your machine only if you configure an
@@ -416,7 +421,7 @@ The full list with workarounds is [`docs/KNOWN-ISSUES.md`](docs/KNOWN-ISSUES.md)
   the Inspector shows coverage as partial until done). Changing the LLM model/endpoint re-extracts only
   each chat's recent turns (`NMOS_EXTRACT_BACKFILL`, default 100); older turns keep the previous model's
   facts, marked "older generation" in the Inspector, until you run **Extract all history** on that chat
-  (ADR 0014, since 0.1.0-beta.11). An update that brings a new extractor generation (such as `extract-v14`) does
+  (ADR 0014, since 0.1.0-beta.11). An update that brings a new extractor generation (such as `extract-v15`) does
   the same once, and reads each chat's canon sources once more; the CHANGELOG says which updates do.
 - Item and character names are free text unless the story links them: "지도" and "해안 지도" are
   different items. An item lost or destroyed in turns extracted before 0.1.0-beta.13 still shows its

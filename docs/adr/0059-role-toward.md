@@ -49,4 +49,5 @@ tenancy and a friendship between the same two people would replace each other.
 - A role the story only implies may still come out as `relationship` from a model that ignores the narrowed
   description; such rows fold as before.
 - Roles do not appear in `<Cast>` groups (out of scope).
-- Evaluation: `docs/perf/extract-v15.md` (step 3, a bounded paid run before step 2 merges).
+- Evaluation: `docs/perf/extract-v15.md` (Phase 25 step 3): the AGE-27 role in 3 of 3 runs, the main M0 chat one case
+  more, about 3.5 % more input and 5.5 % more output tokens a call than `extract-v14` on the same turns.
