@@ -5,7 +5,7 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-- **Phase 22: a re-extraction that keeps what it found** (ADR 0057 and its amendment 1, ADR 0044 amendment 3, D66,
+- **Phase 22 complete: a re-extraction that keeps what it found** (ADR 0057 and its amendment 1, ADR 0044 amendment 3, D66,
   `docs/perf/reextract-loss.md`; AGE-25). **"Extract all history" no longer extracts again** a turn that was extracted
   before an earlier turn's secret (K29): it keeps the turn's facts and asks one short model call whether a character
   found the secret out there. On the owner's M0 chat the 68 turns one press re-extracted cost 727k input and 85k output
