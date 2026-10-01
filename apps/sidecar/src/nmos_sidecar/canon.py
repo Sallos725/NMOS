@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -106,8 +106,8 @@ def sync(conn: psycopg.Connection, conv_id: UUID, entries: list[dict[str, Any]],
     stale = observed_at is not None and conv["canon_observed_at"] is not None and observed_at < conv["canon_observed_at"]
     applied = not stale and conv["canon_manifest_id"] != mid
     if applied:
-        conn.execute("UPDATE conversation SET canon_manifest_id = %s, canon_observed_at = %s WHERE id = %s",
-                     (mid, observed_at or datetime.now(timezone.utc), conv_id))
+        conn.execute("UPDATE conversation SET canon_manifest_id = %s, canon_observed_at = coalesce(%s, now())"
+                     " WHERE id = %s", (mid, observed_at, conv_id))  # the database's clock, as every row it is read with
         conn.execute("INSERT INTO canon_applied (conversation_id, manifest_id, observed_at) VALUES (%s, %s, %s)",
                      (conv_id, mid, observed_at))
     elif not stale and observed_at is not None:

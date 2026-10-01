@@ -355,9 +355,10 @@ live AS (
                ORDER BY x.extractor_key = %(gen)s DESC, g.activated_at DESC, g.key) AS chosen
     FROM r JOIN extraction x ON x.source_revision_id = r.rid AND split_part(x.window_hash, ':', 3) = r.wtag
     JOIN projection_generation g ON g.key = x.extractor_key AND g.kind = 'canon'
-    -- as of `at` for a replay; with no `at`, the extractions in force now by the database's clock (as summaries)
-    WHERE (%(at)s::timestamptz IS NULL OR x.created_at <= %(at)s::timestamptz)
-      AND (x.discarded_at IS NULL OR (%(at)s::timestamptz IS NOT NULL AND x.discarded_at > %(at)s::timestamptz))
+    -- as of `at` for a replay; with no `at`, as of the request's transaction start (now(), the database's clock and
+    -- the instant its trace records), so an extraction committed during the request is read by neither it nor a replay
+    WHERE x.created_at <= coalesce(%(at)s::timestamptz, now())
+      AND (x.discarded_at IS NULL OR x.discarded_at > coalesce(%(at)s::timestamptz, now()))
 )
 SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.value, a.epistemic, a.confidence,
        a.evidence, a.knowledge, a.known_by, a.hidden_from, a.polarity, a.modality, a.source, a.asserted_by, a.salience,

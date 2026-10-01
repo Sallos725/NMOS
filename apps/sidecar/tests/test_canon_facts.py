@@ -589,3 +589,31 @@ def test_a_canon_fact_just_read_is_served_whatever_the_sidecar_clock_says(migrat
         free = recall(c, chat, "Who is Kaito?", budget=2000, canon_manifest_id=mid, canon_held=["card:desc", "persona"])
         assert "Kaito identity: squire" in free["packet"]["text"]
         assert c.get(f"/v1/trace/{free['trace_id']}/replay").json()["reproduced"] is True
+
+
+def test_a_story_fact_just_extracted_is_served_whatever_the_sidecar_clock_says(migrated, monkeypatch):
+    """A live request reads the story's facts up to its own message (`upto`) with no time to read at: they are the
+    extractions in force by the database's clock. The sidecar's clock may lag it (Python 3.12 on Windows ticks every
+    15.6 ms); a fact extracted just before the request then compared newer than "now" and was left out, and the
+    request's replay held it (seen on the Windows bundle, Phase 23)."""
+    from datetime import datetime as real, timedelta
+
+    from nmos_sidecar import facts
+
+    class Lagging(real):
+        @classmethod
+        def now(cls, tz=None):
+            return real.now(tz) - timedelta(seconds=1)
+
+    chat, model = story(), Model()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        out = push(c, chat, canon_texts())
+        recall(c, chat, "Who is Kaito?", canon_manifest_id=out["manifest_id"],
+               canon_held=["card:desc", "persona", "lore:kaito"])
+        drain(migrated, model)
+        monkeypatch.setattr(facts, "datetime", Lagging, raising=False)
+        free = recall(c, chat, "Who is Kaito?", budget=2000, canon_manifest_id=out["manifest_id"],
+                      canon_held=["card:desc", "persona"])
+        assert "Hana located in old mill" in free["packet"]["text"]
+        assert c.get(f"/v1/trace/{free['trace_id']}/replay").json()["reproduced"] is True

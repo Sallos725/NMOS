@@ -198,3 +198,24 @@ def test_copilot_review_of_154_a_surrogate_a_colliding_message_id_and_a_newer_ob
         assert (older["applied"], older["stale"]) == (False, True)
         done = push(c, chat, {"note": (NOTE + " 새로", {})}, t0 + 2000)
         assert done["applied"]
+
+
+def test_a_canon_change_with_no_observation_time_is_stamped_by_the_database(migrated, monkeypatch):
+    """canon_observed_at orders canon uploads (a stale one is ignored); with no observation time from the plugin it is
+    the database's now(), not the sidecar's clock, which may lag or run ahead of the rows it is compared with."""
+    from datetime import datetime as real, timedelta
+
+    class Off(real):
+        @classmethod
+        def now(cls, tz=None):
+            return real.now(tz) - timedelta(hours=1)
+
+    monkeypatch.setattr(canon, "datetime", Off, raising=False)
+    chat = SimChat("canon-clock")
+    chat.user("Hello.")
+    with make_client(migrated) as c:
+        sync(c, chat)
+        push(c, chat, {"card:desc": ("Hana is a scout.", {})})
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        row = conn.execute("SELECT canon_observed_at, now() AS db FROM conversation").fetchone()
+    assert abs((row["db"] - row["canon_observed_at"]).total_seconds()) < 60
