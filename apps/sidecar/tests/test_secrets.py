@@ -293,18 +293,33 @@ def first_import(c, migrated, model, db) -> tuple[SimChat, str]:
     return chat, conv
 
 
+def extractions(db) -> list[dict]:
+    return db.execute("SELECT id, window_hash, discarded_at, hints FROM extraction ORDER BY created_at").fetchall()
+
+
 def test_extract_all_history_recovers_a_reveal_missed_on_first_import(migrated, db):
-    """Audit G2: Extract all history used to skip every compiled turn, so K29's workaround did nothing. It now
-    extracts again the turns extracted before an earlier turn's secret, oldest first, and only those."""
+    """Audit G2, then PHASE-22 Q1–Q4 (ADR 0057): Extract all history checks the turns extracted before an earlier
+    turn's secret, oldest first, and only those, with a reveal check; their extractions stay (AGE-25)."""
     model = SecretRecorder()
     with make_client(migrated, **LLM) as c:
         chat, conv = first_import(c, migrated, model, db)
+        before = {x["id"] for x in extractions(db) if x["discarded_at"] is None}
         out = c.post(f"/v1/conversations/{conv}/extract-history").json()
-        assert out["queued"]["extract"] == 2  # turns 1 and 2; turn 0 holds the secret
+        assert out["queued"]["extract"] == 0 and out["queued"]["reveal"] == 2  # turns 1, 2; turn 0 holds the secret
+        assert out["coverage"]["extraction"]["reveal_checks"]["pending"] == 2
+        calls = len(model.prompts)
         drain(migrated, model)
+        assert len(model.prompts) == calls + 2 and all("OPEN SECRETS" in p for p in model.prompts[calls:])
+        live = [x for x in extractions(db) if x["discarded_at"] is None]
+        assert before <= {x["id"] for x in live}  # nothing discarded
+        checks = [x for x in live if x["window_hash"].startswith("reveal:")]
+        assert len(checks) == 2 and {x["hints"]["checks"] for x in checks} <= {str(i) for i in before}
         goal = goal_of(db)
         assert not goal.get("hidden_from") and [r["to"] for r in goal["revealed"]] == ["Noel"]
-        assert c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["extract"] == 0  # settled
+        assert [r["listed_hash"] is not None for r in reveal_rows(db)] == [True]
+        again = c.post(f"/v1/conversations/{conv}/extract-history").json()
+        assert again["queued"]["extract"] == again["queued"]["reveal"] == 0  # settled
+        assert again["coverage"]["extraction"]["reveal_checks"] == {"pending": 0, "failed": 0, "checked": 2}
 
 
 def test_rebuild_recovers_a_reveal_missed_on_first_import(migrated, db):
