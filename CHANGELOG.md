@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **"At first": how it started, when you ask** (Phase 21 step 2, ADR 0056, D67; AGE-26). A message that asks how
+  something started (처음, 맨 처음, 최초, 예전, 옛날, 원래, 초반, 첫 만남, "at first", "originally", …) now gets the oldest of
+  several similar events of the characters it names, not the newest, also small ones; and a pair's first form of
+  address or relationship even when the chat window holds the current one. Other messages are unchanged, and recorded
+  requests replay as they were.
+
 - **Phase 22 complete: a re-extraction that keeps what it found** (ADR 0057 and its amendment 1, ADR 0044 amendment 3, D66,
   `docs/perf/reextract-loss.md`; AGE-25). **"Extract all history" no longer extracts again** a turn that was extracted
   before an earlier turn's secret (K29): it keeps the turn's facts and asks one short model call whether a character

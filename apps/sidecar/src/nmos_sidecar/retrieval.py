@@ -18,7 +18,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from .entities import norm
-from .facts import LIVE, STANDING, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
+from .facts import FIRST_CUE, LIVE, STANDING, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
 from . import scene, spans, summaries
 from .ids import uuid7
 from .ledger import find_conversation
@@ -76,6 +76,7 @@ class RecallOptions:
     summarize_key: str | None = None  # summaries of this generation in <Story> (packet-v8, ADR 0043); None: off
     canon_key: str | None = None  # canon facts of this generation (ADR 0047); None: off
     lexical_keywords: bool = True  # the keyword route (ADR 0052); a trace that did not record it replays with it off
+    first_cue: bool = True  # how it started, when the message asks (ADR 0056); a trace without it replays with it off
     excerpt_chars: int = MAX_EXCERPT_CHARS  # an excerpt's length at most; derived from the budget (`filled`), not recorded
     fill_facts: int = 0  # fact slots the budget adds, for facts kept from no one (`filled`, ADR 0049), not recorded
 
@@ -83,7 +84,7 @@ class RecallOptions:
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
 RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit", "vector_min_sim", "query_prefix",
             "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator", "summarize_key", "canon_key",
-            "lexical_keywords")
+            "lexical_keywords", "first_cue")
 CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
@@ -448,13 +449,18 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             # its order and event cap at any limit), and the added slots go to what no one is kept from (ADR 0049).
             grow = options.fill_facts > 0
             claims_limit = max(1, options.facts_limit // 2)
+            # How it started (ADR 0056): where the window starts, read only when the message asks.
+            first = options.first_cue and bool(FIRST_CUE.search(query))
+            start = _window_start(conn, head, in_context, upto) if first else None
             ranked = relevant_facts(view["facts"], query, previous_ai, in_context,
                                     len(view["facts"]) if grow else options.facts_limit,
-                                    options.events_limit, persona, scene.names(g.cast, r), causes=causes)
+                                    options.events_limit, persona, scene.names(g.cast, r), causes=causes,
+                                    first_cue=first, window_start=start)
             facts = _grown(ranked[:options.facts_limit], ranked, options.fill_facts)
             # Claims after facts, so the budget serves narration first (ADR 0013).
             ranked = relevant_facts(view["claims"], query, previous_ai, in_context,
-                                    len(view["claims"]) if grow else claims_limit, persona=persona, causes=causes)
+                                    len(view["claims"]) if grow else claims_limit, persona=persona, causes=causes,
+                                    first_cue=first, window_start=start)
             claims = _grown(ranked[:claims_limit], ranked,
                             max(1, (options.facts_limit + options.fill_facts) // 2) - claims_limit)
             # How the cast stand with each other takes the budget before threads (ADR 0026).
@@ -618,6 +624,14 @@ def _head_turn(conn: psycopg.Connection, head: UUID, upto: int | None = None) ->
     """The turn of the head's last message (as of `upto`): the turn a request answers."""
     return conn.execute("SELECT max(turn) AS t FROM active_membership WHERE commit_id = %s AND position <= %s",
                         (head, 2**31 - 1 if upto is None else upto)).fetchone()["t"]
+
+
+def _window_start(conn: psycopg.Connection, head: UUID, in_context: set[str], upto: int | None) -> int | None:
+    """The lowest head position (as of `upto`) of a message in context: where the chat window starts (ADR 0056)."""
+    return conn.execute(
+        "SELECT min(am.position) AS p FROM active_membership am JOIN source_revision sr ON sr.id = am.source_revision_id"
+        " JOIN source_object so ON so.id = sr.source_object_id WHERE am.commit_id = %s AND am.position <= %s"
+        " AND so.host_logical_id = ANY(%s)", (head, 2**31 - 1 if upto is None else upto, sorted(in_context))).fetchone()["p"]
 
 
 def _head_last(conn: psycopg.Connection, head: UUID, upto: int | None) -> str | None:

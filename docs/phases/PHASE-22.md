@@ -6,7 +6,7 @@
 > exception of R7, `docs/STATUS.md`). The owner chose the direction on 2026-10-01 (AGE-25): **a reveal check instead of
 > a re-extraction for K29, and a report of the narrated facts a re-extraction dropped**; keeping the earlier facts
 > automatically is reconsidered after the loss rate is measured, and extracting a new chat oldest first is not done.
-> Phase 21 (AGE-26) is a separate draft; this phase does not depend on it.
+> Phase 21 (AGE-26) is a separate phase; this phase does not depend on it.
 
 ## Questions and proposed answers
 
