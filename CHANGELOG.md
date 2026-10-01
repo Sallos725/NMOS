@@ -5,6 +5,18 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **A role between two people is remembered as such: `extract-v15`** (Phase 25, ADR 0059, D69,
+  `docs/perf/extract-v15.md`; AGE-27). Who rents from whom, works for, teaches or looks after whom is now its own fact,
+  `role_toward`, one per direction, beside the pair's relationship, which now means a personal tie (kin, romance,
+  rivalry, friendship). A turn that says where someone lives and the role they hold there gives both. The role counts
+  as how two characters stand: it comes first among facts of equal mention, opens the packet's facts and names what
+  it replaced; canon may state it; the Inspector's Relationships section has a Role column. On the owner's main M0
+  chat the question about a tenant, answered before only by a lucky excerpt, now finds the fact (one case more).
+  **A new extractor generation**: each chat's recent turns are extracted again once and its canon sources read again
+  once (provider cost); it replaces the unreleased `extract-v14`, so `0.3.0` moves from `extract-v13` to
+  `extract-v15`. An extraction reads about 3.5 % more input and writes 5.5 % more output than with `extract-v14`.
+  Recorded requests replay as they were.
+
 - **A story fact extracted just before a request is served on every system.** A live request reads the story's facts
   up to its own message with no time to read at, and took "now" from the sidecar's clock while extractions are
   stamped by the database's: where the sidecar's clock lags (Python 3.12 on Windows, the Docker-free Windows bundle of

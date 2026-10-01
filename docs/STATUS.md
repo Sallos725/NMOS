@@ -62,18 +62,20 @@ the synthetic first-cue cases 5 → 8 of 15, the restored copies' Hangul probes 
 and 0 → 2 of 6, every other set unchanged, no new forbidden phrase; retrieve p50 at 10,000 messages −0.6 ms, +2.5 ms
 with every question naming a character, within the rounds' spread. Phase 24 complete. K32 measured and left out.
 
-**Phase 25 — `extract-v15`: a role between two people, its own fact: approved 2026-10-01, current (alongside Phase
-23).** Spec `docs/phases/PHASE-25.md` (AGE-27 under AGE-24): a new predicate `role_toward` (tenant of, employer of,
+**Phase 25 — `extract-v15`: a role between two people, its own fact: approved and complete 2026-10-01, not
+released.** Spec `docs/phases/PHASE-25.md` (AGE-27 under AGE-24): a new predicate `role_toward` (tenant of, employer of,
 teacher of…; one current value per direction) next to a pair's relationship, read as a standing fact; one extractor
 generation that replaces the unreleased `extract-v14` before `0.3.0`. Step 1 (the spec) done. Step 2 (ADR 0059, D69):
 `extract-v15` implemented on its branch (`role_toward` in the registry, `relationship` narrowed to personal ties, the
 prompt's line on a place and a role with a synthetic example; `role_toward` in `facts.STANDING` and
-`canonfacts.PREDICATES`; the Inspector's pair view has a Role column), merged only after step 3's paid evaluation.
+`canonfacts.PREDICATES`; the Inspector's pair view has a Role column), merged with step 3 (#232).
 Step 3 (`docs/perf/extract-v15.md`, owner OK 2026-10-01; 449 calls, 3.90M input and 0.57M output tokens, the output
-43 % above the estimate): every criterion met — the AGE-27 role in 3 of 3 runs; sampled turns 116 ledger facts
+43 % above the estimate, owner accepted): every criterion met — the AGE-27 role in 3 of 3 runs; sampled turns 116 ledger facts
 (lowest `extract-v14` run 113), `relationship` rows at the bar; the M0 chats +1 case on the main chat, sample 2 equal,
 the AGE-27 case passing with vectors off. High risk (AGENTS.md §14): stored data (a new generation) and memory
-selection (a new standing predicate).
+selection (a new standing predicate). Per call `extract-v15` reads about 3.5 % more input and writes 5.5 % more
+output than `extract-v14` on the same turns. Phase 25 complete. Next, outside the phase: the owner deploys `:edge`,
+rebuilds production with `extract-v15` and dumps it; Stage 6's repair-survival check on that dump; AGE-23; `0.3.0`.
 
 **Phase 23 — NMOS without Docker: approved 2026-10-01, current.** Spec `docs/phases/PHASE-23.md`
 (AGE-29; the owner pulled it in before 1.0, an exception to R7): a bundle for each PocketRisu portable target
@@ -574,8 +576,8 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
   one-generation rule counts what a release carries, `AGENTS.md` §13), so `0.3.0` moves from `extract-v13` to
   `extract-v15` and its users re-extract once. Cost accepted: the owner's production chats, rebuilt with
   `extract-v14`, are rebuilt again, and Stage 6's repair-survival check (40/68 on `extract-v14`) is measured
-  again on an `extract-v15` rebuild before the tag. The `extract-v15` paid evaluation still needs the owner's
-  OK for its estimate. Order: AGE-26 → AGE-28 (with K32) → AGE-27 → production rebuild and Stage 6 re-check →
+  again on an `extract-v15` rebuild before the tag. `extract-v15` is on `main` (Phase 25, complete
+  2026-10-01). Order: AGE-26 → AGE-28 (with K32) → AGE-27 → production rebuild and Stage 6 re-check →
   AGE-23 → `0.3.0` (AGE-7).
 - Stage 4 — decided 2026-09-27: first milestone (R1); recommended answers to Q1–Q5; no release yet. Spec
   `docs/phases/PHASE-10.md`, approved 2026-09-27. Tentative: a holder's own slip is direction, not a leak.
@@ -587,11 +589,9 @@ window at the provider's cost (ADR 0006, 0014). Owner-approved changes wait for 
 paid once (owner decision 2026-09-26). A-12 and A-14 shipped in `extract-v11` (owner decision 2026-09-27,
 `docs/perf/extract-v11.md`). The synthetic prompt examples (owner decision 2026-09-28, PR #149) and evidence
 found in the turn for every assertion (owner decision 2026-09-29, C2 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`)
-shipped in `extract-v14` with a shorter context (Phase 19, ADR 0054, `docs/perf/extract-v14.md`). Queued:
-AGE-27, a role between two people (tenant and landlord, employer and employee) recorded as a relationship
-instead of only a location — `extract-v15`, which replaces the unreleased `extract-v14` before `0.3.0`
-(owner decision 2026-10-01, Decisions above); Phase 25 (`role_toward`, ADR 0059), current: implemented on its branch,
-the paid evaluation next.
+shipped in `extract-v14` with a shorter context (Phase 19, ADR 0054, `docs/perf/extract-v14.md`). AGE-27, a role
+between two people, shipped in `extract-v15` (Phase 25, ADR 0059, `docs/perf/extract-v15.md`), which replaces the
+unreleased `extract-v14` before `0.3.0` (owner decision 2026-10-01, Decisions above). Queued: nothing.
 
 ## Public release checklist (done 2026-09-23)
 
