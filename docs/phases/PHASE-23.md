@@ -1,6 +1,6 @@
 # Phase 23 — NMOS without Docker: a bundle for each PocketRisu portable target
 
-> **Status: approved 2026-10-01 (Q6 as amended below; every other proposed answer), current alongside Phase 22.**
+> **Status: approved 2026-10-01 (Q6 as amended below; every other proposed answer), current.**
 > Not a roadmap stage: the owner pulled it in before 1.0 by name (2026-10-01, an exception to R7 in
 > `docs/ROADMAP-1.0.md`), tracked as AGE-29. The spike behind it is on the
 > branch `spike/native-bundle` (`tools/native/`, CI run 36807358696).
