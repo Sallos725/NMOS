@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any
@@ -731,7 +732,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                    limit: int, events_limit: int | None = None,
                    persona: frozenset[str] = frozenset(), present: frozenset[str] = frozenset(),
                    causes: bool = False, first_cue: bool = False,
-                   window_start: int | None = None, marks: bool = False) -> list[dict[str, Any]]:
+                   window_start: int | None = None, marks: bool = False,
+                   aliases: Mapping[str, frozenset[str]] | None = None) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
@@ -759,6 +761,10 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     before salience and score; a `minor` event needs no lexical bar; equal scores go to the older fact;
     and a standing fact whose source is in context stays a candidate when it started before the window
     (`_started_before`).
+
+    `aliases` (`name_variants`, ADR 0058): the other names a character goes by in this request (`variants.aliases`, a
+    given name or a Hangul spelling of a romanized name); they count as its names, for a mention and for a secret's
+    holder addressed.
     """
     q = _norm(query)
     ai = _norm(previous_ai)
@@ -772,10 +778,10 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         if f["host_logical_id"] in in_context and not f.get("held_off"):  # a lock holds against the story (ADR 0047)
             if not (oldest and window_start is not None and _started_before(f, window_start, in_context, marks)):
                 continue
-        names = [n for n in {_norm(x) for x in (f.get("names") or [f["subject"], f.get("object")])}
+        names = [n for n in _widened(f.get("names") or [f["subject"], f.get("object")], aliases)
                  if len(n) >= 2 and n not in user]
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
-        hidden = [_norm(n) for n in f.get("hidden_from") or [] if len(_norm(n)) >= 2 and _norm(n) not in user]
+        hidden = [n for n in _widened(f.get("hidden_from") or [], aliases) if len(n) >= 2 and n not in user]
         if any(n in q for n in hidden):
             mention += 2.5
         elif mention and any(n in present for n in hidden):
@@ -807,6 +813,11 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
             continue
         out.append(f)
     return out
+
+
+def _widened(names: list[Any], aliases: Mapping[str, frozenset[str]] | None) -> set[str]:
+    out = {_norm(x) for x in names if x}
+    return out | {v for n in out for v in aliases.get(n, ())} if aliases else out
 
 
 def _scope(f: dict[str, Any]) -> tuple:

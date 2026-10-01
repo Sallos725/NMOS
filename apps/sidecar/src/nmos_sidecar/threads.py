@@ -24,10 +24,11 @@ resolution must be to match.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from .entities import USER_NAMES, Resolution, norm
+from .variants import widened
 
 KINDS = {"promised": "promise", "goal": "goal", "question": "question", "threat": "threat", "owes": "debt"}
 PREDICATES = frozenset(KINDS) | {"fulfilled", "resolved"}  # the only assertions a thread opens, restates or closes
@@ -239,19 +240,21 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
 
 
 def relevant_threads(threads: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],
-                     limit: int, persona: frozenset[str] = frozenset(), about: bool = False) -> list[dict[str, Any]]:
+                     limit: int, persona: frozenset[str] = frozenset(), about: bool = False,
+                     aliases: Mapping[str, frozenset[str]] | None = None) -> list[dict[str, Any]]:
     """Open threads whose maker or recipient is mentioned now (Q5): in the user's message first, then in
     the previous reply; newest first within each. The persona does not count as a mention (it is in
     every chat; `persona` adds the names the host reported for it, ADR 0023), and a thread whose opening
     message is still in the prompt is left out (D3). With `about` (packet-v4), a promise whose words the
-    user's message repeats (ABOUT_MIN) comes first, mentioned or not."""
+    user's message repeats (ABOUT_MIN) comes first, mentioned or not. `aliases`: the other names a character goes by in
+    this request (ADR 0058)."""
     q, ai = norm(query), norm(previous_ai)
     q_grams = _grams(query) if about else set()
     scored = []
     for t in threads:
         if t["status"] != "open" or t.get("host_logical_id") in in_context:
             continue
-        names = {norm(n) for n in t["names"] if n} - USER_NAMES - persona
+        names = widened(t["names"], aliases) - USER_NAMES - persona
         names = {n for n in names if len(n) >= 2}
         mention = 2 if any(n in q for n in names) else (1 if any(n in ai for n in names) else 0)
         if about:

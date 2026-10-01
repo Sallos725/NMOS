@@ -19,7 +19,7 @@ from psycopg.types.json import Jsonb
 
 from .entities import norm
 from .facts import FIRST_CUE, LIVE, STANDING, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
-from . import scene, spans, summaries
+from . import scene, spans, summaries, variants
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
@@ -78,6 +78,7 @@ class RecallOptions:
     lexical_keywords: bool = True  # the keyword route (ADR 0052); a trace that did not record it replays with it off
     first_cue: bool = True  # how it started, when the message asks (ADR 0056); a trace without it replays with it off
     history_marks: bool = True  # earlier versions only under marks that cover them (ADR 0038 amendment 1); same replay rule
+    name_variants: bool = True  # a given name, a Hangul spelling of a romanized name (ADR 0058); same replay rule
     excerpt_chars: int = MAX_EXCERPT_CHARS  # an excerpt's length at most; derived from the budget (`filled`), not recorded
     fill_facts: int = 0  # fact slots the budget adds, for facts kept from no one (`filled`, ADR 0049), not recorded
 
@@ -85,7 +86,7 @@ class RecallOptions:
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
 RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit", "vector_min_sim", "query_prefix",
             "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator", "summarize_key", "canon_key",
-            "lexical_keywords", "first_cue", "history_marks")
+            "lexical_keywords", "first_cue", "history_marks", "name_variants")
 CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
@@ -430,20 +431,24 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         # Sim bots track many characters: state of characters mentioned right now gets the budget first.
         g.state.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in focus), reverse=True)
     view = None
+    names_of: dict[int, Any] = {}  # one mapping of name variants per view, whichever path asks first (ADR 0058)
     if options.facts_limit > 0 or options.threads_limit > 0:
         view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
                            options.canon_key, canon_facts)
         g.canon_names, g.canon_facts = view.get("canon_names"), view.get("canon_facts_manifest")
         r = view["resolution"]
         persona = r.persona_names if r else frozenset()
+        aliases = _aliases(r, query, previous_ai, options, view, names_of)
         # Who is in the scene, so facts only some of them know are marked (packet-v3, ADR 0034).
         g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
-                            _head_turn(conn, head, upto))
+                            _head_turn(conn, head, upto), aliases=aliases,
+                            marks=_thread_marks(view, aliases))
         if options.threads_limit > 0:
             g.threads = _moded([thread_entry(t, scene.private(t, g.cast, r)) for t in
                                 relevant_threads(view["threads"], query, previous_ai, in_context,
                                                  options.threads_limit, persona,
-                                                 about=options.policy in ABOUT_POLICIES)], view["threads"], g, r, options)
+                                                 about=options.policy in ABOUT_POLICIES, aliases=aliases)],
+                                view["threads"], g, r, options)
         if options.facts_limit > 0:
             causes = options.policy in CAUSE_POLICIES
             # packet-v9 ranks every candidate once: the configured limit's share is its head (relevant_facts keeps
@@ -455,13 +460,13 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             start = _window_start(conn, head, in_context, upto) if first else None
             ranked = relevant_facts(view["facts"], query, previous_ai, in_context,
                                     len(view["facts"]) if grow else options.facts_limit,
-                                    options.events_limit, persona, scene.names(g.cast, r), causes=causes,
-                                    first_cue=first, window_start=start, marks=options.history_marks)
+                                    options.events_limit, persona, scene.names(g.cast, r, aliases), causes=causes,
+                                    first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases)
             facts = _grown(ranked[:options.facts_limit], ranked, options.fill_facts)
             # Claims after facts, so the budget serves narration first (ADR 0013).
             ranked = relevant_facts(view["claims"], query, previous_ai, in_context,
                                     len(view["claims"]) if grow else claims_limit, persona=persona, causes=causes,
-                                    first_cue=first, window_start=start, marks=options.history_marks)
+                                    first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases)
             claims = _grown(ranked[:claims_limit], ranked,
                             max(1, (options.facts_limit + options.fill_facts) // 2) - claims_limit)
             # How the cast stand with each other takes the budget before threads (ADR 0026).
@@ -484,7 +489,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             who = scene.display(r, options.narrator) if r is not None else options.narrator
             g.note = f" The story is told in the first person by {who}: only what they know is listed."
         if options.policy in CAST_POLICIES and r is not None:
-            g.cast_lines, used = cast_groups(view, g.cast, r, query, options, in_context)
+            g.cast_lines, used = cast_groups(view, g.cast, r, query, options, in_context, aliases)
             if used:  # a line in <Cast> is not said again in another section
                 g.lead = [line for line in g.lead if line.ref.get("assertion") not in used]
                 g.facts = [line for line in g.facts if line.ref.get("assertion") not in used]
@@ -495,12 +500,14 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                options.canon_key, canon_facts)
             g.canon_names, g.canon_facts = view.get("canon_names"), view.get("canon_facts_manifest")
         r = view["resolution"] if view else None
+        aliases = _aliases(r, query, previous_ai, options, view, names_of) if view else None
         if view and not g.cast and r is not None:
             g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
-                                _head_turn(conn, head, upto))
+                                _head_turn(conn, head, upto), aliases=aliases,
+                                marks=_thread_marks(view, aliases))
         g.story = summaries.packet_lines(conn, head, options.summarize_key, view["secrets"] if view else [], query,
                                          in_context, upto, known_at,
-                                         scene.names(g.cast, r) if r is not None else frozenset())
+                                         scene.names(g.cast, r, aliases) if r is not None else frozenset())
     # The keyword route adds no raw text that repeats a secret still kept from someone (ADR 0052, owner 2026-09-30):
     # an excerpt only it found is left out when it does, so it places no secret the other routes would not. The same
     # test as a summary's (PHASE-12 Q3), stricter when someone it is kept from is in the scene.
@@ -510,11 +517,13 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
                                options.canon_key, canon_facts)
         r = view["resolution"]
+        aliases = _aliases(r, query, previous_ai, options, view, names_of)
         cast = g.cast
         if not cast and r is not None:  # facts, threads and summaries off: the scene still sets the bar
             cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
-                              _head_turn(conn, head, upto))
-        present = scene.names(cast, r) if r is not None else frozenset()
+                              _head_turn(conn, head, upto), aliases=aliases,
+                              marks=_thread_marks(view, aliases))
+        present = scene.names(cast, r, aliases) if r is not None else frozenset()
         kept = []
         for e in g.ranked:
             if e.revision_id not in keyword_only:
@@ -524,6 +533,28 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.keyword_withheld = len(g.ranked) - len(kept)
         g.ranked = kept
     return g
+
+
+def _aliases(r: Any, query: str, previous_ai: str, options: RecallOptions, view: dict[str, Any],
+             cache: dict[int, Any]) -> dict[str, frozenset[str]] | None:
+    """The other names the characters go by in this request (`name_variants`, ADR 0058), or None when the option is
+    off; computed once per view (`cache`). The names in knowledge marks include an open thread's: a thread keeps the
+    marks of the assertion that opened it (`threads.fold`)."""
+    if not options.name_variants or r is None:
+        return None
+    if id(view) not in cache:
+        marked = {n for row in view["facts"] + view["claims"] + view["other"] + view["threads"]
+                  for n in (*(row.get("known_by") or ()), *(row.get("hidden_from") or ()))}
+        cache[id(view)] = variants.aliases(r.entities(), r.persona_names, f"{query} {previous_ai}", marked)
+    return cache[id(view)]
+
+
+def _thread_marks(view: dict[str, Any], aliases: dict[str, frozenset[str]] | None) -> list[str]:
+    """With `name_variants`, the names in open threads' knowledge marks, for the scene's cast: someone a thread is kept
+    from may be named only there (ADR 0058). Without it, none, as recorded requests had it."""
+    if aliases is None:
+        return []
+    return [n for t in view["threads"] for n in (*(t.get("known_by") or ()), *(t.get("hidden_from") or ()))]
 
 
 def _keyword_only(c: dict[str, Any], options: RecallOptions) -> bool:
@@ -545,16 +576,22 @@ def cast_facts(facts: list[dict[str, Any]], to_persona: Callable[[dict[str, Any]
 
 
 def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, options: RecallOptions,
-                in_context: set[str] = frozenset()) -> tuple[list[tuple[str, list[Line]]], set[Any]]:
+                in_context: set[str] = frozenset(), aliases: dict[str, frozenset[str]] | None = None
+                ) -> tuple[list[tuple[str, list[Line]]], set[Any]]:
     """Each scene character's current state as the lines it is (PHASE-12 Q4, ADR 0043): place, condition, feeling
     toward the persona, what they carry, and, for a character the message names, their open goals, the one the
     message is about first: an open goal can be long over without a turn saying so (K23), and every request would
     carry it. Up to CAST_MAX characters, the persona left out. A line only some of the scene know stays in its section
     (its Private handling), and a narrator's unknowns are left out (ADR 0035). Returns the groups and the assertions
-    they use. A canon fact whose text the prompt held is not said again (D3, ADR 0047)."""
+    they use. A canon fact whose text the prompt held is not said again (D3, ADR 0047). With `aliases`
+    (`name_variants`, ADR 0058) the characters the user's message names come first: a given name in the previous
+    reply brings more characters into the scene, and the one asked about must keep its group."""
     persona = scene.key(r, scene.PERSONA)
-    order = [k for k in cast if k != persona][:CAST_MAX]
     said = norm(query)
+    order = [k for k in cast if k != persona]
+    if aliases is not None:
+        order.sort(key=lambda k: not any(n in said for n in scene.names({k: cast[k]}, r, aliases)))  # stable
+    order = order[:CAST_MAX]
     before, cause = options.policy in BEFORE_POLICIES, options.policy in CAUSE_POLICIES
 
     def shown(row: dict[str, Any]) -> bool:
@@ -571,7 +608,7 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
     used: set[Any] = set()
     for k in order:
         pick = cast_facts(mine.get(k, []), lambda f: scene.key(r, f["object"]) == persona)
-        named = any(n in said for n in scene.names({k: cast[k]}, r))
+        named = any(n in said for n in scene.names({k: cast[k]}, r, aliases))
         goals = [t for t in view["threads"] if named and t.get("kind") == "goal" and t["status"] == "open"
                  and scene.key(r, t["by"]) == k and shown(t)]
         goals.sort(key=lambda t: (similarity(query, t.get("text")) if query else 0.0, t["position"]), reverse=True)

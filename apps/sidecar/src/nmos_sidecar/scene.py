@@ -3,8 +3,8 @@
 The scene cast is read from what the request already has: the characters the last CAST_TURNS turns before
 the current one are about (subjects, objects and typed participants of their assertions, Phase 8), every
 character named in the user's message or the previous reply (extraction lags one turn behind), a known entity
-or a name in knowledge marks, and the persona. Characters compare by entity (ADR 0012), and every name the
-persona goes by is the persona, so aliases are one person.
+or a name in knowledge marks, under any name it goes by in this request (`aliases`, ADR 0058), and the persona.
+Characters compare by entity (ADR 0012), and every name the persona goes by is the persona, so aliases are one person.
 
 A limited fact is private in this scene when someone in the cast is not among the characters shown to know
 it (`known_by`); with nobody in the cast, nothing is. Public, unknown and unmarked facts are never private.
@@ -12,9 +12,11 @@ it (`known_by`); with nobody in the cast, nothing is. Public, unknown and unmark
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from .entities import USER_NAMES, Resolution, norm
+from .variants import widened
 
 CAST_TURNS = 2
 PERSONA = "{{user}}"
@@ -32,20 +34,23 @@ def key(r: Resolution, name: str) -> str:
     return r.key("character", PERSONA if is_persona(r, name) else name)
 
 
-def names(scene: dict[str, str], r: Resolution | None) -> frozenset[str]:
-    """Every normalized name the scene's characters go by, for matching knowledge marks."""
+def names(scene: dict[str, str], r: Resolution | None,
+          aliases: Mapping[str, frozenset[str]] | None = None) -> frozenset[str]:
+    """Every normalized name the scene's characters go by, for matching knowledge marks and the message."""
     out = {norm(n) for n in scene.values()}
     if r is not None:
         for e in r.entities():
             if e["id"] in scene:
                 out |= {norm(n) for n in e["names"]}
-    return frozenset(n for n in out if len(n) >= 2)
+    return frozenset(n for n in widened(out, aliases) if len(n) >= 2)
 
 
 def cast(rows: list[dict[str, Any]], r: Resolution | None, query: str = "", previous_ai: str = "",
-         now: int | None = None, turns: int = CAST_TURNS) -> dict[str, str]:
+         now: int | None = None, turns: int = CAST_TURNS,
+         aliases: Mapping[str, frozenset[str]] | None = None, marks: Iterable[str] = ()) -> dict[str, str]:
     """{entity key: display name} of the characters in the scene. `now` is the current turn (the user's
-    message); without it, the last turn any row comes from counts as the last one before it."""
+    message); without it, the last turn any row comes from counts as the last one before it. `marks`: more names in
+    knowledge marks (an open thread's, ADR 0058)."""
     if r is None:
         return {}
     out: dict[str, str] = {}
@@ -60,7 +65,7 @@ def cast(rows: list[dict[str, Any]], r: Resolution | None, query: str = "", prev
     else:
         until = max((row["turn"] for row in rows if row.get("turn") is not None), default=-1)
     since = until - turns + 1
-    marked: set[str] = set()  # names in knowledge marks: someone a secret is kept from may be named only there
+    marked: set[str] = set(marks)  # names in knowledge marks: someone a secret is kept from may be named only there
     for row in rows:
         if row.get("known_by") or row.get("hidden_from"):
             marked.update(row.get("known_by") or ())
@@ -78,10 +83,10 @@ def cast(rows: list[dict[str, Any]], r: Resolution | None, query: str = "", prev
     for e in r.entities():
         if e["type"] != "character" or e.get("persona"):
             continue
-        if any(len(n) >= 2 and n in said for n in {norm(x) for x in e["names"]} - USER_NAMES):
+        if any(len(n) >= 2 and n in said for n in widened(e["names"], aliases) - USER_NAMES):
             out.setdefault(e["id"], e["name"])
     for name in marked:
-        if len(norm(name)) >= 2 and not is_persona(r, name) and norm(name) in said:
+        if not is_persona(r, name) and any(len(n) >= 2 and n in said for n in widened([name], aliases)):
             add(name)
     add(PERSONA)
     return out

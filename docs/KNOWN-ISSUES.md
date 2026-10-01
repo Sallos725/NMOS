@@ -39,7 +39,7 @@ without a PocketRisu change.
 | K28 | Taking turns in one chat from two tabs or devices makes memory of the messages one of them lacks drop out and come back | Data | host (H10); not planned (audit A-13) |
 | K29 | A reveal in the turns first extracted together can be missed | Memory | "Extract all history" after connecting a chat with secrets (ADR 0033 amendment 2) |
 | K30 | A summary can say a secret in other words | Memory | since 0.2.0 (Phase 12, ADR 0042, 0043); summaries off for a chat where it matters |
-| K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases) |
+| K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases); on `main` a given name with a common family name, and a Hangul spelling of a romanized name (Phase 24, ADR 0058) |
 | K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | recorded, not scheduled (`docs/perf/m0-sample2.md`); canon did not change it |
 | K33 | The packet stops at ≈2,000–3,000 tokens whatever the memory budget | Recall | resolved on `main` by `packet-v9` (Phase 15, ADR 0049): excerpts and facts grow with the budget up to 8,000 |
 | K34 | A request whose query embedding does not answer in 300 ms recalls without vectors | Recall | measured (Phase 15): 70 % of the owner's production requests; the Status tab says so since Phase 15, the progress display since Phase 17 |
@@ -319,6 +319,9 @@ by meaning. *On `main` (Phase 14, ADR 0046):* a given name the chat's lorebook l
 as a key of the character's entry is a mention: on the same chat, with its canon, the given-name probes found their
 fact 2 of 3, as many as the full name. A given name no lorebook lists is still no mention. With canon facts on
 (Phase 14 step 6) the probes gave the same.
+*On `main` (Phase 24, ADR 0058):* the given name of a three-syllable name with a common family name is a mention of
+that character, unless another entity holds it, two characters would share it, or it is the persona's; and a Hangul
+word is a mention of a character the story names in Latin letters when it spells that name.
 
 **K32 — A third-person persona does not bring its own facts.** The persona's names never count as a mention
 (ADR 0023): a user who narrates by name writes that name in every message. Only a first-person question ("내 …",
