@@ -12,6 +12,8 @@ import argparse
 import hashlib
 import json
 import os
+import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -214,7 +216,7 @@ def build_windows_tray(stage: Path, work: Path) -> None:
     """NMOS.exe (the plugin's icon; starts pythonw nmos_tray.py) and the tray. Needs an MSVC developer shell."""
     src = Path(__file__).parent / "windows"
     shutil.copy2(src / "nmos_tray.py", stage)
-    subprocess.run([sys.executable, str(src / "make_icon.py"), str(stage / "nmos.ico")], check=True)
+    subprocess.run([sys.executable, str(Path(__file__).parent / "make_icon.py"), str(stage / "nmos.ico")], check=True)
     build = work / "exe"
     shutil.rmtree(build, ignore_errors=True)
     build.mkdir()
@@ -225,6 +227,76 @@ def build_windows_tray(stage: Path, work: Path) -> None:
     subprocess.run(["cl", "/nologo", "/O2", "/utf-8", "/W3", "nmos_exe.c", "nmos.res",
                     "/link", "/SUBSYSTEM:WINDOWS", "/OUT:NMOS.exe"], cwd=build, check=True)
     shutil.copy2(build / "NMOS.exe", stage)
+
+
+MACHO = (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa\xcf")
+BUNDLE_ID = "io.github.sallos725.nmos"
+
+
+def apple_version(version: str) -> str:
+    m = re.match(r"\d+(\.\d+){0,2}", version)
+    return m.group(0) if m else "0.0.0"
+
+
+def build_macos_app(stage: Path, work: Path, version: str) -> Path:
+    """NMOS.app (PHASE-23 Q6): the bundle in Contents/Resources, the menu-bar program in Contents/MacOS, every Mach-O
+    file in it signed ad hoc and then the app, so a download is "from an unidentified developer" (Open Anyway) and not
+    "damaged". The app is sealed: data, .env and log live in ~/Library/Application Support/NMOS (Q3)."""
+    app = stage.parent / "NMOS.app"
+    shutil.rmtree(app, ignore_errors=True)
+    contents = app / "Contents"
+    (contents / "MacOS").mkdir(parents=True)
+    shutil.move(str(stage), str(contents / "Resources"))
+    res = contents / "Resources"
+    # Nothing can be cached inside a sealed app at run time, so the bytecode is compiled now (errors: files in
+    # packages' test data that are not Python 3, harmless).
+    subprocess.run([str(res / "python" / "bin" / "python3"), "-m", "compileall", "-q", "-j", "0",
+                    str(res / "python" / "lib")], check=False, stdout=subprocess.DEVNULL)
+    src = Path(__file__).parent / "macos"
+    subprocess.run(["swiftc", "-O", "-target", "arm64-apple-macos13.0", str(src / "NMOSApp.swift"),
+                    "-o", str(contents / "MacOS" / "NMOS")], check=True)
+    iconset = work / "nmos.iconset"
+    shutil.rmtree(iconset, ignore_errors=True)
+    subprocess.run([sys.executable, str(Path(__file__).parent / "make_icon.py"), "--iconset", str(iconset)], check=True)
+    subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(res / "nmos.icns")], check=True)
+    with (contents / "Info.plist").open("wb") as f:
+        plistlib.dump({
+            "CFBundleName": "NMOS", "CFBundleDisplayName": "NMOS", "CFBundleIdentifier": BUNDLE_ID,
+            "CFBundleExecutable": "NMOS", "CFBundleIconFile": "nmos", "CFBundlePackageType": "APPL",
+            # Apple's version keys take dotted numbers only ("0.3.0-beta.1" → "0.3.0"); the full one is NMOSVersion.
+            "CFBundleShortVersionString": apple_version(version), "CFBundleVersion": apple_version(version),
+            "NMOSVersion": version,
+            "LSMinimumSystemVersion": "13.0", "LSUIElement": True,  # a menu-bar item, no Dock icon
+            "NSHumanReadableCopyright": "MIT License",
+            # App Transport Security blocks plain http by default; the menu asks the sidecar on 127.0.0.1 over http.
+            "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
+        }, f)
+    signed = 0
+    for p in sorted(contents.rglob("*")):
+        if p.is_file() and not p.is_symlink():
+            with p.open("rb") as f:
+                if f.read(4) in MACHO:
+                    subprocess.run(["codesign", "--force", "--sign", "-", "--timestamp=none", str(p)], check=True,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    signed += 1
+    subprocess.run(["codesign", "--force", "--sign", "-", "--timestamp=none", str(app)], check=True)
+    subprocess.run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)], check=True)
+    log(f"NMOS.app: {signed} Mach-O files signed ad hoc, then the app")
+    return app
+
+
+def build_dmg(app: Path, dmg: Path) -> Path:
+    """NMOS.app beside a link to /Applications: dragged there it is installed as a Mac app is, out of App
+    Translocation (PHASE-23 Q9)."""
+    staging = app.parent / "dmg"
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir()
+    shutil.move(str(app), str(staging / "NMOS.app"))
+    (staging / "Applications").symlink_to("/Applications")
+    dmg.unlink(missing_ok=True)
+    subprocess.run(["hdiutil", "create", "-quiet", "-volname", "NMOS", "-srcfolder", str(staging), "-ov",
+                    "-format", "UDZO", str(dmg)], check=True)
+    return dmg
 
 
 def install_sidecar(python: Path, work: Path) -> None:
@@ -327,7 +399,11 @@ def main() -> None:
     shutil.copy2(REPO / ".env.example", stage / ".env.example")
     shutil.copy2(REPO / "LICENSE", stage)
 
-    if windows:
+    sizes = (f"unpacked {du(stage) / 1e6:.0f} MB (python {du(stage / 'python') / 1e6:.0f}, "
+             f"pgsql {du(stage / 'pgsql') / 1e6:.0f})")
+    if a.target.startswith("macos"):
+        archive = build_dmg(build_macos_app(stage, work, a.version), a.out / f"{name}.dmg")
+    elif windows:
         archive = a.out / f"{name}.zip"
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
             for p in sorted(stage.rglob("*")):
@@ -336,9 +412,7 @@ def main() -> None:
         archive = a.out / f"{name}.tar.gz"
         with tarfile.open(archive, "w:gz") as t:
             t.add(stage, arcname=name)
-    log(f"unpacked {du(stage) / 1e6:.0f} MB (python {du(stage / 'python') / 1e6:.0f}, "
-        f"pgsql {du(stage / 'pgsql') / 1e6:.0f}); archive {archive.stat().st_size / 1e6:.0f} MB; "
-        f"{time.monotonic() - t0:.0f} s")
+    log(f"{sizes}; archive {archive.stat().st_size / 1e6:.0f} MB; {time.monotonic() - t0:.0f} s")
     print(archive)
 
 

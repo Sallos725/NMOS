@@ -4,6 +4,9 @@
     ci_smoke.py refuse <archive> <parent> <folder> <text>     the launcher stops with <text> in its output
     ci_smoke.py suite  <archive> <parent> [<folder>]          the sidecar test suite against the bundle's PostgreSQL
     ci_smoke.py tray   <archive> <parent> [<folder>]          Windows: NMOS.exe, the tray and start at login
+    ci_smoke.py app    <archive> <parent> [<folder>]          macOS: NMOS.app from the .dmg, its menu-bar item and login item
+
+A macOS .dmg is mounted and its NMOS.app copied out; the bundle the smokes run is the app's Contents/Resources.
 
 The default folder is "한글 폴더": a Korean name with a space, as a Windows user folder can be.
 """
@@ -17,6 +20,7 @@ import signal
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 import urllib.request
 import zipfile
@@ -30,6 +34,15 @@ def unpack(archive: Path, parent: Path, folder: str) -> Path:
     dest = parent / folder
     shutil.rmtree(dest, ignore_errors=True)
     dest.mkdir(parents=True)
+    if archive.suffix == ".dmg":
+        mount = Path(tempfile.mkdtemp(prefix="nmos-dmg-"))
+        subprocess.run(["hdiutil", "attach", "-quiet", "-nobrowse", "-readonly", "-mountpoint", str(mount),
+                        str(archive)], check=True)
+        try:
+            shutil.copytree(mount / "NMOS.app", dest / "NMOS.app", symlinks=True)
+        finally:
+            subprocess.run(["hdiutil", "detach", "-quiet", str(mount)], check=False)
+        return dest / "NMOS.app" / "Contents" / "Resources"
     if archive.suffix == ".zip":
         with zipfile.ZipFile(archive) as z:
             z.extractall(dest)
@@ -101,6 +114,9 @@ def main() -> int:
         return refuse(bundle, sys.argv[5])
     if mode == "suite":
         return suite(bundle)
+    if mode == "app":
+        app_smoke = Path(__file__).parent / "macos" / "app_smoke.py"
+        return subprocess.run([sys.executable, str(app_smoke), str(bundle.parent.parent)]).returncode
     if mode == "tray":
         tray_smoke = Path(__file__).parent / "windows" / "tray_smoke.py"
         return subprocess.run([str(bundle_python(bundle)), str(tray_smoke), str(bundle)]).returncode

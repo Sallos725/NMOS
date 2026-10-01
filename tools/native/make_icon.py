@@ -1,7 +1,8 @@
-"""Write nmos.ico (16-256 px PNG frames) with the standard library only: the plugin's icon (src/icon.ts, a one-stroke
-N with a memory node) in white on the palette's black.
+"""The bundle's icon with the standard library only: the plugin's icon (src/icon.ts, a one-stroke N with a memory
+node) in white on the palette's black.
 
-    python make_icon.py <out.ico> [<preview.png>]
+    python make_icon.py <out.ico> [<preview.png>]      Windows: nmos.ico (16-256 px PNG frames)
+    python make_icon.py --iconset <dir>                 macOS: an .iconset for iconutil (16-512 px, @1x and @2x)
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import zlib
 BG = (0x0A, 0x0B, 0x0E)  # adapters/pocketrisu-plugin/src/palette.ts bg
 FG = (0xF4, 0xF4, 0xF7)  # palette.ts textStrong
 SIZES = (16, 20, 24, 32, 40, 48, 64, 256)
-SS = 4  # supersampling per axis
+SS = 4  # supersampling per axis (2 from 256 px up: plenty there, and four times faster)
 
 
 def in_rounded_square(x: float, y: float, r: float = 0.22) -> bool:
@@ -46,17 +47,18 @@ def in_glyph(x: float, y: float, size: int) -> bool:
 
 def render(size: int) -> bytes:
     rows = []
+    ss = SS if size < 256 else 2
     for py in range(size):
         row = bytearray([0])  # PNG filter: none
         for px in range(size):
             bg = fg = 0
-            for sy in range(SS):
-                for sx in range(SS):
-                    x, y = (px + (sx + 0.5) / SS) / size, (py + (sy + 0.5) / SS) / size
+            for sy in range(ss):
+                for sx in range(ss):
+                    x, y = (px + (sx + 0.5) / ss) / size, (py + (sy + 0.5) / ss) / size
                     if in_rounded_square(x, y):
                         bg += 1
                         fg += in_glyph(x, y, size)
-            n = SS * SS
+            n = ss * ss
             if bg == 0:
                 row += bytes(4)
                 continue
@@ -73,7 +75,25 @@ def render(size: int) -> bytes:
             + chunk(b"IEND", b""))
 
 
+def iconset(directory: str) -> None:
+    import os
+
+    os.makedirs(directory, exist_ok=True)
+    rendered: dict[int, bytes] = {}
+    for points in (16, 32, 128, 256, 512):
+        for scale in (1, 2):
+            px = points * scale
+            if px not in rendered:
+                rendered[px] = render(px)
+            name = f"icon_{points}x{points}{'@2x' if scale == 2 else ''}.png"
+            with open(os.path.join(directory, name), "wb") as f:
+                f.write(rendered[px])
+
+
 def main() -> None:
+    if sys.argv[1] == "--iconset":
+        iconset(sys.argv[2])
+        return
     frames = [(s, render(s)) for s in SIZES]
     header = struct.pack("<HHH", 0, 1, len(frames))
     offset = 6 + 16 * len(frames)
