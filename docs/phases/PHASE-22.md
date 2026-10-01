@@ -1,6 +1,6 @@
 # Phase 22 — A re-extraction that keeps what it found: a reveal check, and the facts a re-extraction dropped
 
-> **Status: draft (2026-10-01), awaiting owner approval.** Not a roadmap stage: an urgent correction found by
+> **Status: approved (2026-10-01) with every proposed answer (Q2–Q8; Q1 is the owner's decision); current.** Not a roadmap stage: an urgent correction found by
 > measurement (a local benchmark of the owner's chats, 2026-09-30/10-01), tracked as AGE-25 under AGE-24 (the urgent
 > exception of R7, `docs/STATUS.md`). The owner chose the direction on 2026-10-01 (AGE-25): **a reveal check instead of
 > a re-extraction for K29, and a report of the narrated facts a re-extraction dropped**; keeping the earlier facts
