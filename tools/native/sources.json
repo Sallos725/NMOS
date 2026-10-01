@@ -1,0 +1,34 @@
+{
+  "_comment": "Every download in a bundle, pinned (Phase 23 Q5). build_bundle.py fails on any digest or commit mismatch. To move a version, change it here with the upstream digest and rerun the smokes.",
+  "python": {
+    "version": "3.12.14",
+    "release": "20260929",
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/{release}/cpython-{version}%2B{release}-{triple}-install_only_stripped.tar.gz",
+    "sha256": {
+      "x86_64-unknown-linux-gnu": "ef605200f8174e87ecfc308e52a88127543f85dd5c940dc5e92cab244b98a003",
+      "aarch64-unknown-linux-gnu": "706111f834ae1557314f48b7293ddc72cc96e952aa75c5d31f56c2b7ddeac3d3",
+      "aarch64-apple-darwin": "1bb3e53d231ee2c8881e8daf6426f4dd95bff0dda496af0f3af300357aa998d0",
+      "x86_64-pc-windows-msvc": "f38e68f4d612ade6dd50c894fc80b14c0be0c3b5201145d6fff5f20b9323204d"
+    }
+  },
+  "postgresql": {
+    "version": "16.15.0",
+    "url": "https://github.com/theseus-rs/postgresql-binaries/releases/download/{version}/postgresql-{version}-{triple}.tar.gz",
+    "sha256": {
+      "x86_64-unknown-linux-gnu": "77dd669eda3985ea8be26256f6af28d3c8414152ada713797555bb7423b4486a",
+      "aarch64-unknown-linux-gnu": "f6d49ffbaea28cf8732785b18afb75bded905667d4ec8e2308a13a30fe0a24d1",
+      "aarch64-apple-darwin": "46f6382024d9b633d1f4b4903ffef8c2404e00ae83098d628c00591048cb0512",
+      "x86_64-pc-windows-msvc": "157bd7322f8c653f06b0373d1b2280e9cb238b6a6d3bd05541aeb8f33885a8ad"
+    }
+  },
+  "postgresql_source": {
+    "version": "16.15",
+    "url": "https://ftp.postgresql.org/pub/source/v{version}/postgresql-{version}.tar.bz2",
+    "sha256": "c1575341fa7bd40f5274ea465b34390f4dc64cdd0770af327005caaeb9f6b7ed"
+  },
+  "pgvector": {
+    "tag": "v0.8.6",
+    "commit": "8ee86c96f0fd72390f890aa8a336fda6d3ab4c6c",
+    "repo": "https://github.com/pgvector/pgvector"
+  }
+}

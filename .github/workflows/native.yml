@@ -1,0 +1,58 @@
+name: native
+
+# Phase 23: the Docker-free bundle on each PocketRisu portable target, built from pinned sources
+# (tools/native/sources.json) and checked from a folder with a Korean name and a space.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ["tools/native/**", ".github/workflows/native.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x64, os: ubuntu-22.04, suite: true }
+          - { target: linux-arm64, os: ubuntu-22.04-arm, suite: false }
+          - { target: macos-arm64, os: macos-14, suite: true }
+          # The system drive has 8.3 short names (the launcher's way around PostgreSQL's ANSI paths).
+          - { target: win-x64, os: windows-2022, suite: true, parent: "C:/Users/runneradmin" }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0  # no major tags since v8
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libxml2
+      - name: Build
+        if: runner.os != 'Windows'
+        run: uv run --no-project --python 3.12 python tools/native/build_bundle.py --target ${{ matrix.target }} --version 0.0.0-ci
+      - name: Build (MSVC x64 environment for pgvector)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
+          uv run --no-project --python 3.12 python tools/native/build_bundle.py --target ${{ matrix.target }} --version 0.0.0-ci
+      - name: Smoke (start, Korean pg_trgm, stop, restart, the three refusals)
+        shell: bash
+        run: uv run --no-project --python 3.12 python tools/native/ci_smoke.py smoke dist-native/NMOS-v0.0.0-ci-${{ matrix.target }}.* "${{ matrix.parent || runner.temp }}"
+      - name: A drive without short names gets the move message (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          fsutil 8dot3name query D: || true
+          uv run --no-project --python 3.12 python tools/native/ci_smoke.py refuse dist-native/NMOS-v0.0.0-ci-win-x64.zip "${{ runner.temp }}" "한글 폴더" "non-English characters"
+      - name: Sidecar test suite against the bundle's PostgreSQL
+        if: matrix.suite
+        shell: bash
+        run: uv run --no-project --python 3.12 python tools/native/ci_smoke.py suite dist-native/NMOS-v0.0.0-ci-${{ matrix.target }}.* "${{ matrix.parent || runner.temp }}" "테스트 폴더"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: NMOS-${{ matrix.target }}
+          path: dist-native/NMOS-v0.0.0-ci-${{ matrix.target }}.*
+          retention-days: 7
