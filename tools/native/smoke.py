@@ -49,8 +49,14 @@ def stop(proc: subprocess.Popen, bundle: Path) -> float:
     else:
         os.killpg(proc.pid, signal.SIGINT)
     proc.wait(timeout=60)
-    pg_ctl = bundle / "pgsql" / "bin" / ("pg_ctl.exe" if WINDOWS else "pg_ctl")
-    status = subprocess.run([str(pg_ctl), "-D", str(bundle / "data" / "pg"), "status"], stdout=subprocess.DEVNULL)
+    pgsql, data = bundle / "pgsql", bundle / "data"
+    if WINDOWS:  # pg_ctl reads its arguments through the ANSI code page, as the launcher works around
+        sys.path.insert(0, str(bundle))
+        from nmos_launcher import ascii_path
+
+        pgsql, data = ascii_path(pgsql), ascii_path(data)
+    pg_ctl = pgsql / "bin" / ("pg_ctl.exe" if WINDOWS else "pg_ctl")
+    status = subprocess.run([str(pg_ctl), "-D", str(data / "pg"), "status"], stdout=subprocess.DEVNULL)
     if status.returncode == 0:
         raise SystemExit("Postgres is still running after the launcher stopped")
     return time.monotonic() - t0

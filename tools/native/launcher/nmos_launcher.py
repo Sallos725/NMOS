@@ -41,8 +41,33 @@ def read_env_file(path: Path) -> dict[str, str]:
     return env
 
 
+PGSQL = ROOT / "pgsql"  # on Windows, replaced by its ASCII short path in main()
+
+
 def pg_bin(name: str) -> str:
-    return str(ROOT / "pgsql" / "bin" / f"{name}{EXE}")
+    return str(PGSQL / "bin" / f"{name}{EXE}")
+
+
+def ascii_path(path: Path) -> Path:
+    """Windows: an all-ASCII spelling of an existing path (its 8.3 short form when it has other characters).
+
+    PostgreSQL on Windows reads its own location and data directory through the ANSI code page, and initdb writes
+    the installation path into UTF-8 SQL, so any non-ASCII character (a Korean user or folder name) breaks it.
+    """
+    if str(path).isascii():
+        return path
+    import ctypes
+
+    buf = ctypes.create_unicode_buffer(32768)
+    if ctypes.windll.kernel32.GetShortPathNameW(str(path), buf, len(buf)) and buf.value.isascii():
+        return Path(buf.value)
+    raise SystemExit(
+        f"NMOS cannot run its database under {path}: the path has non-English characters and this drive has no short "
+        "(8.3) names. Move the NMOS folder to a path with only English letters and digits, such as C:\\NMOS, and "
+        "start it again.\n"
+        f"NMOS 데이터베이스는 한글 등 영문이 아닌 글자가 들어간 경로({path})에서 실행할 수 없습니다. "
+        "NMOS 폴더를 C:\\NMOS처럼 영문과 숫자로만 된 경로로 옮긴 뒤 다시 실행해 주세요."
+    )
 
 
 def run(cmd: list[str], **kw) -> None:
@@ -105,8 +130,11 @@ def main() -> int:
         pglib = str(ROOT / "pgsql" / "lib")
         os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(filter(None, [pglib, os.environ.get("LD_LIBRARY_PATH")]))
     data = Path(env.get("NMOS_DATA_DIR") or ROOT / "data")
-    pgdata = data / "pg"
     data.mkdir(parents=True, exist_ok=True)
+    if WINDOWS:
+        global PGSQL
+        PGSQL, data = ascii_path(PGSQL), ascii_path(data)
+    pgdata = data / "pg"
     pg_port = int(env.get("NMOS_PG_PORT", "54390"))
     sidecar_bind = env.get("NMOS_SIDECAR_BIND", "127.0.0.1")
     sidecar_port = env.get("NMOS_SIDECAR_PORT", "8790")

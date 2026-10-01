@@ -65,12 +65,14 @@ jobs:
           until curl -sf http://127.0.0.1:8795/v1/health > /dev/null; do sleep 1; done
           cd apps/sidecar
           NMOS_TEST_ADMIN_URL="postgresql://nmos:$(cat "$OLDPWD/$b/data/db-password")@127.0.0.1:54390/postgres" uv run pytest -q
-      - name: Smoke under a non-ASCII path the ANSI code page can hold (Windows)
+      - name: Smoke under a Korean folder on C:, where 8.3 short names exist (Windows)
         if: always() && runner.os == 'Windows'
         shell: bash
         run: |
+          fsutil 8dot3name query C: || true
+          fsutil 8dot3name query D: || true
           archive=$(ls dist-native/NMOS-v0.0.0-spike-${{ matrix.target }}.*)
-          uv run --no-project --python 3.12 python tools/native/ci_smoke.py "$archive" "${{ runner.temp }}" "Café folder"
+          uv run --no-project --python 3.12 python tools/native/ci_smoke.py "$archive" "C:\Users\runneradmin" "사용자 폴더"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
