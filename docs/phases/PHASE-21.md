@@ -10,7 +10,7 @@
 | # | Question | Proposed answer | Alternatives |
 |---|---|---|---|
 | Q1 | What makes a message ask how it started? | **A first cue in the message:** 처음, 맨 처음, 최초, 예전, 옛날, 원래, 초반, "첫" followed by a space, 번 or 째 (첫 만남, 첫번째, 첫째; not 첫눈), and in English "at first", "first time", "originally", "in the beginning". Read from the message only, like the "why" cue (packet-v6, ADR 0040). | A model call that classifies the message (a call on the request path). |
-| Q2 | What changes when it is there? | **Two things, only for that request:** (a) events: among the mentioned events the earliest go first, and a `minor` event no longer needs the lexical bar (ADR 0020) to stay a candidate; ties between facts go to the older one; (b) a standing fact (`relationship`, `feels_toward`, `addresses`) with earlier versions stays a candidate even when its current version's source is in the chat window: its earlier versions, which the packet already prints (ADR 0038), are not in the window. | Only (a); only (b) (the measurement below needs both). |
+| Q2 | What changes when it is there? | **Two things, only for that request.** (a) **Events:** the event cap orders the events by mention first and then by turn, **oldest first, before salience and score** (today: mention, `major`, score, newest); so an old `minor` event of a mentioned character comes before a newer `major` one. A `minor` event no longer needs the lexical bar (ADR 0020) to stay a candidate. Among other facts, equal scores go to the older one (today: the newer). (b) **History in the window:** a standing fact (`relationship`, `feels_toward`, `addresses`) whose current version's source is in the chat window stays a candidate **only when one of its earlier versions starts before the window** (its position is lower than the window's first message): the packet prints those versions (ADR 0038) and the window does not hold them. When every version is in the window, the fact stays out as today. | Only (a); only (b) (the measurement below needs both). |
 | Q3 | "마지막에 / 최근에" (how it is now)? | **No change.** Ties already go to the newest, and the current version is what the packet prints first. | A last cue that drops earlier versions. |
 | Q4 | How do recorded requests replay? | **A recall option `first_cue` recorded in the trace, on for new requests; a trace without it replays with it off** (as `lexical_keywords`, Phase 18). The packet policy stays `packet-v10`. | A new packet policy `packet-v11`. |
 | Q5 | Does the packet grow? | **No budget change.** The candidates differ; the fitter and the budget are as today. Measured: the median packet changes by less than 1 % on every set (−0.8 % to +0.0 %). | — |
@@ -37,6 +37,8 @@ counts only). Today's code against Q2:
 - The M0 case failed because two `minor` events of the first turns did not pass the lexical bar and later, `major`
   events of the same character took the event slots; the copies' cases failed because a pair's current form of address
   was in the window, so the fact and its first version were left out.
+- Measured with Q2 (b) as written (an earlier version before the window); the looser rule (any history) gave the
+  same counts on every set.
 - Each half of Q2 alone fixes only its own cases (ablation): without (a) the M0 case fails again; without (b) the
   `extract-v14` copy stays at 6/8.
 - Most of the synthetic set's remaining misses are a given name used without the family name (AGE-28), outside this phase.
@@ -46,9 +48,11 @@ counts only). Today's code against Q2:
 ## In scope (Phase 21)
 
 1. **The cue (Q1)** and the two changes (Q2) in fact selection, behind the recorded option (Q4).
-2. **Deterministic cases:** the cue's words and non-words (첫눈 is not a cue), events ordered oldest
-   first with the cue and newest first without, a `minor` event kept with the cue, a standing fact with history kept
-   while its current source is in the window, a trace without `first_cue` replaying unchanged.
+2. **Deterministic cases:** the cue's words and non-words (첫눈 is not a cue); with the cue an old `minor` event of
+   a mentioned character before a newer `major` one, and without it the reverse (today); a `minor` event below the
+   lexical bar kept with the cue only; a standing fact whose current source is in the window kept when an earlier
+   version starts before the window, and left out when every version is in the window; a trace without `first_cue`
+   replaying unchanged.
 3. **Evaluation (Q6)** and docs: an ADR, `ARCHITECTURE.md` (a decision), CHANGELOG, `docs/perf/first-cue.md`.
 
 ## Out of scope (Phase 21)
