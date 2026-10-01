@@ -83,12 +83,13 @@ def test_equal_scores_go_to_the_older_fact_with_the_cue():
     assert relevant_facts([new, old], "하나 처음 기억나?", "", set(), 1, first_cue=True) == [old]
 
 
-def addressing(first_position: int):
+def addressing(first_position: int, **first):
     """유이 calls 하나 '선배' at first and '언니' now; the current version's source is in the window."""
     history = [{"position": first_position, "turn": first_position // 2, "predicate": "addresses", "subject": "유이",
-                "object": "하나", "value": "선배", "polarity": "positive"},
+                "object": "하나", "value": "선배", "polarity": "positive", "knowledge": "public", "known_by": None,
+                "hidden_from": None, **first},
                {"position": 120, "turn": 60, "predicate": "addresses", "subject": "유이", "object": "하나",
-                "value": "언니", "polarity": "positive"}]
+                "value": "언니", "polarity": "positive", "knowledge": "public", "known_by": None, "hidden_from": None}]
     return fact(120, "유이", "addresses", "언니", object="하나", object_type="character", host_logical_id="in-window",
                 history=history)
 
@@ -106,6 +107,20 @@ def test_a_standing_fact_in_the_window_stays_when_an_earlier_version_starts_befo
 
 def test_a_standing_fact_whose_every_version_is_in_the_window_stays_out():
     now = addressing(first_position=110)
+    assert relevant_facts([now], QUESTION, "", {"in-window"}, 8, first_cue=True, window_start=100) == []
+
+
+def test_a_canon_version_counts_only_when_the_prompt_does_not_hold_it():
+    # canon statements have positions below every turn; a held one is in the prompt already (ADR 0047)
+    now = addressing(first_position=-3, canon="card:desc", turn=None)
+    held = {"in-window", "canon:card:desc"}
+    assert relevant_facts([now], QUESTION, "", held, 8, first_cue=True, window_start=100) == []
+    assert relevant_facts([now], QUESTION, "", {"in-window"}, 8, first_cue=True, window_start=100) == [now]
+
+
+def test_an_earlier_version_kept_from_someone_does_not_bring_the_fact_back():
+    # the packet prints earlier versions under the current row's marks: one with other marks would lose its own
+    now = addressing(first_position=20, knowledge="limited", hidden_from=["리아"])
     assert relevant_facts([now], QUESTION, "", {"in-window"}, 8, first_cue=True, window_start=100) == []
 
 

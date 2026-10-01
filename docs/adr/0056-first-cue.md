@@ -27,10 +27,14 @@ generated first-cue probes 6/8.
    persona's bonus, which would put a newer event first; ordering by the score left the M0 case failing (6/10), by
    whether it is mentioned it passes (7/10). Facts other than events keep their score order.
 3. **History the window does not hold** (Q2 b). With the cue, a fact whose source is in context stays a candidate when
-   it is a standing fact (`relationship`, `feels_toward`, `addresses`) and one of its earlier versions (`facts._prior`:
-   the same predicate, another value, not a denial) starts before the window — at a head position lower than the lowest
-   position of a message in context (`retrieval._window_start`, read only when the cue is there). When every version is
-   in the window, the fact stays out as today. An event in the window stays out.
+   it is a standing fact (`relationship`, `feels_toward`, `addresses`) with an earlier version (`facts._prior`: the
+   same predicate, another value, not a denial) the prompt does not hold (`facts._started_before`): one the story
+   stated before the window — at a head position lower than the lowest position of a message in context
+   (`retrieval._window_start`, read only when the cue is there) — or a canon statement whose key the prompt did not
+   hold (canon positions are below every turn; a held one is in the prompt, D3). **And every such version has the
+   current version's knowledge marks** (knowledge, `known_by`, `hidden_from`; history entries now carry them): the
+   packet prints earlier versions in the current version's line, under its marks (K42). Otherwise, and when every
+   version is in the window, the fact stays out as today. An event in the window stays out.
 4. **No "last" cue** (Q3). "마지막에 / 최근에" change nothing: ties already go to the newest, and the packet prints the
    current version first.
 5. **Replays** (Q4). `first_cue` is a recorded recall option, on for new requests; claims are ranked with it too. A trace
@@ -44,4 +48,7 @@ generated first-cue probes 6/8.
 - With the cue, newer events of a mentioned character can lose their slots to older ones; a cue word used in another
   sense ("원래 그래") does the same. Measured on the synthetic chat's 25 cases at two cuts: no change (23, 24).
 - A request with the cue makes one more indexed read (the window's lowest position).
+- History entries (`GET …/facts?history=true`, Inspector) carry each version's knowledge marks.
+- Found in review, not changed here: an earlier version is printed under the current version's marks for every
+  standing fact outside the window, since `packet-v5` (K42).
 - Evaluation, latency and the remaining misses (mostly a given name without the family name, AGE-28): Phase 21 step 3.

@@ -232,7 +232,8 @@ def _entry(h: dict[str, Any], outcome: dict[int, str]) -> dict[str, Any]:
     """One history entry of a fact version; a canon statement names its canon key (ADR 0047)."""
     out = {"position": h["position"], "turn": h["turn"], "predicate": h["predicate"], "subject": h["subject"],
            "value": h["value"], "object": h["object"], "polarity": h["polarity"],
-           "outcome": outcome.get(id(h), "superseded")}
+           "outcome": outcome.get(id(h), "superseded"), "knowledge": h.get("knowledge"),
+           "known_by": h.get("known_by"), "hidden_from": h.get("hidden_from")}
     if h.get("canon"):
         out["canon"] = h["canon"]
     return out
@@ -756,8 +757,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     With `first_cue` (ADR 0056), when the message asks how it started (FIRST_CUE): events are capped mentioned first
     (whether, not how strongly: a secret's or the persona's bonus would put a newer one first), then oldest first,
     before salience and score; a `minor` event needs no lexical bar; equal scores go to the older fact;
-    and a standing fact whose source is in context stays a candidate when one of its earlier versions (`_prior`) starts
-    before `window_start`, the lowest position in context (the window does not hold how it started).
+    and a standing fact whose source is in context stays a candidate when it started before the window
+    (`_started_before`).
     """
     q = _norm(query)
     ai = _norm(previous_ai)
@@ -769,7 +770,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     scored = []
     for f in facts:
         if f["host_logical_id"] in in_context and not f.get("held_off"):  # a lock holds against the story (ADR 0047)
-            if not (oldest and window_start is not None and any(h["position"] < window_start for h in _prior(f))):
+            if not (oldest and window_start is not None and _started_before(f, window_start, in_context)):
                 continue
         names = [n for n in {_norm(x) for x in (f.get("names") or [f["subject"], f.get("object")])}
                  if len(n) >= 2 and n not in user]
@@ -806,6 +807,21 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
             continue
         out.append(f)
     return out
+
+
+def _scope(f: dict[str, Any]) -> tuple:
+    return f.get("knowledge"), sorted(f.get("known_by") or []), sorted(f.get("hidden_from") or [])
+
+
+def _started_before(f: dict[str, Any], window_start: int, in_context: set[str]) -> bool:
+    """A standing fact with an earlier version (`_prior`) the prompt does not hold (ADR 0056): one the story stated
+    before the window (a position lower than `window_start`, the lowest in context), or a canon statement whose key
+    the prompt did not hold (its synthetic position is below every turn; a held one is in the prompt, ADR 0047). The
+    packet prints earlier versions under the current row's knowledge marks, so every such version must have the same
+    marks; otherwise the fact stays out as it would without the cue."""
+    before = [h for h in _prior(f) if ("canon:" + h["canon"] not in in_context if h.get("canon")
+                                       else h["position"] < window_start)]
+    return bool(before) and all(_scope(h) == _scope(f) for h in before)
 
 
 def _prior(f: dict[str, Any]) -> list[dict[str, Any]]:
