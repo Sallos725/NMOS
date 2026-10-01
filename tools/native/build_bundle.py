@@ -81,6 +81,51 @@ def build_pgvector(pgsql: Path, work: Path, windows: bool) -> None:
         subprocess.run(["make", "-s", "clean"], cwd=src, check=False)
         subprocess.run(["make", "-s", *args], cwd=src, check=True)
         subprocess.run(["make", "-s", "install", *args], cwd=src, check=True)
+        if sys.platform == "darwin":
+            build_macos_pg_trgm(pgsql, work, work.parent, args)
+
+
+# macOS libc puts Han, Hangul and kana in the ideogram/phonogram classes instead of alpha (glibc: alpha), so stock
+# pg_trgm makes no trigrams for Korean there and lexical recall finds nothing. The bundle's pg_trgm counts them as word
+# characters, which is what the Linux/Docker build does.
+TRGM_H_OLD = "#define ISWORDCHR(c, len)\t(t_isalnum_with_len(c, len))"
+TRGM_H_NEW = ("extern bool nmos_ideographic(const char *c, int len);\n"
+              "#define ISWORDCHR(c, len)\t(t_isalnum_with_len(c, len) || nmos_ideographic(c, len))")
+TRGM_OP_ADD = """
+/* NMOS bundle (macOS): Han, Hangul and kana are word characters, as glibc's iswalnum says on Linux. */
+#include <wctype.h>
+#include "utils/pg_locale.h"
+
+bool
+nmos_ideographic(const char *c, int len)
+{
+\twchar_t\t\tw[2];
+
+\tif (len < 2 || char2wchar(w, 2, c, len, NULL) != 1)
+\t\treturn false;
+\treturn iswideogram((wint_t) w[0]) || iswphonogram((wint_t) w[0]);
+}
+"""
+
+
+def build_macos_pg_trgm(pgsql: Path, work: Path, cache: Path, make_args: list[str]) -> None:
+    major_minor = ".".join(PG_VERSION.split(".")[:2])
+    src_tar = fetch(f"https://ftp.postgresql.org/pub/source/v{major_minor}/postgresql-{major_minor}.tar.bz2", cache)
+    src = work / "pg_trgm"
+    shutil.rmtree(src, ignore_errors=True)
+    prefix = f"postgresql-{major_minor}/contrib/pg_trgm/"
+    with tarfile.open(src_tar, "r:bz2") as t:
+        members = [m for m in t.getmembers() if m.name.startswith(prefix)]
+        t.extractall(work / "pgsrc", members=members, filter="tar")
+    (work / "pgsrc" / prefix).rename(src)
+    header = (src / "trgm.h").read_text()
+    if TRGM_H_OLD not in header:
+        raise SystemExit("pg_trgm/trgm.h changed; review the macOS word-character patch")
+    (src / "trgm.h").write_text(header.replace(TRGM_H_OLD, TRGM_H_NEW))
+    with (src / "trgm_op.c").open("a") as f:
+        f.write(TRGM_OP_ADD)
+    subprocess.run(["make", "-s", "USE_PGXS=1", *make_args], cwd=src, check=True)
+    subprocess.run(["make", "-s", "USE_PGXS=1", "install", *make_args], cwd=src, check=True)
 
 
 # glibc itself and the dynamic loader come from the user's system; everything else Postgres links is copied in.

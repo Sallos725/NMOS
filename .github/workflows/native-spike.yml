@@ -52,20 +52,18 @@ jobs:
           py=$b/python/bin/python3; [ -f "$py" ] || py=$b/python/python.exe
           if [ "$RUNNER_OS" = Windows ]; then locs="en-US ko-KR Korean_Korea.949 C"; else locs="en_US.UTF-8 ko_KR.UTF-8 UTF-8 C.UTF-8 C"; fi
           "$py" tools/native/locale_probe.py "$b" $locs
-      - name: Locale probe on PostgreSQL 16 ICU, 17 and 18 (diagnostic, macOS)
+      - name: libc character classes (diagnostic, macOS)
+        if: always() && runner.os == 'macOS'
+        run: cc -o wctype_probe tools/native/macos/wctype_probe.c && ./wctype_probe
+      - name: Sidecar test suite against the bundle's PostgreSQL (macOS)
         if: always() && runner.os == 'macOS'
         shell: bash
         run: |
           b=$(ls -d probe/NMOS-*)
-          "$b/python/bin/python3" tools/native/locale_probe.py "$b" icu:und icu:ko
-          for v in 17.11.0 18.6.0; do
-            gh release download -R theseus-rs/postgresql-binaries $v -p "postgresql-$v-aarch64-apple-darwin.tar.gz" -D pg$v
-            tar -xzf pg$v/*.tar.gz -C pg$v
-            NMOS_PROBE_PGSQL=$(ls -d $PWD/pg$v/postgresql-*/) "$b/python/bin/python3" tools/native/locale_probe.py "$b" \
-              en_US.UTF-8 builtin:C.UTF-8 icu:und
-          done
-        env:
-          GH_TOKEN: ${{ github.token }}
+          NMOS_SIDECAR_PORT=8795 "$b/python/bin/python3" "$b/nmos_launcher.py" > launcher.log 2>&1 &
+          until curl -sf http://127.0.0.1:8795/v1/health > /dev/null; do sleep 1; done
+          cd apps/sidecar
+          NMOS_TEST_ADMIN_URL="postgresql://nmos:$(cat "$OLDPWD/$b/data/db-password")@127.0.0.1:54390/postgres" uv run pytest -q
       - name: Smoke under a non-ASCII path the ANSI code page can hold (Windows)
         if: always() && runner.os == 'Windows'
         shell: bash
