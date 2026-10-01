@@ -69,20 +69,35 @@ def generation(settings: Settings) -> Generation | None:
 IS_SECRET = """s.status = 'valid' AND s.knowledge = 'limited' AND cardinality(s.hidden_from) > 0
     AND s.predicate <> ALL(%(not_secrets)s) AND coalesce(s.modality, 'actual') <> 'dreamed'"""
 
-# Turns of the head whose extraction of `key` was made, and not checked since, before a secret of an earlier turn could
-# be listed (K29, audit G2): `seen` is when the turn last looked for reveals, its extraction or its latest live check.
+# Turns of the head whose extraction of `key` was made, and not checked since by the reveal generation `rkey`, before a
+# secret of an earlier turn could be listed (K29, audit G2): `seen` is when the turn last looked for reveals, its
+# extraction or its latest live check. And turns whose check was made before an earlier turn's check that found a
+# reveal: two workers checked them at once, and the later turn's OPEN SECRETS may have kept a slot for a secret found out
+# meanwhile (at most OPEN_SECRETS are listed).
 UNCHECKED = """
 WITH anchor AS (
     SELECT am.turn, am.source_revision_id AS rid, am.turn_hash
     FROM conversation c JOIN active_membership am ON am.commit_id = c.head_commit_id
     WHERE c.id = %(conv)s AND am.turn_hash IS NOT NULL
 ),
+checked AS (
+    SELECT x.turn, x.xid, max(x.created_at) AS at FROM (
+        SELECT a.turn, r.hints->>'checks' AS xid, r.created_at FROM anchor a
+        JOIN extraction r ON r.source_revision_id = a.rid AND r.window_hash = %(window)s || a.turn_hash
+        WHERE r.extractor_key = %(rkey)s AND r.discarded_at IS NULL) x
+    GROUP BY 1, 2
+),
+revealing AS (  -- checks that found a reveal
+    SELECT a.turn, r.created_at FROM anchor a
+    JOIN extraction r ON r.source_revision_id = a.rid AND r.window_hash = %(window)s || a.turn_hash
+    WHERE r.extractor_key = %(rkey)s AND r.discarded_at IS NULL
+      AND EXISTS (SELECT 1 FROM assertion s WHERE s.extraction_id = r.id AND s.status = 'valid')
+),
 cur AS (
-    SELECT a.turn, a.rid, a.turn_hash, x.id AS xid, x.created_at,
-           greatest(x.created_at, (SELECT max(r.created_at) FROM extraction r
-                                   WHERE r.source_revision_id = a.rid AND r.window_hash = %(window)s || a.turn_hash
-                                     AND r.discarded_at IS NULL AND r.hints->>'checks' = x.id::text)) AS seen
+    SELECT a.turn, a.rid, a.turn_hash, x.id AS xid, x.created_at, k.at AS last_check,
+           greatest(x.created_at, k.at) AS seen
     FROM anchor a JOIN extraction x ON x.source_revision_id = a.rid AND x.window_hash = a.turn_hash
+    LEFT JOIN checked k ON k.turn = a.turn AND k.xid = x.id::text
     WHERE x.extractor_key = %(key)s AND x.discarded_at IS NULL
 ),
 secret_turn AS (
@@ -98,12 +113,14 @@ WHERE EXISTS (
     SELECT 1 FROM secret_turn st
     WHERE st.turn < t.turn AND NOT EXISTS (
         SELECT 1 FROM shown v WHERE v.turn = st.turn AND v.since < t.seen AND (v.until IS NULL OR v.until > t.seen)))
+   OR t.last_check IS NOT NULL AND EXISTS (SELECT 1 FROM revealing c WHERE c.turn < t.turn AND c.created_at > t.last_check)
 ORDER BY t.turn
 """
 
 
-def unchecked(conn: psycopg.Connection, key: str, conv: UUID) -> list[dict[str, Any]]:
-    return conn.execute(UNCHECKED, {"conv": conv, "key": key, "window": WINDOW,
+def unchecked(conn: psycopg.Connection, key: str, rkey: str, conv: UUID) -> list[dict[str, Any]]:
+    """Turns of the head whose extraction of `key` needs a check of the reveal generation `rkey` (UNCHECKED)."""
+    return conn.execute(UNCHECKED, {"conv": conv, "key": key, "rkey": rkey, "window": WINDOW,
                                     "not_secrets": sorted(NOT_SECRETS)}).fetchall()
 
 
@@ -111,7 +128,7 @@ def schedule(conn: psycopg.Connection, key: str, extractor_key: str, conv: UUID)
     """Per-chat "extract all history" (PHASE-22 Q1, Q4): queue a check of each turn that needs one, at background
     priority, so `extraction.claim` takes them oldest first. A turn already queued or running is left alone; one checked
     before, which needs a check again, is queued again. Idempotent."""
-    turns = unchecked(conn, extractor_key, conv)
+    turns = unchecked(conn, extractor_key, key, conv)
     if not turns:
         return 0
     with conn.transaction():

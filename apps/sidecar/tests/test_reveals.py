@@ -13,6 +13,7 @@ from nmos_sidecar.facts import served_assertions
 from nmos_sidecar.ids import uuid7
 from test_extraction import drain
 from test_generations import LLM
+from test_hints import step
 from test_secrets import SecretRecorder, extractions, first_import, goal_of
 
 
@@ -139,3 +140,55 @@ def test_waiting_checks_stop_when_extraction_is_turned_off_or_its_model_changes(
         assert c.put("/v1/config", json={"llm_url": ""}).status_code == 200
         assert db.execute("SELECT count(*) AS n FROM job WHERE kind = 'reveal' AND status IN ('queued', 'running')"
                           ).fetchone()["n"] == 0
+
+
+def test_only_the_latest_reveal_generation_is_served_and_counts_as_looking(migrated, db):
+    """Copilot review of #213: a reveal-only generation change neither serves two checks nor settles a turn."""
+    from nmos_sidecar import reveals
+
+    with make_client(migrated, **LLM) as c:
+        _, conv = checked(c, migrated, db)
+        ex, rv = active_generation(db, "extract"), active_generation(db, "reveal")
+        assert reveals.unchecked(db, ex.key, rv.key, conv) == []
+        newer = generations.make("reveal", "http://fake-llm/v1", "fake", version="reveal-v2")
+        generations.activate(db, newer)
+        db.commit()
+        assert [r["turn"] for r in reveals.unchecked(db, ex.key, newer.key, conv)] == [1, 2]
+        assert served_from_checks(db)  # the older generation serves until the turn is checked again
+        check = db.execute("SELECT source_revision_id AS rid, window_hash, hints FROM extraction"
+                           " WHERE window_hash LIKE 'reveal:%%' AND jsonb_array_length(hints->'secrets') > 0"
+                           " AND EXISTS (SELECT 1 FROM assertion a WHERE a.extraction_id = extraction.id)").fetchone()
+        db.execute("INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model,"
+                   " raw, hints) VALUES (%s, %s, %s, 'reveal-v2', %s, 'fake', '{}', %s)",
+                   (uuid7(), check["rid"], check["window_hash"], newer.key, Jsonb(check["hints"])))
+        db.commit()
+        assert not served_from_checks(db)  # the newer check found nothing: only it counts
+
+
+def test_a_check_made_before_an_earlier_turns_reveal_is_checked_again(migrated, db):
+    """Copilot review of #213: two workers checked neighbouring turns at once; another press recovers it."""
+    from nmos_sidecar import reveals
+
+    with make_client(migrated, **LLM) as c:
+        model = SecretRecorder()
+        chat, conv = first_import(c, migrated, model, db)
+        c.post(f"/v1/conversations/{conv}/extract-history")
+        drain(migrated, model)
+        step(c, migrated, chat, model, "Noel waves.")  # a later turn, extracted after the reveal
+        ex, rv = active_generation(db, "extract"), active_generation(db, "reveal")
+        later = db.execute("SELECT x.id, x.source_revision_id AS rid, x.window_hash FROM extraction x"
+                           " JOIN active_membership am ON am.source_revision_id = x.source_revision_id"
+                           " AND am.turn_hash = x.window_hash JOIN conversation c ON c.head_commit_id = am.commit_id"
+                           " WHERE x.extractor_key = %s ORDER BY am.turn DESC LIMIT 1", (ex.key,)).fetchone()
+        db.execute("INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority) VALUES ('reveal', 'turn3', %s,"
+                   " %s, 300)", (conv, Jsonb({"extraction_id": str(later["id"]), "revision_id": str(later["rid"]),
+                                             "window_hash": later["window_hash"], "generation": rv.key})))
+        db.commit()
+        drain(migrated, SecretRecorder())
+        assert reveals.unchecked(db, ex.key, rv.key, conv) == []  # made after turn 2's reveal: settled
+        # As if the later turn's check had finished first, while turn 2's was still asking the model.
+        db.execute("UPDATE extraction SET created_at = (SELECT min(created_at) FROM extraction) WHERE window_hash = %s",
+                   ("reveal:" + later["window_hash"],))
+        db.commit()
+        assert len(reveals.unchecked(db, ex.key, rv.key, conv)) == 1
+        assert c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["reveal"] == 1

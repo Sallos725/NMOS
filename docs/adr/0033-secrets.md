@@ -104,7 +104,7 @@ missing. Two workers can still extract neighbouring turns at once; another "Extr
 ## Amendment 3 (2026-10-01, Phase 22, ADR 0057): a reveal check instead of a re-extraction
 
 G2's fix extracted such a turn again, and the new model call dropped facts the turn had (AGE-25: on the owner's M0
-main chat 30 narrated facts left the chat's memory after one press). "Extract all history" now keeps the turn's
+main chat 34 narrated facts left the chat's memory after one press). "Extract all history" now keeps the turn's
 extraction and asks a reveal check: the same OPEN SECRETS, CONTEXT and TARGET, answered with `secrets` only, its
 `learned` rows served with the turn while the extraction it checked serves it (ADR 0057). Which turns qualify is
 unchanged, except that a check counts as having looked. Rebuild is unchanged.

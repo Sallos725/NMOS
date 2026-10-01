@@ -28,8 +28,8 @@ from .threads import PREDICATES as THREAD_PREDICATES, fold as fold_threads
 # `unit` is the turn (a message without one counts alone). `live` holds every extraction that still
 # matches the head, and `chosen` the one generation that serves its unit: the active one first, then the
 # most recently activated. A reveal check of the turn (ADR 0057) is served with it while the extraction it checked
-# (`chosen_id`) is the one serving it. Rows without a generation (before migration 0008) never qualify. A window
-# function, not a self-join: the CTE's row estimate is far too low for a join (a nested loop at 10k).
+# (`chosen_id`) is the one serving it, one reveal generation's (the most recently activated, checked per check row). Rows
+# without a generation (before migration 0008) never qualify. A window function, not a self-join: the CTE's row estimate is far too low for a join (a nested loop at 10k).
 # The allBefore cut is an uncorrelated scalar subquery, so it runs once (InitPlan). As a joined CTE, a
 # head commit without fresh statistics (every edit makes one) let the planner re-run it per row: ≈7 s
 # at 10k messages instead of ≈60 ms.
@@ -47,7 +47,8 @@ live AS (
            e.window_hash <> m.turn_hash AS is_check,
            CASE WHEN e.window_hash <> m.turn_hash THEN e.hints->>'checks' END AS checks,
            first_value(e.extractor_key) OVER w AS chosen, first_value(e.id) OVER w AS chosen_id,
-           first_value(e.compiler_version) OVER w AS chosen_compiler
+           first_value(e.compiler_version) OVER w AS chosen_compiler,
+           e.source_revision_id AS rid, e.window_hash, g.activated_at
     FROM extraction e
     JOIN projection_generation g ON g.key = e.extractor_key
     -- the turn hash (ADR 0008, 0031); a reveal check of the turn under its own window (ADR 0057)
@@ -72,18 +73,25 @@ SELECT a.id, a.subject, a.subject_type, a.predicate, a.object, a.object_type, a.
            LIMIT 1) END AS listed_hash
 FROM live l
 JOIN assertion a ON a.extraction_id = l.eid
-WHERE (CASE WHEN l.is_check THEN l.checks = l.chosen_id::text ELSE l.extractor_key = l.chosen END) AND a.status = 'valid'
+WHERE (CASE WHEN l.is_check THEN l.checks = l.chosen_id::text AND NOT EXISTS (  -- a more recently activated
+                 SELECT 1 FROM extraction r JOIN projection_generation rg ON rg.key = r.extractor_key  -- generation's check
+                 WHERE r.source_revision_id = l.rid AND r.window_hash = l.window_hash AND {known_r}
+                   AND r.hints->>'checks' = l.checks
+                   AND (rg.activated_at > l.activated_at OR rg.activated_at = l.activated_at AND rg.key < l.extractor_key))
+            ELSE l.extractor_key = l.chosen END) AND a.status = 'valid'
 ORDER BY l.position, l.is_check, a.id
 """
 
 
-ACTIVE_ASSERTIONS = ACTIVE_ASSERTIONS_TEMPLATE.format(upto="", known="e.discarded_at IS NULL")
+ACTIVE_ASSERTIONS = ACTIVE_ASSERTIONS_TEMPLATE.format(upto="", known="e.discarded_at IS NULL",
+                                                      known_r="r.discarded_at IS NULL")
 # The same read "as of" an earlier request (ADR 0027): the head up to a position, and only what NMOS had
 # extracted by a time (an extraction discarded later still served then). A separate statement, so the
 # request path keeps its plan.
 ACTIVE_ASSERTIONS_AS_OF = ACTIVE_ASSERTIONS_TEMPLATE.format(
     upto=" AND am.position <= %(upto)s",
-    known="e.created_at <= %(known_at)s AND (e.discarded_at IS NULL OR e.discarded_at > %(known_at)s)")
+    known="e.created_at <= %(known_at)s AND (e.discarded_at IS NULL OR e.discarded_at > %(known_at)s)",
+    known_r="r.created_at <= %(known_at)s AND (r.discarded_at IS NULL OR r.discarded_at > %(known_at)s)")
 
 
 def served_assertions(conn: psycopg.Connection, head: UUID, extractor_key: str, upto: int | None = None,
