@@ -166,6 +166,23 @@ def vendor_linux_libs(pgsql: Path) -> list[str]:
     return sorted(copied)
 
 
+def build_windows_tray(stage: Path, work: Path) -> None:
+    """NMOS.exe (icon + a stub that starts pythonw nmos_tray.py) and the tray script. Needs an MSVC developer shell."""
+    src = Path(__file__).parent / "windows"
+    shutil.copy2(src / "nmos_tray.py", stage)
+    subprocess.run([sys.executable, str(src / "make_icon.py"), str(stage / "nmos.ico")], check=True)
+    build = work / "exe"
+    shutil.rmtree(build, ignore_errors=True)
+    build.mkdir()
+    for name in ("nmos_exe.c", "nmos.rc"):
+        shutil.copy2(src / name, build)
+    shutil.copy2(stage / "nmos.ico", build)
+    subprocess.run(["rc", "/nologo", "/fo", "nmos.res", "nmos.rc"], cwd=build, check=True)
+    subprocess.run(["cl", "/nologo", "/O2", "/utf-8", "/W3", "nmos_exe.c", "nmos.res",
+                    "/link", "/SUBSYSTEM:WINDOWS", "/OUT:NMOS.exe"], cwd=build, check=True)
+    shutil.copy2(build / "NMOS.exe", stage)
+
+
 def install_sidecar(python: Path, work: Path) -> None:
     sidecar = REPO / "apps" / "sidecar"
     req = work / "requirements.txt"
@@ -248,6 +265,7 @@ def main() -> None:
     shutil.copy2(launcher / "nmos_launcher.py", stage)
     if windows:
         shutil.copy2(launcher / "NMOS.bat", stage)
+        build_windows_tray(stage, work)
     else:
         shutil.copy2(launcher / "start.sh", stage)
         (stage / "start.sh").chmod(0o755)

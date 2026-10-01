@@ -73,6 +73,14 @@ jobs:
           fsutil 8dot3name query D: || true
           archive=$(ls dist-native/NMOS-v0.0.0-spike-${{ matrix.target }}.*)
           uv run --no-project --python 3.12 python tools/native/ci_smoke.py "$archive" "C:\Users\runneradmin" "사용자 폴더"
+      - name: "Tray (NMOS.exe → tray window → quit stops Postgres), under a Korean folder on C:"
+        if: always() && runner.os == 'Windows'
+        shell: bash
+        run: |
+          d="C:/Users/runneradmin/트레이 테스트"
+          rm -rf "$d" && mkdir -p "$d" && unzip -q dist-native/NMOS-v0.0.0-spike-win-x64.zip -d "$d"
+          b=$(ls -d "$d"/NMOS-*)
+          "$b/python/python.exe" tools/native/windows/tray_smoke.py "$b"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

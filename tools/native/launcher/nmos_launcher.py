@@ -24,8 +24,11 @@ WINDOWS = os.name == "nt"
 EXE = ".exe" if WINDOWS else ""
 
 
+LOG = sys.stdout  # the tray points this at data/nmos.log
+
+
 def log(msg: str) -> None:
-    print(f"[nmos] {msg}", flush=True)
+    print(f"[nmos] {time.strftime('%Y-%m-%d %H:%M:%S')} {msg}", file=LOG, flush=True)
 
 
 def read_env_file(path: Path) -> dict[str, str]:
@@ -70,8 +73,13 @@ def ascii_path(path: Path) -> Path:
     )
 
 
+# Child processes: inherit the console, or (tray) write to the log file with no console window of their own.
+CHILD_KW: dict = {}
+CHILD_KW_NO_OUTPUT: dict = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+
+
 def run(cmd: list[str], **kw) -> None:
-    subprocess.run(cmd, check=True, **kw)
+    subprocess.run(cmd, check=True, **CHILD_KW, **kw)
 
 
 def init_cluster(pgdata: Path, password: str, port: int) -> None:
@@ -91,6 +99,93 @@ def init_cluster(pgdata: Path, password: str, port: int) -> None:
         f.write(f"port = {port}\n")
         f.write("listen_addresses = '127.0.0.1'\n")
         f.write("unix_socket_directories = ''\n")
+
+
+class Services:
+    """Postgres, migrations, the sidecar and the worker of this bundle: start(), alive(), stop()."""
+
+    def __init__(self) -> None:
+        os.environ["PYTHONUTF8"] = "1"
+        self.env = dict(os.environ)
+        for key, value in read_env_file(ROOT / ".env").items():
+            self.env.setdefault(key, value)
+        if sys.platform.startswith("linux"):
+            # The bundle carries the libraries Postgres links (build_bundle.vendor_linux_libs), indirect ones too.
+            pglib = str(ROOT / "pgsql" / "lib")
+            os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(filter(None, [pglib, os.environ.get("LD_LIBRARY_PATH")]))
+        self.data = Path(self.env.get("NMOS_DATA_DIR") or ROOT / "data")
+        self.data.mkdir(parents=True, exist_ok=True)
+        self.pg_port = int(self.env.get("NMOS_PG_PORT", "54390"))
+        self.bind = self.env.get("NMOS_SIDECAR_BIND", "127.0.0.1")
+        self.port = self.env.get("NMOS_SIDECAR_PORT", "8790")
+        self.url = f"http://{self.bind}:{self.port}"
+        self.procs: list[subprocess.Popen] = []
+        self.pgdata: Path | None = None
+        self.stopped = False
+
+    def start(self) -> None:
+        data = self.data
+        if WINDOWS:
+            global PGSQL
+            PGSQL, data = ascii_path(PGSQL), ascii_path(data)
+        self.pgdata = pgdata = data / "pg"
+        pw_path = data / "db-password"
+        if not (pgdata / "PG_VERSION").is_file():
+            log(f"first start: creating the database in {pgdata}")
+            t0 = time.monotonic()
+            password = secrets.token_urlsafe(24)
+            init_cluster(pgdata, password, self.pg_port)
+            pw_path.write_text(password, encoding="utf-8")
+            log(f"initdb took {time.monotonic() - t0:.1f} s")
+        if not pw_path.is_file():
+            raise SystemExit(f"{pw_path} is missing; the database password cannot be recovered")
+        password = pw_path.read_text(encoding="utf-8").strip()
+
+        t0 = time.monotonic()
+        status = subprocess.run([pg_bin("pg_ctl"), "-D", str(pgdata), "status"], **{**CHILD_KW, "stdout": subprocess.DEVNULL})
+        if status.returncode == 0:
+            log("postgres from an earlier run is still up; using it")
+        else:
+            run([pg_bin("pg_ctl"), "-D", str(pgdata), "-l", str(data / "postgres.log"), "-w", "start"])
+        log(f"postgres up on 127.0.0.1:{self.pg_port} ({time.monotonic() - t0:.1f} s)")
+
+        import psycopg
+
+        with psycopg.connect(f"postgresql://nmos:{password}@127.0.0.1:{self.pg_port}/postgres", autocommit=True) as c:
+            if not c.execute("SELECT 1 FROM pg_database WHERE datname = 'nmos'").fetchone():
+                c.execute("CREATE DATABASE nmos")
+        env = dict(self.env)
+        env.update({
+            "NMOS_DATABASE_URL": f"postgresql://nmos:{password}@127.0.0.1:{self.pg_port}/nmos",
+            "NMOS_MIGRATIONS_DIR": str(ROOT / "migrations"),
+            "NMOS_PLUGIN_FILE": str(ROOT / "plugin" / "nmos-pocketrisu.js"),
+        })
+        env.setdefault("NMOS_CORS_ORIGINS", "http://localhost:6001,http://127.0.0.1:6001")
+        py = sys.executable
+        run([py, "-m", "nmos_sidecar.migrate"], env=env)
+        self.procs.append(subprocess.Popen([py, "-m", "uvicorn", "nmos_sidecar.api:app_factory", "--factory",
+                                            "--host", self.bind, "--port", self.port], env=env, **CHILD_KW))
+        self.procs.append(subprocess.Popen([py, "-m", "nmos_sidecar.worker"], env=env, **CHILD_KW))
+        log(f"sidecar on {self.url} — set this URL in the PocketRisu plugin")
+
+    def alive(self) -> bool:
+        return bool(self.procs) and all(p.poll() is None for p in self.procs)
+
+    def stop(self) -> None:
+        if self.stopped:
+            return
+        self.stopped = True
+        for p in self.procs:
+            if p.poll() is None:
+                p.terminate()
+        for p in self.procs:
+            try:
+                p.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                p.kill()
+        if self.pgdata is not None:
+            subprocess.run([pg_bin("pg_ctl"), "-D", str(self.pgdata), "-m", "fast", "-w", "stop"], **CHILD_KW)
+        log("stopped")
 
 
 _console_handler = None  # kept referenced so ctypes does not free the callback
@@ -116,98 +211,30 @@ def install_windows_stop_handlers(shutdown) -> None:
 
 
 def main() -> int:
+    """Console mode (start.sh, NMOS.bat): output in this terminal, Ctrl+C stops."""
     # Paths can hold any script (Korean user folders); a legacy console code page must not crash a log line.
     for stream in (sys.stdout, sys.stderr):
         if stream is not None:
             stream.reconfigure(encoding="utf-8", errors="backslashreplace")
-    os.environ["PYTHONUTF8"] = "1"
-    env = dict(os.environ)
-    for key, value in read_env_file(ROOT / ".env").items():
-        env.setdefault(key, value)
-
-    if sys.platform.startswith("linux"):
-        # The bundle carries the libraries Postgres links (build_bundle.vendor_linux_libs), including indirect ones.
-        pglib = str(ROOT / "pgsql" / "lib")
-        os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(filter(None, [pglib, os.environ.get("LD_LIBRARY_PATH")]))
-    data = Path(env.get("NMOS_DATA_DIR") or ROOT / "data")
-    data.mkdir(parents=True, exist_ok=True)
-    if WINDOWS:
-        global PGSQL
-        PGSQL, data = ascii_path(PGSQL), ascii_path(data)
-    pgdata = data / "pg"
-    pg_port = int(env.get("NMOS_PG_PORT", "54390"))
-    sidecar_bind = env.get("NMOS_SIDECAR_BIND", "127.0.0.1")
-    sidecar_port = env.get("NMOS_SIDECAR_PORT", "8790")
-
-    pw_path = data / "db-password"
-    if not (pgdata / "PG_VERSION").is_file():
-        password = secrets.token_urlsafe(24)
-        log(f"first start: creating the database in {pgdata}")
-        t0 = time.monotonic()
-        init_cluster(pgdata, password, pg_port)
-        pw_path.write_text(password, encoding="utf-8")
-        log(f"initdb took {time.monotonic() - t0:.1f} s")
-    password = pw_path.read_text(encoding="utf-8").strip()
-
-    t0 = time.monotonic()
-    if subprocess.run([pg_bin("pg_ctl"), "-D", str(pgdata), "status"], stdout=subprocess.DEVNULL).returncode == 0:
-        log("postgres from an earlier run is still up; using it")
-    else:
-        run([pg_bin("pg_ctl"), "-D", str(pgdata), "-l", str(data / "postgres.log"), "-w", "start"])
-    log(f"postgres up on 127.0.0.1:{pg_port} ({time.monotonic() - t0:.1f} s)")
-
-    procs: list[subprocess.Popen] = []
-    stopped = False
-
-    def shutdown(*_: object) -> None:
-        nonlocal stopped
-        if stopped:
-            return
-        stopped = True
-        for p in procs:
-            if p.poll() is None:
-                p.terminate()
-        for p in procs:
-            try:
-                p.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                p.kill()
-        subprocess.run([pg_bin("pg_ctl"), "-D", str(pgdata), "-m", "fast", "-w", "stop"])
-        log("stopped")
-
+    services = Services()
     try:
-        import psycopg
-
-        admin_url = f"postgresql://nmos:{password}@127.0.0.1:{pg_port}/postgres"
-        with psycopg.connect(admin_url, autocommit=True) as conn:
-            if not conn.execute("SELECT 1 FROM pg_database WHERE datname = 'nmos'").fetchone():
-                conn.execute("CREATE DATABASE nmos")
-
-        env.update({
-            "NMOS_DATABASE_URL": f"postgresql://nmos:{password}@127.0.0.1:{pg_port}/nmos",
-            "NMOS_MIGRATIONS_DIR": str(ROOT / "migrations"),
-            "NMOS_PLUGIN_FILE": str(ROOT / "plugin" / "nmos-pocketrisu.js"),
-        })
-        env.setdefault("NMOS_CORS_ORIGINS", "http://localhost:6001,http://127.0.0.1:6001")
-        py = sys.executable
-        run([py, "-m", "nmos_sidecar.migrate"], env=env)
-        procs.append(subprocess.Popen([py, "-m", "uvicorn", "nmos_sidecar.api:app_factory", "--factory",
-                                       "--host", sidecar_bind, "--port", sidecar_port], env=env))
-        procs.append(subprocess.Popen([py, "-m", "nmos_sidecar.worker"], env=env))
-        log(f"sidecar on http://{sidecar_bind}:{sidecar_port} — set this URL in the PocketRisu plugin; Ctrl+C stops")
-
+        services.start()
+        log("Ctrl+C stops")
         if WINDOWS:
-            install_windows_stop_handlers(shutdown)
+            install_windows_stop_handlers(services.stop)
         else:
             signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-        while all(p.poll() is None for p in procs):
+        while services.alive():
             time.sleep(1)
         log("a process exited; stopping")
         return 1
-    except (KeyboardInterrupt, SystemExit):
+    except (KeyboardInterrupt, SystemExit) as e:
+        if isinstance(e, SystemExit) and isinstance(e.code, str):
+            log(e.code)
+            return 1
         return 0
     finally:
-        shutdown()
+        services.stop()
 
 
 if __name__ == "__main__":
