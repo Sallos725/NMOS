@@ -389,17 +389,21 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     return card;
   }
 
-  /** One line: what this chat's memory cost in NMOS's own model calls (PHASE-17 Q4). Nothing when the sidecar
-   * does not know the chat or does not answer: the card is about the switch. */
+  /** What this chat's memory cost in NMOS's own model calls (PHASE-17 Q4), and the facts a re-extraction dropped
+   * (PHASE-22 Q6). Nothing when the sidecar does not know the chat or does not answer: the card is about the switch. */
   async function usageLine(hostChatId: string): Promise<HTMLElement | null> {
     try {
       const chats = await deps.api<{ id: string; host_chat_ref: string }[]>('GET',
         `/v1/conversations?host=pocketrisu&host_chat_ref=${encodeURIComponent(hostChatId)}`, undefined, 5000);
       const chat = chats.find((c) => c.host_chat_ref === hostChatId);
       if (!chat) return null;
-      const cov = await deps.api<{ usage?: { total?: UsageTotal } }>('GET',
+      const cov = await deps.api<{ usage?: { total?: UsageTotal }; dropped?: number }>('GET',
         `/v1/conversations/${encodeURIComponent(chat.id)}/coverage?usage=true`, undefined, 5000);
-      return cov.usage?.total ? el('div', { class: 'muted', text: usageText(cov.usage.total, lang) }) : null;
+      const lines = [cov.usage?.total ? el('div', { class: 'muted', text: usageText(cov.usage.total, lang) }) : null,
+        // the facts a re-extraction dropped (PHASE-22 Q6), when there are any
+        typeof cov.dropped === 'number' && cov.dropped > 0
+          ? el('div', { class: 'muted', text: L('chat.dropped', { n: cov.dropped }) }) : null].filter((x): x is HTMLDivElement => x !== null);
+      return lines.length ? el('div', {}, ...lines) : null;
     } catch {
       return null;
     }

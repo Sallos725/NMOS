@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:566605159526".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:4da41dec5a72".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -243,6 +243,11 @@
     // this chat (ADR 0048)
     "chat.title": ["\uC774 \uCC44\uD305", "This chat"],
     "chat.none": ["\uC5F4\uB9B0 \uCC44\uD305\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uCC44\uD305\uC744 \uC5F0 \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.", "No chat is open. Open one and try again."],
+    "chat.dropped": [
+      '\uB2E4\uC2DC \uCD94\uCD9C\uD558\uBA74\uC11C \uC0AC\uB77C\uC9C4 \uC0AC\uC2E4 {n}\uAC1C: \uC778\uC2A4\uD399\uD130\uC758 "\uD655\uC778 \uD544\uC694"\uC5D0\uC11C \uBCF5\uC6D0\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.',
+      '{n} facts dropped by a re-extraction: restore them under "Needs attention" in the Inspector.'
+    ],
+    // PHASE-22 Q6
     "chat.on": ["NMOS \uCF1C\uC9D0", "NMOS on"],
     "chat.off": ["NMOS \uAEBC\uC9D0", "NMOS off"],
     "chat.on_sub": [
@@ -394,6 +399,8 @@
     "rp.fact_correct": ["\uC815\uC815({n})", "Correct {n}"],
     "rp.fact_lock": ["\uACE0\uC815", "Lock"],
     // a canon fact or a correction stays current against the story (ADR 0047)
+    "rp.fact_restore": ["\uBCF5\uC6D0", "Restore"],
+    // a fact a re-extraction dropped, remembered at its turn again (PHASE-22 Q7)
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
     "rp.select": ["\uC77C\uAD04 \uB2EB\uAE30\uC5D0 \uB123\uAE30", "Select to close"],
     "rp.outcome": ["\uB2EB\uB294 \uACB0\uACFC", "Outcome"],
@@ -1809,7 +1816,7 @@ ${revisionHash}`;
     const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
-  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|undo):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|undo):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
   function repairAction(value) {
     const m = value ? REPAIR.exec(value) : null;
     if (!m?.[1] || !m[2]) return null;
@@ -2425,7 +2432,12 @@ html,body{margin:0;background:${PALETTE.bg}}
           void 0,
           5e3
         );
-        return cov.usage?.total ? el("div", { class: "muted", text: usageText(cov.usage.total, lang) }) : null;
+        const lines = [
+          cov.usage?.total ? el("div", { class: "muted", text: usageText(cov.usage.total, lang) }) : null,
+          // the facts a re-extraction dropped (PHASE-22 Q6), when there are any
+          typeof cov.dropped === "number" && cov.dropped > 0 ? el("div", { class: "muted", text: L("chat.dropped", { n: cov.dropped }) }) : null
+        ].filter((x) => x !== null);
+        return lines.length ? el("div", {}, ...lines) : null;
       } catch {
         return null;
       }

@@ -458,7 +458,12 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         in_force = unedited_quotes(in_force, {x["turn"]: x["h"] for x in conn.execute(
             "SELECT turn, max(turn_hash) AS h FROM active_membership WHERE commit_id = %s AND turn = ANY(%s)"
             " GROUP BY turn", (head, quoting)).fetchall()})
-    rows, retracted = apply_facts(rows, in_force, r, applied, _annotate, turn_positions)
+    restored_at = sorted({rep["target"].get("turn") for rep in in_force if rep["kind"] == "fact_restore"} - {None})
+    turn_info = {x["turn"]: (x["p"], x["h"]) for x in conn.execute(  # PHASE-22 Q7: where a restored fact goes
+        "SELECT turn, max(position) AS p, max(turn_hash) AS h FROM active_membership WHERE commit_id = %s"
+        " AND turn = ANY(%s) AND (%s::int IS NULL OR position <= %s::int) GROUP BY turn",
+        (head, restored_at, upto, upto)).fetchall()} if restored_at else {}
+    rows, retracted = apply_facts(rows, in_force, r, applied, _annotate, turn_positions, turn_info)
     locks = apply_locks(rows, in_force, r, applied)  # PHASE-14 Q7
     # Secrets (PHASE-10, ADR 0033): a reveal ends a secret for the character who found it out, from its
     # turn on: its hidden_from drops that name and its known_by gains it (amendment 1: the scene, strict mode

@@ -13,8 +13,12 @@ turn's secret and keeps its extraction; a check lists the turn's OPEN SECRETS an
 `learned` rows are served while the extraction it checked serves the turn; the chat's coverage counts checks. No
 plugin change. Amended after a post-merge review (ADR 0057 amendment 1): a check is asked again when it listed a secret
 an earlier turn found out (either finishing order), and a turn's latest check is served, not its generation's latest
-activation (replays unchanged by an activation). Next, step 3 (dropped facts, `fact_restore`). High risk (AGENTS.md §14): stored data and
-re-extraction.
+activation (replays unchanged by an activation). Step 3 (ADR 0044 amendment 3): a narrated fact a re-extraction of
+the same generation dropped (matched one to one with the new rows; held nowhere else in memory) is listed in "Needs
+attention" with **Restore**, counted on the panel's chat card and by `GET …/dropped`; `fact_restore` adds it back as
+the owner's version at its turn while the turn reads the same, and applies to the story's row when the turn states it
+again. A new plugin build. Next, step 4 (the loss tool, the local M0 copy end to end, the paid run after the owner's
+OK, latency). High risk (AGENTS.md §14): stored data, re-extraction and owner repairs.
 
 **Phase 23 — NMOS without Docker: approved 2026-10-01, current alongside Phase 22.** Spec `docs/phases/PHASE-23.md`
 (AGE-29; the owner pulled it in before 1.0, an exception to R7): a bundle for each PocketRisu portable target

@@ -180,9 +180,10 @@ class RepairRequest(BaseModel):
     """The owner repairs one item of a conversation's memory (ADR 0044): the id the Inspector shows for a thread, a
     secret or a fact (for a name split, a name of the entity), what to do, and what the kind needs: a close's outcome,
     a secret's character, a correction's new object or value, a split's other name, and the turn it takes effect.
-    `fact_lock` keeps a canon fact or a correction current against the story (ADR 0047)."""
+    `fact_lock` keeps a canon fact or a correction current against the story (ADR 0047); `fact_restore` adds back a fact
+    a re-extraction dropped (PHASE-22 Q7)."""
     kind: Literal["thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
-                  "name_split", "fact_lock"]
+                  "name_split", "fact_lock", "fact_restore"]
     item: Text = Field(min_length=1, max_length=120)
     outcome: Text | None = Field(default=None, max_length=32)
     character: Text | None = Field(default=None, max_length=120)

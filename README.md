@@ -150,7 +150,9 @@ language after a page reload.
   fact, and on an entity's page split two names the story joined. A repair survives rebuilds and new extractor
   generations, is listed under **Repairs** with **Undo**, and each chat's page starts with **Needs attention** (old
   open threads, ends that matched no thread, disputed whereabouts, repairs that match nothing now, splits still
-  joined through another name, ambiguous names).
+  joined through another name, ambiguous names, and facts a re-extraction dropped: narrated facts of a turn that the
+  same model, extracting the turn again, did not state again and the chat holds nowhere else, each with **Restore**;
+  Phase 22). The panel's chat card counts the dropped facts.
   **Canon** (Phase 14, ADR 0045–0047): NMOS keeps each chat's card (its story fields and greeting), lorebook entries,
   persona and author's note as sources, a new revision on each edit, listed in the conversation page's **Canon**
   section. Lorebook keys give a character's other names. The extraction model reads the card, the persona and the note

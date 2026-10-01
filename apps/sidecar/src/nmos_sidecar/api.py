@@ -25,8 +25,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from . import (__version__, archive, audit, canon, canonfacts, extraction, generations, inspector, ledger, normtext, plugin,
-               preview, readmodel, retention, repairs, reveals, runtime, summaries, vectors)
+from . import (__version__, archive, audit, canon, canonfacts, dropped, extraction, generations, inspector, ledger, normtext,
+               plugin, preview, readmodel, retention, repairs, reveals, runtime, summaries, vectors)
 from . import usage as model_usage
 from .config import Settings
 from .db import make_pool
@@ -788,6 +788,20 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return [{k: s.get(k) for k in ("id", "text", "turn", "holders", "kept_from", "open", "ended", "repair")}
                 for s in items_of(conv_id, request, "secrets")]
 
+    @app.get("/v1/conversations/{conv_id}/dropped", dependencies=[Depends(auth)])
+    def conversation_dropped(conv_id: UUID, request: Request):
+        """Narrated facts a re-extraction of this chat dropped and its memory no longer holds (PHASE-22 Q5), oldest turn
+        first, with the `id` a restore names (Q7)."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            head = conv["head_commit_id"]
+            if head is None:
+                return []
+            return [{k: f.get(k) for k in ("id", "turn", "predicate", "subject", "object", "value", "text", "evidence")}
+                    for f in dropped.find(conn, head, rt["active_extractor"], view_of(conn, head))]
+
     @app.get("/v1/conversations/{conv_id}/repairs", dependencies=[Depends(auth)])
     def list_repairs(conv_id: UUID, request: Request):
         """The owner's repairs of this chat (ADR 0044), newest first: each in force with the item it applies to now
@@ -818,8 +832,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             head = conv["head_commit_id"]
+            view = view_of(conn, head)
+            if body.kind == "fact_restore":
+                view["dropped"] = dropped.find(conn, head, rt["active_extractor"], view)
             try:
-                target, value = repairs.plan(body.kind, body.item, view_of(conn, head),
+                target, value = repairs.plan(body.kind, body.item, view,
                                              head_turn(conn, head), body.outcome, body.character, body.turn,
                                              body.new_object, body.new_value, body.other, body.entity_type,
                                              version_key)
@@ -868,12 +885,20 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="conversation not found")
             return coverage_view(conn, conv_id, usage)
 
-    def coverage_view(conn, conv_id: UUID, usage: bool = False) -> dict[str, Any]:
+    def coverage_view(conn, conv_id: UUID, usage: bool = False, lost: int | None = None) -> dict[str, Any]:
+        """With `usage` (the panel's chat card and the Inspector, not the HUD's polls): the model usage, and how many facts
+        a re-extraction dropped (PHASE-22 Q6; `lost`: counted already)."""
         ex_key = rt["active_extractor"]
         pj_key = rt["projection"].key if rt["projection"] else None
         rv_key = rt["reveal"].key if rt["reveal"] else None
         spent = {"usage": model_usage.totals(conn, conv_id, {ex_key, pj_key, rt.get("active_summarizer"),
                                                               rt.get("active_canon"), rv_key} - {None})} if usage else {}
+        if usage:
+            if lost is None:
+                head = conn.execute("SELECT head_commit_id FROM conversation WHERE id = %s", (conv_id,)).fetchone()
+                lost = len(dropped.find(conn, head["head_commit_id"], ex_key, view_of(conn, head["head_commit_id"]))) \
+                    if head and head["head_commit_id"] else 0
+            spent["dropped"] = lost
         compiled = extraction.coverage(conn, ex_key, conv_id).get(conv_id)
         return {
             "extraction": {"generation": generations.describe(conn, ex_key), **(compiled or {}),
@@ -1050,8 +1075,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             ex_key = rt["active_extractor"]
             pj_key = rt["projection"].key if rt["projection"] else None
             view = inspector.with_participants(view_of(conn, head))
+            lost = dropped.find(conn, head, ex_key, view)  # PHASE-22 Q6
             traces = readmodel.traces(conn, conv_id)
-            cov = coverage_view(conn, conv_id, usage=True)
+            cov = coverage_view(conn, conv_id, usage=True, lost=len(lost))
             return inspector.detail(conv, current_state(conn, head, rt["rules"].version),
                                     readmodel.membership(conn, head, ex_key, pj_key),
                                     readmodel.commits(conn, conv_id), traces,
@@ -1067,7 +1093,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     repairs=repair_rows(conn, conv_id, view["repairs"]), last_turn=head_turn(conn, head),
                                     canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
                                     canon_held=canon.held(conn, conv_id), canon_read=cov["canon"].get("keys"),
-                                    canon_facts=view.get("canon_facts", 0))
+                                    canon_facts=view.get("canon_facts", 0), dropped=lost)
 
     def summary_view(conn, conv_id: UUID, head: UUID, secrets: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The Inspector's summaries of a chat (PHASE-12 step 6), with the generation and whether packets use them."""

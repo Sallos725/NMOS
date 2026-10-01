@@ -216,6 +216,9 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "h.issue": ("무엇", "What"),
     "at.stale": ("{n}턴 넘게 다시 나오지 않은 열린 스레드", "open for more than {n} turns without a restatement"),
     "at.unmatched": ("짝이 맞는 열린 스레드가 없는 종료", "an end matching no open thread"),
+    # PHASE-22 Q6: a narrated fact a re-extraction of the turn left out, which memory no longer holds anywhere
+    "at.dropped": ("다시 추출하면서 사라진 사실 (복원하면 그 턴의 사실로 다시 기억)",
+                   "dropped by a re-extraction (restore it to remember it at its turn again)"),
     "at.disputed": ("이야기가 엇갈린 사실", "a fact the story contradicts"),
     "at.repair": ("지금 맞는 항목이 없는 수리", "a repair that matches nothing now"),
     "at.split": ("아직 한 인물인 이름 분리", "a split whose names are still one entity"),
@@ -276,7 +279,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "rk.fact_lock": ("사실 고정", "lock a fact"),
     "rk.thread_close": ("스레드 닫기", "close a thread"), "rk.thread_reopen": ("스레드 다시 열기", "reopen a thread"),
     "rk.secret_found_out": ("비밀을 알게 됨", "secret found out"), "rk.secret_keep": ("비밀 유지", "secret still kept"),
-    "rk.fact_retract": ("사실 철회", "retract a fact"), "rk.fact_correct": ("사실 정정", "correct a fact"),
+    "rk.fact_restore": ("사실 복원", "restore a fact"), "rk.fact_retract": ("사실 철회", "retract a fact"), "rk.fact_correct": ("사실 정정", "correct a fact"),
     "rk.name_split": ("이름 분리", "split two names"),
     "rs.applied": ("적용됨", "applied"), "rs.unmatched": ("지금 맞는 항목 없음", "matches nothing now"),
     "rs.removed": ("되돌림", "taken back"),
@@ -853,6 +856,8 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
                              _close(th)])
     for u in view.get("unmatched", []):
         rows.append([_v(_t(lang, "at.unmatched")), _v(fact_line_text(u)), _turn(u), ""])
+    for f in view.get("dropped", []):  # PHASE-22 Q6
+        rows.append([_v(_t(lang, "at.dropped")), _v(fact_line_text(f)), _v(f.get("turn")), _act("fact_restore", f["id"])])
     owned = {f["id"]: f["repair"] for f in view.get("facts", []) if f.get("owner")}  # the owner's corrections
     for c in view.get("conflicts", []):
         if c.get("kind") == "canon":  # keep canon's (a lock) or the story's (canon's statement retracted), or leave it
@@ -1039,7 +1044,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            last_turn: int | None = None, canon_rows: list[dict[str, Any]] | None = None,
            canon_history: dict[str, dict[str, Any]] | None = None,
            canon_held: dict[str, dict[str, Any]] | None = None, canon_read: dict[str, dict[str, Any]] | None = None,
-           canon_facts: int = 0) -> str:
+           canon_facts: int = 0, dropped: list[dict[str, Any]] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -1049,7 +1054,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     active = (((coverage or {}).get("extraction") or {}).get("generation") or {}).get("key")
     # What needs a look comes first; logs of the machinery start folded.
     queue = _attention({"threads": threads or [], "unmatched": unmatched or [], "conflicts": conflicts or [],
-                        "ambiguous": ambiguous or []}, repairs or [], last_turn, lang)
+                        "ambiguous": ambiguous or [], "dropped": dropped or []}, repairs or [], last_turn, lang)
     parts: list[Section] = [
         ("attention", t("attention"), len(queue),
          table([t(k) for k in ("h.issue", "h.text", "h.turn", "h.repair")], queue) + f"<p class=\"muted\">{t('at.note')}</p>"

@@ -30,6 +30,8 @@ const STRINGS = {
   // this chat (ADR 0048)
   'chat.title': ['이 채팅', 'This chat'],
   'chat.none': ['열린 채팅이 없습니다. 채팅을 연 뒤 다시 시도하세요.', 'No chat is open. Open one and try again.'],
+  'chat.dropped': ['다시 추출하면서 사라진 사실 {n}개: 인스펙터의 "확인 필요"에서 복원할 수 있습니다.',
+    '{n} facts dropped by a re-extraction: restore them under "Needs attention" in the Inspector.'],  // PHASE-22 Q6
   'chat.on': ['NMOS 켜짐', 'NMOS on'],
   'chat.off': ['NMOS 꺼짐', 'NMOS off'],
   'chat.on_sub': ['이 채팅의 대화를 기억하고 생성할 때 기억을 넣습니다. 끄면 이 채팅은 사이드카로 보내지 않고 기억도 넣지 않습니다. 이미 쌓인 기억은 지우지 않습니다.',
@@ -140,6 +142,7 @@ const STRINGS = {
   'rp.fact_retract': ['철회', 'Retract'],
   'rp.fact_correct': ['정정({n})', 'Correct {n}'],
   'rp.fact_lock': ['고정', 'Lock'],  // a canon fact or a correction stays current against the story (ADR 0047)
+  'rp.fact_restore': ['복원', 'Restore'],  // a fact a re-extraction dropped, remembered at its turn again (PHASE-22 Q7)
   'rp.undo': ['되돌리기', 'Undo'],
   'rp.select': ['일괄 닫기에 넣기', 'Select to close'],
   'rp.outcome': ['닫는 결과', 'Outcome'],
