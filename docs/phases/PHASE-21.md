@@ -1,6 +1,6 @@
 # Phase 21 — "At first": how it started, when the message asks
 
-> **Status: approved (2026-10-01) with every proposed answer (Q1–Q6); current.** The owner asked that a model call
+> **Status: approved (2026-10-01) with every proposed answer (Q1–Q6); complete (2026-10-01), `docs/perf/first-cue.md`.** The owner asked that a model call
 > classifying the message (Q1's alternative) be reviewed later, outside this phase. Not a roadmap stage: a correction found by measurement
 > (a local benchmark of the owner's chats, 2026-09-30/10-01), tracked as AGE-26 under AGE-24. The other findings of
 > AGE-24 are separate: AGE-25 (a re-extraction loses facts it had), AGE-27 (role relationships extracted as places),
@@ -63,12 +63,13 @@ counts only). Today's code against Q2:
 
 ## Acceptance criteria
 
-- [ ] Every existing test and memory-evaluation case passes; recorded `packet-v10` requests without `first_cue`
+- [x] Every existing test and memory-evaluation case passes; recorded `packet-v10` requests without `first_cue`
       replay as they were.
-- [ ] The deterministic cases of In scope 2.
-- [ ] Q6's sets: M0 main cases that need memory at least +1; each restored copy's first-cue probes at least as many as
-      today; the synthetic 25-case sets no worse than today; no new forbidden phrase placed on any set.
-- [ ] Request-path latency unchanged within noise (the cue is a regular expression on the message).
+- [x] The deterministic cases of In scope 2 (`test_first_cue.py`).
+- [x] Q6's sets: M0 main cases that need memory at least +1; each restored copy's first-cue probes at least as many as
+      today; the synthetic 25-case sets no worse than today; no new forbidden phrase placed on any set (M0 main 6 → 7
+      of 10; the copies 5/5 and 6 → 7 of 8; 23 and 24 of 25 unchanged; `docs/perf/first-cue.md`).
+- [x] Request-path latency unchanged within noise (p50 +1.9 ms without the cue, +1.2 ms with it; rounds spread ±5–10 ms).
 
 ## Steps (one pull request each)
 

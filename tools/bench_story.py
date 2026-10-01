@@ -16,6 +16,8 @@ names that canon and holds a quarter of the entries, the card and the persona in
     cd apps/sidecar && NMOS_PACKET_POLICY=packet-v8 uv run python ../../tools/bench_story.py 10000  # another policy
     cd apps/sidecar && BENCH_RECALL=wide BENCH_BUDGET=8000 uv run python ../../tools/bench_story.py 10000
 
+With BENCH_FIRST=1 (Phase 21) every question starts with "처음에", the first cue (ADR 0056).
+
 With BENCH_RECALL=wide (Phase 15) every message has a vector near the query's (a stub embedder answers at once) and
 each request asks for the scenes of a place with no previous reply, so recall has more excerpts and facts to offer than
 any budget takes: a larger budget's recall is the largest. The default questions match the chat's repeated sentence,
@@ -263,6 +265,7 @@ def bench(n: int) -> dict:
                     chat.user(f"새 대사 {i}: {PLACES[i % len(PLACES)]}에 다시 가자.")
                     sync(client, chat)
                     q = f"{PLACES[i % len(PLACES)]} 장면" if wide else QUERIES[i % len(QUERIES)]
+                    q = f"처음에 {q}" if os.environ.get("BENCH_FIRST") == "1" else q  # Phase 21: every message asks how it started
                     out, ms = post(client, "/v1/retrieve", {"chat_id": chat.id, "query": q,
                                                              "previous_ai": "" if wide else SENTENCE,
                                                              "in_context_ids": [m["chatId"] for m in chat.messages[-40:]],
