@@ -379,7 +379,10 @@ as before; tags follow these rules.
 - **A patch release must not ship half a stage.** If `main` holds user-visible work of an unfinished
   stage, branch `release/0.N` from the last tag, cherry-pick the fix, and tag there.
 - **At most one extractor generation per milestone.** An extractor prompt or registry change goes on the
-  "Queued for the next extractor generation" list in `docs/STATUS.md` and ships with the stage.
+  "Queued for the next extractor generation" list in `docs/STATUS.md` and ships with the stage. The count is
+  what a release carries: a generation on `main` that no tag has shipped may be replaced by the next one
+  before the release, so a release's users still re-extract once (owner decision 2026-10-01, `extract-v15`
+  before `0.3.0`).
 - **A bug fix that needs a migration, a new predicate, a new extractor generation, a new UI feature or a
   new ADR is feature work**: it joins the current stage's plan, or ask the owner. Keep other fixes small.
 - Every release before `1.0.0` is a GitHub pre-release (`release.yml`).
