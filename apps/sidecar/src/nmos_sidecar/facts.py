@@ -720,12 +720,17 @@ def prior(f: dict[str, Any]) -> float:
 
 WHY = re.compile(r"(왜|어째서|무슨 이유|이유가|이유는|\bwhy\b|how come)", re.IGNORECASE)
 PRIOR_CAUSE = 1.0  # packet-v6: a fact with a stated cause, when the message asks why (ADR 0040)
+# The message asks how it started (ADR 0056): 처음 (맨 처음), 최초, 예전, 옛날, 원래, 초반, and 첫 before a space, 번 or 째
+# (첫 만남, 첫번째, 첫째; not 첫눈). From the message only, like WHY.
+FIRST_CUE = re.compile(r"(처음|최초|예전|옛날|원래|초반|첫(\s|번|째)|\bat first\b|\bfirst time\b|\boriginally\b"
+                       r"|\bin the beginning\b)", re.IGNORECASE)
 
 
 def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],
                    limit: int, events_limit: int | None = None,
                    persona: frozenset[str] = frozenset(), present: frozenset[str] = frozenset(),
-                   causes: bool = False) -> list[dict[str, Any]]:
+                   causes: bool = False, first_cue: bool = False,
+                   window_start: int | None = None) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
@@ -747,17 +752,25 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
 
     With `causes` (packet-v6, ADR 0040) a stated cause counts as part of the fact's words, and when the message asks
     why, a fact that has one gains PRIOR_CAUSE.
+
+    With `first_cue` (ADR 0056), when the message asks how it started (FIRST_CUE): events are capped mentioned first
+    (whether, not how strongly: a secret's or the persona's bonus would put a newer one first), then oldest first,
+    before salience and score; a `minor` event needs no lexical bar; equal scores go to the older fact;
+    and a standing fact whose source is in context stays a candidate when one of its earlier versions (`_prior`) starts
+    before `window_start`, the lowest position in context (the window does not hold how it started).
     """
     q = _norm(query)
     ai = _norm(previous_ai)
     q_grams = _grams(query)
     first_person = bool(FIRST_PERSON.search(query))
     why = causes and bool(WHY.search(query))
+    oldest = first_cue and bool(FIRST_CUE.search(query))
     user = USER_NAMES | persona
     scored = []
     for f in facts:
         if f["host_logical_id"] in in_context and not f.get("held_off"):  # a lock holds against the story (ADR 0047)
-            continue
+            if not (oldest and window_start is not None and any(h["position"] < window_start for h in _prior(f))):
+                continue
         names = [n for n in {_norm(x) for x in (f.get("names") or [f["subject"], f.get("object")])}
                  if len(n) >= 2 and n not in user]
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
@@ -771,14 +784,19 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         grams = _grams(fact_text(f) + (f" {f['because']}" if causes and f.get("because") else ""))
         lexical = len(grams & q_grams) / max(1, len(q_grams))
         score = mention + lexical + (prior(f) if mention else 0.0) + (PRIOR_CAUSE if why and f.get("because") else 0.0)
-        if f["predicate"] == "event" and f.get("salience") == "minor" and (
+        if not oldest and f["predicate"] == "event" and f.get("salience") == "minor" and (
                 len(_grams(f.get("value") or "") & q_grams) / max(1, len(q_grams)) < LEXICAL_BAR):
             continue  # the query must be about the event itself, not just name its subject
         if mention or lexical >= LEXICAL_BAR:
             scored.append((score, f["position"], f, mention))
-    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
-    events = sorted((x for x in scored if x[2]["predicate"] == "event"),
-                    key=lambda x: (x[3], x[2].get("salience") == "major", x[0], x[1]), reverse=True)
+    age = (lambda x: -x[1]) if oldest else (lambda x: x[1])  # equal scores: the newer, or the older with the cue
+    scored.sort(key=lambda x: (x[0], age(x)), reverse=True)
+    if oldest:
+        events = sorted((x for x in scored if x[2]["predicate"] == "event"),
+                        key=lambda x: (x[3] > 0, -x[1], x[2].get("salience") == "major", x[0]), reverse=True)
+    else:
+        events = sorted((x for x in scored if x[2]["predicate"] == "event"),
+                        key=lambda x: (x[3], x[2].get("salience") == "major", x[0], x[1]), reverse=True)
     kept_events = {id(x[2]) for x in events[:events_limit]} if events_limit is not None else None
     out: list[dict[str, Any]] = []
     for _, _, f, _ in scored:

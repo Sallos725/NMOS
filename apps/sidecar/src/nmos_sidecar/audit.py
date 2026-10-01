@@ -155,6 +155,7 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     recorded = {k: v for k, v in (t.get("recall_options") or {}).items() if k in RECORDED}
     recorded.setdefault("canon_key", None)  # a request from before canon facts read none (ADR 0047)
     recorded.setdefault("lexical_keywords", False)  # nor did one from before the keyword route (ADR 0052)
+    recorded.setdefault("first_cue", False)  # nor one from before the first cue (ADR 0056)
     opts = dataclasses.replace(options, **recorded, extractor_key=t["extractor_key"],
                                rules_version=t["rules_version"] or "none", policy=policy)
     wanted = projection or t["embed_projection"]

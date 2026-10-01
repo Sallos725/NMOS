@@ -554,6 +554,12 @@ TARGET, answered with `secrets` only. A check is an extraction of a `reveal` gen
 `reveal:<turn hash>`, naming the extraction it checked; its `learned` rows are served with the turn while that
 extraction serves it, and read as of an earlier request only when made by then. Nothing is discarded.
 
+**D67 — How it started, when the message asks (Phase 21, ADR 0056).** A user message with a first cue (처음, 최초, 예전,
+옛날, 원래, 초반, 첫 before a space, 번 or 째; "at first", "originally", …) ranks events mentioned first, then oldest,
+before salience and score, keeps `minor` events without the lexical bar, breaks equal scores toward the older fact, and
+keeps a standing fact whose source is in context when an earlier version starts before the window. Recorded as
+`first_cue`; older traces replay without it.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
