@@ -93,6 +93,7 @@ def shortcut(field: str) -> str:
 
 target, workdir = shortcut("TargetPath"), shortcut("WorkingDirectory")
 result["shortcut_target"], result["shortcut_workdir"] = target, workdir
+print("shortcut:", ascii(target), ascii(workdir), Path(target).exists(), flush=True)
 # NMOS.exe finds its folder from its own path, so an empty working directory would not stop it.
 subprocess.Popen([target], cwd=workdir or str(Path(target).parent))
 result["start_from_shortcut_s"] = wait(lambda: health() and window(), 120, "NMOS started from the Startup shortcut")
