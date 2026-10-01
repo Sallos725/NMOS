@@ -524,6 +524,15 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
 - R7 — decided 2026-10-01: 1.0 needs stages 4–7. Stage 8 (PocketRisu bridge; R6 moot) and Stage 6's transition
   rules and conflict queue move after 1.0; Stage 6 ends with Phase 20. Until 1.0 a new phase is a Stage 7 item,
   urgent fixes excepted; C10 (deleted-chat memory, AGE-4) waits until after 1.0 unless the owner pulls it in.
+- `0.3.0` after AGE-24 — decided 2026-10-01: `0.3.0` waits for the urgent AGE-24 fixes (AGE-26 first cue,
+  AGE-28 given names, AGE-27 role relationships), so the release does not ship the real-chat recall gaps it
+  knows about. AGE-27 needs `extract-v15`; it replaces the unreleased `extract-v14` before the tag (the
+  one-generation rule counts what a release carries, `AGENTS.md` §13), so `0.3.0` moves from `extract-v13` to
+  `extract-v15` and its users re-extract once. Cost accepted: the owner's production chats, rebuilt with
+  `extract-v14`, are rebuilt again, and Stage 6's repair-survival check (40/68 on `extract-v14`) is measured
+  again on an `extract-v15` rebuild before the tag. The `extract-v15` paid evaluation still needs the owner's
+  OK for its estimate. Order: AGE-26 → AGE-28 (with K32) → AGE-27 → production rebuild and Stage 6 re-check →
+  AGE-23 → `0.3.0` (AGE-7).
 - Stage 4 — decided 2026-09-27: first milestone (R1); recommended answers to Q1–Q5; no release yet. Spec
   `docs/phases/PHASE-10.md`, approved 2026-09-27. Tentative: a holder's own slip is direction, not a leak.
 
@@ -534,7 +543,10 @@ window at the provider's cost (ADR 0006, 0014). Owner-approved changes wait for 
 paid once (owner decision 2026-09-26). A-12 and A-14 shipped in `extract-v11` (owner decision 2026-09-27,
 `docs/perf/extract-v11.md`). The synthetic prompt examples (owner decision 2026-09-28, PR #149) and evidence
 found in the turn for every assertion (owner decision 2026-09-29, C2 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`)
-shipped in `extract-v14` with a shorter context (Phase 19, ADR 0054, `docs/perf/extract-v14.md`). Queued: none.
+shipped in `extract-v14` with a shorter context (Phase 19, ADR 0054, `docs/perf/extract-v14.md`). Queued:
+AGE-27, a role between two people (tenant and landlord, employer and employee) recorded as a relationship
+instead of only a location — `extract-v15`, which replaces the unreleased `extract-v14` before `0.3.0`
+(owner decision 2026-10-01, Decisions above); needs a phase spec.
 
 ## Public release checklist (done 2026-09-23)
 
