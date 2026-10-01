@@ -83,16 +83,16 @@ spacing aside); the read compares entities, so an alias the chat knows matches a
 
 ## Acceptance criteria
 
-- [ ] Every existing test and memory-evaluation case passes; recorded requests replay as they were.
-- [ ] The deterministic cases of In scope 3.
-- [ ] On the restored copies, the tool's counts recorded (Q8); the M0 main chat's dropped facts include AGE-25's case.
-- [ ] On a local copy of the owner's M0 main chat as it is (damaged), no model call: AGE-25's occupation listed as
+- [x] Every existing test and memory-evaluation case passes; recorded requests replay as they were.
+- [x] The deterministic cases of In scope 3.
+- [x] On the restored copies, the tool's counts recorded (Q8); the M0 main chat's dropped facts include AGE-25's case.
+- [x] On a local copy of the owner's M0 main chat as it is (damaged), no model call: AGE-25's occupation listed as
       dropped, restored, the M0 case's packet holding it, and the repair undone (counts and pass/fail only, nothing of
       the chat in the repository).
-- [ ] Q8's paid run (after the owner's OK): no extraction discarded by "Extract all history"; the checks find at
+- [ ] Q8's paid run (after the owner's OK; run 2026-10-01, all but the reveal count met, see `docs/perf/reextract-loss.md`): no extraction discarded by "Extract all history"; the checks find at
       least the reveals the 68 re-extractions found (each reveal by its secret and character); fewer input and output
       tokens than the re-extractions; AGE-25's M0 case answered.
-- [ ] Request-path latency at 10,000 messages unchanged within noise (the served read gains the checks' rows).
+- [x] Request-path latency at 10,000 messages unchanged within noise (the served read gains the checks' rows).
 
 ## Steps (one pull request each)
 

@@ -5,6 +5,16 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Phase 22: a re-extraction that keeps what it found** (ADR 0057 and its amendment 1, ADR 0044 amendment 3, D66,
+  `docs/perf/reextract-loss.md`; AGE-25). **"Extract all history" no longer extracts again** a turn that was extracted
+  before an earlier turn's secret (K29): it keeps the turn's facts and asks one short model call whether a character
+  found the secret out there. On the owner's M0 chat the 68 turns one press re-extracted cost 727k input and 85k output
+  tokens and dropped the answer to "what does A do?"; their checks took 324k and 1.5k, discarded nothing, and the
+  answer stayed. **Facts a re-extraction dropped** (the same model, extracting a turn again, did not state them again
+  and the chat holds them nowhere else) are listed under "Needs attention" with **Restore**, and counted on the
+  panel's chat card; Restore puts the fact back as yours at its turn, Undo takes it back. Nothing is restored on its
+  own. New API: `GET /v1/conversations/{id}/dropped`, repair kind `fact_restore`. Migration 0028; a new plugin build.
+
 - **An owner's repair survives a new extractor generation** (ADR 0044 amendment 2, `docs/perf/repair.md`). A repair now
   also stores its item's quote of the chat, and finds a re-extracted item by that quote when the new generation words
   it differently or states it at another turn. On a copy of the owner's chats re-extracted with `extract-v14`, 40 of

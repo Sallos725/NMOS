@@ -17,8 +17,16 @@ activation (replays unchanged by an activation). Step 3 (ADR 0044 amendment 3): 
 the same generation dropped (matched one to one with the new rows; held nowhere else in memory) is listed in "Needs
 attention" with **Restore**, counted on the panel's chat card and by `GET …/dropped`; `fact_restore` adds it back as
 the owner's version at its turn while the turn reads the same, and applies to the story's row when the turn states it
-again. A new plugin build. Next, step 4 (the loss tool, the local M0 copy end to end, the paid run after the owner's
-OK, latency). High risk (AGENTS.md §14): stored data, re-extraction and owner repairs.
+again. A new plugin build. Step 4 (`docs/perf/reextract-loss.md`, `tools/reextract_loss.py`): listed now, 31 on the
+M0 main chat (AGE-25's occupation among them), 24 and 95 on the bench's other chats, 0 on the restored production copy
+(its re-extractions were under generations no longer serving; the spec's 106 counted those) and 66 on that copy
+re-extracted with `extract-v14`; on the damaged M0 copy the occupation restored passes AGE-25's case and Undo fails it
+again. The paid run (the owner's OK for 68 calls, `gemma4:31b`): no extraction discarded, 324k input and 1.5k output
+tokens against the press's 727k and 85k, M0 main 36/40 (as before the press, the damaged copy 35/40), AGE-25's case
+passed; the checks found every reveal the press found of the secrets both read the same way but one, which reads as
+the press's false positive (a plan carried out, not found out): that criterion is not met as written and waits for the
+owner. Latency at 10,000 messages unchanged (fact read p50 105.2 → 105.9 ms). High risk (AGENTS.md §14): stored data,
+re-extraction and owner repairs.
 
 **Phase 23 — NMOS without Docker: approved 2026-10-01, current alongside Phase 22.** Spec `docs/phases/PHASE-23.md`
 (AGE-29; the owner pulled it in before 1.0, an exception to R7): a bundle for each PocketRisu portable target
