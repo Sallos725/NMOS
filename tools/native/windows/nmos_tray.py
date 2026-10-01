@@ -1,0 +1,336 @@
+"""NMOS for Windows (Phase 23): a notification-area icon that runs the bundle's services. NMOS.exe starts it with
+pythonw.exe, so there is no console; everything is logged to data/nmos.log.
+
+Win32 through ctypes only, so the bundle needs no extra package.
+"""
+
+from __future__ import annotations
+
+import base64
+import ctypes
+import hashlib
+import os
+import subprocess
+import sys
+import threading
+import traceback
+from ctypes import wintypes
+from pathlib import Path
+
+import nmos_launcher as launcher
+
+user32 = ctypes.WinDLL("user32", use_last_error=True)
+shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+ole32 = ctypes.WinDLL("ole32")
+
+LRESULT = ctypes.c_ssize_t
+WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+
+WM_DESTROY, WM_CLOSE, WM_QUERYENDSESSION, WM_ENDSESSION, WM_NULL = 0x0002, 0x0010, 0x0011, 0x0016, 0x0000
+WM_LBUTTONUP, WM_RBUTTONUP, WM_APP = 0x0202, 0x0205, 0x8000
+# WM_COMMAND_POST: a menu command posted to the window (wParam = the command); the CI smoke drives the tray with it.
+WM_TRAY, WM_STATUS, WM_COMMAND_POST = WM_APP + 1, WM_APP + 2, WM_APP + 3
+NIM_ADD, NIM_MODIFY, NIM_DELETE = 0, 1, 2
+NIF_MESSAGE, NIF_ICON, NIF_TIP, NIF_INFO = 0x1, 0x2, 0x4, 0x10
+NIIF_INFO, NIIF_ERROR = 0x1, 0x3
+MF_STRING, MF_GRAYED, MF_CHECKED, MF_SEPARATOR = 0x0, 0x1, 0x8, 0x800
+TPM_RIGHTBUTTON, TPM_NONOTIFY, TPM_RETURNCMD = 0x2, 0x80, 0x100
+IMAGE_ICON, LR_LOADFROMFILE, SM_CXSMICON, SM_CYSMICON = 1, 0x10, 49, 50
+MB_ICONERROR, MB_ICONINFORMATION = 0x10, 0x40
+ERROR_ALREADY_EXISTS = 183
+CLASS_NAME = "NMOSTrayWindow"
+
+CMD_COPY_URL, CMD_OPEN_PLUGIN, CMD_OPEN_LOGS, CMD_AUTOSTART, CMD_QUIT = 1, 2, 3, 4, 9
+
+
+class WNDCLASSEXW(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT), ("style", wintypes.UINT), ("lpfnWndProc", WNDPROC),
+                ("cbClsExtra", ctypes.c_int), ("cbWndExtra", ctypes.c_int), ("hInstance", wintypes.HINSTANCE),
+                ("hIcon", wintypes.HICON), ("hCursor", wintypes.HANDLE), ("hbrBackground", wintypes.HBRUSH),
+                ("lpszMenuName", wintypes.LPCWSTR), ("lpszClassName", wintypes.LPCWSTR), ("hIconSm", wintypes.HICON)]
+
+
+class NOTIFYICONDATAW(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("hWnd", wintypes.HWND), ("uID", wintypes.UINT),
+                ("uFlags", wintypes.UINT), ("uCallbackMessage", wintypes.UINT), ("hIcon", wintypes.HICON),
+                ("szTip", wintypes.WCHAR * 128), ("dwState", wintypes.DWORD), ("dwStateMask", wintypes.DWORD),
+                ("szInfo", wintypes.WCHAR * 256), ("uVersion", wintypes.UINT), ("szInfoTitle", wintypes.WCHAR * 64),
+                ("dwInfoFlags", wintypes.DWORD), ("guidItem", ctypes.c_byte * 16), ("hBalloonIcon", wintypes.HICON)]
+
+
+class GUID(ctypes.Structure):
+    _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD), ("Data3", wintypes.WORD),
+                ("Data4", ctypes.c_ubyte * 8)]
+
+
+user32.DefWindowProcW.restype = LRESULT
+user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.CreateWindowExW.restype = wintypes.HWND
+user32.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+                                   ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                   wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, wintypes.LPVOID]
+user32.LoadImageW.restype = wintypes.HANDLE
+user32.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT, ctypes.c_int, ctypes.c_int,
+                              wintypes.UINT]
+user32.CreatePopupMenu.restype = wintypes.HMENU
+user32.AppendMenuW.argtypes = [wintypes.HMENU, wintypes.UINT, ctypes.c_size_t, wintypes.LPCWSTR]
+user32.TrackPopupMenu.argtypes = [wintypes.HMENU, wintypes.UINT, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                  wintypes.HWND, wintypes.LPVOID]
+user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.MessageBoxW.argtypes = [wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.UINT]
+user32.DestroyMenu.argtypes = [wintypes.HMENU]
+user32.DestroyWindow.argtypes = [wintypes.HWND]
+user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+shell32.Shell_NotifyIconW.argtypes = [wintypes.DWORD, ctypes.POINTER(NOTIFYICONDATAW)]
+shell32.SHGetKnownFolderPath.argtypes = [ctypes.POINTER(GUID), wintypes.DWORD, wintypes.HANDLE,
+                                        ctypes.POINTER(ctypes.c_wchar_p)]
+ole32.CoTaskMemFree.argtypes = [ctypes.c_void_p]
+kernel32.CreateMutexW.restype = wintypes.HANDLE
+kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+
+
+def message_box(text: str, error: bool = True) -> None:
+    user32.MessageBoxW(None, text, "NMOS", MB_ICONERROR if error else MB_ICONINFORMATION)
+
+
+# --- start at login: a shortcut to this NMOS.exe in the user's Startup folder -----------------------------------------
+
+FOLDERID_STARTUP = GUID(0xB97D20BB, 0xF46A, 0x4C97, (ctypes.c_ubyte * 8)(0xBA, 0x10, 0x5E, 0x36, 0x08, 0x43, 0x08, 0x54))
+EXE = launcher.ROOT / "NMOS.exe"
+
+
+def startup_shortcut() -> Path:
+    path = ctypes.c_wchar_p()
+    if shell32.SHGetKnownFolderPath(ctypes.byref(FOLDERID_STARTUP), 0, None, ctypes.byref(path)) != 0:
+        raise OSError("the Startup folder is unknown")
+    try:
+        return Path(path.value) / "NMOS.lnk"
+    finally:
+        ole32.CoTaskMemFree(ctypes.cast(path, ctypes.c_void_p))
+
+
+def powershell(script: str) -> str:
+    """Run a PowerShell script passed as UTF-16 (-EncodedCommand), so Korean paths survive; its output is UTF-8."""
+    script = "[Console]::OutputEncoding = [Text.Encoding]::UTF8\n" + script
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+                       capture_output=True, **launcher.CHILD_FLAGS)
+    if r.returncode:
+        raise OSError(r.stderr.decode("utf-8", "replace").strip() or f"powershell exited {r.returncode}")
+    return r.stdout.decode("utf-8", "replace").strip()
+
+
+def ps_quote(path: Path) -> str:
+    return "'" + str(path).replace("'", "''") + "'"
+
+
+def autostart_enabled() -> bool:
+    """On only when the shortcut starts this copy; one left by a moved or another copy reads as off."""
+    lnk = startup_shortcut()
+    if not lnk.exists():
+        return False
+    target = powershell(f"(New-Object -ComObject WScript.Shell).CreateShortcut({ps_quote(lnk)}).TargetPath")
+    return Path(target).resolve() == EXE.resolve()
+
+
+def set_autostart(on: bool) -> None:
+    lnk = startup_shortcut()
+    if not on:
+        lnk.unlink(missing_ok=True)
+        return
+    powershell(f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut({ps_quote(lnk)})\n"
+               f"$s.TargetPath = {ps_quote(EXE)}\n$s.WorkingDirectory = {ps_quote(launcher.ROOT)}\n"
+               f"$s.IconLocation = {ps_quote(EXE)} + ',0'\n$s.Description = 'NMOS'\n$s.Save()")
+
+
+# --- the tray ---------------------------------------------------------------------------------------------------------
+
+class Tray:
+    def __init__(self) -> None:
+        self.services = launcher.Services()
+        self.state = "starting"  # starting | running | stopped | failed | stopping
+        self.error = ""
+        self.autostart = False
+        self.hwnd = None
+        self.nid = NOTIFYICONDATAW()
+        self._wndproc = WNDPROC(self.wndproc)  # referenced for the window's lifetime
+        self.taskbar_created = user32.RegisterWindowMessageW("TaskbarCreated")
+
+    def create(self) -> None:
+        hinst = kernel32.GetModuleHandleW(None)
+        wc = WNDCLASSEXW(cbSize=ctypes.sizeof(WNDCLASSEXW), lpfnWndProc=self._wndproc, hInstance=hinst,
+                         lpszClassName=CLASS_NAME)
+        user32.RegisterClassExW(ctypes.byref(wc))
+        self.hwnd = user32.CreateWindowExW(0, CLASS_NAME, "NMOS", 0, 0, 0, 0, 0, None, None, hinst, None)
+        icon = user32.LoadImageW(None, str(launcher.ROOT / "nmos.ico"), IMAGE_ICON,
+                                 user32.GetSystemMetrics(SM_CXSMICON), user32.GetSystemMetrics(SM_CYSMICON),
+                                 LR_LOADFROMFILE)
+        self.nid.cbSize = ctypes.sizeof(NOTIFYICONDATAW)
+        self.nid.hWnd, self.nid.uID, self.nid.hIcon = self.hwnd, 1, icon
+        self.nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
+        self.nid.uCallbackMessage = WM_TRAY
+        self.nid.szTip = "NMOS — 시작하는 중…"
+        ok = shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(self.nid))
+        launcher.log(f"tray icon added: {bool(ok)}")
+
+    def set_tip(self, tip: str, balloon: str | None = None, error: bool = False) -> None:
+        self.nid.szTip = tip[:127]
+        self.nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
+        if balloon:
+            self.nid.uFlags |= NIF_INFO
+            self.nid.szInfoTitle, self.nid.szInfo = "NMOS", balloon[:255]
+            self.nid.dwInfoFlags = NIIF_ERROR if error else NIIF_INFO
+        shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(self.nid))
+
+    # --- services (a worker thread; the window thread only reads the state) --------------------------------------
+    def run_services(self) -> None:
+        try:
+            self.autostart = autostart_enabled()
+        except OSError as e:
+            launcher.log(f"start at login unknown: {e}")
+        try:
+            self.services.start()
+            self.state = "running"
+        except BaseException as e:  # noqa: BLE001 — anything here must reach the user, not a closed console
+            self.state = "failed"
+            self.error = e.code if isinstance(e, SystemExit) and isinstance(e.code, str) else repr(e)
+            launcher.log("start failed:\n" + "".join(traceback.format_exception(e)))
+        user32.PostMessageW(self.hwnd, WM_STATUS, 0, 0)
+        while self.state == "running" and self.services.alive():
+            threading.Event().wait(2)
+        if self.state == "running":
+            self.state = "stopped"
+            launcher.log("a service exited; see this log")
+            user32.PostMessageW(self.hwnd, WM_STATUS, 0, 0)
+
+    def on_status(self) -> None:
+        if self.state == "running":
+            self.set_tip(f"NMOS — 실행 중 ({self.services.url})",
+                         f"NMOS가 실행 중이에요. PocketRisu 플러그인의 사이드카 주소: {self.services.url}")
+        elif self.state == "failed":
+            self.set_tip("NMOS — 시작 실패", "NMOS를 시작하지 못했어요. 메뉴의 '로그 폴더 열기'에서 nmos.log를 확인해 주세요.",
+                         error=True)
+            message_box(f"NMOS를 시작하지 못했어요.\n\n{self.error}")
+        elif self.state == "stopped":
+            self.set_tip("NMOS — 멈춤 (로그 확인)", "NMOS의 서비스가 멈췄어요. 로그를 확인해 주세요.", error=True)
+
+    # --- menu ------------------------------------------------------------------------------------------------------
+    def show_menu(self) -> None:
+        status = {"starting": "시작하는 중…", "running": f"실행 중 — {self.services.url}",
+                  "stopped": "멈춤 — 로그를 확인해 주세요", "failed": "시작 실패 — 로그를 확인해 주세요",
+                  "stopping": "끄는 중…"}[self.state]
+        menu = user32.CreatePopupMenu()
+        user32.AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, f"NMOS: {status}")
+        user32.AppendMenuW(menu, MF_SEPARATOR, 0, None)
+        user32.AppendMenuW(menu, MF_STRING, CMD_COPY_URL, "사이드카 주소 복사")
+        user32.AppendMenuW(menu, MF_STRING, CMD_OPEN_PLUGIN, "플러그인 파일 폴더 열기")
+        user32.AppendMenuW(menu, MF_STRING, CMD_OPEN_LOGS, "로그 폴더 열기")
+        user32.AppendMenuW(menu, MF_SEPARATOR, 0, None)
+        user32.AppendMenuW(menu, MF_STRING | (MF_CHECKED if self.autostart else 0), CMD_AUTOSTART,
+                           "Windows 시작 시 NMOS 실행")
+        user32.AppendMenuW(menu, MF_SEPARATOR, 0, None)
+        user32.AppendMenuW(menu, MF_STRING, CMD_QUIT, "NMOS 종료")
+        pt = wintypes.POINT()
+        user32.GetCursorPos(ctypes.byref(pt))
+        user32.SetForegroundWindow(self.hwnd)  # otherwise the menu does not close when clicking elsewhere
+        cmd = user32.TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_NONOTIFY | TPM_RETURNCMD, pt.x, pt.y, 0,
+                                    self.hwnd, None)
+        user32.PostMessageW(self.hwnd, WM_NULL, 0, 0)
+        user32.DestroyMenu(menu)
+        self.on_command(cmd)
+
+    def on_command(self, cmd: int) -> None:
+        if cmd == CMD_COPY_URL:
+            subprocess.run(["clip"], input=self.services.url.encode("ascii"), **launcher.CHILD_KW_NO_OUTPUT)
+            self.set_tip(self.nid.szTip, "사이드카 주소를 복사했어요.")
+        elif cmd == CMD_OPEN_PLUGIN:
+            os.startfile(launcher.ROOT / "plugin")
+        elif cmd == CMD_OPEN_LOGS:
+            os.startfile(self.services.data)
+        elif cmd == CMD_AUTOSTART:
+            want = not self.autostart
+            try:
+                set_autostart(want)
+                self.autostart = want
+                launcher.log(f"start at login: {'on' if want else 'off'}")
+                self.set_tip(self.nid.szTip, "Windows를 시작하면 NMOS도 같이 실행돼요." if want
+                             else "Windows를 시작해도 NMOS는 실행되지 않아요.")
+            except OSError as e:
+                launcher.log(f"start at login could not be changed: {e}")
+                message_box(f"Windows 시작 시 실행 설정을 바꾸지 못했어요.\n\n{e}")
+        elif cmd == CMD_QUIT:
+            user32.PostMessageW(self.hwnd, WM_CLOSE, 0, 0)
+
+    # --- window procedure -------------------------------------------------------------------------------------------
+    def wndproc(self, hwnd, msg, wparam, lparam):
+        if msg == WM_TRAY and lparam in (WM_RBUTTONUP, WM_LBUTTONUP):
+            self.show_menu()
+            return 0
+        if msg == WM_COMMAND_POST:
+            self.on_command(int(wparam))
+            return 0
+        if msg == WM_STATUS:
+            self.on_status()
+            return 0
+        if msg == self.taskbar_created:  # Explorer restarted: the icon is gone until added again
+            shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(self.nid))
+            return 0
+        if msg == WM_QUERYENDSESSION:
+            return 1
+        if msg == WM_ENDSESSION and wparam:
+            self.quit()
+            return 0
+        if msg == WM_CLOSE:
+            user32.DestroyWindow(hwnd)
+            return 0
+        if msg == WM_DESTROY:
+            self.quit()
+            user32.PostQuitMessage(0)
+            return 0
+        return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+    def quit(self) -> None:
+        self.state = "stopping"
+        shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(self.nid))
+        self.services.stop()
+
+    def loop(self) -> None:
+        msg = wintypes.MSG()
+        while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            user32.TranslateMessage(ctypes.byref(msg))
+            user32.DispatchMessageW(ctypes.byref(msg))
+
+
+def main() -> int:
+    data = launcher.Services().data  # resolves .env and NMOS_DATA_DIR like the services do
+    log_path = data / "nmos.log"
+    if log_path.exists() and log_path.stat().st_size > 5_000_000:
+        log_path.replace(data / "nmos.log.1")
+    log_file = open(log_path, "a", encoding="utf-8", buffering=1)
+    sys.stdout = sys.stderr = log_file  # pythonw has neither
+    launcher.LOG = log_file
+    no_window = {"creationflags": subprocess.CREATE_NO_WINDOW}
+    launcher.CHILD_FLAGS = no_window
+    launcher.CHILD_KW = {**no_window, "stdout": log_file, "stderr": subprocess.STDOUT}
+    launcher.CHILD_KW_NO_OUTPUT = {**no_window, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+
+    # One NMOS per bundle folder, said kindly before the launcher's own data-folder lock would refuse it.
+    key = hashlib.sha1(str(launcher.ROOT).lower().encode()).hexdigest()[:16]
+    kernel32.CreateMutexW(None, True, f"Local\\NMOS-{key}")
+    if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
+        message_box("NMOS가 이미 실행 중이에요. 작업 표시줄 오른쪽 아래의 NMOS 아이콘을 확인해 주세요.", error=False)
+        return 0
+
+    tray = Tray()
+    tray.create()
+    threading.Thread(target=tray.run_services, daemon=True).start()
+    tray.loop()
+    launcher.log("tray exited")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

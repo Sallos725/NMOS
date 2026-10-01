@@ -78,11 +78,11 @@ def ascii_path(path: Path) -> Path:
 # Child processes: inherit the console, or (tray) write to the log file with no console window of their own.
 CHILD_KW: dict = {}
 CHILD_KW_NO_OUTPUT: dict = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
-CHILD_KW_NO_OUTPUT_ERR: dict = {}  # extra flags for a captured child (the tray adds CREATE_NO_WINDOW)
+CHILD_FLAGS: dict = {}  # process-creation flags for every child, captured ones too (the tray: CREATE_NO_WINDOW)
 
 
 def run(cmd: list[str], **kw) -> None:
-    subprocess.run(cmd, check=True, **CHILD_KW, **kw)
+    subprocess.run(cmd, check=True, **{**CHILD_KW, **kw})  # a call's own stdout/stderr win over CHILD_KW's
 
 
 def write_private(path: Path, text: str) -> None:
@@ -163,7 +163,7 @@ def restrict_to_this_user(data: Path) -> None:
     if marker.exists():
         return
     sid = subprocess.run(["whoami", "/user", "/fo", "csv", "/nh"], capture_output=True, text=True, check=True,
-                         **CHILD_KW_NO_OUTPUT_ERR).stdout.strip().split(",")[-1].strip('"')
+                         **CHILD_FLAGS).stdout.strip().split(",")[-1].strip('"')
     # The folder alone gets the owner-only entries, inherited by what it holds; what it already holds (data from an
     # earlier start) is reset to inherit them. Granting folder inheritance flags to files with /T left an existing
     # file with no usable entry (the lock file could no longer be opened, by its owner either).
