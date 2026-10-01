@@ -69,8 +69,12 @@ with Open Anyway. The spike (`spike/native-bundle`) ran on all four targets. Ste
 image; the launcher refuses a second launcher on the same data, data written by a newer NMOS, and a port in use,
 and keeps the data its owner's only (on Windows by ACL). On each target, from a folder named "한글 폴더": first start,
 Korean `pg_trgm`, stop, restart and the three refusals; the sidecar suite (783) passes against the bundle's
-PostgreSQL on linux-x64, macos-arm64 and win-x64. High risk (AGENTS.md §14): the bundle's stored data. Next, step 3
-(Windows: `NMOS.exe`, the tray, start at login). Separate from Phase 22's code; neither waits on the other.
+PostgreSQL on linux-x64, macos-arm64 and win-x64. High risk (AGENTS.md §14): the bundle's stored data. Step 3
+(Windows): `NMOS.exe` with the plugin's icon starts a notification-area tray (status, copy the sidecar URL, the plugin
+and log folders, start at login through the user's Run key, quit); a failed or interrupted start leaves nothing
+running; checked on CI from a Korean folder, a sign-in included by starting the Run entry's command. The Windows
+suite's one intermittent failure was the sidecar's clock (fixed in #228: canon facts follow the database's clock).
+Next, step 4 (macOS: the menu-bar app). Separate from Phase 22's code; neither waits on the other.
 
 **Release `v0.2.0` (2026-09-28), the first milestone (`docs/ROADMAP-1.0.md`), at the owner's request.** Stage 4
 (knowledge and secrets, Phase 10) complete, with Stage 5 (Phases 11–12) and Stage 6 so far (Phase 13, Phase 14 steps
