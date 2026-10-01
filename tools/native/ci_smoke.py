@@ -77,7 +77,9 @@ def suite(bundle: Path) -> int:
                 return 1
             time.sleep(0.5)
         pw = (bundle / "data" / "db-password").read_text(encoding="utf-8").strip()
-        env = dict(os.environ, NMOS_TEST_ADMIN_URL=f"postgresql://nmos:{pw}@127.0.0.1:54390/postgres")
+        # UTF-8 mode, as the launcher runs the sidecar: on Windows the tests read the repository's docs and fixtures,
+        # which a cp1252 default cannot decode.
+        env = dict(os.environ, NMOS_TEST_ADMIN_URL=f"postgresql://nmos:{pw}@127.0.0.1:54390/postgres", PYTHONUTF8="1")
         return subprocess.run(["uv", "run", "pytest", "-q"], cwd=REPO / "apps" / "sidecar", env=env).returncode
     finally:
         if WINDOWS:
