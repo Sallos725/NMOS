@@ -23,15 +23,20 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
       - if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libxml2
-      - if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
       - name: Build
+        if: runner.os != 'Windows'
         shell: bash
         run: uv run --no-project --python 3.12 python tools/native/build_bundle.py --target ${{ matrix.target }} --version 0.0.0-spike
+      - name: Build (Windows, in the MSVC x64 environment for pgvector and NMOS.exe)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
+          uv run --no-project --python 3.12 python tools/native/build_bundle.py --target ${{ matrix.target }} --version 0.0.0-spike
       - name: Linked libraries (diagnostic)
         if: runner.os == 'macOS'
         run: |
@@ -81,7 +86,7 @@ jobs:
           rm -rf "$d" && mkdir -p "$d" && unzip -q dist-native/NMOS-v0.0.0-spike-win-x64.zip -d "$d"
           b=$(ls -d "$d"/NMOS-*)
           "$b/python/python.exe" tools/native/windows/tray_smoke.py "$b"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: NMOS-${{ matrix.target }}
