@@ -117,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusLine.isEnabled = false
         menu.addItem(statusLine)
         menu.addItem(.separator())
+        menu.addItem(withTitle: "대시보드 열기", action: #selector(openDashboard), keyEquivalent: "").target = self
         menu.addItem(withTitle: "사이드카 주소 복사", action: #selector(copyURL), keyEquivalent: "").target = self
         menu.addItem(withTitle: "플러그인 파일 위치 열기", action: #selector(openPlugin), keyEquivalent: "").target = self
         menu.addItem(withTitle: "로그 폴더 열기", action: #selector(openLogs), keyEquivalent: "").target = self
@@ -192,6 +193,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.refresh()
             }
         }.resume()
+    }
+
+    /// The Inspector's first page (PHASE-23 Q8), with the token when one is set (the page asks for it).
+    @objc func openDashboard() {
+        var page = url + "/dashboard"
+        if let token, let q = token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            page += "?token=\(q)"
+        }
+        if let target = URL(string: page) { NSWorkspace.shared.open(target) }
     }
 
     @objc func copyURL() {

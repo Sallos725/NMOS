@@ -351,3 +351,28 @@ def test_every_pair_is_shown_although_the_facts_table_is_capped():
     page = inspector.detail(conv, [], [], [], [], [], None, lang="en", standing=[old])
     assert "Mina → Rin: mother" in page
     assert "Mina ↔ Rin" not in inspector.detail(conv, [], [], [], [], [], None, lang="en")
+
+
+def test_the_dashboard_is_the_inspector_with_the_version_and_the_failed_jobs(migrated):
+    """PHASE-23 Q8: the bundles' tray and menu bar open /dashboard, the Inspector's first page with the version, the
+    plugin build, the generations in use, the background jobs and their recent errors; read-only, behind the token."""
+    import psycopg
+
+    from nmos_sidecar import __version__
+
+    with make_client(migrated, llm_url="http://fake-llm/v1", llm_model="fake", llm_api_key="sk-secret-dashboard") as c:
+        sync_named(c, chat(), character_name="하나", chat_name="첫 대화")
+        conv_id = c.get("/v1/conversations").json()[0]["id"]
+        with psycopg.connect(migrated, autocommit=True) as conn:
+            conn.execute("INSERT INTO job (kind, dedupe_key, conversation_id, payload, status, attempts, last_error)"
+                         " VALUES ('extract', 'dashboard-test', %s, '{}', 'dead', 5, %s)",
+                         (conv_id, "model said <b>no</b> " + "x" * 400))
+        del c.headers["Authorization"]
+        assert c.get("/dashboard", follow_redirects=False).status_code == 401
+        moved = c.get("/dashboard", params={"token": "test-token", "lang": "en"}, follow_redirects=False)
+        assert moved.status_code == 307 and moved.headers["location"] == "/inspector?token=test-token&lang=en"
+        page = c.get("/dashboard", params={"token": "test-token", "lang": "en"}).text
+        assert f"Version {__version__}" in page and "Recent errors" in page
+        assert "model said &lt;b&gt;no&lt;/b&gt;" in page and "x" * 300 not in page  # escaped, cut to 300 characters
+        assert "sk-secret-dashboard" not in page  # the model and endpoint, never a key
+        assert "fake @ http://fake-llm/v1" in page

@@ -134,6 +134,16 @@ def stop_while_starting(bundle: Path) -> dict:
     return outcome
 
 
+def check_dashboard() -> str:
+    """/dashboard (the tray's and the menu bar's) reaches the Inspector's first page with the version on it."""
+    with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/dashboard", timeout=10) as r:
+        page = r.read().decode("utf-8")
+        final = r.geturl()
+    if "/inspector" not in final or "버전" not in page:
+        raise SystemExit(f"/dashboard did not reach the Inspector with its version: {final}")
+    return final
+
+
 def check_sql(bundle: Path) -> dict:
     with connect(bundle) as conn:
         ext = dict(conn.execute("SELECT extname, extversion FROM pg_extension").fetchall())
@@ -152,6 +162,7 @@ def main() -> None:
     proc, result["first_start_s"] = start(bundle)
     try:
         result["sql"] = check_sql(bundle)
+        result["dashboard"] = check_dashboard()
         if WINDOWS:
             result["data_acl"] = check_owner_only_acl(bundle / "data")
         result["refused_second_launcher"] = refused(bundle, "already running")

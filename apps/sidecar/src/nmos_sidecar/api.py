@@ -10,6 +10,7 @@ import time
 import dataclasses
 import ipaddress
 import re
+from urllib.parse import quote
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
@@ -19,7 +20,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Qu
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -30,7 +31,7 @@ from . import (__version__, archive, audit, canon, canonfacts, dropped, extracti
 from . import usage as model_usage
 from .config import Settings
 from .db import make_pool
-from .extraction import enqueue_after_apply, job_counts
+from .extraction import enqueue_after_apply, job_counts, recent_errors
 from .facts import STANDING, links_of as facts_links_of, memory_view, version_key
 from .ids import uuid7
 from .models import (
@@ -1064,7 +1065,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                    extraction.coverage(conn, ex_key) if ex_key else {},
                                    vectors.coverage(conn, pj_key) if pj_key else {},
                                    lang=inspector.lang_of(lang), embed=embed,
-                                   plugin={"expected": plugin.expected(), "seen": plugins.recent()})
+                                   plugin={"expected": plugin.expected(), "seen": plugins.recent()},
+                                   version=__version__, errors=recent_errors(conn))
 
     def inspector_detail_html(conv_id: UUID, request: Request, token: str | None, lang: str | None,
                               embed: bool = False) -> str:
@@ -1118,6 +1120,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_index(request: Request, token: str | None = None, lang: str | None = None):
         return inspector_index_html(request, token, lang)
+
+    # The Docker-free bundles' tray and menu bar open this (PHASE-23 Q8): the Inspector's first page, which holds
+    # the version, the plugin build, the generations in use, the background jobs and their recent errors.
+    @app.get("/dashboard", dependencies=[Depends(auth)])
+    def dashboard(token: str | None = None, lang: str | None = None):
+        q = "&".join(f"{k}={quote(v)}" for k, v in (("token", token), ("lang", lang)) if v)
+        return RedirectResponse("/inspector" + (f"?{q}" if q else ""), status_code=307)
 
     @app.get("/inspector/c/{conv_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_detail(conv_id: UUID, request: Request, token: str | None = None, lang: str | None = None):
