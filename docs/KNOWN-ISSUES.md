@@ -50,7 +50,7 @@ without a PocketRisu change.
 | K39 | A grown excerpt can carry a value the story has since replaced | Recall | measured, accepted (Phase 18, owner 2026-09-30) |
 | K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | measured; a lower threshold found less, 0.8 kept (2026-09-30) |
 | K41 | Re-extracted with `extract-v14`, `deepseek-v4.1-flash` passed fewer M0 cases | Memory | measured, accepted (Phase 19, owner 2026-09-30) |
-| K42 | A standing fact's earlier versions are printed under the current version's knowledge marks | Memory | found in review (Phase 21, 2026-10-01); a fix changes `packet-v10` output, owner to decide |
+| K42 | A standing fact's earlier versions are printed under the current version's knowledge marks | Memory | resolved on `main` (ADR 0038 amendment 1, 2026-10-01): a version kept from someone only under the same marks |
 
 ## Performance
 
@@ -255,10 +255,10 @@ run-to-run variance caused the drop was not measured. *Workaround:* none; a chat
 `packet-v5` (ADR 0038) the packet names what a relationship, a feeling or a form of address replaced, and how it
 started, in the same line as the current version; a fact's history does not keep who knew each version, and the line
 carries the current version's marks, which the memory mode (ADR 0035) also reads. When an earlier version was kept from
-someone and the current one is not, the earlier one is printed as if it were public too. Seen in review of Phase 21,
-not in a chat. Phase 21's first cue (ADR 0056) brings such a fact back from the window only when every earlier version
-outside it has the current one's marks, so it adds no case. *Workaround:* none. A fix (each version's own marks, or
-leaving out a version with others) changes `packet-v10`'s output for every request with such a history.
+someone and the current one is not, the earlier one is printed as if it were public too. Found in review of Phase 21;
+the owner's M0 main chat has one (a feeling only one character knew, printed under its public line in every packet).
+*Resolved on `main`* (ADR 0038 amendment 1, 2026-10-01, the owner's request): history entries keep their marks, and a
+version kept from someone is printed only under the same marks; requests recorded before replay as they were.
 
 ## Recall and gating
 

@@ -431,7 +431,8 @@ Private section.
 of head nouns: friends, lovers, siblings, classmates, rivals, colleagues…) replaces the other direction's either way
 (K24). Feelings and speech levels stay per direction. `resolve-v5`: a character name ending with a persona name as its
 own word is the persona. The default policy `packet-v5` names, on a standing fact's line, the earlier value it
-replaced and its turn.
+replaced and its turn; since amendment 1 (K42) a version kept from someone only under the same knowledge marks
+(recorded as `history_marks`; older traces replay without it).
 
 **D49 — Open business (Phase 11, ADR 0039).** Since `extract-v13` goals, questions, threats and debts are threads
 beside promises: the prompt lists OPEN THREADS, and `resolved` ends one by owner and text with an outcome (migration

@@ -731,7 +731,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                    limit: int, events_limit: int | None = None,
                    persona: frozenset[str] = frozenset(), present: frozenset[str] = frozenset(),
                    causes: bool = False, first_cue: bool = False,
-                   window_start: int | None = None) -> list[dict[str, Any]]:
+                   window_start: int | None = None, marks: bool = False) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
@@ -770,7 +770,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     scored = []
     for f in facts:
         if f["host_logical_id"] in in_context and not f.get("held_off"):  # a lock holds against the story (ADR 0047)
-            if not (oldest and window_start is not None and _started_before(f, window_start, in_context)):
+            if not (oldest and window_start is not None and _started_before(f, window_start, in_context, marks)):
                 continue
         names = [n for n in {_norm(x) for x in (f.get("names") or [f["subject"], f.get("object")])}
                  if len(n) >= 2 and n not in user]
@@ -813,14 +813,24 @@ def _scope(f: dict[str, Any]) -> tuple:
     return f.get("knowledge"), sorted(f.get("known_by") or []), sorted(f.get("hidden_from") or [])
 
 
-def _started_before(f: dict[str, Any], window_start: int, in_context: set[str]) -> bool:
+def _shown_under(h: dict[str, Any], f: dict[str, Any]) -> bool:
+    """Whether an earlier version may be printed in the current version's line, under its knowledge marks (ADR 0038
+    amendment 1, K42): not when it was kept from someone (`limited`) and its marks are not the current version's. A
+    public or unmarked version under a limited line is treated more narrowly than it was, which leaks nothing."""
+    return h.get("knowledge") != "limited" or _scope(h) == _scope(f)
+
+
+def _started_before(f: dict[str, Any], window_start: int, in_context: set[str], marks: bool = False) -> bool:
     """A standing fact with an earlier version (`_prior`) the prompt does not hold (ADR 0056): one the story stated
     before the window (a position lower than `window_start`, the lowest in context), or a canon statement whose key
     the prompt did not hold (its synthetic position is below every turn; a held one is in the prompt, ADR 0047). The
-    packet prints earlier versions under the current row's knowledge marks, so every such version must have the same
-    marks; otherwise the fact stays out as it would without the cue."""
+    packet prints earlier versions under the current row's knowledge marks: with `marks` (ADR 0038 amendment 1) one of
+    them must be printed there (`_shown_under`); without, every one of them must have the same marks. Otherwise the
+    fact stays out as it would without the cue."""
     before = [h for h in _prior(f) if ("canon:" + h["canon"] not in in_context if h.get("canon")
                                        else h["position"] < window_start)]
+    if marks:
+        return any(_shown_under(h, f) for h in before)
     return bool(before) and all(_scope(h) == _scope(f) for h in before)
 
 
@@ -832,21 +842,27 @@ def _prior(f: dict[str, Any]) -> list[dict[str, Any]]:
             and h["polarity"] == "positive" and _norm(h["value"]) != _norm(f.get("value"))]
 
 
-def earlier(f: dict[str, Any]) -> dict[str, Any] | None:
-    """The version a standing fact replaced (ADR 0038): the latest earlier statement in its history, of the same
-    predicate, with another value and not a denial. For a relationship that may be the other direction."""
+def _printed(f: dict[str, Any], marks: bool) -> list[dict[str, Any]]:
     prior = _prior(f)
+    return [h for h in prior if _shown_under(h, f)] if marks else prior
+
+
+def earlier(f: dict[str, Any], marks: bool = False) -> dict[str, Any] | None:
+    """The version a standing fact replaced (ADR 0038): the latest earlier statement in its history, of the same
+    predicate, with another value and not a denial. For a relationship that may be the other direction. With `marks`,
+    of those the line may print under its own marks (`_shown_under`, amendment 1)."""
+    prior = _printed(f, marks)
     return prior[-1] if prior else None
 
 
-def first(f: dict[str, Any]) -> dict[str, Any] | None:
+def first(f: dict[str, Any], marks: bool = False) -> dict[str, Any] | None:
     """How it started, when that differs from what it replaced: the earliest such statement (ADR 0038). "What did she
-    call him at first" was answered only by accident before the fold was fixed (M0)."""
-    prior = _prior(f)
+    call him at first" was answered only by accident before the fold was fixed (M0). `marks` as for `earlier`."""
+    prior = _printed(f, marks)
     return prior[0] if len(prior) > 1 and _norm(prior[0]["value"]) != _norm(prior[-1]["value"]) else None
 
 
-def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False) -> str:
+def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False, marks: bool = False) -> str:
     """One <Fact> with its knowledge marks exactly as stored (D19): knowledge="public", or known_by /
     hidden_from for limited facts, or no mark at all when who knows is unknown. A negated fact is
     explicitly not (or no longer) true (ADR 0013). A disputed fact carries what contradicts it in the same
@@ -870,9 +886,9 @@ def fact_line(f: dict[str, Any], before: bool = False, cause: bool = False) -> s
         text += f"; but turn {when}: {fact_text(against)}"
     if cause and f.get("because"):
         text += f"; because: {f['because']}"
-    if before and (was := earlier(f)):
+    if before and (was := earlier(f, marks)):
         text += f"; before, {_when(was)}: {fact_text(was)}"
-        if start := first(f):
+        if start := first(f, marks):
             text += f"; first, {_when(start)}: {fact_text(start)}"
     return f"    <Fact{attrs}>{escape(text)}</Fact>"
 
@@ -925,11 +941,13 @@ def _marks(f: dict[str, Any]) -> dict[str, Any]:
     return {"hidden_from": list(f["hidden_from"])} if f.get("knowledge") == "limited" and f.get("hidden_from") else {}
 
 
-def fact_entry(f: dict[str, Any], private: bool = False, before: bool = False, cause: bool = False) -> Line:
+def fact_entry(f: dict[str, Any], private: bool = False, before: bool = False, cause: bool = False,
+               marks: bool = False) -> Line:
     """A fact as a packet line with its provenance (ADR 0027): the assertion, and the words a reply can
     echo (its value, else its object). `private`: only some characters in the scene know it (ADR 0034).
-    `before`: name the version a standing fact replaced (packet-v5, ADR 0038); `cause`: the stated cause (ADR 0040)."""
-    return Line("fact", fact_line(f, before, cause), _ref(f), f.get("turn"), fact_text(f),
+    `before`: name the version a standing fact replaced (packet-v5, ADR 0038); `cause`: the stated cause (ADR 0040);
+    `marks`: only versions the line's knowledge marks cover (ADR 0038 amendment 1)."""
+    return Line("fact", fact_line(f, before, cause, marks), _ref(f), f.get("turn"), fact_text(f),
                 f.get("value") or f.get("object") or "", _marks(f), private)
 
 
