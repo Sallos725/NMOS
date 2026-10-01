@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -232,6 +233,11 @@ MACHO = (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xfe\x
 BUNDLE_ID = "io.github.sallos725.nmos"
 
 
+def apple_version(version: str) -> str:
+    m = re.match(r"\d+(\.\d+){0,2}", version)
+    return m.group(0) if m else "0.0.0"
+
+
 def build_macos_app(stage: Path, work: Path, version: str) -> Path:
     """NMOS.app (PHASE-23 Q6): the bundle in Contents/Resources, the menu-bar program in Contents/MacOS, every Mach-O
     file in it signed ad hoc and then the app, so a download is "from an unidentified developer" (Open Anyway) and not
@@ -257,7 +263,9 @@ def build_macos_app(stage: Path, work: Path, version: str) -> Path:
         plistlib.dump({
             "CFBundleName": "NMOS", "CFBundleDisplayName": "NMOS", "CFBundleIdentifier": BUNDLE_ID,
             "CFBundleExecutable": "NMOS", "CFBundleIconFile": "nmos", "CFBundlePackageType": "APPL",
-            "CFBundleShortVersionString": version, "CFBundleVersion": version,
+            # Apple's version keys take dotted numbers only ("0.3.0-beta.1" → "0.3.0"); the full one is NMOSVersion.
+            "CFBundleShortVersionString": apple_version(version), "CFBundleVersion": apple_version(version),
+            "NMOSVersion": version,
             "LSMinimumSystemVersion": "13.0", "LSUIElement": True,  # a menu-bar item, no Dock icon
             "NSHumanReadableCopyright": "MIT License",
         }, f)

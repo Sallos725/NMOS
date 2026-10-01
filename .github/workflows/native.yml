@@ -57,7 +57,8 @@ jobs:
         shell: bash
         run: uv run --no-project --python 3.12 python tools/native/ci_smoke.py tray dist-native/NMOS-v0.0.0-ci-win-x64.zip "${{ matrix.parent }}" "트레이 테스트"
       # Windows' suite takes ~15 minutes (Linux and macOS ~4): on a pull request it runs only when what the sidecar
-      # runs on changed (the launcher, the build, the pins, the smokes, the sidecar or the migrations).
+      # runs on in the bundle changed (the launcher, the build, the pins, the smokes); always on a manual run. A
+      # sidecar-only change does not start this workflow: its suite runs in ci.yml, and the release runs this one.
       - name: Does the Windows suite need to run?
         id: winsuite
         if: runner.os == 'Windows'
@@ -68,7 +69,7 @@ jobs:
           if [ "${{ github.event_name }}" != pull_request ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           changed=$(gh pr diff ${{ github.event.pull_request.number }} -R ${{ github.repository }} --name-only)
           echo "$changed"
-          if echo "$changed" | grep -qE '^(tools/native/(launcher/|build_bundle\.py|sources\.json|smoke\.py|ci_smoke\.py)|apps/sidecar/|migrations/)'; then
+          if echo "$changed" | grep -qE '^tools/native/(launcher/|build_bundle\.py|sources\.json|smoke\.py|ci_smoke\.py)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

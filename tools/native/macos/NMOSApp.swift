@@ -72,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var state = "starting"  // starting | running | stopped | failed | stopping
     var timer: Timer?
     var url = "http://127.0.0.1:8790"
+    var token: String?  // NMOS_AUTH_TOKEN: /v1/health asks for it like every endpoint
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let me = Bundle.main.bundleIdentifier ?? ""
@@ -84,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                  attributes: [.posixPermissions: 0o700])
         let env = readEnv(support.appendingPathComponent(".env"))
         url = "http://\(env["NMOS_SIDECAR_BIND"] ?? "127.0.0.1"):\(env["NMOS_SIDECAR_PORT"] ?? "8790")"
+        token = env["NMOS_AUTH_TOKEN"].flatMap { $0.isEmpty ? nil : $0 }
         copyPlugin()
         buildMenu()
         start()
@@ -118,6 +120,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "NMOS 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
+        refresh()
+    }
+
+    /// State changes go to the log too, which is where support (and the CI smoke) can see what the menu shows.
+    func setState(_ new: String) {
+        state = new
+        if let h = try? FileHandle(forWritingTo: logURL) {
+            h.seekToEndOfFile()
+            h.write("[app] state: \(new)\n".data(using: .utf8)!)
+            try? h.close()
+        }
         refresh()
     }
 
@@ -163,8 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func exited(_ code: Int32) {
         if state == "stopping" { return }
         let wasRunning = state == "running"
-        state = wasRunning ? "stopped" : "failed"
-        refresh()
+        setState(wasRunning ? "stopped" : "failed")
         alert(wasRunning ? "NMOS의 서비스가 멈췄어요. 메뉴의 '로그 폴더 열기'에서 nmos.log를 확인해 주세요."
                          : "NMOS를 시작하지 못했어요.\n\n\(lastLog())")
     }
@@ -173,10 +185,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard state == "starting" || state == "running", let health = URL(string: url + "/v1/health") else { return }
         var request = URLRequest(url: health)
         request.timeoutInterval = 1.5
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         URLSession.shared.dataTask(with: request) { data, _, _ in
             let ok = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["ok"] as? Bool ?? false
             DispatchQueue.main.async {
-                if ok && self.state == "starting" { self.state = "running" }
+                if ok && self.state == "starting" { self.setState("running") }
                 self.refresh()
             }
         }.resume()
@@ -213,8 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Quit, sign-out or shut-down: stop the launcher (SIGINT: it stops the sidecar, the worker and PostgreSQL) first.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let p = launcher, p.isRunning else { return .terminateNow }
-        state = "stopping"
-        refresh()
+        setState("stopping")
         p.interrupt()
         DispatchQueue.global().async {
             let deadline = Date().addingTimeInterval(60)

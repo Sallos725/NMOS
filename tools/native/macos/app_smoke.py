@@ -19,12 +19,14 @@ import urllib.request
 from pathlib import Path
 
 BUNDLE_ID = "io.github.sallos725.nmos"
+TOKEN = "nmos-ci-token"  # .env in Application Support sets NMOS_AUTH_TOKEN: the menu must still see the sidecar
 SUPPORT = Path.home() / "Library" / "Application Support" / "NMOS"
 
 
 def health() -> bool:
+    request = urllib.request.Request("http://127.0.0.1:8790/v1/health", headers={"Authorization": f"Bearer {TOKEN}"})
     try:
-        with urllib.request.urlopen("http://127.0.0.1:8790/v1/health", timeout=2) as r:
+        with urllib.request.urlopen(request, timeout=2) as r:
             return json.load(r).get("ok") is True
     except OSError:
         return False
@@ -71,12 +73,16 @@ def main() -> int:
     app.parent.mkdir(exist_ok=True)
     shutil.move(str(copied), str(app))
     shutil.rmtree(SUPPORT, ignore_errors=True)
+    SUPPORT.mkdir(parents=True)
+    (SUPPORT / ".env").write_text(f"NMOS_AUTH_TOKEN={TOKEN}\n")
     result: dict = {"verified_before": verify(app)}
     assess = subprocess.run(["spctl", "--assess", "--type", "execute", "-vv", str(app)], capture_output=True, text=True)
     result["gatekeeper (diagnostic)"] = (assess.stdout + assess.stderr).strip()
 
     subprocess.run(["open", str(app)], check=True)
     result["first_start_s"] = wait(lambda: health() and app_running(app), 240, "the sidecar and the app")
+    log = lambda: (SUPPORT / "nmos.log").read_text(errors="replace")  # noqa: E731
+    result["menu_shows_running_s"] = wait(lambda: "[app] state: running" in log(), 30, "the menu's running state")
     result["data_in_support"] = (SUPPORT / "pg" / "PG_VERSION").is_file() and (SUPPORT / "db-password").is_file()
     result["plugin_copied"] = (SUPPORT / "plugin" / "nmos-pocketrisu.js").is_file()
     result["nothing_written_inside"] = not (app / "Contents" / "Resources" / "data").exists()
@@ -89,7 +95,8 @@ def main() -> int:
     result["quit_s"] = wait(lambda: not health() and pg_stopped(app) and not app_running(app), 90,
                             "the app, the sidecar and PostgreSQL to stop")
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    ok = (result["verified_before"] and result["verified_while_running"] and result["data_in_support"]
+    result["menu_saw_stopping"] = "[app] state: stopping" in log()
+    ok = (result["verified_before"] and result["menu_saw_stopping"] and result["verified_while_running"] and result["data_in_support"]
           and result["plugin_copied"] and result["nothing_written_inside"]
           and result["login_item_on"] in ("enabled", "requiresApproval") and result["login_item_off"] == "notRegistered")
     shutil.rmtree(app, ignore_errors=True)
