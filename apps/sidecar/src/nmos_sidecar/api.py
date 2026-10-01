@@ -617,7 +617,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         """What a join, a split or the undo of either would change (PHASE-20 Q1–Q4): the chat's memory now and as it
         would be, both read as every request reads them, and the difference; nothing is written."""
         now = view_of(conn, head)
-        at = datetime.now(timezone.utc)
+        at = conn.execute("SELECT clock_timestamp() AS t").fetchone()["t"]  # the database's clock, as the rows it joins
         exclude: set[str] = set()
         if action == "join":
             check_join(now["resolution"], a["entity_type"], a["name"], a["same_as"])
