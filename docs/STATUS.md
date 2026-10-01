@@ -13,8 +13,12 @@ turn's secret and keeps its extraction; a check lists the turn's OPEN SECRETS an
 `learned` rows are served while the extraction it checked serves the turn; the chat's coverage counts checks. No
 plugin change. Amended after a post-merge review (ADR 0057 amendment 1): a check is asked again when it listed a secret
 an earlier turn found out (either finishing order), and a turn's latest check is served, not its generation's latest
-activation (replays unchanged by an activation). Next, step 3 (dropped facts, `fact_restore`). High risk (AGENTS.md §14): stored data and
-re-extraction.
+activation (replays unchanged by an activation). Step 3 (ADR 0044 amendment 3): a narrated fact a re-extraction of
+the same generation dropped (matched one to one with the new rows; held nowhere else in memory) is listed in "Needs
+attention" with **Restore**, counted on the panel's chat card and by `GET …/dropped`; `fact_restore` adds it back as
+the owner's version at its turn while the turn reads the same, and applies to the story's row when the turn states it
+again. A new plugin build. Next, step 4 (the loss tool, the local M0 copy end to end, the paid run after the owner's
+OK, latency). High risk (AGENTS.md §14): stored data, re-extraction and owner repairs.
 
 **Release `v0.2.0` (2026-09-28), the first milestone (`docs/ROADMAP-1.0.md`), at the owner's request.** Stage 4
 (knowledge and secrets, Phase 10) complete, with Stage 5 (Phases 11–12) and Stage 6 so far (Phase 13, Phase 14 steps
