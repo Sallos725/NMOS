@@ -74,9 +74,10 @@ IS_SECRET = """s.status = 'valid' AND s.knowledge = 'limited' AND cardinality(s.
 # - its extraction was made, and its check (if any) read its OPEN SECRETS, before a secret of an earlier turn could be
 #   listed (`seen`: when the turn last looked for reveals);
 # - its check is another reveal generation's (the latest check of a turn is the one served, item 3);
-# - its check listed a secret as kept from someone whom an earlier turn found it out for (a reveal, of a check or of an
-#   extraction, live now): two workers checked them at once, in either order, and the listing may have given one of its
-#   at most OPEN_SECRETS slots to that secret. Judged by what the check listed, not by when it was stored.
+# - its check listed a secret as kept from someone whom an earlier turn found it out for (a reveal served now: of that
+#   turn's extraction of `key` or of its latest check): two workers checked them at once, in either order, and the
+#   listing may have given one of its at most OPEN_SECRETS slots to that secret. Judged by what the check listed, not by
+#   when it was stored.
 UNCHECKED = """
 WITH anchor AS (
     SELECT am.turn, am.source_revision_id AS rid, am.turn_hash
@@ -90,23 +91,23 @@ checked AS (  -- each turn's live check: the latest made (one per turn since rev
     WHERE r.discarded_at IS NULL
     ORDER BY a.turn, r.created_at DESC, r.id DESC
 ),
-found AS (  -- reveals live now, by the turn that made them: who found out which listed secret
-    SELECT a.turn, s.subject, s.value FROM anchor a
-    JOIN extraction r ON r.source_revision_id = a.rid AND r.window_hash IN (a.turn_hash, %(window)s || a.turn_hash)
-    JOIN assertion s ON s.extraction_id = r.id
-    WHERE r.discarded_at IS NULL AND s.status = 'valid' AND s.predicate = 'learned'
-),
-stale AS (  -- checks that listed a secret as kept from someone an earlier turn found it out for
-    SELECT DISTINCT k.id FROM checked k CROSS JOIN LATERAL jsonb_array_elements(k.hints->'secrets') h
-    JOIN found f ON f.turn < k.turn AND f.value = '[turn ' || (h->>'turn') || '] ' || (h->>'text')
-                AND h->'kept_from' ? f.subject
-),
 cur AS (
     SELECT a.turn, a.rid, a.turn_hash, x.id AS xid, x.created_at, k.id AS check_id, k.rkey,
            greatest(x.created_at, k.read_at) AS seen
     FROM anchor a JOIN extraction x ON x.source_revision_id = a.rid AND x.window_hash = a.turn_hash
     LEFT JOIN checked k ON k.turn = a.turn AND k.hints->>'checks' = x.id::text
     WHERE x.extractor_key = %(key)s AND x.discarded_at IS NULL
+),
+found AS (  -- reveals served now, by the turn that made them: the turn's extraction of `key` and its latest check
+    SELECT c.turn, s.subject, s.value FROM cur c
+    JOIN assertion s ON s.extraction_id IN (c.xid, c.check_id)
+    WHERE s.status = 'valid' AND s.predicate = 'learned'
+),
+stale AS (  -- checks that listed a secret as kept from someone an earlier turn found it out for
+    SELECT DISTINCT c.check_id AS id FROM cur c JOIN checked k ON k.id = c.check_id
+    CROSS JOIN LATERAL jsonb_array_elements(k.hints->'secrets') h
+    JOIN found f ON f.turn < c.turn AND f.value = '[turn ' || (h->>'turn') || '] ' || (h->>'text')
+                AND h->'kept_from' ? f.subject
 ),
 secret_turn AS (
     SELECT DISTINCT c.turn, c.rid, c.turn_hash FROM cur c JOIN assertion s ON s.extraction_id = c.xid WHERE """ + IS_SECRET + """
@@ -208,7 +209,9 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         if conn.execute("SELECT 1 FROM extraction WHERE id = %s AND discarded_at IS NULL FOR SHARE",
                         (checked,)).fetchone() is None:
             return "obsolete"
-        window = WINDOW + turn_hash  # one live check per turn, whatever its generation (ADR 0057 amendment 1)
+        window = WINDOW + turn_hash  # one live check per turn, whatever its generation (ADR 0057 amendment 1):
+        # workers of two generations may store the same turn's at once, so replace under a lock of the turn's window
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 57))", (f"{revision_id}:{window}",))
         conn.execute("UPDATE extraction SET discarded_at = now() WHERE source_revision_id = %s AND window_hash = %s"
                      " AND discarded_at IS NULL", (revision_id, window))
         check_id = uuid7()

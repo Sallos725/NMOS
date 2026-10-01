@@ -209,3 +209,28 @@ def test_a_check_that_listed_a_secret_found_out_earlier_is_checked_again(migrate
         assert c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["reveal"] == 1
         drain(migrated, SecretRecorder())
         assert reveals.unchecked(db, ex.key, rv.key, conv) == []  # its new check lists nothing found out: settled
+
+
+def test_a_reveal_memory_does_not_serve_marks_no_check_stale(migrated, db):
+    """Copilot review of #215: an older generation's extraction is stored but not served; its reveal must not make a
+    later turn's check stale (each press would queue it again)."""
+    from nmos_sidecar import reveals
+
+    with make_client(migrated, **LLM) as c:
+        _, conv = checked(c, migrated, db)
+        ex, rv = active_generation(db, "extract"), active_generation(db, "reveal")
+        listed = db.execute("SELECT hints->'secrets'->0 AS s FROM extraction WHERE window_hash LIKE 'reveal:%%'"
+                            " AND jsonb_array_length(hints->'secrets') > 0 AND discarded_at IS NULL"
+                            " ORDER BY created_at LIMIT 1").fetchone()["s"]  # turn 1's check listed the secret
+        turn1 = db.execute("SELECT am.source_revision_id AS rid, am.turn_hash FROM active_membership am"
+                           " JOIN conversation c ON c.head_commit_id = am.commit_id WHERE am.turn = 1").fetchone()
+        old = generations.make("extract", "http://old-llm/v1", "old")
+        generations.ensure(db, old)
+        xid = uuid7()
+        db.execute("INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model,"
+                   " raw) VALUES (%s, %s, %s, 'old', %s, 'old', '{}')", (xid, turn1["rid"], turn1["turn_hash"], old.key))
+        db.execute("INSERT INTO assertion (extraction_id, source_revision_id, subject, subject_type, predicate, value,"
+                   " status) VALUES (%s, %s, %s, 'character', 'learned', %s, 'valid')",
+                   (xid, turn1["rid"], listed["kept_from"][0], f"[turn {listed['turn']}] {listed['text']}"))
+        db.commit()
+        assert reveals.unchecked(db, ex.key, rv.key, conv) == []  # turn 2's check listed it; turn 1's old row is not served
