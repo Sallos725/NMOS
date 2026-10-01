@@ -102,8 +102,8 @@ def main() -> int:
     if mode == "suite":
         return suite(bundle)
     if mode == "tray":
-        smoke = Path(__file__).parent / "windows" / "tray_smoke.py"
-        return subprocess.run([str(bundle_python(bundle)), str(smoke), str(bundle)]).returncode
+        tray_smoke = Path(__file__).parent / "windows" / "tray_smoke.py"
+        return subprocess.run([str(bundle_python(bundle)), str(tray_smoke), str(bundle)]).returncode
     raise SystemExit(f"unknown mode {mode}")
 
 
