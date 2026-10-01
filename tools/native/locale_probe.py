@@ -45,8 +45,9 @@ for loc in sys.argv[2:]:
             continue
         with (pgdata / "postgresql.conf").open("a") as f:
             f.write(f"\nport = {port}\nlisten_addresses = '127.0.0.1'\nunix_socket_directories = ''\n")
+        # No pipes: on Windows the postmaster inherits them and a captured pg_ctl start never sees EOF.
         subprocess.run([str(binp / f"pg_ctl{exe}"), "-D", str(pgdata), "-l", str(Path(tmp) / "log"), "-w", "start"],
-                       check=True, capture_output=True)
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             with psycopg.connect(f"postgresql://nmos:{pw}@127.0.0.1:{port}/postgres") as c:
                 c.execute("CREATE EXTENSION pg_trgm")
@@ -55,4 +56,4 @@ for loc in sys.argv[2:]:
             print(f"{loc!r} on {row[0].split(' on ')[0]}: similarity={row[1]} trgm={row[2]}")
         finally:
             subprocess.run([str(binp / f"pg_ctl{exe}"), "-D", str(pgdata), "-m", "fast", "-w", "stop"],
-                           capture_output=True)
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

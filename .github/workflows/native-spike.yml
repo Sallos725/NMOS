@@ -21,6 +21,7 @@ jobs:
           - { target: macos-arm64, os: macos-14 }
           - { target: win-x64, os: windows-2022 }
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
