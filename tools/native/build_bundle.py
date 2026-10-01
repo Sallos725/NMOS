@@ -88,7 +88,9 @@ def build_pgvector(pgsql: Path, work: Path, windows: bool) -> None:
     if not src.exists():
         subprocess.run(["git", "-c", "advice.detachedHead=false", "clone", "-q", "--depth", "1", "-b", pin["tag"],
                         pin["repo"], str(src)], check=True)
-    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=src, capture_output=True, text=True, check=True).stdout.strip()
+    # safe.directory: a cached clone made by another user (the build image runs as root over a host-owned cache).
+    head = subprocess.run(["git", "-c", "safe.directory=*", "rev-parse", "HEAD"], cwd=src, capture_output=True,
+                          text=True, check=True).stdout.strip()
     if head != pin["commit"]:
         raise SystemExit(f"pgvector {pin['tag']} is {head}, not the pinned {pin['commit']} (tools/native/sources.json)")
     if windows:
@@ -161,11 +163,11 @@ LINUX_SYSTEM_LIBS = ("linux-vdso", "ld-linux", "libc.so", "libm.so", "libdl.so",
 PG_NEEDED_MODULES = {"vector", "pg_trgm", "plpgsql", "dict_snowball", "libpq", "libpgtypes", "libecpg"}
 
 
-def vendor_linux_libs(pgsql: Path) -> list[str]:
+def vendor_linux_libs(pgsql: Path) -> dict[str, Path]:
     """Copy the shared libraries Postgres links from the build host into pgsql/lib ($ORIGIN/../lib RUNPATH)."""
     lib = pgsql / "lib"
     elves = [p for p in (pgsql / "bin").iterdir() if p.is_file()] + list(lib.rglob("*.so*"))
-    copied: set[str] = set()
+    copied: dict[str, Path] = {}
     for elf in elves:
         # Resolve as the launcher runs it: pgsql/lib first (LD_LIBRARY_PATH), so Postgres' own libraries resolve.
         out = subprocess.run(["ldd", str(elf)], capture_output=True, text=True,
@@ -184,19 +186,44 @@ def vendor_linux_libs(pgsql: Path) -> list[str]:
             if name.startswith(LINUX_SYSTEM_LIBS) or (lib / name).exists() or str(path).startswith(str(pgsql)):
                 continue
             shutil.copy2(path.resolve(), lib / name)
-            copied.add(name)
+            copied[name] = path
     # RUNPATH covers only direct dependencies; the launcher puts pgsql/lib on LD_LIBRARY_PATH for the indirect ones
     # (libxml2 → ICU, gssapi → krb5).
-    return sorted(copied)
+    return copied
+
+
+def check_linux_packages(copied: dict[str, Path]) -> None:
+    """The vendored libraries' Ubuntu packages must be the versions pinned for this architecture (sources.json)."""
+    arch = subprocess.run(["dpkg", "--print-architecture"], capture_output=True, text=True, check=True).stdout.strip()
+    seen: dict[str, str] = {}
+    for path in copied.values():
+        owner = subprocess.run(["dpkg", "-S", str(path)], capture_output=True, text=True)
+        if owner.returncode:  # /lib is a symlink to /usr/lib on Ubuntu; dpkg knows one spelling
+            owner = subprocess.run(["dpkg", "-S", str(path.resolve())], capture_output=True, text=True, check=True)
+        package = owner.stdout.split(":")[0].strip()
+        seen[package] = subprocess.run(["dpkg-query", "-W", "-f=${Version}", f"{package}:{arch}"], capture_output=True,
+                                       text=True, check=True).stdout.strip()
+    pinned = SOURCES["linux_build"]["packages"].get(arch, {})
+    if seen != pinned:
+        raise SystemExit(f"vendored Ubuntu packages for {arch} differ from sources.json linux_build.packages.{arch}:\n"
+                         + json.dumps(dict(sorted(seen.items())), indent=2))
+    log(f"vendored packages match the pins ({len(seen)})")
 
 
 def install_sidecar(python: Path, work: Path) -> None:
+    """The sidecar's dependencies from uv.lock, each checked against the lock's SHA-256 and taken only as a built
+    wheel (no build step that could fetch an unpinned build backend); the sidecar itself is pure Python and is copied
+    in as source, so its own build backend (hatchling) is never downloaded either."""
     sidecar = REPO / "apps" / "sidecar"
     req = work / "requirements.txt"
-    subprocess.run(["uv", "export", "--frozen", "--no-dev", "--no-emit-project", "--no-hashes", "-q", "-o", str(req)],
+    subprocess.run(["uv", "export", "--frozen", "--no-dev", "--no-emit-project", "-q", "-o", str(req)],
                    cwd=sidecar, check=True)
-    subprocess.run(["uv", "pip", "install", "-q", "--python", str(python), "-r", str(req)], check=True)
-    subprocess.run(["uv", "pip", "install", "-q", "--python", str(python), "--no-deps", str(sidecar)], check=True)
+    subprocess.run(["uv", "pip", "install", "-q", "--python", str(python), "--require-hashes", "--only-binary", ":all:",
+                    "-r", str(req)], check=True)
+    purelib = subprocess.run([str(python), "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+    shutil.copytree(sidecar / "src" / "nmos_sidecar", Path(purelib) / "nmos_sidecar",
+                    ignore=shutil.ignore_patterns("__pycache__"))
 
 
 PG_KEEP_BINS = {"initdb", "pg_ctl", "postgres", "pg_dump", "pg_restore", "pg_controldata"}
@@ -237,6 +264,9 @@ def main() -> None:
     ap.add_argument("--version", required=True)
     ap.add_argument("--out", type=Path, default=REPO / "dist-native")
     ap.add_argument("--cache", type=Path, default=REPO / ".native-cache")
+    ap.add_argument("--check-packages", action="store_true",
+                    help="Linux, inside the pinned build image (build_linux.py): fail unless the vendored libraries "
+                         "come from the pinned package versions")
     a = ap.parse_args()
 
     triple = TARGETS[a.target]
@@ -259,7 +289,10 @@ def main() -> None:
     build_pgvector(stage / "pgsql", work, windows)
     prune_pg_bins(stage / "pgsql")
     if a.target.startswith("linux"):
-        log(f"vendored: {', '.join(vendor_linux_libs(stage / 'pgsql'))}")
+        copied = vendor_linux_libs(stage / "pgsql")
+        log(f"vendored: {', '.join(sorted(copied))}")
+        if a.check_packages:
+            check_linux_packages(copied)
     install_sidecar(python, work)
     prune(stage, windows)
 

@@ -78,6 +78,7 @@ def ascii_path(path: Path) -> Path:
 # Child processes: inherit the console, or (tray) write to the log file with no console window of their own.
 CHILD_KW: dict = {}
 CHILD_KW_NO_OUTPUT: dict = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+CHILD_KW_NO_OUTPUT_ERR: dict = {}  # extra flags for a captured child (the tray adds CREATE_NO_WINDOW)
 
 
 def run(cmd: list[str], **kw) -> None:
@@ -116,15 +117,21 @@ def lock_data_dir(data: Path):
     return f
 
 
-def port_in_use(port: int) -> bool:
+def port_in_use(host: str, port: int) -> bool:
+    """Whether binding host:port fails, which is what the server about to listen there would hit."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.5)
-        return s.connect_ex(("127.0.0.1", port)) == 0
+        if not WINDOWS:  # as the servers do: a port in TIME_WAIT is free, one with a listener is not
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind((host, port))
+        except OSError:
+            return True
+    return False
 
 
-def require_free_port(port: int, what: str, key: str) -> None:
+def require_free_port(host: str, port: int, what: str, key: str) -> None:
     """Q10: a fixed port in use stops the start with its name; a changed port would break the plugin's URL."""
-    if port_in_use(port):
+    if port_in_use(host, port):
         raise SystemExit(
             f"Port {port} ({what}) is already in use by another program. Close it, or set {key} in .env next to "
             f"NMOS to a free port.\n"
@@ -139,6 +146,19 @@ def newer_migrations(conn) -> list[str]:
     shipped = {p.name for p in (ROOT / "migrations").glob("[0-9][0-9][0-9][0-9]_*.sql")}
     applied = {r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()}
     return sorted(applied - shipped)
+
+
+def restrict_to_this_user(data: Path) -> None:
+    """Windows: the data folder (the database and its password) readable by this user and SYSTEM only. A folder made
+    under C:\\ inherits access for every signed-in user, and a POSIX mode does not change a Windows ACL."""
+    marker = data / ".acl-owner-only"
+    if marker.exists():
+        return
+    sid = subprocess.run(["whoami", "/user", "/fo", "csv", "/nh"], capture_output=True, text=True, check=True,
+                         **CHILD_KW_NO_OUTPUT_ERR).stdout.strip().split(",")[-1].strip('"')
+    run(["icacls", str(data), "/inheritance:r", "/grant:r", f"*{sid}:(OI)(CI)F", "/grant:r", "*S-1-5-18:(OI)(CI)F",
+         "/T", "/C", "/Q"], stdout=subprocess.DEVNULL)
+    marker.touch()
 
 
 def init_cluster(pgdata: Path, password: str, port: int) -> None:
@@ -174,7 +194,7 @@ class Services:
             os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(filter(None, [pglib, os.environ.get("LD_LIBRARY_PATH")]))
         self.data = Path(self.env.get("NMOS_DATA_DIR") or ROOT / "data")
         self.data.mkdir(mode=0o700, parents=True, exist_ok=True)
-        self.pg_port = int(self.env.get("NMOS_PG_PORT", "54390"))
+        self.pg_port = int(self.env.get("NMOS_DB_PORT", "54390"))  # the key .env.example names
         self.bind = self.env.get("NMOS_SIDECAR_BIND", "127.0.0.1")
         self.port = self.env.get("NMOS_SIDECAR_PORT", "8790")
         self.url = f"http://{self.bind}:{self.port}"
@@ -187,7 +207,9 @@ class Services:
     def start(self) -> None:
         data = self.data
         self._data_lock = lock_data_dir(data)  # before anything that stop() would undo
-        require_free_port(int(self.port), "the NMOS sidecar", "NMOS_SIDECAR_PORT")
+        require_free_port(self.bind, int(self.port), "the NMOS sidecar", "NMOS_SIDECAR_PORT")
+        if WINDOWS:
+            restrict_to_this_user(data)
         if WINDOWS:
             global PGSQL
             PGSQL, data = ascii_path(PGSQL), ascii_path(data)
@@ -209,7 +231,7 @@ class Services:
         if status.returncode == 0:
             log("postgres from an earlier run is still up; using it")
         else:
-            require_free_port(self.pg_port, "the NMOS database", "NMOS_PG_PORT")
+            require_free_port("127.0.0.1", self.pg_port, "the NMOS database", "NMOS_DB_PORT")
             run([pg_bin("pg_ctl"), "-D", str(pgdata), "-l", str(data / "postgres.log"), "-w", "start"])
         log(f"postgres up on 127.0.0.1:{self.pg_port} ({time.monotonic() - t0:.1f} s)")
 

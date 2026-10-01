@@ -26,10 +26,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0  # no major tags since v8
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq libxml2
-      - name: Build
-        if: runner.os != 'Windows'
+      - name: Build (Linux, in the pinned build image; the vendored libraries' packages are checked)
+        if: runner.os == 'Linux'
+        run: uv run --no-project --python 3.12 python tools/native/build_linux.py --target ${{ matrix.target }} --version 0.0.0-ci
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
         run: uv run --no-project --python 3.12 python tools/native/build_bundle.py --target ${{ matrix.target }} --version 0.0.0-ci
       - name: Build (MSVC x64 environment for pgvector)
         if: runner.os == 'Windows'

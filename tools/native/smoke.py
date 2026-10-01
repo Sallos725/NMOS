@@ -82,7 +82,16 @@ def connect(bundle: Path):
     import psycopg
 
     pw = (bundle / "data" / "db-password").read_text(encoding="utf-8").strip()
-    return psycopg.connect(f"postgresql://nmos:{pw}@127.0.0.1:{os.environ.get('NMOS_PG_PORT', '54390')}/nmos")
+    return psycopg.connect(f"postgresql://nmos:{pw}@127.0.0.1:{os.environ.get('NMOS_DB_PORT', '54390')}/nmos")
+
+
+def check_owner_only_acl(data: Path) -> str:
+    """Windows: nobody but this user and SYSTEM may read the database or its password (launcher, Q5 review)."""
+    acl = subprocess.run(["icacls", str(data / "db-password")], capture_output=True, text=True).stdout
+    broad = [g for g in ("BUILTIN\\Users", "Authenticated Users", "Everyone", "BUILTIN\\Administrators") if g in acl]
+    if broad:  # inherited entries are fine: they come from data/, which the launcher limits to the owner
+        raise SystemExit(f"db-password is readable beyond its owner ({broad}):\n{acl}")
+    return " ".join(acl.split())
 
 
 def check_sql(bundle: Path) -> dict:
@@ -103,6 +112,8 @@ def main() -> None:
     proc, result["first_start_s"] = start(bundle)
     try:
         result["sql"] = check_sql(bundle)
+        if WINDOWS:
+            result["data_acl"] = check_owner_only_acl(bundle / "data")
         result["refused_second_launcher"] = refused(bundle, "already running")
     finally:
         result["stop_s"] = stop(proc, bundle)
