@@ -1,4 +1,7 @@
-"""CI step (spike): unpack a built bundle under a non-ASCII path with a space, then run smoke.py with its Python."""
+"""CI step (spike): unpack a built bundle under a non-ASCII path with a space, then run smoke.py with its Python.
+
+    ci_smoke.py <archive> <parent dir> [<folder name, default 한글 폴더>]
+"""
 
 from __future__ import annotations
 
@@ -9,7 +12,7 @@ import tarfile
 import zipfile
 from pathlib import Path
 
-archive, dest = Path(sys.argv[1]), Path(sys.argv[2]) / "한글 폴더"
+archive, dest = Path(sys.argv[1]), Path(sys.argv[2]) / (sys.argv[3] if len(sys.argv) > 3 else "한글 폴더")
 shutil.rmtree(dest, ignore_errors=True)
 dest.mkdir(parents=True)
 if archive.suffix == ".zip":

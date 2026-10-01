@@ -37,10 +37,27 @@ jobs:
           otool -L dist-native/NMOS-v0.0.0-spike-macos-arm64/pgsql/bin/postgres
           otool -L dist-native/NMOS-v0.0.0-spike-macos-arm64/pgsql/lib/vector.dylib || ls dist-native/NMOS-v0.0.0-spike-macos-arm64/pgsql/lib | head -50
       - name: Smoke (first start, pgvector + Korean pg_trgm, clean stop, second start)
+        continue-on-error: ${{ runner.os == 'Windows' }}  # spike: records whether a Korean path works on a cp1252 runner
         shell: bash
         run: |
           archive=$(ls dist-native/NMOS-v0.0.0-spike-${{ matrix.target }}.*)
           uv run --no-project --python 3.12 python tools/native/ci_smoke.py "$archive" "${{ runner.temp }}"
+      - name: Locale probe (diagnostic)
+        if: always() && runner.os != 'Linux'
+        shell: bash
+        run: |
+          archive=$(ls dist-native/NMOS-v0.0.0-spike-${{ matrix.target }}.*)
+          mkdir -p probe && tar -xf "$archive" -C probe 2>/dev/null || unzip -q "$archive" -d probe
+          b=$(ls -d probe/NMOS-*)
+          py=$b/python/bin/python3; [ -f "$py" ] || py=$b/python/python.exe
+          if [ "$RUNNER_OS" = Windows ]; then locs="en-US ko-KR Korean_Korea.949 C"; else locs="en_US.UTF-8 ko_KR.UTF-8 UTF-8 C.UTF-8 C"; fi
+          "$py" tools/native/locale_probe.py "$b" $locs
+      - name: Smoke under a non-ASCII path the ANSI code page can hold (Windows)
+        if: always() && runner.os == 'Windows'
+        shell: bash
+        run: |
+          archive=$(ls dist-native/NMOS-v0.0.0-spike-${{ matrix.target }}.*)
+          uv run --no-project --python 3.12 python tools/native/ci_smoke.py "$archive" "${{ runner.temp }}" "Café folder"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
