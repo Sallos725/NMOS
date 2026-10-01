@@ -11,7 +11,8 @@ turn's anchor revision under the window `reveal:<turn hash>`, its hints naming t
 the secrets it listed. A read serves its `learned` rows with the turn while the extraction it checked is the one
 serving the turn (`facts.ACTIVE_ASSERTIONS`): a rebuild, a re-extraction after a join's undo or a new extractor
 generation serves the turn with another extraction, and the check stops counting with it. A later check of the same
-turn replaces the earlier one (one live check per turn and generation), listing every secret still open before the turn.
+turn replaces the earlier one, whatever its generation (one live check per turn), listing every secret still open
+before the turn.
 """
 
 from __future__ import annotations
@@ -69,35 +70,42 @@ def generation(settings: Settings) -> Generation | None:
 IS_SECRET = """s.status = 'valid' AND s.knowledge = 'limited' AND cardinality(s.hidden_from) > 0
     AND s.predicate <> ALL(%(not_secrets)s) AND coalesce(s.modality, 'actual') <> 'dreamed'"""
 
-# Turns of the head whose extraction of `key` was made, and not checked since by the reveal generation `rkey`, before a
-# secret of an earlier turn could be listed (K29, audit G2): `seen` is when the turn last looked for reveals, its
-# extraction or its latest live check. And turns whose check was made before an earlier turn's check that found a
-# reveal: two workers checked them at once, and the later turn's OPEN SECRETS may have kept a slot for a secret found out
-# meanwhile (at most OPEN_SECRETS are listed).
+# Turns of the head whose extraction of `key` needs a check of the reveal generation `rkey` (K29, audit G2, ADR 0057):
+# - its extraction was made, and its check (if any) read its OPEN SECRETS, before a secret of an earlier turn could be
+#   listed (`seen`: when the turn last looked for reveals);
+# - its check is another reveal generation's (the latest check of a turn is the one served, item 3);
+# - its check listed a secret as kept from someone whom an earlier turn found it out for (a reveal, of a check or of an
+#   extraction, live now): two workers checked them at once, in either order, and the listing may have given one of its
+#   at most OPEN_SECRETS slots to that secret. Judged by what the check listed, not by when it was stored.
 UNCHECKED = """
 WITH anchor AS (
     SELECT am.turn, am.source_revision_id AS rid, am.turn_hash
     FROM conversation c JOIN active_membership am ON am.commit_id = c.head_commit_id
     WHERE c.id = %(conv)s AND am.turn_hash IS NOT NULL
 ),
-checked AS (
-    SELECT x.turn, x.xid, max(x.created_at) AS at FROM (
-        SELECT a.turn, r.hints->>'checks' AS xid, r.created_at FROM anchor a
-        JOIN extraction r ON r.source_revision_id = a.rid AND r.window_hash = %(window)s || a.turn_hash
-        WHERE r.extractor_key = %(rkey)s AND r.discarded_at IS NULL) x
-    GROUP BY 1, 2
+checked AS (  -- each turn's live check: the latest made (one per turn since review 2026-10-01; ADR 0057 amendment 1)
+    SELECT DISTINCT ON (a.turn) a.turn, r.id, r.hints, r.extractor_key AS rkey,
+           coalesce((r.hints->>'read_at')::timestamptz, r.created_at) AS read_at
+    FROM anchor a JOIN extraction r ON r.source_revision_id = a.rid AND r.window_hash = %(window)s || a.turn_hash
+    WHERE r.discarded_at IS NULL
+    ORDER BY a.turn, r.created_at DESC, r.id DESC
 ),
-revealing AS (  -- checks that found a reveal
-    SELECT a.turn, r.created_at FROM anchor a
-    JOIN extraction r ON r.source_revision_id = a.rid AND r.window_hash = %(window)s || a.turn_hash
-    WHERE r.extractor_key = %(rkey)s AND r.discarded_at IS NULL
-      AND EXISTS (SELECT 1 FROM assertion s WHERE s.extraction_id = r.id AND s.status = 'valid')
+found AS (  -- reveals live now, by the turn that made them: who found out which listed secret
+    SELECT a.turn, s.subject, s.value FROM anchor a
+    JOIN extraction r ON r.source_revision_id = a.rid AND r.window_hash IN (a.turn_hash, %(window)s || a.turn_hash)
+    JOIN assertion s ON s.extraction_id = r.id
+    WHERE r.discarded_at IS NULL AND s.status = 'valid' AND s.predicate = 'learned'
+),
+stale AS (  -- checks that listed a secret as kept from someone an earlier turn found it out for
+    SELECT DISTINCT k.id FROM checked k CROSS JOIN LATERAL jsonb_array_elements(k.hints->'secrets') h
+    JOIN found f ON f.turn < k.turn AND f.value = '[turn ' || (h->>'turn') || '] ' || (h->>'text')
+                AND h->'kept_from' ? f.subject
 ),
 cur AS (
-    SELECT a.turn, a.rid, a.turn_hash, x.id AS xid, x.created_at, k.at AS last_check,
-           greatest(x.created_at, k.at) AS seen
+    SELECT a.turn, a.rid, a.turn_hash, x.id AS xid, x.created_at, k.id AS check_id, k.rkey,
+           greatest(x.created_at, k.read_at) AS seen
     FROM anchor a JOIN extraction x ON x.source_revision_id = a.rid AND x.window_hash = a.turn_hash
-    LEFT JOIN checked k ON k.turn = a.turn AND k.xid = x.id::text
+    LEFT JOIN checked k ON k.turn = a.turn AND k.hints->>'checks' = x.id::text
     WHERE x.extractor_key = %(key)s AND x.discarded_at IS NULL
 ),
 secret_turn AS (
@@ -113,7 +121,7 @@ WHERE EXISTS (
     SELECT 1 FROM secret_turn st
     WHERE st.turn < t.turn AND NOT EXISTS (
         SELECT 1 FROM shown v WHERE v.turn = st.turn AND v.since < t.seen AND (v.until IS NULL OR v.until > t.seen)))
-   OR t.last_check IS NOT NULL AND EXISTS (SELECT 1 FROM revealing c WHERE c.turn < t.turn AND c.created_at > t.last_check)
+   OR t.check_id IS NOT NULL AND (t.rkey <> %(rkey)s OR t.check_id IN (SELECT id FROM stale))
 ORDER BY t.turn
 """
 
@@ -181,6 +189,7 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
     ctx = load_context(conn, revision_id, turn_hash, turns, base["extractor_key"])
     if ctx is None:
         return "obsolete"  # the head changed; the turn is extracted again
+    read_at = conn.execute("SELECT clock_timestamp() AS t").fetchone()["t"]  # when it looked (UNCHECKED's `seen`)
     secrets = secret_hints(ctx, earlier_assertions(conn, ctx, base["extractor_key"]))
     if not secrets:
         parsed, raw, usage = {"secrets": []}, "", NO_CALL  # nothing open before the turn: checked without a call
@@ -199,16 +208,17 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         if conn.execute("SELECT 1 FROM extraction WHERE id = %s AND discarded_at IS NULL FOR SHARE",
                         (checked,)).fetchone() is None:
             return "obsolete"
-        window = WINDOW + turn_hash
+        window = WINDOW + turn_hash  # one live check per turn, whatever its generation (ADR 0057 amendment 1)
         conn.execute("UPDATE extraction SET discarded_at = now() WHERE source_revision_id = %s AND window_hash = %s"
-                     " AND extractor_key = %s AND discarded_at IS NULL", (revision_id, window, gen.key))
+                     " AND discarded_at IS NULL", (revision_id, window))
         check_id = uuid7()
         conn.execute(
             "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model, raw,"
             " coverage, members, hints, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (check_id, revision_id, window, VERSION, gen.key, gen.model, Jsonb({"reply": raw[:20000]}),
              Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]],
-             Jsonb({"checks": str(checked), "secrets": secrets}), Jsonb(usage) if usage is not None else None))
+             Jsonb({"checks": str(checked), "secrets": secrets, "read_at": read_at.isoformat()}),
+             Jsonb(usage) if usage is not None else None))
         rows = [(check_id, revision_id, *(Jsonb(a[c]) if c == "participants" and a[c] is not None else a[c]
                                           for c in ASSERTION_COLUMNS))
                 for a in normalize(items, turn_text, None, shown_target(ctx))]

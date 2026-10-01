@@ -60,3 +60,19 @@ every fact anew. Only the reveal was missing.
 - The fact read gains a probe pattern, not a probe: request-path latency is measured in step 4.
 - A rebuild still extracts every turn, recent ones first; K29 can follow it, and a press of "Extract all history"
   then checks those turns. Facts a rebuild drops are Phase 22 step 3's report.
+
+## Amendment 1 (2026-10-01): a check judged by what it listed; the latest check served
+
+A review after the merge (AGE-25, two static findings) showed two gaps in items 3 and 4.
+
+6. **Stale by content, not by time.** Item 4 asked a turn's check again when an earlier turn's revealing check was
+   stored after it. Two workers can also finish the other way: the later turn's check reads its OPEN SECRETS before the
+   earlier check's reveal is stored, and is stored after it. A check now records when it read its OPEN SECRETS
+   (`hints.read_at`, which is also when it looked for item 4's first rule), and a turn needs a check again when its
+   check listed a secret as kept from someone whom an earlier turn's live reveal (of a check or an extraction) found it
+   out for: whatever the order, that listing may have given one of its 8 slots to a secret no longer open. Its new
+   check lists it no more, so a third press queues nothing.
+7. **One live check per turn; the latest made is served.** A new check of a turn discards the earlier one whatever its
+   generation, and the read serves a turn's latest check by `created_at`, not by its generation's `activated_at`: an
+   activation changes, so a reveal generation taken back would have changed what a recorded request replays. A press
+   checks again a turn whose check is another generation's than the active one.
