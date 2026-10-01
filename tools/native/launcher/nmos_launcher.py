@@ -164,8 +164,13 @@ def restrict_to_this_user(data: Path) -> None:
         return
     sid = subprocess.run(["whoami", "/user", "/fo", "csv", "/nh"], capture_output=True, text=True, check=True,
                          **CHILD_KW_NO_OUTPUT_ERR).stdout.strip().split(",")[-1].strip('"')
+    # The folder alone gets the owner-only entries, inherited by what it holds; what it already holds (data from an
+    # earlier start) is reset to inherit them. Granting folder inheritance flags to files with /T left an existing
+    # file with no usable entry (the lock file could no longer be opened, by its owner either).
     run(["icacls", str(data), "/inheritance:r", "/grant:r", f"*{sid}:(OI)(CI)F", "/grant:r", "*S-1-5-18:(OI)(CI)F",
-         "/T", "/C", "/Q"], stdout=subprocess.DEVNULL)
+         "/Q"], stdout=subprocess.DEVNULL)
+    if any(data.iterdir()):
+        run(["icacls", str(data / "*"), "/reset", "/T", "/C", "/Q"], stdout=subprocess.DEVNULL)
     marker.touch()
 
 
@@ -214,10 +219,10 @@ class Services:
 
     def start(self) -> None:
         data = self.data
+        if WINDOWS:
+            restrict_to_this_user(data)  # before the lock file and the database are made in it
         self._data_lock = lock_data_dir(data)  # before anything that stop() would undo
         require_free_port(self.bind, int(self.port), "the NMOS sidecar", "NMOS_SIDECAR_PORT")
-        if WINDOWS:
-            restrict_to_this_user(data)
         if WINDOWS:
             global PGSQL
             PGSQL, data = ascii_path(PGSQL), ascii_path(data)
