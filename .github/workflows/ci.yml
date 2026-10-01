@@ -24,7 +24,7 @@ jobs:
         working-directory: apps/sidecar
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0  # no major tags since v8
       - run: uv sync --frozen
       - run: uv run pytest -q
 
