@@ -6,7 +6,6 @@ Win32 through ctypes only, so the bundle needs no extra package.
 
 from __future__ import annotations
 
-import base64
 import ctypes
 import hashlib
 import os
@@ -14,6 +13,7 @@ import subprocess
 import sys
 import threading
 import traceback
+import winreg
 from ctypes import wintypes
 from pathlib import Path
 
@@ -22,7 +22,6 @@ import nmos_launcher as launcher
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 shell32 = ctypes.WinDLL("shell32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-ole32 = ctypes.WinDLL("ole32")
 
 LRESULT = ctypes.c_ssize_t
 WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
@@ -59,11 +58,6 @@ class NOTIFYICONDATAW(ctypes.Structure):
                 ("dwInfoFlags", wintypes.DWORD), ("guidItem", ctypes.c_byte * 16), ("hBalloonIcon", wintypes.HICON)]
 
 
-class GUID(ctypes.Structure):
-    _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD), ("Data3", wintypes.WORD),
-                ("Data4", ctypes.c_ubyte * 8)]
-
-
 user32.DefWindowProcW.restype = LRESULT
 user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 user32.CreateWindowExW.restype = wintypes.HWND
@@ -85,9 +79,6 @@ user32.SetForegroundWindow.argtypes = [wintypes.HWND]
 kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
 shell32.Shell_NotifyIconW.argtypes = [wintypes.DWORD, ctypes.POINTER(NOTIFYICONDATAW)]
-shell32.SHGetKnownFolderPath.argtypes = [ctypes.POINTER(GUID), wintypes.DWORD, wintypes.HANDLE,
-                                        ctypes.POINTER(ctypes.c_wchar_p)]
-ole32.CoTaskMemFree.argtypes = [ctypes.c_void_p]
 kernel32.CreateMutexW.restype = wintypes.HANDLE
 kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
 
@@ -96,56 +87,37 @@ def message_box(text: str, error: bool = True) -> None:
     user32.MessageBoxW(None, text, "NMOS", MB_ICONERROR if error else MB_ICONINFORMATION)
 
 
-# --- start at login: a shortcut to this NMOS.exe in the user's Startup folder -----------------------------------------
+# --- start at login: this NMOS.exe in the user's Run key ------------------------------------------------------------
+# Not a Startup-folder shortcut: WScript.Shell writes a shortcut's paths in the ANSI code page, so a Korean folder
+# came back as "???" and an empty target (Phase 23 step 3, CI). The registry holds the path as it is.
 
-FOLDERID_STARTUP = GUID(0xB97D20BB, 0xF46A, 0x4C97, (ctypes.c_ubyte * 8)(0xBA, 0x10, 0x5E, 0x36, 0x08, 0x43, 0x08, 0x54))
+RUN_KEY, RUN_VALUE = r"Software\Microsoft\Windows\CurrentVersion\Run", "NMOS"
 EXE = launcher.ROOT / "NMOS.exe"
 
 
-def startup_shortcut() -> Path:
-    path = ctypes.c_wchar_p()
-    if shell32.SHGetKnownFolderPath(ctypes.byref(FOLDERID_STARTUP), 0, None, ctypes.byref(path)) != 0:
-        raise OSError("the Startup folder is unknown")
+def autostart_command() -> str | None:
     try:
-        return Path(path.value) / "NMOS.lnk"
-    finally:
-        ole32.CoTaskMemFree(ctypes.cast(path, ctypes.c_void_p))
-
-
-def powershell(script: str) -> str:
-    """Run a PowerShell script passed as UTF-16 (-EncodedCommand), so Korean paths survive; its output is UTF-8.
-    [Text.Encoding]::UTF8 would put a byte-order mark before the output (Windows PowerShell 5.1), and a path read
-    back with it compares unequal and cannot be started."""
-    script = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false\n" + script
-    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
-    r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
-                       capture_output=True, **launcher.CHILD_FLAGS)
-    if r.returncode:
-        raise OSError(r.stderr.decode("utf-8", "replace").strip() or f"powershell exited {r.returncode}")
-    return r.stdout.decode("utf-8-sig", "replace").strip()
-
-
-def ps_quote(path: Path) -> str:
-    return "'" + str(path).replace("'", "''") + "'"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
+            return winreg.QueryValueEx(key, RUN_VALUE)[0]
+    except FileNotFoundError:
+        return None
 
 
 def autostart_enabled() -> bool:
-    """On only when the shortcut starts this copy; one left by a moved or another copy reads as off."""
-    lnk = startup_shortcut()
-    if not lnk.exists():
-        return False
-    target = powershell(f"(New-Object -ComObject WScript.Shell).CreateShortcut({ps_quote(lnk)}).TargetPath")
-    return Path(target).resolve() == EXE.resolve()
+    """On only when the entry starts this copy; one left by a moved or another copy reads as off."""
+    command = autostart_command()
+    return command is not None and Path(command.strip('"')).resolve() == EXE.resolve()
 
 
 def set_autostart(on: bool) -> None:
-    lnk = startup_shortcut()
-    if not on:
-        lnk.unlink(missing_ok=True)
-        return
-    powershell(f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut({ps_quote(lnk)})\n"
-               f"$s.TargetPath = {ps_quote(EXE)}\n$s.WorkingDirectory = {ps_quote(launcher.ROOT)}\n"
-               f"$s.IconLocation = {ps_quote(EXE)} + ',0'\n$s.Description = 'NMOS'\n$s.Save()")
+    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+        if on:
+            winreg.SetValueEx(key, RUN_VALUE, 0, winreg.REG_SZ, f'"{EXE}"')
+        else:
+            try:
+                winreg.DeleteValue(key, RUN_VALUE)
+            except FileNotFoundError:
+                pass
 
 
 # --- the tray ---------------------------------------------------------------------------------------------------------

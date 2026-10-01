@@ -2,9 +2,9 @@
 
     tray_smoke.py <bundle>
 
-NMOS.exe brings up the tray and the sidecar; start at login is turned on (a Startup shortcut to this NMOS.exe), off
-and on again from the tray's own commands; the tray quits and PostgreSQL stops; the Startup shortcut starts NMOS
-again (as a sign-in would) and the tray quits once more; the shortcut is removed.
+NMOS.exe brings up the tray and the sidecar; start at login is turned on (this NMOS.exe in the user's Run key), off
+and on again from the tray's own commands; the tray quits and PostgreSQL stops; the Run entry's command starts NMOS
+again (as a sign-in would) and the tray quits once more; the entry is removed.
 """
 
 from __future__ import annotations
@@ -67,9 +67,8 @@ def quit_tray() -> float:
     return wait(lambda: not health() and pg_stopped() and not window(), 90, "the tray, the sidecar and PostgreSQL to stop")
 
 
-lnk = nmos_tray.startup_shortcut()
-lnk.unlink(missing_ok=True)
-result: dict = {"shortcut": str(lnk)}
+nmos_tray.set_autostart(False)
+result: dict = {}
 
 result["exe_exit"] = subprocess.run([str(bundle / "NMOS.exe")], timeout=30).returncode
 result["first_start_s"] = wait(lambda: health() and window(), 240, "the sidecar and the tray")
@@ -77,28 +76,21 @@ log = (bundle / "data" / "nmos.log").read_text(encoding="utf-8", errors="replace
 result["tray_icon_added"] = "tray icon added: True" in log
 
 command(nmos_tray.CMD_AUTOSTART)
-wait(lambda: lnk.exists(), 30, "the Startup shortcut")
+wait(lambda: nmos_tray.autostart_command() is not None, 30, "the Run entry")
+result["autostart_command"] = nmos_tray.autostart_command()
 result["autostart_points_here"] = nmos_tray.autostart_enabled()
 command(nmos_tray.CMD_AUTOSTART)
-wait(lambda: not lnk.exists(), 30, "the Startup shortcut to go")
+wait(lambda: nmos_tray.autostart_command() is None, 30, "the Run entry to go")
 command(nmos_tray.CMD_AUTOSTART)
-wait(lambda: lnk.exists(), 30, "the Startup shortcut again")
+wait(lambda: nmos_tray.autostart_command() is not None, 30, "the Run entry again")
 result["quit_s"] = quit_tray()
 
-# What Windows does with it at sign-in: start its target in its working directory. (os.startfile cannot open a .lnk
-# on the CI runner, a service session without the shell's associations; a desktop session can.)
-def shortcut(field: str) -> str:
-    return nmos_tray.powershell(f"(New-Object -ComObject WScript.Shell).CreateShortcut({nmos_tray.ps_quote(lnk)}).{field}")
-
-
-target, workdir = shortcut("TargetPath"), shortcut("WorkingDirectory")
-result["shortcut_target"], result["shortcut_workdir"] = target, workdir
-print("shortcut:", ascii(target), ascii(workdir), Path(target).exists(), flush=True)
-# NMOS.exe finds its folder from its own path, so an empty working directory would not stop it.
-subprocess.Popen([target], cwd=workdir or str(Path(target).parent))
-result["start_from_shortcut_s"] = wait(lambda: health() and window(), 120, "NMOS started from the Startup shortcut")
+# What Windows does with the Run entry at sign-in: start the command it holds.
+target = nmos_tray.autostart_command().strip('"')
+subprocess.Popen([target], cwd=str(Path(target).parent))
+result["start_from_run_entry_s"] = wait(lambda: health() and window(), 120, "NMOS started from the Run entry")
 result["second_quit_s"] = quit_tray()
-lnk.unlink(missing_ok=True)
+nmos_tray.set_autostart(False)
 
 print(json.dumps(result, ensure_ascii=False, indent=2))
 if not (result["exe_exit"] == 0 and result["autostart_points_here"]):

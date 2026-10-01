@@ -69,8 +69,9 @@ installs the plugin from the bundle and sets the URL shown in the tray: memory w
 
 1. **The bundle builder and launcher** from the spike, hardened: pinned sources (Q5), one launcher per data folder,
    private password file, the newer-data refusal (Q3), the port check (Q10).
-2. **Windows:** `NMOS.exe` with the plugin's icon, the tray (Q7), start at login (a shortcut in the user's Startup
-   folder), the short-path launch and its message.
+2. **Windows:** `NMOS.exe` with the plugin's icon, the tray (Q7), start at login (this `NMOS.exe` in the user's
+   `HKCU\...\Run` key; amended in step 3: a Startup-folder shortcut made by `WScript.Shell` stores its paths in the
+   ANSI code page and lost a Korean folder name), the short-path launch and its message.
 3. **macOS:** the patched `pg_trgm` (finding 2) and the menu-bar app (Q6).
 4. **Linux:** the vendored libraries (finding 4); `start.sh`, and a sample systemd user unit in the docs.
 5. **The dashboard** (Q8) in the sidecar.
