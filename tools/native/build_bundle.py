@@ -268,6 +268,8 @@ def build_macos_app(stage: Path, work: Path, version: str) -> Path:
             "NMOSVersion": version,
             "LSMinimumSystemVersion": "13.0", "LSUIElement": True,  # a menu-bar item, no Dock icon
             "NSHumanReadableCopyright": "MIT License",
+            # App Transport Security blocks plain http by default; the menu asks the sidecar on 127.0.0.1 over http.
+            "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
         }, f)
     signed = 0
     for p in sorted(contents.rglob("*")):
