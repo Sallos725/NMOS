@@ -1,14 +1,15 @@
 # Phase 26 — A repair whose item is gone suggests where it belongs now
 
-> **Status: draft (2026-10-01), awaiting the owner's approval.** Stage 6 (owner repair, ADR 0044), the remaining
+> **Status: approved (2026-10-01): every answer as proposed, and an exception to R7; current, alongside Phase 23.**
+> Stage 6 (owner repair, ADR 0044), the remaining
 > part of AGE-23 before `0.3.0`: the owner chose on 2026-10-01 to make a repair that matches nothing after a new
 > extractor generation easy to re-apply, rather than only rewording Stage 6's done criterion ("quality before time").
-> R7 (2026-10-01) keeps new phases to Stage 7 until 1.0, urgent fixes excepted; this phase needs the owner's
-> exception, as Phase 23 had. No release in this phase; `0.3.0` (AGE-7) follows it.
+> R7 (2026-10-01) keeps new phases to Stage 7 until 1.0, urgent fixes excepted; the owner granted this phase an
+> exception (2026-10-01), as Phase 23 had. No release in this phase; `0.3.0` (AGE-7) follows it.
 
 ## Questions and answers
 
-| # | Question | Proposed answer | Not chosen |
+| # | Question | Answer | Not chosen |
 |---|---|---|---|
 | Q1 | Which repairs get suggestions? | **Every repair that matches nothing now and names an item:** thread close and reopen, secret found out and kept, fact retract, correct and lock. Not a name split (it names two names, not an item) and not a restore (its fact is gone by definition, ADR 0057). A repair whose target turn was edited or deleted gets none either: the story changed there, so the owner decides afresh (ADR 0044 item 3). | Threads only (the measured case; secrets and facts orphan the same way). |
 | Q2 | What is a candidate? | **An item of the same head, in the state the repair would change, that no applied repair holds:** for a thread close, an open thread of the same kind and maker (and counterpart for a promise or a debt); for a reopen, a closed one; for a secret found out, a kept secret of the same predicate and subject (and object); for a keep, an ended one; for a fact repair, a current fact of the same predicate and subject (and object where the predicate is per object). At most three, ranked: a quote sharing a run with the repair's first (ADR 0044 amendment 2), then text similarity to the repair's target, then distance from its turn. No minimum similarity: the owner judges, and a wrong suggestion costs a glance. | A similarity floor (on the measured copy most real candidates sit below 0.2, so a floor would hide them); candidates from other heads (another character's thread is never the same thread). |
