@@ -92,9 +92,9 @@ def main(argv: list[str]) -> None:
         for c in measure(url):
             s, a = c["same_generation"], c["across_generations"]
             print(f"{url.rsplit('/', 1)[-1]} {c['conversation'][:8]}: same generation: turns {s['turns']}, facts "
-                  f"{s['facts']}, stated again {s['stated_again']}, lost {s['lost']}, dropped {s['dropped']} "
-                  f"{s['dropped_by_predicate']}; across generations: turns {a['turns']}, facts {a['facts']}, "
-                  f"stated again {a['stated_again']}, lost {a['lost']}")
+                  f"{s['facts']}, stated again {s['stated_again']}, lost {s['lost']} {s['lost_by_predicate']}, dropped "
+                  f"{s['dropped']} {s['dropped_by_predicate']}; across generations: turns {a['turns']}, facts {a['facts']}, "
+                  f"stated again {a['stated_again']}, lost {a['lost']} {a['lost_by_predicate']}")
 
 
 if __name__ == "__main__":
