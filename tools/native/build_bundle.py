@@ -11,6 +11,7 @@ import argparse
 import os
 import shutil
 import subprocess
+import sys
 import tarfile
 import time
 import urllib.request
@@ -73,6 +74,10 @@ def build_pgvector(pgsql: Path, work: Path, windows: bool) -> None:
     else:
         # OPTFLAGS="": no -march=native, so the library runs on any CPU of the target architecture.
         args = [f"PG_CONFIG={pgsql / 'bin' / 'pg_config'}", "OPTFLAGS="]
+        if sys.platform == "darwin":
+            # pg_config carries the SDK path of the machine that built Postgres; use this machine's SDK.
+            sdk = subprocess.run(["xcrun", "--show-sdk-path"], capture_output=True, text=True, check=True).stdout.strip()
+            args.append(f"PG_SYSROOT={sdk}")
         subprocess.run(["make", "-s", "clean"], cwd=src, check=False)
         subprocess.run(["make", "-s", *args], cwd=src, check=True)
         subprocess.run(["make", "-s", "install", *args], cwd=src, check=True)

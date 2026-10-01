@@ -91,6 +91,11 @@ def install_windows_stop_handlers(shutdown) -> None:
 
 
 def main() -> int:
+    # Paths can hold any script (Korean user folders); a legacy console code page must not crash a log line.
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None:
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+    os.environ["PYTHONUTF8"] = "1"
     env = dict(os.environ)
     for key, value in read_env_file(ROOT / ".env").items():
         env.setdefault(key, value)

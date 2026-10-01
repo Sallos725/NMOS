@@ -72,6 +72,7 @@ def check_sql(bundle: Path) -> dict:
 
 
 def main() -> None:
+    sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
     bundle = Path(sys.argv[1]).resolve()
     result: dict = {"bundle": str(bundle), "platform": sys.platform}
     proc, result["first_start_s"] = start(bundle)
