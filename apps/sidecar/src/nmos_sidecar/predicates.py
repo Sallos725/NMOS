@@ -32,7 +32,12 @@ REGISTRY: dict[str, Predicate] = {p.name: p for p in (
               "role, occupation, title or true identity"),
     Predicate("has_trait", ("character",), None, True, "multi", "lasting trait, habit, appearance"),
     Predicate("relationship", ("character",), ("character",), True, "single",
-              "relationship of subject to object (sibling, rival, lovers…)", per_object=True),
+              "personal relationship of subject to object: kin, romance, rivalry, friendship (sibling, rival, lovers…);"
+              " a role such as tenant or employer is role_toward", per_object=True),
+    Predicate("role_toward", ("character",), ("character",), True, "single",
+              "the subject's role toward the object: tenant of, landlord of, employer of, works for, teacher of,"
+              " student of, master of, servant of, guardian of, ward of… (value: the subject's side, e.g. tenant:"
+              " rents a room in the object's house)", per_object=True),
     Predicate("feels_toward", ("character",), ("character",), True, "single",
               "subject's current feeling toward object", per_object=True),
     Predicate("addresses", ("character",), ("character",), True, "single",

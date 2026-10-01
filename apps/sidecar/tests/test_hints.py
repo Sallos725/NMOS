@@ -224,4 +224,4 @@ def test_the_prompt_asks_for_open_business_its_end_and_stated_causes():
                    "`because`, for `event`, `feels_toward`, `relationship`, `has_status` and `goal` only",
                    "Never guess a cause.", '"outcome": "achieved|abandoned|failed|answered|averted|paid (resolved only)"'):
         assert phrase in prompt, phrase
-    assert extraction.COMPILER_VERSION == "extract-v14"
+    assert extraction.COMPILER_VERSION == "extract-v15"

@@ -33,7 +33,7 @@ from .reconcile import Entry, RevKey, turn_layout
 
 log = logging.getLogger("nmos.extraction")
 
-COMPILER_VERSION = "extract-v14"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
+COMPILER_VERSION = "extract-v15"  # v2: known_by / hidden_from; v3: knowledge scope (D19); v4: per turn (ADR 0008);
 #                                 v5: polarity, modality, source, also_called (ADR 0012, ADR 0013);
 #                                 v6: destroyed (PHASE-6, ADR 0017);
 #                                 v7: promises actual, fulfilled, OPEN PROMISES, event salience (PHASE-7);
@@ -47,7 +47,9 @@ COMPILER_VERSION = "extract-v14"  # v2: known_by / hidden_from; v3: knowledge sc
 #                                 v13: goal, question, threat and owes as open business, OPEN THREADS and
 #                                 `resolved` with an outcome, `because` (PHASE-11, ADR 0039);
 #                                 v14: context messages cut at 1,000 characters, synthetic examples, a quote
-#                                 not in the target turn parks the assertion (PHASE-19, ADR 0054)
+#                                 not in the target turn parks the assertion (PHASE-19, ADR 0054);
+#                                 v15: role_toward, a role between two people, and `relationship` for personal
+#                                 ties only (PHASE-25, ADR 0059)
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
 TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
@@ -129,6 +131,12 @@ Rules:
   working it out. `found_out_by` names only characters the secret is kept from; `evidence` quotes the TARGET
   turn. Record what they now know as usual (e.g. `knows`) as well. Most turns reveal none: then "secrets": [].
   A hint, a related remark, a suspicion or a guess is not finding out.
+- `role_toward` when the TARGET turn states a role one character holds toward another: who rents from, works
+  for, teaches, serves or looks after whom. `value`: the subject's side in the chat's language. One assertion
+  per direction, for each side the TARGET turn states. A role is not a `relationship` (kin, romance, rivalry,
+  friendship): a pair can have both. When the TARGET turn says both where someone lives and the role they hold
+  there, give both, e.g. "하나가 하녀로 일하며 지내는 카이토의 저택": `located_in` (하나, 카이토의 저택) and
+  `role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").
 - `addresses` when the TARGET turn settles how one character speaks to or calls another from now on:
   they agree or decide to speak informally or formally, someone asks for or allows a form of address,
   or a new form of address is used for the first time and taken up. `value`: the speech level and the

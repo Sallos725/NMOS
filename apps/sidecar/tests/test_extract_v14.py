@@ -153,7 +153,7 @@ def test_a_canon_read_does_not_apply_the_check(migrated):
 
 def test_the_extractor_generation_changes_and_canon_only_by_its_predicates():
     ex = extraction.extractor(SETTINGS).spec
-    assert extraction.COMPILER_VERSION == "extract-v14"
+    assert extraction.COMPILER_VERSION == "extract-v15"
     changed = {k for k in V13_EXTRACT if ex[k] != V13_EXTRACT[k]}
     assert changed == {"compiler", "prompt", "predicates", "context_chars"} and ex["context_chars"] == 1000
     canon = canonfacts.generation(SETTINGS).spec

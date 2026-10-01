@@ -568,6 +568,14 @@ holds or two characters would share. They count wherever the message is matched 
 secret's holder addressed (D19), threads, the scene's cast (D44), whose groups then put the characters the message
 names first. Nothing is stored. Recorded as `name_variants`; older traces replay without it.
 
+**D69 — A role between two people is its own fact (Phase 25, ADR 0059).** `extract-v15` adds `role_toward`
+(character → character, a value, one current value per direction: tenant of, employer of, teacher of…) and narrows
+`relationship` to personal ties (kin, romance, rivalry, friendship); a pair keeps its relationship and each
+direction's role at once, and a turn that says where someone lives and the role they hold there gives `located_in`
+and `role_toward` both. `role_toward` is a standing fact (ADR 0026): it ranks, leads and carries its history as
+`relationship`, `feels_toward` and `addresses` do, canon may state it, and the Inspector's pair view shows it per
+direction. Older generations have no such rows, so recorded requests replay as they were.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
