@@ -1,0 +1,49 @@
+name: native-spike
+
+# Spike: build the Docker-free bundle on each PocketRisu target and smoke-test it under a Korean path.
+on:
+  workflow_dispatch:
+  push:
+    branches: [spike/native-bundle]
+    paths: ["tools/native/**", ".github/workflows/native-spike.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x64, os: ubuntu-22.04 }
+          - { target: linux-arm64, os: ubuntu-22.04-arm }
+          - { target: macos-arm64, os: macos-14 }
+          - { target: win-x64, os: windows-2022 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libxml2
+      - if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Build
+        shell: bash
+        run: uv run --no-project --python 3.12 python tools/native/build_bundle.py --target ${{ matrix.target }} --version 0.0.0-spike
+      - name: Linked libraries (diagnostic)
+        if: runner.os == 'macOS'
+        run: |
+          otool -L dist-native/NMOS-v0.0.0-spike-macos-arm64/pgsql/bin/postgres
+          otool -L dist-native/NMOS-v0.0.0-spike-macos-arm64/pgsql/lib/vector.dylib || ls dist-native/NMOS-v0.0.0-spike-macos-arm64/pgsql/lib | head -50
+      - name: Smoke (first start, pgvector + Korean pg_trgm, clean stop, second start)
+        shell: bash
+        run: |
+          archive=$(ls dist-native/NMOS-v0.0.0-spike-${{ matrix.target }}.*)
+          uv run --no-project --python 3.12 python tools/native/ci_smoke.py "$archive" "${{ runner.temp }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: NMOS-${{ matrix.target }}
+          path: dist-native/NMOS-v0.0.0-spike-${{ matrix.target }}.*
+          retention-days: 7
