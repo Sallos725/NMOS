@@ -7,3 +7,7 @@ __pycache__/
 node_modules
 fixtures/host/incoming/*.json
 config/parsers.json
+
+# Portable bundles (tools/native, Phase 23)
+/dist-native/
+/.native-cache/

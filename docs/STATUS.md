@@ -48,8 +48,14 @@ request (ADR 0038 amendment 1, recorded as `history_marks`): no case of any set 
 (AGE-29; the owner pulled it in before 1.0, an exception to R7): a bundle for each PocketRisu portable target
 (win-x64, macos-arm64, linux-x64, linux-arm64; Termux later) with a portable PostgreSQL 16, Python, the sidecar and the plugin;
 Windows as a zip with `NMOS.exe` in the notification area, macOS as a menu-bar app signed ad hoc and allowed once
-with Open Anyway. The spike (`spike/native-bundle`) ran on all four targets. Step 1 (the spec) done; next, step 2
-(builder, launcher, pinned sources, the CI smokes). Separate from Phase 22's code; neither waits on the other.
+with Open Anyway. The spike (`spike/native-bundle`) ran on all four targets. Step 1 (the spec) done. Step 2
+(`tools/native/`, `native.yml`): every download pinned by SHA-256 (`sources.json`), the sidecar's packages by
+`uv.lock`'s hashes, the Linux libraries a bundle carries by their Ubuntu package versions in a digest-pinned build
+image; the launcher refuses a second launcher on the same data, data written by a newer NMOS, and a port in use,
+and keeps the data its owner's only (on Windows by ACL). On each target, from a folder named "한글 폴더": first start,
+Korean `pg_trgm`, stop, restart and the three refusals; the sidecar suite (783) passes against the bundle's
+PostgreSQL on linux-x64, macos-arm64 and win-x64. High risk (AGENTS.md §14): the bundle's stored data. Next, step 3
+(Windows: `NMOS.exe`, the tray, start at login). Separate from Phase 22's code; neither waits on the other.
 
 **Release `v0.2.0` (2026-09-28), the first milestone (`docs/ROADMAP-1.0.md`), at the owner's request.** Stage 4
 (knowledge and secrets, Phase 10) complete, with Stage 5 (Phases 11–12) and Stage 6 so far (Phase 13, Phase 14 steps
