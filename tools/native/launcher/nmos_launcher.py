@@ -267,7 +267,10 @@ class Services:
         else:
             require_free_port("127.0.0.1", self.pg_port, "the NMOS database", "NMOS_DB_PORT")
             self._checkpoint()
-            run([pg_bin("pg_ctl"), "-D", str(pgdata), "-l", str(data / "postgres.log"), "-w", "start"])
+            # -p: NMOS_DB_PORT changed after the first start (the port-in-use message says to) wins over the port
+            # init_cluster wrote into postgresql.conf.
+            run([pg_bin("pg_ctl"), "-D", str(pgdata), "-l", str(data / "postgres.log"), "-o", f"-p {self.pg_port}",
+                 "-w", "start"])
         log(f"postgres up on 127.0.0.1:{self.pg_port} ({time.monotonic() - t0:.1f} s)")
 
         import psycopg

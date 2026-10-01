@@ -22,7 +22,8 @@ continues without memory.
 
 ## Requirements
 
-- Docker with Compose.
+- Docker with Compose, **or** no Docker: a portable bundle for Windows x64, macOS on Apple Silicon, or Linux
+  x64/ARM64 (the systems PocketRisu ships portable packages for; see [Without Docker](#without-docker)).
 - PocketRisu opened at **`http://localhost…` or HTTPS** (PocketRisu Remote Access). Browsers do not run
   PocketRisu plugins on plain-HTTP LAN addresses such as `http://192.168.x.x:6001`.
   If PocketRisu runs on another machine, use an SSH tunnel
@@ -32,8 +33,9 @@ continues without memory.
 
 ## Install
 
-1. Download `nmos-docker-compose.yml` from the [latest release](https://github.com/Sallos725/NMOS/releases),
-   rename it to `docker-compose.yml`, and start it:
+1. Start the sidecar. With Docker: download `nmos-docker-compose.yml` from the
+   [latest release](https://github.com/Sallos725/NMOS/releases), rename it to `docker-compose.yml`, and start it
+   (without Docker, see [Without Docker](#without-docker) and continue at step 2):
 
    ```bash
    docker compose up -d
@@ -51,6 +53,59 @@ continues without memory.
 
 That's it: raw recall works with no model configured. The panel's **Inspector** tab shows what NMOS
 stored and what it injected.
+
+### Without Docker
+
+From 0.3.0 each release also carries a bundle per system with NMOS, its own PostgreSQL 16 and Python, and the
+plugin of the same build (Phase 23, ADR 0060). Nothing else is installed; NMOS listens on `127.0.0.1:8790` as with
+Docker, and its database on `127.0.0.1:54390`. Settings that the Docker install reads from `.env` go in a `.env`
+beside NMOS (copy `.env.example`); a port in use stops the start and names the setting to change.
+
+**Windows (x64)** — `NMOS-v<version>-win-x64.zip`
+
+1. Unpack the zip anywhere on drive C:, for example `Documents\NMOS`. A folder with Korean letters works; a drive
+   without short (8.3) names cannot hold one, and NMOS then says to move it to a folder with English letters only.
+2. Double-click `NMOS.exe`. Windows may warn that it protects your PC (the program is not code-signed): choose
+   **More info → Run anyway**, once. The first start takes about 15 seconds; later starts 1–2 seconds.
+3. NMOS sits in the notification area. Its menu shows the status, copies the sidecar URL, opens the dashboard, the
+   plugin's folder (`plugin\nmos-pocketrisu.js`) and the log folder (`data\nmos.log`), turns on start at login,
+   and quits (which stops the database too). `NMOS.bat` starts it in a console window instead, for servers.
+
+**macOS (Apple Silicon, macOS 13 or later)** — `NMOS-v<version>-macos-arm64.dmg`
+
+1. Open the `.dmg` and drag `NMOS.app` onto Applications.
+2. Open NMOS from Applications. macOS says it cannot check the app for malicious software (it is signed ad hoc,
+   not notarized): click **Done**, then System Settings → **Privacy & Security** → **Open Anyway**, once. If macOS
+   still refuses, run `xattr -cr /Applications/NMOS.app` in Terminal and open it again.
+3. NMOS sits in the menu bar, with the Windows menu. Its data, `.env`, log and the plugin file are in
+   `~/Library/Application Support/NMOS/`.
+
+**Linux (x64, ARM64; glibc 2.35 or later: Ubuntu 22.04+, Debian 12, Raspberry Pi OS bookworm)** —
+`NMOS-v<version>-linux-x64.tar.gz` or `-linux-arm64.tar.gz`
+
+```bash
+tar xzf NMOS-v<version>-linux-x64.tar.gz
+cd NMOS-v<version>-linux-x64 && ./start.sh   # Ctrl+C stops NMOS and its database
+```
+
+To run it in the background, as a systemd user service (`~/.config/systemd/user/nmos.service`, then
+`systemctl --user enable --now nmos`; `loginctl enable-linger` keeps it running after you log out):
+
+```ini
+[Unit]
+Description=NMOS (portable)
+
+[Service]
+ExecStart=%h/NMOS-v<version>-linux-x64/start.sh
+# The launcher stops the sidecar, the worker and PostgreSQL itself.
+KillMode=mixed
+TimeoutStopSec=60
+
+[Install]
+WantedBy=default.target
+```
+
+Then continue at step 2 above with the plugin in the bundle's `plugin/` folder (macOS: Application Support).
 
 ## Upgrade, backup and rollback
 
@@ -81,6 +136,13 @@ NMOS_VERSION=0.1.0-beta.19 docker compose up -d   # the release you are going ba
 Put the older plugin file back and reload PocketRisu. Your chats themselves live in PocketRisu. The next
 generation in each chat syncs what changed since the backup, and the worker extracts it again at the
 provider's cost.
+
+**Without Docker:** quit NMOS, then copy its `data` folder somewhere as the backup (macOS:
+`~/Library/Application Support/NMOS`). To upgrade, unpack the new version beside the old one and move `data` into
+it (macOS: replace `NMOS.app` in Applications; the data stays where it is), then start the new version: it applies
+the migrations. Replace the plugin file and reload PocketRisu as above. An older version refuses data a newer one has
+written and changes nothing; to go back, put the backup copy of `data` in the older version's folder. A bundle stays on
+PostgreSQL 16; a later major moves through the NMOS Archive (export, then restore in the new version).
 
 ### Export (NMOS Archive)
 

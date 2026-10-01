@@ -14,8 +14,27 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yml
 
+  # Phase 23: the four Docker-free bundles, built from pinned sources and attached only after their smokes and the
+  # sidecar suite against each bundle's PostgreSQL pass (native.yml).
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+  bundles:
+    needs: version
+    uses: ./.github/workflows/native.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+    permissions:
+      contents: read
+      pull-requests: read
+
   release:
-    needs: ci
+    needs: [ci, bundles]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -56,6 +75,11 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/Sallos725/NMOS
             org.opencontainers.image.licenses=MIT
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: NMOS-*
+          path: bundles
+          merge-multiple: true
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -64,5 +88,5 @@ jobs:
           cp deploy/docker-compose.yml nmos-docker-compose.yml
           flags=""; [[ "$GITHUB_REF_NAME" == *-* || "$GITHUB_REF_NAME" == v0.* ]] && flags="--prerelease"
           notes=$(awk -v v="## ${GITHUB_REF_NAME#v}" '$0==v{f=1;next} /^## /{f=0} f' CHANGELOG.md)
-          gh release create "$GITHUB_REF_NAME" nmos-pocketrisu.js nmos-docker-compose.yml \
+          gh release create "$GITHUB_REF_NAME" nmos-pocketrisu.js nmos-docker-compose.yml bundles/NMOS-* \
             --title "NMOS $GITHUB_REF_NAME" --notes "$notes" $flags

@@ -5,6 +5,7 @@
 First start (initdb + migrations), health, pgvector and pg_trgm queries, a clean stop that also stops Postgres,
 then a second start on the same data. Then the refusals: a second launcher on the same data while one runs, data
 written by a newer NMOS (a migration this bundle does not ship), and the sidecar's port taken by another program.
+Last, an update: the data of the version before (this bundle without its last migration) starts here and migrates.
 """
 
 from __future__ import annotations
@@ -56,8 +57,8 @@ def stop(proc: subprocess.Popen, bundle: Path) -> float:
     return time.monotonic() - t0
 
 
-def pg_running(bundle: Path) -> bool:
-    pgsql, data = bundle / "pgsql", bundle / "data"
+def pg_running(bundle: Path, data: Path | None = None) -> bool:
+    pgsql, data = bundle / "pgsql", data or bundle / "data"
     if WINDOWS:  # pg_ctl reads its arguments through the ANSI code page, as the launcher works around
         sys.path.insert(0, str(bundle))
         from nmos_launcher import ascii_path
@@ -78,11 +79,11 @@ def refused(bundle: Path, expect: str) -> str:
     return next(line for line in out.splitlines() if expect in line).strip()
 
 
-def connect(bundle: Path):
+def connect(bundle: Path, data: Path | None = None, port: str | None = None):
     import psycopg
 
-    pw = (bundle / "data" / "db-password").read_text(encoding="utf-8").strip()
-    return psycopg.connect(f"postgresql://nmos:{pw}@127.0.0.1:{os.environ.get('NMOS_DB_PORT', '54390')}/nmos")
+    pw = ((data or bundle / "data") / "db-password").read_text(encoding="utf-8").strip()
+    return psycopg.connect(f"postgresql://nmos:{pw}@127.0.0.1:{port or os.environ.get('NMOS_DB_PORT', '54390')}/nmos")
 
 
 def check_owner_only_acl(data: Path) -> str:
@@ -132,6 +133,53 @@ def stop_while_starting(bundle: Path) -> dict:
     for key in ("NMOS_DATA_DIR", "NMOS_SIDECAR_PORT", "NMOS_DB_PORT"):
         os.environ.pop(key)
     return outcome
+
+
+def update_keeps_data(bundle: Path) -> dict:
+    """Q3's update: data written by the version before, moved into this one, starts and migrates with nothing lost.
+    The version before is this bundle without its last migration (a release adds migrations; the code that applies
+    them is this bundle's either way)."""
+    import tempfile
+
+    sys.path.insert(0, str(bundle))
+    import nmos_launcher
+
+    data = Path(tempfile.mkdtemp(prefix="nmos-update-", dir=bundle))
+    os.environ.update(NMOS_DATA_DIR=str(data), NMOS_SIDECAR_PORT="8798")
+    last = max((bundle / "migrations").glob("[0-9][0-9][0-9][0-9]_*.sql"))
+    held_back = last.with_name(last.name + ".next")
+
+    def start_and_stop(write_marker: bool, db_port: str) -> set[str]:
+        os.environ["NMOS_DB_PORT"] = db_port
+        services = nmos_launcher.Services()
+        services.start()  # returns once the migrations are applied and the sidecar and worker are spawned
+        try:
+            with connect(bundle, data, db_port) as conn:
+                if write_marker:
+                    conn.execute("CREATE TABLE smoke_update_marker (note text)")
+                    conn.execute("INSERT INTO smoke_update_marker VALUES ('written before the update')")
+                elif conn.execute("SELECT note FROM smoke_update_marker").fetchone() != ("written before the update",):
+                    raise SystemExit("the data written before the update is gone after it")
+                return {r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()}
+        finally:
+            services.stop()
+            if pg_running(bundle, data):
+                raise SystemExit("Postgres is still running after the update check's stop")
+
+    try:
+        last.rename(held_back)
+        try:
+            before = start_and_stop(write_marker=True, db_port="54398")
+        finally:
+            held_back.rename(last)
+        # On another database port, as after the port-in-use message: NMOS_DB_PORT holds for data made on the old one.
+        after = start_and_stop(write_marker=False, db_port="54399")
+    finally:
+        for key in ("NMOS_DATA_DIR", "NMOS_SIDECAR_PORT", "NMOS_DB_PORT"):
+            os.environ.pop(key, None)  # NMOS_DB_PORT is unset if the first start never came
+    if last.name in before or after - before != {last.name}:
+        raise SystemExit(f"the update did not apply exactly {last.name}: {sorted(after - before)}")
+    return {"migrated": last.name, "migrations": len(after)}
 
 
 def check_dashboard() -> str:
@@ -184,6 +232,7 @@ def main() -> None:
         taken.listen()
         result["refused_port"] = refused(bundle, f"Port {PORT}")
     result["stop_while_starting"] = stop_while_starting(bundle)
+    result["update_keeps_data"] = update_keeps_data(bundle)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
