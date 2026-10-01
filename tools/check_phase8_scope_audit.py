@@ -93,8 +93,8 @@ def check() -> tuple[list[str], dict]:
             problems.append(f"{key}: usable/exclusion should be {want is None}/{want}")
     for directory in (*RUNS, PHASE8_RUNS):  # completeness: every candidate assertion is in the audit
         for path in sorted((ROOT / directory).glob("*/runs.jsonl")):
-            source = str(path.relative_to(ROOT))
-            for n, line in enumerate(path.read_text().splitlines(), 1):
+            source = path.relative_to(ROOT).as_posix()  # the audit's keys use "/" on every OS
+            for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 record = json.loads(line)
                 if directory == PHASE8_RUNS and record["variant"] != "v8":
                     continue
