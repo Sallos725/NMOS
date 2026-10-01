@@ -548,6 +548,12 @@ After an undo the owner may re-extract the turns extracted while the join held (
 one): those turns' extractions are discarded and just they are queued, at the owner's provider's cost. A worker
 whose job a rebuild or a re-extraction made obsolete while the model answered stores nothing.
 
+**D66 — A reveal check instead of a re-extraction (Phase 22, ADR 0057).** "Extract all history" keeps the extraction
+of a turn extracted before an earlier turn's secret (K29) and asks a reveal check: the turn's OPEN SECRETS, CONTEXT and
+TARGET, answered with `secrets` only. A check is an extraction of a `reveal` generation under the window
+`reveal:<turn hash>`, naming the extraction it checked; its `learned` rows are served with the turn while that
+extraction serves it, and read as of an earlier request only when made by then. Nothing is discarded.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

@@ -132,9 +132,9 @@ language after a page reload.
   Click a conversation for its state, facts, entities (names that refer to the same one), recent
   retrievals, commits (with what each sync changed, e.g. `delete ×12`) and messages. On a conversation page three buttons act on that chat:
   **Extract all history** extracts and embeds the older turns the first sync skipped (and moves turns
-  still served by an earlier LLM model to the current one, and turns that were extracted before an earlier
-  turn's secret, K29), and **Rebuild memory** (click twice)
-  discards the chat's facts, from every model, and extracts every turn again. Both leave raw
+  still served by an earlier LLM model to the current one; a turn extracted before an earlier turn's secret, K29,
+  keeps its facts and gets one short call that asks only whether the secret was found out there), and **Rebuild
+  memory** (click twice) discards the chat's facts, from every model, and extracts every turn again. Both leave raw
   messages alone, run in the background and cost one LLM call per turn. **Delete conversation**
   (click twice) deletes everything NMOS stored for that chat, raw messages included, and cannot be
   undone. Use it after deleting the chat in PocketRisu. The PocketRisu chat itself is never touched;

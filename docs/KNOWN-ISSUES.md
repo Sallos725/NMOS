@@ -394,10 +394,12 @@ run oldest turn first, but when NMOS first sees a chat it extracts the recent wi
 that reveals a secret can be extracted before the turn that made it, and the reveal matches nothing. In play,
 turns are extracted one at a time and this does not happen. Found by the Phase 10 evaluation (a synthetic
 case extracted all at once). *Workaround:* after connecting an existing chat that has secrets, run **Extract
-all history** once. Since ADR 0033 amendment 2 it also extracts again every turn extracted before an earlier
-turn's secret was (audit G2; `test_extract_all_history_recovers_a_reveal_missed_on_first_import`), oldest
-first; until then it skipped them and did nothing here. With two workers (the default) two neighbouring turns
-can still run at once; running it again fixes that. **Rebuild memory** also works but extracts the whole chat.
+all history** once. It checks every turn extracted before an earlier turn's secret was for a reveal, oldest
+first (Phase 22, ADR 0057; `test_extract_all_history_recovers_a_reveal_missed_on_first_import`): one short model
+call per turn that asks only about the open secrets, and the turn keeps its facts. From ADR 0033 amendment 2 until
+Phase 22 it extracted those turns again instead, and a re-extraction drops some facts (AGE-25); before that it
+skipped them. With two workers (the default) two neighbouring turns can still run at once; running it again fixes
+that. **Rebuild memory** also works but extracts the whole chat.
 
 
 **K30 — A summary can say a secret in other words.** Since Phase 12 (ADR 0042, 0043, on `main`) the prompt of each

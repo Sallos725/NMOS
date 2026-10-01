@@ -1,4 +1,4 @@
-"""nmos-worker: processes queued jobs (extraction, embedding, summaries, canon facts). Several workers may run
+"""nmos-worker: processes queued jobs (extraction, reveal checks, embedding, summaries, canon facts). Several workers may run
 concurrently."""
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
-from . import canonfacts, generations, migrate, retention, summaries
+from . import canonfacts, generations, migrate, retention, reveals, summaries
 from .config import Settings
 from .extraction import claim, extractor, fail, finish, process_extract
 from .llm import ChatModel, Embedder, LLMError
@@ -42,6 +42,19 @@ def handlers(settings: Settings) -> Handlers:
             return status
 
         out["extract"] = (ex.key, extract)
+        rv = reveals.generation(settings)
+        if rv is not None:
+            checker = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
+                                settings.llm_json_mode)
+
+            def check(conn: psycopg.Connection, job: dict[str, Any]) -> str:
+                status = reveals.process(conn, job, checker.complete_metered, rv, settings.extract_turns)
+                if status == "done" and sm is not None:  # a secret found out changes what a summary may say
+                    with conn.transaction():
+                        summaries.schedule_stale(conn, job["conversation_id"], sm.key)
+                return status
+
+            out["reveal"] = (rv.key, check)
     if sm is not None:
         writer = ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
                            settings.llm_json_mode)
@@ -124,7 +137,7 @@ def maintenance(settings: Settings, stop: threading.Event, holder: dict[str, Any
                                  current.embed_api_key, current.llm_timeout_s)
                 if new_signature != signature:
                     for gen in (extractor(current), projection(current), summaries.summarizer(current),
-                                canonfacts.generation(current)):
+                                canonfacts.generation(current), reveals.generation(current)):
                         if gen is not None:
                             generations.ensure(conn, gen)  # rows reference their generation
                     holder["jobs"] = jobs

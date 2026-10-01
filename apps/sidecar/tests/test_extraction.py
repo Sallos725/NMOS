@@ -10,6 +10,7 @@ import pytest
 from psycopg.rows import dict_row
 
 from conftest import active_generation, make_client
+from nmos_sidecar import reveals
 from nmos_sidecar.extraction import claim, process_extract
 from nmos_sidecar.worker import run_once
 from simchat import SimChat
@@ -31,7 +32,11 @@ def fake_complete(system: str, user: str) -> tuple[dict, str]:
 
 def jobs_for(conn, complete=fake_complete):
     gen = active_generation(conn, "extract")
-    return {"extract": (gen.key, lambda cn, job: process_extract(cn, job, complete, gen, gen.spec["context_turns"]))}
+    jobs = {"extract": (gen.key, lambda cn, job: process_extract(cn, job, complete, gen, gen.spec["context_turns"]))}
+    if conn.execute("SELECT 1 FROM projection_generation WHERE kind = 'reveal'").fetchone():  # ADR 0057
+        rv = active_generation(conn, "reveal")
+        jobs["reveal"] = (rv.key, lambda cn, job: reveals.process(cn, job, complete, rv, rv.spec["context_turns"]))
+    return jobs
 
 
 def drain(url: str, complete=fake_complete) -> int:

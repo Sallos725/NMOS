@@ -26,7 +26,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from . import (__version__, archive, audit, canon, canonfacts, extraction, generations, inspector, ledger, normtext, plugin,
-               preview, readmodel, retention, repairs, runtime, summaries, vectors)
+               preview, readmodel, retention, repairs, reveals, runtime, summaries, vectors)
 from . import usage as model_usage
 from .config import Settings
 from .db import make_pool
@@ -132,7 +132,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         pj = vectors.projection(cur)
         sm = summaries.summarizer(cur)
         rt.update(settings=cur, rules=rules, overrides=overrides, extractor=extraction.extractor(cur), projection=pj,
-                  summarizer=sm, canon=canonfacts.generation(cur),
+                  summarizer=sm, canon=canonfacts.generation(cur), reveal=reveals.generation(cur),
                   recall=RecallOptions(
             top_k=cur.recall_top_k, threshold=cur.recall_threshold, rules_version=rules.version,
             facts_limit=cur.facts_limit, events_limit=cur.events_limit,
@@ -184,6 +184,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         elif cg.key != before_canon:
             generations.activate(conn, cg)
             queued += canonfacts.schedule(conn, cg.key)  # every chat's canon in force (ADR 0047)
+        if rt["reveal"] is not None:
+            generations.activate(conn, rt["reveal"])  # its checks are queued by "extract all history" only (ADR 0057)
         rt["active_extractor"] = generations.active(conn, "extract")
         rt["active_summarizer"] = generations.active(conn, "summarize")
         # Off means none read or made (the panel's switch), as for summaries.
@@ -863,11 +865,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def coverage_view(conn, conv_id: UUID, usage: bool = False) -> dict[str, Any]:
         ex_key = rt["active_extractor"]
         pj_key = rt["projection"].key if rt["projection"] else None
+        rv_key = rt["reveal"].key if rt["reveal"] else None
         spent = {"usage": model_usage.totals(conn, conv_id, {ex_key, pj_key, rt.get("active_summarizer"),
-                                                              rt.get("active_canon")} - {None})} if usage else {}
+                                                              rt.get("active_canon"), rv_key} - {None})} if usage else {}
+        compiled = extraction.coverage(conn, ex_key, conv_id).get(conv_id)
         return {
-            "extraction": {"generation": generations.describe(conn, ex_key),
-                           **extraction.coverage(conn, ex_key, conv_id).get(conv_id, {})},
+            "extraction": {"generation": generations.describe(conn, ex_key), **(compiled or {}),
+                           **({"reveal_checks": reveals.coverage(conn, rv_key, conv_id)} if compiled else {})},
             "embeddings": {"generation": generations.describe(conn, pj_key),
                            **vectors.coverage(conn, pj_key, conv_id).get(conv_id, {})},
             "canon": {"generation": generations.describe(conn, rt.get("active_canon")),
@@ -881,7 +885,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def extract_history(conv_id: UUID, request: Request):
         """Queue every turn / message of this chat's head that the active generations have not
         processed, beyond the first-sight backfill, at background priority; failed ones are retried, and
-        turns extracted before an earlier turn's secret are extracted again (K29)."""
+        turns extracted before an earlier turn's secret get a reveal check (K29, PHASE-22 Q1): their extractions stay."""
         ex, pj, cur = rt["extractor"], rt["projection"], rt["settings"]
         with request.app.state.pool.connection() as conn:
             if readmodel.conversation(conn, conv_id) is None:
@@ -891,15 +895,16 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             for kind, gen in (("extract", ex), ("embed", pj), ("canon", rt["canon"])):
                 if gen:
                     extraction.retry_failed(conn, kind, gen.key, conv_id)
-            unseen = extraction.discard_unseen_secrets(conn, ex.key, conv_id) if ex else 0
             queued = {
                 "extract": extraction.schedule_generation(conn, ex.key, cur.extract_backfill, conv_id, history=True)
                 if ex else 0,
                 "embed": vectors.schedule_projection(conn, pj.key, cur.embed_backfill, conv_id, history=True)
                 if pj else 0,
                 "canon": canonfacts.schedule(conn, rt["canon"].key, conv_id) if rt["canon"] else 0,
+                # after the extract jobs: a turn queued again is extracted with what is open by then, not checked
+                "reveal": reveals.schedule(conn, rt["reveal"].key, ex.key, conv_id) if ex and rt["reveal"] else 0,
             }
-            log.info("extract history conversation=%s queued=%s unseen_secrets=%d", conv_id, queued, unseen)
+            log.info("extract history conversation=%s queued=%s", conv_id, queued)
             return {"queued": queued, "coverage": coverage_view(conn, conv_id)}
 
     @app.post("/v1/conversations/{conv_id}/rebuild", dependencies=[Depends(auth)])

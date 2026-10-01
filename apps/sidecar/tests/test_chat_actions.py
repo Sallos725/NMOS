@@ -33,7 +33,7 @@ def test_extract_history_queues_what_first_sight_left_out(migrated, db):
         cid = conv_id(c, chat)
         assert facts(c, chat) == []  # turn 0 is older than the first-sight backfill
         out = c.post(f"/v1/conversations/{cid}/extract-history").json()
-        assert out["queued"] == {"extract": 6, "embed": len(chat.messages) - 4, "canon": 0}
+        assert out["queued"] == {"extract": 6, "embed": len(chat.messages) - 4, "canon": 0, "reveal": 0}
         assert out["coverage"]["extraction"]["pending"] == 6
         drain(migrated)
         drain_embeddings(migrated)
@@ -41,7 +41,7 @@ def test_extract_history_queues_what_first_sight_left_out(migrated, db):
         assert cov["extraction"]["complete"] and cov["embeddings"]["complete"]
         assert [f["object"] for f in facts(c, chat)] == ["old chapel"]
         # Idempotent: nothing is missing any more.
-        assert c.post(f"/v1/conversations/{cid}/extract-history").json()["queued"] == {"extract": 0, "embed": 0, "canon": 0}
+        assert c.post(f"/v1/conversations/{cid}/extract-history").json()["queued"] == {"extract": 0, "embed": 0, "canon": 0, "reveal": 0}
 
 
 def test_rebuild_discards_and_reextracts_every_turn(migrated, db):
