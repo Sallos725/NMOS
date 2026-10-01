@@ -68,8 +68,11 @@ teacher of…; one current value per direction) next to a pair's relationship, r
 generation that replaces the unreleased `extract-v14` before `0.3.0`. Step 1 (the spec) done. Step 2 (ADR 0059, D69):
 `extract-v15` implemented on its branch (`role_toward` in the registry, `relationship` narrowed to personal ties, the
 prompt's line on a place and a role with a synthetic example; `role_toward` in `facts.STANDING` and
-`canonfacts.PREDICATES`; the Inspector's pair view has a Role column), merged only after step 3's paid evaluation,
-which needs the owner's OK for its estimate. High risk (AGENTS.md §14): stored data (a new generation) and memory
+`canonfacts.PREDICATES`; the Inspector's pair view has a Role column), merged only after step 3's paid evaluation.
+Step 3 (`docs/perf/extract-v15.md`, owner OK 2026-10-01; 449 calls, 3.90M input and 0.57M output tokens, the output
+43 % above the estimate): every criterion met — the AGE-27 role in 3 of 3 runs; sampled turns 116 ledger facts
+(lowest `extract-v14` run 113), `relationship` rows at the bar; the M0 chats +1 case on the main chat, sample 2 equal,
+the AGE-27 case passing with vectors off. High risk (AGENTS.md §14): stored data (a new generation) and memory
 selection (a new standing predicate).
 
 **Phase 23 — NMOS without Docker: approved 2026-10-01, current.** Spec `docs/phases/PHASE-23.md`
