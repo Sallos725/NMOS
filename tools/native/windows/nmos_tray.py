@@ -113,14 +113,16 @@ def startup_shortcut() -> Path:
 
 
 def powershell(script: str) -> str:
-    """Run a PowerShell script passed as UTF-16 (-EncodedCommand), so Korean paths survive; its output is UTF-8."""
-    script = "[Console]::OutputEncoding = [Text.Encoding]::UTF8\n" + script
+    """Run a PowerShell script passed as UTF-16 (-EncodedCommand), so Korean paths survive; its output is UTF-8.
+    [Text.Encoding]::UTF8 would put a byte-order mark before the output (Windows PowerShell 5.1), and a path read
+    back with it compares unequal and cannot be started."""
+    script = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false\n" + script
     encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
     r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
                        capture_output=True, **launcher.CHILD_FLAGS)
     if r.returncode:
         raise OSError(r.stderr.decode("utf-8", "replace").strip() or f"powershell exited {r.returncode}")
-    return r.stdout.decode("utf-8", "replace").strip()
+    return r.stdout.decode("utf-8-sig", "replace").strip()
 
 
 def ps_quote(path: Path) -> str:
