@@ -60,7 +60,8 @@ def test_a_turn_with_no_open_secret_before_it_is_checked_without_a_call(migrated
         calls = len(model.prompts)
         assert drain(migrated, model) == 1 and len(model.prompts) == calls
         (made,) = db.execute("SELECT usage, hints FROM extraction WHERE window_hash LIKE 'reveal:%'").fetchall()
-        assert made["usage"] == {"calls": 0} and made["hints"] == {"checks": str(turn0["id"]), "secrets": []}
+        assert made["usage"] == {"calls": 0} and made["hints"]["checks"] == str(turn0["id"])
+        assert made["hints"]["secrets"] == [] and made["hints"]["read_at"]
 
 
 def test_a_check_stops_counting_when_its_extraction_no_longer_serves_the_turn(migrated, db):
@@ -163,10 +164,19 @@ def test_only_the_latest_reveal_generation_is_served_and_counts_as_looking(migra
                    (uuid7(), check["rid"], check["window_hash"], newer.key, Jsonb(check["hints"])))
         db.commit()
         assert not served_from_checks(db)  # the newer check found nothing: only it counts
+        # Review 2026-10-01 (AGE-25): taking the older generation back changes neither a replay nor the read; the next
+        # press checks the turn whose latest check is the newer generation's.
+        then = db.execute("SELECT clock_timestamp() AS t").fetchone()["t"]
+        generations.activate(db, rv)
+        db.commit()
+        assert not served_from_checks(db, known_at=then) and not served_from_checks(db)
+        assert [r["turn"] for r in reveals.unchecked(db, ex.key, rv.key, conv)] == [2]
 
 
-def test_a_check_made_before_an_earlier_turns_reveal_is_checked_again(migrated, db):
-    """Copilot review of #213: two workers checked neighbouring turns at once; another press recovers it."""
+def test_a_check_that_listed_a_secret_found_out_earlier_is_checked_again(migrated, db):
+    """Copilot review of #213 and review 2026-10-01 (AGE-25): two workers checked neighbouring turns at once, in either
+    order of finishing. The later turn's check listed a secret the earlier one found out (its slot may have kept out
+    another); judged by what it listed, the next press checks it again."""
     from nmos_sidecar import reveals
 
     with make_client(migrated, **LLM) as c:
@@ -180,15 +190,47 @@ def test_a_check_made_before_an_earlier_turns_reveal_is_checked_again(migrated, 
                            " JOIN active_membership am ON am.source_revision_id = x.source_revision_id"
                            " AND am.turn_hash = x.window_hash JOIN conversation c ON c.head_commit_id = am.commit_id"
                            " WHERE x.extractor_key = %s ORDER BY am.turn DESC LIMIT 1", (ex.key,)).fetchone()
-        db.execute("INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority) VALUES ('reveal', 'turn3', %s,"
+        db.execute("INSERT INTO job (kind, dedupe_key, conversation_id, payload, priority) VALUES ('reveal', 'later', %s,"
                    " %s, 300)", (conv, Jsonb({"extraction_id": str(later["id"]), "revision_id": str(later["rid"]),
                                              "window_hash": later["window_hash"], "generation": rv.key})))
         db.commit()
         drain(migrated, SecretRecorder())
-        assert reveals.unchecked(db, ex.key, rv.key, conv) == []  # made after turn 2's reveal: settled
-        # As if the later turn's check had finished first, while turn 2's was still asking the model.
-        db.execute("UPDATE extraction SET created_at = (SELECT min(created_at) FROM extraction) WHERE window_hash = %s",
-                   ("reveal:" + later["window_hash"],))
+        made = db.execute("SELECT hints FROM extraction WHERE window_hash = %s AND discarded_at IS NULL",
+                          ("reveal:" + later["window_hash"],)).fetchone()["hints"]
+        assert made["secrets"] == [] and made["read_at"]  # read after turn 2's reveal: nothing open
+        assert reveals.unchecked(db, ex.key, rv.key, conv) == []
+        # As if it had read OPEN SECRETS before turn 2's reveal was stored, whichever check finished first.
+        listed = db.execute("SELECT hints->'secrets' AS s FROM extraction WHERE window_hash LIKE 'reveal:%%'"
+                            " AND jsonb_array_length(hints->'secrets') > 0 AND discarded_at IS NULL LIMIT 1").fetchone()["s"]
+        db.execute("UPDATE extraction SET hints = jsonb_set(hints, '{secrets}', %s) WHERE window_hash = %s"
+                   " AND discarded_at IS NULL", (Jsonb(listed), "reveal:" + later["window_hash"]))
         db.commit()
         assert len(reveals.unchecked(db, ex.key, rv.key, conv)) == 1
         assert c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["reveal"] == 1
+        drain(migrated, SecretRecorder())
+        assert reveals.unchecked(db, ex.key, rv.key, conv) == []  # its new check lists nothing found out: settled
+
+
+def test_a_reveal_memory_does_not_serve_marks_no_check_stale(migrated, db):
+    """Copilot review of #215: an older generation's extraction is stored but not served; its reveal must not make a
+    later turn's check stale (each press would queue it again)."""
+    from nmos_sidecar import reveals
+
+    with make_client(migrated, **LLM) as c:
+        _, conv = checked(c, migrated, db)
+        ex, rv = active_generation(db, "extract"), active_generation(db, "reveal")
+        listed = db.execute("SELECT hints->'secrets'->0 AS s FROM extraction WHERE window_hash LIKE 'reveal:%%'"
+                            " AND jsonb_array_length(hints->'secrets') > 0 AND discarded_at IS NULL"
+                            " ORDER BY created_at LIMIT 1").fetchone()["s"]  # turn 1's check listed the secret
+        turn1 = db.execute("SELECT am.source_revision_id AS rid, am.turn_hash FROM active_membership am"
+                           " JOIN conversation c ON c.head_commit_id = am.commit_id WHERE am.turn = 1").fetchone()
+        old = generations.make("extract", "http://old-llm/v1", "old")
+        generations.ensure(db, old)
+        xid = uuid7()
+        db.execute("INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model,"
+                   " raw) VALUES (%s, %s, %s, 'old', %s, 'old', '{}')", (xid, turn1["rid"], turn1["turn_hash"], old.key))
+        db.execute("INSERT INTO assertion (extraction_id, source_revision_id, subject, subject_type, predicate, value,"
+                   " status) VALUES (%s, %s, %s, 'character', 'learned', %s, 'valid')",
+                   (xid, turn1["rid"], listed["kept_from"][0], f"[turn {listed['turn']}] {listed['text']}"))
+        db.commit()
+        assert reveals.unchecked(db, ex.key, rv.key, conv) == []  # turn 2's check listed it; turn 1's old row is not served
