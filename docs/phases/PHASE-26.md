@@ -1,6 +1,9 @@
 # Phase 26 — A repair whose item is gone suggests where it belongs now
 
-> **Status: approved (2026-10-01): every answer as proposed, and an exception to R7; current, alongside Phase 23.**
+> **Status: stopped 2026-10-01 after step 2, by the owner's choice; nothing merged (step 2 was PR #238, closed; its
+> branch kept). The owner's review on the copy found that every one of the 18 repairs with candidates had lost its item
+> for good: no repaired error had come back reworded, so the suggestions were all wrong. Stage 6's done criterion was
+> reworded instead (see "Outcome").** Approved 2026-10-01: every answer as proposed, and an exception to R7.
 > Stage 6 (owner repair, ADR 0044), the remaining
 > part of AGE-23 before `0.3.0`: the owner chose on 2026-10-01 to make a repair that matches nothing after a new
 > extractor generation easy to re-apply, rather than only rewording Stage 6's done criterion ("quality before time").
@@ -80,3 +83,23 @@ Stop and ask the owner when:
 - a candidate list would need another head than Q2's to hold the owner's item (a design question, not a tuning one);
 - the move cannot be one transaction with the current schema, or undo needs a second migration;
 - the Inspector page reads more than 5 ms slower.
+
+## Outcome (2026-10-01)
+
+Step 2 (PR #238: candidates, the move, migration 0029, a plugin build; 878 tests, the Inspector +2.1 ms) was measured on
+the production copy re-extracted with `extract-v15` before it merged. Of the owner's 68 Phase 13 repairs, 40 apply and
+none is missed where its item is still quoted; 28 match nothing. 10 of them have no item of their head in the state they
+change; 18 have one to three candidates (40 lines in "Needs attention"). The owner read all 18 and the chat's thread list:
+none of the candidates is the repaired item, and the item is nowhere else in memory. 24 of the 28 close a thread the
+story had finished and 4 mark a secret found out, so a vanished item leaves memory as the repair meant it. The risk the
+phase was for, a repaired error coming back in other words, did not occur, and the suggestions would only have added
+wrong lines. The owner stopped the phase; Stage 6's criterion reads "every repair survives a rebuild and a new extractor
+generation, or, when the generation no longer states its item, is listed under Needs attention"
+(`docs/ROADMAP-1.0.md`), which the measurements meet.
+
+The same review measured how much any re-extraction changes (no model call; counts only): on production copies, a
+second `extract-v14` run of the same chats states again with the same head and quote 74 % of the first run's current
+story facts, 78 % of threads and 76 % of secrets; `extract-v15` against `extract-v14` 61 %, 72 % and 53 %, with about
+as many new items the other way. Three `gemma4:31b` runs of the same sampled turns agree on 83–84 % of rows on the
+synthetic chat and 72–78 % on the owner's chat. Facts a re-extraction of the same generation drops are listed since
+Phase 22; those a new generation drops are not (AGE-30).

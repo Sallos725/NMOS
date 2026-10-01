@@ -11,7 +11,8 @@ later, is `docs/KNOWN-ISSUES.md`.
   `-linux-arm64.tar.gz` (`start.sh`). Each holds PostgreSQL 16 with `pg_trgm` and `pgvector`, Python, the sidecar and
   the plugin; nothing else is installed, and the plugin's URL is the same as with Docker. The tray and the menu bar
   show the status, copy the URL, open the dashboard and the plugin and log folders, start NMOS at login, and quit
-  (stopping the database too). To update, unpack the new version and move `data` into it (README "Without Docker").
+  (stopping the database too). To update on Windows/Linux, unpack the new version, move `data` into it and copy the
+  existing `.env` too (macOS: replace the app; data and `.env` stay in Application Support; README "Without Docker").
   The Docker install is unchanged.
 
 - **`/dashboard`**: the Inspector's first page, now with the NMOS version and the last failed or retrying background

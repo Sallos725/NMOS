@@ -29,8 +29,10 @@ part of a Docker-free NMOS is a PostgreSQL with `pg_trgm` and `pgvector` that ru
    menu-bar `NMOS.app` in a `.dmg`, every binary signed ad hoc and allowed once with Open Anyway (Q6), data in
    `~/Library/Application Support/NMOS/`, `pg_trgm` built to count Hangul, Han and kana as word characters as glibc
    does; Linux a tarball with `start.sh` (glibc 2.35+). `NMOS.bat` and `start.sh` stay for servers.
-4. **Updates move the data** (Q3): the new version is unpacked beside the old and `data/` moved in; it migrates on
-   start. A bundle stays on PostgreSQL 16; a later major goes through the NMOS Archive (ADR 0050, Q4).
+4. **Updates move the data** (Q3): on Windows/Linux, the new version is unpacked beside the old, `data/` moved in
+   and the existing `.env` copied beside the new launcher; it migrates on start. On macOS, the app is replaced and
+   the data and `.env` stay in Application Support. A bundle stays on PostgreSQL 16; a later major goes through the
+   NMOS Archive (ADR 0050, Q4).
 5. **Release** (Q9): `release.yml` calls `native.yml` with the tag's version; the four bundles are attached to the
    GitHub release only after, on each target, the smoke (from a folder with a Korean name and a space: first start,
    Korean `pg_trgm`, stop and restart, the three refusals, a stop during a start, an update) and, on linux-x64,

@@ -59,7 +59,8 @@ stored and what it injected.
 From 0.3.0 each release also carries a bundle per system with NMOS, its own PostgreSQL 16 and Python, and the
 plugin of the same build (Phase 23, ADR 0060). Nothing else is installed; NMOS listens on `127.0.0.1:8790` as with
 Docker, and its database on `127.0.0.1:54390`. Settings that the Docker install reads from `.env` go in a `.env`
-beside NMOS (copy `.env.example`); a port in use stops the start and names the setting to change.
+beside NMOS. Copy `.env.example`, then change `NMOS_DB_PORT=5436` to `NMOS_DB_PORT=54390` for the portable
+database (the example is shared with Docker); a port in use stops the start and names the setting to change.
 
 **Windows (x64)** — `NMOS-v<version>-win-x64.zip`
 
@@ -137,11 +138,14 @@ Put the older plugin file back and reload PocketRisu. Your chats themselves live
 generation in each chat syncs what changed since the backup, and the worker extracts it again at the
 provider's cost.
 
-**Without Docker:** quit NMOS, then copy its `data` folder somewhere as the backup (macOS:
-`~/Library/Application Support/NMOS`). To upgrade, unpack the new version beside the old one and move `data` into
-it (macOS: replace `NMOS.app` in Applications; the data stays where it is), then start the new version: it applies
+**Without Docker:** quit NMOS, then back up its `data` folder and, if present, the `.env` beside NMOS (macOS:
+back up `~/Library/Application Support/NMOS`, which also holds `.env`). To upgrade on Windows/Linux, unpack the new
+version beside the old one, move `data` into it and copy the existing `.env` beside the new launcher to keep your
+token, ports and model settings (macOS: replace `NMOS.app` in Applications; the data and `.env` stay where they are).
+Then start the new version: it applies
 the migrations. Replace the plugin file and reload PocketRisu as above. An older version refuses data a newer one has
-written and changes nothing; to go back, put the backup copy of `data` in the older version's folder. A bundle stays on
+written and changes nothing; to go back, restore the backed-up `data` and `.env` in the older version's folder
+(macOS: restore the Application Support folder). A bundle stays on
 PostgreSQL 16; a later major moves through the NMOS Archive (export, then restore in the new version).
 
 ### Export (NMOS Archive)

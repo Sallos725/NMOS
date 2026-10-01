@@ -21,7 +21,7 @@
 | 7 — Forensic recall | raw-history search, evidence traversal, exact quotes | partial: packet ledger and as-of replay (Phase 9); not authorized |
 | 8 — PocketRisu bridge | partial chat reads, mutation events | not started; after 1.0 (R7) |
 
-Stages 0–3 are the foundation and are done. Stages 4 and 5 are done. Stage 6 closes with Phase 20; Stage 7 is what
+Stages 0–3 are the foundation and are done. Stages 4, 5 and 6 are done (Stage 6 met its criteria on 2026-10-01); Stage 7 is what
 remains before 1.0 (R7).
 Phase 15 (a packet that fills its budget, `docs/phases/PHASE-15.md`) is not a stage of this roadmap: it is P1 of
 `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`, approved 2026-09-29, and was done after Phase 14 and before Phase 16
@@ -144,9 +144,16 @@ Done when:
 - K8 and K23 are closed; closed 2026-10-01 by owner decision: the owner's repair in the panel is the fix,
   and NMOS finding a split name or an ended thread by itself is not planned (reading the context for it costs
   too much per turn);
-- every repair survives a rebuild and a new extractor generation;
+- every repair survives a rebuild and a new extractor generation, or, when the generation no longer states its item,
+  is listed under "Needs attention" (reworded 2026-10-01 by the owner after Phase 26's review);
 - export, restore into a fresh install and replay give the same packets;
 - each canon source has recorded host evidence and a conflict fixture.
+
+**Done (2026-10-01; ships in `0.3.0`).** K8 and K23 closed by owner decision; every kind of repair survives a rebuild and
+a new generation in the deterministic cases, and on the production copy re-extracted with `extract-v15` 40 of the
+owner's 68 repairs apply with none missed where its item is still quoted, the other 28 listed and their items gone for
+good (the owner's review, `docs/phases/PHASE-26.md`); export, restore and replay give the same packets
+(`docs/perf/archive.md`); each canon source has host evidence and a conflict fixture.
 
 ## Stage 4 — Epistemic engine
 
