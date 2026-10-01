@@ -52,7 +52,23 @@
         "libzstd1": "1.4.8+dfsg-3build1",
         "zlib1g": "1:1.2.11.dfsg-2ubuntu9.2"
       },
-      "arm64": {}
+      "arm64": {
+        "libcom-err2": "1.46.5-2ubuntu1.2",
+        "libgcc-s1": "12.3.0-1ubuntu1~22.04.3",
+        "libgssapi-krb5-2": "1.19.2-2ubuntu0.8",
+        "libicu70": "70.1-2",
+        "libk5crypto3": "1.19.2-2ubuntu0.8",
+        "libkeyutils1": "1.6.1-2ubuntu3",
+        "libkrb5-3": "1.19.2-2ubuntu0.8",
+        "libkrb5support0": "1.19.2-2ubuntu0.8",
+        "liblz4-1": "1.9.3-2build2",
+        "liblzma5": "5.2.5-2ubuntu1.1",
+        "libssl3": "3.0.2-0ubuntu1.29",
+        "libstdc++6": "12.3.0-1ubuntu1~22.04.3",
+        "libxml2": "2.9.13+dfsg-1ubuntu0.13",
+        "libzstd1": "1.4.8+dfsg-3build1",
+        "zlib1g": "1:1.2.11.dfsg-2ubuntu9.2"
+      }
     }
   }
 }

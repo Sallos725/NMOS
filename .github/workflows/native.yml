@@ -19,8 +19,9 @@ jobs:
           - { target: linux-x64, os: ubuntu-22.04, suite: true }
           - { target: linux-arm64, os: ubuntu-22.04-arm, suite: false }
           - { target: macos-arm64, os: macos-14, suite: true }
-          # The system drive has 8.3 short names (the launcher's way around PostgreSQL's ANSI paths).
-          - { target: win-x64, os: windows-2022, suite: true, parent: "C:/Users/runneradmin" }
+          # C:\ has 8.3 short names (the launcher's way around PostgreSQL's ANSI paths), and a folder made at its
+          # root inherits access for every signed-in user, which the launcher must take away from data/.
+          - { target: win-x64, os: windows-2022, suite: true, parent: "C:/NMOS-CI" }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 50
     steps:

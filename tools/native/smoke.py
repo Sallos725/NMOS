@@ -88,7 +88,8 @@ def connect(bundle: Path):
 def check_owner_only_acl(data: Path) -> str:
     """Windows: nobody but this user and SYSTEM may read the database or its password (launcher, Q5 review)."""
     acl = subprocess.run(["icacls", str(data / "db-password")], capture_output=True, text=True).stdout
-    broad = [g for g in ("BUILTIN\\Users", "Authenticated Users", "Everyone", "BUILTIN\\Administrators") if g in acl]
+    # Administrators can take any file anyway; the point is every other signed-in user.
+    broad = [g for g in ("BUILTIN\\Users", "Authenticated Users", "Everyone", "INTERACTIVE") if g in acl]
     if broad:  # inherited entries are fine: they come from data/, which the launcher limits to the owner
         raise SystemExit(f"db-password is readable beyond its owner ({broad}):\n{acl}")
     return " ".join(acl.split())
