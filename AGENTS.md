@@ -32,8 +32,9 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-21.md` is the latest, a draft awaiting the owner's
-   approval; no phase is current; `PHASE-0.md`…`PHASE-20.md` still define the behavior they introduced).
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-22.md` is the latest and the current
+   phase; `PHASE-21.md` is a draft awaiting the owner's approval; `PHASE-0.md`…`PHASE-20.md` still define the behavior they
+   introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
 6. Relevant ADRs in `docs/adr/`.
 
@@ -82,7 +83,8 @@ If two normative documents appear to conflict:
 | 19 — one extractor generation, `extract-v14` (shorter context, synthetic examples, evidence in the turn) | complete (2026-10-01), not released; `deepseek-v4.1-flash`'s M0 criterion missed (owner accepted, K41) | `PHASE-19.md`, ADR 0054 |
 | 20 — a name join shown before it is made (C7 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`; Stage 6, remaining items) | complete (2026-10-01), not released | `PHASE-20.md`, ADR 0055 |
 | 21 — "at first": how it started, when the message asks (AGE-26; a correction found by measurement, not a roadmap stage) | **draft**, awaiting the owner's approval | `PHASE-21.md` |
-| 22+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
+| 22 — a re-extraction that keeps what it found: a reveal check, and the facts a re-extraction dropped (AGE-25; an urgent correction found by measurement, not a roadmap stage) | **current** (approved 2026-10-01) | `PHASE-22.md` |
+| 23+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
 ADR 0006/0007, `docs/perf/scale.md`).
