@@ -32,8 +32,8 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-24.md` is the latest; Phases 23 and 24
-   are current; `PHASE-0.md`…`PHASE-22.md` still define the behavior they introduced).
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-24.md` is the latest; Phase 23 is the
+   current phase; `PHASE-0.md`…`PHASE-22.md` and `PHASE-24.md` still define the behavior they introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
 6. Relevant ADRs in `docs/adr/`.
 
@@ -84,7 +84,7 @@ If two normative documents appear to conflict:
 | 21 — "at first": how it started, when the message asks (AGE-26; a correction found by measurement, not a roadmap stage) | complete (2026-10-01), not released; K42 fixed with it (ADR 0038 amendment 1) | `PHASE-21.md`, ADR 0056 |
 | 22 — a re-extraction that keeps what it found: a reveal check, and the facts a re-extraction dropped (AGE-25; an urgent correction found by measurement, not a roadmap stage) | complete (2026-10-01), not released; the paid run's reveal count missed by one (owner accepted) | `PHASE-22.md`, ADR 0057 |
 | 23 — NMOS without Docker: a bundle for each PocketRisu portable target (AGE-29; pulled in before 1.0 by the owner, an exception to R7) | **current** (approved 2026-10-01) | `PHASE-23.md` |
-| 24 — a name as the story says it: given names and romanized names (AGE-28 under AGE-24; a correction found by measurement, not a roadmap stage) | **current** (approved 2026-10-01), alongside Phase 23 | `PHASE-24.md` |
+| 24 — a name as the story says it: given names and romanized names (AGE-28 under AGE-24; a correction found by measurement, not a roadmap stage) | complete (2026-10-01), not released; K32 measured and left out | `PHASE-24.md`, ADR 0058 |
 | 25+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,

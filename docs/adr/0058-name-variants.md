@@ -52,4 +52,5 @@ in Hangul about those characters found their values 8 of 24 and 0 of 6 times.
 - A three-syllable foreign name whose first syllable is on the family-name list (도로시 → 로시) is split too; such a
   given name rarely appears alone.
 - Each request reads the resolution's entities once more and scans its message for Hangul runs.
-- Evaluation and latency: Phase 24 step 3. K32 (a persona narrated in the third person) is unchanged (PHASE-24 Q4).
+- Evaluation and latency: `docs/perf/name-variants.md`. K32 (a persona narrated in the third person) is unchanged
+  (PHASE-24 Q4).

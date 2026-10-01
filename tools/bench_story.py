@@ -18,6 +18,10 @@ names that canon and holds a quarter of the entries, the card and the persona in
 
 With BENCH_FIRST=1 (Phase 21) every question starts with "처음에", the first cue (ADR 0056).
 
+With BENCH_NAMES=1 (Phase 24) the story's 40 characters are named as people are: 20 three-syllable Hangul names and
+20 romanized ones, and every question starts with one of them as the user would write it, a given name or the Hangul
+spelling of a romanized name (ADR 0058).
+
 With BENCH_RECALL=wide (Phase 15) every message has a vector near the query's (a stub embedder answers at once) and
 each request asks for the scenes of a place with no previous reply, so recall has more excerpts and facts to offer than
 any budget takes: a larger budget's recall is the largest. The default questions match the chat's repeated sentence,
@@ -65,6 +69,31 @@ except ImportError:  # before Phase 14
 
 SECRETS = 6  # about what the owner's longest chat keeps
 BUDGET = int(os.environ.get("BENCH_BUDGET", "2000"))  # 2,000: Phase 12's default; Phase 15 compares 4,000 and 8,000
+# BENCH_NAMES=1 (Phase 24): 20 Hangul names and 20 romanized ones, each given name used once
+_FAMILY = "김이박최정강조윤장임"
+_ROMAN = {"김": "Kim", "이": "Lee", "박": "Park", "최": "Choi", "정": "Jung", "강": "Kang", "조": "Cho", "윤": "Yoon",
+          "장": "Jang", "임": "Lim"}
+_HANGUL_GIVEN = ["민준", "서윤", "하진", "지우", "도윤", "수아", "은비", "태오", "하람", "이안", "서진", "예준", "지안", "시우",
+                 "하윤", "유나", "준서", "다은", "건우", "소율"]
+_LATIN_GIVEN = [("지호", "Ji-ho"), ("예린", "Ye-rin"), ("현우", "Hyun-woo"), ("채원", "Chae-won"), ("우진", "Woo-jin"),
+                ("나연", "Na-yeon"), ("승민", "Seung-min"), ("가은", "Ga-eun"), ("도현", "Do-hyun"), ("수빈", "Su-bin"),
+                ("재원", "Jae-won"), ("하은", "Ha-eun"), ("민서", "Min-seo"), ("지훈", "Ji-hoon"), ("서연", "Seo-yeon"),
+                ("태민", "Tae-min"), ("유진", "Yu-jin"), ("성훈", "Sung-hoon"), ("아린", "A-rin"), ("동현", "Dong-hyun")]
+
+
+def person(n: int) -> str:
+    """Character n of 40 (n < 20: a Hangul name, else a romanized one), or 인물n without BENCH_NAMES."""
+    if os.environ.get("BENCH_NAMES") != "1":
+        return f"인물{n}"
+    fam = _FAMILY[n % 10]
+    return f"{fam}{_HANGUL_GIVEN[n]}" if n < 20 else f"{_ROMAN[fam]} {_LATIN_GIVEN[n - 20][1]}"
+
+
+def called(n: int) -> str:
+    """How a question calls character n: the given name, or the Hangul spelling of the romanized name."""
+    return _HANGUL_GIVEN[n] if n < 20 else f"{_FAMILY[n % 10]}{_LATIN_GIVEN[n - 20][0]}"
+
+
 SCENE = "하나와 카이토는 등대 아래에서 만나 편지 이야기를 나누었다. " * 8  # ≈ 250 characters, as the owner's
 STORY = "하나는 항구 마을에서 카이토를 만나 등대와 도서관을 오가며 오래된 약속을 되짚었다. " * 6  # ≈ 280 characters
 
@@ -83,8 +112,8 @@ def add_facts(db: psycopg.Connection, head, key: str) -> int:
             "INSERT INTO assertion (extraction_id, source_revision_id, subject, subject_type, predicate, object,"
             " object_type, status, knowledge, known_by, hidden_from) VALUES (%s, %s, %s, 'character', 'located_in',"
             " %s, 'place', 'valid', %s, %s, %s)",
-            [(i, a["rid"], f"인물{a['turn'] % 40}", PLACES[a["turn"] % len(PLACES)],
-              *(("limited", [f"인물{a['turn'] % 40}"], [f"인물{(a['turn'] + 1) % 40}"]) if n < SECRETS
+            [(i, a["rid"], person(a["turn"] % 40), PLACES[a["turn"] % len(PLACES)],
+              *(("limited", [person(a["turn"] % 40)], [person((a["turn"] + 1) % 40)]) if n < SECRETS
                 else ("unknown", None, None)))
              for n, (i, a) in enumerate(zip(ids, anchors))])
     db.execute("ANALYZE extraction")
@@ -266,6 +295,7 @@ def bench(n: int) -> dict:
                     sync(client, chat)
                     q = f"{PLACES[i % len(PLACES)]} 장면" if wide else QUERIES[i % len(QUERIES)]
                     q = f"처음에 {q}" if os.environ.get("BENCH_FIRST") == "1" else q  # Phase 21: every message asks how it started
+                    q = f"{called(i * 3 % 40)}, {q}" if os.environ.get("BENCH_NAMES") == "1" else q  # Phase 24
                     out, ms = post(client, "/v1/retrieve", {"chat_id": chat.id, "query": q,
                                                              "previous_ai": "" if wide else SENTENCE,
                                                              "in_context_ids": [m["chatId"] for m in chat.messages[-40:]],
