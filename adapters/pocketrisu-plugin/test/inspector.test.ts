@@ -61,6 +61,9 @@ describe('repair marks (ADR 0044)', () => {
     expect(repairAction('fact_correct:42:object')).toEqual({ kind: 'fact_correct', item: '42', extra: 'object' });
     expect(repairAction('fact_lock:42')).toEqual({ kind: 'fact_lock', item: '42', extra: null });  // ADR 0047
     expect(repairAction('fact_restore:42')).toEqual({ kind: 'fact_restore', item: '42', extra: null });  // PHASE-22 Q7
+    // PHASE-26: the repair to move, and the item it may now mean
+    expect(repairAction(`repair_move:${id}:${encodeURIComponent('3f1a-c')}`)).toEqual(
+      { kind: 'repair_move', item: id, extra: '3f1a-c' });
     expect(repairAction(`undo:${who}`)?.kind).toBe('undo');
     for (const value of [null, '', 'thread_close', 'thread_close:', 'name_split:1:x', 'drop:1', 'thread_close:xyz',
       'thread_close:1:a:b', 'secret_keep:1:<b>', 'secret_keep:1:"x"', 'THREAD_CLOSE:1', ` thread_close:1`,
@@ -136,6 +139,16 @@ describe('join preview (PHASE-20)', () => {
 
   it('says nothing changes when nothing does', () => {
     expect(previewText({ ...base, changes: false }, en)).toEqual([en('pv.nothing')]);
+  });
+
+  it("names no entity for a repair's move (PHASE-26)", () => {
+    const move = { ...base, before: [], after: [] };
+    expect(previewText({ ...move, changes: false }, en)).toEqual([en('pv.nothing_memory')]);
+    const lines: Preview['lines'] = [
+      { kind: 'thread_status', thread: { text: 'find the key', by: 'Hana', turn: 7 }, status: 'achieved' }];
+    const out = previewText({ ...move, changes: true, lines }, en);
+    expect(out).toHaveLength(1);  // the change alone, no entity line
+    expect(out[0]).toContain('find the key');
   });
 
   it('puts the entities first and the warnings before the rest, with how many more', () => {

@@ -42,7 +42,7 @@ export interface EntityRow {
 /** A repair the inspector marks for the panel (ADR 0044): what to do, to which item, and a character or field. */
 export interface RepairAction { kind: string; item: string; extra: string | null }
 
-const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|undo):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|repair_move|undo):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
 
 /** Parse a `data-repair` value (`kind:item[:extra]`, the extra percent-encoded, so a name is any text); null for
  * anything else. The extra is data only: a request body and a button's text. */
@@ -232,9 +232,10 @@ function previewWords(x: PreviewLine, say: Say, status: (s: string) => string): 
 /** What a preview says, in reading order: the entities before and after, then at most `max` lines, the warnings
  * first, and how many more. "Nothing changes" when nothing does. Pure: the panel only renders it. */
 export function previewText(p: Preview, say: Say, status: (s: string) => string = (s) => s, max = 8): string[] {
-  if (!p.changes) return [say('pv.nothing')];
+  const named = p.before.length > 0 || p.after.length > 0;  // a join or a split; a repair's move names no entity
+  if (!p.changes) return [say(named ? 'pv.nothing' : 'pv.nothing_memory')];
   const names = (es: PreviewEntity[]) => es.map((e) => e.name).join(', ');
-  const out = [say('pv.entities', { a: names(p.before), b: names(p.after) })];
+  const out = named ? [say('pv.entities', { a: names(p.before), b: names(p.after) })] : [];
   for (const e of p.after) {  // the entity after, with every name it goes by and whose page stays (Q1)
     const others = e.names.filter((n) => n !== e.name);
     if (others.length) out.push(say('pv.names', { a: e.name, n: others.join(', ') }));

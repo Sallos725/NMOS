@@ -144,6 +144,8 @@ const STRINGS = {
   'rp.fact_lock': ['고정', 'Lock'],  // a canon fact or a correction stays current against the story (ADR 0047)
   'rp.fact_restore': ['복원', 'Restore'],  // a fact a re-extraction dropped, remembered at its turn again (PHASE-22 Q7)
   'rp.undo': ['되돌리기', 'Undo'],
+  'rp.repair_move': ['여기에 적용', 'Apply here'],  // a repair that matches nothing now, moved to this item (PHASE-26)
+  'rp.moved': ['수리를 이 항목으로 옮겼습니다.', 'Moved the repair to this item.'],
   'rp.select': ['일괄 닫기에 넣기', 'Select to close'],
   'rp.outcome': ['닫는 결과', 'Outcome'],
   'oc.kept': ['지킴', 'kept'], 'oc.broken': ['깨짐', 'broken'], 'oc.achieved': ['이룸', 'achieved'],
@@ -169,12 +171,14 @@ const STRINGS = {
   'pv.title': ['바뀌는 것', 'What changes'],
   'pv.nothing': ['기억은 그대로입니다. 두 이름은 이미 같은 대상이거나, 이 채팅에 둘 다 나오지 않습니다.',
     'Memory stays as it is: the two names are one entity already, or not both mentioned in this chat.'],
+  'pv.nothing_memory': ['기억은 그대로입니다.', 'Memory stays as it is.'],
   'pv.entities': ['{a} → {b}', '{a} → {b}'],
   'pv.more': ['외 {n}건', '{n} more'],
   'pv.changed': ['미리보기 뒤에 기억이 바뀌었습니다. 새로 본 내용입니다.', 'Memory changed since the preview. Here is the new one.'],
   'pv.confirm_join': ['이대로 합치기', 'Join as shown'],
   'pv.confirm_split': ['이대로 나누기', 'Split as shown'],
   'pv.confirm_undo': ['이대로 되돌리기', 'Undo as shown'],
+  'pv.confirm_move': ['이대로 옮기기', 'Move as shown'],
   'pv.fact_replaced': ['"{a}" 대신 "{b}"가 현재 사실이 됩니다', '"{b}" replaces "{a}"'],
   'pv.turn': [' ({t}턴)', ' (turn {t})'],
   'pv.names': ['"{a}"의 다른 이름: {n}', '"{a}" also goes by: {n}'],

@@ -222,6 +222,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
                    "dropped by a re-extraction (restore it to remember it at its turn again)"),
     "at.disputed": ("이야기가 엇갈린 사실", "a fact the story contradicts"),
     "at.repair": ("지금 맞는 항목이 없는 수리", "a repair that matches nothing now"),
+    "at.maybe": ("이 항목일 수도 있음", "may now mean"),
     "at.split": ("아직 한 인물인 이름 분리", "a split whose names are still one entity"),
     "at.ambiguous": ("모호한 이름 (연결 안 함)", "an ambiguous name (not linked)"),
     "at.none": ("확인할 것이 없습니다.", "Nothing needs a look."),
@@ -849,8 +850,10 @@ def _corrections(f: dict[str, Any]) -> list[str]:
     return (["object"] if has_object else []) + (["value"] if has_value else [])
 
 
-def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: int | None, lang: str) -> list[list[str]]:
-    """What needs a look (PHASE-13 Q6), each with its repair where one fits: from what NMOS already detects."""
+def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: int | None, lang: str,
+               suggestions: dict[str, list[dict[str, Any]]] | None = None) -> list[list[str]]:
+    """What needs a look (PHASE-13 Q6), each with its repair where one fits: from what NMOS already detects. Under a
+    repair that matches nothing now, the items it may now mean, each with "Apply here" (PHASE-26 Q4)."""
     rows: list[list[str]] = []
     if last_turn is not None:
         for th in view.get("threads", []):
@@ -883,9 +886,22 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
             rows.append([_v(_t(lang, "at.split")), _repair_target(rep), "", _undo(rep)])
         elif not rep.get("applied"):
             rows.append([_v(_t(lang, "at.repair")), _repair_target(rep), "", _undo(rep)])
+            for item in (suggestions or {}).get(str(rep["id"]), []):
+                rows.append([f"<span class=\"muted\">↳ {_v(_t(lang, 'at.maybe'))}</span>", _v(_suggested(rep, item)),
+                             _turn(item) if item.get("canon") or item.get("turn") is not None else "",
+                             _act("repair_move", rep["id"], str(item["id"]))])
     for a in view.get("ambiguous", []):
         rows.append([_v(_t(lang, "at.ambiguous")), _v(f"{a['name']}: " + ", ".join(a.get("candidates") or [])), "", ""])
     return rows
+
+
+def _suggested(rep: dict[str, Any], item: dict[str, Any]) -> str:
+    """An item a repair may now mean (PHASE-26), as its own section shows it."""
+    if rep["kind"].startswith("thread_"):
+        return _who_to(item) + f": {item.get('text') or ''}"
+    if rep["kind"].startswith("secret_"):
+        return item.get("text") or ""
+    return fact_line_text(item)
 
 
 def _repair_target(rep: dict[str, Any]) -> str:
@@ -1050,7 +1066,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            last_turn: int | None = None, canon_rows: list[dict[str, Any]] | None = None,
            canon_history: dict[str, dict[str, Any]] | None = None,
            canon_held: dict[str, dict[str, Any]] | None = None, canon_read: dict[str, dict[str, Any]] | None = None,
-           canon_facts: int = 0, dropped: list[dict[str, Any]] | None = None) -> str:
+           canon_facts: int = 0, dropped: list[dict[str, Any]] | None = None,
+           suggestions: dict[str, list[dict[str, Any]]] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -1060,7 +1077,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     active = (((coverage or {}).get("extraction") or {}).get("generation") or {}).get("key")
     # What needs a look comes first; logs of the machinery start folded.
     queue = _attention({"threads": threads or [], "unmatched": unmatched or [], "conflicts": conflicts or [],
-                        "ambiguous": ambiguous or [], "dropped": dropped or []}, repairs or [], last_turn, lang)
+                        "ambiguous": ambiguous or [], "dropped": dropped or []}, repairs or [], last_turn, lang,
+                       suggestions or {})
     parts: list[Section] = [
         ("attention", t("attention"), len(queue),
          table([t(k) for k in ("h.issue", "h.text", "h.turn", "h.repair")], queue) + f"<p class=\"muted\">{t('at.note')}</p>"

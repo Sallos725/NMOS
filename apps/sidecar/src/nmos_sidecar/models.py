@@ -209,6 +209,13 @@ class ReextractRequest(BaseModel):
     turns: list[int] | None = Field(default=None, max_length=10_000)
 
 
+class RepairMoveRequest(BaseModel):
+    """The owner moves a repair that matches nothing now to an item it may now mean (PHASE-26 Q3): the id the Inspector
+    shows for that thread, secret or fact, and, for the move itself, the fingerprint of its preview."""
+    item: Text = Field(min_length=1, max_length=120)
+    expect: str | None = Field(default=None, max_length=64)
+
+
 class ExpectRequest(BaseModel):
     """An undo of a join or a split, made from its preview (PHASE-20 Q4): the preview's fingerprint."""
     expect: str | None = Field(default=None, max_length=64)

@@ -576,6 +576,12 @@ and `role_toward` both. `role_toward` is a standing fact (ADR 0026): it ranks, l
 `relationship`, `feels_toward` and `addresses` do, canon may state it, and the Inspector's pair view shows it per
 direction. Older generations have no such rows, so recorded requests replay as they were.
 
+**D70 — A repair whose item is gone suggests where it belongs now (Phase 26, ADR 0060).** A repair that matches nothing
+now, on a turn that still reads as it did, lists up to three items of its head in the state it changes (a total order:
+its quote, text, turn) under "Needs attention"; "Apply here" moves it in one transaction after a preview: the old
+repair taken back, the same repair planned and stored for the item with `moved_from`, a lock on a moved correction
+moved with it. Never automatic.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

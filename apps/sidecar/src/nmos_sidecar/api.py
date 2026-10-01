@@ -13,7 +13,7 @@ import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
@@ -37,7 +37,7 @@ from .models import (
     BodiesRequest,
     BodiesResponse,
     CanonSyncRequest, CanonSyncResponse,
-    EntityLinkRequest, ExpectRequest, MemoryModeRequest, ReextractRequest, RepairRequest,
+    EntityLinkRequest, ExpectRequest, MemoryModeRequest, ReextractRequest, RepairMoveRequest, RepairRequest,
     OutputRequest,
     Packet,
     ReconcileRequest,
@@ -613,9 +613,37 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return conn.execute(f"SELECT {cols} FROM {table} WHERE id = %s AND conversation_id = %s AND removed_at IS NULL",
                             (row_id, conv_id)).fetchone()
 
+    def planned_move(conn, conv_id: UUID, head: UUID, now: dict[str, Any], row: UUID, item: str,
+                     new_id: Any, at: Any) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+        """A repair's move to `item` (PHASE-26 Q3): the repair as it reads now, the rows the move would store (the
+        repair for the item, and each lock on a moved correction naming it), and the locks it takes back. A preview
+        (`new_id` None) names them by ids derived from the repair, so it reads the same each time and a correction's
+        owner version has a repair id like any other."""
+        rep = next((x for x in now["repairs"] if str(x["id"]) == str(row)), None)
+        if rep is None:
+            raise HTTPException(status_code=404, detail="repair not found")
+        try:
+            target, value = repairs.plan_move(rep, item, now, head_turn(conn, head), version_key)
+        except repairs.RepairError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        if new_id is None:
+            new_id = uuid5(NAMESPACE_URL, f"nmos:move-preview:{row}")
+            lock_ids = [uuid5(NAMESPACE_URL, f"nmos:move-preview:{row}:{n}") for n in range(len(now["repairs"]))]
+        else:
+            lock_ids = [uuid7() for _ in now["repairs"]]
+        moved = {"id": new_id, "kind": rep["kind"], "target": target, "value": value, "note": rep.get("note"),
+                 "created_at": at, "moved_from": rep["id"]}
+        locks = [x for x in now["repairs"] if x["kind"] == "fact_lock"
+                 and str((x.get("target") or {}).get("repair")) == str(rep["id"])] if rep["kind"] == "fact_correct" else []
+        relocked = [{"id": lock_ids[n], "kind": "fact_lock",
+                     "target": {**x["target"], "repair": str(new_id)}, "value": x.get("value") or {},
+                     "note": x.get("note"), "created_at": at, "moved_from": x["id"]} for n, x in enumerate(locks)]
+        return rep, [moved, *relocked], locks
+
     def preview_of(conn, conv_id: UUID, head: UUID, action: str, **a: Any) -> dict[str, Any]:
-        """What a join, a split or the undo of either would change (PHASE-20 Q1–Q4): the chat's memory now and as it
-        would be, both read as every request reads them, and the difference; nothing is written."""
+        """What a join, a split, the undo of either or a repair's move would change (PHASE-20 Q1–Q4, PHASE-26 Q3): the
+        chat's memory now and as it would be, both read as every request reads them, and the difference; nothing is
+        written."""
         now = view_of(conn, head)
         # now(), as the link the join would insert is stamped (DEFAULT now()): the database's clock, the same moment
         at = conn.execute("SELECT now() AS t").fetchone()["t"]
@@ -641,6 +669,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="link not found")
             names = [(link["entity_type"], link["name"]), (link["entity_type"], link["same_as"])]
             what_if = {"drop_links": {str(link["id"])}}
+        elif action == "move":  # PHASE-26 Q3: the old repair taken back, the same repair for the item
+            rep, stored, locks = planned_move(conn, conv_id, head, now, a["row"], a["item"], None, at)
+            names = []
+            what_if = {"drop_repairs": {str(rep["id"])} | {str(x["id"]) for x in locks}, "add_repairs": stored}
+            exclude = {str(x["id"]) for x in stored} | what_if["drop_repairs"]
         else:  # "unsplit"
             rep = in_force(conn, "owner_repair", conv_id, a["row"])
             if rep is None:
@@ -760,9 +793,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def repair_rows(conn, conv_id: UUID, live: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Every repair of a chat, newest first, with the item each in force applies to now (ADR 0044)."""
         applied = {str(x["id"]): x["applied"] for x in live}
-        rows = conn.execute("SELECT id, kind, target, value, note, created_at, removed_at FROM owner_repair"
+        edited = {str(x["id"]) for x in live if x.get("edited")}
+        rows = conn.execute("SELECT id, kind, target, value, note, created_at, removed_at, moved_from FROM owner_repair"
                             " WHERE conversation_id = %s ORDER BY created_at DESC, id DESC", (conv_id,)).fetchall()
-        return [{**row, "applied": applied.get(str(row["id"]))} for row in rows]
+        return [{**row, "applied": applied.get(str(row["id"])), **({"edited": True} if str(row["id"]) in edited else {})}
+                for row in rows]
 
     def head_turn(conn, head: UUID) -> int | None:
         return conn.execute("SELECT max(turn) AS t FROM active_membership WHERE commit_id = %s", (head,)).fetchone()["t"]
@@ -876,6 +911,43 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             raise HTTPException(status_code=404, detail="repair not found")
         log.info("owner repair removed conversation=%s repair=%s", conv_id, repair_id)
         return {"removed": str(repair_id)}
+
+    @app.post("/v1/conversations/{conv_id}/repairs/{repair_id}/move/preview", dependencies=[Depends(auth)])
+    def preview_move_repair(conv_id: UUID, repair_id: UUID, body: RepairMoveRequest, request: Request):
+        """What moving a repair that matches nothing now to `item` would change (PHASE-26 Q3)."""
+        with request.app.state.pool.connection() as conn:
+            return preview_of(conn, conv_id, head_of(conn, conv_id), "move", row=repair_id, item=body.item)
+
+    @app.post("/v1/conversations/{conv_id}/repairs/{repair_id}/move", dependencies=[Depends(auth)])
+    def move_repair(conv_id: UUID, repair_id: UUID, body: RepairMoveRequest, request: Request):
+        """The owner moves a repair that matches nothing now to one of the items it may now mean (PHASE-26 Q3): in one
+        transaction the old repair is taken back and the same repair is stored for the item, naming the old one
+        (`moved_from`), and so is each lock on a moved correction. With `expect`, made from its preview (409 when memory
+        changed since)."""
+        with request.app.state.pool.connection() as conn:
+            head = head_of(conn, conv_id)
+            with conn.transaction():
+                expect_same(conn, conv_id, body.expect, "move", row=repair_id, item=body.item)
+                at = conn.execute("SELECT now() AS t").fetchone()["t"]
+                rep, stored, locks = planned_move(conn, conv_id, head, view_of(conn, head), repair_id, body.item,
+                                                  uuid7(), at)
+                taken = conn.execute("UPDATE owner_repair SET removed_at = now() WHERE conversation_id = %s"
+                                     " AND id = ANY(%s) AND removed_at IS NULL",
+                                     (conv_id, [rep["id"], *(x["id"] for x in locks)])).rowcount
+                if taken != 1 + len(locks):
+                    raise HTTPException(status_code=409, detail="the repair changed since it was read")
+                for x in stored:
+                    conn.execute("INSERT INTO owner_repair (id, conversation_id, kind, target, value, note, moved_from)"
+                                 " VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                                 (x["id"], conv_id, x["kind"], Jsonb(x["target"]), Jsonb(x["value"]), x["note"],
+                                  x["moved_from"]))
+            moved = stored[0]
+            applied = next((x["applied"] for x in view_of(conn, head)["repairs"] if str(x["id"]) == str(moved["id"])),
+                           None)
+        log.info("owner repair moved conversation=%s repair=%s to=%s kind=%s locks=%d applied=%s", conv_id, repair_id,
+                 moved["id"], rep["kind"], len(locks), applied is not None)
+        return {"repair": {k: moved[k] for k in ("id", "kind", "target", "value", "note", "moved_from")},
+                "moved_from": str(repair_id), "locks": len(locks), "applied": applied}
 
     @app.get("/v1/conversations/{conv_id}/coverage", dependencies=[Depends(auth)])
     def conversation_coverage(conv_id: UUID, request: Request, usage: bool = False):
@@ -1094,7 +1166,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     repairs=repair_rows(conn, conv_id, view["repairs"]), last_turn=head_turn(conn, head),
                                     canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
                                     canon_held=canon.held(conn, conv_id), canon_read=cov["canon"].get("keys"),
-                                    canon_facts=view.get("canon_facts", 0), dropped=lost)
+                                    canon_facts=view.get("canon_facts", 0), dropped=lost,
+                                    suggestions={str(x["id"]): repairs.candidates(x, view) for x in view["repairs"]
+                                                 if not x.get("applied")})
 
     def summary_view(conn, conv_id: UUID, head: UUID, secrets: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The Inspector's summaries of a chat (PHASE-12 step 6), with the generation and whether packets use them."""

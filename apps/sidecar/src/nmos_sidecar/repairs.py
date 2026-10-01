@@ -626,3 +626,128 @@ def _plan_lock(f: dict[str, Any], view: dict[str, Any], r: Resolution | None) ->
     if hit is None or str(hit["id"]) != str(f["id"]):
         raise RepairError("the fact cannot be told apart from another one of its canon text")
     return target, {}
+
+
+# --- a repair that matches nothing now: where it may belong (PHASE-26, ADR 0060) ------------------------------------
+
+CANDIDATES = 3  # suggestions per repair (Q2)
+MOVABLE = frozenset({"thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
+                     "fact_lock"})
+
+
+def _quote_of_secret(view: dict[str, Any]) -> Callable[[dict[str, Any]], str | None]:
+    evidence = {a["id"]: a.get("evidence") for a in view.get("assertions") or ()}
+    return lambda s: evidence.get(s["id"])
+
+
+def _pool(rep: dict[str, Any], view: dict[str, Any]) -> tuple[list[dict[str, Any]], Callable, Callable] | None:
+    """The items a repair of this kind could apply to now, in the state it changes and of its head (Q2), with how to
+    read an item's text and quote; None when the repair names no item a move could take (Q1)."""
+    t, r = rep.get("target") or {}, view.get("resolution")
+    kind = rep["kind"]
+    if kind.startswith("thread_"):
+        maker = _key(r, t.get("by"))
+        to = _key(r, t.get("to")) if t.get("kind") in ("promise", "debt") else None
+        want_open = kind == "thread_close"
+        items = [x for x in view.get("threads") or () if x["kind"] == t.get("kind") and _key(r, x["by"]) == maker
+                 and (to is None or _key(r, x.get("to")) == to) and (x["status"] == "open") == want_open
+                 and not x.get("repair")]
+        return items, lambda x: x.get("text"), lambda x: x.get("evidence")
+    if kind.startswith("secret_"):
+        subject = _key(r, t.get("subject")) if t.get("subject") else None
+        obj = _key(r, t.get("object")) if t.get("object") else None
+        character = (rep.get("value") or {}).get("character") or ""
+        items = [s for s in view.get("secrets") or ()
+                 if (t.get("predicate") is None or s.get("predicate") == t["predicate"])
+                 and (subject is None or _key(r, s.get("subject")) == subject)
+                 and (obj is None or _key(r, s.get("object")) == obj) and not s.get("repair")
+                 and _named(list(s["ended"]) if kind == "secret_keep" else s["open"], character, r) is not None]
+        return items, lambda s: s["text"], _quote_of_secret(view)
+    if kind in ("fact_retract", "fact_correct", "fact_lock"):
+        if t.get("repair"):  # a lock on the owner's correction moves with that correction (Q3), not by itself
+            return None
+        canon = t.get("turn") == -1
+        if canon != (kind == "fact_lock"):
+            return None
+        subject, obj = _ekey(r, t.get("subject_type"), t.get("subject")), _ekey(r, t.get("object_type"), t.get("object"))
+        # The object is part of the head where it is part of the fact's slot (a relationship's other character, an
+        # item held); for one current value per subject (a place, a status) it is what a new generation may word anew.
+        pred = REGISTRY.get(t.get("predicate") or "")
+        own_object = pred is None or pred.per_object or pred.cardinality == "multi"
+        rows = [a for a in view.get("assertions") or () if a.get("canon")] if canon else view.get("facts") or []
+        items = [a for a in rows if not a.get("owner") and bool(a.get("canon")) == canon and not a.get("locked")
+                 and a["predicate"] == t.get("predicate")
+                 and (a.get("source") or "narration") == (t.get("source") or "narration")
+                 and _ekey(r, a.get("subject_type"), a["subject"]) == subject
+                 and (not own_object or _ekey(r, a.get("object_type"), a.get("object")) == obj)]
+        return items, secret_text, lambda a: a.get("evidence")
+    return None
+
+
+def candidates(rep: dict[str, Any], view: dict[str, Any]) -> list[dict[str, Any]]:
+    """Up to CANDIDATES items a repair that matches nothing now may mean (PHASE-26 Q2), in a total order: a quote sharing
+    a run with the target's stored quote first, then the closer text, the nearer turn, the earlier turn and the text.
+    None for a repair that applies, one whose target turn was edited (`edited`, ADR 0044 item 3), or a kind Q1 leaves
+    out."""
+    if rep.get("applied") or rep.get("edited") or rep.get("removed_at") or rep["kind"] not in MOVABLE:
+        return []
+    pool = _pool(rep, view)
+    if not pool:
+        return []
+    items, text_of, quote_of = pool
+    t = rep.get("target") or {}
+    at = t.get("turn")
+    far = 2**31
+
+    def order(x: dict[str, Any]) -> tuple:
+        turn = x.get("turn")
+        return (not quoted(t.get("evidence"), quote_of(x)), -similarity(t.get("text"), text_of(x)),
+                abs(turn - at) if turn is not None and at is not None else far,
+                turn if turn is not None else far, text_of(x) or "")
+    return sorted(items, key=order)[:CANDIDATES]
+
+
+def _earliest(kind: str, item: str, view: dict[str, Any], character: str | None) -> int | None:
+    """The earliest turn a repair of this kind can take effect on this item: as `plan` checks it (the item's turn, or the
+    story's close or reveal the repair undoes)."""
+    r = view.get("resolution")
+    if kind.startswith("thread_"):
+        x = next((t for t in view.get("threads") or () if str(t["id"]) == item), None)
+        closed = (x.get("closed_by") or {}).get("turn") if x and kind == "thread_reopen" else None
+        return None if x is None else closed if closed is not None else x.get("turn")
+    if kind.startswith("secret_"):
+        s = next((s for s in view.get("secrets") or () if str(s["id"]) == item), None)
+        if s is None:
+            return None
+        name = _named(list(s["ended"]), character or "", r) if kind == "secret_keep" else None
+        revealed = s["ended"][name].get("turn") if name is not None else None
+        return revealed if revealed is not None else s.get("turn")
+    f = next((f for f in view.get("facts") or () if str(f["id"]) == item), None)
+    return f.get("turn") if f else None
+
+
+def plan_move(rep: dict[str, Any], item: str, view: dict[str, Any], last_turn: int | None,
+              version_key: Callable[..., tuple] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The target and value of the repair `rep` moved to `item` (PHASE-26 Q3): one of its candidates, planned as a new
+    repair of the same kind is, with the same outcome, character or new value. The turn stays the old one's when the
+    item allows it, else becomes the earliest the item allows; never past the chat's last turn."""
+    if rep["kind"] not in MOVABLE:
+        raise RepairError("this repair names no item to move")
+    if rep.get("applied"):
+        raise RepairError("the repair applies to an item now")
+    if rep.get("edited"):
+        raise RepairError("the repair's turn was edited: make a new repair instead")
+    if item not in {str(x["id"]) for x in candidates(rep, view)}:
+        raise RepairError("that item is not one this repair may now mean")
+    value = rep.get("value") or {}
+    turn = value.get("turn")
+    if turn is not None and rep["kind"] not in ("fact_retract", "fact_lock"):
+        since = _earliest(rep["kind"], item, view, value.get("character"))
+        if since is not None and turn < since:
+            turn = since
+        if last_turn is not None and turn > last_turn:
+            turn = last_turn
+    if rep["kind"] == "fact_lock":
+        return plan("fact_lock", item, view, last_turn, version_key=version_key)
+    return plan(rep["kind"], item, view, last_turn, value.get("outcome"), value.get("character"), turn,
+                value.get("object"), value.get("value"), version_key=version_key)

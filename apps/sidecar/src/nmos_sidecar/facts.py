@@ -531,6 +531,17 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         conflicts += _canon_conflicts(facts, {a["position"]: a for a in rows if a.get("canon")}, r)
     conflicts += held
     items: dict[tuple, dict[str, Any]] = {}
+    # A repair that matches nothing on a turn that no longer reads as it did was made on other text (ADR 0044 item 3):
+    # the Inspector suggests no item for it (PHASE-26 Q1). Read only when such a repair exists.
+    orphaned = {str(rep["id"]): rep["target"] for rep in repairs if rep["kind"] != "name_split"
+                and applied.get(str(rep["id"])) is None and (rep.get("target") or {}).get("turn_hash")
+                and (rep["target"].get("turn") or 0) >= 0}
+    edited: set[str] = set()
+    if orphaned:
+        hashes = {x["turn"]: x["h"] for x in conn.execute(
+            "SELECT turn, max(turn_hash) AS h FROM active_membership WHERE commit_id = %s AND turn = ANY(%s)"
+            " GROUP BY turn", (head, sorted({t.get("turn") for t in orphaned.values()}))).fetchall()}
+        edited = {i for i, t in orphaned.items() if hashes.get(t.get("turn")) != t["turn_hash"]}
     for f in facts:  # one timeline per item, newest first (facts are sorted by position)
         if whereabouts(f):
             items.setdefault(version_key(f, r), {
@@ -539,7 +550,8 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
     return {"facts": facts, "claims": claims, "other": other, "entities": r.entities(),
             "ambiguous": r.ambiguous_mentions(), "conflicts": conflicts, "items": list(items.values()),
             "threads": threads, "unmatched": unmatched, "secrets": secrets, "unrevealed": unrevealed,
-            "repairs": [_report(rep, applied, r) for rep in repairs], "assertions": rows, "resolution": r,
+            "repairs": [{**_report(rep, applied, r), **({"edited": True} if str(rep["id"]) in edited else {})}
+                        for rep in repairs], "assertions": rows, "resolution": r,
             "canon_names": canon_used, "canon_facts": len(canon_rows), "canon_facts_manifest": canon_facts}
 
 

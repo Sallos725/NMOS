@@ -460,11 +460,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     if (action.kind === 'thread_close') return closeControls(action);
     const n = action.kind === 'fact_correct' ? L(action.extra === 'object' ? 'rp.field_object' : 'rp.field_value')
       : action.extra ?? '';
-    const button = el('button', { class: 'mini', text: L(`rp.${action.kind}` as StringKey, { n }) });
+    const button = el('button', { class: 'mini',
+      text: action.kind === 'repair_move' ? L('rp.repair_move') : L(`rp.${action.kind}` as StringKey, { n }) });
     const spot = el('div');
     button.addEventListener('click', () => {
       if (action.kind === 'fact_correct') correctForm(action, button);
       else if (action.kind === 'undo' && action.extra === 'name_split') void undoSplit(action, button, spot);
+      else if (action.kind === 'repair_move') void moveRepair(action, button, spot);
       else void repairNow(action, button);
     });
     return [button, spot];
@@ -543,6 +545,18 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     await withPreview(spot, button, `${base}/remove/preview`, {}, 'pv.confirm_undo', async (expect) => {
       await deps.api('POST', `${base}/remove`, { expect }, 15_000);
       say(actionMsg, L('rp.undone'), 'ok');
+      await showInspector();
+    });
+  }
+  /** A repair that matches nothing now, moved to an item it may now mean (PHASE-26 Q3), previewed like a join. */
+  async function moveRepair(action: RepairAction, button: HTMLButtonElement, spot: HTMLElement): Promise<void> {
+    const conversation = inspectorConversation(inspectorPath);
+    if (!conversation || !action.extra) return;
+    const base = `/v1/conversations/${conversation}/repairs/${action.item}`;
+    const item = action.extra;
+    await withPreview(spot, button, `${base}/move/preview`, { item }, 'pv.confirm_move', async (expect) => {
+      await deps.api('POST', `${base}/move`, { item, expect }, 15_000);
+      say(actionMsg, L('rp.moved'), 'ok');
       await showInspector();
     });
   }

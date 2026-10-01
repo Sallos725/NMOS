@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:4da41dec5a72".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:2dc9ffff3a6c".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -402,6 +402,9 @@
     "rp.fact_restore": ["\uBCF5\uC6D0", "Restore"],
     // a fact a re-extraction dropped, remembered at its turn again (PHASE-22 Q7)
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
+    "rp.repair_move": ["\uC5EC\uAE30\uC5D0 \uC801\uC6A9", "Apply here"],
+    // a repair that matches nothing now, moved to this item (PHASE-26)
+    "rp.moved": ["\uC218\uB9AC\uB97C \uC774 \uD56D\uBAA9\uC73C\uB85C \uC62E\uACBC\uC2B5\uB2C8\uB2E4.", "Moved the repair to this item."],
     "rp.select": ["\uC77C\uAD04 \uB2EB\uAE30\uC5D0 \uB123\uAE30", "Select to close"],
     "rp.outcome": ["\uB2EB\uB294 \uACB0\uACFC", "Outcome"],
     "oc.kept": ["\uC9C0\uD0B4", "kept"],
@@ -438,12 +441,14 @@
       "\uAE30\uC5B5\uC740 \uADF8\uB300\uB85C\uC785\uB2C8\uB2E4. \uB450 \uC774\uB984\uC740 \uC774\uBBF8 \uAC19\uC740 \uB300\uC0C1\uC774\uAC70\uB098, \uC774 \uCC44\uD305\uC5D0 \uB458 \uB2E4 \uB098\uC624\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
       "Memory stays as it is: the two names are one entity already, or not both mentioned in this chat."
     ],
+    "pv.nothing_memory": ["\uAE30\uC5B5\uC740 \uADF8\uB300\uB85C\uC785\uB2C8\uB2E4.", "Memory stays as it is."],
     "pv.entities": ["{a} \u2192 {b}", "{a} \u2192 {b}"],
     "pv.more": ["\uC678 {n}\uAC74", "{n} more"],
     "pv.changed": ["\uBBF8\uB9AC\uBCF4\uAE30 \uB4A4\uC5D0 \uAE30\uC5B5\uC774 \uBC14\uB00C\uC5C8\uC2B5\uB2C8\uB2E4. \uC0C8\uB85C \uBCF8 \uB0B4\uC6A9\uC785\uB2C8\uB2E4.", "Memory changed since the preview. Here is the new one."],
     "pv.confirm_join": ["\uC774\uB300\uB85C \uD569\uCE58\uAE30", "Join as shown"],
     "pv.confirm_split": ["\uC774\uB300\uB85C \uB098\uB204\uAE30", "Split as shown"],
     "pv.confirm_undo": ["\uC774\uB300\uB85C \uB418\uB3CC\uB9AC\uAE30", "Undo as shown"],
+    "pv.confirm_move": ["\uC774\uB300\uB85C \uC62E\uAE30\uAE30", "Move as shown"],
     "pv.fact_replaced": ['"{a}" \uB300\uC2E0 "{b}"\uAC00 \uD604\uC7AC \uC0AC\uC2E4\uC774 \uB429\uB2C8\uB2E4', '"{b}" replaces "{a}"'],
     "pv.turn": [" ({t}\uD134)", " (turn {t})"],
     "pv.names": ['"{a}"\uC758 \uB2E4\uB978 \uC774\uB984: {n}', '"{a}" also goes by: {n}'],
@@ -1816,7 +1821,7 @@ ${revisionHash}`;
     const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
-  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|undo):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|repair_move|undo):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
   function repairAction(value) {
     const m = value ? REPAIR.exec(value) : null;
     if (!m?.[1] || !m[2]) return null;
@@ -1997,9 +2002,10 @@ ${revisionHash}`;
     }
   }
   function previewText(p, say2, status = (s) => s, max = 8) {
-    if (!p.changes) return [say2("pv.nothing")];
+    const named = p.before.length > 0 || p.after.length > 0;
+    if (!p.changes) return [say2(named ? "pv.nothing" : "pv.nothing_memory")];
     const names = (es) => es.map((e) => e.name).join(", ");
-    const out = [say2("pv.entities", { a: names(p.before), b: names(p.after) })];
+    const out = named ? [say2("pv.entities", { a: names(p.before), b: names(p.after) })] : [];
     for (const e of p.after) {
       const others = e.names.filter((n) => n !== e.name);
       if (others.length) out.push(say2("pv.names", { a: e.name, n: others.join(", ") }));
@@ -2490,11 +2496,15 @@ html,body{margin:0;background:${PALETTE.bg}}
     function repairControls(action) {
       if (action.kind === "thread_close") return closeControls(action);
       const n = action.kind === "fact_correct" ? L(action.extra === "object" ? "rp.field_object" : "rp.field_value") : action.extra ?? "";
-      const button = el("button", { class: "mini", text: L(`rp.${action.kind}`, { n }) });
+      const button = el("button", {
+        class: "mini",
+        text: action.kind === "repair_move" ? L("rp.repair_move") : L(`rp.${action.kind}`, { n })
+      });
       const spot = el("div");
       button.addEventListener("click", () => {
         if (action.kind === "fact_correct") correctForm(action, button);
         else if (action.kind === "undo" && action.extra === "name_split") void undoSplit(action, button, spot);
+        else if (action.kind === "repair_move") void moveRepair(action, button, spot);
         else void repairNow(action, button);
       });
       return [button, spot];
@@ -2582,6 +2592,17 @@ html,body{margin:0;background:${PALETTE.bg}}
       await withPreview(spot, button, `${base}/remove/preview`, {}, "pv.confirm_undo", async (expect) => {
         await deps.api("POST", `${base}/remove`, { expect }, 15e3);
         say(actionMsg, L("rp.undone"), "ok");
+        await showInspector();
+      });
+    }
+    async function moveRepair(action, button, spot) {
+      const conversation = inspectorConversation(inspectorPath);
+      if (!conversation || !action.extra) return;
+      const base = `/v1/conversations/${conversation}/repairs/${action.item}`;
+      const item = action.extra;
+      await withPreview(spot, button, `${base}/move/preview`, { item }, "pv.confirm_move", async (expect) => {
+        await deps.api("POST", `${base}/move`, { item, expect }, 15e3);
+        say(actionMsg, L("rp.moved"), "ok");
         await showInspector();
       });
     }
