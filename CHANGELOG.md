@@ -5,6 +5,13 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **A story fact extracted just before a request is served on every system.** A live request reads the story's facts
+  up to its own message with no time to read at, and took "now" from the sidecar's clock while extractions are
+  stamped by the database's: where the sidecar's clock lags (Python 3.12 on Windows, the Docker-free Windows bundle of
+  Phase 23), a fact extracted moments before was left out, and the request's replay held it. It now follows the
+  database's clock, as canon facts do since the previous fix; a canon change with no observation time from the plugin
+  is stamped by the database too. Recorded requests replay as they were.
+
 - **A character called by the given name alone, or in Hangul when the story spells the name in Latin letters, now
   brings their memory** (Phase 24, ADR 0058, D68; AGE-28). "이안은 어디 있지?" now counts as a mention of 백이안
   (a three-syllable name with a common family name), and "하진은?" of a character the story calls Hajin (a fixed
