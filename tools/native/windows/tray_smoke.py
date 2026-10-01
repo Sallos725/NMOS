@@ -87,11 +87,14 @@ result["quit_s"] = quit_tray()
 
 # What Windows does with it at sign-in: start its target in its working directory. (os.startfile cannot open a .lnk
 # on the CI runner, a service session without the shell's associations; a desktop session can.)
-target, workdir = nmos_tray.powershell(
-    f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut({nmos_tray.ps_quote(lnk)})\n"
-    "$s.TargetPath\n$s.WorkingDirectory").splitlines()
+def shortcut(field: str) -> str:
+    return nmos_tray.powershell(f"(New-Object -ComObject WScript.Shell).CreateShortcut({nmos_tray.ps_quote(lnk)}).{field}")
+
+
+target, workdir = shortcut("TargetPath"), shortcut("WorkingDirectory")
 result["shortcut_target"], result["shortcut_workdir"] = target, workdir
-subprocess.Popen([target], cwd=workdir)
+# NMOS.exe finds its folder from its own path, so an empty working directory would not stop it.
+subprocess.Popen([target], cwd=workdir or str(Path(target).parent))
 result["start_from_shortcut_s"] = wait(lambda: health() and window(), 120, "NMOS started from the Startup shortcut")
 result["second_quit_s"] = quit_tray()
 lnk.unlink(missing_ok=True)
