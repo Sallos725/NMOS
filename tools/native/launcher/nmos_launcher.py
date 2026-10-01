@@ -16,6 +16,7 @@ import secrets
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -82,9 +83,41 @@ def run(cmd: list[str], **kw) -> None:
     subprocess.run(cmd, check=True, **CHILD_KW, **kw)
 
 
+def write_private(path: Path, text: str) -> None:
+    """Write a file only this user can read (the database password; other local users must not see it)."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+
+
+class AlreadyRunning(SystemExit):
+    pass
+
+
+def lock_data_dir(data: Path):
+    """Hold an exclusive lock on data/launcher.lock for this process's lifetime; a second launcher on the same data
+    would otherwise adopt the first one's Postgres and stop it on its way out."""
+    f = open(data / "launcher.lock", "a+")
+    try:
+        if WINDOWS:
+            import msvcrt
+
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        raise AlreadyRunning(f"NMOS is already running on {data} (another start.sh, NMOS.bat or NMOS.exe).\n"
+                             f"NMOS가 이미 이 데이터 폴더({data})로 실행 중이에요.") from None
+    return f
+
+
 def init_cluster(pgdata: Path, password: str, port: int) -> None:
     pwfile = pgdata.parent / "pg-initpw.tmp"
-    pwfile.write_text(password, encoding="utf-8")
+    write_private(pwfile, password)
     try:
         # A UTF-8 ctype is required: under the C locale pg_trgm treats Hangul as non-word characters and makes no
         # trigrams, so Korean lexical recall finds nothing. The names differ per OS; the Docker image uses en_US.utf8.
@@ -114,7 +147,7 @@ class Services:
             pglib = str(ROOT / "pgsql" / "lib")
             os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(filter(None, [pglib, os.environ.get("LD_LIBRARY_PATH")]))
         self.data = Path(self.env.get("NMOS_DATA_DIR") or ROOT / "data")
-        self.data.mkdir(parents=True, exist_ok=True)
+        self.data.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.pg_port = int(self.env.get("NMOS_PG_PORT", "54390"))
         self.bind = self.env.get("NMOS_SIDECAR_BIND", "127.0.0.1")
         self.port = self.env.get("NMOS_SIDECAR_PORT", "8790")
@@ -122,9 +155,12 @@ class Services:
         self.procs: list[subprocess.Popen] = []
         self.pgdata: Path | None = None
         self.stopped = False
+        self.lock = threading.Lock()  # start() spawning and stop() never interleave (quit while starting)
+        self._data_lock = None
 
     def start(self) -> None:
         data = self.data
+        self._data_lock = lock_data_dir(data)  # before anything that stop() would undo
         if WINDOWS:
             global PGSQL
             PGSQL, data = ascii_path(PGSQL), ascii_path(data)
@@ -135,7 +171,7 @@ class Services:
             t0 = time.monotonic()
             password = secrets.token_urlsafe(24)
             init_cluster(pgdata, password, self.pg_port)
-            pw_path.write_text(password, encoding="utf-8")
+            write_private(pw_path, password)
             log(f"initdb took {time.monotonic() - t0:.1f} s")
         if not pw_path.is_file():
             raise SystemExit(f"{pw_path} is missing; the database password cannot be recovered")
@@ -163,18 +199,24 @@ class Services:
         env.setdefault("NMOS_CORS_ORIGINS", "http://localhost:6001,http://127.0.0.1:6001")
         py = sys.executable
         run([py, "-m", "nmos_sidecar.migrate"], env=env)
-        self.procs.append(subprocess.Popen([py, "-m", "uvicorn", "nmos_sidecar.api:app_factory", "--factory",
-                                            "--host", self.bind, "--port", self.port], env=env, **CHILD_KW))
-        self.procs.append(subprocess.Popen([py, "-m", "nmos_sidecar.worker"], env=env, **CHILD_KW))
+        with self.lock:
+            if self.stopped:
+                raise SystemExit("stopped while starting")
+            self.procs.append(subprocess.Popen([py, "-m", "uvicorn", "nmos_sidecar.api:app_factory", "--factory",
+                                                "--host", self.bind, "--port", self.port], env=env, **CHILD_KW))
+            self.procs.append(subprocess.Popen([py, "-m", "nmos_sidecar.worker"], env=env, **CHILD_KW))
         log(f"sidecar on {self.url} — set this URL in the PocketRisu plugin")
 
     def alive(self) -> bool:
         return bool(self.procs) and all(p.poll() is None for p in self.procs)
 
     def stop(self) -> None:
-        if self.stopped:
-            return
-        self.stopped = True
+        with self.lock:
+            if self.stopped:
+                return
+            self.stopped = True
+        if self._data_lock is None:
+            return  # never started, or another launcher holds this data: nothing here is ours to stop
         for p in self.procs:
             if p.poll() is None:
                 p.terminate()
@@ -185,6 +227,7 @@ class Services:
                 p.kill()
         if self.pgdata is not None:
             subprocess.run([pg_bin("pg_ctl"), "-D", str(self.pgdata), "-m", "fast", "-w", "stop"], **CHILD_KW)
+        self._data_lock.close()
         log("stopped")
 
 
