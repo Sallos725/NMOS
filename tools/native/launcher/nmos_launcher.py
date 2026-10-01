@@ -199,7 +199,8 @@ class Services:
     def __init__(self) -> None:
         os.environ["PYTHONUTF8"] = "1"
         self.env = dict(os.environ)
-        for key, value in read_env_file(ROOT / ".env").items():
+        # NMOS_ENV_FILE: the macOS app's .env lives in Application Support, beside its data (the app is read-only).
+        for key, value in read_env_file(Path(os.environ.get("NMOS_ENV_FILE") or ROOT / ".env")).items():
             self.env.setdefault(key, value)
         if sys.platform.startswith("linux"):
             # The bundle carries the libraries Postgres links (build_bundle.vendor_linux_libs), indirect ones too.

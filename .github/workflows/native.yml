@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read  # the Windows suite's file check
 
 jobs:
   bundle:
@@ -42,6 +43,9 @@ jobs:
       - name: Smoke (start, Korean pg_trgm, stop, restart, the three refusals)
         shell: bash
         run: uv run --no-project --python 3.12 python tools/native/ci_smoke.py smoke dist-native/NMOS-v0.0.0-ci-${{ matrix.target }}.* "${{ matrix.parent || runner.temp }}"
+      - name: NMOS.app from the .dmg, its menu-bar item and login item (macOS)
+        if: runner.os == 'macOS'
+        run: uv run --no-project --python 3.12 python tools/native/ci_smoke.py app dist-native/NMOS-v0.0.0-ci-macos-arm64.dmg "${{ runner.temp }}" "앱 테스트"
       - name: A drive without short names gets the move message (Windows)
         if: runner.os == 'Windows'
         shell: bash
@@ -52,8 +56,25 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: uv run --no-project --python 3.12 python tools/native/ci_smoke.py tray dist-native/NMOS-v0.0.0-ci-win-x64.zip "${{ matrix.parent }}" "트레이 테스트"
+      # Windows' suite takes ~15 minutes (Linux and macOS ~4): on a pull request it runs only when what the sidecar
+      # runs on changed (the launcher, the build, the pins, the smokes, the sidecar or the migrations).
+      - name: Does the Windows suite need to run?
+        id: winsuite
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != pull_request ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          changed=$(gh pr diff ${{ github.event.pull_request.number }} -R ${{ github.repository }} --name-only)
+          echo "$changed"
+          if echo "$changed" | grep -qE '^(tools/native/(launcher/|build_bundle\.py|sources\.json|smoke\.py|ci_smoke\.py)|apps/sidecar/|migrations/)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Sidecar test suite against the bundle's PostgreSQL
-        if: matrix.suite
+        if: matrix.suite && (runner.os != 'Windows' || steps.winsuite.outputs.run == 'true')
         shell: bash
         run: uv run --no-project --python 3.12 python tools/native/ci_smoke.py suite dist-native/NMOS-v0.0.0-ci-${{ matrix.target }}.* "${{ matrix.parent || runner.temp }}" "테스트 폴더"
       - uses: actions/upload-artifact@v7
