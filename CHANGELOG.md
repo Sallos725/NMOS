@@ -18,7 +18,7 @@ later, is `docs/KNOWN-ISSUES.md`.
   database's. Where the sidecar's clock lags (Python 3.12 on Windows ticks every 15.6 ms, as in the Docker-free
   Windows bundle of Phase 23), a fact extracted moments before was left out, and the request's replay then did not
   reproduce it. The choice now follows the database's clock, as summaries already did; the name-join preview stamps
-  its link by the database's clock too. Recorded requests replay as they were.
+  its link as the join would (the database's `now()`). Recorded requests replay as they were.
 
 - **A relationship's or feeling's earlier version kept from someone is no longer shown as known to all** (ADR 0038
   amendment 1, K42). Since `packet-v5` a relationship, feeling or form of address line also names what it replaced
