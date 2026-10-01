@@ -49,6 +49,13 @@ func glyph() -> NSImage {
     return image
 }
 
+/// The log opened for appending (O_APPEND): every write lands at the end, whoever writes. A handle that only seeks to
+/// the end once keeps its own offset, and the launcher's output then overwrote the app's own lines.
+func appendHandle() -> FileHandle? {
+    let fd = open(logURL.path, O_WRONLY | O_APPEND | O_CREAT, 0o600)
+    return fd < 0 ? nil : FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+}
+
 func alert(_ text: String) {
     NSApp.activate(ignoringOtherApps: true)
     let a = NSAlert()
@@ -126,11 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// State changes go to the log too, which is where support (and the CI smoke) can see what the menu shows.
     func setState(_ new: String) {
         state = new
-        if let h = try? FileHandle(forWritingTo: logURL) {
-            h.seekToEndOfFile()
-            h.write("[app] state: \(new)\n".data(using: .utf8)!)
-            try? h.close()
-        }
+        appendHandle()?.write("[app] state: \(new)\n".data(using: .utf8)!)
         refresh()
     }
 
@@ -152,11 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         env["PYTHONUTF8"] = "1"
         env["PYTHONDONTWRITEBYTECODE"] = "1"  // the app is sealed: nothing is written inside it
         p.environment = env
-        if !FileManager.default.fileExists(atPath: logURL.path) {
-            FileManager.default.createFile(atPath: logURL.path, contents: nil)
-        }
-        if let h = try? FileHandle(forWritingTo: logURL) {
-            h.seekToEndOfFile()
+        if let h = appendHandle() {
             p.standardOutput = h
             p.standardError = h
         }

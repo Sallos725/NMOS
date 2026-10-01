@@ -94,8 +94,8 @@ def main() -> int:
     subprocess.run(["osascript", "-e", f'tell application id "{BUNDLE_ID}" to quit'], check=True, timeout=90)
     result["quit_s"] = wait(lambda: not health() and pg_stopped(app) and not app_running(app), 90,
                             "the app, the sidecar and PostgreSQL to stop")
-    print(json.dumps(result, ensure_ascii=False, indent=2))
     result["menu_saw_stopping"] = "[app] state: stopping" in log()
+    print(json.dumps(result, ensure_ascii=False, indent=2))
     ok = (result["verified_before"] and result["menu_saw_stopping"] and result["verified_while_running"] and result["data_in_support"]
           and result["plugin_copied"] and result["nothing_written_inside"]
           and result["login_item_on"] in ("enabled", "requiresApproval") and result["login_item_off"] == "notRegistered")
