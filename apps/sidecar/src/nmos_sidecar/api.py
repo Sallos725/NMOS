@@ -184,8 +184,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         elif cg.key != before_canon:
             generations.activate(conn, cg)
             queued += canonfacts.schedule(conn, cg.key)  # every chat's canon in force (ADR 0047)
-        if rt["reveal"] is not None:
-            generations.activate(conn, rt["reveal"])  # its checks are queued by "extract all history" only (ADR 0057)
+        rv = rt["reveal"]
+        if rv is None:
+            if retired := extraction.retire(conn, "reveal"):
+                log.info("LLM extraction is off: %d queued reveal checks made obsolete", retired)
+        else:  # its checks are queued by "extract all history" only (ADR 0057); another generation's never run
+            generations.activate(conn, rv)
+            conn.execute("UPDATE job SET status = 'obsolete', updated_at = now() WHERE kind = 'reveal'"
+                         " AND status = 'queued' AND payload->>'generation' IS DISTINCT FROM %s", (rv.key,))
         rt["active_extractor"] = generations.active(conn, "extract")
         rt["active_summarizer"] = generations.active(conn, "summarize")
         # Off means none read or made (the panel's switch), as for summaries.

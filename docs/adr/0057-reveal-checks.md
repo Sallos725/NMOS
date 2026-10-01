@@ -23,7 +23,9 @@ every fact anew. Only the reveal was missing.
    No other fact. A turn with no open secret before it is checked without a call (usage `{"calls": 0}`). An answer
    without a `secrets` list fails the job, which is retried.
 2. **Stored as canon facts are (ADR 0047).** A check is an extraction of a generation of kind `reveal` (migration 0028;
-   key: the extractor's endpoint and model, `reveal-v1`, the prompt's fingerprint and the context settings), against the
+   key: the extractor's endpoint and model, JSON mode and temperature, `reveal-v1`, the prompt's fingerprint, the
+   compiler that builds its input and checks its answer (`extraction.COMPILER_VERSION`), the normalizer and the context
+   settings), against the
    turn's anchor revision, under the window `reveal:<turn hash>`. Its hints record the extraction it checked
    (`checks`) and the secrets it listed (with their turn hashes, as a turn extraction's, ADR 0033 amendment 2). No
    other reader of a turn's extractions takes it: they match the turn hash itself. One live check per turn and

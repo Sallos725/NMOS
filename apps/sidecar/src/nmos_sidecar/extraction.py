@@ -785,7 +785,8 @@ OLDER_SERVES = """EXISTS (SELECT 1 FROM active_membership t
 # its jobs were queued is completed by the next scheduling run.
 REBUILD_PENDING = """(EXISTS (SELECT 1 FROM active_membership t
                     JOIN extraction x ON x.source_revision_id = t.source_revision_id
-                    WHERE t.commit_id = e.head AND t.turn = e.turn AND x.discarded_at IS NOT NULL)
+                    WHERE t.commit_id = e.head AND t.turn = e.turn AND x.discarded_at IS NOT NULL
+                      AND x.window_hash NOT LIKE 'reveal:%%')  -- a replaced reveal check is no rebuild (ADR 0057)
                 AND NOT """ + OLDER_SERVES + """)"""
 
 

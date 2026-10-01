@@ -255,6 +255,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "us.none": ("아직 기록된 모델 호출이 없어요.", "No model calls recorded yet."),
     "us.kind.extract": ("사실 추출", "Fact extraction"), "us.kind.canon": ("원전 읽기", "Canon reads"),
     "us.kind.summarize": ("요약", "Summaries"), "us.kind.embed": ("임베딩", "Embeddings"),
+    "us.kind.reveal": ("비밀 확인", "Reveal checks"),
     "us.total": ("합계", "Total"), "us.active": ("사용 중", "active"),
     "us.h.calls": ("호출", "Calls"), "us.h.input": ("입력 토큰", "Input tokens"),
     "us.h.output": ("출력 토큰", "Output tokens"), "us.h.cached": ("캐시 입력", "Cached input"),

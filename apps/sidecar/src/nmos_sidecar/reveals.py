@@ -24,10 +24,11 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import generations
+from . import generations, normtext
 from .config import Settings
-from .extraction import (ASSERTION_COLUMNS, CONTEXT_CHARS, HISTORY_PRIORITY, TARGET_CHARS, build_prompt, coverage_of,
-                         earlier_assertions, load_context, normalize, revealed, secret_hints, shown_target)
+from .extraction import (ASSERTION_COLUMNS, COMPILER_VERSION, CONTEXT_CHARS, HISTORY_PRIORITY, TARGET_CHARS,
+                         build_prompt, coverage_of, earlier_assertions, load_context, normalize, revealed, secret_hints,
+                         shown_target)
 from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, metered
@@ -53,11 +54,13 @@ Answer with JSON only: {"secrets": [{"secret": "S1", "found_out_by": ["..."], "e
 
 def generation(settings: Settings) -> Generation | None:
     """The reveal generation the settings describe (credentials excluded), or None when extraction is off. It uses the
-    extraction model and endpoint, and the extractor's context settings (PHASE-22 Q2)."""
+    extraction model and endpoint, and the extractor's context settings (PHASE-22 Q2); its key names every part that
+    changes its output (Q3)."""
     if not (settings.llm_url and settings.llm_model):
         return None
     return generations.make(
         "reveal", settings.llm_url, settings.llm_model, version=VERSION, prompt=generations.fingerprint(PROMPT),
+        compiler=COMPILER_VERSION, normalizer=normtext.NORMALIZER_VERSION,  # its input and its answer's check
         json_mode=settings.llm_json_mode, temperature=0, context_turns=settings.extract_turns,
         target_chars=TARGET_CHARS, context_chars=CONTEXT_CHARS)
 

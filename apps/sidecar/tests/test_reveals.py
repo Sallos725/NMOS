@@ -126,3 +126,16 @@ def test_an_archive_with_checks_restores_the_same_reveals(migrated, db, database
     with psycopg.connect(target, row_factory=dict_row, autocommit=True) as restored:
         assert [r["value"] for r in served_from_checks(restored)] == [r["value"] for r in served_from_checks(db)]
         assert goal_of(restored)["revealed"] == goal_of(db)["revealed"]
+
+
+def test_waiting_checks_stop_when_extraction_is_turned_off_or_its_model_changes(migrated, db):
+    model = SecretRecorder()
+    with make_client(migrated, **LLM) as c:
+        _, conv = first_import(c, migrated, model, db)
+        assert c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["reveal"] == 2
+        assert c.put("/v1/config", json={"llm_model": "another"}).status_code == 200  # a new reveal generation
+        assert db.execute("SELECT count(*) AS n FROM job WHERE kind = 'reveal' AND status = 'queued'").fetchone()["n"] == 0
+        assert c.post(f"/v1/conversations/{conv}/extract-history").json()["queued"]["reveal"] == 0  # the new generation has none of these turns yet
+        assert c.put("/v1/config", json={"llm_url": ""}).status_code == 200
+        assert db.execute("SELECT count(*) AS n FROM job WHERE kind = 'reveal' AND status IN ('queued', 'running')"
+                          ).fetchone()["n"] == 0
