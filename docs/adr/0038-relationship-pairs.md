@@ -58,3 +58,25 @@ Closes K24's direction case.
 - Entity ids carry the resolver version (ADR 0012): Inspector links to entity pages from before `resolve-v5` point at
   ids that no longer exist. Replays of requests recorded before this read with the current rules: a recorded
   `packet-v4` request is reproduced only where the pair fold and the persona rule change nothing it placed.
+
+## Amendment 1 (2026-10-01, K42): earlier versions only under marks that cover them
+
+Found in review of Phase 21 (ADR 0056), fixed at the owner's request the same day. Item 5 prints a standing fact's
+earlier versions in the current version's line, under that line's knowledge marks, which the memory mode (ADR 0035)
+also reads; the fact's history kept no marks. A version kept from someone thus read as known to everyone the current one
+is known to. Seen in the owner's M0 main chat: a feeling three earlier versions of which only one character knew,
+printed under its public current line in every packet.
+
+1. **History entries carry their marks** (knowledge, `known_by`, `hidden_from`), also in `GET …/facts?history=true`.
+2. **A `limited` earlier version is printed only under the same marks** (`facts._shown_under`): "before" and "first"
+   are the latest and the earliest of the versions the line may print. A public or unmarked version under a limited
+   line is printed: treated more narrowly than it was, it leaks nothing. The Inspector (the owner's view) shows every
+   version, as before.
+3. **Phase 21's first cue** (ADR 0056 item 3) brings a fact back from the window when a version it would print starts
+   before the window (instead of requiring every such version to have the current marks).
+4. **Replays.** A recorded recall option `history_marks`, on for new requests; a trace that did not record it replays
+   with it off, so a request from before this amendment replays as it was. The packet policy stays `packet-v10`.
+
+Measured on replays (vectors off): no case of any set changes (M0 main 7/10, the synthetic sets 23, 24 and 5/15, the
+restored copies' probes 5/5, 7/8 and 7/7, 4/4); every M0 main packet names one version fewer (the feeling above); the
+synthetic sets' packets change in 2–5 of 15–25 (other versions named, none fewer).

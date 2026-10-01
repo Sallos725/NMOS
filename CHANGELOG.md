@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **A relationship's or feeling's earlier version kept from someone is no longer shown as known to all** (ADR 0038
+  amendment 1, K42). Since `packet-v5` a relationship, feeling or form of address line also names what it replaced
+  and how it started, under the current version's knowledge marks; a version only some characters knew read as known
+  to everyone. Such a version is now named only when the current one has the same marks. The Inspector still shows
+  every version; recorded requests replay as they were.
+
 - **"At first": how it started, when you ask** (Phase 21 step 2, ADR 0056, D67; AGE-26). A message that asks how
   something started (처음, 맨 처음, 최초, 예전, 옛날, 원래, 초반, 첫 만남, "at first", "originally", …) now gets the oldest of
   several similar events of the characters it names, not the newest, also small ones; and a pair's first form of

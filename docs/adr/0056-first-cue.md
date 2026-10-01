@@ -34,7 +34,9 @@ generated first-cue probes 6/8.
    hold (canon positions are below every turn; a held one is in the prompt, D3). **And every such version has the
    current version's knowledge marks** (knowledge, `known_by`, `hidden_from`; history entries now carry them): the
    packet prints earlier versions in the current version's line, under its marks (K42). Otherwise, and when every
-   version is in the window, the fact stays out as today. An event in the window stays out.
+   version is in the window, the fact stays out as today. An event in the window stays out. Since ADR 0038 amendment 1
+   (`history_marks`), which prints only versions the line's marks cover, the rule is that one such version the line
+   would print qualifies; a trace without `history_marks` keeps the rule above.
 4. **No "last" cue** (Q3). "마지막에 / 최근에" change nothing: ties already go to the newest, and the packet prints the
    current version first.
 5. **Replays** (Q4). `first_cue` is a recorded recall option, on for new requests; claims are ranked with it too. A trace
