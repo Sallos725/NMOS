@@ -1,7 +1,8 @@
 # Phase 23 — NMOS without Docker: a bundle for every PocketRisu target
 
-> **Status: draft (2026-10-01), awaiting owner approval.** Not a roadmap stage: the owner pulled it in before 1.0 by
-> name (2026-10-01, an exception to R7 in `docs/ROADMAP-1.0.md`), tracked as AGE-29. The spike behind it is on the
+> **Status: approved 2026-10-01 (Q6 as amended below; every other proposed answer), current alongside Phase 22.**
+> Not a roadmap stage: the owner pulled it in before 1.0 by name (2026-10-01, an exception to R7 in
+> `docs/ROADMAP-1.0.md`), tracked as AGE-29. The spike behind it is on the
 > branch `spike/native-bundle` (`tools/native/`, CI run 36807358696).
 
 ## Decided (owner, 2026-10-01)
@@ -52,7 +53,7 @@ Findings the phase builds on:
 | Q3 | Where does the data live? | **`data/` inside the bundle folder**, as PocketRisu keeps `save/`; `NMOS_DATA_DIR` moves it. An update unpacks the new version and moves `data/` over (documented; the launcher refuses a `data/` written by a newer NMOS). | A per-user folder (`%LOCALAPPDATA%\NMOS`, `~/Library/Application Support/NMOS`). |
 | Q4 | A later PostgreSQL major? | **The bundles stay on PostgreSQL 16.** A move to a later major goes through the NMOS Archive (ADR 0050: export in the old bundle, restore in the new), which does not depend on the server version. | Ship `pg_upgrade` with the old binaries. |
 | Q5 | The supply chain? | **Every download pinned by SHA-256** in `tools/native/sources.json` (Python, PostgreSQL binaries and source, `pgvector` at a commit); a mismatch fails the build. | Pin versions only (the spike). |
-| Q6 | macOS? | **A menu-bar `NMOS.app`** (no Dock icon) with the Windows menu, from a small Swift program built in CI that starts and stops the services; unsigned, so the first start needs `xattr -cr` as PocketRisu's does. | Only `start.sh` on macOS; PyObjC (a new runtime package). |
+| Q6 | macOS? | **A menu-bar `NMOS.app`** (no Dock icon) with the Windows menu, from a small Swift program built in CI that starts and stops the services. **Owner, 2026-10-01: no `xattr -cr`.** Python and PostgreSQL go inside the app and every binary in it is signed ad hoc (free, no Apple account), so a downloaded copy is "from an unidentified developer", not "damaged": the user allows it once in System Settings → Privacy & Security → Open Anyway. `xattr -cr` stays in the docs as the fallback. | Developer ID signing and notarization (Apple Developer Program, $99 a year; a plain double-click); only `start.sh`; PyObjC (a new runtime package). |
 | Q7 | The tray menu? | **Status, copy the sidecar URL, open the dashboard, open the plugin folder, open the log folder, start at login, quit** (quit stops PostgreSQL). | The spike's menu without a dashboard or start at login. |
 | Q8 | The dashboard? | **A read-only page the sidecar serves at `/dashboard`:** version and plugin-build match, the LLM and embedding settings in use (no keys), queued and failed jobs, the last errors. Settings stay in the PocketRisu panel. It follows the sidecar's auth: with `NMOS_AUTH_TOKEN` set it asks for the token. | No dashboard (the menu only); settings editable there too. |
 | Q9 | Release? | **`release.yml` builds the four bundles and attaches them to the GitHub release** (`NMOS-vX-<target>.zip` / `.tar.gz`) after their smokes pass; a pull request touching `tools/native/` runs the smokes. `:edge` stays Docker-only. | Bundles on every `main` merge too. |
@@ -87,12 +88,14 @@ installs the plugin from the bundle and sets the URL shown in the tray: memory w
 - [ ] The sidecar test suite passes against the bundle's PostgreSQL on linux-x64, macos-arm64 and win-x64.
 - [ ] Windows: `NMOS.exe` brings up the tray; quit stops the sidecar, the worker and PostgreSQL; a second `NMOS.exe`
       says it is running; start at login works after a sign-out and in.
-- [ ] macOS: `NMOS.app` brings up the menu-bar item with the same behaviour.
+- [ ] macOS: `NMOS.app` brings up the menu-bar item with the same behaviour; `codesign --verify --deep --strict`
+      passes on the app in CI.
 - [ ] An update keeps the data: version N's `data/` moved into N+1 starts and migrates; N+1's data refused by N.
 - [ ] Every existing test passes; the Docker install, its images and `:edge` are unchanged.
 - [ ] **The owner's check** (evidence boundary, `AGENTS.md` §2): on a Windows PC with PocketRisu's portable package,
-      unpack, start, install the plugin from the bundle, chat, and see recall in the panel; the same on a Mac if one
-      is at hand.
+      unpack, start, install the plugin from the bundle, chat, and see recall in the panel; on the owner's Mac, the
+      same with the app downloaded through a browser and allowed once with Open Anyway, no Terminal (if PostgreSQL or
+      Python inside it is still blocked, stop and ask: notarization or `xattr -cr` is the owner's call).
 
 ## Steps (one pull request each)
 

@@ -16,6 +16,13 @@ an earlier turn found out (either finishing order), and a turn's latest check is
 activation (replays unchanged by an activation). Next, step 3 (dropped facts, `fact_restore`). High risk (AGENTS.md §14): stored data and
 re-extraction.
 
+**Phase 23 — NMOS without Docker: approved 2026-10-01, current alongside Phase 22.** Spec `docs/phases/PHASE-23.md`
+(AGE-29; the owner pulled it in before 1.0, an exception to R7): a bundle for each PocketRisu portable target
+(win-x64, macos-arm64, linux-x64, linux-arm64) with a portable PostgreSQL 16, Python, the sidecar and the plugin;
+Windows as a zip with `NMOS.exe` in the notification area, macOS as a menu-bar app signed ad hoc and allowed once
+with Open Anyway. The spike (`spike/native-bundle`) ran on all four targets. Step 1 (the spec) done; next, step 2
+(builder, launcher, pinned sources, the CI smokes). Separate from Phase 22's code; neither waits on the other.
+
 **Release `v0.2.0` (2026-09-28), the first milestone (`docs/ROADMAP-1.0.md`), at the owner's request.** Stage 4
 (knowledge and secrets, Phase 10) complete, with Stage 5 (Phases 11–12) and Stage 6 so far (Phase 13, Phase 14 steps
 1–5) from `main`: secrets and memory modes, open business and causes, relationship pairs, summaries in `<Story>` and
@@ -465,8 +472,9 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
   (AGE-25); approved 2026-10-01 with every proposed answer (Q2–Q8, `docs/phases/PHASE-22.md`); current.
 - Phase 23 (NMOS without Docker: a bundle for every PocketRisu target; AGE-29): the owner pulled it in before 1.0
   (2026-10-01, an exception to R7) and chose zip + `NMOS.exe` for Windows; a spike on `spike/native-bundle` ran on all
-  four targets; draft awaiting the owner's approval (`docs/phases/PHASE-23.md`). Phase 24+ (Stages 7–8): not
-  authorized.
+  four targets; approved 2026-10-01 with every proposed answer but Q6, where the owner chose ad hoc signing and
+  "Open Anyway" over `xattr -cr` and will check it on their Mac (`docs/phases/PHASE-23.md`); current alongside
+  Phase 22. Phase 24+ (Stages 7–8): not authorized.
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600. Raised to 800 on 2026-09-27 (owner; ADR 0035).
 - Release cadence — decided 2026-09-26, revised 2026-09-27: one release per roadmap stage, urgent patches
