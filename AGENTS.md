@@ -32,8 +32,8 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-22.md` is the latest and the current
-   phase; `PHASE-21.md` is a draft awaiting the owner's approval; `PHASE-0.md`…`PHASE-20.md` still define the behavior they
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-23.md` is the latest; it and
+   `PHASE-22.md` are the current phases; `PHASE-21.md` is a draft awaiting the owner's approval; `PHASE-0.md`…`PHASE-20.md` still define the behavior they
    introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
 6. Relevant ADRs in `docs/adr/`.
