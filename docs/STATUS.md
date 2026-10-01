@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Phase 22 — A re-extraction that keeps what it found: approved 2026-10-01, current.** Spec `docs/phases/PHASE-22.md`
+**Phase 22 — A re-extraction that keeps what it found: approved and complete 2026-10-01, not released.** Spec `docs/phases/PHASE-22.md`
 (AGE-25 under AGE-24, an urgent correction found by measurement): "Extract all history" asks a small reveal check
 instead of extracting again a turn extracted before an earlier turn's secret (K29), and a narrated fact a
 re-extraction of the same generation dropped is listed in "Needs attention" with a Restore repair (`fact_restore`).
@@ -17,10 +17,19 @@ activation (replays unchanged by an activation). Step 3 (ADR 0044 amendment 3): 
 the same generation dropped (matched one to one with the new rows; held nowhere else in memory) is listed in "Needs
 attention" with **Restore**, counted on the panel's chat card and by `GET …/dropped`; `fact_restore` adds it back as
 the owner's version at its turn while the turn reads the same, and applies to the story's row when the turn states it
-again. A new plugin build. Next, step 4 (the loss tool, the local M0 copy end to end, the paid run after the owner's
-OK, latency). High risk (AGENTS.md §14): stored data, re-extraction and owner repairs.
+again. A new plugin build. Step 4 (`docs/perf/reextract-loss.md`, `tools/reextract_loss.py`): listed now, 31 on the
+M0 main chat (AGE-25's occupation among them), 24 and 95 on the bench's other chats, 0 on the restored production copy
+(its re-extractions were under generations no longer serving; the spec's 106 counted those) and 66 on that copy
+re-extracted with `extract-v14`; on the damaged M0 copy the occupation restored passes AGE-25's case and Undo fails it
+again. The paid run (the owner's OK for 68 calls, `gemma4:31b`): no extraction discarded, 324k input and 1.5k output
+tokens against the press's 727k and 85k, M0 main 36/40 (as before the press, the damaged copy 35/40), AGE-25's case
+passed; the checks found every reveal the press found of the secrets both read the same way but one, which reads as
+the press's false positive (a plan carried out, not found out): that criterion missed as written, and the owner
+accepted it (2026-10-01). Keeping a re-extraction's dropped facts automatically (the owner's option 3): not now (owner,
+2026-10-01; K29 no longer re-extracts and Restore is there). Phase 22 complete. Latency at 10,000 messages unchanged (fact read p50 105.2 → 105.9 ms). High risk (AGENTS.md §14): stored data,
+re-extraction and owner repairs.
 
-**Phase 23 — NMOS without Docker: approved 2026-10-01, current alongside Phase 22.** Spec `docs/phases/PHASE-23.md`
+**Phase 23 — NMOS without Docker: approved 2026-10-01, current.** Spec `docs/phases/PHASE-23.md`
 (AGE-29; the owner pulled it in before 1.0, an exception to R7): a bundle for each PocketRisu portable target
 (win-x64, macos-arm64, linux-x64, linux-arm64; Termux later) with a portable PostgreSQL 16, Python, the sidecar and the plugin;
 Windows as a zip with `NMOS.exe` in the notification area, macOS as a menu-bar app signed ad hoc and allowed once
@@ -397,7 +406,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K41 (K10 resolved; K33–K38 recorded 2026-09-29, K39–K40 in Phase 18, K41 in Phase 19) current as of `v0.2.0` and Phase 20, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–7 of the original roadmap, one release each (R7, 2026-10-01: Stage 8 after 1.0, Stage 6 ends with Phase 20, new phases only for Stage 7; R1, R5, R7 decided, R2–R4 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0057` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair; Phase 14: canon sources, names from canon, canon facts and lock; NMOS off for one chat; Phase 15: a packet that fills its budget; Phase 16: NMOS Archive; Phase 17: model-call usage; Phase 18: keyword lexical recall, excerpts that fill their length; Phase 19: `extract-v14`; Phase 20: join preview; Phase 22: reveal checks (0056 is Phase 21's draft) |
-| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-23.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 met (the owner's iPhone check 2026-10-01; the host's alert is K38); 17 met; 18 met (latency measured over the benchmark's questions, owner accepted); 19 met but for `deepseek-v4.1-flash`'s M0 criterion (owner accepted, K41); 20 met; 21 draft; 22 current; 23 current |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-23.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 met (the owner's iPhone check 2026-10-01; the host's alert is K38); 17 met; 18 met (latency measured over the benchmark's questions, owner accepted); 19 met but for `deepseek-v4.1-flash`'s M0 criterion (owner accepted, K41); 20 met; 21 draft; 22 met but the paid run's reveal count missed by one (owner accepted); 23 current |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 | Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11`, and A-12's markup half in `clean-v3` (both unreleased) |
 
@@ -473,7 +482,9 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
   (`docs/phases/PHASE-21.md`).
 - Phase 22 (a re-extraction that keeps what it found: a reveal check instead of K29's re-extraction, and the narrated
   facts a re-extraction dropped, with a Restore repair; AGE-25, urgent): the owner chose the direction 2026-10-01
-  (AGE-25); approved 2026-10-01 with every proposed answer (Q2–Q8, `docs/phases/PHASE-22.md`); current.
+  (AGE-25); approved 2026-10-01 with every proposed answer (Q2–Q8, `docs/phases/PHASE-22.md`); complete 2026-10-01
+  (`docs/perf/reextract-loss.md`), the paid run's reveal count missed by one (owner accepted); option 3 (keeping dropped
+  facts automatically) not now; no release.
 - Phase 23 (NMOS without Docker: a bundle for each PocketRisu portable target; AGE-29): the owner pulled it in before 1.0
   (2026-10-01, an exception to R7) and chose zip + `NMOS.exe` for Windows; a spike on `spike/native-bundle` ran on all
   four targets; approved 2026-10-01 with every proposed answer but Q6, where the owner chose ad hoc signing and

@@ -1,6 +1,7 @@
 # Phase 22 — A re-extraction that keeps what it found: a reveal check, and the facts a re-extraction dropped
 
-> **Status: approved (2026-10-01) with every proposed answer (Q2–Q8; Q1 is the owner's decision); current.** Not a roadmap stage: an urgent correction found by
+> **Status: approved (2026-10-01) with every proposed answer (Q2–Q8; Q1 is the owner's decision); complete
+> (2026-10-01), `docs/perf/reextract-loss.md`; the paid run's reveal count missed by one, the owner accepted it.** Not a roadmap stage: an urgent correction found by
 > measurement (a local benchmark of the owner's chats, 2026-09-30/10-01), tracked as AGE-25 under AGE-24 (the urgent
 > exception of R7, `docs/STATUS.md`). The owner chose the direction on 2026-10-01 (AGE-25): **a reveal check instead of
 > a re-extraction for K29, and a report of the narrated facts a re-extraction dropped**; keeping the earlier facts
@@ -83,16 +84,17 @@ spacing aside); the read compares entities, so an alias the chat knows matches a
 
 ## Acceptance criteria
 
-- [ ] Every existing test and memory-evaluation case passes; recorded requests replay as they were.
-- [ ] The deterministic cases of In scope 3.
-- [ ] On the restored copies, the tool's counts recorded (Q8); the M0 main chat's dropped facts include AGE-25's case.
-- [ ] On a local copy of the owner's M0 main chat as it is (damaged), no model call: AGE-25's occupation listed as
+- [x] Every existing test and memory-evaluation case passes; recorded requests replay as they were.
+- [x] The deterministic cases of In scope 3.
+- [x] On the restored copies, the tool's counts recorded (Q8); the M0 main chat's dropped facts include AGE-25's case.
+- [x] On a local copy of the owner's M0 main chat as it is (damaged), no model call: AGE-25's occupation listed as
       dropped, restored, the M0 case's packet holding it, and the repair undone (counts and pass/fail only, nothing of
       the chat in the repository).
-- [ ] Q8's paid run (after the owner's OK): no extraction discarded by "Extract all history"; the checks find at
+- [x] Q8's paid run (after the owner's OK; run 2026-10-01, all but the reveal count met, the owner accepted that one:
+      a false positive of the re-extraction, `docs/perf/reextract-loss.md`): no extraction discarded by "Extract all history"; the checks find at
       least the reveals the 68 re-extractions found (each reveal by its secret and character); fewer input and output
       tokens than the re-extractions; AGE-25's M0 case answered.
-- [ ] Request-path latency at 10,000 messages unchanged within noise (the served read gains the checks' rows).
+- [x] Request-path latency at 10,000 messages unchanged within noise (the served read gains the checks' rows).
 
 ## Steps (one pull request each)
 
