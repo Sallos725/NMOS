@@ -61,8 +61,12 @@ original design, and most recent phases (15, 17, 18, 19) were outside it. So:
 - **Until 1.0, a new phase is a Stage 7 item.** Urgent fixes (`AGENTS.md` §13) are the exception. Other ideas,
   including C10 of `docs/proposals/IDEA-SURVEY-2026-09-29.md` (memory of chats deleted in the host; host evidence
   H22 recorded), wait under "After 1.0" unless the owner pulls one in by name.
+- **Pulled in by name (2026-10-01): NMOS without Docker** (AGE-29, Phase 23). PocketRisu's portable-package users
+  cannot run the Docker install, so a 1.0 they cannot attach misses part of the host's users. Phase 23 covers the four
+  portable targets; Termux follows separately (its Q2) and is not a 1.0 condition (owner, 2026-10-01): it waits under
+  "After 1.0".
 
-The road left is Stage 7 (`0.4.0`) and two quiet weeks on production.
+The road left is Stage 7 (`0.4.0`), Phase 23 (NMOS without Docker), and two quiet weeks on production.
 
 ## Measuring progress (M0, before the first stage)
 
@@ -211,6 +215,7 @@ Done when:
 ## The 1.0 gate
 
 - stages 4–7 meet their done criteria (Stage 6 as narrowed by R7);
+- Phase 23 is complete: a release carries a bundle for each PocketRisu portable target;
 - no evaluation category is worse than in `0.1.x`;
 - an upgrade from a `v0.1.0-beta.21` database and from each `0.x.0` works (`tests/test_upgrade.py`);
 - two weeks on the owner's production with no heavy change;
@@ -219,7 +224,8 @@ Done when:
 ## After 1.0
 
 Moved here by R7 (2026-10-01), in no order: Stage 8 (PocketRisu bridge); Stage 6's transition rules and conflict
-queue; C10 of the idea survey (memory of chats deleted in the host).
+queue; C10 of the idea survey (memory of chats deleted in the host); NMOS without Docker on Termux (Android), after
+Phase 23's four portable targets (owner, 2026-10-01).
 
 The owner's longer aim is long-term memory for LLMs in general, not only role-play. The parts of NMOS
 that already carry over are the immutable ledger with rebuildable memory, provenance, hybrid recall
