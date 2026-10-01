@@ -125,6 +125,24 @@ describe('panel', () => {
     expect(calls.map((c) => c[1])).toContain('/v1/conversations/conv-9/coverage?usage=true');
   });
 
+  it("counts in this chat's card the facts a re-extraction dropped, and says nothing for none (PHASE-22 Q6)", async () => {
+    for (const dropped of [3, 0]) {
+      document.body.replaceChildren();
+      const { d } = deps();
+      const total = { calls: 12, reported: 12, input: 48210, output: 3105, cached: 0 };
+      d.api = async <T>(_method: 'GET' | 'POST' | 'PUT', path: string) => {
+        if (path === '/v1/conversations?host=pocketrisu&host_chat_ref=chat-1') return [{ id: 'conv-9', host_chat_ref: 'chat-1' }] as T;
+        if (path.startsWith('/v1/conversations/conv-9/coverage')) return { usage: { total }, dropped } as T;
+        return config as T;
+      };
+      await openPanel(d, 'status');
+      const card = () => document.querySelector('#nmos-panel .card')!.textContent ?? '';
+      await vi.waitFor(() => expect(card()).toContain('NMOS model use: 12 calls'));
+      if (dropped) expect(card()).toContain('3 facts dropped by a re-extraction');
+      else expect(card()).not.toContain('dropped by a re-extraction');
+    }
+  });
+
   it('leaves the usage line out when the sidecar does not know the chat', async () => {
     const { d } = deps();
     d.api = async <T>(_method: 'GET' | 'POST' | 'PUT', path: string) =>

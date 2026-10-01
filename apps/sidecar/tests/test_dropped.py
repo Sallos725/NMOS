@@ -130,3 +130,56 @@ def test_one_quote_restates_only_the_fact_the_new_extraction_states():
                         [row("Ren", "possesses", "sword", quote=pair)], None)) == {0}
     # An accumulating fact with a new value: still the same predicate, subject and object (level 2).
     assert set(restated([row("Ren", "has_trait", value="brave")], [row("Ren", "has_trait", value="bold")], None)) == {0}
+
+
+def claimed(system: str, user: str) -> tuple[dict, str]:
+    """A second call that words the occupation as the character's own claim, not as narration."""
+    out, raw = stub_extractor(system, user)
+    target = user.split("TARGET", 1)[1]
+    return {**out, "assertions": [{**a, "source": "character_claim", "asserted_by": a["subject"]}
+                                  if a["predicate"] == "identity" and "today" in target else a
+                                  for a in out["assertions"]]}, raw
+
+
+def test_a_claim_or_a_plan_restates_no_fact(migrated):
+    """Copilot review of #216: a character's claim, a plan or a dream does not state how things stand (memory_view puts
+    them in claims and other), so it neither hides a drop nor makes a restore step aside."""
+    old = [row("Hana", "identity", value="knight")]
+    for change in ({"source": "character_claim", "asserted_by": "Hana"}, {"modality": "hypothetical"},
+                   {"modality": "dreamed"}):
+        assert restated(old, [{**row("Hana", "identity", value="knight"), **change}], None) == {}
+    chat = chat_of("Kaito is in the harbor.", "Hana is a knight. It is today.", "Kaito is in the garden.")
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        sync(c, chat)
+        drain(migrated, stub_extractor)
+        cid = conv_id(c, chat)
+        assert c.post(f"/v1/conversations/{cid}/rebuild").status_code == 200
+        drain(migrated, claimed)
+        (lost,) = dropped(c, cid)
+        assert lost["value"] == "knight"
+        out = repair(c, cid, kind="fact_restore", item=str(lost["id"]))
+        assert out["applied"] is not None and "Hana identity: knight" in memory(packet(c, chat, "What is Hana?"))
+        assert [f["owner"] for f in c.get(f"/v1/conversations/{cid}/facts").json() if f["predicate"] == "identity"] \
+            == [True]
+
+
+def test_a_restore_survives_an_archive_and_its_restore(migrated, database_url_factory, tmp_path):
+    """ADR 0050: the owner's repair, with its nested target, comes back with the chat and applies the same."""
+    from nmos_sidecar import archive
+
+    chat = chat_of("Kaito is in the harbor.", "Hana is a knight. It is today.", "Kaito is in the garden.")
+    with make_client(migrated, **LLM, extract_backfill=100) as c:
+        cid = damaged(c, migrated, chat)
+        (lost,) = dropped(c, cid)
+        repair(c, cid, kind="fact_restore", item=str(lost["id"]))
+        before = memory(packet(c, chat, "What is Hana?"))
+        assert "Hana identity: knight" in before
+    source = tmp_path / f"a{archive.SUFFIX}"
+    archive.export_file(migrated, str(source))
+    target = database_url_factory()
+    archive.restore_file(target, str(source))
+    with make_client(target, **LLM, extract_backfill=100) as c:
+        assert memory(packet(c, chat, "What is Hana?")) == before
+        assert dropped(c, cid) == []
+        (rep,) = c.get(f"/v1/conversations/{cid}/repairs").json()["repairs"]
+        assert rep["kind"] == "fact_restore" and rep["applied"] is not None

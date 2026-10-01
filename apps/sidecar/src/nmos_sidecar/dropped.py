@@ -18,7 +18,7 @@ from uuid import UUID
 import psycopg
 
 from .predicates import REGISTRY, stored_knowledge
-from .repairs import RESTORED, _ekey, restated
+from .repairs import _ekey, _established, restated
 from .secrets import secret_text
 
 NOT_FACTS = frozenset({"learned", "also_called"})  # a reveal and a name link are not facts (ADR 0033, 0012)
@@ -68,7 +68,7 @@ def find(conn: psycopg.Connection, head: UUID, key: str | None, view: dict[str, 
         by.setdefault(row["extraction_id"], []).append(row)
     r = view.get("resolution")
     held = {(a["predicate"], _ekey(r, a.get("subject_type"), a["subject"]), _ekey(r, a.get("object_type"), a.get("object")))
-            for a in view.get("assertions") or () if (a.get("source") or "narration") == "narration"}
+            for a in view.get("assertions") or () if _established(a)}
     out = []
     for p in pairs:
         old = [a for a in by.get(p["old"], []) if _fact(a)]

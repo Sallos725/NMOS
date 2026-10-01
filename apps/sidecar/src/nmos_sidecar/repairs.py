@@ -290,11 +290,18 @@ def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution
             or (_by_quote(target, rows, same, lambda a: a.get("evidence")) if quote else None))
 
 
+def _established(b: dict[str, Any]) -> bool:
+    """A row that states how things stand, as `facts.memory_view` takes facts: narrated (legacy rows without a source
+    count as narration) and actual. A character's claim or a plan, a dream or a guess restates no fact (PHASE-22 Q5)."""
+    return (b.get("source") or "narration") == "narration" and (b.get("modality") or "actual") == "actual"
+
+
 def _restates(level: int, a: dict[str, Any], b: dict[str, Any], r: Resolution | None) -> bool:
-    """Whether `b` states the fact `a` again, at one of PHASE-22 Q5's levels, closest first: (1) the same predicate,
-    subject and object (as entities) and, for a predicate that accumulates, the same value; (2) the same predicate,
-    subject and object; (3) the same predicate and subject with a quote sharing a run (the object worded otherwise)."""
-    if a["predicate"] != b["predicate"] or (
+    """Whether `b`, a narrated actual row, states the fact `a` again, at one of PHASE-22 Q5's levels, closest first:
+    (1) the same predicate, subject and object (as entities) and, for a predicate that accumulates, the same value;
+    (2) the same predicate, subject and object; (3) the same predicate and subject with a quote sharing a run (the
+    object worded otherwise)."""
+    if a["predicate"] != b["predicate"] or not _established(b) or (
             _ekey(r, a.get("subject_type"), a["subject"]) != _ekey(r, b.get("subject_type"), b["subject"])):
         return False
     if level == 3:
