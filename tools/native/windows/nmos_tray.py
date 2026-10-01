@@ -40,7 +40,7 @@ MB_ICONERROR, MB_ICONINFORMATION = 0x10, 0x40
 ERROR_ALREADY_EXISTS = 183
 CLASS_NAME = "NMOSTrayWindow"
 
-CMD_COPY_URL, CMD_OPEN_PLUGIN, CMD_OPEN_LOGS, CMD_AUTOSTART, CMD_QUIT = 1, 2, 3, 4, 9
+CMD_COPY_URL, CMD_OPEN_PLUGIN, CMD_OPEN_LOGS, CMD_AUTOSTART, CMD_DASHBOARD, CMD_QUIT = 1, 2, 3, 4, 5, 9
 
 
 class WNDCLASSEXW(ctypes.Structure):
@@ -118,6 +118,14 @@ def set_autostart(on: bool) -> None:
                 winreg.DeleteValue(key, RUN_VALUE)
             except FileNotFoundError:
                 pass
+
+
+def dashboard_url(services: launcher.Services) -> str:
+    """The Inspector's first page (PHASE-23 Q8), with the token when one is set (the page asks for it)."""
+    from urllib.parse import quote
+
+    token = services.env.get("NMOS_AUTH_TOKEN")
+    return services.url + "/dashboard" + (f"?token={quote(token)}" if token else "")
 
 
 # --- the tray ---------------------------------------------------------------------------------------------------------
@@ -200,6 +208,8 @@ class Tray:
         menu = user32.CreatePopupMenu()
         user32.AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, f"NMOS: {status}")
         user32.AppendMenuW(menu, MF_SEPARATOR, 0, None)
+        user32.AppendMenuW(menu, MF_STRING | (0 if self.state == "running" else MF_GRAYED), CMD_DASHBOARD,
+                           "대시보드 열기")
         user32.AppendMenuW(menu, MF_STRING, CMD_COPY_URL, "사이드카 주소 복사")
         user32.AppendMenuW(menu, MF_STRING, CMD_OPEN_PLUGIN, "플러그인 파일 폴더 열기")
         user32.AppendMenuW(menu, MF_STRING, CMD_OPEN_LOGS, "로그 폴더 열기")
@@ -218,7 +228,9 @@ class Tray:
         self.on_command(cmd)
 
     def on_command(self, cmd: int) -> None:
-        if cmd == CMD_COPY_URL:
+        if cmd == CMD_DASHBOARD:
+            os.startfile(dashboard_url(self.services))
+        elif cmd == CMD_COPY_URL:
             subprocess.run(["clip"], input=self.services.url.encode("ascii"), **launcher.CHILD_KW_NO_OUTPUT)
             self.set_tip(self.nid.szTip, "사이드카 주소를 복사했어요.")
         elif cmd == CMD_OPEN_PLUGIN:

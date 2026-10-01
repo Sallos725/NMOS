@@ -741,6 +741,14 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     return "done"
 
 
+def recent_errors(conn: psycopg.Connection, limit: int = 8) -> list[dict[str, Any]]:
+    """Background jobs that failed for good or are retrying, newest first, each with its last error cut to 300
+    characters (an error can quote a model's reply)."""
+    return conn.execute("SELECT kind, status, attempts, updated_at, left(last_error, 300) AS error FROM job"
+                        " WHERE last_error IS NOT NULL AND status IN ('dead', 'queued', 'running')"
+                        " ORDER BY updated_at DESC LIMIT %s", (limit,)).fetchall()
+
+
 def job_counts(conn: psycopg.Connection) -> dict[str, int]:
     return {r["status"]: r["n"] for r in conn.execute("SELECT status, count(*) AS n FROM job GROUP BY status").fetchall()}
 

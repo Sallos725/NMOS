@@ -71,7 +71,7 @@ func lastLog(_ lines: Int = 6) -> String {
     return mine.suffix(lines).joined(separator: "\n")
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var item: NSStatusItem!
     var statusLine: NSMenuItem!
     var loginLine: NSMenuItem!
@@ -117,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusLine.isEnabled = false
         menu.addItem(statusLine)
         menu.addItem(.separator())
+        menu.addItem(withTitle: "대시보드 열기", action: #selector(openDashboard), keyEquivalent: "").target = self
         menu.addItem(withTitle: "사이드카 주소 복사", action: #selector(copyURL), keyEquivalent: "").target = self
         menu.addItem(withTitle: "플러그인 파일 위치 열기", action: #selector(openPlugin), keyEquivalent: "").target = self
         menu.addItem(withTitle: "로그 폴더 열기", action: #selector(openLogs), keyEquivalent: "").target = self
@@ -192,6 +193,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.refresh()
             }
         }.resume()
+    }
+
+    /// The Inspector's first page (PHASE-23 Q8), with the token when one is set (the page asks for it).
+    /// Only RFC 3986 unreserved characters stay as they are: `&`, `=` and `+` (a space to the server) are escaped.
+    @objc func openDashboard() {
+        var page = url + "/dashboard"
+        let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        if let token, let q = token.addingPercentEncoding(withAllowedCharacters: unreserved) {
+            page += "?token=\(q)"
+        }
+        if let target = URL(string: page) { NSWorkspace.shared.open(target) }
+    }
+
+    /// The menu enables items itself (autoenablesItems); the dashboard waits until NMOS answers, like the Windows tray.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        menuItem.action != #selector(openDashboard) || state == "running"
     }
 
     @objc func copyURL() {

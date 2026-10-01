@@ -140,6 +140,12 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "full": ("전체", "full"),
     "job.queued": ("대기", "queued"), "job.running": ("실행 중", "running"), "job.done": ("완료", "done"),
     "job.dead": ("실패", "dead"), "job.obsolete": ("폐기", "obsolete"),
+    # the first page's status (PHASE-23 Q8): what the tray's and the menu bar's "dashboard" opens
+    "version": ("버전", "Version"),
+    "errors": ("최근 오류", "Recent errors"),
+    "errors.none": ("실패했거나 다시 시도 중인 백그라운드 작업이 없습니다.", "No background job has failed or is retrying."),
+    "h.job": ("작업", "Job"), "h.status": ("상태", "Status"), "h.attempts": ("시도", "Attempts"),
+    "h.when": ("시각", "When"), "h.error": ("오류", "Error"),
     "ids": ("식별자", "Identifiers"),
     # contents: short names of the detail sections
     "toc.state": ("상태", "State"), "toc.coverage": ("처리 현황", "Coverage"), "toc.conflicts": ("충돌", "Conflicts"),
@@ -436,10 +442,21 @@ def _percent(stats: dict[str, Any] | None, done_key: str, lang: str) -> str:
     return text if stats["complete"] else f"<span class=\"chip\">{_t(lang, 'partial')}</span> {text}"
 
 
+def _errors(errors: list[dict[str, Any]], lang: str) -> str:
+    """Background jobs that failed for good or are retrying, newest first, with their last error (cut, escaped)."""
+    head = f"<h2>{_t(lang, 'errors')}</h2>"
+    if not errors:
+        return head + f"<p class=\"muted\">{_t(lang, 'errors.none')}</p>"
+    rows = [[_v(e["kind"]), _t(lang, f"job.{e['status']}") if f"job.{e['status']}" in T else _v(e["status"]),
+             _v(e["attempts"]), timestamp(e["updated_at"]), _v(e["error"])] for e in errors]
+    return head + table([_t(lang, k) for k in ("h.job", "h.status", "h.attempts", "h.when", "h.error")], rows)
+
+
 def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str, int] | None = None,
           gens: dict[str, dict[str, Any] | None] | None = None, extraction: dict | None = None,
           embeddings: dict | None = None, lang: str = "ko", embed: bool = False,
-          plugin: dict[str, Any] | None = None) -> str:
+          plugin: dict[str, Any] | None = None, version: str | None = None,
+          errors: list[dict[str, Any]] | None = None) -> str:
     extraction, embeddings, gens = extraction or {}, embeddings or {}, gens or {}
     q = query(token, lang)
     rows = [[f"<a href=\"/inspector/c/{c['id']}{q}\">{_v(label(c))}</a>"
@@ -454,13 +471,15 @@ def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str
                                             "h.commits", "h.branched", "h.last_retrieval")], rows)
                if rows else f"<p class=\"muted\">{_t(lang, 'no_conversations')}</p>")
     switch = "" if embed else _lang_switch("/inspector", token, lang)
-    body = (f"<div class=\"top\"><h1>{_t(lang, 'title')}</h1>{switch}</div>"
+    ver = f"<span class=\"muted\">{_t(lang, 'version')} {_v(version)}</span>" if version else ""
+    body = (f"<div class=\"top\"><h1>{_t(lang, 'title')}</h1>{ver}{switch}</div>"
             f"<p class=\"muted\">{_t(lang, 'intro')} {queue}</p>"
             f"<p>{_t(lang, 'extractor')}: {_generation(gens.get('extraction'), lang)}<br>"
             f"{_t(lang, 'projection')}: {_generation(gens.get('embeddings'), lang)}"
             + (f"<br>{_t(lang, 'sm.generation')}: {_generation(gens['summaries'], lang)}" if gens.get("summaries") else "")
             + "</p>"
-            + _plugin_status(plugin or {}, q, lang, embed) + listing)
+            + _plugin_status(plugin or {}, q, lang, embed) + listing
+            + (_errors(errors, lang) if errors is not None else ""))
     return body if embed else page(_t(lang, "title"), body, lang)
 
 

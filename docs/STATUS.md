@@ -100,7 +100,12 @@ PostgreSQL on linux-x64, macos-arm64 and win-x64. High risk (AGENTS.md §14): th
 and log folders, start at login through the user's Run key, quit); a failed or interrupted start leaves nothing
 running; checked on CI from a Korean folder, a sign-in included by starting the Run entry's command. The Windows
 suite's one intermittent failure was the sidecar's clock (fixed in #228: canon facts follow the database's clock).
-Next, step 4 (macOS: the menu-bar app). Separate from Phase 22's code; neither waits on the other.
+Step 4 (macOS): `NMOS.app`, a menu-bar item, in a `.dmg`, every binary in it signed ad hoc; data in
+`~/Library/Application Support/NMOS/` (App Translocation; the owner's Q3/Q9 exception); checked on CI from the `.dmg`,
+sealed while running. Merged after #233 (story facts read up to a request's message follow the request's
+transaction start, not the sidecar's clock: the Windows-only replay failures, 9 of 40 before, 0 of 40 after). Step 5:
+`/dashboard`, the Inspector's first page with the version and recent job errors added, opened from the tray and the
+menu bar. Next, step 6 (release workflow, README, ADR, the owner's check on Windows and a Mac).
 
 **Release `v0.2.0` (2026-09-28), the first milestone (`docs/ROADMAP-1.0.md`), at the owner's request.** Stage 4
 (knowledge and secrets, Phase 10) complete, with Stage 5 (Phases 11–12) and Stage 6 so far (Phase 13, Phase 14 steps
