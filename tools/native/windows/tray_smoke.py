@@ -93,5 +93,5 @@ result["second_quit_s"] = quit_tray()
 nmos_tray.set_autostart(False)
 
 print(json.dumps(result, ensure_ascii=False, indent=2))
-if not (result["exe_exit"] == 0 and result["autostart_points_here"]):
+if not (result["exe_exit"] == 0 and result["tray_icon_added"] and result["autostart_points_here"]):
     raise SystemExit(1)

@@ -215,9 +215,28 @@ class Services:
         self.pgdata: Path | None = None
         self.stopped = False
         self.lock = threading.Lock()  # start() spawning and stop() never interleave (quit while starting)
+        self._teardown_lock = threading.Lock()
+        self._idle = threading.Event()  # set while no start() is running
+        self._idle.set()
         self._data_lock = None
 
     def start(self) -> None:
+        """Start everything; on any failure (a refusal, a stop asked meanwhile) undo what was started, PostgreSQL
+        included, before raising: nothing is left running for a quit that may never come."""
+        self._idle.clear()
+        try:
+            self._start()
+        except BaseException:
+            self._teardown()
+            raise
+        finally:
+            self._idle.set()
+
+    def _checkpoint(self) -> None:
+        if self.stopped:
+            raise SystemExit("stopped while starting")
+
+    def _start(self) -> None:
         data = self.data
         if WINDOWS:
             restrict_to_this_user(data)  # before the lock file and the database are made in it
@@ -228,6 +247,7 @@ class Services:
             PGSQL, data = ascii_path(PGSQL), ascii_path(data)
         self.pgdata = pgdata = data / "pg"
         pw_path = data / "db-password"
+        self._checkpoint()
         if not (pgdata / "PG_VERSION").is_file():
             log(f"first start: creating the database in {pgdata}")
             t0 = time.monotonic()
@@ -245,6 +265,7 @@ class Services:
             log("postgres from an earlier run is still up; using it")
         else:
             require_free_port("127.0.0.1", self.pg_port, "the NMOS database", "NMOS_DB_PORT")
+            self._checkpoint()
             run([pg_bin("pg_ctl"), "-D", str(pgdata), "-l", str(data / "postgres.log"), "-w", "start"])
         log(f"postgres up on 127.0.0.1:{self.pg_port} ({time.monotonic() - t0:.1f} s)")
 
@@ -271,8 +292,7 @@ class Services:
         py = sys.executable
         run([py, "-m", "nmos_sidecar.migrate"], env=env)
         with self.lock:
-            if self.stopped:
-                raise SystemExit("stopped while starting")
+            self._checkpoint()
             self.procs.append(subprocess.Popen([py, "-m", "uvicorn", "nmos_sidecar.api:app_factory", "--factory",
                                                 "--host", self.bind, "--port", self.port], env=env, **CHILD_KW))
             self.procs.append(subprocess.Popen([py, "-m", "nmos_sidecar.worker"], env=env, **CHILD_KW))
@@ -282,12 +302,23 @@ class Services:
         return bool(self.procs) and all(p.poll() is None for p in self.procs)
 
     def stop(self) -> None:
+        """Stop everything this launcher started. A start() still running stops at its next checkpoint and undoes
+        itself; this waits for that, so PostgreSQL is never started after a stop."""
         with self.lock:
-            if self.stopped:
-                return
             self.stopped = True
-        if self._data_lock is None:
-            return  # never started, or another launcher holds this data: nothing here is ours to stop
+        self._idle.wait(timeout=300)
+        self._teardown()
+
+    def _teardown(self) -> None:
+        with self._teardown_lock:
+            if self._data_lock is None:
+                return  # never started, already torn down, or another launcher holds this data: nothing is ours
+            self._stop_all()
+            self._data_lock.close()
+            self._data_lock = None
+            log("stopped")
+
+    def _stop_all(self) -> None:
         for p in self.procs:
             if p.poll() is None:
                 p.terminate()
@@ -296,10 +327,9 @@ class Services:
                 p.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 p.kill()
-        if self.pgdata is not None:
-            subprocess.run([pg_bin("pg_ctl"), "-D", str(self.pgdata), "-m", "fast", "-w", "stop"], **CHILD_KW)
-        self._data_lock.close()
-        log("stopped")
+        if self.pgdata is not None and (self.pgdata / "PG_VERSION").is_file():
+            subprocess.run([pg_bin("pg_ctl"), "-D", str(self.pgdata), "-m", "fast", "-w", "stop"],
+                           **{**CHILD_KW, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL})
 
 
 _console_handler = None  # kept referenced so ctypes does not free the callback

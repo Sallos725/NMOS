@@ -19,10 +19,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR args, int show) {
     STARTUPINFOW si = {sizeof si};
     PROCESS_INFORMATION pi;
     if (!CreateProcessW(NULL, cmd, NULL, NULL, FALSE, 0, NULL, dir, &si, &pi)) {
-        MessageBoxW(NULL,
-                    L"NMOS를 시작할 수 없어요: python\\pythonw.exe를 찾지 못했습니다.\n"
-                    L"압축을 모두 푼 폴더에서 NMOS.exe를 실행해 주세요.",
-                    L"NMOS", MB_ICONERROR);
+        DWORD err = GetLastError();
+        static wchar_t reason[1024], text[2048];
+        if (!FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, err, 0, reason,
+                            sizeof reason / sizeof reason[0], NULL))
+            swprintf(reason, sizeof reason / sizeof reason[0], L"error %lu", err);
+        swprintf(text, sizeof text / sizeof text[0],
+                 L"NMOS를 시작할 수 없어요 (python\\pythonw.exe):\n%ls\n"
+                 L"%ls압축을 모두 푼 폴더에서 NMOS.exe를 실행했는지 확인해 주세요.",
+                 reason, err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND ? L"" : L"백신이 막았거나 파일이 손상됐을 수 있어요. ");
+        MessageBoxW(NULL, text, L"NMOS", MB_ICONERROR);
         return 1;
     }
     CloseHandle(pi.hThread);

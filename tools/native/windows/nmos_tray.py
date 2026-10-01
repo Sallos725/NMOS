@@ -171,13 +171,14 @@ class Tray:
         except BaseException as e:  # noqa: BLE001 — anything here must reach the user, not a closed console
             self.state = "failed"
             self.error = e.code if isinstance(e, SystemExit) and isinstance(e.code, str) else repr(e)
-            launcher.log("start failed:\n" + "".join(traceback.format_exception(e)))
+            launcher.log("start failed (what had started is stopped):\n" + "".join(traceback.format_exception(e)))
         user32.PostMessageW(self.hwnd, WM_STATUS, 0, 0)
         while self.state == "running" and self.services.alive():
             threading.Event().wait(2)
         if self.state == "running":
             self.state = "stopped"
-            launcher.log("a service exited; see this log")
+            launcher.log("a service exited; stopping the others (see this log)")
+            self.services.stop()  # the worker and PostgreSQL do not wait for a quit that may never come
             user32.PostMessageW(self.hwnd, WM_STATUS, 0, 0)
 
     def on_status(self) -> None:
