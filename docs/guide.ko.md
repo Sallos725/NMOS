@@ -28,8 +28,9 @@ NMOS가 꺼져 있거나 느려도 채팅은 그대로 진행됩니다.
 
 ## 설치
 
-1. [최신 릴리스](https://github.com/Sallos725/NMOS/releases)에서 `nmos-docker-compose.yml`을 받아
-   `docker-compose.yml`로 이름을 바꾸고 실행합니다.
+1. 사이드카를 켭니다. Docker를 쓰면 [최신 릴리스](https://github.com/Sallos725/NMOS/releases)에서
+   `nmos-docker-compose.yml`을 받아 `docker-compose.yml`로 이름을 바꾸고 실행합니다. Docker가 없으면 아래
+   [Docker 없이](#docker-없이)대로 켜고 2번으로 넘어가세요.
    ```bash
    docker compose up -d
    curl http://127.0.0.1:8790/v1/health
@@ -51,6 +52,39 @@ NMOS가 꺼져 있거나 느려도 채팅은 그대로 진행됩니다.
 
 여기까지만 해도 기본 기억(글자 일치 검색)이 동작합니다. NMOS 화면의 **인스펙터** 탭에서
 NMOS가 무엇을 저장했고 무엇을 넣었는지 볼 수 있습니다.
+
+### Docker 없이
+
+0.3.0부터 릴리스마다 PocketRisu 포터블 패키지가 있는 시스템별 번들이 함께 올라옵니다. 안에 NMOS, 전용
+PostgreSQL 16과 Python, 같은 빌드의 플러그인이 들어 있고 따로 설치할 것은 없습니다. 주소는 Docker와 같은
+`http://127.0.0.1:8790`이고, 전용 DB는 `127.0.0.1:54390`입니다. Docker 설치에서 `.env`로 하던 설정은 NMOS 옆의
+`.env`에 씁니다. `.env.example`을 복사한 뒤 `NMOS_DB_PORT=5436`을 `NMOS_DB_PORT=54390`으로 바꾸세요(예시는 Docker와 공유합니다).
+포트가 이미 쓰이고 있으면 시작을 멈추고 바꿀 설정 이름을 알려 줍니다.
+
+**Windows (x64)** — `NMOS-v<버전>-win-x64.zip`
+
+1. C 드라이브 아무 곳에나 압축을 풉니다(예: `문서\NMOS`). 한글 폴더 이름도 괜찮습니다. 짧은(8.3) 이름이 없는
+   드라이브에서는 영문 폴더로 옮기라는 안내가 나옵니다.
+2. `NMOS.exe`를 더블클릭합니다. "Windows의 PC 보호" 창이 뜨면(코드 서명이 없어서) **추가 정보 → 실행**을 한 번
+   누르세요. 첫 시작은 15초쯤, 그다음부터는 1~2초 걸립니다.
+3. 알림 영역의 NMOS 아이콘 메뉴에서 상태 확인, 사이드카 주소 복사, 대시보드 열기, 플러그인 폴더
+   (`plugin\nmos-pocketrisu.js`)·로그 폴더(`data\nmos.log`) 열기, Windows 시작 시 실행, 종료(DB도 같이 꺼짐)를 할 수
+   있습니다.
+
+**macOS (Apple Silicon, macOS 13 이상)** — `NMOS-v<버전>-macos-arm64.dmg`
+
+1. `.dmg`를 열고 `NMOS.app`을 응용 프로그램 폴더로 끌어 놓습니다.
+2. 응용 프로그램에서 NMOS를 엽니다. 악성 소프트웨어 확인을 못 했다는 창이 뜨면(공증 없이 ad-hoc 서명이라서)
+   **완료**를 누르고, 시스템 설정 → **개인정보 보호 및 보안** → **그래도 열기**를 한 번 누르세요. 그래도 안 열리면
+   터미널에서 `xattr -cr /Applications/NMOS.app`을 실행하고 다시 엽니다.
+3. 메뉴 막대에 NMOS가 생기고 메뉴는 Windows와 같습니다. 데이터, `.env`, 로그, 플러그인 파일은
+   `~/Library/Application Support/NMOS/`에 있습니다.
+
+**Linux (x64, ARM64; glibc 2.35 이상: Ubuntu 22.04+, Debian 12, Raspberry Pi OS bookworm)** —
+`NMOS-v<버전>-linux-x64.tar.gz` 또는 `-linux-arm64.tar.gz`. 압축을 풀고 `./start.sh`로 켭니다(Ctrl+C로 DB까지 종료).
+백그라운드로 돌리는 systemd 사용자 서비스 예시는 README의 "Without Docker"에 있습니다.
+
+그다음 위 2번부터 이어서 하면 됩니다. 플러그인 파일은 번들의 `plugin` 폴더(macOS는 Application Support)에 있습니다.
 
 ## 업데이트 · 백업 · 되돌리기
 
@@ -79,6 +113,14 @@ NMOS_VERSION=0.1.0-beta.19 docker compose up -d   # 되돌아갈 릴리스
 
 옛 플러그인 파일도 다시 넣고 새로고침하세요. 대화 자체는 PocketRisu에 있으므로, 각 채팅의 다음 생성에서
 백업 이후 바뀐 내용이 다시 동기화되고 worker가 그만큼 다시 추출합니다(제공자 비용).
+
+**Docker 없이:** NMOS를 종료하고 `data` 폴더와, 있다면 NMOS 옆의 `.env`도 백업하세요(macOS는 `.env`까지 들어 있는
+`~/Library/Application Support/NMOS`를 통째로 복사). Windows/Linux 업데이트는 새 버전을 옛 버전 옆에 풀고 `data` 폴더를
+옮긴 뒤 기존 `.env`도 새 실행 파일 옆에 복사하세요. 인증 토큰·포트·모델 설정이 유지됩니다(macOS는 응용 프로그램의
+`NMOS.app`만 바꾸면 되고 데이터와 `.env`는 그대로). 새 버전을 켤 때 DB 변경이 적용됩니다. 플러그인
+파일도 바꾸고 새로고침하세요. 옛 버전은 새 버전이 쓴 데이터를 거부하고 아무것도 바꾸지 않습니다. 되돌리려면 백업해
+둔 `data`와 `.env`를 옛 버전 폴더에 복원하세요(macOS는 Application Support 폴더를 복원). 번들은 PostgreSQL 16에 머물고, 다음 메이저로는 NMOS 아카이브(내보내기 → 새
+버전에서 복원)로 옮깁니다.
 
 ### 내보내기 (NMOS 아카이브)
 

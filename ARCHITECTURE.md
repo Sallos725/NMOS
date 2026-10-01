@@ -589,7 +589,7 @@ and bound server-side to `(conversation, worldline, principal)` via a scope toke
 | Worker | same codebase, separate process, Postgres-backed job table (`SKIP LOCKED`) |
 | Plugin | TypeScript → single bundled `.js` (esbuild) in PocketRisu V3 plugin format |
 | Tests | pytest (sidecar), vitest (plugin pure functions) |
-| Deploy | Docker Compose on homelab; optional token in the plugin arg `auth_token` (ADR 0003, H12); TLS if crossing hosts |
+| Deploy | Docker Compose on homelab; optional token in the plugin arg `auth_token` (ADR 0003, H12); TLS if crossing hosts. Without Docker (Phase 23, ADR 0060): a portable bundle per PocketRisu portable target — `NMOS-vX-win-x64.zip` (`NMOS.exe`, tray), `-macos-arm64.dmg` (menu-bar `NMOS.app`, signed ad hoc), `-linux-x64.tar.gz` and `-linux-arm64.tar.gz` (`start.sh`) — each with PostgreSQL 16 (`pg_trgm`, `pgvector`), Python and the plugin, attached to tagged releases |
 
 ## 7. Repository layout
 
@@ -620,7 +620,8 @@ nmos/
 ├── fixtures/
 │   ├── host/                  # recorded PocketRisu observations
 │   └── unit/                  # cross-language hash vectors
-├── tools/                     # release check, benchmarks, evaluations, replay; Phase 0A spike tooling
+├── tools/                     # release check, benchmarks, evaluations, replay; Phase 0A spike tooling;
+│                              #   native/: the Docker-free bundles (builder, launcher, tray, menu-bar app, smokes)
 └── docker/
 ```
 

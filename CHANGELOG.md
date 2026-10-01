@@ -5,6 +5,19 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **NMOS without Docker** (Phase 23, ADR 0060; AGE-29). The release carries a bundle for each system PocketRisu ships
+  a portable package for: `NMOS-v<version>-win-x64.zip` (double-click `NMOS.exe`; NMOS sits in the notification area),
+  `-macos-arm64.dmg` (a menu-bar `NMOS.app`, signed ad hoc: allow it once with Open Anyway), `-linux-x64.tar.gz` and
+  `-linux-arm64.tar.gz` (`start.sh`). Each holds PostgreSQL 16 with `pg_trgm` and `pgvector`, Python, the sidecar and
+  the plugin; nothing else is installed, and the plugin's URL is the same as with Docker. The tray and the menu bar
+  show the status, copy the URL, open the dashboard and the plugin and log folders, start NMOS at login, and quit
+  (stopping the database too). To update on Windows/Linux, unpack the new version, move `data` into it and copy the
+  existing `.env` too (macOS: replace the app; data and `.env` stay in Application Support; README "Without Docker").
+  The Docker install is unchanged.
+
+- **`/dashboard`**: the Inspector's first page, now with the NMOS version and the last failed or retrying background
+  jobs with their errors (Phase 23 step 5). Read-only, behind the sidecar's token like the Inspector.
+
 - **A role between two people is remembered as such: `extract-v15`** (Phase 25, ADR 0059, D69,
   `docs/perf/extract-v15.md`; AGE-27). Who rents from whom, works for, teaches or looks after whom is now its own fact,
   `role_toward`, one per direction, beside the pair's relationship, which now means a personal tie (kin, romance,

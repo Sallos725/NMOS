@@ -106,7 +106,8 @@ def build_pgvector(pgsql: Path, work: Path, windows: bool) -> None:
             # pg_config carries the SDK path of the machine that built Postgres; use this machine's SDK.
             sdk = subprocess.run(["xcrun", "--show-sdk-path"], capture_output=True, text=True, check=True).stdout.strip()
             args.append(f"PG_SYSROOT={sdk}")
-        subprocess.run(["make", "-s", "clean"], cwd=src, check=False)
+        # With PG_CONFIG, or clean fails and a cached clone keeps objects built elsewhere (another glibc).
+        subprocess.run(["make", "-s", "clean", *args], cwd=src, check=True)
         subprocess.run(["make", "-s", *args], cwd=src, check=True)
         subprocess.run(["make", "-s", "install", *args], cwd=src, check=True)
         if sys.platform == "darwin":
