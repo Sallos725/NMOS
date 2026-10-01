@@ -143,17 +143,17 @@ def prompts(args: argparse.Namespace) -> list[dict[str, Any]]:
 def run(args: argparse.Namespace) -> None:
     system = X.SYSTEM_PROMPT.format(registry=registry_prompt())
     checks = hasattr(X, "shown_target")  # extract-v14 or later: normalize parks a quote not in the turn
-    todo = []
-    for p in prompts(args):
+    todo, selected = [], prompts(args)
+    for p in selected:
         for n in range(1, args.runs + 1):
             path = args.out / args.label / str(n) / f"{args.name}-{p['turn']}.json"
             if not path.exists():
                 todo.append((path, p))
-    if args.turns_from:  # the same turns as the stored run: its checked quotes are in them
+    if args.turns_from:  # the same turns as the stored run: its checked quotes are in them (every turn, done or not)
         files = stored_turns(args.turns_from, args.name)
         found = total = 0
         missed = []
-        for p in {p["turn"]: p for _, p in todo}.values():
+        for p in selected:
             quotes = [a["evidence"] for a in json.loads(files[p["turn"]].read_text(encoding="utf-8"))["assertions"]
                       if a.get("quote_in_turn")]
             hits = sum(1 for q in quotes if in_turn(q, p["shown"]))

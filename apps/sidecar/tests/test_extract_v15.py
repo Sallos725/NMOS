@@ -145,25 +145,32 @@ def tenancy(system, user):
     return {"assertions": items}, "{}"
 
 
-def test_a_role_leads_the_packet_and_a_request_recorded_before_it_replays_as_it_was(migrated):
+def tenancy_seen_as_a_place(system, user):
+    """An earlier generation's model on the same story: the place only, no role (AGE-27 under extract-v14)."""
+    parsed, raw = tenancy(system, user)
+    return {"assertions": [a for a in parsed["assertions"] if a["predicate"] != "role_toward"]}, raw
+
+
+def story() -> SimChat:
+    chat = SimChat()
+    chat.user("하나와 카이토는 소꿉친구다.")
+    chat.reply("둘은 어릴 때부터 같은 골목에서 자랐다.")
+    filler(chat, 5)
+    chat.user("하나는 카이토의 집에 세 들어 산다. 하나는 다락방을 좋아하고, 월세를 모으려 한다.")
+    chat.reply("카이토는 월세 봉투를 받아 들었다.")
+    filler(chat, 5, tag="b")
+    return chat
+
+
+def test_a_role_leads_the_packet(migrated):
     with make_client(migrated, llm_url="http://fake/v1", llm_model="fake") as c:
-        chat = SimChat()
-        chat.user("하나와 카이토는 소꿉친구다.")
-        chat.reply("둘은 어릴 때부터 같은 골목에서 자랐다.")
-        filler(chat, 5)
-        sync(c, chat)
-        drain(migrated, tenancy)
-        before = recall(c, chat, "하나는 카이토에게 어떤 사람이야?", budget=600)
-        chat.user("하나는 카이토의 집에 세 들어 산다. 하나는 다락방을 좋아하고, 월세를 모으려 한다.")
-        chat.reply("카이토는 월세 봉투를 받아 들었다.")
-        filler(chat, 5, tag="b")
+        chat = story()
         sync(c, chat)
         drain(migrated, tenancy)
         rows = [f for f in facts(c, chat) if f["predicate"] in ("role_toward", "relationship", "located_in")]
         # the trait's own words in the message: as a plain fact it would rank above the role
         out = recall(c, chat, "하나는 카이토에게 어떤 사람이야? 다락방을 좋아한다던데.", budget=600)
         packet, lines = out["packet"]["text"], c.get(f"/v1/trace/{out['trace_id']}").json()["lines"]
-        again = c.get(f"/v1/trace/{before['trace_id']}/replay").json()
     assert {(f["predicate"], f["value"] or f["object"]) for f in rows} == {
         ("relationship", "소꿉친구"), ("role_toward", "세입자: 카이토의 집에 세 들어 삶"), ("located_in", "카이토의 집")}
     assert re.search(r"하나 role toward 카이토: 세입자: 카이토의 집에 세 들어 삶</Fact>", packet)
@@ -171,5 +178,25 @@ def test_a_role_leads_the_packet_and_a_request_recorded_before_it_replays_as_it_
     role_at, trait_at = (next(i for i, e in enumerate(lines) if needle in e["text"])
                          for needle in ("role toward", "다락방을 좋아함"))
     assert role_at < trait_at
-    assert "role toward" not in before["packet"]["text"]
+
+
+def test_a_request_recorded_under_an_earlier_generation_replays_as_it_was(migrated):
+    """Q4: older generations hold no `role_toward` rows, so no recall option is needed. A request recorded under one
+    generation replays with that generation's facts after a newer one, which has the role, became active."""
+    chat = story()
+    query = "하나는 카이토에게 어떤 사람이야?"
+    with make_client(migrated, llm_url="http://fake/v1", llm_model="earlier") as c:
+        sync(c, chat)
+        drain(migrated, tenancy_seen_as_a_place)
+        before = recall(c, chat, query, budget=600)
+        earlier_key = c.get(f"/v1/trace/{before['trace_id']}").json()["extractor_key"]
+    with make_client(migrated, llm_url="http://fake/v1", llm_model="later") as c:
+        sync(c, chat)
+        drain(migrated, tenancy)
+        now = recall(c, chat, query, budget=600)
+        later_key = c.get(f"/v1/trace/{now['trace_id']}").json()["extractor_key"]
+        again = c.get(f"/v1/trace/{before['trace_id']}/replay").json()
+    assert earlier_key != later_key
+    assert "role toward" not in before["packet"]["text"] and "located in 카이토의 집" in before["packet"]["text"]
+    assert "하나 role toward 카이토: 세입자" in now["packet"]["text"]
     assert again["status"] == "ok" and again["reproduced"] is True and again["text"] == before["packet"]["text"]
