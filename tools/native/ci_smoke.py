@@ -3,6 +3,7 @@
     ci_smoke.py smoke  <archive> <parent> [<folder>]          smoke.py with the bundle's Python
     ci_smoke.py refuse <archive> <parent> <folder> <text>     the launcher stops with <text> in its output
     ci_smoke.py suite  <archive> <parent> [<folder>]          the sidecar test suite against the bundle's PostgreSQL
+    ci_smoke.py tray   <archive> <parent> [<folder>]          Windows: NMOS.exe, the tray and start at login
 
 The default folder is "한글 폴더": a Korean name with a space, as a Windows user folder can be.
 """
@@ -100,6 +101,9 @@ def main() -> int:
         return refuse(bundle, sys.argv[5])
     if mode == "suite":
         return suite(bundle)
+    if mode == "tray":
+        tray_smoke = Path(__file__).parent / "windows" / "tray_smoke.py"
+        return subprocess.run([str(bundle_python(bundle)), str(tray_smoke), str(bundle)]).returncode
     raise SystemExit(f"unknown mode {mode}")
 
 

@@ -96,6 +96,44 @@ def check_owner_only_acl(data: Path) -> str:
     return " ".join(acl.split())
 
 
+def stop_while_starting(bundle: Path) -> dict:
+    """A stop that comes while a first start is still creating the database leaves nothing running: PostgreSQL is
+    not started after the stop, and no sidecar or worker is left behind."""
+    import tempfile
+    import threading
+
+    sys.path.insert(0, str(bundle))
+    import nmos_launcher
+
+    data = Path(tempfile.mkdtemp(prefix="nmos-race-", dir=bundle))
+    os.environ.update(NMOS_DATA_DIR=str(data), NMOS_SIDECAR_PORT="8797", NMOS_DB_PORT="54397")
+    services = nmos_launcher.Services()
+    outcome: dict = {}
+
+    def run() -> None:
+        try:
+            services.start()
+            outcome["start"] = "finished"
+        except SystemExit as e:
+            outcome["start"] = str(e.code)
+
+    t = threading.Thread(target=run)
+    t.start()
+    time.sleep(0.3)  # inside initdb
+    services.stop()
+    t.join(timeout=120)
+    pgsql, pgdata = bundle / "pgsql", data / "pg"
+    if WINDOWS:
+        pgsql, pgdata = nmos_launcher.ascii_path(pgsql), nmos_launcher.ascii_path(data) / "pg"
+    running = subprocess.run([str(pgsql / "bin" / ("pg_ctl.exe" if WINDOWS else "pg_ctl")), "-D", str(pgdata), "status"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    if running or any(p.poll() is None for p in services.procs) or t.is_alive():
+        raise SystemExit(f"something is left running after a stop during start: {outcome}, postgres={running}")
+    for key in ("NMOS_DATA_DIR", "NMOS_SIDECAR_PORT", "NMOS_DB_PORT"):
+        os.environ.pop(key)
+    return outcome
+
+
 def check_sql(bundle: Path) -> dict:
     with connect(bundle) as conn:
         ext = dict(conn.execute("SELECT extname, extversion FROM pg_extension").fetchall())
@@ -134,6 +172,7 @@ def main() -> None:
         taken.bind(("127.0.0.1", int(PORT)))
         taken.listen()
         result["refused_port"] = refused(bundle, f"Port {PORT}")
+    result["stop_while_starting"] = stop_while_starting(bundle)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

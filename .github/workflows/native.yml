@@ -48,6 +48,10 @@ jobs:
         run: |
           fsutil 8dot3name query D: || true
           uv run --no-project --python 3.12 python tools/native/ci_smoke.py refuse dist-native/NMOS-v0.0.0-ci-win-x64.zip "${{ runner.temp }}" "한글 폴더" "non-English characters"
+      - name: NMOS.exe, the tray and start at login (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: uv run --no-project --python 3.12 python tools/native/ci_smoke.py tray dist-native/NMOS-v0.0.0-ci-win-x64.zip "${{ matrix.parent }}" "트레이 테스트"
       - name: Sidecar test suite against the bundle's PostgreSQL
         if: matrix.suite
         shell: bash
