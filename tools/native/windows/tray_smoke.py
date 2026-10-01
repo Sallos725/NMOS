@@ -86,7 +86,13 @@ command(nmos_tray.CMD_AUTOSTART)
 wait(lambda: lnk.exists(), 30, "the Startup shortcut again")
 result["quit_s"] = quit_tray()
 
-os.startfile(lnk)  # what Windows does with it at sign-in
+# What Windows does with it at sign-in: start its target in its working directory. (os.startfile cannot open a .lnk
+# on the CI runner, a service session without the shell's associations; a desktop session can.)
+target, workdir = nmos_tray.powershell(
+    f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut({nmos_tray.ps_quote(lnk)})\n"
+    "$s.TargetPath\n$s.WorkingDirectory").splitlines()
+result["shortcut_target"], result["shortcut_workdir"] = target, workdir
+subprocess.Popen([target], cwd=workdir)
 result["start_from_shortcut_s"] = wait(lambda: health() and window(), 120, "NMOS started from the Startup shortcut")
 result["second_quit_s"] = quit_tray()
 lnk.unlink(missing_ok=True)
