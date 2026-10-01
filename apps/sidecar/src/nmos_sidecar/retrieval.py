@@ -431,16 +431,18 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         # Sim bots track many characters: state of characters mentioned right now gets the budget first.
         g.state.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in focus), reverse=True)
     view = None
+    names_of: dict[int, Any] = {}  # one mapping of name variants per view, whichever path asks first (ADR 0058)
     if options.facts_limit > 0 or options.threads_limit > 0:
         view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
                            options.canon_key, canon_facts)
         g.canon_names, g.canon_facts = view.get("canon_names"), view.get("canon_facts_manifest")
         r = view["resolution"]
         persona = r.persona_names if r else frozenset()
-        aliases = _aliases(r, query, previous_ai, options, view)
+        aliases = _aliases(r, query, previous_ai, options, view, names_of)
         # Who is in the scene, so facts only some of them know are marked (packet-v3, ADR 0034).
         g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
-                            _head_turn(conn, head, upto), aliases=aliases)
+                            _head_turn(conn, head, upto), aliases=aliases,
+                            marks=_thread_marks(view, aliases))
         if options.threads_limit > 0:
             g.threads = _moded([thread_entry(t, scene.private(t, g.cast, r)) for t in
                                 relevant_threads(view["threads"], query, previous_ai, in_context,
@@ -498,10 +500,11 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                options.canon_key, canon_facts)
             g.canon_names, g.canon_facts = view.get("canon_names"), view.get("canon_facts_manifest")
         r = view["resolution"] if view else None
-        aliases = _aliases(r, query, previous_ai, options, view) if view else None
+        aliases = _aliases(r, query, previous_ai, options, view, names_of) if view else None
         if view and not g.cast and r is not None:
             g.cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
-                                _head_turn(conn, head, upto), aliases=aliases)
+                                _head_turn(conn, head, upto), aliases=aliases,
+                                marks=_thread_marks(view, aliases))
         g.story = summaries.packet_lines(conn, head, options.summarize_key, view["secrets"] if view else [], query,
                                          in_context, upto, known_at,
                                          scene.names(g.cast, r, aliases) if r is not None else frozenset())
@@ -514,11 +517,12 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
                                options.canon_key, canon_facts)
         r = view["resolution"]
-        aliases = _aliases(r, query, previous_ai, options, view)
+        aliases = _aliases(r, query, previous_ai, options, view, names_of)
         cast = g.cast
         if not cast and r is not None:  # facts, threads and summaries off: the scene still sets the bar
             cast = scene.cast(view["facts"] + view["claims"] + view["other"], r, query, previous_ai,
-                              _head_turn(conn, head, upto), aliases=aliases)
+                              _head_turn(conn, head, upto), aliases=aliases,
+                              marks=_thread_marks(view, aliases))
         present = scene.names(cast, r, aliases) if r is not None else frozenset()
         kept = []
         for e in g.ranked:
@@ -531,14 +535,26 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     return g
 
 
-def _aliases(r: Any, query: str, previous_ai: str, options: RecallOptions,
-             view: dict[str, Any]) -> dict[str, frozenset[str]] | None:
-    """The other names the characters go by in this request (`name_variants`, ADR 0058), or None."""
+def _aliases(r: Any, query: str, previous_ai: str, options: RecallOptions, view: dict[str, Any],
+             cache: dict[int, Any]) -> dict[str, frozenset[str]] | None:
+    """The other names the characters go by in this request (`name_variants`, ADR 0058), or None when the option is
+    off; computed once per view (`cache`). The names in knowledge marks include an open thread's: a thread keeps the
+    marks of the assertion that opened it (`threads.fold`)."""
     if not options.name_variants or r is None:
         return None
-    marked = {n for row in view["facts"] + view["claims"] + view["other"]
-              for n in (*(row.get("known_by") or ()), *(row.get("hidden_from") or ()))}
-    return variants.aliases(r.entities(), r.persona_names, f"{query} {previous_ai}", marked)
+    if id(view) not in cache:
+        marked = {n for row in view["facts"] + view["claims"] + view["other"] + view["threads"]
+                  for n in (*(row.get("known_by") or ()), *(row.get("hidden_from") or ()))}
+        cache[id(view)] = variants.aliases(r.entities(), r.persona_names, f"{query} {previous_ai}", marked)
+    return cache[id(view)]
+
+
+def _thread_marks(view: dict[str, Any], aliases: dict[str, frozenset[str]] | None) -> list[str]:
+    """With `name_variants`, the names in open threads' knowledge marks, for the scene's cast: someone a thread is kept
+    from may be named only there (ADR 0058). Without it, none, as recorded requests had it."""
+    if aliases is None:
+        return []
+    return [n for t in view["threads"] for n in (*(t.get("known_by") or ()), *(t.get("hidden_from") or ()))]
 
 
 def _keyword_only(c: dict[str, Any], options: RecallOptions) -> bool:

@@ -12,7 +12,7 @@ it (`known_by`); with nobody in the cast, nothing is. Public, unknown and unmark
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from .entities import USER_NAMES, Resolution, norm
@@ -47,9 +47,10 @@ def names(scene: dict[str, str], r: Resolution | None,
 
 def cast(rows: list[dict[str, Any]], r: Resolution | None, query: str = "", previous_ai: str = "",
          now: int | None = None, turns: int = CAST_TURNS,
-         aliases: Mapping[str, frozenset[str]] | None = None) -> dict[str, str]:
+         aliases: Mapping[str, frozenset[str]] | None = None, marks: Iterable[str] = ()) -> dict[str, str]:
     """{entity key: display name} of the characters in the scene. `now` is the current turn (the user's
-    message); without it, the last turn any row comes from counts as the last one before it."""
+    message); without it, the last turn any row comes from counts as the last one before it. `marks`: more names in
+    knowledge marks (an open thread's, ADR 0058)."""
     if r is None:
         return {}
     out: dict[str, str] = {}
@@ -64,7 +65,7 @@ def cast(rows: list[dict[str, Any]], r: Resolution | None, query: str = "", prev
     else:
         until = max((row["turn"] for row in rows if row.get("turn") is not None), default=-1)
     since = until - turns + 1
-    marked: set[str] = set()  # names in knowledge marks: someone a secret is kept from may be named only there
+    marked: set[str] = set(marks)  # names in knowledge marks: someone a secret is kept from may be named only there
     for row in rows:
         if row.get("known_by") or row.get("hidden_from"):
             marked.update(row.get("known_by") or ())

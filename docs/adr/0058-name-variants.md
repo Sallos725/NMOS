@@ -26,11 +26,13 @@ in Hangul about those characters found their values 8 of 24 and 0 of 6 times.
    the first prefix whose keys meet any Latin character's decides: when exactly one, that word goes by its name for
    this request; when more, no word of that run does. One direction only (a Hangul word for a Latin name).
 3. **One owner per variant.** A given name or a Hangul word counts for no one when it is another entity's name or the
-   persona's given name, or when two characters would share it. A name that only knowledge marks hold (someone a
-   secret is kept from, ADR 0034) is a character of its own for these rules, so a secret's holder addressed by a
-   variant is still recognized.
-4. **Everywhere a message is matched against names** (Q3), from one mapping per request (`variants.aliases`, in
-   `retrieval._aliases`): fact selection (`relevant_facts`, facts and claims: a mention, and a secret's holder addressed,
+   persona's given name, or when two characters would share it, whichever rule gives it to each (백하진's given name
+   and Hajin's spelling are both 하진: neither). A name that only knowledge marks hold (someone a secret is kept from,
+   ADR 0034), an open thread's included (a thread keeps the marks of the assertion that opened it), is a character of
+   its own for these rules, so a secret's holder addressed by a variant is still recognized; with the option on, the
+   scene's cast reads an open thread's marks too.
+4. **Everywhere a message is matched against names** (Q3), from one mapping per request (`variants.aliases`, computed
+   once by `retrieval._aliases` whichever path asks first): fact selection (`relevant_facts`, facts and claims: a mention, and a secret's holder addressed,
    D19), open threads (`relevant_threads`), the scene's cast (`scene.cast`, D44: a fact kept from a character addressed
    by a variant is private) and its names (`scene.names`: knowledge marks, the cast's groups, summaries and the keyword
    route's secret check). Nothing is stored; entity resolution, joins and the Inspector are unchanged.

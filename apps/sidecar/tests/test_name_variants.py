@@ -206,3 +206,48 @@ def test_with_the_option_the_character_the_message_names_keeps_its_cast_group():
                                                          RecallOptions(), set(), al)[0]]
     assert "곽은비" not in groups(None)  # without the option: the cast's order, as recorded requests had it
     assert groups({})[0] == "곽은비"
+
+
+def test_a_given_name_and_a_spelling_of_the_same_word_count_for_neither():
+    # 백하진's given name and Hajin's Hangul spelling are both 하진: one owner per variant, whichever rule gives it
+    assert variants.aliases([entity("백하진"), entity("hajin")], [], "하진은?") == {}
+    assert variants.aliases([entity("백하진"), entity("hajin")], [], "") == {"백하진": frozenset({"하진"})}
+
+
+def test_a_name_only_an_open_threads_marks_hold_gets_its_variant_and_joins_the_scene():
+    from nmos_sidecar.retrieval import _aliases, _thread_marks
+
+    rows = [row(9, "카이토", "located_in", None, "부두", **C)]
+    r = resolve(uuid.uuid4(), rows)
+    thread = {"known_by": ["카이토"], "hidden_from": ["백이안"], "knowledge": "limited"}
+    view = {"facts": rows, "claims": [], "other": [], "threads": [thread]}
+    al = _aliases(r, "이안이 왔어.", "", RecallOptions(), view, {})
+    assert al == {"백이안": frozenset({"이안"})}
+    assert _thread_marks(view, None) == []  # without the option: as recorded requests had it
+    now = cast(rows, r, "이안이 왔어.", aliases=al, marks=_thread_marks(view, al))
+    assert "백이안" in now.values() and private(thread, now, r)
+
+
+def test_the_variants_are_computed_once_per_request(full, monkeypatch):
+    client, url = full
+    chat = story(client, url, ["백이안 is in the 시장."])
+    calls = []
+    original = variants.aliases
+    monkeypatch.setattr(variants, "aliases", lambda *a, **k: calls.append(1) or original(*a, **k))
+    ask(client, chat, "이안은 지금 어디 있지?")
+    assert len(calls) == 1
+
+
+def test_every_path_of_one_request_reuses_the_first_mapping(monkeypatch):
+    from nmos_sidecar.retrieval import _aliases
+
+    r = resolve(uuid.uuid4(), [row(9, "백이안", "located_in", None, "시장", **C)])
+    view = {"facts": [], "claims": [], "other": [], "threads": []}
+    calls = []
+    original = variants.aliases
+    monkeypatch.setattr(variants, "aliases", lambda *a, **k: calls.append(1) or original(*a, **k))
+    cache: dict = {}
+    first = _aliases(r, "이안", "", RecallOptions(), view, cache)
+    assert _aliases(r, "이안", "", RecallOptions(), view, cache) is first  # the summary and keyword paths
+    assert len(calls) == 1
+    assert _aliases(r, "이안", "", RecallOptions(name_variants=False), view, {}) is None

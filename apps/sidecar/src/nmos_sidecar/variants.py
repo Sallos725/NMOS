@@ -98,8 +98,8 @@ def aliases(entities: Iterable[Mapping[str, Any]], persona_names: Iterable[str],
     `entities` are the resolution's (ADR 0012), `persona_names` every name the persona goes by, `text` the user's
     message and the previous reply, `marked` the names in knowledge marks (someone a secret is kept from may be named
     only there, ADR 0034): each one no entity goes by is a character of its own. A given name or a Hangul word counts
-    for one character only: not when it is another entity's name, when two characters would share it, or when it is
-    the persona's given name. The persona gains none (its names are never a mention, ADR 0023)."""
+    for one character only, whichever rule gives it: not when it is another entity's name, when two characters would
+    share it (a given name and a spelling included), or when it is the persona's given name. The persona gains none (its names are never a mention, ADR 0023)."""
     persona = {norm(n) for n in persona_names}
     entities = list(entities)
     held = {norm(n) for e in entities for n in e["names"]}
@@ -109,15 +109,11 @@ def aliases(entities: Iterable[Mapping[str, Any]], persona_names: Iterable[str],
             held.add(n)
     taken = persona | {g for n in persona if (g := given(n))} | held
     characters = [e for e in entities if e["type"] == "character" and not e.get("persona")]
-    extra: dict[str, set[str]] = defaultdict(set)
-    owners: dict[str, set[str]] = defaultdict(set)
+    owners: dict[str, set[str]] = defaultdict(set)  # a variant → every character either rule gives it to
     for e in characters:
         for n in e["names"]:
             if g := given(norm(n)):
                 owners[g].add(e["id"])
-    for g, ids in owners.items():
-        if len(ids) == 1 and g not in taken:
-            extra[next(iter(ids))].add(g)
     spelled: dict[str, set[str]] = defaultdict(set)
     for e in characters:
         for n in e["names"]:
@@ -131,9 +127,12 @@ def aliases(entities: Iterable[Mapping[str, Any]], persona_names: Iterable[str],
                     continue
                 ids = set().union(*(spelled.get(k, set()) for k in hangul_keys(word)))
                 if ids:
-                    if len(ids) == 1 and word not in taken:
-                        extra[next(iter(ids))].add(word)
+                    owners[word] |= ids  # two characters for one word: neither, below
                     break
+    extra: dict[str, set[str]] = defaultdict(set)
+    for word, ids in owners.items():
+        if len(ids) == 1 and word not in taken:
+            extra[next(iter(ids))].add(word)
     return {norm(n): frozenset(extra[e["id"]]) for e in characters if extra.get(e["id"]) for n in e["names"]}
 
 
