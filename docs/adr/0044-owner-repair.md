@@ -135,3 +135,25 @@ quotes the same message, and `extract-v14` checks that a quote is in its turn (A
 15. **Not done:** an item of the same turn and maker that quotes another sentence of the turn (9 of the 68) is left
     unmatched and listed: nothing tells whether it is the same item, and a wrong match would close a thread the owner
     never saw. A lock on an owner's correction still names the correction's repair.
+
+## Amendment 3 (2026-10-01, Phase 22): restore a fact a re-extraction dropped
+
+A turn extracted again by the same generation (a rebuild, the re-extraction after a join's undo, K29's before Phase
+22) gets a new model call that may leave out what the first one found (AGE-25; `docs/phases/PHASE-22.md`, evidence).
+The owner may now put such a fact back; nothing does it on its own (PHASE-22 Q7, the owner's option 3 waits for the
+loss rate).
+
+16. **What is dropped** (`dropped.find`, PHASE-22 Q5; read for the Inspector, the panel and the API, never on the request
+    path). For each turn whose serving extraction of the active generation replaced a discarded one of the same
+    generation and turn hash, the replaced extraction's facts (narrated, actual, not a reveal or a name link) are matched
+    one to one with the new extraction's rows, closest first: (1) the same predicate, subject and object (as entities)
+    and, for a predicate that accumulates, the same value; (2) the same predicate, subject and object; (3) the same
+    predicate and subject with a quote sharing a run of `QUOTE_MIN_CHARS` (`repairs.restated`). A fact neither stated
+    again nor held by any narrated row of the chat's memory now (the same predicate, subject and object) is dropped:
+    listed in **Needs attention** with **Restore**, counted on the panel's chat card (`coverage?usage=true` →
+    `dropped`), and listed by `GET /v1/conversations/{id}/dropped`.
+17. **`fact_restore`** (migration 0028). Its target is the dropped fact as it was (every column a served row has), its
+    turn, the turn's hash, its line and its quote. A read adds it as the owner's version at the end of its turn, after
+    the turn's other rows, while the turn reads the same (its hash on the head), so the folds and a later statement of
+    the story treat it as any fact of that turn (Q4). When the turn's rows state it again (item 16's levels), it applies
+    to that row and adds nothing; after an edit of the turn it matches nothing. Undo as every repair.

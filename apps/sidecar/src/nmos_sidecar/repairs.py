@@ -37,8 +37,9 @@ from .secrets import secret_text
 from .threads import MATCH_MIN, similarity
 
 KINDS = ("thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
-         "name_split", "fact_lock")
-ENABLED = frozenset(KINDS)  # threads and secrets since step 3, facts and names since step 4, locks since Phase 14
+         "name_split", "fact_lock", "fact_restore")
+# threads and secrets since step 3, facts and names since step 4, locks since Phase 14, restores since Phase 22
+ENABLED = frozenset(KINDS)
 PROMISE_OUTCOMES = ("kept", "broken")
 # A quote names the same item when it shares this many characters with the stored one: extract-v14's own minimum for
 # a quote (extraction.EVIDENCE_MIN_CHARS); a shorter run is shared by most turns.
@@ -289,6 +290,39 @@ def match_fact(target: dict[str, Any], rows: list[dict[str, Any]], r: Resolution
             or (_by_quote(target, rows, same, lambda a: a.get("evidence")) if quote else None))
 
 
+def _restates(level: int, a: dict[str, Any], b: dict[str, Any], r: Resolution | None) -> bool:
+    """Whether `b` states the fact `a` again, at one of PHASE-22 Q5's levels, closest first: (1) the same predicate,
+    subject and object (as entities) and, for a predicate that accumulates, the same value; (2) the same predicate,
+    subject and object; (3) the same predicate and subject with a quote sharing a run (the object worded otherwise)."""
+    if a["predicate"] != b["predicate"] or (
+            _ekey(r, a.get("subject_type"), a["subject"]) != _ekey(r, b.get("subject_type"), b["subject"])):
+        return False
+    if level == 3:
+        return quoted(a.get("evidence"), b.get("evidence"))
+    if _ekey(r, a.get("object_type"), a.get("object")) != _ekey(r, b.get("object_type"), b.get("object")):
+        return False
+    pred = REGISTRY.get(a["predicate"])
+    return level == 2 or (pred is not None and pred.cardinality == "single") or norm(a.get("value")) == norm(b.get("value"))
+
+
+def restated(old: list[dict[str, Any]], new: list[dict[str, Any]], r: Resolution | None) -> dict[int, dict[str, Any]]:
+    """PHASE-22 Q5: which facts of a replaced extraction (`old`) the extraction that replaced it (`new`) states again,
+    matched one to one (a row of `new` restates at most one fact), closest level first. {index in old: its row in
+    new}: a quote shared with another character's fact never counts, and of two belongings one sentence lists only the
+    one stated again is."""
+    out: dict[int, dict[str, Any]] = {}
+    free = list(new)
+    for level in (1, 2, 3):
+        for i, a in enumerate(old):
+            if i in out:
+                continue
+            b = next((b for b in free if _restates(level, a, b, r)), None)
+            if b is not None:
+                out[i] = b
+                free.remove(b)
+    return out
+
+
 def _owner_id(rep: dict[str, Any]) -> int:
     """An owner's version is not an assertion: a negative id, stable for the repair."""
     return -(UUID(str(rep["id"])).int % 2**62) - 1
@@ -299,15 +333,20 @@ ANNOTATIONS = ("subject_entity", "object_entity", "names", "participant_entities
 
 def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Resolution | None,
                 applied: dict[str, str | None], annotate: Callable[[dict[str, Any], Any], None] | None = None,
-                turn_positions: dict[int, int] | None = None) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+                turn_positions: dict[int, int] | None = None,
+                turn_info: dict[int, tuple[int, str | None]] | None = None,
+                ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     """Retract and correct (Q1 items 2 and 3) on the head's assertions, in the order they were made. A retracted
     assertion is left out, so the version before it is current again. A correction is an owner's version of the fact:
     at the fact's own turn, or for a fact that accumulates (a trait, an event), it replaces it in place (same position
     and turn hash, so the turn's other repairs still find it); from a later turn it is a version at the end of that
     turn, which supersedes the fact from there, and a later turn that states the fact again supersedes it (Q4). Its
-    entities are resolved again (`annotate`). Returns the new list and {repair id: the retracted assertion}; `applied`
-    gets {repair id: the assertion it applied to, or None}."""
-    mine = [rep for rep in repairs if rep["kind"] in ("fact_retract", "fact_correct")]
+    entities are resolved again (`annotate`). A restore (PHASE-22 Q7) adds back a fact a re-extraction dropped, as the
+    owner's version at the end of its turn (`turn_info`: each restored turn's last position and hash on the head), while
+    that turn reads as it did; when the turn's rows state it again, it applies to that row and adds nothing. Returns the
+    new list and {repair id: the retracted assertion}; `applied` gets {repair id: the assertion it applied to, or
+    None}."""
+    mine = [rep for rep in repairs if rep["kind"] in ("fact_retract", "fact_correct", "fact_restore")]
     for rep in mine:
         applied.setdefault(str(rep["id"]), None)
     if not mine:
@@ -322,6 +361,13 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
     later: list[dict[str, Any]] = []  # owner's versions from a later turn, in the order made
     retracted: dict[str, dict[str, Any]] = {}
     for rep in mine:
+        if rep["kind"] == "fact_restore":
+            new = _restore(rep, by_turn.get(rep["target"].get("turn"), ()), r, applied, turn_info or {})
+            if new is not None:
+                later.append(new)
+                if annotate is not None and r is not None:
+                    annotate(new, r)
+            continue
         a = match_fact(rep["target"], [x for x in by_turn.get(rep["target"].get("turn"), ()) if id(x) not in gone], r,
                        quote=False)
         if a is None and rep["target"].get("evidence"):  # by its quote, among every row: a quote names one or none
@@ -377,6 +423,43 @@ def apply_facts(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Re
     return out, retracted
 
 
+# A restored fact's columns, as the fact read serves a row (`facts.ACTIVE_ASSERTIONS`) and a restore's target stores them.
+RESTORED = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic", "confidence",
+            "evidence", "knowledge", "known_by", "hidden_from", "polarity", "modality", "source", "asserted_by",
+            "salience", "participants", "outcome", "because")
+
+
+def restore_target(f: dict[str, Any]) -> dict[str, Any]:
+    """What a restore stores (PHASE-22 Q7): the dropped fact as it was (`dropped.find`), its turn and the turn's hash,
+    and its line and quote to show it."""
+    return {"turn": f["turn"], "turn_hash": f["turn_hash"], "predicate": f["predicate"], "subject": f["subject"],
+            "object": f.get("object"), "text": f["text"], "evidence": f.get("evidence"),
+            "fact": {k: f.get(k) for k in RESTORED}}
+
+
+def _restore(rep: dict[str, Any], turn_rows: Any, r: Resolution | None, applied: dict[str, str | None],
+             turn_info: dict[int, tuple[int, str | None]]) -> dict[str, Any] | None:
+    """The owner's version a restore adds, or None: its turn edited or gone (applies to nothing), or stated again by
+    the turn's rows now (applies to that row)."""
+    t = rep["target"] or {}
+    fact = t.get("fact") or {}
+    at = turn_info.get(t.get("turn"))
+    if at is None or at[1] != t.get("turn_hash") or not fact.get("predicate"):
+        return None
+    again = next((b for level in (1, 2, 3) for b in turn_rows if not b.get("owner") and _restates(level, fact, b, r)),
+                 None)
+    if again is not None:
+        applied[str(rep["id"])] = str(again["id"])
+        return None
+    new = {k: fact.get(k) for k in RESTORED}
+    new["participants"] = tuple(fact["participants"]) if fact.get("participants") else None
+    new.update({"id": _owner_id(rep), "turn": t["turn"], "turn_hash": t["turn_hash"], "position": at[0],
+                "host_logical_id": None, "generation": None, "compiler": None, "listed_hash": None,
+                "source": "narration", "owner": True, "repair": str(rep["id"])})
+    applied[str(rep["id"])] = str(new["id"])
+    return new
+
+
 def apply_locks(rows: list[dict[str, Any]], repairs: list[dict[str, Any]], r: Resolution | None,
                 applied: dict[str, str | None]) -> dict[int, str]:
     """The owner's locks (PHASE-14 Q7, ADR 0047) on the rows after retractions and corrections: a canon fact, found by
@@ -415,6 +498,11 @@ def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outc
     r = view.get("resolution")
     if kind == "name_split":
         return _plan_split(item, other, entity_type, r)
+    if kind == "fact_restore":  # the caller lists the chat's dropped facts in the view (`dropped.find`)
+        f = next((d for d in view.get("dropped") or () if str(d["id"]) == item), None)
+        if f is None:
+            raise RepairError("no fact a re-extraction dropped with that id in this chat now")
+        return restore_target(f), {}
     if kind.startswith("fact_"):
         return _plan_fact(kind, item, view, last_turn, new_object, new_value, turn, version_key)
     at = last_turn if turn is None else turn
