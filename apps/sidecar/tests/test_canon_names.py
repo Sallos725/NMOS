@@ -20,7 +20,9 @@ from test_extraction import drain
 from test_generations import LLM
 from test_sidecar_integration import recall, sync
 
-FULL, GIVEN = "한서윤", "서윤"
+# A two-syllable family name: Phase 24 gives three-syllable names their given name (ADR 0058), not this one, so the
+# given name here is a mention only through the lorebook (ADR 0046).
+FULL, GIVEN = "남궁서윤", "서윤"
 
 
 def row(subject: str, kind: str = "character", **more) -> dict:

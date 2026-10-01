@@ -561,6 +561,13 @@ before salience and score, keeps `minor` events without the lexical bar, breaks 
 keeps a standing fact whose source is in context when an earlier version the prompt does not hold (stated before the
 window, or canon not held) has its marks. Recorded as `first_cue`; older traces replay without it.
 
+**D68 — A name as the story says it (Phase 24, ADR 0058).** For one request, a character's three-syllable Hangul name
+with a common family name also goes by its given name (백이안 → 이안), and a character held under a Latin name by a
+Hangul word of the message that spells it on a fixed key (하진 → Hajin); not the persona, and not a name another entity
+holds or two characters would share. They count wherever the message is matched against names: fact selection and a
+secret's holder addressed (D19), threads, the scene's cast (D44), whose groups then put the characters the message
+names first. Nothing is stored. Recorded as `name_variants`; older traces replay without it.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
