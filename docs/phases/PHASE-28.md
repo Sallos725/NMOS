@@ -1,7 +1,7 @@
 # Phase 28 — A role that ends, and a name said two ways, after the AGE-24 live run
 
 > **Status: approved 2026-10-03 (the owner, every proposed answer below), current as a correction phase (AGENTS §7
-> item 5); step 2 next.** A correction found by measurement under AGE-24, not roadmap Stage 7 or 8. Scope narrowed on
+> item 5); step 2 in review (#251).** A correction found by measurement under AGE-24, not roadmap Stage 7 or 8. Scope narrowed on
 > review of the first draft (#250): the role-ending and identity defects first, each behind a setting that is off by
 > default; excerpt and ranking changes only after they are re-measured on the corrected state (Q6).
 
