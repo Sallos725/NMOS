@@ -19,8 +19,9 @@ worse by more than one case; packets never larger, sample 2's smaller (−14.88 
 Step 3 (the owner's two decisions, 2026-10-02): **Q1b, the keywords anchor** (today's anchor met a stop condition,
 the forbidden rise); **Q5's size bound one-sided** (smaller packets allowed: the rules bound excerpts below
 `excerpt_chars` by construction, and the case and forbidden criteria caught no loss); **`packet-v11` the default**,
-`packet-v10` kept as `NMOS_PACKET_POLICY=packet-v10`. Acceptance met but for the latency criterion, which the
-replays do not measure; the owner's live bench (the three-bench NMOS lane, AGE-24's criterion) follows the switch.
+`packet-v10` kept as `NMOS_PACKET_POLICY=packet-v10`. Every acceptance criterion met: the latency one by
+`tools/bench_story.py 10000` (three rounds a side: p50 218.9 ms under `packet-v10` against 211.5 under `packet-v11`,
+the rounds overlapping). The owner's live bench (the three-bench NMOS lane, AGE-24's criterion) follows the switch.
 **High risk (AGENTS.md §14)**: memory selection (what text an excerpt shows; pinned by `test_packet_v11.py`,
 `test_packet_v10.py`, `test_memory_eval.py`; recorded requests replay as they were) and K39 (the cue growth within
 320 characters; noted there).

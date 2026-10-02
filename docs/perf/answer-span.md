@@ -104,6 +104,23 @@ address focus's forbidden increase, or consider keywords and explicitly decide w
 exempted from the size criterion. This document chooses neither, does not amend Q1b or Q6, and does not switch
 an anchor or the default. After that decision, the remaining checks and live-host evidence are still required.
 
+## Request-path latency (step 3, Phase 27's last criterion)
+
+`tools/bench_story.py 10000` with `BENCH_BUDGET=4000`, the default questions and no embedder (the shape of the other
+perf pages' latency rows), in a four-core container pinned to two cores, three rounds a side run in turn
+(`NMOS_PACKET_POLICY=packet-v10`, then the default `packet-v11`). Each run is 15 requests on the 10,000-message chat.
+
+| Round | `packet-v10` p50 / p95 (ms) | `packet-v11` p50 / p95 (ms) |
+|---|---:|---:|
+| 1 | 208.0 / 377.8 | 209.5 / 302.7 |
+| 2 | 223.0 / 331.9 | 211.5 / 288.2 |
+| 3 | 218.9 / 292.6 | 222.6 / 359.9 |
+| median | **218.9** / 331.9 | **211.5** / 302.7 |
+
+The rounds overlap (208–223 against 209–223 ms p50), so the difference between the medians is noise, as expected: the
+two rules are pure functions on text the request has already read. Not a measurement of the owner's chats, whose
+questions carry the cues and vectors these rules act on; the live bench is.
+
 ## Reproduce the CLI comparison
 
 Use the evaluation copies, case directories and generation keys from the local protocol; the example leaves
