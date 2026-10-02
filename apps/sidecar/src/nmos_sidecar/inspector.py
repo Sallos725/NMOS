@@ -27,7 +27,8 @@ h1{font-size:20px;margin:0 0 4px} h2{font-size:15px;margin:28px 0 8px}
 a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
 .muted{color:var(--muted)} .mono{font-family:ui-monospace,monospace;font-size:12px}
 pre.mono{white-space:pre-wrap;background:var(--chip);padding:8px 10px;border-radius:6px;margin:4px 0 0}
-.top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:12px}
+.refresh{margin:0} .refresh button{font:inherit;color:var(--fg);background:var(--chip);border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer}
 .lang{font-size:13px;white-space:nowrap}
 .ref{display:block;font-family:ui-monospace,monospace;font-size:11px;color:var(--muted)}
 table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
@@ -142,6 +143,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "job.dead": ("실패", "dead"), "job.obsolete": ("폐기", "obsolete"),
     # the first page's status (PHASE-23 Q8): what the tray's and the menu bar's "dashboard" opens
     "version": ("버전", "Version"),
+    "refresh": ("새로고침", "Refresh"),
     "errors": ("최근 오류", "Recent errors"),
     "errors.none": ("실패했거나 다시 시도 중인 백그라운드 작업이 없습니다.", "No background job has failed or is retrying."),
     "h.job": ("작업", "Job"), "h.status": ("상태", "Status"), "h.attempts": ("시도", "Attempts"),
@@ -471,8 +473,13 @@ def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str
                                             "h.commits", "h.branched", "h.last_retrieval")], rows)
                if rows else f"<p class=\"muted\">{_t(lang, 'no_conversations')}</p>")
     switch = "" if embed else _lang_switch("/inspector", token, lang)
+    refresh = "" if embed else (
+        '<form class="refresh" method="get" action="/inspector">'
+        + (f'<input type="hidden" name="token" value="{_v(token)}">' if token else "")
+        + f'<input type="hidden" name="lang" value="{_v(lang)}">'
+        + f'<button type="submit">{_t(lang, "refresh")}</button></form>')
     ver = f"<span class=\"muted\">{_t(lang, 'version')} {_v(version)}</span>" if version else ""
-    body = (f"<div class=\"top\"><h1>{_t(lang, 'title')}</h1>{ver}{switch}</div>"
+    body = (f"<div class=\"top\"><h1>{_t(lang, 'title')}</h1>{ver}{refresh}{switch}</div>"
             f"<p class=\"muted\">{_t(lang, 'intro')} {queue}</p>"
             f"<p>{_t(lang, 'extractor')}: {_generation(gens.get('extraction'), lang)}<br>"
             f"{_t(lang, 'projection')}: {_generation(gens.get('embeddings'), lang)}"

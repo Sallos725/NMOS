@@ -33,8 +33,9 @@ Read these files in this order before changing code:
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
 4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-27.md` is the latest, approved and complete
-   2026-10-02, a correction phase beside the current phase under §7 item 5, as Phases 24 and 25 were; `PHASE-26.md`
-   was stopped before it merged; Phase 23 is the current phase, its step 6 awaiting the owner's check; `PHASE-0.md`…`PHASE-22.md`,
+   2026-10-02, a correction phase run beside Phase 23 under §7 item 5, as Phases 24 and 25 were; `PHASE-26.md`
+   was stopped before it merged; Phase 23 is complete after the owner's Windows and Mac checks (2026-10-02), and
+   no phase is current; `PHASE-0.md`…`PHASE-22.md`,
    `PHASE-24.md` and `PHASE-25.md` still define the behavior they introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
 6. Relevant ADRs in `docs/adr/`.
@@ -85,7 +86,7 @@ If two normative documents appear to conflict:
 | 20 — a name join shown before it is made (C7 of `docs/proposals/IDEA-SURVEY-2026-09-29.md`; Stage 6, remaining items) | complete (2026-10-01), not released | `PHASE-20.md`, ADR 0055 |
 | 21 — "at first": how it started, when the message asks (AGE-26; a correction found by measurement, not a roadmap stage) | complete (2026-10-01), not released; K42 fixed with it (ADR 0038 amendment 1) | `PHASE-21.md`, ADR 0056 |
 | 22 — a re-extraction that keeps what it found: a reveal check, and the facts a re-extraction dropped (AGE-25; an urgent correction found by measurement, not a roadmap stage) | complete (2026-10-01), not released; the paid run's reveal count missed by one (owner accepted) | `PHASE-22.md`, ADR 0057 |
-| 23 — NMOS without Docker: a bundle for each PocketRisu portable target (AGE-29; pulled in before 1.0 by the owner, an exception to R7) | **current** (approved 2026-10-01) | `PHASE-23.md` |
+| 23 — NMOS without Docker: a bundle for each PocketRisu portable target (AGE-29; pulled in before 1.0 by the owner, an exception to R7) | complete (2026-10-02; owner's Windows and Mac checks), not released | `PHASE-23.md` |
 | 24 — a name as the story says it: given names and romanized names (AGE-28 under AGE-24; a correction found by measurement, not a roadmap stage) | complete (2026-10-01), not released; K32 measured and left out | `PHASE-24.md`, ADR 0058 |
 | 25 — `extract-v15`: a role between two people, its own fact (`role_toward`; AGE-27 under AGE-24; a correction found by measurement, not a roadmap stage) | complete (2026-10-01), not released; the paid run's output tokens 43 % above the estimate (owner accepted) | `PHASE-25.md`, ADR 0059 |
 | 26 — a repair whose item is gone suggests where it belongs now (Stage 6, AGE-23; an exception to R7 granted by the owner) | stopped (2026-10-01) after step 2, not merged: no repaired error came back on the copy, so Stage 6's criterion was reworded instead | `PHASE-26.md` |

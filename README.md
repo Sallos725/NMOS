@@ -62,6 +62,9 @@ Docker, and its database on `127.0.0.1:54390`. Settings that the Docker install 
 beside NMOS. Copy `.env.example`, then change `NMOS_DB_PORT=5436` to `NMOS_DB_PORT=54390` for the portable
 database (the example is shared with Docker); a port in use stops the start and names the setting to change.
 
+The dashboard's **Refresh** button reads the latest job counts, errors and conversation list, keeping the token and
+language. It is a read-only status page; settings stay in the PocketRisu panel.
+
 **Windows (x64)** — `NMOS-v<version>-win-x64.zip`
 
 1. Unpack the zip anywhere on drive C:, for example `Documents\NMOS`. A folder with Korean letters works; a drive
