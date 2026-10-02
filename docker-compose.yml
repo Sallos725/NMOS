@@ -18,7 +18,7 @@ x-nmos-env: &nmos-env
   NMOS_SUMMARIES: ${NMOS_SUMMARIES:-}  # empty: on (the image's default); 0 turns summaries off
   NMOS_CANON_FACTS: ${NMOS_CANON_FACTS:-}  # empty: on (the image's default); 0 turns canon facts off
   NMOS_EMBED_BACKFILL: ${NMOS_EMBED_BACKFILL:-2000}
-  NMOS_EMBED_MAX_CHUNKS: ${NMOS_EMBED_MAX_CHUNKS:-24}
+  NMOS_EMBED_MAX_CHUNKS: ${NMOS_EMBED_MAX_CHUNKS:-8}
   NMOS_WORKER_CONCURRENCY: ${NMOS_WORKER_CONCURRENCY:-2}
   NMOS_TRACE_RETENTION_DAYS: ${NMOS_TRACE_RETENTION_DAYS:-30}
   NMOS_PACKET_POLICY: ${NMOS_PACKET_POLICY:-}  # empty: the image's default policy

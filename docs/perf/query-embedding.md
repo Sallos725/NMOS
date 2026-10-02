@@ -1,8 +1,10 @@
-# The query embedded while recall reads (ADR 0061, K34), and long replies embedded whole (ADR 0062, K13)
+# The query embedded while recall reads (ADR 0061, K34), and the chunk cap measured (ADR 0062, K13)
 
 What the request path gains when the query's embedding runs beside recall's reads instead of before them, and when the
-sync that delivers the user's message asks for it first. Synthetic only: `tools/bench_story.py` at 10,000 messages, a
-stub embedder. The owner's bench harness (AGE-24) measures the real chats live and stays outside the repository.
+sync that delivers the user's message asks for it first. The first sections are synthetic (`tools/bench_story.py` at
+10,000 messages, a stub embedder); the last two are the owner's measurement on the production host with the real
+embedder, from the review of #242. The owner's bench harness (AGE-24) measures the real chats live and stays outside
+the repository.
 
 ## Setup
 
@@ -77,10 +79,44 @@ none).
 - A 700 ms embedder is beyond production's shape (280–450 ms behind a proxy); it shows the bound: what the prefetch
   buys is the sync's time, nothing more, and no request pays for an embedder that never answers.
 
-## Long replies embedded whole (ADR 0062)
+## On the owner's host: the real embedder (the review of #242, 2026-10-02)
 
-Not measurable here: the bench chat's replies are 1,200 characters (two chunks under either cap), so its vectors,
-search time and packets are the same under the cap of 24 as under 8. On the owner's main M0 chat (73 turns, replies of
-≈10,000 characters) the cap of 8 left ≈45 % of each reply without a vector; under 24 every reply is embedded whole
-(≈1,300 vectors in place of ≈600, a few milliseconds of exact search). The evaluation copies must be embedded again
-under the new projection before a replay with vectors shows the difference (`tools/eval_rp.py --projection`).
+The owner's review ran this branch's head (`806698a`) against `main` (`cf52cec`) on the production machine, through
+the sidecar's real sync → retrieve → trace path (FastAPI's `TestClient`, the real Postgres, the real Ollama): the 40
+questions of the M0 v2 main set, three rounds a side, the sides' order changed each round, a fresh copy of the database
+for each run, the chunk cap at 8, no extraction or summary worker. Two embedder paths: production's current one (Ollama
+in Docker reached directly, `NMOS_EMBED_TIMEOUT_MS` 1,000) and the one K34 was measured on (the HTTPS proxy, 300 ms).
+Medians of the three rounds' percentiles, `sidecar_total` from the traces.
+
+| Embedder path | `main` p50 → this branch p50 | p95 | fell back, `main` → branch | branch requests that took their sync's embedding |
+|---|---:|---:|---:|---:|
+| Direct, 1,000 ms (production today) | **226.83 → 163.52 ms** | 254.16 → 193.08 ms | 0/120 → 0/120 | 120/120 |
+| Proxy, 300 ms (K34's path) | **322.93 → 176.88 ms** | 389.46 → 201.62 ms | 0/120 → 0/120 | 120/120 |
+
+The branch's `embed_wait` p50 was 0 ms on the direct path and 9.24 ms through the proxy; the sync itself took 15–16 ms
+p50 on `main` and 16–18 ms on the branch. The latency gain and the prefetch are confirmed on the real embedder. **The
+fallback share is not**: production has moved to the direct path with a 1,000 ms timeout, and in this run `main` fell
+back on none of its 120 requests either, so K34's 70 % (141 of 201 recalls, Phase 15, on the proxy path at 300 ms) is a
+historical figure this run cannot show shrinking. Sidecar time only: no plugin round trip, no generated answers (the
+AGE-24 criterion is the live bench's, which has not run on this branch).
+
+## The chunk cap: no change on the M0 chat (ADR 0062)
+
+The first draft of ADR 0062 raised the default cap from 8 to 24 chunks on the belief that the owner's ≈10,000-character
+replies had their second half outside vectors. The same review measured it on the evaluation copy of the M0 v2 main
+chat: 147 active messages, 15,621 raw characters at most, **5,481 normalized** (`clean-v3`, the text the chunks are cut
+from). No message is cut at 8 chunks; no message's spans differ between 8 and 24. A fresh copy re-embedded under a
+24-chunk projection (242 jobs, 709 vectors, 303.74 s; the new vectors at cosine 0.9999999999991362 to the stored ones,
+so the same model) compiled, with the same fixed query vectors and `known_at`, the **same 40 packets** as the old
+projection, character for character:
+
+| Replay (`packet-v10`, 4,000 tokens, keyword route on) | needing memory | all | forbidden | mean tokens | with vectors |
+|---|---:|---:|---:|---:|---:|
+| `main`, the old projection (cap 8) | 16/23 | 32/40 | 1 | 3,106.32 | 40/40 |
+| this branch, the old projection | 16/23 | 32/40 | 1 | 3,106.32 | 40/40 |
+| this branch, the new projection (cap 24) | 16/23 | 32/40 | 1 | 3,106.32 | 40/40 |
+
+The one forbidden phrase is in the baseline too. These are packet-evidence scores, not generated answers. So the
+default went back to 8 (the same projection key as before: nothing re-embeds on upgrade) and the cap stayed a setting
+of the projection for chats whose normalized messages are longer. The bench chat cannot measure it either: its replies
+are 1,200 characters, two chunks under either cap.

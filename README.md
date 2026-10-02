@@ -303,7 +303,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_CANON_FACTS` | `1` | The extraction model also reads the chat's canon for facts, in the background (ADR 0047): the card, the persona, the author's note, and each lorebook entry once a prompt held it. The story supersedes them. `0` turns this off (so does the panel) |
 | `NMOS_EXTRACT_HINTS` | `40` | Entity names from earlier in the chat shown to extraction so it reuses them; `0` turns this off |
 | `NMOS_EMBED_BACKFILL` | `2000` | On first sight of a chat, embed the latest N messages (cheap; covers long histories) |
-| `NMOS_EMBED_MAX_CHUNKS` | `24` | Chunks of 700 characters embedded per message, from its start: 24 covers a 16,800-character reply whole (ADR 0062; it was 8, which left the second half of a 10,000-character reply unreachable by semantic recall, K13). Part of the projection: a change re-embeds every chat once |
+| `NMOS_EMBED_MAX_CHUNKS` | `8` | Chunks of 700 normalized characters embedded per message, from its start: 8 is 5,600 characters, the cap as before this setting (K13); a message longer than that once normalized is embedded in part (the Inspector says so). Raise it for chats whose messages are longer (ADR 0062). Part of the projection: a change re-embeds every chat once |
 | `NMOS_WORKER_CONCURRENCY` | `2` | Parallel background jobs |
 | `NMOS_PARSERS_FILE` | off | State parser rules, e.g. `/config/parsers.json` (mounted from `./config`) |
 | `NMOS_RECALL_THRESHOLD` | `0.4` | Minimum trigram match for lexical recall |

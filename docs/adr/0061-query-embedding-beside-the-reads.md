@@ -51,15 +51,18 @@ reply and the window, not on the candidates. Only the vector search, the fusion 
    embedding 5,000 ms (`tools/eval_rp.py`) waits up to that after the reads and lets the call run twice as long.
 7. **Asked for at the sync** (`retrieval.Prefetched`, `api.bodies`). The plugin syncs the chat before it asks for the
    packet, and the bodies it uploads carry the user's new message — the same text it then sends as the query
-   (`queryTexts`). When the sync's manifest ends in a user message whose body is in the upload, the sidecar starts that
-   text's embedding at once (before the sync's own database work), keyed by the embedder and the exact text with its
-   query prefix; the retrieve that follows takes it in place of starting a call, and records `embed_lead`, how long
-   before recall the call began. The embedder so has the sync's time as well (the host's reconcile and bodies take
-   0.3–2.5 s on a long chat, `docs/perf/scale.md`). The prefetched call may run at least 2 s (`PREFETCH_CALL_MIN_MS`,
-   or twice the timeout when that is more), since its request follows by the sync's time; an entry no request takes
-   within a minute is dropped, and one is taken once. A replay never takes one (it compiles from its own reads, ADR
-   0027), and a text that differs from the synced message (a probe, an evaluation) is embedded as in item 1. Nothing
-   is stored.
+   (`queryTexts`). When the sync's manifest ends in a user message whose body is in the upload, the sidecar starts
+   that text's embedding at once (before the sync's own database work), keyed by the projection and the exact text
+   with its query prefix; the retrieve that follows takes it in place of starting a call, and records `embed_lead`,
+   how long before recall the call began. An entry keeps the embedder object it was asked of and is given only to a
+   request whose embedder is that object: a settings save rebuilds the embedder (`api.rebuild`), and an entry asked of
+   the old one is dropped, not served to the new (an id is no identity: a new object can get a collected one's `id()`,
+   which is how the first draft could have searched a new projection with the old model's vector; Codex on #242). The
+   embedder so has the sync's time as well (the host's reconcile and bodies take 0.3–2.5 s on a long chat,
+   `docs/perf/scale.md`). The prefetched call may run at least 2 s (`PREFETCH_CALL_MIN_MS`, or twice the timeout when
+   that is more), since its request follows by the sync's time; an entry no request takes within a minute is dropped,
+   and one is taken once. A replay never takes one (it compiles from its own reads, ADR 0027), and a text that differs
+   from the synced message (a probe, an evaluation) is embedded as in item 1. Nothing is stored.
 
 ## Consequences
 

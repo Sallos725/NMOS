@@ -20,12 +20,13 @@ later, is `docs/KNOWN-ISSUES.md`.
   A cold model (an unloaded Ollama) still gives no vectors to the request that wakes it. Measured:
   `docs/perf/query-embedding.md`.
 
-- **Long replies are embedded whole** (ADR 0062, D71; K13, AGE-24). Semantic recall embedded at most the first 5,600
-  characters of a message (8 chunks of 700), so on a chat whose replies run to 10,000 characters — the owner's long
-  chats — nothing said in the second half of a reply could be found by a paraphrased question. The cap is now a setting,
-  `NMOS_EMBED_MAX_CHUNKS`, default 24 (16,800 characters), and belongs to the projection: **every chat is embedded again
-  once** after the upgrade (local, in the background; the recent messages first), as after any embedding change. Chats
-  with the usual 1,200-character replies embed the same two chunks as before. Nothing else about recall changes.
+- **The chunk cap is a setting** (ADR 0062, D71; K13). Semantic recall embeds at most the first 5,600 normalized
+  characters of a message (8 chunks of 700). The cap is now `NMOS_EMBED_MAX_CHUNKS` (default 8, as before: nothing is
+  re-embedded on upgrade) and belongs to the projection: a changed cap is a new projection, under which every chat is
+  embedded again once (local, in the background; the recent messages first). Raise it for chats whose messages are
+  longer than that once normalized. The owner's long chats are not — their messages normalize to under 5,500
+  characters, and a cap of 24 compiled the same packets on the M0 evaluation copy — so nothing changes for them.
+  Nothing else about recall changes.
 
 - **NMOS without Docker** (Phase 23, ADR 0060; AGE-29). The release carries a bundle for each system PocketRisu ships
   a portable package for: `NMOS-v<version>-win-x64.zip` (double-click `NMOS.exe`; NMOS sits in the notification area),

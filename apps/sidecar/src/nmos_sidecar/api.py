@@ -447,7 +447,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             return
         text = clean_text(normalize_text(content))
         if text.strip():
-            prefetched.start(recall.embedder, recall.query_prefix + text, recall.embed_timeout_ms)
+            prefetched.start(recall.embedder, recall.embed_projection, recall.query_prefix + text,
+                             recall.embed_timeout_ms)
 
     @app.post("/v1/sync/bodies", response_model=BodiesResponse, dependencies=[Depends(auth)])
     def bodies(body: BodiesRequest, request: Request):

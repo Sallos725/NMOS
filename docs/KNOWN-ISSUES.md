@@ -21,7 +21,7 @@ without a PocketRisu change.
 | K9 | A destroyed or used-up item keeps its last holder in turns not extracted by `extract-v6` | Memory | fixed for new turns in beta.13 (ADR 0017); older turns: "extract all history" |
 | K11 | A secret is kept by instruction, not isolation: the model can still voice it | Memory | 0.2.0: Private section, strict and narrator modes (Phase 10); hard POV not planned |
 | K12 | A word in more than 200 messages brings no lexical excerpts | Recall | reduced on `main` (Phase 18, ADR 0052): each keyword is looked up alone and only a broad one is dropped |
-| K13 | Very long messages are only partly embedded and extracted | Recall | accepted limit (#13); embeddings on `main` cover 24 chunks (16,800 characters) instead of 8 (ADR 0062), a cap set by `NMOS_EMBED_MAX_CHUNKS` |
+| K13 | Very long messages are only partly embedded and extracted | Recall | accepted limit (#13); the embedding cap is a setting on `main`, `NMOS_EMBED_MAX_CHUNKS` (default 8 chunks, 5,600 characters, as before; ADR 0062) |
 | K14 | Rare over-injection into an auxiliary call; transformed input gets no memory | Gating | accepted (ADR 0001) |
 | K15 | Thresholds and extraction quality are checked on limited data | Quality | evaluation (A5 baseline) |
 | K16 | NMOS does not notice a chat deleted in PocketRisu | Data | host (H10) |
@@ -287,11 +287,11 @@ even when its other words are broad. A question whose every keyword is broad sti
 ≤700 normalized characters (≤5,600); extraction reads the first 6,000 characters of each message in
 the target turn and 2,000 of each context message. The Inspector flags partly processed messages
 (#13).
-*On `main` (ADR 0062, D71):* embeddings cover the first 24 chunks (≤16,800 characters), the cap `NMOS_EMBED_MAX_CHUNKS`
-sets; the owner's long chats write replies of ≈10,000 characters, whose second half no vector reached under the cap
-of 8. The cap is part of the projection key, so the upgrade re-embeds every chat once (local, in the background;
-K18), and until a chat is embedded again its requests search what the new projection has so far. Extraction's limits
-are unchanged.
+*On `main` (ADR 0062, D71):* the embedding cap is a setting, `NMOS_EMBED_MAX_CHUNKS` (default 8, as before), part of
+the projection key: raising it makes a new projection and re-embeds every chat once (local, in the background; K18);
+the default does not. The owner's long chats stay within the default once normalized (the M0 v2 main chat's messages:
+15,621 raw characters at most, 5,481 normalized; a cap of 24 compiled the same packets on its copy), so this limit is
+not where AGE-24's recall gaps are. Extraction's limits are unchanged.
 
 **K14 — Gating edge cases.** A main generation is recognized by the user's latest input appearing in
 the prompt (ADR 0001, amendment 2). A `model`-mode auxiliary call (trigger/Lua) whose prompt contains

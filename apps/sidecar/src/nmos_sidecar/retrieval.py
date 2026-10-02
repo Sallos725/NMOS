@@ -112,36 +112,42 @@ class Prefetched:
     """Query embeddings asked for before their request (ADR 0061 item 7). A sync whose bodies carry the chat's newest
     user message starts that message's embedding (`api.bodies`); the retrieve that follows the sync — the plugin sends
     the same text as its query — takes it instead of asking again, so the embedder has had the sync's time as well.
-    Keyed by the embedder and the exact text (prefix included); an entry is taken once, and one no request took within
+    Keyed by the projection (D20) and the exact text (prefix included); an entry keeps the embedder it was asked of and
+    is given only to a request whose embedder is that object, since a settings save rebuilds the embedder
+    (`api.rebuild`) and an entry asked of the old one is not the new one's (the old object's `id()` can be reused by
+    the new one, so an id is no identity; Codex on #242). An entry is taken once, and one no request took within
     PREFETCH_TTL_S is dropped. A replay never takes one (`gather`: `known_at` is set)."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._entries: dict[tuple[int, str], tuple[QueryEmbedding, float]] = {}
+        self._entries: dict[tuple[str, str], tuple[QueryEmbedding, Embedder, float]] = {}
 
-    def start(self, embedder: Embedder, text: str, timeout_ms: int) -> QueryEmbedding:
-        key = (id(embedder), text)
+    def start(self, embedder: Embedder, projection: str, text: str, timeout_ms: int) -> QueryEmbedding:
+        key = (projection, text)
         with self._lock:
             self._sweep()
-            if key in self._entries:  # the same text synced twice (a retry): one call
-                return self._entries[key][0]
+            entry = self._entries.get(key)
+            if entry is not None and entry[1] is embedder:  # the same text synced twice (a retry): one call
+                return entry[0]
             pending = QueryEmbedding(embedder, text, timeout_ms,
                                      call_timeout_ms=max(EMBED_CALL_FACTOR * timeout_ms, PREFETCH_CALL_MIN_MS))
-            self._entries[key] = (pending, time.monotonic())
+            self._entries[key] = (pending, embedder, time.monotonic())
             return pending
 
-    def take(self, embedder: Embedder, text: str) -> QueryEmbedding | None:
+    def take(self, embedder: Embedder, projection: str, text: str) -> QueryEmbedding | None:
         with self._lock:
             self._sweep()
-            entry = self._entries.pop((id(embedder), text), None)
-        return entry[0] if entry else None
+            entry = self._entries.pop((projection, text), None)
+        if entry is None or entry[1] is not embedder:  # none, or asked of an embedder a settings save replaced
+            return None
+        return entry[0]
 
     def _sweep(self) -> None:
         now = time.monotonic()
-        for key in [k for k, (_, at) in self._entries.items() if now - at > PREFETCH_TTL_S]:
+        for key in [k for k, (_, _, at) in self._entries.items() if now - at > PREFETCH_TTL_S]:
             del self._entries[key]
         while len(self._entries) > 64:  # requests that never came: the oldest go first
-            del self._entries[min(self._entries, key=lambda k: self._entries[k][1])]
+            del self._entries[min(self._entries, key=lambda k: self._entries[k][2])]
 
 
 prefetched = Prefetched()
@@ -483,7 +489,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         if options.embedder is not None:  # asked for first, answered while the reads below run (ADR 0061)
             text = options.query_prefix + query
             # A live request takes the embedding its sync asked for (item 7); a replay compiles from its own reads.
-            pending = prefetched.take(options.embedder, text) if known_at is None else None
+            pending = (prefetched.take(options.embedder, options.embed_projection, text) if known_at is None
+                       else None)
             if pending is not None:
                 g.timings["embed_lead"] = round((time.perf_counter() - pending.started) * 1000, 2)
             else:

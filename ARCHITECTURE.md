@@ -591,12 +591,14 @@ the trace records the embedder's time (`embed`), the wait after the reads (`embe
 for a prefetched embedding, how long before recall its call began (`embed_lead`). Nothing recorded changes: requests
 replay as they were.
 
-**D71 — Long replies embedded whole (ADR 0062; K13, AGE-24).** A message is embedded in chunks of 700 normalized
-characters from its start, at most `NMOS_EMBED_MAX_CHUNKS` of them (24: 16,800 characters; the cap was the constant 8,
-5,600 characters, which left the second half of the owner's ≈10,000-character replies unsearchable by vectors). The cap
-is in the projection key (D20), so each projection embeds by its own cap and a changed cap is a new projection that
-re-embeds every chat once (ADR 0014 item 5, K18). The search is unchanged: the best chunk per message, one candidate per
-message; for the usual 1,200-character reply (two chunks) nothing changes.
+**D71 — The chunk cap, a setting of the projection (ADR 0062; K13, AGE-24).** A message is embedded in chunks of 700
+normalized characters from its start, at most `NMOS_EMBED_MAX_CHUNKS` of them (default 8: 5,600 characters, the cap
+since #13; a value under 1 is refused at startup). The cap is in the projection key (D20), so each projection embeds by
+its own cap (`process_embed` reads it from the generation's spec) and a changed cap is a new projection that re-embeds
+every chat once (ADR 0014 item 5, K18); the default is the cap it was, with the key it had, so an upgrade re-embeds
+nothing. The search is unchanged: the best chunk per message, one candidate per message. Measured on the M0 v2 main
+chat's evaluation copy (Codex, on #242): its messages normalize to at most 5,481 characters, within the default, and a
+cap of 24 compiles the same 40 packets — the first draft's claim that the cap cut the owner's replies in half was wrong.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

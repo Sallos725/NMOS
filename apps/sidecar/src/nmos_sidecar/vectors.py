@@ -20,9 +20,10 @@ from .generations import Generation
 from .llm import Embedder, embedded
 
 CHUNK_CHARS = 700
-# The default cap on chunks per message (`Settings.embed_max_chunks`, ADR 0062): 24 × 700 = 16,800 characters. Each
-# projection carries its own cap in its key (`max_chunks`), so a changed cap is a new projection and re-embeds.
-MAX_CHUNKS = 24
+# The default cap on chunks per message (`Settings.embed_max_chunks`, ADR 0062): 8 × 700 = 5,600 normalized characters,
+# as since #13 (K13). Each projection carries its cap in its key (`max_chunks`), so a changed cap is a new projection
+# and re-embeds; the default is unchanged, so an upgrade does not.
+MAX_CHUNKS = 8
 CHUNKER_VERSION = "chunk-v1"  # bump when chunks() can cut differently
 DOCUMENT_PROFILE = "plain"  # documents are embedded without an instruction prefix
 RECENT_PRIORITY, HISTORY_PRIORITY = 200, 950

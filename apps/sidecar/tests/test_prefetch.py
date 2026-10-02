@@ -3,7 +3,9 @@ takes it instead of asking again."""
 
 from __future__ import annotations
 
+import gc
 import time
+import weakref
 
 from conftest import make_client
 from memeval import StubEmbedder
@@ -82,7 +84,7 @@ def test_a_replay_leaves_the_prefetched_embedding_to_the_live_request(migrated):
         time.sleep(0.05)
         with db(migrated) as conn:
             audit.replay(conn, out["trace_id"], RecallOptions(embedder=emb, embed_projection=trace["embed_projection"]))
-        assert retrieval.prefetched.take(emb, retrieval.query_prefix("fake-embed", "auto")
+        assert retrieval.prefetched.take(emb, trace["embed_projection"], retrieval.query_prefix("fake-embed", "auto")
                                          + "혹시 그 반짝이는 은빛 물건은 어디 숨겼지?") is not None
 
 
@@ -93,11 +95,86 @@ def test_prefetched_entries_expire_and_are_taken_once():
 
     cache = Prefetched()
     emb = Instant()
-    first = cache.start(emb, "q", 300)
-    assert cache.start(emb, "q", 300) is first  # already in flight: not asked twice
+    first = cache.start(emb, "embed-p", "q", 300)
+    assert cache.start(emb, "embed-p", "q", 300) is first  # already in flight: not asked twice
     settle(first)
-    assert cache.take(emb, "q") is first and cache.take(emb, "q") is None
-    again = cache.start(emb, "q", 300)
-    cache._entries[(id(emb), "q")] = (again, time.monotonic() - PREFETCH_TTL_S - 1)
-    assert cache.take(emb, "q") is None  # too old: a request that never came
-    assert cache.take(Instant(), "q") is None  # another embedder's text is another entry
+    assert cache.take(emb, "embed-p", "q") is first and cache.take(emb, "embed-p", "q") is None
+    again = cache.start(emb, "embed-p", "q", 300)
+    assert cache.take(emb, "embed-other", "q") is None and cache.take(emb, "embed-p", "q2") is None  # not this one
+    assert cache.take(emb, "embed-p", "q") is again
+    again = cache.start(emb, "embed-p", "q", 300)
+    cache._entries[("embed-p", "q")] = (again, emb, time.monotonic() - PREFETCH_TTL_S - 1)
+    assert cache.take(emb, "embed-p", "q") is None  # too old: a request that never came
+
+
+def test_an_entry_asked_of_a_replaced_embedder_is_not_given_to_the_new_one():
+    """An entry is the embedder object's it was asked of, not its `id()`'s: `api.rebuild` makes a new Embedder on every
+    settings save, and a new object can get a collected one's id (Codex on #242 reproduced a stale vector searching a
+    new projection that way). The same projection with a new object is not served either; the entry is dropped."""
+    class Instant:
+        def embed(self, texts, timeout_s):
+            return [[1.0, 0.0] for _ in texts]
+
+    cache = Prefetched()
+    old, new = Instant(), Instant()
+    alive = weakref.ref(old)
+    pending = cache.start(old, "embed-p", "q", 300)
+    settle(pending)
+    pending._thread.join()  # the call's thread let go of its arguments
+    del old
+    gc.collect()
+    assert alive() is not None  # the entry holds its embedder: its id cannot be reused while the entry lives
+    assert cache.take(new, "embed-p", "q") is None  # another object is not it: dropped, not given
+    gc.collect()
+    assert alive() is None  # let go with the entry
+    old = Instant()
+    pending = cache.start(old, "embed-p", "q", 300)
+    settle(pending)
+    assert cache.take(new, "embed-p", "q") is None and cache.take(old, "embed-p", "q") is None  # dropped, not given
+    pending = cache.start(old, "embed-p", "q", 300)
+    assert cache.start(new, "embed-p", "q", 300) is not pending  # a sync retried after the save: the new one's call
+    assert cache.take(new, "embed-p", "q") is not pending and cache.take(old, "embed-p", "q") is None
+
+
+def test_a_settings_save_between_the_sync_and_its_retrieve_leaves_the_prefetched_embedding_unused(migrated,
+                                                                                                 monkeypatch):
+    """Through the API: the sync asks the embedder the app built; `PUT /v1/config` rebuilds it (a new object, here a
+    new projection too); the retrieve of the same text embeds with the new one and records no `embed_lead`."""
+    from nmos_sidecar import api
+
+    made: list[Counting] = []
+
+    class Embed(Counting):
+        def __init__(self, url, model, api_key=""):
+            super().__init__()
+            self.url = url
+            made.append(self)
+
+    monkeypatch.setattr(api, "Embedder", Embed)
+    with make_client(migrated, **settings_for("full")) as client:  # no injected embedder: `api.rebuild` builds one
+        chat = story(client, migrated, vectors=True)
+        first = made[-1]  # the embedder the app serves requests with now (startup rebuilds once more)
+        question = "혹시 그 반짝이는 은빛 물건은 어디 숨겼지?"
+        chat.user(question)
+        sync(client, chat)
+        time.sleep(0.05)
+        assert len(first.texts) == 1 and first.texts[0].endswith(question)
+        assert client.put("/v1/config", json={"embed_url": "http://stub-embed-two/v1"}).status_code == 200
+        second = made[-1]
+        assert second is not first and second.url == "http://stub-embed-two/v1"
+        out = recall(client, chat, question, in_context=[m["chatId"] for m in chat.messages[-2:]], budget=600)
+        timings = client.get(f"/v1/trace/{out['trace_id']}").json()["latency_ms"]
+        assert out["vectors"] == "on" and "embed_lead" not in timings  # asked of the new embedder, not taken
+        assert len(first.texts) == 1 and len(second.texts) == 1 and second.texts[0].endswith(question)
+        # the same projection with a rebuilt object (a save that touched nothing of the embedding): not served either
+        chat.user(question)
+        sync(client, chat)
+        time.sleep(0.05)
+        assert len(second.texts) == 2
+        assert client.put("/v1/config", json={"recall_threshold": 0.5}).status_code == 200
+        third = made[-1]
+        assert third is not second and third.url == second.url
+        out = recall(client, chat, question, in_context=[m["chatId"] for m in chat.messages[-2:]], budget=600)
+        timings = client.get(f"/v1/trace/{out['trace_id']}").json()["latency_ms"]
+        assert out["vectors"] == "on" and "embed_lead" not in timings
+        assert len(third.texts) == 1 and len(second.texts) == 2
