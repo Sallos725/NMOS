@@ -47,11 +47,11 @@ from .models import (
     RetrieveResponse,
     RevisionRef,
 )
-from .canonical import manifest_hash, manifest_hashes, storable
+from .canonical import manifest_hash, manifest_hashes, normalize_text, storable
 from .reconcile import Entry, plan, plan_append
 from .llm import Embedder
-from .packet import DEFAULT_POLICY, POLICIES
-from .retrieval import RecallOptions, query_prefix, retrieve
+from .packet import DEFAULT_POLICY, POLICIES, clean_text
+from .retrieval import RecallOptions, prefetched, query_prefix, retrieve
 from .state import current_state, rebuild_state, sync_rules, write_state
 
 log = logging.getLogger("nmos.sidecar")
@@ -431,8 +431,28 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         with request.app.state.pool.connection() as conn:
             return do_reconcile(conn, body)
 
+    def prefetch_query(body: BodiesRequest) -> None:
+        """The newest user message's embedding is asked for as soon as its text arrives (ADR 0061 item 7): the
+        retrieve that follows this sync sends the same text as its query (the plugin's `queryTexts`) and takes it from
+        `retrieval.prefetched`. Nothing is stored; a text no retrieve asks for is dropped after a minute."""
+        recall = rt["recall"]
+        if recall.embedder is None or body.then_reconcile is None or not body.then_reconcile.messages:
+            return
+        last = body.then_reconcile.messages[-1]
+        if last.role != "user" or last.disabled or last.is_comment:
+            return
+        content = next((b.content for b in body.bodies if b.host_logical_id == last.host_logical_id
+                        and b.revision_hash == last.revision_hash), None)
+        if content is None:
+            return
+        text = clean_text(normalize_text(content))
+        if text.strip():
+            prefetched.start(recall.embedder, recall.embed_projection, recall.query_prefix + text,
+                             recall.embed_timeout_ms)
+
     @app.post("/v1/sync/bodies", response_model=BodiesResponse, dependencies=[Depends(auth)])
     def bodies(body: BodiesRequest, request: Request):
+        prefetch_query(body)  # before the database work: the embedder gets that time too
         with request.app.state.pool.connection() as conn:
             conv = ledger.lock_conversation(conn, body.host, body.chat_id, None)
             def derive(rid: UUID, content: str, meta: dict[str, Any]) -> None:

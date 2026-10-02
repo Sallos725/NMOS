@@ -86,6 +86,45 @@ longer states its item, is listed under Needs attention") and met: **Stage 6 com
 The review's measure of re-extraction drift (same generation 74 % of facts again, `extract-v14` → `extract-v15` 61 %)
 is on AGE-30. Next: `0.3.0` (AGE-7) with the owner's OK for the tag.
 
+**Under AGE-24, not a phase (2026-10-02): vectors that arrive in time, and the chunk cap a setting (ADR 0061, D70;
+ADR 0062, D71; K34, K13).** The four sub-issues of AGE-24 are done (Phases 21, 22, 24, 25); its criterion (the M0
+main cases that need memory at 8 of 10 or better, measured live by the owner's bench harness) stood at 7 of 10 in
+replays with vectors off, and live requests lost what vectors add (one or two such cases per M0 run, and the AGE-27
+excerpt) when the query's embedding missed its 300 ms (70 % of production recalls on the proxy path, K34). Three
+changes, none to the ranking, the budget or the recorded options: (1) the query's embedding call runs on its own thread
+while lexical recall, the facts, threads, cast and summaries are read, and the request waits for it at most
+`embed_timeout_ms` after those reads, so no request waits longer for the embedding and the embedder has the reads'
+time too (one that now has vectors pays the search and a fuller packet, as any request with vectors did); (2) a sync
+whose bodies carry the chat's newest user message starts that text's embedding at once, and the retrieve that follows
+(the plugin's query is that text) takes it, so the embedder has the sync's time as well and such a request waits for
+nothing — the entry is the projection's and the embedder object's it was asked of, so a settings save in between
+leaves it unused (the first draft keyed it by `id()`, which a rebuilt embedder can reuse: Codex on #242 reproduced a
+stale vector that way); (3) the chunk cap is a setting, `NMOS_EMBED_MAX_CHUNKS`, part of the projection key, default
+8 as before. The first draft raised the default to 24 on the belief that the cap cut the owner's ≈10,000-character
+replies in half; measured on the M0 v2 main chat's evaluation copy (Codex, on #242) its 147 messages normalize to at
+most 5,481 characters (15,621 raw), no span changes between 8 and 24, and a copy re-embedded under 24 compiled the
+same 40 packets (16/23 needing memory, 32/40 in all) — so the default stays, the key is the release before's, and
+nothing re-embeds on upgrade. Deterministic cases in `test_query_embedding.py`, `test_prefetch.py`, `test_vectors.py`,
+`test_long_messages.py`. Measured (`docs/perf/query-embedding.md`): at 10,000 messages a 400 ms stub embedder gave
+`main` 0 of 15 requests with vectors at 644 ms p50 and this branch 15 of 15 at 534 ms; on the owner's host against the
+real Ollama (40 questions × 3 rounds a side, the sidecar's sync → retrieve path) the median went 226.83 → 163.52 ms
+on production's direct path (1,000 ms timeout) and 322.93 → 176.88 ms on the former proxy path (300 ms), every request
+took its sync's embedding (120 of 120), and no request fell back on either side — production reaches Ollama directly
+now, so K34's 70 % is the proxy path's history, not a figure this run can show shrinking. **High risk (AGENTS.md
+§14)**: memory selection (vector candidates reach the fusion where the embedding used to miss its timeout; the
+ranking, the bars and the budget are unchanged), projection provenance and isolation (the default projection's key is
+unchanged, pinned by `test_long_messages.py`; a raised cap is its own projection, which embeds by the cap its spec
+records; a query searches the active projection's vectors only, pinned by `test_generations.py`; a prefetched
+embedding is given only to the projection and embedder object it was asked of, `test_prefetch.py`), and fail-open
+(`test_query_embedding.py`, `test_vectors.py`: a slow or failed embedder leaves the request lexical, with the reason in
+the trace). Replays of recorded requests (an evaluation gives the embedding 5,000 ms) do not show (1)–(2), and the
+10,000-message bench chat does not show the real chats; the owner's live bench harness (`~/nmos-eval/three-bench`, the
+NMOS lane on this commit, the embedder as in production) is where AGE-24's criterion is measured, and has not run on
+this branch yet.
+Next, in the owner's order — the cases first, the latency second: Phase 27 (`docs/phases/PHASE-27.md`, the excerpt's
+span: the M0 main failures that have their answer among the candidates and excerpt another part of the message; the
+prototype of #241 measured +3 of 23), then that live run.
+
 **Phase 23 — NMOS without Docker: approved 2026-10-01, current.** Spec `docs/phases/PHASE-23.md`
 (AGE-29; the owner pulled it in before 1.0, an exception to R7): a bundle for each PocketRisu portable target
 (win-x64, macos-arm64, linux-x64, linux-arm64; Termux later) with a portable PostgreSQL 16, Python, the sidecar and the plugin;
@@ -473,7 +512,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H22, D1–D69, O2/O3/O4/O5 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H22, D1–D71, O2/O3/O4/O5 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
 | Schema | `migrations/0001`–`0027` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode, thread outcome and cause, summaries, owner repairs, canon, canon facts and lock, model-call usage |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
@@ -482,7 +521,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k without extraction and embeddings (D24); with both on (15k facts, 15k vectors) 10k takes ≈3.2 s (A-09); K3 on the real host (2026-09-27): rerolls and last-reply swipes stay on the fast path, an edit of an older message at 10k takes 3.6–3.8 s |
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K42 (K10 resolved; K33–K38 recorded 2026-09-29, K39–K40 in Phase 18, K41 in Phase 19, K42 in Phase 21 and resolved on `main`) current as of `v0.2.0` and Phase 20, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–7 of the original roadmap, one release each (R7, 2026-10-01: Stage 8 after 1.0, Stage 6 ends with Phase 20, new phases only for Stage 7; R1, R5, R7 decided, R2–R4 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
-| Decisions | `docs/adr/0001`–`0060` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair; Phase 14: canon sources, names from canon, canon facts and lock; NMOS off for one chat; Phase 15: a packet that fills its budget; Phase 16: NMOS Archive; Phase 17: model-call usage; Phase 18: keyword lexical recall, excerpts that fill their length; Phase 19: `extract-v14`; Phase 20: join preview; Phase 21: first cue; Phase 22: reveal checks; Phase 24: name variants; Phase 25: `role_toward`; Phase 23: portable bundles |
+| Decisions | `docs/adr/0001`–`0062` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair; Phase 14: canon sources, names from canon, canon facts and lock; NMOS off for one chat; Phase 15: a packet that fills its budget; Phase 16: NMOS Archive; Phase 17: model-call usage; Phase 18: keyword lexical recall, excerpts that fill their length; Phase 19: `extract-v14`; Phase 20: join preview; Phase 21: first cue; Phase 22: reveal checks; Phase 24: name variants; Phase 25: `role_toward`; Phase 23: portable bundles; the query embedded while recall reads (K34); the chunk cap a setting of the projection (K13) |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-26.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 met (the owner's iPhone check 2026-10-01; the host's alert is K38); 17 met; 18 met (latency measured over the benchmark's questions, owner accepted); 19 met but for `deepseek-v4.1-flash`'s M0 criterion (owner accepted, K41); 20 met; 21 met; 22 met but the paid run's reveal count missed by one (owner accepted); 23 current; 24 met; 25 met (the paid run's output tokens 43 % above the estimate, owner accepted); 26 stopped (not merged; Stage 6's criterion reworded) |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 | Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11`, and A-12's markup half in `clean-v3` (both unreleased) |
