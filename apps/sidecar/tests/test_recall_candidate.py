@@ -59,3 +59,20 @@ def test_multilingual_details_cue_uses_current_query():
     assert T.DETAIL.search('이 기록의 내용은?')
     assert T.DETAIL.search('What are its contents?')
     assert not T.DETAIL.search('Find the archive.')
+
+
+def test_answer_span_context_cannot_leak_after_a_failed_gather(monkeypatch):
+    monkeypatch.setattr(retrieval, 'fuse', retrieval.fuse)
+    monkeypatch.setattr(retrieval, 'grown_excerpt', retrieval.grown_excerpt)
+    source = 'Cedar memo.\n1. West gate.\n2. Keys.\n3. Tide.'
+    def fail(*args, **kwargs):
+        retrieval.fuse([], [], 0.4, 0.42, [{'id': 'R1', 'position': 1,
+                                          'clean': source, 'keyword_score': 1}])
+        assert T._ANSWER_SPANS.get()
+        raise RuntimeError('synthetic failure after choosing a span')
+    wrapped = T.install(fail, Path('/tmp/unused'), answer_spans=True)
+    before = T._QUERY.get(), T._ANSWER_SPANS.get(), T._CHAR_LIMIT.get()
+    with pytest.raises(RuntimeError, match='synthetic failure'):
+        wrapped(None, None, 'What are the contents of the cedar memo?', '', set(),
+                retrieval.RecallOptions(excerpt_chars=500))
+    assert (T._QUERY.get(), T._ANSWER_SPANS.get(), T._CHAR_LIMIT.get()) == before

@@ -71,3 +71,24 @@ def test_gate_rejects_prompt_window_change_even_when_denominator_is_same(tmp_pat
     E.write(path, record)
     with pytest.raises(ValueError, match="prompt window changed"):
         G.verify(tmp_path, "candidate", cases)
+
+
+def test_frozen_candidates_from_another_question_are_refused_before_db_access(tmp_path, monkeypatch):
+    work = Path(E.__file__).resolve().parents[1]
+    monkeypatch.chdir(work)
+    def forbidden_connect(*args, **kwargs):
+        pytest.fail('mismatched frozen input reached the database')
+    monkeypatch.setattr(E.psycopg, 'connect', forbidden_connect)
+    case = {'name': 'synthetic', 'query': 'Which door?', 'gold': ['west']}
+    cases = tmp_path / 'cases.json'
+    cases.write_text(json.dumps([case]))
+    out = tmp_path / 'private'
+    E.write(out / 'baseline/source.json', {
+        str(path.relative_to(work)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted((work / 'apps/sidecar/src/nmos_sidecar').glob('*.py'))
+    })
+    E.write(out / 'baseline/cases/synthetic.json', {'case': {**case, 'query': 'Which window?'}})
+    args = Namespace(cases=cases, out=out, label='new', db='unused', candidate=True,
+                     answer_spans=True, allow_local_embeddings=False, frozen_candidates='baseline')
+    with pytest.raises(ValueError, match='frozen candidate question'):
+        E.run(args)

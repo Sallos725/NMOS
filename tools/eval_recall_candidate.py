@@ -89,6 +89,8 @@ def run(args: argparse.Namespace) -> None:
         raise ValueError('private artifacts must be outside a repository')
     if (args.out / args.label).exists():
         raise ValueError('preserve prior measurement; choose a new label')
+    if getattr(args, 'answer_spans', False) and not args.candidate:
+        raise ValueError('--answer-spans requires --candidate')
     cases_bytes = args.cases.read_bytes()
     cases = json.loads(cases_bytes)
     fixed = {'cases_sha256': hashlib.sha256(cases_bytes).hexdigest(), 'extractor': EXTRACTOR,
@@ -103,29 +105,59 @@ def run(args: argparse.Namespace) -> None:
     run_dir = args.out / args.label
     write(run_dir / 'source.json', {str(p.relative_to(Path.cwd())): hashlib.sha256(p.read_bytes()).hexdigest()
                                   for p in sorted((Path.cwd() / 'apps/sidecar/src/nmos_sidecar').glob('*.py'))})
-    for name in ('eval_recall_candidate.py', 'recall_candidate.py', 'recall_passages.py'):
+    for name in ('eval_recall_candidate.py', 'recall_candidate.py', 'recall_passages.py', 'recall_answer_spans.py'):
         source = Path(__file__).parent / name
         (run_dir / name).write_bytes(source.read_bytes())
     embedder = CachedLocalEmbedder(args.out, args.allow_local_embeddings)
     opts = retrieval.RecallOptions(embedder=embedder, embed_projection=PROJECTION,
                                    query_prefix=retrieval.QWEN3_QUERY_INSTRUCTION)
+    reference = getattr(args, 'frozen_candidates', None)
+    frozen_cases = {}
+    if reference:
+        if not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', reference):
+            raise ValueError('invalid candidate reference')
+        if (json.loads((args.out / reference / 'source.json').read_text())
+                != json.loads((run_dir / 'source.json').read_text())):
+            raise ValueError('candidate reference production source changed')
+        for case in cases:
+            saved = json.loads((args.out / reference / 'cases' / (case['name'] + '.json')).read_text())
+            if saved['case'] != case:
+                raise ValueError('frozen candidate question or gold changed')
+            frozen_cases[case['name']] = saved
+    write(run_dir / 'mode.json', {'candidate': args.candidate,
+                                 'answer_spans': getattr(args, 'answer_spans', False),
+                                 'frozen_candidates_from': reference,
+                                 'frozen_case_sha256': {name: digest(saved) for name, saved in frozen_cases.items()}})
+    frozen_current = None
     original_gather = audit.gather
     original_fuse, original_excerpt = retrieval.fuse, retrieval.grown_excerpt
     gather_for_run = original_gather
     captured = {}
     def gather(*a: Any, **kw: Any) -> retrieval.Gathered:
         g = gather_for_run(*a, **kw)
+        if frozen_current is not None:
+            captured['live_routes_before_freeze'] = {name: getattr(g, name) for name in
+                                                     ('lexical_note', 'keyword_note', 'vector_note')}
+            for name in ('lexical_note', 'keyword_note', 'vector_note'):
+                setattr(g, name, frozen_current['gathered'][name])
         captured['gathered'] = dataclasses.asdict(g)
         return g
     try:
+        if reference:
+            def frozen_fuse(*a: Any, **kw: Any) -> list[dict[str, Any]]:
+                if frozen_current is None:
+                    raise ValueError('no frozen candidates for the active question')
+                return [dict(row) for row in frozen_current['gathered']['candidates']]
+            retrieval.fuse = frozen_fuse
         if args.candidate:
             from recall_candidate import install
-            gather_for_run = install(original_gather, args.out)
+            gather_for_run = install(original_gather, args.out, answer_spans=getattr(args, "answer_spans", False))
         audit.gather = gather
         with psycopg.connect(args.db, row_factory=dict_row, autocommit=True,
                              options='-c default_transaction_read_only=on') as conn:
             assert conn.execute('SHOW transaction_read_only').fetchone()['transaction_read_only'] == 'on'
             for index, case in enumerate(cases):
+                frozen_current = frozen_cases.get(case['name'])
                 out = audit.replay(conn, UUID(case['trace']), opts, 'packet-v10', known_at=KNOWN_AT,
                                    query=case.get('query'), budget=4000, projection=PROJECTION,
                                    extractor_key=EXTRACTOR, summarize_key=SUMMARY,
@@ -133,6 +165,8 @@ def run(args: argparse.Namespace) -> None:
                 if not out or out['status'] != 'ok' or out['vectors'] != 'on':
                     raise ValueError('case missing or vector search unavailable')
                 window = E.prompt_window(conn, UUID(case['trace']), case.get('query') is not None)
+                if frozen_current is not None and window != frozen_current['window']:
+                    raise ValueError('frozen candidate prompt window changed')
                 result = {'name': case['name'], 'category': case['category'], **E.score(case, out['text'], window)}
                 write(run_dir / 'cases' / (case['name'] + '.json'),
                       {'case': case, 'result': result, 'packet': out, 'window': window, **captured})
@@ -158,6 +192,8 @@ def main() -> None:
     parser.add_argument('--db', required=True)
     parser.add_argument('--label', required=True)
     parser.add_argument('--candidate', action='store_true')
+    parser.add_argument('--answer-spans', action='store_true', help='try contiguous answer spans; requires --candidate')
+    parser.add_argument('--frozen-candidates', help='use a retained run’s fused candidates and route states')
     parser.add_argument('--allow-local-embeddings', action='store_true')
     run(parser.parse_args())
 

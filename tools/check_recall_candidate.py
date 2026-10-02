@@ -31,23 +31,23 @@ def checked(root: Path, label: str, cases: list[dict[str,Any]], budget: int) -> 
     return result
 
 
-def verify(root: Path, label: str, cases_path: Path) -> dict[str,Any]:
+def verify(root: Path, label: str, cases_path: Path, reference: str = "baseline") -> dict[str,Any]:
     protocol = read(root/'protocol.json')
     if hashlib.sha256(cases_path.read_bytes()).hexdigest() != protocol['cases_sha256']:
         raise ValueError('gold file hash changed')
     if hashlib.sha256(Path(E.__file__).read_bytes()).hexdigest() != protocol['scorer_sha256']:
         raise ValueError('original scorer changed')
     cases = read(cases_path)
-    if read(root/'baseline/source.json') != read(root/label/'source.json'):
+    if read(root/reference/'source.json') != read(root/label/'source.json'):
         raise ValueError('production source changed between runs')
     for case in cases:
-        b = read(root/'baseline/cases'/(case['name']+'.json'))
+        b = read(root/reference/'cases'/(case['name']+'.json'))
         n = read(root/label/'cases'/(case['name']+'.json'))
         if b['window'] != n['window']:
             raise ValueError('prompt window changed')
         if b['packet']['keywords'] != n['packet']['keywords']:
             raise ValueError('keyword route changed')
-    base = checked(root,'baseline',cases,protocol['budget'])
+    base = checked(root,reference,cases,protocol['budget'])
     new = checked(root,label,cases,protocol['budget'])
     lost = [n for n,b in base.items() if b['passed'] and not new[n]['passed']]
     gained = [n for n,b in base.items() if not b['passed'] and new[n]['passed']]
@@ -63,7 +63,8 @@ def verify(root: Path, label: str, cases_path: Path) -> dict[str,Any]:
 def main() -> None:
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('root',type=Path);ap.add_argument('label');ap.add_argument('--cases',type=Path,required=True)
-    args=ap.parse_args();result=verify(args.root,args.label,args.cases)
+    ap.add_argument('--reference', default='baseline', help='also compare against a previously selected candidate')
+    args=ap.parse_args();result=verify(args.root,args.label,args.cases,args.reference)
     print(json.dumps(result,ensure_ascii=False))
     if not result['pass']:
         raise SystemExit(1)
