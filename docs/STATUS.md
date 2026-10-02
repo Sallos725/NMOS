@@ -2,6 +2,14 @@
 
 ## Current phase
 
+**AGE-24 evaluation candidate (2026-10-02), not production:** the retained M0 v2 `extract-v15`
+main-chat/vector-ON score is 16/23 memory-needed cases. An isolated read-only recall prototype reaches
+19/23 with the same questions, scorer, facts, prompt windows and 4,000-token budget; a repeat has identical
+packets, no lost passing case and no added forbidden match. Two new passes still have incomplete semantic
+coverage. The original evaluation commit and original packet bodies were not retained: the current base
+is not substituted for them. Seven failures traced with that limitation; `docs/perf/age24-recall-candidate.md`.
+No production source or generation change, no deployment, no AGE-24 completion. Phase 23 remains current.
+
 **Phase 22 — A re-extraction that keeps what it found: approved and complete 2026-10-01, not released.** Spec `docs/phases/PHASE-22.md`
 (AGE-25 under AGE-24, an urgent correction found by measurement): "Extract all history" asks a small reveal check
 instead of extracting again a turn extracted before an earlier turn's secret (K29), and a narrated fact a
