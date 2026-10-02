@@ -8,6 +8,7 @@ generation its handler implements, and facts only come from the active generatio
 from __future__ import annotations
 
 import json
+import re
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -204,8 +205,8 @@ ROLE_ENDINGS = """- If CURRENT ROLES are listed (R1, R2, …), report in `roles_
   `when`: "now" when it is over by the end of the TARGET turn (they have moved out, quit or been dismissed,
   the arrangement is called off); "planned" when the TARGET turn only plans, arranges, announces or prepares
   the ending (packing for tomorrow's move, notice that takes effect later): the role holds until a later turn
-  ends it. `evidence` quotes the TARGET turn, never CONTEXT. Not when someone only goes out, travels or is away
-  for a while. Do not write the ending as a `role_toward` yourself. A new role toward the same person replaces
+  ends it. `evidence`: one passage of the TARGET turn, copied as it is; never CONTEXT, never two passages
+  joined with "...". Not when someone only goes out, travels or is away for a while. Do not write the ending as a `role_toward` yourself. A new role toward the same person replaces
   the listed one by itself: give only the new `role_toward`. Most turns end none: then "roles_ended": [].
 """
 _ANSWER_END = '''"secrets": [{{"secret": "S1", "found_out_by": ["..."], "evidence": "..."}}]}}'''
@@ -719,6 +720,24 @@ def revealed(answer: dict[str, Any], secrets: list[dict[str, Any]], turn_text: s
     return out
 
 
+ELLIPSIS = re.compile(r"\s*(?:\.{3,}|…)\s*")
+
+
+def quoted_in(evidence: str, turn_text: str) -> str | None:
+    """The quote of a role ending as found in the target turn: a quote of one passage when it is there; a quote that
+    joins passages with an ellipsis by its first passage of EVIDENCE_MIN_CHARS or more that is there by itself, which
+    is then the evidence kept; None otherwise. The test is the same (EVIDENCE_MIN); a passage from CONTEXT is never
+    counted or kept. The owner's run of 37af724: on the turn of the move the model joined a sentence of the previous
+    turn and one of the target, three times out of three, and the whole quote missed the bar."""
+    pieces = [p for p in ELLIPSIS.split(evidence) if p] if evidence else []
+    if len(pieces) == 1:
+        return evidence if similarity(evidence, turn_text) >= EVIDENCE_MIN else None
+    for piece in pieces:
+        if len(piece) >= EVIDENCE_MIN_CHARS and similarity(piece, turn_text) >= EVIDENCE_MIN:
+            return piece
+    return None
+
+
 def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, Any]],
                 turn_text: str) -> list[Any]:
     """extract-v16's role endings (PHASE-28 Q1): the model's `roles_ended` (R<n> of CURRENT ROLES, with a quote of the
@@ -726,7 +745,7 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
     closes exactly that role with. Only an ending that is over in the target turn (`when` "now"): one only planned or
     prepared there (packing for tomorrow's move) closes nothing yet; the owner's run of 4a7c11c saw a stay ended on the
     eve of the move, three times out of three. An unknown number, or evidence not found in the target turn, gives
-    nothing. A negative
+    nothing; a quote that joins passages with an ellipsis counts by its passage found there (`quoted_in`). A negative
     `role_toward` the model wrote itself between the two parties of a listed role is dropped: the listed ending is the
     one way to close it, and a free one in other words would stand beside the role as a fact of its own."""
     pairs = {(norm(r["by"]), norm(r["to"])) for r in roles}
@@ -745,8 +764,8 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
             continue
         if str(entry.get("when") or "").strip().lower() != "now":
             continue
-        evidence = str(entry.get("evidence") or "").strip()[:300]
-        if not evidence or similarity(evidence, turn_text) < EVIDENCE_MIN:
+        evidence = quoted_in(str(entry.get("evidence") or "").strip()[:300], turn_text)
+        if evidence is None:
             continue
         done.add(int(ref))
         listed = roles[int(ref) - 1]

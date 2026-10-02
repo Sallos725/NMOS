@@ -44,6 +44,12 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    on a sentence about the next day. Each ending now states `when`: "now" when it is over by the end of the TARGET
    turn, "planned" when the turn only plans, arranges, announces or prepares it; only "now" is written, and a missing
    or other `when` closes nothing. The evidence must quote the TARGET turn, never CONTEXT.
+   *And on the run of `37af724`* (9 calls): the eve kept the stay 3/3 ("planned") and the resignation ended 3/3, but the
+   move closed 0/3: the model named the stay and "now" and quoted a sentence of the previous turn and one of the target
+   joined by "...", which missed the bar as a whole (0.64–0.67 against 0.7). The rule now asks for one passage of the
+   TARGET turn as it is; and `quoted_in` reads a quote joined by an ellipsis by its passages: the first of
+   `EVIDENCE_MIN_CHARS` or more found in the turn at the same bar is the evidence kept, a passage from CONTEXT is never
+   counted or kept. The bar is unchanged.
 2. **A name and a part of it** (Q4). The `also_called` rule (`ALIAS_PARTS`, in place of `extract-v15`'s `V15_ALIAS`)
    also asks for an alias when the TARGET turn writes a character by a full name and, for the same character, by part
    of it: the given name alone, or in a story in English the first or the last name alone; subject the full name, value

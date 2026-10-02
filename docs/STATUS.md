@@ -27,7 +27,9 @@ and 20 turns but in no turn's assertions; withdrawn and removed before merge. Th
 closed, the model giving the role's name without the listed description; the ending is now named by number (R1, …) and
 written by the worker. Re-run on `4a7c11c` (22 calls): values exact, the employment ending 3/3 and the move 2/3, but the
 stay ended on the eve of the move 3/3; each ending now states `when` and only one over in the TARGET turn ("now")
-closes the role. Next: the eve, move and resignation turns again (keep 3/3, end 3/3, end 3/3), then the rest of Q5 (c).
+closes the role. On `37af724` (9 calls): eve kept 3/3 and resignation ended 3/3, the move 0/3 (a quote joining a CONTEXT
+and a TARGET sentence with "..."); a joined quote now counts by its passage in the TARGET turn, at the same bar. Next:
+those turns again (keep 3/3, end 3/3, end 3/3), then the rest of Q5 (c).
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

@@ -84,8 +84,9 @@ def test_the_v16_prompt_names_a_listed_role_that_ends_right_after_the_role_rule(
     assert prompt.index('`role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").') < rule
     for phrase in ('`when`: "now" when it is over by the end of the TARGET turn',
                    '"planned" when the TARGET turn only plans, arranges, announces or prepares',
-                   "the role holds until a later turn\n  ends it", "`evidence` quotes the TARGET turn, never CONTEXT",
-                   "Not when someone only goes out, travels or is away\n  for a while",
+                   "the role holds until a later turn\n  ends it",
+                   '`evidence`: one passage of the TARGET turn, copied as it is; never CONTEXT, never two passages\n  joined with "..."',
+                   "Not when someone only goes out, travels or is away for a while",
                    "Do not write the ending as a `role_toward` yourself",
                    "A new role toward the same person replaces\n  the listed one by itself",
                    'Most turns end none: then "roles_ended": [].',
@@ -199,6 +200,25 @@ def test_an_ending_only_planned_or_without_its_time_closes_nothing_yet():
     (row,) = extraction.ended_roles({"roles_ended": [{"role": "R1", "when": "planned", "evidence": eve},
                                                      {"role": "R1", "when": "now", "evidence": MOVED}]}, [], ROLES, MOVED)
     assert row["value"] == "세입자: 카이토의 집에 세 들어 삶"  # a planned report does not use up the number
+
+
+EVE = "그날 저녁 하나는 다락방에서 짐을 쌌다. 내일부터는 다른 집에서 지내기로 되어 있었다."
+
+
+def test_a_quote_joining_context_and_target_counts_by_its_passage_in_the_target_turn():
+    """The owner's run of 37af724: on the turn of the move the model named the stay and "now", and quoted a sentence of
+    the previous turn and one of the target joined by "...", three times out of three; the whole quote missed the bar.
+    The passage found in the target turn is the evidence, at the same bar; the previous turn's never counts."""
+    joined = EVE.split(". ")[1] + " ... " + MOVED
+    assert extraction.quoted_in(MOVED, MOVED) == MOVED  # a whole quote, as before
+    assert extraction.quoted_in(joined, MOVED) == MOVED
+    assert extraction.quoted_in(EVE.split(". ")[1] + "…" + MOVED, MOVED) == MOVED
+    assert extraction.quoted_in(EVE.replace(". ", " ... "), MOVED) is None  # every passage from CONTEXT
+    assert extraction.quoted_in(EVE.split(". ")[1] + " ... 이사했다.", MOVED) is None  # too short to tell
+    assert extraction.quoted_in("", MOVED) is None
+    (row,) = extraction.ended_roles({"roles_ended": [{"role": "R1", "when": "now", "evidence": joined}]}, [], ROLES,
+                                    MOVED)
+    assert row["evidence"] == MOVED and row["value"] == "세입자: 카이토의 집에 세 들어 삶"
 
 
 def test_a_free_ending_between_a_listed_pair_is_dropped_and_others_are_kept():
