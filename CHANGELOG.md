@@ -5,6 +5,27 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **The query is embedded while recall reads, so a slower embedder still gives vectors** (ADR 0061, D70; K34, AGE-24).
+  A request used to give the embedding of your message 300 ms on its own, after lexical recall and before the facts
+  were read: an embedder behind a proxy, or a busy one, missed it, and 70 % of the owner's production requests found
+  memory by shared words only. The embedding call now starts when recall starts and runs while the state, facts,
+  threads, cast and summaries are read; the request waits for it at most 300 ms after those reads. The embedder so
+  has the reads' time as well (≈100–300 ms on a long chat), a request whose embedder answered during the reads is
+  faster than before, and none is slower in all. And since the plugin syncs your message before it asks for the packet,
+  the sidecar now starts the embedding of that message the moment the sync delivers it and hands it to the request
+  that follows: on a long chat the sync alone outlasts a slow embedder's call, so that request waits for nothing. The timeout's meaning for you is unchanged (`NMOS_EMBED_TIMEOUT_MS`:
+  what a request may wait for the embedding); the call itself may run twice that long and ends on its own. Fail-open
+  and the Status tab's notice are as before; the trace now records `embed_wait`. Recorded requests replay as they were.
+  A cold model (an unloaded Ollama) still gives no vectors to the request that wakes it. Measured:
+  `docs/perf/query-embedding.md`.
+
+- **Long replies are embedded whole** (ADR 0062, D71; K13, AGE-24). Semantic recall embedded at most the first 5,600
+  characters of a message (8 chunks of 700), so on a chat whose replies run to 10,000 characters — the owner's long
+  chats — nothing said in the second half of a reply could be found by a paraphrased question. The cap is now a setting,
+  `NMOS_EMBED_MAX_CHUNKS`, default 24 (16,800 characters), and belongs to the projection: **every chat is embedded again
+  once** after the upgrade (local, in the background; the recent messages first), as after any embedding change. Chats
+  with the usual 1,200-character replies embed the same two chunks as before. Nothing else about recall changes.
+
 - **NMOS without Docker** (Phase 23, ADR 0060; AGE-29). The release carries a bundle for each system PocketRisu ships
   a portable package for: `NMOS-v<version>-win-x64.zip` (double-click `NMOS.exe`; NMOS sits in the notification area),
   `-macos-arm64.dmg` (a menu-bar `NMOS.app`, signed ad hoc: allow it once with Open Anyway), `-linux-x64.tar.gz` and

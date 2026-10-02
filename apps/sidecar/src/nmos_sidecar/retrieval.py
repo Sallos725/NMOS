@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import threading
 import time
 from collections.abc import Callable, Iterable
+from concurrent.futures import Future
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -53,6 +55,95 @@ QWEN3_QUERY_INSTRUCTION = ("Instruct: Given a question or remark from a role-pla
 # Candidates must match the user's message; the previous AI turn only breaks ties in ranking
 # (as a filter it pulled in near-duplicate filler during manual testing).
 AI_TIEBREAK_WEIGHT = 0.2
+# The query embedding's own call runs this many times `embed_timeout_ms` (per network phase, as before): long enough
+# to answer while recall reads and for the wait after them (QueryEmbedding), short enough that a call the request has
+# given up on ends soon after, instead of holding the embedder for the next request (ADR 0061).
+EMBED_CALL_FACTOR = 2
+# A prefetched embedding (Prefetched, ADR 0061 item 7) is asked for at the sync, before its request exists: its call
+# may run at least this long, since the request follows the sync by the sync's own time (0.3–2.5 s on a long chat,
+# docs/perf/scale.md), and an entry no request took within PREFETCH_TTL_S is dropped.
+PREFETCH_CALL_MIN_MS = 2000
+PREFETCH_TTL_S = 60.0
+
+
+class QueryEmbedding:
+    """The query's embedding, asked for when recall starts and collected after its reads (ADR 0061, K34).
+
+    Before, recall waited `embed_timeout_ms` for the embedding alone, after lexical recall and before every other read:
+    an embedder slower than that (a remote one, or Ollama behind a proxy: 70 % of the owner's production requests)
+    gave no vectors, and the request still paid the wait. Now the call runs on its own thread while lexical recall,
+    the facts, threads, scene and summaries are read, and the request waits for it at most `embed_timeout_ms` after
+    those reads: never longer than before in all, and the embedder gets the reads' time as well. The call itself is
+    bounded at EMBED_CALL_FACTOR × the timeout. The thread touches no database connection."""
+
+    def __init__(self, embedder: Embedder, text: str, timeout_ms: int, call_timeout_ms: int | None = None):
+        self.timeout_ms = timeout_ms
+        self.call_timeout_ms = call_timeout_ms or EMBED_CALL_FACTOR * timeout_ms  # the call's own bound
+        self.started = time.perf_counter()
+        self.call_ms: float | None = None  # how long the embedder took, once it answered
+        self._future: Future[list[float]] = Future()
+        self._future.set_running_or_notify_cancel()
+        self._thread = threading.Thread(target=self._run, args=(embedder, text), name="nmos-query-embedding",
+                                        daemon=True)
+        self._thread.start()
+
+    def _run(self, embedder: Embedder, text: str) -> None:
+        started = time.perf_counter()
+        try:
+            (vec,) = embedder.embed([text], timeout_s=self.call_timeout_ms / 1000)
+        except BaseException as exc:  # noqa: BLE001 — re-raised to the waiter, which classifies it
+            self._future.set_exception(exc)
+            return
+        self.call_ms = round((time.perf_counter() - started) * 1000, 2)
+        self._future.set_result(vec)
+
+    def result(self) -> list[float]:
+        """The vector, waiting at most `timeout_ms` from now. LLMError when it is not there by then (the thread's call
+        ends on its own soon after; its answer is dropped), or when the call failed; a ValueError (an answer of the
+        wrong shape) comes through as it did."""
+        try:
+            return self._future.result(timeout=self.timeout_ms / 1000)
+        except TimeoutError as exc:
+            raise LLMError(f"embedding not answered within {self.timeout_ms} ms after recall's reads") from exc
+
+
+class Prefetched:
+    """Query embeddings asked for before their request (ADR 0061 item 7). A sync whose bodies carry the chat's newest
+    user message starts that message's embedding (`api.bodies`); the retrieve that follows the sync — the plugin sends
+    the same text as its query — takes it instead of asking again, so the embedder has had the sync's time as well.
+    Keyed by the embedder and the exact text (prefix included); an entry is taken once, and one no request took within
+    PREFETCH_TTL_S is dropped. A replay never takes one (`gather`: `known_at` is set)."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._entries: dict[tuple[int, str], tuple[QueryEmbedding, float]] = {}
+
+    def start(self, embedder: Embedder, text: str, timeout_ms: int) -> QueryEmbedding:
+        key = (id(embedder), text)
+        with self._lock:
+            self._sweep()
+            if key in self._entries:  # the same text synced twice (a retry): one call
+                return self._entries[key][0]
+            pending = QueryEmbedding(embedder, text, timeout_ms,
+                                     call_timeout_ms=max(EMBED_CALL_FACTOR * timeout_ms, PREFETCH_CALL_MIN_MS))
+            self._entries[key] = (pending, time.monotonic())
+            return pending
+
+    def take(self, embedder: Embedder, text: str) -> QueryEmbedding | None:
+        with self._lock:
+            self._sweep()
+            entry = self._entries.pop((id(embedder), text), None)
+        return entry[0] if entry else None
+
+    def _sweep(self) -> None:
+        now = time.monotonic()
+        for key in [k for k, (_, at) in self._entries.items() if now - at > PREFETCH_TTL_S]:
+            del self._entries[key]
+        while len(self._entries) > 64:  # requests that never came: the oldest go first
+            del self._entries[min(self._entries, key=lambda k: self._entries[k][1])]
+
+
+prefetched = Prefetched()
 
 
 @dataclass(frozen=True)
@@ -382,7 +473,20 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     lexical: list[dict[str, Any]] = []
     keyword: list[dict[str, Any]] = []
     vector: list[dict[str, Any]] = []
+    pending: QueryEmbedding | None = None
+    cut = 0
+    focus = f"{query} {previous_ai}"
+    # The turn the packet shows: the message's turn index since packet-v7, as facts have it (ADR 0041).
+    by_turn = options.policy in TURN_POLICIES
     if query.strip():
+        if options.embedder is not None:  # asked for first, answered while the reads below run (ADR 0061)
+            text = options.query_prefix + query
+            # A live request takes the embedding its sync asked for (item 7); a replay compiles from its own reads.
+            pending = prefetched.take(options.embedder, text) if known_at is None else None
+            if pending is not None:
+                g.timings["embed_lead"] = round((time.perf_counter() - pending.started) * 1000, 2)
+            else:
+                pending = QueryEmbedding(options.embedder, text, options.embed_timeout_ms)
         cut = _cut(conn, head, upto)
         lexical, g.lexical_note = _lexical(conn, head, query, previous_ai, cut, options.threshold,
                                            options.lexical_timeout_ms, upto)
@@ -392,38 +496,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             keyword, g.keyword_note = _keyword_lexical(conn, head, keywords(query), cut, options.lexical_timeout_ms,
                                                        upto)
             g.timings["keywords"] = round((time.perf_counter() - t0) * 1000, 2)
-        if options.embedder is not None:
-            t0 = time.perf_counter()
-            try:
-                (qvec,) = options.embedder.embed([options.query_prefix + query],
-                                                 timeout_s=options.embed_timeout_ms / 1000)
-                g.timings["embed"] = round((time.perf_counter() - t0) * 1000, 2)
-                vector = vector_candidates(conn, head, qvec, options.embed_projection, cut, CANDIDATE_LIMIT,
-                                           upto, None if vectors_now else known_at)
-                g.timings["vector"] = round((time.perf_counter() - t0) * 1000 - g.timings["embed"], 2)
-                g.vector_note = "on"
-            except (LLMError, ValueError) as exc:  # fail open to lexical-only
-                g.vector_note = f"fallback: {exc}"[:200]
-    g.candidates = fuse(lexical, vector, options.threshold, options.vector_min_sim, keyword)
-    g.excluded = [c for c in g.candidates if c["host_logical_id"] in in_context]
-    eligible = [c for c in g.candidates if c["host_logical_id"] not in in_context][: options.top_k]
-    focus = f"{query} {previous_ai}"
-    # The turn the packet shows: the message's turn index since packet-v7, as facts have it (ADR 0041).
-    by_turn = options.policy in TURN_POLICIES
-    words = keywords(query) if options.policy in GROW_POLICIES else []
-    for c in eligible:
-        # a lexical or keyword hit is the whole message; a vector-only hit is its chunk
-        clean = (c["clean"] if c.get("user_score") or c.get("keyword_score")
-                 else c["clean"][c["text_start"]:c["text_end"]])
-        if options.policy in GROW_POLICIES:  # packet-v10: grown to its length from the best sentence (ADR 0053)
-            text, short = grown_excerpt(clean, focus, words, options.excerpt_chars)
-        else:
-            text = excerpt(clean, focus, max_chars=options.excerpt_chars)
-            short = excerpt(clean, focus, window=1, max_chars=options.excerpt_chars)
-        g.ranked.append(Excerpt(turn=c["turn"] if by_turn else c["position"],
-                                speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
-                                text=text, score=float(c["rrf"]), revision_id=str(c["id"]), short=short,
-                                position=c["position"]))
+    # State, facts, threads, the scene and the summaries are read before the excerpts are chosen: none of them depends
+    # on the candidates, and the query embedding answers meanwhile (ADR 0061). The excerpts follow, then what the
+    # memory mode withheld is taken out of them.
     if options.rules_version != "none":
         g.state = [StateItem(key=r["key"], value=r["value"], turn=r["turn"] if by_turn else r["position"])
                    for r in current_state(conn, head, options.rules_version, upto)
@@ -479,12 +554,6 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                               if f["predicate"] not in STANDING]
                              + [claim_entry(c, scene.private(c, g.cast, r), cause) for c in claims], facts + claims, g, r,
                              options)
-        if g.withheld_lines:
-            # An excerpt that says what the mode withheld would give it back word for word.
-            kept = [e for e in g.ranked
-                    if not any(spans.reuse(line.content, e.text) >= REPEATS for line in g.withheld_lines)]
-            g.withheld += len(g.ranked) - len(kept)
-            g.ranked = kept
         if options.narrator:
             who = scene.display(r, options.narrator) if r is not None else options.narrator
             g.note = f" The story is told in the first person by {who}: only what they know is listed."
@@ -508,6 +577,43 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.story = summaries.packet_lines(conn, head, options.summarize_key, view["secrets"] if view else [], query,
                                          in_context, upto, known_at,
                                          scene.names(g.cast, r, aliases) if r is not None else frozenset())
+    if pending is not None:
+        t0 = time.perf_counter()
+        try:
+            qvec = pending.result()
+            g.timings["embed_wait"] = round((time.perf_counter() - t0) * 1000, 2)
+            g.timings["embed"] = pending.call_ms  # the embedder's own time, mostly spent during the reads
+            t0 = time.perf_counter()
+            vector = vector_candidates(conn, head, qvec, options.embed_projection, cut, CANDIDATE_LIMIT,
+                                       upto, None if vectors_now else known_at)
+            g.timings["vector"] = round((time.perf_counter() - t0) * 1000, 2)
+            g.vector_note = "on"
+        except (LLMError, ValueError) as exc:  # fail open to lexical-only
+            g.timings["embed_wait"] = round((time.perf_counter() - t0) * 1000, 2)
+            g.vector_note = f"fallback: {exc}"[:200]
+    g.candidates = fuse(lexical, vector, options.threshold, options.vector_min_sim, keyword)
+    g.excluded = [c for c in g.candidates if c["host_logical_id"] in in_context]
+    eligible = [c for c in g.candidates if c["host_logical_id"] not in in_context][: options.top_k]
+    words = keywords(query) if options.policy in GROW_POLICIES else []
+    for c in eligible:
+        # a lexical or keyword hit is the whole message; a vector-only hit is its chunk
+        clean = (c["clean"] if c.get("user_score") or c.get("keyword_score")
+                 else c["clean"][c["text_start"]:c["text_end"]])
+        if options.policy in GROW_POLICIES:  # packet-v10: grown to its length from the best sentence (ADR 0053)
+            text, short = grown_excerpt(clean, focus, words, options.excerpt_chars)
+        else:
+            text = excerpt(clean, focus, max_chars=options.excerpt_chars)
+            short = excerpt(clean, focus, window=1, max_chars=options.excerpt_chars)
+        g.ranked.append(Excerpt(turn=c["turn"] if by_turn else c["position"],
+                                speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
+                                text=text, score=float(c["rrf"]), revision_id=str(c["id"]), short=short,
+                                position=c["position"]))
+    if g.withheld_lines:
+        # An excerpt that says what the mode withheld would give it back word for word.
+        kept = [e for e in g.ranked
+                if not any(spans.reuse(line.content, e.text) >= REPEATS for line in g.withheld_lines)]
+        g.withheld += len(g.ranked) - len(kept)
+        g.ranked = kept
     # The keyword route adds no raw text that repeats a secret still kept from someone (ADR 0052, owner 2026-09-30):
     # an excerpt only it found is left out when it does, so it places no secret the other routes would not. The same
     # test as a summary's (PHASE-12 Q3), stricter when someone it is kept from is in the scene.

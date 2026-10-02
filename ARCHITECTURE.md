@@ -191,7 +191,8 @@ through a SKIP LOCKED queue; single-valued predicates form fact versions.
 
 **D18 — Hybrid recall (Phase 3, ADR 0005).** Exact cosine over head-membership chunk embeddings (pgvector),
 RRF with lexical, abstention by per-signal bars, query-side instruction for instruction-tuned embedders,
-fail-open to lexical on embedding timeout.
+fail-open to lexical on embedding timeout. Since D70 the query is embedded while recall reads, and the timeout bounds
+the wait after the reads.
 
 **D19 — Soft character knowledge (Phase 4 subset; revised 2026-09-22, ADR 0007).** Each assertion
 has `knowledge = public | limited | unknown`. `public` is openly known and needs no list; `limited`
@@ -575,6 +576,26 @@ direction's role at once, and a turn that says where someone lives and the role 
 and `role_toward` both. `role_toward` is a standing fact (ADR 0026): it ranks, leads and carries its history as
 `relationship`, `feels_toward` and `addresses` do, canon may state it, and the Inspector's pair view shows it per
 direction. Older generations have no such rows, so recorded requests replay as they were.
+
+**D70 — The query embedded while recall reads (ADR 0061; K34, AGE-24).** Recall starts the query's embedding call on
+its own thread before lexical recall, reads the state, the facts, threads, cast and summaries meanwhile (none of them
+needs the vector), and then waits for the embedding at most `embed_timeout_ms` (300): the request is never slower in
+all than when the call alone had that time, and the embedder gets the reads' time as well (≈100–300 ms at the measured
+sizes, where the owner's production fallbacks sat: 70 % of recalls, behind a proxy at 280–450 ms). The call itself is
+bounded at twice the timeout, so one the request gave up on does not hold the embedder for the next request. A sync
+whose bodies carry the chat's newest user message starts that text's embedding at once, and the retrieve that follows
+(the plugin sends the same text as its query) takes it instead of calling: the embedder has the sync's time too, and
+such a request waits for nothing. Fail-open to lexical, the vector search, the fusion and the ranking are as before;
+the trace records the embedder's time (`embed`), the wait after the reads (`embed_wait`), the search (`vector`) and,
+for a prefetched embedding, how long before recall its call began (`embed_lead`). Nothing recorded changes: requests
+replay as they were.
+
+**D71 — Long replies embedded whole (ADR 0062; K13, AGE-24).** A message is embedded in chunks of 700 normalized
+characters from its start, at most `NMOS_EMBED_MAX_CHUNKS` of them (24: 16,800 characters; the cap was the constant 8,
+5,600 characters, which left the second half of the owner's ≈10,000-character replies unsearchable by vectors). The cap
+is in the projection key (D20), so each projection embeds by its own cap and a changed cap is a new projection that
+re-embeds every chat once (ADR 0014 item 5, K18). The search is unchanged: the best chunk per message, one candidate per
+message; for the usual 1,200-character reply (two chunks) nothing changes.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

@@ -52,12 +52,12 @@ def test_embedding_reports_partial_coverage_for_long_message(client_all, migrate
     covered = {r["clean_chars"]: r["covered"] for r in db.execute(
         "SELECT rt.clean_chars, max(re.text_end) AS covered FROM revision_embedding re"
         " JOIN revision_text rt ON rt.source_revision_id = re.source_revision_id GROUP BY rt.clean_chars").fetchall()}
-    assert covered[5_000] == 5_000  # fits
-    assert all(covered[n] < n and covered[n] <= limit for n in (6_000, 10_000, 20_000))
+    assert covered[5_000] == 5_000 and covered[6_000] == 6_000 and covered[10_000] == 10_000  # within the 24 chunks
+    assert covered[20_000] < 20_000 and covered[20_000] <= limit == 16_800  # beyond the cap: still partial (K13)
     cov = client_all.get(f"/v1/conversations/{conv_id(client_all, chat)}/coverage").json()["embeddings"]
-    assert cov["partial"] == 3 and cov["complete"] is False
+    assert cov["partial"] == 1 and cov["complete"] is False
     page = client_all.get(f"/inspector/c/{conv_id(client_all, chat)}?lang=en").text
-    assert "partially embedded 3" in page and "emb full" in page and f"emb {covered[20_000]:,}/20,000" in page
+    assert "partially embedded 1" in page and "emb full" in page and f"emb {covered[20_000]:,}/20,000" in page
 
 
 def test_extraction_reports_target_truncation(client_all, migrated, db):

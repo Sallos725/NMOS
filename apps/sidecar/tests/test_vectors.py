@@ -10,7 +10,7 @@ from psycopg.rows import dict_row
 
 from conftest import active_generation, make_client
 from nmos_sidecar.llm import LLMError
-from nmos_sidecar.vectors import chunks, process_embed
+from nmos_sidecar.vectors import MAX_CHUNKS, chunks, process_embed
 from nmos_sidecar.worker import run_once
 from simchat import SimChat
 from test_sidecar_integration import recall, sync
@@ -68,7 +68,17 @@ def vec_client(migrated):
 def test_chunks_cover_text():
     text = "가나다. " * 300
     spans = chunks(text)
-    assert spans[0][0] == 0 and all(e - s <= 700 for s, e in spans) and len(spans) <= 8
+    assert spans[0][0] == 0 and all(e - s <= 700 for s, e in spans) and len(spans) <= MAX_CHUNKS
+    assert spans[-1][1] == len(text)  # 1,500 characters: three chunks, the whole text
+
+
+def test_the_chunk_cap_is_the_projections_own():
+    """ADR 0062: a long message is embedded whole up to the cap (24 chunks, 16,800 characters by default), and a
+    projection keeps the cap its key records — one from before the cap was in the key cuts at eight, as it did."""
+    text = "가나다라마. " * 4000  # 28,000 characters
+    assert len(chunks(text)) == MAX_CHUNKS == 24 and chunks(text)[-1][1] >= 16_000
+    assert len(chunks(text, limit=8)) == 8 and chunks(text, limit=8)[-1][1] <= 5_600
+    assert chunks(text, 700, 60)[-1][1] == len(text)  # a cap the text does not reach: embedded whole
 
 
 def test_paraphrase_recalled_through_vectors(vec_client, migrated, db):

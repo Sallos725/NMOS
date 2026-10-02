@@ -21,7 +21,7 @@ without a PocketRisu change.
 | K9 | A destroyed or used-up item keeps its last holder in turns not extracted by `extract-v6` | Memory | fixed for new turns in beta.13 (ADR 0017); older turns: "extract all history" |
 | K11 | A secret is kept by instruction, not isolation: the model can still voice it | Memory | 0.2.0: Private section, strict and narrator modes (Phase 10); hard POV not planned |
 | K12 | A word in more than 200 messages brings no lexical excerpts | Recall | reduced on `main` (Phase 18, ADR 0052): each keyword is looked up alone and only a broad one is dropped |
-| K13 | Very long messages are only partly embedded and extracted | Recall | accepted limit (#13) |
+| K13 | Very long messages are only partly embedded and extracted | Recall | accepted limit (#13); embeddings on `main` cover 24 chunks (16,800 characters) instead of 8 (ADR 0062), a cap set by `NMOS_EMBED_MAX_CHUNKS` |
 | K14 | Rare over-injection into an auxiliary call; transformed input gets no memory | Gating | accepted (ADR 0001) |
 | K15 | Thresholds and extraction quality are checked on limited data | Quality | evaluation (A5 baseline) |
 | K16 | NMOS does not notice a chat deleted in PocketRisu | Data | host (H10) |
@@ -42,7 +42,7 @@ without a PocketRisu change.
 | K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases); on `main` a given name with a common family name, and a Hangul spelling of a romanized name (Phase 24, ADR 0058) |
 | K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | recorded, not scheduled (`docs/perf/m0-sample2.md`); canon did not change it; two rules measured in Phase 24, neither gained without a loss |
 | K33 | The packet stops at ≈2,000–3,000 tokens whatever the memory budget | Recall | resolved on `main` by `packet-v9` (Phase 15, ADR 0049): excerpts and facts grow with the budget up to 8,000 |
-| K34 | A request whose query embedding does not answer in 300 ms recalls without vectors | Recall | measured (Phase 15): 70 % of the owner's production requests; the Status tab says so since Phase 15, the progress display since Phase 17 |
+| K34 | A request whose query embedding does not answer in 300 ms recalls without vectors | Recall | measured (Phase 15): 70 % of the owner's production requests; the Status tab says so since Phase 15, the progress display since Phase 17; reduced on `main` (ADR 0061): the embedding runs while recall reads, so it has the reads' time (≈100–300 ms) and the 300 ms after them |
 | K35 | "The story so far" is written from every scene summary, with no cap on its input | Memory | recorded, not scheduled |
 | K36 | A chat whose large lorebook NMOS has read almost whole recalls more slowly | Performance | measured, accepted (Phase 14, owner 2026-09-29) |
 | K37 | A story that changes who someone is, against the card or a lorebook, is not flagged | Memory | by decision (ADR 0047 amendment 1); needs a model check |
@@ -287,6 +287,11 @@ even when its other words are broad. A question whose every keyword is broad sti
 ≤700 normalized characters (≤5,600); extraction reads the first 6,000 characters of each message in
 the target turn and 2,000 of each context message. The Inspector flags partly processed messages
 (#13).
+*On `main` (ADR 0062, D71):* embeddings cover the first 24 chunks (≤16,800 characters), the cap `NMOS_EMBED_MAX_CHUNKS`
+sets; the owner's long chats write replies of ≈10,000 characters, whose second half no vector reached under the cap
+of 8. The cap is part of the projection key, so the upgrade re-embeds every chat once (local, in the background;
+K18), and until a chat is embedded again its requests search what the new projection has so far. Extraction's limits
+are unchanged.
 
 **K14 — Gating edge cases.** A main generation is recognized by the user's latest input appearing in
 the prompt (ADR 0001, amendment 2). A `model`-mode auxiliary call (trigger/Lua) whose prompt contains
@@ -358,6 +363,13 @@ since Phase 17 the progress display says "· lexical only" on that request's out
 `NMOS_EMBED_TIMEOUT_MS` (e.g. 1000) for a remote or slow embedder; it is not part of the projection, so nothing is
 embedded again. Pointing the embedding URL at a closer address would help too, but a new endpoint is a new projection
 and re-embeds every chat (K18).
+*On `main` (ADR 0061, D70):* the embedding call starts when recall starts and runs while the state, facts, threads,
+cast and summaries are read; the request waits for it at most 300 ms after those reads. The embedder so has the reads'
+time (≈100–300 ms at the measured sizes) as well, which covers a warm embedder behind a proxy at 280–450 ms, and the
+request is never slower in all than before. A sync that delivers the user's new message also starts that text's
+embedding at once, so the retrieve that follows the sync (the plugin's query is the same text) finds it under way or
+done: the embedder has the sync's time too (0.3–2.5 s on a long chat), and such a request waits for nothing. A cold model (≈18 s) still gives no vectors to the request that wakes it;
+the trace's `embed_wait` says what each request waited (`docs/perf/query-embedding.md`).
 
 **K39 — A grown excerpt can carry a value the story has since replaced.** Since `packet-v10` (Phase 18, ADR 0053)
 an excerpt is up to four sentences of raw text around its best sentence, and raw text says what was true then: an old

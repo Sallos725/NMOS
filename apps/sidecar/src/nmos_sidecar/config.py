@@ -45,6 +45,10 @@ class Settings:
     extract_backfill: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_BACKFILL", "100")))
     # Embeddings are cheap (local models): cover far more history on first sight than LLM extraction.
     embed_backfill: int = field(default_factory=lambda: int(os.environ.get("NMOS_EMBED_BACKFILL", "2000")))
+    # Chunks of 700 normalized characters embedded per message, from its start (ADR 0062; K13). 24 covers a 16,800-
+    # character reply whole, the shape of the owner's long chats; 8 (the cap until ADR 0062) left their second half
+    # unsearchable by vectors. Part of the projection key: a change re-embeds (K18).
+    embed_max_chunks: int = field(default_factory=lambda: int(os.environ.get("NMOS_EMBED_MAX_CHUNKS", "24")))
     worker_concurrency: int = field(default_factory=lambda: int(os.environ.get("NMOS_WORKER_CONCURRENCY", "2")))
     facts_limit: int = field(default_factory=lambda: int(os.environ.get("NMOS_FACTS_LIMIT", "8")))
     # `event` facts among them (PHASE-7 Q4): the newest events of a main character would take every slot.
