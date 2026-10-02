@@ -12,10 +12,12 @@ characters (320) instead of four sentences; the prototype's one-case rules and p
 review of #242 measured the other suspected cause, the embedding chunk cap: the M0 main packets are the same under a
 cap of 24. Step 1 the spec (#243). Step 2 the implementation behind `NMOS_PACKET_POLICY` (#245; ADR 0063, D72; twelve
 deterministic cases; the tie-break anchor as the recorded recall option `excerpt_anchor`), measured by the owner on
-#245's head with both anchors (#246, `docs/perf/answer-span.md`: twelve sets, three runs each, every run the same):
+#245's head with both anchors (#246, `docs/perf/answer-span.md`: twelve sets, three runs each; the M0 main scores the
+same in every run, a few other sets varying by one case within the bound):
 the M0 main cases that need memory with vectors `packet-v10` 16/23, `packet-v11` with today's anchor 18/23, with the
 question's keywords 19/23 (without vectors 14 → 15 → 16); forbidden phrases over the twelve sets 93 → 96 → 87; no set
-worse by more than one case; packets never larger, sample 2's smaller (−14.88 % with vectors, −6.96 % without).
+worse by more than one case; no set's median packet size larger by more than 0.11 % (main, within the 5 % bound),
+sample 2's smaller (−14.88 % with vectors, −6.96 % without).
 Step 3 (the owner's two decisions, 2026-10-02): **Q1b, the keywords anchor** (today's anchor met a stop condition,
 the forbidden rise); **Q5's size bound one-sided** (smaller packets allowed: the rules bound excerpts below
 `excerpt_chars` by construction, and the case and forbidden criteria caught no loss); **`packet-v11` the default**,

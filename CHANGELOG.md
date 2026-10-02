@@ -25,8 +25,8 @@ later, is `docs/KNOWN-ISSUES.md`.
   with most of your words, and a why or contents question gets the whole of a short-sentence explanation (up to 320
   characters) instead of four sentences; the sentence an excerpt starts from is chosen by your question's keywords
   alone. Measured on the owner's chats by replay (`docs/perf/answer-span.md`): the main chat's questions that need
-  memory 16 → 19 of 23, forbidden phrases down over twelve sets, no set worse by more than one case; packets never
-  larger and sometimes smaller. `NMOS_PACKET_POLICY=packet-v10` keeps the previous policy. Traces record a new recall
+  memory 16 → 19 of 23, forbidden phrases down over twelve sets, no set worse by more than one case; packets at most
+  0.11 % larger on one set and smaller on another. `NMOS_PACKET_POLICY=packet-v10` keeps the previous policy. Traces record a new recall
   option, `excerpt_anchor`; recorded requests replay as they were.
 
 - **The chunk cap is a setting** (ADR 0062, D71; K13). Semantic recall embeds at most the first 5,600 normalized

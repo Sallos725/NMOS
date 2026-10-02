@@ -60,10 +60,12 @@ The embedding chunk cap was the other suspect and is not the cause: the M0 main 
 
 - Under `packet-v11` a paraphrased question about a long message gets the chunk it is about, and a why or contents
   question gets the whole of a short-sentence explanation up to 320 characters; everything else in the packet is
-  `packet-v10`'s. Measured (`docs/perf/answer-span.md`, the owner's replays, twelve sets, three runs each, every run
-  the same): the M0 main cases that need memory 16 → 19 of 23 with vectors and 14 → 16 without; over the twelve sets
-  forbidden phrases 93 → 87; no set worse by more than one case; packets never larger, and on sample 2 smaller
-  (−14.88 % with vectors, −6.96 % without), which the owner allowed by rewording Q5's bound to one side: the rules
+  `packet-v10`'s. Measured (`docs/perf/answer-span.md`, the owner's replays, twelve sets, three runs each; the M0
+  main scores the same in every run, a few other sets varying by one case within the bound): the M0 main cases that
+  need memory 16 → 19 of 23 with vectors and 14 → 16 without; over the twelve sets forbidden phrases 93 → 87; no set
+  worse by more than one case; no set's median packet size larger by more than 0.11 % (main, within the 5 % bound),
+  and sample 2's smaller (−14.88 % with vectors, −6.96 % without), which the owner allowed by rewording Q5's bound to
+  one side: the rules
   bound excerpts below `excerpt_chars` by construction (a chunk ≤ 700 characters, a why or contents excerpt ≤ 320
   against 960 at 4,000 tokens), and that set lost nothing measurable (+1 case, forbidden 2 → 0).
 - Risks that remain: a word hit whose keyword sentence lies outside the chunk the vector found loses that sentence

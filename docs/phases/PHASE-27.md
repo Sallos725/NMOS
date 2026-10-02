@@ -90,8 +90,10 @@ production: the prototype does not change the sidecar.
 - [x] The deterministic cases of In scope 2 (`test_packet_v11.py`, twelve).
 - [x] Q6's sets, three runs each (`docs/perf/answer-span.md`, the keywords anchor): the M0 main cases that need memory
       +3 with vectors on (16 → 19 of 23) and +2 off (14 → 16); no other set worse by more than one case in any run;
-      forbidden phrases 93 → 87 over the twelve sets; the median packet size per set not larger (sample 2 smaller by
-      14.88 % with vectors and 6.96 % without, allowed by Q5 as reworded; every other set within ±5 %).
+      forbidden phrases 93 → 87 over the twelve sets; the median packet size per set larger by at most 0.11 % (main,
+      within the 5 % bound; sample 2 smaller by 14.88 % with vectors and 6.96 % without, allowed by Q5 as reworded;
+      every other set within ±5 %). The M0 main scores were the same in every run; a few other sets varied by one
+      case, within the bound.
 - [x] Request-path latency unchanged within noise (`tools/bench_story.py 10000`, budget 4,000, three rounds a side in
       turn, `docs/perf/answer-span.md`): `packet-v10` 208.0 / 223.0 / 218.9 ms p50, `packet-v11` 209.5 / 211.5 / 222.6 —
       medians 218.9 against 211.5, the rounds overlapping; p95 331.9 against 302.7. The excerpt rules are pure functions
