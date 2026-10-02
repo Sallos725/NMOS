@@ -33,7 +33,7 @@ Read these files in this order before changing code:
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
 4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-27.md` is the latest, approved 2026-10-02,
-   step 2 next, a correction phase beside the current phase under §7 item 5, as Phases 24 and 25 were; `PHASE-26.md`
+   step 2 done and step 3 next, a correction phase beside the current phase under §7 item 5, as Phases 24 and 25 were; `PHASE-26.md`
    was stopped before it merged; Phase 23 is the current phase, its step 6 awaiting the owner's check; `PHASE-0.md`…`PHASE-22.md`,
    `PHASE-24.md` and `PHASE-25.md` still define the behavior they introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
@@ -89,7 +89,7 @@ If two normative documents appear to conflict:
 | 24 — a name as the story says it: given names and romanized names (AGE-28 under AGE-24; a correction found by measurement, not a roadmap stage) | complete (2026-10-01), not released; K32 measured and left out | `PHASE-24.md`, ADR 0058 |
 | 25 — `extract-v15`: a role between two people, its own fact (`role_toward`; AGE-27 under AGE-24; a correction found by measurement, not a roadmap stage) | complete (2026-10-01), not released; the paid run's output tokens 43 % above the estimate (owner accepted) | `PHASE-25.md`, ADR 0059 |
 | 26 — a repair whose item is gone suggests where it belongs now (Stage 6, AGE-23; an exception to R7 granted by the owner) | stopped (2026-10-01) after step 2, not merged: no repaired error came back on the copy, so Stage 6's criterion was reworded instead | `PHASE-26.md` |
-| 27 — the excerpt lands on the answer: a vector hit's span, and room for an explanation (`packet-v11`; under AGE-24, from the diagnosis of draft PR #241; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-02), step 2 next; before 0.3.0 (AGE-7) | `PHASE-27.md` |
+| 27 — the excerpt lands on the answer: a vector hit's span, and room for an explanation (`packet-v11`; under AGE-24, from the diagnosis of draft PR #241; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-02), step 2 done (`packet-v11` behind `NMOS_PACKET_POLICY`, ADR 0063), step 3 next: the evaluation, then the default; before 0.3.0 (AGE-7) | `PHASE-27.md`, ADR 0063 |
 | 28+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,

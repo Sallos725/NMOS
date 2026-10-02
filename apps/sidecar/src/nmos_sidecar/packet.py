@@ -42,6 +42,10 @@ NOTE_EXTRAS = (('negated="true"', " negated=\"true\" marks something explicitly 
                ('locked="true"', " locked=\"true\" marks a fact the user fixed: it holds, whatever the story said"
                                  " against it."))
 MAX_EXCERPT_CHARS = 480
+# packet-v10 grows an excerpt to at most this many sentences (owner, 2026-09-30): growing to the whole length brought
+# back more values the story had since replaced (docs/perf/lexical-recall.md, "Step 4"); packet-v11 lifts the cap for a
+# why or contents question only, within CUE_GROW_CHARS (ADR 0063)
+GROW_MAX_SENTENCES = 4
 
 # Markup and model reasoning that is not story: style/script blocks and <Thoughts>/<think> sections.
 _DROP_BLOCKS = re.compile(r"<(style|script|thoughts|think|thinking)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
@@ -124,11 +128,13 @@ def excerpt(content: str, query: str, window: int = 2, max_chars: int = MAX_EXCE
     return f"{prefix}{text}{suffix}"
 
 
-def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = MAX_EXCERPT_CHARS) -> tuple[str, str]:
+def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = MAX_EXCERPT_CHARS,
+                  max_sentences: int | None = GROW_MAX_SENTENCES) -> tuple[str, str]:
     """packet-v10 (ADR 0053): the excerpt and its one-sentence form. The best sentence holds most of `words` (the
     message's keywords), then shares most trigrams with `query`, the earlier one on a tie; the excerpt adds whole
     neighbouring sentences, after then before in turn, while the text stays within `max_chars` and holds at most
-    GROW_MAX_SENTENCES. A best sentence longer than `max_chars` is cut there, as `excerpt` does."""
+    `max_sentences` (GROW_MAX_SENTENCES; None: no sentence cap, packet-v11's growth for a why or contents question,
+    ADR 0063). A best sentence longer than `max_chars` is cut there, as `excerpt` does."""
     parts = sentences(content) or [content.strip()]
     query_grams = _trigrams(query)
     lowered = [p.casefold() for p in parts]
@@ -148,7 +154,7 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
     lo = hi = best
     length = len(parts[best])
     after = True
-    while length <= max_chars and hi - lo + 1 < GROW_MAX_SENTENCES:
+    while length <= max_chars and (max_sentences is None or hi - lo + 1 < max_sentences):
         fits_after = hi + 1 < len(parts) and length + 1 + len(parts[hi + 1]) <= max_chars
         fits_before = lo > 0 and length + 1 + len(parts[lo - 1]) <= max_chars
         if not (fits_after or fits_before):
@@ -193,12 +199,18 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
 # FILL_MAX; facts to twice their limit at most. Threads, events, secrets, <Cast> and <Story> keep packet-v8's limits:
 # growing them placed stale business above ≈8,000 tokens (docs/perf/packet-fill.md). At FILL_BASE and below it is
 # packet-v8.
+# packet-v11 is packet-v10 whose excerpt lands on the answer (PHASE-27, ADR 0063): a message found by a word route and
+# by vectors excerpts within its vector chunk (the part of the message the question is about) instead of the whole
+# message, and a why or contents question grows its excerpt by whole sentences up to CUE_GROW_CHARS with no sentence
+# cap, since an explanation is often cut into short sentences. Available as `NMOS_PACKET_POLICY=packet-v11`; the
+# default until the Phase 27 evaluation passes (step 3).
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
-            "packet-v8", "packet-v9", "packet-v10")
+            "packet-v8", "packet-v9", "packet-v10", "packet-v11")
 DEFAULT_POLICY = "packet-v10"
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
-             "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2}  # estimated tokens per non-ASCII char
-_V8 = ("packet-v8", "packet-v9", "packet-v10")  # packet-v8 and what builds on it
+             "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2,
+             "packet-v11": 1.2}  # estimated tokens per non-ASCII char
+_V8 = ("packet-v8", "packet-v9", "packet-v10", "packet-v11")  # packet-v8 and what builds on it
 PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})  # promises the message is about first (ADR 0019 am. 1)
@@ -207,11 +219,11 @@ CAUSE_POLICIES = frozenset({"packet-v6", "packet-v7", *_V8})  # facts and claims
 TURN_POLICIES = frozenset({"packet-v7", *_V8})  # excerpts and state carry their message's turn index (ADR 0041)
 STORY_POLICIES = frozenset(_V8)  # summaries in a <Story> section (ADR 0043)
 CAST_POLICIES = frozenset(_V8)  # each scene character's state in a <Cast> section (ADR 0043)
-FILL_POLICIES = frozenset({"packet-v9", "packet-v10"})  # recall grows with the budget (ADR 0049)
-GROW_POLICIES = frozenset({"packet-v10"})  # an excerpt grows to its length from its best sentence (ADR 0053)
-# ... to at most this many sentences (owner, 2026-09-30): growing to the whole length brought back more values the
-# story had since replaced (docs/perf/lexical-recall.md, "Step 4")
-GROW_MAX_SENTENCES = 4
+FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11"})  # recall grows with the budget (ADR 0049)
+GROW_POLICIES = frozenset({"packet-v10", "packet-v11"})  # an excerpt grows to its length from its best sentence (ADR 0053)
+SPAN_POLICIES = frozenset({"packet-v11"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
+CUE_GROW_CHARS = 320  # packet-v11: a why or contents question's excerpt grows by sentences to this, no sentence cap
+CONTENTS = re.compile(r"내용|\bcontents?\b", re.IGNORECASE)  # the contents cue (PHASE-27 Q2), with facts.WHY
 FILL_BASE, FILL_MAX, FILL_FACTS_MAX = 2000, 4.0, 2.0  # the budget recall is sized for, and the largest factors
 STORY_SHARE = 0.3  # packet-v8: <Story> may take at most this share of the budget inside the frame (PHASE-12 Q5)
 RESTATES = 0.6  # packet-v4: a claim this close to a fact of the same head says it again (ADR 0019's match)

@@ -20,14 +20,14 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from .entities import norm
-from .facts import FIRST_CUE, LIVE, STANDING, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
+from .facts import FIRST_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
 from . import scene, spans, summaries, variants
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
-from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, DEFAULT_POLICY, FILL_FACTS_MAX,
-                     GROW_POLICIES, grown_excerpt,
+from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, CONTENTS, CUE_GROW_CHARS,
+                     DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
                      StateItem, clean_text, compile_lines, cut_lines, excerpt, fill, fits_at, kept_counts, secret_line,
                      secret_text)
@@ -185,6 +185,10 @@ class RecallOptions:
     first_cue: bool = True  # how it started, when the message asks (ADR 0056); a trace without it replays with it off
     history_marks: bool = True  # earlier versions only under marks that cover them (ADR 0038 amendment 1); same replay rule
     name_variants: bool = True  # a given name, a Hangul spelling of a romanized name (ADR 0058); same replay rule
+    # packet-v11's tie-break anchor for the excerpt's best sentence (PHASE-27 Q1b, ADR 0063): "focus", the question and
+    # the previous reply (today's, every policy's), or "keywords", the question's keywords alone (the prototype's);
+    # measured in Phase 27 step 2 through `tools/eval_rp.py --anchor`. Recorded; a trace without it replays with "focus".
+    excerpt_anchor: str = "focus"
     excerpt_chars: int = MAX_EXCERPT_CHARS  # an excerpt's length at most; derived from the budget (`filled`), not recorded
     fill_facts: int = 0  # fact slots the budget adds, for facts kept from no one (`filled`, ADR 0049), not recorded
 
@@ -192,7 +196,7 @@ class RecallOptions:
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
 RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit", "vector_min_sim", "query_prefix",
             "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator", "summarize_key", "canon_key",
-            "lexical_keywords", "first_cue", "history_marks", "name_variants")
+            "lexical_keywords", "first_cue", "history_marks", "name_variants", "excerpt_anchor")
 CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
@@ -611,12 +615,22 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     g.excluded = [c for c in g.candidates if c["host_logical_id"] in in_context]
     eligible = [c for c in g.candidates if c["host_logical_id"] not in in_context][: options.top_k]
     words = keywords(query) if options.policy in GROW_POLICIES else []
+    span = options.policy in SPAN_POLICIES  # packet-v11 (ADR 0063)
+    cue = span and bool(WHY.search(query) or CONTENTS.search(query))  # a why or contents question (PHASE-27 Q2)
+    anchor = " ".join(words) if span and options.excerpt_anchor == "keywords" and words else focus  # Q1b
     for c in eligible:
-        # a lexical or keyword hit is the whole message; a vector-only hit is its chunk
-        clean = (c["clean"] if c.get("user_score") or c.get("keyword_score")
-                 else c["clean"][c["text_start"]:c["text_end"]])
-        if options.policy in GROW_POLICIES:  # packet-v10: grown to its length from the best sentence (ADR 0053)
-            text, short = grown_excerpt(clean, focus, words, options.excerpt_chars)
+        # a lexical or keyword hit is the whole message; a vector-only hit is its chunk; under packet-v11 a word hit
+        # whose vector similarity meets the bar excerpts within its chunk too: the chunk is the part of the message
+        # the question is about, the words only say the message is relevant (PHASE-27 Q1)
+        word_hit = bool(c.get("user_score") or c.get("keyword_score"))
+        in_chunk = not word_hit or (span and c.get("sim") is not None and c["sim"] >= options.vector_min_sim
+                                    and c.get("text_end") is not None)
+        clean = c["clean"][c["text_start"]:c["text_end"]] if in_chunk else c["clean"]
+        if cue:  # packet-v11: by whole sentences up to CUE_GROW_CHARS, no sentence cap (PHASE-27 Q2)
+            text, short = grown_excerpt(clean, anchor, words, min(options.excerpt_chars, CUE_GROW_CHARS),
+                                        max_sentences=None)
+        elif options.policy in GROW_POLICIES:  # packet-v10: grown to its length from the best sentence (ADR 0053)
+            text, short = grown_excerpt(clean, anchor, words, options.excerpt_chars)
         else:
             text = excerpt(clean, focus, max_chars=options.excerpt_chars)
             short = excerpt(clean, focus, window=1, max_chars=options.excerpt_chars)
