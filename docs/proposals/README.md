@@ -14,6 +14,7 @@ This directory splits the recommended next work into two tracks.
 | — | [Original vision → stable: audit and proposal](ORIGINAL-VISION-TO-STABLE-2026-09-27.md) (2026-09-27, Korean) | Review only: capability gaps, reproduced correctness findings, proposed priorities and release gates; no phase or release authorization |
 | — | [Public release and a benchmark](PUBLIC-RELEASE-AND-BENCHMARK.md) (2026-09-29) | Owner direction: packet fill next (Phase 15, approved), then a public benchmark, installation, announcement; no phase authorization |
 | — | [Ideas from a survey of another memory plugin](IDEA-SURVEY-2026-09-29.md) (2026-09-29) | Proposal only: one fix taken (CBS blocks in canon, ADR 0047 amendment 2), ten candidates placed by stage, owner decides the order |
+| — | [AGE-24: improvement investigation after the live benchmark](AGE24-LIVE-REGRESSIONS.md) (2026-10-03) | Investigation proposal only: the live run's regressions in priority order (names K8/K31, roles K43, selection K39/K44), read-only diagnostics, measurement before another live run (`docs/perf/age24-live-2026-10-02.md`); no phase or implementation authorized |
 
 The recommended order is:
 
