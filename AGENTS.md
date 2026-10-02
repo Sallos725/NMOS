@@ -33,8 +33,8 @@ Read these files in this order before changing code:
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
 4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-27.md` is the latest, approved 2026-10-02,
-   step 2 next, in progress beside the current phase as Phases 24 and 25 were; `PHASE-26.md` was stopped before it
-   merged; Phase 23 is the current phase, its step 6 awaiting the owner's check; `PHASE-0.md`…`PHASE-22.md`,
+   step 2 next, a correction phase beside the current phase under §7 item 5, as Phases 24 and 25 were; `PHASE-26.md`
+   was stopped before it merged; Phase 23 is the current phase, its step 6 awaiting the owner's check; `PHASE-0.md`…`PHASE-22.md`,
    `PHASE-24.md` and `PHASE-25.md` still define the behavior they introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
 6. Relevant ADRs in `docs/adr/`.
@@ -51,7 +51,7 @@ Reference documents explain intent. They are **not** permission to implement fut
 If two normative documents appear to conflict:
 
 - architecture invariants win over implementation convenience;
-- the current phase defines allowed scope;
+- the current phase defines allowed scope (an approved correction phase beside it, §7 item 5, defines its own);
 - do not silently reinterpret either document;
 - stop and report the conflict if it affects implementation.
 
@@ -219,6 +219,12 @@ mutate chats, or call a model. Its results go to `docs/HOST-FACTS.md` and `fixtu
 2. A `docs/phases/PHASE-N.md` exists with goal, scope, out-of-scope and acceptance criteria.
 3. `docs/STATUS.md` and §0/§2 of this file name it as current.
 4. Only then implement it; record evidence against each acceptance criterion.
+5. **A correction phase runs beside the current phase.** A phase that is not a roadmap stage — a correction found by
+   measurement under an open issue (Phases 24, 25 and 27 under AGE-24) — does not displace the roadmap phase that is
+   current. For it, items 3 and 4 read: its §2 row says **approved** with its date and next step, `docs/STATUS.md`
+   carries its paragraph under "Current phase", and its own spec's scope, steps and stop conditions gate its
+   implementation; the roadmap phase stays `current` and keeps its scope. Only an approved row implements; a draft
+   row does not.
 
 Do not infer owner decisions from preference or convenience.
 
