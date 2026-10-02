@@ -10,7 +10,7 @@ roadmap stage). The owner's live run on `e13dee7` met the real-chat target (S0ma
 owner). Two defects confirmed in its traces: a role stays current after the story ends it (the ending extracted as
 another predicate, or in other words), and a full name and its given name resolve to two entities with separate
 histories. Approved answers: `extract-v16` shows the extractor the roles in force (`CURRENT ROLES`) and ends one
-exactly as listed (ADR 0013 unchanged), and links a character written in full and by part of the name as an alias
+by its number, written by the worker with the listed value (ADR 0013 unchanged), and links a character written in full and by part of the name as an alias
 (Q4, decided after the first answer was measured; below); behind `NMOS_EXTRACT_COMPILER`, off by default, measured by
 the owner (per-defect replays, an `extract-v16` comparison after an approved estimate, then live runs three times
 each, medians and every run). Excerpt and ranking changes wait for that re-measurement. **High risk (AGENTS.md
@@ -22,8 +22,10 @@ Step 1 the spec (#250). **Step 2 (#251, in review), off by default** — ADR 006
 `test_extract_v16.py`, the first-connection limit pinned. The first answer to Q4, a read-side join
 (`given_name_join`), was measured by the owner on #251's head (nine preserved copies, 837 reads, no model call): no
 join on any read, the S4b (2/3) and S2 (22/25) replays unchanged, since the split pairs occur together in the text of 3
-and 20 turns but in no turn's assertions; withdrawn and removed before merge. `extract-v16`'s comparison dry run: S1
-and S2, 240 turns three times each, 1,440 calls, about 18.1M input tokens. Next: the owner's approval of that run (Q5 c).
+and 20 turns but in no turn's assertions; withdrawn and removed before merge. The owner's `extract-v16` run on
+`a5c888a` (S2's role-ending turns first; stopped at 39 of 1,440 calls by the stop condition): 0 of 6 listed roles
+closed, the model giving the role's name without the listed description; the ending is now named by number (R1, …) and
+written by the worker. Next: a small re-run of those turns, then the rest of Q5 (c).
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

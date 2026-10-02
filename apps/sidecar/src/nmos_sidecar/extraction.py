@@ -196,14 +196,18 @@ Answer with JSON only: {{"assertions": [{{"subject": "...", "subject_type": "...
 "knowledge": "public|limited|unknown", "known_by": [], "hidden_from": []}}],
 "secrets": [{{"secret": "S1", "found_out_by": ["..."], "evidence": "..."}}]}}"""
 
-# extract-v16 (PHASE-28 Q1): the roles in force are listed, as open promises, threads and secrets are, and a role the
-# TARGET turn ends is denied with the listed value, so ADR 0013's value match closes exactly that role.
-ROLE_ENDINGS = """- If CURRENT ROLES are listed: when the TARGET turn ends one (the stay ends and they move out, someone
-  quits or is dismissed, the arrangement is called off), `role_toward` with "negative" and subject, object
-  and value exactly as listed. Not when someone only goes out, travels or is away for a while, and not for
-  a role that is not listed. A new role toward the same person replaces the listed one by itself: give
-  only the new one.
+# extract-v16 (PHASE-28 Q1): the roles in force are listed (R1, R2, …), as open secrets are (S1, …), and the model names
+# the one the TARGET turn ends; `ended_roles` writes the negative with the listed subject, object and value, so ADR 0013's
+# value match closes exactly that role. Asking the model to copy the value failed on the owner's run of #251: it gave the
+# role's name without its description, which matched nothing.
+ROLE_ENDINGS = """- If CURRENT ROLES are listed (R1, R2, …), report in `roles_ended` each one the TARGET turn ends: the stay
+  ends and they move out, someone quits or is dismissed, the arrangement is called off. `evidence` quotes
+  the TARGET turn. Not when someone only goes out, travels or is away for a while. Do not write the ending
+  as a `role_toward` yourself. A new role toward the same person replaces the listed one by itself: give
+  only the new `role_toward`. Most turns end none: then "roles_ended": [].
 """
+_ANSWER_END = '''"secrets": [{{"secret": "S1", "found_out_by": ["..."], "evidence": "..."}}]}}'''
+ANSWER_ROLES = _ANSWER_END[:-2] + ',\n"roles_ended": [{{"role": "R1", "evidence": "..."}}]}}'  # extract-v16's answer
 # extract-v16 (PHASE-28 Q4, decided on the measurement of #251): a name said two ways. extract-v15 links two names only
 # when the TARGET turn gives both "for the same entity" ("하나(Hana)"), so a story that writes a character in full and
 # calls them by part of the name keeps two entities (the read-side join found the pair in no assertion of the same
@@ -222,8 +226,8 @@ ALIAS_PARTS = """- `also_called` when the TARGET turn itself gives both names fo
 _ROLE_EXAMPLE = '  `role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").\n'  # the role rule follows it
 PROMPTS = {"extract-v15": SYSTEM_PROMPT,
            "extract-v16": SYSTEM_PROMPT.replace(_ROLE_EXAMPLE, _ROLE_EXAMPLE + ROLE_ENDINGS, 1)
-                                       .replace(V15_ALIAS, ALIAS_PARTS, 1)}
-assert ROLE_ENDINGS in PROMPTS["extract-v16"] and ALIAS_PARTS in PROMPTS["extract-v16"], "a v16 rule's place moved"
+                                       .replace(V15_ALIAS, ALIAS_PARTS, 1).replace(_ANSWER_END, ANSWER_ROLES, 1)}
+assert all(x in PROMPTS["extract-v16"] for x in (ROLE_ENDINGS, ALIAS_PARTS, ANSWER_ROLES)), "a v16 rule's place moved"
 ROLES = frozenset({"extract-v16"})  # the compilers that list CURRENT ROLES
 PARTS_APART = frozenset({"extract-v16"})  # the compilers whose alias of a name and its part needs the part on its own
 
@@ -626,7 +630,7 @@ def roles_block(roles: list[dict[str, Any]]) -> list[str]:
     if not roles:
         return []
     lines = ["CURRENT ROLES (held earlier in this story, not yet ended):"]
-    lines += [f"- {x['by']} → {x['to']}: {x['role']} (turn {x['turn']})" for x in roles]
+    lines += [f"R{i}. {x['by']} → {x['to']}: {x['role']} (turn {x['turn']})" for i, x in enumerate(roles, 1)]
     return lines + [""]
 
 
@@ -657,6 +661,9 @@ def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
     if secrets:
         lines += ["", f"Before answering, decide for each OPEN SECRET (S1–S{len(secrets)}) whether a character it is"
                   " kept from finds it out in the TARGET turn; list only those in `secrets`."]
+    if roles:
+        lines += ["", f"Before answering, decide for each CURRENT ROLE (R1–R{len(roles)}) whether the TARGET turn ends"
+                  " it; list only those in `roles_ended`."]
     return "\n".join(lines)
 
 
@@ -706,6 +713,39 @@ def revealed(answer: dict[str, Any], secrets: list[dict[str, Any]], turn_text: s
                         "modality": "actual", "source": "narration", "evidence": evidence, "knowledge": "unknown",
                         "epistemic": "stated"})
     return out
+
+
+def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, Any]],
+                turn_text: str) -> list[Any]:
+    """extract-v16's role endings (PHASE-28 Q1): the model's `roles_ended` (R<n> of CURRENT ROLES, with a quote of the
+    TARGET turn) → a negative `role_toward` with the listed subject, object and value, which ADR 0013's value match
+    closes exactly that role with. An unknown number, or evidence not found in the target turn, gives nothing. A negative
+    `role_toward` the model wrote itself between the two parties of a listed role is dropped: the listed ending is the
+    one way to close it, and a free one in other words would stand beside the role as a fact of its own."""
+    pairs = {(norm(r["by"]), norm(r["to"])) for r in roles}
+    kept = [a for a in items if not (isinstance(a, dict) and a.get("predicate") == "role_toward"
+                                     and str(a.get("polarity") or "").strip().lower() == "negative"
+                                     and (norm(a.get("subject")), norm(a.get("object"))) in pairs)]
+    entries = answer.get("roles_ended")
+    if not roles or not isinstance(entries, list):
+        return kept
+    done: set[int] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        ref = str(entry.get("role") or "").strip().upper().lstrip("R")
+        if not ref.isdigit() or not 1 <= int(ref) <= len(roles) or int(ref) in done:
+            continue
+        evidence = str(entry.get("evidence") or "").strip()[:300]
+        if not evidence or similarity(evidence, turn_text) < EVIDENCE_MIN:
+            continue
+        done.add(int(ref))
+        listed = roles[int(ref) - 1]
+        kept.append({"subject": listed["by"], "subject_type": "character", "predicate": "role_toward",
+                     "object": listed["to"], "object_type": "character", "value": listed["role"], "polarity": "negative",
+                     "modality": "actual", "source": "narration", "evidence": evidence, "knowledge": "public",
+                     "epistemic": "stated"})
+    return kept
 
 
 ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic",
@@ -800,6 +840,8 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     items = [a for a in items if not (isinstance(a, dict) and a.get("predicate") in DERIVED)]
     turn_text = "\n".join(r["content"] for r in ctx["members"])
     items += revealed(parsed, secrets, turn_text)
+    if roles:
+        items = ended_roles(parsed, items, roles, turn_text)
     with conn.transaction():
         # Still this worker's job? A rebuild or a re-extraction (PHASE-20 Q7) makes it obsolete, and a stale claim is
         # taken back after 10 minutes, while the model answers: a row built from the context loaded before must not

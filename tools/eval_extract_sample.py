@@ -197,6 +197,8 @@ def run(args: argparse.Namespace) -> None:
                     raise LLMError("model reply has no `assertions` list")
                 items = [x for x in items if not (isinstance(x, dict) and x.get("predicate") in X.DERIVED)]
                 items += X.revealed(parsed, p["secrets"], p["text"])
+                if p["roles"]:  # extract-v16: the listed endings, as the worker writes them
+                    items = X.ended_roles(parsed, items, p["roles"], p["text"])
                 apart = {"apart": True} if args.compiler in getattr(X, "PARTS_APART", ()) else {}
                 rows = (X.normalize(items, p["text"], p["hints"], p["shown"], **apart) if checks
                         else X.normalize(items, p["text"], p["hints"]))

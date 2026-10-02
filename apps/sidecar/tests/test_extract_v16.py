@@ -78,18 +78,20 @@ def test_an_unknown_compiler_is_refused_at_startup():
         assert extraction.compiler_of(Settings(database_url="", extract_compiler=name)) == name
 
 
-def test_the_v16_prompt_ends_a_listed_role_as_listed_right_after_the_role_rule():
+def test_the_v16_prompt_names_a_listed_role_that_ends_right_after_the_role_rule():
     prompt = extraction.PROMPTS["extract-v16"].format(registry=registry_prompt())
-    rule = prompt.index("- If CURRENT ROLES are listed: when the TARGET turn ends one")
+    rule = prompt.index("- If CURRENT ROLES are listed (R1, R2, …), report in `roles_ended` each one the TARGET")
     assert prompt.index('`role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").') < rule
-    for phrase in ('`role_toward` with "negative" and subject, object\n  and value exactly as listed',
-                   "Not when someone only goes out, travels or is away for a while",
-                   "not for\n  a role that is not listed",
-                   "A new role toward the same person replaces the listed one by itself"):
+    for phrase in ("`evidence` quotes\n  the TARGET turn", "Not when someone only goes out, travels or is away for a while",
+                   "Do not write the ending\n  as a `role_toward` yourself",
+                   "A new role toward the same person replaces the listed one by itself",
+                   'Most turns end none: then "roles_ended": [].',
+                   '"roles_ended": [{"role": "R1", "evidence": "..."}]}'):
         assert phrase in prompt, phrase
     # the rest of the prompt is extract-v15's, but for the alias rule (below)
-    assert prompt.replace(extraction.ROLE_ENDINGS, "").replace(extraction.ALIAS_PARTS, extraction.V15_ALIAS) == \
-        extraction.SYSTEM_PROMPT.format(registry=registry_prompt())
+    v16 = extraction.PROMPTS["extract-v16"].replace(extraction.ROLE_ENDINGS, "").replace(
+        extraction.ALIAS_PARTS, extraction.V15_ALIAS).replace(extraction.ANSWER_ROLES, extraction._ANSWER_END)
+    assert v16 == extraction.SYSTEM_PROMPT
 
 
 def test_the_v16_prompt_links_a_full_name_and_a_part_of_it_with_its_limits():
@@ -148,10 +150,49 @@ def test_a_role_whose_parties_the_prompt_does_not_name_is_listed_only_when_it_is
 def test_the_block_lists_each_role_with_its_turn_and_only_when_there_is_one():
     roles = [{"by": "하나", "to": "카이토", "role": "세입자", "turn": 3}]
     assert extraction.roles_block(roles) == ["CURRENT ROLES (held earlier in this story, not yet ended):",
-                                             "- 하나 → 카이토: 세입자 (turn 3)", ""]
+                                             "R1. 하나 → 카이토: 세입자 (turn 3)", ""]
     c = {**ctx("하나는 이사했다."), "context": []}
     assert "CURRENT ROLES" in extraction.build_prompt(c, roles=roles)
+    assert extraction.build_prompt(c, roles=roles).endswith(
+        "Before answering, decide for each CURRENT ROLE (R1–R1) whether the TARGET turn ends it; list only those in"
+        " `roles_ended`.")
     assert "CURRENT ROLES" not in extraction.build_prompt(c) and "CURRENT ROLES" not in extraction.build_prompt(c, roles=[])
+
+
+# --- the model names an ending, the listed role is written (Q1) --------------------------------------------------------
+
+ROLES = [{"by": "하나", "to": "카이토", "role": "세입자: 카이토의 집에 세 들어 삶", "turn": 1},
+         {"by": "{{user}}", "to": "유이", "role": "손님: 유이의 여관 3호실에 묵음", "turn": 2}]
+MOVED = "하나는 짐을 싸서 카이토의 집을 떠나 이사했다."
+
+
+def test_a_named_ending_is_written_with_the_listed_subject_object_and_value():
+    (row,) = extraction.ended_roles({"roles_ended": [{"role": "R1", "evidence": MOVED}]}, [], ROLES, MOVED)
+    assert (row["subject"], row["object"], row["value"], row["polarity"]) == (
+        "하나", "카이토", "세입자: 카이토의 집에 세 들어 삶", "negative")
+    assert (row["predicate"], row["modality"], row["source"]) == ("role_toward", "actual", "narration")
+    (valid,) = extraction.normalize([row], MOVED, shown=MOVED)
+    assert valid["status"] == "valid"
+
+
+def test_an_unknown_number_a_quote_not_in_the_turn_and_a_repeat_give_nothing_more():
+    named = [{"role": "R9", "evidence": MOVED}, {"role": "R2", "evidence": "유이는 어젯밤 항구의 창고에서 지도를 찾았다."},
+             {"role": "r1", "evidence": MOVED}, {"role": "R1", "evidence": MOVED}, "R2", {"role": "R1"}]
+    rows = extraction.ended_roles({"roles_ended": named}, [], ROLES, MOVED)
+    assert [(r["subject"], r["value"]) for r in rows] == [("하나", "세입자: 카이토의 집에 세 들어 삶")]
+    assert extraction.ended_roles({"roles_ended": "R1"}, [], ROLES, MOVED) == []
+    assert extraction.ended_roles({}, [], [], MOVED) == []
+
+
+def test_a_free_ending_between_a_listed_pair_is_dropped_and_others_are_kept():
+    """On the owner's run the model wrote the ending itself with the role's name only, which matched nothing and would
+    stand beside the role as a fact of its own (#251)."""
+    free = {"subject": "하나", "subject_type": CHAR, "predicate": "role_toward", "object": "카이토", "object_type": CHAR,
+            "value": "세입자", "polarity": "negative"}
+    other = {**free, "object": "유이"}  # not a listed pair
+    new = {**free, "value": "친구의 집에 얹혀 삶", "polarity": "positive"}  # a new role toward the same person
+    place = {"subject": "하나", "predicate": "located_in", "object": "카이토의 집", "polarity": "negative"}
+    assert extraction.ended_roles({}, [free, other, new, place], ROLES, MOVED) == [other, new, place]
 
 
 # --- what an ending as listed does (ADR 0013, unchanged) ---------------------------------------------------------------
@@ -175,12 +216,13 @@ def test_an_ending_as_listed_closes_exactly_that_role_and_keeps_it_in_history():
 
 # --- through the worker ------------------------------------------------------------------------------------------------
 
-LISTED = re.compile(r"^- (?P<by>.+?) → (?P<to>.+?): (?P<role>.+) \(turn \d+\)$", re.M)
+LISTED = re.compile(r"^(?P<ref>R\d+)\. (?P<by>.+?) → (?P<to>.+?): (?P<role>.+) \(turn \d+\)$", re.M)
 
 
 def moving_out(system, user):
     """The model as the prompt allows it: the tenancy when the story states it, the leaving as a place, and under
-    extract-v16 the ending of the listed role, copied from CURRENT ROLES."""
+    extract-v16 the listed role it ends (by number), with a free ending in the role's name only besides, as the owner's
+    run saw the model write one (#251)."""
     target = user.split("TARGET", 1)[1]
     items = []
     if "세 들어" in target:
@@ -192,10 +234,12 @@ def moving_out(system, user):
                       "object_type": "place", "polarity": "negative", "modality": "actual", "source": "narration",
                       "knowledge": "public"})
         if "CURRENT ROLES" in user:
-            for m in LISTED.finditer(user.split("CURRENT ROLES", 1)[1].split("\n\n", 1)[0]):
-                items.append({"subject": m["by"], "subject_type": CHAR, "predicate": "role_toward", "object": m["to"],
-                              "object_type": CHAR, "value": m["role"], "polarity": "negative", "modality": "actual",
-                              "source": "narration", "knowledge": "public"})
+            listed = list(LISTED.finditer(user.split("CURRENT ROLES", 1)[1].split("\n\n", 1)[0]))
+            items += [{"subject": m["by"], "subject_type": CHAR, "predicate": "role_toward", "object": m["to"],
+                       "object_type": CHAR, "value": m["role"].split(":")[0], "polarity": "negative",
+                       "modality": "actual", "source": "narration", "knowledge": "public"} for m in listed]
+            return {"assertions": items, "roles_ended": [{"role": m["ref"], "evidence": "하나는 짐을 싸서 카이토의 집을"
+                                                          " 떠나 이사했다."} for m in listed]}, "{}"
     return {"assertions": items}, "{}"
 
 

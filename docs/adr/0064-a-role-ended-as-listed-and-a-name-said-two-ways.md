@@ -25,11 +25,19 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    OPEN THREADS and OPEN SECRETS are shown (`extraction.role_hints`, `roles_block`): the current, narrated, actual,
    positive `role_toward` facts of the generation's own earlier extractions, folded as the read side folds them, newest
    first: those whose party other than the persona the prompt names, then the persona's own, at most `OPEN_ROLES` (8).
-   A rule after the role rule (`ROLE_ENDINGS`) asks, when the TARGET turn ends a listed role, for `role_toward` with
-   `"negative"` and subject, object and value exactly as listed; not for a temporary absence or an unlisted role; a new
-   role toward the same person replaces the listed one by itself (single per direction, ADR 0059). ADR 0013 is
-   unchanged: the copied value is what lets the negative close exactly that role. The list is stored with the
-   extraction's hints (`roles`).
+   The roles are numbered (R1, R2, …), as OPEN SECRETS are (S1, …). A rule after the role rule (`ROLE_ENDINGS`) asks
+   the model to report in `roles_ended` each listed role the TARGET turn ends, with a quote of the turn; not a temporary
+   absence; not to write the ending as a `role_toward` itself; a new role toward the same person replaces the listed one
+   by itself (single per direction, ADR 0059). `extraction.ended_roles` writes each ending as a negative `role_toward`
+   with the listed subject, object and value (an unknown number or a quote not in the turn gives nothing), and drops a
+   negative `role_toward` the model wrote itself between a listed role's two parties. ADR 0013 is unchanged: the
+   listed value is what lets the negative close exactly that role. The list is stored with the extraction's hints
+   (`roles`).
+   *Amended 2026-10-03 on the owner's run of `a5c888a`:* the first rule asked the model to write the negative with the
+   listed value copied. On the S2 role-ending turns (13 turns, 3 runs each, 39 calls, `gemma4:31b`), it closed 0 of 6:
+   the endings it gave carried the role's name without the description the list showed, in the raw answer, so they
+   matched nothing; the stay's ending was missed in 2 of 3 runs. Naming the listed role by number takes the copy away
+   from the model.
 2. **A name and a part of it** (Q4). The `also_called` rule (`ALIAS_PARTS`, in place of `extract-v15`'s `V15_ALIAS`)
    also asks for an alias when the TARGET turn writes a character by a full name and, for the same character, by part
    of it: the given name alone, or in a story in English the first or the last name alone; subject the full name, value
