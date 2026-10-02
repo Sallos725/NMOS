@@ -64,9 +64,9 @@ original design, and most recent phases (15, 17, 18, 19) were outside it. So:
 - **Pulled in by name (2026-10-01): NMOS without Docker** (AGE-29, Phase 23). PocketRisu's portable-package users
   cannot run the Docker install, so a 1.0 they cannot attach misses part of the host's users. Phase 23 covers the four
   portable targets; Termux follows separately (its Q2) and is not a 1.0 condition (owner, 2026-10-01): it waits under
-  "After 1.0".
+  "After 1.0". Phase 23 is complete after the owner's Windows and Mac checks (2026-10-02), not released yet.
 
-The road left is Stage 7 (`0.4.0`), Phase 23 (NMOS without Docker), and two quiet weeks on production.
+The road left is Stage 7 (`0.4.0`), publishing Phase 23's bundles with a tagged release, and two quiet weeks on production.
 
 ## Measuring progress (M0, before the first stage)
 

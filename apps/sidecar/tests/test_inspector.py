@@ -357,8 +357,29 @@ def test_the_dashboard_is_the_inspector_with_the_version_and_the_failed_jobs(mig
     """PHASE-23 Q8: the bundles' tray and menu bar open /dashboard, the Inspector's first page with the version, the
     plugin build, the generations in use, the background jobs and their recent errors; read-only, behind the token."""
     import psycopg
+    from html.parser import HTMLParser
 
     from nmos_sidecar import __version__
+
+    class RefreshForm(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.action = None
+            self.fields = {}
+            self.inside = False
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag == "form":
+                self.inside = attrs.get("class") == "refresh" and attrs.get("method") == "get"
+                if self.inside:
+                    self.action = attrs.get("action")
+            if self.inside and tag == "input":
+                self.fields[attrs["name"]] = attrs["value"]
+
+        def handle_endtag(self, tag):
+            if tag == "form":
+                self.inside = False
 
     with make_client(migrated, llm_url="http://fake-llm/v1", llm_model="fake", llm_api_key="sk-secret-dashboard") as c:
         sync_named(c, chat(), character_name="하나", chat_name="첫 대화")
@@ -376,3 +397,14 @@ def test_the_dashboard_is_the_inspector_with_the_version_and_the_failed_jobs(mig
         assert "model said &lt;b&gt;no&lt;/b&gt;" in page and "x" * 300 not in page  # escaped, cut to 300 characters
         assert "sk-secret-dashboard" not in page  # the model and endpoint, never a key
         assert "fake @ http://fake-llm/v1" in page
+        form = RefreshForm()
+        form.feed(page)
+        assert form.action == "/inspector" and form.fields == {"token": "test-token", "lang": "en"}
+        with psycopg.connect(migrated, autocommit=True) as conn:
+            conn.execute("UPDATE job SET status = 'done', last_error = NULL WHERE dedupe_key = 'dashboard-test'")
+        refreshed = c.get(form.action, params=form.fields)
+        assert refreshed.status_code == 200 and '<html lang="en">' in refreshed.text
+        assert "model said" not in refreshed.text and "No background job has failed or is retrying." in refreshed.text
+        assert "새로고침" in c.get("/dashboard", params={"token": "test-token"}).text
+        c.headers["Authorization"] = "Bearer test-token"
+        assert '<form class="refresh"' not in c.get("/v1/inspector").json()["html"]

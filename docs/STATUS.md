@@ -2,10 +2,13 @@
 
 ## Current phase
 
+**No phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small dashboard
+Refresh follow-up is recorded below. Stages 7–8 / Phase 28+ remain unauthorized.
+
 **Phase 27 — The excerpt lands on the answer (`packet-v11`): approved, measured and complete 2026-10-02, not
 released.** Spec `docs/phases/PHASE-27.md` (AGE-31 under AGE-24; a correction found by measurement, not a roadmap
-stage, run beside the current phase as Phases 24 and 25 were — Phase 23 stays current until the owner's check of its
-step 6; the owner's order: before 0.3.0, AGE-7). From the diagnosis of draft PR #241: the request often retrieves the
+stage, run beside Phase 23, then current, as Phases 24 and 25 were; the owner's order: before 0.3.0, AGE-7).
+From the diagnosis of draft PR #241: the request often retrieves the
 message that holds the answer and excerpts another part of it. Two rules in a new packet policy: a message found by a
 word route and by vectors excerpts within its vector chunk, and a why or contents question grows its excerpt by
 characters (320) instead of four sentences; the prototype's one-case rules and passage embeddings stay out. The
@@ -151,7 +154,7 @@ Next, in the owner's order — the cases first, the latency second: Phase 27 (`d
 span: the M0 main failures that have their answer among the candidates and excerpt another part of the message; the
 prototype of #241 measured +3 of 23), then that live run.
 
-**Phase 23 — NMOS without Docker: approved 2026-10-01, current.** Spec `docs/phases/PHASE-23.md`
+**Phase 23 — NMOS without Docker: approved 2026-10-01, complete 2026-10-02, not released.** Spec `docs/phases/PHASE-23.md`
 (AGE-29; the owner pulled it in before 1.0, an exception to R7): a bundle for each PocketRisu portable target
 (win-x64, macos-arm64, linux-x64, linux-arm64; Termux later) with a portable PostgreSQL 16, Python, the sidecar and the plugin;
 Windows as a zip with `NMOS.exe` in the notification area, macOS as a menu-bar app signed ad hoc and allowed once
@@ -175,8 +178,16 @@ menu bar. Step 6: `release.yml` builds the four bundles through `native.yml` wit
 after their checks; the smoke adds an update (data of the version before starts and migrates, nothing lost, on another
 database port: the launcher now passes `NMOS_DB_PORT` at every start, which a changed port needed); README "Without
 Docker" and the Korean guide (the shared `.env.example` needs `NMOS_DB_PORT=54390`; updates keep `.env` too);
-ADR 0060; `ARCHITECTURE.md` §6. Left: the owner's check on a Windows PC and a Mac with
-the step 6 bundles.
+ADR 0060; `ARCHITECTURE.md` §6. The owner's Windows and macOS checks (2026-10-02, AGE-29): memory injection works,
+PostgreSQL shuts down, and data remains after restarting (owner reports; the OS/host versions and bundle builds
+were not supplied). The requested small follow-up adds a **Refresh / 새로고침** button to the standalone dashboard's
+first page: a read-only GET keeps its token and language and reads the status again. The owner explicitly confirmed
+the Mac browser-download / Open Anyway path without Terminal too. The last owner-check boundary is met; Phase 23
+is complete. Bundles ship with the next tagged release; no tag is authorized by these checks.
+Refresh follow-up verified locally: the dashboard test submits the rendered GET form, keeps auth and language,
+and reads a job's changed status; the embedded panel has no added form. The full sidecar suite passes (898 tests),
+`git diff --check` passes, and the diff-scoped self-review found no remaining issue. The native bundles were not
+rebuilt for this UI-only follow-up; the owner's checks above concern the bundles they already ran.
 
 **Release `v0.2.0` (2026-09-28), the first milestone (`docs/ROADMAP-1.0.md`), at the owner's request.** Stage 4
 (knowledge and secrets, Phase 10) complete, with Stage 5 (Phases 11–12) and Stage 6 so far (Phase 13, Phase 14 steps
@@ -548,7 +559,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K42 (K10 resolved; K33–K38 recorded 2026-09-29, K39–K40 in Phase 18, K41 in Phase 19, K42 in Phase 21 and resolved on `main`) current as of `v0.2.0` and Phase 20, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–7 of the original roadmap, one release each (R7, 2026-10-01: Stage 8 after 1.0, Stage 6 ends with Phase 20, new phases only for Stage 7; R1, R5, R7 decided, R2–R4 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0063` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair; Phase 14: canon sources, names from canon, canon facts and lock; NMOS off for one chat; Phase 15: a packet that fills its budget; Phase 16: NMOS Archive; Phase 17: model-call usage; Phase 18: keyword lexical recall, excerpts that fill their length; Phase 19: `extract-v14`; Phase 20: join preview; Phase 21: first cue; Phase 22: reveal checks; Phase 24: name variants; Phase 25: `role_toward`; Phase 23: portable bundles; the query embedded while recall reads (K34); the chunk cap a setting of the projection (K13); Phase 27: `packet-v11`, the excerpt lands on the answer |
-| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-27.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 met (the owner's iPhone check 2026-10-01; the host's alert is K38); 17 met; 18 met (latency measured over the benchmark's questions, owner accepted); 19 met but for `deepseek-v4.1-flash`'s M0 criterion (owner accepted, K41); 20 met; 21 met; 22 met but the paid run's reveal count missed by one (owner accepted); 23 current; 24 met; 25 met (the paid run's output tokens 43 % above the estimate, owner accepted); 26 stopped (not merged; Stage 6's criterion reworded); 27 complete (2026-10-02; Q1b the keywords anchor and Q5's bound one-sided by the owner on the measurement) |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-27.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 met (the owner's iPhone check 2026-10-01; the host's alert is K38); 17 met; 18 met (latency measured over the benchmark's questions, owner accepted); 19 met but for `deepseek-v4.1-flash`'s M0 criterion (owner accepted, K41); 20 met; 21 met; 22 met but the paid run's reveal count missed by one (owner accepted); 23 met (owner Windows and Mac checks 2026-10-02); 24 met; 25 met (the paid run's output tokens 43 % above the estimate, owner accepted); 26 stopped (not merged; Stage 6's criterion reworded); 27 complete (2026-10-02; Q1b the keywords anchor and Q5's bound one-sided by the owner on the measurement) |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 | Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11`, and A-12's markup half in `clean-v3` (both unreleased) |
 
@@ -635,7 +646,8 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
 - Phase 23 (NMOS without Docker: a bundle for each PocketRisu portable target; AGE-29): the owner pulled it in before 1.0
   (2026-10-01, an exception to R7) and chose zip + `NMOS.exe` for Windows; a spike on `spike/native-bundle` ran on all
   four targets; approved 2026-10-01 with every proposed answer but Q6, where the owner chose ad hoc signing and
-  "Open Anyway" over `xattr -cr` and will check it on their Mac (`docs/phases/PHASE-23.md`); current.
+  "Open Anyway" over `xattr -cr`; Windows and Mac checked by the owner, including the Mac browser-download /
+  Open Anyway path without Terminal, complete 2026-10-02 (`docs/phases/PHASE-23.md`); no release.
 - Phase 24 (a name as the story says it: a given name alone, and a Hangul word for a character held under a romanized
   name; AGE-28 under AGE-24, one of the fixes `0.3.0` waits for): approved 2026-10-01 with every proposed answer
   (`docs/phases/PHASE-24.md`); the owner noted that the fixes keep adding rules for small gains (every rule behind a

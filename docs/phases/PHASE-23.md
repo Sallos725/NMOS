@@ -1,6 +1,7 @@
 # Phase 23 — NMOS without Docker: a bundle for each PocketRisu portable target
 
-> **Status: approved 2026-10-01 (Q6 as amended below; every other proposed answer), current.**
+> **Status: approved 2026-10-01 (Q6 as amended below; every other proposed answer), complete 2026-10-02 after
+> the owner's Windows and Mac checks; not released.**
 > Not a roadmap stage: the owner pulled it in before 1.0 by name (2026-10-01, an exception to R7 in
 > `docs/ROADMAP-1.0.md`), tracked as AGE-29. The spike behind it is on the
 > branch `spike/native-bundle` (`tools/native/`, CI run 36807358696).
@@ -15,6 +16,8 @@
   installer, no `.msi`. `NMOS.bat` and `start.sh` stay for servers and advanced users only.
 - **Storage stays PostgreSQL** (`ARCHITECTURE.md` §2, invariant 9): each bundle carries a portable PostgreSQL 16 with `pg_trgm`
   and `pgvector`, a standalone Python with the sidecar, the migrations and the plugin of the same build.
+- **Dashboard refresh (owner, 2026-10-02, AGE-29):** add a manual Refresh button if it is a small change. The
+  standalone first page submits a read-only GET, keeping its token and language, to read the current status again.
 
 ## What the spike measured
 
@@ -95,7 +98,7 @@ installs the plugin from the bundle and sets the URL shown in the tray: memory w
       passes on the app in CI.
 - [ ] An update keeps the data: version N's `data/` moved into N+1 starts and migrates; N+1's data refused by N.
 - [ ] Every existing test passes; the Docker install, its images and `:edge` are unchanged.
-- [ ] **The owner's check** (evidence boundary, `AGENTS.md` §2): on a Windows PC with PocketRisu's portable package,
+- [x] **The owner's check** (evidence boundary, `AGENTS.md` §2): on a Windows PC with PocketRisu's portable package,
       unpack, start, install the plugin from the bundle, chat, and see recall in the panel; on the owner's Mac, the
       same with the app downloaded through a browser and allowed once with Open Anyway, no Terminal (if PostgreSQL or
       Python inside it is still blocked, stop and ask: notarization or `xattr -cr` is the owner's call).
@@ -110,6 +113,16 @@ installs the plugin from the bundle and sets the URL shown in the tray: memory w
 6. Release workflow, README, ADR, `ARCHITECTURE.md`; the owner's check; Phase 23 complete.
 
 A merge reaches `:edge` as usual; the bundles first ship with the next tagged release (`AGENTS.md` §13).
+
+## Owner check (2026-10-02)
+
+The owner reported on Windows and macOS: memory injection works, PostgreSQL shuts down successfully, and the data
+remains after restarting. These are the owner's reports, not new agent-run smokes or fixtures; the OS and PocketRisu
+versions and bundle builds were not provided. The Windows dashboard lacked a Refresh button (the small addition
+above). The owner also explicitly confirmed that the Mac app was downloaded through a browser, allowed with
+Open Anyway and run successfully without Terminal. The last owner-check boundary is met: Phase 23 is complete,
+not released. The reports do not independently establish start at login after a sign-out and in; its existing CI
+evidence is recorded in `docs/STATUS.md`.
 
 ## Stop conditions
 
