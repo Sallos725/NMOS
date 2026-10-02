@@ -32,3 +32,4 @@ packages = ["src/nmos_sidecar"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["../../tools"]

@@ -2,6 +2,16 @@
 
 ## Current phase
 
+**AGE-24 evaluation candidate (2026-10-02), not production:** the retained M0 v2 `extract-v15`
+main-chat/vector-ON score is 16/23 memory-needed cases. The read-only prototype first reached 19/23;
+a follow-up that selects contiguous list, causal and container passages reaches **20/23** (36/40 overall),
+without losing a previously passing case or adding a forbidden match. Questions, scorer, facts, prompt
+windows and the 4,000-token budget stay fixed; final runs also freeze the baseline candidate pool to
+remove a lexical-timeout difference. The document list and container evidence now reach the packet
+whole; the causal explanation includes the patch but still omits the precise intake/exhaust ordering.
+The original evaluation runtime SHA and packet bodies remain unverified. See `docs/perf/age24-recall-candidate.md`.
+Draft PR #241; evaluation tools only. No production generation change or AGE-24 completion; Phase 23 remains current.
+
 **Phase 22 — A re-extraction that keeps what it found: approved and complete 2026-10-01, not released.** Spec `docs/phases/PHASE-22.md`
 (AGE-25 under AGE-24, an urgent correction found by measurement): "Extract all history" asks a small reveal check
 instead of extracting again a turn extracted before an earlier turn's secret (K29), and a narrated fact a
