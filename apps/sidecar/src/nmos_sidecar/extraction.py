@@ -212,6 +212,10 @@ ROLE_ENDINGS = """- If CURRENT ROLES are listed (R1, R2, …), report in `roles_
   or is away for a while. Do not write the ending as a `role_toward` yourself. A new role toward the same
   person replaces the listed one by itself: give only the new `role_toward`. Most turns end none: then
   "roles_ended": [].
+  A listed role is between its two people, not just a job title. A new job, workplace or rank is not itself
+  an ending of that pair's arrangement: a new job does not end a mentorship; a promotion does not end employment or being colleagues.
+  Check whether that relationship continues (CONTEXT can establish continuity). Report an ending only when
+  the TARGET ends the listed relationship itself, not merely another duty or description attached to it.
 """
 _ANSWER_END = '''"secrets": [{{"secret": "S1", "found_out_by": ["..."], "evidence": "..."}}]}}'''
 ANSWER_ROLES = (_ANSWER_END[:-2]  # extract-v16's answer

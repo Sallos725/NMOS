@@ -32,7 +32,15 @@ and a TARGET sentence with "..."); a joined quote now counts by its passage in t
 `2e4ccfd` (9 calls): move 3/3, resignation 3/3, eve kept 2/3 (once "now" on a sentence about the next day); a quote
 that places the change later (`LATER`) now closes nothing. On `162b515` (9 calls): eve 3/3, resignation 3/3, move 1/3
 (twice quoting the previous turn's room assignment); the rule now asks for the TARGET turn's own words for what happens
-there. Next: those turns again (keep 3/3, end 3/3, end 3/3), then the rest of Q5 (c).
+there. On `c582343` the three checks passed 3/3 each, but the wider run stopped at 76 calls: a new job
+wrongly ended a continuing mentorship at S2 turn 74 in 2/3 runs. The local correction clarifies that a job,
+workplace or rank change does not itself end the relationship between the listed people. A 27-call remeasurement
+kept that mentorship 3/3 and retained all three earlier checks (12/12 total); the sidecar suite passed 921 tests.
+This is a bounded check with preserved v15 hints, not the complete Q5 (c) comparison or a sequential worker run.
+Evidence and limitations: `docs/perf/extract-v16-role-continuity.md`. The owner also requested an independent story:
+`tools/eval_story_probe.py` prepares 14 authored space-station cases, 42 calls for three runs; dry-run and nine
+tool tests passed, with no model call on that new corpus. Next: the remaining Q5 (c) comparison, alias checks and
+first-connection/backfill measurements; no default switch or acceptance checkbox is implied by this correction.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

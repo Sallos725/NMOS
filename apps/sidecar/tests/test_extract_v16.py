@@ -88,6 +88,8 @@ def test_the_v16_prompt_names_a_listed_role_that_ends_right_after_the_role_rule(
                    'A sentence about tomorrow or later is never "now".',
                    "`evidence`: the TARGET turn's own words for what happens in it that ends the role",
                    "A reason, an arrangement or a plan in\n  CONTEXT is not evidence",
+                   "A listed role is between its two people, not just a job title",
+                   "a new job does not end a mentorship; a promotion does not end employment or being colleagues",
                    'never join two passages with "..."',
                    "Not when someone only goes out, travels\n  or is away for a while",
                    "Do not write the ending as a `role_toward` yourself",
@@ -268,6 +270,14 @@ def test_an_ending_as_listed_closes_exactly_that_role_and_keeps_it_in_history():
     # leaving the place is another predicate: it does not end the role
     left = row(5, "하나", "located_in", "카이토의 집", polarity="negative", subject_type=CHAR, object_type="place")
     assert ("하나", "카이토", "세입자: 카이토의 집에 세 들어 삶", "positive") in current([tenancy, left])
+
+
+def test_a_new_job_toward_another_person_keeps_the_existing_mentorship():
+    mentorship = role(1, "하나", "카이토", "제자: 카이토에게 지도를 배우는 조수")
+    hired = role(2, "하나", "유이", "직원: 유이의 측량 사무소에서 일함")
+    assert current([mentorship, hired]) == [
+        ("하나", "유이", "직원: 유이의 측량 사무소에서 일함", "positive"),
+        ("하나", "카이토", "제자: 카이토에게 지도를 배우는 조수", "positive")]
 
 
 # --- through the worker ------------------------------------------------------------------------------------------------

@@ -62,6 +62,13 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    ends the role (they carry their bags out, hand back the key, say they quit), and says a reason, an arrangement or a
    plan in CONTEXT is not evidence; the closing line asks to quote the text after "TARGET turn N:". The quote check is
    unchanged.
+   *And on `c582343`* (76 calls before stopping): the three earlier role checks passed 3/3 each, but S2 turn 74
+   ended the protagonist's mentorship in 2/3 runs on taking another job, although the context explicitly kept the
+   lessons. The prompt now distinguishes a relationship between two people from a job title or workplace: context
+   may establish continuity, while an ending still needs the TARGET to end that relationship. The parser and
+   reconciliation rule are unchanged. A bounded 27-call remeasurement kept the mentorship 3/3 and the earlier
+   three checks 3/3 each; this does not establish the full comparison or worker/backfill acceptance. See
+   `docs/perf/extract-v16-role-continuity.md`.
 2. **A name and a part of it** (Q4). The `also_called` rule (`ALIAS_PARTS`, in place of `extract-v15`'s `V15_ALIAS`)
    also asks for an alias when the TARGET turn writes a character by a full name and, for the same character, by part
    of it: the given name alone, or in a story in English the first or the last name alone; subject the full name, value
