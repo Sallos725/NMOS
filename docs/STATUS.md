@@ -2,6 +2,14 @@
 
 ## Current phase
 
+**PR #249 regression follow-up (2026-10-03): investigation only.**
+[PR #249](https://github.com/Sallos725/NMOS/pull/249) records the completed live benchmark on `e13dee7`:
+the repeated S0main target is met, but the combined no-regression gate fails. AGE-24 remains open.
+A read-only follow-up found no alias rows for the affected S2/S4b full/given-name pairs and reproduced why
+linking names alone does not end a role with a differently worded negative. Seven existing pure tests and
+three controlled role checks passed; these are not new benchmark scores. [Phase 28](phases/PHASE-28.md)
+is a **draft correction scope**, awaiting owner approval, with no product changes or new model calls.
+
 **No phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small dashboard
 Refresh follow-up is recorded below. Stages 7–8 / Phase 28+ remain unauthorized.
 
@@ -26,7 +34,7 @@ the forbidden rise); **Q5's size bound one-sided** (smaller packets allowed: the
 `excerpt_chars` by construction, and the case and forbidden criteria caught no loss); **`packet-v11` the default**,
 `packet-v10` kept as `NMOS_PACKET_POLICY=packet-v10`. Every acceptance criterion met: the latency one by
 `tools/bench_story.py 10000` (three rounds a side: p50 218.9 ms under `packet-v10` against 211.5 under `packet-v11`,
-the rounds overlapping). The owner's live bench (the three-bench NMOS lane, AGE-24's criterion) follows the switch.
+the rounds overlapping). The subsequent live benchmark and its failed combined gate are recorded in PR #249 above.
 **High risk (AGENTS.md §14)**: memory selection (what text an excerpt shows; pinned by `test_packet_v11.py`,
 `test_packet_v10.py`, `test_memory_eval.py`; recorded requests replay as they were) and K39 (the cue growth within
 320 characters; noted there).
@@ -148,11 +156,9 @@ embedding is given only to the projection and embedder object it was asked of, `
 (`test_query_embedding.py`, `test_vectors.py`: a slow or failed embedder leaves the request lexical, with the reason in
 the trace). Replays of recorded requests (an evaluation gives the embedding 5,000 ms) do not show (1)–(2), and the
 10,000-message bench chat does not show the real chats; the owner's live bench harness (`~/nmos-eval/three-bench`, the
-NMOS lane on this commit, the embedder as in production) is where AGE-24's criterion is measured, and has not run on
-this branch yet.
-Next, in the owner's order — the cases first, the latency second: Phase 27 (`docs/phases/PHASE-27.md`, the excerpt's
-span: the M0 main failures that have their answer among the candidates and excerpt another part of the message; the
-prototype of #241 measured +3 of 23), then that live run.
+NMOS lane, the embedder as in production) is where AGE-24's criterion is measured. Phase 27 and the subsequent
+live run on `e13dee7` are complete; PR #249 records the real-chat target met and the combined no-regression gate
+failed. The follow-up above is a draft, not authorization for new product behavior.
 
 **Phase 23 — NMOS without Docker: approved 2026-10-01, complete 2026-10-02, not released.** Spec `docs/phases/PHASE-23.md`
 (AGE-29; the owner pulled it in before 1.0, an exception to R7): a bundle for each PocketRisu portable target
