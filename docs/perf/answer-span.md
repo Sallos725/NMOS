@@ -4,7 +4,16 @@
 `fa86d955a85947670e33d9ca8ce7e89608e42e37` (merged as `69704fe`).
 **Neither anchor meets the current acceptance criteria.** The main chat gains the required memory answers,
 but `focus` increases the forbidden-phrase total and both anchors miss the packet-size bound.
-Phase 27 remains incomplete; `packet-v10` remains the default. No product code or acceptance criterion changes.
+At the time of this measurement Phase 27 was incomplete and `packet-v10` the default; this report changed no product
+code or acceptance criterion.
+
+**Decision (the owner, 2026-10-02, after this measurement; Phase 27 step 3):** the tie-break anchor is the question's
+keywords (today's anchor met the stop condition on forbidden phrases, 93 → 96; the keywords anchor passed every stop
+condition at 87 with the largest gain); Q5's size bound is one-sided — the median packet size per set must not grow by
+more than 5 %, and smaller is allowed, since the two rules bound excerpts below `excerpt_chars` by construction and the
+case and forbidden criteria caught no loss on the set that shrank (+1 case, forbidden 2 → 0); `packet-v11` is the
+default (ADR 0063 amended, `docs/phases/PHASE-27.md` Q1b and Q5). The measurement below is as recorded before that
+decision.
 
 ## Setup and limits
 
@@ -94,6 +103,23 @@ Under PHASE-27's stop conditions, the owner must decide the next direction befor
 address focus's forbidden increase, or consider keywords and explicitly decide whether smaller packets may be
 exempted from the size criterion. This document chooses neither, does not amend Q1b or Q6, and does not switch
 an anchor or the default. After that decision, the remaining checks and live-host evidence are still required.
+
+## Request-path latency (step 3, Phase 27's last criterion)
+
+`tools/bench_story.py 10000` with `BENCH_BUDGET=4000`, the default questions and no embedder (the shape of the other
+perf pages' latency rows), in a four-core container pinned to two cores, three rounds a side run in turn
+(`NMOS_PACKET_POLICY=packet-v10`, then the default `packet-v11`). Each run is 15 requests on the 10,000-message chat.
+
+| Round | `packet-v10` p50 / p95 (ms) | `packet-v11` p50 / p95 (ms) |
+|---|---:|---:|
+| 1 | 208.0 / 377.8 | 209.5 / 302.7 |
+| 2 | 223.0 / 331.9 | 211.5 / 288.2 |
+| 3 | 218.9 / 292.6 | 222.6 / 359.9 |
+| median | **218.9** / 331.9 | **211.5** / 302.7 |
+
+The rounds overlap (208–223 against 209–223 ms p50), so the difference between the medians is noise, as expected: the
+two rules are pure functions on text the request has already read. Not a measurement of the owner's chats, whose
+questions carry the cues and vectors these rules act on; the live bench is.
 
 ## Reproduce the CLI comparison
 

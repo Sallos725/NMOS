@@ -185,11 +185,12 @@ class RecallOptions:
     first_cue: bool = True  # how it started, when the message asks (ADR 0056); a trace without it replays with it off
     history_marks: bool = True  # earlier versions only under marks that cover them (ADR 0038 amendment 1); same replay rule
     name_variants: bool = True  # a given name, a Hangul spelling of a romanized name (ADR 0058); same replay rule
-    # packet-v11's tie-break anchor for the excerpt's best sentence (PHASE-27 Q1b, ADR 0063): "focus", the question and
-    # the previous reply (today's, every policy's), or "keywords", the question's keywords alone — the question itself
-    # when it has none — (the prototype's);
-    # measured in Phase 27 step 2 through `tools/eval_rp.py --anchor`. Recorded; a trace without it replays with "focus".
-    excerpt_anchor: str = "focus"
+    # packet-v11's tie-break anchor for the excerpt's best sentence (PHASE-27 Q1b, ADR 0063): "keywords", the question's
+    # keywords alone — the question itself when it has none — (the prototype's; the default since step 3, measured: with
+    # "focus" the forbidden total rose 93 → 96 over twelve sets, with "keywords" it fell to 87), or "focus", the question
+    # and the previous reply (`packet-v10`'s, which ignores this option; `tools/eval_rp.py --anchor focus` for an
+    # evaluation). Recorded; a trace without it replays with "focus", the anchor every request had before.
+    excerpt_anchor: str = "keywords"
     excerpt_chars: int = MAX_EXCERPT_CHARS  # an excerpt's length at most; derived from the budget (`filled`), not recorded
     fill_facts: int = 0  # fact slots the budget adds, for facts kept from no one (`filled`, ADR 0049), not recorded
 

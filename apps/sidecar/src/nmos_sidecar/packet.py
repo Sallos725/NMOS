@@ -202,11 +202,12 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
 # packet-v11 is packet-v10 whose excerpt lands on the answer (PHASE-27, ADR 0063): a message found by a word route and
 # by vectors excerpts within its vector chunk (the part of the message the question is about) instead of the whole
 # message, and a why or contents question grows its excerpt by whole sentences up to CUE_GROW_CHARS with no sentence
-# cap, since an explanation is often cut into short sentences. Available as `NMOS_PACKET_POLICY=packet-v11`; the
-# default until the Phase 27 evaluation passes (step 3).
+# cap, since an explanation is often cut into short sentences. The default since Phase 27 step 3 (owner, 2026-10-02:
+# the M0 main cases that need memory 16 → 19 of 23, forbidden phrases 93 → 87 over twelve sets, docs/perf/answer-span.md);
+# `packet-v10` stays available as `NMOS_PACKET_POLICY=packet-v10`.
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
             "packet-v8", "packet-v9", "packet-v10", "packet-v11")
-DEFAULT_POLICY = "packet-v10"
+DEFAULT_POLICY = "packet-v11"
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
              "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2,
              "packet-v11": 1.2}  # estimated tokens per non-ASCII char

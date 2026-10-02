@@ -185,7 +185,7 @@ def test_the_cue_growth_stays_within_its_length_and_cuts_a_long_sentence():
     assert grown_excerpt(many, "line", ["line"], 1000) == grown_excerpt(many, "line", ["line"], 1000, GROW_MAX_SENTENCES)
 
 
-# ---- Q1b: the tie-break anchor -------------------------------------------------------------------------------------
+# ---- Q1b: the tie-break anchor (step 3: packet-v11's is the question's keywords; "focus" is packet-v10's) -----------
 
 TWELVE = [
     "The parrot sat on the mast all morning and watched the gulls.",
@@ -204,28 +204,37 @@ TWELVE = [
 BELL = "The bell rang and everyone froze on the deck."  # the previous reply: trigrams of the eleventh sentence
 
 
-def test_the_anchor_is_the_question_with_the_previous_reply_unless_the_option_says_keywords(migrated):
-    """Two sentences hold the keyword; the previous reply decides the tie today (every policy), the question's
-    keywords alone under `excerpt_anchor="keywords"` (packet-v11 only, an evaluation's knob: Q1b)."""
+def test_packet_v11_anchors_on_the_questions_keywords_and_packet_v10_on_the_previous_reply(migrated):
+    """Two sentences hold the keyword. Under packet-v11 the question's keywords alone break the tie (the earlier
+    sentence; Q1b, decided by measurement in step 3), and the trace records `excerpt_anchor: "keywords"`; a replay with
+    `excerpt_anchor="focus"` (`eval_rp.py --anchor focus`) lets the previous reply decide, as packet-v10 always does."""
     with client_for(migrated, "packet-v11") as c:
         chat = chat_with(" ".join(TWELVE))
         text, _, trace = packet_and_candidate(c, migrated, chat, "what did the parrot do", previous_ai=BELL)
-        assert "flew to the galley" in text and "watched the gulls" not in text  # today's anchor: the eleventh
-        assert trace["recall_options"]["excerpt_anchor"] == "focus"
+        assert "watched the gulls" in text and "flew to the galley" not in text  # the first, on a tie
+        assert trace["recall_options"]["excerpt_anchor"] == "keywords"
         assert c.get(f"/v1/trace/{trace['id']}/replay").json()["reproduced"] is True
         with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
             opts = RecallOptions(embedder=FakeEmbedder(), embed_projection=trace["embed_projection"])
             assert audit.replay(conn, trace["id"], opts)["text"] == text  # the recorded anchor replays as it was
-            keyed = audit.replay(conn, trace["id"], opts, excerpt_anchor="keywords")  # as `eval_rp.py --anchor`
-        assert "watched the gulls" in keyed["text"] and "flew to the galley" not in keyed["text"]  # the first, on a tie
+            focused = audit.replay(conn, trace["id"], opts, excerpt_anchor="focus")  # as `eval_rp.py --anchor focus`
+        assert "flew to the galley" in focused["text"] and "watched the gulls" not in focused["text"]  # the eleventh
+        # a trace from before the option existed records no anchor: it replays with "focus", the anchor every request
+        # had then (`audit.replay`), even under packet-v11
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            conn.execute("UPDATE retrieval_trace SET recall_options = recall_options - 'excerpt_anchor' WHERE id = %s",
+                         (trace["id"],))
+            legacy = audit.replay(conn, trace["id"], opts)
+        assert "flew to the galley" in legacy["text"] and "watched the gulls" not in legacy["text"]
+        assert c.get(f"/v1/trace/{trace['id']}").json()["recall_options"].get("excerpt_anchor") is None
         # a question without keywords ("비", one syllable, is none; it is the embedder's rain concept, which finds the
         # message by vectors alone): the keywords anchor is the question itself, never the previous reply
         text, cand, trace = packet_and_candidate(c, migrated, chat, "비?", previous_ai=BELL)
         assert cand["keyword_score"] == 0 and cand["user_score"] < 0.4 and cand["sim"] >= 0.42, cand
-        assert "flew to the galley" in text and "watched the gulls" not in text  # focus: the previous reply decides
+        assert "watched the gulls" in text and "flew to the galley" not in text
         with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
-            keyed = audit.replay(conn, trace["id"], opts, excerpt_anchor="keywords")
-        assert "watched the gulls" in keyed["text"] and "flew to the galley" not in keyed["text"]
+            focused = audit.replay(conn, trace["id"], opts, excerpt_anchor="focus")
+        assert "flew to the galley" in focused["text"] and "watched the gulls" not in focused["text"]
     with client_for(migrated, "packet-v10") as c:
         chat = chat_with(" ".join(TWELVE))
         text, _, trace = packet_and_candidate(c, migrated, chat, "what did the parrot do", previous_ai=BELL)
@@ -235,14 +244,14 @@ def test_the_anchor_is_the_question_with_the_previous_reply_unless_the_option_sa
             assert audit.replay(conn, trace["id"], opts, excerpt_anchor="keywords")["text"] == text  # v10: today's
 
 
-# ---- Q3: the policy, selected and recorded; the default unchanged --------------------------------------------------
+# ---- Q3: the policy, the default since step 3; packet-v10 selected by the setting; both recorded and replayed -------
 
-def test_the_policy_is_selected_by_the_setting_and_recorded_while_the_default_stays_v10(migrated):
-    with client_for(migrated, "packet-v11") as c:
+def test_packet_v11_is_the_default_and_packet_v10_stays_available_by_the_setting(migrated):
+    with make_client(migrated, embedder=FakeEmbedder(), **EMB) as c:  # NMOS_PACKET_POLICY unset
         text, _, trace = packet_and_candidate(c, migrated, chat_with(LONG), Q1_QUESTION)
         assert trace["policy"] == "packet-v11" and "behind the stove" in text
         assert c.get(f"/v1/trace/{trace['id']}/replay").json()["reproduced"] is True
-    with make_client(migrated, embedder=FakeEmbedder(), **EMB) as c:  # NMOS_PACKET_POLICY unset
+    with client_for(migrated, "packet-v10") as c:
         text, _, trace = packet_and_candidate(c, migrated, chat_with(LONG), Q1_QUESTION)
         assert trace["policy"] == "packet-v10" and "named the parrot Pepper" in text
         assert c.get(f"/v1/trace/{trace['id']}/replay").json()["reproduced"] is True

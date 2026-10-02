@@ -530,7 +530,8 @@ a keyword in more than 200 or more than half of the head messages, or not found 
 scores sum `log(messages / matches)` under the lexical timeout. A keyword hit is its own admission signal in fusion. An excerpt only this route found is
 left out when it repeats a secret still kept from someone. Recorded as `lexical_keywords`; older traces replay without it.
 
-**D63 — Excerpts that fill their length (Phase 18, ADR 0053).** `packet-v10`, the default, is `packet-v9` whose excerpt
+**D63 — Excerpts that fill their length (Phase 18, ADR 0053).** `packet-v10` (the default until Phase 27 made `packet-v11`
+the default, D72; available as `NMOS_PACKET_POLICY=packet-v10`) is `packet-v9` whose excerpt
 starts from the sentence holding most of the message's keywords (then most shared trigrams) and adds whole neighbouring
 sentences, after then before, within `excerpt_chars` and at most four sentences; a longer best sentence is cut there.
 `packet-v9` stays for replays.
@@ -605,10 +606,12 @@ found by a word route whose vector similarity is at or above `vector_min_sim` is
 found, as a vector-only hit always was (a word hit below the bar, or without a vector, from the whole message), and a
 why or contents question (`facts.WHY`, `packet.CONTENTS`) grows its excerpt by whole sentences to 320 characters with no
 sentence cap; other questions keep `packet-v10`'s four. The tie-break anchor between sentences holding the same keywords
-is the recorded recall option `excerpt_anchor` ("focus": the question and the previous reply, today's and the default;
-"keywords": the prototype's, `packet-v11` only), measured in Phase 27 step 2 (`tools/eval_rp.py --anchor`). The policy
-is available as `NMOS_PACKET_POLICY=packet-v11`; the default stays `packet-v10` until Phase 27's evaluation passes (step
-3), since every `main` merge publishes `:edge`. Recorded requests replay as they were.
+is the recorded recall option `excerpt_anchor`: `packet-v11` reads "keywords" (the question's keywords, or the question
+itself when it has none; the default, decided by measurement in Phase 27 step 2 — with "focus" the forbidden total rose
+93 → 96, with "keywords" it fell to 87), `packet-v10` always anchors on "focus" (the question and the previous reply);
+`tools/eval_rp.py --anchor` replays either. **`packet-v11` is the default since Phase 27 step 3** (the M0 main cases
+that need memory 16 → 19 of 23, `docs/perf/answer-span.md`; the owner allowed the smaller packets it makes, Q5);
+`packet-v10` stays available as `NMOS_PACKET_POLICY=packet-v10`. Recorded requests replay as they were.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
