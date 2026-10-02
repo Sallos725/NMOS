@@ -4,7 +4,16 @@
 `fa86d955a85947670e33d9ca8ce7e89608e42e37` (merged as `69704fe`).
 **Neither anchor meets the current acceptance criteria.** The main chat gains the required memory answers,
 but `focus` increases the forbidden-phrase total and both anchors miss the packet-size bound.
-Phase 27 remains incomplete; `packet-v10` remains the default. No product code or acceptance criterion changes.
+At the time of this measurement Phase 27 was incomplete and `packet-v10` the default; this report changed no product
+code or acceptance criterion.
+
+**Decision (the owner, 2026-10-02, after this measurement; Phase 27 step 3):** the tie-break anchor is the question's
+keywords (today's anchor met the stop condition on forbidden phrases, 93 → 96; the keywords anchor passed every stop
+condition at 87 with the largest gain); Q5's size bound is one-sided — the median packet size per set must not grow by
+more than 5 %, and smaller is allowed, since the two rules bound excerpts below `excerpt_chars` by construction and the
+case and forbidden criteria caught no loss on the set that shrank (+1 case, forbidden 2 → 0); `packet-v11` is the
+default (ADR 0063 amended, `docs/phases/PHASE-27.md` Q1b and Q5). The measurement below is as recorded before that
+decision.
 
 ## Setup and limits
 

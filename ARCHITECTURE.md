@@ -605,10 +605,12 @@ found by a word route whose vector similarity is at or above `vector_min_sim` is
 found, as a vector-only hit always was (a word hit below the bar, or without a vector, from the whole message), and a
 why or contents question (`facts.WHY`, `packet.CONTENTS`) grows its excerpt by whole sentences to 320 characters with no
 sentence cap; other questions keep `packet-v10`'s four. The tie-break anchor between sentences holding the same keywords
-is the recorded recall option `excerpt_anchor` ("focus": the question and the previous reply, today's and the default;
-"keywords": the prototype's, `packet-v11` only), measured in Phase 27 step 2 (`tools/eval_rp.py --anchor`). The policy
-is available as `NMOS_PACKET_POLICY=packet-v11`; the default stays `packet-v10` until Phase 27's evaluation passes (step
-3), since every `main` merge publishes `:edge`. Recorded requests replay as they were.
+is the recorded recall option `excerpt_anchor`: `packet-v11` reads "keywords" (the question's keywords, or the question
+itself when it has none; the default, decided by measurement in Phase 27 step 2 — with "focus" the forbidden total rose
+93 → 96, with "keywords" it fell to 87), `packet-v10` always anchors on "focus" (the question and the previous reply);
+`tools/eval_rp.py --anchor` replays either. **`packet-v11` is the default since Phase 27 step 3** (the M0 main cases
+that need memory 16 → 19 of 23, `docs/perf/answer-span.md`; the owner allowed the smaller packets it makes, Q5);
+`packet-v10` stays available as `NMOS_PACKET_POLICY=packet-v10`. Recorded requests replay as they were.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

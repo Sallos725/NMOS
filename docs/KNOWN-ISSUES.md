@@ -378,7 +378,11 @@ amount of money, an earlier name for someone, a promise before it changed. On a 
 often, `packet-v10` placed such replaced values 17 times over four cuts against `packet-v9`'s 12 (with vectors; none a
 secret), and growing to the whole length 29 (`docs/perf/lexical-recall.md`, Step 4). Facts and `<Cast>` still say
 the current value, and each excerpt carries its turn. Accepted with the four-sentence cap (owner, 2026-09-30).
-*Workaround:* `NMOS_PACKET_POLICY=packet-v9` keeps two-sentence excerpts.
+*On `main` (`packet-v11`, Phase 27, ADR 0063):* a why or contents question grows its excerpt by whole sentences to 320
+characters with no sentence cap, so such an excerpt can carry more replaced values than four sentences would; other
+questions keep the cap. Measured over twelve sets (`docs/perf/answer-span.md`): forbidden phrases 93 → 87 and no set
+worse by more than one case, so the cap's lifting cost nothing measurable there; the risk stays listed.
+*Workaround:* `NMOS_PACKET_POLICY=packet-v9` keeps two-sentence excerpts; `packet-v10` the four-sentence cap.
 
 **K40 — A short keyword is not found where a particle is attached to it.** The keyword route (ADR 0052) matches a
 keyword at trigram word similarity 0.8. Korean attaches particles to the word, and a keyword of two syllables scores
