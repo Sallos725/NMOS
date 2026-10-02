@@ -48,10 +48,7 @@
           "memory_passed": 0,
           "forbidden": 0,
           "mean_chars": 242,
-          "max_chars": 242,
-          "missed": [
-            "m28-blanc-job"
-          ]
+          "max_chars": 242
         },
         "baseline": {
           "n": 1,
@@ -60,10 +57,7 @@
           "memory_passed": 0,
           "forbidden": 0,
           "mean_chars": 242,
-          "max_chars": 242,
-          "missed": [
-            "m28-blanc-job"
-          ]
+          "max_chars": 242
         }
       },
       {
@@ -77,12 +71,7 @@
           "memory_passed": 8,
           "forbidden": 1,
           "mean_chars": 7145,
-          "max_chars": 7987,
-          "missed": [
-            "m28-yuuma-calls-radia",
-            "m28-blanc-called-before",
-            "m12-story-so-far"
-          ]
+          "max_chars": 7987
         },
         "baseline": {
           "n": 40,
@@ -91,16 +80,7 @@
           "memory_passed": 5,
           "forbidden": 2,
           "mean_chars": 6480,
-          "max_chars": 7341,
-          "missed": [
-            "m28-yuuma-calls-radia",
-            "m28-blanc-called-before",
-            "m28-yuuma-calls-blanc",
-            "m12-first-baking",
-            "m12-tin-box",
-            "m12-story-so-far",
-            "m12-blanc-lodger"
-          ]
+          "max_chars": 7341
         }
       },
       {
@@ -114,12 +94,7 @@
           "memory_passed": 8,
           "forbidden": 1,
           "mean_chars": 7227,
-          "max_chars": 7987,
-          "missed": [
-            "m28-yuuma-calls-radia",
-            "m28-blanc-called-before",
-            "m12-story-so-far"
-          ]
+          "max_chars": 7987
         },
         "baseline": {
           "n": 40,
@@ -128,16 +103,7 @@
           "memory_passed": 6,
           "forbidden": 3,
           "mean_chars": 6319,
-          "max_chars": 7082,
-          "missed": [
-            "m28-blanc-job",
-            "m28-yuuma-calls-radia",
-            "m28-blanc-called-before",
-            "m28-dinner-irrelevant",
-            "m28-yuuma-calls-blanc",
-            "m12-first-baking",
-            "m12-blanc-lodger"
-          ]
+          "max_chars": 7082
         }
       },
       {
@@ -151,10 +117,7 @@
           "memory_passed": 0,
           "forbidden": 0,
           "mean_chars": 242,
-          "max_chars": 242,
-          "missed": [
-            "m28-blanc-job"
-          ]
+          "max_chars": 242
         },
         "baseline": {
           "n": 1,
@@ -163,10 +126,7 @@
           "memory_passed": 0,
           "forbidden": 0,
           "mean_chars": 242,
-          "max_chars": 242,
-          "missed": [
-            "m28-blanc-job"
-          ]
+          "max_chars": 242
         }
       },
       {
@@ -180,11 +140,7 @@
           "memory_passed": 9,
           "forbidden": 1,
           "mean_chars": 6622,
-          "max_chars": 7687,
-          "missed": [
-            "m28-yuuma-calls-radia",
-            "m12-story-so-far"
-          ]
+          "max_chars": 7687
         },
         "baseline": {
           "n": 40,
@@ -193,16 +149,7 @@
           "memory_passed": 5,
           "forbidden": 2,
           "mean_chars": 6480,
-          "max_chars": 7341,
-          "missed": [
-            "m28-yuuma-calls-radia",
-            "m28-blanc-called-before",
-            "m28-yuuma-calls-blanc",
-            "m12-first-baking",
-            "m12-tin-box",
-            "m12-story-so-far",
-            "m12-blanc-lodger"
-          ]
+          "max_chars": 7341
         }
       },
       {
@@ -216,10 +163,7 @@
           "memory_passed": 10,
           "forbidden": 1,
           "mean_chars": 7071,
-          "max_chars": 7762,
-          "missed": [
-            "m28-yuuma-calls-radia"
-          ]
+          "max_chars": 7762
         },
         "baseline": {
           "n": 40,
@@ -228,16 +172,7 @@
           "memory_passed": 6,
           "forbidden": 3,
           "mean_chars": 6319,
-          "max_chars": 7082,
-          "missed": [
-            "m28-blanc-job",
-            "m28-yuuma-calls-radia",
-            "m28-blanc-called-before",
-            "m28-dinner-irrelevant",
-            "m28-yuuma-calls-blanc",
-            "m12-first-baking",
-            "m12-blanc-lodger"
-          ]
+          "max_chars": 7082
         }
       },
       {
@@ -251,10 +186,7 @@
           "memory_passed": 0,
           "forbidden": 0,
           "mean_chars": 242,
-          "max_chars": 242,
-          "missed": [
-            "m28-blanc-job"
-          ]
+          "max_chars": 242
         },
         "baseline": {
           "n": 1,
@@ -263,10 +195,7 @@
           "memory_passed": 0,
           "forbidden": 0,
           "mean_chars": 242,
-          "max_chars": 242,
-          "missed": [
-            "m28-blanc-job"
-          ]
+          "max_chars": 242
         }
       },
       {
@@ -280,12 +209,7 @@
           "memory_passed": 8,
           "forbidden": 1,
           "mean_chars": 6604,
-          "max_chars": 7717,
-          "missed": [
-            "m28-yuuma-calls-radia",
-            "m28-blanc-called-before",
-            "m12-story-so-far"
-          ]
+          "max_chars": 7717
         },
         "baseline": {
           "n": 40,
@@ -294,16 +218,7 @@
           "memory_passed": 5,
           "forbidden": 2,
           "mean_chars": 6480,
-          "max_chars": 7341,
-          "missed": [
-            "m28-yuuma-calls-radia",
-            "m28-blanc-called-before",
-            "m28-yuuma-calls-blanc",
-            "m12-first-baking",
-            "m12-tin-box",
-            "m12-story-so-far",
-            "m12-blanc-lodger"
-          ]
+          "max_chars": 7341
         }
       },
       {
@@ -317,12 +232,7 @@
           "memory_passed": 8,
           "forbidden": 1,
           "mean_chars": 6694,
-          "max_chars": 7717,
-          "missed": [
-            "m28-yuuma-calls-radia",
-            "m28-blanc-called-before",
-            "m12-story-so-far"
-          ]
+          "max_chars": 7717
         },
         "baseline": {
           "n": 40,
@@ -331,16 +241,7 @@
           "memory_passed": 6,
           "forbidden": 3,
           "mean_chars": 6319,
-          "max_chars": 7082,
-          "missed": [
-            "m28-blanc-job",
-            "m28-yuuma-calls-radia",
-            "m28-blanc-called-before",
-            "m28-dinner-irrelevant",
-            "m28-yuuma-calls-blanc",
-            "m12-first-baking",
-            "m12-blanc-lodger"
-          ]
+          "max_chars": 7082
         }
       },
       {
@@ -354,8 +255,7 @@
           "memory_passed": 0,
           "forbidden": 0,
           "mean_chars": 242,
-          "max_chars": 242,
-          "missed": []
+          "max_chars": 242
         },
         "baseline": {
           "n": 1,
@@ -364,8 +264,7 @@
           "memory_passed": 0,
           "forbidden": 0,
           "mean_chars": 242,
-          "max_chars": 242,
-          "missed": []
+          "max_chars": 242
         }
       },
       {
@@ -379,8 +278,7 @@
           "memory_passed": 0,
           "forbidden": 0,
           "mean_chars": 2098,
-          "max_chars": 2292,
-          "missed": []
+          "max_chars": 2292
         },
         "baseline": {
           "n": 15,
@@ -389,8 +287,7 @@
           "memory_passed": 0,
           "forbidden": 0,
           "mean_chars": 1824,
-          "max_chars": 1824,
-          "missed": []
+          "max_chars": 1824
         }
       },
       {
@@ -404,8 +301,7 @@
           "memory_passed": 0,
           "forbidden": 0,
           "mean_chars": 2095,
-          "max_chars": 2289,
-          "missed": []
+          "max_chars": 2289
         },
         "baseline": {
           "n": 15,
@@ -414,8 +310,7 @@
           "memory_passed": 0,
           "forbidden": 0,
           "mean_chars": 1481,
-          "max_chars": 1481,
-          "missed": []
+          "max_chars": 1481
         }
       },
       {
@@ -783,6 +678,7 @@
     "in_story_order": true,
     "missing_or_duplicate": 0
   },
+  "missed_lists": "synthetic scenarios only (S1-S4b case labels); the owner's chats' case names (S0main, S0s2) stay outside the repository (PHASE-11 Q1, docs/perf/m0-baseline.md); their counts are n - passed",
   "limitations": [
     "Packet and chat-window evidence, not generated-answer accuracy.",
     "Historical baseline is not a controlled single-change comparison.",

@@ -51,6 +51,8 @@ without a PocketRisu change.
 | K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | measured; a lower threshold found less, 0.8 kept (2026-09-30) |
 | K41 | Re-extracted with `extract-v14`, `deepseek-v4.1-flash` passed fewer M0 cases | Memory | measured, accepted (Phase 19, owner 2026-09-30) |
 | K42 | A standing fact's earlier versions are printed under the current version's knowledge marks | Memory | resolved on `main` (ADR 0038 amendment 1, 2026-10-01): a version kept from someone only under the same marks |
+| K43 | A role between two people stays current after the story ends it, when the ending is recorded under another predicate or in other words | Memory | recorded, not scheduled (`docs/perf/age24-live-2026-10-02.md`; the two failure modes in `docs/proposals/AGE24-LIVE-REGRESSIONS.md`) |
+| K44 | A fact ranked out of its slots is not shown even when the message that states it is retrieved, and the excerpt can skip its sentence | Recall | recorded, not scheduled (`docs/perf/age24-live-2026-10-02.md`; candidates in `docs/proposals/AGE24-LIVE-REGRESSIONS.md`) |
 
 ## Performance
 
@@ -147,7 +149,13 @@ names a wrong automatic alias joined (entity page → "Split names joined by mis
 join, split and undo is previewed first, and an undo can re-extract the turns extracted while the join held. *What remains:* NMOS finds
 neither case by itself; each chat's "Needs attention" lists ambiguous names and a split whose names another name still
 joins, and the owner fixes them in the panel. *Closed 2026-10-01 (owner decision):* the panel is the fix; NMOS
-finding these by itself is not planned.
+finding these by itself is not planned. *Measured 2026-10-02 (the owner's live bench, `docs/perf/age24-live-2026-10-02.md`):*
+in two synthetic scenarios a character's full name and given name were two entities with separate histories — an edited
+birthday stored under the full name did not answer a given-name question, and an old form of address stayed current under
+the full name after the given-name entity's form of address had changed — and a read-only join preview (Phase 20's what-if) recovered the
+birthday and ended the old address, leaving an old guest role and an employment pair current (K43). Whether the source
+states both spellings and the pipeline lost it is the first question of `docs/proposals/AGE24-LIVE-REGRESSIONS.md`; the
+panel remains the fix.
 
 **K9 — Destroyed or used-up items keep their last holder.** A new holder ends the previous one (ADR
 0011), and since 0.1.0-beta.12 so does a statement that the holder no longer has it ("lost", "dropped
@@ -260,6 +268,23 @@ the owner's M0 main chat has one (a feeling only one character knew, printed und
 *Resolved on `main`* (ADR 0038 amendment 1, 2026-10-01, the owner's request): history entries keep their marks, and a
 version kept from someone is printed only under the same marks; requests recorded before replay as they were.
 
+**K43 — A role between two people stays current after the story ends it, when the ending is recorded under another
+predicate or in other words.** Since `extract-v15` (Phase 25, ADR 0059) a role (`role_toward`: tenant of, employer of…) is
+its own standing fact, one version history per subject and object, and a negative assertion ends it only when it matches
+that key and, as for every single-valued predicate (ADR 0013 item 4), the normalized value. On the owner's live bench
+(2026-10-02, `docs/perf/age24-live-2026-10-02.md`, "Findings") two endings missed: a guest's leaving the room was extracted
+as a negative `located_in`, which cannot end the `role_toward` (one history entry, still current at the 240-turn checkpoint), and an employment's
+end was extracted as a negative `role_toward` whose description differs from the positive's (roughly "worked on the named
+vessel" against "works on the captain's ship"), so the value match fails and both lines are current. The packet then serves
+an obsolete role as a current fact — not the labeled history K39 describes, and not K24's by-design case (a feeling outliving
+a relationship change), though of the same shape. Dropping the value match for every negative could end the wrong role
+where two people hold several, so the proposal (`docs/proposals/AGE24-LIVE-REGRESSIONS.md`, "Roles") separates the two
+failure modes (no ending extracted; an ending in other words) and names bounded candidates, each needing a spec and an
+architecture decision; a prompt or registry change needs a new extractor generation and does not rewrite `extract-v15`'s
+rows. Recorded, not scheduled.
+*Workaround:* retract the obsolete role in the panel (a `fact_retract` repair, ADR 0044; it stays out whatever
+generation extracts it again); the Inspector shows both lines with their turns.
+
 ## Recall and gating
 
 **K26 — The token estimate over-counts Korean.** The packet budget is filled against a conservative
@@ -327,6 +352,9 @@ fact 2 of 3, as many as the full name. A given name no lorebook lists is still n
 *On `main` (Phase 24, ADR 0058):* the given name of a three-syllable name with a common family name is a mention of
 that character, unless another entity holds it, two characters would share it, or it is the persona's; and a Hangul
 word is a mention of a character the story names in Latin letters when it spells that name.
+*Measured 2026-10-02 (the live bench, `docs/perf/age24-live-2026-10-02.md`):* the variant does not apply where the given
+name is an entity's own name, which includes an entity a split (K8) created for the same character; the S4b and S2 cases
+failed so.
 
 **K32 — A third-person persona does not bring its own facts.** The persona's names never count as a mention
 (ADR 0023): a user who narrates by name writes that name in every message. Only a first-person question ("내 …",
@@ -382,6 +410,12 @@ the current value, and each excerpt carries its turn. Accepted with the four-sen
 characters with no sentence cap, so such an excerpt can carry more replaced values than four sentences would; other
 questions keep the cap. Measured over twelve sets (`docs/perf/answer-span.md`): forbidden phrases 93 → 87 and no set
 worse by more than one case, so the cap's lifting cost nothing measurable there; the risk stays listed.
+*Measured 2026-10-02 (the owner's live bench, `docs/perf/age24-live-2026-10-02.md`):* on the synthetic 240-turn chat,
+current-location and current-address questions took early excerpts with old residence and address terms while the current
+answer was also available (S1 final 6 forbidden matches against the historical lane's 2, S2 full history 5 against 2);
+those packets are 12–14 % larger than that lane's (ADR 0061's vectors arrive in time now), and raw matches include labeled
+history and negation. Replays of those requests under `packet-v10`, the focus anchor and without vectors are the proposal's
+first measurement step (`docs/proposals/AGE24-LIVE-REGRESSIONS.md`).
 *Workaround:* `NMOS_PACKET_POLICY=packet-v9` keeps two-sentence excerpts; `packet-v10` the four-sentence cap.
 
 **K40 — A short keyword is not found where a particle is attached to it.** The keyword route (ADR 0052) matches a
@@ -396,6 +430,23 @@ of 0.8 differ (`docs/perf/lexical-recall.md`, "K40"). A
 main character's name matched almost every message once its particles counted, and was dropped as too broad; the
 rare words that answer questions stand alone often enough to be found at 0.8. The threshold stays 0.8.
 *Workaround:* none needed; vectors and the whole-message route still answer.
+
+**K44 — A fact ranked out of its slots is not shown, even when the message that states it is retrieved.** The packet
+takes the facts ranked highest for the message's names and words (`relevant_facts`): `facts_limit` (8) of them, grown by
+the budget's fill to 16 at 4,000 tokens and no further (`FILL_FACTS_MAX`, ADR 0049), and half as many claims. A fact
+ranked below that is left out whatever the question asks, and the excerpt of a retrieved message is chosen by the
+question's keywords (`packet-v11`, ADR 0063), not by the fact. On the owner's live bench (2026-10-02,
+`docs/perf/age24-live-2026-10-02.md`, "Findings") a book's title, extracted before the question, ranked 24th behind
+standing relationship facts (`role_toward`, Phase 25) while vector recall found its message and the chunk that holds the
+title; the keywords anchor took a neighbouring sentence with a character's name, and the title was left out (`memory_cut`
+0: not the budget). The same fixed candidates under `packet-v10`, and with name variants off, missed it too; the `focus`
+anchor was not tried. The S4b birthday fell out the same way (rank 11 of 8 claim slots) once a name split (K8) put it
+under another name. Recorded, not scheduled; the proposal (`docs/proposals/AGE24-LIVE-REGRESSIONS.md`, "Selection")
+names bounded candidates — less weight to a name-only sentence when the question has content words, an answer-bearing
+neighbouring sentence kept within the chunk, question-specific facts competing with standing relationships — each to be
+measured on held-out questions first.
+*Workaround:* ask with the fact's own words, which the keyword route and the anchor look for; `NMOS_FACTS_LIMIT` raises
+the base (8), which the fill doubles at 4,000 tokens.
 
 ## Data and lifecycle
 

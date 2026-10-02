@@ -3,7 +3,7 @@
   "s4b": [
     {
       "owner_link_assumed": false,
-      "query": "하람 생일이 언제라고 했지?",
+      "query": "the S4b given-name birthday question, unchanged (its text stays outside the repository)",
       "policy": "packet-v11",
       "name_variants": true,
       "exact_recorded_ledger": true,
@@ -14,7 +14,7 @@
     },
     {
       "owner_link_assumed": true,
-      "query": "하람 생일이 언제라고 했지?",
+      "query": "the S4b given-name birthday question, unchanged (its text stays outside the repository)",
       "policy": "packet-v11",
       "name_variants": true,
       "exact_recorded_ledger": false,
@@ -28,8 +28,8 @@
     {
       "assumed_character_links": [
         [
-          "도윤",
-          "서도윤"
+          "protagonist (given name)",
+          "protagonist (full name)"
         ]
       ],
       "preview_change_kinds": {
@@ -47,8 +47,8 @@
     {
       "assumed_character_links": [
         [
-          "이안",
-          "백이안"
+          "clerk (given name)",
+          "clerk (full name)"
         ]
       ],
       "preview_change_kinds": {
@@ -66,16 +66,16 @@
     {
       "assumed_character_links": [
         [
-          "도윤",
-          "서도윤"
+          "protagonist (given name)",
+          "protagonist (full name)"
         ],
         [
-          "이안",
-          "백이안"
+          "clerk (given name)",
+          "clerk (full name)"
         ],
         [
-          "하람",
-          "윤하람"
+          "friend (given name)",
+          "friend (full name)"
         ]
       ],
       "preview_change_kinds": {
@@ -99,6 +99,7 @@
   "limits": [
     "Identity joins are assumptions for diagnosis, not validated automatic joins.",
     "Persona and thread outcomes also change; these need review.",
-    "No full-scenario score or safety improvement is claimed."
+    "No full-scenario score or safety improvement is claimed.",
+    "Character names and question text stay outside the repository (PHASE-11 Q1); links are described by the character's role (protagonist, clerk, friend)."
   ]
 }
