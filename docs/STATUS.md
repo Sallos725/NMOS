@@ -2,6 +2,12 @@
 
 ## Current phase
 
+**AGE-24 combination review (2026-10-02), documentation only:** the interaction of PR #241's evaluation-only
+excerpt candidate and PR #242's query embedding/chunk changes is reviewed in
+[the combination review and staged application plan](audits/AGE24-PR241-242-COMBINATION-REVIEW.md).
+No combined implementation, new benchmark, production rollout, Phase 27 approval or AGE-24 completion is claimed.
+Phase 23 remains current.
+
 **Phase 22 — A re-extraction that keeps what it found: approved and complete 2026-10-01, not released.** Spec `docs/phases/PHASE-22.md`
 (AGE-25 under AGE-24, an urgent correction found by measurement): "Extract all history" asks a small reveal check
 instead of extracting again a turn extracted before an earlier turn's secret (K29), and a narrated fact a
