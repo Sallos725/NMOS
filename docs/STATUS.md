@@ -30,8 +30,9 @@ stay ended on the eve of the move 3/3; each ending now states `when` and only on
 closes the role. On `37af724` (9 calls): eve kept 3/3 and resignation ended 3/3, the move 0/3 (a quote joining a CONTEXT
 and a TARGET sentence with "..."); a joined quote now counts by its passage in the TARGET turn, at the same bar. On
 `2e4ccfd` (9 calls): move 3/3, resignation 3/3, eve kept 2/3 (once "now" on a sentence about the next day); a quote
-that places the change later (`LATER`) now closes nothing. Next: those turns again (keep 3/3, end 3/3, end 3/3), then
-the rest of Q5 (c).
+that places the change later (`LATER`) now closes nothing. On `162b515` (9 calls): eve 3/3, resignation 3/3, move 1/3
+(twice quoting the previous turn's room assignment); the rule now asks for the TARGET turn's own words for what happens
+there. Next: those turns again (keep 3/3, end 3/3, end 3/3), then the rest of Q5 (c).
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

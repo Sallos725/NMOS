@@ -205,9 +205,13 @@ ROLE_ENDINGS = """- If CURRENT ROLES are listed (R1, R2, …), report in `roles_
   `when`: "now" when it is over by the end of the TARGET turn (they have moved out, quit or been dismissed,
   the arrangement is called off); "planned" when the TARGET turn only plans, arranges, announces or prepares
   the ending (packing for tomorrow's move, notice that takes effect later), even when it is decided in this
-  turn: the role holds until a later turn ends it. A sentence about tomorrow or later is never "now". `evidence`: one passage of the TARGET turn, copied as it is; never CONTEXT, never two passages
-  joined with "...". Not when someone only goes out, travels or is away for a while. Do not write the ending as a `role_toward` yourself. A new role toward the same person replaces
-  the listed one by itself: give only the new `role_toward`. Most turns end none: then "roles_ended": [].
+  turn: the role holds until a later turn ends it. A sentence about tomorrow or later is never "now".
+  `evidence`: the TARGET turn's own words for what happens in it that ends the role (they carry their bags
+  out, hand back the key, say they quit), one passage copied as it is. A reason, an arrangement or a plan in
+  CONTEXT is not evidence, and never join two passages with "...". Not when someone only goes out, travels
+  or is away for a while. Do not write the ending as a `role_toward` yourself. A new role toward the same
+  person replaces the listed one by itself: give only the new `role_toward`. Most turns end none: then
+  "roles_ended": [].
 """
 _ANSWER_END = '''"secrets": [{{"secret": "S1", "found_out_by": ["..."], "evidence": "..."}}]}}'''
 ANSWER_ROLES = (_ANSWER_END[:-2]  # extract-v16's answer
@@ -668,7 +672,8 @@ def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
     if roles:
         lines += ["", f"Before answering, decide for each CURRENT ROLE (R1–R{len(roles)}) whether the TARGET turn ends"
                   " it, and whether it is over by the end of the TARGET turn (\"now\") or only planned or prepared"
-                  " (\"planned\"); list only those in `roles_ended`."]
+                  " (\"planned\"); list only those in `roles_ended`, each quoting the TARGET turn (the text after"
+                  f" \"TARGET turn {ctx['target']['turn']}:\"), not CONTEXT."]
     return "\n".join(lines)
 
 

@@ -86,11 +86,13 @@ def test_the_v16_prompt_names_a_listed_role_that_ends_right_after_the_role_rule(
                    '"planned" when the TARGET turn only plans, arranges, announces or prepares',
                    "even when it is decided in this\n  turn: the role holds until a later turn ends it",
                    'A sentence about tomorrow or later is never "now".',
-                   '`evidence`: one passage of the TARGET turn, copied as it is; never CONTEXT, never two passages\n  joined with "..."',
-                   "Not when someone only goes out, travels or is away for a while",
+                   "`evidence`: the TARGET turn's own words for what happens in it that ends the role",
+                   "A reason, an arrangement or a plan in\n  CONTEXT is not evidence",
+                   'never join two passages with "..."',
+                   "Not when someone only goes out, travels\n  or is away for a while",
                    "Do not write the ending as a `role_toward` yourself",
-                   "A new role toward the same person replaces\n  the listed one by itself",
-                   'Most turns end none: then "roles_ended": [].',
+                   "A new role toward the same\n  person replaces the listed one by itself",
+                   'Most turns end none: then\n  "roles_ended": [].',
                    '"roles_ended": [{"role": "R1", "when": "now|planned", "evidence": "..."}]}'):
         assert phrase in prompt, phrase
     # the rest of the prompt is extract-v15's, but for the alias rule (below)
@@ -160,7 +162,8 @@ def test_the_block_lists_each_role_with_its_turn_and_only_when_there_is_one():
     assert "CURRENT ROLES" in extraction.build_prompt(c, roles=roles)
     assert extraction.build_prompt(c, roles=roles).endswith(
         "Before answering, decide for each CURRENT ROLE (R1–R1) whether the TARGET turn ends it, and whether it is over by"
-        ' the end of the TARGET turn ("now") or only planned or prepared ("planned"); list only those in `roles_ended`.')
+        ' the end of the TARGET turn ("now") or only planned or prepared ("planned"); list only those in `roles_ended`,'
+        ' each quoting the TARGET turn (the text after "TARGET turn 20:"), not CONTEXT.')
     assert "CURRENT ROLES" not in extraction.build_prompt(c) and "CURRENT ROLES" not in extraction.build_prompt(c, roles=[])
 
 

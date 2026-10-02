@@ -56,6 +56,12 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    nothing whatever `when` says, and the rule says a sentence about tomorrow or later is never "now". This is a cue list
    in the K39 manner: it can miss an ending told with such a word (a stale role) and grows only by measurement; a
    premature ending (a wrong current state) is the worse error.
+   *And on `162b515`* (9 calls): `LATER` held the eve 3/3 (it blocked one "now"), the resignation ended 3/3, but the
+   move closed 1/3: twice the model named the stay "now" and quoted only the previous turn's room assignment (the
+   reason for the move, not the move). The rule now asks for the TARGET turn's own words for what happens there that
+   ends the role (they carry their bags out, hand back the key, say they quit), and says a reason, an arrangement or a
+   plan in CONTEXT is not evidence; the closing line asks to quote the text after "TARGET turn N:". The quote check is
+   unchanged.
 2. **A name and a part of it** (Q4). The `also_called` rule (`ALIAS_PARTS`, in place of `extract-v15`'s `V15_ALIAS`)
    also asks for an alias when the TARGET turn writes a character by a full name and, for the same character, by part
    of it: the given name alone, or in a story in English the first or the last name alone; subject the full name, value
