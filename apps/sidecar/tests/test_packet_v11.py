@@ -219,6 +219,14 @@ def test_packet_v11_anchors_on_the_questions_keywords_and_packet_v10_on_the_prev
             assert audit.replay(conn, trace["id"], opts)["text"] == text  # the recorded anchor replays as it was
             focused = audit.replay(conn, trace["id"], opts, excerpt_anchor="focus")  # as `eval_rp.py --anchor focus`
         assert "flew to the galley" in focused["text"] and "watched the gulls" not in focused["text"]  # the eleventh
+        # a trace from before the option existed records no anchor: it replays with "focus", the anchor every request
+        # had then (`audit.replay`), even under packet-v11
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            conn.execute("UPDATE retrieval_trace SET recall_options = recall_options - 'excerpt_anchor' WHERE id = %s",
+                         (trace["id"],))
+            legacy = audit.replay(conn, trace["id"], opts)
+        assert "flew to the galley" in legacy["text"] and "watched the gulls" not in legacy["text"]
+        assert c.get(f"/v1/trace/{trace['id']}").json()["recall_options"].get("excerpt_anchor") is None
         # a question without keywords ("비", one syllable, is none; it is the embedder's rain concept, which finds the
         # message by vectors alone): the keywords anchor is the question itself, never the previous reply
         text, cand, trace = packet_and_candidate(c, migrated, chat, "비?", previous_ai=BELL)
