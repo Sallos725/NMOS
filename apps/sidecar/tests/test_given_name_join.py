@@ -73,6 +73,11 @@ def test_two_values_of_one_single_valued_predicate_in_a_turn_say_they_are_two():
     assert same(resolve(CONV, alike, given_joins=True))  # the same place: nothing says two
     moved = BOTH + [c(3, "백이안", "located_in", "부엌", None), c(4, "이안", "located_in", "정원", None)]
     assert same(resolve(CONV, moved, given_joins=True))  # another turn: a move, not two people
+    # one value per object (a role, a feeling): two values toward the same person in a turn are two people
+    roles = BOTH + [c(3, "백이안", "role_toward", "카이토", "고용주"), c(3, "이안", "role_toward", "카이토", "동생")]
+    assert not same(resolve(CONV, roles, given_joins=True))
+    apart_roles = BOTH + [c(3, "백이안", "role_toward", "카이토", "고용주"), c(3, "이안", "role_toward", "유이", "동생")]
+    assert same(resolve(CONV, apart_roles, given_joins=True))  # toward two people: nothing says two
 
 
 def test_a_given_name_two_full_names_share_joins_neither():
@@ -228,6 +233,13 @@ def test_the_evaluation_replays_with_the_option_and_lists_every_join(migrated):
         sync(c, chat)
         drain(migrated, cafe)
         trace = recall(c, chat, QUESTION, budget=600)["trace_id"]
+        other = SimChat("no-join")
+        other.user("하나는 정원에 있다.")
+        other.reply("바람이 분다.")
+        filler(other, 1)
+        sync(c, other)
+        drain(migrated, cafe)
+        quiet = recall(c, other, "하나는 어디 있어?", budget=600)["trace_id"]
     cases = [{"name": "where", "category": "state", "trace": trace, "gold": ["located in 집"],
               "forbidden": ["located in 카페"]}]
     with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
@@ -236,3 +248,6 @@ def test_the_evaluation_replays_with_the_option_and_lists_every_join(migrated):
         joins = eval_rp.given_joins(conn, cases)
     assert off["summary"]["all"]["passed"] == 0 and on["summary"]["all"]["passed"] == 1
     assert joins == {trace: [["백이안", "이안"]]}
+    with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:  # a request read and nothing joined
+        assert eval_rp.given_joins(conn, cases + [{"name": "quiet", "trace": quiet}]) == {
+            trace: [["백이안", "이안"]], quiet: []}

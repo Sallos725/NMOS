@@ -297,7 +297,8 @@ def _given_joins(rows: list[dict[str, Any]], first: dict[Node, tuple[int, str]],
 
     - both are mentioned (subject, object or participant) in each of at least GIVEN_JOIN_TURNS turns;
     - no single assertion names both: one statement relating the two, or listing both, is about two people;
-    - no turn gives them different values of one single-valued predicate (two places, two conditions at once);
+    - no turn gives them different values of one single-valued predicate (two places, two conditions at once), toward
+      the same object when the predicate holds one value per object (two roles toward the same person);
     - no other character's full name has that given name (ADR 0058 item 3);
     - neither is the persona, and the given name is not the persona's;
     - neither name is ambiguous, and the owner has not split the two (ADR 0044).
@@ -325,7 +326,8 @@ def _given_joins(rows: list[dict[str, Any]], first: dict[Node, tuple[int, str]],
     wanted = {n for pair in pairs for n in pair}
     turns: dict[Any, set[Node]] = {}
     together: set[frozenset] = set()  # names one assertion names together (any two of them: two people)
-    held: dict[tuple, dict[Node, set[str]]] = {}  # (turn, predicate) → node → the values it holds in that turn
+    # (turn, predicate, the object when the predicate is per object) → node → the values it holds there in that turn
+    held: dict[tuple, dict[Node, set[str]]] = {}
     for row in rows:
         named = {node(row.get("subject_type"), row.get("subject"), persona)}
         if row.get("object"):
@@ -341,10 +343,14 @@ def _given_joins(rows: list[dict[str, Any]], first: dict[Node, tuple[int, str]],
         turns.setdefault(row["turn"], set()).update(named)
         pred = REGISTRY.get(row.get("predicate"))
         subject = node(row.get("subject_type"), row.get("subject"), persona)
-        if (pred is not None and pred.cardinality == "single" and not pred.per_object and subject in wanted
+        if (pred is not None and pred.cardinality == "single" and subject in wanted
                 and row.get("polarity", "positive") == "positive" and row.get("modality", "actual") == "actual"):
-            what = norm(row.get("object") or row.get("value"))
-            held.setdefault((row["turn"], row["predicate"]), {}).setdefault(subject, set()).add(what)
+            if pred.per_object:  # one value per object: two values toward the same one (a role, a feeling) are two
+                where = (row["turn"], row["predicate"], node(row.get("object_type"), row.get("object"), persona))
+                what = norm(row.get("value"))
+            else:
+                where, what = (row["turn"], row["predicate"]), norm(row.get("object") or row.get("value"))
+            held.setdefault(where, {}).setdefault(subject, set()).add(what)
     out = []
     for full, short in pairs:
         if frozenset((full, short)) in together:

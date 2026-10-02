@@ -37,7 +37,8 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    (`entities._given_joins`, after the story's aliases and the owner's links) joins a character written as a
    three-syllable Hangul name with a common family name (`variants.given`) to the character named by its given name
    alone when: both are mentioned in each of at least `GIVEN_JOIN_TURNS` (2) turns; no single assertion names both; no
-   turn gives them different values of one single-valued predicate; no other character's full name has that given name;
+   turn gives them different values of one single-valued predicate (toward the same object, for one that holds a value per
+   object: two roles toward one person); no other character's full name has that given name;
    neither is the persona and the given name is not the persona's; neither name is ambiguous; and the owner has not split
    them (ADR 0044). The join is listed among the entity's aliases (`given_name: true`). `NMOS_GIVEN_NAME_JOIN=1` turns it
    on for new requests; `tools/eval_rp.py --given-name-join [--show-joins]` replays recorded requests with it and lists

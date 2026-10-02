@@ -198,7 +198,8 @@ def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: Recall
 def given_joins(conn: psycopg.Connection, cases: list[dict[str, Any]], extractor: str | None = None
                 ) -> dict[str, list[list[str]]]:
     """Every join `given_name_join` makes as of each case's request (PHASE-28 Q4, Q5 (b)), per trace: [full name, given
-    name], normalized. Names of the owner's chats: printed to the terminal for the owner to check, never kept."""
+    name], normalized; every trace read is listed, an empty list when nothing was joined, so the count of requests
+    checked is the count read. Names of the owner's chats: printed to the terminal for the owner to check, never kept."""
     out: dict[str, list[list[str]]] = {}
     for trace in dict.fromkeys(case["trace"] for case in cases):
         t = audit._trace(conn, UUID(trace))
@@ -207,8 +208,7 @@ def given_joins(conn: psycopg.Connection, cases: list[dict[str, Any]], extractor
         view = memory_view(conn, t["head_commit_id"], extractor or t["extractor_key"], t["upto_position"],
                            None if extractor else t["created_at"], given_joins=True)
         r = view["resolution"]
-        if r is not None and r.given_joins:
-            out[trace] = [[full[1], short[1]] for full, short in r.given_joins]
+        out[trace] = [[full[1], short[1]] for full, short in r.given_joins] if r is not None else []
     return out
 
 
@@ -281,9 +281,11 @@ def main() -> None:
             print("Vectors off (--no-vectors): lexical recall only.\n")
         print(table(report))
     for trace, pairs in joins.items():
-        print(f"given-name joins as of {trace}: " + "; ".join(" = ".join(p) for p in pairs), file=sys.stderr)
+        if pairs:
+            print(f"given-name joins as of {trace}: " + "; ".join(" = ".join(p) for p in pairs), file=sys.stderr)
     if args.show_joins:
-        print(f"given-name joins: {sum(len(p) for p in joins.values())} over {len(joins)} request(s)", file=sys.stderr)
+        print(f"given-name joins: {sum(len(p) for p in joins.values())} in {sum(1 for p in joins.values() if p)} of"
+              f" {len(joins)} request(s) read", file=sys.stderr)
     lexical = [r["name"] for r in report["cases"] if r["status"] == "ok" and not r["vectors"]]
     if not args.no_vectors and lexical:
         print(f"vectors did not run for {len(lexical)} case(s): {', '.join(lexical)}", file=sys.stderr)
