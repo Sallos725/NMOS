@@ -215,6 +215,12 @@ def compiler_of(settings: Settings) -> str:
     return settings.extract_compiler or COMPILER_VERSION
 
 
+def prompt_of(compiler: str) -> str:
+    """A compiler's system prompt: the default compiler's is SYSTEM_PROMPT whatever it is called (a test names an
+    upgrade by renaming it); the settings only select a compiler of PROMPTS (`Settings.__post_init__`)."""
+    return PROMPTS.get(compiler, SYSTEM_PROMPT)
+
+
 # A job key names one unit of work (revision, window, generation). If that work was made obsolete
 # (generation switched away, provider disabled, head moved) and is wanted again, the row is revived.
 REQUEUE = """ON CONFLICT (dedupe_key) DO UPDATE SET status = 'queued', priority = EXCLUDED.priority, attempts = 0,
@@ -767,7 +773,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         secrets = secret_hints(ctx, earlier)
         threads = thread_hints(ctx, earlier)
         roles = role_hints(ctx, earlier) if compiler in ROLES else []
-        parsed, raw, usage = metered(complete, PROMPTS[compiler].format(registry=registry_prompt()),
+        parsed, raw, usage = metered(complete, prompt_of(compiler).format(registry=registry_prompt()),
                                      build_prompt(ctx, hints, promises, secrets, threads, roles))
     items = parsed.get("assertions")
     if not isinstance(items, list):  # not an empty answer: fail the job, so it is retried and then counted failed
@@ -830,7 +836,7 @@ def extractor(settings: Settings) -> Generation | None:
     compiler = compiler_of(settings)
     return generations.make(
         "extract", settings.llm_url, settings.llm_model,
-        compiler=compiler, prompt=generations.fingerprint(PROMPTS[compiler]),
+        compiler=compiler, prompt=generations.fingerprint(prompt_of(compiler)),
         predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.NORMALIZER_VERSION,
         json_mode=settings.llm_json_mode, temperature=0, unit="turn", context_turns=settings.extract_turns,
         target_chars=TARGET_CHARS, context_chars=CONTEXT_CHARS, hints=settings.extract_hints,
