@@ -22,6 +22,12 @@ job, workplace or rank change does not itself end the relationship between the l
 establish continuity, while an ending still needs the TARGET. The bounded correction check passed 12/12
 reconciliation checks over 27 calls. This does not complete Q5 (c); see `docs/perf/extract-v16-role-continuity.md`.
 
+Q4 measurement amendment (2026-10-03, `27c7658`): on all 27 S2 turns that write a known full name and its part
+apart, 3 runs each (81 calls), the model gave no `also_called`. `extract-v16` now lists those pairs (NAME PAIRS, N1, …:
+a full name in KNOWN ENTITIES whose part the turn writes on its own; not a namesake's part, a pair already one entity,
+or the persona's names) and the model confirms one by number in `same_names`; the worker writes the alias, which the
+turn check keeps (ADR 0064 item 2). A first introduction, whose full name is not yet known, stays with the free rule.
+
 ## Goal
 
 Two defects confirmed in the stored traces of the owner's live run on `e13dee7` (AGE-24), each a state error rather

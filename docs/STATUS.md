@@ -41,6 +41,11 @@ Evidence and limitations: `docs/perf/extract-v16-role-continuity.md`. The owner 
 `tools/eval_story_probe.py` prepares 14 authored space-station cases, 42 calls for three runs; dry-run and nine
 tool tests passed, with no model call on that new corpus. Next: the remaining Q5 (c) comparison, alias checks and
 first-connection/backfill measurements; no default switch or acceptance checkbox is implied by this correction.
+On `27c7658` the owner re-ran the core role checks (12/12 kept) and then every S2 turn that writes a known full name
+and its part apart (27 turns × 3, 81 calls): no `also_called` at all, so the run stopped at 111 of 1,440 calls. Those
+pairs are now listed to the model (NAME PAIRS, N1, …) and confirmed by number (`same_names`), the worker writing the
+alias (ADR 0064 item 2). `LATER`'s 내주/내달 now count only as nouns, not inside 내주다/내달리다. Next: the same 27 turns
+(and the 12 role checks) on the new head, then the rest of Q5 (c).
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

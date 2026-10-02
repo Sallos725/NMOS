@@ -14,7 +14,8 @@ then says how many of the stored run's checked quotes the chosen turns still con
 
 `--compiler` (PHASE-28 Q5 (c)) runs another of the checkout's compilers (`extraction.PROMPTS`), e.g. `extract-v16`,
 which also lists the roles in force (CURRENT ROLES, read from the `--hints` generation's earlier facts like every other
-list); each file records the compiler and the roles it listed.
+list) and the NAME PAIRS (a known full name and its part written apart in the turn); each file records the compiler,
+the roles and the pairs it listed.
 
 `score` compares labels: rows, the evidence check, input and output tokens, `addresses`, `relationship` and
 `role_toward` rows, the role endings (negative `role_toward`) apart: as listed (subject, object and value of a listed
@@ -139,10 +140,13 @@ def prompts(args: argparse.Namespace) -> list[dict[str, Any]]:
             hints = X.entity_hints(conn, ctx, args.hints, spec["spec"].get("hints", 0), earlier)
             secrets = X.secret_hints(ctx, earlier)
             roles = X.role_hints(ctx, earlier) if args.compiler in getattr(X, "ROLES", ()) else []
+            text = "\n".join(r["content"] for r in ctx["members"])
+            pairs = (X.name_pairs(hints, text, X.persona_of(ctx["target"].get("host_persona_name")))
+                     if args.compiler in getattr(X, "PARTS_APART", ()) else [])
             user = X.build_prompt(ctx, hints, X.promise_hints(ctx, earlier), secrets, X.thread_hints(ctx, earlier),
-                                  **({"roles": roles} if roles else {}))
+                                  **({"roles": roles} if roles else {}), **({"pairs": pairs} if pairs else {}))
             out.append({"turn": a["turn"], "user": user, "hints": hints, "secrets": secrets, "roles": roles,
-                        "text": "\n".join(r["content"] for r in ctx["members"]),
+                        "pairs": pairs, "text": text,
                         # what the model saw of the target turn (extract-v14's `shown_target`)
                         "shown": "\n".join(r["content"][:X.TARGET_CHARS] for r in ctx["members"])})
     return out
@@ -199,6 +203,8 @@ def run(args: argparse.Namespace) -> None:
                 items += X.revealed(parsed, p["secrets"], p["text"])
                 if p["roles"]:  # extract-v16: the listed endings, as the worker writes them
                     items = X.ended_roles(parsed, items, p["roles"], p["text"])
+                if p.get("pairs"):  # extract-v16: the confirmed name pairs, as the worker writes them
+                    items = X.same_names(parsed, items, p["pairs"], p["text"])
                 apart = {"apart": True} if args.compiler in getattr(X, "PARTS_APART", ()) else {}
                 rows = (X.normalize(items, p["text"], p["hints"], p["shown"], **apart) if checks
                         else X.normalize(items, p["text"], p["hints"]))
@@ -206,6 +212,7 @@ def run(args: argparse.Namespace) -> None:
                     r["quote_in_turn"] = in_turn(r.get("evidence"), p["shown"])
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps({"turn": p["turn"], "compiler": args.compiler, "roles": p["roles"],
+                                            "pairs": p.get("pairs") or [],
                                             "usage": usage,
                                             "secs": round(time.monotonic() - t0, 1), "assertions": rows,
                                             "reveals": len(parsed.get("secrets") or [])},

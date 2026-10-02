@@ -95,7 +95,7 @@ def test_the_v16_prompt_names_a_listed_role_that_ends_right_after_the_role_rule(
                    "Do not write the ending as a `role_toward` yourself",
                    "A new role toward the same\n  person replaces the listed one by itself",
                    'Most turns end none: then\n  "roles_ended": [].',
-                   '"roles_ended": [{"role": "R1", "when": "now|planned", "evidence": "..."}]}'):
+                   '"roles_ended": [{"role": "R1", "when": "now|planned", "evidence": "..."}],'):
         assert phrase in prompt, phrase
     # the rest of the prompt is extract-v15's, but for the alias rule (below)
     v16 = extraction.PROMPTS["extract-v16"].replace(extraction.ROLE_ENDINGS, "").replace(
@@ -129,6 +129,88 @@ def test_the_v16_prompt_links_a_full_name_and_a_part_of_it_with_its_limits():
     rows = extraction.normalize([{**both, "modality": "actual", "source": "narration"}], "윤하나가 문을 열었다.",
                                 apart=True)
     assert (rows[0]["status"], rows[0]["reason"]) == ("pending", "alias not stated in the turn")
+
+
+# --- NAME PAIRS (Q4, the owner's run of 27c7658) ----------------------------------------------------------------------
+
+def test_the_v16_prompt_asks_for_listed_name_pairs_by_number():
+    """The owner's run of 27c7658: the free alias rule gave no `also_called` on any of 27 turns that write a known full
+    name and its part apart, 3 runs each. Known full names whose part the turn writes are listed (N1, …) and the model
+    answers by number, as CURRENT ROLES are."""
+    v15, v16 = (extraction.PROMPTS[c].format(registry=registry_prompt()) for c in ("extract-v15", "extract-v16"))
+    for phrase in ("If NAME PAIRS are listed (N1, N2, …)", "Report in `same_names` each pair the TARGET turn uses for one"
+                   " character", "Do not also write that `also_called` yourself", '"same_names": []',
+                   '"same_names": [{"pair": "N1", "evidence": "..."}]'):
+        assert phrase not in v15 and phrase in v16.replace("\n  ", " "), phrase
+
+
+def test_name_parts_are_the_given_name_of_a_hangul_name_and_the_first_or_last_word_of_a_latin_one():
+    assert extraction.name_parts("윤하나") == ["하나"] and extraction.name_parts("남궁하나") == ["하나"]
+    assert extraction.name_parts("Hana Yoon") == ["Hana", "Yoon"]
+    assert extraction.name_parts("Mary Anne Smith") == ["Mary", "Smith"]
+    for name in ("하나", "윤하나나나나", "?검은 망토의 남자", "Hana", "윤 하나", "검은 고양이"):
+        assert extraction.name_parts(name) == [], name
+    assert extraction.name_parts("카이토") == ["이토"]  # a candidate only: the turn must write 이토 apart, and the model confirm
+
+
+def known(*names, also=None):
+    return [{"name": n, "type": CHAR, **({"also": also[n]} if also and n in also else {})} for n in names]
+
+
+TWO_WAYS = "윤하나는 의자에 앉았다. 하나는 차를 마셨다."
+
+
+def test_a_known_full_name_is_paired_with_its_part_only_when_the_turn_writes_the_part_apart():
+    assert extraction.name_pairs(known("윤하나", "하나"), TWO_WAYS) == [{"full": "윤하나", "part": "하나"}]
+    assert extraction.name_pairs(known("윤하나"), TWO_WAYS) == [{"full": "윤하나", "part": "하나"}]  # part not yet known
+    assert extraction.name_pairs(known("윤하나"), "윤하나는 의자에 앉았다.") == []  # only inside the full name
+    assert extraction.name_pairs(known("윤하나"), "하나는 차를 마셨다.") == []  # the full name is not in the turn
+    assert extraction.name_pairs(known("윤하나", also={"윤하나": ["하나"]}), TWO_WAYS) == []  # already one character
+    assert extraction.name_pairs(known("윤하나", "김하나"), TWO_WAYS) == []  # two known full names share the part
+    assert extraction.name_pairs(known("윤하나"), TWO_WAYS, persona=["윤하나"]) == []  # the persona (Q6)
+    assert extraction.name_pairs(known("윤하나"), TWO_WAYS, persona=["하나"]) == []
+    assert extraction.name_pairs([{"name": "윤하나", "type": "place"}], TWO_WAYS) == []
+    assert extraction.name_pairs(None, TWO_WAYS) == []
+    latin = "Hana Yoon opened the door. Hana smiled."
+    assert extraction.name_pairs(known("Hana Yoon"), latin) == [{"full": "Hana Yoon", "part": "Hana"}]
+    many = known(*(f"윤{g}람" for g in "가나다라마바사아자차"))
+    text = " ".join(f"윤{g}람이 왔다. {g}람은 웃었다." for g in "가나다라마바사아자차")
+    assert len(extraction.name_pairs(many, text)) == extraction.NAME_PAIRS
+
+
+def test_the_block_and_the_nudge_list_the_pairs_only_when_there_is_one():
+    pairs = [{"full": "윤하나", "part": "하나"}]
+    user = extraction.build_prompt(ctx(TWO_WAYS), known("윤하나"), pairs=pairs)
+    assert "NAME PAIRS (a known full name, and part of it written on its own in the TARGET turn):\nN1. 윤하나 / 하나" in user
+    assert "Before answering, decide for each NAME PAIR (N1–N1) whether the TARGET turn uses the two names for one" in user
+    assert "NAME PAIRS" not in extraction.build_prompt(ctx(TWO_WAYS), known("윤하나"))
+
+
+PAIRS = [{"full": "윤하나", "part": "하나"}, {"full": "Hana Yoon", "part": "Yoon"}]
+
+
+def test_a_confirmed_pair_is_written_as_the_alias_the_turn_check_keeps():
+    (row,) = extraction.same_names({"same_names": [{"pair": "N1", "evidence": TWO_WAYS}]}, [], PAIRS, TWO_WAYS)
+    assert (row["subject"], row["predicate"], row["value"], row["evidence"]) == ("윤하나", "also_called", "하나", TWO_WAYS)
+    (kept,) = extraction.normalize([row], TWO_WAYS, known("윤하나", "하나"), TWO_WAYS, apart=True)
+    assert (kept["status"], kept["modality"], kept["source"]) == ("valid", "actual", "narration")
+
+
+def test_an_unknown_number_a_quote_not_in_the_turn_and_a_repeat_give_nothing_more():
+    answer = {"same_names": [{"pair": "N3", "evidence": TWO_WAYS}, {"pair": "윤하나 / 하나", "evidence": TWO_WAYS},
+                             {"pair": "N1", "evidence": "카이토는 창밖을 내다보며 오래 생각에 잠겼다."},
+                             {"pair": "n1", "evidence": TWO_WAYS}, {"pair": "N1", "evidence": TWO_WAYS}, "N1"]}
+    assert [r["value"] for r in extraction.same_names(answer, [], PAIRS, TWO_WAYS)] == ["하나"]
+    assert extraction.same_names({"same_names": "N1"}, [], PAIRS, TWO_WAYS) == []
+    assert extraction.same_names({}, [], PAIRS, TWO_WAYS) == []
+
+
+def test_a_free_alias_between_a_listed_pair_is_dropped_and_others_are_kept():
+    free = {"subject": "하나", "subject_type": CHAR, "predicate": "also_called", "value": "윤하나"}
+    other = {"subject": "카이토", "subject_type": CHAR, "predicate": "also_called", "value": "Kaito"}
+    place = {"subject": "윤하나", "subject_type": CHAR, "predicate": "located_in", "object": "거실"}
+    assert extraction.same_names({"same_names": []}, [free, other, place], PAIRS, TWO_WAYS) == [other, place]
+    assert extraction.same_names({}, [free], [], TWO_WAYS) == [free]  # no pairs listed: the free rule, as before
 
 
 # --- which roles are listed (Q2) --------------------------------------------------------------------------------------
@@ -417,6 +499,42 @@ def two_ways_chat() -> SimChat:
     chat.reply("꽃이 피어 있었다.")
     filler(chat, 2, tag="b")
     return chat
+
+
+def pairs_named(system, user):
+    """The model as the prompt allows it: each turn's place; under extract-v16, a listed NAME PAIR confirmed by number,
+    and no free alias (the owner's run of 27c7658 saw none)."""
+    target = user.split("TARGET", 1)[1]
+    items = []
+    for name, place, where in (("윤하나", "현관", "문을 열었다"), ("하나", "정원", "정원으로"), ("윤하나", "거실", "의자에")):
+        if where in target:
+            items.append({"subject": name, "subject_type": CHAR, "predicate": "located_in", "object": place,
+                          "object_type": "place", "modality": "actual", "source": "narration", "knowledge": "public"})
+    if "N1. 윤하나 / 하나" in user:
+        return {"assertions": items, "same_names": [{"pair": "N1", "evidence": TWO_WAYS}]}, "{}"
+    return {"assertions": items}, "{}"
+
+
+@pytest.mark.parametrize("compiler, places", [
+    ("extract-v15", [("윤하나", "거실"), ("하나", "정원")]),  # two entities, each with a current place (the defect)
+    ("extract-v16", [("윤하나", "거실")]),  # one character, in its latest place
+])
+def test_a_known_full_name_and_its_part_written_apart_are_one_character_under_extract_v16(migrated, compiler, places):
+    chat = SimChat()
+    with make_client(migrated, llm_url="http://fake/v1", llm_model="fake", extract_compiler=compiler) as c:
+        for text in ("윤하나가 문을 열었다.", "하나는 정원으로 나갔다.", TWO_WAYS):  # in story order, as a live chat
+            chat.user(text)
+            chat.reply("바람이 불었다.")
+            filler(chat, 1, tag=str(len(chat.messages)))
+            sync(c, chat)
+            drain(migrated, pairs_named)
+        current = sorted((f["subject"], f["object"]) for f in facts(c, chat)
+                         if f["predicate"] == "located_in" and f.get("polarity") != "negative")
+    assert current == sorted(places)
+    with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+        rows = conn.execute("SELECT hints FROM extraction").fetchall()
+    listed = [r["hints"]["names"] for r in rows if r["hints"] and r["hints"].get("names")]
+    assert listed == ([[{"full": "윤하나", "part": "하나"}]] if compiler == "extract-v16" else [])
 
 
 @pytest.mark.parametrize("compiler, places", [

@@ -81,6 +81,20 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    (`alias_evidenced(..., apart=True)`, `PARTS_APART`): when one name is part of the other, the turn must write the
    full name, and the part on its own, not only inside the full name; a full name known only from earlier turns
    (KNOWN ENTITIES, ADR 0024) does not stand in, since a part alone may be someone else's name.
+   *Amended on the owner's run of `27c7658`:* on all 27 S2 turns that write a known full name and its part apart (two
+   pairs, 7 and 20 turns, 3 runs each, 81 calls) the model gave no `also_called` at all, in the raw answer; the hints
+   listed the full name and the part as two KNOWN ENTITIES. As with the roles, the choice is now made for the model to
+   answer by number: **NAME PAIRS** (`extraction.name_pairs`, `pairs_block`, at most `NAME_PAIRS`, 8) lists each full
+   name of a named character in KNOWN ENTITIES whose part (`name_parts`: the given name of a Hangul name of three or
+   four syllables; the first or the last word of a Latin name of two words or more) the TARGET turn writes apart as
+   `alias_evidenced(apart=True)` checks it, as N1, N2, …; not a pair the hints already show as one entity, a part two
+   known full names share (a namesake), or a name of the persona (PHASE-28 Q6). The rule and a closing line ask the
+   model to report in `same_names` each pair the turn uses for one character, with a quote of the TARGET turn;
+   `extraction.same_names` writes the `also_called` (subject the listed full name, value the part) when the quote is
+   in the turn (`quoted_in`), and drops a free `also_called` the model wrote between a listed pair's names. The pairs
+   are stored with the extraction's hints (`names`). Identity is still the model's judgment, now asked of it pair by
+   pair; ADR 0012's turn check, provenance and ambiguity rule are unchanged, and a name whose full name is not yet
+   known (a first introduction) is left to the free rule above. Not yet measured.
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before

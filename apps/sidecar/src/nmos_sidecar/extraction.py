@@ -65,6 +65,7 @@ OPEN_PROMISES = 8  # open promise threads shown to the model (PHASE-7 Q3)
 OPEN_SECRETS = 8  # open secrets shown to the model (PHASE-10)
 OPEN_THREADS = 8  # open goals, questions, threats and debts shown to the model (PHASE-11)
 OPEN_ROLES = 8  # current roles shown to the model (extract-v16, PHASE-28 Q2)
+NAME_PAIRS = 8  # known full names written with a part of them, shown to the model (extract-v16, PHASE-28 Q4)
 
 SYSTEM_PROMPT = """You extract durable story facts for the long-term memory of a role-play chat.
 You are given the recent CONTEXT turns and ONE TARGET turn: the user's message(s) and the reply to
@@ -219,7 +220,8 @@ ROLE_ENDINGS = """- If CURRENT ROLES are listed (R1, R2, …), report in `roles_
 """
 _ANSWER_END = '''"secrets": [{{"secret": "S1", "found_out_by": ["..."], "evidence": "..."}}]}}'''
 ANSWER_ROLES = (_ANSWER_END[:-2]  # extract-v16's answer
-                + ',\n"roles_ended": [{{"role": "R1", "when": "now|planned", "evidence": "..."}}]}}')
+                + ',\n"roles_ended": [{{"role": "R1", "when": "now|planned", "evidence": "..."}}],'
+                + '\n"same_names": [{{"pair": "N1", "evidence": "..."}}]}}')
 # extract-v16 (PHASE-28 Q4, decided on the measurement of #251): a name said two ways. extract-v15 links two names only
 # when the TARGET turn gives both "for the same entity" ("하나(Hana)"), so a story that writes a character in full and
 # calls them by part of the name keeps two entities (the read-side join found the pair in no assertion of the same
@@ -234,6 +236,12 @@ ALIAS_PARTS = """- `also_called` when the TARGET turn itself gives both names fo
   first or the last name alone), e.g. "윤하나가 문을 열었다. 하나는 웃었다.": subject the full name, value
   the part. Not when the two could be different people: they speak to or act on each other, they are
   named side by side as two, or the story has another character with that name.
+  If NAME PAIRS are listed (N1, N2, …), each is a known full name and part of it, both written in the
+  TARGET turn. Report in `same_names` each pair the TARGET turn uses for one character (one introduces
+  themselves in full and is then called by the given name; a name tag reads the full name and they are
+  addressed by the given name), with `evidence`: one passage of the TARGET turn copied as it is that
+  shows it. Not under the conditions above. Do not also write that `also_called` yourself. When none is
+  one character: "same_names": [].
 """
 _ROLE_EXAMPLE = '  `role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").\n'  # the role rule follows it
 PROMPTS = {"extract-v15": SYSTEM_PROMPT,
@@ -585,6 +593,42 @@ def role_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = OPE
             for f in named + persona][:limit]
 
 
+def name_parts(name: str) -> list[str]:
+    """The parts of a full name a story may call its bearer by (PHASE-28 Q4): the given name of a Hangul name of three
+    syllables (윤하나 → 하나) or four (남궁하나 → 하나); the first and the last word of a Latin name of two words or more."""
+    name = " ".join(name.split())
+    if re.fullmatch(r"[가-힣]{3,4}", name):
+        return [name[len(name) - 2:]]
+    words = name.split(" ")
+    if len(words) >= 2 and all(re.fullmatch(r"[A-Za-z][A-Za-z'’-]+", w) for w in words):
+        return list(dict.fromkeys([words[0], words[-1]]))
+    return []
+
+
+def name_pairs(hints: list[dict[str, Any]] | None, turn_text: str, persona: list[str] | None = None,
+               limit: int = NAME_PAIRS) -> list[dict[str, Any]]:
+    """NAME PAIRS (extract-v16, PHASE-28 Q4): each full name of a named character in KNOWN ENTITIES whose part
+    (`name_parts`) the target turn writes on its own beside it, as `alias_evidenced(apart=True)` checks it, so a pair
+    the model confirms is an alias the turn check keeps. The owner's run of 27c7658 found the free alias rule gave none
+    in 81 calls on 27 such turns, where the hints listed the full name and the part as two entities. Not a pair already
+    one entity (the hint lists both), a part shared by two known full names (a namesake), or the persona's names
+    (PHASE-28 Q6). In KNOWN ENTITIES order, at most `limit`."""
+    named = [h for h in hints or () if h.get("type") == "character" and not unnamed(h)]
+    off = {norm(n) for n in persona or ()} | {norm("{{user}}")}
+    owners: dict[str, set[str]] = {}
+    found = []
+    for h in named:
+        names = [n for n in [h["name"], *h.get("also", [])] if n]
+        for full in names:
+            for part in name_parts(full):
+                owners.setdefault(norm(part), set()).add(norm(h["name"]))
+                if (norm(part) not in {norm(n) for n in names} and not {norm(full), norm(part)} & off
+                        and alias_evidenced({"subject": full, "value": part}, turn_text, apart=True)):
+                    found.append({"full": full, "part": part})
+    pairs = [p for p in found if len(owners[norm(p["part"])]) == 1]
+    return list({(norm(p["full"]), norm(p["part"])): p for p in pairs}.values())[:limit]
+
+
 DESCRIBING = ("has_trait", "identity", "has_status")
 
 
@@ -638,6 +682,14 @@ def threads_block(threads: list[dict[str, Any]]) -> list[str]:
     return lines + [""]
 
 
+def pairs_block(pairs: list[dict[str, Any]]) -> list[str]:
+    if not pairs:
+        return []
+    lines = ["NAME PAIRS (a known full name, and part of it written on its own in the TARGET turn):"]
+    lines += [f"N{i}. {x['full']} / {x['part']}" for i, x in enumerate(pairs, 1)]
+    return lines + [""]
+
+
 def roles_block(roles: list[dict[str, Any]]) -> list[str]:
     if not roles:
         return []
@@ -657,9 +709,10 @@ def secrets_block(secrets: list[dict[str, Any]]) -> list[str]:
 
 def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
                  promises: list[dict[str, Any]] | None = None, secrets: list[dict[str, Any]] | None = None,
-                 threads: list[dict[str, Any]] | None = None, roles: list[dict[str, Any]] | None = None) -> str:
-    lines = (hints_block(hints or []) + promises_block(promises or []) + threads_block(threads or [])
-             + roles_block(roles or []) + secrets_block(secrets or []) + ["CONTEXT:"])
+                 threads: list[dict[str, Any]] | None = None, roles: list[dict[str, Any]] | None = None,
+                 pairs: list[dict[str, Any]] | None = None) -> str:
+    lines = (hints_block(hints or []) + pairs_block(pairs or []) + promises_block(promises or [])
+             + threads_block(threads or []) + roles_block(roles or []) + secrets_block(secrets or []) + ["CONTEXT:"])
     for row in ctx["context"]:
         lines.append(f"[turn {row['turn']}] {_speaker(row['metadata'])}: {row['content'][:CONTEXT_CHARS]}")
     if len(lines) == 1:
@@ -678,6 +731,9 @@ def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
                   " it, and whether it is over by the end of the TARGET turn (\"now\") or only planned or prepared"
                   " (\"planned\"); list only those in `roles_ended`, each quoting the TARGET turn (the text after"
                   f" \"TARGET turn {ctx['target']['turn']}:\"), not CONTEXT."]
+    if pairs:
+        lines += ["", f"Before answering, decide for each NAME PAIR (N1–N{len(pairs)}) whether the TARGET turn uses the"
+                  " two names for one character; list only those in `same_names`, each quoting the TARGET turn."]
     return "\n".join(lines)
 
 
@@ -793,6 +849,36 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
     return kept
 
 
+def same_names(answer: dict[str, Any], items: list[Any], pairs: list[dict[str, Any]], turn_text: str) -> list[Any]:
+    """extract-v16's confirmed NAME PAIRS (PHASE-28 Q4): the model's `same_names` (N<n>, with a quote of the TARGET
+    turn) → `also_called` with the listed full name as subject and the part as value, which `alias_evidenced` keeps by
+    construction. An unknown number, a repeat, or a quote not found in the target turn (`quoted_in`) gives nothing.
+    The model's own `also_called` between a listed pair's names is dropped: the listed answer is the one way to link
+    them, so a free alias the model was not sure enough to confirm does not link them anyway."""
+    listed = {frozenset((norm(p["full"]), norm(p["part"]))) for p in pairs}
+    kept = [a for a in items if not (isinstance(a, dict) and a.get("predicate") == "also_called"
+                                     and frozenset((norm(a.get("subject")), norm(a.get("value")))) in listed)]
+    entries = answer.get("same_names")
+    if not pairs or not isinstance(entries, list):
+        return kept
+    done: set[int] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        ref = str(entry.get("pair") or "").strip().upper().lstrip("N")
+        if not ref.isdigit() or not 1 <= int(ref) <= len(pairs) or int(ref) in done:
+            continue
+        evidence = quoted_in(str(entry.get("evidence") or "").strip()[:300], turn_text)
+        if evidence is None:
+            continue
+        done.add(int(ref))
+        pair = pairs[int(ref) - 1]
+        kept.append({"subject": pair["full"], "subject_type": "character", "predicate": "also_called",
+                     "value": pair["part"], "modality": "actual", "source": "narration", "evidence": evidence,
+                     "knowledge": "public", "epistemic": "stated"})
+    return kept
+
+
 ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic",
                      "confidence", "evidence", "status", "reason", "knowledge", "known_by", "hidden_from",
                      "polarity", "modality", "source", "asserted_by", "salience", "participants", "outcome", "because")
@@ -866,7 +952,9 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     secrets: list[dict[str, Any]] = []
     threads: list[dict[str, Any]] = []
     roles: list[dict[str, Any]] = []
+    pairs: list[dict[str, Any]] = []
     compiler = gen.spec.get("compiler", COMPILER_VERSION)
+    turn_text = "\n".join(r["content"] for r in ctx["members"])
     if sum(len(r["content"]) for r in ctx["members"]) < MIN_CONTENT_CHARS:
         parsed, raw, usage = {"assertions": []}, "", NO_CALL
     else:
@@ -877,16 +965,19 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         secrets = secret_hints(ctx, earlier)
         threads = thread_hints(ctx, earlier)
         roles = role_hints(ctx, earlier) if compiler in ROLES else []
+        if compiler in PARTS_APART:
+            pairs = name_pairs(hints, turn_text, persona_of(ctx["target"].get("host_persona_name")))
         parsed, raw, usage = metered(complete, prompt_of(compiler).format(registry=registry_prompt()),
-                                     build_prompt(ctx, hints, promises, secrets, threads, roles))
+                                     build_prompt(ctx, hints, promises, secrets, threads, roles, pairs))
     items = parsed.get("assertions")
     if not isinstance(items, list):  # not an empty answer: fail the job, so it is retried and then counted failed
         raise LLMError("model reply has no `assertions` list")
     items = [a for a in items if not (isinstance(a, dict) and a.get("predicate") in DERIVED)]
-    turn_text = "\n".join(r["content"] for r in ctx["members"])
     items += revealed(parsed, secrets, turn_text)
     if roles:
         items = ended_roles(parsed, items, roles, turn_text)
+    if pairs:
+        items = same_names(parsed, items, pairs, turn_text)
     with conn.transaction():
         # Still this worker's job? A rebuild or a re-extraction (PHASE-20 Q7) makes it obsolete, and a stale claim is
         # taken back after 10 minutes, while the model answers: a row built from the context loaded before must not
@@ -904,7 +995,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
              Jsonb({"reply": raw[:20000]}), Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]],
              None if hints is None and not promises and not secrets and not threads and not roles
              else Jsonb({"entities": hints or [], "promises": promises, "secrets": secrets, "threads": threads,
-                         **({"roles": roles} if roles else {})}),
+                         **({"roles": roles} if roles else {}), **({"names": pairs} if pairs else {})}),
              Jsonb(usage) if usage is not None else None),
         ).fetchone()
         if inserted is None:
