@@ -82,11 +82,14 @@ def test_the_v16_prompt_names_a_listed_role_that_ends_right_after_the_role_rule(
     prompt = extraction.PROMPTS["extract-v16"].format(registry=registry_prompt())
     rule = prompt.index("- If CURRENT ROLES are listed (R1, R2, …), report in `roles_ended` each one the TARGET")
     assert prompt.index('`role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").') < rule
-    for phrase in ("`evidence` quotes\n  the TARGET turn", "Not when someone only goes out, travels or is away for a while",
-                   "Do not write the ending\n  as a `role_toward` yourself",
-                   "A new role toward the same person replaces the listed one by itself",
+    for phrase in ('`when`: "now" when it is over by the end of the TARGET turn',
+                   '"planned" when the TARGET turn only plans, arranges, announces or prepares',
+                   "the role holds until a later turn\n  ends it", "`evidence` quotes the TARGET turn, never CONTEXT",
+                   "Not when someone only goes out, travels or is away\n  for a while",
+                   "Do not write the ending as a `role_toward` yourself",
+                   "A new role toward the same person replaces\n  the listed one by itself",
                    'Most turns end none: then "roles_ended": [].',
-                   '"roles_ended": [{"role": "R1", "evidence": "..."}]}'):
+                   '"roles_ended": [{"role": "R1", "when": "now|planned", "evidence": "..."}]}'):
         assert phrase in prompt, phrase
     # the rest of the prompt is extract-v15's, but for the alias rule (below)
     v16 = extraction.PROMPTS["extract-v16"].replace(extraction.ROLE_ENDINGS, "").replace(
@@ -154,8 +157,8 @@ def test_the_block_lists_each_role_with_its_turn_and_only_when_there_is_one():
     c = {**ctx("하나는 이사했다."), "context": []}
     assert "CURRENT ROLES" in extraction.build_prompt(c, roles=roles)
     assert extraction.build_prompt(c, roles=roles).endswith(
-        "Before answering, decide for each CURRENT ROLE (R1–R1) whether the TARGET turn ends it; list only those in"
-        " `roles_ended`.")
+        "Before answering, decide for each CURRENT ROLE (R1–R1) whether the TARGET turn ends it, and whether it is over by"
+        ' the end of the TARGET turn ("now") or only planned or prepared ("planned"); list only those in `roles_ended`.')
     assert "CURRENT ROLES" not in extraction.build_prompt(c) and "CURRENT ROLES" not in extraction.build_prompt(c, roles=[])
 
 
@@ -167,7 +170,7 @@ MOVED = "하나는 짐을 싸서 카이토의 집을 떠나 이사했다."
 
 
 def test_a_named_ending_is_written_with_the_listed_subject_object_and_value():
-    (row,) = extraction.ended_roles({"roles_ended": [{"role": "R1", "evidence": MOVED}]}, [], ROLES, MOVED)
+    (row,) = extraction.ended_roles({"roles_ended": [{"role": "R1", "when": "now", "evidence": MOVED}]}, [], ROLES, MOVED)
     assert (row["subject"], row["object"], row["value"], row["polarity"]) == (
         "하나", "카이토", "세입자: 카이토의 집에 세 들어 삶", "negative")
     assert (row["predicate"], row["modality"], row["source"]) == ("role_toward", "actual", "narration")
@@ -176,12 +179,26 @@ def test_a_named_ending_is_written_with_the_listed_subject_object_and_value():
 
 
 def test_an_unknown_number_a_quote_not_in_the_turn_and_a_repeat_give_nothing_more():
-    named = [{"role": "R9", "evidence": MOVED}, {"role": "R2", "evidence": "유이는 어젯밤 항구의 창고에서 지도를 찾았다."},
-             {"role": "r1", "evidence": MOVED}, {"role": "R1", "evidence": MOVED}, "R2", {"role": "R1"}]
+    named = [{"role": "R9", "when": "now", "evidence": MOVED},
+             {"role": "R2", "when": "now", "evidence": "유이는 어젯밤 항구의 창고에서 지도를 찾았다."},
+             {"role": "r1", "when": "NOW", "evidence": MOVED}, {"role": "R1", "when": "now", "evidence": MOVED}, "R2",
+             {"role": "R1", "when": "now"}]
     rows = extraction.ended_roles({"roles_ended": named}, [], ROLES, MOVED)
     assert [(r["subject"], r["value"]) for r in rows] == [("하나", "세입자: 카이토의 집에 세 들어 삶")]
     assert extraction.ended_roles({"roles_ended": "R1"}, [], ROLES, MOVED) == []
     assert extraction.ended_roles({}, [], [], MOVED) == []
+
+
+def test_an_ending_only_planned_or_without_its_time_closes_nothing_yet():
+    """The owner's run of 4a7c11c: on the eve of the move, packing, the model ended the stay three times out of three on a
+    sentence about tomorrow. Only an ending over in the target turn is written."""
+    eve = "하나는 내일 이사할 짐을 쌌다. 내일부터 겨울 내내 다른 집에서 지내기로 했다."
+    for when in ("planned", "", None, "later"):
+        entry = {"role": "R1", "evidence": eve, **({"when": when} if when is not None else {})}
+        assert extraction.ended_roles({"roles_ended": [entry]}, [], ROLES, eve) == []
+    (row,) = extraction.ended_roles({"roles_ended": [{"role": "R1", "when": "planned", "evidence": eve},
+                                                     {"role": "R1", "when": "now", "evidence": MOVED}]}, [], ROLES, MOVED)
+    assert row["value"] == "세입자: 카이토의 집에 세 들어 삶"  # a planned report does not use up the number
 
 
 def test_a_free_ending_between_a_listed_pair_is_dropped_and_others_are_kept():
@@ -238,8 +255,9 @@ def moving_out(system, user):
             items += [{"subject": m["by"], "subject_type": CHAR, "predicate": "role_toward", "object": m["to"],
                        "object_type": CHAR, "value": m["role"].split(":")[0], "polarity": "negative",
                        "modality": "actual", "source": "narration", "knowledge": "public"} for m in listed]
-            return {"assertions": items, "roles_ended": [{"role": m["ref"], "evidence": "하나는 짐을 싸서 카이토의 집을"
-                                                          " 떠나 이사했다."} for m in listed]}, "{}"
+            return {"assertions": items, "roles_ended": [{"role": m["ref"], "when": "now",
+                                                          "evidence": "하나는 짐을 싸서 카이토의 집을 떠나 이사했다."}
+                                                         for m in listed]}, "{}"
     return {"assertions": items}, "{}"
 
 

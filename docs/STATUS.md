@@ -25,7 +25,9 @@ join on any read, the S4b (2/3) and S2 (22/25) replays unchanged, since the spli
 and 20 turns but in no turn's assertions; withdrawn and removed before merge. The owner's `extract-v16` run on
 `a5c888a` (S2's role-ending turns first; stopped at 39 of 1,440 calls by the stop condition): 0 of 6 listed roles
 closed, the model giving the role's name without the listed description; the ending is now named by number (R1, …) and
-written by the worker. Next: a small re-run of those turns, then the rest of Q5 (c).
+written by the worker. Re-run on `4a7c11c` (22 calls): values exact, the employment ending 3/3 and the move 2/3, but the
+stay ended on the eve of the move 3/3; each ending now states `when` and only one over in the TARGET turn ("now")
+closes the role. Next: the eve, move and resignation turns again (keep 3/3, end 3/3, end 3/3), then the rest of Q5 (c).
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

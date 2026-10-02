@@ -38,6 +38,12 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    the endings it gave carried the role's name without the description the list showed, in the raw answer, so they
    matched nothing; the stay's ending was missed in 2 of 3 runs. Naming the listed role by number takes the copy away
    from the model.
+   *Amended again on the owner's run of `4a7c11c`* (the same turns, 22 calls before the stop condition): the numbered
+   endings carried the listed value, the employment ending closed 3 of 3 and the move 2 of 3 (the third quoted the
+   previous turn and was rightly dropped), but on the eve of the move, still packing, the model ended the stay 3 of 3
+   on a sentence about the next day. Each ending now states `when`: "now" when it is over by the end of the TARGET
+   turn, "planned" when the turn only plans, arranges, announces or prepares it; only "now" is written, and a missing
+   or other `when` closes nothing. The evidence must quote the TARGET turn, never CONTEXT.
 2. **A name and a part of it** (Q4). The `also_called` rule (`ALIAS_PARTS`, in place of `extract-v15`'s `V15_ALIAS`)
    also asks for an alias when the TARGET turn writes a character by a full name and, for the same character, by part
    of it: the given name alone, or in a story in English the first or the last name alone; subject the full name, value

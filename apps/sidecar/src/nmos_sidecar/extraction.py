@@ -200,14 +200,17 @@ Answer with JSON only: {{"assertions": [{{"subject": "...", "subject_type": "...
 # the one the TARGET turn ends; `ended_roles` writes the negative with the listed subject, object and value, so ADR 0013's
 # value match closes exactly that role. Asking the model to copy the value failed on the owner's run of #251: it gave the
 # role's name without its description, which matched nothing.
-ROLE_ENDINGS = """- If CURRENT ROLES are listed (R1, R2, …), report in `roles_ended` each one the TARGET turn ends: the stay
-  ends and they move out, someone quits or is dismissed, the arrangement is called off. `evidence` quotes
-  the TARGET turn. Not when someone only goes out, travels or is away for a while. Do not write the ending
-  as a `role_toward` yourself. A new role toward the same person replaces the listed one by itself: give
-  only the new `role_toward`. Most turns end none: then "roles_ended": [].
+ROLE_ENDINGS = """- If CURRENT ROLES are listed (R1, R2, …), report in `roles_ended` each one the TARGET turn ends, with
+  `when`: "now" when it is over by the end of the TARGET turn (they have moved out, quit or been dismissed,
+  the arrangement is called off); "planned" when the TARGET turn only plans, arranges, announces or prepares
+  the ending (packing for tomorrow's move, notice that takes effect later): the role holds until a later turn
+  ends it. `evidence` quotes the TARGET turn, never CONTEXT. Not when someone only goes out, travels or is away
+  for a while. Do not write the ending as a `role_toward` yourself. A new role toward the same person replaces
+  the listed one by itself: give only the new `role_toward`. Most turns end none: then "roles_ended": [].
 """
 _ANSWER_END = '''"secrets": [{{"secret": "S1", "found_out_by": ["..."], "evidence": "..."}}]}}'''
-ANSWER_ROLES = _ANSWER_END[:-2] + ',\n"roles_ended": [{{"role": "R1", "evidence": "..."}}]}}'  # extract-v16's answer
+ANSWER_ROLES = (_ANSWER_END[:-2]  # extract-v16's answer
+                + ',\n"roles_ended": [{{"role": "R1", "when": "now|planned", "evidence": "..."}}]}}')
 # extract-v16 (PHASE-28 Q4, decided on the measurement of #251): a name said two ways. extract-v15 links two names only
 # when the TARGET turn gives both "for the same entity" ("하나(Hana)"), so a story that writes a character in full and
 # calls them by part of the name keeps two entities (the read-side join found the pair in no assertion of the same
@@ -663,7 +666,8 @@ def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
                   " kept from finds it out in the TARGET turn; list only those in `secrets`."]
     if roles:
         lines += ["", f"Before answering, decide for each CURRENT ROLE (R1–R{len(roles)}) whether the TARGET turn ends"
-                  " it; list only those in `roles_ended`."]
+                  " it, and whether it is over by the end of the TARGET turn (\"now\") or only planned or prepared"
+                  " (\"planned\"); list only those in `roles_ended`."]
     return "\n".join(lines)
 
 
@@ -719,7 +723,10 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
                 turn_text: str) -> list[Any]:
     """extract-v16's role endings (PHASE-28 Q1): the model's `roles_ended` (R<n> of CURRENT ROLES, with a quote of the
     TARGET turn) → a negative `role_toward` with the listed subject, object and value, which ADR 0013's value match
-    closes exactly that role with. An unknown number, or evidence not found in the target turn, gives nothing. A negative
+    closes exactly that role with. Only an ending that is over in the target turn (`when` "now"): one only planned or
+    prepared there (packing for tomorrow's move) closes nothing yet; the owner's run of 4a7c11c saw a stay ended on the
+    eve of the move, three times out of three. An unknown number, or evidence not found in the target turn, gives
+    nothing. A negative
     `role_toward` the model wrote itself between the two parties of a listed role is dropped: the listed ending is the
     one way to close it, and a free one in other words would stand beside the role as a fact of its own."""
     pairs = {(norm(r["by"]), norm(r["to"])) for r in roles}
@@ -735,6 +742,8 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
             continue
         ref = str(entry.get("role") or "").strip().upper().lstrip("R")
         if not ref.isdigit() or not 1 <= int(ref) <= len(roles) or int(ref) in done:
+            continue
+        if str(entry.get("when") or "").strip().lower() != "now":
             continue
         evidence = str(entry.get("evidence") or "").strip()[:300]
         if not evidence or similarity(evidence, turn_text) < EVIDENCE_MIN:
