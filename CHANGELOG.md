@@ -20,6 +20,13 @@ later, is `docs/KNOWN-ISSUES.md`.
   A cold model (an unloaded Ollama) still gives no vectors to the request that wakes it. Measured:
   `docs/perf/query-embedding.md`.
 
+- **`packet-v11`, the excerpt that lands on the answer, behind `NMOS_PACKET_POLICY`** (Phase 27 step 2, ADR 0063,
+  D72; AGE-31). Under it a message found by your words *and* by meaning is excerpted from the part the meaning found,
+  instead of around the sentence with most of your words, and a why or contents question gets the whole of a
+  short-sentence explanation (up to 320 characters) instead of four sentences. **The default is unchanged**
+  (`packet-v10`) until Phase 27's evaluation passes on every set; set `NMOS_PACKET_POLICY=packet-v11` to try it.
+  Traces record a new recall option, `excerpt_anchor`, for that evaluation (`tools/eval_rp.py --anchor`).
+
 - **The chunk cap is a setting** (ADR 0062, D71; K13). Semantic recall embeds at most the first 5,600 normalized
   characters of a message (8 chunks of 700). The cap is now `NMOS_EMBED_MAX_CHUNKS` (default 8, as before: nothing is
   re-embedded on upgrade) and belongs to the projection: a changed cap is a new projection, under which every chat is

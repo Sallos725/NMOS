@@ -600,6 +600,16 @@ nothing. The search is unchanged: the best chunk per message, one candidate per 
 chat's evaluation copy (Codex, on #242): its messages normalize to at most 5,481 characters, within the default, and a
 cap of 24 compiles the same 40 packets — the first draft's claim that the cap cut the owner's replies in half was wrong.
 
+**D72 — The excerpt lands on the answer (`packet-v11`; ADR 0063; Phase 27, AGE-31).** Under `packet-v11` a message
+found by a word route whose vector similarity is at or above `vector_min_sim` is excerpted from the chunk the vector
+found, as a vector-only hit always was (a word hit below the bar, or without a vector, from the whole message), and a
+why or contents question (`facts.WHY`, `packet.CONTENTS`) grows its excerpt by whole sentences to 320 characters with no
+sentence cap; other questions keep `packet-v10`'s four. The tie-break anchor between sentences holding the same keywords
+is the recorded recall option `excerpt_anchor` ("focus": the question and the previous reply, today's and the default;
+"keywords": the prototype's, `packet-v11` only), measured in Phase 27 step 2 (`tools/eval_rp.py --anchor`). The policy
+is available as `NMOS_PACKET_POLICY=packet-v11`; the default stays `packet-v10` until Phase 27's evaluation passes (step
+3), since every `main` merge publishes `:edge`. Recorded requests replay as they were.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
