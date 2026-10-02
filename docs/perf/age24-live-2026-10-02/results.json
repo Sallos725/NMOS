@@ -1,0 +1,793 @@
+{
+  "schema": 1,
+  "commit": "e13dee732d0660a5347a9020bf3de12a5fdc71c9",
+  "model": "gemma4:31b-cloud",
+  "extractor": "extract-v15",
+  "packet_policy": "packet-v11",
+  "excerpt_anchor": "keywords",
+  "budget_tokens": 4000,
+  "embedding": {
+    "model": "qwen3-embedding:8b",
+    "timeout_ms": 1000,
+    "max_chunks": 8
+  },
+  "plugin_sha256": "0cfe0f68ce82b6ff26b269620f653d8e9db6ea5cb7e3d0ced8e96d8521917c82",
+  "host_image_id": "sha256:e3fc431541a918649e6a8b55274f0fe2c498310e176f8a7477fc0fcc19d69b88",
+  "calls": {
+    "logged": 1903,
+    "successful": 1902,
+    "input_tokens": 14767708,
+    "output_tokens": 1445225,
+    "initial_ceiling": 1890,
+    "owner_approved_final_ceiling": 2000
+  },
+  "summary": {
+    "completed_runs": 9,
+    "expected_runs": 9,
+    "EvidenceVerdict": "defect",
+    "scope": "parent target applied to each S0 full-history repetition; regression counts from original NMOS; raw phrase changes need review",
+    "failures": [
+      "S3-1/s3: fewer passed cases than original NMOS",
+      "S4b-1/s4b: fewer passed cases than original NMOS",
+      "S2-1/default: more raw forbidden-phrase matches; inspect them",
+      "S2-1/all: fewer passed cases than original NMOS",
+      "S2-1/all: more raw forbidden-phrase matches; inspect them",
+      "S1-1/c120: more raw forbidden-phrase matches; inspect them",
+      "S1-1/c240: fewer passed cases than original NMOS",
+      "S1-1/c240: more raw forbidden-phrase matches; inspect them"
+    ],
+    "sets": [
+      {
+        "scenario": "S0main",
+        "repeat": 1,
+        "set": "first",
+        "actual": {
+          "n": 1,
+          "passed": 0,
+          "memory_n": 1,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 242,
+          "max_chars": 242,
+          "missed": [
+            "m28-blanc-job"
+          ]
+        },
+        "baseline": {
+          "n": 1,
+          "passed": 0,
+          "memory_n": 1,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 242,
+          "max_chars": 242,
+          "missed": [
+            "m28-blanc-job"
+          ]
+        }
+      },
+      {
+        "scenario": "S0main",
+        "repeat": 1,
+        "set": "default",
+        "actual": {
+          "n": 40,
+          "passed": 37,
+          "memory_n": 10,
+          "memory_passed": 8,
+          "forbidden": 1,
+          "mean_chars": 7145,
+          "max_chars": 7987,
+          "missed": [
+            "m28-yuuma-calls-radia",
+            "m28-blanc-called-before",
+            "m12-story-so-far"
+          ]
+        },
+        "baseline": {
+          "n": 40,
+          "passed": 33,
+          "memory_n": 10,
+          "memory_passed": 5,
+          "forbidden": 2,
+          "mean_chars": 6480,
+          "max_chars": 7341,
+          "missed": [
+            "m28-yuuma-calls-radia",
+            "m28-blanc-called-before",
+            "m28-yuuma-calls-blanc",
+            "m12-first-baking",
+            "m12-tin-box",
+            "m12-story-so-far",
+            "m12-blanc-lodger"
+          ]
+        }
+      },
+      {
+        "scenario": "S0main",
+        "repeat": 1,
+        "set": "all",
+        "actual": {
+          "n": 40,
+          "passed": 37,
+          "memory_n": 10,
+          "memory_passed": 8,
+          "forbidden": 1,
+          "mean_chars": 7227,
+          "max_chars": 7987,
+          "missed": [
+            "m28-yuuma-calls-radia",
+            "m28-blanc-called-before",
+            "m12-story-so-far"
+          ]
+        },
+        "baseline": {
+          "n": 40,
+          "passed": 33,
+          "memory_n": 10,
+          "memory_passed": 6,
+          "forbidden": 3,
+          "mean_chars": 6319,
+          "max_chars": 7082,
+          "missed": [
+            "m28-blanc-job",
+            "m28-yuuma-calls-radia",
+            "m28-blanc-called-before",
+            "m28-dinner-irrelevant",
+            "m28-yuuma-calls-blanc",
+            "m12-first-baking",
+            "m12-blanc-lodger"
+          ]
+        }
+      },
+      {
+        "scenario": "S0main",
+        "repeat": 2,
+        "set": "first",
+        "actual": {
+          "n": 1,
+          "passed": 0,
+          "memory_n": 1,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 242,
+          "max_chars": 242,
+          "missed": [
+            "m28-blanc-job"
+          ]
+        },
+        "baseline": {
+          "n": 1,
+          "passed": 0,
+          "memory_n": 1,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 242,
+          "max_chars": 242,
+          "missed": [
+            "m28-blanc-job"
+          ]
+        }
+      },
+      {
+        "scenario": "S0main",
+        "repeat": 2,
+        "set": "default",
+        "actual": {
+          "n": 40,
+          "passed": 38,
+          "memory_n": 10,
+          "memory_passed": 9,
+          "forbidden": 1,
+          "mean_chars": 6622,
+          "max_chars": 7687,
+          "missed": [
+            "m28-yuuma-calls-radia",
+            "m12-story-so-far"
+          ]
+        },
+        "baseline": {
+          "n": 40,
+          "passed": 33,
+          "memory_n": 10,
+          "memory_passed": 5,
+          "forbidden": 2,
+          "mean_chars": 6480,
+          "max_chars": 7341,
+          "missed": [
+            "m28-yuuma-calls-radia",
+            "m28-blanc-called-before",
+            "m28-yuuma-calls-blanc",
+            "m12-first-baking",
+            "m12-tin-box",
+            "m12-story-so-far",
+            "m12-blanc-lodger"
+          ]
+        }
+      },
+      {
+        "scenario": "S0main",
+        "repeat": 2,
+        "set": "all",
+        "actual": {
+          "n": 40,
+          "passed": 39,
+          "memory_n": 10,
+          "memory_passed": 10,
+          "forbidden": 1,
+          "mean_chars": 7071,
+          "max_chars": 7762,
+          "missed": [
+            "m28-yuuma-calls-radia"
+          ]
+        },
+        "baseline": {
+          "n": 40,
+          "passed": 33,
+          "memory_n": 10,
+          "memory_passed": 6,
+          "forbidden": 3,
+          "mean_chars": 6319,
+          "max_chars": 7082,
+          "missed": [
+            "m28-blanc-job",
+            "m28-yuuma-calls-radia",
+            "m28-blanc-called-before",
+            "m28-dinner-irrelevant",
+            "m28-yuuma-calls-blanc",
+            "m12-first-baking",
+            "m12-blanc-lodger"
+          ]
+        }
+      },
+      {
+        "scenario": "S0main",
+        "repeat": 3,
+        "set": "first",
+        "actual": {
+          "n": 1,
+          "passed": 0,
+          "memory_n": 1,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 242,
+          "max_chars": 242,
+          "missed": [
+            "m28-blanc-job"
+          ]
+        },
+        "baseline": {
+          "n": 1,
+          "passed": 0,
+          "memory_n": 1,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 242,
+          "max_chars": 242,
+          "missed": [
+            "m28-blanc-job"
+          ]
+        }
+      },
+      {
+        "scenario": "S0main",
+        "repeat": 3,
+        "set": "default",
+        "actual": {
+          "n": 40,
+          "passed": 37,
+          "memory_n": 10,
+          "memory_passed": 8,
+          "forbidden": 1,
+          "mean_chars": 6604,
+          "max_chars": 7717,
+          "missed": [
+            "m28-yuuma-calls-radia",
+            "m28-blanc-called-before",
+            "m12-story-so-far"
+          ]
+        },
+        "baseline": {
+          "n": 40,
+          "passed": 33,
+          "memory_n": 10,
+          "memory_passed": 5,
+          "forbidden": 2,
+          "mean_chars": 6480,
+          "max_chars": 7341,
+          "missed": [
+            "m28-yuuma-calls-radia",
+            "m28-blanc-called-before",
+            "m28-yuuma-calls-blanc",
+            "m12-first-baking",
+            "m12-tin-box",
+            "m12-story-so-far",
+            "m12-blanc-lodger"
+          ]
+        }
+      },
+      {
+        "scenario": "S0main",
+        "repeat": 3,
+        "set": "all",
+        "actual": {
+          "n": 40,
+          "passed": 37,
+          "memory_n": 10,
+          "memory_passed": 8,
+          "forbidden": 1,
+          "mean_chars": 6694,
+          "max_chars": 7717,
+          "missed": [
+            "m28-yuuma-calls-radia",
+            "m28-blanc-called-before",
+            "m12-story-so-far"
+          ]
+        },
+        "baseline": {
+          "n": 40,
+          "passed": 33,
+          "memory_n": 10,
+          "memory_passed": 6,
+          "forbidden": 3,
+          "mean_chars": 6319,
+          "max_chars": 7082,
+          "missed": [
+            "m28-blanc-job",
+            "m28-yuuma-calls-radia",
+            "m28-blanc-called-before",
+            "m28-dinner-irrelevant",
+            "m28-yuuma-calls-blanc",
+            "m12-first-baking",
+            "m12-blanc-lodger"
+          ]
+        }
+      },
+      {
+        "scenario": "S0s2",
+        "repeat": 1,
+        "set": "first",
+        "actual": {
+          "n": 1,
+          "passed": 1,
+          "memory_n": 0,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 242,
+          "max_chars": 242,
+          "missed": []
+        },
+        "baseline": {
+          "n": 1,
+          "passed": 1,
+          "memory_n": 0,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 242,
+          "max_chars": 242,
+          "missed": []
+        }
+      },
+      {
+        "scenario": "S0s2",
+        "repeat": 1,
+        "set": "default",
+        "actual": {
+          "n": 15,
+          "passed": 15,
+          "memory_n": 0,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 2098,
+          "max_chars": 2292,
+          "missed": []
+        },
+        "baseline": {
+          "n": 15,
+          "passed": 15,
+          "memory_n": 0,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 1824,
+          "max_chars": 1824,
+          "missed": []
+        }
+      },
+      {
+        "scenario": "S0s2",
+        "repeat": 1,
+        "set": "all",
+        "actual": {
+          "n": 15,
+          "passed": 15,
+          "memory_n": 0,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 2095,
+          "max_chars": 2289,
+          "missed": []
+        },
+        "baseline": {
+          "n": 15,
+          "passed": 15,
+          "memory_n": 0,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 1481,
+          "max_chars": 1481,
+          "missed": []
+        }
+      },
+      {
+        "scenario": "S3",
+        "repeat": 1,
+        "set": "s3",
+        "actual": {
+          "n": 6,
+          "passed": 5,
+          "memory_n": 5,
+          "memory_passed": 4,
+          "forbidden": 0,
+          "mean_chars": 6462,
+          "max_chars": 6920,
+          "missed": [
+            "s3_r4_book"
+          ]
+        },
+        "baseline": {
+          "n": 6,
+          "passed": 6,
+          "memory_n": 5,
+          "memory_passed": 5,
+          "forbidden": 0,
+          "mean_chars": 5536,
+          "max_chars": 5850,
+          "missed": []
+        }
+      },
+      {
+        "scenario": "S3",
+        "repeat": 1,
+        "set": "s5-branch",
+        "actual": {
+          "n": 6,
+          "passed": 6,
+          "memory_n": 3,
+          "memory_passed": 3,
+          "forbidden": 0,
+          "mean_chars": 6065,
+          "max_chars": 6446,
+          "missed": []
+        },
+        "baseline": {
+          "n": 6,
+          "passed": 6,
+          "memory_n": 3,
+          "memory_passed": 3,
+          "forbidden": 0,
+          "mean_chars": 4680,
+          "max_chars": 5621,
+          "missed": []
+        }
+      },
+      {
+        "scenario": "S3",
+        "repeat": 1,
+        "set": "s5-newchat",
+        "actual": {
+          "n": 6,
+          "passed": 6,
+          "memory_n": 0,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 611,
+          "max_chars": 612,
+          "missed": []
+        },
+        "baseline": {
+          "n": 6,
+          "passed": 6,
+          "memory_n": 0,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 610,
+          "max_chars": 612,
+          "missed": []
+        }
+      },
+      {
+        "scenario": "S4",
+        "repeat": 1,
+        "set": "s4",
+        "actual": {
+          "n": 4,
+          "passed": 4,
+          "memory_n": 2,
+          "memory_passed": 2,
+          "forbidden": 0,
+          "mean_chars": 6241,
+          "max_chars": 6371,
+          "missed": []
+        },
+        "baseline": {
+          "n": 4,
+          "passed": 3,
+          "memory_n": 2,
+          "memory_passed": 1,
+          "forbidden": 0,
+          "mean_chars": 6373,
+          "max_chars": 6512,
+          "missed": [
+            "s4_del_pet"
+          ]
+        }
+      },
+      {
+        "scenario": "S4b",
+        "repeat": 1,
+        "set": "s4b",
+        "actual": {
+          "n": 3,
+          "passed": 2,
+          "memory_n": 3,
+          "memory_passed": 2,
+          "forbidden": 0,
+          "mean_chars": 5922,
+          "max_chars": 6499,
+          "missed": [
+            "s4b_edit_bday"
+          ]
+        },
+        "baseline": {
+          "n": 3,
+          "passed": 3,
+          "memory_n": 3,
+          "memory_passed": 3,
+          "forbidden": 0,
+          "mean_chars": 6637,
+          "max_chars": 7060,
+          "missed": []
+        }
+      },
+      {
+        "scenario": "S2",
+        "repeat": 1,
+        "set": "first",
+        "actual": {
+          "n": 1,
+          "passed": 1,
+          "memory_n": 0,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 0,
+          "max_chars": 0,
+          "missed": []
+        },
+        "baseline": {
+          "n": 1,
+          "passed": 1,
+          "memory_n": 0,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 0,
+          "max_chars": 0,
+          "missed": []
+        }
+      },
+      {
+        "scenario": "S2",
+        "repeat": 1,
+        "set": "default",
+        "actual": {
+          "n": 25,
+          "passed": 21,
+          "memory_n": 4,
+          "memory_passed": 3,
+          "forbidden": 3,
+          "mean_chars": 3688,
+          "max_chars": 4887,
+          "missed": [
+            "c240_03_location",
+            "c240_05_address",
+            "c240_19_past",
+            "c240_24_irrelevant"
+          ]
+        },
+        "baseline": {
+          "n": 25,
+          "passed": 21,
+          "memory_n": 4,
+          "memory_passed": 2,
+          "forbidden": 2,
+          "mean_chars": 3689,
+          "max_chars": 4265,
+          "missed": [
+            "c240_06_address",
+            "c240_19_past",
+            "c240_21_early",
+            "c240_24_irrelevant"
+          ]
+        }
+      },
+      {
+        "scenario": "S2",
+        "repeat": 1,
+        "set": "all",
+        "actual": {
+          "n": 25,
+          "passed": 20,
+          "memory_n": 4,
+          "memory_passed": 3,
+          "forbidden": 5,
+          "mean_chars": 7642,
+          "max_chars": 8084,
+          "missed": [
+            "c240_02_location",
+            "c240_05_address",
+            "c240_06_address",
+            "c240_19_past",
+            "c240_24_irrelevant"
+          ]
+        },
+        "baseline": {
+          "n": 25,
+          "passed": 22,
+          "memory_n": 4,
+          "memory_passed": 3,
+          "forbidden": 2,
+          "mean_chars": 6831,
+          "max_chars": 7372,
+          "missed": [
+            "c240_06_address",
+            "c240_19_past",
+            "c240_24_irrelevant"
+          ]
+        }
+      },
+      {
+        "scenario": "S1",
+        "repeat": 1,
+        "set": "c30",
+        "actual": {
+          "n": 25,
+          "passed": 25,
+          "memory_n": 0,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 1346,
+          "max_chars": 1493,
+          "missed": []
+        },
+        "baseline": {
+          "n": 25,
+          "passed": 25,
+          "memory_n": 0,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 1314,
+          "max_chars": 1442,
+          "missed": []
+        }
+      },
+      {
+        "scenario": "S1",
+        "repeat": 1,
+        "set": "c60",
+        "actual": {
+          "n": 25,
+          "passed": 25,
+          "memory_n": 0,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 1436,
+          "max_chars": 1738,
+          "missed": []
+        },
+        "baseline": {
+          "n": 25,
+          "passed": 25,
+          "memory_n": 0,
+          "memory_passed": 0,
+          "forbidden": 0,
+          "mean_chars": 1195,
+          "max_chars": 1253,
+          "missed": []
+        }
+      },
+      {
+        "scenario": "S1",
+        "repeat": 1,
+        "set": "c120",
+        "actual": {
+          "n": 25,
+          "passed": 23,
+          "memory_n": 3,
+          "memory_passed": 3,
+          "forbidden": 3,
+          "mean_chars": 3850,
+          "max_chars": 5839,
+          "missed": [
+            "c120_02_location",
+            "c120_07_address"
+          ]
+        },
+        "baseline": {
+          "n": 25,
+          "passed": 22,
+          "memory_n": 3,
+          "memory_passed": 1,
+          "forbidden": 2,
+          "mean_chars": 2272,
+          "max_chars": 4507,
+          "missed": [
+            "c120_02_location",
+            "c120_21_early",
+            "c120_22_early"
+          ]
+        }
+      },
+      {
+        "scenario": "S1",
+        "repeat": 1,
+        "set": "c240",
+        "actual": {
+          "n": 25,
+          "passed": 19,
+          "memory_n": 4,
+          "memory_passed": 3,
+          "forbidden": 6,
+          "mean_chars": 7162,
+          "max_chars": 7871,
+          "missed": [
+            "c240_02_location",
+            "c240_03_location",
+            "c240_05_address",
+            "c240_06_address",
+            "c240_19_past",
+            "c240_24_irrelevant"
+          ]
+        },
+        "baseline": {
+          "n": 25,
+          "passed": 21,
+          "memory_n": 4,
+          "memory_passed": 2,
+          "forbidden": 2,
+          "mean_chars": 6273,
+          "max_chars": 6930,
+          "missed": [
+            "c240_06_address",
+            "c240_19_past",
+            "c240_21_early",
+            "c240_24_irrelevant"
+          ]
+        }
+      }
+    ]
+  },
+  "source_result_sha256": {
+    "S0main-1": "42b0108cef66a3bb78e5335562ced889fda9dd57d31ceb814f6e374d0c3099d3",
+    "S0main-2": "c49cd54465aac6342878097647280dbe03a8ca03710e630790ac02f89aeca28c",
+    "S0main-3": "f583f1559536683c263400a54855186feef0de21e0bc6fd9115f0a1bafec6de9",
+    "S0s2-1": "404edf2cde24ca402ba3f9569914c80bae02b9a2abac781538c3fa21cec5be08",
+    "S1-1": "f86eea9c4ef718cfd43517676a98ff4f74bb973650f9570f2ae9cb152d5cf784",
+    "S2-1": "7c5aa9ee5f24f27b53dd96334f7354bc118bb6e81a42d8f23af45a9ea44ba0d4",
+    "S3-1": "a98ac7f8f2655bd058fcac87575b53fac0e8f0248579c02698f7a56387b7d974",
+    "S4-1": "4367ef2c18339dc9c90c77d4b1f4f5f0b7724f322e1d1fb4486d4a7061bf9b25",
+    "S4b-1": "2b0582e261ca59ab5bcbf0c82ba59c97691fc59e46cf9c1e0f75b2977043e9cc"
+  },
+  "s1_final_source_check": {
+    "turns": 240,
+    "expected_messages": 480,
+    "matches_exactly_once": 480,
+    "in_story_order": true,
+    "missing_or_duplicate": 0
+  },
+  "limitations": [
+    "Packet and chat-window evidence, not generated-answer accuracy.",
+    "Historical baseline is not a controlled single-change comparison.",
+    "Only S0main repeated three times; the other scenarios ran once.",
+    "Forbidden counts are raw pattern matches, not unique semantic violations.",
+    "Source conversations and captured requests remain private local evidence."
+  ]
+}

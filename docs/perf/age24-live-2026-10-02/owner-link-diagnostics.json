@@ -1,0 +1,104 @@
+{
+  "method": "Read-only owner-link what-if using existing Phase 20 memory_view. No DB mutation, model call or embedding call. S4b fixed selected candidates; unchanged query and baseline ledger reproduced. S2 memory-view diagnostics only, not packet replay or score.",
+  "s4b": [
+    {
+      "owner_link_assumed": false,
+      "query": "하람 생일이 언제라고 했지?",
+      "policy": "packet-v11",
+      "name_variants": true,
+      "exact_recorded_ledger": true,
+      "contains_gold": false,
+      "contains_forbidden": false,
+      "chars": 5275,
+      "tokens": 2576
+    },
+    {
+      "owner_link_assumed": true,
+      "query": "하람 생일이 언제라고 했지?",
+      "policy": "packet-v11",
+      "name_variants": true,
+      "exact_recorded_ledger": false,
+      "contains_gold": true,
+      "contains_forbidden": false,
+      "chars": 5808,
+      "tokens": 2810
+    }
+  ],
+  "s2": [
+    {
+      "assumed_character_links": [
+        [
+          "도윤",
+          "서도윤"
+        ]
+      ],
+      "preview_change_kinds": {
+        "persona": 1,
+        "fact_replaced": 10,
+        "thread_merged": 1
+      },
+      "old_polite_address_current_before": true,
+      "old_polite_address_current_after": true,
+      "later_familiar_address_current_after": true,
+      "old_guest_role_current_after": true,
+      "positive_employment_role_current_after": true,
+      "negative_employment_role_current_after": true
+    },
+    {
+      "assumed_character_links": [
+        [
+          "이안",
+          "백이안"
+        ]
+      ],
+      "preview_change_kinds": {
+        "fact_replaced": 4,
+        "thread_merged": 1,
+        "thread_status": 1
+      },
+      "old_polite_address_current_before": true,
+      "old_polite_address_current_after": false,
+      "later_familiar_address_current_after": true,
+      "old_guest_role_current_after": true,
+      "positive_employment_role_current_after": true,
+      "negative_employment_role_current_after": true
+    },
+    {
+      "assumed_character_links": [
+        [
+          "도윤",
+          "서도윤"
+        ],
+        [
+          "이안",
+          "백이안"
+        ],
+        [
+          "하람",
+          "윤하람"
+        ]
+      ],
+      "preview_change_kinds": {
+        "persona": 1,
+        "fact_replaced": 23,
+        "thread_merged": 3,
+        "thread_status": 1
+      },
+      "old_polite_address_current_before": true,
+      "old_polite_address_current_after": false,
+      "later_familiar_address_current_after": true,
+      "old_guest_role_current_after": true,
+      "positive_employment_role_current_after": true,
+      "negative_employment_role_current_after": true
+    }
+  ],
+  "script_sha256": {
+    "compare_owner_links.py": "6e2d81a69e2ade57379ca2f804ff28881d9eb6273985cfdee9a2e5ee9f54909e",
+    "compare_s4b_policy.py": "b3361534abc69b7926dcf159c7fba13c2790184b0dccea8cedcb7edf0f4170dd"
+  },
+  "limits": [
+    "Identity joins are assumptions for diagnosis, not validated automatic joins.",
+    "Persona and thread outcomes also change; these need review.",
+    "No full-scenario score or safety improvement is claimed."
+  ]
+}
