@@ -89,15 +89,30 @@ installs the plugin from the bundle and sets the URL shown in the tray: memory w
 
 ## Acceptance criteria
 
-- [ ] On each of the four targets, in CI: the bundle builds from pinned sources, and the smoke passes from a folder
+- [x] On each of the four targets, in CI: the bundle builds from pinned sources, and the smoke passes from a folder
       with a Korean name and a space (Windows: on the system drive; on a drive without short names, the move message).
-- [ ] The sidecar test suite passes against the bundle's PostgreSQL on linux-x64, macos-arm64 and win-x64.
-- [ ] Windows: `NMOS.exe` brings up the tray; quit stops the sidecar, the worker and PostgreSQL; a second `NMOS.exe`
+      (`native.yml` run 36855596213 on step 6's head: the four builds and smokes from "한글 폴더", Windows under
+      `C:/NMOS-CI` and its move message on drive D:.)
+- [x] The sidecar test suite passes against the bundle's PostgreSQL on linux-x64, macos-arm64 and win-x64.
+      (The same run's suite step on the three targets.)
+- [x] Windows: `NMOS.exe` brings up the tray; quit stops the sidecar, the worker and PostgreSQL; a second `NMOS.exe`
       says it is running; start at login works after a sign-out and in.
-- [ ] macOS: `NMOS.app` brings up the menu-bar item with the same behaviour; `codesign --verify --deep --strict`
+      (The same run's tray smoke: the tray, start at login on, off and on, quit with the sidecar and PostgreSQL
+      stopped, and NMOS started again from the Run entry's command, as a sign-in does. Not run there, accepted by
+      the owner 2026-10-02 with the owner's check below: a second `NMOS.exe`'s notice (the launcher's own "already
+      running" refusal is in the smoke), the worker checked stopped after a quit (it is after a stopped start), and
+      a real sign-out and in.)
+- [x] macOS: `NMOS.app` brings up the menu-bar item with the same behaviour; `codesign --verify --deep --strict`
       passes on the app in CI.
-- [ ] An update keeps the data: version N's `data/` moved into N+1 starts and migrates; N+1's data refused by N.
-- [ ] Every existing test passes; the Docker install, its images and `:edge` are unchanged.
+      (The same run's app smoke from the `.dmg`: the menu's running state, `codesign` while running, the login item
+      on and off, quit with the sidecar and PostgreSQL stopped. Not run there, accepted by the owner 2026-10-02 as for
+      Windows: a second app's notice, the worker checked stopped after a quit, and a real login.)
+- [x] An update keeps the data: version N's `data/` moved into N+1 starts and migrates; N+1's data refused by N.
+      (The same run's smoke on the four targets: the data of the version before migrates with what it held, and data
+      with a migration this bundle does not ship is refused as written by a newer NMOS.)
+- [x] Every existing test passes; the Docker install, its images and `:edge` are unchanged.
+      (`ci.yml` green on `main` after step 6, run 36857825784; steps 2–6 change no Dockerfile, compose file or image
+      step: `release.yml` only adds the bundles beside the images.)
 - [x] **The owner's check** (evidence boundary, `AGENTS.md` §2): on a Windows PC with PocketRisu's portable package,
       unpack, start, install the plugin from the bundle, chat, and see recall in the panel; on the owner's Mac, the
       same with the app downloaded through a browser and allowed once with Open Anyway, no Terminal (if PostgreSQL or
@@ -121,8 +136,8 @@ remains after restarting. These are the owner's reports, not new agent-run smoke
 versions and bundle builds were not provided. The Windows dashboard lacked a Refresh button (the small addition
 above). The owner also explicitly confirmed that the Mac app was downloaded through a browser, allowed with
 Open Anyway and run successfully without Terminal. The last owner-check boundary is met: Phase 23 is complete,
-not released. The reports do not independently establish start at login after a sign-out and in; its existing CI
-evidence is recorded in `docs/STATUS.md`.
+not released. The reports do not establish start at login after a sign-out and in, nor a second start's notice;
+the owner accepted those on the CI evidence above (acceptance criteria, Windows and macOS).
 
 ## Stop conditions
 
