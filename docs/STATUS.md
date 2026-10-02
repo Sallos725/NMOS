@@ -9,10 +9,13 @@ the answer and excerpts another part of it. Two rules, behind a new packet polic
 by vectors excerpts within its vector chunk, and a why or contents question grows its excerpt by characters (320)
 instead of four sentences. The prototype's one-case rules and passage embeddings stay out. Measured by the owner's
 replays on every set (Q6) and then the live bench harness; the prototype's own numbers (16 → 19 of 23 on the M0 main
-chat for these two rules) are development-set evidence only. The review of #242 measured the other suspected cause,
+chat) are development-set evidence for the two rules **with the prototype's keyword-only tie-break anchor**; the
+combination with today's anchor is unmeasured and step 2 measures both (Q1b). The review of #242 measured the other suspected cause,
 the embedding chunk cap: the M0 main packets are the same under a cap of 24, so the excerpt's span is the open lever.
-Step 1 (the spec) done. Step 2 (`packet-v11`, the deterministic cases, the ADR) next; it touches the excerpt loop of
-`retrieval.gather` that #242 also edits, so it is built on whichever lands first.
+Step 1 (the spec) done. Step 2 (`packet-v11` behind `NMOS_PACKET_POLICY` with the default unchanged, the deterministic
+cases, the ADR, Q1b measured) next; the default switches to `packet-v11` in step 3, after Q6's criteria pass on the
+implementation, because every `main` merge publishes `:edge`. Step 2 touches the excerpt loop of `retrieval.gather`
+that #242 also edits, so it is built on whichever lands first.
 
 **Phase 22 — A re-extraction that keeps what it found: approved and complete 2026-10-01, not released.** Spec `docs/phases/PHASE-22.md`
 (AGE-25 under AGE-24, an urgent correction found by measurement): "Extract all history" asks a small reveal check
