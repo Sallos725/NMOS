@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Phase 27 — The excerpt lands on the answer (`packet-v11`): approved 2026-10-02, step 2 next.** Spec
+**Phase 27 — The excerpt lands on the answer (`packet-v11`): approved 2026-10-02, measured; owner decision pending.** Spec
 `docs/phases/PHASE-27.md` (AGE-31 under AGE-24; a correction found by measurement, not a roadmap stage, in progress
 beside the current phase as Phases 24 and 25 were — Phase 23 stays current until the owner's check of its step 6; the
 owner's order: before 0.3.0, AGE-7). From the diagnosis of draft PR #241: the request often retrieves the message that holds
@@ -11,16 +11,23 @@ by vectors excerpts within its vector chunk, and a why or contents question grow
 instead of four sentences. The prototype's one-case rules and passage embeddings stay out. Measured by the owner's
 replays on every set (Q6) and then the live bench harness; the prototype's own numbers (16 → 19 of 23 on the M0 main
 chat) are development-set evidence for the two rules **with the prototype's keyword-only tie-break anchor**; the
-combination with today's anchor is unmeasured and step 2 measures both (Q1b). The review of #242 measured the other suspected cause,
+combination with today's anchor was unmeasured there; the implementation's both-anchor results are below (Q1b).
+The review of #242 measured the other suspected cause,
 the embedding chunk cap: the M0 main packets are the same under a cap of 24, so the excerpt's span is the open lever.
-Step 1 (the spec) done. Step 2 in progress (ADR 0063, D72; the implementation in PR #245, the owner's both-anchor
-measurement completes it): `packet-v11` behind `NMOS_PACKET_POLICY` with the default unchanged —
-a word hit whose vector meets the bar excerpts within its chunk, a why or contents question grows to 320 characters
-with no sentence cap — and the tie-break anchor as the recorded recall option `excerpt_anchor` ("focus" today, "keywords"
-the prototype's; `tools/eval_rp.py --anchor`), twelve deterministic cases (`test_packet_v11.py`, one per branch of
-Q1–Q3 and Q1b). Step 2 completes with Q1b measured on Q6's sets with both anchors (the owner's replays, the result
-in the PR). Step 3 next: Q6 in full, three runs each; when the criteria pass, that PR switches the default and records
-K39's note, because every `main` merge publishes `:edge`.
+Step 1 (the spec) done. Step 2's implementation merged in #245 (ADR 0063, D72): `packet-v11` behind
+`NMOS_PACKET_POLICY`, default unchanged, twelve deterministic cases and the recorded `excerpt_anchor` option
+("focus" today; "keywords" the prototype's). Both anchors measured on #245 head `fa86d95` on 2026-10-02
+(`docs/perf/answer-span.md`): 12 CLI sets, three runs per combination, plus the existing synthetic first-cue and
+Phase 21/24 probes. Main memory-needed cases with vectors: v10 16/23, focus 18/23, keywords 19/23 in each of three
+runs; without vectors 14/23, 15/23, 16/23. No other CLI set loses more than one case per run, and the auxiliary probe
+counts stay unchanged. **Neither anchor passes the current criteria**: focus increases the CLI forbidden total
+93 → 96 (the spec's stop condition); keywords reduces it to 87, but sample 2's median packet size changes by
+−14.88% with vectors and −6.96% without, beyond ±5% (focus with vectors: −11.78%). Size statistics are the median
+of three per-run medians; the report preserves all repetitions and measurement limits. Q1b's anchor decision and
+step 3 remain pending the owner's direction; no criteria relaxed, no default switched, no phase-complete claim.
+Six selected existing pure/scorer checks passed; this measurement did not run the full suite, historical v10 replay
+identity against the base, 10,000-message latency or the live bench. High-risk behavior being measured (AGENTS.md
+§14): memory selection and K39; this results update changes documentation only.
 
 **Phase 22 — A re-extraction that keeps what it found: approved and complete 2026-10-01, not released.** Spec `docs/phases/PHASE-22.md`
 (AGE-25 under AGE-24, an urgent correction found by measurement): "Extract all history" asks a small reveal check
