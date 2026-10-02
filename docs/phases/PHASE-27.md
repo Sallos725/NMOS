@@ -1,11 +1,14 @@
 # Phase 27 — The excerpt lands on the answer: a vector hit's span, and room for an explanation
 
-> **Status: draft, awaiting the owner's approval.** Not a roadmap stage: a correction found by measurement under AGE-24
+> **Status: approved 2026-10-02 (every proposed answer; the owner's order: before 0.3.0, AGE-7). Step 1 done; step 2
+> (`packet-v11`, the deterministic cases, the ADR) next.** Not a roadmap stage: a correction found by measurement under AGE-24
 > (the real-chat recall gaps), proposed from the diagnosis of draft PR #241 (`docs/perf/age24-recall-candidate.md` on
 > its branch): on the M0 v2 main chat the request often *retrieves* the message that holds the answer and then excerpts
 > another part of it. This phase ports the two general rules of that prototype into the packet compiler, behind a new
 > packet policy, so that they run in production and are measured on every set. The prototype's one-case rules
-> (enumerated lists, "what was it packed in") and its passage embeddings stay out.
+> (enumerated lists, "what was it packed in") and its passage embeddings stay out. The review of #242 measured the
+> other suspected cause, the embedding chunk cap: the M0 main packets are the same under a cap of 24, so the excerpt's
+> span is the open lever (`docs/perf/query-embedding.md`).
 
 ## Questions and proposed answers
 
