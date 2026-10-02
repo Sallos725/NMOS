@@ -1,6 +1,7 @@
-"""extract-v16 (PHASE-28 Q1–Q3): the roles in force are shown to the extractor as CURRENT ROLES, and a role the TARGET turn
-ends is denied with the listed value, so ADR 0013's value match closes exactly that role. Behind NMOS_EXTRACT_COMPILER;
-extract-v15 stays the default and its generation key is unchanged."""
+"""extract-v16 (PHASE-28 Q1–Q4): the roles in force are shown to the extractor as CURRENT ROLES, and a role the TARGET turn
+ends is denied with the listed value, so ADR 0013's value match closes exactly that role; and a character written in full
+and by part of the name is one entity through `also_called`. Behind NMOS_EXTRACT_COMPILER; extract-v15 stays the default
+and its generation key is unchanged."""
 
 from __future__ import annotations
 
@@ -86,8 +87,36 @@ def test_the_v16_prompt_ends_a_listed_role_as_listed_right_after_the_role_rule()
                    "not for\n  a role that is not listed",
                    "A new role toward the same person replaces the listed one by itself"):
         assert phrase in prompt, phrase
-    # the rest of the prompt is extract-v15's
-    assert prompt.replace(extraction.ROLE_ENDINGS, "") == extraction.SYSTEM_PROMPT.format(registry=registry_prompt())
+    # the rest of the prompt is extract-v15's, but for the alias rule (below)
+    assert prompt.replace(extraction.ROLE_ENDINGS, "").replace(extraction.ALIAS_PARTS, extraction.V15_ALIAS) == \
+        extraction.SYSTEM_PROMPT.format(registry=registry_prompt())
+
+
+def test_the_v16_prompt_links_a_full_name_and_a_part_of_it_with_its_limits():
+    v15, v16 = (extraction.PROMPTS[c].format(registry=registry_prompt()) for c in ("extract-v15", "extract-v16"))
+    assert extraction.V15_ALIAS in v15 and extraction.V15_ALIAS not in v16 and extraction.ALIAS_PARTS in v16
+    for phrase in ("writes a character by a full\n  name and, for the same character, by part of it",
+                   "the given name alone; in a story in English, the\n  first or the last name alone",
+                   'e.g. "윤하나가 문을 열었다. 하나는 웃었다.": subject the full name, value\n  the part',
+                   "Not when the two could be different people: they speak to or act on each other",
+                   "named side by side as two, or the story has another character with that name"):
+        assert phrase in v16, phrase
+    # the alias still needs both names in the turn it comes from (ADR 0012), and under extract-v16 the part on its own:
+    # inside the full name it is not said a second time
+    both = {"subject": "윤하나", "subject_type": CHAR, "predicate": "also_called", "value": "하나"}
+    for apart in (False, True):
+        assert extraction.alias_evidenced(both, "윤하나가 문을 열었다. 하나는 웃었다.", apart=apart)
+        assert not extraction.alias_evidenced(both, "하나는 웃었다.", apart=apart)
+        assert extraction.alias_evidenced({**both, "subject": "하나", "value": "윤하나"},
+                                          "윤하나가 문을 열었다. 하나는 웃었다.", apart=apart)  # either way round
+    assert extraction.alias_evidenced(both, "윤하나가 문을 열었다.")  # extract-v15's check, as it was
+    assert not extraction.alias_evidenced(both, "윤하나가 문을 열었다.", apart=True)
+    listed = [{"name": "윤하나", "type": CHAR}]
+    assert extraction.alias_evidenced(both, "하나는 웃었다.", listed, apart=True)  # the full name shown as known
+    assert extraction.alias_evidenced({**both, "value": "Hana"}, "윤하나(Hana)", apart=True)  # not nested: as before
+    rows = extraction.normalize([{**both, "modality": "actual", "source": "narration"}], "윤하나가 문을 열었다.",
+                                apart=True)
+    assert (rows[0]["status"], rows[0]["reason"]) == ("pending", "alias not stated in the turn")
 
 
 # --- which roles are listed (Q2) --------------------------------------------------------------------------------------
@@ -233,3 +262,47 @@ def test_a_first_connection_extracts_the_ending_before_the_role_and_lists_nothin
         drain(migrated, moving_out)
         roles = roles_of(c, chat)
     assert roles == [("하나", "카이토", "세입자: 카이토의 집에 세 들어 삶", "positive")]
+
+
+# --- a name said two ways, through the worker (Q4) ---------------------------------------------------------------------
+
+def two_ways(system, user):
+    """The model as each prompt allows it: under extract-v16 the turn that writes 윤하나 and then 하나 links them."""
+    target = user.split("TARGET", 1)[1]
+    items = []
+
+    def say(**item):
+        items.append({"subject_type": CHAR, "modality": "actual", "source": "narration", "knowledge": "public", **item})
+
+    if "문을 열었다" in target:
+        say(subject="윤하나", predicate="located_in", object="현관", object_type="place")
+        if extraction.ALIAS_PARTS in system:
+            say(subject="윤하나", predicate="also_called", value="하나")
+    if "정원으로" in target:
+        say(subject="하나", predicate="located_in", object="정원", object_type="place")
+    return {"assertions": items}, "{}"
+
+
+def two_ways_chat() -> SimChat:
+    chat = SimChat()
+    chat.user("윤하나가 문을 열었다. 하나는 웃었다.")
+    chat.reply("바람이 들어왔다.")
+    filler(chat, 2)
+    chat.user("하나는 정원으로 나갔다.")
+    chat.reply("꽃이 피어 있었다.")
+    filler(chat, 2, tag="b")
+    return chat
+
+
+@pytest.mark.parametrize("compiler, places", [
+    ("extract-v15", [("윤하나", "현관"), ("하나", "정원")]),  # two entities, each with a current place (the defect)
+    ("extract-v16", [("하나", "정원")]),  # one character, in its later place
+])
+def test_a_name_and_its_part_are_one_character_under_extract_v16(migrated, compiler, places):
+    chat = two_ways_chat()
+    with make_client(migrated, llm_url="http://fake/v1", llm_model="fake", extract_compiler=compiler) as c:
+        sync(c, chat)
+        drain(migrated, two_ways)
+        current = sorted((f["subject"], f["object"]) for f in facts(c, chat)
+                         if f["predicate"] == "located_in" and f.get("polarity") != "negative")
+    assert current == sorted(places)

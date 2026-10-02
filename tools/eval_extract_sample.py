@@ -18,7 +18,7 @@ list); each file records the compiler and the roles it listed.
 
 `score` compares labels: rows, the evidence check, input and output tokens, `addresses`, `relationship` and
 `role_toward` rows, the role endings (negative `role_toward`) apart: as listed (subject, object and value of a listed
-role) or not, and,
+role) or not, the aliases kept (`also_called`, PHASE-28 Q4: the owner checks each), and,
 with `--ledger` (a fact ledger of a synthetic chat: `must_appear_in_turn`, `subject`, `statement`, `kind`), how many
 ledger facts some row finds (one of the fact's characters named, its object or value overlapping the statement's
 character trigrams by at least 0.5): a recall measure with no precision check.
@@ -197,7 +197,8 @@ def run(args: argparse.Namespace) -> None:
                     raise LLMError("model reply has no `assertions` list")
                 items = [x for x in items if not (isinstance(x, dict) and x.get("predicate") in X.DERIVED)]
                 items += X.revealed(parsed, p["secrets"], p["text"])
-                rows = (X.normalize(items, p["text"], p["hints"], p["shown"]) if checks
+                apart = {"apart": True} if args.compiler in getattr(X, "PARTS_APART", ()) else {}
+                rows = (X.normalize(items, p["text"], p["hints"], p["shown"], **apart) if checks
                         else X.normalize(items, p["text"], p["hints"]))
                 for r in rows:
                     r["quote_in_turn"] = in_turn(r.get("evidence"), p["shown"])
@@ -247,8 +248,8 @@ def score(args: argparse.Namespace) -> None:
                 gold.setdefault(x["must_appear_in_turn"] - 1, []).append(x)
     print("| label | run | turns | valid rows | quote < 12 | not in the turn | share | ledger facts: any row | valid, checked |"
           " … lost to the check | addresses | relationship | role_toward | role endings: as listed / other"
-          " | input tokens (sum) | output (median) |")
-    print("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+          " | also_called | input tokens (sum) | output (median) |")
+    print("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for label in args.labels.split(","):
         for run_dir in sorted((args.out / label).iterdir()):
             files = sorted(run_dir.glob(f"{args.name}-*.json"))
@@ -266,7 +267,7 @@ def score(args: argparse.Namespace) -> None:
                 c["valid"] += len(valid)
                 c["short"] += sum(1 for a in valid if a.get("evidence") and len(a["evidence"]) < QUOTE_MIN_CHARS)
                 c["out"] += len(valid) - len(kept)
-                for predicate in ("addresses", "relationship", "role_toward"):
+                for predicate in ("addresses", "relationship", "role_toward", "also_called"):
                     c[predicate] += sum(1 for a in kept if a["predicate"] == predicate)
                 listed = {(x["by"], x["to"], norm(x["role"])) for x in r.get("roles") or ()}
                 for a in kept:  # an ending closes a role only with the listed value (ADR 0013), PHASE-28 Q1
@@ -285,10 +286,10 @@ def score(args: argparse.Namespace) -> None:
             out_median = st.median(u.get("output", 0) for u in usage)
             print(f"| {label} | {run_dir.name} | {len(files)} | {c['valid']} | {c['short']} | {c['out']} | {share:.1f} % |"
                   f" {c['found']}/{c['gold']} | {c['kept']}/{c['gold']} | {c['lost']} | {c['addresses']} | {c['relationship']} |"
-                  f" {c['role_toward']} | {c['as_listed']} / {c['other_end']} |"
+                  f" {c['role_toward']} | {c['as_listed']} / {c['other_end']} | {c['also_called']} |"
                   f" {tokens_in / 1e3:.0f}k | {out_median:.0f} |")
             if kinds:
-                print(f"|  | ledger kinds found (valid, checked): {dict(sorted(kinds.items()))} | | | | | | | | | | | | | | |")
+                print(f"|  | ledger kinds found (valid, checked): {dict(sorted(kinds.items()))} | | | | | | | | | | | | | | | |")
 
 
 def main() -> None:

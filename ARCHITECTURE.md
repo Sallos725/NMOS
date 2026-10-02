@@ -613,15 +613,14 @@ itself when it has none; the default, decided by measurement in Phase 27 step 2 
 that need memory 16 → 19 of 23, `docs/perf/answer-span.md`; the owner allowed the smaller packets it makes, Q5);
 `packet-v10` stays available as `NMOS_PACKET_POLICY=packet-v10`. Recorded requests replay as they were.
 
-**D73 — A role ended as listed, and a full name with its given name (ADR 0064, proposed; Phase 28, AGE-24).** Two
-settings, both off by default until the owner's measurement decides. `NMOS_EXTRACT_COMPILER=extract-v16` shows the
-extractor the roles in force (CURRENT ROLES, as open promises, threads and secrets are shown) and asks for an ending
-with the listed value, so ADR 0013's value match closes exactly that role; `extract-v15` stays the default with its
-key. `NMOS_GIVEN_NAME_JOIN=1` turns on the recorded recall option `given_name_join`: the request's resolution joins a
-three-syllable Hangul name and its given name when the story mentions both in the same turns (at least two) and no
-assertion, contradiction, namesake, persona, ambiguity or owner split says otherwise. Its conditions do not prove
-identity (two people so named, in separate assertions, read the same), so it is a measured candidate only. A trace
-without the option replays with it off.
+**D73 — `extract-v16`: a role ended as listed, and a name said two ways (ADR 0064, proposed; Phase 28, AGE-24).**
+Off by default until the owner's measurement decides (`NMOS_EXTRACT_COMPILER=extract-v16`; `extract-v15` stays the
+default with its key). The extractor is shown the roles in force (CURRENT ROLES, as open promises, threads and secrets
+are shown) and asked for an ending with the listed value, so ADR 0013's value match closes exactly that role; and it is
+asked for `also_called` when a turn writes a character in full and by part of the name, unless the two could be
+different people, the part checked on its own in the turn (ADR 0012's provenance and ambiguity rule unchanged). A
+read-side join of a name and its given name was measured first and withdrawn: the stored assertions never named the
+split pairs in the same turn.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

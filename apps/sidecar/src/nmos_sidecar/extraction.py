@@ -51,7 +51,8 @@ COMPILER_VERSION = "extract-v15"  # v2: known_by / hidden_from; v3: knowledge sc
 #                                 v15: role_toward, a role between two people, and `relationship` for personal
 #                                 ties only (PHASE-25, ADR 0059)
 # The extractor a sidecar runs is the default above unless NMOS_EXTRACT_COMPILER selects another of COMPILERS
-# (PHASE-28 Q3): extract-v16 is extract-v15 with CURRENT ROLES and the rule to end a listed role as listed (Q1, Q2).
+# (PHASE-28 Q3): extract-v16 is extract-v15 with CURRENT ROLES and the rule to end a listed role as listed (Q1, Q2),
+# and `also_called` for a character written in full and by part of the name (Q4).
 # extract-v15's prompt and generation key are unchanged by it, so nothing re-extracts until it is selected.
 COMPILERS = ("extract-v15", "extract-v16")
 MIN_CONTENT_CHARS = 12
@@ -203,11 +204,28 @@ ROLE_ENDINGS = """- If CURRENT ROLES are listed: when the TARGET turn ends one (
   a role that is not listed. A new role toward the same person replaces the listed one by itself: give
   only the new one.
 """
+# extract-v16 (PHASE-28 Q4, decided on the measurement of #251): a name said two ways. extract-v15 links two names only
+# when the TARGET turn gives both "for the same entity" ("하나(Hana)"), so a story that writes a character in full and
+# calls them by part of the name keeps two entities (the read-side join found the pair in no assertion of the same
+# turn). The narration's own reference is the evidence; `alias_evidenced` still wants both names in the turn, and a
+# name linked to two others is ambiguous and joins neither (ADR 0012).
+V15_ALIAS = """- `also_called` only when the TARGET turn itself gives both names for the same entity (e.g. "하나(Hana)"),
+  or for an unnamed character it reveals (above).
+"""
+ALIAS_PARTS = """- `also_called` when the TARGET turn itself gives both names for the same entity (e.g. "하나(Hana)"),
+  or for an unnamed character it reveals (above). Also when the TARGET turn writes a character by a full
+  name and, for the same character, by part of it (the given name alone; in a story in English, the
+  first or the last name alone), e.g. "윤하나가 문을 열었다. 하나는 웃었다.": subject the full name, value
+  the part. Not when the two could be different people: they speak to or act on each other, they are
+  named side by side as two, or the story has another character with that name.
+"""
 _ROLE_EXAMPLE = '  `role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").\n'  # the role rule follows it
 PROMPTS = {"extract-v15": SYSTEM_PROMPT,
-           "extract-v16": SYSTEM_PROMPT.replace(_ROLE_EXAMPLE, _ROLE_EXAMPLE + ROLE_ENDINGS, 1)}
-assert PROMPTS["extract-v16"] != SYSTEM_PROMPT, "the role rule's place in the prompt moved"
+           "extract-v16": SYSTEM_PROMPT.replace(_ROLE_EXAMPLE, _ROLE_EXAMPLE + ROLE_ENDINGS, 1)
+                                       .replace(V15_ALIAS, ALIAS_PARTS, 1)}
+assert ROLE_ENDINGS in PROMPTS["extract-v16"] and ALIAS_PARTS in PROMPTS["extract-v16"], "a v16 rule's place moved"
 ROLES = frozenset({"extract-v16"})  # the compilers that list CURRENT ROLES
+PARTS_APART = frozenset({"extract-v16"})  # the compilers whose alias of a name and its part needs the part on its own
 
 
 def compiler_of(settings: Settings) -> str:
@@ -696,7 +714,7 @@ ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_t
 
 
 def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None = None,
-              shown: str | None = None) -> list[dict[str, Any]]:
+              shown: str | None = None, apart: bool = False) -> list[dict[str, Any]]:
     """Model output → assertion rows (at most 40): missing entity types filled from the reply or the
     hints (`fill_types`), registry validation (D6), knowledge scope (D19), polarity/modality/source
     (ADR 0013) and the alias evidence check (ADR 0012, ADR 0024). `shown` (the turn worker, since extract-v14,
@@ -719,7 +737,8 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
             confidence = None
         scope, known_by, hidden_from, note = knowledge(item)
         polarity, modality, source, asserted_by, unclaimed = semantics(item)
-        if status == "valid" and item.get("predicate") == "also_called" and not alias_evidenced(item, turn_text, hints):
+        if (status == "valid" and item.get("predicate") == "also_called"
+                and not alias_evidenced(item, turn_text, hints, apart)):
             status, reason = "pending", "alias not stated in the turn"
         if status == "valid" and unclaimed:
             status, reason = "pending", unclaimed
@@ -805,7 +824,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
             return "done"
         rows = [(extraction_id, revision_id, *(Jsonb(a[c]) if c == "participants" and a[c] is not None else a[c]
                                                for c in ASSERTION_COLUMNS))
-                for a in normalize(items, turn_text, hints, shown_target(ctx))]
+                for a in normalize(items, turn_text, hints, shown_target(ctx), compiler in PARTS_APART)]
         if rows:
             with conn.cursor() as cur:
                 cur.executemany(

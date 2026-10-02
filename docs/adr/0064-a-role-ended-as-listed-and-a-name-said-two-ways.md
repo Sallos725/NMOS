@@ -1,10 +1,10 @@
-# 0064 — A role ended as listed (`extract-v16`), and a full name with its given name (`given_name_join`)
+# 0064 — `extract-v16`: a role ended as listed, and a name said two ways
 
-Status: **proposed**, 2026-10-03 (Phase 28 step 2, `docs/phases/PHASE-28.md` Q1–Q4; under AGE-24). Both are behind
-settings that are off by default: `NMOS_EXTRACT_COMPILER=extract-v16` and `NMOS_GIVEN_NAME_JOIN=1`. Making either the
-default is the owner's decision on the measurement of PHASE-28 Q5; until then this ADR is not accepted. No migration,
-no plugin build; one recorded recall option added. ADR 0013's matching rule and ADR 0012's resolution are unchanged when
-the settings are off.
+Status: **proposed**, 2026-10-03 (Phase 28 step 2, `docs/phases/PHASE-28.md` Q1–Q4; under AGE-24). Behind
+`NMOS_EXTRACT_COMPILER=extract-v16`, off by default. Making it the default is the owner's decision on the measurement of
+PHASE-28 Q5; until then this ADR is not accepted. No migration, no plugin build, no recall option. ADR 0012's
+resolution and ADR 0013's matching rule are unchanged. **Amended the same day:** the read-side join first proposed for
+Q4 (`given_name_join`) was measured, joined nothing, and is withdrawn (below); Q4 is the extractor's alias rule instead.
 
 ## Context
 
@@ -13,60 +13,59 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
 1. **A role outlives its ending.** A stay that ended was extracted as a negative `located_in`, which cannot end
    `role_toward`; an employment's ending was extracted in other words than the role, so ADR 0013 item 4 (a negative of a
    per-object single-valued predicate must deny the same normalized value) left the role current beside it.
-2. **One person, two entities.** A character written in full (백이안) and by the given name alone (이안) resolves to two
-   entities: the story never says "이안, that is 백이안", so no `also_called` joins them (ADR 0012), and Phase 24 gives the
-   given name to no one because it already names an entity of its own (ADR 0058 item 3). The extraction hints then list
-   both, so the split persists.
+2. **One person, two entities.** A character written in full (윤하나) and by the given name alone (하나) resolves to two
+   entities. `extract-v15` links two names only when "the TARGET turn itself gives both names for the same entity"
+   ("하나(Hana)"), which narration that simply calls a character both ways never does; and Phase 24 gives the given name
+   to no one because it already names an entity of its own (ADR 0058 item 3). The extraction hints then list both, so
+   the split persists.
 
 ## Decision
 
-1. **`extract-v16`: CURRENT ROLES** (Q1, Q2). The extractor is shown the roles in force before the target turn, as
-   OPEN PROMISES, OPEN THREADS and OPEN SECRETS are shown (`extraction.role_hints`, `roles_block`): the current,
-   narrated, actual, positive `role_toward` facts of the generation's own earlier extractions, folded as the read side
-   folds them, newest first: those whose party other than the persona the prompt names, then the persona's own, at most
-   `OPEN_ROLES` (8). A rule after the role rule (`ROLE_ENDINGS`) asks, when the TARGET turn ends a listed role, for
-   `role_toward` with `"negative"` and subject, object and value exactly as listed; not for a temporary absence or an
-   unlisted role; a new role toward the same person replaces the listed one by itself (single per direction, ADR 0059).
-   ADR 0013 is unchanged: the copied value is what lets the negative close exactly that role. The list is stored with
-   the extraction's hints (`roles`).
-2. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
+1. **CURRENT ROLES** (Q1, Q2). The extractor is shown the roles in force before the target turn, as OPEN PROMISES,
+   OPEN THREADS and OPEN SECRETS are shown (`extraction.role_hints`, `roles_block`): the current, narrated, actual,
+   positive `role_toward` facts of the generation's own earlier extractions, folded as the read side folds them, newest
+   first: those whose party other than the persona the prompt names, then the persona's own, at most `OPEN_ROLES` (8).
+   A rule after the role rule (`ROLE_ENDINGS`) asks, when the TARGET turn ends a listed role, for `role_toward` with
+   `"negative"` and subject, object and value exactly as listed; not for a temporary absence or an unlisted role; a new
+   role toward the same person replaces the listed one by itself (single per direction, ADR 0059). ADR 0013 is
+   unchanged: the copied value is what lets the negative close exactly that role. The list is stored with the
+   extraction's hints (`roles`).
+2. **A name and a part of it** (Q4). The `also_called` rule (`ALIAS_PARTS`, in place of `extract-v15`'s `V15_ALIAS`)
+   also asks for an alias when the TARGET turn writes a character by a full name and, for the same character, by part
+   of it: the given name alone, or in a story in English the first or the last name alone; subject the full name, value
+   the part. Not when the two could be different people: they speak to or act on each other, are named side by side as
+   two, or the story has another character with that name. Provenance is ADR 0012's: the alias lives as long as its
+   turn, and a name linked to two others is ambiguous and joins neither. The turn check is stricter for this case
+   (`alias_evidenced(..., apart=True)`, `PARTS_APART`): when one name is part of the other, the part must occur in the
+   turn on its own, not only inside the full name.
+3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before
    Phase 28 (pinned); `extract-v16`'s differs by compiler and prompt only. A generation's own rows record its compiler.
-3. **`given_name_join`: a recorded recall option, off unless asked for** (Q4). With it the request's resolution
-   (`entities._given_joins`, after the story's aliases and the owner's links) joins a character written as a
-   three-syllable Hangul name with a common family name (`variants.given`) to the character named by its given name
-   alone when: both are mentioned in each of at least `GIVEN_JOIN_TURNS` (2) turns; no single assertion names both; no
-   turn gives them different values of one single-valued predicate (toward the same object, for one that holds a value per
-   object: two roles toward one person); no other character's full name has that given name;
-   neither is the persona and the given name is not the persona's; neither name is ambiguous; and the owner has not split
-   them (ADR 0044). The join is listed among the entity's aliases (`given_name: true`). `NMOS_GIVEN_NAME_JOIN=1` turns it
-   on for new requests; `tools/eval_rp.py --given-name-join [--show-joins]` replays recorded requests with it and lists
-   every join. The Inspector and the owner's previews read without it.
-4. **Replay.** The option is recorded with the other recall options; a trace without it replays with it off
-   (`audit.replay`), as `name_variants` (ADR 0058 item 6). `RESOLVER_VERSION` is unchanged: it only seeds entity ids, and
-   a replay restores recorded options, not a resolver.
+   `extract-v15`'s alias check is as it was.
+
+## Withdrawn: `given_name_join`
+
+The first step 2 proposed a recorded recall option that joined, at read time, a three-syllable Hangul name and its
+given name when the stored assertions mentioned both in the same turns (at least two) and nothing said they were two
+people. The owner's read-only measurement on #251's head (`5e3032f`; nine preserved databases, 837 reads at their
+recorded positions and times; no model call): **no join on any read**, the S4b and S2 replays without vectors unchanged
+(2/3 and 22/25), the S4b edited birthday still missing on the original ledger with fixed candidates. Cause: the target
+pairs occur together in the text of 3 (S4b) and 20 (S2) turns, but in the subject, object or participants of the same
+turn's assertions in none, so the evidence the option read was never there. Co-occurrence in the text would not prove
+identity either (two people so named read the same), so the owner chose the extractor's alias rule (item 2), which the
+same paid `extract-v16` run measures. The option, its setting and its tool flags were removed before merge.
 
 ## Consequences
 
-- With neither setting, nothing changes: the extractor key, every prompt, every packet and every replay are as before.
+- Without the setting, nothing changes: the extractor key, every prompt, every packet and every replay are as before.
 - Selecting `extract-v16` re-extracts every chat once (a new generation, ADR 0006). On a first connection, live and
   first-sight work runs newest first (`extraction.claim`), so a turn that ends a role can be extracted before the turn
   that set it up and then lists nothing: the role stays current. A generation's backfill runs oldest first, so an
-  existing chat switched to `extract-v16` lists in story order. `OPEN PROMISES` has the same limit. Both pinned in
+  existing chat switched to `extract-v16` lists in story order. `OPEN PROMISES` has the same limit. Pinned in
   `test_extract_v16.py`; PHASE-28 Q5 (c) measures first connection and backfill apart.
-- **`given_name_join`'s conditions do not prove identity.** Two people, one written in full and one only by the same
-  given name, mentioned in separate assertions of the same turns ("백이안이 들어왔다. 이안이 앉았다."), read exactly as
-  one person called both ways and are joined (pinned in `test_given_name_join.py`). A wrong join mixes two characters'
-  current facts and their knowledge marks. Hence a comparison candidate: never the default without the owner's decision,
-  and withdrawn if any measured chat shows a false join (PHASE-28 Q4); identity would then go to the extractor's alias
-  guidance instead.
-- Under a join, what is kept from one spelling is kept from the joined character (`test_given_name_join.py`).
-- `given_name_join` reads three-syllable Hangul names only. An English story's split ("Elena Vance" called "Elena" or
-  "Vance") is not covered: there a story calls one person by either part and writes names in either order, so the
-  namesake risk is wider; extending it waits for the measurement on Hangul names (PHASE-28 Q6). `extract-v16` is
-  language-independent.
-- Each request with the option reads its rows once more for the join's conditions; latency is measured before any
-  default (PHASE-28 acceptance criteria).
-- Evaluation: `tools/eval_extract_sample.py --compiler extract-v16` (role endings as listed and others counted apart),
-  `tools/eval_rp.py --given-name-join --show-joins`.
+- The alias rule asks the model to judge identity from the narration. A wrong alias joins two characters' facts and
+  knowledge marks; the turn check, the ambiguity rule and the owner's split (ADR 0044) are the guards, and the Q5 (c)
+  evaluation counts every alias the model gives. It covers names in Latin script as well.
+- Evaluation: `tools/eval_extract_sample.py --compiler extract-v16` (role endings as listed and others counted apart;
+  the alias check as the worker applies it).

@@ -65,8 +65,8 @@ def test_score_counts_the_check_the_same_way_with_and_without_it(tmp_path, capsy
                                    "kind": "event"}], ensure_ascii=False))
     tool.score(argparse.Namespace(out=tmp_path, labels="v13,v14", name="synth", ledger=ledger, persona=""))
     lines = [x for x in capsys.readouterr().out.splitlines() if x.startswith("| v1")]
-    assert lines[0].startswith("| v13 | 1 | 1 | 3 | 1 | 1 | 33.3 % | 1/1 | 1/1 | 0 | 0 | 0 | 0 | 0 / 0 | 1k | 90 |")
-    assert lines[1].startswith("| v14 | 1 | 1 | 2 | 0 | 1 | 50.0 % | 1/1 | 1/1 | 0 | 0 | 0 | 0 | 0 / 0 | 1k | 95 |")
+    assert lines[0].startswith("| v13 | 1 | 1 | 3 | 1 | 1 | 33.3 % | 1/1 | 1/1 | 0 | 0 | 0 | 0 | 0 / 0 | 0 | 1k | 90 |")
+    assert lines[1].startswith("| v14 | 1 | 1 | 2 | 0 | 1 | 50.0 % | 1/1 | 1/1 | 0 | 0 | 0 | 0 | 0 / 0 | 0 | 1k | 95 |")
 
 
 def test_turns_are_chosen_from_one_chat(migrated):
@@ -107,7 +107,7 @@ def test_score_counts_relationship_and_role_rows_apart(tmp_path, capsys):
     path.write_text(json.dumps({"turn": 4, "usage": {"input": 800, "output": 80}, "assertions": rows}, ensure_ascii=False))
     tool.score(argparse.Namespace(out=tmp_path, labels="v15", name="synth", ledger=None, persona=""))
     (line,) = [x for x in capsys.readouterr().out.splitlines() if x.startswith("| v15")]
-    assert line.startswith("| v15 | 1 | 1 | 4 | 0 | 0 | 0.0 % | 0/0 | 0/0 | 0 | 1 | 1 | 2 | 0 / 0 | 1k | 80 |")
+    assert line.startswith("| v15 | 1 | 1 | 4 | 0 | 0 | 0.0 % | 0/0 | 0/0 | 0 | 1 | 1 | 2 | 0 / 0 | 0 | 1k | 80 |")
 
 
 def test_score_counts_role_endings_as_listed_and_others_apart(tmp_path, capsys):
@@ -122,7 +122,7 @@ def test_score_counts_role_endings_as_listed_and_others_apart(tmp_path, capsys):
                                 "assertions": rows}, ensure_ascii=False))
     tool.score(argparse.Namespace(out=tmp_path, labels="v16", name="synth", ledger=None, persona=""))
     (line,) = [x for x in capsys.readouterr().out.splitlines() if x.startswith("| v16")]
-    assert "| 3 | 1 / 2 |" in line
+    assert "| 3 | 1 / 2 | 0 |" in line
 
 
 def test_another_compiler_is_one_the_checkout_has():

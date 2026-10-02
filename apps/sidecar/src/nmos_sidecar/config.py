@@ -80,10 +80,6 @@ class Settings:
     # scene character's state in <Cast>); v7 … v0 are earlier. The compose files pass
     # it empty, so a pinned value cannot outlive a new default.
     packet_policy: str = field(default_factory=lambda: os.environ.get("NMOS_PACKET_POLICY", ""))
-    # A full name and its given name read as one character when the story mentions both in the same turns and nothing
-    # says they are two (PHASE-28 Q4, ADR 0064, proposed): "1" turns the recall option `given_name_join` on for new
-    # requests. A comparison candidate: off by default, since two people so named read the same.
-    given_name_join: bool = field(default_factory=lambda: os.environ.get("NMOS_GIVEN_NAME_JOIN", "") == "1")
     parsers_file: str = field(default_factory=lambda: os.environ.get("NMOS_PARSERS_FILE", ""))
     # Test hook for the "sidecar slower than deadlineMs" acceptance check. Never set in production.
     debug_delay_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_DEBUG_DELAY_MS", "0")))

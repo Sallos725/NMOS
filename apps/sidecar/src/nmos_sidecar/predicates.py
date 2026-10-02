@@ -166,16 +166,23 @@ def fill_types(items: list[Any], hints: list[dict[str, Any]] | None = None) -> l
     return out
 
 
-def alias_evidenced(item: dict[str, Any], turn_text: str, hints: list[dict[str, Any]] | None = None) -> bool:
+def alias_evidenced(item: dict[str, Any], turn_text: str, hints: list[dict[str, Any]] | None = None,
+                    apart: bool = False) -> bool:
     """An `also_called` assertion links two names only if both occur in the turn it comes from (ADR 0012),
     or if one does and the other is, exactly, a name of the same type that the extraction was shown in
-    KNOWN ENTITIES: a turn revealing who a described character is (ADR 0024)."""
+    KNOWN ENTITIES: a turn revealing who a described character is (ADR 0024).
+
+    `apart` (extract-v16, PHASE-28 Q4): when one name is part of the other (윤하나, 하나), the part must occur in the
+    turn on its own, not only inside the full name, which would otherwise count as both."""
     a, b = _casefold(item.get("subject")), _casefold(item.get("value"))
     if not a or not b or a == b:
         return False
     text = _casefold(turn_text)
     listed = {_casefold(n) for h in hints or () if h.get("type") == item.get("subject_type")
               for n in [h.get("name"), *h.get("also", [])]}
+    if apart and (a in b or b in a):
+        whole, part = (a, b) if b in a else (b, a)
+        return part in text.replace(whole, " ") and (whole in text or whole in listed)
     return (a in text and (b in text or b in listed)) or (b in text and a in listed)
 
 
