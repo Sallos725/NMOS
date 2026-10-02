@@ -365,8 +365,9 @@ embedded again. Pointing the embedding URL at a closer address would help too, b
 and re-embeds every chat (K18).
 *On `main` (ADR 0061, D70):* the embedding call starts when recall starts and runs while the state, facts, threads,
 cast and summaries are read; the request waits for it at most 300 ms after those reads. The embedder so has the reads'
-time (≈100–300 ms at the measured sizes) as well, which covers a warm embedder behind a proxy at 280–450 ms, and the
-request is never slower in all than before. A sync that delivers the user's new message also starts that text's
+time (≈100–300 ms at the measured sizes) as well, which covers a warm embedder behind a proxy at 280–450 ms, and no
+request waits longer for the embedding than before (one that now has vectors pays the search and a fuller packet, as
+any request with vectors did). A sync that delivers the user's new message also starts that text's
 embedding at once, so the retrieve that follows the sync (the plugin's query is the same text) finds it under way or
 done: the embedder has the sync's time too (0.3–2.5 s on a long chat), and such a request waits for nothing. A cold model (≈18 s) still gives no vectors to the request that wakes it;
 the trace's `embed_wait` says what each request waited (`docs/perf/query-embedding.md`).

@@ -93,16 +93,21 @@ replays with vectors off, and live requests lost what vectors add (one or two su
 excerpt) when the query's embedding missed its 300 ms (70 % of production recalls, K34). Three changes, none to the
 ranking, the budget or the recorded options: (1) the query's embedding call runs on its own thread while lexical
 recall, the facts, threads, cast and summaries are read, and the request waits for it at most `embed_timeout_ms`
-after those reads, so no request is slower in all and the embedder has the reads' time too; (2) a sync whose bodies
+after those reads, so no request waits longer for the embedding and the embedder has the reads' time too (one that
+now has vectors pays the search and a fuller packet, as any request with vectors did); (2) a sync whose bodies
 carry the chat's newest user message starts that text's embedding at once, and the retrieve that follows (the plugin's
 query is that text) takes it, so the embedder has the sync's time as well and such a request waits for nothing; (3)
 a message is embedded in up to 24 chunks of 700 characters (16,800; `NMOS_EMBED_MAX_CHUNKS`, part of the projection
 key) instead of 8, so the second half of the owner's ≈10,000-character replies is searchable by vectors — a new
 projection, re-embedded once in the background. Deterministic cases in `test_query_embedding.py`, `test_prefetch.py`,
 `test_vectors.py`, `test_long_messages.py`; `docs/perf/query-embedding.md`: at 10,000 messages a 400 ms embedder gave
-`main` 0 of 15 requests with vectors at 644 ms p50 and this branch 15 of 15 at 534 ms. Not high risk: memory
-selection, isolation and fail-open are as before; only how often vectors arrive in time, and how much of a long reply
-they can reach, change. Neither replays of recorded requests (an evaluation gives the embedding 5,000 ms) nor the
+`main` 0 of 15 requests with vectors at 644 ms p50 and this branch 15 of 15 at 534 ms. **High risk (AGENTS.md §14)**:
+memory selection (vector candidates reach the fusion far more often, and from the whole of a long reply; the ranking,
+the bars and the budget are unchanged), projection provenance and isolation (a new projection key; each projection
+embeds by the cap its own spec records, pinned by `test_long_messages.py`, and a query searches the active
+projection's vectors only, pinned by `test_generations.py`), the upgrade's backfill (`test_upgrade.py` restores
+older releases' databases and re-embeds under the new key at startup), and fail-open (`test_query_embedding.py`,
+`test_vectors.py`: a slow or failed embedder leaves the request lexical, with the reason in the trace). Neither replays of recorded requests (an evaluation gives the embedding 5,000 ms) nor the
 10,000-message bench chat (two chunks a reply) show (1)–(3); the owner's live bench harness (`~/nmos-eval/three-bench`,
 the NMOS lane on this commit, the embedder as in production, the copy embedded again under the new projection) does.
 Next: that run, to see whether the M0 main cases that need memory reach 8 of 10 live; the remaining misses are

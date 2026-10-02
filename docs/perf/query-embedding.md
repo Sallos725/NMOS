@@ -44,8 +44,10 @@ Packets: the same mean size per run on both sides (571 tokens without an embedde
   by the time the reads are done, so every request had vectors (15 of 15, 1,032–1,056 tokens: ten excerpts each) at
   −111 ms. This is the production shape of K34: a warm embedder behind a proxy at 280–450 ms.
 - The wait after the reads is bounded as before (`test_query_embedding.py`: an embedder that never answers costs the
-  timeout once, after the reads, and the call ends on its own at twice the timeout), so no request is slower in all
-  than on `main`; the sizes above are the whole retrieve as the plugin sees it (`/v1/retrieve`, in-process).
+  timeout once, after the reads, and the call ends on its own at twice the timeout), so no request waits longer for
+  the embedding than on `main`. The whole request can still be longer when it gains vectors it did not have: the
+  vector search and a fuller packet (the 700 ms row below). The sizes above are the whole retrieve as the plugin sees
+  it (`/v1/retrieve`, in-process).
 
 ## Asked for at the sync (ADR 0061 item 7)
 
@@ -67,10 +69,11 @@ none).
   (the table above), −167 ms against `main`, every request with vectors. In this harness the sync is an in-process
   append of a 10,000-message chat (tens of milliseconds); on the real host the plugin's sync takes 0.3–2.5 s at that
   size (`docs/perf/scale.md`), so a production embedder's call is over before the retrieve arrives.
-- **At 700 ms the request is no slower and 6–7 of 15 have vectors**: the sync, the reads and the 300 ms wait cover the
-  call where the reads ran long; the rest fall back as before, at the same p50 (the wait after the reads is bounded as
-  the call was). The requests that gained vectors compile fuller packets (ten excerpts, the vector search): their p95
-  is ≈60 ms above `main`'s, the price of the memory they now carry, not of the wait.
+- **At 700 ms the median is unchanged and 6–7 of 15 have vectors**: the sync, the reads and the 300 ms wait cover the
+  call where the reads ran long; the rest fall back as before (the wait after the reads is bounded as the call was).
+  The requests that gained vectors are slower than on `main`: they run the vector search and compile fuller packets
+  (ten excerpts), ≈60 ms at the 95th percentile (809.5 against 737.4 ms), the price of the memory they now carry, not
+  of the wait.
 - A 700 ms embedder is beyond production's shape (280–450 ms behind a proxy); it shows the bound: what the prefetch
   buys is the sync's time, nothing more, and no request pays for an embedder that never answers.
 

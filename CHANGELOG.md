@@ -11,7 +11,8 @@ later, is `docs/KNOWN-ISSUES.md`.
   memory by shared words only. The embedding call now starts when recall starts and runs while the state, facts,
   threads, cast and summaries are read; the request waits for it at most 300 ms after those reads. The embedder so
   has the reads' time as well (≈100–300 ms on a long chat), a request whose embedder answered during the reads is
-  faster than before, and none is slower in all. And since the plugin syncs your message before it asks for the packet,
+  faster than before, and none waits longer for the embedding than before (a request that now finds vectors spends
+  what a request with vectors always spent: the search and a fuller packet). And since the plugin syncs your message before it asks for the packet,
   the sidecar now starts the embedding of that message the moment the sync delivers it and hands it to the request
   that follows: on a long chat the sync alone outlasts a slow embedder's call, so that request waits for nothing. The timeout's meaning for you is unchanged (`NMOS_EMBED_TIMEOUT_MS`:
   what a request may wait for the embedding); the call itself may run twice that long and ends on its own. Fail-open

@@ -27,10 +27,13 @@ reply and the window, not on the candidates. Only the vector search, the fusion 
    the cast groups and the summaries, then collects the embedding: it waits **at most `embed_timeout_ms` from that
    point**. Then the vector search, the fusion, the excerpts, and what the memory mode withheld taken out of them, as
    before. The thread holds no database connection; the request thread keeps the one connection.
-2. **Never slower in all.** The wait after the reads is bounded as the whole call was: a request whose embedder does
-   not answer costs what it cost (the reads, then the timeout), and one whose embedder answers while the reads run
-   waits nothing. The embedder gets the reads' time in addition — ≈100–300 ms at the measured sizes, which is where
-   the owner's production fallbacks sit (280–450 ms behind a proxy).
+2. **The wait is bounded as before.** The wait after the reads is bounded as the whole call was: a request whose
+   embedder does not answer costs what it cost (the reads, then the timeout), and one whose embedder answers while the
+   reads run waits nothing. The embedder gets the reads' time in addition — ≈100–300 ms at the measured sizes, which is
+   where the owner's production fallbacks sit (280–450 ms behind a proxy). The bound is on the wait for the embedding,
+   not on the whole request: a request that now has vectors where it fell back before pays the vector search and
+   compiles a fuller packet, as every request with vectors always did (`docs/perf/query-embedding.md`: ≈60 ms at the
+   95th percentile on the requests that gained vectors from a 700 ms embedder, at an unchanged median).
 3. **The call is bounded at `EMBED_CALL_FACTOR` (2) × the timeout**, per network phase as before (httpx: the time to
    connect, to write, and until the answer starts). It must outlast the reads plus the wait to be of use, and it must
    end soon after the request has given up on it, since an embedder serves one request at a time (`vectors.process_embed`:
@@ -61,8 +64,8 @@ reply and the window, not on the candidates. Only the vector search, the fusion 
 ## Consequences
 
 - A request whose embedder answers within the reads' time plus the timeout has vectors, where before it needed to
-  answer within the timeout alone. The worst case is unchanged; a request whose embedder answers during the reads is
-  faster than before by the time it no longer waits.
+  answer within the timeout alone. The wait's worst case is unchanged; a request whose embedder answers during the
+  reads is faster than before by the time it no longer waits; one that gains vectors spends what vectors cost.
 - The sidecar runs one extra thread per request with an embedder, for the length of the call. A call abandoned by its
   request runs on to at most twice the timeout (a prefetched one to at least 2 s).
 - A request that follows its sync finds its embedding under way or done: on a long chat the sync alone outlasts a

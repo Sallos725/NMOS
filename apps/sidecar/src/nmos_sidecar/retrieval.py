@@ -73,8 +73,9 @@ class QueryEmbedding:
     an embedder slower than that (a remote one, or Ollama behind a proxy: 70 % of the owner's production requests)
     gave no vectors, and the request still paid the wait. Now the call runs on its own thread while lexical recall,
     the facts, threads, scene and summaries are read, and the request waits for it at most `embed_timeout_ms` after
-    those reads: never longer than before in all, and the embedder gets the reads' time as well. The call itself is
-    bounded at EMBED_CALL_FACTOR × the timeout. The thread touches no database connection."""
+    those reads: it never waits longer for the embedding than before, and the embedder gets the reads' time as well.
+    (A request that now has vectors pays the vector search and a fuller packet, as one with vectors always did.) The
+    call itself is bounded at EMBED_CALL_FACTOR × the timeout. The thread touches no database connection."""
 
     def __init__(self, embedder: Embedder, text: str, timeout_ms: int, call_timeout_ms: int | None = None):
         self.timeout_ms = timeout_ms

@@ -78,3 +78,8 @@ class Settings:
     parsers_file: str = field(default_factory=lambda: os.environ.get("NMOS_PARSERS_FILE", ""))
     # Test hook for the "sidecar slower than deadlineMs" acceptance check. Never set in production.
     debug_delay_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_DEBUG_DELAY_MS", "0")))
+
+    def __post_init__(self) -> None:
+        # A cap under one would embed nothing and mark every embed job done (ADR 0062): refused at startup.
+        if self.embed_max_chunks < 1:
+            raise ValueError(f"NMOS_EMBED_MAX_CHUNKS must be at least 1, not {self.embed_max_chunks}")

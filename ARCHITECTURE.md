@@ -579,9 +579,10 @@ direction. Older generations have no such rows, so recorded requests replay as t
 
 **D70 — The query embedded while recall reads (ADR 0061; K34, AGE-24).** Recall starts the query's embedding call on
 its own thread before lexical recall, reads the state, the facts, threads, cast and summaries meanwhile (none of them
-needs the vector), and then waits for the embedding at most `embed_timeout_ms` (300): the request is never slower in
-all than when the call alone had that time, and the embedder gets the reads' time as well (≈100–300 ms at the measured
-sizes, where the owner's production fallbacks sat: 70 % of recalls, behind a proxy at 280–450 ms). The call itself is
+needs the vector), and then waits for the embedding at most `embed_timeout_ms` (300): a request never waits longer for
+the embedding than when the call alone had that time, and the embedder gets the reads' time as well (≈100–300 ms at
+the measured sizes, where the owner's production fallbacks sat: 70 % of recalls, behind a proxy at 280–450 ms). A
+request that now has vectors pays the vector search and a fuller packet, as a request with vectors always did. The call itself is
 bounded at twice the timeout, so one the request gave up on does not hold the embedder for the next request. A sync
 whose bodies carry the chat's newest user message starts that text's embedding at once, and the retrieve that follows
 (the plugin sends the same text as its query) takes it instead of calling: the embedder has the sync's time too, and
