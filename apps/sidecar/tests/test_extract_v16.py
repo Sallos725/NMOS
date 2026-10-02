@@ -112,7 +112,8 @@ def test_the_v16_prompt_links_a_full_name_and_a_part_of_it_with_its_limits():
     assert extraction.alias_evidenced(both, "윤하나가 문을 열었다.")  # extract-v15's check, as it was
     assert not extraction.alias_evidenced(both, "윤하나가 문을 열었다.", apart=True)
     listed = [{"name": "윤하나", "type": CHAR}]
-    assert extraction.alias_evidenced(both, "하나는 웃었다.", listed, apart=True)  # the full name shown as known
+    assert extraction.alias_evidenced(both, "하나는 웃었다.", listed)  # extract-v15: a known name stands in (ADR 0024)
+    assert not extraction.alias_evidenced(both, "하나는 웃었다.", listed, apart=True)  # a part alone may be another's
     assert extraction.alias_evidenced({**both, "value": "Hana"}, "윤하나(Hana)", apart=True)  # not nested: as before
     rows = extraction.normalize([{**both, "modality": "actual", "source": "narration"}], "윤하나가 문을 열었다.",
                                 apart=True)

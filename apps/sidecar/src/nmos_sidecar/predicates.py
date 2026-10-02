@@ -172,8 +172,9 @@ def alias_evidenced(item: dict[str, Any], turn_text: str, hints: list[dict[str, 
     or if one does and the other is, exactly, a name of the same type that the extraction was shown in
     KNOWN ENTITIES: a turn revealing who a described character is (ADR 0024).
 
-    `apart` (extract-v16, PHASE-28 Q4): when one name is part of the other (윤하나, 하나), the part must occur in the
-    turn on its own, not only inside the full name, which would otherwise count as both."""
+    `apart` (extract-v16, PHASE-28 Q4): when one name is part of the other (윤하나, 하나), the turn must write both: the
+    full name, and the part on its own, not only inside the full name (which would otherwise count as both). A full name
+    known from earlier turns does not stand in for it: a part alone may be someone else's name."""
     a, b = _casefold(item.get("subject")), _casefold(item.get("value"))
     if not a or not b or a == b:
         return False
@@ -182,7 +183,7 @@ def alias_evidenced(item: dict[str, Any], turn_text: str, hints: list[dict[str, 
               for n in [h.get("name"), *h.get("also", [])]}
     if apart and (a in b or b in a):
         whole, part = (a, b) if b in a else (b, a)
-        return part in text.replace(whole, " ") and (whole in text or whole in listed)
+        return whole in text and part in text.replace(whole, " ")
     return (a in text and (b in text or b in listed)) or (b in text and a in listed)
 
 

@@ -36,8 +36,9 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    the part. Not when the two could be different people: they speak to or act on each other, are named side by side as
    two, or the story has another character with that name. Provenance is ADR 0012's: the alias lives as long as its
    turn, and a name linked to two others is ambiguous and joins neither. The turn check is stricter for this case
-   (`alias_evidenced(..., apart=True)`, `PARTS_APART`): when one name is part of the other, the part must occur in the
-   turn on its own, not only inside the full name.
+   (`alias_evidenced(..., apart=True)`, `PARTS_APART`): when one name is part of the other, the turn must write the
+   full name, and the part on its own, not only inside the full name; a full name known only from earlier turns
+   (KNOWN ENTITIES, ADR 0024) does not stand in, since a part alone may be someone else's name.
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before
