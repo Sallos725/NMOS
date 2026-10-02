@@ -7,9 +7,12 @@ import gc
 import time
 import weakref
 
+import pytest
+
 from conftest import make_client
 from memeval import StubEmbedder
 from nmos_sidecar import retrieval
+from nmos_sidecar.llm import LLMError
 from nmos_sidecar.retrieval import EMBED_CALL_FACTOR, PREFETCH_CALL_MIN_MS, PREFETCH_TTL_S, Prefetched, QueryEmbedding
 from test_packet_ledger import ask, settings_for, story
 from test_sidecar_integration import recall, sync
@@ -178,3 +181,46 @@ def test_a_settings_save_between_the_sync_and_its_retrieve_leaves_the_prefetched
         timings = client.get(f"/v1/trace/{out['trace_id']}").json()["latency_ms"]
         assert out["vectors"] == "on" and "embed_lead" not in timings
         assert len(third.texts) == 1 and len(second.texts) == 2
+
+
+def test_a_prefetched_call_that_failed_is_not_given_to_the_request():
+    """Codex (#244): a sync's call that failed (the embedder down for that moment) must not cost the request its
+    vectors by being inherited; the request asks again, as one without a prefetch does."""
+    class Failing:
+        def embed(self, texts, timeout_s):
+            raise LLMError("embedding request failed: connection refused")
+
+    cache = Prefetched()
+    emb = Failing()
+    pending = cache.start(emb, "embed-p", "q", 300)
+    with pytest.raises(LLMError):
+        pending.result()
+    assert pending.failed() and cache.take(emb, "embed-p", "q") is None
+
+
+def test_a_request_whose_prefetch_failed_asks_again_and_has_vectors(migrated):
+    class FlakyOnce(Counting):
+        def __init__(self):
+            super().__init__()
+            self.fail_next = False
+
+        def embed(self, texts, timeout_s):
+            if self.fail_next:
+                self.fail_next = False
+                self.texts += texts
+                raise LLMError("embedding request failed: connection refused")
+            return super().embed(texts, timeout_s)
+
+    emb = FlakyOnce()
+    with make_client(migrated, embedder=emb, **settings_for("full")) as client:
+        chat = story(client, migrated, vectors=True)
+        before = len(emb.texts)
+        question = "혹시 그 반짝이는 은빛 물건은 어디 숨겼지?"
+        chat.user(question)
+        emb.fail_next = True
+        sync(client, chat)  # the prefetched call fails
+        time.sleep(0.05)
+        assert len(emb.texts) == before + 1 and not emb.fail_next
+        out = recall(client, chat, question, in_context=[m["chatId"] for m in chat.messages[-2:]], budget=600)
+        timings = client.get(f"/v1/trace/{out['trace_id']}").json()["latency_ms"]
+        assert out["vectors"] == "on" and "embed_lead" not in timings and len(emb.texts) == before + 2

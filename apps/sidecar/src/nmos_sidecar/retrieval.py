@@ -98,6 +98,11 @@ class QueryEmbedding:
         self.call_ms = round((time.perf_counter() - started) * 1000, 2)
         self._future.set_result(vec)
 
+    def failed(self) -> bool:
+        """Whether the call has already ended in an error. A prefetched call that failed (the embedder down for the
+        moment of the sync) is not given to its request: the request asks again, as one without a prefetch does."""
+        return self._future.done() and self._future.exception() is not None
+
     def result(self) -> list[float]:
         """The vector, waiting at most `timeout_ms` from now. LLMError when it is not there by then (the thread's call
         ends on its own soon after; its answer is dropped), or when the call failed; a ValueError (an answer of the
@@ -115,8 +120,9 @@ class Prefetched:
     Keyed by the projection (D20) and the exact text (prefix included); an entry keeps the embedder it was asked of and
     is given only to a request whose embedder is that object, since a settings save rebuilds the embedder
     (`api.rebuild`) and an entry asked of the old one is not the new one's (the old object's `id()` can be reused by
-    the new one, so an id is no identity; Codex on #242). An entry is taken once, and one no request took within
-    PREFETCH_TTL_S is dropped. A replay never takes one (`gather`: `known_at` is set)."""
+    the new one, so an id is no identity; Codex on #242). An entry whose call already failed is not given either (the
+    request asks again; Codex on #244). An entry is taken once, and one no request took within PREFETCH_TTL_S is
+    dropped. A replay never takes one (`gather`: `known_at` is set)."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -139,6 +145,8 @@ class Prefetched:
             self._sweep()
             entry = self._entries.pop((projection, text), None)
         if entry is None or entry[1] is not embedder:  # none, or asked of an embedder a settings save replaced
+            return None
+        if entry[0].failed():  # the sync's call failed: the request asks again rather than inherit the failure
             return None
         return entry[0]
 

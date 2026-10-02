@@ -57,12 +57,14 @@ reply and the window, not on the candidates. Only the vector search, the fusion 
    how long before recall the call began. An entry keeps the embedder object it was asked of and is given only to a
    request whose embedder is that object: a settings save rebuilds the embedder (`api.rebuild`), and an entry asked of
    the old one is dropped, not served to the new (an id is no identity: a new object can get a collected one's `id()`,
-   which is how the first draft could have searched a new projection with the old model's vector; Codex on #242). The
-   embedder so has the sync's time as well (the host's reconcile and bodies take 0.3–2.5 s on a long chat,
-   `docs/perf/scale.md`). The prefetched call may run at least 2 s (`PREFETCH_CALL_MIN_MS`, or twice the timeout when
-   that is more), since its request follows by the sync's time; an entry no request takes within a minute is dropped,
-   and one is taken once. A replay never takes one (it compiles from its own reads, ADR 0027), and a text that differs
-   from the synced message (a probe, an evaluation) is embedded as in item 1. Nothing is stored.
+   which is how the first draft could have searched a new projection with the old model's vector; Codex on #242). An
+   entry whose call has already failed is not given either: the request asks again, as one without a prefetch does,
+   and falls back only if that call fails too (Codex on #244). The embedder so has the sync's time as well (the host's
+   reconcile and bodies take 0.3–2.5 s on a long chat, `docs/perf/scale.md`). The prefetched call may run at least 2 s
+   (`PREFETCH_CALL_MIN_MS`, or twice the timeout when that is more), since its request follows by the sync's time; an
+   entry no request takes within a minute is dropped, and one is taken once. A replay never takes one (it compiles
+   from its own reads, ADR 0027), and a text that differs from the synced message (a probe, an evaluation) is embedded
+   as in item 1. Nothing is stored.
 
 ## Consequences
 
