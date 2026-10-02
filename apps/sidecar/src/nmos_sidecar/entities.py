@@ -23,6 +23,11 @@ Since `resolve-v5` (ADR 0038) a character name of two or more words whose last w
 for the persona "타쿠미") is the persona too: the story writes the persona's full name as well, and one chat was
 split in two by it (Phase 11 M0).
 
+With `given_joins` (the recorded recall option `given_name_join`, PHASE-28 Q4, ADR 0064, proposed; off unless a
+request asks for it) a character written as a three-syllable Hangul name joins the character named by its given name
+alone when the story mentions both in the same turns and nothing says they are two people (`_given_joins`). It is not
+a `RESOLVER_VERSION`: a request records the option, and a trace without it reads without it.
+
 Since `resolve-v4` (ADR 0025) the owner's links (`entity_link`) join two names of one type whenever both
 are mentioned on the head. The owner outranks the story's aliases: a name the owner links is never
 ambiguous, and when the story's aliases made it ambiguous, only the owner's link joins it. An entity is
@@ -38,6 +43,7 @@ from typing import Any
 from uuid import UUID, uuid5
 
 RESOLVER_VERSION = "resolve-v5"
+GIVEN_JOIN_TURNS = 2  # turns that mention both a full name and its given name before `given_joins` joins them
 USER_NAMES = {"{{user}}", "{user}", "user", "유저"}
 PERSONA = "{{user}}"
 UNNAMED = "?"  # the extractor names a character shown without a name by a description starting with it (ADR 0024)
@@ -76,7 +82,7 @@ def mentions(row: dict[str, Any], persona: frozenset[str] = frozenset()) -> Iter
 class Resolution:
     def __init__(self, conversation: UUID, rows: list[dict[str, Any]], persona: Iterable[str] = (),
                  links: Iterable[dict[str, Any]] = (), splits: Iterable[dict[str, Any]] = (),
-                 canon: Iterable[dict[str, Any]] = ()):
+                 canon: Iterable[dict[str, Any]] = (), given_joins: bool = False):
         self.conversation = conversation
         self.persona = frozenset(n for n in map(norm, persona) if n)
         first: dict[Node, tuple[int, str]] = {}  # node → (order, spelling) of its first mention on the head
@@ -152,6 +158,14 @@ class Resolution:
                     union(a, b)
         for a, b, _ in self.links:
             union(a, b)
+        # A full name and its given name (PHASE-28 Q4), after the story's aliases and the owner's links: what they joined
+        # counts as one, so a given name already joined to its full name needs nothing more.
+        self.given_joins: list[tuple[Node, Node]] = []
+        if given_joins:
+            for full, short in _given_joins(rows, first, self.persona, self.ambiguous | overruled, latest):
+                if find(full) != find(short):
+                    union(full, short)
+                    self.given_joins.append((full, short))
         self._root = {n: find(n) for n in first if n not in self.ambiguous}
         # A split whose names are still one entity, and the names that still join them.
         self.split_via: dict[str, list[str]] = {}
@@ -225,6 +239,9 @@ class Resolution:
         for a, _, link in self.links:
             self._entities[self._root[a]]["links"].append(
                 {"id": str(link["id"]), "name": link["name"], "same_as": link["same_as"]})
+        for full, short in self.given_joins:  # listed like an alias, so a read can show what the option joined
+            self._entities[self._root[full]]["aliases"].append(
+                {"name": first[full][1], "other": first[short][1], "turn": None, "given_name": True})
 
     # --- lookups --------------------------------------------------------------------------------
 
@@ -270,6 +287,74 @@ class Resolution:
     def ambiguous_mentions(self) -> list[dict[str, Any]]:
         return [{"type": n[0], "name": self._first[n][1], "candidates": self.candidates(*n)}
                 for n in sorted(self.ambiguous, key=lambda n: self._first[n])]
+
+
+def _given_joins(rows: list[dict[str, Any]], first: dict[Node, tuple[int, str]], persona: frozenset[str],
+                 unsettled: set[Node], latest: dict[frozenset, str]) -> list[tuple[Node, Node]]:
+    """(full name, given name) pairs of characters `given_joins` joins (PHASE-28 Q4, ADR 0064, proposed). A character
+    written as a three-syllable Hangul name with a common family name (`variants.given`) and the character named by its
+    given name alone join when all hold:
+
+    - both are mentioned (subject, object or participant) in each of at least GIVEN_JOIN_TURNS turns;
+    - no single assertion names both: one statement relating the two, or listing both, is about two people;
+    - no turn gives them different values of one single-valued predicate (two places, two conditions at once);
+    - no other character's full name has that given name (ADR 0058 item 3);
+    - neither is the persona, and the given name is not the persona's;
+    - neither name is ambiguous, and the owner has not split the two (ADR 0044).
+
+    These do not prove identity: two people, one written in full and one only by the same given name, mentioned in
+    separate assertions of the same turns, read exactly as one person called both ways, and are joined. The option is
+    a measured comparison candidate for that reason (PHASE-28 Q4), off unless a request asks for it."""
+    from .predicates import REGISTRY  # predicates imports this module
+    from .variants import given
+
+    persona_given = {g for n in persona | USER_NAMES if (g := given(n))}
+    fulls: dict[str, list[Node]] = {}
+    for n in first:
+        if n[0] == "character" and n[1] != PERSONA and (g := given(n[1])):
+            fulls.setdefault(g, []).append(n)
+    pairs = []
+    for g, (full, *others) in fulls.items():
+        short = ("character", g)
+        if (others or short not in first or g in persona_given or {full, short} & unsettled
+                or latest.get(frozenset((full, short))) == "split"):
+            continue
+        pairs.append((full, short))
+    if not pairs:
+        return []
+    wanted = {n for pair in pairs for n in pair}
+    turns: dict[Any, set[Node]] = {}
+    together: set[frozenset] = set()  # names one assertion names together (any two of them: two people)
+    held: dict[tuple, dict[Node, set[str]]] = {}  # (turn, predicate) → node → the values it holds in that turn
+    for row in rows:
+        named = {node(row.get("subject_type"), row.get("subject"), persona)}
+        if row.get("object"):
+            named.add(node(row.get("object_type"), row["object"], persona))
+        named |= {node(p["type"], p["name"], persona) for p in row.get("participants") or ()}
+        named &= wanted
+        if not named:
+            continue
+        if len(named) > 1:
+            together.update(frozenset((a, b)) for a in named for b in named if a != b)
+        if row.get("turn") is None:
+            continue
+        turns.setdefault(row["turn"], set()).update(named)
+        pred = REGISTRY.get(row.get("predicate"))
+        subject = node(row.get("subject_type"), row.get("subject"), persona)
+        if (pred is not None and pred.cardinality == "single" and not pred.per_object and subject in wanted
+                and row.get("polarity", "positive") == "positive" and row.get("modality", "actual") == "actual"):
+            what = norm(row.get("object") or row.get("value"))
+            held.setdefault((row["turn"], row["predicate"]), {}).setdefault(subject, set()).add(what)
+    out = []
+    for full, short in pairs:
+        if frozenset((full, short)) in together:
+            continue
+        if sum(1 for named in turns.values() if full in named and short in named) < GIVEN_JOIN_TURNS:
+            continue
+        if any(full in by and short in by and by[full] != by[short] for by in held.values()):
+            continue
+        out.append((full, short))
+    return out
 
 
 def _own_alias(row: dict[str, Any], persona: frozenset[str] = frozenset()) -> bool:
@@ -320,8 +405,9 @@ def _path(a: Node, b: Node, edges: dict[Node, set[Node]], links: list[tuple[Node
 
 def resolve(conversation: UUID, rows: list[dict[str, Any]], persona: Iterable[str] = (),
             links: Iterable[dict[str, Any]] = (), splits: Iterable[dict[str, Any]] = (),
-            canon: Iterable[dict[str, Any]] = ()) -> Resolution:
+            canon: Iterable[dict[str, Any]] = (), given_joins: bool = False) -> Resolution:
     """Entities of one conversation's active assertions (rows in position order). `persona`: the persona's
     name as the host reports it for this conversation (ADR 0023), if known. `links`: the owner's current
-    links of this conversation (`entity_type`, `name`, `same_as`, `id`; ADR 0025)."""
-    return Resolution(conversation, rows, persona, links, splits, canon)
+    links of this conversation (`entity_type`, `name`, `same_as`, `id`; ADR 0025). `given_joins`: the recall option
+    `given_name_join` (PHASE-28 Q4)."""
+    return Resolution(conversation, rows, persona, links, splits, canon, given_joins)

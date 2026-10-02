@@ -185,6 +185,10 @@ class RecallOptions:
     first_cue: bool = True  # how it started, when the message asks (ADR 0056); a trace without it replays with it off
     history_marks: bool = True  # earlier versions only under marks that cover them (ADR 0038 amendment 1); same replay rule
     name_variants: bool = True  # a given name, a Hangul spelling of a romanized name (ADR 0058); same replay rule
+    # A full name and its given name joined as one character when the story mentions both in the same turns and nothing
+    # says they are two (PHASE-28 Q4, ADR 0064, proposed): a comparison candidate, off unless NMOS_GIVEN_NAME_JOIN is
+    # set (`tools/eval_rp.py --given-name-join` for an evaluation). Recorded; a trace without it replays with it off.
+    given_name_join: bool = False
     # packet-v11's tie-break anchor for the excerpt's best sentence (PHASE-27 Q1b, ADR 0063): "keywords", the question's
     # keywords alone — the question itself when it has none — (the prototype's; the default since step 3, measured: with
     # "focus" the forbidden total rose 93 → 96 over twelve sets, with "keywords" it fell to 87), or "focus", the question
@@ -198,7 +202,7 @@ class RecallOptions:
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
 RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit", "vector_min_sim", "query_prefix",
             "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator", "summarize_key", "canon_key",
-            "lexical_keywords", "first_cue", "history_marks", "name_variants", "excerpt_anchor")
+            "lexical_keywords", "first_cue", "history_marks", "name_variants", "excerpt_anchor", "given_name_join")
 CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
@@ -531,7 +535,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     names_of: dict[int, Any] = {}  # one mapping of name variants per view, whichever path asks first (ADR 0058)
     if options.facts_limit > 0 or options.threads_limit > 0:
         view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
-                           options.canon_key, canon_facts)
+                           options.canon_key, canon_facts, given_joins=options.given_name_join)
         g.canon_names, g.canon_facts = view.get("canon_names"), view.get("canon_facts_manifest")
         r = view["resolution"]
         persona = r.persona_names if r else frozenset()
@@ -588,7 +592,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     if options.policy in STORY_POLICIES and options.summarize_key and not options.narrator:  # ADR 0043, PHASE-12 Q3
         if view is None and options.extractor_key:  # facts and threads off: the secrets still decide what may be told
             view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
-                               options.canon_key, canon_facts)
+                               options.canon_key, canon_facts, given_joins=options.given_name_join)
             g.canon_names, g.canon_facts = view.get("canon_names"), view.get("canon_facts_manifest")
         r = view["resolution"] if view else None
         aliases = _aliases(r, query, previous_ai, options, view, names_of) if view else None
@@ -655,7 +659,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     if keyword_only and any(e.revision_id in keyword_only for e in g.ranked) and options.extractor_key:
         if view is None:
             view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
-                               options.canon_key, canon_facts)
+                               options.canon_key, canon_facts, given_joins=options.given_name_join)
         r = view["resolution"]
         aliases = _aliases(r, query, previous_ai, options, view, names_of)
         cast = g.cast

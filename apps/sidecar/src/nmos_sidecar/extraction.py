@@ -22,7 +22,7 @@ from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, metered
 from .entities import UNNAMED, norm, resolve
-from .facts import fact_text, links_of, persona_of, served_assertions
+from .facts import _versions, fact_text, links_of, persona_of, served_assertions, version_key
 from . import canon
 from .repairs import repairs_of, splits_of
 from .predicates import (DERIVED, REGISTRY, alias_evidenced, because, fill_types, knowledge, outcome, participants,
@@ -50,6 +50,10 @@ COMPILER_VERSION = "extract-v15"  # v2: known_by / hidden_from; v3: knowledge sc
 #                                 not in the target turn parks the assertion (PHASE-19, ADR 0054);
 #                                 v15: role_toward, a role between two people, and `relationship` for personal
 #                                 ties only (PHASE-25, ADR 0059)
+# The extractor a sidecar runs is the default above unless NMOS_EXTRACT_COMPILER selects another of COMPILERS
+# (PHASE-28 Q3): extract-v16 is extract-v15 with CURRENT ROLES and the rule to end a listed role as listed (Q1, Q2).
+# extract-v15's prompt and generation key are unchanged by it, so nothing re-extracts until it is selected.
+COMPILERS = ("extract-v15", "extract-v16")
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
 TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
@@ -58,6 +62,7 @@ RECENT_PRIORITY, HISTORY_PRIORITY = 250, 900  # generation rebuild: recent windo
 OPEN_PROMISES = 8  # open promise threads shown to the model (PHASE-7 Q3)
 OPEN_SECRETS = 8  # open secrets shown to the model (PHASE-10)
 OPEN_THREADS = 8  # open goals, questions, threats and debts shown to the model (PHASE-11)
+OPEN_ROLES = 8  # current roles shown to the model (extract-v16, PHASE-28 Q2)
 
 SYSTEM_PROMPT = """You extract durable story facts for the long-term memory of a role-play chat.
 You are given the recent CONTEXT turns and ONE TARGET turn: the user's message(s) and the reply to
@@ -189,6 +194,25 @@ Answer with JSON only: {{"assertions": [{{"subject": "...", "subject_type": "...
 "confidence": 0.0-1.0, "evidence": "...",
 "knowledge": "public|limited|unknown", "known_by": [], "hidden_from": []}}],
 "secrets": [{{"secret": "S1", "found_out_by": ["..."], "evidence": "..."}}]}}"""
+
+# extract-v16 (PHASE-28 Q1): the roles in force are listed, as open promises, threads and secrets are, and a role the
+# TARGET turn ends is denied with the listed value, so ADR 0013's value match closes exactly that role.
+ROLE_ENDINGS = """- If CURRENT ROLES are listed: when the TARGET turn ends one (the stay ends and they move out, someone
+  quits or is dismissed, the arrangement is called off), `role_toward` with "negative" and subject, object
+  and value exactly as listed. Not when someone only goes out, travels or is away for a while, and not for
+  a role that is not listed. A new role toward the same person replaces the listed one by itself: give
+  only the new one.
+"""
+_ROLE_EXAMPLE = '  `role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").\n'  # the role rule follows it
+PROMPTS = {"extract-v15": SYSTEM_PROMPT,
+           "extract-v16": SYSTEM_PROMPT.replace(_ROLE_EXAMPLE, _ROLE_EXAMPLE + ROLE_ENDINGS, 1)}
+assert PROMPTS["extract-v16"] != SYSTEM_PROMPT, "the role rule's place in the prompt moved"
+ROLES = frozenset({"extract-v16"})  # the compilers that list CURRENT ROLES
+
+
+def compiler_of(settings: Settings) -> str:
+    """The compiler the settings select (NMOS_EXTRACT_COMPILER), the default when empty (PHASE-28 Q3)."""
+    return settings.extract_compiler or COMPILER_VERSION
 
 
 # A job key names one unit of work (revision, window, generation). If that work was made obsolete
@@ -487,6 +511,40 @@ def secret_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = O
     return out[:limit]
 
 
+def role_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = OPEN_ROLES) -> list[dict[str, Any]]:
+    """Roles in force before the target turn (extract-v16, PHASE-28 Q1, Q2): the current, narrated, actual, positive
+    `role_toward` facts of this generation's earlier extractions, folded as the read side folds them (ADR 0013), newest
+    first: those whose party other than the persona the prompt names (in a message or as its speaker), then the
+    persona's own (the persona is in every scene, so naming it says nothing), at most `limit`. A role can only be
+    ended as listed while it is listed. On a first connection later turns are extracted first (`claim`), so a role
+    set up in a turn not yet extracted is not listed."""
+    roles = [dict(row) for row in rows if row["predicate"] == "role_toward"
+             and row.get("modality", "actual") == "actual" and row.get("source") != "character_claim"]
+    if limit <= 0 or not roles:
+        return []
+    r = resolve(ctx["target"]["conversation_id"], rows, persona_of(ctx["target"].get("host_persona_name")),
+                ctx["target"].get("links") or (),
+                ctx["target"].get("splits") or (), ctx["target"].get("canon") or ())
+    by_key: dict[tuple, list[dict[str, Any]]] = {}
+    for row in roles:
+        by_key.setdefault(version_key(row, r), []).append(row)
+    held = sorted((f for history in by_key.values() for f in _versions(history, r) if f["polarity"] == "positive"),
+                  key=lambda f: f["position"], reverse=True)
+    shown = norm(" ".join(f"{_speaker(row['metadata'])}: {row['content']}" for row in ctx["context"] + ctx["members"]))
+    named, persona = [], []
+    for f in held:
+        names = set()
+        for name in (f["subject"], f.get("object")):
+            e = r.entity("character", name) if name else None
+            names |= {norm(n) for n in (e["names"] if e else [name] if name else [])}
+        if any(n in shown for n in {n for n in names - r.persona_names if len(n) >= 2}):
+            named.append(f)
+        elif r.is_persona("character", f["subject"]) or r.is_persona("character", f.get("object")):
+            persona.append(f)
+    return [{"by": f["subject"], "to": f["object"], "role": f["value"], "turn": f["turn"]}
+            for f in named + persona][:limit]
+
+
 DESCRIBING = ("has_trait", "identity", "has_status")
 
 
@@ -540,6 +598,14 @@ def threads_block(threads: list[dict[str, Any]]) -> list[str]:
     return lines + [""]
 
 
+def roles_block(roles: list[dict[str, Any]]) -> list[str]:
+    if not roles:
+        return []
+    lines = ["CURRENT ROLES (held earlier in this story, not yet ended):"]
+    lines += [f"- {x['by']} → {x['to']}: {x['role']} (turn {x['turn']})" for x in roles]
+    return lines + [""]
+
+
 def secrets_block(secrets: list[dict[str, Any]]) -> list[str]:
     if not secrets:
         return []
@@ -551,9 +617,9 @@ def secrets_block(secrets: list[dict[str, Any]]) -> list[str]:
 
 def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
                  promises: list[dict[str, Any]] | None = None, secrets: list[dict[str, Any]] | None = None,
-                 threads: list[dict[str, Any]] | None = None) -> str:
+                 threads: list[dict[str, Any]] | None = None, roles: list[dict[str, Any]] | None = None) -> str:
     lines = (hints_block(hints or []) + promises_block(promises or []) + threads_block(threads or [])
-             + secrets_block(secrets or []) + ["CONTEXT:"])
+             + roles_block(roles or []) + secrets_block(secrets or []) + ["CONTEXT:"])
     for row in ctx["context"]:
         lines.append(f"[turn {row['turn']}] {_speaker(row['metadata'])}: {row['content'][:CONTEXT_CHARS]}")
     if len(lines) == 1:
@@ -689,6 +755,8 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     promises: list[dict[str, Any]] = []
     secrets: list[dict[str, Any]] = []
     threads: list[dict[str, Any]] = []
+    roles: list[dict[str, Any]] = []
+    compiler = gen.spec.get("compiler", COMPILER_VERSION)
     if sum(len(r["content"]) for r in ctx["members"]) < MIN_CONTENT_CHARS:
         parsed, raw, usage = {"assertions": []}, "", NO_CALL
     else:
@@ -698,8 +766,9 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         promises = promise_hints(ctx, earlier)
         secrets = secret_hints(ctx, earlier)
         threads = thread_hints(ctx, earlier)
-        parsed, raw, usage = metered(complete, SYSTEM_PROMPT.format(registry=registry_prompt()),
-                                     build_prompt(ctx, hints, promises, secrets, threads))
+        roles = role_hints(ctx, earlier) if compiler in ROLES else []
+        parsed, raw, usage = metered(complete, PROMPTS[compiler].format(registry=registry_prompt()),
+                                     build_prompt(ctx, hints, promises, secrets, threads, roles))
     items = parsed.get("assertions")
     if not isinstance(items, list):  # not an empty answer: fail the job, so it is retried and then counted failed
         raise LLMError("model reply has no `assertions` list")
@@ -719,10 +788,11 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
             "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model, raw,"
             " coverage, members, hints, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             " ON CONFLICT DO NOTHING RETURNING id",
-            (extraction_id, revision_id, window_hash, COMPILER_VERSION, gen.key, gen.model,
+            (extraction_id, revision_id, window_hash, compiler, gen.key, gen.model,
              Jsonb({"reply": raw[:20000]}), Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]],
-             None if hints is None and not promises and not secrets and not threads
-             else Jsonb({"entities": hints or [], "promises": promises, "secrets": secrets, "threads": threads}),
+             None if hints is None and not promises and not secrets and not threads and not roles
+             else Jsonb({"entities": hints or [], "promises": promises, "secrets": secrets, "threads": threads,
+                         **({"roles": roles} if roles else {})}),
              Jsonb(usage) if usage is not None else None),
         ).fetchone()
         if inserted is None:
@@ -757,9 +827,10 @@ def extractor(settings: Settings) -> Generation | None:
     """The extractor generation the settings describe (credentials excluded), or None when off."""
     if not (settings.llm_url and settings.llm_model):
         return None
+    compiler = compiler_of(settings)
     return generations.make(
         "extract", settings.llm_url, settings.llm_model,
-        compiler=COMPILER_VERSION, prompt=generations.fingerprint(SYSTEM_PROMPT),
+        compiler=compiler, prompt=generations.fingerprint(PROMPTS[compiler]),
         predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.NORMALIZER_VERSION,
         json_mode=settings.llm_json_mode, temperature=0, unit="turn", context_turns=settings.extract_turns,
         target_chars=TARGET_CHARS, context_chars=CONTEXT_CHARS, hints=settings.extract_hints,

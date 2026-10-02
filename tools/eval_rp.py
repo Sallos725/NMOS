@@ -6,6 +6,7 @@ The cases are the owner's chats and stay outside the repository; the report prin
     cd apps/sidecar
     uv run python ../../tools/eval_rp.py DIR --db postgresql://…/copy [--extractor KEY] [--summarizer KEY] [--canon KEY]
         [--policy P] [--budget N] [--projection KEY [--embed-url URL]] [--no-vectors] [--json]
+        [--given-name-join [--show-joins]]
 
 DIR/cases.json:
 
@@ -56,6 +57,7 @@ from psycopg.rows import dict_row
 
 from nmos_sidecar import audit, runtime, vectors
 from nmos_sidecar.config import Settings
+from nmos_sidecar.facts import memory_view
 from nmos_sidecar.llm import Embedder
 from nmos_sidecar.retrieval import RecallOptions, query_prefix
 
@@ -145,7 +147,7 @@ def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: Recall
              extractor: str | None = None, budget: int | None = None, summarizer: str | None = None,
              canon: str | None = None, projection: str | None = None,
              embed_timeout_ms: int | None = None, keywords: bool | None = None,
-             anchor: str | None = None) -> dict[str, Any]:
+             anchor: str | None = None, given_name_join: bool | None = None) -> dict[str, Any]:
     """Every case's numbers, and a summary per category and overall. Read-only."""
     results: list[dict[str, Any]] = []
     overrides: dict[str, Any] = {"extractor_key": extractor} if extractor else {}
@@ -159,6 +161,8 @@ def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: Recall
         overrides["lexical_keywords"] = keywords
     if anchor:  # packet-v11's tie-break anchor (PHASE-27 Q1b, ADR 0063): "focus" (today's) or "keywords"
         overrides["excerpt_anchor"] = anchor
+    if given_name_join is not None:  # a full name and its given name as one (PHASE-28 Q4), whatever the request recorded
+        overrides["given_name_join"] = given_name_join
     known_at = datetime.now(timezone.utc) if extractor or summarizer or canon else None
     for case in cases:
         out = audit.replay(conn, UUID(case["trace"]), opts, policy, known_at=known_at, query=case.get("query"),
@@ -189,6 +193,23 @@ def evaluate(conn: psycopg.Connection, cases: list[dict[str, Any]], opts: Recall
                          "lexical_found": sum(r["lexical_found"] for r in ok),
                          "excerpt_median": _median([n for r in ok for n in r["excerpt_chars"]])}
     return {"cases": results, "summary": summary}
+
+
+def given_joins(conn: psycopg.Connection, cases: list[dict[str, Any]], extractor: str | None = None
+                ) -> dict[str, list[list[str]]]:
+    """Every join `given_name_join` makes as of each case's request (PHASE-28 Q4, Q5 (b)), per trace: [full name, given
+    name], normalized. Names of the owner's chats: printed to the terminal for the owner to check, never kept."""
+    out: dict[str, list[list[str]]] = {}
+    for trace in dict.fromkeys(case["trace"] for case in cases):
+        t = audit._trace(conn, UUID(trace))
+        if t is None or t.get("upto_position") is None:
+            continue
+        view = memory_view(conn, t["head_commit_id"], extractor or t["extractor_key"], t["upto_position"],
+                           None if extractor else t["created_at"], given_joins=True)
+        r = view["resolution"]
+        if r is not None and r.given_joins:
+            out[trace] = [[full[1], short[1]] for full, short in r.given_joins]
+    return out
 
 
 EXCERPT = re.compile(r"<Excerpt\b[^>]*>(.*?)</Excerpt>", re.S)
@@ -236,6 +257,11 @@ def main() -> None:
                          " or the question's keywords alone")
     ap.add_argument("--keywords", choices=("on", "off"),
                     help="the keyword route (ADR 0052) in place of what each request recorded (before it: off)")
+    ap.add_argument("--given-name-join", action="store_true",
+                    help="read a full name and its given name as one character (Phase 28 Q4) in every request")
+    ap.add_argument("--show-joins", action="store_true",
+                    help="print to stderr every join --given-name-join makes, per request, for the owner to check"
+                         " (names of the chat: keep them out of the repository)")
     ap.add_argument("--json", action="store_true", help="per-case numbers as JSON (names and counts only)")
     args = ap.parse_args()
     cases = json.loads((args.dir / "cases.json").read_text(encoding="utf-8"))
@@ -245,13 +271,19 @@ def main() -> None:
         warm(opts)
         report = evaluate(conn, cases, opts, args.policy, args.extractor, args.budget, args.summarizer, args.canon,
                           args.projection, args.embed_timeout_ms,
-                          None if args.keywords is None else args.keywords == "on", anchor=args.anchor)
+                          None if args.keywords is None else args.keywords == "on", anchor=args.anchor,
+                          given_name_join=True if args.given_name_join else None)
+        joins = given_joins(conn, cases, args.extractor) if args.show_joins else {}
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:
         if args.no_vectors:  # asked for explicitly: production recalls mostly without vectors (K34, PHASE-18 Q5)
             print("Vectors off (--no-vectors): lexical recall only.\n")
         print(table(report))
+    for trace, pairs in joins.items():
+        print(f"given-name joins as of {trace}: " + "; ".join(" = ".join(p) for p in pairs), file=sys.stderr)
+    if args.show_joins:
+        print(f"given-name joins: {sum(len(p) for p in joins.values())} over {len(joins)} request(s)", file=sys.stderr)
     lexical = [r["name"] for r in report["cases"] if r["status"] == "ok" and not r["vectors"]]
     if not args.no_vectors and lexical:
         print(f"vectors did not run for {len(lexical)} case(s): {', '.join(lexical)}", file=sys.stderr)

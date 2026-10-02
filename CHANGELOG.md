@@ -5,6 +5,14 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Two corrections to measure, both off by default** (Phase 28, ADR 0064 proposed, D73; AGE-24). The owner's live
+  run found a role kept as current after the story ended it, and one character split in two by its full name and its
+  given name. `NMOS_EXTRACT_COMPILER=extract-v16` shows the extractor the roles in force and asks it to end one with
+  the listed wording, so the ending closes that role (selecting it re-extracts every chat once; `extract-v15` stays the
+  default). `NMOS_GIVEN_NAME_JOIN=1` reads 백이안 and 이안 as one character when the story mentions both in the same
+  turns and nothing says they are two; two different people so named read the same, so it stays off until measured.
+  With neither set nothing changes; traces record the new recall option and recorded requests replay as they were.
+
 - **The query is embedded while recall reads, so a slower embedder still gives vectors** (ADR 0061, D70; K34, AGE-24).
   A request used to give the embedding of your message 300 ms on its own, after lexical recall and before the facts
   were read: an embedder behind a proxy, or a busy one, missed it, and 70 % of the owner's production requests found

@@ -367,7 +367,8 @@ LIVE: Any = object()  # `canon_facts` of a live read: decided from the manifest 
 def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None, upto: int | None = None,
                 known_at: datetime | None = None, canon_manifest: str | None = None,
                 canon_exact: bool = False, canon_key: str | None = None,
-                canon_facts: Any = LIVE, what_if: dict[str, Any] | None = None) -> dict[str, list[dict[str, Any]]]:
+                canon_facts: Any = LIVE, what_if: dict[str, Any] | None = None,
+                given_joins: bool = False) -> dict[str, list[dict[str, Any]]]:
     """The head's assertions by what they may do (ADR 0013).
 
     - facts: current fact versions from actual narration (legacy rows without a source count as
@@ -386,6 +387,9 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
 
     `upto` and `known_at` read it as of an earlier request (ADR 0027): the head up to that position, the
     extractions and owner links NMOS had by that time.
+
+    `given_joins` (the recall option `given_name_join`, PHASE-28 Q4) joins a full name and its given name in the
+    resolution (`entities._given_joins`); the Inspector and the owner's previews read without it.
 
     `what_if` reads it as it would be after an owner's join, split or undo (PHASE-20 Q3): `add_links` and
     `add_repairs` are rows as they would be stored, `drop_links` and `drop_repairs` ids taken back. Nothing is written.
@@ -428,7 +432,7 @@ def memory_view(conn: psycopg.Connection, head: UUID, extractor_key: str | None,
         links = [x for x in links if str(x["id"]) not in what_if.get("drop_links", ())] + list(
             what_if.get("add_links", ()))
     r = resolve(conv["conversation_id"], rows, persona_of(conv["host_persona_name"]), links, splits_of(in_force),
-                canon_names)
+                canon_names, given_joins)
     narrated: dict[tuple, list[dict[str, Any]]] = {}
     claimed: dict[tuple, dict[str, Any]] = {}
     other: list[dict[str, Any]] = []

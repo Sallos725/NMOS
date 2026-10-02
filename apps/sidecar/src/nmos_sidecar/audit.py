@@ -159,6 +159,7 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     recorded.setdefault("history_marks", False)  # nor one from before history under its marks (ADR 0038 am. 1)
     recorded.setdefault("name_variants", False)  # nor one from before given and romanized names (ADR 0058)
     recorded.setdefault("excerpt_anchor", "focus")  # the anchor every request had before packet-v11's Q1b (ADR 0063)
+    recorded.setdefault("given_name_join", False)  # nor a join of a full name and its given name (PHASE-28 Q4)
     opts = dataclasses.replace(options, **recorded, extractor_key=t["extractor_key"],
                                rules_version=t["rules_version"] or "none", policy=policy)
     wanted = projection or t["embed_projection"]
