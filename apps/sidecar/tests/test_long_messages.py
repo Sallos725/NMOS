@@ -6,7 +6,8 @@ import pytest
 
 from conftest import make_client
 from nmos_sidecar.extraction import TARGET_CHARS
-from nmos_sidecar.vectors import CHUNK_CHARS, MAX_CHUNKS
+from nmos_sidecar.normtext import NORMALIZER_VERSION
+from nmos_sidecar.vectors import CHUNK_CHARS, CHUNKER_VERSION, DOCUMENT_PROFILE, MAX_CHUNKS
 from simchat import SimChat
 from test_extraction import drain, filler
 from test_generations import EMB, LLM, conv_id
@@ -53,7 +54,7 @@ def test_embedding_reports_partial_coverage_for_long_message(client_all, migrate
         "SELECT rt.clean_chars, max(re.text_end) AS covered FROM revision_embedding re"
         " JOIN revision_text rt ON rt.source_revision_id = re.source_revision_id GROUP BY rt.clean_chars").fetchall()}
     assert covered[5_000] == 5_000  # fits
-    assert all(covered[n] < n and covered[n] <= limit for n in (6_000, 10_000, 20_000))
+    assert all(covered[n] < n and covered[n] <= limit == 5_600 for n in (6_000, 10_000, 20_000))  # partial (K13)
     cov = client_all.get(f"/v1/conversations/{conv_id(client_all, chat)}/coverage").json()["embeddings"]
     assert cov["partial"] == 3 and cov["complete"] is False
     page = client_all.get(f"/inspector/c/{conv_id(client_all, chat)}?lang=en").text
@@ -86,3 +87,49 @@ def test_long_message_raw_evidence_remains_complete(client_all, migrated, db):
     drain_embeddings(migrated)
     for n, row in members(db).items():
         assert row["content"] == story(n) and len(row["content"]) == n
+
+
+def test_a_projection_embeds_by_the_cap_its_own_key_records(client_all, migrated, db):
+    """ADR 0062: the default projection embeds the 20,000-character message in 8 chunks (its key says `max_chunks` 8,
+    as the constant did: the same key as before the setting, so an upgrade re-embeds nothing); a generation whose spec
+    says 24 embeds 24 under the same default, and a spec from before the cap was in the key (no `max_chunks`) cuts
+    at 8."""
+    from nmos_sidecar import generations
+    from nmos_sidecar.generations import Generation
+    from nmos_sidecar.vectors import process_embed
+
+    chat = long_chat()
+    sync(client_all, chat)
+    drain_embeddings(migrated)
+    rid = members(db)[20_000]["id"]
+    active = db.execute("SELECT projection, count(*) AS n, max(text_end) AS covered FROM revision_embedding"
+                        " WHERE source_revision_id = %s GROUP BY projection", (rid,)).fetchall()
+    assert len(active) == 1 and active[0]["n"] == MAX_CHUNKS == 8 and active[0]["covered"] <= 5_600
+    before_the_setting = generations.make("embed", EMB["embed_url"], EMB["embed_model"], normalizer=NORMALIZER_VERSION,
+                                          chunker=CHUNKER_VERSION, chunk_chars=CHUNK_CHARS, max_chunks=8,
+                                          document_profile=DOCUMENT_PROFILE)
+    assert active[0]["projection"] == before_the_setting.key  # the constant's key, as the release before made it
+    wide = generations.make("embed", EMB["embed_url"], EMB["embed_model"], normalizer="clean-vtest",
+                            chunker="chunk-v1", chunk_chars=CHUNK_CHARS, max_chunks=24, document_profile="plain")
+    legacy = Generation(kind="embed", model=EMB["embed_model"], endpoint=wide.endpoint, key="embed-before-the-cap",
+                        spec={"kind": "embed", "model": EMB["embed_model"], "chunker": "chunk-v1"})
+    for gen, cap in ((wide, 24), (legacy, 8)):
+        generations.ensure(db, gen)
+        assert process_embed(db, {"payload": {"revision_id": str(rid), "generation": gen.key}},
+                             FakeEmbedder(), gen) == "done"
+        rows = db.execute("SELECT count(*) AS n, max(text_end) AS covered FROM revision_embedding"
+                          " WHERE source_revision_id = %s AND projection = %s", (rid, gen.key)).fetchone()
+        assert rows["n"] == cap and cap * (CHUNK_CHARS - 30) <= rows["covered"] <= cap * CHUNK_CHARS, gen.key
+
+
+def test_a_chunk_cap_under_one_is_refused_at_startup(monkeypatch):
+    """A cap of 0 would embed nothing and mark every embed job done (Copilot on #242)."""
+    from nmos_sidecar.config import Settings
+
+    with pytest.raises(ValueError, match="NMOS_EMBED_MAX_CHUNKS must be at least 1"):
+        Settings(embed_max_chunks=0)
+    monkeypatch.setenv("NMOS_EMBED_MAX_CHUNKS", "-3")
+    with pytest.raises(ValueError, match="at least 1, not -3"):
+        Settings()
+    monkeypatch.setenv("NMOS_EMBED_MAX_CHUNKS", "1")
+    assert Settings().embed_max_chunks == 1

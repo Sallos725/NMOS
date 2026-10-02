@@ -26,6 +26,11 @@ With BENCH_RECALL=wide (Phase 15) every message has a vector near the query's (a
 each request asks for the scenes of a place with no previous reply, so recall has more excerpts and facts to offer than
 any budget takes: a larger budget's recall is the largest. The default questions match the chat's repeated sentence,
 whose excerpts all say the same thing, and there is no embedder.
+
+With BENCH_EMBED_MS=N (ADR 0061) the wide embedder answers after N ms, as a remote or busy embedder does (K34): with N
+near or above `NMOS_EMBED_TIMEOUT_MS` (300), the result also says how many of the 15 requests had vectors. With
+BENCH_PREFETCH=1 each request's user message is its question, as the plugin sends it, so the sync that delivers the
+message starts its embedding (ADR 0061 item 7) and the retrieve that follows takes it.
 """
 
 from __future__ import annotations
@@ -50,6 +55,7 @@ from nmos_sidecar import generations  # noqa: E402
 from nmos_sidecar.api import create_app  # noqa: E402
 from nmos_sidecar.config import Settings  # noqa: E402
 from nmos_sidecar.ids import uuid7  # noqa: E402
+from nmos_sidecar.llm import LLMError  # noqa: E402
 from nmos_sidecar.migrate import apply_migrations  # noqa: E402
 from nmos_sidecar.vectors import projection, vector_literal  # noqa: E402
 
@@ -228,10 +234,16 @@ class Near:
     """BENCH_RECALL=wide: a query embedder that answers at once with the vector every message is near (`add_vectors`),
     so vector search has more relevant candidates than any budget takes, as on a long real chat."""
 
-    def __init__(self) -> None:
+    def __init__(self, delay_ms: int = 0) -> None:
         self.base: list[float] = [random.Random(11).gauss(0, 1) for _ in range(DIM)]
+        self.delay_ms = delay_ms  # BENCH_EMBED_MS: a slow embedder, answering after this long
 
     def embed(self, texts: list[str], timeout_s: float) -> list[list[float]]:
+        if self.delay_ms:
+            if self.delay_ms / 1000 > timeout_s:  # what httpx would do: the call times out before the answer
+                time.sleep(timeout_s)
+                raise LLMError(f"embedding request failed: ReadTimeout after {timeout_s:.3f}s")
+            time.sleep(self.delay_ms / 1000)
         return [self.base for _ in texts]
 
 
@@ -258,7 +270,7 @@ def bench(n: int) -> dict:
     wide = os.environ.get("BENCH_RECALL") == "wide"
     embed = {"embed_url": "http://bench/v1", "embed_model": "bench"} if wide else {}
     settings = Settings(database_url=url, llm_url="http://bench/v1", llm_model="bench", **off, **embed)  # no worker runs
-    near = Near() if wide else None
+    near = Near(int(os.environ.get("BENCH_EMBED_MS", "0"))) if wide else None
     try:
         apply_migrations(url)
         chat = build_chat(n)
@@ -288,23 +300,27 @@ def bench(n: int) -> dict:
                 # would scan it too, which the sidecar alone never does. Its objects are frozen out of collection.
                 gc.collect()
                 gc.freeze()
-                retrieves, story, sizes = [], 0, []
+                retrieves, story, sizes, vectors_on = [], 0, [], 0
                 for i in range(15):
                     chat.reply(SENTENCE * 20 + f"새 장면 {i}.")
-                    chat.user(f"새 대사 {i}: {PLACES[i % len(PLACES)]}에 다시 가자.")
-                    sync(client, chat)
                     q = f"{PLACES[i % len(PLACES)]} 장면" if wide else QUERIES[i % len(QUERIES)]
                     q = f"처음에 {q}" if os.environ.get("BENCH_FIRST") == "1" else q  # Phase 21: every message asks how it started
                     q = f"{called(i * 3 % 40)}, {q}" if os.environ.get("BENCH_NAMES") == "1" else q  # Phase 24
+                    # ADR 0061 item 7: the user's message is the question, as the plugin sends it; else another message
+                    chat.user(q if os.environ.get("BENCH_PREFETCH") == "1" else f"새 대사 {i}: {PLACES[i % len(PLACES)]}에 다시 가자.")
+                    sync(client, chat)
                     out, ms = post(client, "/v1/retrieve", {"chat_id": chat.id, "query": q,
                                                              "previous_ai": "" if wide else SENTENCE,
                                                              "in_context_ids": [m["chatId"] for m in chat.messages[-40:]],
                                                              "budget_tokens": BUDGET, **extra})
                     retrieves.append(ms)
+                    vectors_on += out.get("vectors") == "on"
                     story += "<Story>" in out["packet"]["text"]
                     sizes.append((out["packet"]["token_estimate"], out["packet"]["excerpt_count"]))
             result["retrieve_ms"] = {"p50": p(retrieves, 0.5), "p95": p(retrieves, 0.95)}
             result["packets_with_story"] = story
+            if near is not None:
+                result["vectors_on"] = vectors_on  # of 15 requests (K34, ADR 0061)
             result["budget"], result["policy"] = BUDGET, settings.packet_policy or "default"
             result["packet_tokens_mean"] = round(sum(t for t, _ in sizes) / len(sizes))
             result["excerpts_mean"] = round(sum(e for _, e in sizes) / len(sizes), 1)

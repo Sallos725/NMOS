@@ -45,6 +45,10 @@ class Settings:
     extract_backfill: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_BACKFILL", "100")))
     # Embeddings are cheap (local models): cover far more history on first sight than LLM extraction.
     embed_backfill: int = field(default_factory=lambda: int(os.environ.get("NMOS_EMBED_BACKFILL", "2000")))
+    # Chunks of 700 normalized characters embedded per message, from its start (ADR 0062; K13): 8 is 5,600 characters,
+    # the cap since #13, which the owner's long chats stay within once normalized (measured on the M0 copy: 5,481 at
+    # most). Part of the projection key: a change re-embeds every chat once (K18); the default does not.
+    embed_max_chunks: int = field(default_factory=lambda: int(os.environ.get("NMOS_EMBED_MAX_CHUNKS", "8")))
     worker_concurrency: int = field(default_factory=lambda: int(os.environ.get("NMOS_WORKER_CONCURRENCY", "2")))
     facts_limit: int = field(default_factory=lambda: int(os.environ.get("NMOS_FACTS_LIMIT", "8")))
     # `event` facts among them (PHASE-7 Q4): the newest events of a main character would take every slot.
@@ -74,3 +78,8 @@ class Settings:
     parsers_file: str = field(default_factory=lambda: os.environ.get("NMOS_PARSERS_FILE", ""))
     # Test hook for the "sidecar slower than deadlineMs" acceptance check. Never set in production.
     debug_delay_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_DEBUG_DELAY_MS", "0")))
+
+    def __post_init__(self) -> None:
+        # A cap under one would embed nothing and mark every embed job done (ADR 0062): refused at startup.
+        if self.embed_max_chunks < 1:
+            raise ValueError(f"NMOS_EMBED_MAX_CHUNKS must be at least 1, not {self.embed_max_chunks}")

@@ -20,6 +20,9 @@ from .generations import Generation
 from .llm import Embedder, embedded
 
 CHUNK_CHARS = 700
+# The default cap on chunks per message (`Settings.embed_max_chunks`, ADR 0062): 8 × 700 = 5,600 normalized characters,
+# as since #13 (K13). Each projection carries its cap in its key (`max_chunks`), so a changed cap is a new projection
+# and re-embeds; the default is unchanged, so an upgrade does not.
 MAX_CHUNKS = 8
 CHUNKER_VERSION = "chunk-v1"  # bump when chunks() can cut differently
 DOCUMENT_PROFILE = "plain"  # documents are embedded without an instruction prefix
@@ -32,15 +35,17 @@ def projection(settings: Settings) -> Generation | None:
         return None
     return generations.make(
         "embed", settings.embed_url, settings.embed_model, normalizer=normtext.NORMALIZER_VERSION,
-        chunker=CHUNKER_VERSION, chunk_chars=CHUNK_CHARS, max_chunks=MAX_CHUNKS, document_profile=DOCUMENT_PROFILE,
+        chunker=CHUNKER_VERSION, chunk_chars=CHUNK_CHARS, max_chunks=settings.embed_max_chunks,
+        document_profile=DOCUMENT_PROFILE,
     )
 
 
-def chunks(text: str, size: int = CHUNK_CHARS) -> list[tuple[int, int]]:
-    """(start, end) spans of at most `size` chars, cut at paragraph/sentence boundaries when possible."""
+def chunks(text: str, size: int = CHUNK_CHARS, limit: int = MAX_CHUNKS) -> list[tuple[int, int]]:
+    """(start, end) spans of at most `size` chars, cut at paragraph/sentence boundaries when possible; at most `limit`
+    of them, from the text's start (the rest of a longer message is not embedded: K13)."""
     spans: list[tuple[int, int]] = []
     start, n = 0, len(text)
-    while start < n and len(spans) < MAX_CHUNKS:
+    while start < n and len(spans) < limit:
         end = min(n, start + size)
         if end < n:
             window = text[start:end]
@@ -71,7 +76,8 @@ def process_embed(conn: psycopg.Connection, job: dict[str, Any], embedder: Embed
     if done:
         return "done"
     text = row["clean_content"]  # spans index into the normalized text (retrieval slices the same way)
-    spans = chunks(text)
+    # The projection's own cut (its key holds it, D20); a projection from before the cap was in the key cut at 8.
+    spans = chunks(text, gen.spec.get("chunk_chars", CHUNK_CHARS), gen.spec.get("max_chunks", 8))
     if not spans:
         return "done"
     # One chunk per request: Ollama serves embeddings in order, and a large batch here would delay the
