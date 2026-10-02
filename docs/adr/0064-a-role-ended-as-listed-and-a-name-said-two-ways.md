@@ -50,6 +50,12 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    TARGET turn as it is; and `quoted_in` reads a quote joined by an ellipsis by its passages: the first of
    `EVIDENCE_MIN_CHARS` or more found in the turn at the same bar is the evidence kept, a passage from CONTEXT is never
    counted or kept. The bar is unchanged.
+   *And on `2e4ccfd`* (9 calls): the move ended 3/3 and the resignation 3/3, each on one TARGET passage, but the eve
+   was ended "now" once in three, on the same TARGET sentence about the next day (similarity 0.975). A quote that
+   places the change later (`LATER`: 내일, 다음 날/주/달, 예정, tomorrow, next week, will, going to, …) now closes
+   nothing whatever `when` says, and the rule says a sentence about tomorrow or later is never "now". This is a cue list
+   in the K39 manner: it can miss an ending told with such a word (a stale role) and grows only by measurement; a
+   premature ending (a wrong current state) is the worse error.
 2. **A name and a part of it** (Q4). The `also_called` rule (`ALIAS_PARTS`, in place of `extract-v15`'s `V15_ALIAS`)
    also asks for an alias when the TARGET turn writes a character by a full name and, for the same character, by part
    of it: the given name alone, or in a story in English the first or the last name alone; subject the full name, value

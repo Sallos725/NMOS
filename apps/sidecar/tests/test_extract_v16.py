@@ -84,7 +84,8 @@ def test_the_v16_prompt_names_a_listed_role_that_ends_right_after_the_role_rule(
     assert prompt.index('`role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").') < rule
     for phrase in ('`when`: "now" when it is over by the end of the TARGET turn',
                    '"planned" when the TARGET turn only plans, arranges, announces or prepares',
-                   "the role holds until a later turn\n  ends it",
+                   "even when it is decided in this\n  turn: the role holds until a later turn ends it",
+                   'A sentence about tomorrow or later is never "now".',
                    '`evidence`: one passage of the TARGET turn, copied as it is; never CONTEXT, never two passages\n  joined with "..."',
                    "Not when someone only goes out, travels or is away for a while",
                    "Do not write the ending as a `role_toward` yourself",
@@ -203,6 +204,21 @@ def test_an_ending_only_planned_or_without_its_time_closes_nothing_yet():
 
 
 EVE = "그날 저녁 하나는 다락방에서 짐을 쌌다. 내일부터는 다른 집에서 지내기로 되어 있었다."
+
+
+def test_a_quote_that_places_the_change_later_closes_nothing_even_when_said_now():
+    """The owner's run of 2e4ccfd: on the eve of the move the model answered "now" once in three, quoting "내일부터 겨울
+    내내 …", a sentence in the target turn about the next day. A quote with a time word that places the change later
+    closes nothing; an ending told as done still does."""
+    for quote in ("내일부터 겨울 내내 다른 집에서 지내기로 했다.", "다음 날 아침에 이사하기로 했다.", "다음 주에 짐을 옮길 예정이다.",
+                  "She will move out of Kaito's house tomorrow.", "From next week she rents a room elsewhere.",
+                  "Hana is going to leave the inn."):
+        assert extraction.ended_roles({"roles_ended": [{"role": "R1", "when": "now", "evidence": quote}]}, [], ROLES,
+                                      quote) == [], quote
+    for quote in (MOVED, "하나는 오늘 아침 카이토의 집을 떠나 새 집으로 이사했다.", "Hana moved out of Kaito's house this morning."):
+        (row,) = extraction.ended_roles({"roles_ended": [{"role": "R1", "when": "now", "evidence": quote}]}, [], ROLES,
+                                        quote)
+        assert row["polarity"] == "negative", quote
 
 
 def test_a_quote_joining_context_and_target_counts_by_its_passage_in_the_target_turn():

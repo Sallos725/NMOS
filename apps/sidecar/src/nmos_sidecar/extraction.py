@@ -204,8 +204,8 @@ Answer with JSON only: {{"assertions": [{{"subject": "...", "subject_type": "...
 ROLE_ENDINGS = """- If CURRENT ROLES are listed (R1, R2, …), report in `roles_ended` each one the TARGET turn ends, with
   `when`: "now" when it is over by the end of the TARGET turn (they have moved out, quit or been dismissed,
   the arrangement is called off); "planned" when the TARGET turn only plans, arranges, announces or prepares
-  the ending (packing for tomorrow's move, notice that takes effect later): the role holds until a later turn
-  ends it. `evidence`: one passage of the TARGET turn, copied as it is; never CONTEXT, never two passages
+  the ending (packing for tomorrow's move, notice that takes effect later), even when it is decided in this
+  turn: the role holds until a later turn ends it. A sentence about tomorrow or later is never "now". `evidence`: one passage of the TARGET turn, copied as it is; never CONTEXT, never two passages
   joined with "...". Not when someone only goes out, travels or is away for a while. Do not write the ending as a `role_toward` yourself. A new role toward the same person replaces
   the listed one by itself: give only the new `role_toward`. Most turns end none: then "roles_ended": [].
 """
@@ -721,6 +721,12 @@ def revealed(answer: dict[str, Any], secrets: list[dict[str, Any]], turn_text: s
 
 
 ELLIPSIS = re.compile(r"\s*(?:\.{3,}|…)\s*")
+# A quote that places the change later is a plan, whatever `when` says (PHASE-28 Q1): the owner's run of 2e4ccfd saw the
+# stay ended "now" on the eve of the move, quoting "내일부터 겨울 내내 …". Kept to time words; a cue list grows like K39's,
+# so it is measured with the rest of Q5 (c). Missing an ending here costs a stale role; a premature one, a wrong state.
+LATER = re.compile(r"(내일|모레|다음\s?날|이튿날|다음\s?(주|달|해)|내주|내달|내년|머지않아|예정|"
+                   r"\b(tomorrow|soon|will|shall)\b|\bgoing to\b|\bplan(s|ned)? to\b|\bnext (day|week|month|year)\b|"
+                   r"\bfrom (tomorrow|next)\b)", re.IGNORECASE)
 
 
 def quoted_in(evidence: str, turn_text: str) -> str | None:
@@ -745,7 +751,8 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
     closes exactly that role with. Only an ending that is over in the target turn (`when` "now"): one only planned or
     prepared there (packing for tomorrow's move) closes nothing yet; the owner's run of 4a7c11c saw a stay ended on the
     eve of the move, three times out of three. An unknown number, or evidence not found in the target turn, gives
-    nothing; a quote that joins passages with an ellipsis counts by its passage found there (`quoted_in`). A negative
+    nothing; a quote that joins passages with an ellipsis counts by its passage found there (`quoted_in`); a quote that
+    places the change later (`LATER`: tomorrow, next week, planned…) closes nothing, whatever `when` says. A negative
     `role_toward` the model wrote itself between the two parties of a listed role is dropped: the listed ending is the
     one way to close it, and a free one in other words would stand beside the role as a fact of its own."""
     pairs = {(norm(r["by"]), norm(r["to"])) for r in roles}
@@ -765,7 +772,7 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
         if str(entry.get("when") or "").strip().lower() != "now":
             continue
         evidence = quoted_in(str(entry.get("evidence") or "").strip()[:300], turn_text)
-        if evidence is None:
+        if evidence is None or LATER.search(evidence):
             continue
         done.add(int(ref))
         listed = roles[int(ref) - 1]
