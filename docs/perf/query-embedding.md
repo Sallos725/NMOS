@@ -47,6 +47,33 @@ Packets: the same mean size per run on both sides (571 tokens without an embedde
   timeout once, after the reads, and the call ends on its own at twice the timeout), so no request is slower in all
   than on `main`; the sizes above are the whole retrieve as the plugin sees it (`/v1/retrieve`, in-process).
 
+## Asked for at the sync (ADR 0061 item 7)
+
+`BENCH_PREFETCH=1`: each request's user message is its question, as the plugin sends it, so the sync that delivers the
+message starts its embedding and the retrieve that follows takes it. The same wide recall, three rounds each, `main`
+and this branch in turn; `BENCH_EMBED_MS` 400 (production's shape) and 700 (an embedder that misses even the reads'
+time plus the timeout).
+
+| Run (15 requests each; the message is the question) | `main` cf52cec, p50 / p95 | this change, p50 / p95 | p50 difference | requests with vectors, before → after |
+|---|---:|---:|---:|---:|
+| Embedder answering in 400 ms (production's shape) | 660.0 / 747.1 ms | 493.2 / 564.2 ms | **−167 ms** | **0 → 15** |
+| Embedder answering in 700 ms (beyond the reads plus the timeout) | 648.7 / 737.4 ms | 636.1 / 809.5 ms | −13 ms | **0 → 6–7** |
+
+Raw rounds (p50, ms): `main` 400 ms 628.8, 660.0, 671.4; branch 468.6, 502.3, 493.2; `main` 700 ms 648.7, 641.2, 664.0;
+branch 624.0, 636.1, 647.7 (vectors 6, 6, 7 of 15; packets 909–929 tokens, 4–4.7 excerpts, against `main`'s 818 and
+none).
+
+- **At 400 ms the sync's time comes on top of the reads'**: 493 ms p50 against 534 ms when the call starts at recall
+  (the table above), −167 ms against `main`, every request with vectors. In this harness the sync is an in-process
+  append of a 10,000-message chat (tens of milliseconds); on the real host the plugin's sync takes 0.3–2.5 s at that
+  size (`docs/perf/scale.md`), so a production embedder's call is over before the retrieve arrives.
+- **At 700 ms the request is no slower and 6–7 of 15 have vectors**: the sync, the reads and the 300 ms wait cover the
+  call where the reads ran long; the rest fall back as before, at the same p50 (the wait after the reads is bounded as
+  the call was). The requests that gained vectors compile fuller packets (ten excerpts, the vector search): their p95
+  is ≈60 ms above `main`'s, the price of the memory they now carry, not of the wait.
+- A 700 ms embedder is beyond production's shape (280–450 ms behind a proxy); it shows the bound: what the prefetch
+  buys is the sync's time, nothing more, and no request pays for an embedder that never answers.
+
 ## Long replies embedded whole (ADR 0062)
 
 Not measurable here: the bench chat's replies are 1,200 characters (two chunks under either cap), so its vectors,
