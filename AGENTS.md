@@ -33,7 +33,8 @@ Read these files in this order before changing code:
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
 4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-27.md` is the latest, approved 2026-10-02,
-   step 2 next; `PHASE-26.md` was stopped before it merged; Phase 23 is the current phase; `PHASE-0.md`…`PHASE-22.md`,
+   step 2 next, in progress beside the current phase as Phases 24 and 25 were; `PHASE-26.md` was stopped before it
+   merged; Phase 23 is the current phase, its step 6 awaiting the owner's check; `PHASE-0.md`…`PHASE-22.md`,
    `PHASE-24.md` and `PHASE-25.md` still define the behavior they introduced).
 5. `docs/HOST-FACTS.md` — facts established by the live PocketRisu spike.
 6. Relevant ADRs in `docs/adr/`.

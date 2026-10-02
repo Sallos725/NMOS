@@ -3,8 +3,9 @@
 ## Current phase
 
 **Phase 27 — The excerpt lands on the answer (`packet-v11`): approved 2026-10-02, step 2 next.** Spec
-`docs/phases/PHASE-27.md` (AGE-31 under AGE-24; a correction found by measurement, not a roadmap stage; the owner's
-order: before 0.3.0, AGE-7). From the diagnosis of draft PR #241: the request often retrieves the message that holds
+`docs/phases/PHASE-27.md` (AGE-31 under AGE-24; a correction found by measurement, not a roadmap stage, in progress
+beside the current phase as Phases 24 and 25 were — Phase 23 stays current until the owner's check of its step 6; the
+owner's order: before 0.3.0, AGE-7). From the diagnosis of draft PR #241: the request often retrieves the message that holds
 the answer and excerpts another part of it. Two rules, behind a new packet policy: a message found by a word route and
 by vectors excerpts within its vector chunk, and a why or contents question grows its excerpt by characters (320)
 instead of four sentences. The prototype's one-case rules and passage embeddings stay out. Measured by the owner's

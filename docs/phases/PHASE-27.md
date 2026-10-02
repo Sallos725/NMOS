@@ -59,10 +59,19 @@ production: the prototype does not change the sidecar.
 1. `packet-v11` (Q1–Q3) in `packet.py` and `retrieval.gather`: the chunk as the excerpt's source for a candidate with
    a qualifying vector similarity, and character-bounded growth for why/contents questions; behind `NMOS_PACKET_POLICY`
    in step 2, the default in step 3 (Q3); the tie-break anchor as Q1b's measurement decides.
-2. Deterministic cases: a message found by a keyword and by vectors excerpts within its chunk under `packet-v11` and
-   the whole message under `packet-v10`; a why question's excerpt takes five short sentences within 320 characters
-   under `packet-v11` and four under `packet-v10`; an ordinary question keeps four; a recorded `packet-v10` request
-   replays as it was.
+2. Deterministic cases, one per branch of Q1–Q3 and Q1b (Copilot on #243):
+   - Q1: a message found by a **keyword** and by vectors, and one found by **lexical** recall and by vectors, each
+     excerpt within the chunk under `packet-v11` and the whole message under `packet-v10`; a message found by a word
+     route whose vector similarity is **below** `vector_min_sim` keeps the whole message under both; a message found
+     by vectors **only** excerpts its chunk under both (unchanged).
+   - Q2: a **why** question's excerpt takes five short sentences within 320 characters under `packet-v11` and four
+     under `packet-v10`; a **contents** question (`내용`, "contents") the same; an **ordinary** question keeps four
+     under both; the growth never exceeds `excerpt_chars`.
+   - Q1b: a message whose candidate sentences tie on keywords, where the previous reply decides the tie today and the
+     question's keywords alone decide it otherwise: the case pins whichever anchor Q1b's measurement chose, and that
+     `packet-v10` keeps today's.
+   - Q3: `NMOS_PACKET_POLICY=packet-v11` selects the policy and the trace records it; with the variable unset the
+     default is `packet-v10` until step 3; a recorded `packet-v10` request replays as it was.
 3. Evaluation (Q6) and docs: an ADR, `ARCHITECTURE.md` (a decision), CHANGELOG, README (`NMOS_PACKET_POLICY`),
    KNOWN-ISSUES (K39: longer windows carry more replaced values), `docs/perf/answer-span.md`.
 
