@@ -27,6 +27,8 @@ apart, 3 runs each (81 calls), the model gave no `also_called`. `extract-v16` no
 a full name in KNOWN ENTITIES whose part the turn writes on its own; not a namesake's part, a pair already one entity,
 or the persona's names) and the model confirms one by number in `same_names`; the worker writes the alias, which the
 turn check keeps (ADR 0064 item 2). A first introduction, whose full name is not yet known, stays with the free rule.
+On `0abb2fd` (90 calls) the model confirmed listed pairs by their names instead of their number in 46 of 63 answers,
+all refused, so no alias was kept; the rule and the closing line now ask for the number, shown for N1.
 
 ## Goal
 

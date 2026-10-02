@@ -94,7 +94,12 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    in the turn (`quoted_in`), and drops a free `also_called` the model wrote between a listed pair's names. The pairs
    are stored with the extraction's hints (`names`). Identity is still the model's judgment, now asked of it pair by
    pair; ADR 0012's turn check, provenance and ambiguity rule are unchanged, and a name whose full name is not yet
-   known (a first introduction) is left to the free rule above. Not yet measured.
+   known (a first introduction) is left to the free rule above.
+   *And on `0abb2fd`* (90 calls; roles 12/12): NAME PAIRS were listed on 21 of the 27 turns, and on 46 of their 63
+   answers the model confirmed a pair by its names (`"pair": "윤하람 / 하람"`) instead of its number, which the parser
+   refused (17 gave none); no alias was kept, none wrong. The rule now says `pair` is the number as listed, never the
+   names, and the closing line shows the answer for N1 with its names (`for N1, 윤하람 / 하람: {"pair": "N1", …}`). The
+   parser is unchanged: a pair named by its names is still refused.
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before

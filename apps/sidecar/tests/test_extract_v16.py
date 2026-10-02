@@ -139,7 +139,8 @@ def test_the_v16_prompt_asks_for_listed_name_pairs_by_number():
     answers by number, as CURRENT ROLES are."""
     v15, v16 = (extraction.PROMPTS[c].format(registry=registry_prompt()) for c in ("extract-v15", "extract-v16"))
     for phrase in ("If NAME PAIRS are listed (N1, N2, …)", "Report in `same_names` each pair the TARGET turn uses for one"
-                   " character", "Do not also write that `also_called` yourself", '"same_names": []',
+                   " character", 'with `pair`: its number as listed ("N1"), never the names',
+                   "Do not also write that `also_called` yourself", '"same_names": []',
                    '"same_names": [{"pair": "N1", "evidence": "..."}]'):
         assert phrase not in v15 and phrase in v16.replace("\n  ", " "), phrase
 
@@ -183,6 +184,9 @@ def test_the_block_and_the_nudge_list_the_pairs_only_when_there_is_one():
     user = extraction.build_prompt(ctx(TWO_WAYS), known("윤하나"), pairs=pairs)
     assert "NAME PAIRS (a known full name, and part of it written on its own in the TARGET turn):\nN1. 윤하나 / 하나" in user
     assert "Before answering, decide for each NAME PAIR (N1–N1) whether the TARGET turn uses the two names for one" in user
+    # the owner's run of 0abb2fd: 46 of 63 answers named the pair ("윤하람 / 하람") instead of its number, and were refused
+    assert ('list only those in `same_names` by their number, not their names (for N1, 윤하나 / 하나: {"pair": "N1",'
+            ' "evidence": "..."}), each quoting the TARGET turn.') in user
     assert "NAME PAIRS" not in extraction.build_prompt(ctx(TWO_WAYS), known("윤하나"))
 
 
@@ -197,7 +201,8 @@ def test_a_confirmed_pair_is_written_as_the_alias_the_turn_check_keeps():
 
 
 def test_an_unknown_number_a_quote_not_in_the_turn_and_a_repeat_give_nothing_more():
-    answer = {"same_names": [{"pair": "N3", "evidence": TWO_WAYS}, {"pair": "윤하나 / 하나", "evidence": TWO_WAYS},
+    answer = {"same_names": [{"pair": "N3", "evidence": TWO_WAYS},
+                             {"pair": "윤하나 / 하나", "evidence": TWO_WAYS},  # the names, not the number: refused
                              {"pair": "N1", "evidence": "카이토는 창밖을 내다보며 오래 생각에 잠겼다."},
                              {"pair": "n1", "evidence": TWO_WAYS}, {"pair": "N1", "evidence": TWO_WAYS}, "N1"]}
     assert [r["value"] for r in extraction.same_names(answer, [], PAIRS, TWO_WAYS)] == ["하나"]

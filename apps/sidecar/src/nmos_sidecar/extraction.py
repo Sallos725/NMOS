@@ -239,8 +239,8 @@ ALIAS_PARTS = """- `also_called` when the TARGET turn itself gives both names fo
   If NAME PAIRS are listed (N1, N2, …), each is a known full name and part of it, both written in the
   TARGET turn. Report in `same_names` each pair the TARGET turn uses for one character (one introduces
   themselves in full and is then called by the given name; a name tag reads the full name and they are
-  addressed by the given name), with `evidence`: one passage of the TARGET turn copied as it is that
-  shows it. Not under the conditions above. Do not also write that `also_called` yourself. When none is
+  addressed by the given name), with `pair`: its number as listed ("N1"), never the names, and
+  `evidence`: one passage of the TARGET turn copied as it is that shows it. Not under the conditions above. Do not also write that `also_called` yourself. When none is
   one character: "same_names": [].
 """
 _ROLE_EXAMPLE = '  `role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").\n'  # the role rule follows it
@@ -733,7 +733,9 @@ def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
                   f" \"TARGET turn {ctx['target']['turn']}:\"), not CONTEXT."]
     if pairs:
         lines += ["", f"Before answering, decide for each NAME PAIR (N1–N{len(pairs)}) whether the TARGET turn uses the"
-                  " two names for one character; list only those in `same_names`, each quoting the TARGET turn."]
+                  " two names for one character; list only those in `same_names` by their number, not their names"
+                  f" (for N1, {pairs[0]['full']} / {pairs[0]['part']}: {{\"pair\": \"N1\", \"evidence\": \"...\"}}),"
+                  " each quoting the TARGET turn."]
     return "\n".join(lines)
 
 
