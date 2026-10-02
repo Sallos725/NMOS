@@ -69,6 +69,9 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    reconciliation rule are unchanged. A bounded 27-call remeasurement kept the mentorship 3/3 and the earlier
    three checks 3/3 each; this does not establish the full comparison or worker/backfill acceptance. See
    `docs/perf/extract-v16-role-continuity.md`.
+   The same review found that `LATER`'s 내주 and 내달 (next week, next month) also matched the verbs 내주다 (hand
+   over: "열쇠를 내주고") and 내달리다 (dash), so a done ending quoted with them closed nothing; they now count only as
+   the nouns (followed by a space, a particle such as 에, 의 or 부터, or the end). No model call measured this.
 2. **A name and a part of it** (Q4). The `also_called` rule (`ALIAS_PARTS`, in place of `extract-v15`'s `V15_ALIAS`)
    also asks for an alias when the TARGET turn writes a character by a full name and, for the same character, by part
    of it: the given name alone, or in a story in English the first or the last name alone; subject the full name, value

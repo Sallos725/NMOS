@@ -226,6 +226,19 @@ def test_a_quote_that_places_the_change_later_closes_nothing_even_when_said_now(
         assert row["polarity"] == "negative", quote
 
 
+def test_next_week_and_next_month_are_nouns_not_the_verbs_that_contain_them():
+    """The owner's probe on 27c7658: "과제를 내주었다" (gave an assignment) matched 내주 (next week). 내주다 (hand over)
+    and 내달리다 (dash) tell what happens now; the nouns still place the change later."""
+    for quote in ("하나는 카이토에게 열쇠를 내주고 짐을 들고 나왔다.", "하나는 짐을 메고 문밖으로 내달려 집을 떠났다."):
+        assert extraction.LATER.search(quote) is None, quote
+        (row,) = extraction.ended_roles({"roles_ended": [{"role": "R1", "when": "now", "evidence": quote}]}, [], ROLES,
+                                        quote)
+        assert row["polarity"] == "negative", quote
+    for quote in ("하나는 내주에 카이토의 집을 떠난다.", "내달부터 다른 집에 세 들기로 했다.", "하나는 내주 월요일에 이사한다.",
+                  "이사는 내달.", "내주의 일정대로 집을 비운다.", "이사를 내달로 미뤘다."):
+        assert extraction.LATER.search(quote), quote
+
+
 def test_a_quote_joining_context_and_target_counts_by_its_passage_in_the_target_turn():
     """The owner's run of 37af724: on the turn of the move the model named the stay and "now", and quoted a sentence of
     the previous turn and one of the target joined by "...", three times out of three; the whole quote missed the bar.

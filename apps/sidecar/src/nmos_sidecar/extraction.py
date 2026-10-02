@@ -733,7 +733,8 @@ ELLIPSIS = re.compile(r"\s*(?:\.{3,}|…)\s*")
 # A quote that places the change later is a plan, whatever `when` says (PHASE-28 Q1): the owner's run of 2e4ccfd saw the
 # stay ended "now" on the eve of the move, quoting "내일부터 겨울 내내 …". Kept to time words; a cue list grows like K39's,
 # so it is measured with the rest of Q5 (c). Missing an ending here costs a stale role; a premature one, a wrong state.
-LATER = re.compile(r"(내일|모레|다음\s?날|이튿날|다음\s?(주|달|해)|내주|내달|내년|머지않아|예정|"
+# 내주/내달 as the nouns "next week/month" only: not the verbs 내주다 (hand over: 열쇠를 내주었다) or 내달리다 (dash).
+LATER = re.compile(r"(내일|모레|다음\s?날|이튿날|다음\s?(주|달|해)|(내주|내달)(?=$|[\s에의로부까중쯤초말,.!?])|내년|머지않아|예정|"
                    r"\b(tomorrow|soon|will|shall)\b|\bgoing to\b|\bplan(s|ned)? to\b|\bnext (day|week|month|year)\b|"
                    r"\bfrom (tomorrow|next)\b)", re.IGNORECASE)
 
