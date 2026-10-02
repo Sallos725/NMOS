@@ -31,7 +31,8 @@ The embedding chunk cap was the other suspect and is not the cause: the M0 main 
    part of the message the question is about; the words only say the message is relevant (`retrieval.gather`,
    `packet.SPAN_POLICIES`).
 2. **A why or contents question grows by characters** (Q2). When the user's message has the why cue (`facts.WHY`, ADR
-   0040) or the contents cue (`packet.CONTENTS`: `내용`, "content", "contents"), the excerpt grows from its best sentence
+   0040) or the contents cue (`packet.CONTENTS`: `내용`, "contents", "content of" — not the adjective), the excerpt grows
+   from its best sentence
    by whole neighbouring sentences, after then before, up to `CUE_GROW_CHARS` (320) with no sentence cap — within the
    budget's `excerpt_chars` when that is smaller. Other questions keep `packet-v10`'s rule (four sentences within
    `excerpt_chars`). The prototype measured 320 for every question at a lost case and two more forbidden phrases, which
@@ -46,7 +47,8 @@ The embedding chunk cap was the other suspect and is not the cause: the M0 main 
    sentences holding the same keywords by the trigrams they share with the question and the previous reply (`focus`).
    The prototype's measurements (16 → 17 → 19 of 23) used the question's keywords alone as that anchor, so which anchor
    the gain needs is unknown. `excerpt_anchor` is `"focus"` (today's; the default; every policy) or `"keywords"` (the
-   prototype's; `packet-v11` only: `packet-v10` keeps today's whatever the option says). It is recorded with the other
+   prototype's: the question's keywords, or the question itself when it has none — never the previous reply;
+   `packet-v11` only: `packet-v10` keeps today's whatever the option says). It is recorded with the other
    recall options, so a trace replays with the anchor it had and a trace from before it replays with `"focus"`;
    `tools/eval_rp.py --anchor` sets it for an evaluation. Step 2's measurement decides: the anchor stays `"focus"`
    unless the gain needs the other, in which case `packet-v11` takes it and this ADR is amended. No request sets it;

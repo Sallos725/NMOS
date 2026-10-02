@@ -13,12 +13,14 @@ replays on every set (Q6) and then the live bench harness; the prototype's own n
 chat) are development-set evidence for the two rules **with the prototype's keyword-only tie-break anchor**; the
 combination with today's anchor is unmeasured and step 2 measures both (Q1b). The review of #242 measured the other suspected cause,
 the embedding chunk cap: the M0 main packets are the same under a cap of 24, so the excerpt's span is the open lever.
-Step 1 (the spec) done. Step 2 (ADR 0063, D72): `packet-v11` behind `NMOS_PACKET_POLICY` with the default unchanged —
+Step 1 (the spec) done. Step 2 in progress (ADR 0063, D72; the implementation in PR #245, the owner's both-anchor
+measurement completes it): `packet-v11` behind `NMOS_PACKET_POLICY` with the default unchanged —
 a word hit whose vector meets the bar excerpts within its chunk, a why or contents question grows to 320 characters
 with no sentence cap — and the tie-break anchor as the recorded recall option `excerpt_anchor` ("focus" today, "keywords"
 the prototype's; `tools/eval_rp.py --anchor`), twelve deterministic cases (`test_packet_v11.py`, one per branch of
-Q1–Q3 and Q1b). Step 3 next: the owner's replays (Q6, both anchors, three runs each); when the criteria pass, that PR
-switches the default and records K39's note, because every `main` merge publishes `:edge`.
+Q1–Q3 and Q1b). Step 2 completes with Q1b measured on Q6's sets with both anchors (the owner's replays, the result
+in the PR). Step 3 next: Q6 in full, three runs each; when the criteria pass, that PR switches the default and records
+K39's note, because every `main` merge publishes `:edge`.
 
 **Phase 22 — A re-extraction that keeps what it found: approved and complete 2026-10-01, not released.** Spec `docs/phases/PHASE-22.md`
 (AGE-25 under AGE-24, an urgent correction found by measurement): "Extract all history" asks a small reveal check

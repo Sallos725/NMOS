@@ -186,7 +186,8 @@ class RecallOptions:
     history_marks: bool = True  # earlier versions only under marks that cover them (ADR 0038 amendment 1); same replay rule
     name_variants: bool = True  # a given name, a Hangul spelling of a romanized name (ADR 0058); same replay rule
     # packet-v11's tie-break anchor for the excerpt's best sentence (PHASE-27 Q1b, ADR 0063): "focus", the question and
-    # the previous reply (today's, every policy's), or "keywords", the question's keywords alone (the prototype's);
+    # the previous reply (today's, every policy's), or "keywords", the question's keywords alone — the question itself
+    # when it has none — (the prototype's);
     # measured in Phase 27 step 2 through `tools/eval_rp.py --anchor`. Recorded; a trace without it replays with "focus".
     excerpt_anchor: str = "focus"
     excerpt_chars: int = MAX_EXCERPT_CHARS  # an excerpt's length at most; derived from the budget (`filled`), not recorded
@@ -617,7 +618,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     words = keywords(query) if options.policy in GROW_POLICIES else []
     span = options.policy in SPAN_POLICIES  # packet-v11 (ADR 0063)
     cue = span and bool(WHY.search(query) or CONTENTS.search(query))  # a why or contents question (PHASE-27 Q2)
-    anchor = " ".join(words) if span and options.excerpt_anchor == "keywords" and words else focus  # Q1b
+    # Q1b: the keywords anchor is the question's keywords alone, or the question itself when it has none (the
+    # prototype's rule: never the previous reply); every other case anchors on the question and the previous reply
+    anchor = (" ".join(words) or query) if span and options.excerpt_anchor == "keywords" else focus
     for c in eligible:
         # a lexical or keyword hit is the whole message; a vector-only hit is its chunk; under packet-v11 a word hit
         # whose vector similarity meets the bar excerpts within its chunk too: the chunk is the part of the message

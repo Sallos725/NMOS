@@ -170,6 +170,7 @@ def test_the_cues():
     assert WHY.search("Why did it stop?") and WHY.search("펌프가 왜 멈췄어?") and not WHY.search("Who stopped it?")
     assert CONTENTS.search("What were the contents of the memo?") and CONTENTS.search("그 기록의 내용은?")
     assert CONTENTS.search("What is the content of the memo?") and not CONTENTS.search("Who is contented?")
+    assert not CONTENTS.search("Is she content?") and not CONTENTS.search("The content was moved.")  # the adjective, a noun alone
 
 
 def test_the_cue_growth_stays_within_its_length_and_cuts_a_long_sentence():
@@ -192,7 +193,7 @@ TWELVE = [
     "The mate counted the barrels twice and frowned.",
     "A grey cat slept on the coiled rope by the wheel.",
     "The captain wrote the day's log in a steady hand.",
-    "Two boys from the village sold figs on the pier.",
+    "Two boys from the village sold figs in the rain.",
     "The tide came in slowly and the ropes creaked.",
     "The lamps were lit one by one along the quay.",
     "Nobody spoke of the storm that had passed the week before.",
@@ -217,6 +218,14 @@ def test_the_anchor_is_the_question_with_the_previous_reply_unless_the_option_sa
             assert audit.replay(conn, trace["id"], opts)["text"] == text  # the recorded anchor replays as it was
             keyed = audit.replay(conn, trace["id"], opts, excerpt_anchor="keywords")  # as `eval_rp.py --anchor`
         assert "watched the gulls" in keyed["text"] and "flew to the galley" not in keyed["text"]  # the first, on a tie
+        # a question without keywords ("비", one syllable, is none; it is the embedder's rain concept, which finds the
+        # message by vectors alone): the keywords anchor is the question itself, never the previous reply
+        text, cand, trace = packet_and_candidate(c, migrated, chat, "비?", previous_ai=BELL)
+        assert cand["keyword_score"] == 0 and cand["user_score"] < 0.4 and cand["sim"] >= 0.42, cand
+        assert "flew to the galley" in text and "watched the gulls" not in text  # focus: the previous reply decides
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            keyed = audit.replay(conn, trace["id"], opts, excerpt_anchor="keywords")
+        assert "watched the gulls" in keyed["text"] and "flew to the galley" not in keyed["text"]
     with client_for(migrated, "packet-v10") as c:
         chat = chat_with(" ".join(TWELVE))
         text, _, trace = packet_and_candidate(c, migrated, chat, "what did the parrot do", previous_ai=BELL)
