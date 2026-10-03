@@ -90,6 +90,9 @@ def test_the_v16_prompt_names_a_listed_role_that_ends_right_after_the_role_rule(
                    "A reason, an arrangement or a plan in\n  CONTEXT is not evidence",
                    "A listed role is between its two people, not just a job title",
                    "a new job does not end a mentorship; a promotion does not end employment or being colleagues",
+                   # the owner's run of 073b7a1: a promotion at the bakery ended the role toward the inn's owner (2/3)
+                   "A new role, job or promotion toward someone else (another employer, another workplace) never ends a\n"
+                   "  listed role toward a different person",
                    'never join two passages with "..."',
                    "Not when someone only goes out, travels\n  or is away for a while",
                    "Do not write the ending as a `role_toward` yourself",
@@ -250,7 +253,8 @@ def test_the_block_lists_each_role_with_its_turn_and_only_when_there_is_one():
     c = {**ctx("하나는 이사했다."), "context": []}
     assert "CURRENT ROLES" in extraction.build_prompt(c, roles=roles)
     assert extraction.build_prompt(c, roles=roles).endswith(
-        "Before answering, decide for each CURRENT ROLE (R1–R1) whether the TARGET turn ends it, and whether it is over by"
+        "Before answering, decide for each CURRENT ROLE (R1–R1) whether the TARGET turn ends it between its own two people"
+        " (a new role or promotion toward someone else does not), and whether it is over by"
         ' the end of the TARGET turn ("now") or only planned or prepared ("planned"); list only those in `roles_ended`,'
         ' each quoting the TARGET turn (the text after "TARGET turn 20:"), not CONTEXT.')
     assert "CURRENT ROLES" not in extraction.build_prompt(c) and "CURRENT ROLES" not in extraction.build_prompt(c, roles=[])

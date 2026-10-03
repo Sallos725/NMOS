@@ -217,6 +217,9 @@ ROLE_ENDINGS = """- If CURRENT ROLES are listed (R1, R2, …), report in `roles_
   an ending of that pair's arrangement: a new job does not end a mentorship; a promotion does not end employment or being colleagues.
   Check whether that relationship continues (CONTEXT can establish continuity). Report an ending only when
   the TARGET ends the listed relationship itself, not merely another duty or description attached to it.
+  A new role, job or promotion toward someone else (another employer, another workplace) never ends a
+  listed role toward a different person: the `evidence` must show the listed role's own two people
+  parting or their arrangement ending.
 """
 _ANSWER_END = '''"secrets": [{{"secret": "S1", "found_out_by": ["..."], "evidence": "..."}}]}}'''
 ANSWER_ROLES = (_ANSWER_END[:-2]  # extract-v16's answer
@@ -728,7 +731,8 @@ def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
                   " kept from finds it out in the TARGET turn; list only those in `secrets`."]
     if roles:
         lines += ["", f"Before answering, decide for each CURRENT ROLE (R1–R{len(roles)}) whether the TARGET turn ends"
-                  " it, and whether it is over by the end of the TARGET turn (\"now\") or only planned or prepared"
+                  " it between its own two people (a new role or promotion toward someone else does not), and whether"
+                  " it is over by the end of the TARGET turn (\"now\") or only planned or prepared"
                   " (\"planned\"); list only those in `roles_ended`, each quoting the TARGET turn (the text after"
                   f" \"TARGET turn {ctx['target']['turn']}:\"), not CONTEXT."]
     if pairs:

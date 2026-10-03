@@ -69,6 +69,13 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    reconciliation rule are unchanged. A bounded 27-call remeasurement kept the mentorship 3/3 and the earlier
    three checks 3/3 each; this does not establish the full comparison or worker/backfill acceptance. See
    `docs/perf/extract-v16-role-continuity.md`.
+   *And on `073b7a1`* (the aliases now kept, item 2): the four core checks held 12/12, but at S2 turn 99, a promotion
+   at the bakery, the model ended the listed role toward the inn's owner ("now", R5, a TARGET quote about the
+   promotion) in 2 of 3 runs; the parser had refused the same wrong ending earlier only for its malformed reference.
+   The rule now says a new role, job or promotion toward someone else never ends a listed role toward a different
+   person, the evidence having to show the listed role's own two people parting; the closing line asks whether the
+   turn ends each role "between its own two people (a new role or promotion toward someone else does not)". Parser
+   unchanged.
    The same review found that `LATER`'s 내주 and 내달 (next week, next month) also matched the verbs 내주다 (hand
    over: "열쇠를 내주고") and 내달리다 (dash), so a done ending quoted with them closed nothing; they now count only as
    the nouns (followed by a space, a particle such as 에, 의 or 부터, or the end). No model call measured this.
@@ -100,6 +107,9 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    refused (17 gave none); no alias was kept, none wrong. The rule now says `pair` is the number as listed, never the
    names, and the closing line shows the answer for N1 with its names (`for N1, 윤하람 / 하람: {"pair": "N1", …}`). The
    parser is unchanged: a pair named by its names is still refused.
+   *And on `073b7a1`* (81 calls): every `same_names` entry used the number; 49 aliases were kept (9 refused by the quote
+   check), only the two target pairs, and both pairs resolved as one entity in each run (윤하람/하람 2/2/2 turns, 백이안/
+   이안 15/14/14).
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before

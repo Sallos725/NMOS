@@ -47,6 +47,9 @@ pairs are now listed to the model (NAME PAIRS, N1, …) and confirmed by number 
 alias (ADR 0064 item 2). `LATER`'s 내주/내달 now count only as nouns, not inside 내주다/내달리다. On `0abb2fd` (90
 calls): roles 12/12; the pairs were listed on 21 of the 27 turns, but 46 of 63 answers named a pair by its names
 instead of its number and were refused (no alias kept, none wrong); the prompt now asks for the number, shown for N1.
+On `073b7a1` (S2, 30 scenes × 3): both name pairs joined 3/3 (all answers by number), core roles 12/12, but turn 99's
+bakery promotion ended the role toward the inn's owner in 2/3 runs (13/15 with it); the role rule and closing line now
+say a new role or promotion toward someone else never ends a listed role toward a different person.
 Next: the same 27 turns (and the 12 role checks) on the new head, then the rest of Q5 (c).
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
