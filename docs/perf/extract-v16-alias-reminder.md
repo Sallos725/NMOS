@@ -494,3 +494,33 @@ are retained in `/home/grantkim725/nmos-eval/pr251/2026-10-03/role-confirmation-
 All fourteen ROLE/TARGET/gold/order pairs match v2; rules and context change together, so causality is
 not isolated. Next: resolve the no-evidence and completed-ending evidence contracts before adoption.
 No worker, generation or default change; sequential, full-comparison and live gates remain unverified.
+
+## Scoring-only evidence contract revision (2026-10-03)
+
+On owner review, yes still needs the existing TARGET quote/LATER validation; no may omit a quote and
+cannot authorize a termination. Regrade the same retained replies with **zero additional calls**:
+v3 **14/14**, normal accept **8/8**, wrong accept **0/6**, normal pending **0/8**; v2 **11/14**, with its
+three wrong accepts unchanged. Original 10/14 grades and the separate uncertain yes-evidence review
+remain intact. Thirteen offline controls pass; all yes outcomes and original artifact hashes verify.
+
+The next confirmation-only plan has 17 fixed requests: 12 glass-garden role regressions previously used
+in extractor development, and 5 new-story roles from four diversity scenarios. V3 prompt unchanged;
+no TARGET overlaps the earlier fourteen. Input estimate 20,136, stop budget 22,150, output forecast
+489, cap 8,704, no retries; separately approved and executed below. Method, exposure limits and next sequence:
+[contract and bounded probe](../proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md#evidence-contract-revision-no-quote-optional-2026-10-03).
+
+## Additional confirmation probe: 17/17 (2026-10-03, 20:36 KST)
+
+The approved seventeen calls pass under `yes-required-no-optional`, with the v3 prompt unchanged:
+new-story diversity **5/5**, previously used glass regressions **12/12**. Normal acceptance **8/8**,
+normal pending **0/8**, non-ending no **9/9**, wrong acceptance **0/9**. All eight yes quotes occur
+literally in TARGET and support termination in the unblinded lead review; three no quotes are absent
+as the contract permits. No automatic semantic entailment guarantee or independent human annotation
+is claimed. New-story coverage is four short authored stories, with R04 measured in both directions.
+
+Input **14,440** / output **478**, elapsed **9.436 s**, errors/retries **0**. The runner exits 0, and fresh
+zero-call readback reproduces all grades, request/source hashes and usage. Raw evidence and the group
+breakdown are preserved in `/home/grantkim725/nmos-eval/pr251/2026-10-03/role-confirmation-17-results/`.
+Details: [17-case result](../proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md#measured-17-case-probe-2026-10-03-2036-kst).
+Next is the ADR 0064/phase and worker adoption decision, then fresh sequential S1 with turn-88 readback.
+No production code, generation or default changed; NMO-24 and the release gate remain open.

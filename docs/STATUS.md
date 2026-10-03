@@ -175,9 +175,17 @@ source and paired ROLE/TARGET hashes verify. The bounded decision bar passes; th
 An offline sentence-LATER replay blocks no additional located wrong ending, including turn 86; one v2
 quote cannot be located exactly, and a declared synthetic control exposes false withholding. Keep the
 original guard for primary scoring and separately grade quote support/weakness/uncertainty. V3 supports
-the revised direction on this sample without establishing causality or sequential correctness. Next:
-decide the no-response evidence contract and confirmed-ending evidence standard before adoption.
-A second worker call and pending-role flow still need a separate ADR/phase decision.
+the revised direction on this sample without establishing causality or sequential correctness.
+After owner review, the experiment contract requires a valid TARGET quote for yes and makes the no
+quote optional. A zero-call regrade preserves all yes outcomes: **v3 14/14, v2 11/14**; the four absent
+no quotes are now allowed, while uncertain yes evidence remains separately recorded. The owner separately
+approved the **17-call** follow-up: **17/17 pass at 20:36 KST**, new-story diversity **5/5** and previously
+used glass regressions **12/12**. Normal acceptance **8/8**, normal pending **0/8**, wrong acceptance **0/9**;
+all eight yes quotes are literal and support termination in the recorded review. Three optional no quotes
+are absent. Input **14,440** / output **478**, elapsed **9.436 s**, no errors/retries; frozen prompt, requests,
+source hashes and fresh artifact readback verify. This is a short synthetic probe, not a sequential verdict.
+Next: decide ADR 0064/phase amendment and v16 worker adoption scope before a fresh sequential S1 check
+at turn 88. A pending-role review flow remains unimplemented.
 First-connection, full-comparison and live gates remain open; NMO-24 still blocks
 NMO-7. No default or generation change follows from recording these results.
 

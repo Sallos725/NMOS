@@ -7,7 +7,10 @@ but three of six non-endings are wrongly accepted. The pilot bar is missed; see 
 No worker, prompt generation, schema, default or ADR is changed. Approval covered only the frozen
 calls below, not adoption of the design. The private pre-execution plan remains unchanged for audit.
 The separately approved v3 batch adds fourteen calls at 20:12 KST; its specification and paired results
-are recorded below. Total confirmation calls across v2 and v3: **28**.
+are recorded below. Total confirmation calls across v2 and v3: **28**. The subsequent scoring-only revision
+allows no without a quote and regrades v3 to 14/14 with zero new calls; see the contract revision below.
+The separately approved seventeen-case probe then completes at 20:36 KST, bringing total confirmation
+calls to **45**. Call totals are accounting, not a combined accuracy score across different experiments.
 Source snapshot: `a1f4e81c08f2ec407844e5190f8636b5152179bb`; Phase 28 / NMO-24.
 
 ## Offline diagnosis
@@ -526,6 +529,157 @@ defect for the requirement that every reply provide supporting TARGET evidence; 
 integration, real pending review, first-connection/sequential behavior and release acceptance. This is
 a promising paired observation, not causal isolation of the rules or context and not production adoption.
 
+## Evidence contract revision: no quote optional (2026-10-03)
+
+At the owner's review, adopt **`yes-required-no-optional` for experiment scoring**. A structured `yes`
+still requires a TARGET quote that passes the unchanged `quoted_in` and quote-local `LATER` checks.
+A structured `no` withholds the ending with or without a quote. Missing/empty no evidence is now an
+allowed outcome, not a failed classification. If supplied no evidence does not match TARGET, record
+that separately and never present it as validated provenance; it still cannot authorize a termination.
+Invalid yes/no values or a supplied non-string evidence value remain response/schema failures.
+
+This changes only the experiment gate, not the v3 system text, request bodies, original grades or any
+production generation. A no can still be wrong and leave a genuine termination pending; normal-ending
+pending therefore remains a primary metric. The source extraction's original quote remains preserved
+for eventual review. The proposed generic role-confirmation review item/actions are not implemented
+merely because that quote exists; their wiring remains an ADR/worker adoption task.
+
+All 28 retained v2/v3 responses were re-read without provider calls. Every yes retains its original
+outcome, including rejection for a missing, foreign or future quote. Thirteen offline controls cover
+those requirements, no with/without/unmatched evidence, malformed answers and both gold-error directions.
+The original artifact integrity manifests still verify. **Additional model calls: 0; DB writes: 0.**
+
+| Same frozen cases, revised contract | V2 | V3 |
+|---|---:|---:|
+| Passes under original contract (retained) | 10/14 | 10/14 |
+| Passes under revised contract | **11/14** | **14/14** |
+| Normal-ending accept / pending | 8/8 / 0/8 | **8/8 / 0/8** |
+| Non-ending no / wrong yes | 3/6 / 3/6 | **6/6 / 0/6** |
+| Optional no quote missing (diagnostic) | 1 | **4** |
+
+The earlier phrase “evidence contract not met” describes the original contract. Under this explicitly
+revised contract, the four empty no replies are valid withholding decisions. The separate four uncertain
+yes-quote completion judgments remain recorded, not silently upgraded to certain supporting evidence.
+Qualitative quote quality stays secondary to the declared automatic gate. These are **in-sample**
+results: 86/74/99 helped motivate the restored rules, and v3 is not evidence of generalization or a
+sequential fix. The regrade artifacts keep both old and new grades and each source reply's hash.
+
+## Bounded probe: 17 confirmation requests
+
+The owner subsequently approved this prepared envelope with “17회의 모델 호출을 승인.” All seventeen
+requests completed at 20:36 KST; the frozen pre-execution specification remains below and the measured
+results follow it. The private plan snapshot and explicit approval record are preserved separately.
+
+Use the **identical v3 system** (`c5fe766ad7541573ce74e09f6f5282b8d6f4592602bd933f5bd331c85f986413`)
+and the revised scoring contract. No prompt tweak accompanies the new cases, including no change to
+its existing evidence wording. Each request receives only its one ROLE, up to two available preceding
+turns and TARGET, with the v3 template. No new extraction or sequential worker run is needed.
+
+| Group | Requests | Normal / non-ending | Interpretation |
+|---|---:|---:|---|
+| Glass-garden role cases and role follow-up | **12** | **6 / 6** | First confirmation probe on these inputs, but repeatedly used for earlier extractor development; regression coverage, not a clean development holdout |
+| Diversity pack R01–R04 | **5** | **2 / 3** | Four different stories selected after the v3 prompt was frozen; R04 is checked in both directions |
+| Total | **17** | **8 / 9** | Report the two groups separately |
+
+Glass-garden uses every existing listed role in its role-bearing cases, including two roles in the
+same end-job/keep-mentor scene, and the employment-ends/friendship-continues follow-up. Alias-only cases
+are excluded because they have no ending role to verify. Their existing authored role values, TARGETs
+and gold expectations stay unchanged. Related scene pairs are not counted as independent stories.
+
+The new corpus is `NMO-24-diversity-2026-10-03`, an authored synthetic pack whose handoff and manifest
+report no model/host execution. Select R01 completed interpreter delegation; R02 carrying out a continuing
+mail delegation; R03 fictional dismissal during practice; and both independent directions of R04's
+delegations. Every request uses **T2 as TARGET and T1 as CONTEXT**, excluding the later T3 explanation.
+New fixed ROLE descriptions are explicitly derived from T1 and preserved with their seed evidence;
+they are not claimed to be measured worker outputs. Source probes supply gold but are never sent.
+
+All seventeen complete request hashes are distinct and no TARGET duplicates a v2/v3 TARGET. This is
+a byte-overlap check, not a semantic independence guarantee. The diversity pack's own overlap audit
+also distinguishes its events from the older story, but these short, explicit synthetic cases cannot
+stand in for natural long-form data. “New” means outside the v2/v3 probe and prompt-tuning material
+reviewed here, not a claim about model pretraining or every other chat's activity. Freeze requests
+before execution and report every result, regardless of correctness.
+
+| Bound | Approved execution envelope |
+|---|---|
+| Route/model | Existing `http://127.0.0.1:11500/v1/chat/completions`, `gemma4:31b-cloud` |
+| Calls | **17**, once each, sequential, temperature 0, JSON mode, retries **0** |
+| Input estimate / stop budget | **20,136 / 22,150 tokens** |
+| Output forecast / cap | **489 / 8,704 tokens**, 512 maximum per request |
+| Time estimate | Roughly **15–60 seconds** for calls; **3–5 minutes** including result review |
+
+The output forecast uses v3's measured mean; neither token estimate nor time is measured on these
+inputs or a currency quote. Run the five new-story requests first, then twelve glass cases in fixed
+identifier order. Wrong judgments and well-formed guard rejections are recorded and continued.
+Technical/schema/truncation/usage errors, changed frozen hashes and call/token limits stop execution;
+no automatic retry, prompt patch, relabeling or case substitution follows a failure.
+
+Requests SHA-256: `5cc23ae9675a8ae4dce797b42aa24c87da23b62fa9861f123435bb7859478b1f`.
+Scoring code SHA-256: `e4ab23b8e05892fbc20b2d62603d7c5032e1ca87a26308e4223531e7c7879b21`.
+Private source snapshots, exact filled prompts, both regrades, validation and prepared requests are in
+`/home/grantkim725/nmos-eval/pr251/2026-10-03/role-confirmation-contract-review/`.
+**Executed: 17/17 under the separate approval.** No earlier fourteen-call approval was reused for it.
+
+Report false-ending acceptance, normal-ending no/total-pending and correctly withheld no rates under
+the revised contract, separately by group. Track optional no evidence status and yes evidence quality
+alongside those rates; keep uncertainty visible. Even all seventeen passing would provide only a small
+additional check, not Phase 28 completion. Follow the owner's sequence: experiment evidence contract
+→ bounded outside-sample verification → owner-approved ADR 0064/phase amendment and v16 worker work
+→ fresh sequential S1 with an explicit turn-88 readback. Full comparison and live gates remain open.
+
+## Measured 17-case probe (2026-10-03, 20:36 KST)
+
+**EvidenceVerdict: verified for this bounded confirmation probe.** All seventeen fixed requests pass
+`yes-required-no-optional`, with no wrong accepted ending or withheld normal ending. The v3 system
+hash is unchanged. Every real response is HTTP 200, model `gemma4:31b` on the requested
+`gemma4:31b-cloud` route, and finish reason `stop`. The runner exits **0** after seventeen calls with
+zero retries, errors, truncated responses or missing usage.
+
+| Group | Passes | Normal accept / pending | Non-ending no / wrong yes |
+|---|---:|---:|---:|
+| New-story diversity R01–R04 | **5/5** | **2/2 / 0/2** | **3/3 / 0/3** |
+| Previously used glass-garden regressions | **12/12** | **6/6 / 0/6** | **6/6 / 0/6** |
+| Total | **17/17** | **8/8 / 0/8** | **9/9 / 0/9** |
+
+All eight yes replies supply literal TARGET quotations and pass the unchanged quote/LATER checks.
+An unblinded lead review finds each quote supports completed termination of the specific arrangement;
+none of these eight is marked weak or uncertain. This is a recorded review, not an independent human
+annotation or an automated semantic-proof mechanism. Six no replies also give literal supporting
+quotes. The remaining three no replies omit evidence: glass mentorship after a new job, promotion
+with continuing employment, and temporary absence. These are allowed by the approved experiment
+contract, not malformed output. Supplied-but-unmatched no evidence: **0**.
+
+R04 correctly separates the two directions: the book delegation ends and the reverse mail delegation
+continues. R03 keeps the real role despite a fictional dismissal. R01 ends the completed delegation
+despite friendship continuing, and R02 keeps the delegation while it is being performed elsewhere.
+These five inputs cover four short authored stories; the other twelve remain development regressions.
+
+| Resource measurement | Observed |
+|---|---:|
+| Start / finish, KST | 20:36:29.701 / 20:36:39.137 |
+| Elapsed / summed request durations | **9.436 / 9.357 s** |
+| Request latency, min / median / max | **460 / 508 / 1,093 ms** |
+| Provider input, including cached input | **14,440 tokens**, including **10,976 cached** |
+| Provider output / reported reasoning | **478 / 0 tokens** |
+| Approved input stop budget / output cap | 22,150 / 8,704 tokens |
+
+This is provider usage, not an invoice. These short inputs and high cache reuse are not a cost
+estimate for long sequential turns. The experiment adds exactly seventeen provider calls; offline
+regrading, controls and artifact verification add none. The source corpus and older results stay intact.
+
+Private evidence: `/home/grantkim725/nmos-eval/pr251/2026-10-03/role-confirmation-17-results/`.
+Every request, raw HTTP body, parsed reply, grade and usage is preserved. `verified-results.json`
+contains group metrics and the separate evidence review. `run.py --execute` exits 0; fresh
+`verify_results.py` artifact readback reparses all replies, reproduces every grade and usage total,
+checks frozen request/source hashes, and exits 0 with zero provider calls. Thirteen grader controls
+and a seventeen-wrong-answer simulated execution verify rejection and continuation. A file-level
+integrity manifest verifies all 180 preserved files.
+
+This supports moving to an explicit ADR/worker design decision. It does **not** verify worker wiring,
+pending persistence/review, obsolete-job handling, first connection, a fresh sequential S1, or release
+acceptance. The v3 in-sample resignation-quote uncertainty is retained; clean quotes in short new cases
+do not retroactively resolve it. Turn 88 must still be checked after real sequential worker integration.
+
 ## Adoption boundary and handoff
 
 ADR 0064 and Phase 28 would need an owner-approved amendment before implementation. The decision must
@@ -547,9 +701,10 @@ raw-file hashes, cost census, filled prompts and frozen requests. Version 1 reta
 diff, reconstructed lists and parser replay. Eight synthetic grading controls check quote/LATER rejection and
 both wrong-yes/wrong-no gold failures without calling a model. These validate instrumentation only.
 
-NMO-24 stays In Progress and blocks NMO-7. Both approved batches are complete. V3 improves all three
-wrong decision labels while retaining normal endings, but empty `no` evidence and uncertain `yes`
-completion evidence remain. Next: decide the evidence contract for non-ending responses and the
-standard for a confirmed completed ending before worker/pending adoption. Preserve the current results;
-no prompt revision, generation change, implementation or further model execution is authorized by
-recording them. The full comparison and live gates remain open.
+NMO-24 stays In Progress and blocks NMO-7. All three approved batches are complete. The revised experiment
+contract requires yes evidence and makes no evidence optional; v3 regrades to 14/14 with zero calls.
+The additional approved probe passes seventeen cases (new-story 5/5, regression 12/12). Next: the owner
+decides the ADR 0064/phase amendment and v16 worker adoption scope, including retained original and
+confirmation evidence, usage, failure behavior, pending review and stale-job handling. Then run a fresh
+sequential S1 with explicit turn-88 readback. Existing yes-evidence uncertainty remains a diagnostic;
+the scoring revision does not erase it. No generation/default or production code is changed.
