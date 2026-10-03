@@ -117,6 +117,8 @@ regeneration, multiple characters with private knowledge, and users who notice e
    Offer a per-tokenizer estimate, chosen by the owner, never guessed.
 4. **Leak monitoring as a contract with VEIL (O1).** NMOS reports placed secrets that the reply reused.
    VEIL decides disclosure pacing. The data flows one way and is read-only.
+   **Superseded:** O1 resolved 2026-09-30; NMOS is independent of MIRRA and VEIL, so this integration is
+   no longer planned ([ARCHITECTURE §9](../../ARCHITECTURE.md#9-open-decisions)).
 5. **Exploration without harming users.** Echo cannot label unplaced lines, and serving random packets
    to learn would degrade real conversations. A candidate: when the budget has slack (empty packets are
    frequent, 47 of 168), place one extra below-threshold line and record it as exploratory. The reply's
