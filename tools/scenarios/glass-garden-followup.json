@@ -39,6 +39,24 @@
       "expected_ended": ["R1"],
       "expected_aliases": [],
       "forbidden_aliases": []
+    },
+    {
+      "id": "teasing-address-is-not-a-name",
+      "context": [],
+      "target": "문채린은 강세온이 설명한 항로를 듣고 장난스럽게 웃었다. “알겠어요. 별빛 박사님 말씀대로 따라갈게요.” 문채린은 말하면서 강세온을 가리켰다. 강세온은 그 농담에 웃었다. 별빛 박사님은 이 자리에서만 쓴 장난스러운 호칭이며, 어느 쪽의 이름이나 평소 별명으로 소개된 것이 아니다.",
+      "roles": [],
+      "expected_ended": [],
+      "expected_aliases": [],
+      "forbidden_aliases": [["문채린", "별빛 박사님"], ["강세온", "별빛 박사님"]]
+    },
+    {
+      "id": "bare-job-title-is-not-a-name",
+      "context": [],
+      "target": "류태오는 유리정원 운송선의 선장이다. 강세온이 “선장님, 출발 준비가 끝났습니다”라고 보고하자 류태오가 고개를 끄덕였다. 여기서 선장님은 직책에 따른 호칭일 뿐 이름이나 별명으로 정한 표현은 아니다.",
+      "roles": [],
+      "expected_ended": [],
+      "expected_aliases": [],
+      "forbidden_aliases": [["류태오", "선장님"]]
     }
   ]
 }

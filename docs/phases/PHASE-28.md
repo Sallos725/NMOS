@@ -64,6 +64,12 @@ run restarts and the full comparison remains pending.
 Q1 follow-up: the next sequential run ended the guest role on the eve of the move using a quote about packed
 luggage. The fingerprinted system and final input check now distinguish preparations from completed checkout.
 The failed input passes 3/3 fresh replies and independent cases 54/54. Full and sequential gates remain open.
+Q4 follow-up: that candidate's sequential run completes 62 jobs before repeated trailing-comma JSON errors.
+Its turn 34 also attributes a teasing address to the speaker as a self-alias, making the stored name join
+ambiguous. The prompt now distinguishes stable introduced names from casual addresses and bare titles;
+a title alias needs a personal name and explicit introduction, and its subject is the person named.
+The input closing check also forbids trailing commas. The parser and resolver are unchanged; fresh
+bounded and sequential verification are required under the new generation.
 
 Two defects confirmed in the stored traces of the owner's live run on `e13dee7` (AGE-24), each a state error rather
 than a scoring artefact:

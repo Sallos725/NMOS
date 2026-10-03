@@ -156,6 +156,11 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    and closing check explicitly include a distinctive name-like title identifying that same person, excluding
    shared generic titles and unconfirmed identity claims. The guard is unchanged. A fresh 54-call probe passes
    the original 42 checks and 12 follow-up controls; sequential verification restarts under a new generation.
+   A later sequential audit found casual titles over-extracted, including a teasing address attributed to
+   its speaker instead of its recipient. The v16 prompt now excludes casual/teasing addresses and bare
+   job or relationship titles, and permits a title alias only when it contains a personal name and is
+   explicitly introduced as a name. It reuses existing spelling for an honorific variant and names the
+   recipient as subject. Resolver ambiguity and acceptance of valid self-introductions are unchanged.
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before

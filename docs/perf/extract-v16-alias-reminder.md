@@ -119,8 +119,9 @@ It adds no parser heuristic. The new source SHA-256 is
   output 41,682 tokens. Combined: 57 calls, no errors or retries.
 - Related tests: **60 passed**. The final worker reminder regression failed at its missing-input
   assertion before the change; the v15 pin and the existing state checks pass afterward.
-- The full suite and a fresh sequential S1 restart are next. The 1,440-call comparison still waits for
-  sequential verification; no outputs from an older prompt generation will be reused.
+- The full sidecar suite passes **951 tests** (650.58 s, two dependency warnings); plugin tests pass
+  196, typecheck and build pass. The fresh sequential S1 restart stops after 62 completed jobs, below.
+  The 1,440-call comparison still waits for sequential verification.
 
 The probe also needed a measurement correction: it previously removed every character claim before
 entity resolution, while the product lets the resolver evaluate self-alias claims. It now passes all
@@ -133,10 +134,47 @@ The diff-scoped self-review checked the identity/provenance risk, explicit confl
 generation fingerprint, v15 isolation, compiler delivery, and unchanged quote and role reconciliation
 rules. No schema, host, request path, default, or worker-order change is made.
 
+## An address is not necessarily a name
+
+The completion candidate (`6636ef3`) stops after **62 completed jobs / 64 attempts**. Turn 62 returns
+an object with a comma after its last member twice, including its one retry. Code fences are tolerated
+by the product parser and are not the cause. Input 631,905 / output 68,650 tokens; two format failures,
+one retry. Both provider replies and the stopped database archive are retained.
+
+Auditing that run also finds an identity defect at turn 34: Haram jokingly addresses Doyun as
+`바다 박사님`, but the model records it as Haram's own alias. Production accepts self-alias claims;
+the mistaken subject therefore matters. Persistent readback through turn 35 marks Haram ambiguous
+and loses the previously established full/given-name join. Other bare titles were also over-extracted.
+This is a wrong extracted fact, not a packet omission, and not evidence of an actual false merge.
+
+The next v16 prompt distinguishes stable introduced names from casual or teasing addresses and bare
+job/relationship titles, even when only one person is mentioned. A title alias must include a personal
+name and be explicitly introduced as what that person is called. An honorific variant reuses the
+existing alias spelling; the alias's subject is the person named, not the speaker. The closing check
+also asks for valid JSON without a trailing comma. These prompt changes create a new generation;
+the parser, identity resolver, schema, v15 and the role-ending checks remain unchanged.
+
+The candidate source SHA-256 is `dcbbc3781156266a26a2fbcb3714834997a8d7b1a8e411f34eb7e53401364f04`,
+system SHA-256 `258f7a43bfe3159f913f9ac2560d18b5bcc5684ab89525b371e2214fe0e22769`.
+Related tests pass **60**. Two further synthetic negative controls cover teasing address ownership
+and a bare job title; the original 14 cases and prior four follow-ups are unchanged. Bounded model
+verification passes **69/69**: 20 independent cases x 3, plus three replies each to the preserved actual
+inputs at turns 34, 62 and 86. Turn 34 checks that the teasing address creates no alias; turn 62 checks
+JSON syntax only; turn 86 checks that the guest role stays. None writes to the old stopped database.
+Input **426,798 / output 54,939 tokens**, zero errors, retries or missing usage. The source/system hashes
+above pin this run; generation `extract-7e9f41da3278af76f30d8b6ffa5c646a` is new.
+
+A fresh actual S1 backfill starts from turn 0 on its own copy, **240** planned calls and initially
+**3,515,497** estimated input tokens. It remains in progress. The 1,440-call fixed-hint comparison
+waits for that result; no full comparison or Q5(c) pass is claimed. The scoped review checked the
+unchanged v15 path, fingerprinted worker input, preserved original probe cases and unchanged parser/
+resolver rules. This remains high risk for identity/provenance and historical/current role state.
+
 Local evidence stays under `/home/grantkim725/nmos-eval/pr251/2026-10-03/`:
 `alias-fix-system-v1/`, `alias-fix-closing-v2/`, and `alias-fix-integrated-v3/` retain the distinct
 candidates, hashes, raw replies, negative controls and logs. `RESULTS.md` links to actual files.
 `sequential-alias-v3/` holds the stopped worker run; `full-alias-v3/` was prepared but made no calls.
 `alias-fix-titles-v4/`, `sequential-alias-v4/` and `full-alias-v4/` separate the next generation's evidence.
 `alias-fix-completion-v5/` preserves the final bounded checks; `sequential-alias-v5/` and `full-alias-v5/`
-hold the next executions. Both stopped sequential runs retain their original archives and diagnoses.
+hold that candidate's executions. All three stopped sequential runs retain their original archives and
+diagnoses. `alias-fix-scope-v6/` and `sequential-alias-v6/` separate the narrowed alias candidate.

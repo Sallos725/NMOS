@@ -95,9 +95,17 @@ That title candidate's suite passes 950 tests, but sequential S1 stops at 87/240
 bed are incorrectly marked as checkout on the eve of the move. A fingerprinted final completion check now
 distinguishes preparation from a completed ending. The identical failed input passes 3/3 fresh calls; the
 independent cases pass 54/54, related tests 60/60. The probe's resolver input was corrected to include valid
-self-alias claims as production does; the earlier 54 replies still pass on regrading. The next full suite and
-sequential restart use this correction, with the 1,440-call comparison still waiting. This remains partial
-evidence, with both stopped worker copies preserved; no default or Q5 gate is changed.
+self-alias claims as production does; the earlier 54 replies still pass on regrading. That full sidecar suite
+passes 951 tests; plugin tests 196, typecheck and build pass. Its sequential restart stops at 62 completed
+jobs / 64 attempts: turn 62 has a trailing JSON comma twice. Audit also finds a teasing address wrongly
+recorded as the speaker's own alias, making a correct full/given-name join ambiguous in stored state.
+The next v16 prompt limits titles to explicitly introduced names containing a personal name, excludes
+casual addresses, distinguishes the person named from the speaker, and asks for no trailing JSON comma.
+Related tests pass 60; bounded model verification passes 69/69 (60 independent samples plus nine fresh
+replies to the actual failed inputs; the three turn-62 replies check syntax only). Input 426,798 / output
+54,939 tokens, no errors or retries. Fresh sequential S1 restarts from turn 0 under its new generation.
+The 1,440-call comparison still waits. All stopped copies are preserved; no parser, resolver, default or
+Q5 gate changes.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

@@ -260,21 +260,27 @@ ALIAS_PARTS = """- `also_called` when the TARGET turn itself gives both names fo
   `evidence`: one passage of the TARGET turn copied as it is that shows it. Not under the conditions above. Do not also write that `also_called` yourself. When none is
   one character: "same_names": [].
   The numbered answer replaces `also_called` only for a listed pair. For an unlisted pair, including a
-  newly introduced character's full and short name or a distinctive name-like title used for that person,
+  newly introduced character's full and short name or a stable nickname explicitly introduced as a name,
   write `also_called` in `assertions` when the TARGET
   establishes that identity. An `addresses` fact or an `event` about choosing a form of address does
   not record that the two names identify one person; include the alias as its own fact as well.
   Use narration when the narrator shows the same person answering to both names; a character's claim
   alone stays a character_claim. Both forms must occur in the TARGET, with the short form on its own.
-  A generic title shared by several people is not an alias for one of them.
+  Ordinary forms of address, teasing labels and bare job or relationship titles are not aliases, even if
+  only one person is mentioned. A title alias must contain a personal name and be explicitly introduced
+  as what that person is called, not merely used while addressing them. Use an existing alias spelling
+  when the turn only adds an honorific. The alias subject is the person being named, not whoever speaks.
 """
 # Repeated at the end of v16's input, and included here so changing it changes the generation fingerprint.
 ALIAS_CHECK = ("Before answering, check for names the TARGET uses for the same character. For a pair not listed"
-               " in NAME PAIRS, include an `also_called` assertion (subject: name; value: alternate name or"
-               " distinctive title) when the TARGET establishes both forms for that one person, even if you also record"
+               " in NAME PAIRS, include an `also_called` assertion (subject: person being named; value: alternate name)"
+               " when the TARGET establishes both names for that one person, even if you also record"
                " `addresses` or an `event`. Quote the TARGET passage showing that identity. Do not join"
-               " namesakes, use shared generic titles as aliases, or infer a full name from CONTEXT alone."
-               " Use `same_names` only for listed pairs.")
+               " namesakes or infer a full name from CONTEXT alone. Casual or teasing forms of address, bare job"
+               " titles and relationship terms belong in `addresses`, not aliases. A title alias needs a personal"
+               " name and an explicit introduction as a name; do not invent a new variant for an honorific."
+               " A speaker addressing someone else is not naming themselves. Use `same_names` only for listed pairs."
+               " Return valid JSON with no comma after the last member of an object or array.")
 ALIAS_PARTS += "  " + ALIAS_CHECK + "\n"
 _ROLE_EXAMPLE = '  `role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").\n'  # the role rule follows it
 PROMPTS = {"extract-v15": SYSTEM_PROMPT,
