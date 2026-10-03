@@ -21,7 +21,7 @@ from . import generations, normtext
 from .config import Settings
 from .generations import Generation
 from .ids import uuid7
-from .llm import NO_CALL, LLMError, metered
+from .llm import NO_CALL, LLMError, ReplyError, metered
 from .entities import PERSONA, UNNAMED, node, norm, resolve
 from .facts import _versions, fact_text, links_of, persona_of, served_assertions, version_key
 from . import canon
@@ -1040,24 +1040,32 @@ def confirm_endings(complete: Callable[[str, str], tuple[Any, ...]], items: list
     """Confirm each listed ending `ended_roles` wrote (`listed` set), one call each. A yes keeps the ending. Anything
     else holds it: the row stays with `held` set, so `normalize` stores it pending with its reason (no fact: the role
     stays current until a later turn ends it or the owner does; nothing resolves it by itself). A failed call holds the
-    ending and is recorded, neither retried here nor failing the job (that would ask the extraction again). Returns a
-    record of each confirmation (kept with the extraction's raw reply: the role, the first answer's quote, the
-    outcome, the confirmation's answer, reply, quote and usage) and their usage summed, None when no call reported."""
+    ending and is recorded, neither retried here nor failing the job (that would ask the extraction again): a call
+    made that gave nothing usable (`ReplyError`: no response, an error status, a reply that is not the JSON asked for)
+    keeps what came back, whole, and its usage (counted, with tokens only as reported); any other failure keeps its
+    error and no usage, since it is not known that a call was made. Returns a record of each confirmation (kept with
+    the extraction's raw reply: the role, the first answer's quote, the outcome, the confirmation's answer, its whole
+    reply, quote, usage and error) and their usage summed, None when no usage is known."""
     record: list[dict[str, Any]] = []
     usage: dict[str, Any] | None = None
     for item in items:
         if not (isinstance(item, dict) and item.get("listed") is not None):
             continue
+        error = None
         try:
             answer, raw, used = metered(complete, ROLE_CONFIRM_SYSTEM, confirm_prompt(item["listed"], ctx))
+        except ReplyError as exc:
+            answer, raw, used, error = None, exc.raw, exc.usage, str(exc)[:500]
+            outcome, quote = ("unusable reply" if exc.raw else "call failed: no response"), None
         except Exception as exc:  # noqa: BLE001 - a failed confirmation holds the ending; the job goes on
-            answer, raw, used, outcome, quote = None, "", None, f"call failed: {type(exc).__name__}", None
+            answer, raw, used, error = None, "", None, f"{type(exc).__name__}: {exc}"[:500]
+            outcome, quote = f"call failed: {type(exc).__name__}", None
         else:
             outcome, quote = confirmed(answer, turn_text)
         if quote is None:
             item["held"] = f"{HELD}: {outcome}"
         record.append({"role": item["listed"], "ending": item.get("evidence"), "outcome": outcome, "quote": quote,
-                       "answer": answer, "reply": raw[:4000], "usage": used})
+                       "answer": answer, "reply": raw, "usage": used, **({"error": error} if error else {})})
         if used is not None:
             usage = usage or {}
             for key, value in used.items():

@@ -208,15 +208,24 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
      cue confirms. The prompt decides whether the turn completes the ending; the quote checks only filter a yes and
      do not prove completion (the experiment's four resignation quotes stay uncertain). A `no` withholds with or
      without a quote.
-   - **Not confirmed: held, not applied.** A no, an invalid answer, a quote not in the turn, a later-dated quote or a
-     failed call holds the ending: the row is stored `pending`, reason `role ending not confirmed: <outcome>`, so it is
-     no fact and the role stays current. The extraction's raw record keeps the first reply and, per confirmation,
-     the role, the first answer's quote, the outcome, the confirmation's answer, reply (4,000 characters), quote and
-     usage; the row keeps its turn, generation (`extractor_key`) and time (`created_at`). A failed call is not retried
-     and does not fail the job (a retry would ask the extraction again). Confirmations run before the job's final
-     check, so an obsolete or reclaimed job stores neither.
+   - **Not confirmed: held, not applied.** A no, an invalid answer, a quote not in the turn, a later-dated quote, an
+     unusable reply or a failed call holds the ending: the row is stored `pending`, reason `role ending not
+     confirmed: <outcome>`, so it is no fact and the role stays current. The extraction's raw record keeps the first
+     reply and, per confirmation, the role, the first answer's quote, the outcome, the confirmation's answer, its
+     **whole** reply, quote, usage and any error; the row keeps its turn, generation (`extractor_key`) and time
+     (`created_at`). A call that was made but gave nothing usable (`llm.ReplyError`: no response, an error status, a
+     reply that is not the JSON asked for) keeps what came back and its usage; any other failure keeps its error and
+     no usage. A failed call is not retried and does not fail the job (a retry would ask the extraction again).
+     Confirmations run before the job's final check, so an obsolete or reclaimed job stores neither.
+     *Corrected on the owner's review of `62f10d0`:* a reply that was not valid JSON lost its text and reported
+     usage, and replies were cut to 4,000 characters; both are kept whole now, pinned through the real client with
+     the provider's HTTP replaced and a fresh database read.
    - **Usage.** The extraction's usage sums its confirmations at the top level (what the usage report counts) and
-     keeps theirs apart under `confirm`.
+     keeps theirs apart under `confirm`. A call made counts once; its tokens only as the provider reported them,
+     none for a call that got no response.
+   - **Request envelope.** The confirmation uses the extractor's client (`ChatModel.complete_metered`): temperature
+     0, JSON mode as configured, and no output-token limit, unlike the experiment's `max_tokens` 512. A bounded run
+     sets and records its own limits.
    - **The cost of holding, and what is not decided.** A held ending is not resolved by itself: a normal ending the
      confirmation wrongly holds keeps the role current until a later turn ends it again (the story need not) or the
      owner corrects it. This is a measured mitigation behind `extract-v16`, **not an approved product policy**: it is

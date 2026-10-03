@@ -196,6 +196,10 @@ and every confirmation kept in the extraction's raw record; usage sums them, kep
 generation (the confirmation is in v16's fingerprint); `extract-v15` unchanged. A held normal ending keeps the role
 current; a review item is not implemented and not an approved policy. Tests use stand-in models only. Next: the
 owner's fresh sequential S1 from turn 0 under this generation, with turn 88's stored state read back.
+The owner's review of `62f10d0` found a confirmation reply that was not valid JSON lost its text and usage, and
+replies were cut at 4,000 characters; corrected (the client's `ReplyError` keeps what came back and the call's usage;
+replies are kept whole), with tests through the real client and a fresh database read. No model call; the
+confirmation request has no output-token limit (the experiment's 512 was its own envelope).
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

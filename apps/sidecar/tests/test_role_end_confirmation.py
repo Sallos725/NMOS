@@ -5,12 +5,15 @@ role, anything else holds the ending as a pending row with its reason and keeps 
 from __future__ import annotations
 
 import hashlib
+import json
 
+import httpx
 import psycopg
+import pytest
 from psycopg.rows import dict_row
 
 from conftest import make_client
-from nmos_sidecar import extraction as X
+from nmos_sidecar import extraction as X, llm
 from simchat import SimChat
 from test_extract_v16 import CHAR, confirming, roles_of
 from test_extraction import drain, filler
@@ -135,8 +138,9 @@ def tenancy(answer: str):
     return complete, asked
 
 
-def run_tenancy(migrated, answer):
-    complete, asked = tenancy(answer)
+def run_story(migrated, complete):
+    """The stay at turn 0, the move at the turn after the filler; returns the roles, the stored endings with their
+    extraction's raw record and usage, and how many jobs did not end done."""
     chat = SimChat()
     chat.user("하나는 카이토의 집에 세 들어 산다.")
     chat.reply("카이토는 월세 봉투를 받아 들었다.")
@@ -150,11 +154,17 @@ def run_tenancy(migrated, answer):
         sync(c, chat)
         drain(migrated, complete)
         roles = roles_of(c, chat)
-    with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+    with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:  # a fresh connection: stored state
         held = conn.execute("SELECT a.status, a.reason, a.polarity, a.value, a.evidence, x.raw, x.usage, x.extractor_key,"
                             " x.compiler_version FROM assertion a JOIN extraction x ON x.id = a.extraction_id"
                             " WHERE a.predicate = 'role_toward' AND a.polarity = 'negative'").fetchall()
         failed = conn.execute("SELECT count(*) AS n FROM job WHERE status <> 'done'").fetchone()["n"]
+    return roles, held, failed
+
+
+def run_tenancy(migrated, answer):
+    complete, asked = tenancy(answer)
+    roles, held, failed = run_story(migrated, complete)
     return roles, held, asked, failed
 
 
@@ -203,3 +213,65 @@ def test_extract_v15_never_asks_for_a_confirmation(migrated):
         sync(c, chat)
         drain(migrated, complete)
     assert asked == []
+
+
+# --- through the real client, the provider's HTTP replaced (the owner's review of 62f10d0) ---------------------------
+
+def provider(monkeypatch, confirmation):
+    """`httpx.post` as an OpenAI-compatible provider: the extraction as `tenancy` answers it (100 in / 10 out); the
+    confirmation's content and usage from `confirmation(user)`, or a connection error when it is None."""
+    complete, _ = tenancy("yes")
+
+    def post(url, json, headers, timeout):  # noqa: A002 - httpx's keyword
+        system, user = json["messages"][0]["content"], json["messages"][1]["content"]
+        if system == X.ROLE_CONFIRM_SYSTEM:
+            if confirmation is None:
+                raise httpx.ConnectError("connection refused")
+            content, usage = confirmation(user)
+        else:
+            content, usage = _dumps(complete(system, user)[0]), {"prompt_tokens": 100, "completion_tokens": 10}
+        return httpx.Response(200, json={"model": "m", "choices": [{"message": {"content": content}}], "usage": usage})
+    monkeypatch.setattr(llm.httpx, "post", post)
+    return llm.ChatModel("http://fake/v1", "fake").complete_metered
+
+
+def _dumps(value):
+    return json.dumps(value, ensure_ascii=False)
+
+
+def tokens(usage):
+    return {k: usage.get(k) for k in ("calls", "input", "output")}
+
+
+def test_an_unusable_confirmation_keeps_what_came_back_and_its_usage(migrated, monkeypatch):
+    broken = '{"ended":"no","evidence":'
+    complete = provider(monkeypatch, lambda user: (broken, {"prompt_tokens": 123, "completion_tokens": 7}))
+    roles, (h,), failed = run_story(migrated, complete)
+    assert roles == [("하나", "카이토", ROLE["role"], "positive")] and failed == 0
+    assert (h["status"], h["reason"]) == ("pending", "role ending not confirmed: unusable reply")
+    (c,) = h["raw"]["confirmations"]
+    assert c["reply"] == broken and c["answer"] is None and "JSON" in c["error"]
+    assert tokens(c["usage"]) == {"calls": 1, "input": 123, "output": 7}
+    assert tokens(h["usage"]) == {"calls": 2, "input": 223, "output": 17}
+    assert tokens(h["usage"]["confirm"]) == {"calls": 1, "input": 123, "output": 7}
+
+
+def test_a_confirmation_without_a_response_counts_the_call_and_no_tokens(migrated, monkeypatch):
+    roles, (h,), failed = run_story(migrated, provider(monkeypatch, None))
+    assert roles == [("하나", "카이토", ROLE["role"], "positive")] and failed == 0
+    assert (h["status"], h["reason"]) == ("pending", "role ending not confirmed: call failed: no response")
+    (c,) = h["raw"]["confirmations"]
+    assert c["reply"] == "" and "connection refused" in c["error"]
+    assert tokens(c["usage"]) == {"calls": 1, "input": None, "output": None}  # attempted; tokens not invented
+    assert tokens(h["usage"]) == {"calls": 2, "input": 100, "output": 10}
+
+
+@pytest.mark.parametrize("pad", [0, 4100])
+def test_a_confirmed_reply_is_kept_whole(migrated, monkeypatch, pad):
+    reply = " " * pad + _dumps({"ended": "yes", "evidence": MOVED})
+    complete = provider(monkeypatch, lambda user: (reply, {"prompt_tokens": 50, "completion_tokens": 5}))
+    roles, (h,), failed = run_story(migrated, complete)
+    assert roles == [("하나", "카이토", ROLE["role"], "negative")] and h["status"] == "valid" and failed == 0
+    (c,) = h["raw"]["confirmations"]
+    assert c["reply"] == reply and c["quote"] == MOVED and "error" not in c
+    assert tokens(h["usage"]) == {"calls": 2, "input": 150, "output": 15}
