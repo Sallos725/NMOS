@@ -564,7 +564,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H22, D1–D72, O2/O3/O4/O5 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H22, D1–D72, O1/O2/O3/O4/O5 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
 | Schema | `migrations/0001`–`0027` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode, thread outcome and cause, summaries, owner repairs, canon, canon facts and lock, model-call usage |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
@@ -616,7 +616,9 @@ higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G
 - Phase 26 (a repair whose item is gone suggests where it belongs now; Stage 6, AGE-23) — approved 2026-10-01, then
   stopped by the owner the same day after the review on the copy (`docs/phases/PHASE-26.md`, "Outcome"); Stage 6's
   criterion reworded and met.
-- O1 — relationship to MIRRA / VEIL.
+- O1 — resolved 2026-09-30: NMOS is an independent project, no longer related to MIRRA or VEIL
+  (owner decision [NMO-16](https://linear.app/sallos725/issue/NMO-16); Git record aligned by NMO-32,
+  `ARCHITECTURE.md` §9).
 - O5 — resolved 2026-09-24: superseded vectors and text pruned (ADR 0015, D29), full-manifest host
   observations compacted losslessly (ADR 0018, D31), everything else on abandoned worldlines kept.
 - Phase 9 (accountable packets): complete, released in `v0.1.0-beta.19`.
