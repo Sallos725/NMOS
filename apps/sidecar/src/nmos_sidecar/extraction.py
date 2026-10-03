@@ -833,6 +833,7 @@ def role_party_named(role: dict[str, Any], turn_text: str, hints: list[dict[str,
 
     Checking the quote alone rejected every measured correct move/resignation. Checking the shown turn keeps
     those while rejecting the unrelated employer at turn 99. A pronoun-only counterpart is conservatively missed.
+    The counterpart's given name alone counts when no other known full name shares it.
     """
     persona_names = frozenset(norm(n) for n in persona or ())
     to_persona = node("character", role["to"], persona_names)[1] == PERSONA
@@ -843,6 +844,15 @@ def role_party_named(role: dict[str, Any], turn_text: str, hints: list[dict[str,
     names = {other}
     if len(owners) == 1:
         names |= {n for n in owners[0] if sum(n in g for g in groups) == 1}
+    # The given name alone (`name_parts`: 강무진 → 무진), as NAME PAIRS reads it: the owner's run of 7dbef46 saw a correct
+    # resignation (S1 turn 233) blocked because the turn called 강무진 무진 and the hints did not link them. Only a part
+    # no other known full name has, and not the persona's.
+    own = owners[0] if len(owners) == 1 else None
+    for full in list(names):
+        for part in name_parts(full):
+            holders = [g for g in groups if any(part in name_parts(n) for n in g)]
+            if all(g is own for g in holders) and node("character", part, persona_names)[1] != PERSONA:
+                names.add(part)
     text = norm(turn_text)
     # Keep Korean particles usable, but do not count Ann inside Joanne/Anna or a given name inside another full name.
     return any(re.search(r"(?<!\w)" + re.escape(n) + (r"(?![a-z0-9_])" if n[-1:].isascii() else ""), text)

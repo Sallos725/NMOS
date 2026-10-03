@@ -94,6 +94,13 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    TARGET's end. System-only wording still failed 2/3; the final 24-call check keeps this role 3/3 and passes
    all six role cases (18/18) and name joins (6/6). Parser unchanged; this is a prompt mitigation requiring a
    new generation and full measurement, not a semantic guarantee. See `docs/perf/extract-v16-role-closure.md`.
+   *And on `7dbef46`* (739 samples): S1's resignation (turn 233) was named correctly ("now", both directions, a
+   TARGET quote), but the turn called the listed 강무진 by the given name 무진 alone and the fixed hints did not link
+   them, so the counterpart check refused all six endings (S1 15/18). The check now also counts the counterpart's
+   given name alone (`name_parts`, as NAME PAIRS reads it), written apart, when no other known full name shares it
+   and it is not the persona's. A namesake known only by the given name still counts: the check stays a
+   prerequisite, not proof of identity. Not yet measured with a model; the owner's offline counterfactual with the
+   alias supplied closed 3/3.
    The same review found that `LATER`'s 내주 and 내달 (next week, next month) also matched the verbs 내주다 (hand
    over: "열쇠를 내주고") and 내달리다 (dash), so a done ending quoted with them closed nothing; they now count only as
    the nouns (followed by a space, a particle such as 에, 의 or 부터, or the end). No model call measured this.

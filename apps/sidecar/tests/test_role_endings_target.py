@@ -57,6 +57,28 @@ def test_a_role_toward_the_persona_checks_the_other_person():
     assert X.ended_roles(answer(quote), [], [reverse | {"to": "Seon Hale"}], quote, persona=["Hale"]) == []
 
 
+def test_the_counterpart_called_by_the_given_name_alone_is_named():
+    """The owner's run of 7dbef46: S1 turn 233 ended both directions of an employment correctly, but the turn called
+    강무진 무진 and the hints did not link them, so the guard blocked both (0/3)."""
+    role = ROLE | {"to": "강무진", "role": "직원: 강무진의 공방에서 일함"}
+    quote = "강세온은 공방 열쇠를 반납하고 무진에게 그만두겠다고 말했다."
+    (row,) = X.ended_roles(answer(quote), [], [role], quote)
+    assert row["object"] == "강무진"
+    known = [{"name": "강무진", "type": "character"}, {"name": "무진", "type": "character"}]  # the split itself
+    assert len(X.ended_roles(answer(quote), [], [role], quote, hints=known)) == 1
+    # another known full name with the same given name: the part alone may be that person
+    namesake = known + [{"name": "서무진", "type": "character"}]
+    assert X.ended_roles(answer(quote), [], [role], quote, hints=namesake) == []
+    assert X.ended_roles(answer(quote), [], [role], quote, persona=["무진"]) == []  # the persona's name
+    reverse = {"by": "강무진", "to": "강세온", "role": "고용주"}  # toward the persona: the other party, by its part
+    assert len(X.ended_roles(answer(quote), [], [reverse], quote, persona=["강세온"])) == 1
+    inside = "강세온은 공방 열쇠를 반납하고 서무진에게 그만두겠다고 말했다."  # the part only inside another name
+    assert X.ended_roles(answer(inside), [], [role], inside) == []
+    latin = ROLE | {"to": "Mujin Kang", "role": "clerk"}
+    text = "Seon handed back the keys and told Mujin she was quitting."
+    assert len(X.ended_roles(answer(text), [], [latin], text)) == 1
+
+
 def test_an_ending_with_a_pronoun_only_counterpart_is_conservatively_missed():
     quote = "강세온은 그녀에게 열쇠를 돌려주고 식당 일을 그만두었다."
     assert X.ended_roles(answer(quote), [], [ROLE], quote) == []

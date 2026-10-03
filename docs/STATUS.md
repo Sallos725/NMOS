@@ -75,6 +75,8 @@ window; no further production patch or full restart was made. Evidence and isola
 `docs/perf/extract-v16-fixed-hints-and-glass.md`. Sequential copies and a three-call concurrency cap are
 prepared, with zero sequential model calls. Next: decide the follow-up for missing alias extraction and
 measure whether sequential v16 hints resolve the conservative ending miss; no default change.
+The counterpart check now also counts the counterpart's given name alone when no other known full name shares it
+and it is not the persona's (ADR 0064 item 1), which is what blocked S1's resignation; not yet measured.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
