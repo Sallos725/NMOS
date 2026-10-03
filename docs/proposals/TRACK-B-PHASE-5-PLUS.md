@@ -73,6 +73,8 @@ Needed later, not before B0/B1:
 
 - **O1 — MIRRA / VEIL relationship** (before B5): whether NMOS owns the knowledge-boundary role or
   interoperates with another component.
+  **Resolved 2026-09-30:** NMOS is independent of MIRRA and VEIL; this is no longer an open decision
+  ([ARCHITECTURE §9](../../ARCHITECTURE.md#9-open-decisions)).
 - **O5 — retention of abandoned worldlines, host observations, and conflict/audit history** (before
   B2's conflict queue grows it).
 - **Hard POV ambition** (before B5): soft annotation only, or eventual separate-call/host-orchestrated

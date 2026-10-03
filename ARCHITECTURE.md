@@ -698,9 +698,9 @@ Each phase gets its own `PHASE-N.md` with acceptance criteria before work starts
 
 These must be resolved by the owner, not by an implementing agent.
 
-- **O1 — Relationship to MIRRA and VEIL.** Is NMOS MIRRA v2 (superseding its SQLite/MCP-first
-  choices)? Does NMOS absorb VEIL's knowledge-boundary role, or consume VEIL as a separate
-  plugin for disclosure pacing?
+- ~~O1 — Relationship to MIRRA and VEIL~~ — **resolved 2026-09-30: NMOS is an independent
+  project, no longer related to MIRRA or VEIL.** Owner decision in
+  [NMO-16](https://linear.app/sallos725/issue/NMO-16), recorded here by NMO-32.
 - ~~O2 — Postgres vs SQLite~~ — **resolved 2026-09-22: PostgreSQL** (§6).
 - ~~O3 — Main-generation gating heuristic~~ — **resolved 2026-09-22: D13 / ADR 0001.**
 - ~~O4 — Cross-chat branch policy~~ — **resolved 2026-09-22: D14 / ADR 0002.**
