@@ -26,7 +26,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from . import (__version__, archive, audit, canon, canonfacts, dropped, extraction, generations, inspector, ledger, normtext,
+from . import (__version__, archive, audit, canon, canonfacts, dropped, endings, extraction, generations, inspector, ledger,
+               normtext,
                plugin, preview, readmodel, retention, repairs, reveals, runtime, summaries, vectors)
 from . import usage as model_usage
 from .config import Settings
@@ -855,8 +856,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="conversation not found")
             head = conv["head_commit_id"]
             view = view_of(conn, head)
-            if body.kind == "fact_restore":
-                view["dropped"] = dropped.find(conn, head, rt["active_extractor"], view)
+            if body.kind == "fact_restore":  # a fact a re-extraction dropped, or a held role ending (PHASE-28 Q7)
+                view["dropped"] = (dropped.find(conn, head, rt["active_extractor"], view)
+                                   + endings.held(conn, head, rt["active_extractor"], view))
             try:
                 target, value = repairs.plan(body.kind, body.item, view,
                                              head_turn(conn, head), body.outcome, body.character, body.turn,
@@ -1099,6 +1101,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             pj_key = rt["projection"].key if rt["projection"] else None
             view = inspector.with_participants(view_of(conn, head))
             lost = dropped.find(conn, head, ex_key, view)  # PHASE-22 Q6
+            role_ends = {"automatic": endings.automatic(conn, view, head_turn(conn, head)),  # PHASE-28 Q7
+                         "held": endings.held(conn, head, ex_key, view)}
             traces = readmodel.traces(conn, conv_id)
             cov = coverage_view(conn, conv_id, usage=True, lost=len(lost))
             return inspector.detail(conv, current_state(conn, head, rt["rules"].version),
@@ -1116,7 +1120,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                     repairs=repair_rows(conn, conv_id, view["repairs"]), last_turn=head_turn(conn, head),
                                     canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
                                     canon_held=canon.held(conn, conv_id), canon_read=cov["canon"].get("keys"),
-                                    canon_facts=view.get("canon_facts", 0), dropped=lost)
+                                    canon_facts=view.get("canon_facts", 0), dropped=lost,
+                                    endings=role_ends)
 
     def summary_view(conn, conv_id: UUID, head: UUID, secrets: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The Inspector's summaries of a chat (PHASE-12 step 6), with the generation and whether packets use them."""

@@ -258,6 +258,15 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
      patronage ended because the patron is jailed and her guild dissolved) can still be confirmed although the
      TARGET never says the arrangement itself ends. It is counted as a wrong ending, not relabelled; the PHASE-28
      stop condition is relaxed for this class only, and any other wrong ending still stops a run.
+   - **The owner sees both** (PHASE-28 Q7, 2026-10-03, owner decision on `docs/proposals/ROLE-END-REVIEW.md`). A
+     held ending only shows that the two calls disagreed; when both are wrong (S1 turn 227) nothing held it. So the
+     Inspector's "Needs attention" lists every ending applied after a yes in the last `endings.RECENT_TURNS` (30)
+     turns, with both quotes and a retraction (`fact_retract`: the version before it is current again), and every
+     held ending of the serving extractions, with its outcome and a restore (`fact_restore`: the owner's version of
+     the ending at its turn, as for a fact a re-extraction dropped). An owner repair is stored by what the item says
+     (ADR 0044), so a rebuild or a new generation keeps the choice. Read only, off the request path
+     (`endings.automatic`, `endings.held`); no new repair kind, no migration. An applied ending older than the window
+     leaves the list and can still be retracted from the facts list.
    - **Usage.** The extraction's usage sums its confirmations at the top level (what the usage report counts) and
      keeps theirs apart under `confirm`. A call made counts once; its tokens only as the provider reported them,
      none for a call that got no response.

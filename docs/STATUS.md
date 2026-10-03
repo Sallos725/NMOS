@@ -239,6 +239,11 @@ Owner decision on that review (2026-10-03): **v4 withdrawn, v3 restored** (31/32
 (an arrangement ended on the counterpart's arrest, fall or loss of office) is a known, counted wrong ending that no
 longer stops a run on its own (ADR 0064 item 4, PHASE-28 stop conditions). extract-v16 is still a new generation by
 the alias rule. Next: a fresh sequential S1 from turn 0 on this head, with the owner's approval and budget.
+Design review after v4 (Codex's recommendation; `docs/proposals/ROLE-END-REVIEW.md`): one model cannot be made exact on
+endings, and a held ending only catches a disagreement. Owner decision, implemented (PHASE-28 Q7): the Inspector's
+"Needs attention" lists every role ending applied in the last 30 turns (retract to keep the role) and every held one
+(restore to end it at its turn), with existing repair kinds, no migration, no model call. Whether PHASE-28's
+zero-wrong-ending condition becomes a counted ceiling is still the owner's to decide.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

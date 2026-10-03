@@ -1,6 +1,8 @@
 # Role endings: what NMOS may apply alone, and what the owner sees
 
-Status: **proposal for the owner's decision** (2026-10-03). Nothing here is implemented or approved. Written on
+Status: **direction accepted by the owner and implemented** (2026-10-03; PHASE-28 Q7, ADR 0064 item 4). Both actions
+use existing repair kinds (`fact_retract` undoes an applied ending, `fact_restore` applies a held one): no migration.
+The acceptance change below is **not decided**. Originally a proposal; the text below is as proposed. Written on
 Codex's recommendation after the v4 re-measurement (`0e5978e`): stop, and decide by design which endings are applied
 automatically and which a person checks, starting from the gap that a held ending needs one of two calls to say no.
 

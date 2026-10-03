@@ -11,7 +11,8 @@ later, is `docs/KNOWN-ISSUES.md`.
   story ends, asks once more about that one role before closing it (an ending it does not confirm is kept aside,
   and the role stays current), and asks it to link a character the story writes in full and by
   part of the name (윤하나 and 하나; Elena Vance and Elena) unless the two could be different people. A known name
-  the turn does not write links only a character that turn is about. Selecting it
+  the turn does not write links only a character that turn is about. The Inspector's "Needs attention" lists the
+  role endings it applied recently and the ones it held, each with one action to undo or apply it. Selecting it
   re-extracts every chat once; `extract-v15` stays the default, and without the setting nothing changes.
 
 - **The query is embedded while recall reads, so a slower embedder still gives vectors** (ADR 0061, D70; K34, AGE-24).
