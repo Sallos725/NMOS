@@ -13,7 +13,7 @@ The canonical review policy is `AGENTS.md §14`. Follow it rather than inventing
 
 Before judging a change, read only the authority needed to understand it:
 
-1. `AGENTS.md`, especially §§2–5, §12, and §14.
+1. `AGENTS.md`, especially §§2–4, §12, and §14.
 2. `ARCHITECTURE.md` for invariants and architectural decisions affected by the diff.
 3. `docs/STATUS.md` for the current authorized scope.
 4. The current or directly relevant `docs/phases/PHASE-N.md`.
@@ -24,27 +24,12 @@ Reference documents do not authorize implementation outside the current phase.
 
 ## 2. Review the diff, not the repository
 
-Start with the pull request diff.
+Scope is defined by `AGENTS.md §14` ("Scope"); that section wins if it differs from this reminder.
 
-Review all changed code, then expand only when necessary into the minimum dependency cone:
-
-- direct callers and callees;
-- shared interfaces and types used by changed code;
-- directly relevant tests;
-- schema and migrations used by the changed path;
-- relevant phase or architecture documentation.
-
-Do not turn a pull-request review into a repository-wide audit.
-
-Do not inspect generated or bulky material by default, including:
-
-- `fixtures/model/**`;
-- `dist/**`;
-- large JSON or JSONL artifacts;
-- historical changelogs;
-- unrelated documentation.
-
-Read these only when the changed code specifically depends on them.
+In short: start from the pull request diff, review all changed code, and expand only into the minimum
+dependency cone the changed path needs. Skip generated or bulky material (`fixtures/model/**`, `dist/**`,
+large JSON/JSONL artifacts, historical changelogs, unrelated documentation) unless the changed code
+specifically depends on it. Never turn a pull-request review into a repository-wide audit.
 
 ## 3. Prioritize correctness over style
 
@@ -73,7 +58,8 @@ Do not propose speculative abstractions or future-phase features as review fixes
 
 ## 4. Protect NMOS invariants explicitly
 
-Pay special attention to these guarantees when the changed path touches them:
+The binding list is `ARCHITECTURE.md §2` (summarized in `AGENTS.md §3`). Pay special attention to these
+guarantees when the changed path touches them:
 
 - raw evidence is not destroyed;
 - derived memory remains rebuildable;
@@ -83,6 +69,7 @@ Pay special attention to these guarantees when the changed path touches them:
 - character knowledge is not treated as world knowledge;
 - inactive sources do not affect generated packets;
 - retrieval and utilization remain distinct;
+- storage stays PostgreSQL (no alternative store is introduced);
 - automatic semantic claims retain provenance;
 - sidecar or embedding failure fails open;
 - stale semantic state is not knowingly injected;
@@ -105,14 +92,8 @@ Never recommend fabricating or inferring measurements.
 
 ## 6. Identify high-risk changes
 
-Classify a change as **high risk** when it can materially affect:
-
-- stored data, migrations, upgrades, backfills, deletion, or recovery;
-- reconciliation or immutable source history;
-- membership, canon, identity, or provenance;
-- authentication, secrets, authorization, or sensitive logging;
-- retrieval/injection semantics affecting selection, isolation, provenance, or fail-open behavior;
-- deployment compatibility where a defect could corrupt persisted state or weaken a security boundary.
+Classify risk using the list in `AGENTS.md §14` ("Risk classification"); do not maintain a separate list
+here.
 
 For a high-risk change, explicitly identify the guarantee at risk and verify the relevant tests, upgrade paths, fixtures, or fail-open behavior.
 
