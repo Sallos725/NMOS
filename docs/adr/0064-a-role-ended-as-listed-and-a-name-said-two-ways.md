@@ -110,6 +110,15 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    distinguish these preparations from completed checkout. That check is fingerprinted and delivered by the
    worker. The identical failed input with the new prompt keeps the role in 3/3 fresh replies, and the independent
    probe passes 54/54; the full and sequential gates restart. No new parser heuristic is added.
+   *Turn 88 follow-up (owner decision, 2026-10-03):* the later `d870f33` sequential run ends a newly
+   established residence while the turn settles into it and compares it with the former inn. The system
+   rule and final `ROLE_TARGET_CHECK` now match the listed place and counterpart to the arrangement the
+   TARGET actually ends. Unpacking, furnishing and greetings in the new home are not endings; an
+   explicit departure or termination of that same arrangement still counts even in the next turn.
+   A proposed veto based on `listed.turn == TARGET - 1` was withdrawn: a discarded ending is not deferred
+   for automatic application, and the listed turn may be a restatement rather than the role's start.
+   No temporal veto or pending-role mechanism is added. This prompt correction and the 107-label set
+   below form one final candidate; fresh model evidence remains required.
    The same review found that `LATER`'s 내주 and 내달 (next week, next month) also matched the verbs 내주다 (hand
    over: "열쇠를 내주고") and 내달리다 (dash), so a done ending quoted with them closed nothing; they now count only as
    the nouns (followed by a space, a particle such as 에, 의 or 부터, or the end). No model call measured this.
@@ -169,6 +178,14 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    as the name part of an explicitly introduced title; the prompt now states that distinction and gives
    a synthetic positive example after a bounded run omitted such a title. Named titles and
    `?description` reveals are distinct strings and remain eligible. V15 and the resolver are unchanged.
+   *Extended before the next full run (review of `d870f33`):* the set lacked the forms of address role-play uses
+   most, between characters and toward a master or a guest, which are also the likeliest to be taken for a
+   nickname: 아저씨, 아줌마, 언니, 오빠, 형(님), 누나, 누님, 아가씨, 도련님, 주인(님), 꼬마, 사부(님), 대장(님), and sir,
+   madam, ma'am, miss, mister, kid, lady, lord, my lord, my lady, young master, young lady, (big) brother,
+   (big) sister (each also with "the" where it applies). Exact matches only, as before: a name with an honorific
+   (`도경 언니`) or a name that merely begins with a label (`형준`) stays eligible. The set grows from 60 to 107
+   labels; since it is inlined in the prompt, this is a new generation, and the v16 system prompt grows by about
+   160 estimated tokens. No model call measured this change.
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before

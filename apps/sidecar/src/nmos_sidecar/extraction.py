@@ -230,11 +230,17 @@ ROLE_ENDINGS = """- If CURRENT ROLES are listed (R1, R2, …), report in `roles_
   the other person must be named. The name need not be in the quoted passage; the ending still must be.
 """
 # Fingerprinted with the system rule and repeated after the other checks for a listed role.
+ROLE_TARGET_CHECK = ("Match the listed role's place and counterpart to the arrangement the TARGET actually ends."
+                     " Leaving or comparing a former home does not end residence in the listed new home."
+                     " Unpacking, furnishing or greeting neighbors while settling into a role established in the"
+                     " previous turn is not an ending. An explicit departure or termination of that same arrangement"
+                     " still ends it, even in the next turn. The listed turn may be a restatement, not its start;"
+                     " judge the event, not the role's age.")
 ROLE_COMPLETION_CHECK = ("Packing, a stripped bed or farewell gifts are preparations, not checkout."
                          " If the person is still staying in the room at the TARGET's end and the move is later,"
                          " the guest role is still held: use planned, not now. For now, quote the completed"
                          " departure or termination itself, not luggage, an emptied shelf or a farewell.")
-ROLE_ENDINGS += "  " + ROLE_COMPLETION_CHECK + "\n"
+ROLE_ENDINGS += "  " + ROLE_TARGET_CHECK + "\n  " + ROLE_COMPLETION_CHECK + "\n"
 _ANSWER_END = '''"secrets": [{{"secret": "S1", "found_out_by": ["..."], "evidence": "..."}}]}}'''
 ANSWER_ROLES = (_ANSWER_END[:-2]  # extract-v16's answer
                 + ',\n"roles_ended": [{{"role": "R1", "when": "now|planned", "evidence": "..."}}],'
@@ -246,15 +252,20 @@ ANSWER_ROLES = (_ANSWER_END[:-2]  # extract-v16's answer
 # name linked to two others is ambiguous and joins neither (ADR 0012).
 # V16 parks these bare descriptions; a named title or a listed ?description is a different value.
 # Included in the v16 prompt below so changing the conservative set changes its generation.
+# The second Korean line and the English forms of address (#251 review of d870f33): the forms of address role-play uses
+# most between characters and toward a master or a guest, the likeliest to be taken for a nickname.
+_BARE_EN = ("old man", "old woman", "elder", "man", "woman", "boy", "girl", "mother", "father", "captain",
+            "boss", "master", "teacher", "student", "clerk",
+            "sir", "madam", "ma'am", "miss", "mister", "kid", "lady", "lord", "young master", "young lady",
+            "brother", "sister", "big brother", "big sister")
 BARE_PERSON_LABELS = frozenset({
     "영감", "영감님", "노인", "노인네", "할아버지", "할머니", "남자", "여자", "청년", "소년", "소녀",
     "아버지", "어머니", "아빠", "엄마", "선장", "선장님", "사장", "사장님", "스승", "스승님", "제자",
     "선생", "선생님", "조합장", "조합장님", "서기", "서기님", "원장", "원장님",
-    "old man", "old woman", "elder", "man", "woman", "boy", "girl", "mother", "father", "captain",
-    "boss", "master", "teacher", "student", "clerk",
-}) | frozenset("the " + label for label in (
-    "old man", "old woman", "elder", "man", "woman", "boy", "girl", "mother", "father", "captain",
-    "boss", "master", "teacher", "student", "clerk"))
+    "아저씨", "아줌마", "언니", "오빠", "형", "형님", "누나", "누님", "아가씨", "도련님", "주인", "주인님",
+    "꼬마", "사부", "사부님", "대장", "대장님",
+    *_BARE_EN, "my lord", "my lady",
+}) | frozenset("the " + label for label in _BARE_EN)
 V15_ALIAS = """- `also_called` only when the TARGET turn itself gives both names for the same entity (e.g. "하나(Hana)"),
   or for an unnamed character it reveals (above).
 """
@@ -805,7 +816,7 @@ def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
     if compiler in PARTS_APART:
         lines += ["", ALIAS_CHECK]
     if roles and compiler in ROLES:
-        lines += ["", ROLE_COMPLETION_CHECK]
+        lines += ["", ROLE_TARGET_CHECK, ROLE_COMPLETION_CHECK]
     return "\n".join(lines)
 
 

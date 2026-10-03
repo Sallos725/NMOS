@@ -234,3 +234,66 @@ candidates, hashes, raw replies, negative controls and logs. `RESULTS.md` links 
 `alias-fix-completion-v5/` preserves the final bounded checks; `sequential-alias-v5/` and `full-alias-v5/`
 hold that candidate's executions. All three stopped sequential runs retain their original archives and
 diagnoses. `alias-fix-scope-v6/` and `sequential-alias-v6/` separate the narrowed alias candidate.
+
+## Bare-label set extended before the next full run
+
+Review of `d870f33`: the exact-label guard lacked the forms of address role-play uses most, between
+characters and toward a master or a guest, which are also the likeliest to be read as a nickname. The owner
+paused the runs before the 1,440-call comparison, since any later change to the inlined set starts another
+generation and another run. `BARE_PERSON_LABELS` now also holds 아저씨, 아줌마, 언니, 오빠, 형, 형님, 누나, 누님,
+아가씨, 도련님, 주인, 주인님, 꼬마, 사부, 사부님, 대장, 대장님, and sir, madam, ma'am, miss, mister, kid, lady, lord,
+my lord, my lady, young master, young lady, brother, sister, big brother, big sister (the English base forms
+also with "the"): **60 → 107 labels**. Matching stays exact: `도경 언니` and `형준` remain eligible, pinned with
+the new labels in `test_extract_v16.py`. The v16 system prompt grows by about **160 estimated tokens** (6,453 →
+6,611) and the per-turn closing block by about the same. Scoped tests pass 82; no model call measured this
+change. The earlier generation hashes above no longer describe the head.
+
+## Match the ending to the listed residence (2026-10-03)
+
+The preserved `d870f33` sequential run stopped after **145 completed jobs / 146 attempts**. Its diagnosis
+and persistent readback identify **turn 88**, not the detection turn 144, as the first wrong ending:
+the role was stated at turn 87; turn 88 furnishes the new attic and compares it with the former inn,
+but the model marks that new residence ended and the worker stores a valid negative assertion.
+Turn 144 emits no ending. The original replies, database archive and causal readback remain in
+`sequential-alias-v10/s1-backfill-1/`; no result was replaced. The public handoff is
+[PR #251's diagnosis](https://github.com/Sallos725/NMOS/pull/251#issuecomment-5967173862).
+
+The owner approved a prompt correction: `ROLE_TARGET_CHECK` asks the model to match the listed role's
+place and counterpart to the arrangement actually ended. Settling into a new role (unpacking,
+furnishing, greeting neighbors) and comparison with a former home do not end the new residence.
+An explicit termination still counts even immediately after the role was established. The check is
+in both the fingerprinted v16 system prompt and the closing block after TARGET and the alias check.
+
+The proposed previous-turn veto was withdrawn. A discarded ending is not automatically applied one
+turn later, so the role can remain current indefinitely. Also, the listed turn is the latest positive
+assertion's turn, which may be a restatement of an older role. Synthetic counterexamples reproduce
+both limitations; they are not observations about the benchmark. No temporal veto or pending-role
+mechanism is implemented. Parser, reconciliation, defaults and v15 generation stay unchanged.
+
+The final candidate combines this wording with `3859ab7`'s **107 labels**. Using `packet.estimate_tokens`
+with the formatted registry, system estimates are **6,453** (`d870f33`), **6,611** (`3859ab7`) and
+**6,750** (combined). The added role check costs approximately **139 tokens** in the system prompt
+and another **139** in a closing block when roles are listed; these are estimates, not provider usage.
+Formatted system SHA-256: `57f74d1569f122d5335cc624aa711d308423a3e70d12882010c7fc97a188b1cf`.
+
+Offline validation: the two focused files (`test_extract_v16.py`, `test_role_endings_target.py`) pass
+**65 tests**. New synthetic worker cases capture the actual system/user prompts and read back both
+a continuing residence and an explicitly ended next-turn residence through the API. Before the
+patch, the settling case fails at the missing-rule assertion after state readback succeeds. The
+v15 generation key stays unchanged against both earlier commits under the same test settings; v16
+gets a distinct key. These checks prove delivery and deterministic handling, not model judgment.
+The full sidecar suite passes **975 tests** in **656.98 s**, with no skips and two existing dependency
+deprecation warnings. It runs the candidate's source with the existing Python 3.12 environment whose
+`uv.lock` matches this checkout. No paid model calls are made by these tests.
+
+Diff-scoped self-review: **high risk** for entity identity and current/historical role state. The combined
+diff against `d870f33` retains the pending alias's raw evidence, preserves v15's prompt/key and the
+existing reconciliation path, and allows an evidenced immediate ending. The new wording is fingerprinted
+with the system prompt so older model results cannot silently stand in for this candidate. No schema,
+request-path or fail-open code changes; real-model state correctness remains unverified.
+
+**Not run on this candidate:** model calls, sequential backfill, the full 1,440-call comparison and
+live acceptance. Next, approve the exact bounded call/token estimate for the preserved turn-88 input
+and controls for a normal next-turn termination, an older role restated immediately before its end,
+and a different home's departure. Preserve every reply and inspect both raw endings and normalized
+state. A passing bounded check precedes a fresh sequential copy; it does not complete the full gate.

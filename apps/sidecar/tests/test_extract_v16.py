@@ -63,7 +63,10 @@ def test_extract_v15_stays_the_default_with_its_key_and_prompt():
     assert "CURRENT ROLES" not in extraction.SYSTEM_PROMPT
 
 
-@pytest.mark.parametrize("label", ["영감", "선장님", "스승", "노인", "old man", "the captain"])
+@pytest.mark.parametrize("label", ["영감", "선장님", "스승", "노인", "old man", "the captain",
+                                   # the forms of address role-play uses most (#251 review of d870f33)
+                                   "아저씨", "언니", "오빠", "형", "누나", "아가씨", "도련님", "주인님", "꼬마",
+                                   "사부님", "대장", "sir", "my lady", "the young master"])
 def test_v16_parks_bare_person_descriptions_without_changing_v15(label):
     item = {"subject": "최도경", "subject_type": CHAR, "predicate": "also_called", "value": label,
             "modality": "actual", "source": "narration"}
@@ -77,7 +80,8 @@ def test_v16_parks_bare_person_descriptions_without_changing_v15(label):
 
 
 def test_bare_description_guard_preserves_personal_names_named_titles_and_unnamed_reveals():
-    for subject, value in (("최도경", "도경"), ("최도경", "최 선생"), ("최도경", "?노인")):
+    for subject, value in (("최도경", "도경"), ("최도경", "최 선생"), ("최도경", "?노인"), ("최도경", "도경 언니"),
+                           ("최도경", "형준")):
         item = {"subject": subject, "subject_type": CHAR, "predicate": "also_called", "value": value,
                 "modality": "actual", "source": "narration"}
         target = f"{subject}의 다른 이름은 {value}이다."
@@ -487,6 +491,48 @@ def move_out(chat: SimChat) -> None:
 def roles_of(c, chat):
     return [(f["subject"], f["object"], f["value"], f["polarity"]) for f in facts(c, chat)
             if f["predicate"] == "role_toward"]
+
+
+@pytest.mark.parametrize("ending", [False, True], ids=["settling-in", "explicit-next-turn-ending"])
+def test_worker_delivers_the_role_target_check_and_keeps_explicit_next_turn_endings(migrated, ending):
+    """Synthetic model replies verify prompt delivery and state readback, not the model's scene judgment."""
+    chat = SimChat()
+    start = "하나는 카이토의 새 집에 세 들어 살기 시작했다."
+    target = ("하나는 카이토에게 새 집 열쇠를 반납하고 임대 계약을 끝내며 그 집에서 완전히 퇴거했다." if ending else
+              "하나는 카이토의 새 집에 짐을 풀고 가구를 배치하며 이웃에게 인사했다. 옛 여관과 달리 이곳은 조용했다.")
+    value = "세입자: 카이토의 새 집에 세 들어 삶"
+    captured = []
+
+    def complete(system, user):
+        shown = user.split("TARGET turn", 1)[1]
+        if start in shown:
+            return {"assertions": [{"subject": "하나", "subject_type": CHAR, "predicate": "role_toward",
+                                     "object": "카이토", "object_type": CHAR, "value": value,
+                                     "modality": "actual", "source": "narration", "evidence": start}]}, "{}"
+        if target in shown:
+            captured.append((system, user))
+            return {"assertions": [], "roles_ended": ([{"role": "R1", "when": "now", "evidence": target}]
+                                                       if ending else [])}, "{}"
+        return {"assertions": []}, "{}"
+
+    with make_client(migrated, llm_url="http://fake/v1", llm_model="fake", extract_compiler="extract-v16") as c:
+        chat.user(start)
+        chat.reply("카이토는 열쇠를 건넸다.")
+        chat.user(target)
+        chat.reply("바람이 불었다.")
+        sync(c, chat)
+        drain(migrated, complete)  # establish turn 0 before turn 1 becomes eligible
+        filler(chat, 1)
+        sync(c, chat)
+        drain(migrated, complete)
+        assert roles_of(c, chat) == [("하나", "카이토", value, "negative" if ending else "positive")]
+
+    assert len(captured) == 1
+    system, user = captured[0]
+    assert f"R1. 하나 → 카이토: {value} (turn 0)" in user and "TARGET turn 1:" in user
+    rule = "Match the listed role's place and counterpart to the arrangement the TARGET actually ends."
+    assert rule in system and rule in user.split("TARGET turn 1:", 1)[1]
+    assert rule not in extraction.SYSTEM_PROMPT
 
 
 def test_under_extract_v16_the_story_ends_the_role_it_listed(migrated):

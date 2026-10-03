@@ -75,7 +75,16 @@ prompt-only candidates fail on the preserved input. V16 normalization now retain
 labels as pending aliases, with raw evidence intact. The finite set is fingerprinted in the v16 prompt;
 even an introduced nickname equal to a listed label stays pending. Named titles, full/given names and
 the `?description` reveal path remain eligible. This conservative guard changes neither v15 nor the
-resolver; model, sequential and full comparison gates remain open.
+resolver; model, sequential and full comparison gates remain open. Before the next full run the set adds the
+forms of address role-play uses most (아저씨, 언니, 오빠, 형, 누나, 아가씨, 도련님, 주인님, sir, my lady, …; 107
+labels), a new generation, not yet measured.
+The `d870f33` sequential run also incorrectly ends the new residence at turn 88 while the scene settles
+into it; turn 144 only detects the missing role. The owner approved matching each listed role's place
+and counterpart to the actual ending, in the system prompt and final reminder, together with the
+107-label set. The proposed previous-turn veto is withdrawn: an explicit next-turn ending must still
+be recorded, and `CURRENT ROLES.turn` may reflect a restatement. No pending-role mechanism is added.
+The corrected prompt requires fresh bounded model verification before sequential and full runs;
+deterministic worker checks alone do not establish Q5 (c).
 
 Two defects confirmed in the stored traces of the owner's live run on `e13dee7` (AGE-24), each a state error rather
 than a scoring artefact:

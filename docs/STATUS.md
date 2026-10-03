@@ -112,6 +112,9 @@ alias as pending, preserving its raw reply and assertion. Its finite Korean/Engl
 with the new prompt; even a nickname identical to a listed bare label remains pending. Named titles and
 the `?description` reveal path still work. Scoped tests pass 48, including persistent worker/API readback
 and a mutation that disables the guard. New model and sequential verification are in progress.
+Paused by the owner before the next full run to extend the set with the forms of address role-play uses most
+(아저씨, 언니, 오빠, 형, 누나, 아가씨, 도련님, 주인님, 꼬마, 사부, 대장, sir, my lady, young master, …): 60 → 107 exact
+labels, a new generation, about 160 more system-prompt tokens; not yet measured (ADR 0064 item 2).
 The first guard candidate misses the qualified title in all three independent repeats (57/60 total),
 so the prompt now explicitly allows an introduced surname-and-title name and gives a synthetic positive
 example. The new candidate passes 66 independent and 15 actual-input results: **82 attempts / 81 passes**,
@@ -119,6 +122,17 @@ input 592,225 / output 65,920 tokens, one trailing-comma failure recovered by on
 Scoped tests pass 48; a fresh S1 backfill restarts at turn 0 (240 planned calls, input estimate 3,756,085).
 The 1,440-call comparison still waits. All stopped copies are preserved; no parser, resolver, default or
 Q5 gate changes. Details and limitations: `docs/perf/extract-v16-alias-reminder.md`.
+
+The preserved `d870f33` sequential run stopped at 145 completed jobs / 146 attempts. Its first wrong
+residence ending is turn 88, while settling into the new attic and comparing it with the former inn;
+turn 144 only exposed the already-missing role. The owner approved a prompt correction together with
+the 107-label set: match the listed role's place and counterpart to the arrangement actually ended,
+and distinguish settling in from leaving. Explicit next-turn endings remain allowed; a proposed
+previous-turn veto was withdrawn because a discarded ending need not be stated again. No pending-role
+mechanism is added. The final v16 prompt is a new generation; v15 stays unchanged. Model verification,
+sequential restart and the full comparison remain pending; the earlier passing replies do not verify
+this candidate. Focused tests pass 65 and the full sidecar suite passes 975; validation and the bounded
+next check are recorded in the same perf note.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
