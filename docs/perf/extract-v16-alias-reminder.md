@@ -407,3 +407,30 @@ or paid run, per Phase 28's wrong-role-ending stop condition. Use this newly pre
 assessing a follow-up; repeating the full sequence unchanged is not supported by this result.
 First connection, the full comparison, latency and live acceptance remain unverified. NMO-24 stays
 open and blocks NMO-7; the earlier 975 deterministic test passes do not override this observed defect.
+
+## Offline prompt comparison and a confirmation experiment proposal (2026-10-03)
+
+At the owner's request, compare the three preserved passing fixed-input prompts with the failed
+sequential turn-88 prompt, with **zero model calls and zero database writes**. All three fixed-input
+prompts are identical. The system, TARGET, context and **R1's parties, value and turn 87** match the
+sequential prompt exactly. The former inn stay appears in neither role list. Other roles change from
+five to three; entities, promises, threads and secrets differ. Neither list hits the eight-role cap.
+
+Read-only reconstruction from each preserved database reproduces its recorded roles, and the whole
+sequential user prompt rebuilds byte-for-byte. Replaying the same failed answer with either hint set
+produces the same valid negative. Therefore no stale former-stay entry or R1 mapping defect is found
+in this incident. This comparison does not prove which other hint difference or model variation caused
+the failure. It supports no additional prompt patch or role-list implementation change by itself.
+
+The owner proposed a separate short confirmation when the extractor says an ending is `now`, with
+only TARGET and one role, and pending review on disagreement. The reviewable experiment is
+[`ROLE-END-CONFIRMATION-EXPERIMENT.md`](../proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md): exact prompt,
+seven unique inputs, three repeats, maximum 21 calls, fixed token bounds, quote/LATER checks, and
+wrong-ending rejection paired with the normal-ending `no` and total pending rates. It includes a raw
+response census of six preserved sequential executions, with observed and extrapolated costs separated.
+No confirmation model call has run. Worker integration, pending review actions and ADR 0064 changes
+require a separate owner decision; the experiment does not authorize them.
+
+Private evidence and full filled prompts are retained in
+`/home/grantkim725/nmos-eval/pr251/2026-10-03/turn88-offline-confirmation-plan/`. The source prompt hashes,
+full diff, read-only reconstruction, parser replay and eight grading controls are preserved there.

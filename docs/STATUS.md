@@ -145,9 +145,17 @@ rule is present in both prompt blocks; the target/context match the bounded case
 rebuilt hints differ. Thus the bounded 12/12 does not establish sequential correctness. Input
 **1,020,111** / output **90,301** tokens; **318.977 s** to the stop. Raw replies, the stopped database
 archive and causal readback are preserved. No correction or paid restart follows this failure.
-Next: owner decision on the failed prompt mitigation, using the preserved failing input before any
-new candidate or run. First-connection, full-comparison and live gates remain open; NMO-24 still
-blocks NMO-7. No default or generation change follows from recording these results.
+The requested zero-call comparison rules out a stale former-inn role or mismatched R1: both inputs
+list the identical new residence as R1, and both role lists rebuild from their respective databases.
+The surrounding hints differ; causal sensitivity is not established. A proposed confirmation-only
+experiment freezes TARGET plus one role and reports wrong-ending rejection beside normal-ending
+pending rates. Its 7 unique inputs × 3 repeats (21 calls) are **prepared, not executed or approved**;
+input estimate 25,509 tokens, stop budget 28,060, output forecast 2,100 and cap 10,752. Six preserved
+sequential runs supply observed call counts and explicitly extrapolated per-240 token estimates.
+Spec and prompt: `docs/proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md`. Next: owner approval of that
+bounded experiment; adopting a second worker call and a pending-role review flow requires a separate
+ADR/phase decision. First-connection, full-comparison and live gates remain open; NMO-24 still blocks
+NMO-7. No default or generation change follows from recording these results.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
