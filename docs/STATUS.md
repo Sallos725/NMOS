@@ -260,7 +260,11 @@ not prove full normal-ending recall or the unrun 237/239 checks. All saved raw/u
 reconciled through a fresh read-only connection; cost estimate $0.4926 without cache
 discounts. Small same-data memory reads show no apparent slowdown (31.00 → 30.26 ms
 median); the 10k/live latency gate remains unrun. The owner requested one fresh repeat
-on the same code/envelope; its evidence is separate. Detailed results and next scope:
+on the same code/envelope. That retry stops at **turn 117 on the 4,096-token output
+cap**: 117 jobs completed, 119 calls including the cut-off reply, $0.2387 estimated.
+It is incomplete, not a product-defect verdict; 200/233/237/239 were not reached.
+The first-run failures remain open. Both runs are preserved; total $0.7313 estimated.
+No third run or cap change follows automatically. Detailed results and next scope:
 `docs/perf/extract-v16-c0b0a5b-sequential.md`. NMO-24/NMO-35 remain open; v15 stays default.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small

@@ -643,5 +643,6 @@ role scenes pass, but resignation is returned as planned; both employment direct
 remain current. At turn 200 a different misattributed alias makes 윤하람 ambiguous;
 names at the last measured turn pass 2/3. No wrong automatic role ending was observed
 in that prefix, which is not full normal-ending recall. The owner requested a fresh
-repeat on the same frozen code. See [the run report](extract-v16-c0b0a5b-sequential.md)
+repeat on the same frozen code; it stops at 117 on the experiment output cap (119 calls,
+incomplete), without reaching the later failures. See [the run report](extract-v16-c0b0a5b-sequential.md)
 for all aliases, role outcomes, usage, readback and the zero-call latency diagnostic.

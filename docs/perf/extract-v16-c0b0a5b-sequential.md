@@ -4,7 +4,9 @@
 The normal resignation was classified `planned` for one direction, with the reverse
 omitted. Neither directed employment role ended. A separate wrong alias at turn 200
 made 윤하람 ambiguous; the three name pairs resolve 2/3 at the last measured turn.
-The owner requested one fresh repeat after this result; its evidence is kept separately.
+The owner requested one fresh repeat after this result. **That retry is incomplete:**
+it stopped at turn 117 when a main reply reached the 4,096-token output cap. The
+first run's later accuracy failures were not reached again; neither result is a pass.
 This report is not a release or default-switch verdict. `extract-v15` remains default.
 
 **High risk:** current/historical role state, entity identity, provenance and extraction
@@ -186,3 +188,100 @@ the measured prefix. One served wrong alias instead introduced ambiguity.
 | 206 | 2100 | `람이` | `윤하람` | `람이` | pending; alias not stated in the turn |
 | 217 | 2155 | `윤하람` | `람이` | `람이` | pending; alias not stated in the turn |
 | 217 | 2156 | `{{user}}` | `도도` | `도도` | pending; alias not stated in the turn |
+
+## Owner-requested retry: output limit, not an accuracy verdict
+
+The owner requested “다시 시도” after the first failure. One fresh copy of the untouched
+prepared baseline ran with the same commit, generation, gold, stop rules and token/call
+limits. The only runner change was an isolated database name; both sets of source/rule
+hashes were checked. No product or prompt change and no third run followed.
+
+**Outcome: incomplete, exit 1, `experimental_output_limit`, at turn 117.** Turns 0–116
+completed (117/240 jobs). The next main call returned HTTP 200 with
+`finish_reason=length`, exactly **4,096 output tokens**, and incomplete JSON. The client
+raised ReplyError. The experiment stopped before the worker could retry the queued job.
+This cap belongs to the runner; production has no corresponding output cap. It is not
+proof of a product defect or that an uncapped reply would pass the later semantic gates.
+
+| Retry observation | Result |
+|---|---|
+| Declared role scenes reached | 5/5 (74, 86, 87, 88, 99); 144/233 not reached |
+| Normal-ending gold reached | Move applied 1/1 scene / 1/1 directed role; no pending |
+| 88 | Residence retained, no ending proposal or confirmation call |
+| Confirmed endings | Applied 1 / held 0 / wrong applied 0 in the measured prefix |
+| Names at last completed turn 116 | 3/3; this is **not** the final turn-239 identity gate |
+| All aliases | 9 rows; 7 newly joined pairs reviewed, no false joins observed |
+| First-run failures at 200/233; 237 case | Not reached; unresolved by this retry |
+| DB jobs after stop | 117 done; 123 queued, of which one has been attempted once |
+
+The move confirmation quote is Weak in isolation, as in the first run; the complete
+TARGET supports the real move. The main call at 117 has no successful extraction row.
+Its full HTTP body, ReplyError raw and usage are preserved in the run artifacts.
+
+| Retry lane | Calls | Input | Output | Cached input | HTTP time |
+|---|---:|---:|---:|---:|---:|
+| Main, including the cut-off reply | 118 | 1,353,702 | 121,200 | 682,784 | 494.134 s |
+| Confirmation | 1 | 4,559 | 43 | 0 | 0.724 s |
+| Total | 119 | 1,358,261 | 121,243 | 682,784 | 494.858 s |
+
+Stopped **01:49:20 KST**. Elapsed 1,020.449 s (17 min), including 517.092 s of local
+review waits; excluding those waits gives 503.357 s. One truncated reply / downstream
+JSON parse error, zero retries, zero HTTP errors and zero missing usage reports.
+The runner's `format_failures=0` counter is not evidence of no parse error: the preserved
+ReplyError explicitly records the incomplete JSON. The earlier classified length stop
+is the primary cause.
+
+A fresh read-only connection reconciles all **117 successful extraction records**, with
+stored totals of **118 calls / 1,346,264 input / 117,147 output**. The remaining failed
+main call is outside those successful rows: **1 call / 11,997 input / 4,096 output**.
+These sum to the complete HTTP totals above, including cached tokens. Do not equate
+successful-extraction usage with all paid attempts in this incomplete run.
+
+Retry estimate without cache discounts: **$0.23865374**. Across the two separate runs:
+**358 calls, 4,157,412 input / 373,049 output, $0.73125728**. Each run had its own
+approved limits; the combined totals are not a single-run budget overrun.
+
+At turn 0, the exact system/user prompt hash matches between runs but the raw replies
+differ; later prompts already diverge through different saved state. This is a fresh
+sequential repeat, not a fixed-input comparison of each later turn. The retry cannot
+replace or invalidate the first run's observed failures.
+
+Retry evidence: `/home/grantkim725/nmos-eval/pr251/2026-10-04/sequential-c0b0a5b-retry2/`.
+`verify_fresh_readback.py` exits 0 for preservation and reconciliation; overall evidence
+remains unverified/incomplete. `post_audit.py` records every row and fresh prefix reads;
+`compare_runs.py` checks equal product/gold/rules and records prompt/reply hashes for
+all 117 common completed turns. The stopped DB archive and failed HTTP body remain
+preserved. No further model calls were made after the stop.
+
+### Every retry also_called row
+
+| Turn | Stored ID | Subject | Object | Value | Stored / served outcome |
+|---|---:|---|---|---|---|
+| 0 | 1147 | `서도윤` | `도윤` | `도윤` | valid; newly joined, correct |
+| 1 | 1159 | `오봉순` | `null` | `오 사장` | valid; newly joined, correct |
+| 10 | 1216 | `서정호` | `null` | `정호` | valid; newly joined, correct |
+| 18 | 1250 | `강무진` | `null` | `무진` | valid; newly joined, correct |
+| 24 | 1278 | `백이안` | `null` | `이안` | valid; newly joined, correct |
+| 33 | 1318 | `윤하람` | `null` | `하람` | valid; newly joined, correct |
+| 53 | 1396 | `서정호` | `null` | `미친 해도쟁이` | valid; no served alias (character claim about another name) |
+| 59 | 1419 | `추오월` | `null` | `오월` | valid; newly joined, correct |
+| 110 | 1627 | `?쪽배` | `null` | `청새치호에 딸린 쪽배` | pending; alias not stated in the turn |
+
+
+## Handoff after both runs
+
+Changed: evidence only, product remains c0b0a5b and v15 stays default.
+Verified: scoped deterministic tests, actual worker prefixes, raw/usage preservation,
+all served aliases and negative roles in those prefixes, first-run Inspector listing,
+and the bounded read-latency diagnostic.
+Not verified: full fresh S1, first connection, the 1,440-call comparison, the 10k
+latency gate and live acceptance.
+Risks: first-run alias misattribution at 200 and missed resignation at 233 persist as
+open evidence; the retry failed earlier for a different reason. A successful retry
+would not erase those failures.
+Next: Claude can independently inspect the preserved attribution and planned/now
+cases without another model call. NMO-35 still needs its scoped confirmation design.
+Before any further paid execution, explicitly select an output envelope that addresses
+this observed cap failure; record it as a changed experiment condition, preserving the
+same evidence and acceptance criteria. No resume, new cap, default change or additional
+call is selected by this report.
