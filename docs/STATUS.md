@@ -149,9 +149,13 @@ The requested zero-call comparison rules out a stale former-inn role or mismatch
 list the identical new residence as R1, and both role lists rebuild from their respective databases.
 The surrounding hints differ; causal sensitivity is not established. A proposed confirmation-only
 experiment freezes TARGET plus one role and reports wrong-ending rejection beside normal-ending
-pending rates. Its 7 unique inputs × 3 repeats (21 calls) are **prepared, not executed or approved**;
-input estimate 25,509 tokens, stop budget 28,060, output forecast 2,100 and cap 10,752. Six preserved
-sequential runs supply observed call counts and explicitly extrapolated per-240 token estimates.
+pending rates. After owner review, version 2 uses **14 unique inputs once each** (8 normal, 6 non-ending),
+including both S1 turn-233 directions with the full/given-name mismatch. The historical 31 correct and
+8 wrong observations collapse to 5 unique confirmation inputs; all sources are mapped, not counted as
+39 new cases. Semantic mistakes are recorded without stopping; only technical errors, changed hashes
+or budgets stop the probe. It is **prepared, not executed or approved**: input estimate 25,648 tokens,
+stop budget 28,213, output forecast 1,400 and cap 7,168. The unexecuted 21-call plan is superseded.
+Six preserved sequential runs supply observed call counts and explicitly extrapolated per-240 token estimates.
 Spec and prompt: `docs/proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md`. Next: owner approval of that
 bounded experiment; adopting a second worker call and a pending-role review flow requires a separate
 ADR/phase decision. First-connection, full-comparison and live gates remain open; NMO-24 still blocks

@@ -425,12 +425,16 @@ the failure. It supports no additional prompt patch or role-list implementation 
 The owner proposed a separate short confirmation when the extractor says an ending is `now`, with
 only TARGET and one role, and pending review on disagreement. The reviewable experiment is
 [`ROLE-END-CONFIRMATION-EXPERIMENT.md`](../proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md): exact prompt,
-seven unique inputs, three repeats, maximum 21 calls, fixed token bounds, quote/LATER checks, and
-wrong-ending rejection paired with the normal-ending `no` and total pending rates. It includes a raw
+version 2 has fourteen unique inputs called once, fixed token bounds, unchanged quote/LATER checks,
+and wrong-ending rejection paired with normal-ending `no` and total pending rates. Incorrect judgments
+are recorded without stopping, per owner review. The 31 correct / 8 wrong historical observations map
+to five distinct inputs; both S1 turn-233 full/given-name directions are also included. This supersedes
+the unexecuted seven-input, three-repeat plan. It includes a raw
 response census of six preserved sequential executions, with observed and extrapolated costs separated.
 No confirmation model call has run. Worker integration, pending review actions and ADR 0064 changes
 require a separate owner decision; the experiment does not authorize them.
 
 Private evidence and full filled prompts are retained in
-`/home/grantkim725/nmos-eval/pr251/2026-10-03/turn88-offline-confirmation-plan/`. The source prompt hashes,
-full diff, read-only reconstruction, parser replay and eight grading controls are preserved there.
+`/home/grantkim725/nmos-eval/pr251/2026-10-03/turn88-offline-confirmation-plan/` (initial diagnosis) and
+`turn88-offline-confirmation-plan-v2/` (revised experiment and source snapshots). The source prompt
+hashes, full diff, read-only reconstruction, parser replay and grading controls are preserved.

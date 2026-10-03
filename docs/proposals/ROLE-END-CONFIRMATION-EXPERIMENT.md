@@ -1,7 +1,7 @@
 # Role-ending confirmation experiment — proposal, not approved for execution
 
-Prepared 2026-10-03 after the owner's request for an offline comparison and a small confirmation-only
-experiment. **Model calls made: 0.** No worker, prompt generation, schema, default or ADR is changed.
+Revised 2026-10-03 after owner review: continue through incorrect decisions and replace repeated calls
+with unique preserved cases. This is version 2 of the confirmation-only experiment. **Model calls made: 0.** No worker, prompt generation, schema, default or ADR is changed.
 Approval of this experiment would authorize only the frozen calls below, not adoption of the design.
 Source snapshot: `a1f4e81c08f2ec407844e5190f8636b5152179bb`; Phase 28 / NMO-24.
 
@@ -63,44 +63,61 @@ is preserved; no selective excerpt is introduced for a desired answer. Original 
 the same shown story text without generated speaker-label prefixes.
 
 System SHA-256: `2234cbeef3fa3d617f0cbb28ae1893da0521fe4a62fe38ba15898d49c427bae8`.
-Frozen request file SHA-256: `6e817678d5c072fc842fe1cacefa116d71b4c01a9cda23ca56024173dfd100a6`.
+Frozen request file SHA-256: `46db6e55143d32375d3825aadc35c7250e949226dbce609d75d291fb6f80f770`.
 Changing either prompt or test input after approval invalidates the estimate and creates a new experiment.
 
-## Cases and proposed execution budget
+## Cases and proposed execution budget — version 2
 
-| Unique case | Source | Expected confirmation |
-|---|---|---|
-| Settling into the new residence, turn 88 | Two preserved failed executions | no |
-| Completed checkout, turn 87 | Preserved correct ending | yes |
-| Eve of the move, turn 86 | Preserved non-ending scene | no |
-| Explicit termination in the next turn | Existing authored control | yes |
-| Former home ends while current home continues | Existing authored control | no |
-| Promotion under a different employer | New authored control | no |
-| Employment ends while friendship continues | New authored control | yes |
+The earlier 31 correct / 8 known-wrong count is **39 observations across five extractor candidates and
+repeats**, not 39 distinct confirmation inputs. The original offline classification, source prompts and
+raw responses have been checked and linked individually. Once confirmation contains only TARGET and
+one role, they reduce to **5 unique inputs: 3 correct endings and 2 wrong endings**. All 39 observation
+references remain in `legacy-observation-map.json`; each unique input is called once. Eight previously
+unclassified historical endings stay out of the labeled sample.
 
-The two turn-88 failures reduce to **the same confirmation input**, so both are referenced by one case.
-The earlier new-role and old-role-restatement termination controls also become identical after removing
-history and age; they are one unique case, not two independent successes. Authored cases are explicitly
-separate from story evidence. Three repeats per unique input give at most **21 calls**: **9 normal-ending
-samples** and **12 non-ending samples**. The actual turn-88 result (3 samples) is reported separately.
+| Input group | Unique normal endings | Unique non-endings | Source |
+|---|---:|---:|---|
+| Existing control bank | 3 | 4 | Preserved S1 checkout/eve/settling scenes and four authored controls |
+| Historical 31/8 audit | 3 | 2 | S2 move, two directions of resignation, mentorship and other-employer promotion |
+| S1 turn 233, required name mismatch | 2 | 0 | Navigator→employer and employer→navigator roles, each supported by three preserved responses |
+| Total | **8** | **6** | **14 unique inputs, once each** |
 
-* Existing route/model: `gemma4:31b-cloud`, temperature 0, JSON mode, one request at a time, no retries.
-* Input text estimate: **25,509 tokens** using `packet.estimate_tokens`; conservative input stop
-  budget **28,060**, including 10% allowance. This is not provider-reported usage.
-* Output forecast: **2,100 tokens** (planning assumption: 100/call, not measured). Each request explicitly
-  caps output at **512 tokens**, for a maximum of **10,752** across 21 calls if the provider honors the cap.
-* Record provider input/output/cached/reasoning usage, response duration and finish reason for every call.
-  A truncated response is a failure, never an implicit `no`; a missing usage record blocks cost claims.
-* Proposed order: repeat 1 over the seven rows above, then repeats 2 and 3. No extraction rerun, no worker
-  execution, no writes to benchmark databases, and no changes to source evidence.
-* Stop on the first incorrect confirmation against the frozen expected answer, invalid/error response,
-  changed input hash, or before a request would exceed the approved input/call budget. Preserve it and
-  mark later samples **not run**. Report rates only over attempts actually made, with every denominator.
-* Estimated execution and result review after approval: approximately **3–5 minutes**, based on earlier
-  bounded request durations; service delays can extend it.
+Normal inputs now include **6 preserved role/scene combinations and 2 authored controls**, compared
+with one preserved normal input in version 1. The six preserved positive combinations still cover only
+two story scenes (checkout and resignation), with name, direction and role-description variants; they
+are not six independent stories. Report those clusters and do not treat repeated historical observations
+as extra new verifier evidence. The two turn-88 failures remain one unique verification input, as do the
+new-role and older-role-restatement controls after removing history and age.
 
-The stop rule means a failure can leave the experiment too small to estimate both rates. That is an
-incomplete result, not a zero failure rate for the unrun side. No automatic prompt patch or restart.
+**Mandatory S1 turn 233:** TARGET contains `무진` and no `강무진`; the original role contains `강무진`.
+Include both ending directions exactly as recorded, with no alias hint added. The original roles also
+contain `{{user}}`, absent from TARGET, so a miss would measure this stripped input's identity problem;
+it would not by itself isolate the given-name mismatch from missing persona information. Gold remains
+`yes`, based on the preserved full-story diagnosis and correct original ending, not on a verifier reply.
+Report these two cases individually and show their contribution to the normal-ending pending rate.
+
+* Existing route/model: `gemma4:31b-cloud`, temperature 0, JSON mode, **one request per unique input**, one
+  request at a time, **14 calls maximum, no retries**. No claim that temperature 0 guarantees determinism.
+* Input text estimate: **25,648 tokens** using `packet.estimate_tokens`; conservative input stop budget
+  **28,213**, including 10% allowance. This replaces the unexecuted version-1 budget. It is not provider usage.
+* Output forecast: **1,400 tokens** (100/call planning assumption, not measured); request limit **512 tokens**
+  each, maximum **7,168** across 14 calls if the provider honors the cap.
+* Capture input/output/cached/reasoning usage, duration, finish reason, raw response, classification and
+  quote/LATER result for every attempt. Gold and case identifiers never enter the model request.
+* Frozen order: the settling failure, both S1 name-mismatch directions, then the remaining case IDs in
+  lexical order, as recorded in `requests.json`. No extraction rerun, worker run or database writes.
+* **Incorrect decisions do not stop the experiment.** Record a wrong `yes`, wrong `no`, or well-formed
+  answer rejected by quote/LATER checks, then continue unchanged through every remaining input. The
+  owner explicitly requested this measurement behavior; it does not relax production/sequential gates.
+* Stop only for transport/HTTP errors, malformed JSON or response schema, truncated response, missing
+  required usage, changed input hash, or the call/token budget. A quote/LATER rejection of a well-formed
+  answer is a measured pending outcome, not a transport/schema error. Preserve errors and mark later
+  samples not run. Do not retry, patch the prompt, or restart automatically.
+* Estimated execution and review after approval: approximately **3–5 minutes**, with service-delay uncertainty.
+
+The previous first-semantic-error stop rule and three-repeat schedule are superseded. Completing all
+14 classifications allows wrong-ending rejection and normal-ending pending to be reported together.
+If a technical/budget stop prevents completion, report partial denominators and unrun cases explicitly.
 
 ## Decision metrics, reported side by side
 
@@ -112,12 +129,13 @@ incomplete result, not a zero failure rate for the unrun side. No automatic prom
 | Total normal-ending pending rate | Every non-accepted outcome / attempted normal-ending samples | Includes `no`, guard rejection, malformed output and transport errors |
 | Normal-ending pass rate | Accepted `yes` / attempted normal-ending samples | Genuine endings retained |
 
-Also report per-case counts, each repeat, invalid-quote/LATER/error counts, actual token usage, and
+Also report each unique case, the actual-scene/authored-control split, invalid-quote/LATER/error counts, actual token usage, and
 confirmation latency. Gold labels are frozen before calls. A pending state prevents an automatic wrong
 ending, but retains a stale current role until reviewed; that cost must not be hidden in a “blocked” score.
 
-Proposed pilot bar: no accepted wrong ending and no withheld declared normal ending in the samples
-actually run. Missing samples do not pass the bar. Even 21/21 would support only a bounded follow-up,
+Proposed pilot bar: no accepted wrong ending and no withheld declared normal ending after all cases
+are classified. Missing samples do not pass the bar, and crossing this bar does not stop measurement.
+Even 14/14 would support only a bounded follow-up,
 not a production correctness guarantee, default switch or Phase 28 completion. Owner judgment on an
 acceptable false-pending rate and operational review workload remains necessary before adoption.
 
@@ -170,10 +188,12 @@ provenance; approved endings must apply to the original event time, and stale re
 must not be silently approved. Until review, normal terminations withheld by the verifier stay current.
 
 The local evidence directory is
-`/home/grantkim725/nmos-eval/pr251/2026-10-03/turn88-offline-confirmation-plan/`.
-It contains the full prompt diff, reconstructed lists, parser replay, raw-file hashes, cost census,
-filled prompts and frozen requests. Eight synthetic grading controls check quote/LATER rejection and
+`/home/grantkim725/nmos-eval/pr251/2026-10-03/turn88-offline-confirmation-plan-v2/`.
+The unexecuted version 1 remains intact in `turn88-offline-confirmation-plan/` for audit.
+It contains the historical classification, all 39 observation mappings, original source snapshots,
+raw-file hashes, cost census, filled prompts and frozen requests. Version 1 retains the full prompt
+diff, reconstructed lists and parser replay. Eight synthetic grading controls check quote/LATER rejection and
 both wrong-yes/wrong-no gold failures without calling a model. These validate instrumentation only.
 
-NMO-24 stays In Progress and blocks NMO-7. Next action: owner approval of this **21-call confirmation-only
+NMO-24 stays In Progress and blocks NMO-7. Next action: owner approval of this **14-call confirmation-only
 experiment and its token bounds**. Experiment approval does not approve the worker or pending workflow.
