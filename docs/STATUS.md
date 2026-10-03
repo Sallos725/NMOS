@@ -133,6 +133,13 @@ mechanism is added. The final v16 prompt is a new generation; v15 stays unchange
 sequential restart and the full comparison remain pending; the earlier passing replies do not verify
 this candidate. Focused tests pass 65 and the full sidecar suite passes 975; validation and the bounded
 next check are recorded in the same perf note.
+The owner-approved bounded model check of `a1f4e81` then passes **12/12**: three fresh replies to the
+preserved turn 88 retain the new residence, and three repeats each of explicit next-turn termination,
+an older role restated before ending, and a former-home departure pass. Input **98,679** / output
+**7,929** tokens; no errors or retries. This is fixed-input model output and production postprocessing,
+not a fresh sequential worker run. The next action is a new S1 sequential copy with a check at turn 88;
+the first-connection, full-comparison and live gates remain open. No default or generation change
+follows from recording these results.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

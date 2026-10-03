@@ -297,3 +297,47 @@ live acceptance. Next, approve the exact bounded call/token estimate for the pre
 and controls for a normal next-turn termination, an older role restated immediately before its end,
 and a different home's departure. Preserve every reply and inspect both raw endings and normalized
 state. A passing bounded check precedes a fresh sequential copy; it does not complete the full gate.
+
+## Bounded model check of `a1f4e81` (2026-10-03, 18:25 KST)
+
+The owner approved model testing. This run freezes the source at
+`a1f4e81c08f2ec407844e5190f8636b5152179bb` and uses the existing `gemma4:31b-cloud` route
+(the provider reports `gemma4:31b`). It makes **12 calls**, one at a time, with **no retries**;
+the planned input estimate is **124,713 tokens**, output forecast **12,700**, output stop budget
+**20,000**. A wrong ending or format error stops the run immediately.
+
+| Case | Input | Expected result | Fresh replies |
+|---|---|---|---|
+| Original turn 88 | Preserved story, context and hints; only the approved prompt blocks change | Keep the new residence; no listed role ends | 3/3 |
+| Explicit next-turn ending | Authored control; role at turn 87, completed termination at 88 | End R1 | 3/3 |
+| Older role restated immediately before its ending | Authored control; role introduced at 1, restated at 87, ended at 88 | End R1 | 3/3 |
+| Former home ends, current home continues | Authored control; the same counterpart owns both homes | Keep the listed current residence | 3/3 |
+
+**12/12 passed**, with **0 errors, 0 retries and no missing usage**. Provider-reported input is
+**98,679 tokens**, including **83,008 cached input tokens**; output is **7,929 tokens**. Model request
+durations total **40.096 s**. These are token counts and request durations, not a billing amount or
+the preparation time. The three original-turn replies all return an empty `roles_ended`; the two
+termination controls all name R1 as `now`, with a TARGET quote. The former-home control names no
+ending. The same assertions also pass production normalization and role-history reconciliation.
+No valid alias is produced in these cases; this is not a wider alias benchmark.
+
+The previous prompt reconstructs byte-for-byte from its recorded input before the new prompt is
+built. Before any paid call, the grader rejects the preserved wrong turn-88 reply and a deliberately
+wrong answer to every control, and accepts the corresponding synthetic expected replies. Recorded
+HTTP responses, parsed replies and grades are read back after execution; all 12 responses are HTTP
+200 and the source hash is unchanged. The gold expectations never enter a model prompt.
+
+Evidence is retained outside Git at
+`/home/grantkim725/nmos-eval/pr251/2026-10-03/turn88-target-a1f4e81/`: `verify.py`, `snapshot/`,
+`manifest.json`, `cases.json`, `system.txt`, the original prompt/reply, each call's prompt, HTTP body,
+reply and grade, and `summary.json`. Source SHA-256:
+`746112cd855d40920ce02320f03a5c73ca46da0b16c5b2573d844cee15186b5a`; runner SHA-256:
+`8308c23c17f75d108b2b8d442e3c7dbdb9d452e994652e4959f97765c95d9762`.
+The model/settings generation is `extract-4547e1d8ae60259ef55bbff1f48294da`; the system hash is the
+combined candidate's hash above. The dry-run and `--execute` both exit 0.
+
+This verifies the bounded role checks on fixed inputs, **not persistent sequential state**: the
+benchmark database was read-only and no worker/backfill was run. Sequential S1, first-connection
+behavior, the 1,440-call comparison, latency and the live gate remain open. Next is a fresh sequential
+copy under this same generation, with the new residence checked at turn 88 rather than waiting
+until turn 144; every failure and usage record must be retained. NMO-24 remains open.
