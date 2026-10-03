@@ -145,7 +145,8 @@ development. The evidence is Korean, mostly S1, and `LATER`, the bare-label guar
 Korean and English (Latin script) only (ADR 0064, Consequences). Measuring that, and adjusting, is after 1.0 (owner,
 2026-10-03; NMO-34).
 Also out, and before 0.3.0 (owner, 2026-10-03; NMO-35): a confirmation call for an alias whose two names both occur
-in the turn (S1 turn 237), and the resolver's treatment of one person with two aliases (S1 turn 182; ADR 0012).
+in the turn (S1 turn 237). The resolver's treatment of one person with two aliases (S1 turn 182) was brought into this
+phase the same day for extract-v16 only (ADR 0012 amendment of 2026-10-03); extract-v15 resolves as before.
 
 ## Acceptance criteria
 
@@ -183,9 +184,10 @@ in the turn (S1 turn 237), and the resolver's treatment of one person with two a
 ## Stop conditions
 
 Stop and ask the owner when: a default request, `extract-v15`'s key or an older replay changes; a needed schema,
-migration or runtime-dependency change; a false join or a wrong role ending on any measured chat (except the one class
-the owner accepted on 2026-10-03, ADR 0064 item 4: an arrangement ended on the counterpart's arrest, fall or loss of
-office, which is still counted and reported); a secret leak; a
+migration or runtime-dependency change; a false join on any measured chat; a wrong role ending of a kind not seen
+before, or more than **one** wrong automatic role ending in a run (owner, 2026-10-03: each automatic and held ending
+is listed and reversible, Q7; every wrong one is counted and reported, the 227 class of ADR 0064 item 4 among them);
+a secret leak; a
 paid run would exceed its approved estimate; a baseline is unavailable; an acceptance bar is missed. Never replace the
 owner's measurement with synthetic results.
 

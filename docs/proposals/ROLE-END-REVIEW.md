@@ -2,7 +2,8 @@
 
 Status: **direction accepted by the owner and implemented** (2026-10-03; PHASE-28 Q7, ADR 0064 item 4). Both actions
 use existing repair kinds (`fact_retract` undoes an applied ending, `fact_restore` applies a held one): no migration.
-The acceptance change below is **not decided**. Originally a proposal; the text below is as proposed. Written on
+The acceptance change below was decided the same evening: at most one wrong automatic ending per run, each
+counted; a kind not seen before still stops (PHASE-28 stop conditions). Originally a proposal; the text below is as proposed. Written on
 Codex's recommendation after the v4 re-measurement (`0e5978e`): stop, and decide by design which endings are applied
 automatically and which a person checks, starting from the gap that a held ending needs one of two calls to say no.
 

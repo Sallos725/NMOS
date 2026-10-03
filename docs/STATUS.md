@@ -244,6 +244,11 @@ endings, and a held ending only catches a disagreement. Owner decision, implemen
 "Needs attention" lists every role ending applied in the last 30 turns (retract to keep the role) and every held one
 (restore to end it at its turn), with existing repair kinds, no migration, no model call. Whether PHASE-28's
 zero-wrong-ending condition becomes a counted ceiling is still the owner's to decide.
+Owner decisions the same evening: the stop condition is now a ceiling (at most one wrong automatic role ending per
+run, each counted; a new kind still stops, PHASE-28). And S1 turn 182 is fixed for extract-v16: a part checked apart
+no longer makes its full name ambiguous (ADR 0012 amendment), so 윤하람 / 하람 / 람이 are one person and 237's wrong
+alias leaves only 람이 ambiguous; extract-v15 resolves as before. Accepted cost: one wrong alias beside a full name's
+part now joins. The next fresh S1 is the owner's (run by Codex) with an identity gate of 3/3.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

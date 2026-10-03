@@ -196,11 +196,11 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    Deterministic and language-neutral; not in the prompt, so the generation names it apart (`aliases`,
    `ALIASES_PRESENT`). Pinned on the preserved S1 rows (`tests/test_alias_presence.py`, from
    `fixtures/model/phase28/2026-10-03-s1-confirmation-review/`): 81 and 200 become pending, 182 stays valid, and
-   237 (`람이 → 도도`, both names in the turn, a letter's addressee taken for its writer) is not caught. Two things
-   stay open for NMO-35, outside this phase: a confirmation of an alias the turn's names allow (237), and the
-   resolver counting one person's two names as ambiguous (182: `윤하람 → 하람` and `→ 람이` make 윤하람 a name of
-   two unlinked names, ADR 0012 item 3). The resolver goes last: today that ambiguity turns a wrong alias into no
-   join (81) rather than a wrong one.
+   237 (`람이 → 도도`, both names in the turn, a letter's addressee taken for its writer) is not caught. The
+   resolver counted one person's two names as ambiguous (182: `윤하람 → 하람` and `→ 람이`); *owner decision, the
+   same day:* fixed for extract-v16 by ADR 0012's amendment of 2026-10-03 (a part checked apart does not count toward
+   its full name's ambiguity), so 237 leaves 람이 ambiguous and the pair holds. A confirmation of an alias the turn's
+   names allow (237) stays open for NMO-35, outside this phase.
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before
