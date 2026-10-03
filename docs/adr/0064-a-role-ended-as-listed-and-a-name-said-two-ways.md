@@ -76,6 +76,18 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    person, the evidence having to show the listed role's own two people parting; the closing line asks whether the
    turn ends each role "between its own two people (a new role or promotion toward someone else does not)". Parser
    unchanged.
+   *And on `ed10842`* (41 calls before stopping): the unrelated bakery promotion still ended the inn employment
+   in 2/3 runs. `ended_roles` now also requires the listed counterpart's name or an unambiguous KNOWN ENTITIES alias
+   in the bounded, shown TARGET. For a role toward the persona, the check uses the other party (the existing
+   resolver's persona-name rule). CONTEXT, hints alone, text beyond the shown target, another entity type and a
+   shared alias do not supply that mention. The name can be outside the quote: the PR comment's quote-only proposal
+   would reject all 31 preserved correct move/resignation endings. Replaying the implemented guard keeps those 31
+   and drops eight known wrong endings; the fresh 90-call S2 probe passes 15/15 core role checks and 6/6 name joins.
+   The model still proposes a wrong ending once at turn 99, blocked by the guard. This is a conservative prerequisite,
+   not semantic proof: a pronoun-only counterpart may leave a stale role, and an incidental name in the turn can
+   still accompany a wrong model judgment. Three additional endings at turn 219 require sequential state review;
+   fixed v15 hints do not establish their ending time. No default change or Q5 completion follows from this result.
+   See `docs/perf/extract-v16-role-target.md`.
    The same review found that `LATER`'s 내주 and 내달 (next week, next month) also matched the verbs 내주다 (hand
    over: "열쇠를 내주고") and 내달리다 (dash), so a done ending quoted with them closed nothing; they now count only as
    the nouns (followed by a space, a particle such as 에, 의 or 부터, or the end). No model call measured this.

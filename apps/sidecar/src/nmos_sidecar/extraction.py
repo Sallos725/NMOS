@@ -22,7 +22,7 @@ from .config import Settings
 from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, metered
-from .entities import UNNAMED, norm, resolve
+from .entities import PERSONA, UNNAMED, node, norm, resolve
 from .facts import _versions, fact_text, links_of, persona_of, served_assertions, version_key
 from . import canon
 from .repairs import repairs_of, splits_of
@@ -220,6 +220,9 @@ ROLE_ENDINGS = """- If CURRENT ROLES are listed (R1, R2, …), report in `roles_
   A new role, job or promotion toward someone else (another employer, another workplace) never ends a
   listed role toward a different person: the `evidence` must show the listed role's own two people
   parting or their arrangement ending.
+  Only report an ending if the listed counterpart is named in the TARGET itself, by their name or a
+  KNOWN ENTITIES alias, not only in CONTEXT or CURRENT ROLES. For a role toward the user's persona,
+  the other person must be named. The name need not be in the quoted passage; the ending still must be.
 """
 _ANSWER_END = '''"secrets": [{{"secret": "S1", "found_out_by": ["..."], "evidence": "..."}}]}}'''
 ANSWER_ROLES = (_ANSWER_END[:-2]  # extract-v16's answer
@@ -816,8 +819,31 @@ def quoted_in(evidence: str, turn_text: str) -> str | None:
     return None
 
 
+def role_party_named(role: dict[str, Any], turn_text: str, hints: list[dict[str, Any]] | None = None,
+                     persona: list[str] | None = None) -> bool:
+    """A counterpart mentioned in the shown TARGET; old hints supply names, never the mention itself.
+
+    Checking the quote alone rejected every measured correct move/resignation. Checking the shown turn keeps
+    those while rejecting the unrelated employer at turn 99. A pronoun-only counterpart is conservatively missed.
+    """
+    persona_names = frozenset(norm(n) for n in persona or ())
+    to_persona = node("character", role["to"], persona_names)[1] == PERSONA
+    other = norm(role["by"] if to_persona else role["to"])
+    groups = [{norm(h["name"]), *(norm(n) for n in h.get("also", []))}
+              for h in hints or () if h.get("type") == "character"]
+    owners = [g for g in groups if other in g]
+    names = {other}
+    if len(owners) == 1:
+        names |= {n for n in owners[0] if sum(n in g for g in groups) == 1}
+    text = norm(turn_text)
+    # Keep Korean particles usable, but do not count Ann inside Joanne/Anna or a given name inside another full name.
+    return any(re.search(r"(?<!\w)" + re.escape(n) + (r"(?![a-z0-9_])" if n[-1:].isascii() else ""), text)
+               for n in names if n)
+
+
 def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, Any]],
-                turn_text: str) -> list[Any]:
+                turn_text: str, *, hints: list[dict[str, Any]] | None = None,
+                persona: list[str] | None = None) -> list[Any]:
     """extract-v16's role endings (PHASE-28 Q1): the model's `roles_ended` (R<n> of CURRENT ROLES, with a quote of the
     TARGET turn) → a negative `role_toward` with the listed subject, object and value, which ADR 0013's value match
     closes exactly that role with. Only an ending that is over in the target turn (`when` "now"): one only planned or
@@ -826,7 +852,9 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
     nothing; a quote that joins passages with an ellipsis counts by its passage found there (`quoted_in`); a quote that
     places the change later (`LATER`: tomorrow, next week, planned…) closes nothing, whatever `when` says. A negative
     `role_toward` the model wrote itself between the two parties of a listed role is dropped: the listed ending is the
-    one way to close it, and a free one in other words would stand beside the role as a fact of its own."""
+    one way to close it, and a free one in other words would stand beside the role as a fact of its own.
+    The counterpart must be named in the shown TARGET (not necessarily in the quote); hints alone cannot establish
+    that a scene about another employer ends this arrangement. A pronoun-only mention can leave a stale role."""
     pairs = {(norm(r["by"]), norm(r["to"])) for r in roles}
     kept = [a for a in items if not (isinstance(a, dict) and a.get("predicate") == "role_toward"
                                      and str(a.get("polarity") or "").strip().lower() == "negative"
@@ -846,8 +874,10 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
         evidence = quoted_in(str(entry.get("evidence") or "").strip()[:300], turn_text)
         if evidence is None or LATER.search(evidence):
             continue
-        done.add(int(ref))
         listed = roles[int(ref) - 1]
+        if not role_party_named(listed, turn_text, hints, persona):
+            continue
+        done.add(int(ref))
         kept.append({"subject": listed["by"], "subject_type": "character", "predicate": "role_toward",
                      "object": listed["to"], "object_type": "character", "value": listed["role"], "polarity": "negative",
                      "modality": "actual", "source": "narration", "evidence": evidence, "knowledge": "public",
@@ -981,7 +1011,8 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
     items = [a for a in items if not (isinstance(a, dict) and a.get("predicate") in DERIVED)]
     items += revealed(parsed, secrets, turn_text)
     if roles:
-        items = ended_roles(parsed, items, roles, turn_text)
+        items = ended_roles(parsed, items, roles, shown_target(ctx), hints=hints,
+                            persona=persona_of(ctx["target"].get("host_persona_name")))
     if pairs:
         items = same_names(parsed, items, pairs, turn_text)
     with conn.transaction():

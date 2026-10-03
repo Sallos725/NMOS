@@ -146,7 +146,7 @@ def prompts(args: argparse.Namespace) -> list[dict[str, Any]]:
             user = X.build_prompt(ctx, hints, X.promise_hints(ctx, earlier), secrets, X.thread_hints(ctx, earlier),
                                   **({"roles": roles} if roles else {}), **({"pairs": pairs} if pairs else {}))
             out.append({"turn": a["turn"], "user": user, "hints": hints, "secrets": secrets, "roles": roles,
-                        "pairs": pairs, "text": text,
+                        "pairs": pairs, "text": text, "persona": X.persona_of(ctx["target"].get("host_persona_name")),
                         # what the model saw of the target turn (extract-v14's `shown_target`)
                         "shown": "\n".join(r["content"][:X.TARGET_CHARS] for r in ctx["members"])})
     return out
@@ -202,7 +202,7 @@ def run(args: argparse.Namespace) -> None:
                 items = [x for x in items if not (isinstance(x, dict) and x.get("predicate") in X.DERIVED)]
                 items += X.revealed(parsed, p["secrets"], p["text"])
                 if p["roles"]:  # extract-v16: the listed endings, as the worker writes them
-                    items = X.ended_roles(parsed, items, p["roles"], p["text"])
+                    items = X.ended_roles(parsed, items, p["roles"], p["shown"], hints=p["hints"], persona=p["persona"])
                 if p.get("pairs"):  # extract-v16: the confirmed name pairs, as the worker writes them
                     items = X.same_names(parsed, items, p["pairs"], p["text"])
                 apart = {"apart": True} if args.compiler in getattr(X, "PARTS_APART", ()) else {}

@@ -50,7 +50,15 @@ instead of its number and were refused (no alias kept, none wrong); the prompt n
 On `073b7a1` (S2, 30 scenes × 3): both name pairs joined 3/3 (all answers by number), core roles 12/12, but turn 99's
 bakery promotion ended the role toward the inn's owner in 2/3 runs (13/15 with it); the role rule and closing line now
 say a new role or promotion toward someone else never ends a listed role toward a different person.
-Next: the same 27 turns (and the 12 role checks) on the new head, then the rest of Q5 (c).
+On `ed10842`, the same wrong ending persisted in 2/3 runs; stopped at 41 calls. The correction now requires the
+listed counterpart's name or an unambiguous known alias in the shown TARGET, not merely in old hints. A quote-only
+name check was rejected by offline measurement: it would also drop all 31 measured correct endings. Replaying
+the actual guard keeps those 31 and rejects the eight known wrong endings. A fresh 90-call S2 probe passes the
+five role checks in all three runs (15/15); both name pairs resolve in every run (6/6). The model still proposes one
+wrong turn-99 ending, now blocked. Three further endings at the school departure (turn 219) are outside those core
+checks; fixed v15 hints do not establish their true ending time. This is not the full Q5 (c) or a sequential v16
+worker/backfill verdict. Evidence, tests and conservative misses: `docs/perf/extract-v16-role-target.md`.
+Next: the rest of Q5 (c), including sequential state and the remaining ending classifications; no default change.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

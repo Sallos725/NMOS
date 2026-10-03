@@ -33,6 +33,15 @@ both pairs joined in each of 3 runs (every answer by number), and the core role 
 another workplace (S2 turn 99) ended the role toward a different person in 2 of 3 runs, so Q1's rule now says such a
 new role never ends a listed role toward someone else (ADR 0064 item 1).
 
+Q1 measurement amendment (2026-10-03, `ed10842`): that prompt still ended the wrong employer's role in 2/3 runs,
+so the parser also requires the counterpart's name or an unambiguous known alias in the shown TARGET. The name
+need not be inside the ending quote: a quote-only check would reject all 31 preserved correct endings. For a role
+toward the persona, the named party must be the other person, using the existing persona resolution rule.
+The actual guard retained those 31 and blocked eight known wrong endings offline; a fresh 90-call S2 probe kept
+all five core role checks in all three runs (15/15) and both name pairs joined per run (6/6). Pronoun-only endings
+can be missed, and a name elsewhere in the turn is not proof of an ending by itself. The remaining semantic and
+worker/backfill gates still apply; see `docs/perf/extract-v16-role-target.md`.
+
 ## Goal
 
 Two defects confirmed in the stored traces of the owner's live run on `e13dee7` (AGE-24), each a state error rather

@@ -313,7 +313,7 @@ def test_a_quote_that_places_the_change_later_closes_nothing_even_when_said_now(
                                       quote) == [], quote
     for quote in (MOVED, "하나는 오늘 아침 카이토의 집을 떠나 새 집으로 이사했다.", "Hana moved out of Kaito's house this morning."):
         (row,) = extraction.ended_roles({"roles_ended": [{"role": "R1", "when": "now", "evidence": quote}]}, [], ROLES,
-                                        quote)
+                                        quote, hints=known("카이토", also={"카이토": ["Kaito"]}))
         assert row["polarity"] == "negative", quote
 
 
@@ -322,8 +322,9 @@ def test_next_week_and_next_month_are_nouns_not_the_verbs_that_contain_them():
     and 내달리다 (dash) tell what happens now; the nouns still place the change later."""
     for quote in ("하나는 카이토에게 열쇠를 내주고 짐을 들고 나왔다.", "하나는 짐을 메고 문밖으로 내달려 집을 떠났다."):
         assert extraction.LATER.search(quote) is None, quote
+        target = "카이토는 문 옆에 서 있었다. " + quote
         (row,) = extraction.ended_roles({"roles_ended": [{"role": "R1", "when": "now", "evidence": quote}]}, [], ROLES,
-                                        quote)
+                                        target)
         assert row["polarity"] == "negative", quote
     for quote in ("하나는 내주에 카이토의 집을 떠난다.", "내달부터 다른 집에 세 들기로 했다.", "하나는 내주 월요일에 이사한다.",
                   "이사는 내달.", "내주의 일정대로 집을 비운다.", "이사를 내달로 미뤘다."):
