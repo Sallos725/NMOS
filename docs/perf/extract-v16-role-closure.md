@@ -75,3 +75,6 @@ The full comparison must restart for the new prompt. The owner authorized quota 
 after correction when a defect appears in the first quarter: 360 of the 1,440 planned calls.
 First-connection/backfill and live-host gates still remain, including turn 219's ending time.
 No default switch or phase-completion claim follows from the bounded check.
+
+The fresh run subsequently stopped at 739/1,440 on an S1 ending blocked by a missing known alias;
+the independent story also missed a free alias. See [the follow-up measurement](extract-v16-fixed-hints-and-glass.md).

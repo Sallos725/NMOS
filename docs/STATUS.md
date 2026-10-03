@@ -65,7 +65,16 @@ business closure from residence or mentorship, and check continued access at the
 24-call check passes all six role cases (18/18) and both name joins per run (6/6); system-only wording had still
 failed 2/3. Evidence and the JSON diagnosis: `docs/perf/extract-v16-role-closure.md`. The owner authorized a new
 full run, preserving every result, with correction and restart for a defect found within its first quarter.
-Next: restart Q5 (c) for this prompt, then sequential state and the remaining ending classifications; no default change.
+The fresh `7dbef46` comparison stopped at 739/1,440 samples (743 attempts; four recovered JSON errors).
+S2's six declared role cases pass 18/18, S1's 15/18: the S1 resignation model output is correct under the
+declared check, but the fixed v15 hint lacks the captain's full/given-name alias and the counterpart guard
+rejects the endings in all three repeats. Separately, the independent glass-garden model probe passes its
+first 24 role samples, then misses the explicit alias in sample 25; 17 samples remain unrun. Both are
+criteria misses, not full acceptance. The failure is beyond the owner's 360-sample automatic correction
+window; no further production patch or full restart was made. Evidence and isolated counterfactuals:
+`docs/perf/extract-v16-fixed-hints-and-glass.md`. Sequential copies and a three-call concurrency cap are
+prepared, with zero sequential model calls. Next: decide the follow-up for missing alias extraction and
+measure whether sequential v16 hints resolve the conservative ending miss; no default change.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
