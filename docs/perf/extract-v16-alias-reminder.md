@@ -524,3 +524,114 @@ breakdown are preserved in `/home/grantkim725/nmos-eval/pr251/2026-10-03/role-co
 Details: [17-case result](../proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md#measured-17-case-probe-2026-10-03-2036-kst).
 Next is the ADR 0064/phase and worker adoption decision, then fresh sequential S1 with turn-88 readback.
 No production code, generation or default changed; NMO-24 and the release gate remain open.
+
+
+## Fresh S1 with worker confirmation: roles pass, identity fails (2026-10-03, 22:44 KST)
+
+**High risk:** current/historical roles, identity and stored provenance. Target
+`4e76c700406d6b42843f65935edb82fa6d2fdf15`, generation
+`extract-696ace94a0f2a9485521a51ae001d995`, requested model `gemma4:31b-cloud`
+(provider reports `gemma4:31b`). The owner approved one fresh sequential S1 backfill,
+turns 0–239, at most 240 extraction + 32 confirmation calls, no retry, input stop
+threshold 4,200,000 and output budget 336,384. The prepared baseline contained 481
+source rows and 240 unattempted jobs, with no extraction of this generation. The
+stopped old-generation copy was not resumed.
+
+The real worker completed **240/240 jobs and 247 calls (240 + 7)**. The declared role
+checks pass **7/7**, but the final name-pair gate passes only **1/3**, so the runner
+exits **1**, `accuracy_failure`, after turn 239. This is not an overall S1 pass.
+No additional model call or product correction follows this failure.
+
+| Check | Observed persistent state |
+|---|---|
+| 74 mentorship; 86 move preparation; 99 other employer; 144 shop closure | Listed relationship retained in each declared scene |
+| 87 actual move | Old inn role ends after confirmation yes; no normal pending |
+| 88 settling into the new attic | Extractor again proposes a wrong now ending, quoting cleaning; confirmation no leaves a pending negative and the new residence current |
+| 233 resignation | Both directed employment roles end, including the full/given-name counterpart; no normal pending |
+| Final names | 강무진 / 무진 joined; 윤하람 / 하람 and 백이안 / 이안 not joined |
+
+Turn 88's extraction, assertions and resident-to-owner fact were read through a new
+read-only connection; reverse mentorship cannot substitute for residence. The normal
+ending gold is **2 scenes / 3 directed roles**: applied 2/2 scenes and 3/3 roles,
+pending **0/2 scenes, 0/3 roles**. The single pending confirmation in the run is the
+correctly withheld turn-88 candidate, not a normal-ending miss. Outside frozen gold,
+turn 159's actual attic departure is confirmed yes. Do not enlarge the normal-ending
+denominator with post-run observations.
+
+### Usage, envelope and evidence quality
+
+| Lane | Calls | Input | Output | Cached input reported |
+|---|---:|---:|---:|---:|
+| Extraction | 240 | 2,868,812 | 257,325 | 1,403,744 |
+| Confirmation | 7 | 32,527 | 242 | 3,936 |
+| Total | 247 | **2,901,339** | **257,567** | **1,407,680** |
+
+Elapsed to the terminal status write: **1,036.248 s (17 min 16 s)**. HTTP-boundary
+request duration sums to 1,021.578 s; confirmation median 728 ms, maximum 901 ms.
+HTTP/format/usage errors, retries and truncated outputs: **0**. Maximum outputs were
+2,625 main / 57 confirmation. The runner explicitly sends `max_tokens=4096/512`;
+production remains uncapped, so this is a measurement of that bounded envelope.
+Reported HTTP token counts equal all 240 stored extraction totals and the separate
+`usage.confirm` totals on fresh DB readback. Duration counters use different timing
+boundaries and are not asserted byte-identical.
+
+Confirmation adds **7 calls per 240 turns (2.92%)**, 32,527 input and 242 output tokens.
+At the owner's per-million rates ($0.14 input / $0.40 output), without cache discounts,
+the total estimate is **$0.50921426**, including **$0.00465058** for confirmation.
+This is not a provider invoice or an account-balance reading.
+
+All six yes replies pass the existing TARGET quote / LATER contract; the one no has
+an optional empty quote. Separate, unblinded quotation review: **Supports 1, Weak 2,
+Uncertain 3, Contradicts 0, Missing 1**. The move and school-departure quotes need the
+rest of their scenes; both resignation quotes announce quitting without themselves
+proving completion. Turn 227 quotes removal from guild leadership to end a directed
+sponsorship/purchase role: it is outside declared gold and its semantic validity
+remains uncertain. These labels do not change frozen gold or claim that every yes
+has independently established termination. In particular, the seven role checks are
+not evidence of zero wrong endings throughout every ungraded scene.
+
+### Identity diagnosis, no model calls
+
+All three intended pairs were joined by turn 33. Fresh historical reads establish:
+
+- At turn **81**, the model writes and the worker accepts `백이안 → 곽 조합장` as an
+  alias; the quote is about another person. `백이안` becomes ambiguous between `이안`
+  and `곽 조합장`. Removing only that row in memory restores the pair at that position.
+- Through turn **181**, `윤하람 / 하람` is still joined. At **182**, a legitimate
+  `윤하람 → 람이` pet-name alias makes the full name ambiguous between `하람` and
+  `람이`: `entities._splits` treats otherwise disconnected neighbours symmetrically.
+  Removing only the new alias in memory restores the pair at that position. This is
+  distinct from model misattribution: even these correct alias inputs trigger it.
+- Additional accepted misattributions occur at **200** (`추오월 → 도도`) and **237**
+  (`람이 → 도도`, from a letter addressed to 도도). They need separate correction;
+  neither is the first loss of the two final name pairs.
+
+The counterfactual removes input rows only in memory: no DB write, fake ground truth,
+resolver change or downstream sequential replay. The missing final joins are not
+missing initial extraction. The runner's three fixed forbidden-alias checks missed
+these new misattributions, so the terminal gate detected a divergence that began
+at turn 81; it must not be described as an error first occurring at turn 239.
+
+Next: hand off the preserved cases for alias attribution and legitimate multiple-alias
+resolution review under ADR 0012's ambiguity/provenance guarantees. Review the uncertain
+turn-227 ending separately. No automatic merge, resolver/default change or paid restart
+is authorized by this result. First-connection, full comparison and live gates remain
+unrun; NMO-24 continues to block NMO-7.
+
+Full run evidence root (owner-local; bounded synthetic excerpts are linked below):
+`/home/grantkim725/nmos-eval/pr251/2026-10-03/sequential-confirm-4e76c70/`.
+`PLAN.json` SHA-256: `a61e5a6bbe0ec09985b12c23074f6c662a9e0012f6d06102a9ace04687763daa`.
+The root retains approval, frozen source/run hashes, `execution.log`, separate numbered
+HTTP requests/replies, checks and the stopped DB archive. `fresh-readback-summary.json`,
+`identity-diagnosis.json` and `quote-review.json` record the zero-call follow-up.
+`verify_fresh_readback.py` and `diagnose_names.py` exit 0; the former verifies preservation
+and reproduces the failed gate, not an overall pass. The source worktree remains clean.
+
+Owner-authorized review excerpts are now included in
+[`fixtures/model/phase28/2026-10-03-s1-confirmation-review`](../../fixtures/model/phase28/2026-10-03-s1-confirmation-review/README.md):
+turns 81/182/200/227/237, exact source and model TARGETs, actual KNOWN ENTITIES, original
+alias JSON and stored/prior alias directions; turn 227 also includes its role confirmation.
+All ten source messages match the authored synthetic corpus byte for byte. Source/model
+text differences from the existing normalizer are preserved, not silently rewritten.
+Export/readback and hash validation use no model calls. These excerpts expose measured
+failures for review; they are not new passing fixtures or an implementation change.
