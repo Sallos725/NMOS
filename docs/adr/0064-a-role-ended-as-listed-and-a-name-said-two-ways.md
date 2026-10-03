@@ -261,5 +261,13 @@ same paid `extract-v16` run measures. The option, its setting and its tool flags
 - The alias rule asks the model to judge identity from the narration. A wrong alias joins two characters' facts and
   knowledge marks; the turn check, the ambiguity rule and the owner's split (ADR 0044) are the guards, and the Q5 (c)
   evaluation counts every alias the model gives. It covers names in Latin script as well.
+- **Measured in Korean, mostly on one story.** The rules grew one measured failure at a time, nearly all from S1
+  (turns 30, 34, 43, 74, 86–88); the confirmation probe's seventeen cases are twelve Glass Garden regressions (also
+  Korean) and five short synthetic ones. Three guards are written per language: `LATER` knows Korean and English
+  time words only, `BARE_PERSON_LABELS` Korean and English labels only (a label in another language passes
+  unguarded), and NAME PAIRS splits Hangul names of three or four syllables and Latin names only (no kana or kanji
+  names). The confirmation prompt depends on no such list but is unmeasured outside Korean. No held-out story or
+  other language has been run; that evaluation, and any change it calls for, is after 1.0 (owner, 2026-10-03;
+  NMO-34). A default switch before then rests on this evidence and says so.
 - Evaluation: `tools/eval_extract_sample.py --compiler extract-v16` (role endings as listed and others counted apart;
   the alias check as the worker applies it).

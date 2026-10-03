@@ -139,7 +139,10 @@ files, captured requests and databases stay with the owner, outside the reposito
 
 Q6, and: a new predicate; a change to `facts.relation`, `facts.version_key` or ADR 0013; rewriting or re-extracting
 `extract-v15` rows or the benchmark baseline; the Inspector's and the owner preview's resolution (they keep the
-default); a migration; a plugin build.
+default); a migration; a plugin build. Also out: whether the rules hold in other languages and on stories not used in
+development. The evidence is Korean, mostly S1, and `LATER`, the bare-label guard and NAME PAIRS are written for
+Korean and English (Latin script) only (ADR 0064, Consequences). Measuring that, and adjusting, is after 1.0 (owner,
+2026-10-03; NMO-34).
 
 ## Acceptance criteria
 
