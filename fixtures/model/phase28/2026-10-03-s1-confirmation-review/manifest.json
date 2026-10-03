@@ -1,0 +1,48 @@
+{
+  "source_commit": "4e76c700406d6b42843f65935edb82fa6d2fdf15",
+  "generation": "extract-696ace94a0f2a9485521a51ae001d995",
+  "run": "S1 sequential backfill, 2026-10-03 22:26–22:44 KST",
+  "turn_index_base": 0,
+  "story_source_turn_index_base": 1,
+  "story": "윤슬포 해도 / Yunseulpo Chart",
+  "input_kind": "Authored synthetic benchmark story; source README says Claude-written, no real people or existing IP. Outputs and database rows are measured, not fabricated.",
+  "story_source_sha256": "38fa44646c28a94f839d27fccf1fc0d54aed0b6422dd4a4b33ed891920928978",
+  "plan_sha256": "a61e5a6bbe0ec09985b12c23074f6c662a9e0012f6d06102a9ace04687763daa",
+  "turns": [
+    {
+      "turn": 81,
+      "authored_story_turn": 82,
+      "original_alias_count": 1,
+      "stored_alias_count": 1,
+      "path": "turn-081"
+    },
+    {
+      "turn": 182,
+      "authored_story_turn": 183,
+      "original_alias_count": 2,
+      "stored_alias_count": 2,
+      "path": "turn-182"
+    },
+    {
+      "turn": 200,
+      "authored_story_turn": 201,
+      "original_alias_count": 1,
+      "stored_alias_count": 1,
+      "path": "turn-200"
+    },
+    {
+      "turn": 227,
+      "authored_story_turn": 228,
+      "original_alias_count": 0,
+      "stored_alias_count": 0,
+      "path": "turn-227"
+    },
+    {
+      "turn": 237,
+      "authored_story_turn": 238,
+      "original_alias_count": 1,
+      "stored_alias_count": 1,
+      "path": "turn-237"
+    }
+  ]
+}

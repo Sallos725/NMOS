@@ -1,0 +1,518 @@
+{
+  "turn": 81,
+  "authored_story_turn": 82,
+  "extraction_id": "01a101f6-e725-7c3d-8637-85f630cf0510",
+  "target_members": [
+    {
+      "role": "user",
+      "source_revision_id": "01a0fc5b-6d7b-79b6-a3c2-bad7549f5a6c",
+      "revision_hash": "95df414ea99f222ba2ab3c5a2099ffb159b76e41e201c8d260b439f800333963",
+      "content_sha256": "702e171db0ecf90297f78748db5b2c431dcafb1aa66aa82d7855bde8ce10377e",
+      "authored_source_equal": true,
+      "normalization_changed_text": false,
+      "model_content_sha256": "702e171db0ecf90297f78748db5b2c431dcafb1aa66aa82d7855bde8ce10377e",
+      "truncated": false
+    },
+    {
+      "role": "char",
+      "source_revision_id": "01a0fc5b-c790-75e0-85db-c1e6d083eae7",
+      "revision_hash": "a1f38ed1b57ea913b8275e61633cd7c56797cc27e319f84bcdb59df9a87d5163",
+      "content_sha256": "d37e83b8c91fabbda247fd42abcb4bbe7610686fd397ff809dafb06bec4e7890",
+      "authored_source_equal": true,
+      "normalization_changed_text": true,
+      "model_content_sha256": "97b7d5e720a70fee7f32e2e5c26861c186bf69222e478aa4a42a09665c220a39",
+      "truncated": false
+    }
+  ],
+  "known_entities_stored": [
+    {
+      "also": [
+        "하람"
+      ],
+      "name": "윤하람",
+      "type": "character"
+    },
+    {
+      "name": "경위의",
+      "type": "item"
+    },
+    {
+      "name": "?기구상 주인",
+      "seen": [
+        {
+          "fact": "?기구상 주인 identity: 기구상 주인",
+          "turn": 78,
+          "evidence": "주인은 작업대 앞에 앉아 외알 확대경을 한쪽 눈에 끼고 무언가를 조이고 있었다."
+        },
+        {
+          "fact": "서도윤 event: 경위의를 구매함",
+          "turn": 79,
+          "evidence": "그 경위의, 제가 살게요. 90펠. 여기 있습니다."
+        }
+      ],
+      "type": "character"
+    },
+    {
+      "name": "은화",
+      "type": "item"
+    },
+    {
+      "name": "기구상",
+      "type": "place"
+    },
+    {
+      "name": "측각기",
+      "type": "item"
+    },
+    {
+      "name": "?창구 직원",
+      "seen": [
+        {
+          "fact": "?창구 직원 addresses 서도윤: 존댓말, '서 선생'이라고 부름",
+          "turn": 76,
+          "evidence": "\"서 선생, 점심 안 드십니까?\""
+        }
+      ],
+      "type": "character"
+    },
+    {
+      "also": [
+        "이안"
+      ],
+      "name": "백이안",
+      "type": "character"
+    },
+    {
+      "name": "남색 제복",
+      "type": "item"
+    },
+    {
+      "name": "항만청",
+      "type": "place"
+    },
+    {
+      "name": "?항만청장",
+      "seen": [
+        {
+          "fact": "?항만청장 identity: 윤슬포 항만청장",
+          "turn": 74,
+          "evidence": "잠시 후 도윤은 항만청장의 방으로 안내되었다."
+        },
+        {
+          "fact": "서도윤 event: 항만청 임시 측량사로 채용됨",
+          "turn": 74,
+          "evidence": "오늘부로 윤슬포 항만청 임시 측량사로 채용한다."
+        }
+      ],
+      "type": "character"
+    },
+    {
+      "also": [
+        "오월"
+      ],
+      "name": "추오월",
+      "type": "character"
+    },
+    {
+      "name": "추천서",
+      "type": "item"
+    },
+    {
+      "name": "나무 상자",
+      "type": "item"
+    },
+    {
+      "name": "한울",
+      "type": "place"
+    },
+    {
+      "name": "빵",
+      "type": "item"
+    },
+    {
+      "name": "곽은비",
+      "type": "character"
+    },
+    {
+      "name": "윤슬포",
+      "type": "place"
+    },
+    {
+      "also": [
+        "무진"
+      ],
+      "name": "강무진",
+      "type": "character"
+    },
+    {
+      "name": "상인조합",
+      "type": "group"
+    },
+    {
+      "name": "청새치호",
+      "type": "item"
+    },
+    {
+      "name": "윤슬포 부두 3번 부두",
+      "type": "place"
+    },
+    {
+      "name": "청동 나침반",
+      "type": "item"
+    },
+    {
+      "also": [
+        "정호"
+      ],
+      "name": "서정호",
+      "type": "character"
+    },
+    {
+      "name": "칠초해",
+      "type": "place"
+    },
+    {
+      "name": "파도소리 주점",
+      "type": "place"
+    },
+    {
+      "name": "칠초해 해도",
+      "type": "item"
+    },
+    {
+      "also": [
+        "오 사장"
+      ],
+      "name": "오봉순",
+      "type": "character"
+    },
+    {
+      "name": "먹물",
+      "type": "character"
+    },
+    {
+      "name": "천 주머니",
+      "type": "item"
+    },
+    {
+      "name": "상인조합 회관",
+      "type": "place"
+    },
+    {
+      "name": "갈매기 여관 3호실",
+      "type": "place"
+    },
+    {
+      "name": "은빛 잉크병",
+      "type": "item"
+    },
+    {
+      "name": "용의 턱",
+      "type": "concept"
+    },
+    {
+      "name": "쌍둥이",
+      "type": "concept"
+    },
+    {
+      "name": "울음목",
+      "type": "concept"
+    },
+    {
+      "name": "검은등",
+      "type": "concept"
+    },
+    {
+      "name": "소금솥",
+      "type": "concept"
+    },
+    {
+      "name": "과부바위",
+      "type": "concept"
+    },
+    {
+      "name": "까치이빨",
+      "type": "concept"
+    }
+  ],
+  "original_also_called_items": [
+    {
+      "subject": "백이안",
+      "subject_type": "character",
+      "predicate": "also_called",
+      "value": "곽 조합장",
+      "polarity": "positive",
+      "modality": "actual",
+      "source": "narration",
+      "asserted_by": null,
+      "epistemic": "implied",
+      "confidence": 0.9,
+      "evidence": "곽 조합장이 직접 오 사장한테 제안을 넣었다는 얘기가 부두에 쫙 퍼졌어.",
+      "knowledge": "public",
+      "known_by": [],
+      "hidden_from": []
+    }
+  ],
+  "original_also_called_verbatim_json": [
+    "{\n      \"subject\": \"백이안\",\n      \"subject_type\": \"character\",\n      \"predicate\": \"also_called\",\n      \"value\": \"곽 조합장\",\n      \"polarity\": \"positive\",\n      \"modality\": \"actual\",\n      \"source\": \"narration\",\n      \"asserted_by\": null,\n      \"epistemic\": \"implied\",\n      \"confidence\": 0.9,\n      \"evidence\": \"곽 조합장이 직접 오 사장한테 제안을 넣었다는 얘기가 부두에 쫙 퍼졌어.\",\n      \"knowledge\": \"public\",\n      \"known_by\": [],\n      \"hidden_from\": []\n    }"
+  ],
+  "original_same_names": [],
+  "stored_also_called_rows": [
+    {
+      "id": 1517,
+      "extraction_id": "01a101f6-e725-7c3d-8637-85f630cf0510",
+      "source_revision_id": "01a0fc5b-c790-75e0-85db-c1e6d083eae7",
+      "subject": "백이안",
+      "subject_type": "character",
+      "predicate": "also_called",
+      "object": null,
+      "object_type": null,
+      "value": "곽 조합장",
+      "epistemic": "implied",
+      "confidence": 0.9,
+      "evidence": "곽 조합장이 직접 오 사장한테 제안을 넣었다는 얘기가 부두에 쫙 퍼졌어.",
+      "status": "valid",
+      "reason": null,
+      "known_by": null,
+      "hidden_from": null,
+      "knowledge": "public",
+      "polarity": "positive",
+      "modality": "actual",
+      "source": "narration",
+      "asserted_by": null,
+      "salience": null,
+      "participants": null,
+      "outcome": null,
+      "because": null
+    }
+  ],
+  "prior_served_character_alias_rows": [
+    {
+      "id": 1147,
+      "subject": "서도윤",
+      "subject_type": "character",
+      "predicate": "also_called",
+      "object": "도윤",
+      "object_type": "character",
+      "value": "도윤",
+      "epistemic": "stated",
+      "confidence": 1.0,
+      "evidence": "일자리 없는 떠돌이 견습 측량사가 지금의 서도윤이었다. ... 도윤은 무의식적으로 외투 안쪽을 더듬었다.",
+      "knowledge": "public",
+      "known_by": null,
+      "hidden_from": null,
+      "polarity": "positive",
+      "modality": "actual",
+      "source": "narration",
+      "asserted_by": null,
+      "salience": null,
+      "participants": null,
+      "outcome": null,
+      "because": null,
+      "position": 1,
+      "turn": 0,
+      "host_logical_id": "3fae0226-46c1-492c-a637-835ed6507372",
+      "generation": "extract-696ace94a0f2a9485521a51ae001d995",
+      "compiler": "extract-v16",
+      "turn_hash": "b2164f89e973b07fec54f064918bb983",
+      "listed_hash": null
+    },
+    {
+      "id": 1159,
+      "subject": "오봉순",
+      "subject_type": "character",
+      "predicate": "also_called",
+      "object": null,
+      "object_type": null,
+      "value": "오 사장",
+      "epistemic": "stated",
+      "confidence": 1.0,
+      "evidence": "다들 오 사장이라고 부르지.",
+      "knowledge": "public",
+      "known_by": null,
+      "hidden_from": null,
+      "polarity": "positive",
+      "modality": "actual",
+      "source": "character_claim",
+      "asserted_by": "오봉순",
+      "salience": null,
+      "participants": null,
+      "outcome": null,
+      "because": null,
+      "position": 3,
+      "turn": 1,
+      "host_logical_id": "98655c37-2f6c-4f95-b7da-da08f1f90061",
+      "generation": "extract-696ace94a0f2a9485521a51ae001d995",
+      "compiler": "extract-v16",
+      "turn_hash": "4291a7e4e0a0f15aab87553100d52fdf",
+      "listed_hash": null
+    },
+    {
+      "id": 1212,
+      "subject": "서정호",
+      "subject_type": "character",
+      "predicate": "also_called",
+      "object": null,
+      "object_type": null,
+      "value": "정호",
+      "epistemic": "stated",
+      "confidence": null,
+      "evidence": "정호랑 둘이서 등대섬 앞바다 측량 나갔다가",
+      "knowledge": "public",
+      "known_by": null,
+      "hidden_from": null,
+      "polarity": "positive",
+      "modality": "actual",
+      "source": "narration",
+      "asserted_by": null,
+      "salience": null,
+      "participants": null,
+      "outcome": null,
+      "because": null,
+      "position": 21,
+      "turn": 10,
+      "host_logical_id": "de1b46a1-ae1e-4924-bb21-d3b9683a0556",
+      "generation": "extract-696ace94a0f2a9485521a51ae001d995",
+      "compiler": "extract-v16",
+      "turn_hash": "5b915a174885c7bb53615181ecda3764",
+      "listed_hash": null
+    },
+    {
+      "id": 1248,
+      "subject": "강무진",
+      "subject_type": "character",
+      "predicate": "also_called",
+      "object": null,
+      "object_type": null,
+      "value": "무진",
+      "epistemic": "stated",
+      "confidence": null,
+      "evidence": "강무진이 성큼성큼 걸어 나왔다.",
+      "knowledge": "public",
+      "known_by": null,
+      "hidden_from": null,
+      "polarity": "positive",
+      "modality": "actual",
+      "source": "narration",
+      "asserted_by": null,
+      "salience": null,
+      "participants": null,
+      "outcome": null,
+      "because": null,
+      "position": 37,
+      "turn": 18,
+      "host_logical_id": "d888d54a-2b5e-4b0c-bcb8-1db074a72bbd",
+      "generation": "extract-696ace94a0f2a9485521a51ae001d995",
+      "compiler": "extract-v16",
+      "turn_hash": "0b883dced74f6a8f6d5c8ebacc5f222a",
+      "listed_hash": null
+    },
+    {
+      "id": 1278,
+      "subject": "백이안",
+      "subject_type": "character",
+      "predicate": "also_called",
+      "object": null,
+      "object_type": null,
+      "value": "이안",
+      "epistemic": "stated",
+      "confidence": null,
+      "evidence": "이안이 내어 준 대장은 두꺼운 가죽 장정의 묵직한 책이었다.",
+      "knowledge": "public",
+      "known_by": null,
+      "hidden_from": null,
+      "polarity": "positive",
+      "modality": "actual",
+      "source": "narration",
+      "asserted_by": null,
+      "salience": null,
+      "participants": null,
+      "outcome": null,
+      "because": null,
+      "position": 49,
+      "turn": 24,
+      "host_logical_id": "643019ea-adb9-4bb4-b0a9-31af8577133b",
+      "generation": "extract-696ace94a0f2a9485521a51ae001d995",
+      "compiler": "extract-v16",
+      "turn_hash": "391e2c11e8a8dd2fde791de47f44f2d2",
+      "listed_hash": null
+    },
+    {
+      "id": 1319,
+      "subject": "윤하람",
+      "subject_type": "character",
+      "predicate": "also_called",
+      "object": null,
+      "object_type": null,
+      "value": "하람",
+      "epistemic": "stated",
+      "confidence": null,
+      "evidence": "앞치마 끈을 다시 묶던 윤하람이 고개를 들고 환하게 웃었다.",
+      "knowledge": "public",
+      "known_by": null,
+      "hidden_from": null,
+      "polarity": "positive",
+      "modality": "actual",
+      "source": "narration",
+      "asserted_by": null,
+      "salience": null,
+      "participants": null,
+      "outcome": null,
+      "because": null,
+      "position": 67,
+      "turn": 33,
+      "host_logical_id": "b3f8b96d-b807-45c8-8fa1-253f59591a6f",
+      "generation": "extract-696ace94a0f2a9485521a51ae001d995",
+      "compiler": "extract-v16",
+      "turn_hash": "ff187b9c1547b27622e79e8f5b0efdc5",
+      "listed_hash": null
+    },
+    {
+      "id": 1427,
+      "subject": "추오월",
+      "subject_type": "character",
+      "predicate": "also_called",
+      "object": null,
+      "object_type": null,
+      "value": "오월",
+      "epistemic": "stated",
+      "confidence": null,
+      "evidence": "\"오월아, 오월아. 그게 다였다.\"",
+      "knowledge": "public",
+      "known_by": null,
+      "hidden_from": null,
+      "polarity": "positive",
+      "modality": "actual",
+      "source": "narration",
+      "asserted_by": null,
+      "salience": null,
+      "participants": null,
+      "outcome": null,
+      "because": null,
+      "position": 119,
+      "turn": 59,
+      "host_logical_id": "43fd8a19-0138-48fd-b407-02d8153ec47b",
+      "generation": "extract-696ace94a0f2a9485521a51ae001d995",
+      "compiler": "extract-v16",
+      "turn_hash": "6cddcb60420a38a5813f4b509d922047",
+      "listed_hash": null
+    }
+  ],
+  "derived_ambiguous_before": [],
+  "derived_ambiguous_after": [
+    {
+      "type": "character",
+      "name": "백이안",
+      "candidates": [
+        "이안",
+        "곽 조합장"
+      ]
+    }
+  ],
+  "artifact_hashes": {
+    "results/turn-81.json": "677567fa4b0ef7b0edc05ce650a7108464ee5ea82b418cadebc8a409fb453fb1",
+    "turns/81/attempt-1/call-0082-main/prompt.json": "38d9a103ba6a6aaab13eeba241099385922b7bca7a8e77ea3e21f6e9aaecd951",
+    "turns/81/attempt-1/extraction-reply.json": "b8217df5c2b45140108146a656d137244a6a4ef4b630614346cc15e66d9c4d88"
+  },
+  "main_raw_reply_sha256": "d6c2cb51ab7600a546cce59a9a9e02237e2c955d28ddb7c29752c69284b62c2b"
+}

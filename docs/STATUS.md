@@ -203,6 +203,22 @@ confirmation request has no output-token limit (the experiment's 512 was its own
 The owner's review of `17f3900` found an error status (HTTP 400 or above) whose body reports usage counted the
 call but not its tokens; the client reads usage from such a body now (none stays "not reported"). Client-only: the
 generation key is unchanged.
+The owner-approved fresh sequential S1 on `4e76c70` completed all **240 jobs / 247 calls**
+(240 extraction + 7 confirmation) in **1,036.248 s**, with no technical errors or retries.
+The seven declared role scenes pass: turn 88's wrong cleaning-as-ending candidate is held pending,
+its residence survives a fresh DB read, and normal ending gold closes **2/2 scenes (3/3 roles),
+pending 0**. But final name joins pass **1/3**, so the run exits 1, an accuracy failure.
+The joins existed initially: a wrong `백이안 → 곽 조합장` alias at turn 81 breaks one; the legitimate
+`윤하람 → 람이` alias at turn 182 makes the other ambiguous under the existing resolver's
+multiple-neighbour rule. Read-only per-scene counterfactuals confirm the triggers; no rows were
+changed. Other misattributed aliases at 200/237 and an uncertain sponsorship ending at 227 need
+review. Input **2,901,339** / output **257,567**, confirmation separately **32,527 / 242**;
+provider counts and stored totals agree on fresh readback. Next: alias attribution and legitimate
+multiple-alias resolution review, not another model run. First connection, full comparison and
+live gates remain unrun; v15 stays default. Details and limits:
+`docs/perf/extract-v16-alias-reminder.md` (fresh S1 with worker confirmation). The owner-authorized
+81/182/200/227/237 excerpts, preserving original/stored directions and actual entity hints,
+are in `fixtures/model/phase28/2026-10-03-s1-confirmation-review/` for independent review.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
