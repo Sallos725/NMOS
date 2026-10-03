@@ -611,6 +611,16 @@ removing the assertion's `epistemic` field (it is live: `certainty="implied"`; A
 higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G3 were fixed: M0 and Stage 5 (owner,
 2026-09-28).
 
+## Anonymous design survey (2026-10-03)
+
+The owner's requested [anonymous comparison](proposals/IDEA-SURVEY-2026-10-03.md) records current NMOS behavior,
+approaches observed in other projects and possible follow-up measurements. Static source reading only: no runtime
+comparison, model calls or claimed recall gains. Current NMO-24 (formerly AGE-24) help is limited to the existing
+Phase 28 role-ending checks and diagnosis; support retrieval, route coverage and story selection wait for corrected
+state and separate scope approval. Optional UI feedback remains a proposal. No new phase or release gate is added.
+The [earlier survey](proposals/IDEA-SURVEY-2026-09-29.md#7-follow-up-2026-10-03) now marks completed candidates and
+later deferrals. External project identities and identifying source references are omitted at the owner's request.
+
 ## Open owner decisions
 
 - Phase 26 (a repair whose item is gone suggests where it belongs now; Stage 6, AGE-23) — approved 2026-10-01, then

@@ -13,7 +13,8 @@ This directory splits the recommended next work into two tracks.
 | — | [Stage 4: who knows what](STAGE-4-KNOWLEDGE.md) (2026-09-27) | Decided (recommended answers); `docs/phases/PHASE-10.md` |
 | — | [Original vision → stable: audit and proposal](ORIGINAL-VISION-TO-STABLE-2026-09-27.md) (2026-09-27, Korean) | Review only: capability gaps, reproduced correctness findings, proposed priorities and release gates; no phase or release authorization |
 | — | [Public release and a benchmark](PUBLIC-RELEASE-AND-BENCHMARK.md) (2026-09-29) | Owner direction: packet fill next (Phase 15, approved), then a public benchmark, installation, announcement; no phase authorization |
-| — | [Ideas from a survey of another memory plugin](IDEA-SURVEY-2026-09-29.md) (2026-09-29) | Proposal only: one fix taken (CBS blocks in canon, ADR 0047 amendment 2), ten candidates placed by stage, owner decides the order |
+| — | [Ideas from a survey of another memory plugin](IDEA-SURVEY-2026-09-29.md) (2026-09-29; follow-up 2026-10-03) | Historical proposal: C2, C4/C5 and C7 implemented in Phases 19, 17 and 20; remaining candidates retain their own gates |
+| — | [Recall ideas from an anonymous comparison](IDEA-SURVEY-2026-10-03.md) (2026-10-03) | Static comparison only: current NMO-24 help, bounded support retrieval, route coverage, story selection and optional UI follow-up; no implementation or release authorization |
 
 The recommended order is:
 
