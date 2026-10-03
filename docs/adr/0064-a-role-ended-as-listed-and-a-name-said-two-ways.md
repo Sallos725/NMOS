@@ -251,6 +251,13 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
      returns no (wrong accept 1/16, normal pending 1/16). The valid quote/LATER contract does not prove semantic
      support. See `docs/proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md`, v4 results. Fresh sequential S1 is
      stopped before execution; this result selects no further prompt or design change.
+     *Owner decision (2026-10-03), on Claude's review of both failures:* **v4 is withdrawn and v3 restored**
+     (pinned again by its SHA-256). v3 measures 31/32 on the same inputs; v4's paragraph left 227 accepted and
+     flipped an unrelated normal ending, so further wording is not pursued for this model. **Known limitation,
+     accepted narrowly:** an arrangement ended on the counterpart's arrest, fall or loss of office (S1 turn 227: a
+     patronage ended because the patron is jailed and her guild dissolved) can still be confirmed although the
+     TARGET never says the arrangement itself ends. It is counted as a wrong ending, not relabelled; the PHASE-28
+     stop condition is relaxed for this class only, and any other wrong ending still stops a run.
    - **Usage.** The extraction's usage sums its confirmations at the top level (what the usage report counts) and
      keeps theirs apart under `confirm`. A call made counts once; its tokens only as the provider reported them,
      none for a call that got no response.

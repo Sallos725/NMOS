@@ -235,6 +235,10 @@ Claude reviews the two preserved failures; no automatic prompt revision or addit
 An alias confirmation for names the turn allows (237) and the resolver's treatment of one person's two names (182, ADR 0012) are NMO-35:
 outside Phase 28, before 0.3.0, the resolver last. The implementation used no model calls; the subsequent
 measurement above used 32.
+Owner decision on that review (2026-10-03): **v4 withdrawn, v3 restored** (31/32 on the same inputs). The 227 class
+(an arrangement ended on the counterpart's arrest, fall or loss of office) is a known, counted wrong ending that no
+longer stops a run on its own (ADR 0064 item 4, PHASE-28 stop conditions). extract-v16 is still a new generation by
+the alias rule. Next: a fresh sequential S1 from turn 0 on this head, with the owner's approval and budget.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

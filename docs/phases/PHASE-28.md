@@ -182,7 +182,9 @@ in the turn (S1 turn 237), and the resolver's treatment of one person with two a
 ## Stop conditions
 
 Stop and ask the owner when: a default request, `extract-v15`'s key or an older replay changes; a needed schema,
-migration or runtime-dependency change; a false join or a wrong role ending on any measured chat; a secret leak; a
+migration or runtime-dependency change; a false join or a wrong role ending on any measured chat (except the one class
+the owner accepted on 2026-10-03, ADR 0064 item 4: an arrangement ended on the counterpart's arrest, fall or loss of
+office, which is still counted and reported); a secret leak; a
 paid run would exceed its approved estimate; a baseline is unavailable; an acceptance bar is missed. Never replace the
 owner's measurement with synthetic results.
 
