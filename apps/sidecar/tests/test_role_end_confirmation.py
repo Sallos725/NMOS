@@ -31,9 +31,16 @@ def ctx(context, members):
     return {"context": context, "members": members, "target": {"turn": 9}}
 
 
-def test_the_confirmation_prompt_is_the_measured_v3_text_and_in_the_v16_fingerprint():
-    assert hashlib.sha256(X.ROLE_CONFIRM_SYSTEM.encode()).hexdigest() == (
-        "c5fe766ad7541573ce74e09f6f5282b8d6f4592602bd933f5bd331c85f986413")
+V4_PARAGRAPH = "Losing an office, post, title or business"
+
+
+def test_the_confirmation_prompt_is_the_measured_v3_text_plus_one_paragraph_and_in_the_v16_fingerprint():
+    system = X.ROLE_CONFIRM_SYSTEM
+    assert hashlib.sha256(system.encode()).hexdigest() == (
+        "885479bcc62d95d6507258fdc89cb02a071917f5be191a97ba2c4099101b5481")  # v4, not yet measured
+    start, end = system.index(V4_PARAGRAPH), system.index("Return only JSON")
+    assert hashlib.sha256((system[:start] + system[end:]).encode()).hexdigest() == (
+        "c5fe766ad7541573ce74e09f6f5282b8d6f4592602bd933f5bd331c85f986413")  # without it, the measured v3 verbatim
     assert X.CONFIRMS == {"extract-v16"} and X.CONFIRM_TURNS == 2
 
 

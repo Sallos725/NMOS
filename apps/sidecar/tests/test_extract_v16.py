@@ -123,7 +123,8 @@ def test_extract_v16_is_its_own_generation_by_compiler_and_prompt_only():
     v15, v16 = extraction.extractor(SETTINGS).spec, extraction.extractor(V16).spec
     assert v16["compiler"] == "extract-v16"
     assert {k for k in v15 if v15[k] != v16[k]} == {"compiler", "prompt"}
-    assert set(v16) - set(v15) == {"confirm"} and "confirm" not in v15  # the role-ending confirmation (ADR 0064 item 4)
+    # the role-ending confirmation (ADR 0064 item 4) and the rule that a known name stands in only for one the turn names
+    assert set(v16) - set(v15) == {"confirm", "aliases"} and not {"confirm", "aliases"} & set(v15)
     assert extraction.extractor(V16).key != V15_KEY
 
 

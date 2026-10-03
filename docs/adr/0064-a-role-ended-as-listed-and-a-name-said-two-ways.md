@@ -186,10 +186,26 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    (`도경 언니`) or a name that merely begins with a label (`형준`) stays eligible. The set grows from 60 to 107
    labels; since it is inlined in the prompt, this is a new generation, and the v16 system prompt grows by about
    160 estimated tokens. No model call measured this change.
+   *Amended on the owner's sequential S1 of `4e76c70` (2026-10-03):* the identity gate failed 1/3. Of the three
+   wrong aliases, two joined a known character the turn never names to a name it does: `백이안 → 곽 조합장` (turn
+   81; 곽 조합장 is 곽은비) and `추오월 → 도도` (turn 200), both passing ADR 0024's rule that a name the extraction
+   was shown stands in for one the turn does not write. Under extract-v16 that holds only for a character the turn is
+   about: the absent name must be a description of someone unnamed (`?…`, the reveal ADR 0024 was for) or belong to
+   a character the turn writes by another of its known names (윤하람 for a turn that writes 하람; turn 182's
+   legitimate `윤하람 → 람이` stays). Otherwise the alias is stored `pending`, "alias not stated in the turn".
+   Deterministic and language-neutral; not in the prompt, so the generation names it apart (`aliases`,
+   `ALIASES_PRESENT`). Pinned on the preserved S1 rows (`tests/test_alias_presence.py`, from
+   `fixtures/model/phase28/2026-10-03-s1-confirmation-review/`): 81 and 200 become pending, 182 stays valid, and
+   237 (`람이 → 도도`, both names in the turn, a letter's addressee taken for its writer) is not caught. Two things
+   stay open for NMO-35, outside this phase: a confirmation of an alias the turn's names allow (237), and the
+   resolver counting one person's two names as ambiguous (182: `윤하람 → 하람` and `→ 람이` make 윤하람 a name of
+   two unlinked names, ADR 0012 item 3). The resolver goes last: today that ambiguity turns a wrong alias into no
+   join (81) rather than a wrong one.
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before
-   Phase 28 (pinned); `extract-v16`'s differs by compiler, prompt and the confirmation's fingerprint (item 4). A
+   Phase 28 (pinned); `extract-v16`'s differs by compiler, prompt, the confirmation's fingerprint (item 4) and the
+   alias rule's (item 2). A
    generation's own rows record its compiler. `extract-v15`'s alias check is as it was.
 4. **A listed role's ending is confirmed before it is stored** (Q1; added 2026-10-03, owner-approved handoff of
    `098c92e`). Prompt wording alone did not hold: the owner's sequential S1 run of `a1f4e81` ended the new residence
@@ -222,6 +238,16 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
      the provider's HTTP replaced and a fresh database read. *Corrected on the owner's review of `17f3900`:* an
      error status whose body reports usage kept the call but not its tokens; they are read from the body now, and a
      body without usage stays "not reported".
+     *Amended on the owner's sequential S1 of `4e76c70`:* at turn 227 the extraction and the confirmation both
+     ended `곽은비 → 서도윤: 후원자 및 의뢰인` on "귀하는 오늘부로 윤슬포 상인조합 조합장의 자리를 잃습니다", a
+     quote that ends her office, not the patronage; the TARGET never says the patronage ends. The owner counts it a
+     wrong ending (contract: TARGET itself must end the arrangement). **v4** adds one paragraph to v3 before the
+     answer format: losing an office, post, title or business, an arrest or an organization dissolved ends that, not
+     a separate arrangement between the listed two (sponsorship, a commission, a debt, a promise); yes only when
+     TARGET says the arrangement itself ends, not because what happened makes it unlikely to continue; the yes
+     evidence must be about the listed arrangement. v3 is otherwise unchanged (a test restores its SHA-256 by
+     removing the paragraph). **v4 is unmeasured**: before another sequential run, the owner re-measures it on the
+     preserved v3 cases (14 + 17) and turn 227.
    - **Usage.** The extraction's usage sums its confirmations at the top level (what the usage report counts) and
      keeps theirs apart under `confirm`. A call made counts once; its tokens only as the provider reported them,
      none for a call that got no response.

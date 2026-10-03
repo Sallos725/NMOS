@@ -143,6 +143,8 @@ default); a migration; a plugin build. Also out: whether the rules hold in other
 development. The evidence is Korean, mostly S1, and `LATER`, the bare-label guard and NAME PAIRS are written for
 Korean and English (Latin script) only (ADR 0064, Consequences). Measuring that, and adjusting, is after 1.0 (owner,
 2026-10-03; NMO-34).
+Also out, and before 0.3.0 (owner, 2026-10-03; NMO-35): a confirmation call for an alias whose two names both occur
+in the turn (S1 turn 237), and the resolver's treatment of one person with two aliases (S1 turn 182; ADR 0012).
 
 ## Acceptance criteria
 

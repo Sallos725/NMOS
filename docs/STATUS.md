@@ -219,6 +219,14 @@ live gates remain unrun; v15 stays default. Details and limits:
 `docs/perf/extract-v16-alias-reminder.md` (fresh S1 with worker confirmation). The owner-authorized
 81/182/200/227/237 excerpts, preserving original/stored directions and actual entity hints,
 are in `fixtures/model/phase28/2026-10-03-s1-confirmation-review/` for independent review.
+Claude's review of those excerpts and the owner's decisions (2026-10-03): turns 81 and 200 joined a known character
+the turn never names; under extract-v16 a known name now stands in only for a `?` description or a character the turn
+writes another way (ADR 0064 item 2; offline on the preserved rows: 81 and 200 pending, 182 valid, 237 not caught).
+Turn 227 is a wrong ending (the quote ends the patron's office, not the patronage); the confirmation prompt gains one
+paragraph (v4, ADR 0064 item 4), **unmeasured**. Both are a new extract-v16 generation, so the next step is the
+owner's re-measurement of v4 on the preserved confirmation cases, then a fresh S1 from turn 0. An alias confirmation
+for names the turn allows (237) and the resolver's treatment of one person's two names (182, ADR 0012) are NMO-35:
+outside Phase 28, before 0.3.0, the resolver last. No model call was made.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
