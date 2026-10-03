@@ -200,6 +200,9 @@ The owner's review of `62f10d0` found a confirmation reply that was not valid JS
 replies were cut at 4,000 characters; corrected (the client's `ReplyError` keeps what came back and the call's usage;
 replies are kept whole), with tests through the real client and a fresh database read. No model call; the
 confirmation request has no output-token limit (the experiment's 512 was its own envelope).
+The owner's review of `17f3900` found an error status (HTTP 400 or above) whose body reports usage counted the
+call but not its tokens; the client reads usage from such a body now (none stays "not reported"). Client-only: the
+generation key is unchanged.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

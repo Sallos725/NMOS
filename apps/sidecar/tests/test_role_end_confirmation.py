@@ -219,7 +219,8 @@ def test_extract_v15_never_asks_for_a_confirmation(migrated):
 
 def provider(monkeypatch, confirmation):
     """`httpx.post` as an OpenAI-compatible provider: the extraction as `tenancy` answers it (100 in / 10 out); the
-    confirmation's content and usage from `confirmation(user)`, or a connection error when it is None."""
+    confirmation's content and usage from `confirmation(user)`, or a connection error when it is None. A third value
+    is the confirmation's HTTP status (default 200)."""
     complete, _ = tenancy("yes")
 
     def post(url, json, headers, timeout):  # noqa: A002 - httpx's keyword
@@ -227,10 +228,11 @@ def provider(monkeypatch, confirmation):
         if system == X.ROLE_CONFIRM_SYSTEM:
             if confirmation is None:
                 raise httpx.ConnectError("connection refused")
-            content, usage = confirmation(user)
+            content, usage, *status = confirmation(user)
         else:
-            content, usage = _dumps(complete(system, user)[0]), {"prompt_tokens": 100, "completion_tokens": 10}
-        return httpx.Response(200, json={"model": "m", "choices": [{"message": {"content": content}}], "usage": usage})
+            content, usage, status = _dumps(complete(system, user)[0]), {"prompt_tokens": 100, "completion_tokens": 10}, []
+        return httpx.Response(*status or [200], json={"model": "m", "choices": [{"message": {"content": content}}],
+                                                      "usage": usage})
     monkeypatch.setattr(llm.httpx, "post", post)
     return llm.ChatModel("http://fake/v1", "fake").complete_metered
 
@@ -264,6 +266,27 @@ def test_a_confirmation_without_a_response_counts_the_call_and_no_tokens(migrate
     assert c["reply"] == "" and "connection refused" in c["error"]
     assert tokens(c["usage"]) == {"calls": 1, "input": None, "output": None}  # attempted; tokens not invented
     assert tokens(h["usage"]) == {"calls": 2, "input": 100, "output": 10}
+
+
+def test_an_error_status_keeps_the_usage_its_body_reports(migrated, monkeypatch):
+    """HTTP 500 with the same body a 200 would carry (the owner's review of 17f3900): its tokens are counted."""
+    answer = _dumps({"ended": "yes", "evidence": MOVED})
+    complete = provider(monkeypatch, lambda user: (answer, {"prompt_tokens": 123, "completion_tokens": 7}, 500))
+    roles, (h,), failed = run_story(migrated, complete)
+    assert roles == [("하나", "카이토", ROLE["role"], "positive")] and failed == 0
+    assert (h["status"], h["reason"]) == ("pending", "role ending not confirmed: unusable reply")
+    (c,) = h["raw"]["confirmations"]
+    assert c["answer"] is None and "HTTP 500" in c["error"] and json.loads(c["reply"])["usage"]["prompt_tokens"] == 123
+    assert tokens(c["usage"]) == {"calls": 1, "input": 123, "output": 7}
+    assert tokens(h["usage"]) == {"calls": 2, "input": 223, "output": 17}
+
+
+def test_an_error_status_without_usage_reports_no_tokens(monkeypatch):
+    monkeypatch.setattr(llm.httpx, "post", lambda url, json, headers, timeout: httpx.Response(502, text="bad gateway"))
+    with pytest.raises(llm.ReplyError) as err:
+        llm.ChatModel("http://fake/v1", "fake").complete_metered("s", "u")
+    assert err.value.raw == "bad gateway"
+    assert tokens(err.value.usage) == {"calls": 1, "input": None, "output": None}
 
 
 @pytest.mark.parametrize("pad", [0, 4100])

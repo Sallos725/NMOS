@@ -138,9 +138,13 @@ class ChatModel:
             res = httpx.post(f"{self.url}/chat/completions", json=body, headers=headers, timeout=self.timeout_s)
         except httpx.HTTPError as exc:
             raise ReplyError(f"request failed: {exc}", "", usage_of(None, started)) from exc
-        if res.status_code >= 400:
-            raise ReplyError(f"HTTP {res.status_code}: {res.text[:300]}", storable(res.text), usage_of(None, started))
         reply: Any = None
+        if res.status_code >= 400:
+            try:  # an error body can still report usage; one that does not stays "not reported"
+                reply = res.json()
+            except ValueError:
+                pass
+            raise ReplyError(f"HTTP {res.status_code}: {res.text[:300]}", storable(res.text), usage_of(reply, started))
         try:
             reply = res.json()
             text = reply["choices"][0]["message"]["content"] or ""

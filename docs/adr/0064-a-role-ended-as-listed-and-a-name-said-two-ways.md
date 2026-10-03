@@ -219,7 +219,9 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
      Confirmations run before the job's final check, so an obsolete or reclaimed job stores neither.
      *Corrected on the owner's review of `62f10d0`:* a reply that was not valid JSON lost its text and reported
      usage, and replies were cut to 4,000 characters; both are kept whole now, pinned through the real client with
-     the provider's HTTP replaced and a fresh database read.
+     the provider's HTTP replaced and a fresh database read. *Corrected on the owner's review of `17f3900`:* an
+     error status whose body reports usage kept the call but not its tokens; they are read from the body now, and a
+     body without usage stays "not reported".
    - **Usage.** The extraction's usage sums its confirmations at the top level (what the usage report counts) and
      keeps theirs apart under `confirm`. A call made counts once; its tokens only as the provider reported them,
      none for a call that got no response.
