@@ -101,6 +101,15 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    and it is not the persona's. A namesake known only by the given name still counts: the check stays a
    prerequisite, not proof of identity. Not yet measured with a model; the owner's offline counterfactual with the
    alias supplied closed 3/3.
+   Review of `16c23e6` found that deriving the part could bypass the known-alias ambiguity check. Another
+   character's explicit alias ownership now also blocks that part, even if the other full name has no matching
+   part. A bare short-name entity still permits the unresolved split. The original S1 replies close 3/3 with
+   their unchanged hints, and the conflicting-alias control blocks 3/3, in offline replay only.
+   In the subsequent actual sequential run, the model ended a guest role on the eve of the move, quoting
+   packing and a stripped bed without a future word. The system rule and final `ROLE_COMPLETION_CHECK` now
+   distinguish these preparations from completed checkout. That check is fingerprinted and delivered by the
+   worker. The identical failed input with the new prompt keeps the role in 3/3 fresh replies, and the independent
+   probe passes 54/54; the full and sequential gates restart. No new parser heuristic is added.
    The same review found that `LATER`'s 내주 and 내달 (next week, next month) also matched the verbs 내주다 (hand
    over: "열쇠를 내주고") and 내달리다 (dash), so a done ending quoted with them closed nothing; they now count only as
    the nouns (followed by a space, a particle such as 에, 의 or 부터, or the end). No model call measured this.
@@ -135,6 +144,18 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    *And on `073b7a1`* (81 calls): every `same_names` entry used the number; 49 aliases were kept (9 refused by the quote
    check), only the two target pairs, and both pairs resolved as one entity in each run (윤하람/하람 2/2/2 turns, 백이안/
    이안 15/14/14).
+   On the independent glass-garden first-introduction probe, the model omitted the free alias despite an
+   explicit introduction. The v16 prompt now makes clear that only a listed pair replaces `also_called` with
+   `same_names`; an unlisted evidenced pair remains a separate alias even when an address or event is also
+   recorded. A closing check repeats this and is fingerprinted in the system prompt. System-only wording
+   passed the first name case 1/3; with the closing check all unchanged 14 cases pass in each of three repeats
+   (42/42). No hints were added. Sequential and full comparison gates remain; see
+   `docs/perf/extract-v16-alias-reminder.md`.
+   The first actual sequential S1 run then stopped at turn 87: the move was reported correctly, but earlier
+   extraction omitted the innkeeper's distinctive title, so the counterpart check rejected it. The free rule
+   and closing check explicitly include a distinctive name-like title identifying that same person, excluding
+   shared generic titles and unconfirmed identity claims. The guard is unchanged. A fresh 54-call probe passes
+   the original 42 checks and 12 follow-up controls; sequential verification restarts under a new generation.
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before

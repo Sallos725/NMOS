@@ -144,7 +144,8 @@ def prompts(args: argparse.Namespace) -> list[dict[str, Any]]:
             pairs = (X.name_pairs(hints, text, X.persona_of(ctx["target"].get("host_persona_name")))
                      if args.compiler in getattr(X, "PARTS_APART", ()) else [])
             user = X.build_prompt(ctx, hints, X.promise_hints(ctx, earlier), secrets, X.thread_hints(ctx, earlier),
-                                  **({"roles": roles} if roles else {}), **({"pairs": pairs} if pairs else {}))
+                                  **({"roles": roles} if roles else {}), **({"pairs": pairs} if pairs else {}),
+                                  **({"compiler": args.compiler} if hasattr(X, "ALIAS_CHECK") else {}))
             out.append({"turn": a["turn"], "user": user, "hints": hints, "secrets": secrets, "roles": roles,
                         "pairs": pairs, "text": text, "persona": X.persona_of(ctx["target"].get("host_persona_name")),
                         # what the model saw of the target turn (extract-v14's `shown_target`)

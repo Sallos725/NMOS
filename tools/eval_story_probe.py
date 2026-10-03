@@ -79,7 +79,7 @@ def prompt(case: dict[str, Any], compiler: str) -> str:
                for i, text in enumerate(case["context"])]
     ctx = {"context": context, "target": {"turn": len(context)},
            "members": [{"metadata": {"role": "char", "name": "Narrator"}, "content": case["target"]}]}
-    return X.build_prompt(ctx, roles=case["roles"] if compiler in X.ROLES else [])
+    return X.build_prompt(ctx, roles=case["roles"] if compiler in X.ROLES else [], compiler=compiler)
 
 
 def grade(case: dict[str, Any], parsed: dict[str, Any], compiler: str) -> dict[str, Any]:
@@ -89,14 +89,15 @@ def grade(case: dict[str, Any], parsed: dict[str, Any], compiler: str) -> dict[s
     if compiler in X.ROLES:
         items = X.ended_roles(parsed, items, case["roles"], case["target"])
     rows = X.normalize(items, case["target"], shown=case["target"], apart=compiler in X.PARTS_APART)
-    actual = [a | {"id": f"measured-{i}", "turn": len(case["context"]), "position": len(case["context"])}
-              for i, a in enumerate(rows) if a["status"] == "valid" and a["modality"] == "actual"
-              and a["source"] == "narration"]
+    valid = [a | {"id": f"measured-{i}", "turn": len(case["context"]), "position": len(case["context"])}
+             for i, a in enumerate(rows) if a["status"] == "valid"]
+    actual = [a for a in valid if a["modality"] == "actual" and a["source"] == "narration"]
     seeds = [{"id": f"seed-{i}", "turn": r["turn"], "position": r["turn"],
               "subject": r["by"], "subject_type": "character", "object": r["to"], "object_type": "character",
               "predicate": "role_toward", "value": r["role"], "polarity": "positive", "modality": "actual",
               "source": "narration", "status": "valid"} for i, r in enumerate(case["roles"])]
-    resolution = resolve(CONVERSATION, [*seeds, *actual])
+    # The product gives the resolver claims too; it decides which self-alias claims may join names.
+    resolution = resolve(CONVERSATION, [*seeds, *valid])
     checks = []
     for i, seed in enumerate(seeds, 1):
         history = [seed, *(a for a in actual if a["predicate"] == "role_toward"
@@ -116,8 +117,8 @@ def grade(case: dict[str, Any], parsed: dict[str, Any], compiler: str) -> dict[s
             checks.append({"check": f"{left} = {right}", "expected": expected, "actual": joined,
                            "passed": joined == expected})
     allowed_aliases = {frozenset(pair) for pair in case["expected_aliases"]}
-    unexpected_aliases = [a for a in actual if a["predicate"] == "also_called"
-                          and frozenset((a["subject"], a["value"])) not in allowed_aliases]
+    unexpected_aliases = [a for _, _, a in resolution.alias_rows
+                         if frozenset((a["subject"], a["value"])) not in allowed_aliases]
     checks.append({"check": "no unexpected aliases", "passed": not unexpected_aliases, "rows": unexpected_aliases})
     return {"passed": all(c["passed"] for c in checks), "checks": checks, "assertions": rows,
             "roles_ended": parsed.get("roles_ended")}

@@ -556,9 +556,17 @@ def test_a_known_full_name_and_its_part_written_apart_are_one_character_under_ex
 ])
 def test_a_name_and_its_part_are_one_character_under_extract_v16(migrated, compiler, places):
     chat = two_ways_chat()
+    prompts = []
+
+    def capture(system, user):
+        prompts.append(user)
+        return two_ways(system, user)
+
     with make_client(migrated, llm_url="http://fake/v1", llm_model="fake", extract_compiler=compiler) as c:
         sync(c, chat)
-        drain(migrated, two_ways)
+        drain(migrated, capture)
         current = sorted((f["subject"], f["object"]) for f in facts(c, chat)
                          if f["predicate"] == "located_in" and f.get("polarity") != "negative")
+    reminder = "Before answering, check for names the TARGET uses for the same character."
+    assert prompts and all((reminder in user) == (compiler == "extract-v16") for user in prompts)
     assert current == sorted(places)

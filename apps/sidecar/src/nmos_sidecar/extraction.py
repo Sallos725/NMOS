@@ -229,6 +229,12 @@ ROLE_ENDINGS = """- If CURRENT ROLES are listed (R1, R2, …), report in `roles_
   KNOWN ENTITIES alias, not only in CONTEXT or CURRENT ROLES. For a role toward the user's persona,
   the other person must be named. The name need not be in the quoted passage; the ending still must be.
 """
+# Fingerprinted with the system rule and repeated after the other checks for a listed role.
+ROLE_COMPLETION_CHECK = ("Packing, a stripped bed or farewell gifts are preparations, not checkout."
+                         " If the person is still staying in the room at the TARGET's end and the move is later,"
+                         " the guest role is still held: use planned, not now. For now, quote the completed"
+                         " departure or termination itself, not luggage, an emptied shelf or a farewell.")
+ROLE_ENDINGS += "  " + ROLE_COMPLETION_CHECK + "\n"
 _ANSWER_END = '''"secrets": [{{"secret": "S1", "found_out_by": ["..."], "evidence": "..."}}]}}'''
 ANSWER_ROLES = (_ANSWER_END[:-2]  # extract-v16's answer
                 + ',\n"roles_ended": [{{"role": "R1", "when": "now|planned", "evidence": "..."}}],'
@@ -253,7 +259,23 @@ ALIAS_PARTS = """- `also_called` when the TARGET turn itself gives both names fo
   addressed by the given name), with `pair`: its number as listed ("N1"), never the names, and
   `evidence`: one passage of the TARGET turn copied as it is that shows it. Not under the conditions above. Do not also write that `also_called` yourself. When none is
   one character: "same_names": [].
+  The numbered answer replaces `also_called` only for a listed pair. For an unlisted pair, including a
+  newly introduced character's full and short name or a distinctive name-like title used for that person,
+  write `also_called` in `assertions` when the TARGET
+  establishes that identity. An `addresses` fact or an `event` about choosing a form of address does
+  not record that the two names identify one person; include the alias as its own fact as well.
+  Use narration when the narrator shows the same person answering to both names; a character's claim
+  alone stays a character_claim. Both forms must occur in the TARGET, with the short form on its own.
+  A generic title shared by several people is not an alias for one of them.
 """
+# Repeated at the end of v16's input, and included here so changing it changes the generation fingerprint.
+ALIAS_CHECK = ("Before answering, check for names the TARGET uses for the same character. For a pair not listed"
+               " in NAME PAIRS, include an `also_called` assertion (subject: name; value: alternate name or"
+               " distinctive title) when the TARGET establishes both forms for that one person, even if you also record"
+               " `addresses` or an `event`. Quote the TARGET passage showing that identity. Do not join"
+               " namesakes, use shared generic titles as aliases, or infer a full name from CONTEXT alone."
+               " Use `same_names` only for listed pairs.")
+ALIAS_PARTS += "  " + ALIAS_CHECK + "\n"
 _ROLE_EXAMPLE = '  `role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").\n'  # the role rule follows it
 PROMPTS = {"extract-v15": SYSTEM_PROMPT,
            "extract-v16": SYSTEM_PROMPT.replace(_ROLE_EXAMPLE, _ROLE_EXAMPLE + ROLE_ENDINGS, 1)
@@ -721,7 +743,7 @@ def secrets_block(secrets: list[dict[str, Any]]) -> list[str]:
 def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
                  promises: list[dict[str, Any]] | None = None, secrets: list[dict[str, Any]] | None = None,
                  threads: list[dict[str, Any]] | None = None, roles: list[dict[str, Any]] | None = None,
-                 pairs: list[dict[str, Any]] | None = None) -> str:
+                 pairs: list[dict[str, Any]] | None = None, *, compiler: str = COMPILER_VERSION) -> str:
     lines = (hints_block(hints or []) + pairs_block(pairs or []) + promises_block(promises or [])
              + threads_block(threads or []) + roles_block(roles or []) + secrets_block(secrets or []) + ["CONTEXT:"])
     for row in ctx["context"]:
@@ -751,6 +773,10 @@ def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
                   " two names for one character; list only those in `same_names` by their number, not their names"
                   f" (for N1, {pairs[0]['full']} / {pairs[0]['part']}: {{\"pair\": \"N1\", \"evidence\": \"...\"}}),"
                   " each quoting the TARGET turn."]
+    if compiler in PARTS_APART:
+        lines += ["", ALIAS_CHECK]
+    if roles and compiler in ROLES:
+        lines += ["", ROLE_COMPLETION_CHECK]
     return "\n".join(lines)
 
 
@@ -833,7 +859,7 @@ def role_party_named(role: dict[str, Any], turn_text: str, hints: list[dict[str,
 
     Checking the quote alone rejected every measured correct move/resignation. Checking the shown turn keeps
     those while rejecting the unrelated employer at turn 99. A pronoun-only counterpart is conservatively missed.
-    The counterpart's given name alone counts when no other known full name shares it.
+    The counterpart's given name alone counts when no other known full name or alias owner shares it.
     """
     persona_names = frozenset(norm(n) for n in persona or ())
     to_persona = node("character", role["to"], persona_names)[1] == PERSONA
@@ -850,7 +876,9 @@ def role_party_named(role: dict[str, Any], turn_text: str, hints: list[dict[str,
     own = owners[0] if len(owners) == 1 else None
     for full in list(names):
         for part in name_parts(full):
-            holders = [g for g in groups if any(part in name_parts(n) for n in g)]
+            # A bare short-name entity may be the unresolved split. An alias to another name is stronger evidence
+            # and must keep blocking the mention, even when that name has no matching given-name part.
+            holders = [g for g in groups if (part in g and len(g) > 1) or any(part in name_parts(n) for n in g)]
             if all(g is own for g in holders) and node("character", part, persona_names)[1] != PERSONA:
                 names.add(part)
     text = norm(turn_text)
@@ -1022,7 +1050,8 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         if compiler in PARTS_APART:
             pairs = name_pairs(hints, turn_text, persona_of(ctx["target"].get("host_persona_name")))
         parsed, raw, usage = metered(complete, prompt_of(compiler).format(registry=registry_prompt()),
-                                     build_prompt(ctx, hints, promises, secrets, threads, roles, pairs))
+                                     build_prompt(ctx, hints, promises, secrets, threads, roles, pairs,
+                                                  compiler=compiler))
     items = parsed.get("assertions")
     if not isinstance(items, list):  # not an empty answer: fail the job, so it is retried and then counted failed
         raise LLMError("model reply has no `assertions` list")

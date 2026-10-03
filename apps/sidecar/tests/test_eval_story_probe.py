@@ -67,6 +67,17 @@ def test_full_name_alone_does_not_prove_a_short_alias():
     assert result["assertions"][0]["status"] == "pending"
 
 
+def test_self_alias_claims_use_the_same_resolution_as_the_product():
+    case = cases()["full-and-given-name"]
+    row = alias("강세온", "세온", case["target"]) | {"source": "character_claim", "asserted_by": "강세온"}
+    assert tool.grade(case, {"assertions": [row]}, "extract-v16")["passed"]
+    # A bad self-identification must not disappear from grading merely because it was a character's claim.
+    case = next(c for c in tool.load_cases(tool.DEFAULT_CASES.with_name("glass-garden-followup.json"))["cases"]
+                if c["id"] == "unconfirmed-title-claim")
+    row = alias("서유건", "문 원장님", case["target"]) | {"source": "character_claim", "asserted_by": "서유건"}
+    assert not tool.grade(case, {"assertions": [row]}, "extract-v16")["passed"]
+
+
 def test_an_ending_under_a_proven_alias_is_not_an_unexpected_other_person():
     case = cases()["alias-and-ending-together"]
     parsed = {"assertions": [alias("강세온", "세온", case["target"]),

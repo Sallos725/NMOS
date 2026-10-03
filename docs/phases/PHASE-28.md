@@ -51,6 +51,20 @@ correction followed by restart for defects found in the first quarter. See `docs
 
 ## Goal
 
+Q4 follow-up (2026-10-03, owner-authorized after the wider comparison stopped): the unchanged independent
+glass-garden probe exposed a first-introduction alias omission. Explicitly retaining `also_called` for
+unlisted pairs and repeating that check at the input's end passes all 14 cases in each of three repeats,
+without added hints. The reminder is included in the generation fingerprint. The counterpart's new
+given-name path also retains explicit alias-owner conflict rejection. Full and sequential gates stay open;
+see `docs/perf/extract-v16-alias-reminder.md`.
+The subsequent sequential S1 run found an omitted distinctive title at turn 87, within the correction
+window. The v16 alias clarification now includes those evidenced titles while excluding shared generic
+titles and unconfirmed claims. Original cases plus separate follow-up controls pass 54/54; the sequential
+run restarts and the full comparison remains pending.
+Q1 follow-up: the next sequential run ended the guest role on the eve of the move using a quote about packed
+luggage. The fingerprinted system and final input check now distinguish preparations from completed checkout.
+The failed input passes 3/3 fresh replies and independent cases 54/54. Full and sequential gates remain open.
+
 Two defects confirmed in the stored traces of the owner's live run on `e13dee7` (AGE-24), each a state error rather
 than a scoring artefact:
 

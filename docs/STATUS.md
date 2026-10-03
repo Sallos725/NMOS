@@ -77,6 +77,27 @@ prepared, with zero sequential model calls. Next: decide the follow-up for missi
 measure whether sequential v16 hints resolve the conservative ending miss; no default change.
 The counterpart check now also counts the counterpart's given name alone when no other known full name shares it
 and it is not the persona's (ADR 0064 item 1), which is what blocked S1's resignation; not yet measured.
+The owner then approved missing-alias correction, sequential verification and a fresh comparison capped at
+three model calls. The v16 free-alias rule and closing check pass the unchanged independent glass-garden
+probe 42/42 (no hints added); system-only wording had still missed the first name case 2/3. The new counterpart
+path also needed a known-alias conflict guard: it had re-added a short name explicitly owned by another
+character. Related tests pass 59/59; integrated offline replay keeps glass 42/42, closes the preserved S1
+resignation 3/3, and blocks conflicting alias ownership 3/3. These replays are not new model or sequential
+successes. The corrected full suite and sequential worker comparison are in progress; no default change or
+Q5 completion. Evidence and the preserved runner migration-path error: `docs/perf/extract-v16-alias-reminder.md`.
+Follow-up: that corrected suite passes 950 tests, but actual sequential S1 stopped at 88/240. It stored the
+three intended name joins, then missed the move because the innkeeper's distinctive title alias was absent.
+The v16 prompt now explicitly retains an evidenced distinctive title, without accepting a shared generic
+title or promoting an unconfirmed identity claim. The unchanged original probe plus four separate controls
+pass 54/54, including explicit employment termination despite continued friendship (3/3). Related tests
+pass 59; a fresh full suite and sequential S1 are running. The new full comparison is prepared, not started.
+That title candidate's suite passes 950 tests, but sequential S1 stops at 87/240: packed luggage and a stripped
+bed are incorrectly marked as checkout on the eve of the move. A fingerprinted final completion check now
+distinguishes preparation from a completed ending. The identical failed input passes 3/3 fresh calls; the
+independent cases pass 54/54, related tests 60/60. The probe's resolver input was corrected to include valid
+self-alias claims as production does; the earlier 54 replies still pass on regrading. The next full suite and
+sequential restart use this correction, with the 1,440-call comparison still waiting. This remains partial
+evidence, with both stopped worker copies preserved; no default or Q5 gate is changed.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

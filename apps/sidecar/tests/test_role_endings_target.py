@@ -84,10 +84,20 @@ def test_an_ending_with_a_pronoun_only_counterpart_is_conservatively_missed():
     assert X.ended_roles(answer(quote), [], [ROLE], quote) == []
 
 
+@pytest.mark.parametrize("own_alias", [False, True])
+def test_a_given_name_cannot_override_another_characters_known_alias(own_alias):
+    role = ROLE | {"to": "강무진", "role": "직원: 강무진의 공방에서 일함"}
+    target = "강세온은 무진에게 공방 열쇠를 반납하고 고용 계약을 끝냈다."
+    hints = [{"name": "강무진", "type": "character", "also": ["무진"] if own_alias else []},
+             {"name": "다른 선장", "type": "character", "also": ["무진"]}]
+    assert X.ended_roles(answer(target), [], [role], target, hints=hints) == []
+
+
 @pytest.mark.parametrize("name_beyond_target", [False, True])
 def test_worker_keeps_the_role_when_only_context_names_its_counterpart(migrated, name_beyond_target):
     chat = tenancy_chat()
     observed = []
+    prompts = []
 
     def wrong_ending(system, user):
         target = user.split("\nTARGET turn", 1)[1].split("\n\nBefore answering", 1)[0]
@@ -96,6 +106,7 @@ def test_worker_keeps_the_role_when_only_context_names_its_counterpart(migrated,
         listed = list(LISTED.finditer(user))
         assert listed
         observed.append(target)
+        prompts.append(user)
         quote = "유이는 하나를 제과실의 수석 제빵사로 승진시켰다."
         return {"assertions": [], "roles_ended": [{"role": listed[0]['ref'], "when": "now", "evidence": quote}]}, "{}"
 
@@ -109,4 +120,5 @@ def test_worker_keeps_the_role_when_only_context_names_its_counterpart(migrated,
         sync(client, chat)
         drain(migrated, wrong_ending)
         assert observed and all("카이토" not in target for target in observed)
+        assert all("Packing, a stripped bed or farewell gifts are preparations, not checkout." in p for p in prompts)
         assert roles_of(client, chat) == [("하나", "카이토", "세입자: 카이토의 집에 세 들어 삶", "positive")]
