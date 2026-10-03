@@ -250,6 +250,19 @@ no longer makes its full name ambiguous (ADR 0012 amendment), so 윤하람 / 하
 alias leaves only 람이 ambiguous; extract-v15 resolves as before. Accepted cost: one wrong alias beside a full name's
 part now joins. The next fresh S1 is the owner's (run by Codex) with an identity gate of 3/3.
 
+Fresh sequential S1 on `c0b0a5b` (2026-10-04) stops at **turn 233 after 234/240 jobs /
+239 calls**: 6/7 declared role scenes; the resignation is `planned` for one direction,
+the reverse omitted, so both roles remain current without confirmation or pending.
+Names at the last measured turn pass **2/3**: the legitimate 윤하람/하람/람이 triple
+joins at 185, but the wrong `윤하람 → 도도` alias at 200 makes the full name ambiguous.
+Confirmed endings: applied 5, held 0, wrong applied 0 in the measured prefix; this does
+not prove full normal-ending recall or the unrun 237/239 checks. All saved raw/usage
+reconciled through a fresh read-only connection; cost estimate $0.4926 without cache
+discounts. Small same-data memory reads show no apparent slowdown (31.00 → 30.26 ms
+median); the 10k/live latency gate remains unrun. The owner requested one fresh repeat
+on the same code/envelope; its evidence is separate. Detailed results and next scope:
+`docs/perf/extract-v16-c0b0a5b-sequential.md`. NMO-24/NMO-35 remain open; v15 stays default.
+
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
 

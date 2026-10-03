@@ -635,3 +635,13 @@ All ten source messages match the authored synthetic corpus byte for byte. Sourc
 text differences from the existing normalizer are preserved, not silently rewritten.
 Export/readback and hash validation use no model calls. These excerpts expose measured
 failures for review; they are not new passing fixtures or an implementation change.
+
+## Fresh c0b0a5b run (2026-10-04)
+
+The next fresh S1 stops at turn 233: 234/240 jobs, 239 calls. Six of seven declared
+role scenes pass, but resignation is returned as planned; both employment directions
+remain current. At turn 200 a different misattributed alias makes 윤하람 ambiguous;
+names at the last measured turn pass 2/3. No wrong automatic role ending was observed
+in that prefix, which is not full normal-ending recall. The owner requested a fresh
+repeat on the same frozen code. See [the run report](extract-v16-c0b0a5b-sequential.md)
+for all aliases, role outcomes, usage, readback and the zero-call latency diagnostic.
