@@ -137,9 +137,17 @@ The owner-approved bounded model check of `a1f4e81` then passes **12/12**: three
 preserved turn 88 retain the new residence, and three repeats each of explicit next-turn termination,
 an older role restated before ending, and a former-home departure pass. Input **98,679** / output
 **7,929** tokens; no errors or retries. This is fixed-input model output and production postprocessing,
-not a fresh sequential worker run. The next action is a new S1 sequential copy with a check at turn 88;
-the first-connection, full-comparison and live gates remain open. No default or generation change
-follows from recording these results.
+not a fresh sequential worker run. The owner then approved a new S1 sequential copy under that same
+generation. It stops at **turn 88 after 89/240 calls** (0-based turns 0–88), with **0 format errors or
+retries**: the model again ends the new residence using a comparison with the former home. The worker
+stores the negative, and a fresh read-only connection confirms that the residence is absent. The new
+rule is present in both prompt blocks; the target/context match the bounded case, but sequentially
+rebuilt hints differ. Thus the bounded 12/12 does not establish sequential correctness. Input
+**1,020,111** / output **90,301** tokens; **318.977 s** to the stop. Raw replies, the stopped database
+archive and causal readback are preserved. No correction or paid restart follows this failure.
+Next: owner decision on the failed prompt mitigation, using the preserved failing input before any
+new candidate or run. First-connection, full-comparison and live gates remain open; NMO-24 still
+blocks NMO-7. No default or generation change follows from recording these results.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

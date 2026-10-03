@@ -292,9 +292,9 @@ existing reconciliation path, and allows an evidenced immediate ending. The new 
 with the system prompt so older model results cannot silently stand in for this candidate. No schema,
 request-path or fail-open code changes; real-model state correctness remains unverified.
 
-**Not run on this candidate:** model calls, sequential backfill, the full 1,440-call comparison and
-live acceptance. Next, approve the exact bounded call/token estimate for the preserved turn-88 input
-and controls for a normal next-turn termination, an older role restated immediately before its end,
+**At implementation time, not yet run on this candidate:** model calls, sequential backfill, the full
+1,440-call comparison and live acceptance. The next proposed action was to approve the exact bounded
+call/token estimate for the preserved turn-88 input and controls for a normal next-turn termination, an older role restated immediately before its end,
 and a different home's departure. Preserve every reply and inspect both raw endings and normalized
 state. A passing bounded check precedes a fresh sequential copy; it does not complete the full gate.
 
@@ -341,3 +341,69 @@ benchmark database was read-only and no worker/backfill was run. Sequential S1, 
 behavior, the 1,440-call comparison, latency and the live gate remain open. Next is a fresh sequential
 copy under this same generation, with the new residence checked at turn 88 rather than waiting
 until turn 144; every failure and usage record must be retained. NMO-24 remains open.
+
+## Sequential S1 on `a1f4e81`: turn 88 fails again (2026-10-03, 18:48 KST)
+
+The owner approved one S1 backfill of **240 turns**, using the same immutable source snapshot and
+`extract-4547e1d8ae60259ef55bbff1f48294da` generation as the bounded check. The initial input estimate
+was **3,898,433 tokens**, output forecast **253,000**, output stop budget **320,000**; one call at a
+time, no real format retries. The 1,440-call comparison was not started. Preparation restores the
+unchanged baseline into a separate database and checks the 240 queued turns in story order.
+
+**Verdict: defect.** The worker processes **89 jobs / 89 calls**, turns **0–88**, then the declared
+turn-88 check fails and the runner exits **1**. This is not 89 successful semantic cases. The three
+known bad-alias checks (30, 34, 43), mentorship continuity (74), eve of the move (86), and actual move
+(87) pass. The new residence established at 87 is wrongly ended at 88. All 89 HTTP responses are 200;
+there are **0 format failures, 0 retries, and no missing usage**. Turns 89–239 are not run.
+
+| Measurement | Observed |
+|---|---|
+| Started / stopped (KST) | 18:43:11 / 18:48:30 |
+| Elapsed to semantic stop | 318.977 s |
+| Provider input | 1,020,111 tokens, including 510,656 cached |
+| Provider output | 90,301 tokens |
+| Sum of model-request durations | 318.628 s |
+
+These are provider usage and elapsed measurements, not a monetary invoice. Remaining jobs stay
+queued in the stopped isolated copy, with no worker continuing them.
+
+At 88 the raw answer names **R1, `when: now`**, quoting a comparison with the former home rather than
+a departure from the listed new residence. The worker writes a valid negative with the listed role's
+exact value. The persistent view has the positive residence immediately before that turn and none
+after it. A new read-only database connection reproduces both states and the directed residence
+check fails independently. This is a model decision reaching stored current state, before retrieval;
+there is no evidence of a missing prompt block. The recorded system and closing block both contain
+`ROLE_TARGET_CHECK`, and the source, system and runner hashes match their pre-run values.
+
+The TARGET and preceding context are identical to the bounded turn-88 case, but its input is not
+identical: earlier fresh model results rebuild the entity and role hints. The fixed-input **12/12**
+therefore remains a bounded result, and does not establish sequential correctness. This run does not
+isolate which hint difference or model variation caused the recurrence. No new prompt, age veto,
+pending-role mechanism, parser change, default change or paid restart was applied after the failure.
+
+Before model execution, the directed grader rejected the preserved earlier failure and a synthetic
+reverse-mentorship-only state, while accepting a synthetic retained residence. A simulated transport
+self-test exercises one malformed response and one retry; its two simulated attempts are excluded
+from every real-model count above. After the stop, all **583 source revisions** match the preparation
+database verbatim, and all **481 active chat revision hashes** verify. The postmortem initially applied
+the chat hash formula to every source type; the corrected read-only check and that tooling error are
+both retained, with no model call or product change.
+
+Evidence stays outside Git at
+`/home/grantkim725/nmos-eval/pr251/2026-10-03/sequential-turn88-a1f4e81/`: the execution contract,
+preparation, runner and its self-tests; all prompts, HTTP bodies, raw replies and stored assertions;
+API and turn-bounded readback; failed checks; `s1-backfill-1/failure-diagnosis.json` and
+`s1-backfill-1/stopped.nmos.zip`. A file-level integrity manifest verifies the preserved copy. Stopped
+archive SHA-256: `f5b61a6b31cb0ef7bd862b1d010fc62d01d17165336be9b6082eb6441d3ca915`.
+The original baseline and previous attempts remain intact.
+
+Execution used the frozen snapshot's `apps/sidecar/src` on `PYTHONPATH` and the existing Python 3.12
+environment to run `run_sequential.py --scenario s1 --mode backfill --repeat 1 --execute` (exit 1).
+`diagnose.py` reopens the stopped database read-only, validates the stored failure and hashes, and
+exits 0; its successful diagnosis does not turn the product verdict into a pass.
+
+**Next:** an owner decision on the failed prompt mitigation, before another implementation candidate
+or paid run, per Phase 28's wrong-role-ending stop condition. Use this newly preserved input when
+assessing a follow-up; repeating the full sequence unchanged is not supported by this result.
+First connection, the full comparison, latency and live acceptance remain unverified. NMO-24 stays
+open and blocks NMO-7; the earlier 975 deterministic test passes do not override this observed defect.
