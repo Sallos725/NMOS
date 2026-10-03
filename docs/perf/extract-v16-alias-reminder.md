@@ -431,10 +431,38 @@ are recorded without stopping, per owner review. The 31 correct / 8 wrong histor
 to five distinct inputs; both S1 turn-233 full/given-name directions are also included. This supersedes
 the unexecuted seven-input, three-repeat plan. It includes a raw
 response census of six preserved sequential executions, with observed and extrapolated costs separated.
-No confirmation model call has run. Worker integration, pending review actions and ADR 0064 changes
-require a separate owner decision; the experiment does not authorize them.
+At proposal time no confirmation model call had run. The owner subsequently approved version 2;
+the measured result is recorded below. Worker integration, pending review actions and ADR 0064
+changes require a separate owner decision; the experiment does not authorize them.
 
 Private evidence and full filled prompts are retained in
 `/home/grantkim725/nmos-eval/pr251/2026-10-03/turn88-offline-confirmation-plan/` (initial diagnosis) and
 `turn88-offline-confirmation-plan-v2/` (revised experiment and source snapshots). The source prompt
 hashes, full diff, read-only reconstruction, parser replay and grading controls are preserved.
+
+## Confirmation-only pilot: fourteen unique inputs (2026-10-03, 19:45 KST)
+
+**EvidenceVerdict: defect** against the frozen pilot bar. The approved v2 calls complete **14/14**,
+once each, with no transport/schema errors or retries. The runner exits **2 after completion** for
+four nonpassing classifications; incorrect decisions and quote rejections do not stop the experiment.
+Normal endings pass **8/8**, including both S1 turn-233 full/given-name directions: `no` rate and total
+pending rate are both **0/8**. Non-endings give **2/6 valid no, 3/6 wrong accepts, 1/6 invalid quote**.
+Turn 88 says no but supplies empty evidence. The other wrong accepts are the eve of moving,
+mentorship continuing after a job change, and promotion without ending another employment.
+
+Both valid rejections are authored controls. The preserved inputs alone have **0/4 valid non-ending
+rejections, 3/4 wrong accepts and 1/4 invalid quote**. Their six normal variants cover only two scenes.
+One accepted correct yes uses a verbatim but insufficient termination quote; quote presence does not
+verify entailment. The unchanged verifier therefore lacks evidence for adoption despite low measured
+normal-ending pending and token use. No actual pending-state persistence or review flow was tested.
+
+Measured **8.545 s** elapsed (19:45:36–19:45:45 KST), **15,588 input / 501 output tokens**, including
+832 cached input; median request 555 ms, maximum 1,059 ms. The provider reports `gemma4:31b` for
+`gemma4:31b-cloud`. All raw HTTP bodies, requests, usage and grades are retained in
+`/home/grantkim725/nmos-eval/pr251/2026-10-03/role-confirmation-v2-results/`. A zero-call fresh artifact
+readback reproduces every grade and usage total and verifies frozen input/source hashes (exit 0).
+The full case table, actual-scene/control split and cost projection calibrated from measured usage are
+in [the experiment record](../proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md#measured-confirmation-only-results-2026-10-03-1945-kst).
+
+The fourteen approved calls are complete. Next is an owner decision on a different role-ending design;
+no implementation or additional paid run follows automatically. NMO-24 remains open and blocks NMO-7.

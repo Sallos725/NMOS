@@ -153,12 +153,19 @@ pending rates. After owner review, version 2 uses **14 unique inputs once each**
 including both S1 turn-233 directions with the full/given-name mismatch. The historical 31 correct and
 8 wrong observations collapse to 5 unique confirmation inputs; all sources are mapped, not counted as
 39 new cases. Semantic mistakes are recorded without stopping; only technical errors, changed hashes
-or budgets stop the probe. It is **prepared, not executed or approved**: input estimate 25,648 tokens,
-stop budget 28,213, output forecast 1,400 and cap 7,168. The unexecuted 21-call plan is superseded.
-Six preserved sequential runs supply observed call counts and explicitly extrapolated per-240 token estimates.
-Spec and prompt: `docs/proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md`. Next: owner approval of that
-bounded experiment; adopting a second worker call and a pending-role review flow requires a separate
-ADR/phase decision. First-connection, full-comparison and live gates remain open; NMO-24 still blocks
+or budgets stop the probe. The owner then approved it; **all 14 calls completed at 19:45 KST** with
+no technical errors or retries. Normal endings pass the frozen grader **8/8**, including both S1
+turn-233 directions; normal-ending `no` and total pending rates are **0/8**. Non-endings yield **2/6 valid
+no, 3/6 wrong accepts, 1/6 invalid quote** (turn 88 returns no with empty evidence). Both valid rejections
+are authored controls; preserved non-endings alone yield 0/4 valid no and 3/4 wrong accepts. One correct
+yes also quotes text that does not itself establish termination; the frozen matcher does not check
+entailment. **The pilot bar is missed.** Input **15,588** / output **501** tokens, elapsed **8.545 s**;
+the exit code is 2 after all cases, not an early technical stop. The unexecuted 21-call plan remains superseded.
+Six preserved sequential runs supply observed call counts; the new pilot usage calibrates explicitly
+projected per-240 token costs. Spec, results and evidence: `docs/proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md`.
+Next: owner decision on a different role-ending design; this unchanged verifier is not supported for
+adoption. A second worker call and pending-role review flow still require a separate ADR/phase decision.
+First-connection, full-comparison and live gates remain open; NMO-24 still blocks
 NMO-7. No default or generation change follows from recording these results.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small

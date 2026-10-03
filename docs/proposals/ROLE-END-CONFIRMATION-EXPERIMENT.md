@@ -1,8 +1,11 @@
-# Role-ending confirmation experiment — proposal, not approved for execution
+# Role-ending confirmation experiment — version 2 measured, pilot bar missed
 
 Revised 2026-10-03 after owner review: continue through incorrect decisions and replace repeated calls
-with unique preserved cases. This is version 2 of the confirmation-only experiment. **Model calls made: 0.** No worker, prompt generation, schema, default or ADR is changed.
-Approval of this experiment would authorize only the frozen calls below, not adoption of the design.
+with unique preserved cases. The owner then approved version 2 with “이대로 14회 측정 가보자”.
+**Model calls made: 14, completed 2026-10-03 19:45 KST.** Normal endings pass the frozen grader 8/8,
+but three of six non-endings are wrongly accepted. The pilot bar is missed; see the results below.
+No worker, prompt generation, schema, default or ADR is changed. Approval covered only the frozen
+calls below, not adoption of the design. The private pre-execution plan remains unchanged for audit.
 Source snapshot: `a1f4e81c08f2ec407844e5190f8636b5152179bb`; Phase 28 / NMO-24.
 
 ## Offline diagnosis
@@ -165,7 +168,8 @@ calls, and would need a separately specified and measured policy.
 Per-240 calculation: observed confirmations × 240 / parsed turns. Input calculation: sum of token
 estimates of the frozen confirmation system plus the actual TARGET and listed role, × 240 / parsed
 turns. Output is a stated forecast; the 512-token request cap is also retained in `cost-census.json`.
-The input/output token forecast will be replaced by provider usage from the pilot where available.
+Pilot usage and a separately labeled projection from that usage appear below; the pre-run estimates
+above remain intact for comparison.
 
 **These are overlapping, stopped prefixes under different generations, not completed 240-turn runs or
 independent samples of normal operation.** A zero before turn 63 does not predict zero for a full story.
@@ -173,6 +177,106 @@ The newest two prefixes imply **2.25% and 4.83% additional calls**, respectively
 calls per 240**. This supports a small observed call-frequency estimate, not a guarantee that billed
 cost stays within a few percent. Cache treatment, input/output prices, retry policy and termination
 frequency matter; no currency cost is asserted.
+
+## Measured confirmation-only results (2026-10-03, 19:45 KST)
+
+**EvidenceVerdict: defect** for the claim that this frozen verifier meets the pilot bar. All **14 unique
+inputs were called once**, in the frozen order; no additional extraction, worker or database write ran.
+The runner exits **2 after all 14** to indicate semantic/guard failures, not a technical interruption.
+There are no transport/schema failures, truncated responses, retries or missing usage. Each response
+is HTTP 200 with `finish_reason: stop`; the provider reports `gemma4:31b` for the requested
+`gemma4:31b-cloud` route. Prompt, request, grader and source hashes remain unchanged.
+
+| Metric | Result |
+|---|---:|
+| Explicit wrong-ending rejection: valid `no` / non-endings | **2/6 (33.3%)** |
+| Wrong-ending acceptance: accepted `yes` / non-endings | **3/6 (50%)** |
+| Non-ending invalid quote, excluded from semantic rejection | **1/6 (16.7%)** |
+| Normal-ending `no` rate | **0/8 (0%)** |
+| Total normal-ending pending rate | **0/8 (0%)** |
+| Normal-ending pass rate under frozen grading | **8/8 (100%)** |
+
+The three nonaccepted non-endings would be withheld by the proposed policy, but only two supply a
+valid `no`. The other is an empty quote, not successful evidence-based rejection. No real pending
+record or review UI was created. All rates describe this selected sample, not population estimates.
+
+| Input, in execution order | Gold | Reply | Frozen result |
+|---|---|---|---|
+| Settling into the new residence, turn 88 | no | no, empty evidence | Pending: invalid quote; fails |
+| S1 turn 233, full/given-name employer direction | yes | yes | Accept; passes |
+| S1 turn 233, full/given-name navigator direction | yes | yes | Accept; passes |
+| S1 completed checkout, turn 87 | yes | yes | Accept; passes |
+| Employment ends, friendship continues (authored) | yes | yes | Accept; passes |
+| S1 eve of move, turn 86 | no | yes | **Wrong accept** |
+| Explicit next-turn ending (authored) | yes | yes | Accept; passes |
+| Former-home ending only (authored) | no | no | Valid pending; passes |
+| S2 turn 233, captain/employer direction | yes | yes | Accept; passes, with weak evidence noted below |
+| S2 turn 233, navigator direction | yes | yes | Accept; passes |
+| S2 turn 74, mentorship continues | no | yes | **Wrong accept** |
+| S2 completed checkout, turn 87 | yes | yes | Accept; passes |
+| S2 turn 99, other-employer promotion | no | yes | **Wrong accept** |
+| Other-counterpart promotion (authored) | no | no | Valid pending; passes |
+
+**Preserved versus authored:** the ten preserved inputs contain six normal endings (6/6 accepted)
+and four non-endings (**0/4 valid no, 3/4 wrong accepts, 1/4 invalid quote**). The four authored controls
+all pass: 2/2 normal endings accepted and 2/2 non-endings validly rejected. The observed rejection
+success therefore comes entirely from authored controls. The six preserved normal variants still
+represent only checkout and resignation scenes. S1 turn 233 passes in both directions despite the
+full/given-name mismatch; this does not establish general identity robustness.
+
+Turn 88 returns `no` with an empty evidence string. It would withhold the wrong ending, but does not
+meet the promised quote contract. The eve-of-move reply quotes packing without the TARGET's future
+wording, so the unchanged quote-local `LATER` guard accepts its incorrect `yes`. The other two wrong
+accepts mistake a job change for mentorship termination and promotion for ending another employment.
+These are observations of this one verifier run, not proof of a general causal mechanism.
+
+A separate qualitative review also finds a correct `yes` with insufficient supporting evidence:
+`legacy-s2-turn-233-role-1` quotes releasing a hand and entering a cabin, which does not itself establish
+termination. The frozen grader checks quote presence and future wording, not semantic entailment.
+Its 8/8 normal acceptance score is retained without retrospectively changing the scoring rules; it
+must not be described as eight independently verified supporting explanations.
+
+| Resource measurement | Observed |
+|---|---|
+| Start / finish (KST) | 19:45:36.460 / 19:45:45.005 |
+| Execution elapsed / summed request durations | **8.545 s / 8.435 s** |
+| Per-call latency, minimum / median / maximum | 486 / 555 / 1,059 ms |
+| Provider input, including cached input | **15,588 tokens**, including **832 cached** |
+| Provider output / reported reasoning | **501 / 0 tokens** |
+| Input estimate / stop budget, for comparison | 25,648 / 28,213 tokens |
+| Output forecast / cap, for comparison | 1,400 / 7,168 tokens |
+
+Execution was much shorter than the estimated 3–5 minutes for execution and review; preparation and
+analysis are outside the 8.545 s measurement. This is provider usage, not a monetary invoice.
+
+The ten preserved inputs average **1,477.8 input / 36.7 output tokens per confirmation**. Short authored
+controls are excluded from this calibration. Multiplying those measured means by the historical raw
+call frequency gives the following **projection**, not measured usage for the historical requests or
+a completed 240-turn run:
+
+| Historical prefix | Observed calls / parsed turns | Projected calls / 240 | Projected added input / output tokens per 240 |
+|---|---:|---:|---:|
+| alias-v10 | 7/145 | 11.59 | 17,122 / 425 |
+| alias-v3 | 1/88 | 2.73 | 4,030 / 100 |
+| alias-v4 | 1/87 | 2.76 | 4,077 / 101 |
+| alias-v5 | 0/62 | 0 | 0 / 0 |
+| alias-v6 | 0/63 | 0 | 0 / 0 |
+| turn88-a1f4e81 | 2/89 | 5.39 | 7,970 / 198 |
+
+The earlier limitations still apply, especially overlapping early prefixes and unknown future ending
+frequency. No new calls were made to obtain this projection. Low observed token overhead does not
+compensate for the three accepted wrong endings.
+
+Evidence is preserved in
+`/home/grantkim725/nmos-eval/pr251/2026-10-03/role-confirmation-v2-results/`:
+`execution/` contains all exact requests, raw HTTP bodies, replies, grading and usage;
+`verified-results.json` contains metrics and projections; `selftest/` contains only simulated responses.
+`run.py --execute` ran against the source snapshot above using the existing Python 3.12 environment
+and exits 2. `verify_results.py` re-reads every real artifact, checks all request/source hashes and
+usage, reparses replies and reproduces every grade with zero model calls (exit 0). A preflight self-test
+feeds fourteen intentionally incorrect replies through the complete loop with zero model calls and
+confirms that semantic errors do not stop measurement. A file-level integrity manifest verifies the
+preserved copy. Raw story text stays outside Git and Linear.
 
 ## Adoption boundary and handoff
 
@@ -195,5 +299,8 @@ raw-file hashes, cost census, filled prompts and frozen requests. Version 1 reta
 diff, reconstructed lists and parser replay. Eight synthetic grading controls check quote/LATER rejection and
 both wrong-yes/wrong-no gold failures without calling a model. These validate instrumentation only.
 
-NMO-24 stays In Progress and blocks NMO-7. Next action: owner approval of this **14-call confirmation-only
-experiment and its token bounds**. Experiment approval does not approve the worker or pending workflow.
+NMO-24 stays In Progress and blocks NMO-7. The approved fourteen calls are complete; the unchanged
+confirmation-only design is not supported for adoption by this pilot. Next is an owner decision on
+whether to pursue a different role-ending design, using the preserved false positives and evidence
+failure before proposing another bounded run. No implementation or additional model calls follow
+automatically. Experiment approval did not approve the worker or pending workflow.
