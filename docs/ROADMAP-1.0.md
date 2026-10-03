@@ -232,7 +232,9 @@ Done when:
 
 Moved here by R7 (2026-10-01), in no order: Stage 8 (PocketRisu bridge); Stage 6's transition rules and conflict
 queue; C10 of the idea survey (memory of chats deleted in the host); NMOS without Docker on Termux (Android), after
-Phase 23's four portable targets (owner, 2026-10-01).
+Phase 23's four portable targets (owner, 2026-10-01); `extract-v16`'s role-ending and alias rules measured on
+stories not used in development and in other languages, and adjusted (they were built on Korean, mostly one story;
+ADR 0064; owner, 2026-10-03, NMO-34).
 
 The owner's longer aim is long-term memory for LLMs in general, not only role-play. The parts of NMOS
 that already carry over are the immutable ledger with rebuildable memory, provenance, hybrid recall

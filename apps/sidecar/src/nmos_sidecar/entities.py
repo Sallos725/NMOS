@@ -38,6 +38,10 @@ from typing import Any
 from uuid import UUID, uuid5
 
 RESOLVER_VERSION = "resolve-v5"
+# The compilers whose alias of a name and a part of it (윤하람, 하람) the turn check passed with the part written on its
+# own (extraction.PARTS_APART). Such a part does not make its full name ambiguous (`_splits`, ADR 0012 amendment of
+# PHASE-28 Q4): 윤하람 → 하람 and 윤하람 → 람이 are one person's two names, not one name of two people (S1 turn 182).
+PART_EDGES = frozenset({"extract-v16"})
 USER_NAMES = {"{{user}}", "{user}", "user", "유저"}
 PERSONA = "{{user}}"
 UNNAMED = "?"  # the extractor names a character shown without a name by a description starting with it (ADR 0024)
@@ -82,6 +86,7 @@ class Resolution:
         first: dict[Node, tuple[int, str]] = {}  # node → (order, spelling) of its first mention on the head
         counts: dict[Node, int] = {}
         edges: dict[Node, set[Node]] = {}
+        parts: dict[Node, set[Node]] = {}  # a full name → the parts of it its aliases checked apart name (PART_EDGES)
         self.alias_rows: list[tuple[Node, Node, dict[str, Any]]] = []
         hosted: dict[str, str] = {}  # the host's persona names as the story spells them (a node keeps one spelling)
         for row in rows:
@@ -98,6 +103,9 @@ class Resolution:
                     edges.setdefault(a, set()).add(b)
                     edges.setdefault(b, set()).add(a)
                     self.alias_rows.append((a, b, row))
+                    whole, part = (a, b) if len(a[1]) > len(b[1]) else (b, a)
+                    if row.get("compiler") in PART_EDGES and part[1] in whole[1]:
+                        parts.setdefault(whole, set()).add(part)
         for row in rows:  # second pass: participants rank below every resolve-v1 name source
             for p in row.get("participants") or ():  # stored by predicates.participants(): typed, named
                 n = self.node(p["type"], p["name"])
@@ -128,8 +136,8 @@ class Resolution:
         self.alias_rows = [(a, b, row) for a, b, row in self.alias_rows
                            if not any({a, b} == {x, y} for x, y, _ in self.splits)]
         linked = {n for a, b, _ in self.links for n in (a, b)}
-        overruled = {n for n in linked if _splits(n, edges)}  # the owner settles what the story left ambiguous
-        self.ambiguous = {n for n in edges if _splits(n, edges)} - linked
+        overruled = {n for n in linked if _splits(n, edges, parts)}  # the owner settles what the story left ambiguous
+        self.ambiguous = {n for n in edges if _splits(n, edges, parts)} - linked
         parent: dict[Node, Node] = {n: n for n in first}
 
         def find(n: Node) -> Node:
@@ -280,10 +288,11 @@ def _own_alias(row: dict[str, Any], persona: frozenset[str] = frozenset()) -> bo
     return bool(speaker) and node(row.get("subject_type"), row.get("subject"), persona) == node("character", speaker, persona)
 
 
-def _splits(n: Node, edges: dict[Node, set[Node]]) -> bool:
+def _splits(n: Node, edges: dict[Node, set[Node]], parts: dict[Node, set[Node]] | None = None) -> bool:
     """Whether `n` joins alias neighbours that are not otherwise connected: then it names more than one
-    entity and must not merge them."""
-    nbrs = list(edges.get(n, ()))
+    entity and must not merge them. A part of `n` checked apart (`parts`, PART_EDGES) is not counted: a full name with
+    its given name and one more name is one person's names. Two names besides the part still make it ambiguous."""
+    nbrs = [m for m in edges.get(n, ()) if m not in (parts or {}).get(n, ())]
     if len(nbrs) < 2:
         return False
     seen = {nbrs[0]}

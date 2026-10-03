@@ -301,6 +301,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_LLM_URL` / `NMOS_LLM_MODEL` / `NMOS_LLM_API_KEY` | off | Background fact extraction. Ollama on the host: `http://host.docker.internal:11434/v1` |
 | `NMOS_EMBED_URL` / `NMOS_EMBED_MODEL` | off | Semantic recall, e.g. `qwen3-embedding:0.6b` |
 | `NMOS_EXTRACT_BACKFILL` | `100` | On first sight of a chat, extract only the latest N **turns** (cost control; the rest on request) |
+| `NMOS_EXTRACT_COMPILER` | *(empty: `extract-v15`)* | The extractor (Phase 28): `extract-v16` also shows the model the roles in force and closes the one the story ends (a stay over, a job left), and links a character the story writes in full and by part of the name (윤하나 and 하나). A change re-extracts every chat once; being measured, not yet the default |
 | `NMOS_EXTRACT_TURNS` | `3` | Previous turns an extraction sees as context |
 | `NMOS_SUMMARIES` | `1` | The extraction model also summarizes each 8-turn scene and the story so far, in the background (ADR 0042); `packet-v8` puts them in `<Story>`. `0` turns this off (so does the panel) |
 | `NMOS_CANON_FACTS` | `1` | The extraction model also reads the chat's canon for facts, in the background (ADR 0047): the card, the persona, the author's note, and each lorebook entry once a prompt held it. The story supersedes them. `0` turns this off (so does the panel) |

@@ -18,6 +18,17 @@ class LLMError(RuntimeError):
     pass
 
 
+class ReplyError(LLMError):
+    """A call that was made but gave nothing usable: no response (`raw` empty), an error status, or a reply that is
+    not the JSON object asked for. It keeps what came back (`raw`, the whole text) and the call's usage (`usage_of`:
+    the call counted, tokens only as the provider reported them), so a caller can keep both (ADR 0064 item 4)."""
+
+    def __init__(self, message: str, raw: str, usage: dict[str, Any]):
+        super().__init__(message)
+        self.raw = raw
+        self.usage = usage
+
+
 def _headers(api_key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
@@ -126,19 +137,29 @@ class ChatModel:
         try:
             res = httpx.post(f"{self.url}/chat/completions", json=body, headers=headers, timeout=self.timeout_s)
         except httpx.HTTPError as exc:
-            raise LLMError(f"request failed: {exc}") from exc
+            raise ReplyError(f"request failed: {exc}", "", usage_of(None, started)) from exc
+        reply: Any = None
         if res.status_code >= 400:
-            raise LLMError(f"HTTP {res.status_code}: {res.text[:300]}")
+            try:  # an error body can still report usage; one that does not stays "not reported"
+                reply = res.json()
+            except ValueError:
+                pass
+            raise ReplyError(f"HTTP {res.status_code}: {res.text[:300]}", storable(res.text), usage_of(reply, started))
         try:
             reply = res.json()
             text = reply["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError, ValueError) as exc:  # TypeError: a null message or choices
-            raise LLMError(f"unexpected response shape: {exc}") from exc
+            raise ReplyError(f"unexpected response shape: {exc}", storable(res.text), usage_of(reply, started)) from exc
         if not isinstance(text, str):
-            raise LLMError(f"unexpected response shape: content is {type(text).__name__}, not text")
+            raise ReplyError(f"unexpected response shape: content is {type(text).__name__}, not text",
+                             storable(res.text), usage_of(reply, started))
         text = storable(text)
         # a model can escape half an emoji (ADR 0029)
-        return storable(parse_json_object(text)), text, usage_of(reply, started)
+        try:
+            parsed = parse_json_object(text)
+        except LLMError as exc:
+            raise ReplyError(str(exc), text, usage_of(reply, started)) from None
+        return storable(parsed), text, usage_of(reply, started)
 
 
 class Embedder:

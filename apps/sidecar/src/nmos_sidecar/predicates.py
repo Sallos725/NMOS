@@ -166,17 +166,35 @@ def fill_types(items: list[Any], hints: list[dict[str, Any]] | None = None) -> l
     return out
 
 
-def alias_evidenced(item: dict[str, Any], turn_text: str, hints: list[dict[str, Any]] | None = None) -> bool:
+def alias_evidenced(item: dict[str, Any], turn_text: str, hints: list[dict[str, Any]] | None = None,
+                    apart: bool = False) -> bool:
     """An `also_called` assertion links two names only if both occur in the turn it comes from (ADR 0012),
     or if one does and the other is, exactly, a name of the same type that the extraction was shown in
-    KNOWN ENTITIES: a turn revealing who a described character is (ADR 0024)."""
+    KNOWN ENTITIES: a turn revealing who a described character is (ADR 0024).
+
+    `apart` (extract-v16, PHASE-28 Q4): when one name is part of the other (윤하나, 하나), the turn must write both: the
+    full name, and the part on its own, not only inside the full name (which would otherwise count as both). A full name
+    known from earlier turns does not stand in for it: a part alone may be someone else's name.
+
+    Also with `apart` (ADR 0064 item 2, the owner's S1 review of `4e76c70`): a known name the turn does not write stands
+    in only for a character the turn is about, so it must be a description of someone unnamed (`?…`, the reveal of
+    ADR 0024) or a character the turn writes by another of its known names (윤하람 for a turn that writes 하람). A known
+    character the turn never names is not joined to a name in it (S1 turn 81: 백이안, absent, and 곽 조합장)."""
     a, b = _casefold(item.get("subject")), _casefold(item.get("value"))
     if not a or not b or a == b:
         return False
     text = _casefold(turn_text)
-    listed = {_casefold(n) for h in hints or () if h.get("type") == item.get("subject_type")
-              for n in [h.get("name"), *h.get("also", [])]}
-    return (a in text and (b in text or b in listed)) or (b in text and a in listed)
+    known = [{_casefold(n) for n in [h.get("name"), *h.get("also", [])]} - {""}
+             for h in hints or () if h.get("type") == item.get("subject_type")]
+    listed = set().union(*known)
+    if apart and (a in b or b in a):
+        whole, part = (a, b) if b in a else (b, a)
+        return whole in text and part in text.replace(whole, " ")
+    if not ((a in text and (b in text or b in listed)) or (b in text and a in listed)):
+        return False
+    return not apart or all(name.startswith("?") or any(other in text for names in known if name in names
+                                                        for other in names - {name})
+                            for name in (a, b) if name not in text)
 
 
 POLARITIES = ("positive", "negative")

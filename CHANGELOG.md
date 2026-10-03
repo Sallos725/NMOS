@@ -5,6 +5,16 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **`extract-v16`, an extractor to measure, off by default** (Phase 28, ADR 0064 proposed, D73; AGE-24). The owner's
+  live run found a role kept as current after the story ended it, and one character split in two by its full name and
+  its given name. `NMOS_EXTRACT_COMPILER=extract-v16` shows the extractor the roles in force and asks it which one the
+  story ends, asks once more about that one role before closing it (an ending it does not confirm is kept aside,
+  and the role stays current), and asks it to link a character the story writes in full and by
+  part of the name (윤하나 and 하나; Elena Vance and Elena) unless the two could be different people. A known name
+  the turn does not write links only a character that turn is about. The Inspector's "Needs attention" lists the
+  role endings it applied recently and the ones it held, each with one action to undo or apply it. Selecting it
+  re-extracts every chat once; `extract-v15` stays the default, and without the setting nothing changes.
+
 - **The query is embedded while recall reads, so a slower embedder still gives vectors** (ADR 0061, D70; K34, AGE-24).
   A request used to give the embedding of your message 300 ms on its own, after lexical recall and before the facts
   were read: an embedder behind a proxy, or a busy one, missed it, and 70 % of the owner's production requests found
