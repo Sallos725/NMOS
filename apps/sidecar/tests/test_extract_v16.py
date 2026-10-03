@@ -256,7 +256,10 @@ def test_the_block_lists_each_role_with_its_turn_and_only_when_there_is_one():
         "Before answering, decide for each CURRENT ROLE (R1–R1) whether the TARGET turn ends it between its own two people"
         " (a new role or promotion toward someone else does not), and whether it is over by"
         ' the end of the TARGET turn ("now") or only planned or prepared ("planned"); list only those in `roles_ended`,'
-        ' each quoting the TARGET turn (the text after "TARGET turn 20:"), not CONTEXT.')
+        ' each quoting the TARGET turn (the text after "TARGET turn 20:"), not CONTEXT.\n'
+        'A business closing or an owner retiring is not a resident moving out or a mentorship ending.'
+        ' Check the end of the TARGET: if accommodation, access or the relationship continues,'
+        ' do not end that role merely because work or chores stop.')
     assert "CURRENT ROLES" not in extraction.build_prompt(c) and "CURRENT ROLES" not in extraction.build_prompt(c, roles=[])
 
 

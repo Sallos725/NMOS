@@ -217,6 +217,11 @@ ROLE_ENDINGS = """- If CURRENT ROLES are listed (R1, R2, …), report in `roles_
   an ending of that pair's arrangement: a new job does not end a mentorship; a promotion does not end employment or being colleagues.
   Check whether that relationship continues (CONTEXT can establish continuity). Report an ending only when
   the TARGET ends the listed relationship itself, not merely another duty or description attached to it.
+  A business closing or its owner retiring does not by itself end someone's residence there or their
+  mentorship. Closing the shop's door is not moving out; a key given for continued use is not a key
+  returned to end a stay. If the TARGET preserves the accommodation, access or relationship, keep that
+  role even when its work or chores cease. End a residence only when the stay itself ends; check for
+  continued use or access at the end of the TARGET before deciding.
   A new role, job or promotion toward someone else (another employer, another workplace) never ends a
   listed role toward a different person: the `evidence` must show the listed role's own two people
   parting or their arrangement ending.
@@ -738,6 +743,9 @@ def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
                   " it is over by the end of the TARGET turn (\"now\") or only planned or prepared"
                   " (\"planned\"); list only those in `roles_ended`, each quoting the TARGET turn (the text after"
                   f" \"TARGET turn {ctx['target']['turn']}:\"), not CONTEXT."]
+        lines += ["A business closing or an owner retiring is not a resident moving out or a mentorship ending."
+                  " Check the end of the TARGET: if accommodation, access or the relationship continues,"
+                  " do not end that role merely because work or chores stop."]
     if pairs:
         lines += ["", f"Before answering, decide for each NAME PAIR (N1–N{len(pairs)}) whether the TARGET turn uses the"
                   " two names for one character; list only those in `same_names` by their number, not their names"

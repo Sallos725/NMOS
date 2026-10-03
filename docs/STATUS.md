@@ -58,7 +58,14 @@ five role checks in all three runs (15/15); both name pairs resolve in every run
 wrong turn-99 ending, now blocked. Three further endings at the school departure (turn 219) are outside those core
 checks; fixed v15 hints do not establish their true ending time. This is not the full Q5 (c) or a sequential v16
 worker/backfill verdict. Evidence, tests and conservative misses: `docs/perf/extract-v16-role-target.md`.
-Next: the rest of Q5 (c), including sequential state and the remaining ending classifications; no default change.
+The wider `f747f4f` comparison stopped at 507 successful samples (509 attempts, including two recovered JSON
+format errors): S2 turn 144's shop closure incorrectly ended the resident's stay in 3/3 runs. The first divergence
+is the model's role-ending decision, before retrieval. The system rule and closing reminder now distinguish
+business closure from residence or mentorship, and check continued access at the end of the TARGET. A fresh
+24-call check passes all six role cases (18/18) and both name joins per run (6/6); system-only wording had still
+failed 2/3. Evidence and the JSON diagnosis: `docs/perf/extract-v16-role-closure.md`. The owner authorized a new
+full run, preserving every result, with correction and restart for a defect found within its first quarter.
+Next: restart Q5 (c) for this prompt, then sequential state and the remaining ending classifications; no default change.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

@@ -42,6 +42,13 @@ all five core role checks in all three runs (15/15) and both name pairs joined p
 can be missed, and a name elsewhere in the turn is not proof of an ending by itself. The remaining semantic and
 worker/backfill gates still apply; see `docs/perf/extract-v16-role-target.md`.
 
+Q1 measurement amendment (2026-10-03, `f747f4f`): the wider comparison stopped at 507 successful samples when
+closing a shop ended a continuing residence in 3/3 runs. The system rule and closing reminder now distinguish
+business closure or retirement from residence and mentorship, checking continued access at the TARGET's end.
+The bounded 24-call check passes six role cases in all runs (18/18) and both name joins per run (6/6).
+Q5 (c) restarts for the new prompt; this is not a full acceptance result. The owner authorized quota use and
+correction followed by restart for defects found in the first quarter. See `docs/perf/extract-v16-role-closure.md`.
+
 ## Goal
 
 Two defects confirmed in the stored traces of the owner's live run on `e13dee7` (AGE-24), each a state error rather
