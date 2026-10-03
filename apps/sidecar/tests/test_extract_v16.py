@@ -123,6 +123,7 @@ def test_extract_v16_is_its_own_generation_by_compiler_and_prompt_only():
     v15, v16 = extraction.extractor(SETTINGS).spec, extraction.extractor(V16).spec
     assert v16["compiler"] == "extract-v16"
     assert {k for k in v15 if v15[k] != v16[k]} == {"compiler", "prompt"}
+    assert set(v16) - set(v15) == {"confirm"} and "confirm" not in v15  # the role-ending confirmation (ADR 0064 item 4)
     assert extraction.extractor(V16).key != V15_KEY
 
 
@@ -449,10 +450,18 @@ def test_a_new_job_toward_another_person_keeps_the_existing_mentorship():
 LISTED = re.compile(r"^(?P<ref>R\d+)\. (?P<by>.+?) → (?P<to>.+?): (?P<role>.+) \(turn \d+\)$", re.M)
 
 
+def confirming(user, ended="yes"):
+    """A confirmation's answer (ADR 0064 item 4): `ended`, quoting the TARGET turn's first message as it is."""
+    first = user.split("\nTARGET:\n", 1)[1].split("\n", 1)[0].split(": ", 1)[1]
+    return {"ended": ended, "evidence": first}, "{}"
+
+
 def moving_out(system, user):
     """The model as the prompt allows it: the tenancy when the story states it, the leaving as a place, and under
     extract-v16 the listed role it ends (by number), with a free ending in the role's name only besides, as the owner's
-    run saw the model write one (#251)."""
+    run saw the model write one (#251). It confirms each ending it is asked about."""
+    if system == extraction.ROLE_CONFIRM_SYSTEM:
+        return confirming(user)
     target = user.split("TARGET", 1)[1]
     items = []
     if "세 들어" in target:
@@ -504,6 +513,8 @@ def test_worker_delivers_the_role_target_check_and_keeps_explicit_next_turn_endi
     captured = []
 
     def complete(system, user):
+        if system == extraction.ROLE_CONFIRM_SYSTEM:
+            return confirming(user)
         shown = user.split("TARGET turn", 1)[1]
         if start in shown:
             return {"assertions": [{"subject": "하나", "subject_type": CHAR, "predicate": "role_toward",

@@ -188,6 +188,14 @@ Next: decide ADR 0064/phase amendment and v16 worker adoption scope before a fre
 at turn 88. A pending-role review flow remains unimplemented.
 First-connection, full-comparison and live gates remain open; NMO-24 still blocks
 NMO-7. No default or generation change follows from recording these results.
+Implemented after the owner's handoff (ADR 0064 item 4): under `extract-v16` each listed ending that passes the
+existing checks is confirmed by one more call with the measured v3 prompt (ending rules, the role, the two preceding
+turns whole, the TARGET; no other hints). Only a yes quoting the TARGET ends the role; a no, an invalid answer, a
+quote check failure or a failed call holds it as a pending row (`role ending not confirmed: …`) with the first reply
+and every confirmation kept in the extraction's raw record; usage sums them, kept apart under `confirm`. A new
+generation (the confirmation is in v16's fingerprint); `extract-v15` unchanged. A held normal ending keeps the role
+current; a review item is not implemented and not an approved policy. Tests use stand-in models only. Next: the
+owner's fresh sequential S1 from turn 0 under this generation, with turn 88's stored state read back.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

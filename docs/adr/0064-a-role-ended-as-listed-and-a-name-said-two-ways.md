@@ -189,8 +189,43 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before
-   Phase 28 (pinned); `extract-v16`'s differs by compiler and prompt only. A generation's own rows record its compiler.
-   `extract-v15`'s alias check is as it was.
+   Phase 28 (pinned); `extract-v16`'s differs by compiler, prompt and the confirmation's fingerprint (item 4). A
+   generation's own rows record its compiler. `extract-v15`'s alias check is as it was.
+4. **A listed role's ending is confirmed before it is stored** (Q1; added 2026-10-03, owner-approved handoff of
+   `098c92e`). Prompt wording alone did not hold: the owner's sequential S1 run of `a1f4e81` ended the new residence
+   at turn 88, although the same TARGET, context and R1 kept it in the bounded check; only the surrounding hints
+   differed (`docs/proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md`). Each ending `ended_roles` writes, after its own
+   checks (number, `when` "now", quote in the TARGET, `LATER`, the counterpart named), is asked once more of the same
+   model about that one role (`extraction.confirm_endings`):
+   - **Input, as measured (v3).** System: `ROLE_CONFIRM_SYSTEM`, the v3 text verbatim (SHA-256 `c5fe766a…`, pinned
+     by a test): the ending rules, and "yes only when the role is over by the end of TARGET". User
+     (`confirm_prompt`): the listed role (`ROLE: by → to: value`), the last two turns before the target
+     (`CONFIRM_TURNS`), each message whole as a TARGET turn is shown (up to `TARGET_CHARS`, not cut to
+     `CONTEXT_CHARS`), and the target turn, each message with its speaker. No other role, entity, alias, promise,
+     thread or secret, and not the first answer. The context lines carry `[turn N]` as the extraction prompt's do;
+     the experiment's request bytes may differ in that labelling.
+   - **Evidence contract.** Only `{"ended": "yes"}` with a passage of the TARGET turn (`quoted_in`) and no `LATER`
+     cue confirms. The prompt decides whether the turn completes the ending; the quote checks only filter a yes and
+     do not prove completion (the experiment's four resignation quotes stay uncertain). A `no` withholds with or
+     without a quote.
+   - **Not confirmed: held, not applied.** A no, an invalid answer, a quote not in the turn, a later-dated quote or a
+     failed call holds the ending: the row is stored `pending`, reason `role ending not confirmed: <outcome>`, so it is
+     no fact and the role stays current. The extraction's raw record keeps the first reply and, per confirmation,
+     the role, the first answer's quote, the outcome, the confirmation's answer, reply (4,000 characters), quote and
+     usage; the row keeps its turn, generation (`extractor_key`) and time (`created_at`). A failed call is not retried
+     and does not fail the job (a retry would ask the extraction again). Confirmations run before the job's final
+     check, so an obsolete or reclaimed job stores neither.
+   - **Usage.** The extraction's usage sums its confirmations at the top level (what the usage report counts) and
+     keeps theirs apart under `confirm`.
+   - **The cost of holding, and what is not decided.** A held ending is not resolved by itself: a normal ending the
+     confirmation wrongly holds keeps the role current until a later turn ends it again (the story need not) or the
+     owner corrects it. This is a measured mitigation behind `extract-v16`, **not an approved product policy**: it is
+     a trace only, with no Inspector item or action; a review item (the role, both quotes, the turn; approve at the
+     original turn, reject; stale revisions and generations refused) must be decided before any default switch.
+   - **Verification boundary.** The 17/17 probe and v3's 14/14 (regraded, no new call) measure the confirmation call
+     alone. The worker path is covered by tests with stand-in models only; a fresh sequential S1 from turn 0 under
+     this generation, with turn 88's stored state read back, is the gate (owner's run). A run resumed from a stopped
+     database does not count: its wrong ending is already stored.
 
 ## Withdrawn: `given_name_join`
 

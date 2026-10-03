@@ -148,6 +148,7 @@ def prompts(args: argparse.Namespace) -> list[dict[str, Any]]:
                                   **({"compiler": args.compiler} if hasattr(X, "ALIAS_CHECK") else {}))
             out.append({"turn": a["turn"], "user": user, "hints": hints, "secrets": secrets, "roles": roles,
                         "pairs": pairs, "text": text, "persona": X.persona_of(ctx["target"].get("host_persona_name")),
+                        "ctx": {"context": ctx["context"], "members": ctx["members"]},  # a confirmation's turns
                         # what the model saw of the target turn (extract-v14's `shown_target`)
                         "shown": "\n".join(r["content"][:X.TARGET_CHARS] for r in ctx["members"])})
     return out
@@ -204,6 +205,10 @@ def run(args: argparse.Namespace) -> None:
                 items += X.revealed(parsed, p["secrets"], p["text"])
                 if p["roles"]:  # extract-v16: the listed endings, as the worker writes them
                     items = X.ended_roles(parsed, items, p["roles"], p["shown"], hints=p["hints"], persona=p["persona"])
+                confirmations = []
+                if p["roles"] and args.compiler in getattr(X, "CONFIRMS", ()):  # extract-v16: each ending confirmed
+                    confirmations, confirm_usage = X.confirm_endings(model.complete_metered, items, p["ctx"], p["shown"])
+                    usage = X.with_confirmations(usage, confirm_usage)
                 if p.get("pairs"):  # extract-v16: the confirmed name pairs, as the worker writes them
                     items = X.same_names(parsed, items, p["pairs"], p["text"])
                 apart = {"apart": True} if args.compiler in getattr(X, "PARTS_APART", ()) else {}
@@ -213,6 +218,7 @@ def run(args: argparse.Namespace) -> None:
                     r["quote_in_turn"] = in_turn(r.get("evidence"), p["shown"])
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps({"turn": p["turn"], "compiler": args.compiler, "roles": p["roles"],
+                                            "confirmations": confirmations,
                                             "pairs": p.get("pairs") or [],
                                             "usage": usage,
                                             "secs": round(time.monotonic() - t0, 1), "assertions": rows,
