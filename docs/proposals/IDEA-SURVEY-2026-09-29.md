@@ -4,6 +4,10 @@
 > `ARCHITECTURE.md` or `docs/STATUS.md`. The owner decides where each candidate goes (§6). Owner, 2026-09-29: follow the
 > recommended order.
 
+The descriptions below record the situation at the original survey date. See [§7](#7-follow-up-2026-10-03) for
+subsequent implementation and scope decisions, and the [anonymous comparison](IDEA-SURVEY-2026-10-03.md) for new
+recall candidates. Neither follow-up authorizes implementation.
+
 ## 1. Source
 
 The owner asked for the ideas worth taking from another community memory plugin for RisuAI (a single bundled V3
@@ -133,3 +137,18 @@ A chat whose character was moved to the trash or deactivated (restorable) leaves
 4. **C2** on the queued list for the next extractor generation (queued in `docs/STATUS.md`, 2026-09-29); **C3**
    measured and dropped (§4).
 5. **C7 and C10** with Stage 6's remaining items; **C8** with Stage 7; **C9** only with an approved spend.
+
+## 7. Follow-up (2026-10-03)
+
+| Candidate | Current disposition | NMOS evidence |
+|---|---|---|
+| C2 — evidence in the target turn | Implemented in Phase 19; no longer merely queued | [ADR 0054](../adr/0054-extract-v14.md) |
+| C4 + C5 — model usage and fallback outcomes | Phase 17 complete | [Phase 17](../phases/PHASE-17.md), [ADR 0051](../adr/0051-model-call-usage.md) |
+| C7 — preview before joining names | Phase 20 complete | [ADR 0055](../adr/0055-join-preview.md) |
+| C10 — memory whose host chat is missing | Host read measured (H22); work deferred beyond 1.0 by R7 | [ROADMAP](../ROADMAP-1.0.md), [HOST-FACTS](../HOST-FACTS.md) |
+| C8 — model-directed deep search | Proposal only; not automatically included in Stage 7, and request-path generative calls remain outside the current contract | [ROADMAP Stage 7](../ROADMAP-1.0.md#stage-7--forensic-recall), [AGENTS](../../AGENTS.md) |
+| C9 — stronger knowledge wording | Still a proposal requiring an approved live comparison; no new result from this survey | §4 above |
+
+C1's observation, C3's measured rejection and C6's dependency on a separately approved import feature remain as
+recorded. The new [anonymous comparison](IDEA-SURVEY-2026-10-03.md) separates current NMO-24 help from later recall
+experiments and avoids reopening completed work.
