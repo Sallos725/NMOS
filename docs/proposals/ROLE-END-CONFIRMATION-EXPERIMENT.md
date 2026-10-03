@@ -1,4 +1,7 @@
-# Role-ending confirmation experiment — v2 and v3 measured
+# Role-ending confirmation experiment — v2 through v4 measured
+
+**Latest: v4 on `443a5c4` fails 30/32 at 23:56 KST; see the final results section.**
+The earlier design/adoption boundaries below are historical; current behavior is ADR 0064.
 
 Revised 2026-10-03 after owner review: continue through incorrect decisions and replace repeated calls
 with unique preserved cases. The owner then approved version 2 with “이대로 14회 측정 가보자”.
@@ -708,3 +711,88 @@ decides the ADR 0064/phase amendment and v16 worker adoption scope, including re
 confirmation evidence, usage, failure behavior, pending review and stale-job handling. Then run a fresh
 sequential S1 with explicit turn-88 readback. Existing yes-evidence uncertainty remains a diagnostic;
 the scoring revision does not erase it. No generation/default or production code is changed.
+
+## Measured v4 regression: 30/32, candidate fails (2026-10-03, 23:56 KST)
+
+**EvidenceVerdict: execution and artifact readback verified; the candidate fails the frozen regression bar.**
+The owner approved the preserved fourteen and seventeen cases, then separately approved turn 227:
+**32 calls**, one per input, no retries. Target: `443a5c42f8882827f4be1cee304e9f041b177bf3`.
+The actual system is `ROLE_CONFIRM_SYSTEM` v4, SHA-256
+`885479bcc62d95d6507258fdc89cb02a071917f5be191a97ba2c4099101b5481`.
+All 32 user messages are byte-preserved from the prior measured requests and reconstruct exactly with
+`confirm_prompt`; only the system gains the single v4 paragraph from ADR 0064 item 4. Removing that
+paragraph restores the measured v3 hash `c5fe766a…`. The frozen plan includes the complete prompt text.
+
+| Input group | v3 baseline | v4 passes | Normal accept / pending | Non-ending no / wrong accept |
+|---|---:|---:|---:|---:|
+| Original fourteen | 14/14 (asymmetric contract regrade) | **13/14** | **7/8 / 1/8** | **6/6 / 0/6** |
+| Additional seventeen | 17/17 | **17/17** | **8/8 / 0/8** | **9/9 / 0/9** |
+| Sequential S1 turn 227 | wrong yes in preserved worker call | **0/1** | — | **0/1 / 1/1** |
+| This batch | — | **30/32** | **15/16 / 1/16 (6.25%)** | **15/16 / 1/16 (6.25%)** |
+
+Two failures are retained without relabeling or stopping early:
+
+- `legacy-s2-turn-233-role-1`: `무진 → 도윤: 선장: 도윤의 상사`, frozen expected **yes**,
+  now **no**, empty evidence. The earlier v3 reply was yes. Other descriptions/directions of this
+  resignation still return yes. This is a withheld normal ending under the frozen gold, not a parser
+  failure; if applied, the role would remain current. A single paired run does not establish why the
+  answer changed or attribute it solely to the new paragraph.
+- `s1-turn-227-office-not-patronage`: `곽은비 → 서도윤: 후원자 및 의뢰인: 칠초해 해도 완성을 지원하고 완성본을 구매하기로 함`,
+  owner-decided expected **no**, still **yes**. Evidence: `곽은비는 지하 감옥에 있고.` The passage is in
+  TARGET and passes `quoted_in` and `LATER`; imprisonment does not state that the patronage/commission
+  ends. The paragraph addressing this very failure did not block it. This is an accepted wrong ending,
+  not the conservative cost of pending.
+
+Turn 88 remains no. All sixteen yes replies pass the production quote/LATER contract; zero malformed
+responses or missing yes quotes. That syntactic contract does not prove semantic support. An unblinded
+lead review, recorded separately from gold-label scoring, classifies all 32 quotes as **Supports 18,
+Weak 4, Uncertain 2, Contradicts 0, Missing 8**. Among yes replies: **Supports 10, Weak 4, Uncertain 2**.
+The weak group contains the turn-227 imprisonment quote, a workshop-opening response, and two new-home
+arrival quotes. The uncertain two quote the announcement that the navigator needs to quit, not explicit
+completion. All eight empty quotes accompany no, including the withheld normal ending, and are allowed
+by the asymmetric contract. Supplied-but-unmatched quotes: zero. These are lead judgments, not independent
+human annotations or automated semantic proof; Weak does not by itself change a case's gold label.
+
+| Resource measurement | Observed |
+|---|---:|
+| Start / finish, KST | 23:55:43.661 / 23:56:07.453 |
+| Calls / retries / technical errors / truncations | **32 / 0 / 0 / 0** |
+| Elapsed / summed request duration | **23.791 / 23.556 s** |
+| Request latency, min / median / max | **497 / 630 / 1,321 ms** |
+| Input / output / cached input | **71,382 / 894 / 24,288 tokens** |
+| Input stop budget / output cap | 150,000 / 16,384 tokens |
+| Cost at owner-supplied $0.14/M input, $0.40/M output, ignoring cache discount | **$0.01035108** |
+
+Requested route `gemma4:31b-cloud`, reported model `gemma4:31b`, local endpoint
+`http://127.0.0.1:11500/v1/chat/completions`. Temperature 0, JSON mode, one request at a time,
+`max_tokens=512` (experiment only; production omits the cap). Every response is HTTP 200 with finish
+reason `stop`, with provider usage reported. The runner completes all 32 and exits **2** for semantic
+failures. No new extraction, DB write, worker-state mutation, sequential restart or additional call.
+Input token budget is checked before calls using the frozen estimate and after responses using actual
+usage; it is not a provider-enforced input cap.
+
+Local evidence: `/home/grantkim725/nmos-eval/pr251/2026-10-03/role-confirmation-v4-443a5c4/`.
+`PLAN.md`, `experiment-plan.json`, `approval.json`, `cases.json`, `requests.json` and source/input
+manifests fix the target; `execution/calls/` retains each request, raw HTTP body, parsed reply, grade
+and usage. Request-file SHA-256:
+`69ef69be5c8ae7cae4c470d2288f58e9236d197e895447573d75889380961ab5`.
+A separate `verify_results.py` process re-read all 32 artifacts, reproduced every grade and usage total,
+verified all source/input hashes and agreement with production `confirmed`, with **zero model calls**.
+Thirteen grader controls, six technical-stop controls and a simulated batch of 32 wrong answers verify
+that semantic mistakes continue. `quote-review.json` records the individual quote labels.
+
+At the exact target, Codex independently ran `test_alias_presence.py`, `test_extract_v16.py` and
+`test_role_end_confirmation.py`: **78 passed**, including isolated-DB tests (stand-in models).
+The first invocation used the wrong local test account (59 passed / 19 skipped); rerunning with the
+existing isolated benchmark account exercised all 78, with no skips. Claude's 999-test full-suite report
+was not independently repeated. The deterministic alias check preserves 182, holds 81/200, and does not
+catch 237; this confirmation-only batch does not measure alias extraction or NMO-35's future design.
+
+**Handoff / stop:** do not promote v4 or launch fresh sequential S1 on this result. Preserve the frozen
+labels and the two failure records for Claude's design review; no v5 wording or new product behavior is
+chosen here. A new candidate and further paid runs need the owner's decision and bounded approval.
+The 14+17 cases are regressions, including previously exposed stories; 227 motivated v4. This is not a
+held-out generalization result. First connection, full comparison, latency and live release gates remain
+open. NMO-35's alias confirmation before resolver changes separately blocks NMO-7; v15 stays default.
+High risk under review: identity/provenance, current versus historical role state, extraction generations.
+These report-only changes do not modify those behaviors.

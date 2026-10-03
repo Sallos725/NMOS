@@ -223,10 +223,18 @@ Claude's review of those excerpts and the owner's decisions (2026-10-03): turns 
 the turn never names; under extract-v16 a known name now stands in only for a `?` description or a character the turn
 writes another way (ADR 0064 item 2; offline on the preserved rows: 81 and 200 pending, 182 valid, 237 not caught).
 Turn 227 is a wrong ending (the quote ends the patron's office, not the patronage); the confirmation prompt gains one
-paragraph (v4, ADR 0064 item 4), **unmeasured**. Both are a new extract-v16 generation, so the next step is the
-owner's re-measurement of v4 on the preserved confirmation cases, then a fresh S1 from turn 0. An alias confirmation
-for names the turn allows (237) and the resolver's treatment of one person's two names (182, ADR 0012) are NMO-35:
-outside Phase 28, before 0.3.0, the resolver last. No model call was made.
+paragraph (v4, ADR 0064 item 4). Both are a new extract-v16 generation. The owner-approved **32-call v4
+re-measurement on `443a5c4` passes 30/32 but fails its acceptance bar** (23:56 KST): original fourteen 13/14, additional seventeen 17/17,
+turn 227 0/1. The patronage still ends on a quote of imprisonment; one normal captain-to-navigator ending
+is withheld. Wrong acceptance **1/16**, normal pending **1/16**; turn 88 remains no. Input **71,382** /
+output **894**, **23.791 s**, errors/retries 0, estimated **$0.01035108** without cache discount.
+Source/request/response/usage readback and production grading agree; related tests **78 passed**.
+Quote quality is reported separately (yes: Supports 10, Weak 4, Uncertain 2). See
+`docs/proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md` (v4 results). **Stop before fresh sequential S1**:
+Claude reviews the two preserved failures; no automatic prompt revision or additional paid run is approved.
+An alias confirmation for names the turn allows (237) and the resolver's treatment of one person's two names (182, ADR 0012) are NMO-35:
+outside Phase 28, before 0.3.0, the resolver last. The implementation used no model calls; the subsequent
+measurement above used 32.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

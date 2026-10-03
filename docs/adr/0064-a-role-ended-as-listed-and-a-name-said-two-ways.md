@@ -246,8 +246,11 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
      a separate arrangement between the listed two (sponsorship, a commission, a debt, a promise); yes only when
      TARGET says the arrangement itself ends, not because what happened makes it unlikely to continue; the yes
      evidence must be about the listed arrangement. v3 is otherwise unchanged (a test restores its SHA-256 by
-     removing the paragraph). **v4 is unmeasured**: before another sequential run, the owner re-measures it on the
-     preserved v3 cases (14 + 17) and turn 227.
+     removing the paragraph). **v4 was measured and failed** on `443a5c4` (2026-10-03, 23:56 KST): the owner-approved
+     14 + 17 + turn 227 run passes 30/32. Turn 227 still returns yes on imprisonment, and one normal resignation
+     returns no (wrong accept 1/16, normal pending 1/16). The valid quote/LATER contract does not prove semantic
+     support. See `docs/proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md`, v4 results. Fresh sequential S1 is
+     stopped before execution; this result selects no further prompt or design change.
    - **Usage.** The extraction's usage sums its confirmations at the top level (what the usage report counts) and
      keeps theirs apart under `confirm`. A call made counts once; its tokens only as the provider reported them,
      none for a call that got no response.
