@@ -70,6 +70,12 @@ ambiguous. The prompt now distinguishes stable introduced names from casual addr
 a title alias needs a personal name and explicit introduction, and its subject is the person named.
 The input closing check also forbids trailing commas. The parser and resolver are unchanged; fresh
 bounded and sequential verification are required under the new generation.
+Further measurement still finds a bare descriptive alias (`영감`) in persistent state, and two more
+prompt-only candidates fail on the preserved input. V16 normalization now retains exact bare person
+labels as pending aliases, with raw evidence intact. The finite set is fingerprinted in the v16 prompt;
+even an introduced nickname equal to a listed label stays pending. Named titles, full/given names and
+the `?description` reveal path remain eligible. This conservative guard changes neither v15 nor the
+resolver; model, sequential and full comparison gates remain open.
 
 Two defects confirmed in the stored traces of the owner's live run on `e13dee7` (AGE-24), each a state error rather
 than a scoring artefact:

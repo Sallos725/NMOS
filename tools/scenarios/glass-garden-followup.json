@@ -57,6 +57,24 @@
       "expected_ended": [],
       "expected_aliases": [],
       "forbidden_aliases": [["류태오", "선장님"]]
+    },
+    {
+      "id": "narrative-description-is-not-a-name",
+      "context": [],
+      "target": "최도경은 서가에서 책을 꺼내 탁자 위에 펼쳤다. 노인은 안경을 고쳐 쓰고 책장을 넘겼다. 창가에 앉은 강세온은 최도경이 가리킨 지도에 고개를 숙였다. 노인은 잠시 기다렸다가 설명을 이어 갔다.",
+      "roles": [],
+      "expected_ended": [],
+      "expected_aliases": [],
+      "forbidden_aliases": [["최도경", "노인"]]
+    },
+    {
+      "id": "surname-description-is-not-introduced-name",
+      "context": [],
+      "target": "최도경은 작은 배에서 줄을 내려 물 깊이를 쟀다. 최 영감은 수첩에 숫자를 적고 강세온에게 노를 맡겼다. 두 사람은 배를 돌려 정거장으로 돌아갔다.",
+      "roles": [],
+      "expected_ended": [],
+      "expected_aliases": [],
+      "forbidden_aliases": [["최도경", "최 영감"]]
     }
   ]
 }

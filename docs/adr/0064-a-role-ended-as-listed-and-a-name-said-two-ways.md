@@ -161,6 +161,14 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    job or relationship titles, and permits a title alias only when it contains a personal name and is
    explicitly introduced as a name. It reuses existing spelling for an honorific variant and names the
    recipient as subject. Resolver ambiguity and acceptance of valid self-introductions are unchanged.
+   Further sequential and bounded runs still emitted a narrated bare age label (`영감`) despite prompt
+   exclusions. Under v16, normalization now parks character aliases with an exact bare person label on
+   either side. The finite Korean/English set `BARE_PERSON_LABELS` is included in the prompt fingerprint;
+   the row and raw reply are retained as pending. This conservative check also withholds an introduced
+   nickname equal to a listed label; it is not an exhaustive semantic classifier. A surname is sufficient
+   as the name part of an explicitly introduced title; the prompt now states that distinction and gives
+   a synthetic positive example after a bounded run omitted such a title. Named titles and
+   `?description` reveals are distinct strings and remain eligible. V15 and the resolver are unchanged.
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before

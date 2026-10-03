@@ -165,10 +165,66 @@ Input **426,798 / output 54,939 tokens**, zero errors, retries or missing usage.
 above pin this run; generation `extract-7e9f41da3278af76f30d8b6ffa5c646a` is new.
 
 A fresh actual S1 backfill starts from turn 0 on its own copy, **240** planned calls and initially
-**3,515,497** estimated input tokens. It remains in progress. The 1,440-call fixed-hint comparison
-waits for that result; no full comparison or Q5(c) pass is claimed. The scoped review checked the
+**3,515,497** estimated input tokens. It stops after **63 completed jobs**, below. The 1,440-call
+fixed-hint comparison waits; no full comparison or Q5(c) pass is claimed. The scoped review checked the
 unchanged v15 path, fingerprinted worker input, preserved original probe cases and unchanged parser/
 resolver rules. This remains high risk for identity/provenance and historical/current role state.
+
+## A bare person description stays unconfirmed
+
+The narrowed candidate (`b3795df`) passes its full sidecar suite, **951 tests** (652.44 s), and plugin
+196 tests/typecheck/build. Its actual S1 worker still adds `추오월 → 영감` at turn 43, after the earlier
+`추오월 → 추 영감` alias. A read of persistent state through turn 51 confirms that the full name becomes
+ambiguous. The run is stopped after **63/240**, input **634,512 / output 69,971 tokens**, no format errors
+or retries. Turn 62's previous JSON failure does not recur. The stopped archive and diagnosis are kept.
+
+Two prompt-only candidates also fail on the same preserved turn 43. Descriptive-noun wording stops
+after four calls (three turn-30 passes, then turn-43 failure; input 42,250 / output 3,457). Adding a short
+synthetic Korean counterexample stops after two calls (one pass, then failure; input 21,846 / output
+2,463). Neither runs the independent probe or sequential worker. No results are reused across prompts.
+
+The next candidate adds a **v16-only normalization guard**. A character `also_called` with an exact bare
+person label on either side is stored as `pending`, with reason `bare person description is not a
+confirmed name`. It retains the source, raw reply and assertion; it cannot supply a canonical alias.
+The finite Korean/English set covers common age, occupation and kinship descriptions, including
+`영감`, `노인`, `선장님` and `old man`. It is included in the v16 prompt fingerprint, so changing the set
+also changes the generation. It does not change the shared resolver or parser, v15, named titles such
+as `최 선생`, full/given-name aliases, or the explicit `?description` path for an unnamed reveal.
+
+This is deliberately conservative: even an explicitly introduced nickname equal to one of those bare
+labels remains pending. The set is not a general semantic classifier or a guarantee against every
+misleading description. The model still judges other aliases, and all benchmark identity gates remain.
+
+The source SHA-256 is `8bf852f5da2046a02702269698e490df6c19816fd7b72b2879f7904bb94dd32b`, system SHA-256
+`3337acb354a483486275d77ffdb2077a6f02e571c06d6ed38b872dacf155ed35`. Scoped tests pass **48**.
+Six direct regressions fail on the old valid status. A real-worker regression reads back the retained
+pending row and raw reply, and the API's unambiguous full/name-title pair. Disabling only the label
+guard makes that regression fail at its pending-state assertion. Initial test-fixture errors (no closed
+turn, then treating the entities API's list as an object) are preserved separately and are not product
+failures. Fresh model and sequential checks are still required.
+
+The guard candidate's 15 actual-input checks pass, but its independent run stops at the first qualified
+title case in all three repeats: the model omits the alias, rather than the guard rejecting it. Total
+**60 calls, 57 passes**, input 444,003 / output 48,121 tokens. The 14 original cases still pass 42/42.
+This is a new omission, not a successful full correction.
+
+The current wording explicitly allows a **surname** as the personal-name part of an introduced title,
+and gives a short synthetic positive example with different names. It retains the exact bare-label
+guard. The title and two new descriptive-noun cases run first to detect a recurrence sooner; every
+case's input and expected result stay unchanged. All **66 independent samples** pass. The five actual
+inputs (30, 34, 43, 62 and 86), three results each, also pass. Turn 62's third reply has a trailing JSON
+comma; one separately retained same-input retry recovers it. Total **82 attempts / 81 passing results**,
+input **592,225 / output 65,920 tokens**, one format failure, one retry, no unresolved error. Turn 62
+checks syntax only; the remaining actual-input checks use the production normalizer.
+
+Current source SHA-256 `9d3b0ce54af9ab6c1037b83ee6615776f11faaebd613016d5f4eb40d00940956`, system SHA-256
+`1145964433355e3c7bbac40674338c357fe0417a21b080bacb0cea33bc215b5e`, generation
+`extract-230b25a783b8b118584cce55e8b52cc3`. Scoped tests pass **48** (7.28 s, two dependency warnings).
+A new S1 backfill starts at turn 0 with **240** planned calls and initially **3,756,085** estimated input
+tokens. The harness now checks the three observed bad aliases at their turns; the preserved failing
+rows fail those controls. Full tests after pushing and the sequential run remain pending; the fresh
+1,440-call comparison has not started. The scoped review checks the pending-row provenance, exact
+character-only matching, v15 isolation, generation fingerprint and unchanged resolver/reconciliation.
 
 Local evidence stays under `/home/grantkim725/nmos-eval/pr251/2026-10-03/`:
 `alias-fix-system-v1/`, `alias-fix-closing-v2/`, and `alias-fix-integrated-v3/` retain the distinct

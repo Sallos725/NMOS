@@ -244,6 +244,17 @@ ANSWER_ROLES = (_ANSWER_END[:-2]  # extract-v16's answer
 # calls them by part of the name keeps two entities (the read-side join found the pair in no assertion of the same
 # turn). The narration's own reference is the evidence; `alias_evidenced` still wants both names in the turn, and a
 # name linked to two others is ambiguous and joins neither (ADR 0012).
+# V16 parks these bare descriptions; a named title or a listed ?description is a different value.
+# Included in the v16 prompt below so changing the conservative set changes its generation.
+BARE_PERSON_LABELS = frozenset({
+    "영감", "영감님", "노인", "노인네", "할아버지", "할머니", "남자", "여자", "청년", "소년", "소녀",
+    "아버지", "어머니", "아빠", "엄마", "선장", "선장님", "사장", "사장님", "스승", "스승님", "제자",
+    "선생", "선생님", "조합장", "조합장님", "서기", "서기님", "원장", "원장님",
+    "old man", "old woman", "elder", "man", "woman", "boy", "girl", "mother", "father", "captain",
+    "boss", "master", "teacher", "student", "clerk",
+}) | frozenset("the " + label for label in (
+    "old man", "old woman", "elder", "man", "woman", "boy", "girl", "mother", "father", "captain",
+    "boss", "master", "teacher", "student", "clerk"))
 V15_ALIAS = """- `also_called` only when the TARGET turn itself gives both names for the same entity (e.g. "하나(Hana)"),
   or for an unnamed character it reveals (above).
 """
@@ -267,9 +278,13 @@ ALIAS_PARTS = """- `also_called` when the TARGET turn itself gives both names fo
   Use narration when the narrator shows the same person answering to both names; a character's claim
   alone stays a character_claim. Both forms must occur in the TARGET, with the short form on its own.
   Ordinary forms of address, teasing labels and bare job or relationship titles are not aliases, even if
-  only one person is mentioned. A title alias must contain a personal name and be explicitly introduced
+  only one person is mentioned. A title alias must contain a personal name or surname and be explicitly introduced
   as what that person is called, not merely used while addressing them. Use an existing alias spelling
   when the turn only adds an honorific. The alias subject is the person being named, not whoever speaks.
+  A narrator's descriptive common noun is not a name either: age, gender, kinship and occupation labels
+  such as old man/elder (노인, 영감), woman, mother or captain do not become aliases merely because
+  narration refers to the same person by both a name and that noun. A surname plus such a description
+  is still descriptive unless explicitly introduced as a name. Co-reference alone is not a nickname.
 """
 # Repeated at the end of v16's input, and included here so changing it changes the generation fingerprint.
 ALIAS_CHECK = ("Before answering, check for names the TARGET uses for the same character. For a pair not listed"
@@ -278,9 +293,17 @@ ALIAS_CHECK = ("Before answering, check for names the TARGET uses for the same c
                " `addresses` or an `event`. Quote the TARGET passage showing that identity. Do not join"
                " namesakes or infer a full name from CONTEXT alone. Casual or teasing forms of address, bare job"
                " titles and relationship terms belong in `addresses`, not aliases. A title alias needs a personal"
-               " name and an explicit introduction as a name; do not invent a new variant for an honorific."
-               " A speaker addressing someone else is not naming themselves. Use `same_names` only for listed pairs."
+               " name or surname and an explicit introduction as a name; do not invent a new variant for an honorific."
+               " A speaker addressing someone else is not naming themselves. Narration using a common noun for age,"
+               " gender, kinship or occupation (for example elder/old man: 영감, 노인) does not establish a nickname."
+               " A surname plus such a description also needs an explicit introduction as a name; merely referring"
+               " to the same person by both expressions is insufficient. Use `same_names` only for listed pairs."
                " Return valid JSON with no comma after the last member of an object or array.")
+ALIAS_CHECK += (" Bare person descriptions do not establish names, including in narration. An alias using one"
+                " of these exact bare labels is kept unconfirmed: " + ", ".join(sorted(BARE_PERSON_LABELS)) + "."
+                " This exact-label restriction does not exclude a longer surname-and-title name. For example,"
+                " if 전소연 is introduced as 전 원장 and narration shows her answering to 전 원장, include"
+                " also_called with subject 전소연 and value 전 원장. Record that name identity separately from addresses.")
 ALIAS_PARTS += "  " + ALIAS_CHECK + "\n"
 _ROLE_EXAMPLE = '  `role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").\n'  # the role rule follows it
 PROMPTS = {"extract-v15": SYSTEM_PROMPT,
@@ -996,6 +1019,10 @@ def normalize(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | No
             confidence = None
         scope, known_by, hidden_from, note = knowledge(item)
         polarity, modality, source, asserted_by, unclaimed = semantics(item)
+        if (status == "valid" and apart and item.get("predicate") == "also_called"
+                and item.get("subject_type") == "character"
+                and any(norm(item.get(k)) in BARE_PERSON_LABELS for k in ("subject", "value"))):
+            status, reason = "pending", "bare person description is not a confirmed name"
         if (status == "valid" and item.get("predicate") == "also_called"
                 and not alias_evidenced(item, turn_text, hints, apart)):
             status, reason = "pending", "alias not stated in the turn"

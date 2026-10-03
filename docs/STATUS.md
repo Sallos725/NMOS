@@ -104,8 +104,21 @@ casual addresses, distinguishes the person named from the speaker, and asks for 
 Related tests pass 60; bounded model verification passes 69/69 (60 independent samples plus nine fresh
 replies to the actual failed inputs; the three turn-62 replies check syntax only). Input 426,798 / output
 54,939 tokens, no errors or retries. Fresh sequential S1 restarts from turn 0 under its new generation.
+That candidate (`b3795df`) passes 951 full sidecar tests and 196 plugin tests/typecheck/build, but its worker
+stops after 63/240 when a narrated bare age label (`영감`) makes an existing name ambiguous. Input
+634,512 / output 69,971 tokens, no format errors or retries. Two further prompt-only candidates fail on
+the preserved input after four and two calls. A v16-only guard now retains an exact bare person-label
+alias as pending, preserving its raw reply and assertion. Its finite Korean/English set is fingerprinted
+with the new prompt; even a nickname identical to a listed bare label remains pending. Named titles and
+the `?description` reveal path still work. Scoped tests pass 48, including persistent worker/API readback
+and a mutation that disables the guard. New model and sequential verification are in progress.
+The first guard candidate misses the qualified title in all three independent repeats (57/60 total),
+so the prompt now explicitly allows an introduced surname-and-title name and gives a synthetic positive
+example. The new candidate passes 66 independent and 15 actual-input results: **82 attempts / 81 passes**,
+input 592,225 / output 65,920 tokens, one trailing-comma failure recovered by one same-input retry.
+Scoped tests pass 48; a fresh S1 backfill restarts at turn 0 (240 planned calls, input estimate 3,756,085).
 The 1,440-call comparison still waits. All stopped copies are preserved; no parser, resolver, default or
-Q5 gate changes.
+Q5 gate changes. Details and limitations: `docs/perf/extract-v16-alias-reminder.md`.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

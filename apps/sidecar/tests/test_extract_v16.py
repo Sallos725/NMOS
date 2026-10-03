@@ -63,6 +63,58 @@ def test_extract_v15_stays_the_default_with_its_key_and_prompt():
     assert "CURRENT ROLES" not in extraction.SYSTEM_PROMPT
 
 
+@pytest.mark.parametrize("label", ["영감", "선장님", "스승", "노인", "old man", "the captain"])
+def test_v16_parks_bare_person_descriptions_without_changing_v15(label):
+    item = {"subject": "최도경", "subject_type": CHAR, "predicate": "also_called", "value": label,
+            "modality": "actual", "source": "narration"}
+    target = f"최도경은 문을 열었다. {label}은 웃었다."
+    legacy, = extraction.normalize([item], target)
+    guarded, = extraction.normalize([item], target, apart=True)
+    assert legacy["status"] == "valid"
+    assert guarded["status"] == "pending"
+    assert guarded["reason"] == "bare person description is not a confirmed name"
+    assert guarded["subject"] == item["subject"] and guarded["value"] == label
+
+
+def test_bare_description_guard_preserves_personal_names_named_titles_and_unnamed_reveals():
+    for subject, value in (("최도경", "도경"), ("최도경", "최 선생"), ("최도경", "?노인")):
+        item = {"subject": subject, "subject_type": CHAR, "predicate": "also_called", "value": value,
+                "modality": "actual", "source": "narration"}
+        target = f"{subject}의 다른 이름은 {value}이다."
+        result, = extraction.normalize([item], target, apart=True)
+        assert result["status"] == "valid", result
+
+
+def test_worker_preserves_a_rejected_description_without_making_the_name_ambiguous(migrated):
+    chat = SimChat()
+    target = "최도경은 최 선생이라고도 불렸다. 노인은 안경을 고쳐 썼다."
+    chat.user(target)
+    chat.reply("방 안은 조용했다.")
+    filler(chat, 2)
+    items = [{"subject": "최도경", "subject_type": CHAR, "predicate": "also_called", "value": value,
+              "modality": "actual", "source": "narration", "evidence": target}
+             for value in ("최 선생", "노인")]
+
+    with make_client(migrated, llm_url="http://fake/v1", llm_model="fake", extract_compiler="extract-v16") as c:
+        sync(c, chat)
+        drain(migrated, lambda system, user: (
+            {"assertions": items if target in user.split("TARGET turn", 1)[-1] else []},
+            "preserved synthetic reply"))
+        with psycopg.connect(migrated, row_factory=dict_row) as conn:
+            conv = conn.execute("SELECT id FROM conversation").fetchone()["id"]
+            stored = conn.execute("SELECT value, status, reason FROM assertion WHERE predicate='also_called'").fetchall()
+            raw = conn.execute("SELECT x.raw FROM extraction x JOIN assertion a ON a.extraction_id=x.id "
+                               "WHERE a.predicate='also_called' AND a.value=%s LIMIT 1", ("노인",)).fetchone()["raw"]
+        response = c.get(f"/v1/conversations/{conv}/entities")
+        assert response.status_code == 200
+        body = response.json()
+    assert any(a["value"] == "노인" and a["status"] == "pending" for a in stored)
+    assert any(a["value"] == "최 선생" and a["status"] == "valid" for a in stored)
+    assert "preserved synthetic reply" in str(raw)
+    assert not any("노인" in e["names"] for e in body)
+    assert any(set(e["names"]) == {"최도경", "최 선생"} for e in body)
+
+
 def test_extract_v16_is_its_own_generation_by_compiler_and_prompt_only():
     v15, v16 = extraction.extractor(SETTINGS).spec, extraction.extractor(V16).spec
     assert v16["compiler"] == "extract-v16"
