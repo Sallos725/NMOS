@@ -466,3 +466,31 @@ in [the experiment record](../proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md#meas
 
 The fourteen approved calls are complete. Next is an owner decision on a different role-ending design;
 no implementation or additional paid run follows automatically. NMO-24 remains open and blocks NMO-7.
+
+## Follow-up preparation: rules and preceding context (2026-10-03)
+
+The owner deferred v2 adoption and proposed keeping the termination rules and recent CONTEXT while
+excluding other hint registries. The fourteen paired v3 requests were prepared with zero model calls;
+ROLE/TARGET/gold/order are unchanged. The explicit turn-73 continuity is retained past the old
+1,000-character context prefix. Input estimate 82,334, stop budget 90,568; the owner subsequently approved execution.
+The offline sentence-LATER replay adds no rejection among located wrong quotes, retains all 31 historical
+normal observations, leaves one v2 approximate quote unresolved, and exposes an authored false-withholding
+case. No production guard changes. Full prompt, evidence-quality rubric, causality limits and source hashes:
+[v3 proposal](../proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md#version-3-proposal-restore-termination-rules-and-two-preceding-turns).
+
+## Measured v3: correct labels, incomplete evidence (2026-10-03, 20:12 KST)
+
+The owner-approved fourteen calls complete with **14/14 correct yes/no labels**, compared with 11/14
+in v2. Wrong accepts fall **3/6 → 0/6** (86, 74, 99); normal acceptance stays **8/8**, normal pending **0/8**.
+Four no replies have empty evidence (88, 74, 99, and the former-home authored control), so valid no stays
+**2/6** and the unchanged full grader stays **10/14**. All cases finish before exit 2; no retry or technical
+failure occurs. The bounded decision bar passes, but the required supporting-evidence contract does not.
+Separate unblinded review records 6 supporting, 4 uncertain-completion and 4 missing quotes; it does not
+change frozen gold or claim independent human validation. Full case outcomes and usage are in the
+[v3 result](../proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md#measured-v3-comparison-2026-10-03-2012-kst).
+
+Actual input **49,165** / output **402**, elapsed **14.609 s**. Both raw artifacts and zero-call verification
+are retained in `/home/grantkim725/nmos-eval/pr251/2026-10-03/role-confirmation-v3-results/`.
+All fourteen ROLE/TARGET/gold/order pairs match v2; rules and context change together, so causality is
+not isolated. Next: resolve the no-evidence and completed-ending evidence contracts before adoption.
+No worker, generation or default change; sequential, full-comparison and live gates remain unverified.

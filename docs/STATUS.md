@@ -163,8 +163,21 @@ entailment. **The pilot bar is missed.** Input **15,588** / output **501** token
 the exit code is 2 after all cases, not an early technical stop. The unexecuted 21-call plan remains superseded.
 Six preserved sequential runs supply observed call counts; the new pilot usage calibrates explicitly
 projected per-240 token costs. Spec, results and evidence: `docs/proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md`.
-Next: owner decision on a different role-ending design; this unchanged verifier is not supported for
-adoption. A second worker call and pending-role review flow still require a separate ADR/phase decision.
+The owner proposed restoring the existing role-ending rules and recent CONTEXT while excluding other
+hint registries. V3 was prepared with the same 14 ROLE/TARGET pairs and full preserved preceding two turns
+(the detailed turn-73 continuity exceeds the old 1,000-character context prefix), then approved separately.
+All **14 calls complete at 20:12 KST**: decision labels **14/14**, wrong accepts **0/6** (v2: 3/6), normal
+acceptance **8/8** and normal pending **0/8**. Valid no remains **2/6** because four no replies have empty
+evidence (88, 74, 99 and the authored former-home control). The frozen grader stays **10/14**; all cases
+run before exit 2. Separate evidence review marks four accepted resignation quotes as uncertain about
+completion timing. Input **49,165** / output **402**, elapsed **14.609 s**, no errors or retries; request,
+source and paired ROLE/TARGET hashes verify. The bounded decision bar passes; the evidence contract does not.
+An offline sentence-LATER replay blocks no additional located wrong ending, including turn 86; one v2
+quote cannot be located exactly, and a declared synthetic control exposes false withholding. Keep the
+original guard for primary scoring and separately grade quote support/weakness/uncertainty. V3 supports
+the revised direction on this sample without establishing causality or sequential correctness. Next:
+decide the no-response evidence contract and confirmed-ending evidence standard before adoption.
+A second worker call and pending-role flow still need a separate ADR/phase decision.
 First-connection, full-comparison and live gates remain open; NMO-24 still blocks
 NMO-7. No default or generation change follows from recording these results.
 
