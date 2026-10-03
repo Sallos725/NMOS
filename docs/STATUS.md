@@ -249,6 +249,12 @@ run, each counted; a new kind still stops, PHASE-28). And S1 turn 182 is fixed f
 no longer makes its full name ambiguous (ADR 0012 amendment), so 윤하람 / 하람 / 람이 are one person and 237's wrong
 alias leaves only 람이 ambiguous; extract-v15 resolves as before. Accepted cost: one wrong alias beside a full name's
 part now joins. The next fresh S1 is the owner's (run by Codex) with an identity gate of 3/3.
+Codex's S1 on `c0b0a5b` (2026-10-04, `docs/perf/extract-v16-c0b0a5b-sequential.md`) stopped at turn 233 (a
+resignation called `planned`, its reverse left out) with names 2/3 (turn 200's `윤하람 → 도도`, NMO-35); its retry
+stopped at turn 117 on the experiment's 4,096-token output cap. Owner decisions (2026-10-04): an ending marked planned,
+and the reverse of an ending, are asked of the confirmation and held for the owner on a yes, never applied (PHASE-28
+Q7 amendment, ADR 0064 item 4); the next S1's experimental output cap is **8,192** tokens per main call (production
+sends none), recorded as a changed condition. More confirmation calls than the earlier 32-call ceiling assumed.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

@@ -943,7 +943,14 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
     `role_toward` the model wrote itself between the two parties of a listed role is dropped: the listed ending is the
     one way to close it, and a free one in other words would stand beside the role as a fact of its own.
     The counterpart must be named in the shown TARGET (not necessarily in the quote); hints alone cannot establish
-    that a scene about another employer ends this arrangement. A pronoun-only mention can leave a stale role."""
+    that a scene about another employer ends this arrangement. A pronoun-only mention can leave a stale role.
+
+    Two doubts are asked of the confirmation, never applied (PHASE-28 Q7, the owner's S1 of c0b0a5b, turn 233: a
+    resignation called `planned`, its reverse role left out, both stayed current): an ending the model calls not yet
+    over, when its quote passes every other check and places nothing later; and the reverse of an ending (the listed
+    role between the same two the other way round, listed from the same turn: navigator → captain for captain →
+    navigator). Each is written held (`held`, a pending row) with `doubt` set; `confirm_endings` keeps it held when
+    the confirmation says it ended, so the owner sees it, and drops it otherwise."""
     pairs = {(norm(r["by"]), norm(r["to"])) for r in roles}
     kept = [a for a in items if not (isinstance(a, dict) and a.get("predicate") == "role_toward"
                                      and str(a.get("polarity") or "").strip().lower() == "negative"
@@ -952,14 +959,13 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
     if not roles or not isinstance(entries, list):
         return kept
     done: set[int] = set()
+    entries = sorted((e for e in entries if isinstance(e, dict)),  # an ending over now wins over a doubt of the same
+                     key=lambda e: str(e.get("when") or "").strip().lower() != "now")
     for entry in entries:
-        if not isinstance(entry, dict):
-            continue
         ref = str(entry.get("role") or "").strip().upper().lstrip("R")
         if not ref.isdigit() or not 1 <= int(ref) <= len(roles) or int(ref) in done:
             continue
-        if str(entry.get("when") or "").strip().lower() != "now":
-            continue
+        now = str(entry.get("when") or "").strip().lower() == "now"
         evidence = quoted_in(str(entry.get("evidence") or "").strip()[:300], turn_text)
         if evidence is None or LATER.search(evidence):
             continue
@@ -967,11 +973,29 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
         if not role_party_named(listed, turn_text, hints, persona):
             continue
         done.add(int(ref))
-        kept.append({"subject": listed["by"], "subject_type": "character", "predicate": "role_toward",
-                     "object": listed["to"], "object_type": "character", "value": listed["role"], "polarity": "negative",
-                     "modality": "actual", "source": "narration", "evidence": evidence, "knowledge": "public",
-                     "epistemic": "stated", "listed": listed})
+        kept.append(_ending(listed, evidence, None if now else DOUBT_PLANNED))
+    ended = [a for a in kept if isinstance(a, dict) and a.get("listed") is not None]
+    for a in ended:
+        by, to = norm(a["listed"]["by"]), norm(a["listed"]["to"])
+        for i, other in enumerate(roles, 1):
+            if (i not in done and (norm(other["by"]), norm(other["to"])) == (to, by)
+                    and other.get("turn") == a["listed"].get("turn")):
+                done.add(i)
+                kept.append(_ending(other, a["evidence"], DOUBT_REVERSE))
     return kept
+
+
+DOUBT_PLANNED = "marked planned"  # the extraction called the ending not yet over
+DOUBT_REVERSE = "reverse of an ending"  # the other way round of a role the extraction ended
+DOUBTS = (DOUBT_PLANNED, DOUBT_REVERSE)
+
+
+def _ending(listed: dict[str, Any], evidence: str, doubt: str | None) -> dict[str, Any]:
+    """A listed role's ending as `ended_roles` writes it: held, with its doubt, when the extraction did not end it now."""
+    return {"subject": listed["by"], "subject_type": "character", "predicate": "role_toward", "object": listed["to"],
+            "object_type": "character", "value": listed["role"], "polarity": "negative", "modality": "actual",
+            "source": "narration", "evidence": evidence, "knowledge": "public", "epistemic": "stated",
+            "listed": listed, **({"doubt": doubt, "held": f"{HELD}: {doubt}"} if doubt else {})}
 
 
 # extract-v16 (ADR 0064 item 4, PHASE-28 Q1): a listed role's ending the extraction gives, past `ended_roles`' checks, is
@@ -1050,9 +1074,13 @@ def confirm_endings(complete: Callable[[str, str], tuple[Any, ...]], items: list
     keeps what came back, whole, and its usage (counted, with tokens only as reported); any other failure keeps its
     error and no usage, since it is not known that a call was made. Returns a record of each confirmation (kept with
     the extraction's raw reply: the role, the first answer's quote, the outcome, the confirmation's answer, its whole
-    reply, quote, usage and error) and their usage summed, None when no usage is known."""
+    reply, quote, usage and error) and their usage summed, None when no usage is known.
+
+    A doubt (`ended_roles`: an ending marked planned, or the reverse of one) is never applied: a yes keeps it held, as
+    "<doubt>, confirmation says ended", for the owner (PHASE-28 Q7); anything else removes it from `items`."""
     record: list[dict[str, Any]] = []
     usage: dict[str, Any] | None = None
+    dropped: list[int] = []
     for item in items:
         if not (isinstance(item, dict) and item.get("listed") is not None):
             continue
@@ -1067,15 +1095,22 @@ def confirm_endings(complete: Callable[[str, str], tuple[Any, ...]], items: list
             outcome, quote = f"call failed: {type(exc).__name__}", None
         else:
             outcome, quote = confirmed(answer, turn_text)
-        if quote is None:
+        if item.get("doubt"):
+            if quote is None:
+                dropped.append(id(item))
+            else:
+                item["held"] = f"{HELD}: {item['doubt']}, confirmation says ended"
+        elif quote is None:
             item["held"] = f"{HELD}: {outcome}"
         record.append({"role": item["listed"], "ending": item.get("evidence"), "outcome": outcome, "quote": quote,
-                       "answer": answer, "reply": raw, "usage": used, **({"error": error} if error else {})})
+                       "answer": answer, "reply": raw, "usage": used, **({"doubt": item["doubt"]} if item.get("doubt") else {}),
+                       **({"error": error} if error else {})})
         if used is not None:
             usage = usage or {}
             for key, value in used.items():
                 if isinstance(value, int) and not isinstance(value, bool):
                     usage[key] = usage.get(key, 0) + value
+    items[:] = [a for a in items if id(a) not in dropped]
     return record, usage
 
 
@@ -1289,7 +1324,8 @@ def extractor(settings: Settings) -> Generation | None:
     return generations.make(
         "extract", settings.llm_url, settings.llm_model,
         compiler=compiler, prompt=generations.fingerprint(prompt_of(compiler)),
-        **({"confirm": generations.fingerprint(ROLE_CONFIRM_SYSTEM + str(CONFIRM_TURNS))} if compiler in CONFIRMS else {}),
+        **({"confirm": generations.fingerprint(ROLE_CONFIRM_SYSTEM + str(CONFIRM_TURNS) + "|".join(DOUBTS))}
+           if compiler in CONFIRMS else {}),
         **({"aliases": generations.fingerprint(ALIASES_PRESENT)} if compiler in PARTS_APART else {}),
         predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.NORMALIZER_VERSION,
         json_mode=settings.llm_json_mode, temperature=0, unit="turn", context_turns=settings.extract_turns,

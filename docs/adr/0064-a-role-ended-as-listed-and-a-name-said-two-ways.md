@@ -267,6 +267,15 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
      (ADR 0044), so a rebuild or a new generation keeps the choice. Read only, off the request path
      (`endings.automatic`, `endings.held`); no new repair kind, no migration. An applied ending older than the window
      leaves the list and can still be retracted from the facts list.
+     *Amended 2026-10-04 (owner, S1 of `c0b0a5b`, turn 233):* the navigator's resignation came back `when: planned`
+     with a passage of the TARGET, and the captain's reverse role was not named; both stayed current and nothing was
+     listed. Two **doubts** are now asked of the confirmation (`ended_roles` → `confirm_endings`): an ending marked
+     planned whose quote passes `quoted_in`, `LATER` and the counterpart check, and the reverse of any ending (a
+     listed role between the same two the other way round, listed from the same turn). A doubt is written held from
+     the start, so it is never a fact even without a confirmation; a yes keeps it held as "<doubt>, confirmation says
+     ended" and the Inspector lists it for the owner's restore; a no, an invalid answer or a failed call drops it
+     (the confirmation record stays in the raw reply). An ending over now still wins over a doubt of the same role.
+     The doubts are in the confirmation's fingerprint (`DOUBTS`): a new generation.
    - **Usage.** The extraction's usage sums its confirmations at the top level (what the usage report counts) and
      keeps theirs apart under `confirm`. A call made counts once; its tokens only as the provider reported them,
      none for a call that got no response.
