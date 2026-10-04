@@ -7,6 +7,7 @@ from psycopg.rows import dict_row
 
 from conftest import make_client
 from nmos_sidecar import extraction
+from nmos_sidecar.extraction import claim
 from nmos_sidecar.worker import run_once
 from simchat import SimChat
 from test_extraction import fake_complete, filler, jobs_for
@@ -126,3 +127,23 @@ def test_the_first_sight_lane_sits_between_live_work_and_a_generations_backfill(
     assert extraction.LIVE_PRIORITY < extraction.FIRST_PRIORITY < extraction.RECENT_PRIORITY < extraction.HISTORY_PRIORITY
     from nmos_sidecar import canonfacts, summaries, vectors
     assert extraction.FIRST_PRIORITY not in (canonfacts.PRIORITY, vectors.RECENT_PRIORITY, summaries.LIVE_PRIORITY)
+
+
+def test_a_first_sight_turn_waiting_for_a_retry_holds_the_turns_after_it(migrated, db):
+    """Copilot on #260: a retried job waits with `run_after` in the future; the turns after it must not go meanwhile,
+    or they miss its hints. Only a dead job lets them go."""
+    chat = SimChat()
+    filler(chat, 3)
+    chat.user("next")
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+    with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+        handled = {"extract": jobs_for(conn)["extract"][0]}
+        first = claim(conn, handled)
+        extraction.fail(conn, first, "HTTP 429")  # queued again, a retry later
+        assert claim(conn, handled) is None  # turns 1 and 2 wait
+        conn.execute("UPDATE job SET run_after = now() WHERE id = %s", (first["id"],))
+        assert claim(conn, handled)["id"] == first["id"]  # the retry goes first
+        extraction.fail(conn, first | {"attempts": extraction.MAX_ATTEMPTS}, "HTTP 429")  # dead
+        nxt = claim(conn, handled)
+        assert nxt is not None and nxt["id"] > first["id"]

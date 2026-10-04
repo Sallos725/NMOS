@@ -438,7 +438,8 @@ def claim(conn: psycopg.Connection, handled: dict[str, str]) -> dict[str, Any] |
     and the other lists then come from turns this generation already extracted, so what a later turn resolves still
     names them (PHASE-10, ADR 0033); newest first, a first sight's lists were empty. The newest turns are the ones the
     host prompt still carries, and their messages are embedded first. Other work below RECENT_PRIORITY (live turns,
-    embeddings, canon facts) runs newest first."""
+    embeddings, canon facts) runs newest first. A first-sight job waits while an earlier one of its chat and generation
+    waits for a retry: only a dead job lets the turns after it go (PHASE-30 Q2)."""
     with conn.transaction():
         conn.execute(
             "UPDATE job SET status = 'queued', locked_at = NULL, updated_at = now()"
@@ -447,13 +448,19 @@ def claim(conn: psycopg.Connection, handled: dict[str, str]) -> dict[str, Any] |
         return conn.execute(
             """
             UPDATE job SET status = 'running', locked_at = now(), attempts = attempts + 1, updated_at = now()
-            WHERE id = (SELECT id FROM job WHERE status = 'queued' AND run_after <= now()
-                          AND kind || '|' || coalesce(payload->>'generation', '') = ANY(%s)
-                        ORDER BY priority, CASE WHEN priority >= %s OR priority = %s THEN id ELSE -id END
+            WHERE id = (SELECT j.id FROM job j WHERE j.status = 'queued' AND j.run_after <= now()
+                          AND j.kind || '|' || coalesce(j.payload->>'generation', '') = ANY(%(handled)s)
+                          AND NOT (j.priority = %(first)s AND EXISTS (
+                              SELECT 1 FROM job e WHERE e.kind = j.kind AND e.conversation_id = j.conversation_id
+                                AND e.priority = %(first)s AND e.status = 'queued' AND e.id < j.id
+                                AND e.run_after > now() AND e.payload->>'generation' = j.payload->>'generation'))
+                        ORDER BY j.priority, CASE WHEN j.priority >= %(recent)s OR j.priority = %(first)s
+                                                  THEN j.id ELSE -j.id END
                         FOR UPDATE SKIP LOCKED LIMIT 1)
             RETURNING *
             """,
-            ([f"{kind}|{key}" for kind, key in handled.items()], RECENT_PRIORITY, FIRST_PRIORITY),
+            {"handled": [f"{kind}|{key}" for kind, key in handled.items()], "recent": RECENT_PRIORITY,
+             "first": FIRST_PRIORITY},
         ).fetchone()
 
 

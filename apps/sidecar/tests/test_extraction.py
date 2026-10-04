@@ -291,13 +291,18 @@ def test_an_item_has_one_current_holder_and_keeps_its_history(llm_client, migrat
 
 def test_an_unexpected_job_error_fails_the_job_and_the_worker_goes_on(llm_client, migrated, db):
     """A handler bug or odd provider reply (e.g. TypeError) used to escape `run_once` and end the worker
-    thread while the process lived on (audit A-04). It must fail that job and leave the rest claimable."""
+    thread while the process lived on (audit A-04). It must fail that job and leave the rest claimable. Live turns:
+    a first sight's later turns wait for an earlier one's retry by design (PHASE-30 Q2)."""
     chat = SimChat()
     chat.user("Akari is in the old chapel.")
     chat.reply("ok")
+    chat.user("first")
+    sync(llm_client, chat)
+    drain(migrated)
+    seen = chat.complete_turns()
     filler(chat, 2)
     sync(llm_client, chat)
-    total = chat.complete_turns()
+    total = chat.complete_turns() - seen
     calls = {"n": 0}
 
     def flaky(system: str, user: str) -> tuple[dict, str]:
@@ -309,7 +314,7 @@ def test_an_unexpected_job_error_fails_the_job_and_the_worker_goes_on(llm_client
     assert drain(migrated, flaky) == total  # every job was handled, none stopped the loop
     rows = db.execute("SELECT status, last_error FROM job ORDER BY last_error NULLS LAST").fetchall()
     assert rows[0]["status"] == "queued" and "TypeError" in rows[0]["last_error"]  # retried later (backoff)
-    assert [r["status"] for r in rows[1:]] == ["done"] * (total - 1)
+    assert [r["status"] for r in rows[1:]] == ["done"] * (seen + total - 1)
 
 
 def test_a_malformed_assertions_field_is_not_a_compiled_turn(llm_client, migrated, db):

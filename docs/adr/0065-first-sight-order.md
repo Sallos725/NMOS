@@ -23,12 +23,14 @@ extraction runs, so extracting them first served little.
 2. **A live turn waits behind its chat's first-sight window** (Q2). While the chat has an extract job of the same
    generation at `FIRST_PRIORITY` queued or running (`first_sight_pending`), a newly eligible turn is queued at
    `FIRST_PRIORITY` too, so it is claimed after every earlier turn; otherwise at `LIVE_PRIORITY` (100), newest first, as
-   before. A dead job holds nothing. A held turn holds the turns after it the same way, so the chat drains in order.
+   before. A dead job holds nothing; a job waiting for a retry holds the chat's later first-sight jobs in `claim` (added
+   on the review of #260). A held turn holds the turns after it the same way, so the chat drains in order.
    Each turn is extracted once.
 3. **Embedding keeps its priorities** (150 on a first sight, 50 live) and order; it no longer derives them from the
    extraction's.
-4. **Concurrency is unchanged** (Q3): with two workers, two neighbouring turns can run at once and the later one misses
-   what the earlier established, as in a generation's backfill.
+4. **Concurrency is unchanged** (Q3): with two workers, a turn can be extracted while an earlier one is still running and
+   miss what it establishes; a slow turn can leave several later turns without it. A generation's backfill has the same
+   gap.
 
 ## Consequences
 

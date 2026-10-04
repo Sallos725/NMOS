@@ -2,7 +2,7 @@
 
 **Passed: role scenes 7/7, names 3/3 at turn 239, no false join, no technical error.** The newest-first first
 connection on PHASE-28 Q5 (c) scored 4/7 and 1/3 (`extract-v16-q5c-s1.md`). Measured on `1388ea2` (#260; the product
-code is the same at the PR's head, which changes only tests and docs after it), generation
+code at the PR's head adds only Copilot's retry hold in `claim`, which this run never exercised: no call failed), generation
 `extract-409d69e00030e6052c6125fa4520d5db` (`extract-v16` as merged in #251), owner-approved (budget $1). Not a release
 or default-switch verdict; `extract-v15` remains the default.
 

@@ -427,7 +427,8 @@ chat's open secrets as extraction lists them (ADR 0033). A generation's backfill
 run oldest turn first; until Phase 30 a chat NMOS saw for the first time was extracted newest first, so a turn
 that reveals a secret could be extracted before the turn that made it, and the reveal matched nothing. Since Phase 30
 (ADR 0065) the first-sight window is extracted oldest first too. It can still happen in a chat first connected by an
-earlier release, between two neighbouring turns two workers extract at once, and for a secret made before the window
+earlier release, for turns extracted while the turn holding the secret was still running (two workers), and for a
+secret made before the window
 (its turn moves to the generation only with "Extract all history", after the window). In play, turns are extracted
 one at a time and this does not happen. Found by the Phase 10 evaluation (a synthetic case extracted all at once).
 *Workaround:* after connecting an existing chat that has secrets, run **Extract
