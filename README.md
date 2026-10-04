@@ -384,7 +384,8 @@ The inspector's Current state section shows this same example while no state has
 
 ## What gets injected
 
-A system message right before your latest message, marked as reference data (not instructions):
+A system message right before your latest message (at the very end of the prompt with the plugin argument
+`inject_position=end`), marked as reference data (not instructions):
 
 ```xml
 <NarrativeMemory version="0" source="nmos">

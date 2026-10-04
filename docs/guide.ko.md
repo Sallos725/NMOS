@@ -317,8 +317,8 @@ docker compose up -d
 ## (선택) 환경 변수로 기본값 지정
 
 모델과 검색 설정은 NMOS 화면에서 바꾸면 됩니다. 환경 변수는 기본값을 정하고(화면 없이 돌리는 설치에 유용), 화면에
-없는 값(동시 작업 수, 포트 등)도 여기서 정합니다. `docker-compose.yml` 옆(Docker 없이 쓰면 NMOS 옆)에 `.env` 파일을
-만들고 다시 시작하세요(Docker는 `docker compose up -d`):
+없는 값(동시 작업 수, 포트 등)도 여기서 정합니다. `docker-compose.yml` 옆(Docker 없이 쓰면 Windows·Linux는 NMOS 옆, macOS는
+`~/Library/Application Support/NMOS/`)에 `.env` 파일을 만들고 다시 시작하세요(Docker는 `docker compose up -d`):
 
 ```bash
 # 같은 PC의 Ollama 예시
@@ -393,7 +393,8 @@ MP: 30/30
 
 ## 무엇이 주입되나
 
-최근 메시지 바로 앞에 시스템 메시지 하나로 들어가고, 지시가 아니라 참고 자료라고 표시됩니다:
+기본값에서는 최근 메시지 바로 앞에 시스템 메시지 하나로 들어가고(플러그인 인자 `inject_position=end`면 프롬프트 맨 끝),
+지시가 아니라 참고 자료라고 표시됩니다:
 
 ```xml
 <NarrativeMemory version="0" source="nmos">
