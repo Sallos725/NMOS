@@ -42,8 +42,36 @@ def chat_headers(api_key: str) -> dict[str, str]:
         raise LLMError(str(exc)) from None
 
 
+_CLOSING = re.compile(r"\s*[\]}]")
+
+
+def without_trailing_commas(text: str) -> str:
+    """`text` without a comma that ends a list or an object (`[1, 2,]`, `{"a": 1,}`): one right after a value and
+    before `]` or `}`, outside strings. Nothing else changes: a missing, leading or doubled comma stays an error."""
+    out: list[str] = []
+    in_string = escaped = False
+    last = ""  # the last character outside whitespace, a string's closing quote included
+    for i, ch in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+                last = ch
+        elif ch == '"':
+            in_string = True
+        elif ch == "," and (last in ('"', "]", "}") or last.isalnum()) and _CLOSING.match(text, i + 1):
+            continue
+        elif not ch.isspace():
+            last = ch
+        out.append(ch)
+    return "".join(out)
+
+
 def parse_json_object(text: str) -> dict[str, Any]:
-    """Parse the first JSON object in a model reply (tolerates code fences and prose)."""
+    """Parse the first JSON object in a model reply (tolerates code fences, prose and trailing commas)."""
     cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.MULTILINE)
     cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL).strip()
     try:
@@ -55,7 +83,12 @@ def parse_json_object(text: str) -> dict[str, Any]:
         try:
             value = json.loads(cleaned[start: end + 1])
         except json.JSONDecodeError as exc:
-            raise LLMError(f"invalid JSON in model reply: {exc}") from None
+            # S1 turn 62 (2026-10-04): the same trailing comma on every attempt at temperature 0, so a retry never
+            # passed it. Tried only after the strict parse failed: a valid reply parses exactly as before.
+            try:
+                value = json.loads(without_trailing_commas(cleaned[start: end + 1]))
+            except json.JSONDecodeError:
+                raise LLMError(f"invalid JSON in model reply: {exc}") from None
     if not isinstance(value, dict):
         raise LLMError("model reply is not a JSON object")
     return value
