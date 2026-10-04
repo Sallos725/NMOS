@@ -51,7 +51,7 @@ PREDICATES = frozenset({"located_in", "has_status", "identity", "has_trait", "re
 PART_CHARS = 6000  # normalized characters per model call, as a turn's target (extraction.TARGET_CHARS)
 MAX_PARTS = 4  # a longer text is read in its first 24,000 characters; the rest is recorded as not read
 MIN_CHARS = 12
-PRIORITY = 150  # after live turns (100), before a first sight's backfill (200)
+PRIORITY = 150  # after live turns (100), before a first sight's window (210)
 POSITION_BASE = -1_000_000  # canon rows sort before every message (positions start at 0)
 
 PROMPT = """You extract durable facts for the long-term memory of a role-play chat from its CANON: a text the chat is

@@ -32,9 +32,10 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-29.md` is the latest, approved
-   2026-10-04, a correction phase under §7 item 5 built on Phase 28's `extract-v16`, step 2 in review (#251); `PHASE-28.md`, approved
-   2026-10-03, is in step 2, in review on the same PR; `PHASE-27.md` was
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-30.md` is the latest, approved
+   2026-10-04, a correction phase under §7 item 5 (the first-sight extraction order), step 2 in review (#260);
+   `PHASE-29.md`, approved 2026-10-04, built on Phase 28's `extract-v16`, and `PHASE-28.md`, approved 2026-10-03,
+   both had step 2 merged in #251; `PHASE-27.md` was
    complete 2026-10-02, run beside Phase 23 as Phases 24 and 25 were; `PHASE-26.md` was stopped before it merged;
    Phase 23 is complete after the owner's Windows and Mac checks (2026-10-02); `PHASE-0.md`…`PHASE-25.md` and
    `PHASE-27.md` still define the behavior they introduced).
@@ -92,9 +93,10 @@ If two normative documents appear to conflict:
 | 25 — `extract-v15`: a role between two people, its own fact (`role_toward`; AGE-27 under AGE-24; a correction found by measurement, not a roadmap stage) | complete (2026-10-01), not released; the paid run's output tokens 43 % above the estimate (owner accepted) | `PHASE-25.md`, ADR 0059 |
 | 26 — a repair whose item is gone suggests where it belongs now (Stage 6, AGE-23; an exception to R7 granted by the owner) | stopped (2026-10-01) after step 2, not merged: no repaired error came back on the copy, so Stage 6's criterion was reworded instead | `PHASE-26.md` |
 | 27 — the excerpt lands on the answer: a vector hit's span, and room for an explanation (`packet-v11`; under AGE-24, from the diagnosis of draft PR #241; a correction found by measurement, not a roadmap stage) | complete (2026-10-02), not released; Q1b decided for the keywords anchor and Q5's size bound made one-sided by the owner on the measurement (`docs/perf/answer-span.md`); `packet-v11` the default | `PHASE-27.md`, ADR 0063 |
-| 28 — a role that ends, and a name said two ways: `extract-v16`'s `CURRENT ROLES` and an alias of a name and its part (under AGE-24, from the owner's live run on `e13dee7`; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-03); step 2 in review (#251: behind `NMOS_EXTRACT_COMPILER`, off by default; ADR 0064 proposed; the read-side name join measured and withdrawn) | `PHASE-28.md` |
-| 29 — whose name is it: a confirmation for an alias whose two names are both in the turn (NMO-35 under AGE-24; a correction found by measurement on Phase 28's S1 runs, not a roadmap stage) | **approved** (2026-10-04); step 2 in review (#251: inside `extract-v16`, off by default; ADR 0064 amendments) | `PHASE-29.md` |
-| 30+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
+| 28 — a role that ends, and a name said two ways: `extract-v16`'s `CURRENT ROLES` and an alias of a name and its part (under AGE-24, from the owner's live run on `e13dee7`; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-03); step 2 merged (#251: behind `NMOS_EXTRACT_COMPILER`, off by default; ADR 0064 proposed; the read-side name join measured and withdrawn) | `PHASE-28.md` |
+| 29 — whose name is it: a confirmation for an alias whose two names are both in the turn (NMO-35 under AGE-24; a correction found by measurement on Phase 28's S1 runs, not a roadmap stage) | **approved** (2026-10-04); step 2 merged (#251: inside `extract-v16`, off by default; ADR 0064 amendments) | `PHASE-29.md` |
+| 30 — a chat seen for the first time is extracted in story order: the first-sight window oldest first, live turns behind it (NMO-36 under AGE-24; a correction found by measurement on Phase 28's S1 runs, not a roadmap stage) | **approved** (2026-10-04); step 2 in review (#260: every generation, no key or prompt change; ADR 0065, D74) | `PHASE-30.md` |
+| 31+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
 ADR 0006/0007, `docs/perf/scale.md`).

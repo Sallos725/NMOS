@@ -344,7 +344,8 @@ same paid `extract-v16` run measures. The option, its setting and its tool flags
   first-sight work runs newest first (`extraction.claim`), so a turn that ends a role can be extracted before the turn
   that set it up and then lists nothing: the role stays current. A generation's backfill runs oldest first, so an
   existing chat switched to `extract-v16` lists in story order. `OPEN PROMISES` has the same limit. Pinned in
-  `test_extract_v16.py`; PHASE-28 Q5 (c) measures first connection and backfill apart.
+  `test_extract_v16.py`; PHASE-28 Q5 (c) measures first connection and backfill apart. *Removed by ADR 0065
+  (Phase 30): a first sight's window is now extracted oldest first, and the pin expects the ending.*
 - The alias rule asks the model to judge identity from the narration. A wrong alias joins two characters' facts and
   knowledge marks; the turn check, the ambiguity rule and the owner's split (ADR 0044) are the guards, and the Q5 (c)
   evaluation counts every alias the model gives. It covers names in Latin script as well.

@@ -3,7 +3,7 @@
 ## Current phase
 
 **Phase 28 — A role that ends, and a name said two ways: approved 2026-10-03, current as a correction phase (AGENTS
-§7 item 5); step 2 in review (#251).** Spec `docs/phases/PHASE-28.md` (under AGE-24; a correction found by measurement, not a
+§7 item 5); step 2 merged (#251, 2026-10-04).** Spec `docs/phases/PHASE-28.md` (under AGE-24; a correction found by measurement, not a
 roadmap stage). The owner's live run on `e13dee7` met the real-chat target (S0main full-history memory cases 8/10,
 10/10, 8/10) but not the combined no-regression gate (S1 final 21/25 → 19/25, S2 full history 22/25 → 20/25, S3
 6/6 → 5/6, S4b 3/3 → 2/3 against the historical lane; single runs, aggregates only, the result files stay with the
@@ -16,7 +16,7 @@ the owner (per-defect replays, an `extract-v16` comparison after an approved est
 each, medians and every run). Excerpt and ranking changes wait for that re-measurement. **High risk (AGENTS.md
 §14)**: identity and provenance, current versus historical state, extraction generations, knowledge boundaries,
 replay.
-Step 1 the spec (#250). **Step 2 (#251, in review), off by default** — ADR 0064 (proposed), D73; `extract-v16`
+Step 1 the spec (#250). **Step 2 (#251, merged 2026-10-04), off by default** — ADR 0064 (proposed), D73; `extract-v16`
 (`NMOS_EXTRACT_COMPILER`; `extract-v15`'s key pinned unchanged): CURRENT ROLES and the alias of a name and its part
 (the part checked on its own in the turn); `tools/eval_extract_sample.py --compiler`; deterministic cases in
 `test_extract_v16.py`, the first-connection limit pinned. The first answer to Q4, a read-side join
@@ -297,8 +297,8 @@ On that generation (`6e4ca05`, `docs/perf/extract-v16-6e4ca05-sequential.md`): r
 none of its 240 turns (zero calls), and a fresh sequential S1 passes again: names 3/3, roles 7/7, no wrong ending, no
 false join ($0.51).
 
-**Phase 29 — Whose name is it: approved 2026-10-04, current as a correction phase (AGENTS §7 item 5); step 2 in
-review, inside `extract-v16` on #251 (above).** Spec `docs/phases/PHASE-29.md` (NMO-35 under AGE-24). Phase 28's S1 runs fail the
+**Phase 29 — Whose name is it: approved 2026-10-04, current as a correction phase (AGENTS §7 item 5); step 2
+merged, inside `extract-v16` in #251 (above).** Spec `docs/phases/PHASE-29.md` (NMO-35 under AGE-24). Phase 28's S1 runs fail the
 identity gate on one alias class left after ADR 0064 item 2: both names in the TARGET, the alias given to the wrong
 person (turn 200 `윤하람 → 도도` in three runs, turn 237 `람이 → 도도`). Approved answers: one confirmation call per free
 character alias that would newly join two names (not NAME PAIRS, not the persona's, not a `?description` revealed by
@@ -307,6 +307,17 @@ under Needs attention with the owner link; a new `extract-v16` generation, `extr
 fixed-input probe (bar: measured wrong 6/6 held, authored negatives 12/12 held, correct free aliases 9/9 kept, authored
 positives ≥ 11/12), then one fresh sequential S1 (names 3/3, roles 7/7), each after its estimate is approved. **High
 risk (AGENTS.md §14)**: identity and provenance, knowledge boundaries through an alias, extraction generations.
+
+**Phase 30 — A chat seen for the first time is extracted in story order: approved 2026-10-04, current as a correction
+phase (AGENTS §7 item 5); step 2 in review (#260).** Spec `docs/phases/PHASE-30.md` (NMO-36 under AGE-24; a correction
+found by measurement, not a roadmap stage). A first sight extracted its window newest first, so every turn's lists were
+empty and `extract-v16`'s corrections never applied to a long chat connected for the first time (#251,
+`docs/perf/extract-v16-q5c-s1.md`: roles 4/7, names 1/3; story order 7/7, 3/3). Approved answers: the window oldest
+first (`FIRST_PRIORITY`), a live turn behind its chat's pending window, a dead job holding nothing, each turn extracted
+once; every generation, no prompt, key, setting or migration change (ADR 0065, D74; `tests/test_first_sight_order.py`).
+Measured (b) on `1388ea2`: S1 first connection 7/7 and 3/3, no false join, $0.51 (`docs/perf/phase30-first-s1.md`; one
+wrong timing outside the declared scenes, the 227 class). Next: the owner's merge decision (step 4). **High risk (AGENTS.md §14)**: extraction order and generations, current versus historical role state,
+identity and provenance.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
@@ -859,7 +870,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H22, D1–D73, O1/O2/O3/O4/O5 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H22, D1–D74, O1/O2/O3/O4/O5 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
 | Schema | `migrations/0001`–`0027` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode, thread outcome and cause, summaries, owner repairs, canon, canon facts and lock, model-call usage |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
@@ -868,8 +879,8 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k without extraction and embeddings (D24); with both on (15k facts, 15k vectors) 10k takes ≈3.2 s (A-09); K3 on the real host (2026-09-27): rerolls and last-reply swipes stay on the fast path, an edit of an older message at 10k takes 3.6–3.8 s |
 | Known issues | `docs/KNOWN-ISSUES.md` | K1–K42 (K10 resolved; K33–K38 recorded 2026-09-29, K39–K40 in Phase 18, K41 in Phase 19, K42 in Phase 21 and resolved on `main`) current as of `v0.2.0` and Phase 20, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–7 of the original roadmap, one release each (R7, 2026-10-01: Stage 8 after 1.0, Stage 6 ends with Phase 20, new phases only for Stage 7; R1, R5, R7 decided, R2–R4 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
-| Decisions | `docs/adr/0001`–`0064` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair; Phase 14: canon sources, names from canon, canon facts and lock; NMOS off for one chat; Phase 15: a packet that fills its budget; Phase 16: NMOS Archive; Phase 17: model-call usage; Phase 18: keyword lexical recall, excerpts that fill their length; Phase 19: `extract-v14`; Phase 20: join preview; Phase 21: first cue; Phase 22: reveal checks; Phase 24: name variants; Phase 25: `role_toward`; Phase 23: portable bundles; the query embedded while recall reads (K34); the chunk cap a setting of the projection (K13); Phase 27: `packet-v11`, the excerpt lands on the answer; Phase 28 (proposed): `extract-v16`, CURRENT ROLES and a name said two ways |
-| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-29.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 met (the owner's iPhone check 2026-10-01; the host's alert is K38); 17 met; 18 met (latency measured over the benchmark's questions, owner accepted); 19 met but for `deepseek-v4.1-flash`'s M0 criterion (owner accepted, K41); 20 met; 21 met; 22 met but the paid run's reveal count missed by one (owner accepted); 23 met (owner Windows and Mac checks 2026-10-02; a second start's notice, the worker after a quit and a real sign-in not run in CI, owner accepted); 24 met; 25 met (the paid run's output tokens 43 % above the estimate, owner accepted); 26 stopped (not merged; Stage 6's criterion reworded); 27 complete (2026-10-02; Q1b the keywords anchor and Q5's bound one-sided by the owner on the measurement); 28 approved (2026-10-03), step 2 next; 29 approved (2026-10-04), step 2 next (inside `extract-v16` on #251) |
+| Decisions | `docs/adr/0001`–`0065` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair; Phase 14: canon sources, names from canon, canon facts and lock; NMOS off for one chat; Phase 15: a packet that fills its budget; Phase 16: NMOS Archive; Phase 17: model-call usage; Phase 18: keyword lexical recall, excerpts that fill their length; Phase 19: `extract-v14`; Phase 20: join preview; Phase 21: first cue; Phase 22: reveal checks; Phase 24: name variants; Phase 25: `role_toward`; Phase 23: portable bundles; the query embedded while recall reads (K34); the chunk cap a setting of the projection (K13); Phase 27: `packet-v11`, the excerpt lands on the answer; Phase 28 (proposed): `extract-v16`, CURRENT ROLES and a name said two ways; Phase 30: first-sight order |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-30.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 met (the owner's iPhone check 2026-10-01; the host's alert is K38); 17 met; 18 met (latency measured over the benchmark's questions, owner accepted); 19 met but for `deepseek-v4.1-flash`'s M0 criterion (owner accepted, K41); 20 met; 21 met; 22 met but the paid run's reveal count missed by one (owner accepted); 23 met (owner Windows and Mac checks 2026-10-02; a second start's notice, the worker after a quit and a real sign-in not run in CI, owner accepted); 24 met; 25 met (the paid run's output tokens 43 % above the estimate, owner accepted); 26 stopped (not merged; Stage 6's criterion reworded); 27 complete (2026-10-02; Q1b the keywords anchor and Q5's bound one-sided by the owner on the measurement); 28 approved (2026-10-03) and 29 approved (2026-10-04), step 2 merged (#251, `extract-v16` off by default); 30 approved (2026-10-04), step 2 in review (#260) |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 | Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11`, and A-12's markup half in `clean-v3` (both unreleased) |
 

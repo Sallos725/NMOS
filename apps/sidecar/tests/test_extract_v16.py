@@ -585,16 +585,17 @@ def test_under_extract_v15_the_same_story_keeps_the_role_and_stores_no_roles(mig
     assert not any(r["hints"] and "roles" in r["hints"] for r in rows)
 
 
-def test_a_first_connection_extracts_the_ending_before_the_role_and_lists_nothing(migrated):
-    """Q2's measured limit: first-sight work runs newest first, so the turn that ends the role is extracted before the
-    turn that set it up, and its list is empty; the role stays current. A generation's backfill runs oldest first."""
+def test_a_first_connection_lists_the_role_before_the_turn_that_ends_it(migrated):
+    """Q2's measured limit, removed by PHASE-30 (ADR 0065): a first sight's window is extracted oldest first, so the
+    turn that set the role up is extracted before the turn that ends it, which lists it and ends it. Newest first, its
+    list was empty and the role stayed current."""
     chat = tenancy_chat()
     move_out(chat)
     with make_client(migrated, llm_url="http://fake/v1", llm_model="fake", extract_compiler="extract-v16") as c:
         sync(c, chat)
         drain(migrated, moving_out)
         roles = roles_of(c, chat)
-    assert roles == [("하나", "카이토", "세입자: 카이토의 집에 세 들어 삶", "positive")]
+    assert roles == [("하나", "카이토", "세입자: 카이토의 집에 세 들어 삶", "negative")]
 
 
 # --- a name said two ways, through the worker (Q4) ---------------------------------------------------------------------

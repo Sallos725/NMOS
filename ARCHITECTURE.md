@@ -628,6 +628,13 @@ alias whose two names are both in the turn is asked once more about those two na
 held one listed for the owner's link; under `extract-v16` a Hangul or Latin name counts as written only as a word of
 its own. Every held ending and alias is a pending row with its record; the owner sees them under "Needs attention".
 
+**D74 — A chat seen for the first time is extracted in story order (ADR 0065; Phase 30, NMO-36).** A first sight's
+window (the latest `NMOS_EXTRACT_BACKFILL` turns) is claimed oldest first, so every turn's lists (KNOWN ENTITIES, OPEN
+PROMISES, OPEN SECRETS, OPEN THREADS, and `extract-v16`'s CURRENT ROLES and NAME PAIRS) come from the turns before it, as
+in a generation's backfill; newest first, each turn was extracted before every turn before it and its lists were empty.
+A live turn of a chat whose first-sight window is still queued or running waits behind it; a dead job holds nothing.
+Every generation; no prompt, generation key or migration changes.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
