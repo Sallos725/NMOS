@@ -104,7 +104,7 @@ def test_extract_v15_lists_no_role_ending(migrated, answer):
     chat.user(MOVED)
     chat.reply("카이토는 빈 다락방을 정리했다.")
     filler(chat, 2)
-    with make_client(migrated, llm_url="http://fake/v1", llm_model="fake") as c:
+    with make_client(migrated, llm_url="http://fake/v1", llm_model="fake", extract_compiler="extract-v15") as c:
         sync(c, chat)
         drain(migrated, complete)
         conv = next(x["id"] for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)

@@ -8,7 +8,7 @@ from pathlib import Path
 import psycopg
 from psycopg.rows import dict_row
 
-from conftest import active_generation, make_client
+from conftest import active_generation, alias_yes, make_client
 from nmos_sidecar import extraction
 from nmos_sidecar.migrate import apply_migrations, migrations_dir
 from nmos_sidecar.predicates import alias_evidenced, registry_prompt, semantics
@@ -54,6 +54,8 @@ def test_alias_needs_both_names_in_the_turn():
 # --- extraction stores the fields ----------------------------------------------------------------
 
 def semantic_complete(system: str, user: str) -> tuple[dict, str]:
+    if system == extraction.ALIAS_CONFIRM_SYSTEM:  # extract-v16 (the default) confirms an alias stated in the turn
+        return alias_yes(user)
     target = user.split("TARGET", 1)[1]
     items = []
     if "lost the map" in target:
@@ -87,10 +89,10 @@ def test_extraction_stores_polarity_modality_source_and_checks_aliases(migrated,
     with make_client(migrated, **LLM) as c:
         sync(c, chat)
         drain(migrated, semantic_complete)
-    assert active_generation(db, "extract").spec["compiler"] == "extract-v15"
+    assert active_generation(db, "extract").spec["compiler"] == extraction.DEFAULT_COMPILER
     rows = db.execute("SELECT predicate, value, polarity, modality, source, asserted_by, status, reason"
                       " FROM assertion ORDER BY id").fetchall()
-    # The worker takes the newest turn first, so compare regardless of insertion order.
+    # Compare regardless of insertion order.
     got = sorted((r["predicate"], r["polarity"], r["modality"], r["source"], r["asserted_by"], r["status"]) for r in rows)
     assert got == sorted([
         ("possesses", "negative", "actual", "narration", None, "valid"),

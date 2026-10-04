@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from conftest import make_client
+from conftest import alias_yes, make_client
+from nmos_sidecar.extraction import ALIAS_CONFIRM_SYSTEM
 from nmos_sidecar.entities import RESOLVER_VERSION, resolve
 from simchat import SimChat
 from test_extraction import drain, facts
@@ -88,6 +89,8 @@ def test_ids_are_stable_and_versioned():
 # --- through extraction and the API ----------------------------------------------------------------
 
 def alias_complete(system: str, user: str) -> tuple[dict, str]:
+    if system == ALIAS_CONFIRM_SYSTEM:  # extract-v16 (the default) confirms an alias whose two names are in the turn
+        return alias_yes(user)
     target = user.split("TARGET", 1)[1]
     items = []
     if "하나(Hana)" in target:

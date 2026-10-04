@@ -5,6 +5,13 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **`extract-v16` is the default extractor** (ADR 0064 accepted, D73; Phase 28 step 3, AGE-24). It shows the model the
+  roles in force and closes the one the story ends, and links a character the story writes in full and by part of the
+  name, each confirmed once more before it is stored (Phases 28 and 29). Updating re-extracts every chat's recent turns
+  once (a new generation, ADR 0014), oldest first; until a turn is re-extracted, the previous extractor's facts still
+  serve it. `NMOS_EXTRACT_COMPILER=extract-v15` keeps the earlier extractor. `extract-v15` was never released, so 0.3.0
+  users re-extract once either way.
+
 - **A chat connected for the first time is read in story order** (ADR 0065, D74; Phase 30, NMO-36). NMOS used to
   extract a new chat's recent turns newest first, so each turn was read before the turns that came before it: it could
   not see who was already known, which promises and secrets were open, or which roles held, and a later turn's ending

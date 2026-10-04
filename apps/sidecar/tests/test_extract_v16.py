@@ -19,6 +19,7 @@ from nmos_sidecar.config import Settings
 from nmos_sidecar.entities import resolve
 from nmos_sidecar.facts import _versions, version_key
 from nmos_sidecar.predicates import registry_prompt
+from conftest import alias_yes
 from simchat import SimChat
 from test_extract_v14 import SETTINGS
 from test_extraction import drain, facts, filler
@@ -28,8 +29,9 @@ from test_sidecar_integration import sync
 CHAR = "character"
 C = {"subject_type": CHAR, "object_type": CHAR}
 CONV = UUID("01900000-0000-7000-8000-000000000064")
-# extract-v15's generation key for test_extract_v14.SETTINGS, as on `main` before PHASE-28: the default must not move.
+# extract-v15's generation key for test_extract_v14.SETTINGS, as on `main` before PHASE-28: it must not move, selected.
 V15_KEY = "extract-f4dfd4d1c0b5a182bc19aee78f4d9f50"
+V15 = dataclasses.replace(SETTINGS, extract_compiler="extract-v15")
 V16 = dataclasses.replace(SETTINGS, extract_compiler="extract-v16")
 
 
@@ -53,13 +55,13 @@ def current(rows):
                   for f in _versions(h, r))
 
 
-# --- the default is untouched -----------------------------------------------------------------------------------------
+# --- the default (extract-v16 since PHASE-28 step 3) and extract-v15 kept ---------------------------------------------
 
-def test_extract_v15_stays_the_default_with_its_key_and_prompt():
-    assert extraction.COMPILER_VERSION == "extract-v15" and extraction.compiler_of(SETTINGS) == "extract-v15"
-    assert extraction.PROMPTS["extract-v15"] is extraction.SYSTEM_PROMPT
-    assert extraction.extractor(SETTINGS).key == V15_KEY
-    assert extraction.extractor(dataclasses.replace(SETTINGS, extract_compiler="extract-v15")).key == V15_KEY
+def test_extract_v16_is_the_default_and_extract_v15_keeps_its_key_and_prompt():
+    assert extraction.DEFAULT_COMPILER == "extract-v16" and extraction.compiler_of(SETTINGS) == "extract-v16"
+    assert extraction.extractor(SETTINGS).key == extraction.extractor(V16).key
+    assert extraction.COMPILER_VERSION == "extract-v15" and extraction.PROMPTS["extract-v15"] is extraction.SYSTEM_PROMPT
+    assert extraction.compiler_of(V15) == "extract-v15" and extraction.extractor(V15).key == V15_KEY
     assert "CURRENT ROLES" not in extraction.SYSTEM_PROMPT
 
 
@@ -121,7 +123,7 @@ def test_worker_preserves_a_rejected_description_without_making_the_name_ambiguo
 
 
 def test_extract_v16_is_its_own_generation_by_compiler_and_prompt_only():
-    v15, v16 = extraction.extractor(SETTINGS).spec, extraction.extractor(V16).spec
+    v15, v16 = extraction.extractor(V15).spec, extraction.extractor(V16).spec
     assert v16["compiler"] == "extract-v16"
     assert {k for k in v15 if v15[k] != v16[k]} == {"compiler", "prompt"}
     # the role-ending confirmation (ADR 0064 item 4) and the rule that a known name stands in only for one the turn names
@@ -571,7 +573,7 @@ def test_under_extract_v16_the_story_ends_the_role_it_listed(migrated):
 
 def test_under_extract_v15_the_same_story_keeps_the_role_and_stores_no_roles(migrated):
     chat = tenancy_chat()
-    with make_client(migrated, llm_url="http://fake/v1", llm_model="fake") as c:
+    with make_client(migrated, llm_url="http://fake/v1", llm_model="fake", extract_compiler="extract-v15") as c:
         sync(c, chat)
         drain(migrated, moving_out)
         move_out(chat)
@@ -599,14 +601,6 @@ def test_a_first_connection_lists_the_role_before_the_turn_that_ends_it(migrated
 
 
 # --- a name said two ways, through the worker (Q4) ---------------------------------------------------------------------
-
-def alias_yes(user):
-    """A stand-in alias confirmation (PHASE-29) that says yes, quoting the TARGET sentence with NAME_B."""
-    name = user.split("NAME_B: ", 1)[1].split("\n", 1)[0]
-    target = user.split("\nTARGET:\n", 1)[1]
-    sentence = next(s for s in re.split(r"(?<=[.!?\"])\s+|\n", target) if name in s)
-    return {"same": "yes", "evidence": sentence.split(": ", 1)[-1]}, "{}"
-
 
 def two_ways(system, user):
     """The model as each prompt allows it: under extract-v16 the turn that writes 윤하나 and then 하나 links them."""

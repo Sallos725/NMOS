@@ -1,8 +1,9 @@
 # 0064 — `extract-v16`: a role ended as listed, and a name said two ways
 
-Status: **proposed**, 2026-10-03 (Phase 28 step 2, `docs/phases/PHASE-28.md` Q1–Q4; under AGE-24). Behind
-`NMOS_EXTRACT_COMPILER=extract-v16`, off by default. Making it the default is the owner's decision on the measurement of
-PHASE-28 Q5; until then this ADR is not accepted. No migration, no plugin build, no recall option. ADR 0012's
+Status: **accepted**, 2026-10-04: `extract-v16` is the default (Phase 28 step 3, the owner's decision on the PHASE-28
+Q5 (c) measurement and Phase 30's first connection; `docs/phases/PHASE-28.md` Q1–Q4; under AGE-24). Proposed 2026-10-03
+(step 2) behind `NMOS_EXTRACT_COMPILER=extract-v16`, off by default; `NMOS_EXTRACT_COMPILER=extract-v15` still selects
+the earlier extractor. The live gate (PHASE-28 Q5 (d)) runs on this default. No migration, no plugin build, no recall option. ADR 0012's
 resolution and ADR 0013's matching rule are unchanged. **Amended the same day:** the read-side join first proposed for
 Q4 (`given_name_join`) was measured, joined nothing, and is withdrawn (below); Q4 is the extractor's alias rule instead.
 
@@ -226,9 +227,9 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    confirmation's fingerprint (`ALIAS_ASKED`), so `extract-v16` is now `extract-ccb3d153f170e87b4b4d011afbad8d0d`.
    *Corrected on the Codex review of `bcce836` (2026-10-04):* a held alias is held in every copy of the same pair as
    `aliases_to_confirm` compares them (normalized), so `ALICE → BOB` no longer stays valid beside a held `Alice → Bob`.
-3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
-   `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
-   startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before
+3. **Selected by a setting** (Q3). `NMOS_EXTRACT_COMPILER` selects one of `extraction.COMPILERS` (`extract-v15` or
+   `extract-v16`, `extraction.DEFAULT_COMPILER` when empty; anything else is refused at startup). *The default was
+   `extract-v15` until the owner's decision of 2026-10-04; it is `extract-v16` since.* `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before
    Phase 28 (pinned); `extract-v16`'s differs by compiler, prompt, the confirmation's fingerprint (item 4) and the
    alias rule's (item 2). A
    generation's own rows record its compiler. `extract-v15`'s alias check is as it was.

@@ -215,6 +215,12 @@ def test_a_chat_without_model_work_says_so(llm_client, migrated):
     assert "No model calls recorded yet." in llm_client.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
 
 
+def target_tail(user: str) -> str:
+    """The end of the TARGET turn's last message (extract-v16 adds instructions after the TARGET block)."""
+    block = user.split("\nTARGET turn", 1)[1].split("\n\n", 1)[0]
+    return block.rsplit(": ", 1)[1][-40:]
+
+
 def test_coverage_counts_the_facts_and_summaries_the_chat_holds(migrated):
     chat = story_chat(30)
     with make_client(migrated, **ON) as c:
@@ -223,7 +229,7 @@ def test_coverage_counts_the_facts_and_summaries_the_chat_holds(migrated):
         assert c.get(f"/v1/conversations/{conv}/coverage").json()["produced"] == {"facts": 0, "summaries": 0}
         drain_extract(migrated, lambda s, u: ({"assertions": [
             {"subject": "Hana", "subject_type": "character", "predicate": "located_in", "object": "the mill",
-             "object_type": "place", "epistemic": "stated", "confidence": 0.9, "evidence": u.rsplit(": ", 1)[1][-40:],
+             "object_type": "place", "epistemic": "stated", "confidence": 0.9, "evidence": target_tail(u),
              "modality": "actual"}]}, "{}"))
         drain_summaries(migrated)
         produced = c.get(f"/v1/conversations/{conv}/coverage").json()["produced"]
@@ -236,7 +242,7 @@ def test_coverage_counts_the_facts_and_summaries_the_chat_holds(migrated):
         sync(c, chat)
         drain_extract(migrated, lambda s, u: ({"assertions": [
             {"subject": "Hana", "subject_type": "character", "predicate": "located_in", "object": "the mill",
-             "object_type": "place", "epistemic": "stated", "confidence": 0.9, "evidence": u.rsplit(": ", 1)[1][-40:],
+             "object_type": "place", "epistemic": "stated", "confidence": 0.9, "evidence": target_tail(u),
              "modality": "actual"}]}, "{}"))
         drain_summaries(migrated)
         again = c.get(f"/v1/conversations/{conv}/coverage").json()

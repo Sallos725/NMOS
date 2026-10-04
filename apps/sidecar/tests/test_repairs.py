@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import re
 
-from conftest import make_client
+from conftest import alias_yes, make_client
+from nmos_sidecar.extraction import ALIAS_CONFIRM_SYSTEM
 from memeval import FOUND, stub_extractor
 from nmos_sidecar import repairs
 from nmos_sidecar.rebuild import rebuild_all
@@ -396,6 +397,8 @@ ALIAS = re.compile(r"(?P<a>\w+) is also called (?P<b>\w+)\.")
 
 
 def aliased(system: str, user: str) -> tuple[dict, str]:
+    if system == ALIAS_CONFIRM_SYSTEM:  # extract-v16 (the default) confirms an alias whose two names are in the turn
+        return alias_yes(user)
     out, raw = stub_extractor(system, user)
     target = user.split("TARGET", 1)[1]
     out["assertions"] += [{"subject": m["a"], "subject_type": "character", "predicate": "also_called", "value": m["b"],
