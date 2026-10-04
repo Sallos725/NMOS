@@ -17,6 +17,17 @@ each, medians and every run). Excerpt and ranking changes wait for that re-measu
 §14)**: identity and provenance, current versus historical state, extraction generations, knowledge boundaries,
 replay.
 
+**Phase 29 — Whose name is it: approved 2026-10-04, current as a correction phase (AGENTS §7 item 5); step 2 next,
+inside `extract-v16` on #251.** Spec `docs/phases/PHASE-29.md` (NMO-35 under AGE-24). Phase 28's S1 runs fail the
+identity gate on one alias class left after ADR 0064 item 2: both names in the TARGET, the alias given to the wrong
+person (turn 200 `윤하람 → 도도` in three runs, turn 237 `람이 → 도도`). Approved answers: one confirmation call per free
+character alias that would newly join two names (not NAME PAIRS, not the persona's), on the two names, the two preceding
+turns and the TARGET; a quoted yes keeps it, anything else holds it as a pending row with its record; held aliases listed
+under Needs attention with the owner link; a new `extract-v16` generation, `extract-v15` unchanged. Measured by a 60-call
+fixed-input probe (bar: measured wrong 6/6 held, authored negatives 12/12 held, correct free aliases 9/9 kept, authored
+positives ≥ 11/12), then one fresh sequential S1 (names 3/3, roles 7/7), each after its estimate is approved. **High
+risk (AGENTS.md §14)**: identity and provenance, knowledge boundaries through an alias, extraction generations.
+
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
 

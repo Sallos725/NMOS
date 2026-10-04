@@ -1,10 +1,9 @@
 # Phase 29 — Whose name is it: a confirmation for an alias whose two names are both in the turn
 
-> **Status: draft, 2026-10-04 (NMO-35, under AGE-24); Q1 and Q5 decided by the owner the same day, the rest open.** A correction found by measurement, not
-> roadmap Stage 7 or 8; it would run beside the current phase as Phases 24–28 did (AGENTS §7 item 5). It builds on
-> `extract-v16` of Phase 28 (#251, not merged) and changes nothing under `extract-v15`. Only Q1 and Q5 are decided; every other
-> "proposed answer" is a recommendation with its alternatives. If approved, AGENTS §2's "29+ (Stages 7–8)" row becomes
-> "30+".
+> **Status: approved 2026-10-04 (the owner: Q1 and Q5 as decided, the rest as proposed, the probe's bar as written;
+> implementation inside `extract-v16` on #251's branch), current as a correction phase (AGENTS §7 item 5); step 2 next.**
+> NMO-35 under AGE-24; a correction found by measurement, not roadmap Stage 7 or 8. It builds on `extract-v16` of
+> Phase 28 (#251, not merged) and changes nothing under `extract-v15`.
 
 ## Questions and proposed answers
 
@@ -97,8 +96,7 @@ the Inspector.
 ## Steps
 
 1. This document, approved; AGENTS §1/§2 and STATUS name Phase 29.
-2. Implementation and deterministic cases, on #251's branch or a branch stacked on it (owner's choice); a new
-   generation key reported.
+2. Implementation and deterministic cases on #251's branch (owner, 2026-10-04); a new generation key reported.
 3. The probe (b) after its estimate is approved.
 4. The sequential S1 (c) after its estimate is approved.
 5. The decision: kept in `extract-v16` (ADR 0064 amended) or withdrawn.
