@@ -293,6 +293,9 @@ role was stored public (an ending now keeps the role's knowledge scope); a free 
 skipped the numbered ending and its confirmation (now dropped by party: name, persona, joined aliases); a held alias's
 repeat in other case stayed valid; the comparison tool failed on a checkout without confirmations. `extract-v16` is now
 `extract-409d69e00030e6052c6125fa4520d5db` (`extract-v15` unchanged); the measurements above were on earlier v16 keys.
+On that generation (`6e4ca05`, `docs/perf/extract-v16-6e4ca05-sequential.md`): replaying the `9aa7c57` run's replies changes
+none of its 240 turns (zero calls), and a fresh sequential S1 passes again: names 3/3, roles 7/7, no wrong ending, no
+false join ($0.51).
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
