@@ -67,3 +67,13 @@ scenario under `results/`, `summary.json` (`e952b0b2…`), `r04-posthoc-regrade.
 One run each of three-turn scenes written to test these features, by a model session (not the owner's chats). The
 expectations were written by the implementer; R04 shows they can be wrong. Not measured: first connection, longer
 chats (the pack's 120-turn variants), the pack's questions against packets, M and T groups.
+
+## R01, the 120-turn variant (owner-approved, the same day)
+
+The pack's long R01 (the delegation at turn 0, its ending at turn 32, dinner as friends at turn 64, everyday filler
+elsewhere) through the worker on `9aa7c57`, live lane: **pass**. The interpreting role is current at turn 31 after 31
+filler turns (a prefix read), ended at turn 32 after a confirmation yes, and stays ended to turn 119; 임건우 and 정유라
+stay apart; the friendship rows stay. No other role ending in 117 filler turns. 122 calls (120 main, 2 confirmation),
+input 876,796 (cached 692,224), output 31,203, **$0.13523264**, about 2.5 minutes; no technical error. Evidence:
+`/home/grantkim725/nmos-eval/pr251/2026-10-04/long-r01-9aa7c57/` (`expectations.json` fixed before the run, including
+the turn-31 check).
