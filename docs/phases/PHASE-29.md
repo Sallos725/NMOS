@@ -96,7 +96,7 @@ free aliases 9/9 kept, authored positives 12/12 kept, NAME PAIRS 21/21 kept), no
 - [ ] **Defaults unchanged**: `extract-v15`'s key, prompt and default requests as before (full sidecar suite).
 - [ ] **Deterministic** (a): every branch of Q1–Q6.
 - [x] **Probe** (b) meets its bar (60/60, 2026-10-04).
-- [ ] **Sequential S1** (c): names 3/3, roles 7/7, no false join, every held alias listed.
+- [x] **Sequential S1** (c): names 3/3, roles 7/7, no false join, every held alias listed (2026-10-04, `9aa7c57`, `docs/perf/extract-v16-9aa7c57-sequential.md` in #251; one development story).
 - [ ] Diff-scoped self-review naming the guarantees at risk; STATUS, ADR 0012/0064 amendments and NMO-35 updated.
 
 ## Steps
