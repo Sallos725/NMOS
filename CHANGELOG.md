@@ -10,7 +10,9 @@ later, is `docs/KNOWN-ISSUES.md`.
   name, each confirmed once more before it is stored (Phases 28 and 29). Updating re-extracts every chat's recent turns
   once (a new generation, ADR 0014), oldest first; until a turn is re-extracted, the previous extractor's facts still
   serve it. `NMOS_EXTRACT_COMPILER=extract-v15` keeps the earlier extractor. `extract-v15` was never released, so 0.3.0
-  users re-extract once either way.
+  users re-extract once either way. Each of its rules comes only with the list it is about (ADR 0064 item 5): on
+  turns with no role or name pair to check, its prompt is close to `extract-v15`'s, which kept new roles and first
+  events it had been missing.
 
 - **A chat connected for the first time is read in story order** (ADR 0065, D74; Phase 30, NMO-36). NMOS used to
   extract a new chat's recent turns newest first, so each turn was read before the turns that came before it: it could

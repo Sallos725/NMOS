@@ -325,6 +325,15 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
      alone. The worker path is covered by tests with stand-in models only; a fresh sequential S1 from turn 0 under
      this generation, with turn 88's stored state read back, is the gate (owner's run). A run resumed from a stopped
      database does not count: its wrong ending is already stored.
+5. **Each rule comes with its list** (added 2026-10-04, the live gate on `7b7cc14`; `docs/perf/extract-v16-focus.md`).
+   With the role-ending rules and the alias check (twice) on every turn, the owner's real chat lost new roles and first
+   events: S0main's memory cases 7, 5 and 8 of 10, a tenancy written in 0 of 6 fixed-input replies against
+   `extract-v15`'s 6 of 6. The role-ending rules now stand in the system prompt, at their place after the role rule,
+   only when CURRENT ROLES are listed (`SYSTEM_V16_ROLES`; otherwise `SYSTEM_V16`): in the user prompt they turned the
+   resignation into "planned". The NAME PAIRS answer (`PAIRS_RULE`) and the alias check come once, at the end of the
+   user prompt, only when NAME PAIRS are listed; the part-name rule and the guidance for unlisted pairs (`ALIAS_RULE`)
+   stay in the system prompt. A new generation; given up: a nickname on a turn with no NAME PAIRS, which `extract-v15`
+   never wrote and `extract-v16` wrote unreliably.
 
 ## Withdrawn: `given_name_join`
 

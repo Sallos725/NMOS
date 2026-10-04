@@ -319,12 +319,23 @@ ALIAS_CHECK += (" Bare person descriptions do not establish names, including in 
                 " This exact-label restriction does not exclude a longer surname-and-title name. For example,"
                 " if 전소연 is introduced as 전 원장 and narration shows her answering to 전 원장, include"
                 " also_called with subject 전소연 and value 전 원장. Record that name identity separately from addresses.")
-ALIAS_PARTS += "  " + ALIAS_CHECK + "\n"
+# extract-v16, focused (2026-10-04, the AGE-24 live gate on 7b7cc14): every turn's prompt carried the role-ending rules
+# and the alias check twice, and on the owner's real chat the model stopped writing new roles and first events (S0main
+# memory cases 7, 5 and 8 of 10; turn 37's tenancy 0 of 6 against extract-v15's 6 of 6 on the same input). Each block now
+# comes only with the list it is about: the role-ending rules, in the system prompt at their place, only when CURRENT
+# ROLES are listed (moved to the user prompt they turned a resignation into "planned"); the NAME PAIRS answer and the
+# alias check, once at the end of the user prompt, only when NAME PAIRS are listed. The part-name rule and the guidance
+# for unlisted pairs stay in the system prompt (`docs/perf/extract-v16-focus.md`).
+_PAIRS_AT = ALIAS_PARTS.index("  If NAME PAIRS are listed")
+_GENERAL_AT = ALIAS_PARTS.index("  The numbered answer replaces")
+ALIAS_RULE = ALIAS_PARTS[:_PAIRS_AT] + ALIAS_PARTS[_GENERAL_AT:]  # in the system prompt, always
+PAIRS_RULE = ALIAS_PARTS[_PAIRS_AT:_GENERAL_AT]  # in the user prompt, with NAME PAIRS only, followed by ALIAS_CHECK
 _ROLE_EXAMPLE = '  `role_toward` (하나 to 카이토, "하녀: 카이토의 저택에서 일하며 지냄").\n'  # the role rule follows it
-PROMPTS = {"extract-v15": SYSTEM_PROMPT,
-           "extract-v16": SYSTEM_PROMPT.replace(_ROLE_EXAMPLE, _ROLE_EXAMPLE + ROLE_ENDINGS, 1)
-                                       .replace(V15_ALIAS, ALIAS_PARTS, 1).replace(_ANSWER_END, ANSWER_ROLES, 1)}
-assert all(x in PROMPTS["extract-v16"] for x in (ROLE_ENDINGS, ALIAS_PARTS, ANSWER_ROLES)), "a v16 rule's place moved"
+SYSTEM_V16 = SYSTEM_PROMPT.replace(V15_ALIAS, ALIAS_RULE, 1).replace(_ANSWER_END, ANSWER_ROLES, 1)
+SYSTEM_V16_ROLES = SYSTEM_V16.replace(_ROLE_EXAMPLE, _ROLE_EXAMPLE + ROLE_ENDINGS, 1)  # when CURRENT ROLES are listed
+PROMPTS = {"extract-v15": SYSTEM_PROMPT, "extract-v16": SYSTEM_V16_ROLES}  # the full form, which the generation names
+assert all(x in SYSTEM_V16_ROLES for x in (ROLE_ENDINGS, ALIAS_RULE, ANSWER_ROLES)), "a v16 rule's place moved"
+assert ROLE_ENDINGS not in SYSTEM_V16 and ALIAS_CHECK not in SYSTEM_V16_ROLES and PAIRS_RULE not in SYSTEM_V16_ROLES
 ROLES = frozenset({"extract-v16"})  # the compilers that list CURRENT ROLES
 PARTS_APART = frozenset({"extract-v16"})  # the compilers whose alias of a name and its part needs the part on its own
 # The same compilers' rule that a known name the turn does not write stands in only for a character the turn names
@@ -338,9 +349,12 @@ def compiler_of(settings: Settings) -> str:
     return settings.extract_compiler or DEFAULT_COMPILER
 
 
-def prompt_of(compiler: str) -> str:
+def prompt_of(compiler: str, roles: bool = True) -> str:
     """A compiler's system prompt: the default compiler's is SYSTEM_PROMPT whatever it is called (a test names an
-    upgrade by renaming it); the settings only select a compiler of PROMPTS (`Settings.__post_init__`)."""
+    upgrade by renaming it); the settings only select a compiler of PROMPTS (`Settings.__post_init__`). extract-v16's
+    leaves the role-ending rules out when no CURRENT ROLE is listed (`roles` false)."""
+    if compiler in ROLES and not roles:
+        return SYSTEM_V16
     return PROMPTS.get(compiler, SYSTEM_PROMPT)
 
 
@@ -844,10 +858,10 @@ def build_prompt(ctx: dict[str, Any], hints: list[dict[str, Any]] | None = None,
                   " two names for one character; list only those in `same_names` by their number, not their names"
                   f" (for N1, {pairs[0]['full']} / {pairs[0]['part']}: {{\"pair\": \"N1\", \"evidence\": \"...\"}}),"
                   " each quoting the TARGET turn."]
-    if compiler in PARTS_APART:
-        lines += ["", ALIAS_CHECK]
     if roles and compiler in ROLES:
         lines += ["", ROLE_TARGET_CHECK, ROLE_COMPLETION_CHECK]
+    if pairs and compiler in PARTS_APART:  # the NAME PAIRS answer and the alias check only with NAME PAIRS (focused v16)
+        lines += ["", "Rules for NAME PAIRS:\n" + PAIRS_RULE, "", ALIAS_CHECK]
     return "\n".join(lines)
 
 
@@ -1445,7 +1459,7 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         roles = role_hints(ctx, earlier) if compiler in ROLES else []
         if compiler in PARTS_APART:
             pairs = name_pairs(hints, turn_text, persona_of(ctx["target"].get("host_persona_name")))
-        parsed, raw, usage = metered(complete, prompt_of(compiler).format(registry=registry_prompt()),
+        parsed, raw, usage = metered(complete, prompt_of(compiler, bool(roles)).format(registry=registry_prompt()),
                                      build_prompt(ctx, hints, promises, secrets, threads, roles, pairs,
                                                   compiler=compiler))
     items = parsed.get("assertions")
@@ -1529,7 +1543,8 @@ def extractor(settings: Settings) -> Generation | None:
         **({"confirm": generations.fingerprint(ROLE_CONFIRM_SYSTEM + str(CONFIRM_TURNS) + "|".join(DOUBTS)
                                                 + ALIAS_CONFIRM_SYSTEM + ALIAS_ASKED + ENDINGS_POST)}
            if compiler in CONFIRMS else {}),
-        **({"aliases": generations.fingerprint(ALIASES_PRESENT)} if compiler in PARTS_APART else {}),
+        **({"aliases": generations.fingerprint(ALIASES_PRESENT + PAIRS_RULE + ALIAS_CHECK + SYSTEM_V16)}
+           if compiler in PARTS_APART else {}),
         predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.NORMALIZER_VERSION,
         json_mode=settings.llm_json_mode, temperature=0, unit="turn", context_turns=settings.extract_turns,
         target_chars=TARGET_CHARS, context_chars=CONTEXT_CHARS, hints=settings.extract_hints,

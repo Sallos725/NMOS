@@ -164,7 +164,12 @@ def compiler_of(args: argparse.Namespace) -> str:
 
 def run(args: argparse.Namespace) -> None:
     args.compiler = compiler_of(args)
-    system = getattr(X, "PROMPTS", {X.COMPILER_VERSION: X.SYSTEM_PROMPT})[args.compiler].format(registry=registry_prompt())
+    base = getattr(X, "PROMPTS", {X.COMPILER_VERSION: X.SYSTEM_PROMPT})[args.compiler]
+
+    def system_for(p: dict) -> str:  # the focused extract-v16 leaves the role-ending rules out without CURRENT ROLES
+        text = X.prompt_of(args.compiler, bool(p["roles"])) if hasattr(X, "SYSTEM_V16") else base
+        return text.format(registry=registry_prompt())
+
     checks = hasattr(X, "shown_target")  # extract-v14 or later: normalize parks a quote not in the turn
     todo, selected = [], prompts(args)
     for p in selected:
@@ -184,7 +189,7 @@ def run(args: argparse.Namespace) -> None:
             if hits < len(quotes):
                 missed.append(p["turn"])
         print(f"stored quotes found in the chosen turns: {found}/{total}; turns with a miss: {sorted(missed)}", flush=True)
-    tokens = sum(estimate_tokens(system + p["user"]) for _, p in todo)
+    tokens = sum(estimate_tokens(system_for(p) + p["user"]) for _, p in todo)
     print(f"{args.label} ({args.compiler}): {len(todo)} calls, about {tokens / 1e6:.2f}M input tokens (estimate)",
           flush=True)
     if args.dry or not todo:
@@ -197,7 +202,7 @@ def run(args: argparse.Namespace) -> None:
         for attempt in range(6):
             try:
                 t0 = time.monotonic()
-                parsed, raw, usage = metered(model.complete_metered, system, p["user"])
+                parsed, raw, usage = metered(model.complete_metered, system_for(p), p["user"])
                 items = parsed.get("assertions")
                 if not isinstance(items, list):
                     raise LLMError("model reply has no `assertions` list")

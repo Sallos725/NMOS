@@ -129,13 +129,19 @@ def run(args: argparse.Namespace) -> int:
         raise ValueError("runs must be between 1 and 20")
     data = load_cases(args.cases)
     system = X.PROMPTS[args.compiler].format(registry=registry_prompt())
+
+    def system_for(case: dict[str, Any]) -> str:  # as the worker sends it: focused v16 without a listed role (ADR 0064)
+        return X.prompt_of(args.compiler, bool(case["roles"])).format(registry=registry_prompt())
+
     prompts = [(c, prompt(c, args.compiler)) for c in data["cases"]]
+    light = X.prompt_of(args.compiler, False).format(registry=registry_prompt())
     manifest = {"title": data["title"], "mode": "execute" if args.execute else "dry-run",
                 "method": "fixed authored roles; no DB, live host, sequential worker or backfill",
                 "compiler": args.compiler, "model": args.model, "url": args.url,
                 "planned_calls": len(prompts) * args.runs, "runs": args.runs, "retries": 0,
-                "estimated_input_tokens": sum(estimate_tokens(system + user) for _, user in prompts) * args.runs,
+                "estimated_input_tokens": sum(estimate_tokens(system_for(c) + user) for c, user in prompts) * args.runs,
                 "cases_sha256": sha(args.cases.read_text(encoding="utf-8")), "system_sha256": sha(system),
+                **({"system_without_roles_sha256": sha(light)} if light != system else {}),
                 "extraction_sha256": hashlib.sha256(Path(X.__file__).read_bytes()).hexdigest(),
                 "tool_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
     if args.execute and (not args.url or not args.model):
@@ -145,6 +151,8 @@ def run(args: argparse.Namespace) -> int:
     save(args.out / "cases.json", data)
     save(args.out / "prompts.json", {c["id"]: user for c, user in prompts})
     (args.out / "system.txt").write_text(system, encoding="utf-8")
+    if light != system:
+        (args.out / "system-without-roles.txt").write_text(light, encoding="utf-8")
     print(json.dumps(manifest, ensure_ascii=False), flush=True)
     if not args.execute:
         return 0
@@ -162,7 +170,7 @@ def run(args: argparse.Namespace) -> int:
                 name = f"{case['id']}-{repeat}"
                 event({"event": "start", "call": name, "prompt_sha256": sha(user)})
                 try:
-                    parsed, raw, usage = model.complete_metered(system, user)
+                    parsed, raw, usage = model.complete_metered(system_for(case), user)
                     save(args.out / f"{name}-raw.json", {"parsed": parsed, "raw": raw, "usage": usage})
                     result = grade(case, parsed, args.compiler)
                     save(args.out / f"{name}.json", result)

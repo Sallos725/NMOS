@@ -163,13 +163,17 @@ def test_the_v16_prompt_names_a_listed_role_that_ends_right_after_the_role_rule(
         assert phrase in prompt, phrase
     # the rest of the prompt is extract-v15's, but for the alias rule (below)
     v16 = extraction.PROMPTS["extract-v16"].replace(extraction.ROLE_ENDINGS, "").replace(
-        extraction.ALIAS_PARTS, extraction.V15_ALIAS).replace(extraction.ANSWER_ROLES, extraction._ANSWER_END)
+        extraction.ALIAS_RULE, extraction.V15_ALIAS).replace(extraction.ANSWER_ROLES, extraction._ANSWER_END)
     assert v16 == extraction.SYSTEM_PROMPT
+    # focused (the live gate on 7b7cc14): without a listed role the rules are left out, the rest unchanged
+    assert extraction.prompt_of("extract-v16", roles=False) == extraction.PROMPTS["extract-v16"].replace(
+        extraction.ROLE_ENDINGS, "") == extraction.SYSTEM_V16
+    assert extraction.prompt_of("extract-v15", roles=False) == extraction.prompt_of("extract-v15") == extraction.SYSTEM_PROMPT
 
 
 def test_the_v16_prompt_links_a_full_name_and_a_part_of_it_with_its_limits():
     v15, v16 = (extraction.PROMPTS[c].format(registry=registry_prompt()) for c in ("extract-v15", "extract-v16"))
-    assert extraction.V15_ALIAS in v15 and extraction.V15_ALIAS not in v16 and extraction.ALIAS_PARTS in v16
+    assert extraction.V15_ALIAS in v15 and extraction.V15_ALIAS not in v16 and extraction.ALIAS_RULE in v16
     for phrase in ("writes a character by a full\n  name and, for the same character, by part of it",
                    "the given name alone; in a story in English, the\n  first or the last name alone",
                    'e.g. "윤하나가 문을 열었다. 하나는 웃었다.": subject the full name, value\n  the part',
@@ -202,11 +206,33 @@ def test_the_v16_prompt_asks_for_listed_name_pairs_by_number():
     name and its part apart, 3 runs each. Known full names whose part the turn writes are listed (N1, …) and the model
     answers by number, as CURRENT ROLES are."""
     v15, v16 = (extraction.PROMPTS[c].format(registry=registry_prompt()) for c in ("extract-v15", "extract-v16"))
+    assert '"same_names": [{"pair": "N1", "evidence": "..."}]' in v16 and "same_names" not in v15
+    rule = extraction.PAIRS_RULE.replace("\n  ", " ")
     for phrase in ("If NAME PAIRS are listed (N1, N2, …)", "Report in `same_names` each pair the TARGET turn uses for one"
                    " character", 'with `pair`: its number as listed ("N1"), never the names',
-                   "Do not also write that `also_called` yourself", '"same_names": []',
-                   '"same_names": [{"pair": "N1", "evidence": "..."}]'):
-        assert phrase not in v15 and phrase in v16.replace("\n  ", " "), phrase
+                   "Do not also write that `also_called` yourself", '"same_names": []'):
+        assert phrase in rule and phrase not in v16.replace("\n  ", " "), phrase
+
+
+def test_the_name_pairs_rule_and_the_alias_check_come_only_with_name_pairs():
+    """Focused v16 (the live gate on 7b7cc14): the alias check on every turn cost new roles and first events; it comes
+    once, at the end of the user prompt, with the NAME PAIRS answer, only when NAME PAIRS are listed."""
+    ctx = {"context": [], "target": {"turn": 3},
+           "members": [{"metadata": {"role": "user"}, "content": "윤하나가 문을 열었다. 하나는 웃었다."}]}
+    pairs = [{"full": "윤하나", "part": "하나"}]
+    bare = extraction.build_prompt(ctx, compiler="extract-v16")
+    listed = extraction.build_prompt(ctx, pairs=pairs, compiler="extract-v16")
+    assert extraction.ALIAS_CHECK not in bare and extraction.PAIRS_RULE not in bare
+    assert listed.endswith("Rules for NAME PAIRS:\n" + extraction.PAIRS_RULE + "\n\n" + extraction.ALIAS_CHECK)
+    assert extraction.ALIAS_CHECK not in extraction.build_prompt(ctx, pairs=pairs, compiler="extract-v15")
+
+
+def test_the_focused_v16_parts_are_in_its_generation(monkeypatch):
+    before15, before16 = extraction.extractor(V15).key, extraction.extractor(V16).key
+    for name in ("ALIAS_CHECK", "PAIRS_RULE", "SYSTEM_V16"):
+        monkeypatch.setattr(extraction, name, getattr(extraction, name) + " ")
+        assert extraction.extractor(V16).key != before16 and extraction.extractor(V15).key == before15, name
+        monkeypatch.undo()
 
 
 def test_name_parts_are_the_given_name_of_a_hangul_name_and_the_first_or_last_word_of_a_latin_one():
@@ -614,7 +640,7 @@ def two_ways(system, user):
 
     if "문을 열었다" in target:
         say(subject="윤하나", predicate="located_in", object="현관", object_type="place")
-        if extraction.ALIAS_PARTS in system:
+        if extraction.ALIAS_RULE in system:
             say(subject="윤하나", predicate="also_called", value="하나")
     if "정원으로" in target:
         say(subject="하나", predicate="located_in", object="정원", object_type="place")
@@ -687,5 +713,7 @@ def test_a_name_and_its_part_are_one_character_under_extract_v16(migrated, compi
         current = sorted((f["subject"], f["object"]) for f in facts(c, chat)
                          if f["predicate"] == "located_in" and f.get("polarity") != "negative")
     reminder = "Before answering, check for names the TARGET uses for the same character."
-    assert prompts and all((reminder in user) == (compiler == "extract-v16") for user in prompts)
+    # focused v16: the reminder comes with listed NAME PAIRS only; the turn that first writes 윤하나 lists none
+    assert prompts and all((reminder in user) == (compiler == "extract-v16" and "NAME PAIRS (a known" in user)
+                           for user in prompts)
     assert current == sorted(places)
