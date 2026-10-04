@@ -279,6 +279,9 @@ new generation then passed (`9aa7c57`, `extract-b88669ca66664b77df6ac117d741ea8e
 join; at turn 200 the main reply wrote `윤하람 → 도도` again and the alias confirmation held it (no); 250 calls, about
 $0.509 uncached, 19 min. One development story only: S2, the independent probe, the 1,440-call comparison, first
 connection, the 10k gate and the live runs remain.
+Thirteen independent synthetic scenarios from the owner's diversity pack, through the worker on `9aa7c57` (live lane,
+`docs/perf/phase29-diversity-smoke.md`): 12/13 pass the expectations fixed before the run; R04 fails by a naming error in
+those expectations (the stored state is right, a post-hoc regrade passes); no wrong ending, no false join; $0.049.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

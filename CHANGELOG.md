@@ -11,15 +11,22 @@ later, is `docs/KNOWN-ISSUES.md`.
   Vertex serves (`google/…`) from Vertex's publisher-model catalog, since its OpenAI-compatible endpoint has no
   `/models`. Pasting the key works as before.
 
-- **`extract-v16`, an extractor to measure, off by default** (Phase 28, ADR 0064 proposed, D73; AGE-24). The owner's
-  live run found a role kept as current after the story ended it, and one character split in two by its full name and
-  its given name. `NMOS_EXTRACT_COMPILER=extract-v16` shows the extractor the roles in force and asks it which one the
-  story ends, asks once more about that one role before closing it (an ending it does not confirm is kept aside,
-  and the role stays current), and asks it to link a character the story writes in full and by
-  part of the name (윤하나 and 하나; Elena Vance and Elena) unless the two could be different people. A known name
-  the turn does not write links only a character that turn is about. The Inspector's "Needs attention" lists the
-  role endings it applied recently and the ones it held, each with one action to undo or apply it. Selecting it
-  re-extracts every chat once; `extract-v15` stays the default, and without the setting nothing changes.
+- **`extract-v16`, an extractor to measure, off by default** (Phases 28 and 29, ADR 0064 proposed, D73; AGE-24, NMO-35).
+  The owner's live run found a role kept as current after the story ended it, and one character split in two by its
+  full name and its given name. `NMOS_EXTRACT_COMPILER=extract-v16` shows the extractor the roles in force and asks it
+  which one the story ends; each ending is asked once more about that one role before it is applied, and an ending the
+  model calls planned, or the other direction of an ending, is held for you rather than applied. It links a character
+  the story writes in full and by part of the name (윤하나 and 하나; Elena Vance and Elena) unless the two could be
+  different people, and an alias whose two names are both in the turn is asked once more too, so a nickname one
+  character calls another no longer becomes the speaker's. A name counts as written only as a word of its own (람이 is
+  not found inside 하람이). The Inspector's "Needs attention" lists the role endings it applied recently and the ones
+  it held, and the aliases it held, each with one action (undo, apply, or link the two names as one person).
+  Selecting it re-extracts every chat once; `extract-v15` stays the default, and without the setting nothing changes.
+
+- **A model reply with a trailing comma is read** (#251). A reply such as `{"a": [1, 2,],}` was rejected and its turn
+  retried; at temperature 0 the retry wrote the same comma, so the turn was never extracted. A reply that fails to
+  parse is now read again without a comma that ends a list or an object (outside strings); every other reply parses
+  exactly as before. This applies whichever extractor you use.
 
 - **The query is embedded while recall reads, so a slower embedder still gives vectors** (ADR 0061, D70; K34, AGE-24).
   A request used to give the embedding of your message 300 ms on its own, after lexical recall and before the facts

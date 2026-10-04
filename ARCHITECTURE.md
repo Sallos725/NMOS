@@ -622,6 +622,11 @@ asked for `also_called` when a turn writes a character in full and by part of th
 different people, the part checked on its own in the turn (ADR 0012's provenance and ambiguity rule unchanged). A
 read-side join of a name and its given name was measured first and withdrawn: the stored assertions never named the
 split pairs in the same turn.
+Measured since (ADR 0064 items 2 and 4, Phase 29): a listed ending is applied only after one more call about that role
+says it ended, and an ending marked planned, or the other direction of one, is held for the owner, never applied; an
+alias whose two names are both in the turn is asked once more about those two names and held unless confirmed, a
+held one listed for the owner's link; under `extract-v16` a Hangul or Latin name counts as written only as a word of
+its own. Every held ending and alias is a pending row with its record; the owner sees them under "Needs attention".
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
