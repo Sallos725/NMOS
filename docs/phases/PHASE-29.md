@@ -13,7 +13,7 @@
 | Q2 | What is asked, and with what? | **One call per alias, with the two names, the two preceding turns and the TARGET** (the role confirmation's frame, `confirm_prompt`, and its envelope: temperature 0, JSON mode, the extractor's client): "In TARGET, is NAME_B a name for the same person as NAME_A? Answer no when NAME_B is how someone in TARGET addresses, writes to or mentions a different person." The answer is `{"same": "yes" \| "no", "evidence": "<one passage of TARGET>"}`. No other hint, no first answer, no KNOWN ENTITIES list: the confirmation reads the scene, not the extraction's beliefs. | The main prompt's wording again (both failed rows came from the current wording, and prompt-only fixes have failed on this input before); KNOWN ENTITIES in the confirmation (it carries the earlier joins the extraction was misled by); a second model (later, as Q7 of PHASE-28 left it). |
 | Q3 | What counts as a yes? | **`same: yes` with a passage that is in TARGET (`quoted_in`) and contains NAME_B.** Anything else holds the alias: a no, a missing or foreign quote, an invalid answer, a failed call. As for role endings, the quote check filters a yes; it does not prove identity. | A yes alone (no evidence contract); requiring both names in the quote (a nickname is often introduced a sentence away from the full name: S1 turns 1 and 160). |
 | Q4 | What does a held alias mean? | **A pending row, never served**, reason `alias not confirmed: <outcome>`, with the confirmation (the two names, outcome, whole reply, quote, usage, error) kept beside the extraction's raw reply under its own key. The resolver is unchanged (ADR 0012 and its v16 amendment): a pending row joins nothing and makes nothing ambiguous. A wrongly held alias leaves the two names apart, the defect Phase 28 corrected, so the owner must be able to see it (Q5). | Write the alias and mark it doubtful (the resolver would need a new state); drop the row (loses the evidence, and the raw reply already keeps it). |
-| Q5 | How does the owner see a held alias? | *Decided (owner, 2026-10-04): listed.* **Listed under the Inspector's "Needs attention", with the existing owner link (PHASE-20: a name join shown before it is made) as its one action.** Read only, off the request path; no new repair kind, no migration. If the owner link cannot express "these two names are one person" for a held row, implementation stops and asks. | No listing (a wrong hold is invisible, as the role holds were before PHASE-28 Q7); a new repair kind (a migration and a new UI flow for one case). |
+| Q5 | How does the owner see a held alias? | *Decided (owner, 2026-10-04): listed; and, amended the same day, with a one-click owner link (option A): the held row's mark opens the join's preview and links the two names naming that held row, so a name mentioned only there can be linked (the link waits for a mention, ADR 0025); a plugin change.* **Listed under the Inspector's "Needs attention", with the existing owner link (PHASE-20: a name join shown before it is made) as its one action.** Read only, off the request path; no new repair kind, no migration. If the owner link cannot express "these two names are one person" for a held row, implementation stops and asks. | No listing (a wrong hold is invisible, as the role holds were before PHASE-28 Q7); a new repair kind (a migration and a new UI flow for one case). |
 | Q6 | How does it ship? | **Inside `extract-v16`, behind the same `NMOS_EXTRACT_COMPILER`, off by default.** The confirmation's system text joins the generation fingerprint, so this is a new `extract-v16` generation; `extract-v15`'s key, prompt and every default request are unchanged. Usage: the calls are summed into the extraction's top-level usage and kept apart under `confirm`, as the role confirmations are (ADR 0064 item 4). | A separate compiler (`extract-v17`): one more generation for users to re-extract before 0.3.0, against AGENTS §13's one-per-milestone rule. |
 | Q7 | How is it measured? | **Deterministic cases in CI, a fixed-input probe, then one fresh sequential S1** (below, "Measurement"), each with an owner-approved call and token estimate and every result reported. | A sequential run first (one sample, about $0.5, and the two failing inputs appear once each). |
 | Q8 | What is not in this phase? | Language or scenario generalization (NMO-34, after 1.0): the confirmation is worded in English for any script and adds no Korean or English word list. The persona's aliases. Role endings (Phase 28). Resolver, ADR 0012 or ADR 0013 changes. A default switch or a release. | — |
@@ -55,8 +55,10 @@ item's (25), and are not asked.
 
 ## Out of scope
 
-Q8, and: a migration, a new predicate, a new repair kind, a plugin build, any change to the main extraction prompt's
-alias rule, NAME PAIRS, the bare-label set or the presence check.
+Q8, and: a migration, a new predicate, a new repair kind, any change to the main extraction prompt's alias rule, NAME
+PAIRS or the bare-label set. *Amended 2026-10-04 (owner):* the plugin change Q5 A needs is in scope, and so is one change
+to the presence check under extract-v16: a Hangul or Latin name counts only as a word of its own (S1: 람이 was found
+inside 하람이), in the generation fingerprint; other scripts as before (NMO-34).
 
 ## Measurement
 
@@ -85,11 +87,15 @@ calls, role confirmations and alias confirmations under one 64-call ceiling, inp
 $0.52): names 3/3 at 239, role scenes 7/7, every `also_called` row reviewed with its confirmation, held aliases listed in
 the Inspector.
 
+**Result of (b), 2026-10-04:** 60/60, every bar met (measured wrong 6/6 held, authored negatives 12/12 held, correct
+free aliases 9/9 kept, authored positives 12/12 kept, NAME PAIRS 21/21 kept), no technical error, $0.023; at #251's
+`b447843` (`docs/perf/phase29-alias-confirmation-probe.md` in #251).
+
 ## Acceptance criteria
 
 - [ ] **Defaults unchanged**: `extract-v15`'s key, prompt and default requests as before (full sidecar suite).
 - [ ] **Deterministic** (a): every branch of Q1–Q6.
-- [ ] **Probe** (b) meets its bar.
+- [x] **Probe** (b) meets its bar (60/60, 2026-10-04).
 - [ ] **Sequential S1** (c): names 3/3, roles 7/7, no false join, every held alias listed.
 - [ ] Diff-scoped self-review naming the guarantees at risk; STATUS, ADR 0012/0064 amendments and NMO-35 updated.
 
