@@ -261,6 +261,11 @@ worker's retry could never pass it. A reply is now parsed without a comma that e
 strings, and only after the strict parse failed (`llm.without_trailing_commas`): replaying 1,329 preserved replies,
 1,323 parse exactly as before, the five turn-62 replies now parse, and a reply cut by the output cap still fails. No
 prompt or fingerprint changes, so no generation key changes (`extract-v15`'s included); the raw reply is kept as it came.
+The owner's fresh S1 on that fix (`8fe66d1`, same generation and envelope, `docs/perf/extract-v16-8fe66d1-sequential.md`)
+completed 240/240 turns: the declared role scenes pass 7/7 (233's resignation applied in both directions, 88's wrong
+ending held by a confirmation no), 6 endings applied, 1 held, 1 planned doubt dropped (158), no wrong ending, no false
+join; but names 2/3 at 239, the turn-200 alias `윤하람 → 도도` recurring (NMO-35). 248 calls, 2,906,444 input /
+255,349 output, about $0.509 uncached, 18 min 20 s. No reply needed the comma fix (turn 62's input differed).
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
