@@ -51,6 +51,7 @@ without a PocketRisu change.
 | K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | measured; a lower threshold found less, 0.8 kept (2026-09-30) |
 | K41 | Re-extracted with `extract-v14`, `deepseek-v4.1-flash` passed fewer M0 cases | Memory | measured, accepted (Phase 19, owner 2026-09-30) |
 | K42 | A standing fact's earlier versions are printed under the current version's knowledge marks | Memory | resolved on `main` (ADR 0038 amendment 1, 2026-10-01): a version kept from someone only under the same marks |
+| K43 | A question about what someone lent or gave can miss the item once it has changed hands | Recall | measured (the live gate's S3, `extract-v15` and `extract-v16` alike); under AGE-24, PHASE-28 Q6 |
 
 ## Performance
 
@@ -396,6 +397,17 @@ of 0.8 differ (`docs/perf/lexical-recall.md`, "K40"). A
 main character's name matched almost every message once its particles counted, and was dropped as too broad; the
 rare words that answer questions stand alone often enough to be found at 0.8. The threshold stays 0.8.
 *Workaround:* none needed; vectors and the whole-message route still answer.
+
+**K43 — A question about what someone lent or gave can miss the item once it has changed hands.** Measured in the
+live gate's S3 (the synthetic story, 2026-10-04): "이안이 빌려준 책 제목이 뭐였지?" (the title of the book 이안 lent)
+fails in every run measured, on `extract-v15` (`e13dee7`) and on the focused `extract-v16` (`9947d2c`) alike, where
+the historical lane passed it. The facts are stored — 백이안 possesses 『북해 조류 일지』, then 서도윤 possesses it — and
+the packet carries eleven other facts about 백이안 and ten excerpts, but neither possession nor the passage where the
+book is lent. A likely cause, not yet confirmed: the current holder's fact does not name who lent the item, the
+lender's own possession is history once the item moves (K9, ADR 0016), and no excerpt about the lending ranks high
+enough. It is the S3 part of the AGE-24 regressions (PHASE-28 Q6: excerpt and ranking changes, re-measured after the
+role and name corrections). *Workaround:* ask by the holder or the item ("도윤이 가진 책", "북해 조류 일지"). Tracked
+in Linear under NMO-24.
 
 ## Data and lifecycle
 
