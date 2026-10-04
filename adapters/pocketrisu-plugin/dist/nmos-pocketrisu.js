@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:72164c9cbb77".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:8593a8480e30".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -407,6 +407,8 @@
     "rp.fact_correct": ["\uC815\uC815({n})", "Correct {n}"],
     "rp.fact_lock": ["\uACE0\uC815", "Lock"],
     // a canon fact or a correction stays current against the story (ADR 0047)
+    "rp.alias_join": ["\uD55C \uC0AC\uB78C\uC73C\uB85C \uC5F0\uACB0", "Link as one person"],
+    // a held alias, linked by the owner (PHASE-29 Q5)
     "rp.fact_restore": ["\uBCF5\uC6D0", "Restore"],
     // a fact a re-extraction dropped, remembered at its turn again (PHASE-22 Q7)
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
@@ -1830,7 +1832,7 @@ ${revisionHash}`;
     const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
-  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|undo):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|undo|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
   function repairAction(value) {
     const m = value ? REPAIR.exec(value) : null;
     if (!m?.[1] || !m[2]) return null;
@@ -1844,6 +1846,13 @@ ${revisionHash}`;
       if (!extra.trim() || extra.length > 120 || /[\u0000-\u001f\u007f]/.test(extra)) return null;
     }
     return { kind: m[1], item: m[2], extra };
+  }
+  function aliasPair(action) {
+    if (action.kind !== "alias_join" || !action.extra || !/^[0-9]+$/.test(action.item)) return null;
+    const at = action.extra.indexOf("|");
+    const name = at > 0 ? action.extra.slice(0, at).trim() : "";
+    const same_as = at > 0 ? action.extra.slice(at + 1).trim() : "";
+    return name && same_as ? { name, same_as } : null;
   }
   function closeOutcomes(extra) {
     return (extra ?? "").split(",").filter((o) => /^[a-z_]{1,24}$/.test(o));
@@ -2510,6 +2519,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       button.addEventListener("click", () => {
         if (action.kind === "fact_correct") correctForm(action, button);
         else if (action.kind === "undo" && action.extra === "name_split") void undoSplit(action, button, spot);
+        else if (action.kind === "alias_join") void aliasJoin(action, button, spot);
         else void repairNow(action, button);
       });
       return [button, spot];
@@ -2589,6 +2599,18 @@ html,body{margin:0;background:${PALETTE.bg}}
       });
       spot.replaceChildren(el("span", { class: "rpform" }, text2, turn, save2, cancel));
       text2.focus();
+    }
+    async function aliasJoin(action, button, spot) {
+      const conversation = inspectorConversation(inspectorPath);
+      const pair = aliasPair(action);
+      if (!conversation || !pair) return;
+      const path = `/v1/conversations/${conversation}/entity-links`;
+      const body = { entity_type: "character", ...pair, held_alias: Number(action.item) };
+      await withPreview(spot, button, `${path}/preview`, body, "pv.confirm_join", async (expect) => {
+        await deps.api("POST", path, { ...body, expect }, 15e3);
+        say(actionMsg, L("link.done", { a: pair.name, b: pair.same_as }), "ok");
+        await showInspector();
+      });
     }
     async function undoSplit(action, button, spot) {
       const conversation = inspectorConversation(inspectorPath);

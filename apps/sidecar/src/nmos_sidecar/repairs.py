@@ -505,10 +505,10 @@ def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outc
     r = view.get("resolution")
     if kind == "name_split":
         return _plan_split(item, other, entity_type, r)
-    if kind == "fact_restore":  # the caller lists the chat's dropped facts in the view (`dropped.find`)
+    if kind == "fact_restore":  # the caller lists the dropped facts and held role endings (`dropped`, `endings.held`)
         f = next((d for d in view.get("dropped") or () if str(d["id"]) == item), None)
         if f is None:
-            raise RepairError("no fact a re-extraction dropped with that id in this chat now")
+            raise RepairError("no fact a re-extraction dropped, or role ending held, with that id in this chat now")
         return restore_target(f), {}
     if kind.startswith("fact_"):
         return _plan_fact(kind, item, view, last_turn, new_object, new_value, turn, version_key)
