@@ -167,10 +167,18 @@ def test_model_list_reads_the_catalog_on_the_endpoint_host(monkeypatch):
     monkeypatch.setattr(vertex, "access_token", lambda info, client=None: "ya29.token")
     seen: list[httpx.Request] = []
     pages = {
+        # names and stages as the real global catalog listed them on 2026-10-04 (ADR 0022 amendment 1)
         None: {"publisherModels": [_card("gemini-3.8-flash"), _card("gemini-2.0-flash", "DEPRECATED"),
-                                   _card("gemini-embedding-001"), _card("imagen-4.0-generate-001")],
+                                   _card("gemini-embedding-2"), _card("imagen-4.0-generate-001"),
+                                   _card("gemini-2.5-flash-tts"), _card("gemini-3.1-flash-image-preview", "PUBLIC_PREVIEW"),
+                                   _card("gemini-live-2.5-flash-native-audio"), _card("gemini-3.5-transcribe-preview"),
+                                   _card("gemini-3.5-live-translate-preview", "PUBLIC_PREVIEW"),
+                                   _card("gemini-2.5-computer-use-preview-10-2025", "PUBLIC_PREVIEW"),
+                                   _card("gemini-2.5-pro-exp-03-25", "EXPERIMENTAL"),
+                                   _card("gemini-robotics-er-2-preview-info", "PRIVATE_PREVIEW")],
                "nextPageToken": "p2"},
-        "p2": {"publisherModels": [_card("gemini-3.1-pro"), _card("gemini-3.8-flash"),
+        "p2": {"publisherModels": [_card("gemini-3.1-pro-preview", "PUBLIC_PREVIEW"), _card("gemini-3.8-flash"),
+                                   _card("gemini-3.5-flash-lite", actions={}),
                                    _card("gemma-3-27b-it", actions={"deploy": {}}),
                                    _card("gemini-tuned-something", actions={"deployGke": {}})]},
     }
@@ -181,7 +189,8 @@ def test_model_list_reads_the_catalog_on_the_endpoint_host(monkeypatch):
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
     base = "https://aiplatform.googleapis.com/v1/projects/p1/locations/global/endpoints/openapi"
-    assert vertex.list_models(json.loads(sa_key("p1")), base, client) == ["google/gemini-3.1-pro", "google/gemini-3.8-flash"]
+    assert vertex.list_models(json.loads(sa_key("p1")), base, client) \
+        == ["google/gemini-3.1-pro-preview", "google/gemini-3.5-flash-lite", "google/gemini-3.8-flash"]
     assert [r.url.host for r in seen] == ["aiplatform.googleapis.com"] * 2
     assert seen[0].url.path == "/v1beta1/publishers/google/models"
     assert seen[0].headers["authorization"] == "Bearer ya29.token" and seen[0].headers["x-goog-user-project"] == "p1"

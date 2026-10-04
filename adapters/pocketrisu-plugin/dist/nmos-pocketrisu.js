@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:b84c7f4b96f4".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:59978c7c0f65".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2058,7 +2058,8 @@ ${revisionHash}`;
     { label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
     { label: "OpenAI", url: "https://api.openai.com/v1", model: "gpt-4o-mini" },
     { label: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.5-flash" },
-    { label: "Google Vertex AI", url: VERTEX_URL, model: "google/gemini-2.5-flash" },
+    { label: "Google Vertex AI", url: VERTEX_URL, model: "google/gemini-3.8-flash" },
+    // checked on real Vertex (ADR 0022)
     { label: "preset.custom", url: "custom" }
   ];
   var EMBED_PRESETS = [

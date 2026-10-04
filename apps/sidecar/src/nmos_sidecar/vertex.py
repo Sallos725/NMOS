@@ -117,6 +117,10 @@ _ENDPOINT = re.compile(r"https://((?:[a-z0-9-]+-)?aiplatform\.googleapis\.com)/v
                        r"/locations/[^/]+/endpoints/openapi/?")
 # A Model Garden card with deploy actions is a deploy-it-yourself model, not one Vertex serves by name.
 _DEPLOY_ACTIONS = ("deploy", "multiDeployVertex", "deployGke")
+# Gemini cards that are not chat models: speech, images, live audio, embeddings, agents (real catalog, 2026-10-04).
+_NOT_CHAT = re.compile(r"embedding|tts|image|live|transcribe|translate|computer-use|robotics")
+# Launch stages a service account can call (EXPERIMENTAL and PRIVATE_PREVIEW cards were retired or gated).
+_STAGES = ("GA", "PUBLIC_PREVIEW")
 
 
 def catalog_target(url: str) -> tuple[str, str] | None:
@@ -153,7 +157,7 @@ def list_models(info: dict[str, Any], url: str, client: httpx.Client | None = No
     for row in rows:
         name = str(row.get("name", "")).rsplit("/", 1)[-1]
         actions = row.get("supportedActions") or {}
-        if (name.startswith("gemini") and "embedding" not in name and row.get("launchStage") != "DEPRECATED"
+        if (name.startswith("gemini") and not _NOT_CHAT.search(name) and row.get("launchStage") in _STAGES
                 and not any(a in actions for a in _DEPLOY_ACTIONS)):
             names.add(f"google/{name}")
     return sorted(names)
