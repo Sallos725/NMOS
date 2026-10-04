@@ -280,17 +280,35 @@ FIRST_IMPORT = ("Luca secretly plans to watch the lecture, hidden from Noel.", "
                 "Noel found out: Luca goal: watch the lecture.", "Noel smiles.")
 
 
-def first_import(c, migrated, model, db) -> tuple[SimChat, str]:
-    """K29: four complete turns seen at once; the reveal is extracted before the secret and matches nothing."""
+def first_import(c, migrated, model, db, *, before_phase30: bool = True) -> tuple[SimChat, str]:
+    """K29: four complete turns seen at once. A release before Phase 30 extracted them newest first (priority 200), so
+    the reveal was extracted before the secret and matched nothing: such chats still need the recovery. Since Phase 30
+    (ADR 0065) the window is extracted oldest first and the reveal matches at once."""
     chat = SimChat()
     for line in FIRST_IMPORT:
         chat.user(line)
         chat.reply("Noted.")
     sync(c, chat)
+    if before_phase30:
+        db.execute("UPDATE job SET priority = 200 WHERE kind = 'extract' AND priority = %s", (extraction.FIRST_PRIORITY,))
     drain(migrated, model)
+    if not before_phase30:
+        conv = next(x for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)["id"]
+        return chat, conv
     assert goal_of(db)["hidden_from"] == ["Noel"]
     conv = next(x for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)["id"]
     return chat, conv
+
+
+def test_a_first_import_since_phase30_matches_the_reveal_at_once(migrated, db):
+    """PHASE-30 (ADR 0065): the secret's turn is extracted first, so the reveal matches; nothing needs a check."""
+    model = SecretRecorder()
+    with make_client(migrated, **LLM) as c:
+        _, conv = first_import(c, migrated, model, db, before_phase30=False)
+        goal = goal_of(db)
+        assert not goal.get("hidden_from") and [r["to"] for r in goal["revealed"]] == ["Noel"]
+        out = c.post(f"/v1/conversations/{conv}/extract-history").json()
+        assert out["queued"]["extract"] == out["queued"]["reveal"] == 0
 
 
 def extractions(db) -> list[dict]:
