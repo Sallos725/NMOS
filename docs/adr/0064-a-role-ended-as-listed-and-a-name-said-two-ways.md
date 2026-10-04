@@ -201,6 +201,18 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    same day:* fixed for extract-v16 by ADR 0012's amendment of 2026-10-03 (a part checked apart does not count toward
    its full name's ambiguity), so 237 leaves 람이 ambiguous and the pair holds. A confirmation of an alias the turn's
    names allow (237) stays open for NMO-35, outside this phase.
+   *Amended 2026-10-04 (PHASE-29, NMO-35, approved by the owner):* the S1 runs on `c0b0a5b` and `8fe66d1` wrote
+   `윤하람 → 도도` at turn 200 (하람 to 도윤: "도도, 술 마셨지."), both names in the turn, so the presence check kept it
+   and 윤하람 became ambiguous (names 2/3). An alias is now **confirmed** like a listed role ending (item 4): a
+   character's free `also_called` that would be stored valid and would join two names the shown KNOWN ENTITIES do not
+   already hold as one (`aliases_to_confirm`; not a NAME PAIRS answer, not the persona's, not an item's) is asked once
+   (`ALIAS_CONFIRM_SYSTEM`, `alias_prompt`: the two names, NAME_A with the names it already goes by, the two preceding
+   turns and the TARGET, as `confirm_prompt` shows them; no KNOWN ENTITIES list). Only `{"same": "yes"}` quoting a
+   TARGET passage that contains the alias keeps it; anything else, a failed call included, holds it as a pending row
+   (`alias not confirmed: <outcome>`) that joins nothing, with the record under the raw reply's `alias_confirmations`
+   and the usage under `confirm`. Held aliases are listed under the Inspector's "Needs attention"
+   (`endings.held_aliases`). The text is in the confirmation fingerprint: a new `extract-v16` generation;
+   `extract-v15` is unchanged. Known limit: the same model can be wrong twice, and a wrong yes is not listed.
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before

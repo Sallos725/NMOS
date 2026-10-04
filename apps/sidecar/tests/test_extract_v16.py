@@ -101,8 +101,9 @@ def test_worker_preserves_a_rejected_description_without_making_the_name_ambiguo
 
     with make_client(migrated, llm_url="http://fake/v1", llm_model="fake", extract_compiler="extract-v16") as c:
         sync(c, chat)
-        drain(migrated, lambda system, user: (
-            {"assertions": items if target in user.split("TARGET turn", 1)[-1] else []},
+        drain(migrated, lambda system, user: (  # PHASE-29: the alias confirmation says yes for 최 선생
+            {"same": "yes", "evidence": "최도경은 최 선생이라고도 불렸다."} if system == extraction.ALIAS_CONFIRM_SYSTEM
+            else {"assertions": items if target in user.split("TARGET turn", 1)[-1] else []},
             "preserved synthetic reply"))
         with psycopg.connect(migrated, row_factory=dict_row) as conn:
             conv = conn.execute("SELECT id FROM conversation").fetchone()["id"]
@@ -596,8 +597,18 @@ def test_a_first_connection_extracts_the_ending_before_the_role_and_lists_nothin
 
 # --- a name said two ways, through the worker (Q4) ---------------------------------------------------------------------
 
+def alias_yes(user):
+    """A stand-in alias confirmation (PHASE-29) that says yes, quoting the TARGET sentence with NAME_B."""
+    name = user.split("NAME_B: ", 1)[1].split("\n", 1)[0]
+    target = user.split("\nTARGET:\n", 1)[1]
+    sentence = next(s for s in re.split(r"(?<=[.!?\"])\s+|\n", target) if name in s)
+    return {"same": "yes", "evidence": sentence.split(": ", 1)[-1]}, "{}"
+
+
 def two_ways(system, user):
     """The model as each prompt allows it: under extract-v16 the turn that writes 윤하나 and then 하나 links them."""
+    if system == extraction.ALIAS_CONFIRM_SYSTEM:
+        return alias_yes(user)
     target = user.split("TARGET", 1)[1]
     items = []
 
@@ -669,7 +680,8 @@ def test_a_name_and_its_part_are_one_character_under_extract_v16(migrated, compi
     prompts = []
 
     def capture(system, user):
-        prompts.append(user)
+        if system != extraction.ALIAS_CONFIRM_SYSTEM:
+            prompts.append(user)
         return two_ways(system, user)
 
     with make_client(migrated, llm_url="http://fake/v1", llm_model="fake", extract_compiler=compiler) as c:

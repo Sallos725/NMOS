@@ -78,11 +78,15 @@ def test_the_worker_s_two_aliases_resolve_to_one_person_under_extract_v16_only(m
     from simchat import SimChat
     from test_extraction import drain, filler
     from test_sidecar_integration import sync
+    from test_extract_v16 import alias_yes
+    from nmos_sidecar import extraction
 
     chat = SimChat()
     said = {TURNS[0]: ("윤하람", "하람"), TURNS[1]: ("윤하람", "람이")}
 
     def complete(system, user):
+        if system == extraction.ALIAS_CONFIRM_SYSTEM:  # PHASE-29: the two aliases are confirmed
+            return alias_yes(user)
         shown = user.split("TARGET turn", 1)[-1]
         found = [pair for text, pair in said.items() if text in shown]
         return {"assertions": [{"subject": s, "subject_type": "character", "predicate": "also_called", "value": v,

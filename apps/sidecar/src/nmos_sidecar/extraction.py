@@ -1034,12 +1034,7 @@ def confirm_prompt(role: dict[str, Any], ctx: dict[str, Any]) -> str:
     """The confirmation's user message: the listed role, the last `CONFIRM_TURNS` turns before the target (whole, as
     TARGET turns are shown, not cut to CONTEXT_CHARS: the continuation at S2 turn 73 lay past that cut) and the target
     turn, each message with its speaker. No other role, entity, promise, thread or secret, and not the first answer."""
-    turns = sorted({r["turn"] for r in ctx["context"]})[-CONFIRM_TURNS:]
-    context = [f"[turn {r['turn']}] {_speaker(r['metadata'])}: {r['content'][:TARGET_CHARS]}"
-               for r in ctx["context"] if r["turn"] in turns]
-    return "\n".join([f"ROLE: {role['by']} → {role['to']}: {role['role']}", "", "CONTEXT (preceding turns only):",
-                      *(context or ["(No preceding context supplied.)"]), "", "TARGET:",
-                      *(f"{_speaker(r['metadata'])}: {r['content'][:TARGET_CHARS]}" for r in ctx["members"])])
+    return "\n".join([f"ROLE: {role['by']} → {role['to']}: {role['role']}", "", *_scene(ctx)])
 
 
 def confirmed(answer: Any, turn_text: str) -> tuple[str, str | None]:
@@ -1152,8 +1147,146 @@ def same_names(answer: dict[str, Any], items: list[Any], pairs: list[dict[str, A
         pair = pairs[int(ref) - 1]
         kept.append({"subject": pair["full"], "subject_type": "character", "predicate": "also_called",
                      "value": pair["part"], "modality": "actual", "source": "narration", "evidence": evidence,
-                     "knowledge": "public", "epistemic": "stated"})
+                     "knowledge": "public", "epistemic": "stated", "listed_pair": True})
     return kept
+
+
+# extract-v16 (PHASE-29, NMO-35): an alias whose two names are both in the TARGET can be given to the wrong person (S1
+# turn 200: 하람 says "도도, 술 마셨지." to 도윤 and the reply writes 윤하람 → 도도; turn 237: a letter to 도도 from 하람).
+# The presence check (`alias_evidenced`) cannot see it: both names are there. Such an alias is asked once more, about
+# those two names alone, as a listed role ending is (ADR 0064 item 4).
+ALIAS_CONFIRM_SYSTEM = """Decide whether, in TARGET, NAME_B is a name for the same person as NAME_A.
+
+Answer yes only when TARGET itself uses NAME_B for the person NAME_A names: that person introduces themself by it, the narration or another character calls that person by it, or that person answers to it.
+Answer no when NAME_B is how someone in TARGET addresses, writes to, signs to or mentions a different person: a name called out in dialogue, a letter's greeting or signature, a name in reported speech or on a sign. Two people being in the same scene, or talking to each other, does not make their names one person's.
+Answer no when TARGET does not settle it. Use CONTEXT only to know who is who; the answer must rest on TARGET.
+
+Reply with one JSON object and nothing else:
+{"same": "yes" or "no", "evidence": "one passage copied exactly from TARGET that contains NAME_B and shows whose name it is"}"""
+ALIAS_HELD = "alias not confirmed"  # the reason prefix of a held alias (a pending row: it joins nothing)
+
+
+def _scene(ctx: dict[str, Any]) -> list[str]:
+    """CONTEXT (the last `CONFIRM_TURNS` turns, whole) and TARGET, each message with its speaker, as a confirmation
+    shows them."""
+    turns = sorted({r["turn"] for r in ctx["context"]})[-CONFIRM_TURNS:]
+    context = [f"[turn {r['turn']}] {_speaker(r['metadata'])}: {r['content'][:TARGET_CHARS]}"
+               for r in ctx["context"] if r["turn"] in turns]
+    return ["CONTEXT (preceding turns only):", *(context or ["(No preceding context supplied.)"]), "", "TARGET:",
+            *(f"{_speaker(r['metadata'])}: {r['content'][:TARGET_CHARS]}" for r in ctx["members"])]
+
+
+def alias_prompt(item: dict[str, Any], also: list[str], ctx: dict[str, Any]) -> str:
+    """The alias confirmation's user message: the two names (NAME_A with the names it already goes by, since the turn
+    may write that person by another of them: S1 turn 160 writes 하람 for 윤하람), the two preceding turns and the
+    TARGET. No KNOWN ENTITIES list, no other hint, not the first answer."""
+    a = str(item.get("subject") or "")
+    known = [n for n in also if norm(n) not in (norm(a), norm(item.get("value")))]
+    return "\n".join([f"NAME_A: {a}" + (f" (also written: {', '.join(known)})" if known else ""),
+                      f"NAME_B: {item.get('value')}", "", *_scene(ctx)])
+
+
+def alias_confirmed(answer: Any, turn_text: str, name: str) -> tuple[str, str | None]:
+    """(outcome, quote) of one alias confirmation: "yes" when it says the two are one person and quotes a passage of the
+    TARGET (`quoted_in`) that contains NAME_B, with that quote; otherwise why not, and no quote: "no", "quote not in
+    the turn", "quote without the name" or "invalid answer". The quote checks filter a yes; they do not prove it."""
+    if not isinstance(answer, dict):
+        return "invalid answer", None
+    same, evidence = answer.get("same"), answer.get("evidence")
+    if (not isinstance(same, str) or same.strip().lower() not in ("yes", "no")
+            or (evidence is not None and not isinstance(evidence, str))):
+        return "invalid answer", None
+    if same.strip().lower() == "no":
+        return "no", None
+    quote = quoted_in((evidence or "").strip()[:300], turn_text)
+    if quote is None:
+        return "quote not in the turn", None
+    if norm(name) not in norm(quote):
+        return "quote without the name", None
+    return "yes", quote
+
+
+def aliases_to_confirm(items: list[Any], turn_text: str, hints: list[dict[str, Any]] | None,
+                       persona: list[str] | None = None) -> list[tuple[dict[str, Any], list[str]]]:
+    """The aliases PHASE-29 Q1 asks about, each with the names its subject already goes by: a character's `also_called`
+    that `normalize` would store valid (the registry, the bare-label set and `alias_evidenced` already pass it) and
+    that would join two names the shown KNOWN ENTITIES do not already hold as one. Not a NAME PAIRS answer
+    (`listed_pair`, already confirmed by number), not the persona's own alias (PHASE-28 Q6), not an item's or a
+    place's. Only the first 40 items, the ones `normalize` stores."""
+    me = frozenset(n for n in map(norm, persona or ()) if n)
+    groups = [[n for n in [h.get("name"), *h.get("also", [])] if n]
+              for h in hints or () if h.get("type") == "character"]
+    out = []
+    seen: set[tuple[str, str]] = set()
+    for item, _ in fill_types(items[:40], hints):
+        if not (isinstance(item, dict) and item.get("predicate") == "also_called"
+                and item.get("subject_type") == "character" and not item.get("listed_pair") and not item.get("held")):
+            continue
+        a, b = norm(item.get("subject")), norm(item.get("value"))
+        if (validate(item)[0] != "valid" or a in BARE_PERSON_LABELS or b in BARE_PERSON_LABELS
+                or not alias_evidenced(item, turn_text, hints, True) or node("character", a, me)[1] == PERSONA):
+            continue
+        group = next((g for g in groups if a in map(norm, g)), [])
+        if b in map(norm, group) or (a, b) in seen:
+            continue  # already one entity: nothing to join; or asked already (the answer holds every copy)
+        seen.add((a, b))
+        out.append((item, group))
+    return out
+
+
+def confirm_aliases(complete: Callable[[str, str], tuple[Any, ...]], items: list[Any], ctx: dict[str, Any],
+                    turn_text: str, shown: str, hints: list[dict[str, Any]] | None,
+                    persona: list[str] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Confirm each alias `aliases_to_confirm` picks, one call each (PHASE-29 Q2–Q4). A yes keeps it. Anything else holds
+    it: `held` is set, so `normalize` stores it pending with its reason and the resolver never sees it. A failed call is
+    held and recorded as `confirm_endings` records one, neither retried nor failing the job. Returns a record of each
+    (the two names, the outcome, the answer, the whole reply, the quote, usage and error) and their usage summed, None
+    when no usage is known. `turn_text` is what `normalize` checks presence in; `shown`, the TARGET as the model saw it
+    (`shown_target`), is what a quote must be in."""
+    record: list[dict[str, Any]] = []
+    usage: dict[str, Any] | None = None
+    for item, also in aliases_to_confirm(items, turn_text, hints, persona):
+        error = None
+        try:
+            answer, raw, used = metered(complete, ALIAS_CONFIRM_SYSTEM, alias_prompt(item, also, ctx))
+        except ReplyError as exc:
+            answer, raw, used, error = None, exc.raw, exc.usage, str(exc)[:500]
+            outcome, quote = ("unusable reply" if exc.raw else "call failed: no response"), None
+        except Exception as exc:  # noqa: BLE001 - a failed confirmation holds the alias; the job goes on
+            answer, raw, used, error = None, "", None, f"{type(exc).__name__}: {exc}"[:500]
+            outcome, quote = f"call failed: {type(exc).__name__}", None
+        else:
+            outcome, quote = alias_confirmed(answer, shown, str(item.get("value") or ""))
+        if quote is None:
+            for original in items:  # `fill_types` may have copied it; hold the row `normalize` will read
+                if original is item or (isinstance(original, dict) and original.get("predicate") == "also_called"
+                                        and (original.get("subject"), original.get("value"))
+                                        == (item.get("subject"), item.get("value"))):
+                    original["held"] = f"{ALIAS_HELD}: {outcome}"
+        record.append({"subject": item.get("subject"), "value": item.get("value"), "also": also,
+                       "alias": item.get("evidence"), "outcome": outcome, "quote": quote, "answer": answer,
+                       "reply": raw, "usage": used, **({"error": error} if error else {})})
+        if used is not None:
+            usage = usage or {}
+            for key, value in used.items():
+                if isinstance(value, int) and not isinstance(value, bool):
+                    usage[key] = usage.get(key, 0) + value
+    return record, usage
+
+
+def summed(*usages: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Usages added key by key (counts only); None when none is known."""
+    known = [u for u in usages if u is not None]
+    if not known:
+        return None
+    total: dict[str, Any] = {}
+    for u in known:
+        for key, value in u.items():
+            if isinstance(value, int) and not isinstance(value, bool):
+                total[key] = total.get(key, 0) + value
+            else:
+                total.setdefault(key, value)
+    return total
 
 
 ASSERTION_COLUMNS = ("subject", "subject_type", "predicate", "object", "object_type", "value", "epistemic",
@@ -1262,11 +1395,17 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
         items = ended_roles(parsed, items, roles, shown_target(ctx), hints=hints,
                             persona=persona_of(ctx["target"].get("host_persona_name")))
     confirmations: list[dict[str, Any]] = []
+    alias_confirmations: list[dict[str, Any]] = []
+    confirm_usage: dict[str, Any] | None = None
     if roles and compiler in CONFIRMS:
         confirmations, confirm_usage = confirm_endings(complete, items, ctx, shown_target(ctx))
-        usage = with_confirmations(usage, confirm_usage)
     if pairs:
         items = same_names(parsed, items, pairs, turn_text)
+    if compiler in CONFIRMS and raw:  # PHASE-29: an alias whose two names are both in the turn (no reply, no call)
+        alias_confirmations, alias_usage = confirm_aliases(complete, items, ctx, turn_text, shown_target(ctx), hints,
+                                                           persona_of(ctx["target"].get("host_persona_name")))
+        confirm_usage = summed(confirm_usage, alias_usage)
+    usage = with_confirmations(usage, confirm_usage)
     with conn.transaction():
         # Still this worker's job? A rebuild or a re-extraction (PHASE-20 Q7) makes it obsolete, and a stale claim is
         # taken back after 10 minutes, while the model answers: a row built from the context loaded before must not
@@ -1281,7 +1420,8 @@ def process_extract(conn: psycopg.Connection, job: dict[str, Any], complete: Cal
             " coverage, members, hints, usage) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             " ON CONFLICT DO NOTHING RETURNING id",
             (extraction_id, revision_id, window_hash, compiler, gen.key, gen.model,
-             Jsonb({"reply": raw[:20000], **({"confirmations": confirmations} if confirmations else {})}),
+             Jsonb({"reply": raw[:20000], **({"confirmations": confirmations} if confirmations else {}),
+                    **({"alias_confirmations": alias_confirmations} if alias_confirmations else {})}),
              Jsonb(coverage_of(ctx)), [r["id"] for r in ctx["members"]],
              None if hints is None and not promises and not secrets and not threads and not roles
              else Jsonb({"entities": hints or [], "promises": promises, "secrets": secrets, "threads": threads,
@@ -1324,7 +1464,8 @@ def extractor(settings: Settings) -> Generation | None:
     return generations.make(
         "extract", settings.llm_url, settings.llm_model,
         compiler=compiler, prompt=generations.fingerprint(prompt_of(compiler)),
-        **({"confirm": generations.fingerprint(ROLE_CONFIRM_SYSTEM + str(CONFIRM_TURNS) + "|".join(DOUBTS))}
+        **({"confirm": generations.fingerprint(ROLE_CONFIRM_SYSTEM + str(CONFIRM_TURNS) + "|".join(DOUBTS)
+                                                + ALIAS_CONFIRM_SYSTEM)}
            if compiler in CONFIRMS else {}),
         **({"aliases": generations.fingerprint(ALIASES_PRESENT)} if compiler in PARTS_APART else {}),
         predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.NORMALIZER_VERSION,

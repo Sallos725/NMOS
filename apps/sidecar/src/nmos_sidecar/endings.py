@@ -101,3 +101,38 @@ def held(conn: psycopg.Connection, head: UUID, key: str | None, view: dict[str, 
             continue
         out.append({**a, "text": secret_text(a), "confirmation": _confirmation(raw.get(a["id"]), a)})
     return out
+
+
+# PHASE-29 Q5: an alias whose two names are both in the turn, held by its confirmation (extraction.ALIAS_HELD), is listed
+# beside the held endings: a wrong hold leaves one person's two names apart, the defect Phase 28 corrected.
+ALIAS_HELD = "alias not confirmed"  # extraction.ALIAS_HELD
+HELD_ALIASES = (ACTIVE_ASSERTIONS
+                .replace("SELECT a.id,", "SELECT a.reason, a.id,")
+                .replace(_SERVED, "AND a.status = 'pending' AND a.predicate = 'also_called' AND a.reason LIKE %(held)s"))
+ALIAS_CONFIRMATIONS = """
+SELECT a.id, x.raw->'alias_confirmations' AS confirmations
+FROM assertion a JOIN extraction x ON x.id = a.extraction_id
+WHERE a.id = ANY(%s)
+"""
+
+
+def held_aliases(conn: psycopg.Connection, head: UUID, key: str | None, view: dict[str, Any]) -> list[dict[str, Any]]:
+    """The serving extractions' aliases a confirmation held, oldest turn first, each with its confirmation. Not listed:
+    one whose two names the chat's memory already holds as one entity (the owner linked them, or a later alias did)."""
+    if key is None:
+        return []
+    rows = conn.execute(HELD_ALIASES, {"head": head, "key": key, "held": ALIAS_HELD + "%"}).fetchall()
+    if not rows:
+        return []
+    raw = {r["id"]: r["confirmations"] for r in conn.execute(ALIAS_CONFIRMATIONS, ([a["id"] for a in rows],)).fetchall()}
+    r = view.get("resolution")
+    out = []
+    for a in rows:
+        a = dict(a)
+        if r is not None and _ekey(r, a.get("subject_type"), a.get("subject")) == _ekey(r, a.get("subject_type"),
+                                                                                       a.get("value")):
+            continue
+        found = next((c for c in raw.get(a["id"]) or () if (c.get("subject"), c.get("value"))
+                      == (a.get("subject"), a.get("value"))), None)
+        out.append({**a, "confirmation": found})
+    return sorted(out, key=lambda a: (a.get("turn") or 0, a["id"]))

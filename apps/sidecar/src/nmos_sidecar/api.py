@@ -1102,7 +1102,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             view = inspector.with_participants(view_of(conn, head))
             lost = dropped.find(conn, head, ex_key, view)  # PHASE-22 Q6
             role_ends = {"automatic": endings.automatic(conn, view, head_turn(conn, head)),  # PHASE-28 Q7
-                         "held": endings.held(conn, head, ex_key, view)}
+                         "held": endings.held(conn, head, ex_key, view),
+                         "aliases_held": endings.held_aliases(conn, head, ex_key, view)}  # PHASE-29 Q5
             traces = readmodel.traces(conn, conv_id)
             cov = coverage_view(conn, conv_id, usage=True, lost=len(lost))
             return inspector.detail(conv, current_state(conn, head, rt["rules"].version),

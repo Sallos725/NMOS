@@ -268,6 +268,10 @@ completed 240/240 turns: the declared role scenes pass 7/7 (233's resignation ap
 ending held by a confirmation no), 6 endings applied, 1 held, 1 planned doubt dropped (158), no wrong ending, no false
 join; but names 2/3 at 239, the turn-200 alias `윤하람 → 도도` recurring (NMO-35). 248 calls, 2,906,444 input /
 255,349 output, about $0.509 uncached, 18 min 20 s. No reply needed the comma fix (turn 62's input differed).
+Phase 29 step 2 (NMO-35; spec #256, approved 2026-10-04), on this branch: inside `extract-v16`, a free character alias
+that would newly join two names is confirmed by one more call about those two names (ADR 0064 item 2 amendment); a
+held alias is pending, joins nothing and is listed under Needs attention. A new `extract-v16` generation; `extract-v15`
+unchanged. Deterministic only so far; the 60-call probe and the fresh S1 wait for their estimate's approval.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
