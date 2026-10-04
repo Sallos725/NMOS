@@ -1165,6 +1165,7 @@ Answer no when TARGET does not settle it. Use CONTEXT only to know who is who; t
 Reply with one JSON object and nothing else:
 {"same": "yes" or "no", "evidence": "one passage copied exactly from TARGET that contains NAME_B and shows whose name it is"}"""
 ALIAS_HELD = "alias not confirmed"  # the reason prefix of a held alias (a pending row: it joins nothing)
+ALIAS_ASKED = "names only, not a ?description"  # which aliases are asked; in the fingerprint: a change re-extracts
 
 
 def _scene(ctx: dict[str, Any]) -> list[str]:
@@ -1211,7 +1212,9 @@ def aliases_to_confirm(items: list[Any], turn_text: str, hints: list[dict[str, A
                        persona: list[str] | None = None) -> list[tuple[dict[str, Any], list[str]]]:
     """The aliases PHASE-29 Q1 asks about, each with the names its subject already goes by: a character's `also_called`
     that `normalize` would store valid (the registry, the bare-label set and `alias_evidenced` already pass it) and
-    that would join two names the shown KNOWN ENTITIES do not already hold as one. Not a NAME PAIRS answer
+    that would join two names the shown KNOWN ENTITIES do not already hold as one. Not a `?description` revealed by
+    name (ADR 0024: no quote could contain it, so every reveal would be held; found by the Q5 (c) comparison at
+    S1 turn 29). Not a NAME PAIRS answer
     (`listed_pair`, already confirmed by number), not the persona's own alias (PHASE-28 Q6), not an item's or a
     place's. Only the first 40 items, the ones `normalize` stores."""
     me = frozenset(n for n in map(norm, persona or ()) if n)
@@ -1224,6 +1227,8 @@ def aliases_to_confirm(items: list[Any], turn_text: str, hints: list[dict[str, A
                 and item.get("subject_type") == "character" and not item.get("listed_pair") and not item.get("held")):
             continue
         a, b = norm(item.get("subject")), norm(item.get("value"))
+        if a.startswith(UNNAMED) or b.startswith(UNNAMED):
+            continue  # a `?description` revealed by name (ADR 0024) is not two names: it keeps the reveal's own path
         if (validate(item)[0] != "valid" or a in BARE_PERSON_LABELS or b in BARE_PERSON_LABELS
                 or not alias_evidenced(item, turn_text, hints, True) or node("character", a, me)[1] == PERSONA):
             continue
@@ -1466,7 +1471,7 @@ def extractor(settings: Settings) -> Generation | None:
         "extract", settings.llm_url, settings.llm_model,
         compiler=compiler, prompt=generations.fingerprint(prompt_of(compiler)),
         **({"confirm": generations.fingerprint(ROLE_CONFIRM_SYSTEM + str(CONFIRM_TURNS) + "|".join(DOUBTS)
-                                                + ALIAS_CONFIRM_SYSTEM)}
+                                                + ALIAS_CONFIRM_SYSTEM + ALIAS_ASKED)}
            if compiler in CONFIRMS else {}),
         **({"aliases": generations.fingerprint(ALIASES_PRESENT)} if compiler in PARTS_APART else {}),
         predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.NORMALIZER_VERSION,

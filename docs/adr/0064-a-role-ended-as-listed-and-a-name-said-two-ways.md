@@ -221,6 +221,9 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    하람이, 이안 not in 백이안; a Hangul name may take a particle, a Latin one must end a word; other scripts as before),
    under extract-v16 only and in its fingerprint (`ALIASES_PRESENT`). Replayed on the 55 stored `also_called` rows of the
    four S1 runs of 2026-10-04, no row's outcome changes.
+   *Corrected the same day (the Q5 (c) comparison, S1 turn 29):* a `?description` revealed by name (ADR 0024) is not
+   asked: no quote can contain it, so every reveal was held. It keeps the reveal's own path; the selection is in the
+   confirmation's fingerprint (`ALIAS_ASKED`), so `extract-v16` is now `extract-ccb3d153f170e87b4b4d011afbad8d0d`.
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before

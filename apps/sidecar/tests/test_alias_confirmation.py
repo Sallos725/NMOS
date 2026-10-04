@@ -320,3 +320,14 @@ def test_only_extract_v16_reads_names_as_words():
     assert alias_evidenced(item, text, hints, apart=False)      # extract-v15: 람이 found inside 하람이, as before
     assert not alias_evidenced(item, text, hints, apart=True)   # extract-v16: not written as a name
     assert alias_evidenced(item, "\"람이, 빵은?\" 하람이 웃었다.", hints, apart=True)
+
+
+def test_a_described_character_revealed_by_name_keeps_the_reveal_path():
+    """Q5 (c), S1 turn 29: a `?description` (ADR 0024) can never be in a quote, so asking would hold every reveal. It
+    passes the presence check and is not asked."""
+    text = "윤하람이 웃었다. 빵집 아가씨가 바로 그 사람이었다."
+    hints = [{"name": "?빵집 아가씨", "type": CHAR, "also": []}, {"name": "윤하람", "type": CHAR, "also": []}]
+    reveal = alias("윤하람", "?빵집 아가씨")
+    assert alias_evidenced(reveal, text, hints, apart=True)
+    assert X.aliases_to_confirm([reveal], text, hints, []) == []
+    assert X.aliases_to_confirm([alias("윤하람", "람이")], "윤하람이 웃었다. \"람이, 왔어?\"", hints, []) != []
