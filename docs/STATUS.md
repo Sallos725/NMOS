@@ -282,6 +282,12 @@ connection, the 10k gate and the live runs remain.
 Thirteen independent synthetic scenarios from the owner's diversity pack, through the worker on `9aa7c57` (live lane,
 `docs/perf/phase29-diversity-smoke.md`): 12/13 pass the expectations fixed before the run; R04 fails by a naming error in
 those expectations (the stored state is right, a post-hoc regrade passes); no wrong ending, no false join; $0.049.
+Q5 (c) on S1 (`docs/perf/extract-v16-q5c-s1.md`): the fixed-input comparison (S1 × 3 on the v15 hints, two workers)
+passes 21/21 declared role checks with names 3/3 in every run, no wrong ending, no false join ($1.54); it found that a
+`?description` revealed by name was always held, fixed in `cd68657` (`extract-v16` now `extract-ccb3d153…`). The
+first-connection lane (newest first) gets 4/7 and names 1/3 with no false join: no turn sees any earlier role or name,
+so the corrections do not apply to a long chat NMOS sees for the first time ($0.47). Backfill, how an existing chat
+re-extracts, is the passing sequential lane. A change to first-sight order is the owner's decision.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
