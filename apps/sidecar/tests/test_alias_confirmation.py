@@ -245,7 +245,7 @@ def test_a_wrong_alias_the_confirmation_rejects_is_held_joins_nothing_and_is_lis
     assert (record["subject"], record["value"], record["outcome"]) == ("윤하람", "도도", "no")
     assert tease["usage"]["confirm"]["calls"] == 1 and tease["usage"]["calls"] == 2
     assert {"윤하람", "하람"} in names(entities) and not any("도도" in n and "하람" in n for n in names(entities))
-    assert "an alias held, not confirmed: no (not linked)" in page and "윤하람 = 도도" in page
+    assert "an alias held, not confirmed: no (link it to read them as one person)" in page and "윤하람 = 도도" in page
 
 
 def test_a_confirmed_alias_is_served_and_not_listed(migrated):
@@ -258,3 +258,65 @@ def test_extract_v15_never_asks(migrated):
     asked, _, page, rows, failed = run(migrated, None, "no")
     assert asked == [] and failed == 0 and "an alias held" not in page
     assert all("alias_confirmations" not in r["raw"] for r in rows)
+
+
+def test_the_owner_links_a_held_alias_from_needs_attention(migrated):
+    """PHASE-29 Q5: the held row carries the owner link; its names may be mentioned only there, so the link is allowed
+    when it names that held row (and waits for a mention, ADR 0025), and the row leaves the list once linked."""
+    complete, _ = story("no")
+    chat = SimChat()
+    with make_client(migrated, llm_url="http://fake/v1", llm_model="fake", extract_compiler="extract-v16") as c:
+        for i, text in enumerate([INTRO, TEASE]):
+            chat.user(text)
+            chat.reply("가게 안은 따뜻했다.")
+            filler(chat, 1, tag=str(i))
+            sync(c, chat)
+            drain(migrated, complete)
+        conv = next(x["id"] for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)
+        with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:
+            held = conn.execute("SELECT id FROM assertion WHERE predicate = 'also_called' AND value = '도도'"
+                                " AND status = 'pending'").fetchone()["id"]
+        page = c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
+        assert f'data-repair="alias_join:{held}:' in page
+        path = f"/v1/conversations/{conv}/entity-links"
+        body = {"entity_type": "character", "name": "윤하람", "same_as": "도도"}
+        assert c.post(path, json=body).status_code == 422  # 도도 is mentioned nowhere else: not without the held row
+        for wrong in ({"held_alias": held + 999}, {"held_alias": held, "same_as": "하람"},
+                      {"held_alias": held, "entity_type": "item"}):
+            assert c.post(f"{path}/preview", json={**body, **wrong}).status_code == 422
+        preview = c.post(f"{path}/preview", json={**body, "held_alias": held})
+        assert preview.status_code == 200
+        done = c.post(path, json={**body, "held_alias": held, "expect": preview.json()["fingerprint"]})
+        assert done.status_code == 200 and done.json()["link"]["same_as"] == "도도"
+        assert "an alias held" not in c.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
+        reversed_pair = {"entity_type": "character", "name": "도도", "same_as": "윤하람", "held_alias": held}
+        assert c.post(f"{path}/preview", json=reversed_pair).status_code == 422  # no longer listed
+
+
+# --- the presence check counts a name only as a word of its own (PHASE-29, owner 2026-10-04) --------------------------
+
+from nmos_sidecar.predicates import alias_evidenced, mentioned  # noqa: E402
+
+
+@pytest.mark.parametrize("name, text, found", [
+    ("람이", "하람이 코를 킁킁거렸다.", False),       # inside 하람이
+    ("람이", "\"람이, 빵은 다 구웠어?\"", True),
+    ("하람", "하람이 웃었다.", True),                  # a particle after a Hangul name
+    ("이안", "백이안은 앉아 있었다.", False),
+    ("ann", "anna came home.", False),                 # a Latin name ends a word
+    ("ann", "ann's cat; ann이 왔다.", True),
+    ("田中", "山田中村", True),                        # another script: as before (NMO-34)
+    ("오 사장", "다들 오 사장이라고 부르지.", True),
+    ("", "anything", False),
+])
+def test_a_name_is_mentioned_only_as_a_word_of_its_own(name, text, found):
+    assert mentioned(name, text) is found
+
+
+def test_only_extract_v16_reads_names_as_words():
+    item = alias("윤하람", "람이")
+    text = "하람이 코를 킁킁거렸다."
+    hints = [{"name": "윤하람", "type": CHAR, "also": ["하람"]}]
+    assert alias_evidenced(item, text, hints, apart=False)      # extract-v15: 람이 found inside 하람이, as before
+    assert not alias_evidenced(item, text, hints, apart=True)   # extract-v16: not written as a name
+    assert alias_evidenced(item, "\"람이, 빵은?\" 하람이 웃었다.", hints, apart=True)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -166,6 +167,33 @@ def fill_types(items: list[Any], hints: list[dict[str, Any]] | None = None) -> l
     return out
 
 
+def _worded(c: str) -> bool:
+    """A letter or digit of a script written with spaces between words: Hangul or Latin (PHASE-28 Q6: the languages
+    `extract-v16`'s rules are written for)."""
+    return c.isalnum() and (c.isdigit() or "\uac00" <= c <= "\ud7a3" or "\u1100" <= c <= "\u11ff"
+                            or "\u3130" <= c <= "\u318f" or (c.isalpha() and unicodedata.name(c, "").startswith("LATIN")))
+
+
+def mentioned(name: str, text: str) -> bool:
+    """`name` written in `text` as a word of its own: not inside another word (S1: 람이 is not in 하람이, 이안 not in
+    백이안). A Hangul or Latin name must start a word; a Latin name must also end one (Ann is not in Anna), while a
+    Hangul one may take a particle (하람이, 하람은). A name in another script counts anywhere, as before (NMO-34)."""
+    if not name:
+        return False
+    start = text.find(name)
+    while start >= 0:
+        end = start + len(name)
+        before = text[start - 1] if start else ""
+        after = text[end] if end < len(text) else ""
+        head_ok = not (_worded(name[0]) and before and _worded(before))
+        tail_ok = not (_worded(name[-1]) and not ("\uac00" <= name[-1] <= "\ud7a3") and after and _worded(after)
+                       and not ("\uac00" <= after <= "\ud7a3"))
+        if head_ok and tail_ok:
+            return True
+        start = text.find(name, start + 1)
+    return False
+
+
 def alias_evidenced(item: dict[str, Any], turn_text: str, hints: list[dict[str, Any]] | None = None,
                     apart: bool = False) -> bool:
     """An `also_called` assertion links two names only if both occur in the turn it comes from (ADR 0012),
@@ -187,14 +215,18 @@ def alias_evidenced(item: dict[str, Any], turn_text: str, hints: list[dict[str, 
     known = [{_casefold(n) for n in [h.get("name"), *h.get("also", [])]} - {""}
              for h in hints or () if h.get("type") == item.get("subject_type")]
     listed = set().union(*known)
+    # extract-v16 (PHASE-29): a name counts as written only as a word of its own (`mentioned`); extract-v15 as before
+    def written(name: str, where: str = text) -> bool:
+        return mentioned(name, where) if apart else name in where
+
     if apart and (a in b or b in a):
         whole, part = (a, b) if b in a else (b, a)
-        return whole in text and part in text.replace(whole, " ")
-    if not ((a in text and (b in text or b in listed)) or (b in text and a in listed)):
+        return written(whole) and written(part, text.replace(whole, " "))
+    if not ((written(a) and (written(b) or b in listed)) or (written(b) and a in listed)):
         return False
-    return not apart or all(name.startswith("?") or any(other in text for names in known if name in names
+    return not apart or all(name.startswith("?") or any(written(other) for names in known if name in names
                                                         for other in names - {name})
-                            for name in (a, b) if name not in text)
+                            for name in (a, b) if not written(name))
 
 
 POLARITIES = ("positive", "negative")

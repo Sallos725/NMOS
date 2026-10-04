@@ -142,6 +142,7 @@ const STRINGS = {
   'rp.fact_retract': ['철회', 'Retract'],
   'rp.fact_correct': ['정정({n})', 'Correct {n}'],
   'rp.fact_lock': ['고정', 'Lock'],  // a canon fact or a correction stays current against the story (ADR 0047)
+  'rp.alias_join': ['한 사람으로 연결', 'Link as one person'],  // a held alias, linked by the owner (PHASE-29 Q5)
   'rp.fact_restore': ['복원', 'Restore'],  // a fact a re-extraction dropped, remembered at its turn again (PHASE-22 Q7)
   'rp.undo': ['되돌리기', 'Undo'],
   'rp.select': ['일괄 닫기에 넣기', 'Select to close'],

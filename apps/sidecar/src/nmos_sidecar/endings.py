@@ -116,9 +116,12 @@ WHERE a.id = ANY(%s)
 """
 
 
-def held_aliases(conn: psycopg.Connection, head: UUID, key: str | None, view: dict[str, Any]) -> list[dict[str, Any]]:
+def held_aliases(conn: psycopg.Connection, head: UUID, key: str | None, view: dict[str, Any],
+                 links: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """The serving extractions' aliases a confirmation held, oldest turn first, each with its confirmation. Not listed:
-    one whose two names the chat's memory already holds as one entity (the owner linked them, or a later alias did)."""
+    one whose two names the chat's memory already holds as one entity (a later alias joined them), or that the owner
+    linked (`links`, in force: a link between names not both mentioned yet waits for a mention, ADR 0025)."""
+    linked = {frozenset((norm(x["name"]), norm(x["same_as"]))) for x in links or () if x.get("entity_type") == "character"}
     if key is None:
         return []
     rows = conn.execute(HELD_ALIASES, {"head": head, "key": key, "held": ALIAS_HELD + "%"}).fetchall()
@@ -129,8 +132,9 @@ def held_aliases(conn: psycopg.Connection, head: UUID, key: str | None, view: di
     out = []
     for a in rows:
         a = dict(a)
-        if r is not None and _ekey(r, a.get("subject_type"), a.get("subject")) == _ekey(r, a.get("subject_type"),
-                                                                                       a.get("value")):
+        if frozenset((norm(a.get("subject")), norm(a.get("value")))) in linked or (
+                r is not None and _ekey(r, a.get("subject_type"), a.get("subject"))
+                == _ekey(r, a.get("subject_type"), a.get("value"))):
             continue
         found = next((c for c in raw.get(a["id"]) or () if (c.get("subject"), c.get("value"))
                       == (a.get("subject"), a.get("value"))), None)

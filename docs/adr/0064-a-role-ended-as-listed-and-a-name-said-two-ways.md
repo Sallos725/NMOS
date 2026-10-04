@@ -213,6 +213,14 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    and the usage under `confirm`. Held aliases are listed under the Inspector's "Needs attention"
    (`endings.held_aliases`). The text is in the confirmation fingerprint: a new `extract-v16` generation;
    `extract-v15` is unchanged. Known limit: the same model can be wrong twice, and a wrong yes is not listed.
+   The probe on fixed inputs passed 60/60 (`docs/perf/phase29-alias-confirmation-probe.md`). *Owner decisions, the same
+   day:* the listing carries the owner link (PHASE-29 Q5 A): a held row's mark (`alias_join`) opens the join's preview
+   and makes the link (`entity_link`, ADR 0025) naming the held row (`held_alias`), which lets its names be linked
+   though they are mentioned only there; the link joins them once both are mentioned, and the row leaves the list. And
+   the presence check reads a Hangul or Latin name only as a word of its own (`predicates.mentioned`: 람이 is not in
+   하람이, 이안 not in 백이안; a Hangul name may take a particle, a Latin one must end a word; other scripts as before),
+   under extract-v16 only and in its fingerprint (`ALIASES_PRESENT`). Replayed on the 55 stored `also_called` rows of the
+   four S1 runs of 2026-10-04, no row's outcome changes.
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before

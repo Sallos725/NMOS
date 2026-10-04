@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, keepAttribute, linkChoices,
+import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, keepAttribute, linkChoices,
   localTime, previewText, repairAction, sectionTarget, splitChoices } from '../src/inspector';
 import type { EntityRow, Preview } from '../src/inspector';
 import { t, type StringKey } from '../src/i18n';
@@ -172,5 +172,27 @@ describe('join preview (PHASE-20)', () => {
 
   it('parses the undo mark of a name split', () => {
     expect(repairAction(`undo:${id}:name_split`)).toEqual({ kind: 'undo', item: id, extra: 'name_split' });
+  });
+});
+
+describe('a held alias mark (PHASE-29 Q5)', () => {
+  const mark = (pair: string, item = '2064') => repairAction(`alias_join:${item}:${encodeURIComponent(pair)}`);
+  it('names the held row and its two names, which the server checks again', () => {
+    const action = mark('윤하람|도도');
+    expect(action).toEqual({ kind: 'alias_join', item: '2064', extra: '윤하람|도도' });
+    expect(aliasPair(action!)).toEqual({ name: '윤하람', same_as: '도도' });
+  });
+  it('refuses a mark that is not two names of a numbered row', () => {
+    expect(aliasPair(mark('윤하람'))).toBeNull();
+    expect(aliasPair(mark('|도도'))).toBeNull();
+    expect(aliasPair(mark('윤하람| '))).toBeNull();
+    expect(aliasPair(mark('윤하람|도도', 'abc-1'))).toBeNull();
+    expect(aliasPair({ kind: 'fact_restore', item: '1', extra: 'a|b' })).toBeNull();
+    expect(repairAction('alias_join:2064')).toEqual({ kind: 'alias_join', item: '2064', extra: null });
+    expect(aliasPair(repairAction('alias_join:2064')!)).toBeNull();
+  });
+  it('has a button label in both languages', () => {
+    expect(t('ko', 'rp.alias_join' as StringKey)).toBe('한 사람으로 연결');
+    expect(t('en', 'rp.alias_join' as StringKey)).toBe('Link as one person');
   });
 });

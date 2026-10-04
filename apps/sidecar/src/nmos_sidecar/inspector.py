@@ -235,7 +235,8 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "at.role_held": ("확인되지 않아 보류된 역할 종료: {why} (복원하면 그 턴에 끝남)",
                      "a role ending held, not confirmed: {why} (restore it to end the role at its turn)"),
     # PHASE-29 Q5: an alias a confirmation held joins nothing; listed so a wrong hold (one person's two names apart) is seen
-    "at.alias_held": ("확인되지 않아 보류된 별명: {why} (연결하지 않음)", "an alias held, not confirmed: {why} (not linked)"),
+    "at.alias_held": ("확인되지 않아 보류된 별명: {why} (연결하면 한 사람으로 읽음)",
+                      "an alias held, not confirmed: {why} (link it to read them as one person)"),
     "at.repair": ("지금 맞는 항목이 없는 수리", "a repair that matches nothing now"),
     "at.split": ("아직 한 인물인 이름 분리", "a split whose names are still one entity"),
     "at.ambiguous": ("모호한 이름 (연결 안 함)", "an ambiguous name (not linked)"),
@@ -908,7 +909,8 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
     for f in ends.get("aliases_held", []):
         why = ((f.get("reason") or "").split(": ", 1) + [""])[1]
         rows.append([_v(_t(lang, "at.alias_held").format(why=why)), _v(f"{f.get('subject')} = {f.get('value')}")
-                     + _quote(f.get("evidence")), _v(f.get("turn")), ""])
+                     + _quote(f.get("evidence")), _v(f.get("turn")),
+                     _act("alias_join", f["id"], f"{f.get('subject')}|{f.get('value')}")])
     owned = {f["id"]: f["repair"] for f in view.get("facts", []) if f.get("owner")}  # the owner's corrections
     for c in view.get("conflicts", []):
         if c.get("kind") == "canon":  # keep canon's (a lock) or the story's (canon's statement retracted), or leave it

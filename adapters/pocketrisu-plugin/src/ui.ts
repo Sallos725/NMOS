@@ -10,8 +10,8 @@ import { deadlineAdvice, formatMs } from './deadline';
 import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, fillProject, MAX_DEADLINE_MS,
   PANEL_MAX_RESERVED_TOKENS, presetMatches, VERTEX_URL, type FormValues, type Section } from './form';
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
-import { closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices, localTime,
-  previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
+import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices,
+  localTime, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
 import type { EntityRow, Preview, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
@@ -465,6 +465,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     button.addEventListener('click', () => {
       if (action.kind === 'fact_correct') correctForm(action, button);
       else if (action.kind === 'undo' && action.extra === 'name_split') void undoSplit(action, button, spot);
+      else if (action.kind === 'alias_join') void aliasJoin(action, button, spot);
       else void repairNow(action, button);
     });
     return [button, spot];
@@ -534,6 +535,19 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     });
     spot.replaceChildren(el('span', { class: 'rpform' }, text, turn, save, cancel));
     text.focus();
+  }
+  /** A held alias linked by the owner (PHASE-29 Q5): the join's preview and link, naming the held row. */
+  async function aliasJoin(action: RepairAction, button: HTMLButtonElement, spot: HTMLElement): Promise<void> {
+    const conversation = inspectorConversation(inspectorPath);
+    const pair = aliasPair(action);
+    if (!conversation || !pair) return;
+    const path = `/v1/conversations/${conversation}/entity-links`;
+    const body = { entity_type: 'character', ...pair, held_alias: Number(action.item) };
+    await withPreview(spot, button, `${path}/preview`, body, 'pv.confirm_join', async (expect) => {
+      await deps.api('POST', path, { ...body, expect }, 15_000);
+      say(actionMsg, L('link.done', { a: pair.name, b: pair.same_as }), 'ok');
+      await showInspector();
+    });
   }
   /** The undo of a name split, previewed like a join (PHASE-20 Q2). */
   async function undoSplit(action: RepairAction, button: HTMLButtonElement, spot: HTMLElement): Promise<void> {

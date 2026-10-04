@@ -32,6 +32,7 @@ from . import (__version__, archive, audit, canon, canonfacts, dropped, endings,
 from . import usage as model_usage
 from .config import Settings
 from .db import make_pool
+from .entities import norm
 from .extraction import enqueue_after_apply, job_counts, recent_errors
 from .facts import STANDING, links_of as facts_links_of, memory_view, version_key
 from .ids import uuid7
@@ -624,8 +625,18 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             raise HTTPException(status_code=404, detail="conversation not found")
         return conv["head_commit_id"]
 
-    def check_join(r, entity_type: str, name: str, same_as: str) -> None:
-        if r is None or any(r.status(entity_type, n) == "unresolved" for n in (name, same_as)):
+    def held_alias_of(conn, conv_id: UUID, head: UUID, view: dict[str, Any], held: int, entity_type: str, name: str,
+                      same_as: str) -> None:
+        """The held alias a link from "Needs attention" names (PHASE-29 Q5): listed now, of a character, the same two
+        names (either way round); 422 otherwise."""
+        listed = endings.held_aliases(conn, head, rt["active_extractor"], view, facts_links_of(conn, conv_id))
+        pair = {norm(name), norm(same_as)}
+        if entity_type != "character" or not any(
+                a["id"] == held and {norm(a["subject"]), norm(a["value"])} == pair for a in listed):
+            raise HTTPException(status_code=422, detail="not a held alias of these two names")
+
+    def check_join(r, entity_type: str, name: str, same_as: str, held: bool = False) -> None:
+        if r is None or (not held and any(r.status(entity_type, n) == "unresolved" for n in (name, same_as))):
             raise HTTPException(status_code=422, detail="both names must be mentioned in this chat")
         if r.node(entity_type, name) == r.node(entity_type, same_as):
             raise HTTPException(status_code=422, detail="the two names are the same")
@@ -643,7 +654,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         at = conn.execute("SELECT now() AS t").fetchone()["t"]
         exclude: set[str] = set()
         if action == "join":
-            check_join(now["resolution"], a["entity_type"], a["name"], a["same_as"])
+            if a.get("held_alias") is not None:
+                held_alias_of(conn, conv_id, head, now, a["held_alias"], a["entity_type"], a["name"], a["same_as"])
+            check_join(now["resolution"], a["entity_type"], a["name"], a["same_as"], a.get("held_alias") is not None)
             names = [(a["entity_type"], a["name"]), (a["entity_type"], a["same_as"])]
             what_if = {"add_links": [{"id": "preview", "entity_type": a["entity_type"], "name": a["name"].strip(),
                                       "same_as": a["same_as"].strip(), "created_at": at}]}
@@ -706,7 +719,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         """What joining two names would change in this chat's memory (PHASE-20), before the owner joins them."""
         with request.app.state.pool.connection() as conn:
             return preview_of(conn, conv_id, head_of(conn, conv_id), "join", entity_type=body.entity_type,
-                              name=body.name, same_as=body.same_as)
+                              name=body.name, same_as=body.same_as, held_alias=body.held_alias)
 
     @app.post("/v1/conversations/{conv_id}/entity-links", dependencies=[Depends(auth)])
     def add_entity_link(conv_id: UUID, body: EntityLinkRequest, request: Request):
@@ -715,10 +728,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         fingerprint of the preview the owner saw: 409 when memory changed since (PHASE-20 Q4)."""
         with request.app.state.pool.connection() as conn:
             head = head_of(conn, conv_id)
-            check_join(view_of(conn, head)["resolution"], body.entity_type, body.name, body.same_as)
+            now = view_of(conn, head)
+            if body.held_alias is not None:  # PHASE-29 Q5: linked from "Needs attention"
+                held_alias_of(conn, conv_id, head, now, body.held_alias, body.entity_type, body.name, body.same_as)
+            check_join(now["resolution"], body.entity_type, body.name, body.same_as, body.held_alias is not None)
             with conn.transaction():
                 expect_same(conn, conv_id, body.expect, "join", entity_type=body.entity_type, name=body.name,
-                            same_as=body.same_as)
+                            same_as=body.same_as, held_alias=body.held_alias)
                 link = conn.execute(
                     "INSERT INTO entity_link (id, conversation_id, entity_type, name, same_as) VALUES (%s, %s, %s, %s, %s)"
                     " RETURNING id, entity_type, name, same_as, created_at",
@@ -1103,7 +1119,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             lost = dropped.find(conn, head, ex_key, view)  # PHASE-22 Q6
             role_ends = {"automatic": endings.automatic(conn, view, head_turn(conn, head)),  # PHASE-28 Q7
                          "held": endings.held(conn, head, ex_key, view),
-                         "aliases_held": endings.held_aliases(conn, head, ex_key, view)}  # PHASE-29 Q5
+                         "aliases_held": endings.held_aliases(conn, head, ex_key, view,  # PHASE-29 Q5
+                                                              facts_links_of(conn, conv_id))}
             traces = readmodel.traces(conn, conv_id)
             cov = coverage_view(conn, conv_id, usage=True, lost=len(lost))
             return inspector.detail(conv, current_state(conn, head, rt["rules"].version),

@@ -325,7 +325,8 @@ ROLES = frozenset({"extract-v16"})  # the compilers that list CURRENT ROLES
 PARTS_APART = frozenset({"extract-v16"})  # the compilers whose alias of a name and its part needs the part on its own
 # The same compilers' rule that a known name the turn does not write stands in only for a character the turn names
 # (`alias_evidenced`, ADR 0064 item 2): not in the prompt, so its own part of the generation names it.
-ALIASES_PRESENT = "a known name stands in only for a ?-description or a character the turn writes by another name"
+ALIASES_PRESENT = ("a known name stands in only for a ?-description or a character the turn writes by another name"
+                   "; a Hangul or Latin name counts only as a word of its own")  # PHASE-29: 람이 is not in 하람이
 
 
 def compiler_of(settings: Settings) -> str:

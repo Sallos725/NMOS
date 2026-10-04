@@ -271,7 +271,10 @@ join; but names 2/3 at 239, the turn-200 alias `윤하람 → 도도` recurring 
 Phase 29 step 2 (NMO-35; spec #256, approved 2026-10-04), on this branch: inside `extract-v16`, a free character alias
 that would newly join two names is confirmed by one more call about those two names (ADR 0064 item 2 amendment); a
 held alias is pending, joins nothing and is listed under Needs attention. A new `extract-v16` generation; `extract-v15`
-unchanged. Deterministic only so far; the 60-call probe and the fresh S1 wait for their estimate's approval.
+unchanged. The fixed-input probe passed 60/60 ($0.023; `docs/perf/phase29-alias-confirmation-probe.md`). Owner decisions
+the same day: a held alias in Needs attention carries the owner link (Q5 A, a plugin change), and under extract-v16 the
+presence check reads a Hangul or Latin name only as a word of its own (no stored S1 row changes). The fresh S1 on the
+new generation waits for its estimate's approval.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
