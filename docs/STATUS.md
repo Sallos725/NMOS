@@ -274,7 +274,11 @@ held alias is pending, joins nothing and is listed under Needs attention. A new 
 unchanged. The fixed-input probe passed 60/60 ($0.023; `docs/perf/phase29-alias-confirmation-probe.md`). Owner decisions
 the same day: a held alias in Needs attention carries the owner link (Q5 A, a plugin change), and under extract-v16 the
 presence check reads a Hangul or Latin name only as a word of its own (no stored S1 row changes). The fresh S1 on the
-new generation waits for its estimate's approval.
+new generation then passed (`9aa7c57`, `extract-b88669ca66664b77df6ac117d741ea8e`,
+`docs/perf/extract-v16-9aa7c57-sequential.md`): 240/240 turns, **names 3/3, role scenes 7/7**, no wrong ending, no false
+join; at turn 200 the main reply wrote `윤하람 → 도도` again and the alias confirmation held it (no); 250 calls, about
+$0.509 uncached, 19 min. One development story only: S2, the independent probe, the 1,440-call comparison, first
+connection, the 10k gate and the live runs remain.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
