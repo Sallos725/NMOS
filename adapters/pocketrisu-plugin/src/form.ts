@@ -44,11 +44,14 @@ export function isVertexEndpoint(url: string): boolean {
   return /^https:\/\/(?:[a-z0-9-]+-)?aiplatform\.googleapis\.com\//.test(url.trim());
 }
 
+/** A whole Vertex OpenAI-compatible endpoint, the shape the sidecar lists models for (`vertex.catalog_target`). */
+const VERTEX_OPENAPI = /^https:\/\/(?:[a-z0-9-]+-)?aiplatform\.googleapis\.com\/v1(?:beta1)?\/projects\/[^/]+\/locations\/[^/]+\/endpoints\/openapi\/?$/;
+
 /** The endpoint once a service-account key file is read: the Vertex preset with the key's project, unless it is
- *  already a custom (regional) Vertex endpoint with its project set, which stays as it is. */
+ *  already a whole custom (regional) Vertex endpoint with its project set, which stays as it is. */
 export function endpointForKey(url: string, key: string): string {
   const u = url.trim();
-  return isVertexEndpoint(u) && !u.includes('{project}') && !presetMatches(VERTEX_URL, u) ? u : fillProject(VERTEX_URL, key);
+  return VERTEX_OPENAPI.test(u) && !u.includes('{project}') && !presetMatches(VERTEX_URL, u) ? u : fillProject(VERTEX_URL, key);
 }
 
 /** A preset URL matches a saved one exactly, or with any project in place of `{project}`. */

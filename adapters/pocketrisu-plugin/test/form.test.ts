@@ -112,6 +112,7 @@ describe('Vertex AI service-account key (ADR 0021)', () => {
     expect(endpointForKey(VERTEX_URL.replace('{project}', 'old-proj'), key)).toBe(mine); // another key's project
     const regional = 'https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/endpoints/openapi';
     expect(endpointForKey(regional, key)).toBe(regional);
+    expect(endpointForKey('https://aiplatform.googleapis.com/not-openapi', key)).toBe(mine); // the host alone is not kept
     expect(isVertexEndpoint(regional) && isVertexEndpoint(VERTEX_URL)).toBe(true);
     expect(isVertexEndpoint('https://aiplatform.googleapis.com.evil.example/v1')).toBe(false);
     expect(isVertexEndpoint('https://generativelanguage.googleapis.com/v1beta/openai')).toBe(false);

@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:59978c7c0f65".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:72164c9cbb77".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -149,9 +149,10 @@
   function isVertexEndpoint(url) {
     return /^https:\/\/(?:[a-z0-9-]+-)?aiplatform\.googleapis\.com\//.test(url.trim());
   }
+  var VERTEX_OPENAPI = /^https:\/\/(?:[a-z0-9-]+-)?aiplatform\.googleapis\.com\/v1(?:beta1)?\/projects\/[^/]+\/locations\/[^/]+\/endpoints\/openapi\/?$/;
   function endpointForKey(url, key) {
     const u = url.trim();
-    return isVertexEndpoint(u) && !u.includes("{project}") && !presetMatches(VERTEX_URL, u) ? u : fillProject(VERTEX_URL, key);
+    return VERTEX_OPENAPI.test(u) && !u.includes("{project}") && !presetMatches(VERTEX_URL, u) ? u : fillProject(VERTEX_URL, key);
   }
   function presetMatches(presetUrl, url) {
     if (!presetUrl.includes("{project}")) return presetUrl === url;
