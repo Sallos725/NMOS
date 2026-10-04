@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from nmos_sidecar import extraction as X
+from nmos_sidecar.predicates import registry_prompt
+
 SPEC = importlib.util.spec_from_file_location(
     "eval_story_probe", Path(__file__).resolve().parents[3] / "tools" / "eval_story_probe.py")
 tool = importlib.util.module_from_spec(SPEC)
@@ -140,3 +143,31 @@ def test_invalid_seed_and_unsafe_case_id_are_rejected_before_output(tmp_path):
     tool.save(source, data)
     with pytest.raises(ValueError, match="filenames"):
         tool.load_cases(source)
+
+
+def test_each_case_is_sent_the_system_prompt_the_worker_would_send(tmp_path, monkeypatch):
+    """Copilot on #262: a case with no listed role gets the focused extract-v16 system prompt (no role-ending rules)."""
+    sent = []
+
+    class Fake:
+        def __init__(self, *a, **kw):
+            pass
+
+        def complete_metered(self, system, user):
+            sent.append(system)
+            return {"assertions": [], "roles_ended": []}, "{}", {"input": 1, "output": 1}
+
+    data = tool.load_cases(tool.DEFAULT_CASES)
+    by = {c["id"]: c for c in data["cases"]}
+    data["cases"] = [by["mentor-new-job"], by["full-and-given-name"]]  # one role listed; an alias case with none
+    source = tmp_path / "cases.json"
+    tool.save(source, data)
+    monkeypatch.setattr(tool, "ChatModel", Fake)
+    options = args(tmp_path, execute=True)
+    options.cases, options.runs = source, 1
+    tool.run(options)
+    full = X.PROMPTS["extract-v16"].format(registry=registry_prompt())
+    light = X.prompt_of("extract-v16", False).format(registry=registry_prompt())
+    assert sent[:2] == [full, light] and X.ROLE_ENDINGS not in light
+    assert (options.out / "system-without-roles.txt").read_text() == light
+
