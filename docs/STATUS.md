@@ -288,6 +288,11 @@ passes 21/21 declared role checks with names 3/3 in every run, no wrong ending, 
 first-connection lane (newest first) gets 4/7 and names 1/3 with no false join: no turn sees any earlier role or name,
 so the corrections do not apply to a long chat NMOS sees for the first time ($0.47). Backfill, how an existing chat
 re-extracts, is the passing sequential lane. A change to first-sight order is the owner's decision.
+The Codex review of `bcce836` found four defects, fixed with regression tests and no model call: a quietly ended secret
+role was stored public (an ending now keeps the role's knowledge scope); a free negative written under a joined alias
+skipped the numbered ending and its confirmation (now dropped by party: name, persona, joined aliases); a held alias's
+repeat in other case stayed valid; the comparison tool failed on a checkout without confirmations. `extract-v16` is now
+`extract-409d69e00030e6052c6125fa4520d5db` (`extract-v15` unchanged); the measurements above were on earlier v16 keys.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.

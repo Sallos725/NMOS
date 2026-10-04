@@ -224,6 +224,8 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
    *Corrected the same day (the Q5 (c) comparison, S1 turn 29):* a `?description` revealed by name (ADR 0024) is not
    asked: no quote can contain it, so every reveal was held. It keeps the reveal's own path; the selection is in the
    confirmation's fingerprint (`ALIAS_ASKED`), so `extract-v16` is now `extract-ccb3d153f170e87b4b4d011afbad8d0d`.
+   *Corrected on the Codex review of `bcce836` (2026-10-04):* a held alias is held in every copy of the same pair as
+   `aliases_to_confirm` compares them (normalized), so `ALICE → BOB` no longer stays valid beside a held `Alice → Bob`.
 3. **Selected by a setting, the default unchanged** (Q3). `NMOS_EXTRACT_COMPILER` selects one of
    `extraction.COMPILERS` (`extract-v15`, the default when empty, or `extract-v16`; anything else is refused at
    startup). `extraction.PROMPTS["extract-v15"]` is `SYSTEM_PROMPT` and its generation key is the one on `main` before
@@ -299,6 +301,14 @@ The owner's live run on `e13dee7` found two state defects in its traces (PHASE-2
      ended" and the Inspector lists it for the owner's restore; a no, an invalid answer or a failed call drops it
      (the confirmation record stays in the raw reply). An ending over now still wins over a doubt of the same role.
      The doubts are in the confirmation's fingerprint (`DOUBTS`): a new generation.
+     *Corrected on the Codex review of `bcce836` (2026-10-04):* an ending keeps the knowledge scope of the role it
+     ends (`role_hints` carries `knowledge`, `known_by`, `hidden_from`, not shown in the prompt): a secret arrangement
+     ended quietly is no longer stored as public; its reveal stays the secrets' path (ADR 0033). And a free negative `role_toward`
+     between the parties of a listed role is dropped whichever of their names it uses (`_parties`: the name, the
+     persona under any of its names, the KNOWN ENTITIES entry it already belongs to; no join guessed), so `하나 → 카이토`
+     for a listed `김하나 → 카이토` no longer skips the numbered ending, `LATER` and the confirmation. Both are in the
+     confirmation's fingerprint (`ENDINGS_POST`): `extract-v16` is now `extract-409d69e00030e6052c6125fa4520d5db`;
+     `extract-v15` unchanged. No measurement was rerun on this generation.
    - **Usage.** The extraction's usage sums its confirmations at the top level (what the usage report counts) and
      keeps theirs apart under `confirm`. A call made counts once; its tokens only as the provider reported them,
      none for a call that got no response.

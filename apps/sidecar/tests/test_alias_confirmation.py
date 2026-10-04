@@ -331,3 +331,15 @@ def test_a_described_character_revealed_by_name_keeps_the_reveal_path():
     assert alias_evidenced(reveal, text, hints, apart=True)
     assert X.aliases_to_confirm([reveal], text, hints, []) == []
     assert X.aliases_to_confirm([alias("윤하람", "람이")], "윤하람이 웃었다. \"람이, 왔어?\"", hints, []) != []
+
+
+def test_a_repeat_in_other_case_or_spacing_is_held_with_the_first():
+    """Codex review of bcce836: the dedupe compares normalized names, so the hold must too (ALICE → BOB stayed valid)."""
+    text = "Alice and Bob walked home. ALICE spoke to BOB at the gate."
+    rows = [{**alias("Alice", "Bob"), "evidence": text}, {**alias("ALICE", " BOB "), "evidence": text}]
+    calls = []
+    record, _ = X.confirm_aliases(lambda s, u: (calls.append(u), ({"same": "no"}, "{}"))[1], rows,
+                                  ctx([], [row(9, text)]), text, text, [])
+    stored = X.normalize(rows, text, shown=text, apart=True)
+    assert len(calls) == 1 and len(record) == 1
+    assert [(a["status"], a["reason"]) for a in stored] == [("pending", "alias not confirmed: no")] * 2

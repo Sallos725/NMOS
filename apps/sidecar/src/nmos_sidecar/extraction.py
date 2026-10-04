@@ -666,7 +666,10 @@ def role_hints(ctx: dict[str, Any], rows: list[dict[str, Any]], limit: int = OPE
             named.append(f)
         elif r.is_persona("character", f["subject"]) or r.is_persona("character", f.get("object")):
             persona.append(f)
-    return [{"by": f["subject"], "to": f["object"], "role": f["value"], "turn": f["turn"]}
+    # The role's knowledge scope rides along (not shown in the prompt): its ending keeps it (`_ending`), so a secret
+    # arrangement does not become public because it ended (Codex review of bcce836).
+    return [{"by": f["subject"], "to": f["object"], "role": f["value"], "turn": f["turn"],
+             "knowledge": f.get("knowledge"), "known_by": f.get("known_by"), "hidden_from": f.get("hidden_from")}
             for f in named + persona][:limit]
 
 
@@ -952,10 +955,12 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
     role between the same two the other way round, listed from the same turn: navigator → captain for captain →
     navigator). Each is written held (`held`, a pending row) with `doubt` set; `confirm_endings` keeps it held when
     the confirmation says it ended, so the owner sees it, and drops it otherwise."""
-    pairs = {(norm(r["by"]), norm(r["to"])) for r in roles}
+    parties = _parties(hints, persona)
+    pairs = {(x, y) for r in roles for x in parties(r["by"]) for y in parties(r["to"])}
     kept = [a for a in items if not (isinstance(a, dict) and a.get("predicate") == "role_toward"
                                      and str(a.get("polarity") or "").strip().lower() == "negative"
-                                     and (norm(a.get("subject")), norm(a.get("object"))) in pairs)]
+                                     and any((x, y) in pairs for x in parties(a.get("subject"))
+                                             for y in parties(a.get("object"))))]
     entries = answer.get("roles_ended")
     if not roles or not isinstance(entries, list):
         return kept
@@ -986,16 +991,42 @@ def ended_roles(answer: dict[str, Any], items: list[Any], roles: list[dict[str, 
     return kept
 
 
+def _parties(hints: list[dict[str, Any]] | None, persona: list[str] | None) -> Callable[[Any], set[Any]]:
+    """Who a name stands for, as the extraction was shown it: the name itself, the persona under any of its names, and
+    each KNOWN ENTITIES entry it already belongs to (its name and the aliases already joined). No new join is guessed:
+    a name in no entry is only itself. A free negative role between the parties of a listed role is dropped whichever
+    of their names it uses (Codex review of bcce836: 하나 → 카이토 for a listed 김하나 → 카이토 skipped the numbered
+    ending, `LATER` and the confirmation)."""
+    me = frozenset(n for n in map(norm, persona or ()) if n)
+    groups = [frozenset(n for n in map(norm, [h.get("name"), *h.get("also", [])]) if n)
+              for h in hints or () if h.get("type") == "character"]
+
+    def parties(name: Any) -> set[Any]:
+        n = norm(name)
+        if not n:
+            return set()
+        return ({PERSONA} if node("character", n, me)[1] == PERSONA else {n}) | {g for g in groups if n in g}
+    return parties
+
+
+ENDINGS_POST = "endings keep the role's knowledge; free negatives dropped by party"  # in the fingerprint
+
+
 DOUBT_PLANNED = "marked planned"  # the extraction called the ending not yet over
 DOUBT_REVERSE = "reverse of an ending"  # the other way round of a role the extraction ended
 DOUBTS = (DOUBT_PLANNED, DOUBT_REVERSE)
 
 
 def _ending(listed: dict[str, Any], evidence: str, doubt: str | None) -> dict[str, Any]:
-    """A listed role's ending as `ended_roles` writes it: held, with its doubt, when the extraction did not end it now."""
+    """A listed role's ending as `ended_roles` writes it: held, with its doubt, when the extraction did not end it now.
+    It keeps the role's knowledge scope (`role_hints`): an arrangement kept from someone stays kept from them when it
+    ends; a reveal of it is the secrets' own path (ADR 0033), not an ending's. A role listed without a scope (a
+    hand-made list) ends as public, as before."""
+    scope = ({k: listed.get(k) for k in ("knowledge", "known_by", "hidden_from")} if "knowledge" in listed
+             else {"knowledge": "public"})
     return {"subject": listed["by"], "subject_type": "character", "predicate": "role_toward", "object": listed["to"],
             "object_type": "character", "value": listed["role"], "polarity": "negative", "modality": "actual",
-            "source": "narration", "evidence": evidence, "knowledge": "public", "epistemic": "stated",
+            "source": "narration", "evidence": evidence, **scope, "epistemic": "stated",
             "listed": listed, **({"doubt": doubt, "held": f"{HELD}: {doubt}"} if doubt else {})}
 
 
@@ -1264,10 +1295,11 @@ def confirm_aliases(complete: Callable[[str, str], tuple[Any, ...]], items: list
         else:
             outcome, quote = alias_confirmed(answer, shown, str(item.get("value") or ""))
         if quote is None:
-            for original in items:  # `fill_types` may have copied it; hold the row `normalize` will read
+            pair = (norm(item.get("subject")), norm(item.get("value")))
+            for original in items:  # `fill_types` may have copied it; hold every row `normalize` will read as this pair,
+                # compared as `aliases_to_confirm` dedupes them (Codex review of bcce836: ALICE → BOB stayed valid)
                 if original is item or (isinstance(original, dict) and original.get("predicate") == "also_called"
-                                        and (original.get("subject"), original.get("value"))
-                                        == (item.get("subject"), item.get("value"))):
+                                        and (norm(original.get("subject")), norm(original.get("value"))) == pair):
                     original["held"] = f"{ALIAS_HELD}: {outcome}"
         record.append({"subject": item.get("subject"), "value": item.get("value"), "also": also,
                        "alias": item.get("evidence"), "outcome": outcome, "quote": quote, "answer": answer,
@@ -1471,7 +1503,7 @@ def extractor(settings: Settings) -> Generation | None:
         "extract", settings.llm_url, settings.llm_model,
         compiler=compiler, prompt=generations.fingerprint(prompt_of(compiler)),
         **({"confirm": generations.fingerprint(ROLE_CONFIRM_SYSTEM + str(CONFIRM_TURNS) + "|".join(DOUBTS)
-                                                + ALIAS_CONFIRM_SYSTEM + ALIAS_ASKED)}
+                                                + ALIAS_CONFIRM_SYSTEM + ALIAS_ASKED + ENDINGS_POST)}
            if compiler in CONFIRMS else {}),
         **({"aliases": generations.fingerprint(ALIASES_PRESENT)} if compiler in PARTS_APART else {}),
         predicates=generations.fingerprint(repr(sorted(REGISTRY.items()))), normalizer=normtext.NORMALIZER_VERSION,

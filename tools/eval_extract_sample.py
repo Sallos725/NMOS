@@ -214,7 +214,8 @@ def run(args: argparse.Namespace) -> None:
                     alias_confirmations, alias_usage = X.confirm_aliases(model.complete_metered, items, p["ctx"], p["text"],
                                                                          p["shown"], p["hints"], p["persona"])
                     confirm_usage = X.summed(confirm_usage, alias_usage)
-                usage = X.with_confirmations(usage, confirm_usage)
+                if confirm_usage is not None:  # a checkout before the confirmations (ADR 0064 item 4) has none to add
+                    usage = X.with_confirmations(usage, confirm_usage)
                 apart = {"apart": True} if args.compiler in getattr(X, "PARTS_APART", ()) else {}
                 rows = (X.normalize(items, p["text"], p["hints"], p["shown"], **apart) if checks
                         else X.normalize(items, p["text"], p["hints"]))

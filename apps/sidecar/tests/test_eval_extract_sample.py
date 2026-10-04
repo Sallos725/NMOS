@@ -178,3 +178,18 @@ def test_the_tool_post_processes_a_reply_in_the_workers_order():
     order = [worker.index(s.replace("X.", "")) for s in steps[:3]]
     assert order == sorted(order)
     assert '"alias_confirmations": alias_confirmations' in source
+
+
+def test_a_checkout_without_the_confirmations_still_saves_its_turn(monkeypatch, tmp_path):
+    """Codex review of bcce836: the tool runs another checkout's `nmos_sidecar` (the docstring's PYTHONPATH example);
+    one from before ADR 0064 item 4 has no `with_confirmations`, and a reply must not be lost to an AttributeError."""
+    monkeypatch.delattr(extraction, "with_confirmations")
+    monkeypatch.setattr(tool, "prompts", lambda args: [{"turn": 0, "user": "TARGET", "hints": [], "secrets": [],
+                                                      "roles": [], "pairs": [], "text": TURN, "shown": TURN}])
+    monkeypatch.setattr(tool.ChatModel, "complete_metered",
+                        lambda self, s, u: ({"assertions": []}, "{}", {"calls": 1, "input": 10, "output": 2}))
+    args = argparse.Namespace(compiler="extract-v15", out=tmp_path, label="old", name="chat", runs=1, dry=False,
+                              turns_from=None, url="http://fake/v1", model="fake", workers=1)
+    tool.run(args)
+    saved = json.loads((tmp_path / "old" / "1" / "chat-0.json").read_text(encoding="utf-8"))
+    assert saved["usage"] == {"calls": 1, "input": 10, "output": 2} and saved["assertions"] == []

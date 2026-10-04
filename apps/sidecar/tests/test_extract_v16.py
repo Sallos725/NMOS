@@ -563,8 +563,10 @@ def test_under_extract_v16_the_story_ends_the_role_it_listed(migrated):
     assert {r["compiler_version"] for r in rows} == {"extract-v16"}
     listed = [r["hints"]["roles"] for r in rows if r["hints"] and r["hints"].get("roles")]
     # every turn after the tenancy whose prompt names 하나 (its context does) lists it, the moving out included
-    assert listed and all(x == [{"by": "하나", "to": "카이토", "role": "세입자: 카이토의 집에 세 들어 삶", "turn": 0}]
-                          for x in listed)
+    shown = ("by", "to", "role", "turn")  # what CURRENT ROLES shows; the role's knowledge scope rides along (its ending keeps it)
+    assert listed and all([{k: r[k] for k in shown} for r in x]
+                          == [{"by": "하나", "to": "카이토", "role": "세입자: 카이토의 집에 세 들어 삶", "turn": 0}]
+                          and {"knowledge", "known_by", "hidden_from"} <= set(x[0]) for x in listed)
 
 
 def test_under_extract_v15_the_same_story_keeps_the_role_and_stores_no_roles(migrated):
