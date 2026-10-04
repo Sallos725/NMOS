@@ -560,6 +560,22 @@ chats as missing from its list.
 
 Conclusion: H22. What NMOS does with it: nothing yet. C10 (Linear AGE-4) gets designed after Phase 20.
 
+## Picking a file in the plugin frame (2026-10-04, ADR 0022 amendment 1)
+
+Observed on `ghcr.io/pocketrisu/pocketrisu:latest` (v1.13.0), isolated container on `http://localhost:6181` with an
+empty save dir, headless Chromium 1223, the NMOS plugin built from the amendment's branch, sidecar on a throwaway
+database.
+
+1. **The file chooser opens.** Clicking the panel's **Load key file** button, which calls `click()` on a hidden
+   `<input type="file" accept=".json,application/json">` inside the plugin iframe (`sandbox="allow-scripts
+   allow-modals allow-downloads"`, unchanged), raised Chromium's file chooser (single file).
+2. **The frame reads the file.** `File.text()` returned the picked synthetic service-account key; the panel filled the
+   API key field (1,968 characters), the endpoint's project and the model, and its model-list request reached the
+   sidecar through the host's proxy (`POST /v1/config/models` 200).
+3. **The key is not logged.** Neither the sidecar's log nor the host's `request-logs.db` held the key's private key
+   afterwards.
+4. **Not observed:** Safari and iPhone (WebKit did not start on the test host); a native app's file dialog.
+
 ## Scenario evidence index
 
 | Scenario | Before fixture | After fixture | Other logs | Done |

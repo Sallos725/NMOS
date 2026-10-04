@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Google Vertex AI: pick the key file, and the model list works** (ADR 0022 amendment 1). The fact-extraction LLM
+  section shows **Load key file** for a Vertex endpoint: pick the service-account JSON key file instead of pasting it,
+  and the endpoint's project is filled and the model list loads at once. **Load models** now lists the Gemini models
+  Vertex serves (`google/…`) from Vertex's publisher-model catalog, since its OpenAI-compatible endpoint has no
+  `/models`. Pasting the key works as before.
+
 - **`extract-v16`, an extractor to measure, off by default** (Phase 28, ADR 0064 proposed, D73; AGE-24). The owner's
   live run found a role kept as current after the story ended it, and one character split in two by its full name and
   its given name. `NMOS_EXTRACT_COMPILER=extract-v16` shows the extractor the roles in force and asks it which one the

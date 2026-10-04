@@ -225,12 +225,15 @@ def list_models(url: str, api_key: str, kind: str = "llm") -> dict[str, Any]:
     import httpx
 
     try:
+        info = vertex.service_account_info(api_key) if kind == "llm" else None
+        if info is not None and vertex.catalog_target(url):  # Vertex has no `/models` (ADR 0022 amendment 1)
+            return {"ok": True, "models": vertex.list_models(info, url)[:500]}
         headers = chat_headers(api_key) if kind == "llm" else ({"Authorization": f"Bearer {api_key}"} if api_key else {})
         res = httpx.get(f"{url.rstrip('/')}/models", headers=headers, timeout=15)
         res.raise_for_status()
         ids = sorted({str(m.get("id")) for m in res.json().get("data", []) if m.get("id")})
         return {"ok": True, "models": ids[:500]}
-    except LLMError as exc:
+    except (LLMError, vertex.VertexAuthError) as exc:
         return {"ok": False, "error": str(exc)[:300], "models": []}
     except (httpx.HTTPError, ValueError, AttributeError) as exc:
         return {"ok": False, "error": str(exc)[:300], "models": []}

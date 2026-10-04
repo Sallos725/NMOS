@@ -7,8 +7,8 @@ import { budgetAdvice } from './budget';
 import type { ChatSwitch } from './chatoff';
 import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
-import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, fillProject, MAX_DEADLINE_MS,
-  PANEL_MAX_RESERVED_TOKENS, presetMatches, VERTEX_URL, type FormValues, type Section } from './form';
+import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, endpointForKey, fillProject,
+  isVertexEndpoint, MAX_DEADLINE_MS, PANEL_MAX_RESERVED_TOKENS, presetMatches, serviceAccountProject, VERTEX_URL, type FormValues, type Section } from './form';
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
 import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices,
   localTime, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
@@ -63,7 +63,7 @@ const LLM_PRESETS: Preset[] = [
   { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
   { label: 'OpenAI', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
   { label: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
-  { label: 'Google Vertex AI', url: VERTEX_URL, model: 'google/gemini-2.5-flash' },
+  { label: 'Google Vertex AI', url: VERTEX_URL, model: 'google/gemini-3.8-flash' },  // checked on real Vertex (ADR 0022)
   { label: 'preset.custom', url: 'custom' },
 ];
 
@@ -1046,14 +1046,41 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const msg = el('div', { class: 'msg' });
     const load = el('button', { text: L('model.load') });
     const test = el('button', { text: L('model.test') });
+    // Vertex only (ADR 0022 amendment 1): pick the service-account key file instead of pasting it. LLM section only,
+    // since the sidecar refuses a JSON key for embeddings.
+    const keyFile = el('input', { type: 'file', accept: '.json,application/json', style: 'display:none' });
+    const pickKey = el('button', { text: L('model.key_file'), style: 'display:none' });
+    const syncPickKey = () => {
+      pickKey.style.display = kind === 'llm' && isVertexEndpoint(endpoint.value) ? '' : 'none';
+    };
+    pickKey.addEventListener('click', () => keyFile.click());
+    keyFile.addEventListener('change', async () => {
+      const file = keyFile.files?.[0];
+      keyFile.value = '';  // picking the same file again fires `change` again
+      if (!file) return;
+      let text: string;
+      try { text = (await file.text()).trim(); } catch (error) { return say(msg, errorText(lang, error), 'err'); }
+      const project = serviceAccountProject(text);
+      if (!project) return say(msg, L('model.key_file_bad'), 'err');
+      const vertexModel = presets.find((p) => p.url === VERTEX_URL)?.model;
+      key.value = text;
+      endpoint.value = endpointForKey(endpoint.value, text);
+      preset.value = String(presetIndex(presets, endpoint.value));
+      if (!model.value.trim().startsWith('google/') && vertexModel) model.value = vertexModel;
+      update();
+      say(msg, L('model.key_file_ok', { project }), 'ok');
+      load.click();  // the file is all a Vertex user needs to give: list the models right away
+    });
     preset.addEventListener('change', () => {
       const p = presets[Number(preset.value)] as Preset;
       if (p.url !== 'custom') endpoint.value = fillProject(p.url, key.value);
       if (p.model) model.value = p.model;
       if (!p.url) model.value = '';
       say(msg, p.url.includes('{project}') ? L('model.vertex_hint') : '');
+      syncPickKey();
       update();
     });
+    endpoint.addEventListener('input', syncPickKey);
     key.addEventListener('input', () => { endpoint.value = fillProject(endpoint.value, key.value); });
     list.addEventListener('change', () => { model.value = list.value; update(); });
     load.addEventListener('click', async () => {
@@ -1082,7 +1109,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       el('h2', { text: L(title) }), el('p', { class: 'sub', text: L(sub) }),
       field(L('model.provider'), preset), field(L('model.endpoint'), endpoint),
       field(L('model.model'), model), list, field(L('model.key'), key),
-      el('div', { class: 'btns' }, load, test), msg));
+      el('div', { class: 'btns' }, pickKey, load, test), keyFile, msg));
     return {
       values: () => ({ url: endpoint.value, model: model.value, key: key.value }),
       fill(cfg: { url: string; model: string; api_key_set: boolean }) {
@@ -1091,6 +1118,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         model.value = cfg.model;
         key.value = '';
         key.placeholder = L(cfg.api_key_set ? 'model.key_saved' : 'model.key_placeholder');
+        syncPickKey();
       },
     };
   }

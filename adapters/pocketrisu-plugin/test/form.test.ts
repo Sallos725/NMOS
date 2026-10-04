@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { configBody, connArgs, dirtySections, fillProject, presetMatches, serviceAccountProject, VERTEX_URL,
+import { configBody, connArgs, dirtySections, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, VERTEX_URL,
   type FormValues } from '../src/form';
 import { STRING_KEYS, langOf, t } from '../src/i18n';
 
@@ -102,5 +102,19 @@ describe('Vertex AI service-account key (ADR 0021)', () => {
     expect(presetMatches(VERTEX_URL, VERTEX_URL.replace('{project}', 'a/b'))).toBe(false);
     expect(presetMatches(VERTEX_URL, 'https://aiplatform.googleapis.com/v1/projects/p/locations/us-central1/endpoints/openapi')).toBe(false);
     expect(presetMatches('http://llm/v1', 'http://llm/v1')).toBe(true);
+  });
+
+  it('points the endpoint at the key file\'s project, keeping a custom regional Vertex endpoint', () => {
+    const mine = 'https://aiplatform.googleapis.com/v1/projects/my-proj/locations/global/endpoints/openapi';
+    expect(endpointForKey('', key)).toBe(mine);
+    expect(endpointForKey('https://openrouter.ai/api/v1', key)).toBe(mine);
+    expect(endpointForKey(VERTEX_URL, key)).toBe(mine);
+    expect(endpointForKey(VERTEX_URL.replace('{project}', 'old-proj'), key)).toBe(mine); // another key's project
+    const regional = 'https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/endpoints/openapi';
+    expect(endpointForKey(regional, key)).toBe(regional);
+    expect(endpointForKey('https://aiplatform.googleapis.com/not-openapi', key)).toBe(mine); // the host alone is not kept
+    expect(isVertexEndpoint(regional) && isVertexEndpoint(VERTEX_URL)).toBe(true);
+    expect(isVertexEndpoint('https://aiplatform.googleapis.com.evil.example/v1')).toBe(false);
+    expect(isVertexEndpoint('https://generativelanguage.googleapis.com/v1beta/openai')).toBe(false);
   });
 });
