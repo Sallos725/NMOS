@@ -35,6 +35,9 @@ class Settings:
     extract_turns: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_TURNS", "3")))
     # Known entity names shown to extraction (ADR 0012); 0 turns hints off. Part of the extractor generation.
     extract_hints: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_HINTS", "40")))
+    # The extractor (PHASE-28 Q3): empty is `extraction.COMPILER_VERSION` (extract-v15); "extract-v16" lists the roles in
+    # force and ends one as listed. Part of the extractor generation: a change re-extracts every chat once.
+    extract_compiler: str = field(default_factory=lambda: os.environ.get("NMOS_EXTRACT_COMPILER", ""))
     # Scene summaries and the story so far (PHASE-12, ADR 0042, 0043), written by the extraction model; "0" or the
     # plugin's switch turns them off. Needs NMOS_LLM_URL.
     summaries: bool = field(default_factory=lambda: os.environ.get("NMOS_SUMMARIES", "1") != "0")
@@ -82,6 +85,9 @@ class Settings:
     debug_delay_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_DEBUG_DELAY_MS", "0")))
 
     def __post_init__(self) -> None:
+        # A misspelt extractor would be a generation of its own (a full re-extraction): refused at startup.
+        if self.extract_compiler not in ("", "extract-v15", "extract-v16"):
+            raise ValueError(f"NMOS_EXTRACT_COMPILER must be empty, extract-v15 or extract-v16, not {self.extract_compiler!r}")
         # A cap under one would embed nothing and mark every embed job done (ADR 0062): refused at startup.
         if self.embed_max_chunks < 1:
             raise ValueError(f"NMOS_EMBED_MAX_CHUNKS must be at least 1, not {self.embed_max_chunks}")

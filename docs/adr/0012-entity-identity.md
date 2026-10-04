@@ -97,6 +97,21 @@ same type the extraction was shown in its hints: a turn revealing who a characte
 owner input, stored and reversible; there is still no owner split. An entity is named after its first
 name that is not a `?` description.
 
+## Amendment (2026-10-03, PHASE-28 Q4, ADR 0064 item 2; owner decision)
+
+Item 3's ambiguity is read from the alias graph without direction: a name whose alias neighbours are not otherwise
+connected is ambiguous. That also caught one person with two names of their full name: the owner's sequential S1 of
+`4e76c70` stored `윤하람 → 하람` (turn 33) and the legitimate `윤하람 → 람이` (turn 182), and 윤하람, 하람 and 람이
+became three entities. Now an alias from a compiler that checks a name and its part with the part written on its own
+(`entities.PART_EDGES`, equal to `extraction.PARTS_APART`: extract-v16) does not count toward its full name's
+ambiguity when the other name is contained in it (`_splits(..., parts)`). The full name with its part and **one**
+more name is one person; two names besides the part still make it ambiguous; a part two full names share is still
+ambiguous; an alias of a name that is ambiguous (S1 turn 237: `람이 → 도도`) still joins nothing. extract-v15's rows
+resolve exactly as before (pinned), so `RESOLVER_VERSION` is unchanged; only extract-v16's grouping changes.
+**Accepted cost:** one wrong alias of a full name that also has its part now joins, where the full name used to turn
+ambiguous and join nothing. The guards are the alias turn check (ADR 0064 item 2), the owner's split (ADR 0044) and
+NMO-35's alias confirmation. Tests: `tests/test_part_alias_resolution.py`, through the worker and the read.
+
 ## Consequences
 
 - K8 is reduced where the model reuses hinted names or the story states an alias. It is not

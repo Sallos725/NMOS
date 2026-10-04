@@ -42,7 +42,7 @@ export interface EntityRow {
 /** A repair the inspector marks for the panel (ADR 0044): what to do, to which item, and a character or field. */
 export interface RepairAction { kind: string; item: string; extra: string | null }
 
-const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|undo):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+const REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|undo|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
 
 /** Parse a `data-repair` value (`kind:item[:extra]`, the extra percent-encoded, so a name is any text); null for
  * anything else. The extra is data only: a request body and a button's text. */
@@ -59,6 +59,16 @@ export function repairAction(value: string | null): RepairAction | null {
     if (!extra.trim() || extra.length > 120 || /[\u0000-\u001f\u007f]/.test(extra)) return null;
   }
   return { kind: m[1], item: m[2], extra };
+}
+
+/** The two names of a held alias mark (`alias_join:<assertion id>:<name>|<other>`, PHASE-29 Q5); null when they are
+ * not two names. The server checks them against the held row again. */
+export function aliasPair(action: RepairAction): { name: string; same_as: string } | null {
+  if (action.kind !== 'alias_join' || !action.extra || !/^[0-9]+$/.test(action.item)) return null;
+  const at = action.extra.indexOf('|');
+  const name = at > 0 ? action.extra.slice(0, at).trim() : '';
+  const same_as = at > 0 ? action.extra.slice(at + 1).trim() : '';
+  return name && same_as ? { name, same_as } : null;
 }
 
 /** The outcomes a close mark offers (`kind,kind…`, the default first); empty for a mark without them. */
