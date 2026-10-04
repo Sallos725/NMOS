@@ -613,6 +613,13 @@ itself when it has none; the default, decided by measurement in Phase 27 step 2 
 that need memory 16 → 19 of 23, `docs/perf/answer-span.md`; the owner allowed the smaller packets it makes, Q5);
 `packet-v10` stays available as `NMOS_PACKET_POLICY=packet-v10`. Recorded requests replay as they were.
 
+**D74 — A chat seen for the first time is extracted in story order (ADR 0065; Phase 30, NMO-36).** A first sight's
+window (the latest `NMOS_EXTRACT_BACKFILL` turns) is claimed oldest first, so every turn's lists (KNOWN ENTITIES, OPEN
+PROMISES, OPEN SECRETS, OPEN THREADS, and `extract-v16`'s CURRENT ROLES and NAME PAIRS) come from the turns before it, as
+in a generation's backfill; newest first, each turn was extracted before every turn before it and its lists were empty.
+A live turn of a chat whose first-sight window is still queued or running waits behind it; a dead job holds nothing.
+Every generation; no prompt, generation key or migration changes.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

@@ -55,6 +55,8 @@ MAX_ATTEMPTS = 5
 TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
 CONTEXT_CHARS = 1000  # per context message (2,000 before extract-v14: PHASE-19 Q1)
 RECENT_PRIORITY, HISTORY_PRIORITY = 250, 900  # generation rebuild: recent window first, then history
+LIVE_PRIORITY = 100  # a turn that became eligible on a chat already seen, before any backfill
+FIRST_PRIORITY = 210  # a chat's first sight: its window, oldest first (PHASE-30; 200 is an embedding rebuild's)
 OPEN_PROMISES = 8  # open promise threads shown to the model (PHASE-7 Q3)
 OPEN_SECRETS = 8  # open secrets shown to the model (PHASE-10)
 OPEN_THREADS = 8  # open goals, questions, threats and debts shown to the model (PHASE-11)
@@ -229,14 +231,17 @@ def enqueue_after_apply(
                 if lifecycle.get(e.key) == "accepted" and not e.is_comment and e.disabled not in (True, "allBefore")}
 
     first_sight = old_head is None
-    priority = 200 if first_sight else 100  # live turns before backfill
     rows = []
     if extractor_key:
         now, count = complete_turns(manifest, new_lifecycle)
         before = complete_turns(old_head, old_lifecycle)[0] if old_head else {}
-        for (key, turn_hash), turn in now.items():
-            if (key, turn_hash) in before or (first_sight and turn < count - backfill):
-                continue
+        fresh = [(key, turn_hash) for (key, turn_hash), turn in now.items()  # in turn order: claimed oldest first
+                 if (key, turn_hash) not in before and not (first_sight and turn < count - backfill)]
+        # A live turn waits behind its chat's first-sight window while that is queued or running (PHASE-30 Q2), so
+        # its hints come from every earlier turn; a dead job holds nothing.
+        priority = FIRST_PRIORITY if first_sight or (fresh and first_sight_pending(conn, conv_id, extractor_key)) \
+            else LIVE_PRIORITY
+        for key, turn_hash in fresh:
             rev = ids[key]
             rows.append(("extract", f"extract:{rev}:{turn_hash}:{extractor_key}", conv_id,
                          Jsonb({"revision_id": str(rev), "window_hash": turn_hash, "generation": extractor_key}),
@@ -250,7 +255,7 @@ def enqueue_after_apply(
             # Embeddings depend on content only; they run first because recall uses them directly.
             rev = ids[key]
             rows.append(("embed", f"embed:{rev}:{embed_key}", conv_id,
-                         Jsonb({"revision_id": str(rev), "generation": embed_key}), priority - 50))
+                         Jsonb({"revision_id": str(rev), "generation": embed_key}), 150 if first_sight else 50))
     if rows:
         with conn.cursor() as cur:
             cur.executemany(
@@ -259,6 +264,14 @@ def enqueue_after_apply(
                 rows,
             )
     return len(rows)
+
+
+def first_sight_pending(conn: psycopg.Connection, conv_id: UUID, extractor_key: str) -> bool:
+    """Whether the chat still has first-sight extraction of this generation queued or running (PHASE-30 Q2)."""
+    return conn.execute(
+        "SELECT 1 FROM job WHERE kind = 'extract' AND conversation_id = %s AND priority = %s"
+        " AND status IN ('queued', 'running') AND payload->>'generation' = %s LIMIT 1",
+        (conv_id, FIRST_PRIORITY, extractor_key)).fetchone() is not None
 
 
 def retire(conn: psycopg.Connection, kind: str) -> int:
@@ -271,10 +284,12 @@ def retire(conn: psycopg.Connection, kind: str) -> int:
 def claim(conn: psycopg.Connection, handled: dict[str, str]) -> dict[str, Any] | None:
     """Claim the next job whose (kind, generation) a handler implements; others stay queued.
 
-    Live and first-sight work runs newest first: nothing serves those turns yet. A generation's backfill
-    (RECENT_PRIORITY and later) runs oldest first: the previous generation still serves those turns meanwhile,
-    and each turn's OPEN PROMISES, OPEN SECRETS and hints then come from turns this generation already
-    extracted, so what a later turn resolves still names them after the switch (PHASE-10, ADR 0033)."""
+    Extraction runs oldest first wherever a turn's hints depend on it: a chat's first sight (FIRST_PRIORITY, PHASE-30)
+    and a generation's backfill (RECENT_PRIORITY and later). Each turn's KNOWN ENTITIES, OPEN PROMISES, OPEN SECRETS
+    and the other lists then come from turns this generation already extracted, so what a later turn resolves still
+    names them (PHASE-10, ADR 0033); newest first, a first sight's lists were empty. The newest turns are the ones the
+    host prompt still carries, and their messages are embedded first. Other work below RECENT_PRIORITY (live turns,
+    embeddings, canon facts) runs newest first."""
     with conn.transaction():
         conn.execute(
             "UPDATE job SET status = 'queued', locked_at = NULL, updated_at = now()"
@@ -285,11 +300,11 @@ def claim(conn: psycopg.Connection, handled: dict[str, str]) -> dict[str, Any] |
             UPDATE job SET status = 'running', locked_at = now(), attempts = attempts + 1, updated_at = now()
             WHERE id = (SELECT id FROM job WHERE status = 'queued' AND run_after <= now()
                           AND kind || '|' || coalesce(payload->>'generation', '') = ANY(%s)
-                        ORDER BY priority, CASE WHEN priority >= %s THEN id ELSE -id END
+                        ORDER BY priority, CASE WHEN priority >= %s OR priority = %s THEN id ELSE -id END
                         FOR UPDATE SKIP LOCKED LIMIT 1)
             RETURNING *
             """,
-            ([f"{kind}|{key}" for kind, key in handled.items()], RECENT_PRIORITY),
+            ([f"{kind}|{key}" for kind, key in handled.items()], RECENT_PRIORITY, FIRST_PRIORITY),
         ).fetchone()
 
 

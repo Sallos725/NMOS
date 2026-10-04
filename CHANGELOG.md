@@ -5,6 +5,13 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **A chat connected for the first time is read in story order** (ADR 0065, D74; Phase 30, NMO-36). NMOS used to
+  extract a new chat's recent turns newest first, so each turn was read before the turns that came before it: it could
+  not see who was already known, which promises and secrets were open, or which roles held, and a later turn's ending
+  or second name for someone was missed. The turns are now read oldest first, and a turn you write meanwhile waits
+  behind them. The newest turns are still in the chat's own prompt, and their messages are searchable at once.
+  Nothing is extracted again; chats NMOS already knows are unaffected.
+
 - **Google Vertex AI: pick the key file, and the model list works** (ADR 0022 amendment 1). The fact-extraction LLM
   section shows **Load key file** for a Vertex endpoint: pick the service-account JSON key file instead of pasting it,
   and the endpoint's project is filled and the model list loads at once. **Load models** now lists the Gemini models

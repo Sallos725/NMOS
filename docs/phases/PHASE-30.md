@@ -1,10 +1,9 @@
 # Phase 30 — A chat seen for the first time is extracted in story order
 
-> **Status: draft 2026-10-04, not approved.** NMO-36 under AGE-24; a correction found by measurement, not roadmap
-> Stage 7 or 8. Proposed as a correction phase beside the current phase (AGENTS §7 item 5). It changes the worker's
-> order for every extractor generation, `extract-v15` included, and no prompt, generation key or stored row. AGENTS
-> §1/§2 and STATUS name it once it is approved; the draft does not touch them, so it does not conflict with Phase 29's
-> spec (#256).
+> **Status: approved 2026-10-04 (the owner: as proposed), current as a correction phase (AGENTS §7 item 5); step 2 in
+> review (#260).** NMO-36 under AGE-24; a correction found by measurement, not roadmap Stage 7 or 8. It changes the
+> worker's order for every extractor generation, `extract-v15` included, and no prompt, generation key or stored row
+> (ADR 0065, D74).
 
 ## Questions and proposed answers
 
@@ -16,7 +15,7 @@
 | Q4 | What else does the order touch? | **Nothing stored, keyed or prompted.** Every generation keeps its key; nothing re-extracts; no migration; `extract-v15`'s and `extract-v16`'s prompts unchanged. Behavior that changes for every generation: a first connection's hints (KNOWN ENTITIES, OPEN PROMISES, OPEN SECRETS, OPEN THREADS, and under `extract-v16` CURRENT ROLES and NAME PAIRS) are no longer empty, and the facts of the newest turns of the window arrive last instead of first. Scene summaries (300 and later) still wait for extraction's live and recent work. Reveal checks (ADR 0057 item 4): fewer turns need one, since a turn is no longer extracted before the earlier turn holding a secret. Request path: unchanged (it only enqueues). | — |
 | Q5 | What about the request served before the window is extracted? | **Accepted, and measured:** the newest turns' facts arrive last. The host prompt still carries those turns, and their messages are embedded first (first-sight embedding, 150), so recall over them works before any extraction. The time until the window is extracted is the same total as today; the report gives it, and when the newest turn's facts were written. | Newest K first (Q1's (나)). |
 | Q6 | How is it measured? | **Deterministic cases in CI, then one first connection of S1 on `extract-v16`** (below, "Measurement"), each paid run after an owner-approved estimate, every result reported. | — |
-| Q7 | Where does it land? | **Its own implementation PR off `main`**, independent of #251: the order is not part of `extract-v16`. The paid measurement needs `extract-v16`, so it runs on a local merge of that PR's head with #251's head, or after #251 merges, each SHA reported. | Inside #251 (it already carries Phases 28 and 29, and this changes every generation, not v16 alone). |
+| Q7 | Where does it land? | **Its own PR off `main` (#260, with this spec)**, independent of #251: the order is not part of `extract-v16`. The paid measurement needs `extract-v16`, so it runs on a local merge of that PR's head with #251's head, or after #251 merges, each SHA reported. | Inside #251 (it already carries Phases 28 and 29, and this changes every generation, not v16 alone). |
 | Q8 | What is not in this phase? | The first-sight window (`NMOS_EXTRACT_BACKFILL`): turns before it are still extracted only by "extract all history" (D22), after the window, so the window's turns do not see them; a role set up before the window stays invisible to it. Embedding order. A generation's backfill, which already runs oldest first. Any prompt, hint, reconciliation or resolver change. A default switch to `extract-v16` or a release. | — |
 
 ## Goal
@@ -51,7 +50,8 @@ left 도윤 ambiguous. The fresh sequential S1 on #251's review-fix generation (
 
 1. The first-sight order (Q1) and the live-turn hold (Q2) in `extraction.enqueue_after_apply` and `extraction.claim`,
    with their docstrings and the priority comments that name the lanes (`canonfacts.PRIORITY`).
-2. A new ADR (the next free number at step 2) recording the order, and an amendment note on PHASE-28 Q2's limit.
+2. ADR 0065 and D74 recording the order. PHASE-28 Q2's note on the limit waits until #251, which rewrites that row,
+   and this phase are both merged.
 3. Deterministic cases (below), and a pin that every generation key and the extraction prompts are unchanged.
 4. The measurement (Q6) and the decision it supports.
 
@@ -91,13 +91,15 @@ the same cost if the owner wants the change checked under the default generation
 - [ ] **Deterministic** (a): every case above.
 - [ ] **First connection** (b): role scenes 7/7, names 3/3, no false join.
 - [ ] (c) reported if the owner runs it.
-- [ ] Diff-scoped self-review naming the guarantees at risk; STATUS, the ADR, the PHASE-28 Q2 note and NMO-36 updated.
+- [ ] Diff-scoped self-review naming the guarantees at risk; STATUS, ADR 0065, D74 and NMO-36 updated
+  (PHASE-28 Q2's note after #251 merges).
 
 ## Steps
 
-1. This document, approved; AGENTS §1/§2 and STATUS name Phase 30 (after #256 merges, which renames the unauthorized
-   row).
-2. Implementation, ADR and deterministic cases in their own PR off `main` (Q7).
+1. This document, approved (2026-10-04); AGENTS §1/§2 and STATUS name Phase 30.
+2. Implementation, ADR 0065, D74 and deterministic cases (`tests/test_first_sight_order.py`) on the same PR, #260
+   (Q7). #251 pins the old order in `test_a_first_connection_extracts_the_ending_before_the_role_and_lists_nothing`;
+   whichever of the two merges second turns that pin into the ending it now expects.
 3. The measurement (b), and (c) if chosen, after the estimate is approved, on a local merge with #251 or after #251
    merges.
 4. The decision: merged as the order for every generation, or withdrawn (NMO-36 (가): the limit documented).
