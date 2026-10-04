@@ -255,9 +255,11 @@ stopped at turn 117 on the experiment's 4,096-token output cap. Owner decisions 
 and the reverse of an ending, are asked of the confirmation and held for the owner on a yes, never applied (PHASE-28
 Q7 amendment, ADR 0064 item 4); the next S1's experimental output cap is **8,192** tokens per main call (production
 sends none), recorded as a changed condition. More confirmation calls than the earlier 32-call ceiling assumed.
-The S1 on `4cc7ddd` stopped at turn 62 on a reply with a trailing comma (`"hidden_from": [],` before `}`); the same
-comma at the same place broke turn 62 in every earlier run that reached that state, a same-input retry included, so the
-worker's retry could never pass it. A reply is now parsed without a comma that ends a list or an object, outside
+The S1 on `4cc7ddd` (generation `extract-ba2d952e57b5e468cef813c6e6f52273`, 8,192-token cap,
+`docs/perf/extract-v16-4cc7ddd-sequential.md`) is **incomplete**: it stopped at turn 62 after 62/240 jobs and 63 calls
+(701,043 input / 65,299 output, about $0.124 uncached) on a reply with a trailing comma (`"hidden_from": [],` before
+`}`); 0–61 had eight correct aliases, no role ending, names 3/3 at 61. The same comma at the same place broke turn 62 in
+every earlier run that reached that state, a same-input retry included, so the worker's retry could never pass it. A reply is now parsed without a comma that ends a list or an object, outside
 strings, and only after the strict parse failed (`llm.without_trailing_commas`): replaying 1,329 preserved replies,
 1,323 parse exactly as before, the five turn-62 replies now parse, and a reply cut by the output cap still fails. No
 prompt or fingerprint changes, so no generation key changes (`extract-v15`'s included); the raw reply is kept as it came.

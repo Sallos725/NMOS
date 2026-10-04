@@ -11,13 +11,11 @@ The measured product code is unchanged by this report.
 
 ## Target and method
 
-- Product: `8fe66d1b6a4a420e2b08d2228d16d20861d5a487` on `claude/pr251-json-trailing-comma` (4cc7ddd of
-  PR #251 plus the trailing-comma parse fix), `NMOS_EXTRACT_COMPILER=extract-v16`.
+- Product: `8fe66d1b6a4a420e2b08d2228d16d20861d5a487` (PR #251: 4cc7ddd plus the trailing-comma parse fix), `NMOS_EXTRACT_COMPILER=extract-v16`.
 - Generation: `extract-ba2d952e57b5e468cef813c6e6f52273`, the same as on 4cc7ddd (the fix changes no
   fingerprint); v3 confirmation system SHA-256 `c5fe766a…` unchanged.
 - Owner's approval (2026-10-04): another run after the cause of the 4cc7ddd stop (turn 62, a trailing
-  comma; `extract-v16-4cc7ddd-sequential.md` on `claude/pr251-4cc7ddd-s1-results`) was found and fixed,
-  on another branch. A new restore of the preserved S1 baseline (SHA-256 `b8910225…`); the stopped
+  comma; `extract-v16-4cc7ddd-sequential.md`) was found and fixed. A new restore of the preserved S1 baseline (SHA-256 `b8910225…`); the stopped
   4cc7ddd database was not resumed. One worker, no retries.
 - Envelope, gold, verdicts, review and stop rules are those of the 4cc7ddd run, fixed before it: main
   `max_tokens` 8,192 (production sends none), confirmation 512, 240 main / 64 confirmation calls, input
