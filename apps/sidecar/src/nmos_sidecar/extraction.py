@@ -51,11 +51,13 @@ COMPILER_VERSION = "extract-v15"  # v2: known_by / hidden_from; v3: knowledge sc
 #                                 not in the target turn parks the assertion (PHASE-19, ADR 0054);
 #                                 v15: role_toward, a role between two people, and `relationship` for personal
 #                                 ties only (PHASE-25, ADR 0059)
-# The extractor a sidecar runs is the default above unless NMOS_EXTRACT_COMPILER selects another of COMPILERS
-# (PHASE-28 Q3): extract-v16 is extract-v15 with CURRENT ROLES and the rule to end a listed role as listed (Q1, Q2),
-# and `also_called` for a character written in full and by part of the name (Q4).
-# extract-v15's prompt and generation key are unchanged by it, so nothing re-extracts until it is selected.
+# The extractor a sidecar runs is DEFAULT_COMPILER unless NMOS_EXTRACT_COMPILER selects another of COMPILERS
+# (PHASE-28 Q3): extract-v16 is extract-v15 (COMPILER_VERSION, the base prompt) with CURRENT ROLES and the rule to end a
+# listed role as listed (Q1, Q2), and `also_called` for a character written in full and by part of the name (Q4).
+# extract-v16 is the default since the owner's decision of 2026-10-04 (PHASE-28 step 3, ADR 0064 accepted); extract-v15
+# stays selectable, its prompt and generation key unchanged.
 COMPILERS = ("extract-v15", "extract-v16")
+DEFAULT_COMPILER = "extract-v16"
 MIN_CONTENT_CHARS = 12
 MAX_ATTEMPTS = 5
 TARGET_CHARS = 6000  # normalized chars of each target-turn message the model sees (#13)
@@ -332,8 +334,8 @@ ALIASES_PRESENT = ("a known name stands in only for a ?-description or a charact
 
 
 def compiler_of(settings: Settings) -> str:
-    """The compiler the settings select (NMOS_EXTRACT_COMPILER), the default when empty (PHASE-28 Q3)."""
-    return settings.extract_compiler or COMPILER_VERSION
+    """The compiler the settings select (NMOS_EXTRACT_COMPILER), DEFAULT_COMPILER when empty (PHASE-28 Q3)."""
+    return settings.extract_compiler or DEFAULT_COMPILER
 
 
 def prompt_of(compiler: str) -> str:

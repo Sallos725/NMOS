@@ -156,7 +156,7 @@ def prompts(args: argparse.Namespace) -> list[dict[str, Any]]:
 
 def compiler_of(args: argparse.Namespace) -> str:
     """The compiler to run: `--compiler`, else the checkout's default; one the checkout does not have is refused."""
-    name = getattr(args, "compiler", None) or X.COMPILER_VERSION
+    name = getattr(args, "compiler", None) or getattr(X, "DEFAULT_COMPILER", X.COMPILER_VERSION)  # before PHASE-28 step 3
     if name not in getattr(X, "PROMPTS", {X.COMPILER_VERSION: X.SYSTEM_PROMPT}):
         raise SystemExit(f"this checkout has no compiler {name}")
     return name

@@ -179,7 +179,7 @@ def test_usages_add_up():
 
 def test_the_alias_confirmation_is_in_the_v16_fingerprint_and_not_in_v15(monkeypatch):
     s16 = Settings(llm_url="http://x/v1", llm_model="m", extract_compiler="extract-v16")
-    s15 = Settings(llm_url="http://x/v1", llm_model="m")
+    s15 = Settings(llm_url="http://x/v1", llm_model="m", extract_compiler="extract-v15")
     before16, before15 = X.extractor(s16).key, X.extractor(s15).key
     monkeypatch.setattr(X, "ALIAS_CONFIRM_SYSTEM", X.ALIAS_CONFIRM_SYSTEM + " ")
     assert X.extractor(s16).key != before16 and X.extractor(s15).key == before15
@@ -255,7 +255,7 @@ def test_a_confirmed_alias_is_served_and_not_listed(migrated):
 
 
 def test_extract_v15_never_asks(migrated):
-    asked, _, page, rows, failed = run(migrated, None, "no")
+    asked, _, page, rows, failed = run(migrated, "extract-v15", "no")
     assert asked == [] and failed == 0 and "an alias held" not in page
     assert all("alias_confirmations" not in r["raw"] for r in rows)
 

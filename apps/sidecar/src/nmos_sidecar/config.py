@@ -35,8 +35,8 @@ class Settings:
     extract_turns: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_TURNS", "3")))
     # Known entity names shown to extraction (ADR 0012); 0 turns hints off. Part of the extractor generation.
     extract_hints: int = field(default_factory=lambda: int(os.environ.get("NMOS_EXTRACT_HINTS", "40")))
-    # The extractor (PHASE-28 Q3): empty is `extraction.COMPILER_VERSION` (extract-v15); "extract-v16" lists the roles in
-    # force and ends one as listed. Part of the extractor generation: a change re-extracts every chat once.
+    # The extractor (PHASE-28 Q3): empty is `extraction.DEFAULT_COMPILER` (extract-v16 since 2026-10-04: it lists the roles
+    # in force and ends one as listed); "extract-v15" selects the earlier extractor. Part of the extractor generation: a change re-extracts every chat once.
     extract_compiler: str = field(default_factory=lambda: os.environ.get("NMOS_EXTRACT_COMPILER", ""))
     # Scene summaries and the story so far (PHASE-12, ADR 0042, 0043), written by the extraction model; "0" or the
     # plugin's switch turns them off. Needs NMOS_LLM_URL.

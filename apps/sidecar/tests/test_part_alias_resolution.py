@@ -78,7 +78,7 @@ def test_the_worker_s_two_aliases_resolve_to_one_person_under_extract_v16_only(m
     from simchat import SimChat
     from test_extraction import drain, filler
     from test_sidecar_integration import sync
-    from test_extract_v16 import alias_yes
+    from conftest import alias_yes
     from nmos_sidecar import extraction
 
     chat = SimChat()
@@ -105,4 +105,4 @@ def test_the_worker_s_two_aliases_resolve_to_one_person_under_extract_v16_only(m
         conv = next(x["id"] for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == chat.id)
         names = [set(e["names"]) for e in c.get(f"/v1/conversations/{conv}/entities").json()]
     one = {"윤하람", "하람", "람이"} in names
-    assert one == (compiler == "extract-v16"), names
+    assert one == ((compiler or extraction.DEFAULT_COMPILER) == "extract-v16"), names  # empty: the default

@@ -1,7 +1,8 @@
 # Phase 28 — A role that ends, and a name said two ways, after the AGE-24 live run
 
 > **Status: approved 2026-10-03 (the owner, every proposed answer below), current as a correction phase (AGENTS §7
-> item 5); step 2 in review (#251).** A correction found by measurement under AGE-24, not roadmap Stage 7 or 8. Scope narrowed on
+> item 5); step 2 merged (#251); step 3 decided 2026-10-04: `extract-v16` is the default (ADR 0064 accepted); step 4,
+> the live gate, next.** A correction found by measurement under AGE-24, not roadmap Stage 7 or 8. Scope narrowed on
 > review of the first draft (#250): the role-ending and identity defects first, each behind a setting that is off by
 > default; excerpt and ranking changes only after they are re-measured on the corrected state (Q6).
 
@@ -159,7 +160,9 @@ phase the same day for extract-v16 only (ADR 0012 amendment of 2026-10-03); extr
       character; the part only inside the full name links nothing; `extract-v15`'s check is as it was.
 - [x] **The read-side join (Q5 b)**, measured by the owner on #251's head: no join on any of 837 reads; S4b 2/3 and S2
       22/25 replays unchanged; the edited birthday still missing. Not met: withdrawn (Q4).
-- [ ] **`extract-v16` evaluation** (Q5 c, after the owner approves its estimate): the guest and employment endings
+- [x] **`extract-v16` evaluation** (Q5 c, after the owner approves its estimate; met on S1, the owner's option A:
+      fixed input 21/21 (`docs/perf/extract-v16-q5c-s1.md`), sequential backfill 7/7 and 3/3
+      (`extract-v16-6e4ca05-sequential.md`), first connection 7/7 and 3/3 after Phase 30 (`phase30-first-s1.md`)): the guest and employment endings
       close their roles on the isolated copies, no role is ended wrongly, the split pairs are linked and no alias joins
       two people, first connection and backfill reported apart, and token use within the approved estimate.
 - [ ] **Live gate** (Q5 d, after a decision to switch defaults): the four regressed scenarios reach at least their

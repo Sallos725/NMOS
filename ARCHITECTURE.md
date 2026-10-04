@@ -613,9 +613,10 @@ itself when it has none; the default, decided by measurement in Phase 27 step 2 
 that need memory 16 → 19 of 23, `docs/perf/answer-span.md`; the owner allowed the smaller packets it makes, Q5);
 `packet-v10` stays available as `NMOS_PACKET_POLICY=packet-v10`. Recorded requests replay as they were.
 
-**D73 — `extract-v16`: a role ended as listed, and a name said two ways (ADR 0064, proposed; Phase 28, AGE-24).**
-Off by default until the owner's measurement decides (`NMOS_EXTRACT_COMPILER=extract-v16`; `extract-v15` stays the
-default with its key). The extractor is shown the roles in force (CURRENT ROLES, as open promises, threads and secrets
+**D73 — `extract-v16`: a role ended as listed, and a name said two ways (ADR 0064; Phase 28, AGE-24).**
+**The default since 2026-10-04** (the owner's decision, Phase 28 step 3); `NMOS_EXTRACT_COMPILER=extract-v15` selects
+the earlier extractor with its key unchanged. Off by default until then.
+The extractor is shown the roles in force (CURRENT ROLES, as open promises, threads and secrets
 are shown, numbered) and names the one a turn ends; the worker writes the ending with the listed value, so ADR 0013's
 value match closes exactly that role (asking the model to copy the value failed on the owner's run); and it is
 asked for `also_called` when a turn writes a character in full and by part of the name, unless the two could be
