@@ -32,8 +32,9 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-28.md` is the latest, approved
-   2026-10-03, a correction phase under §7 item 5 with no roadmap phase current, step 2 in review (#251); `PHASE-27.md` was
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-29.md` is the latest, approved
+   2026-10-04, a correction phase under §7 item 5 built on Phase 28's `extract-v16`, step 2 in review (#251); `PHASE-28.md`, approved
+   2026-10-03, is in step 2, in review on the same PR; `PHASE-27.md` was
    complete 2026-10-02, run beside Phase 23 as Phases 24 and 25 were; `PHASE-26.md` was stopped before it merged;
    Phase 23 is complete after the owner's Windows and Mac checks (2026-10-02); `PHASE-0.md`…`PHASE-25.md` and
    `PHASE-27.md` still define the behavior they introduced).
@@ -92,7 +93,8 @@ If two normative documents appear to conflict:
 | 26 — a repair whose item is gone suggests where it belongs now (Stage 6, AGE-23; an exception to R7 granted by the owner) | stopped (2026-10-01) after step 2, not merged: no repaired error came back on the copy, so Stage 6's criterion was reworded instead | `PHASE-26.md` |
 | 27 — the excerpt lands on the answer: a vector hit's span, and room for an explanation (`packet-v11`; under AGE-24, from the diagnosis of draft PR #241; a correction found by measurement, not a roadmap stage) | complete (2026-10-02), not released; Q1b decided for the keywords anchor and Q5's size bound made one-sided by the owner on the measurement (`docs/perf/answer-span.md`); `packet-v11` the default | `PHASE-27.md`, ADR 0063 |
 | 28 — a role that ends, and a name said two ways: `extract-v16`'s `CURRENT ROLES` and an alias of a name and its part (under AGE-24, from the owner's live run on `e13dee7`; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-03); step 2 in review (#251: behind `NMOS_EXTRACT_COMPILER`, off by default; ADR 0064 proposed; the read-side name join measured and withdrawn) | `PHASE-28.md` |
-| 29+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
+| 29 — whose name is it: a confirmation for an alias whose two names are both in the turn (NMO-35 under AGE-24; a correction found by measurement on Phase 28's S1 runs, not a roadmap stage) | **approved** (2026-10-04); step 2 in review (#251: inside `extract-v16`, off by default; ADR 0064 amendments) | `PHASE-29.md` |
+| 30+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
 ADR 0006/0007, `docs/perf/scale.md`).
@@ -222,7 +224,7 @@ mutate chats, or call a model. Its results go to `docs/HOST-FACTS.md` and `fixtu
 3. `docs/STATUS.md` and §0/§2 of this file name it as current.
 4. Only then implement it; record evidence against each acceptance criterion.
 5. **A correction phase runs beside the current phase.** A phase that is not a roadmap stage — a correction found by
-   measurement under an open issue (Phases 24, 25, 27 and 28 under AGE-24) — does not displace the roadmap phase that is
+   measurement under an open issue (Phases 24, 25, 27, 28 and 29 under AGE-24) — does not displace the roadmap phase that is
    current. For it, items 3 and 4 read: its §2 row says **approved** with its date and next step, `docs/STATUS.md`
    carries its paragraph under "Current phase", and its own spec's scope, steps and stop conditions gate its
    implementation; the roadmap phase stays `current` and keeps its scope. Only an approved row implements; a draft
