@@ -315,8 +315,8 @@ empty and `extract-v16`'s corrections never applied to a long chat connected for
 `docs/perf/extract-v16-q5c-s1.md`: roles 4/7, names 1/3; story order 7/7, 3/3). Approved answers: the window oldest
 first (`FIRST_PRIORITY`), a live turn behind its chat's pending window, a dead job holding nothing, each turn extracted
 once; every generation, no prompt, key, setting or migration change (ADR 0065, D74; `tests/test_first_sight_order.py`).
-Next: one first connection of S1 on `extract-v16` (on #260's head) after an approved estimate (about $0.50), bar
-7/7 and 3/3. **High risk (AGENTS.md §14)**: extraction order and generations, current versus historical role state,
+Measured (b) on `1388ea2`: S1 first connection 7/7 and 3/3, no false join, $0.51 (`docs/perf/phase30-first-s1.md`; one
+wrong timing outside the declared scenes, the 227 class). Next: the owner's merge decision (step 4). **High risk (AGENTS.md §14)**: extraction order and generations, current versus historical role state,
 identity and provenance.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small

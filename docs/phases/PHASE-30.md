@@ -81,15 +81,23 @@ confirmations, about **$0.50 (약 700원)**, about 20 minutes. Bar, fixed before
 about 10 minutes: what the one-turn lag (Q3) costs on S1. Not gating unless it misses a scene that (b) passes; then it
 is a stop condition.
 
+**Result of (b), 2026-10-04:** passed on `1388ea2` (generation `extract-409d69e0…`): role scenes 7/7, names 3/3, no
+false join, no technical error; 252 calls, $0.51 uncached, 15.4 min; the turns taken 0, 1, 2, … 239
+(`docs/perf/phase30-first-s1.md`). Outside the declared scenes, the sponsorship cancelled at 134 was recorded as a broken
+promise and ended only at 227 (PHASE-28's 227 class; the sequential S1 on the same generation ended it at 134).
+
 No `extract-v15` run is proposed: its prompt is unchanged and its hints can only gain content. One is possible at about
 the same cost if the owner wants the change checked under the default generation.
 
 ## Acceptance criteria
 
-- [ ] **Keys and prompts unchanged**: every generation key and both extraction prompts as before (full sidecar suite).
-- [ ] **Deterministic** (a): every case above.
-- [ ] **First connection** (b): role scenes 7/7, names 3/3, no false join.
-- [ ] (c) reported if the owner runs it.
+- [x] **Keys and prompts unchanged**: every generation key and both extraction prompts as before (full sidecar suite,
+  1,098 passed).
+- [x] **Deterministic** (a): every case above (`tests/test_first_sight_order.py`; the K29 recovery tests now start from a
+  chat first imported before Phase 30, and a first import matches the reveal at once).
+- [x] **First connection** (b): role scenes 7/7, names 3/3, no false join (2026-10-04, `1388ea2`, $0.51;
+  `docs/perf/phase30-first-s1.md`; one wrong timing outside the declared scenes, the 227 class).
+- [ ] (c) reported if the owner runs it (not run).
 - [ ] Diff-scoped self-review naming the guarantees at risk; STATUS, ADR 0065, D74, the PHASE-28 Q2 and
   ADR 0064 notes and NMO-36 updated.
 
