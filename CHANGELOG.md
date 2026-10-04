@@ -10,7 +10,8 @@ later, is `docs/KNOWN-ISSUES.md`.
   not see who was already known, which promises and secrets were open, or which roles held, and a later turn's ending
   or second name for someone was missed. The turns are now read oldest first, and a turn you write meanwhile waits
   behind them. The newest turns are still in the chat's own prompt, and their messages are searchable at once.
-  Nothing is extracted again; chats NMOS already knows are unaffected.
+  Nothing is extracted again; chats NMOS already knows are unaffected. A secret found out within those turns is now
+  matched when they are first read, so K29 (a missed reveal) no longer needs "Extract all history" there.
 
 - **Google Vertex AI: pick the key file, and the model list works** (ADR 0022 amendment 1). The fact-extraction LLM
   section shows **Load key file** for a Vertex endpoint: pick the service-account JSON key file instead of pasting it,
