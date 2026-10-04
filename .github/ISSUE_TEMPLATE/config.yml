@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 한국어 안내 (Korean guide)
+    url: https://github.com/Sallos725/NMOS/blob/main/docs/guide.ko.md
+    about: 설치·설정·문제 해결 안내 / Install, settings and troubleshooting in Korean.
+  - name: Security vulnerability
+    url: https://github.com/Sallos725/NMOS/security/advisories/new
+    about: Report privately, not as a public issue.
