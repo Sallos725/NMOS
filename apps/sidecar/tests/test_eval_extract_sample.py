@@ -126,7 +126,8 @@ def test_score_counts_role_endings_as_listed_and_others_apart(tmp_path, capsys):
 
 
 def test_another_compiler_is_one_the_checkout_has():
-    assert tool.compiler_of(argparse.Namespace(compiler=None)) == extraction.COMPILER_VERSION
+    assert tool.compiler_of(argparse.Namespace(compiler=None)) == extraction.DEFAULT_COMPILER == "extract-v16"
+    assert tool.compiler_of(argparse.Namespace(compiler="extract-v15")) == "extract-v15"
     assert tool.compiler_of(argparse.Namespace(compiler="extract-v16")) == "extract-v16"
     import pytest
     with pytest.raises(SystemExit, match="no compiler extract-v61"):
@@ -193,3 +194,8 @@ def test_a_checkout_without_the_confirmations_still_saves_its_turn(monkeypatch, 
     tool.run(args)
     saved = json.loads((tmp_path / "old" / "1" / "chat-0.json").read_text(encoding="utf-8"))
     assert saved["usage"] == {"calls": 1, "input": 10, "output": 2} and saved["assertions"] == []
+
+
+def test_a_checkout_before_the_default_switch_runs_its_compiler_version(monkeypatch):
+    monkeypatch.delattr(tool.X, "DEFAULT_COMPILER")  # a checkout before PHASE-28 step 3 has no DEFAULT_COMPILER
+    assert tool.compiler_of(argparse.Namespace(compiler=None)) == extraction.COMPILER_VERSION
