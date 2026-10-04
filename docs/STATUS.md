@@ -4,7 +4,9 @@
 
 **Phase 28 — A role that ends, and a name said two ways: approved 2026-10-03, current as a correction phase (AGENTS
 §7 item 5); step 2 merged (#251, 2026-10-04); step 3: `extract-v16` the default (2026-10-04, ADR 0064 accepted);
-step 4, the live gate, next.** Spec `docs/phases/PHASE-28.md` (under AGE-24; a correction found by measurement, not a
+step 4, the live gate: paused after S0main ×3 on `7b7cc14` (memory cases 7, 5, 8 of 10: new roles and first events
+lost to the always-on v16 rules); `extract-v16` focused (ADR 0064 item 5, `docs/perf/extract-v16-focus.md`), the gate to
+restart from the beginning.** Spec `docs/phases/PHASE-28.md` (under AGE-24; a correction found by measurement, not a
 roadmap stage). The owner's live run on `e13dee7` met the real-chat target (S0main full-history memory cases 8/10,
 10/10, 8/10) but not the combined no-regression gate (S1 final 21/25 → 19/25, S2 full history 22/25 → 20/25, S3
 6/6 → 5/6, S4b 3/3 → 2/3 against the historical lane; single runs, aggregates only, the result files stay with the
