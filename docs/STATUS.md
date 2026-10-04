@@ -473,6 +473,10 @@ it when a later turn reveals the name; the owner can join two names of a chat by
 Outside the phase (owner request 2026-09-24, ADR 0022): Google Vertex AI service-account keys for the
 extraction LLM, released in `v0.1.0-beta.15`. Mocked token exchange in CI; verified against real Vertex on
 2026-09-26 with the owner's key (`google/gemini-3.8-flash`: connection test, extraction, recall; ADR 0022).
+Amendment 1 (owner request 2026-10-04, unreleased): **Load key file** in the panel and a model list from Vertex's
+publisher-model catalog. Mocked in CI; the catalog checked against real Vertex with the owner's key (global host, 14
+chat models kept of 26); the picker checked in a real PocketRisu v1.13.0 (Chromium; HOST-FACTS); Safari/iPhone not
+yet checked.
 Outside the phase (owner report 2026-09-26, ADR 0026, D37, released in `v0.1.0-beta.19`): characters forgot settled things (a 반말 agreement
 went back to 존댓말). Reproduced read-only on the owner's database: in a crowded scene the fact ranking was decided by
 `known_by` lists, so trivia took the four facts a 600-token packet holds. Now how the cast stand with each other

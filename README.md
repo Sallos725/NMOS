@@ -240,8 +240,9 @@ language after a page reload.
   and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, Google Vertex AI, any
   OpenAI-compatible endpoint), model list, API key and a **connection test** that makes a real call;
   recall tuning; status-window parser rules (validated before saving).
-  For **Google Vertex AI**, paste the whole service-account JSON key file into the LLM's API key field;
-  the sidecar renews the access token itself (ADR 0022). Use a dedicated service account with only
+  For **Google Vertex AI**, pick the service-account JSON key file with **Load key file** (or paste its whole
+  content into the LLM's API key field): the endpoint's project is filled from the key, the Gemini models Vertex
+  serves are listed, and the sidecar renews the access token itself (ADR 0022). Use a dedicated service account with only
   the Vertex AI User role (`roles/aiplatform.user`). Enabling the APIs is not enough: a key without the
   role gets HTTP 403 on `aiplatform.endpoints.predict`, and the connection test says so. Checked against
   real Vertex with `google/gemini-3.8-flash`.

@@ -67,3 +67,37 @@ No key or token was printed or stored outside the key file.
   - one promise in the chat was not extracted in this single run (a model-quality observation; n = 1).
 - Follow-up: when Vertex refuses on `aiplatform.endpoints.predict`, the connection test now puts the
   missing role first in its message.
+
+## Amendment 1 (2026-10-04): the key as a file, and a model list from the catalog
+
+Owner request outside the phases: a Vertex user should only have to give the key file and pick a model.
+
+1. **The key file can be picked.** The LLM section shows **Load key file** while its endpoint is a Vertex one. The
+   file is read in the panel (`File.text()`), checked to be a service-account key with a `project_id`, and put in the
+   API key field, exactly as a paste would. The endpoint becomes the Vertex preset with the key's project, unless it
+   is already a custom (regional) Vertex endpoint with its project set. The model list loads right away. Nothing is
+   saved until **Save**, and the panel keeps nothing from the file beyond what a paste keeps (decision 5 holds).
+   The embeddings section has no such button (decision 3 holds).
+2. **The model list asks the publisher-model catalog.** The OpenAI-compatible endpoint has no `/models` (404, above).
+   For a service-account key on a Vertex endpoint, the sidecar lists
+   `https://<the endpoint's host>/v1beta1/publishers/google/models` with the key's access token and
+   `x-goog-user-project: <the endpoint's project>`, pages through it, and keeps the Gemini chat models Vertex serves
+   by name: `gemini*`; not speech, image, live-audio, embedding or agent cards (`embedding`, `tts`, `image`, `live`,
+   `transcribe`, `translate`, `computer-use`, `robotics` in the name); launch stage `GA` or `PUBLIC_PREVIEW`; and no
+   deploy action (a deploy-it-yourself Model Garden card). They are returned as the endpoint names them,
+   `google/<name>`. The Vertex preset's model becomes `google/gemini-3.8-flash`, the model checked on 2026-09-26. The token goes only to the endpoint's own
+   host. A refusal is reported with Google's message. A plain key, or a JSON key on another endpoint, lists
+   `/models` as before. Listing calls no model and costs nothing.
+3. **Evidence.** Mocked in `tests/test_vertex.py` (host and project from the endpoint, paging, filter, refusal) and
+   `test/form.test.ts` (the endpoint a key file gives). The picker was checked in headless Chromium inside an iframe
+   with PocketRisu's plugin sandbox flags (`allow-scripts allow-modals allow-downloads`): the file chooser opened and
+   the frame read the file; then in a real PocketRisu v1.13.0 the same, end to end through the host's proxy
+   (`docs/HOST-FACTS.md`, "Picking a file in the plugin frame"). WebKit could not start on the test host, so Safari
+   and iPhone are unchecked.
+4. **Real Vertex** (2026-10-04, owner's key, `tools/vertex_catalog_probe.py`: read-only, prints statuses and model
+   names, never the key or a token). The global host serves the catalog: HTTP 200, 27 cards, 26 `gemini*`, with or
+   without `x-goog-user-project` (the header is kept; it names the project the endpoint already names). `us-central1`
+   lists 128 cards, 31 `gemini*`, a different slice; the list follows the endpoint's own location. Of the 26 global
+   `gemini*` cards the filter keeps 14 (`gemini-1.5-pro-002` … `gemini-3.8-flash`, `gemini-omni-1.1-flash-preview`)
+   and drops 12: speech, image, live, transcription and embedding cards and one `EXPERIMENTAL` card. A kept card that
+   Vertex has retired still shows; the connection test says so.

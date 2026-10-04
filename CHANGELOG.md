@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Google Vertex AI: pick the key file, and the model list works** (ADR 0022 amendment 1). The fact-extraction LLM
+  section shows **Load key file** for a Vertex endpoint: pick the service-account JSON key file instead of pasting it,
+  and the endpoint's project is filled and the model list loads at once. **Load models** now lists the Gemini models
+  Vertex serves (`google/…`) from Vertex's publisher-model catalog, since its OpenAI-compatible endpoint has no
+  `/models`. Pasting the key works as before.
+
 - **The query is embedded while recall reads, so a slower embedder still gives vectors** (ADR 0061, D70; K34, AGE-24).
   A request used to give the embedding of your message 300 ms on its own, after lexical recall and before the facts
   were read: an embedder behind a proxy, or a busy one, missed it, and 70 % of the owner's production requests found

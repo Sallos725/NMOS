@@ -141,3 +141,79 @@ def test_a_vertex_permission_refusal_says_which_role_is_missing(monkeypatch):
     assert out["ok"] is False
     assert out["error"].startswith("Vertex refused") and "roles/aiplatform.user" in out["error"]
     assert "aiplatform.endpoints.predict" in out["error"]  # the original message follows
+
+
+def test_catalog_target_reads_the_endpoint_host_and_project():
+    assert vertex.catalog_target("https://aiplatform.googleapis.com/v1/projects/p1/locations/global/endpoints/openapi") \
+        == ("aiplatform.googleapis.com", "p1")
+    assert vertex.catalog_target(
+        "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/p2/locations/us-central1/endpoints/openapi/") \
+        == ("us-central1-aiplatform.googleapis.com", "p2")
+    for other in ("https://openrouter.ai/api/v1", "https://evil.example/aiplatform.googleapis.com/v1/projects/p/"
+                  "locations/global/endpoints/openapi", "http://aiplatform.googleapis.com/v1/projects/p/locations/"
+                  "global/endpoints/openapi", "https://aiplatform.googleapis.com.evil.example/v1/projects/p/locations/"
+                  "global/endpoints/openapi"):
+        assert vertex.catalog_target(other) is None
+
+
+def _card(name, stage="GA", actions=None):
+    return {"name": f"publishers/google/models/{name}", "launchStage": stage,
+            "supportedActions": actions if actions is not None else {"openGenerationAiStudio": {}}}
+
+
+def test_model_list_reads_the_catalog_on_the_endpoint_host(monkeypatch):
+    """Vertex's OpenAI-compatible endpoint has no `/models` (ADR 0022, 404 on 2026-09-26); the list comes from the
+    publisher-model catalog on the same host, filtered to the Gemini models it serves, paged."""
+    monkeypatch.setattr(vertex, "access_token", lambda info, client=None: "ya29.token")
+    seen: list[httpx.Request] = []
+    pages = {
+        # names and stages as the real global catalog listed them on 2026-10-04 (ADR 0022 amendment 1)
+        None: {"publisherModels": [_card("gemini-3.8-flash"), _card("gemini-2.0-flash", "DEPRECATED"),
+                                   _card("gemini-embedding-2"), _card("imagen-4.0-generate-001"),
+                                   _card("gemini-2.5-flash-tts"), _card("gemini-3.1-flash-image-preview", "PUBLIC_PREVIEW"),
+                                   _card("gemini-live-2.5-flash-native-audio"), _card("gemini-3.5-transcribe-preview"),
+                                   _card("gemini-3.5-live-translate-preview", "PUBLIC_PREVIEW"),
+                                   _card("gemini-2.5-computer-use-preview-10-2025", "PUBLIC_PREVIEW"),
+                                   _card("gemini-2.5-pro-exp-03-25", "EXPERIMENTAL"),
+                                   _card("gemini-robotics-er-2-preview-info", "PRIVATE_PREVIEW")],
+               "nextPageToken": "p2"},
+        "p2": {"publisherModels": [_card("gemini-3.1-pro-preview", "PUBLIC_PREVIEW"), _card("gemini-3.8-flash"),
+                                   _card("gemini-3.5-flash-lite", actions={}),
+                                   _card("gemma-3-27b-it", actions={"deploy": {}}),
+                                   _card("gemini-tuned-something", actions={"deployGke": {}})]},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=pages[request.url.params.get("pageToken")])
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    base = "https://aiplatform.googleapis.com/v1/projects/p1/locations/global/endpoints/openapi"
+    assert vertex.list_models(json.loads(sa_key("p1")), base, client) \
+        == ["google/gemini-3.1-pro-preview", "google/gemini-3.5-flash-lite", "google/gemini-3.8-flash"]
+    assert [r.url.host for r in seen] == ["aiplatform.googleapis.com"] * 2
+    assert seen[0].url.path == "/v1beta1/publishers/google/models"
+    assert seen[0].headers["authorization"] == "Bearer ya29.token" and seen[0].headers["x-goog-user-project"] == "p1"
+
+
+def test_panel_model_list_uses_the_catalog_for_a_vertex_key_and_reports_refusals(monkeypatch):
+    monkeypatch.setattr(vertex, "access_token", lambda info, client=None: "ya29.token")
+    calls: list[str] = []
+
+    def get(url, headers, params=None, timeout=None):
+        calls.append(url)
+        if "publishers" in url:
+            return httpx.Response(403, json={"error": {"code": 403, "message": "Permission denied on catalog"}},
+                                  request=httpx.Request("GET", url))
+        return httpx.Response(200, json={"data": [{"id": "m1"}]}, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(vertex.httpx, "get", get)
+    base = "https://aiplatform.googleapis.com/v1/projects/p1/locations/global/endpoints/openapi"
+    out = runtime.list_models(base, sa_key("p1"))
+    assert out["ok"] is False and "HTTP 403" in out["error"] and "Permission denied on catalog" in out["error"]
+    assert calls == ["https://aiplatform.googleapis.com/v1beta1/publishers/google/models"]
+    # a plain key on the same endpoint, or a JSON key elsewhere, still asks `/models`
+    assert runtime.list_models(base, "sk-plain")["models"] == ["m1"]
+    assert runtime.list_models("http://llm.local/v1", sa_key("p1"))["models"] == ["m1"]
+    bad = runtime.list_models(base, '{"type": "authorized_user"}')
+    assert bad["ok"] is False and "service-account key" in bad["error"]

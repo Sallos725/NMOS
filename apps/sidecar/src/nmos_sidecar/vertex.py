@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import threading
 from typing import Any
 
@@ -109,3 +110,61 @@ def access_token(info: dict[str, Any], client: httpx.Client | None = None) -> st
             except gexc.GoogleAuthError as exc:
                 raise VertexAuthError(f"service-account token exchange failed: {exc}") from None
         return str(creds.token)
+
+
+# Vertex's OpenAI-compatible endpoint, global (`aiplatform…`) or regional (`us-central1-aiplatform…`).
+_ENDPOINT = re.compile(r"https://((?:[a-z0-9-]+-)?aiplatform\.googleapis\.com)/v1(?:beta1)?/projects/([^/]+)"
+                       r"/locations/[^/]+/endpoints/openapi/?")
+# A Model Garden card with deploy actions is a deploy-it-yourself model, not one Vertex serves by name.
+_DEPLOY_ACTIONS = ("deploy", "multiDeployVertex", "deployGke")
+# Gemini cards that are not chat models: speech, images, live audio, embeddings, agents (real catalog, 2026-10-04).
+_NOT_CHAT = re.compile(r"embedding|tts|image|live|transcribe|translate|computer-use|robotics")
+# Launch stages a service account can call (EXPERIMENTAL and PRIVATE_PREVIEW cards were retired or gated).
+_STAGES = ("GA", "PUBLIC_PREVIEW")
+
+
+def catalog_target(url: str) -> tuple[str, str] | None:
+    """(host, project) when `url` is a Vertex OpenAI-compatible endpoint, else None."""
+    match = _ENDPOINT.fullmatch(url.strip())
+    return (match.group(1), match.group(2)) if match else None
+
+
+def list_models(info: dict[str, Any], url: str, client: httpx.Client | None = None) -> list[str]:
+    """The Gemini chat models Vertex serves, named as the OpenAI-compatible endpoint takes them (`google/…`).
+
+    That endpoint has no `/models`; the list comes from the publisher-model catalog on the endpoint's own host
+    (ADR 0022 amendment 1). Raises VertexAuthError, or httpx.HTTPError with Google's message on a refusal."""
+    target = catalog_target(url)
+    if target is None:
+        raise VertexAuthError("not a Vertex AI OpenAI-compatible endpoint")
+    host, project = target
+    headers = {"Authorization": f"Bearer {access_token(info, client)}", "x-goog-user-project": project}
+    get = client.get if client is not None else httpx.get
+    rows: list[dict[str, Any]] = []
+    page: str | None = None
+    for _ in range(20):
+        params: dict[str, Any] = {"pageSize": 100, **({"pageToken": page} if page else {})}
+        res = get(f"https://{host}/v1beta1/publishers/google/models", headers=headers, params=params, timeout=15)
+        if res.status_code != 200:
+            raise httpx.HTTPStatusError(f"Vertex model catalog: HTTP {res.status_code}: {_google_message(res)}",
+                                        request=res.request, response=res)
+        body = res.json()
+        rows += body.get("publisherModels") or []
+        page = body.get("nextPageToken")
+        if not page:
+            break
+    names = set()
+    for row in rows:
+        name = str(row.get("name", "")).rsplit("/", 1)[-1]
+        actions = row.get("supportedActions") or {}
+        if (name.startswith("gemini") and not _NOT_CHAT.search(name) and row.get("launchStage") in _STAGES
+                and not any(a in actions for a in _DEPLOY_ACTIONS)):
+            names.add(f"google/{name}")
+    return sorted(names)
+
+
+def _google_message(res: httpx.Response) -> str:
+    try:
+        return str(res.json()["error"]["message"])[:300]
+    except (ValueError, KeyError, TypeError):
+        return res.text[:300]
