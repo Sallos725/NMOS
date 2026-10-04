@@ -165,3 +165,16 @@ def test_turns_from_a_stored_run_are_those_turns_and_no_others(migrated, tmp_pat
         with pytest.raises(SystemExit, match="1 stored turns are not in this copy"):
             tool.chosen(conn, argparse.Namespace(**{**vars(args), "every_chat": False,
                                                     "conversation": ids["stored-a"]}))
+
+
+def test_the_tool_post_processes_a_reply_in_the_workers_order():
+    """PHASE-29: the comparison measures what the worker stores, so it confirms endings, writes NAME PAIRS answers, then
+    confirms aliases, in `process_extract`'s order, and keeps both confirmation records."""
+    source = TOOL.read_text(encoding="utf-8")
+    worker = Path(extraction.__file__).read_text(encoding="utf-8").split("def process_extract", 1)[1]
+    steps = ("X.confirm_endings(", "X.same_names(", "X.confirm_aliases(", "X.normalize(")
+    at = [source.index(s) for s in steps]
+    assert at == sorted(at)
+    order = [worker.index(s.replace("X.", "")) for s in steps[:3]]
+    assert order == sorted(order)
+    assert '"alias_confirmations": alias_confirmations' in source

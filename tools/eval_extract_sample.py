@@ -205,12 +205,16 @@ def run(args: argparse.Namespace) -> None:
                 items += X.revealed(parsed, p["secrets"], p["text"])
                 if p["roles"]:  # extract-v16: the listed endings, as the worker writes them
                     items = X.ended_roles(parsed, items, p["roles"], p["shown"], hints=p["hints"], persona=p["persona"])
-                confirmations = []
+                confirmations, alias_confirmations, confirm_usage = [], [], None
                 if p["roles"] and args.compiler in getattr(X, "CONFIRMS", ()):  # extract-v16: each ending confirmed
                     confirmations, confirm_usage = X.confirm_endings(model.complete_metered, items, p["ctx"], p["shown"])
-                    usage = X.with_confirmations(usage, confirm_usage)
                 if p.get("pairs"):  # extract-v16: the confirmed name pairs, as the worker writes them
                     items = X.same_names(parsed, items, p["pairs"], p["text"])
+                if args.compiler in getattr(X, "CONFIRMS", ()) and hasattr(X, "confirm_aliases"):  # PHASE-29, as the worker
+                    alias_confirmations, alias_usage = X.confirm_aliases(model.complete_metered, items, p["ctx"], p["text"],
+                                                                         p["shown"], p["hints"], p["persona"])
+                    confirm_usage = X.summed(confirm_usage, alias_usage)
+                usage = X.with_confirmations(usage, confirm_usage)
                 apart = {"apart": True} if args.compiler in getattr(X, "PARTS_APART", ()) else {}
                 rows = (X.normalize(items, p["text"], p["hints"], p["shown"], **apart) if checks
                         else X.normalize(items, p["text"], p["hints"]))
@@ -219,6 +223,7 @@ def run(args: argparse.Namespace) -> None:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps({"turn": p["turn"], "compiler": args.compiler, "roles": p["roles"],
                                             "confirmations": confirmations,
+                                            "alias_confirmations": alias_confirmations,
                                             "pairs": p.get("pairs") or [],
                                             "usage": usage,
                                             "secs": round(time.monotonic() - t0, 1), "assertions": rows,
