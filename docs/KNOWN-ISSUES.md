@@ -285,7 +285,7 @@ even when its other words are broad. A question whose every keyword is broad sti
 
 **K13 — Very long messages are partly processed.** Embeddings cover at most the first 8 chunks of
 ≤700 normalized characters (≤5,600); extraction reads the first 6,000 characters of each message in
-the target turn and 2,000 of each context message. The Inspector flags partly processed messages
+the target turn and 1,000 of each context message (2,000 before `extract-v14`, Phase 19). The Inspector flags partly processed messages
 (#13).
 *On `main` (ADR 0062, D71):* the embedding cap is a setting, `NMOS_EMBED_MAX_CHUNKS` (default 8, as before), part of
 the projection key: raising it makes a new projection and re-embeds every chat once (local, in the background; K18);

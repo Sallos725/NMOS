@@ -266,8 +266,8 @@ language after a page reload.
   holder forgets it too), and **First-person narrator** leaves out what the narrator is not shown to know.
   Both are off by default and apply from the next generation.
 - **Settings**: connection (sidecar URL, route, memory budget, deadline, on/off); **fact-extraction LLM**
-  and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, Google Vertex AI, any
-  OpenAI-compatible endpoint), model list, API key and a **connection test** that makes a real call;
+  and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, Google Vertex AI for the
+  LLM only, any OpenAI-compatible endpoint), model list, API key and a **connection test** that makes a real call;
   recall tuning; status-window parser rules (validated before saving).
   For **Google Vertex AI**, pick the service-account JSON key file with **Load key file** (or paste its whole
   content into the LLM's API key field): the endpoint's project is filled from the key, the Gemini models Vertex
@@ -293,9 +293,12 @@ responses**.
 |---|---|
 | NMOS icon + `기억 불러오는 중…` | NMOS is preparing memory for this request |
 | `✓ 기억 주입 (N자)` / `– 관련 기억 없음` | memory went in / nothing relevant (shown 4 s) |
-| `⚠ 건너뜀: 제한 시간 초과` | the request went without memory (deadline or sidecar error) |
-| `추출 2/5 · 임베딩 5/5` + bar | background extraction/embedding of this chat; `⚠ 실패 N` if some failed |
-| `✓ 처리 완료` | that work finished (shown 3 s) |
+| `⏻ 이 채팅은 NMOS 꺼짐` | NMOS is off for this chat (the Status tab's switch) |
+| `… · 어휘 검색만` | memory went in, but the embedder did not answer in time, so it was found without semantic recall (K34; the Status tab explains) |
+| `… · 재사용` | the same request (a reroll, say), so the packet made a moment ago went in again |
+| `⚠ 건너뜀: 제한 시간 3초 초과 · 눌러서 늘리기` / `⚠ 건너뜀: 사이드카 오류` | the request went without memory; for the deadline, tap it for the panel's advice |
+| `추출 2/5 · 임베딩 5/5 · 요약 1개 남음` + bar | background extraction, embedding and summaries of this chat; `⚠ 실패 N` if some failed |
+| `✓ 사실 N개 추가 · 요약 M개 추가` / `✓ 처리 완료` | that work finished, with the new facts and summaries when known (shown 3 s); `⚠ 실패 N · …` if some failed |
 
 Tap the pill to open the panel. The text follows the panel language (English: `Recalling memory…`,
 `✓ Memory injected (N chars)`, `Facts 2/5 · Embeddings 5/5`, …).
@@ -350,7 +353,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_SIDECAR_BIND` / `NMOS_SIDECAR_PORT` | `127.0.0.1` / `8790` | Where the sidecar listens |
 
 Plugin arguments: `sidecar_url`, `auth_token`, `disabled` (1 = off), `reserved_memory_tokens`
-(0 = 600), `deadline_ms` (0 = 3000), `inject_position` (`before_last_user` or `end`), `route` (`auto`,
+(0 = 4000), `deadline_ms` (0 = 3000), `inject_position` (`before_last_user` or `end`), `route` (`auto`,
 `direct` or `server`: how the plugin reaches the sidecar), `language` (`ko` or `en`), `hud` (1 = progress
 display on the chat screen).
 
@@ -381,7 +384,8 @@ The inspector's Current state section shows this same example while no state has
 
 ## What gets injected
 
-A system message right before your latest message, marked as reference data (not instructions):
+A system message right before your latest message (at the very end of the prompt with the plugin argument
+`inject_position=end`), marked as reference data (not instructions):
 
 ```xml
 <NarrativeMemory version="0" source="nmos">
