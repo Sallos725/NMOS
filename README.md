@@ -1,24 +1,53 @@
+<div align="center">
+
+<img src="docs/images/social-preview.png" alt="NMOS — Narrative Memory for PocketRisu. Long chats, remembered. Locally, with provenance." width="820">
+
 # NMOS — Narrative Memory for PocketRisu
 
-**Beta.** Long-term memory for [PocketRisu](https://github.com/PocketRisu/PocketRisu) role-play.
-PocketRisu is a fork of [RisuAI](https://github.com/kwaroran/RisuAI); NMOS is a plugin that uses the
-RisuAI-family V3 plugin API. It is an independent project, not affiliated with PocketRisu or RisuAI.
-한국어 안내: [docs/guide.ko.md](docs/guide.ko.md)
+**Long-term memory for long role-play chats — local, auditable, and out of your way.**
 
-Long chats fall out of the model's context window. NMOS keeps an **immutable history** of your chat
-in a local sidecar and, right before each reply is generated, adds a small, budgeted memory
-packet with what the model can no longer see:
+[![Release](https://img.shields.io/github/v/release/Sallos725/NMOS?include_prereleases&label=release&color=6e56cf)](https://github.com/Sallos725/NMOS/releases)
+[![CI](https://github.com/Sallos725/NMOS/actions/workflows/ci.yml/badge.svg)](https://github.com/Sallos725/NMOS/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/Sallos725/NMOS?color=blue)](LICENSE)
+![Status: beta](https://img.shields.io/badge/status-beta-orange)
 
-- **Excerpts** of earlier turns relevant to what you just wrote (lexical + optional semantic search)
-- **State** parsed from your bots' status windows (optional, rule-based, no LLM)
-- **Facts** extracted in the background by an LLM of your choice (optional): where people are,
-  who knows what, promises, relationships — with history and provenance
+**English** · [한국어 안내](docs/guide.ko.md)
 
-It tracks what PocketRisu shows: edits, deletes, rerolls, swipes, "Continue", hidden messages,
-"Cut Messages for AI", branches and imports are followed so that removed or replaced text is not
-recalled. This is verified on the tested PocketRisu build (see [Status and limits](#status-and-limits));
-other PocketRisu versions may behave differently. If the sidecar is down or slow, your chat
-continues without memory.
+[Install](#install) · [Panel](#nmos-panel-status-inspector-settings) · [What gets injected](#what-gets-injected) ·
+[Configuration](#configuration-environment) · [Privacy](#privacy) · [Status and limits](#status-and-limits)
+
+</div>
+
+---
+
+Long chats fall out of the model's context window. NMOS keeps an **immutable history** of your chat in a local
+sidecar and, right before each reply is generated, adds a small, budgeted memory packet with what the model can no
+longer see.
+
+| | What it adds | Needs |
+|---|---|---|
+| 📜 **Excerpts** | earlier turns relevant to what you just wrote (lexical + optional semantic search) | nothing; embeddings optional |
+| 📊 **State** | values parsed from your bots' status windows (rule-based, no LLM) | optional parsers |
+| 🧠 **Facts** | where people are, who knows what, promises, relationships — with history and provenance, extracted in the background | an LLM of your choice (optional) |
+
+<p align="center"><img src="docs/images/panel-status.png" alt="NMOS panel, Status tab: sidecar connected, semantic recall on, last request injected 835 characters in 90 ms" width="480"></p>
+
+```mermaid
+flowchart LR
+    A["PocketRisu chat"] -->|"every edit, reroll, swipe, branch"| B["NMOS plugin"]
+    B --> C[("Local sidecar<br/>immutable history")]
+    C -->|"before each reply:<br/>budgeted memory packet"| D["Your model"]
+```
+
+> [!NOTE]
+> **Beta.** NMOS follows what PocketRisu shows: edits, deletes, rerolls, swipes, "Continue", hidden messages,
+> "Cut Messages for AI", branches and imports, so removed or replaced text is not recalled. This is verified on the
+> tested PocketRisu build (see [Status and limits](#status-and-limits)); other PocketRisu versions may behave
+> differently. If the sidecar is down or slow, your chat continues without memory.
+
+<sub>PocketRisu is a fork of [RisuAI](https://github.com/kwaroran/RisuAI); NMOS is a plugin that uses the RisuAI-family
+V3 plugin API. It is an independent project, not affiliated with [PocketRisu](https://github.com/PocketRisu/PocketRisu)
+or RisuAI.</sub>
 
 ## Requirements
 
