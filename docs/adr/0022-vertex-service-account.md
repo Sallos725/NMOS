@@ -67,3 +67,29 @@ No key or token was printed or stored outside the key file.
   - one promise in the chat was not extracted in this single run (a model-quality observation; n = 1).
 - Follow-up: when Vertex refuses on `aiplatform.endpoints.predict`, the connection test now puts the
   missing role first in its message.
+
+## Amendment 1 (2026-10-04): the key as a file, and a model list from the catalog
+
+Owner request outside the phases: a Vertex user should only have to give the key file and pick a model.
+
+1. **The key file can be picked.** The LLM section shows **Load key file** while its endpoint is a Vertex one. The
+   file is read in the panel (`File.text()`), checked to be a service-account key with a `project_id`, and put in the
+   API key field, exactly as a paste would. The endpoint becomes the Vertex preset with the key's project, unless it
+   is already a custom (regional) Vertex endpoint with its project set. The model list loads right away. Nothing is
+   saved until **Save**, and the panel keeps nothing from the file beyond what a paste keeps (decision 5 holds).
+   The embeddings section has no such button (decision 3 holds).
+2. **The model list asks the publisher-model catalog.** The OpenAI-compatible endpoint has no `/models` (404, above).
+   For a service-account key on a Vertex endpoint, the sidecar lists
+   `https://<the endpoint's host>/v1beta1/publishers/google/models` with the key's access token and
+   `x-goog-user-project: <the endpoint's project>`, pages through it, and keeps the Gemini models Vertex serves by
+   name: `gemini*`, not `*embedding*`, not `DEPRECATED`, and no deploy action (a deploy-it-yourself Model Garden
+   card). They are returned as the endpoint names them, `google/<name>`. The token goes only to the endpoint's own
+   host. A refusal is reported with Google's message. A plain key, or a JSON key on another endpoint, lists
+   `/models` as before. Listing calls no model and costs nothing.
+3. **Evidence.** Mocked in `tests/test_vertex.py` (host and project from the endpoint, paging, filter, refusal) and
+   `test/form.test.ts` (the endpoint a key file gives). The picker was checked in headless Chromium inside an iframe
+   with PocketRisu's plugin sandbox flags (`allow-scripts allow-modals allow-downloads`): the file chooser opened and
+   the frame read the file. WebKit could not start on the test host, so Safari and iPhone are unchecked. Against real
+   Vertex, `tools/vertex_catalog_probe.py` (read-only; prints statuses and model names, never the key or a token)
+   answers whether the global host serves the catalog and whether the header is needed; its result is recorded here
+   when run.

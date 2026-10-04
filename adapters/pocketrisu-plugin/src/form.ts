@@ -39,6 +39,18 @@ export function fillProject(url: string, key: string): string {
   return project && url.includes('{project}') ? url.replace('{project}', encodeURIComponent(project)) : url;
 }
 
+/** A Google Vertex AI endpoint, global or regional, with or without its project filled. */
+export function isVertexEndpoint(url: string): boolean {
+  return /^https:\/\/(?:[a-z0-9-]+-)?aiplatform\.googleapis\.com\//.test(url.trim());
+}
+
+/** The endpoint once a service-account key file is read: the Vertex preset with the key's project, unless it is
+ *  already a custom (regional) Vertex endpoint with its project set, which stays as it is. */
+export function endpointForKey(url: string, key: string): string {
+  const u = url.trim();
+  return isVertexEndpoint(u) && !u.includes('{project}') && !presetMatches(VERTEX_URL, u) ? u : fillProject(VERTEX_URL, key);
+}
+
 /** A preset URL matches a saved one exactly, or with any project in place of `{project}`. */
 export function presetMatches(presetUrl: string, url: string): boolean {
   if (!presetUrl.includes('{project}')) return presetUrl === url;
