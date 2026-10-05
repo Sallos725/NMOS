@@ -6,9 +6,9 @@ later, is `docs/KNOWN-ISSUES.md`.
 ## Unreleased
 
 - **Keyword recall finds its words again on a live chat** (ADR 0052). A keyword's lookup has 25 ms; Postgres often
-  planned it from the chat's messages, checking each one, instead of from the trigram index: right after every sync,
-  because its statistics did not know the new head yet, and on a connection that had run the lookup five times, because
-  a prepared statement is planned without its word. That took longer than 25 ms, so the word was dropped as if it were
+  planned it from the chat's messages, checking each one, instead of from the trigram index: after a reroll, an edit or
+  a deletion, because its statistics did not know the new version of the chat yet, and on a connection that had run the
+  lookup five times, because a prepared statement is planned without its word. That took longer than 25 ms, so the word was dropped as if it were
   too common (in the measurement runs, most requests' keyword route ended as `too_broad`), and a replay could find what
   its request had not (ADR 0027). The lookup now always starts from the trigram index. A word whose own matches take
   longer than 25 ms to check (long messages) is still dropped, as before.

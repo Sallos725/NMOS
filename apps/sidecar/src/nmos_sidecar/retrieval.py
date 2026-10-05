@@ -290,10 +290,10 @@ def _apply(conn: psycopg.Connection, settings: dict[str, str]) -> None:
 # The active head revisions a word or message matches (`<%`), at most `limit` (`_lexical_matches`). The matches are
 # found through the trigram index first (`hit`, materialized), then kept if they are on the head: planned from the
 # membership instead, the lookup checks every head message with word_similarity (40 ms instead of 5 at 146 messages,
-# linear in the chat), and the planner chose that whenever its statistics did not hold the head yet — after every sync
-# until the next autoanalyze, since each sync makes a new head commit. `hit` has no other condition (the normalizer is
-# checked after it), so the trigram index is its only way in with sequential scans off: given the normalizer, the
-# planner could scan every revision through the primary key and check each with word_similarity instead.
+# linear in the chat), and the planner chose that whenever its statistics did not hold the head yet: after a reroll,
+# an edit or a deletion makes a new head commit (D4), until the next autoanalyze. It could also plan a known head
+# through revision_text's primary key, checking every revision. `hit` has no other condition (the normalizer is checked
+# after it), so the trigram index is its only way in with sequential scans off.
 _MATCHES = """
     WITH hit AS MATERIALIZED (
         SELECT source_revision_id, normalizer FROM revision_text WHERE %(q)s <%% clean_content

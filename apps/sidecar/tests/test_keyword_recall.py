@@ -163,18 +163,21 @@ def test_the_lexical_lookups_are_planned_with_their_words_every_time(client, mig
 
 
 def test_a_new_head_is_searched_through_the_trigram_index(client, migrated):
-    """Each sync makes a new head commit, which the planner's statistics on active_membership do not hold until the
-    next autoanalyze: it estimated the head at one row and planned the lookup from the membership, with word_similarity
-    on every head message, past a keyword's slice (live, most requests' keywords were dropped as too broad). The lookup
-    is planned from the trigram index whatever the statistics say."""
+    """A reroll, an edit or a deletion makes a new head commit (appends keep the head, D4), which the planner's
+    statistics on active_membership do not hold until the next autoanalyze: it estimated the head at one row and planned
+    the lookup from the membership, with word_similarity on every head message, past a keyword's slice. (On this small
+    chat the planner even planned a known head through revision_text's primary key, checking every revision.) The
+    lookup is planned from the trigram index whatever the statistics say."""
     from nmos_sidecar import retrieval
 
     chat = parrot_chat()
+    chat.reply("The parrot sleeps.")
     sync(client, chat)
     with db(migrated) as conn:
+        before = conn.execute("SELECT head_commit_id FROM conversation").fetchone()["head_commit_id"]
         conn.execute("ANALYZE active_membership")  # the statistics hold this head only
-    chat.reply("The parrot sleeps.")
-    sync(client, chat)  # a new head they do not know
+    chat.reroll("The parrot wakes.")
+    sync(client, chat)  # a divergence: a new head they do not know
     with db(migrated) as conn:
         head = conn.execute("SELECT head_commit_id FROM conversation").fetchone()["head_commit_id"]
         with conn.transaction():
@@ -189,5 +192,6 @@ def test_a_new_head_is_searched_through_the_trigram_index(client, migrated):
         yield n
         for child in n.get("Plans", []):
             yield from nodes(child)
+    assert head != before
     assert any(n.get("Index Name") == "revision_text_trgm" for n in nodes(plan[0]["Plan"]))
     assert len(found) == 1  # the parrot's first message: the newest reply is still provisional
