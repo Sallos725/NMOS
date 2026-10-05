@@ -1,7 +1,7 @@
 # Phase 31 — Recall that knows what changed: replaced values, ended roles, an item's earlier holder
 
 > **Status: approved 2026-10-05 (the owner: as proposed, Q3 as corrected the same day on the measured anchor), current
-> as a correction phase (AGENTS §7 item 5); step 2 in progress (#264).** Under AGE-24 and AGE-37 (K43); a correction found by
+> as a correction phase (AGENTS §7 item 5); step 2 done (#264; ADR 0066, D75), step 3 next.** Under AGE-24 and AGE-37 (K43); a correction found by
 > measurement, not roadmap Stage 7 or 8. Proposed as a correction phase (AGENTS §7 item 5). It is the "excerpt and
 > ranking" work PHASE-28 Q6 left for after the role and name corrections, scoped on the live gate of 2026-10-04/05.
 > Extraction is out of scope: `extract-v16` (focused, ADR 0064 item 5) stays as it is.

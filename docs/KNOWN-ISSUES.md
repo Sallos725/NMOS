@@ -383,6 +383,9 @@ characters with no sentence cap, so such an excerpt can carry more replaced valu
 questions keep the cap. Measured over twelve sets (`docs/perf/answer-span.md`): forbidden phrases 93 → 87 and no set
 worse by more than one case, so the cap's lifting cost nothing measurable there; the risk stays listed.
 *Workaround:* `NMOS_PACKET_POLICY=packet-v9` keeps two-sentence excerpts; `packet-v10` the four-sentence cap.
+*Phase 31 (`packet-v12`, ADR 0066, not the default yet):* an excerpt older than a selected fact's current version that
+repeats the value the fact replaced is left out unless the question has a history cue. An excerpt can still carry a
+replaced value no selected fact is about.
 
 **K40 — A short keyword is not found where a particle is attached to it.** The keyword route (ADR 0052) matches a
 keyword at trigram word similarity 0.8. Korean attaches particles to the word, and a keyword of two syllables scores

@@ -129,18 +129,20 @@ def excerpt(content: str, query: str, window: int = 2, max_chars: int = MAX_EXCE
 
 
 def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = MAX_EXCERPT_CHARS,
-                  max_sentences: int | None = GROW_MAX_SENTENCES) -> tuple[str, str]:
+                  max_sentences: int | None = GROW_MAX_SENTENCES, tie_words: tuple[str, ...] = ()) -> tuple[str, str]:
     """packet-v10 (ADR 0053): the excerpt and its one-sentence form. The best sentence holds most of `words` (the
     message's keywords), then shares most trigrams with `query`, the earlier one on a tie; the excerpt adds whole
     neighbouring sentences, after then before in turn, while the text stays within `max_chars` and holds at most
     `max_sentences` (GROW_MAX_SENTENCES; None: no sentence cap, packet-v11's growth for a why or contents question,
-    ADR 0063). A best sentence longer than `max_chars` is cut there, as `excerpt` does."""
+    ADR 0063). A best sentence longer than `max_chars` is cut there, as `excerpt` does. `tie_words` (packet-v12, the
+    question's one-character words) break a tie on `words` before the trigrams do (PHASE-31 Q3)."""
     parts = sentences(content) or [content.strip()]
     query_grams = _trigrams(query)
     lowered = [p.casefold() for p in parts]
 
-    def rank(i: int) -> tuple[int, int, int]:
-        return (sum(1 for w in words if w.casefold() in lowered[i]), len(_trigrams(parts[i]) & query_grams), -i)
+    def rank(i: int) -> tuple[int, int, int, int]:
+        return (sum(1 for w in words if w.casefold() in lowered[i]), sum(1 for w in tie_words if w.casefold() in lowered[i]),
+                len(_trigrams(parts[i]) & query_grams), -i)
 
     best = max(range(len(parts)), key=rank)
 
@@ -205,13 +207,17 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
 # cap, since an explanation is often cut into short sentences. The default since Phase 27 step 3 (owner, 2026-10-02:
 # the M0 main cases that need memory 16 → 19 of 23, forbidden phrases 93 → 87 over twelve sets, docs/perf/answer-span.md);
 # `packet-v10` stays available as `NMOS_PACKET_POLICY=packet-v10`.
+# packet-v12 is packet-v11 that knows what changed (PHASE-31): an excerpt older than a selected fact's current version
+# that states a value that version replaced is left out, an ended role is printed only for a question about the past
+# (HISTORY_CUE), and an excerpt's anchor sentence breaks a tie on the question's one-character words (책), which are no
+# keywords. Measured on the PHASE-28 live gate's packets (docs/perf/phase28-live-gate-9947d2c.md).
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
-            "packet-v8", "packet-v9", "packet-v10", "packet-v11")
+            "packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12")
 DEFAULT_POLICY = "packet-v11"
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
              "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2,
-             "packet-v11": 1.2}  # estimated tokens per non-ASCII char
-_V8 = ("packet-v8", "packet-v9", "packet-v10", "packet-v11")  # packet-v8 and what builds on it
+             "packet-v11": 1.2, "packet-v12": 1.2}  # estimated tokens per non-ASCII char
+_V8 = ("packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12")  # packet-v8 and what builds on it
 PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})  # promises the message is about first (ADR 0019 am. 1)
@@ -220,9 +226,10 @@ CAUSE_POLICIES = frozenset({"packet-v6", "packet-v7", *_V8})  # facts and claims
 TURN_POLICIES = frozenset({"packet-v7", *_V8})  # excerpts and state carry their message's turn index (ADR 0041)
 STORY_POLICIES = frozenset(_V8)  # summaries in a <Story> section (ADR 0043)
 CAST_POLICIES = frozenset(_V8)  # each scene character's state in a <Cast> section (ADR 0043)
-FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11"})  # recall grows with the budget (ADR 0049)
-GROW_POLICIES = frozenset({"packet-v10", "packet-v11"})  # an excerpt grows to its length from its best sentence (ADR 0053)
-SPAN_POLICIES = frozenset({"packet-v11"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
+FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11", "packet-v12"})  # recall grows with the budget (ADR 0049)
+GROW_POLICIES = frozenset({"packet-v10", "packet-v11", "packet-v12"})  # an excerpt grows to its length from its best sentence (ADR 0053)
+SPAN_POLICIES = frozenset({"packet-v11", "packet-v12"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
+CHANGE_POLICIES = frozenset({"packet-v12"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
 CUE_GROW_CHARS = 320  # packet-v11: a why or contents question's excerpt grows by sentences to this, no sentence cap
 CONTENTS = re.compile(r"내용|\bcontents\b|\bcontent of\b", re.IGNORECASE)  # the contents cue (PHASE-27 Q2); not "is she content"
 FILL_BASE, FILL_MAX, FILL_FACTS_MAX = 2000, 4.0, 2.0  # the budget recall is sized for, and the largest factors

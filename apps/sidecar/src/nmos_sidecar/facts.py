@@ -730,6 +730,9 @@ PRIOR_CAUSE = 1.0  # packet-v6: a fact with a stated cause, when the message ask
 # (첫 만남, 첫번째, 첫째; not 첫눈). From the message only, like WHY.
 FIRST_CUE = re.compile(r"(처음|최초|예전|옛날|원래|초반|첫(\s|번|째)|\bat first\b|\bfirst time\b|\boriginally\b"
                        r"|\bin the beginning\b)", re.IGNORECASE)
+# The message asks about the past (PHASE-31 Q4): FIRST_CUE, and 전에, 이전, before, used to, previously. Under packet-v12
+# it keeps the excerpts that state a replaced value and prints ended roles; from the message only, like FIRST_CUE.
+HISTORY_CUE = re.compile(FIRST_CUE.pattern + r"|전에|이전|\bbefore\b|\bused to\b|\bpreviously\b", re.IGNORECASE)
 
 
 def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],

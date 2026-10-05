@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import re
 import threading
 import time
 from collections.abc import Callable, Iterable
@@ -20,13 +21,14 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from .entities import norm
-from .facts import FIRST_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
+from .facts import FIRST_CUE, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
 from . import scene, spans, summaries, variants
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
-from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, CONTENTS, CUE_GROW_CHARS,
+from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, CHANGE_POLICIES, CONTENTS,
+                     CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
                      StateItem, clean_text, compile_lines, cut_lines, excerpt, fill, fits_at, kept_counts, secret_line,
@@ -447,6 +449,74 @@ def fuse(lexical: list[dict[str, Any]], vector: list[dict[str, Any]], threshold:
     return kept
 
 
+def one_char_words(query: str) -> tuple[str, ...]:
+    """The question's one-character words (책, 집, 돈), which `keywords` drops; a lone Latin letter is no word here.
+    packet-v12 breaks a tie of the excerpt's anchor sentence on them (PHASE-31 Q3)."""
+    return tuple(dict.fromkeys(w for w in re.findall(r"\w+", query) if len(w) == 1 and not w.isascii()))
+
+
+def _said(fact: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(t for t in (fact.get("object"), fact.get("value")) if t)
+
+
+def replaced_values(facts: list[dict[str, Any]]) -> list[tuple[int, tuple[str, ...], tuple[str, ...]]]:
+    """For each selected fact with an earlier version of its own predicate: its current turn, what its earlier versions
+    said (object, value) and what it says now (PHASE-31 Q1)."""
+    out = []
+    for f in facts:
+        if f.get("turn") is None:
+            continue
+        old = tuple(t for h in f.get("history") or ()
+                    if h.get("outcome") == "superseded" and h["position"] < f["position"]
+                    and h["predicate"] == f["predicate"] for t in _said(h))
+        if old:
+            out.append((f["turn"], old, _said(f)))
+    return out
+
+
+def states_replaced(text: str, turn: int | None, replaced: list[tuple[int, tuple[str, ...], tuple[str, ...]]],
+                    names: tuple[str, ...] = ()) -> bool:
+    """An excerpt from before a fact's current version that repeats what that version replaced and not what it says
+    now, by the measure that drops an excerpt restating a withheld line (`spans.reuse`, PHASE-31 Q1). Spans of the
+    current value and of characters' names are not the old value's."""
+    if turn is None:
+        return False
+    for cur_turn, old, now in replaced:
+        if turn >= cur_turn or any(spans.reuse(t, text) >= REPEATS for t in now):
+            continue
+        if any(spans.reuse(t, text, (*now, *names)) >= REPEATS for t in old):
+            return True
+    return False
+
+
+def _ended_role(f: dict[str, Any]) -> bool:
+    return f.get("predicate") == "role_toward" and f.get("polarity") == "negative"
+
+
+def _side(f: dict[str, Any], role: str) -> str:
+    e = f.get(f"{role}_entity") or {}
+    return e.get("id") or " ".join(str(f.get(role) or "").casefold().split())
+
+
+def _side_names(f: dict[str, Any], role: str, r: Any, aliases: dict[str, frozenset[str]] | None) -> set[str]:
+    name = f.get(role)
+    e = r.entity(f.get(f"{role}_type"), name) if r is not None and name else None
+    out = {" ".join(n.casefold().split()) for n in (e["names"] if e else [name] if name else [])}
+    return {n for n in out | {v for n in out for v in (aliases or {}).get(n, ())} if len(n) >= 2}
+
+
+def ended_role_kept(f: dict[str, Any], facts: list[dict[str, Any]], query: str, r: Any = None,
+                    aliases: dict[str, frozenset[str]] | None = None) -> bool:
+    """An ended role a question about now still gets (PHASE-31 Q2): no fact about the same two is current, and the
+    question names both. Then the ended role is all there is to say about them."""
+    pair = {_side(f, "subject"), _side(f, "object")}
+    if any(g is not f and g.get("polarity") != "negative" and {_side(g, "subject"), _side(g, "object")} == pair
+           for g in facts):
+        return False
+    q = " ".join(query.casefold().split())
+    return all(any(n in q for n in _side_names(f, role, r, aliases)) for role in ("subject", "object"))
+
+
 @dataclass
 class Gathered:
     """Everything a request offers the packet, before the budget (ADR 0027)."""
@@ -465,6 +535,8 @@ class Gathered:
     cast: dict[str, str] = field(default_factory=dict)  # scene cast, entity key → name (ADR 0034)
     note: str = ""  # added to the packet's Note (a first-person narrator, ADR 0035)
     withheld: int = 0  # lines and excerpts the chat's memory mode left out or replaced (ADR 0035)
+    replaced: int = 0  # excerpts left out for stating a value a selected fact's current version replaced (packet-v12)
+    ended: int = 0  # ended roles left out of a question about now (packet-v12, PHASE-31 Q2)
     canon_names: str | None = None  # the canon manifest whose names the read used (ADR 0046)
     canon_facts: str | None = None  # the canon manifest whose facts it used; None: none (ADR 0047)
     withheld_lines: list[Line] = field(default_factory=list)
@@ -529,6 +601,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.state.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in focus), reverse=True)
     view = None
     names_of: dict[int, Any] = {}  # one mapping of name variants per view, whichever path asks first (ADR 0058)
+    changes = options.policy in CHANGE_POLICIES and not HISTORY_CUE.search(query)  # packet-v12, PHASE-31 Q1/Q2
+    selected: list[dict[str, Any]] = []  # the facts offered (facts, <Cast>), for packet-v12's replaced values
     if options.facts_limit > 0 or options.threads_limit > 0:
         view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
                            options.canon_key, canon_facts)
@@ -560,6 +634,11 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                     options.events_limit, persona, scene.names(g.cast, r, aliases), causes=causes,
                                     first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases)
             facts = _grown(ranked[:options.facts_limit], ranked, options.fill_facts)
+            if changes:  # an ended role answers a question about the past, not about now (PHASE-31 Q2)
+                kept = [f for f in facts if not _ended_role(f)
+                        or ended_role_kept(f, view["facts"], query, r, aliases)]
+                g.ended, facts = len(facts) - len(kept), kept
+                selected = list(facts)
             # Claims after facts, so the budget serves narration first (ADR 0013).
             ranked = relevant_facts(view["claims"], query, previous_ai, in_context,
                                     len(view["claims"]) if grow else claims_limit, persona=persona, causes=causes,
@@ -581,6 +660,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             g.note = f" The story is told in the first person by {who}: only what they know is listed."
         if options.policy in CAST_POLICIES and r is not None:
             g.cast_lines, used = cast_groups(view, g.cast, r, query, options, in_context, aliases)
+            if changes:
+                selected += [f for f in view["facts"] if f["id"] in used]
             if used:  # a line in <Cast> is not said again in another section
                 g.lead = [line for line in g.lead if line.ref.get("assertion") not in used]
                 g.facts = [line for line in g.facts if line.ref.get("assertion") not in used]
@@ -622,6 +703,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     # Q1b: the keywords anchor is the question's keywords alone, or the question itself when it has none (the
     # prototype's rule: never the previous reply); every other case anchors on the question and the previous reply
     anchor = (" ".join(words) or query) if span and options.excerpt_anchor == "keywords" else focus
+    tie = one_char_words(query) if options.policy in CHANGE_POLICIES else ()  # packet-v12, PHASE-31 Q3
     for c in eligible:
         # a lexical or keyword hit is the whole message; a vector-only hit is its chunk; under packet-v11 a word hit
         # whose vector similarity meets the bar excerpts within its chunk too: the chunk is the part of the message
@@ -632,9 +714,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         clean = c["clean"][c["text_start"]:c["text_end"]] if in_chunk else c["clean"]
         if cue:  # packet-v11: by whole sentences up to CUE_GROW_CHARS, no sentence cap (PHASE-27 Q2)
             text, short = grown_excerpt(clean, anchor, words, min(options.excerpt_chars, CUE_GROW_CHARS),
-                                        max_sentences=None)
+                                        max_sentences=None, tie_words=tie)
         elif options.policy in GROW_POLICIES:  # packet-v10: grown to its length from the best sentence (ADR 0053)
-            text, short = grown_excerpt(clean, anchor, words, options.excerpt_chars)
+            text, short = grown_excerpt(clean, anchor, words, options.excerpt_chars, tie_words=tie)
         else:
             text = excerpt(clean, focus, max_chars=options.excerpt_chars)
             short = excerpt(clean, focus, window=1, max_chars=options.excerpt_chars)
@@ -642,6 +724,15 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                 speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
                                 text=text, score=float(c["rrf"]), revision_id=str(c["id"]), short=short,
                                 position=c["position"]))
+    if changes and selected:  # packet-v12: an excerpt saying what a selected fact's current version replaced (Q1)
+        replaced = replaced_values(selected)
+        if replaced:
+            r = view["resolution"] if view else None  # characters' names are never an old value's spans
+            people = (*r.persona_names, *(n for e in r.entities() if e.get("type") == "character"
+                                          for n in (e["name"], *e.get("names", ())))) if r is not None else ()
+            kept = [e for e in g.ranked if not states_replaced(e.text, e.turn, replaced, people)]
+            g.replaced = len(g.ranked) - len(kept)
+            g.ranked = kept
     if g.withheld_lines:
         # An excerpt that says what the mode withheld would give it back word for word.
         kept = [e for e in g.ranked
@@ -888,6 +979,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                               for k in ("state", "thread", "fact", "claim", "secret", "summary", "excerpt")},
                    "cast": sum(1 for e in placed if e.get("section") == "cast"),
                    "scene_cast": sorted(g.cast.values()), "memory_mode_withheld": g.withheld,
+                   "replaced_left_out": g.replaced, "ended_left_out": g.ended,  # packet-v12 (PHASE-31 Q1, Q2)
                    "memory_cut": cut, "fits_at": fit,
                    "embedding_projection": options.embed_projection[:20] if options.embedder else None,
                    "extractor": (options.extractor_key or "")[:20] or None,

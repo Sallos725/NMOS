@@ -106,7 +106,7 @@ def test_packet_v2_counts_non_ascii_at_1_2_tokens_a_character():
     """K26: three tokenizers counted 0.74-0.98 tokens per Korean character; v0 and v1 estimate 1.5."""
     assert NON_ASCII == {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2,
                          "packet-v5": 1.2, "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2,
-                         "packet-v10": 1.2, "packet-v11": 1.2}
+                         "packet-v10": 1.2, "packet-v11": 1.2, "packet-v12": 1.2}
     assert estimate_tokens("가" * 100) == 150 and estimate_tokens("가" * 100, 1.2) == 120
     assert estimate_tokens("a" * 35, 1.2) == estimate_tokens("a" * 35) == 10  # ASCII unchanged
 
