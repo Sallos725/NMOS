@@ -87,6 +87,15 @@ lost its answer by spans: a fact whose old value the question names is no longer
 "what is … called" question and states an earlier residence or place (다락방, 여관 방, 별빛빵집) or an earlier form
 of address ('도윤 씨', '하람 씨', '이안 씨'). S0main: 22 excerpts over 12 cases, scores unchanged (not listed).
 
+## After the Copilot review of #264 (2026-10-05)
+
+Under `packet-v12` a dropped excerpt's slot is now filled by the next candidate (Q1 as specified; before, the
+candidates were cut to `top_k` first), ended roles leave the ranked facts before the limit, and no placed form of a kept
+excerpt says only an old value. Replayed the same way: S1 turn 240 22, 23, 22 (bar 21); S2 full history 23, 23, 22
+(bar 22); S3 6/6; the live run's databases 23 and 23; M0 main 34 = v11; every other set unchanged. One case changed in
+two runs: `c240_02_location` now places 3호실 from a refilled excerpt (turn 86, packing in the old room) that no
+selected fact's history names by that word (the old place is recorded as 갈매기 여관) — K39's remaining case.
+
 ## Not measured here
 
 Generated answers (the gate scores packets); latency (a replay is not a timing test); a chat whose question about
