@@ -169,6 +169,8 @@ phase the same day for extract-v16 only (ADR 0012 amendment of 2026-10-03); extr
       historical scores at the median of three runs (21/25, 22/25, 6/6, 3/3); S0main keeps at least 8/10 in every run;
       the other sets keep their latest gains; all 24 sets and the raw forbidden-pattern counts reported for every run. A
       false join, a wrong role ending or a secret leak in any run fails the gate whatever the median.
+      *Measured 2026-10-04/05 on `9947d2c`: not passed — S0main 9/10 every run, S4b 3/3, no false join; S1 turn 240 19,
+      S2 19, S3 5/6 for recall reasons shared with `extract-v15` (`docs/perf/phase28-live-gate-9947d2c.md`; Phase 31).*
 - [ ] Latency: requests at 10,000 messages (`tools/bench_story.py`) on an `extract-v16` copy within the baseline's
       variation; fail-open and the memory budget intact.
 - [ ] Diff-scoped self-review naming the guarantees at risk; STATUS, ADR 0064 and the ADR index reflect the adopted

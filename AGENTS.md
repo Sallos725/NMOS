@@ -32,8 +32,9 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-30.md` is the latest, approved
-   2026-10-04, a correction phase under §7 item 5 (the first-sight extraction order), step 2 in review (#260);
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-31.md` is the latest, a draft not yet
+   approved (recall that knows what changed); `PHASE-30.md`, approved 2026-10-04, a correction phase under §7 item 5
+   (the first-sight extraction order), complete (#260);
    `PHASE-29.md`, approved 2026-10-04, built on Phase 28's `extract-v16`, and `PHASE-28.md`, approved 2026-10-03,
    both had step 2 merged in #251; `PHASE-27.md` was
    complete 2026-10-02, run beside Phase 23 as Phases 24 and 25 were; `PHASE-26.md` was stopped before it merged;
