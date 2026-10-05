@@ -32,8 +32,9 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-31.md` is the latest, approved
-   2026-10-05 (recall that knows what changed), complete with `packet-v12` the default (#264); `PHASE-30.md`, approved 2026-10-04, a correction phase under §7 item 5
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-32.md` is the latest, authorized
+   2026-10-05 as an exception to R7 (memory on a time axis in the Inspector), its spec awaiting the owner's answers;
+   `PHASE-31.md`, approved 2026-10-05 (recall that knows what changed), complete with `packet-v12` the default (#264); `PHASE-30.md`, approved 2026-10-04, a correction phase under §7 item 5
    (the first-sight extraction order), complete (#260);
    `PHASE-29.md`, approved 2026-10-04, built on Phase 28's `extract-v16`, and `PHASE-28.md`, approved 2026-10-03,
    both had step 2 merged in #251; `PHASE-27.md` was
@@ -98,7 +99,8 @@ If two normative documents appear to conflict:
 | 29 — whose name is it: a confirmation for an alias whose two names are both in the turn (NMO-35 under AGE-24; a correction found by measurement on Phase 28's S1 runs, not a roadmap stage) | **approved** (2026-10-04); step 2 merged (#251: inside `extract-v16`, off by default; ADR 0064 amendments) | `PHASE-29.md` |
 | 30 — a chat seen for the first time is extracted in story order: the first-sight window oldest first, live turns behind it (NMO-36 under AGE-24; a correction found by measurement on Phase 28's S1 runs, not a roadmap stage) | **approved** (2026-10-04); step 2 in review (#260: every generation, no key or prompt change; ADR 0065, D74) | `PHASE-30.md` |
 | 31 — recall that knows what changed: `packet-v12` leaves out a replaced value's excerpt and an ended role in a question about now, and anchors an excerpt on the question's one-character words on a tie (AGE-24, AGE-37 K43; a correction found by the PHASE-28 live gate, not a roadmap stage) | **approved** (2026-10-05); steps 2–3 done (#264: `packet-v12` behind the policy, ADR 0066, D75; replay `docs/perf/phase31-replay.md`); Q1 amended (owner) and replayed; the second reduced live gate met every bar (`docs/perf/phase31-live-gate.md`); **complete**, `packet-v12` the default (owner, 2026-10-05) | `PHASE-31.md` |
-| 32+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
+| 32 — memory on a time axis: a character's facts as bars over turns in the browser Inspector (AGE-39; pulled in before 1.0 by the owner, an exception to R7) | authorized (2026-10-05); spec drafted, the proposed answers awaiting the owner | `PHASE-32.md` |
+| 33+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
 ADR 0006/0007, `docs/perf/scale.md`).
