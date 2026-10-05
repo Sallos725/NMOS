@@ -637,8 +637,10 @@ A live turn of a chat whose first-sight window is still queued or running waits 
 Every generation; no prompt, generation key or migration changes.
 
 **D75 — Recall that knows what changed (`packet-v12`; ADR 0066; Phase 31, AGE-24).** Under `packet-v12` an excerpt
-older than a selected fact's current version that repeats a value the fact replaced (and not the current one) is left
-out, an ended role leaves the facts unless no fact about the same two is current and the question names both, and the
+older than a fact's current version that repeats a value the fact replaced and not the current one is left out (the
+selected facts by reused spans; the standing facts and places the question names also by marks: a place's word for a
+"where" question, a quoted form of address for a "what is … called" question; not a fact whose old value the question
+names), an ended role leaves the facts unless no fact about the same two is current and the question names both, and the
 excerpt's anchor breaks a tie on the question's one-character words. A question with a history cue (`HISTORY_CUE`:
 `FIRST_CUE` plus 전에, 이전, 첫날, before, used to, previously) keeps the old excerpts and the ended roles. Behind
 `NMOS_PACKET_POLICY`; the default stays `packet-v11` until the owner decides on the measurement.

@@ -22,7 +22,13 @@ Under `packet-v12` (`packet.CHANGE_POLICIES`), in `retrieval.gather`:
    fact's current version, it repeats the old object or value (`spans.reuse` at `REPEATS`, the measure that drops an
    excerpt restating a withheld line, with the current value's and the characters' names' spans not counted) and it
    does not repeat the current one. The freed slot goes to the next candidate. The trace records the count
-   (`replaced_left_out`).
+   (`replaced_left_out`). *Amended 2026-10-05 (the reduced live gate, narrowed on the replay):* for the standing facts
+   and places the question names (both of a pair; a place's subject; also when the prompt holds them and the packet
+   leaves them out), an excerpt is also dropped when it holds a mark of a replaced version and none of the current
+   one's: for a place (`located_in`), when the question asks where, a word of its name at the start of a word of the
+   excerpt (여관이); for a form of address, when the question asks what someone is called, a quoted form ('서 선생';
+   not a character's name alone); for another standing fact, a quoted form. A fact whose earlier value the question
+   names ("왜 여관에서 나왔어?") is not judged by spans or marks.
 2. **An ended role is printed only for a question about the past** (Q2): a `role_toward` fact with negative polarity
    leaves the selected facts, unless no fact about the same two is current and the question names both. The trace
    records the count (`ended_left_out`).

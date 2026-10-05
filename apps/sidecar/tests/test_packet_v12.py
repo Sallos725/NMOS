@@ -15,8 +15,9 @@ from memeval import _sync, settings_for
 from nmos_sidecar import audit
 from nmos_sidecar.facts import FIRST_CUE, HISTORY_CUE
 from nmos_sidecar.packet import CHANGE_POLICIES, POLICIES, grown_excerpt
-from nmos_sidecar.retrieval import (RecallOptions, ended_role_kept, keywords, one_char_words, replaced_values,
-                                    states_replaced)
+from nmos_sidecar.retrieval import CALLED, WHERE
+from nmos_sidecar.retrieval import (RecallOptions, asks_about_old, ended_role_kept, keywords, named_facts, one_char_words,
+                                    replaced_marks, replaced_values, states_marked, states_replaced)
 from simchat import SimChat
 from test_packet_ledger import db, extract
 
@@ -120,6 +121,81 @@ def test_only_a_superseded_version_of_the_same_predicate_counts():
     assert replaced_values([f]) == []
     f["history"][0] = {**f["history"][0], "predicate": "located_in", "outcome": "ended"}
     assert replaced_values([f]) == []
+
+
+# --- Q1 amended (2026-10-05, the reduced live gate): marks, and the facts the question names -------------------------
+
+NAMES = frozenset({"서도윤", "도윤", "윤하람", "하람", "백이안", "이안"})
+
+
+def addressed(position, value, history=(), subject="백이안", obj="서도윤"):
+    return {"position": position, "turn": position // 2, "subject": subject, "subject_type": "character",
+            "object": obj, "object_type": "character", "predicate": "addresses", "value": value,
+            "polarity": "positive", "history": list(history)}
+
+
+def old(position, value, predicate="addresses", obj="서도윤"):
+    return {"position": position, "turn": position // 2, "predicate": predicate, "object": obj, "value": value,
+            "outcome": "superseded"}
+
+
+def test_a_quoted_old_form_is_a_mark_and_a_bare_name_is_none():
+    f = addressed(400, "반말, '도윤'이라고 부름", [old(14, "존댓말, '서 선생'이라고 부름")])
+    marks = replaced_marks([f], NAMES)
+    assert marks == [(200, {"서선생"}, set(), set(), set())]  # '도윤' is only a name: no mark of the current version
+    said = "\"비밀 동지끼리 '서 선생', '백 서기님'은 좀 멀지 않아요? 이제 서로 이름으로 부르죠.\""
+    assert states_marked(said, 95, marks)
+    assert not states_marked(said, 210, marks)  # after the current version
+    assert not states_marked("이안은 도윤을 보며 웃었다.", 95, marks)
+
+
+def test_an_excerpt_with_the_current_form_is_kept():
+    f = addressed(434, "반말, '도도'라고 부름", [old(42, "존댓말, '도윤 씨'라고 부름"), old(214, "반말, '도윤아'라고 부름")],
+                  subject="하람")
+    marks = replaced_marks([f], NAMES)
+    assert states_marked("\"도윤 씨라고 불러 주는 대신, 앞으로 제가 새 빵 만들면\"", 21, marks)
+    assert not states_marked("\"도윤 씨 말고 이제 도도라고 할게.\"", 172, marks)
+
+
+def test_a_place_marks_its_words_with_a_particle_after_them_and_no_prose_word():
+    f = lives(440, "수도 한울", [old(40, None, "located_in", "갈매기 여관")])
+    marks = replaced_marks([f], NAMES)
+    assert marks[0][2] == {"갈매기", "여관"}
+    assert states_marked("\"네. 이 여관이 제 집이에요.\"", 17, marks)
+    assert not states_marked("여관을 떠나 수도 한울로 갔다.", 100, marks)  # it says the current place
+    assert replaced_marks([f], NAMES, places=False) == []  # a place's words only for a question that asks where
+    prose = addressed(300, "반말, 편한 말투", [old(40, "존댓말, 친구 사이의 말투")])
+    assert replaced_marks([prose], NAMES) == []  # 친구, 말투: no marks
+
+
+def test_a_question_that_names_the_old_value_asks_about_the_change():
+    f = lives(440, "지도방 다락방", [old(40, None, "located_in", "갈매기 여관")])
+    assert asks_about_old(f, "도윤은 왜 여관에서 나왔어?", NAMES)
+    assert not asks_about_old(f, "지금 어디 살아?", NAMES)
+    assert not asks_about_old(f, "왜 다락방에 갔어?", NAMES)  # the current value
+
+
+def test_a_form_of_address_marks_only_a_question_about_what_someone_is_called():
+    f = addressed(400, "반말, '도윤'이라고 부름", [old(14, "존댓말, '서 선생'이라고 부름")])
+    assert replaced_marks([f], NAMES, calls=False) == []
+    assert CALLED.search("이안은 도윤을 뭐라고 부르지?") and CALLED.search("하람이는 도윤을 뭐라고 불러?")
+    assert not CALLED.search("무진 선장이 도윤한테 했던 약속, 지키고 있어?")
+
+
+def test_the_where_cue():
+    assert WHERE.search("하람이는 지금 어디 있어?") and WHERE.search("Where does she live now?")
+    assert not WHERE.search("교직원 식당 주방에서 고친 게 뭐였어?")
+
+
+def test_the_facts_a_question_names_judge_too():
+    pair = addressed(400, "반말, '도윤'이라고 부름", [old(14, "존댓말, '서 선생'이라고 부름")])
+    other = addressed(300, "존댓말, '선장님'이라고 부름", [old(10, "존댓말, '아저씨'라고 부름")], subject="서도윤",
+                      obj="강무진")
+    place = lives(440, "수도 한울", [old(40, None, "located_in", "갈매기 여관")])
+    given = {"백이안": frozenset({"이안"}), "서도윤": frozenset({"도윤"}), "윤하람": frozenset({"하람"})}
+    assert named_facts([pair, other, place], "이안은 도윤을 뭐라고 부르지?", None, given) == [pair]
+    assert named_facts([pair, other, place], "하람이는 지금 어디 있어?", None, given) == [place]  # a place: its subject
+    assert named_facts([pair], "이안은 뭐 해?", None, given) == []  # one of the pair
 
 
 # --- Q2: an ended role ----------------------------------------------------------------------------------------------

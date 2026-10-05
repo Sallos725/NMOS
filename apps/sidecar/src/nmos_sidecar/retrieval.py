@@ -489,6 +489,106 @@ def states_replaced(text: str, turn: int | None, replaced: list[tuple[int, tuple
     return False
 
 
+_QUOTED = re.compile(r"['\"‘’“”「」『』](.+?)['\"‘’“”「」『』]")
+PLACE_MARKS = frozenset({"located_in"})  # a replaced place: its name's words are marks too (PHASE-31 Q1, amended)
+MARKED = STANDING | PLACE_MARKS  # facts the question names that judge what changed although the packet leaves them out
+# A place's words are marks only when the question asks where (measured: M0 main lost two answers whose excerpts named
+# rooms the characters had passed through, on questions not about where anyone is)
+WHERE = re.compile(r"어디|\bwhere\b", re.IGNORECASE)
+# A form of address's quoted forms are marks only when the question asks what someone is called (measured: an old
+# '도윤 씨' is in the dialogue of most excerpts, and questions about a promise or a key lost them)
+CALLED = re.compile(r"부르|불러|부름|호칭|\bcalls?\b|\bcalled\b", re.IGNORECASE)
+
+
+def _flat(text: str | None) -> str:
+    return "".join((text or "").casefold().split())
+
+
+def _value_marks(fact: dict[str, Any], names: frozenset[str], places: bool = True,
+                 calls: bool = True) -> tuple[set[str], set[str]]:
+    """What sets one version apart (PHASE-31 Q1, amended 2026-10-05): its quoted forms ('서 선생', '도윤 씨'; not one
+    that is only a character's name; for a form of address only when the question asks what someone is called,
+    `calls`), and for a place (`located_in`), when the question asks where (`places`), the words of the place's name
+    (갈매기, 여관; no character's name). Prose words (친구, 말투) are none: an older excerpt says them about anything.
+    Returns (quoted forms, spaces squashed; words)."""
+    text = " ".join(t for t in (fact.get("object"), fact.get("value")) if t)
+    quoted = {_flat(q) for q in _QUOTED.findall(text)} if calls or fact.get("predicate") != "addresses" else set()
+    words: set[str] = set()
+    if places and fact.get("predicate") in PLACE_MARKS:
+        words = {w.casefold() for w in re.findall(r"\w+", fact.get("object") or "") if len(w) >= 2}
+    return ({q for q in quoted if len(q) >= 2 and q not in names},
+            {w for w in words if not any(w in n or n in w for n in names)})
+
+
+def replaced_marks(facts: list[dict[str, Any]], names: frozenset[str], places: bool = True,
+                   calls: bool = True) -> list[tuple[int, set[str], set[str], set[str], set[str]]]:
+    """For each fact with an earlier version of its own predicate: its current turn, the marks of what its earlier
+    versions said that the current one does not (quoted, words), and the current version's own (quoted, words)."""
+    out = []
+    for f in facts:
+        if f.get("turn") is None:
+            continue
+        now_q, now_w = _value_marks(f, names, places, calls)
+        cur = _flat(" ".join(t for t in (f.get("object"), f.get("value")) if t))
+        old_q: set[str] = set()
+        old_w: set[str] = set()
+        for h in f.get("history") or ():
+            if h.get("outcome") == "superseded" and h["position"] < f["position"] and h["predicate"] == f["predicate"]:
+                q, w = _value_marks(h, names, places, calls)
+                old_q |= {m for m in q if m not in cur}
+                old_w |= {m for m in w if m not in cur}
+        if old_q or old_w:
+            out.append((f["turn"], old_q, old_w, now_q, now_w))
+    return out
+
+
+def _has(text: str, quoted: set[str], words: set[str]) -> bool:
+    """A quoted form anywhere (spaces ignored), or a word at the start of one of the text's words (a particle after it:
+    여관이)."""
+    flat = _flat(text)
+    return any(q in flat for q in quoted) or any(t.startswith(w) for t in re.findall(r"\w+", text.casefold())
+                                                for w in words)
+
+
+def states_marked(text: str, turn: int | None, marks: list[tuple[int, set[str], set[str], set[str], set[str]]]) -> bool:
+    """An excerpt from before a fact's current version that holds a mark of what that version replaced and none of the
+    current version's (PHASE-31 Q1, amended)."""
+    if turn is None:
+        return False
+    return any(turn < cur_turn and _has(text, old_q, old_w) and not _has(text, now_q, now_w)
+               for cur_turn, old_q, old_w, now_q, now_w in marks)
+
+
+def asks_about_old(fact: dict[str, Any], query: str, names: frozenset[str]) -> bool:
+    """The question names what a fact's earlier version said and its current one does not ("왜 여관에서 나왔어?"): it
+    asks about the change, so that fact leaves the old excerpts in (PHASE-31 Q1, amended; measured on the synthetic cut
+    at turn 120). A word of two or more characters at the start of a word of the question; no character's name."""
+    cur = _flat(" ".join(t for t in (fact.get("object"), fact.get("value")) if t))
+    olds = {w.casefold() for h in fact.get("history") or ()
+            if h.get("outcome") == "superseded" and h["predicate"] == fact["predicate"]
+            for w in re.findall(r"\w+", " ".join(t for t in (h.get("object"), h.get("value")) if t))}
+    olds = {w for w in olds if len(w) >= 2 and w not in cur and not any(w in n or n in w for n in names)}
+    return any(t.startswith(w) for t in re.findall(r"\w+", query.casefold()) for w in olds)
+
+
+def named_facts(facts: list[dict[str, Any]], query: str, r: Any,
+                aliases: dict[str, frozenset[str]] | None) -> list[dict[str, Any]]:
+    """Standing facts and places the question names (both of a pair; a place's subject), whether or not the packet
+    holds them: the prompt may hold the current version, and the excerpt of the replaced one would contradict it
+    (PHASE-31 Q1, amended). The persona's names count here."""
+    q = " ".join(query.casefold().split())
+    persona = {" ".join(n.casefold().split()) for n in (r.persona_names if r is not None else ())}
+
+    def named(f: dict[str, Any], role: str) -> bool:
+        side = _side_names(f, role, r, aliases)
+        if r is not None and f.get(role) and r.is_persona(f.get(f"{role}_type"), f.get(role)):
+            side |= {n for n in persona if len(n) >= 2}
+        return any(n in q for n in side)
+
+    return [f for f in facts if f["predicate"] in MARKED and f.get("history") and named(f, "subject")
+            and (f["predicate"] in PLACE_MARKS or named(f, "object"))]
+
+
 def _ended_role(f: dict[str, Any]) -> bool:
     return f.get("predicate") == "role_toward" and f.get("polarity") == "negative"
 
@@ -724,13 +824,22 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                 speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
                                 text=text, score=float(c["rrf"]), revision_id=str(c["id"]), short=short,
                                 position=c["position"]))
-    if changes and selected:  # packet-v12: an excerpt saying what a selected fact's current version replaced (Q1)
-        replaced = replaced_values(selected)
-        if replaced:
-            r = view["resolution"] if view else None  # characters' names are never an old value's spans
-            people = (*r.persona_names, *(n for e in r.entities() if e.get("type") == "character"
-                                          for n in (e["name"], *e.get("names", ())))) if r is not None else ()
-            kept = [e for e in g.ranked if not states_replaced(e.text, e.turn, replaced, people)]
+    if changes and view is not None and g.ranked:  # packet-v12: an excerpt saying what a fact's current version replaced
+        r = view["resolution"]  # characters' names are never an old value's spans or marks
+        people = (*r.persona_names, *(n for e in r.entities() if e.get("type") == "character"
+                                      for n in (e["name"], *e.get("names", ())))) if r is not None else ()
+        flat_names = frozenset(_flat(n) for n in people if len(_flat(n)) >= 2)
+        judged = [f for f in selected if not asks_about_old(f, query, flat_names)]  # a question about the change keeps it
+        replaced = replaced_values(judged)  # Q1: the selected facts' replaced values, by reused spans
+        named = named_facts(view["facts"], query, r, _aliases(r, query, previous_ai, options, view, names_of)
+                            if r is not None else None)
+        named = [f for f in named if not asks_about_old(f, query, flat_names)]
+        # Q1 amended: marks judge only the facts the question names, a place's words only when it asks where, a form
+        # of address's quoted forms only when it asks what someone is called
+        marks = replaced_marks(named, flat_names, bool(WHERE.search(query)), bool(CALLED.search(query)))
+        if replaced or marks:
+            kept = [e for e in g.ranked if not states_replaced(e.text, e.turn, replaced, people)
+                    and not states_marked(e.text, e.turn, marks)]
             g.replaced = len(g.ranked) - len(kept)
             g.ranked = kept
     if g.withheld_lines:

@@ -50,6 +50,43 @@ lending sentence; `c240_02_location` passes, the ended role `투숙객: 갈매�
 the sentence with 보리차 (Q3 as designed). S1 turn 240's 03, 05, 06, 19, 21 and 24 still fail (03 and 05 not
 diagnosed here; 06, 19, 21 and 24 failed historically too).
 
+## Q1 amended, after the reduced live gate (2026-10-05)
+
+The reduced live gate (`phase31-live-gate.md`) missed S1 turn 240 and S2 full history on 03, 05 and 06, an older
+excerpt of a replaced residence or form of address that the span share does not tell. The owner approved telling it by
+marks; the rules were narrowed twice on this replay (see PHASE-31 Q1's amendment). Same method, three replays each,
+now over the 17 gate databases, the three live databases, and the Phase 27 sets (M0 main and sample 2, the synthetic
+cuts; vectors on). "Spans only" is `packet-v12` without the marks; "amended" is the committed rule.
+
+| Set | Bar | `packet-v11` replay | `packet-v12`, spans only | `packet-v12` amended | |
+|---|---|---|---|---|---|
+| S1, turn 240 (gate DBs) | median ≥ 21 | 19, 20, 20 | 21, 22, 22 | 22, 23, 23 | met |
+| S1, turn 240 (live DB) | — | 20 | 22 | 23 | |
+| S2, full history (gate DBs) | median ≥ 22 | 20, 20, 20 | 22, 22, 22 | 23, 23, 23 | met |
+| S2, full history (live DB) | — | 20 | 22 | 23 | |
+| S3 (gate DBs and live DB) | 6/6 | 5 | 6 | 6 | met |
+| S1, turn 120 (gate DBs) | v11 − 1 | 22, 21, 23 | 21, 20, 22 | 23, 22, 24 | met |
+| S2 default, S4, S4b, S5, S0s2 | v11 − 1 | — | = v11 or better | = v11 or better | met |
+| S0main memory cases | v11 − 1 | 38, 37, 38 | = v11 | = v11 | met |
+| M0 main (Phase 27 set, 40) | v11 − 1 | 34, 34, 34 | 33, 34, 34 | 34, 34, 34 | met |
+| M0 sample 2 (15) | v11 − 1 | 9, 10, 8 | 9, 9, 10 | 10, 10, 9 | met |
+| Synthetic cuts 30 / 60 / 120 / 240 | v11 − 1 | 21 / 17 / 13 / 13 | 21 / 17 / 13 / 14 | 21 / 17 / 14 / 14 | met |
+
+Forbidden phrases placed per run, v11 → amended: S1 turn 240 5 → 1, S2 full history 5 → 1, S1 turn 120 3 → 1; the
+synthetic cuts 57 → 51 over three runs; M0 unchanged or lower.
+
+**The two narrowings.** With marks on every selected fact and a place's words on every question, M0 main lost two
+answers in every run (34 → 32): its characters move between many rooms, and questions about what happened in a kitchen
+lost the excerpts naming it; and in the synthetic stories an old '도윤 씨' or '추 영감님' in the dialogue dropped
+excerpts from questions about a promise, a key, a birthday or a relationship (no case failed, the answers sat
+elsewhere). Marks now judge only the facts the question names, a place's words only for a "where" question, a quoted
+form of address only for a "what is … called" question. Separately, "도윤은 왜 여관에서 나왔어?" (synthetic cut 120)
+lost its answer by spans: a fact whose old value the question names is no longer judged.
+
+**What the marks drop now.** Reviewed in full on S1, S2 and S3 (synthetic): every dropped excerpt is on a "where" or
+"what is … called" question and states an earlier residence or place (다락방, 여관 방, 별빛빵집) or an earlier form
+of address ('도윤 씨', '하람 씨', '이안 씨'). S0main: 22 excerpts over 12 cases, scores unchanged (not listed).
+
 ## Not measured here
 
 Generated answers (the gate scores packets); latency (a replay is not a timing test); a chat whose question about

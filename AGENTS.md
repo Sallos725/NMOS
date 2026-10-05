@@ -97,7 +97,7 @@ If two normative documents appear to conflict:
 | 28 — a role that ends, and a name said two ways: `extract-v16`'s `CURRENT ROLES` and an alias of a name and its part (under AGE-24, from the owner's live run on `e13dee7`; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-03); step 2 merged (#251; the read-side name join measured and withdrawn); step 3: `extract-v16` the default (2026-10-04, ADR 0064 accepted); step 4, the live gate: paused after S0main ×3, `extract-v16` focused (ADR 0064 item 5), the gate to restart | `PHASE-28.md` |
 | 29 — whose name is it: a confirmation for an alias whose two names are both in the turn (NMO-35 under AGE-24; a correction found by measurement on Phase 28's S1 runs, not a roadmap stage) | **approved** (2026-10-04); step 2 merged (#251: inside `extract-v16`, off by default; ADR 0064 amendments) | `PHASE-29.md` |
 | 30 — a chat seen for the first time is extracted in story order: the first-sight window oldest first, live turns behind it (NMO-36 under AGE-24; a correction found by measurement on Phase 28's S1 runs, not a roadmap stage) | **approved** (2026-10-04); step 2 in review (#260: every generation, no key or prompt change; ADR 0065, D74) | `PHASE-30.md` |
-| 31 — recall that knows what changed: `packet-v12` leaves out a replaced value's excerpt and an ended role in a question about now, and anchors an excerpt on the question's one-character words on a tie (AGE-24, AGE-37 K43; a correction found by the PHASE-28 live gate, not a roadmap stage) | **approved** (2026-10-05); steps 2–3 done (#264: `packet-v12` behind the policy, ADR 0066, D75; the replay met every bar with 첫날, `docs/perf/phase31-replay.md`), the reduced live gate next | `PHASE-31.md` |
+| 31 — recall that knows what changed: `packet-v12` leaves out a replaced value's excerpt and an ended role in a question about now, and anchors an excerpt on the question's one-character words on a tie (AGE-24, AGE-37 K43; a correction found by the PHASE-28 live gate, not a roadmap stage) | **approved** (2026-10-05); steps 2–3 done (#264: `packet-v12` behind the policy, ADR 0066, D75; replay `docs/perf/phase31-replay.md`); the reduced live gate met S3 and missed S1/S2 on three cases (`docs/perf/phase31-live-gate.md`), Q1 amended (owner) and replayed; a second reduced live gate next | `PHASE-31.md` |
 | 32+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
@@ -233,6 +233,15 @@ mutate chats, or call a model. Its results go to `docs/HOST-FACTS.md` and `fixtu
    carries its paragraph under "Current phase", and its own spec's scope, steps and stop conditions gate its
    implementation; the roadmap phase stays `current` and keeps its scope. Only an approved row implements; a draft
    row does not.
+6. **A spec's measurement plan names its gate by what the change touches** (owner, 2026-10-05, after Phase 31):
+   - *Recall only* (packet policy, ranking, excerpts; no extraction prompt, generation or worker change): a zero-call
+     replay of an earlier gate's databases first (`audit.replay`, every probe, the old policy beside the new one,
+     three replays each with the majority deciding, since the lexical route is not deterministic run to run). Then
+     one reduced live run of the sets the change is for, once each, to confirm on fresh extraction. A miss in the
+     replay is fixed before any live call.
+   - *Extraction* (a prompt, a generation key, the worker's order or concurrency): the full live gate.
+   - A live gate uses the corrected harness pacing (a few seconds between messages, a bounded wait for the shown
+     reply) unless a run must be comparable to an earlier one, and states which.
 
 Do not infer owner decisions from preference or convenience.
 
