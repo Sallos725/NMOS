@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { StatusInfo } from '../src/core';
 import { createChatSwitch } from '../src/chatoff';
-import { safeFragment } from '../src/inspector';
+import { markDetail, placeMarks, safeFragment } from '../src/inspector';
 import { openPanel, type PanelDeps } from '../src/ui';
 
 const id = '0190f3a4-1b2c-7d3e-8f40-123456789abc';
@@ -35,6 +35,33 @@ describe('safeFragment', () => {
     const out = safeFragment('<p>&lt;script&gt;__ran=true&lt;/script&gt; &amp; more</p>');
     expect(out.textContent).toBe('<script>__ran=true</script> & more');
     expect(out.querySelector('script')).toBeNull();
+  });
+});
+
+describe('timeline marks (PHASE-32 step 3)', () => {
+  const lane = '<div class="tl"><div class="tl-row"><div class="tl-lab">located in</div><div class="tl-track">'
+    + '<span class="tl-rule"></span>'
+    + '<span class="tl-bar past" data-v="library" data-s="t2 – t6" data-o="superseded" data-l="18.182" data-w="45.454" '
+    + 'style="background:url(https://x)" onclick="__ran=true" title="t">library</span>'
+    + '<span class="tl-bar owner" data-v="&lt;b&gt;harbor&lt;/b&gt;" data-s="t7 – now" data-o="current" data-l="63.636" '
+    + 'data-w="36.364">harbor</span><span class="tl-dot" data-l="50;left:0" data-v="x"></span></div></div>'
+    + '<script>__ran=true</script></div>';
+
+  it('places marks from their numbers, drops what could run, and shows a mark\'s text as text', () => {
+    ran.__ran = false;
+    const part = safeFragment(lane);
+    placeMarks(part);
+    const [past, current] = Array.from(part.querySelectorAll<HTMLElement>('.tl-bar'));
+    expect(past.getAttribute('style')).toBe('left: 18.182%; width: calc(45.454% - 2px);');
+    expect(past.getAttribute('onclick')).toBeNull();
+    expect(part.querySelector('script')).toBeNull();
+    expect(part.querySelector<HTMLElement>('.tl-dot')!.getAttribute('style')).toBeNull(); // not a plain number
+    const card = markDetail(current, { canon: 'canon', owner: "The owner's version." });
+    expect(card.querySelector('.v')!.textContent).toBe('<b>harbor</b>');
+    expect(card.querySelector('b')).toBeNull();
+    expect(card.textContent).toContain("The owner's version.");
+    expect(Array.from(card.querySelectorAll('.tl-hist p')).map((p) => p.className)).toEqual(['', 'cur']);
+    expect(ran.__ran).toBe(false);
   });
 });
 
@@ -574,5 +601,105 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     await settle();
     expect(panel().querySelector('.preview')).toBeNull();  // the late answer for 유이 is not shown
     expect(button('Join')?.disabled).toBe(false);
+  });
+});
+
+describe('the timeline in the panel (PHASE-32 step 3)', () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+    document.head.replaceChildren();
+  });
+  const who = '5c6d7e8f-9a0b-5c2d-8e3f-0123456789ab';
+  const fragment = (span: string) => '<div class="tl"><p class="tl-switch">'
+    + (span ? '<span class="tl-span" data-span="">Whole chat</span> · <b>Last 25 turns</b>'
+      : '<b>Whole chat</b> · <span class="tl-span" data-span="recent">Last 25 turns</span>')
+    + '</p><div class="tl-main"><div class="tl-group"><p class="tl-h">Facts</p><div class="tl-row">'
+    + '<div class="tl-lab">located in</div><div class="tl-track"><span class="tl-rule"></span>'
+    + '<span class="tl-bar past" data-v="library" data-s="t2 – t6" data-o="superseded" data-l="18.182" data-w="45.454">library</span>'
+    + '<span class="tl-bar" data-v="harbor" data-s="t7 – now" data-o="current" data-l="63.636" data-w="36.364">harbor</span>'
+    + '</div></div></div></div></div>';
+
+  function deps() {
+    const calls: string[] = [];
+    const d: PanelDeps = {
+      api: async <T>(method: 'GET' | 'POST' | 'PUT', path: string) => {
+        calls.push(`${method} ${path}`);
+        if (path.startsWith('/v1/inspector/c/') && path.includes('part=timeline')) {
+          return { html: fragment(path.includes('span=recent') ? 'recent' : '') } as T;
+        }
+        if (path.startsWith(`/v1/inspector/c/${id}/e/${who}`)) {
+          return { html: '<h1>Hana</h1><details id="s-timeline"><summary><h2>Over time</h2></summary>'
+            + '<div class="tl-lazy"></div></details><details id="s-about" open><summary><h2>Facts</h2></summary>'
+            + '<p>table</p></details>' } as T;
+        }
+        if (path.startsWith(`/v1/inspector/c/${id}`)) return { html: `<a href="/inspector/c/${id}/e/${who}">Hana</a>` } as T;
+        if (path.startsWith('/v1/inspector')) return { html: `<a href="/inspector/c/${id}">chat</a>` } as T;
+        if (path.endsWith('/entities')) return [] as T;
+        throw new Error('404');
+      },
+      status: async () => ({ enabled: true, sidecarUrl: 'http://127.0.0.1:8790', language: 'en', connected: true,
+        version: '0.1.0b21', features: {}, last: null }),
+      getArg: async (key) => (key === 'language' ? 'en' : ''),
+      setArg: async () => {},
+      show: async () => {},
+      hide: async () => {},
+      hud: { enable: async () => 'unsupported', disable: async () => {}, problem: () => null, background: () => {} },
+      chat: createChatSwitch({ getArg: async () => '', setArg: async () => {}, currentChatId: async () => null }),
+      download: async () => 0,
+    };
+    return { d, calls };
+  }
+  const settle = async () => { for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setTimeout(resolve, 0)); };
+  const panel = () => document.getElementById('nmos-panel')!;
+  const parts = (calls: string[]) => calls.filter((c) => c.includes('part=timeline'));
+
+  async function openHana(d: PanelDeps): Promise<void> {
+    await openPanel(d, 'inspector');
+    await settle();
+    panel().querySelector<HTMLAnchorElement>(`a[href="/inspector/c/${id}"]`)!.click();
+    await settle();
+    panel().querySelector<HTMLAnchorElement>(`a[href="/inspector/c/${id}/e/${who}"]`)!.click();
+    await settle();
+  }
+
+  it('asks for the timeline only when its section opens, and only once', async () => {
+    const { d, calls } = deps();
+    await openHana(d);
+    expect(calls).toContain(`GET /v1/inspector/c/${id}/e/${who}?timeline=lazy&lang=en`);
+    expect(parts(calls)).toEqual([]); // closed: nothing asked
+    const section = panel().querySelector<HTMLDetailsElement>('#s-timeline')!;
+    for (let i = 0; i < 4; i += 1) { // open and close it again and again
+      section.open = true;
+      section.dispatchEvent(new Event('toggle'));
+      await settle();
+      section.open = false;
+      section.dispatchEvent(new Event('toggle'));
+      await settle();
+    }
+    expect(parts(calls)).toEqual([`GET /v1/inspector/c/${id}/e/${who}?part=timeline&lang=en`]);
+    const bars = Array.from(panel().querySelectorAll<HTMLElement>('.tl-bar'));
+    expect(bars.map((b) => b.style.left)).toEqual(['18.182%', '63.636%']);
+  });
+
+  it('shows a tapped mark under its lane, one detail at a time, and switches the window', async () => {
+    const { d, calls } = deps();
+    await openHana(d);
+    const section = panel().querySelector<HTMLDetailsElement>('#s-timeline')!;
+    section.open = true;
+    section.dispatchEvent(new Event('toggle'));
+    await settle();
+    for (let i = 0; i < 50; i += 1) {
+      for (const bar of Array.from(panel().querySelectorAll<HTMLElement>('.tl-bar'))) bar.click();
+    }
+    const cards = panel().querySelectorAll('.tl-card');
+    expect(cards.length).toBe(1);
+    expect(cards[0].querySelector('.v')!.textContent).toBe('harbor');
+    expect(cards[0].previousElementSibling!.classList.contains('tl-row')).toBe(true); // right under its lane
+    expect(panel().querySelectorAll('.tl .sel').length).toBe(1);
+    panel().querySelector<HTMLElement>('.tl-span[data-span="recent"]')!.click();
+    await settle();
+    expect(parts(calls).at(-1)).toBe(`GET /v1/inspector/c/${id}/e/${who}?part=timeline&span=recent&lang=en`);
+    expect(panel().querySelector('.tl-switch b')!.textContent).toBe('Last 25 turns');
+    expect(panel().querySelectorAll('.tl-card').length).toBe(0); // the old detail went with the old timeline
   });
 });

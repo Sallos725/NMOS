@@ -155,7 +155,7 @@ def test_the_persona_has_a_timeline_but_no_cast_line():
     me = entity("p", "Yuma", persona=True)
     own = fact(10, ("p", "Yuma"), "possesses", [step(2, "compass", "current")], object="compass")
     page = inspector.character(CONV, "p", view([own], entities=[me, entity("e1", "Hana")]), None, now=5)
-    assert len(bars(page)) == 1
+    assert len(bars(page)) == 1 and "소지: compass" in page  # a lane per thing held, named by it
     strip = timeline.cast(lambda k: k, [me, entity("e1", "Hana")], [own], [], 5, None, lambda e: f"/x/{e}", "")
     assert "Yuma" not in strip and "Hana" in strip
 
@@ -193,3 +193,74 @@ def test_the_conversation_page_draws_the_cast_in_the_browser_only(migrated):
         for path in (f"/v1/inspector/c/{conv}", f"/v1/inspector/c/{conv}/e/{hana}"):
             html = client.get(path).json()["html"]
             assert "tl-" not in html and "<script" not in html and 'id="a-' not in html
+
+
+# PHASE-32 step 3: the panel. The plugin's sanitizer keeps these tags, and `class`, `title`, `open`, section ids,
+# Inspector links and the timeline's own data attributes (adapters/pocketrisu-plugin/src/inspector.ts).
+PANEL_TAGS = {"div", "p", "h1", "h2", "span", "b", "br", "a", "table", "thead", "tbody", "tr", "th", "td", "details",
+              "summary"}
+
+
+def panel_safe(html: str) -> None:
+    assert "style=" not in html and "<script" not in html and "aria-" not in html
+    assert set(re.findall(r"<([a-z0-9]+)", html)) <= PANEL_TAGS
+    for href in re.findall(r'href="([^"]*)"', html):
+        assert re.fullmatch(r"/inspector/c/[^/?#]+(/e/[^/?#]+)?", href), href
+    for name in set(re.findall(r'\s(data-[a-z]+)=', html)):
+        assert name in {"data-l", "data-w", "data-v", "data-s", "data-o", "data-k", "data-p", "data-span"}, name
+
+
+def test_the_panel_gets_a_closed_section_only_when_it_asks():
+    located = fact(10, HANA, "located_in", [step(2, "library", "superseded", closed_turn=7), step(7, "harbor", "current")])
+    v = view([located])
+    plain = inspector.character(CONV, "e1", v, None, embed=True)
+    asked = inspector.character(CONV, "e1", v, None, embed=True, lazy=True)
+    assert 'id="s-timeline"' not in plain
+    assert '<details id="s-timeline"><summary><h2>시간축</h2></summary><div class="tl-lazy"></div></details>' in asked
+    assert asked.replace(re.search(r'<details id="s-timeline">.*?</details>', asked).group(0), "") \
+        .replace(' · <a href="#s-timeline">시간축</a>', "") == plain  # nothing else changes
+    conversation = inspector.detail(CONV, [], [], [], [], [], None, embed=True, lazy=True)
+    assert '<details id="s-people"><summary><h2>등장인물 (시간축)</h2></summary><div class="tl-lazy"></div>' in conversation
+
+
+def test_the_panel_timeline_is_what_the_sanitizer_keeps():
+    located = fact(10, HANA, "located_in", [step(2, "library", "superseded", closed_turn=7), step(7, "harbor", "current")],
+                   owner=True)
+    event = fact(12, HANA, "event", None, value="the <b>fire</b>", turn=5, salience="major")
+    thread = {"id": 14, "kind": "promise", "by": "Hana", "to": "Kaito", "text": "meet", "turn": 3, "position": 3,
+              "status": "open", "closed_by": None, "restated": []}
+    part = inspector.character_timeline(CONV, "e1", view([located, event], [thread]), "en", now=10, span="recent")
+    panel_safe(part)
+    assert 'class="tl-bar past" data-v="library" data-s="t2 – t6" data-o="superseded" data-l="18.182" data-w="45.454"' in part
+    assert 'data-p="Hana → Kaito"' in part and 'data-v="the &lt;b&gt;fire&lt;/b&gt;"' in part
+    assert '<span class="tl-span" data-span="">Whole chat</span> · <b>Last 25 turns</b>' in part
+    assert inspector.character_timeline(CONV, "nobody", view([located]), "en", now=10) == ""
+    long = fact(13, HANA, "event", None, value="x" * 1000, turn=6)
+    cut = re.search(r'data-v="(x+…)"', inspector.character_timeline(CONV, "e1", view([long]), "en", now=10)).group(1)
+    assert len(cut) == timeline.DATA_MAX  # under the panel's 400 (escaped text counts as its characters)
+    people = inspector.conversation_cast(CONV, {"facts": [located], "entities": view([])["entities"], "scene": ["e1"]},
+                                         10, "en")
+    panel_safe(people)
+    assert 'href="/inspector/c/c1/e/e1"' in people and 'data-l="' in people
+
+
+def test_the_panel_routes(migrated):
+    from test_inspector import STORY, character_links, story_client
+    from test_sidecar_integration import sync
+
+    client, c, drain = story_client(migrated, STORY)
+    with client:
+        sync(client, c)
+        drain()
+        conv = client.get("/v1/conversations").json()[0]["id"]
+        hana = character_links(client.get(f"/inspector/c/{conv}").text, conv)["Hana"]
+        base = f"/v1/inspector/c/{conv}/e/{hana}"
+        assert client.get(base).json()["html"] == client.get(f"{base}?span=recent").json()["html"]  # as before
+        assert '<div class="tl-lazy"></div>' in client.get(f"{base}?timeline=lazy").json()["html"]
+        part = client.get(f"{base}?part=timeline&span=recent").json()["html"]
+        panel_safe(part)
+        assert "tl-bar" in part and "<b>최근 25턴</b>" in part
+        people = client.get(f"/v1/inspector/c/{conv}?part=timeline").json()["html"]
+        panel_safe(people)
+        assert f'href="/inspector/c/{conv}/e/{hana}"' in people
+        assert '<div class="tl-lazy"></div>' in client.get(f"/v1/inspector/c/{conv}?timeline=lazy").json()["html"]

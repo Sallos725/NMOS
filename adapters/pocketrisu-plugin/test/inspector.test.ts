@@ -51,6 +51,22 @@ describe('inspector markup', () => {
   });
 });
 
+describe('timeline marks (PHASE-32 step 3)', () => {
+  it('pass a position only as a plain number from 0 to 100, and a mark\'s text only as text', () => {
+    for (const value of ['0', '7', '45.454', '100', '100.0', '99.999']) expect(keepAttribute('data-l', value), value).toBe(true);
+    for (const value of ['', '-5', '100.5', '101', '1e2', '50;background:url(x)', '50%', ' 5', '5.1234', 'calc(5%)']) {
+      expect(keepAttribute('data-l', value), value).toBe(false);
+      expect(keepAttribute('data-w', value), value).toBe(false);
+    }
+    expect(keepAttribute('data-span', '')).toBe(true);
+    expect(keepAttribute('data-span', 'recent')).toBe(true);
+    expect(keepAttribute('data-span', 'all')).toBe(false);
+    expect(keepAttribute('data-v', '<b>harbor</b>')).toBe(true); // shown with textContent only
+    expect(keepAttribute('data-v', 'x'.repeat(401))).toBe(false);
+    for (const name of ['data-x', 'data-repairs', 'style', 'aria-pressed']) expect(keepAttribute(name, '5'), name).toBe(false);
+  });
+});
+
 describe('repair marks (ADR 0044)', () => {
   it('parse a kind, an item and a character or field, and nothing else', () => {
     expect(repairAction(`thread_close:${id}`)).toEqual({ kind: 'thread_close', item: id, extra: null });

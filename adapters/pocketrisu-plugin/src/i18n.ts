@@ -101,6 +101,8 @@ const STRINGS = {
   // inspector view
   'insp.loading': ['인스펙터를 불러오는 중…', 'Loading the inspector…'],
   'insp.back': ['← 뒤로', '← Back'],
+  'tl.canon': ['설정(canon)에서 시작한 값이에요. 이야기가 바꾸면 그쪽이 이겨요.', 'Starts from the setting (canon); the story wins when it says otherwise.'],
+  'tl.owner': ['오너가 고친 값이에요.', "The owner's version."],
   'insp.browser': ['브라우저에서 직접 열 수도 있습니다: {url}', 'Also available in a browser: {url}'],
   'act.history': ['과거 전체 추출', 'Extract all history'],
   'act.rebuild': ['기억 재구축', 'Rebuild memory'],

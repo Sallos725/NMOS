@@ -122,6 +122,23 @@ narrow screen.
    - the panel asks for the timeline only when its section is opened, so a chat page in PocketRisu never holds it
      unasked (the iPhone, as above).
 
+   **Implemented** on `claude/phase32-panel`.
+   - The sidecar answers `timeline=lazy` with a closed section (`<div class="tl-lazy">`) on a character's or a chat's
+     page, and `part=timeline` (with `span`) with the timeline alone in the panel's form: only the tags the panel
+     keeps, positions as `data-l` / `data-w`, a mark's text in `data-v` / `data-s` / `data-o` / `data-k` / `data-p`
+     (cut to 300 characters), the window as `data-span`, and no `style`, script or link but the Inspector's own.
+   - The plugin's `keepAttribute` passes `data-l` / `data-w` only as a number from 0 to 100, `data-span` only as `''` or
+     `recent`, and a mark's text only up to 400 characters. `placeMarks` sets the position from the number,
+     `markDetail` builds a tapped mark's detail with `textContent`, and the one click listener the panel already had
+     answers taps and window switches.
+   - Tests: an old plugin's request gets `main`'s bytes (checked byte for byte), and the panel's form passes the
+     sanitizer's rules. The plugin tests cover:
+     - nothing asked before the section opens;
+     - one fetch however often the section opens and closes;
+     - one detail however often marks are tapped;
+     - the window switch;
+     - a mark's markup kept as text.
+
    Tests:
    - an old plugin's request gets today's bytes;
    - markup that tries to pass anything but numbers is dropped;

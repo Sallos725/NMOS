@@ -195,6 +195,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
                  "Starts from the setting (canon); the story wins when it says otherwise."),
     "tl.owner": ("오너가 고친 값이에요.", "The owner's version."),
     "tl.hint": ("막대나 점을 누르면 여기에 자세히 나와요.", "Select a bar or a dot to see it here."),
+    "tl.hint_tap": ("막대나 점을 누르면 바로 아래에 자세히 나와요.", "Tap a bar or a dot to see it right below."),
     "tl.empty": ("이 기간에 그릴 기억이 없어요.", "Nothing to draw in this window."),
     "tl.cast_note": ("눈금은 그 인물의 기억이 바뀐 턴이에요. 이름을 누르면 그 인물의 시간축으로 가요.",
                      "A tick is a turn where that character's memory changed. A name opens their timeline."),
@@ -388,12 +389,38 @@ def _tl_t(lang: str):
     return lambda key: _t(lang, key) if key in T else key.split(".", 1)[-1]
 
 
-def _tl_switch(path: str, q: str, span: str | None, lang: str) -> str:
-    """The two time windows (PHASE-32 Q7) as links that keep the token and the language."""
+def _tl_switch(path: str, q: str, span: str | None, lang: str, panel: bool = False) -> str:
+    """The two time windows (PHASE-32 Q7): links that keep the token and the language, or in the panel plain choices
+    the plugin answers (`data-span`) by asking for the timeline again."""
     choices = ((None, _t(lang, "tl.all")), ("recent", _t(lang, "tl.recent").format(n=timeline.RECENT)))
-    links = [f"<b>{_v(name)}</b>" if value == span else f"<a href=\"{path}{_with_span(q, value)}\">{_v(name)}</a>"
+    links = [f"<b>{_v(name)}</b>" if value == span
+             else f"<span class=\"tl-span\" data-span=\"{value or ''}\">{_v(name)}</span>" if panel
+             else f"<a href=\"{path}{_with_span(q, value)}\">{_v(name)}</a>"
              for value, name in choices]
     return f"<p class=\"tl-switch\">{' · '.join(links)}</p>"
+
+
+LAZY = "<div class=\"tl-lazy\"></div>"  # where the plugin puts the timeline when its section is opened (PHASE-32 step 3)
+
+
+def character_timeline(conv: dict[str, Any], entity_id: str, view: dict[str, Any], lang: str = "ko",
+                       now: int | None = None, span: str | None = None) -> str:
+    """A character's timeline alone, in the panel's form (PHASE-32 step 3): the plugin asks for it when the section
+    opens. Empty when the entity is gone or is not a character."""
+    entity = next((e for e in view["entities"] if e["id"] == entity_id), None)
+    if entity is None or entity["type"] != "character":
+        return ""
+    return timeline.character(_tl_t(lang), entity_id, view["facts"], view.get("threads", []),
+                              {norm(n) for n in entity["names"]}, now, span,
+                              _tl_switch("", "", span, lang, panel=True), panel=True)
+
+
+def conversation_cast(conv: dict[str, Any], cast: dict[str, Any], now: int | None, lang: str = "ko",
+                      span: str | None = None) -> str:
+    """The conversation's cast lines alone, in the panel's form (PHASE-32 step 3); a line opens that character's page."""
+    path = f"/inspector/c/{conv['id']}"
+    return timeline.cast(_tl_t(lang), cast["entities"], cast["facts"], cast.get("scene") or [], now, span,
+                         lambda eid: f"{path}/e/{eid}", _tl_switch("", "", span, lang, panel=True), panel=True)
 
 
 def _t(lang: str, key: str) -> str:
@@ -1145,7 +1172,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            canon_held: dict[str, dict[str, Any]] | None = None, canon_read: dict[str, dict[str, Any]] | None = None,
            canon_facts: int = 0, dropped: list[dict[str, Any]] | None = None,
            endings: dict[str, list[dict[str, Any]]] | None = None, cast: dict[str, Any] | None = None,
-           span: str | None = None) -> str:
+           span: str | None = None, lazy: bool = False) -> str:
     """One conversation. `cast` (the full memory view's facts and entities, and the current scene's character keys)
     draws a line per character over the turns (PHASE-32), outside the panel only."""
     t = lambda k: _t(lang, k)
@@ -1172,6 +1199,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
         parts.insert(1, ("people", t("people"), None, timeline.cast(
             _tl_t(lang), cast["entities"], cast["facts"], cast.get("scene") or [], last_turn, span,
             lambda eid: f"{path}/e/{eid}{_with_span(q, span)}", _tl_switch(path, q, span, lang)), True))
+    elif lazy and embed:  # a plugin that asked for it fills this when it is opened (PHASE-32 step 3)
+        parts.insert(1, ("people", t("people"), None, LAZY, False))
     if (coverage or {}).get("usage") is not None:
         parts.append(("usage", t("us.title"), None, _usage_section(coverage["usage"], lang), False))
     if conflicts:
@@ -1299,7 +1328,7 @@ def _cast_state(view: dict[str, Any], entity_id: str, r: Any, lang: str) -> str:
 
 def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[str, Any]]], token: str | None,
               active: str | None = None, lang: str = "ko", embed: bool = False, now: int | None = None,
-              span: str | None = None) -> str:
+              span: str | None = None, lazy: bool = False) -> str:
     """One character's side of the conversation: what is true of them, what they hold, know and claim.
 
     Read-only regrouping of the same memory view as the detail page; it changes nothing the packet uses.
@@ -1353,10 +1382,12 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
         [t("h.type"), t("h.names"), t("h.mentions"), t("h.alias_turns"), t("h.owner_links")],
         [[chip(lang, "e", entity["type"]), _v(" · ".join(entity["names"])), _v(entity["mentions"]),
           _v(", ".join(str(a["turn"]) for a in entity["aliases"])), _owner_links(entity)]]), True)]
-    if not embed and entity["type"] == "character":  # PHASE-32: the panel's sanitizer drops `style`
+    if not embed and entity["type"] == "character":  # PHASE-32
         parts.append(("timeline", t("timeline"), None, timeline.character(
             _tl_t(lang), entity_id, facts, view.get("threads", []), names, now, span,
             _tl_switch(f"{conv_path}/e/{entity_id}", q, span, lang)), True))
+    elif lazy and entity["type"] == "character":  # a plugin that asked for it fills this when it is opened
+        parts.append(("timeline", t("timeline"), None, LAZY, False))
     if (r := view.get("resolution")) is not None and entity["type"] == "character" \
             and entity_id != scene.key(r, scene.PERSONA):
         parts.append(("now", _v(t("now")), None, _cast_state(view, entity_id, r, lang), True))

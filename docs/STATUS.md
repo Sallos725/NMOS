@@ -329,7 +329,8 @@ Inspector's character page draws that character's facts, relationships from them
 their events as dots, and the conversation page gets one line per character. Owner amendments: Q2 brings the panel in too (step 3,
 high risk: a plugin change to its sanitizer, behind a flag), Q3 adds the mockup's detail column (a short inline script
 in the browser), and Q7 sets the recent window to 25 turns. Step 2 done (the browser Inspector, sidecar only: `timeline.py`, `tests/test_inspector_timeline.py`; the panel's bytes
-checked identical to `main`'s). Next: step 3 (the panel, high risk), then step 4 (timings and the owner's look).
+checked identical to `main`'s). Step 3 (the panel, **high risk**: the plugin's sanitizer) implemented on `claude/phase32-panel`. The owner tries it in a
+test instance before its PR. Then step 4 (timings and the owner's look).
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
