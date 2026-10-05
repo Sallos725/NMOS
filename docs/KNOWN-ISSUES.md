@@ -37,7 +37,7 @@ without a PocketRisu change.
 | K26 | The packet's token estimate over-counts Korean, so the reserve is under-used | Recall | reduced by `packet-v2` (ADR 0032, owner decision); still conservative by design |
 | K27 | Before `extract-v11` / `clean-v3`: an OOC note or memory-like markup inside a reply could become a fact | Memory | fixed in 0.2.0 (audit A-12); older turns: "Extract all history" |
 | K28 | Taking turns in one chat from two tabs or devices makes memory of the messages one of them lacks drop out and come back | Data | host (H10); not planned (audit A-13) |
-| K29 | A reveal in the turns first extracted together can be missed | Memory | "Extract all history" after connecting a chat with secrets (ADR 0033 amendment 2) |
+| K29 | A reveal in the turns first extracted together can be missed (narrowed by Phase 30) | Memory | "Extract all history" after connecting a chat with secrets (ADR 0033 amendment 2) |
 | K30 | A summary can say a secret in other words | Memory | since 0.2.0 (Phase 12, ADR 0042, 0043); summaries off for a chat where it matters |
 | K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases); on `main` a given name with a common family name, and a Hangul spelling of a romanized name (Phase 24, ADR 0058) |
 | K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | recorded, not scheduled (`docs/perf/m0-sample2.md`); canon did not change it; two rules measured in Phase 24, neither gained without a loss |
@@ -51,6 +51,7 @@ without a PocketRisu change.
 | K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | measured; a lower threshold found less, 0.8 kept (2026-09-30) |
 | K41 | Re-extracted with `extract-v14`, `deepseek-v4.1-flash` passed fewer M0 cases | Memory | measured, accepted (Phase 19, owner 2026-09-30) |
 | K42 | A standing fact's earlier versions are printed under the current version's knowledge marks | Memory | resolved on `main` (ADR 0038 amendment 1, 2026-10-01): a version kept from someone only under the same marks |
+| K43 | A question about what someone lent can miss the item once it has changed hands | Recall | resolved on `main` by `packet-v12` (Phase 31 Q3, ADR 0066, 2026-10-05): the excerpt's anchor breaks a tie on the question's one-character words; S3 6/6 live twice |
 
 ## Performance
 
@@ -285,7 +286,7 @@ even when its other words are broad. A question whose every keyword is broad sti
 
 **K13 — Very long messages are partly processed.** Embeddings cover at most the first 8 chunks of
 ≤700 normalized characters (≤5,600); extraction reads the first 6,000 characters of each message in
-the target turn and 2,000 of each context message. The Inspector flags partly processed messages
+the target turn and 1,000 of each context message (2,000 before `extract-v14`, Phase 19). The Inspector flags partly processed messages
 (#13).
 *On `main` (ADR 0062, D71):* the embedding cap is a setting, `NMOS_EMBED_MAX_CHUNKS` (default 8, as before), part of
 the projection key: raising it makes a new projection and re-embeds every chat once (local, in the background; K18);
@@ -383,6 +384,9 @@ characters with no sentence cap, so such an excerpt can carry more replaced valu
 questions keep the cap. Measured over twelve sets (`docs/perf/answer-span.md`): forbidden phrases 93 → 87 and no set
 worse by more than one case, so the cap's lifting cost nothing measurable there; the risk stays listed.
 *Workaround:* `NMOS_PACKET_POLICY=packet-v9` keeps two-sentence excerpts; `packet-v10` the four-sentence cap.
+*Since Phase 31 (`packet-v12`, ADR 0066, the default):* an excerpt older than a selected fact's current version that
+repeats the value the fact replaced is left out unless the question has a history cue. An excerpt can still carry a
+replaced value no selected fact is about.
 
 **K40 — A short keyword is not found where a particle is attached to it.** The keyword route (ADR 0052) matches a
 keyword at trigram word similarity 0.8. Korean attaches particles to the word, and a keyword of two syllables scores
@@ -396,6 +400,21 @@ of 0.8 differ (`docs/perf/lexical-recall.md`, "K40"). A
 main character's name matched almost every message once its particles counted, and was dropped as too broad; the
 rare words that answer questions stand alone often enough to be found at 0.8. The threshold stays 0.8.
 *Workaround:* none needed; vectors and the whole-message route still answer.
+
+**K43 — A question about what someone lent can miss the item once it has changed hands.** Measured in the live gate's
+S3 (the synthetic story, 2026-10-04): "이안이 빌려준 책 제목이 뭐였지?" (the title of the book 이안 lent) fails in every run
+measured, on `extract-v15` (`e13dee7`) and on the focused `extract-v16` (`9947d2c`) alike, where the historical lane
+passed it. The facts are stored — 백이안 possesses 『북해 조류 일지』, then 서도윤 possesses it — and the packet carries eleven
+other facts about 백이안 and ten excerpts, but neither possession nor the passage where the book is lent. A likely cause,
+not yet confirmed: the current holder's fact does not name who lent the item, the lender's own possession is history
+once the item moves (K9, ADR 0016), and no excerpt about the lending ranks high enough. Only a lent item was measured;
+whether a question about a gift misses the same way is not known. It is the S3 part of the AGE-24 regressions
+(PHASE-28 Q6: excerpt and ranking changes, re-measured after the role and name corrections). *Workaround:* ask by the
+holder or the item ("도윤이 가진 책", "북해 조류 일지"). Tracked in Linear under AGE-37.
+*Resolved on `main` (Phase 31, `packet-v12`, ADR 0066):* the stage diagnosis (`docs/perf/k43-offline-diagnosis.md`) found
+the lending message placed but its excerpt anchored 13 sentences before the title: the question's keywords tied across
+three sentences, and `keywords()` drops the one-character 책. Under `packet-v12` the question's one-character words break
+that tie; S3 passed 6/6 in the replay of every gate run and in both reduced live gates. A gift was still not measured.
 
 ## Data and lifecycle
 
@@ -424,10 +443,14 @@ code, not observed). *Workaround:* reload the chat in the other tab or device be
 
 **K29 — A reveal among the turns first extracted together can be missed.** A reveal is reported against the
 chat's open secrets as extraction lists them (ADR 0033). A generation's backfill and "Extract all history"
-run oldest turn first, but when NMOS first sees a chat it extracts the recent window newest first, so a turn
-that reveals a secret can be extracted before the turn that made it, and the reveal matches nothing. In play,
-turns are extracted one at a time and this does not happen. Found by the Phase 10 evaluation (a synthetic
-case extracted all at once). *Workaround:* after connecting an existing chat that has secrets, run **Extract
+run oldest turn first; until Phase 30 a chat NMOS saw for the first time was extracted newest first, so a turn
+that reveals a secret could be extracted before the turn that made it, and the reveal matched nothing. Since Phase 30
+(ADR 0065) the first-sight window is extracted oldest first too. It can still happen in a chat first connected by an
+earlier release, for turns extracted while the turn holding the secret was still running (two workers), and for a
+secret made before the window
+(its turn moves to the generation only with "Extract all history", after the window). In play, turns are extracted
+one at a time and this does not happen. Found by the Phase 10 evaluation (a synthetic case extracted all at once).
+*Workaround:* after connecting an existing chat that has secrets, run **Extract
 all history** once. It checks every turn extracted before an earlier turn's secret was for a reveal, oldest
 first (Phase 22, ADR 0057; `test_extract_all_history_recovers_a_reveal_missed_on_first_import`): one short model
 call per turn that asks only about the open secrets, and the turn keeps its facts. From ADR 0033 amendment 2 until

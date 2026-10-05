@@ -65,8 +65,8 @@ def test_score_counts_the_check_the_same_way_with_and_without_it(tmp_path, capsy
                                    "kind": "event"}], ensure_ascii=False))
     tool.score(argparse.Namespace(out=tmp_path, labels="v13,v14", name="synth", ledger=ledger, persona=""))
     lines = [x for x in capsys.readouterr().out.splitlines() if x.startswith("| v1")]
-    assert lines[0].startswith("| v13 | 1 | 1 | 3 | 1 | 1 | 33.3 % | 1/1 | 1/1 | 0 | 0 | 0 | 0 | 1k | 90 |")
-    assert lines[1].startswith("| v14 | 1 | 1 | 2 | 0 | 1 | 50.0 % | 1/1 | 1/1 | 0 | 0 | 0 | 0 | 1k | 95 |")
+    assert lines[0].startswith("| v13 | 1 | 1 | 3 | 1 | 1 | 33.3 % | 1/1 | 1/1 | 0 | 0 | 0 | 0 | 0 / 0 | 0 | 1k | 90 |")
+    assert lines[1].startswith("| v14 | 1 | 1 | 2 | 0 | 1 | 50.0 % | 1/1 | 1/1 | 0 | 0 | 0 | 0 | 0 / 0 | 0 | 1k | 95 |")
 
 
 def test_turns_are_chosen_from_one_chat(migrated):
@@ -107,7 +107,31 @@ def test_score_counts_relationship_and_role_rows_apart(tmp_path, capsys):
     path.write_text(json.dumps({"turn": 4, "usage": {"input": 800, "output": 80}, "assertions": rows}, ensure_ascii=False))
     tool.score(argparse.Namespace(out=tmp_path, labels="v15", name="synth", ledger=None, persona=""))
     (line,) = [x for x in capsys.readouterr().out.splitlines() if x.startswith("| v15")]
-    assert line.startswith("| v15 | 1 | 1 | 4 | 0 | 0 | 0.0 % | 0/0 | 0/0 | 0 | 1 | 1 | 2 | 1k | 80 |")
+    assert line.startswith("| v15 | 1 | 1 | 4 | 0 | 0 | 0.0 % | 0/0 | 0/0 | 0 | 1 | 1 | 2 | 0 / 0 | 0 | 1k | 80 |")
+
+
+def test_score_counts_role_endings_as_listed_and_others_apart(tmp_path, capsys):
+    """PHASE-28 Q5 (c): an ending with a listed role's subject, object and value closes it (ADR 0013); another does not."""
+    listed = [{"by": "하나", "to": "카이토", "role": "세입자: 카이토의 집에 삶", "turn": 1}]
+    ending = {**row(None), "predicate": "role_toward", "object": "카이토", "polarity": "negative", "quote_in_turn": None}
+    rows = [{**ending, "value": "세입자:  카이토의 집에 삶"}, {**ending, "value": "세입자였음"},
+            {**ending, "value": "집주인", "subject": "카이토", "object": "하나"}]
+    path = tmp_path / "v16" / "1" / "synth-4.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"turn": 4, "compiler": "extract-v16", "roles": listed, "usage": {"input": 800, "output": 80},
+                                "assertions": rows}, ensure_ascii=False))
+    tool.score(argparse.Namespace(out=tmp_path, labels="v16", name="synth", ledger=None, persona=""))
+    (line,) = [x for x in capsys.readouterr().out.splitlines() if x.startswith("| v16")]
+    assert "| 3 | 1 / 2 | 0 |" in line
+
+
+def test_another_compiler_is_one_the_checkout_has():
+    assert tool.compiler_of(argparse.Namespace(compiler=None)) == extraction.DEFAULT_COMPILER == "extract-v16"
+    assert tool.compiler_of(argparse.Namespace(compiler="extract-v15")) == "extract-v15"
+    assert tool.compiler_of(argparse.Namespace(compiler="extract-v16")) == "extract-v16"
+    import pytest
+    with pytest.raises(SystemExit, match="no compiler extract-v61"):
+        tool.compiler_of(argparse.Namespace(compiler="extract-v61"))
 
 
 def test_turns_from_a_stored_run_are_those_turns_and_no_others(migrated, tmp_path):
@@ -142,3 +166,36 @@ def test_turns_from_a_stored_run_are_those_turns_and_no_others(migrated, tmp_pat
         with pytest.raises(SystemExit, match="1 stored turns are not in this copy"):
             tool.chosen(conn, argparse.Namespace(**{**vars(args), "every_chat": False,
                                                     "conversation": ids["stored-a"]}))
+
+
+def test_the_tool_post_processes_a_reply_in_the_workers_order():
+    """PHASE-29: the comparison measures what the worker stores, so it confirms endings, writes NAME PAIRS answers, then
+    confirms aliases, in `process_extract`'s order, and keeps both confirmation records."""
+    source = TOOL.read_text(encoding="utf-8")
+    worker = Path(extraction.__file__).read_text(encoding="utf-8").split("def process_extract", 1)[1]
+    steps = ("X.confirm_endings(", "X.same_names(", "X.confirm_aliases(", "X.normalize(")
+    at = [source.index(s) for s in steps]
+    assert at == sorted(at)
+    order = [worker.index(s.replace("X.", "")) for s in steps[:3]]
+    assert order == sorted(order)
+    assert '"alias_confirmations": alias_confirmations' in source
+
+
+def test_a_checkout_without_the_confirmations_still_saves_its_turn(monkeypatch, tmp_path):
+    """Codex review of bcce836: the tool runs another checkout's `nmos_sidecar` (the docstring's PYTHONPATH example);
+    one from before ADR 0064 item 4 has no `with_confirmations`, and a reply must not be lost to an AttributeError."""
+    monkeypatch.delattr(extraction, "with_confirmations")
+    monkeypatch.setattr(tool, "prompts", lambda args: [{"turn": 0, "user": "TARGET", "hints": [], "secrets": [],
+                                                      "roles": [], "pairs": [], "text": TURN, "shown": TURN}])
+    monkeypatch.setattr(tool.ChatModel, "complete_metered",
+                        lambda self, s, u: ({"assertions": []}, "{}", {"calls": 1, "input": 10, "output": 2}))
+    args = argparse.Namespace(compiler="extract-v15", out=tmp_path, label="old", name="chat", runs=1, dry=False,
+                              turns_from=None, url="http://fake/v1", model="fake", workers=1)
+    tool.run(args)
+    saved = json.loads((tmp_path / "old" / "1" / "chat-0.json").read_text(encoding="utf-8"))
+    assert saved["usage"] == {"calls": 1, "input": 10, "output": 2} and saved["assertions"] == []
+
+
+def test_a_checkout_before_the_default_switch_runs_its_compiler_version(monkeypatch):
+    monkeypatch.delattr(tool.X, "DEFAULT_COMPILER")  # a checkout before PHASE-28 step 3 has no DEFAULT_COMPILER
+    assert tool.compiler_of(argparse.Namespace(compiler=None)) == extraction.COMPILER_VERSION

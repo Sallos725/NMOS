@@ -1,24 +1,53 @@
+<div align="center">
+
+<img src="docs/images/social-preview.png" alt="NMOS — Narrative Memory for PocketRisu. Long chats, remembered. Locally, with provenance." width="820">
+
 # NMOS — Narrative Memory for PocketRisu
 
-**Beta.** Long-term memory for [PocketRisu](https://github.com/PocketRisu/PocketRisu) role-play.
-PocketRisu is a fork of [RisuAI](https://github.com/kwaroran/RisuAI); NMOS is a plugin that uses the
-RisuAI-family V3 plugin API. It is an independent project, not affiliated with PocketRisu or RisuAI.
-한국어 안내: [docs/guide.ko.md](docs/guide.ko.md)
+**Long-term memory for long role-play chats — local, auditable, and out of your way.**
 
-Long chats fall out of the model's context window. NMOS keeps an **immutable history** of your chat
-in a local sidecar and, right before each reply is generated, adds a small, budgeted memory
-packet with what the model can no longer see:
+[![Release](https://img.shields.io/github/v/release/Sallos725/NMOS?include_prereleases&label=release&color=6e56cf)](https://github.com/Sallos725/NMOS/releases)
+[![CI](https://github.com/Sallos725/NMOS/actions/workflows/ci.yml/badge.svg)](https://github.com/Sallos725/NMOS/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/Sallos725/NMOS?color=blue)](LICENSE)
+![Status: beta](https://img.shields.io/badge/status-beta-orange)
 
-- **Excerpts** of earlier turns relevant to what you just wrote (lexical + optional semantic search)
-- **State** parsed from your bots' status windows (optional, rule-based, no LLM)
-- **Facts** extracted in the background by an LLM of your choice (optional): where people are,
-  who knows what, promises, relationships — with history and provenance
+**English** · [한국어 안내](docs/guide.ko.md)
 
-It tracks what PocketRisu shows: edits, deletes, rerolls, swipes, "Continue", hidden messages,
-"Cut Messages for AI", branches and imports are followed so that removed or replaced text is not
-recalled. This is verified on the tested PocketRisu build (see [Status and limits](#status-and-limits));
-other PocketRisu versions may behave differently. If the sidecar is down or slow, your chat
-continues without memory.
+[Install](#install) · [Panel](#nmos-panel-status-inspector-settings) · [What gets injected](#what-gets-injected) ·
+[Configuration](#configuration-environment) · [Privacy](#privacy) · [Status and limits](#status-and-limits)
+
+</div>
+
+---
+
+Long chats fall out of the model's context window. NMOS keeps an **immutable history** of your chat in a local
+sidecar and, right before each reply is generated, adds a small, budgeted memory packet with what the model can no
+longer see.
+
+| | What it adds | Needs |
+|---|---|---|
+| 📜 **Excerpts** | earlier turns relevant to what you just wrote (lexical + optional semantic search) | nothing; embeddings optional |
+| 📊 **State** | values parsed from your bots' status windows (rule-based, no LLM) | optional parsers |
+| 🧠 **Facts** | where people are, who knows what, promises, relationships — with history and provenance, extracted in the background | an LLM of your choice (optional) |
+
+<p align="center"><img src="docs/images/panel-status.png" alt="NMOS panel, Status tab: sidecar connected, semantic recall on, last request injected 835 characters in 90 ms" width="480"></p>
+
+```mermaid
+flowchart LR
+    A["PocketRisu chat"] -->|"every edit, reroll, swipe, branch"| B["NMOS plugin"]
+    B --> C[("Local sidecar<br/>immutable history")]
+    C -->|"before each reply:<br/>budgeted memory packet"| D["Your model"]
+```
+
+> [!NOTE]
+> **Beta.** NMOS follows what PocketRisu shows: edits, deletes, rerolls, swipes, "Continue", hidden messages,
+> "Cut Messages for AI", branches and imports, so removed or replaced text is not recalled. This is verified on the
+> tested PocketRisu build (see [Status and limits](#status-and-limits)); other PocketRisu versions may behave
+> differently. If the sidecar is down or slow, your chat continues without memory.
+
+<sub>PocketRisu is a fork of [RisuAI](https://github.com/kwaroran/RisuAI); NMOS is a plugin that uses the RisuAI-family
+V3 plugin API. It is an independent project, not affiliated with [PocketRisu](https://github.com/PocketRisu/PocketRisu)
+or RisuAI.</sub>
 
 ## Requirements
 
@@ -237,11 +266,12 @@ language after a page reload.
   holder forgets it too), and **First-person narrator** leaves out what the narrator is not shown to know.
   Both are off by default and apply from the next generation.
 - **Settings**: connection (sidecar URL, route, memory budget, deadline, on/off); **fact-extraction LLM**
-  and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, Google Vertex AI, any
-  OpenAI-compatible endpoint), model list, API key and a **connection test** that makes a real call;
+  and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, Google Vertex AI for the
+  LLM only, any OpenAI-compatible endpoint), model list, API key and a **connection test** that makes a real call;
   recall tuning; status-window parser rules (validated before saving).
-  For **Google Vertex AI**, paste the whole service-account JSON key file into the LLM's API key field;
-  the sidecar renews the access token itself (ADR 0022). Use a dedicated service account with only
+  For **Google Vertex AI**, pick the service-account JSON key file with **Load key file** (or paste its whole
+  content into the LLM's API key field): the endpoint's project is filled from the key, the Gemini models Vertex
+  serves are listed, and the sidecar renews the access token itself (ADR 0022). Use a dedicated service account with only
   the Vertex AI User role (`roles/aiplatform.user`). Enabling the APIs is not enough: a key without the
   role gets HTTP 403 on `aiplatform.endpoints.predict`, and the connection test says so. Checked against
   real Vertex with `google/gemini-3.8-flash`.
@@ -263,9 +293,12 @@ responses**.
 |---|---|
 | NMOS icon + `기억 불러오는 중…` | NMOS is preparing memory for this request |
 | `✓ 기억 주입 (N자)` / `– 관련 기억 없음` | memory went in / nothing relevant (shown 4 s) |
-| `⚠ 건너뜀: 제한 시간 초과` | the request went without memory (deadline or sidecar error) |
-| `추출 2/5 · 임베딩 5/5` + bar | background extraction/embedding of this chat; `⚠ 실패 N` if some failed |
-| `✓ 처리 완료` | that work finished (shown 3 s) |
+| `⏻ 이 채팅은 NMOS 꺼짐` | NMOS is off for this chat (the Status tab's switch) |
+| `… · 어휘 검색만` | memory went in, but the embedder did not answer in time, so it was found without semantic recall (K34; the Status tab explains) |
+| `… · 재사용` | the same request (a reroll, say), so the packet made a moment ago went in again |
+| `⚠ 건너뜀: 제한 시간 3초 초과 · 눌러서 늘리기` / `⚠ 건너뜀: 사이드카 오류` | the request went without memory; for the deadline, tap it for the panel's advice |
+| `추출 2/5 · 임베딩 5/5 · 요약 1개 남음` + bar | background extraction, embedding and summaries of this chat; `⚠ 실패 N` if some failed |
+| `✓ 사실 N개 추가 · 요약 M개 추가` / `✓ 처리 완료` | that work finished, with the new facts and summaries when known (shown 3 s); `⚠ 실패 N · …` if some failed |
 
 Tap the pill to open the panel. The text follows the panel language (English: `Recalling memory…`,
 `✓ Memory injected (N chars)`, `Facts 2/5 · Embeddings 5/5`, …).
@@ -301,6 +334,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_LLM_URL` / `NMOS_LLM_MODEL` / `NMOS_LLM_API_KEY` | off | Background fact extraction. Ollama on the host: `http://host.docker.internal:11434/v1` |
 | `NMOS_EMBED_URL` / `NMOS_EMBED_MODEL` | off | Semantic recall, e.g. `qwen3-embedding:0.6b` |
 | `NMOS_EXTRACT_BACKFILL` | `100` | On first sight of a chat, extract only the latest N **turns** (cost control; the rest on request) |
+| `NMOS_EXTRACT_COMPILER` | *(empty: `extract-v16`)* | The extractor (Phases 28–29): `extract-v16` also shows the model the roles in force and closes the one the story ends (a stay over, a job left), asking once more before it does, and links a character the story writes in full and by part of the name (윤하나 and 하나), asking once more about a nickname whose two names are both in the turn. A change re-extracts every chat once; `extract-v15` selects the earlier extractor |
 | `NMOS_EXTRACT_TURNS` | `3` | Previous turns an extraction sees as context |
 | `NMOS_SUMMARIES` | `1` | The extraction model also summarizes each 8-turn scene and the story so far, in the background (ADR 0042); `packet-v8` puts them in `<Story>`. `0` turns this off (so does the panel) |
 | `NMOS_CANON_FACTS` | `1` | The extraction model also reads the chat's canon for facts, in the background (ADR 0047): the card, the persona, the author's note, and each lorebook entry once a prompt held it. The story supersedes them. `0` turns this off (so does the panel) |
@@ -320,7 +354,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_SIDECAR_BIND` / `NMOS_SIDECAR_PORT` | `127.0.0.1` / `8790` | Where the sidecar listens |
 
 Plugin arguments: `sidecar_url`, `auth_token`, `disabled` (1 = off), `reserved_memory_tokens`
-(0 = 600), `deadline_ms` (0 = 3000), `inject_position` (`before_last_user` or `end`), `route` (`auto`,
+(0 = 4000), `deadline_ms` (0 = 3000), `inject_position` (`before_last_user` or `end`), `route` (`auto`,
 `direct` or `server`: how the plugin reaches the sidecar), `language` (`ko` or `en`), `hud` (1 = progress
 display on the chat screen).
 
@@ -351,7 +385,8 @@ The inspector's Current state section shows this same example while no state has
 
 ## What gets injected
 
-A system message right before your latest message, marked as reference data (not instructions):
+A system message right before your latest message (at the very end of the prompt with the plugin argument
+`inject_position=end`), marked as reference data (not instructions):
 
 ```xml
 <NarrativeMemory version="0" source="nmos">

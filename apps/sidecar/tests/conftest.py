@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from collections.abc import Iterator
 
@@ -93,3 +94,11 @@ def active_generation(conn: psycopg.Connection, kind: str):
     row = conn.execute("SELECT * FROM projection_generation WHERE kind = %s ORDER BY activated_at DESC LIMIT 1",
                        (kind,)).fetchone()
     return Generation(kind=row["kind"], model=row["model"], endpoint=row["endpoint"], spec=row["spec"], key=row["key"])
+
+
+def alias_yes(user):
+    """A stand-in alias confirmation (PHASE-29) that says yes, quoting the TARGET sentence with NAME_B."""
+    name = user.split("NAME_B: ", 1)[1].split("\n", 1)[0]
+    target = user.split("\nTARGET:\n", 1)[1]
+    sentence = next(s for s in re.split(r"(?<=[.!?\"])\s+|\n", target) if name in s)
+    return {"same": "yes", "evidence": sentence.split(": ", 1)[-1]}, "{}"

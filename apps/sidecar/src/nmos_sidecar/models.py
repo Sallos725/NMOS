@@ -202,6 +202,9 @@ class EntityLinkRequest(BaseModel):
     name: Text = Field(min_length=1, max_length=120)
     same_as: Text = Field(min_length=1, max_length=120)
     expect: str | None = Field(default=None, max_length=64)  # the preview's fingerprint (PHASE-20 Q4)
+    # PHASE-29 Q5: the held alias (its assertion id) the owner links from "Needs attention"; its names may be mentioned
+    # only in that row, so they need not be mentioned elsewhere on the head (the link waits for a mention, ADR 0025)
+    held_alias: int | None = Field(default=None, ge=1)
 
 
 class ReextractRequest(BaseModel):

@@ -139,7 +139,7 @@ def test_compiler_upgrade_tracks_partial_coverage_and_backfills_beyond_recent_wi
         cov = c.get(f"/v1/conversations/{cid}/coverage").json()["extraction"]
         assert (cov["compiled"], cov["eligible"], cov["complete"]) == (eligible, eligible, True)
 
-    monkeypatch.setattr(extraction, "COMPILER_VERSION", "extract-next")  # a compiler upgrade
+    monkeypatch.setattr(extraction, "DEFAULT_COMPILER", "extract-next")  # a compiler upgrade
     with make_client(migrated, extract_backfill=4, **LLM) as c:
         cov = c.get(f"/v1/conversations/{cid}/coverage").json()["extraction"]
         # Only the recent window is queued (ADR 0014); older turns are served by the previous generation.

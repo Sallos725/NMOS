@@ -1,0 +1,55 @@
+name: Bug report / 버그 신고
+description: Memory is wrong or missing, the panel misbehaves, or NMOS does not start. / 기억이 틀리거나 빠짐, 패널 오류, 실행 문제.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Remove API keys, tokens and anything private before posting.
+        신고 감사합니다. API 키, 토큰, 공개하고 싶지 않은 대화 내용은 지운 뒤 올려 주세요.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened? / 무슨 일이 있었나요?
+      description: What you did in the chat (edit, reroll, swipe, branch, import…), what you expected, and what NMOS recalled or did instead.
+    validations:
+      required: true
+  - type: input
+    id: nmos
+    attributes:
+      label: NMOS version / NMOS 버전
+      description: Shown in the panel's Status tab. / 패널 상태 탭에 표시됩니다.
+    validations:
+      required: true
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: How do you run NMOS? / 실행 방식
+      options:
+        - Docker Compose
+        - Portable bundle (Windows)
+        - Portable bundle (macOS)
+        - Portable bundle (Linux)
+        - From source
+    validations:
+      required: true
+  - type: input
+    id: pocketrisu
+    attributes:
+      label: PocketRisu version and how you open it / PocketRisu 버전과 접속 방식
+      description: The version, and the address you open it at (http://localhost:6001, Remote Access over HTTPS, a tunnel…).
+  - type: dropdown
+    id: features
+    attributes:
+      label: Features on / 켜 둔 기능
+      multiple: true
+      options:
+        - Semantic recall (embeddings) / 의미 검색
+        - Fact extraction (LLM) / 사실 추출
+        - State parsers / 상태창
+        - None (raw recall only) / 없음
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Inspector view or logs / 인스펙터 화면이나 로그
+      description: The Inspector's view of the turn, or the sidecar log around the problem. Screenshots are fine.

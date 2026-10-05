@@ -5,6 +5,62 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Recall knows what changed: `packet-v12` is the default** (ADR 0066, D75; Phase 31, AGE-24, AGE-37). An older
+  excerpt that states a value the story has since replaced (where someone lived, what someone was called) is left out
+  of a question about now, and so is a role the story ended; a question that asks about the past ("전에", "예전에",
+  "before", "used to") keeps both. The excerpt of a long message now centres on the sentence that also holds the
+  question's one-letter words (책, 집, 돈), so "이안이 빌려준 책 제목이 뭐였지?" reaches the title (K43). Measured on
+  the live gate's long synthetic chat: the questions about now at turn 240 went from 18–19 to 23 of 25. Nothing is
+  extracted again; `NMOS_PACKET_POLICY=packet-v11` keeps the previous packet.
+
+- **Keyword recall finds its words again on a live chat** (ADR 0052). A keyword's lookup has 25 ms; Postgres often
+  planned it from the chat's messages, checking each one, instead of from the trigram index: after a reroll, an edit or
+  a deletion, because its statistics did not know the new version of the chat yet, and on a connection that had run the
+  lookup five times, because a prepared statement is planned without its word. That took longer than 25 ms, so the word was dropped as if it were
+  too common (in the measurement runs, most requests' keyword route ended as `too_broad`), and a replay could find what
+  its request had not (ADR 0027). The lookup now always starts from the trigram index. A word whose own matches take
+  longer than 25 ms to check (long messages) is still dropped, as before.
+
+- **`extract-v16` is the default extractor** (ADR 0064 accepted, D73; Phase 28 step 3, AGE-24). It shows the model the
+  roles in force and closes the one the story ends, and links a character the story writes in full and by part of the
+  name, each confirmed once more before it is stored (Phases 28 and 29). Updating re-extracts every chat's recent turns
+  once (a new generation, ADR 0014), oldest first; until a turn is re-extracted, the previous extractor's facts still
+  serve it. `NMOS_EXTRACT_COMPILER=extract-v15` keeps the earlier extractor. `extract-v15` was never released, so 0.3.0
+  users re-extract once either way. Each of its rules comes only with the list it is about (ADR 0064 item 5): on
+  turns with no role or name pair to check, its prompt is close to `extract-v15`'s, which kept new roles and first
+  events it had been missing.
+
+- **A chat connected for the first time is read in story order** (ADR 0065, D74; Phase 30, NMO-36). NMOS used to
+  extract a new chat's recent turns newest first, so each turn was read before the turns that came before it: it could
+  not see who was already known, which promises and secrets were open, or which roles held, and a later turn's ending
+  or second name for someone was missed. The turns are now read oldest first, and a turn you write meanwhile waits
+  behind them. The newest turns are still in the chat's own prompt, and their messages are searchable at once.
+  Nothing is extracted again; chats NMOS already knows are unaffected. A secret found out within those turns is now
+  matched when they are first read, so K29 (a missed reveal) no longer needs "Extract all history" there.
+
+- **Google Vertex AI: pick the key file, and the model list works** (ADR 0022 amendment 1). The fact-extraction LLM
+  section shows **Load key file** for a Vertex endpoint: pick the service-account JSON key file instead of pasting it,
+  and the endpoint's project is filled and the model list loads at once. **Load models** now lists the Gemini models
+  Vertex serves (`google/…`) from Vertex's publisher-model catalog, since its OpenAI-compatible endpoint has no
+  `/models`. Pasting the key works as before.
+
+- **`extract-v16`, an extractor to measure, off by default** (Phases 28 and 29, ADR 0064 proposed, D73; AGE-24, NMO-35).
+  The owner's live run found a role kept as current after the story ended it, and one character split in two by its
+  full name and its given name. `NMOS_EXTRACT_COMPILER=extract-v16` shows the extractor the roles in force and asks it
+  which one the story ends; each ending is asked once more about that one role before it is applied, and an ending the
+  model calls planned, or the other direction of an ending, is held for you rather than applied. It links a character
+  the story writes in full and by part of the name (윤하나 and 하나; Elena Vance and Elena) unless the two could be
+  different people, and an alias whose two names are both in the turn is asked once more too, so a nickname one
+  character calls another no longer becomes the speaker's. A name counts as written only as a word of its own (람이 is
+  not found inside 하람이). The Inspector's "Needs attention" lists the role endings it applied recently and the ones
+  it held, and the aliases it held, each with one action (undo, apply, or link the two names as one person).
+  Selecting it re-extracts every chat once; `extract-v15` stays the default, and without the setting nothing changes.
+
+- **A model reply with a trailing comma is read** (#251). A reply such as `{"a": [1, 2,],}` was rejected and its turn
+  retried; at temperature 0 the retry wrote the same comma, so the turn was never extracted. A reply that fails to
+  parse is now read again without a comma that ends a list or an object (outside strings); every other reply parses
+  exactly as before. This applies whichever extractor you use.
+
 - **The query is embedded while recall reads, so a slower embedder still gives vectors** (ADR 0061, D70; K34, AGE-24).
   A request used to give the embedding of your message 300 ms on its own, after lexical recall and before the facts
   were read: an embedder behind a proxy, or a busy one, missed it, and 70 % of the owner's production requests found

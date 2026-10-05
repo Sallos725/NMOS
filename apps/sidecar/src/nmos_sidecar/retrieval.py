@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import re
 import threading
 import time
 from collections.abc import Callable, Iterable
@@ -20,13 +21,14 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from .entities import norm
-from .facts import FIRST_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
+from .facts import FIRST_CUE, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
 from . import scene, spans, summaries, variants
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
-from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, CONTENTS, CUE_GROW_CHARS,
+from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, CHANGE_POLICIES, CONTENTS,
+                     CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
                      StateItem, clean_text, compile_lines, cut_lines, excerpt, fill, fits_at, kept_counts, secret_line,
@@ -287,27 +289,46 @@ def _apply(conn: psycopg.Connection, settings: dict[str, str]) -> None:
                  [x for kv in settings.items() for x in kv])
 
 
+# The active head revisions a word or message matches (`<%`), at most `limit` (`_lexical_matches`). The matches are
+# found through the trigram index first (`hit`, materialized), then kept if they are on the head: planned from the
+# membership instead, the lookup checks every head message with word_similarity (40 ms instead of 5 at 146 messages,
+# linear in the chat), and the planner chose that whenever its statistics did not hold the head yet: after a reroll,
+# an edit or a deletion makes a new head commit (D4), until the next autoanalyze. It could also plan a known head
+# through revision_text's primary key, checking every revision. `hit` has no other condition (the normalizer is checked
+# after it), so the trigram index is its only way in with sequential scans off.
+_MATCHES = """
+    WITH hit AS MATERIALIZED (
+        SELECT source_revision_id, normalizer FROM revision_text WHERE %(q)s <%% clean_content
+    )
+    SELECT sr.id
+    FROM hit
+    JOIN active_membership am ON am.source_revision_id = hit.source_revision_id
+    JOIN source_revision sr ON sr.id = am.source_revision_id
+    WHERE am.commit_id = %(head)s
+      AND sr.lifecycle = 'accepted'
+      AND am.position > %(cut)s AND am.position <= %(upto)s
+      AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+      AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
+      AND hit.normalizer = %(norm)s
+    LIMIT %(limit)s
+    """
+
+
+def _matches_params(head: UUID, query: str, cut: int, limit: int, upto: int | None = None) -> dict[str, Any]:
+    return {"head": head, "q": query, "cut": cut, "limit": limit, "norm": NORMALIZER_VERSION,
+            "upto": 2**31 - 1 if upto is None else upto}
+
+
 def _lexical_matches(conn: psycopg.Connection, head: UUID, query: str, cut: int, limit: int,
                      upto: int | None = None) -> list[UUID]:
-    """Active head revisions the query matches (`<%`), at most `limit`: the statement stops there, so a
-    broad query costs about `limit` similarity checks instead of one per message."""
-    return [r["id"] for r in conn.execute(
-        """
-        SELECT sr.id
-        FROM active_membership am
-        JOIN source_revision sr ON sr.id = am.source_revision_id
-        JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
-        WHERE am.commit_id = %(head)s
-          AND sr.lifecycle = 'accepted'
-          AND am.position > %(cut)s AND am.position <= %(upto)s
-          AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
-          AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
-          AND %(q)s <%% rt.clean_content
-        LIMIT %(limit)s
-        """,
-        {"head": head, "q": query, "cut": cut, "limit": limit, "norm": NORMALIZER_VERSION,
-         "upto": 2**31 - 1 if upto is None else upto},
-    ).fetchall()]
+    """Active head revisions the query matches (`<%`), at most `limit`: the statement stops there, after checking the
+    trigram index's candidates up to that many head matches (candidates of other chats and earlier revisions are checked
+    too, then left out), so a broad query is dropped by its slice or the timeout. Never prepared on the server: after
+    five runs Postgres may plan a prepared statement without its parameters, and without the word it cannot tell that
+    the trigram index is the narrow way in. Either slow plan took a keyword past its slice, which dropped it as if it
+    were too common, and a replay could find what its request had not (ADR 0027)."""
+    return [r["id"] for r in conn.execute(_MATCHES, _matches_params(head, query, cut, limit, upto),
+                                          prepare=False).fetchall()]
 
 
 def _lexical_candidates(conn: psycopg.Connection, head: UUID, ids: list[UUID], query: str,
@@ -447,6 +468,174 @@ def fuse(lexical: list[dict[str, Any]], vector: list[dict[str, Any]], threshold:
     return kept
 
 
+def one_char_words(query: str) -> tuple[str, ...]:
+    """The question's one-character words (책, 집, 돈), which `keywords` drops; a lone Latin letter is no word here.
+    packet-v12 breaks a tie of the excerpt's anchor sentence on them (PHASE-31 Q3)."""
+    return tuple(dict.fromkeys(w for w in re.findall(r"\w+", query) if len(w) == 1 and not w.isascii()))
+
+
+def _said(fact: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(t for t in (fact.get("object"), fact.get("value")) if t)
+
+
+def replaced_values(facts: list[dict[str, Any]]) -> list[tuple[int, tuple[str, ...], tuple[str, ...]]]:
+    """For each selected fact with an earlier version of its own predicate: its current turn, what its earlier versions
+    said (object, value) and what it says now (PHASE-31 Q1)."""
+    out = []
+    for f in facts:
+        if f.get("turn") is None:
+            continue
+        old = tuple(t for h in f.get("history") or ()
+                    if h.get("outcome") == "superseded" and h["position"] < f["position"]
+                    and h["predicate"] == f["predicate"] for t in _said(h))
+        if old:
+            out.append((f["turn"], old, _said(f)))
+    return out
+
+
+def states_replaced(text: str, turn: int | None, replaced: list[tuple[int, tuple[str, ...], tuple[str, ...]]],
+                    names: tuple[str, ...] = ()) -> bool:
+    """An excerpt from before a fact's current version that repeats what that version replaced and not what it says
+    now, by the measure that drops an excerpt restating a withheld line (`spans.reuse`, PHASE-31 Q1). Spans of the
+    current value and of characters' names are not the old value's."""
+    if turn is None:
+        return False
+    for cur_turn, old, now in replaced:
+        if turn >= cur_turn or any(spans.reuse(t, text) >= REPEATS for t in now):
+            continue
+        if any(spans.reuse(t, text, (*now, *names)) >= REPEATS for t in old):
+            return True
+    return False
+
+
+_QUOTED = re.compile(r"['\"‘’“”「」『』](.+?)['\"‘’“”「」『』]")
+PLACE_MARKS = frozenset({"located_in"})  # a replaced place: its name's words are marks too (PHASE-31 Q1, amended)
+MARKED = STANDING | PLACE_MARKS  # facts the question names that judge what changed although the packet leaves them out
+# A place's words are marks only when the question asks where (measured: M0 main lost two answers whose excerpts named
+# rooms the characters had passed through, on questions not about where anyone is)
+WHERE = re.compile(r"어디|\bwhere\b", re.IGNORECASE)
+# A form of address's quoted forms are marks only when the question asks what someone is called (measured: an old
+# '도윤 씨' is in the dialogue of most excerpts, and questions about a promise or a key lost them)
+CALLED = re.compile(r"부르|불러|부름|호칭|\bcalls?\b|\bcalled\b", re.IGNORECASE)
+
+
+def _flat(text: str | None) -> str:
+    return "".join((text or "").casefold().split())
+
+
+def _value_marks(fact: dict[str, Any], names: frozenset[str], places: bool = True,
+                 calls: bool = True) -> tuple[set[str], set[str]]:
+    """What sets one version apart (PHASE-31 Q1, amended 2026-10-05): its quoted forms ('서 선생', '도윤 씨'; not one
+    that is only a character's name; for a form of address only when the question asks what someone is called,
+    `calls`), and for a place (`located_in`), when the question asks where (`places`), the words of the place's name
+    (갈매기, 여관; no character's name). Prose words (친구, 말투) are none: an older excerpt says them about anything.
+    Returns (quoted forms, spaces squashed; words)."""
+    text = " ".join(t for t in (fact.get("object"), fact.get("value")) if t)
+    quoted = {_flat(q) for q in _QUOTED.findall(text)} if calls or fact.get("predicate") != "addresses" else set()
+    words: set[str] = set()
+    if places and fact.get("predicate") in PLACE_MARKS:
+        words = {w.casefold() for w in re.findall(r"\w+", fact.get("object") or "") if len(w) >= 2}
+    return ({q for q in quoted if len(q) >= 2 and q not in names},
+            {w for w in words if not any(w in n or n in w for n in names)})
+
+
+def replaced_marks(facts: list[dict[str, Any]], names: frozenset[str], places: bool = True,
+                   calls: bool = True) -> list[tuple[int, set[str], set[str], set[str], set[str]]]:
+    """For each fact with an earlier version of its own predicate: its current turn, the marks of what its earlier
+    versions said that the current one does not (quoted, words), and the current version's own (quoted, words)."""
+    out = []
+    for f in facts:
+        if f.get("turn") is None:
+            continue
+        now_q, now_w = _value_marks(f, names, places, calls)
+        cur = _flat(" ".join(t for t in (f.get("object"), f.get("value")) if t))
+        old_q: set[str] = set()
+        old_w: set[str] = set()
+        for h in f.get("history") or ():
+            if h.get("outcome") == "superseded" and h["position"] < f["position"] and h["predicate"] == f["predicate"]:
+                q, w = _value_marks(h, names, places, calls)
+                old_q |= {m for m in q if m not in cur}
+                old_w |= {m for m in w if m not in cur}
+        if old_q or old_w:
+            out.append((f["turn"], old_q, old_w, now_q, now_w))
+    return out
+
+
+def _has(text: str, quoted: set[str], words: set[str]) -> bool:
+    """A quoted form anywhere (spaces ignored), or a word at the start of one of the text's words (a particle after it:
+    여관이)."""
+    flat = _flat(text)
+    return any(q in flat for q in quoted) or any(t.startswith(w) for t in re.findall(r"\w+", text.casefold())
+                                                for w in words)
+
+
+def states_marked(text: str, turn: int | None, marks: list[tuple[int, set[str], set[str], set[str], set[str]]]) -> bool:
+    """An excerpt from before a fact's current version that holds a mark of what that version replaced and none of the
+    current version's (PHASE-31 Q1, amended)."""
+    if turn is None:
+        return False
+    return any(turn < cur_turn and _has(text, old_q, old_w) and not _has(text, now_q, now_w)
+               for cur_turn, old_q, old_w, now_q, now_w in marks)
+
+
+def asks_about_old(fact: dict[str, Any], query: str, names: frozenset[str]) -> bool:
+    """The question names what a fact's earlier version said and its current one does not ("왜 여관에서 나왔어?"): it
+    asks about the change, so that fact leaves the old excerpts in (PHASE-31 Q1, amended; measured on the synthetic cut
+    at turn 120). A word of two or more characters at the start of a word of the question; no character's name."""
+    cur = _flat(" ".join(t for t in (fact.get("object"), fact.get("value")) if t))
+    olds = {w.casefold() for h in fact.get("history") or ()
+            if h.get("outcome") == "superseded" and h["predicate"] == fact["predicate"]
+            for w in re.findall(r"\w+", " ".join(t for t in (h.get("object"), h.get("value")) if t))}
+    olds = {w for w in olds if len(w) >= 2 and w not in cur and not any(w in n or n in w for n in names)}
+    return any(t.startswith(w) for t in re.findall(r"\w+", query.casefold()) for w in olds)
+
+
+def named_facts(facts: list[dict[str, Any]], query: str, r: Any,
+                aliases: dict[str, frozenset[str]] | None) -> list[dict[str, Any]]:
+    """Standing facts and places the question names (both of a pair; a place's subject), whether or not the packet
+    holds them: the prompt may hold the current version, and the excerpt of the replaced one would contradict it
+    (PHASE-31 Q1, amended). The persona's names count here."""
+    q = " ".join(query.casefold().split())
+    persona = {" ".join(n.casefold().split()) for n in (r.persona_names if r is not None else ())}
+
+    def named(f: dict[str, Any], role: str) -> bool:
+        side = _side_names(f, role, r, aliases)
+        if r is not None and f.get(role) and r.is_persona(f.get(f"{role}_type"), f.get(role)):
+            side |= {n for n in persona if len(n) >= 2}
+        return any(n in q for n in side)
+
+    return [f for f in facts if f["predicate"] in MARKED and f.get("history") and named(f, "subject")
+            and (f["predicate"] in PLACE_MARKS or named(f, "object"))]
+
+
+def _ended_role(f: dict[str, Any]) -> bool:
+    return f.get("predicate") == "role_toward" and f.get("polarity") == "negative"
+
+
+def _side(f: dict[str, Any], role: str) -> str:
+    e = f.get(f"{role}_entity") or {}
+    return e.get("id") or " ".join(str(f.get(role) or "").casefold().split())
+
+
+def _side_names(f: dict[str, Any], role: str, r: Any, aliases: dict[str, frozenset[str]] | None) -> set[str]:
+    name = f.get(role)
+    e = r.entity(f.get(f"{role}_type"), name) if r is not None and name else None
+    out = {" ".join(n.casefold().split()) for n in (e["names"] if e else [name] if name else [])}
+    return {n for n in out | {v for n in out for v in (aliases or {}).get(n, ())} if len(n) >= 2}
+
+
+def ended_role_kept(f: dict[str, Any], facts: list[dict[str, Any]], query: str, r: Any = None,
+                    aliases: dict[str, frozenset[str]] | None = None) -> bool:
+    """An ended role a question about now still gets (PHASE-31 Q2): no fact about the same two is current, and the
+    question names both. Then the ended role is all there is to say about them."""
+    pair = {_side(f, "subject"), _side(f, "object")}
+    if any(g is not f and g.get("polarity") != "negative" and {_side(g, "subject"), _side(g, "object")} == pair
+           for g in facts):
+        return False
+    q = " ".join(query.casefold().split())
+    return all(any(n in q for n in _side_names(f, role, r, aliases)) for role in ("subject", "object"))
+
+
 @dataclass
 class Gathered:
     """Everything a request offers the packet, before the budget (ADR 0027)."""
@@ -465,6 +654,8 @@ class Gathered:
     cast: dict[str, str] = field(default_factory=dict)  # scene cast, entity key → name (ADR 0034)
     note: str = ""  # added to the packet's Note (a first-person narrator, ADR 0035)
     withheld: int = 0  # lines and excerpts the chat's memory mode left out or replaced (ADR 0035)
+    replaced: int = 0  # excerpts left out for stating a value a selected fact's current version replaced (packet-v12)
+    ended: int = 0  # ended roles left out of a question about now (packet-v12, PHASE-31 Q2)
     canon_names: str | None = None  # the canon manifest whose names the read used (ADR 0046)
     canon_facts: str | None = None  # the canon manifest whose facts it used; None: none (ADR 0047)
     withheld_lines: list[Line] = field(default_factory=list)
@@ -529,6 +720,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.state.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in focus), reverse=True)
     view = None
     names_of: dict[int, Any] = {}  # one mapping of name variants per view, whichever path asks first (ADR 0058)
+    changes = options.policy in CHANGE_POLICIES and not HISTORY_CUE.search(query)  # packet-v12, PHASE-31 Q1/Q2
+    selected: list[dict[str, Any]] = []  # the facts offered (facts, <Cast>), for packet-v12's replaced values
     if options.facts_limit > 0 or options.threads_limit > 0:
         view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
                            options.canon_key, canon_facts)
@@ -560,6 +753,11 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                     options.events_limit, persona, scene.names(g.cast, r, aliases), causes=causes,
                                     first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases)
             facts = _grown(ranked[:options.facts_limit], ranked, options.fill_facts)
+            if changes:  # an ended role answers a question about the past, not about now (PHASE-31 Q2)
+                kept = [f for f in facts if not _ended_role(f)
+                        or ended_role_kept(f, view["facts"], query, r, aliases)]
+                g.ended, facts = len(facts) - len(kept), kept
+                selected = list(facts)
             # Claims after facts, so the budget serves narration first (ADR 0013).
             ranked = relevant_facts(view["claims"], query, previous_ai, in_context,
                                     len(view["claims"]) if grow else claims_limit, persona=persona, causes=causes,
@@ -581,6 +779,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             g.note = f" The story is told in the first person by {who}: only what they know is listed."
         if options.policy in CAST_POLICIES and r is not None:
             g.cast_lines, used = cast_groups(view, g.cast, r, query, options, in_context, aliases)
+            if changes:
+                selected += [f for f in view["facts"] if f["id"] in used]
             if used:  # a line in <Cast> is not said again in another section
                 g.lead = [line for line in g.lead if line.ref.get("assertion") not in used]
                 g.facts = [line for line in g.facts if line.ref.get("assertion") not in used]
@@ -622,6 +822,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     # Q1b: the keywords anchor is the question's keywords alone, or the question itself when it has none (the
     # prototype's rule: never the previous reply); every other case anchors on the question and the previous reply
     anchor = (" ".join(words) or query) if span and options.excerpt_anchor == "keywords" else focus
+    tie = one_char_words(query) if options.policy in CHANGE_POLICIES else ()  # packet-v12, PHASE-31 Q3
     for c in eligible:
         # a lexical or keyword hit is the whole message; a vector-only hit is its chunk; under packet-v11 a word hit
         # whose vector similarity meets the bar excerpts within its chunk too: the chunk is the part of the message
@@ -632,9 +833,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         clean = c["clean"][c["text_start"]:c["text_end"]] if in_chunk else c["clean"]
         if cue:  # packet-v11: by whole sentences up to CUE_GROW_CHARS, no sentence cap (PHASE-27 Q2)
             text, short = grown_excerpt(clean, anchor, words, min(options.excerpt_chars, CUE_GROW_CHARS),
-                                        max_sentences=None)
+                                        max_sentences=None, tie_words=tie)
         elif options.policy in GROW_POLICIES:  # packet-v10: grown to its length from the best sentence (ADR 0053)
-            text, short = grown_excerpt(clean, anchor, words, options.excerpt_chars)
+            text, short = grown_excerpt(clean, anchor, words, options.excerpt_chars, tie_words=tie)
         else:
             text = excerpt(clean, focus, max_chars=options.excerpt_chars)
             short = excerpt(clean, focus, window=1, max_chars=options.excerpt_chars)
@@ -642,6 +843,24 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                 speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
                                 text=text, score=float(c["rrf"]), revision_id=str(c["id"]), short=short,
                                 position=c["position"]))
+    if changes and view is not None and g.ranked:  # packet-v12: an excerpt saying what a fact's current version replaced
+        r = view["resolution"]  # characters' names are never an old value's spans or marks
+        people = (*r.persona_names, *(n for e in r.entities() if e.get("type") == "character"
+                                      for n in (e["name"], *e.get("names", ())))) if r is not None else ()
+        flat_names = frozenset(_flat(n) for n in people if len(_flat(n)) >= 2)
+        judged = [f for f in selected if not asks_about_old(f, query, flat_names)]  # a question about the change keeps it
+        replaced = replaced_values(judged)  # Q1: the selected facts' replaced values, by reused spans
+        named = named_facts(view["facts"], query, r, _aliases(r, query, previous_ai, options, view, names_of)
+                            if r is not None else None)
+        named = [f for f in named if not asks_about_old(f, query, flat_names)]
+        # Q1 amended: marks judge only the facts the question names, a place's words only when it asks where, a form
+        # of address's quoted forms only when it asks what someone is called
+        marks = replaced_marks(named, flat_names, bool(WHERE.search(query)), bool(CALLED.search(query)))
+        if replaced or marks:
+            kept = [e for e in g.ranked if not states_replaced(e.text, e.turn, replaced, people)
+                    and not states_marked(e.text, e.turn, marks)]
+            g.replaced = len(g.ranked) - len(kept)
+            g.ranked = kept
     if g.withheld_lines:
         # An excerpt that says what the mode withheld would give it back word for word.
         kept = [e for e in g.ranked
@@ -888,6 +1107,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                               for k in ("state", "thread", "fact", "claim", "secret", "summary", "excerpt")},
                    "cast": sum(1 for e in placed if e.get("section") == "cast"),
                    "scene_cast": sorted(g.cast.values()), "memory_mode_withheld": g.withheld,
+                   "replaced_left_out": g.replaced, "ended_left_out": g.ended,  # packet-v12 (PHASE-31 Q1, Q2)
                    "memory_cut": cut, "fits_at": fit,
                    "embedding_projection": options.embed_projection[:20] if options.embedder else None,
                    "extractor": (options.extractor_key or "")[:20] or None,

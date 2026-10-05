@@ -613,6 +613,38 @@ itself when it has none; the default, decided by measurement in Phase 27 step 2 
 that need memory 16 → 19 of 23, `docs/perf/answer-span.md`; the owner allowed the smaller packets it makes, Q5);
 `packet-v10` stays available as `NMOS_PACKET_POLICY=packet-v10`. Recorded requests replay as they were.
 
+**D73 — `extract-v16`: a role ended as listed, and a name said two ways (ADR 0064; Phase 28, AGE-24).**
+**The default since 2026-10-04** (the owner's decision, Phase 28 step 3); `NMOS_EXTRACT_COMPILER=extract-v15` selects
+the earlier extractor with its key unchanged. Off by default until then.
+The extractor is shown the roles in force (CURRENT ROLES, as open promises, threads and secrets
+are shown, numbered) and names the one a turn ends; the worker writes the ending with the listed value, so ADR 0013's
+value match closes exactly that role (asking the model to copy the value failed on the owner's run); and it is
+asked for `also_called` when a turn writes a character in full and by part of the name, unless the two could be
+different people, the part checked on its own in the turn (ADR 0012's provenance and ambiguity rule unchanged). A
+read-side join of a name and its given name was measured first and withdrawn: the stored assertions never named the
+split pairs in the same turn.
+Measured since (ADR 0064 items 2 and 4, Phase 29): a listed ending is applied only after one more call about that role
+says it ended, and an ending marked planned, or the other direction of one, is held for the owner, never applied; an
+alias whose two names are both in the turn is asked once more about those two names and held unless confirmed, a
+held one listed for the owner's link; under `extract-v16` a Hangul or Latin name counts as written only as a word of
+its own. Every held ending and alias is a pending row with its record; the owner sees them under "Needs attention".
+
+**D74 — A chat seen for the first time is extracted in story order (ADR 0065; Phase 30, NMO-36).** A first sight's
+window (the latest `NMOS_EXTRACT_BACKFILL` turns) is claimed oldest first, so every turn's lists (KNOWN ENTITIES, OPEN
+PROMISES, OPEN SECRETS, OPEN THREADS, and `extract-v16`'s CURRENT ROLES and NAME PAIRS) come from the turns before it, as
+in a generation's backfill; newest first, each turn was extracted before every turn before it and its lists were empty.
+A live turn of a chat whose first-sight window is still queued or running waits behind it; a dead job holds nothing.
+Every generation; no prompt, generation key or migration changes.
+
+**D75 — Recall that knows what changed (`packet-v12`; ADR 0066; Phase 31, AGE-24).** Under `packet-v12` an excerpt
+older than a fact's current version that repeats a value the fact replaced and not the current one is left out (the
+selected facts by reused spans; the standing facts and places the question names also by marks: a place's word for a
+"where" question, a quoted form of address for a "what is … called" question; not a fact whose old value the question
+names), an ended role leaves the facts unless no fact about the same two is current and the question names both, and the
+excerpt's anchor breaks a tie on the question's one-character words. A question with a history cue (`HISTORY_CUE`:
+`FIRST_CUE` plus 전에, 이전, 첫날, before, used to, previously) keeps the old excerpts and the ended roles. The default
+since 2026-10-05 (owner, on the second reduced live gate); `NMOS_PACKET_POLICY=packet-v11` keeps the previous packet.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 
@@ -688,9 +720,9 @@ Each phase gets its own `PHASE-N.md` with acceptance criteria before work starts
 
 These must be resolved by the owner, not by an implementing agent.
 
-- **O1 — Relationship to MIRRA and VEIL.** Is NMOS MIRRA v2 (superseding its SQLite/MCP-first
-  choices)? Does NMOS absorb VEIL's knowledge-boundary role, or consume VEIL as a separate
-  plugin for disclosure pacing?
+- ~~O1 — Relationship to MIRRA and VEIL~~ — **resolved 2026-09-30: NMOS is an independent
+  project, no longer related to MIRRA or VEIL.** Owner decision in
+  [NMO-16](https://linear.app/sallos725/issue/NMO-16), recorded here by NMO-32.
 - ~~O2 — Postgres vs SQLite~~ — **resolved 2026-09-22: PostgreSQL** (§6).
 - ~~O3 — Main-generation gating heuristic~~ — **resolved 2026-09-22: D13 / ADR 0001.**
 - ~~O4 — Cross-chat branch policy~~ — **resolved 2026-09-22: D14 / ADR 0002.**

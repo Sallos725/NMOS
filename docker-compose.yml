@@ -15,6 +15,7 @@ x-nmos-env: &nmos-env
   NMOS_EXTRACT_TURNS: ${NMOS_EXTRACT_TURNS:-3}
   NMOS_EXTRACT_HINTS: ${NMOS_EXTRACT_HINTS:-40}
   NMOS_EXTRACT_BACKFILL: ${NMOS_EXTRACT_BACKFILL:-100}
+  NMOS_EXTRACT_COMPILER: ${NMOS_EXTRACT_COMPILER:-}  # empty: extract-v16 (PHASE-28; extract-v15 selectable)
   NMOS_SUMMARIES: ${NMOS_SUMMARIES:-}  # empty: on (the image's default); 0 turns summaries off
   NMOS_CANON_FACTS: ${NMOS_CANON_FACTS:-}  # empty: on (the image's default); 0 turns canon facts off
   NMOS_EMBED_BACKFILL: ${NMOS_EMBED_BACKFILL:-2000}

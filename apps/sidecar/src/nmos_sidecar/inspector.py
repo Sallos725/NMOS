@@ -229,6 +229,14 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "at.dropped": ("다시 추출하면서 사라진 사실 (복원하면 그 턴의 사실로 다시 기억)",
                    "dropped by a re-extraction (restore it to remember it at its turn again)"),
     "at.disputed": ("이야기가 엇갈린 사실", "a fact the story contradicts"),
+    # PHASE-28 Q7: a role ending applied after its confirmation, or held by it (the model can be wrong both times)
+    "at.role_auto": ("자동으로 끝난 역할 (철회하면 다시 현재 역할)",
+                     "a role ended automatically (retract it to keep the role)"),
+    "at.role_held": ("확인되지 않아 보류된 역할 종료: {why} (복원하면 그 턴에 끝남)",
+                     "a role ending held, not confirmed: {why} (restore it to end the role at its turn)"),
+    # PHASE-29 Q5: an alias a confirmation held joins nothing; listed so a wrong hold (one person's two names apart) is seen
+    "at.alias_held": ("확인되지 않아 보류된 별명: {why} (연결하면 한 사람으로 읽음)",
+                      "an alias held, not confirmed: {why} (link it to read them as one person)"),
     "at.repair": ("지금 맞는 항목이 없는 수리", "a repair that matches nothing now"),
     "at.split": ("아직 한 인물인 이름 분리", "a split whose names are still one entity"),
     "at.ambiguous": ("모호한 이름 (연결 안 함)", "an ambiguous name (not linked)"),
@@ -890,6 +898,19 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
         rows.append([_v(_t(lang, "at.unmatched")), _v(fact_line_text(u)), _turn(u), ""])
     for f in view.get("dropped", []):  # PHASE-22 Q6
         rows.append([_v(_t(lang, "at.dropped")), _v(fact_line_text(f)), _v(f.get("turn")), _act("fact_restore", f["id"])])
+    ends = view.get("endings") or {}  # PHASE-28 Q7: role endings, applied or held, each with the owner's one action
+    for f in ends.get("automatic", []):
+        rows.append([_v(_t(lang, "at.role_auto")), _v(fact_line_text(f)) + _quote(f.get("quote")), _v(f.get("turn")),
+                     _act("fact_retract", f["id"])])
+    for f in ends.get("held", []):
+        why = ((f.get("reason") or "").split(": ", 1) + [""])[1]
+        rows.append([_v(_t(lang, "at.role_held").format(why=why)), _v(fact_line_text(f)) + _quote(f.get("evidence")),
+                     _v(f.get("turn")), _act("fact_restore", f["id"])])
+    for f in ends.get("aliases_held", []):
+        why = ((f.get("reason") or "").split(": ", 1) + [""])[1]
+        rows.append([_v(_t(lang, "at.alias_held").format(why=why)), _v(f"{f.get('subject')} = {f.get('value')}")
+                     + _quote(f.get("evidence")), _v(f.get("turn")),
+                     _act("alias_join", f["id"], f"{f.get('subject')}|{f.get('value')}")])
     owned = {f["id"]: f["repair"] for f in view.get("facts", []) if f.get("owner")}  # the owner's corrections
     for c in view.get("conflicts", []):
         if c.get("kind") == "canon":  # keep canon's (a lock) or the story's (canon's statement retracted), or leave it
@@ -912,6 +933,10 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
     for a in view.get("ambiguous", []):
         rows.append([_v(_t(lang, "at.ambiguous")), _v(f"{a['name']}: " + ", ".join(a.get("candidates") or [])), "", ""])
     return rows
+
+
+def _quote(text: str | None) -> str:
+    return f"<br><span class=\"muted\">“{_v(text)}”</span>" if text else ""
 
 
 def _repair_target(rep: dict[str, Any]) -> str:
@@ -1076,7 +1101,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            last_turn: int | None = None, canon_rows: list[dict[str, Any]] | None = None,
            canon_history: dict[str, dict[str, Any]] | None = None,
            canon_held: dict[str, dict[str, Any]] | None = None, canon_read: dict[str, dict[str, Any]] | None = None,
-           canon_facts: int = 0, dropped: list[dict[str, Any]] | None = None) -> str:
+           canon_facts: int = 0, dropped: list[dict[str, Any]] | None = None,
+           endings: dict[str, list[dict[str, Any]]] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -1086,7 +1112,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     active = (((coverage or {}).get("extraction") or {}).get("generation") or {}).get("key")
     # What needs a look comes first; logs of the machinery start folded.
     queue = _attention({"threads": threads or [], "unmatched": unmatched or [], "conflicts": conflicts or [],
-                        "ambiguous": ambiguous or [], "dropped": dropped or []}, repairs or [], last_turn, lang)
+                        "ambiguous": ambiguous or [], "dropped": dropped or [], "endings": endings or {}},
+                       repairs or [], last_turn, lang)
     parts: list[Section] = [
         ("attention", t("attention"), len(queue),
          table([t(k) for k in ("h.issue", "h.text", "h.turn", "h.repair")], queue) + f"<p class=\"muted\">{t('at.note')}</p>"

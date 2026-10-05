@@ -32,8 +32,11 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-28.md` is the latest, approved
-   2026-10-03, a correction phase under §7 item 5 with no roadmap phase current, step 2 next; `PHASE-27.md` was
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-31.md` is the latest, approved
+   2026-10-05 (recall that knows what changed), step 2 in progress (#264); `PHASE-30.md`, approved 2026-10-04, a correction phase under §7 item 5
+   (the first-sight extraction order), complete (#260);
+   `PHASE-29.md`, approved 2026-10-04, built on Phase 28's `extract-v16`, and `PHASE-28.md`, approved 2026-10-03,
+   both had step 2 merged in #251; `PHASE-27.md` was
    complete 2026-10-02, run beside Phase 23 as Phases 24 and 25 were; `PHASE-26.md` was stopped before it merged;
    Phase 23 is complete after the owner's Windows and Mac checks (2026-10-02); `PHASE-0.md`…`PHASE-25.md` and
    `PHASE-27.md` still define the behavior they introduced).
@@ -91,8 +94,11 @@ If two normative documents appear to conflict:
 | 25 — `extract-v15`: a role between two people, its own fact (`role_toward`; AGE-27 under AGE-24; a correction found by measurement, not a roadmap stage) | complete (2026-10-01), not released; the paid run's output tokens 43 % above the estimate (owner accepted) | `PHASE-25.md`, ADR 0059 |
 | 26 — a repair whose item is gone suggests where it belongs now (Stage 6, AGE-23; an exception to R7 granted by the owner) | stopped (2026-10-01) after step 2, not merged: no repaired error came back on the copy, so Stage 6's criterion was reworded instead | `PHASE-26.md` |
 | 27 — the excerpt lands on the answer: a vector hit's span, and room for an explanation (`packet-v11`; under AGE-24, from the diagnosis of draft PR #241; a correction found by measurement, not a roadmap stage) | complete (2026-10-02), not released; Q1b decided for the keywords anchor and Q5's size bound made one-sided by the owner on the measurement (`docs/perf/answer-span.md`); `packet-v11` the default | `PHASE-27.md`, ADR 0063 |
-| 28 — a role that ends, and a name said two ways: `extract-v16`'s `CURRENT ROLES` and the `given_name_join` option (under AGE-24, from the owner's live run on `e13dee7`; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-03); step 2 next (both behind settings, off by default) | `PHASE-28.md` |
-| 29+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
+| 28 — a role that ends, and a name said two ways: `extract-v16`'s `CURRENT ROLES` and an alias of a name and its part (under AGE-24, from the owner's live run on `e13dee7`; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-03); step 2 merged (#251; the read-side name join measured and withdrawn); step 3: `extract-v16` the default (2026-10-04, ADR 0064 accepted); step 4, the live gate: paused after S0main ×3, `extract-v16` focused (ADR 0064 item 5), the gate to restart | `PHASE-28.md` |
+| 29 — whose name is it: a confirmation for an alias whose two names are both in the turn (NMO-35 under AGE-24; a correction found by measurement on Phase 28's S1 runs, not a roadmap stage) | **approved** (2026-10-04); step 2 merged (#251: inside `extract-v16`, off by default; ADR 0064 amendments) | `PHASE-29.md` |
+| 30 — a chat seen for the first time is extracted in story order: the first-sight window oldest first, live turns behind it (NMO-36 under AGE-24; a correction found by measurement on Phase 28's S1 runs, not a roadmap stage) | **approved** (2026-10-04); step 2 in review (#260: every generation, no key or prompt change; ADR 0065, D74) | `PHASE-30.md` |
+| 31 — recall that knows what changed: `packet-v12` leaves out a replaced value's excerpt and an ended role in a question about now, and anchors an excerpt on the question's one-character words on a tie (AGE-24, AGE-37 K43; a correction found by the PHASE-28 live gate, not a roadmap stage) | **approved** (2026-10-05); steps 2–3 done (#264: `packet-v12` behind the policy, ADR 0066, D75; replay `docs/perf/phase31-replay.md`); Q1 amended (owner) and replayed; the second reduced live gate met every bar (`docs/perf/phase31-live-gate.md`); **complete**, `packet-v12` the default (owner, 2026-10-05) | `PHASE-31.md` |
+| 32+ (Stages 7–8 of `docs/ROADMAP-1.0.md`) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
 ADR 0006/0007, `docs/perf/scale.md`).
@@ -222,11 +228,20 @@ mutate chats, or call a model. Its results go to `docs/HOST-FACTS.md` and `fixtu
 3. `docs/STATUS.md` and §0/§2 of this file name it as current.
 4. Only then implement it; record evidence against each acceptance criterion.
 5. **A correction phase runs beside the current phase.** A phase that is not a roadmap stage — a correction found by
-   measurement under an open issue (Phases 24, 25, 27 and 28 under AGE-24) — does not displace the roadmap phase that is
+   measurement under an open issue (Phases 24, 25, 27, 28 and 29 under AGE-24) — does not displace the roadmap phase that is
    current. For it, items 3 and 4 read: its §2 row says **approved** with its date and next step, `docs/STATUS.md`
    carries its paragraph under "Current phase", and its own spec's scope, steps and stop conditions gate its
    implementation; the roadmap phase stays `current` and keeps its scope. Only an approved row implements; a draft
    row does not.
+6. **A spec's measurement plan names its gate by what the change touches** (owner, 2026-10-05, after Phase 31):
+   - *Recall only* (packet policy, ranking, excerpts; no extraction prompt, generation or worker change): a zero-call
+     replay of an earlier gate's databases first (`audit.replay`, every probe, the old policy beside the new one,
+     three replays each with the majority deciding, since the lexical route is not deterministic run to run). Then
+     one reduced live run of the sets the change is for, once each, to confirm on fresh extraction. A miss in the
+     replay is fixed before any live call.
+   - *Extraction* (a prompt, a generation key, the worker's order or concurrency): the full live gate.
+   - A live gate uses the corrected harness pacing (a few seconds between messages, a bounded wait for the shown
+     reply) unless a run must be comparable to an earlier one, and states which.
 
 Do not infer owner decisions from preference or convenience.
 

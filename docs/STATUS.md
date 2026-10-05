@@ -3,19 +3,326 @@
 ## Current phase
 
 **Phase 28 — A role that ends, and a name said two ways: approved 2026-10-03, current as a correction phase (AGENTS
-§7 item 5); step 2 next.** Spec `docs/phases/PHASE-28.md` (under AGE-24; a correction found by measurement, not a
+§7 item 5); step 2 merged (#251, 2026-10-04); step 3: `extract-v16` the default (2026-10-04, ADR 0064 accepted);
+step 4, the live gate: paused after S0main ×3 on `7b7cc14` (memory cases 7, 5, 8 of 10: new roles and first events
+lost to the always-on v16 rules); `extract-v16` focused (ADR 0064 item 5, `docs/perf/extract-v16-focus.md`); the gate on
+`9947d2c` (2026-10-04/05, 17 runs) **not passed**: S0main 9/10 every run, S4b 3/3, no false join, but S1 turn 240 (19, bar
+21), S2 (19, bar 22) and S3 (5/6, K43) missed for recall reasons shared with `extract-v15` (`docs/perf/phase28-live-gate-9947d2c.md`);
+the correction is Phase 31 (approved 2026-10-05, complete, #264: Q1 amended (owner) and replayed; the second reduced live gate met every bar (S3 6/6, S2 23, S1 turn 240 23); `packet-v12` the default (owner, 2026-10-05); 0.3.0 next).** Spec `docs/phases/PHASE-28.md` (under AGE-24; a correction found by measurement, not a
 roadmap stage). The owner's live run on `e13dee7` met the real-chat target (S0main full-history memory cases 8/10,
 10/10, 8/10) but not the combined no-regression gate (S1 final 21/25 → 19/25, S2 full history 22/25 → 20/25, S3
 6/6 → 5/6, S4b 3/3 → 2/3 against the historical lane; single runs, aggregates only, the result files stay with the
 owner). Two defects confirmed in its traces: a role stays current after the story ends it (the ending extracted as
 another predicate, or in other words), and a full name and its given name resolve to two entities with separate
 histories. Approved answers: `extract-v16` shows the extractor the roles in force (`CURRENT ROLES`) and ends one
-exactly as listed (ADR 0013 unchanged); a recorded recall option `given_name_join` joins a full name and its given
-name under evidence and namesake conditions (ADR 0064, proposed); both behind settings, off by default, measured by
+by its number, written by the worker with the listed value (ADR 0013 unchanged), and links a character written in full and by part of the name as an alias
+(Q4, decided after the first answer was measured; below); behind `NMOS_EXTRACT_COMPILER`, off by default, measured by
 the owner (per-defect replays, an `extract-v16` comparison after an approved estimate, then live runs three times
 each, medians and every run). Excerpt and ranking changes wait for that re-measurement. **High risk (AGENTS.md
 §14)**: identity and provenance, current versus historical state, extraction generations, knowledge boundaries,
 replay.
+Step 1 the spec (#250). **Step 2 (#251, merged 2026-10-04), off by default** — ADR 0064 (proposed), D73; `extract-v16`
+(`NMOS_EXTRACT_COMPILER`; `extract-v15`'s key pinned unchanged): CURRENT ROLES and the alias of a name and its part
+(the part checked on its own in the turn); `tools/eval_extract_sample.py --compiler`; deterministic cases in
+`test_extract_v16.py`, the first-connection limit pinned. The first answer to Q4, a read-side join
+(`given_name_join`), was measured by the owner on #251's head (nine preserved copies, 837 reads, no model call): no
+join on any read, the S4b (2/3) and S2 (22/25) replays unchanged, since the split pairs occur together in the text of 3
+and 20 turns but in no turn's assertions; withdrawn and removed before merge. The owner's `extract-v16` run on
+`a5c888a` (S2's role-ending turns first; stopped at 39 of 1,440 calls by the stop condition): 0 of 6 listed roles
+closed, the model giving the role's name without the listed description; the ending is now named by number (R1, …) and
+written by the worker. Re-run on `4a7c11c` (22 calls): values exact, the employment ending 3/3 and the move 2/3, but the
+stay ended on the eve of the move 3/3; each ending now states `when` and only one over in the TARGET turn ("now")
+closes the role. On `37af724` (9 calls): eve kept 3/3 and resignation ended 3/3, the move 0/3 (a quote joining a CONTEXT
+and a TARGET sentence with "..."); a joined quote now counts by its passage in the TARGET turn, at the same bar. On
+`2e4ccfd` (9 calls): move 3/3, resignation 3/3, eve kept 2/3 (once "now" on a sentence about the next day); a quote
+that places the change later (`LATER`) now closes nothing. On `162b515` (9 calls): eve 3/3, resignation 3/3, move 1/3
+(twice quoting the previous turn's room assignment); the rule now asks for the TARGET turn's own words for what happens
+there. On `c582343` the three checks passed 3/3 each, but the wider run stopped at 76 calls: a new job
+wrongly ended a continuing mentorship at S2 turn 74 in 2/3 runs. The local correction clarifies that a job,
+workplace or rank change does not itself end the relationship between the listed people. A 27-call remeasurement
+kept that mentorship 3/3 and retained all three earlier checks (12/12 total); the sidecar suite passed 921 tests.
+This is a bounded check with preserved v15 hints, not the complete Q5 (c) comparison or a sequential worker run.
+Evidence and limitations: `docs/perf/extract-v16-role-continuity.md`. The owner also requested an independent story:
+`tools/eval_story_probe.py` prepares 14 authored space-station cases, 42 calls for three runs; dry-run and nine
+tool tests passed, with no model call on that new corpus. Next: the remaining Q5 (c) comparison, alias checks and
+first-connection/backfill measurements; no default switch or acceptance checkbox is implied by this correction.
+On `27c7658` the owner re-ran the core role checks (12/12 kept) and then every S2 turn that writes a known full name
+and its part apart (27 turns × 3, 81 calls): no `also_called` at all, so the run stopped at 111 of 1,440 calls. Those
+pairs are now listed to the model (NAME PAIRS, N1, …) and confirmed by number (`same_names`), the worker writing the
+alias (ADR 0064 item 2). `LATER`'s 내주/내달 now count only as nouns, not inside 내주다/내달리다. On `0abb2fd` (90
+calls): roles 12/12; the pairs were listed on 21 of the 27 turns, but 46 of 63 answers named a pair by its names
+instead of its number and were refused (no alias kept, none wrong); the prompt now asks for the number, shown for N1.
+On `073b7a1` (S2, 30 scenes × 3): both name pairs joined 3/3 (all answers by number), core roles 12/12, but turn 99's
+bakery promotion ended the role toward the inn's owner in 2/3 runs (13/15 with it); the role rule and closing line now
+say a new role or promotion toward someone else never ends a listed role toward a different person.
+On `ed10842`, the same wrong ending persisted in 2/3 runs; stopped at 41 calls. The correction now requires the
+listed counterpart's name or an unambiguous known alias in the shown TARGET, not merely in old hints. A quote-only
+name check was rejected by offline measurement: it would also drop all 31 measured correct endings. Replaying
+the actual guard keeps those 31 and rejects the eight known wrong endings. A fresh 90-call S2 probe passes the
+five role checks in all three runs (15/15); both name pairs resolve in every run (6/6). The model still proposes one
+wrong turn-99 ending, now blocked. Three further endings at the school departure (turn 219) are outside those core
+checks; fixed v15 hints do not establish their true ending time. This is not the full Q5 (c) or a sequential v16
+worker/backfill verdict. Evidence, tests and conservative misses: `docs/perf/extract-v16-role-target.md`.
+The wider `f747f4f` comparison stopped at 507 successful samples (509 attempts, including two recovered JSON
+format errors): S2 turn 144's shop closure incorrectly ended the resident's stay in 3/3 runs. The first divergence
+is the model's role-ending decision, before retrieval. The system rule and closing reminder now distinguish
+business closure from residence or mentorship, and check continued access at the end of the TARGET. A fresh
+24-call check passes all six role cases (18/18) and both name joins per run (6/6); system-only wording had still
+failed 2/3. Evidence and the JSON diagnosis: `docs/perf/extract-v16-role-closure.md`. The owner authorized a new
+full run, preserving every result, with correction and restart for a defect found within its first quarter.
+The fresh `7dbef46` comparison stopped at 739/1,440 samples (743 attempts; four recovered JSON errors).
+S2's six declared role cases pass 18/18, S1's 15/18: the S1 resignation model output is correct under the
+declared check, but the fixed v15 hint lacks the captain's full/given-name alias and the counterpart guard
+rejects the endings in all three repeats. Separately, the independent glass-garden model probe passes its
+first 24 role samples, then misses the explicit alias in sample 25; 17 samples remain unrun. Both are
+criteria misses, not full acceptance. The failure is beyond the owner's 360-sample automatic correction
+window; no further production patch or full restart was made. Evidence and isolated counterfactuals:
+`docs/perf/extract-v16-fixed-hints-and-glass.md`. Sequential copies and a three-call concurrency cap are
+prepared, with zero sequential model calls. Next: decide the follow-up for missing alias extraction and
+measure whether sequential v16 hints resolve the conservative ending miss; no default change.
+The counterpart check now also counts the counterpart's given name alone when no other known full name shares it
+and it is not the persona's (ADR 0064 item 1), which is what blocked S1's resignation; not yet measured.
+The owner then approved missing-alias correction, sequential verification and a fresh comparison capped at
+three model calls. The v16 free-alias rule and closing check pass the unchanged independent glass-garden
+probe 42/42 (no hints added); system-only wording had still missed the first name case 2/3. The new counterpart
+path also needed a known-alias conflict guard: it had re-added a short name explicitly owned by another
+character. Related tests pass 59/59; integrated offline replay keeps glass 42/42, closes the preserved S1
+resignation 3/3, and blocks conflicting alias ownership 3/3. These replays are not new model or sequential
+successes. The corrected full suite and sequential worker comparison are in progress; no default change or
+Q5 completion. Evidence and the preserved runner migration-path error: `docs/perf/extract-v16-alias-reminder.md`.
+Follow-up: that corrected suite passes 950 tests, but actual sequential S1 stopped at 88/240. It stored the
+three intended name joins, then missed the move because the innkeeper's distinctive title alias was absent.
+The v16 prompt now explicitly retains an evidenced distinctive title, without accepting a shared generic
+title or promoting an unconfirmed identity claim. The unchanged original probe plus four separate controls
+pass 54/54, including explicit employment termination despite continued friendship (3/3). Related tests
+pass 59; a fresh full suite and sequential S1 are running. The new full comparison is prepared, not started.
+That title candidate's suite passes 950 tests, but sequential S1 stops at 87/240: packed luggage and a stripped
+bed are incorrectly marked as checkout on the eve of the move. A fingerprinted final completion check now
+distinguishes preparation from a completed ending. The identical failed input passes 3/3 fresh calls; the
+independent cases pass 54/54, related tests 60/60. The probe's resolver input was corrected to include valid
+self-alias claims as production does; the earlier 54 replies still pass on regrading. That full sidecar suite
+passes 951 tests; plugin tests 196, typecheck and build pass. Its sequential restart stops at 62 completed
+jobs / 64 attempts: turn 62 has a trailing JSON comma twice. Audit also finds a teasing address wrongly
+recorded as the speaker's own alias, making a correct full/given-name join ambiguous in stored state.
+The next v16 prompt limits titles to explicitly introduced names containing a personal name, excludes
+casual addresses, distinguishes the person named from the speaker, and asks for no trailing JSON comma.
+Related tests pass 60; bounded model verification passes 69/69 (60 independent samples plus nine fresh
+replies to the actual failed inputs; the three turn-62 replies check syntax only). Input 426,798 / output
+54,939 tokens, no errors or retries. Fresh sequential S1 restarts from turn 0 under its new generation.
+That candidate (`b3795df`) passes 951 full sidecar tests and 196 plugin tests/typecheck/build, but its worker
+stops after 63/240 when a narrated bare age label (`영감`) makes an existing name ambiguous. Input
+634,512 / output 69,971 tokens, no format errors or retries. Two further prompt-only candidates fail on
+the preserved input after four and two calls. A v16-only guard now retains an exact bare person-label
+alias as pending, preserving its raw reply and assertion. Its finite Korean/English set is fingerprinted
+with the new prompt; even a nickname identical to a listed bare label remains pending. Named titles and
+the `?description` reveal path still work. Scoped tests pass 48, including persistent worker/API readback
+and a mutation that disables the guard. New model and sequential verification are in progress.
+Paused by the owner before the next full run to extend the set with the forms of address role-play uses most
+(아저씨, 언니, 오빠, 형, 누나, 아가씨, 도련님, 주인님, 꼬마, 사부, 대장, sir, my lady, young master, …): 60 → 107 exact
+labels, a new generation, about 160 more system-prompt tokens; not yet measured (ADR 0064 item 2).
+The first guard candidate misses the qualified title in all three independent repeats (57/60 total),
+so the prompt now explicitly allows an introduced surname-and-title name and gives a synthetic positive
+example. The new candidate passes 66 independent and 15 actual-input results: **82 attempts / 81 passes**,
+input 592,225 / output 65,920 tokens, one trailing-comma failure recovered by one same-input retry.
+Scoped tests pass 48; a fresh S1 backfill restarts at turn 0 (240 planned calls, input estimate 3,756,085).
+The 1,440-call comparison still waits. All stopped copies are preserved; no parser, resolver, default or
+Q5 gate changes. Details and limitations: `docs/perf/extract-v16-alias-reminder.md`.
+
+The preserved `d870f33` sequential run stopped at 145 completed jobs / 146 attempts. Its first wrong
+residence ending is turn 88, while settling into the new attic and comparing it with the former inn;
+turn 144 only exposed the already-missing role. The owner approved a prompt correction together with
+the 107-label set: match the listed role's place and counterpart to the arrangement actually ended,
+and distinguish settling in from leaving. Explicit next-turn endings remain allowed; a proposed
+previous-turn veto was withdrawn because a discarded ending need not be stated again. No pending-role
+mechanism is added. The final v16 prompt is a new generation; v15 stays unchanged. Model verification,
+sequential restart and the full comparison remain pending; the earlier passing replies do not verify
+this candidate. Focused tests pass 65 and the full sidecar suite passes 975; validation and the bounded
+next check are recorded in the same perf note.
+The owner-approved bounded model check of `a1f4e81` then passes **12/12**: three fresh replies to the
+preserved turn 88 retain the new residence, and three repeats each of explicit next-turn termination,
+an older role restated before ending, and a former-home departure pass. Input **98,679** / output
+**7,929** tokens; no errors or retries. This is fixed-input model output and production postprocessing,
+not a fresh sequential worker run. The owner then approved a new S1 sequential copy under that same
+generation. It stops at **turn 88 after 89/240 calls** (0-based turns 0–88), with **0 format errors or
+retries**: the model again ends the new residence using a comparison with the former home. The worker
+stores the negative, and a fresh read-only connection confirms that the residence is absent. The new
+rule is present in both prompt blocks; the target/context match the bounded case, but sequentially
+rebuilt hints differ. Thus the bounded 12/12 does not establish sequential correctness. Input
+**1,020,111** / output **90,301** tokens; **318.977 s** to the stop. Raw replies, the stopped database
+archive and causal readback are preserved. No correction or paid restart follows this failure.
+The requested zero-call comparison rules out a stale former-inn role or mismatched R1: both inputs
+list the identical new residence as R1, and both role lists rebuild from their respective databases.
+The surrounding hints differ; causal sensitivity is not established. A proposed confirmation-only
+experiment freezes TARGET plus one role and reports wrong-ending rejection beside normal-ending
+pending rates. After owner review, version 2 uses **14 unique inputs once each** (8 normal, 6 non-ending),
+including both S1 turn-233 directions with the full/given-name mismatch. The historical 31 correct and
+8 wrong observations collapse to 5 unique confirmation inputs; all sources are mapped, not counted as
+39 new cases. Semantic mistakes are recorded without stopping; only technical errors, changed hashes
+or budgets stop the probe. The owner then approved it; **all 14 calls completed at 19:45 KST** with
+no technical errors or retries. Normal endings pass the frozen grader **8/8**, including both S1
+turn-233 directions; normal-ending `no` and total pending rates are **0/8**. Non-endings yield **2/6 valid
+no, 3/6 wrong accepts, 1/6 invalid quote** (turn 88 returns no with empty evidence). Both valid rejections
+are authored controls; preserved non-endings alone yield 0/4 valid no and 3/4 wrong accepts. One correct
+yes also quotes text that does not itself establish termination; the frozen matcher does not check
+entailment. **The pilot bar is missed.** Input **15,588** / output **501** tokens, elapsed **8.545 s**;
+the exit code is 2 after all cases, not an early technical stop. The unexecuted 21-call plan remains superseded.
+Six preserved sequential runs supply observed call counts; the new pilot usage calibrates explicitly
+projected per-240 token costs. Spec, results and evidence: `docs/proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md`.
+The owner proposed restoring the existing role-ending rules and recent CONTEXT while excluding other
+hint registries. V3 was prepared with the same 14 ROLE/TARGET pairs and full preserved preceding two turns
+(the detailed turn-73 continuity exceeds the old 1,000-character context prefix), then approved separately.
+All **14 calls complete at 20:12 KST**: decision labels **14/14**, wrong accepts **0/6** (v2: 3/6), normal
+acceptance **8/8** and normal pending **0/8**. Valid no remains **2/6** because four no replies have empty
+evidence (88, 74, 99 and the authored former-home control). The frozen grader stays **10/14**; all cases
+run before exit 2. Separate evidence review marks four accepted resignation quotes as uncertain about
+completion timing. Input **49,165** / output **402**, elapsed **14.609 s**, no errors or retries; request,
+source and paired ROLE/TARGET hashes verify. The bounded decision bar passes; the evidence contract does not.
+An offline sentence-LATER replay blocks no additional located wrong ending, including turn 86; one v2
+quote cannot be located exactly, and a declared synthetic control exposes false withholding. Keep the
+original guard for primary scoring and separately grade quote support/weakness/uncertainty. V3 supports
+the revised direction on this sample without establishing causality or sequential correctness.
+After owner review, the experiment contract requires a valid TARGET quote for yes and makes the no
+quote optional. A zero-call regrade preserves all yes outcomes: **v3 14/14, v2 11/14**; the four absent
+no quotes are now allowed, while uncertain yes evidence remains separately recorded. The owner separately
+approved the **17-call** follow-up: **17/17 pass at 20:36 KST**, new-story diversity **5/5** and previously
+used glass regressions **12/12**. Normal acceptance **8/8**, normal pending **0/8**, wrong acceptance **0/9**;
+all eight yes quotes are literal and support termination in the recorded review. Three optional no quotes
+are absent. Input **14,440** / output **478**, elapsed **9.436 s**, no errors/retries; frozen prompt, requests,
+source hashes and fresh artifact readback verify. This is a short synthetic probe, not a sequential verdict.
+Next: decide ADR 0064/phase amendment and v16 worker adoption scope before a fresh sequential S1 check
+at turn 88. A pending-role review flow remains unimplemented.
+First-connection, full-comparison and live gates remain open; NMO-24 still blocks
+NMO-7. No default or generation change follows from recording these results.
+Implemented after the owner's handoff (ADR 0064 item 4): under `extract-v16` each listed ending that passes the
+existing checks is confirmed by one more call with the measured v3 prompt (ending rules, the role, the two preceding
+turns whole, the TARGET; no other hints). Only a yes quoting the TARGET ends the role; a no, an invalid answer, a
+quote check failure or a failed call holds it as a pending row (`role ending not confirmed: …`) with the first reply
+and every confirmation kept in the extraction's raw record; usage sums them, kept apart under `confirm`. A new
+generation (the confirmation is in v16's fingerprint); `extract-v15` unchanged. A held normal ending keeps the role
+current; a review item is not implemented and not an approved policy. Tests use stand-in models only. Next: the
+owner's fresh sequential S1 from turn 0 under this generation, with turn 88's stored state read back.
+The owner's review of `62f10d0` found a confirmation reply that was not valid JSON lost its text and usage, and
+replies were cut at 4,000 characters; corrected (the client's `ReplyError` keeps what came back and the call's usage;
+replies are kept whole), with tests through the real client and a fresh database read. No model call; the
+confirmation request has no output-token limit (the experiment's 512 was its own envelope).
+The owner's review of `17f3900` found an error status (HTTP 400 or above) whose body reports usage counted the
+call but not its tokens; the client reads usage from such a body now (none stays "not reported"). Client-only: the
+generation key is unchanged.
+The owner-approved fresh sequential S1 on `4e76c70` completed all **240 jobs / 247 calls**
+(240 extraction + 7 confirmation) in **1,036.248 s**, with no technical errors or retries.
+The seven declared role scenes pass: turn 88's wrong cleaning-as-ending candidate is held pending,
+its residence survives a fresh DB read, and normal ending gold closes **2/2 scenes (3/3 roles),
+pending 0**. But final name joins pass **1/3**, so the run exits 1, an accuracy failure.
+The joins existed initially: a wrong `백이안 → 곽 조합장` alias at turn 81 breaks one; the legitimate
+`윤하람 → 람이` alias at turn 182 makes the other ambiguous under the existing resolver's
+multiple-neighbour rule. Read-only per-scene counterfactuals confirm the triggers; no rows were
+changed. Other misattributed aliases at 200/237 and an uncertain sponsorship ending at 227 need
+review. Input **2,901,339** / output **257,567**, confirmation separately **32,527 / 242**;
+provider counts and stored totals agree on fresh readback. Next: alias attribution and legitimate
+multiple-alias resolution review, not another model run. First connection, full comparison and
+live gates remain unrun; v15 stays default. Details and limits:
+`docs/perf/extract-v16-alias-reminder.md` (fresh S1 with worker confirmation). The owner-authorized
+81/182/200/227/237 excerpts, preserving original/stored directions and actual entity hints,
+are in `fixtures/model/phase28/2026-10-03-s1-confirmation-review/` for independent review.
+Claude's review of those excerpts and the owner's decisions (2026-10-03): turns 81 and 200 joined a known character
+the turn never names; under extract-v16 a known name now stands in only for a `?` description or a character the turn
+writes another way (ADR 0064 item 2; offline on the preserved rows: 81 and 200 pending, 182 valid, 237 not caught).
+Turn 227 is a wrong ending (the quote ends the patron's office, not the patronage); the confirmation prompt gains one
+paragraph (v4, ADR 0064 item 4). Both are a new extract-v16 generation. The owner-approved **32-call v4
+re-measurement on `443a5c4` passes 30/32 but fails its acceptance bar** (23:56 KST): original fourteen 13/14, additional seventeen 17/17,
+turn 227 0/1. The patronage still ends on a quote of imprisonment; one normal captain-to-navigator ending
+is withheld. Wrong acceptance **1/16**, normal pending **1/16**; turn 88 remains no. Input **71,382** /
+output **894**, **23.791 s**, errors/retries 0, estimated **$0.01035108** without cache discount.
+Source/request/response/usage readback and production grading agree; related tests **78 passed**.
+Quote quality is reported separately (yes: Supports 10, Weak 4, Uncertain 2). See
+`docs/proposals/ROLE-END-CONFIRMATION-EXPERIMENT.md` (v4 results). **Stop before fresh sequential S1**:
+Claude reviews the two preserved failures; no automatic prompt revision or additional paid run is approved.
+An alias confirmation for names the turn allows (237) and the resolver's treatment of one person's two names (182, ADR 0012) are NMO-35:
+outside Phase 28, before 0.3.0, the resolver last. The implementation used no model calls; the subsequent
+measurement above used 32.
+Owner decision on that review (2026-10-03): **v4 withdrawn, v3 restored** (31/32 on the same inputs). The 227 class
+(an arrangement ended on the counterpart's arrest, fall or loss of office) is a known, counted wrong ending that no
+longer stops a run on its own (ADR 0064 item 4, PHASE-28 stop conditions). extract-v16 is still a new generation by
+the alias rule. Next: a fresh sequential S1 from turn 0 on this head, with the owner's approval and budget.
+Design review after v4 (Codex's recommendation; `docs/proposals/ROLE-END-REVIEW.md`): one model cannot be made exact on
+endings, and a held ending only catches a disagreement. Owner decision, implemented (PHASE-28 Q7): the Inspector's
+"Needs attention" lists every role ending applied in the last 30 turns (retract to keep the role) and every held one
+(restore to end it at its turn), with existing repair kinds, no migration, no model call. Whether PHASE-28's
+zero-wrong-ending condition becomes a counted ceiling is still the owner's to decide.
+Owner decisions the same evening: the stop condition is now a ceiling (at most one wrong automatic role ending per
+run, each counted; a new kind still stops, PHASE-28). And S1 turn 182 is fixed for extract-v16: a part checked apart
+no longer makes its full name ambiguous (ADR 0012 amendment), so 윤하람 / 하람 / 람이 are one person and 237's wrong
+alias leaves only 람이 ambiguous; extract-v15 resolves as before. Accepted cost: one wrong alias beside a full name's
+part now joins. The next fresh S1 is the owner's (run by Codex) with an identity gate of 3/3.
+Codex's S1 on `c0b0a5b` (2026-10-04, `docs/perf/extract-v16-c0b0a5b-sequential.md`) stopped at turn 233 (a
+resignation called `planned`, its reverse left out) with names 2/3 (turn 200's `윤하람 → 도도`, NMO-35); its retry
+stopped at turn 117 on the experiment's 4,096-token output cap. Owner decisions (2026-10-04): an ending marked planned,
+and the reverse of an ending, are asked of the confirmation and held for the owner on a yes, never applied (PHASE-28
+Q7 amendment, ADR 0064 item 4); the next S1's experimental output cap is **8,192** tokens per main call (production
+sends none), recorded as a changed condition. More confirmation calls than the earlier 32-call ceiling assumed.
+The S1 on `4cc7ddd` (generation `extract-ba2d952e57b5e468cef813c6e6f52273`, 8,192-token cap,
+`docs/perf/extract-v16-4cc7ddd-sequential.md`) is **incomplete**: it stopped at turn 62 after 62/240 jobs and 63 calls
+(701,043 input / 65,299 output, about $0.124 uncached) on a reply with a trailing comma (`"hidden_from": [],` before
+`}`); 0–61 had eight correct aliases, no role ending, names 3/3 at 61. The same comma at the same place broke turn 62 in
+every earlier run that reached that state, a same-input retry included, so the worker's retry could never pass it. A reply is now parsed without a comma that ends a list or an object, outside
+strings, and only after the strict parse failed (`llm.without_trailing_commas`): replaying 1,329 preserved replies,
+1,323 parse exactly as before, the five turn-62 replies now parse, and a reply cut by the output cap still fails. No
+prompt or fingerprint changes, so no generation key changes (`extract-v15`'s included); the raw reply is kept as it came.
+The owner's fresh S1 on that fix (`8fe66d1`, same generation and envelope, `docs/perf/extract-v16-8fe66d1-sequential.md`)
+completed 240/240 turns: the declared role scenes pass 7/7 (233's resignation applied in both directions, 88's wrong
+ending held by a confirmation no), 6 endings applied, 1 held, 1 planned doubt dropped (158), no wrong ending, no false
+join; but names 2/3 at 239, the turn-200 alias `윤하람 → 도도` recurring (NMO-35). 248 calls, 2,906,444 input /
+255,349 output, about $0.509 uncached, 18 min 20 s. No reply needed the comma fix (turn 62's input differed).
+Phase 29 step 2 (NMO-35; spec #256, approved 2026-10-04), on this branch: inside `extract-v16`, a free character alias
+that would newly join two names is confirmed by one more call about those two names (ADR 0064 item 2 amendment); a
+held alias is pending, joins nothing and is listed under Needs attention. A new `extract-v16` generation; `extract-v15`
+unchanged. The fixed-input probe passed 60/60 ($0.023; `docs/perf/phase29-alias-confirmation-probe.md`). Owner decisions
+the same day: a held alias in Needs attention carries the owner link (Q5 A, a plugin change), and under extract-v16 the
+presence check reads a Hangul or Latin name only as a word of its own (no stored S1 row changes). The fresh S1 on the
+new generation then passed (`9aa7c57`, `extract-b88669ca66664b77df6ac117d741ea8e`,
+`docs/perf/extract-v16-9aa7c57-sequential.md`): 240/240 turns, **names 3/3, role scenes 7/7**, no wrong ending, no false
+join; at turn 200 the main reply wrote `윤하람 → 도도` again and the alias confirmation held it (no); 250 calls, about
+$0.509 uncached, 19 min. One development story only: S2, the independent probe, the 1,440-call comparison, first
+connection, the 10k gate and the live runs remain.
+Thirteen independent synthetic scenarios from the owner's diversity pack, through the worker on `9aa7c57` (live lane,
+`docs/perf/phase29-diversity-smoke.md`): 12/13 pass the expectations fixed before the run; R04 fails by a naming error in
+those expectations (the stored state is right, a post-hoc regrade passes); no wrong ending, no false join; $0.049.
+Q5 (c) on S1 (`docs/perf/extract-v16-q5c-s1.md`): the fixed-input comparison (S1 × 3 on the v15 hints, two workers)
+passes 21/21 declared role checks with names 3/3 in every run, no wrong ending, no false join ($1.54); it found that a
+`?description` revealed by name was always held, fixed in `cd68657` (`extract-v16` now `extract-ccb3d153…`). The
+first-connection lane (newest first) gets 4/7 and names 1/3 with no false join: no turn sees any earlier role or name,
+so the corrections do not apply to a long chat NMOS sees for the first time ($0.47). Backfill, how an existing chat
+re-extracts, is the passing sequential lane. A change to first-sight order is the owner's decision.
+The Codex review of `bcce836` found four defects, fixed with regression tests and no model call: a quietly ended secret
+role was stored public (an ending now keeps the role's knowledge scope); a free negative written under a joined alias
+skipped the numbered ending and its confirmation (now dropped by party: name, persona, joined aliases); a held alias's
+repeat in other case stayed valid; the comparison tool failed on a checkout without confirmations. `extract-v16` is now
+`extract-409d69e00030e6052c6125fa4520d5db` (`extract-v15` unchanged); the measurements above were on earlier v16 keys.
+On that generation (`6e4ca05`, `docs/perf/extract-v16-6e4ca05-sequential.md`): replaying the `9aa7c57` run's replies changes
+none of its 240 turns (zero calls), and a fresh sequential S1 passes again: names 3/3, roles 7/7, no wrong ending, no
+false join ($0.51).
+
+**Phase 29 — Whose name is it: approved 2026-10-04, current as a correction phase (AGENTS §7 item 5); step 2
+merged, inside `extract-v16` in #251 (above).** Spec `docs/phases/PHASE-29.md` (NMO-35 under AGE-24). Phase 28's S1 runs fail the
+identity gate on one alias class left after ADR 0064 item 2: both names in the TARGET, the alias given to the wrong
+person (turn 200 `윤하람 → 도도` in three runs, turn 237 `람이 → 도도`). Approved answers: one confirmation call per free
+character alias that would newly join two names (not NAME PAIRS, not the persona's, not a `?description` revealed by
+name), on the two names (NAME_A with its already joined names), the two preceding turns and the TARGET; a quoted yes keeps it, anything else holds it as a pending row with its record; held aliases listed
+under Needs attention with the owner link; a new `extract-v16` generation, `extract-v15` unchanged. Measured by a 60-call
+fixed-input probe (bar: measured wrong 6/6 held, authored negatives 12/12 held, correct free aliases 9/9 kept, authored
+positives ≥ 11/12), then one fresh sequential S1 (names 3/3, roles 7/7), each after its estimate is approved. **High
+risk (AGENTS.md §14)**: identity and provenance, knowledge boundaries through an alias, extraction generations.
+
+**Phase 30 — A chat seen for the first time is extracted in story order: approved 2026-10-04, current as a correction
+phase (AGENTS §7 item 5); step 2 in review (#260).** Spec `docs/phases/PHASE-30.md` (NMO-36 under AGE-24; a correction
+found by measurement, not a roadmap stage). A first sight extracted its window newest first, so every turn's lists were
+empty and `extract-v16`'s corrections never applied to a long chat connected for the first time (#251,
+`docs/perf/extract-v16-q5c-s1.md`: roles 4/7, names 1/3; story order 7/7, 3/3). Approved answers: the window oldest
+first (`FIRST_PRIORITY`), a live turn behind its chat's pending window, a dead job holding nothing, each turn extracted
+once; every generation, no prompt, key, setting or migration change (ADR 0065, D74; `tests/test_first_sight_order.py`).
+Measured (b) on `1388ea2`: S1 first connection 7/7 and 3/3, no false join, $0.51 (`docs/perf/phase30-first-s1.md`; one
+wrong timing outside the declared scenes, the 227 class). Next: the owner's merge decision (step 4). **High risk (AGENTS.md §14)**: extraction order and generations, current versus historical role state,
+identity and provenance.
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stages 7–8 remain unauthorized.
@@ -477,6 +784,10 @@ it when a later turn reveals the name; the owner can join two names of a chat by
 Outside the phase (owner request 2026-09-24, ADR 0022): Google Vertex AI service-account keys for the
 extraction LLM, released in `v0.1.0-beta.15`. Mocked token exchange in CI; verified against real Vertex on
 2026-09-26 with the owner's key (`google/gemini-3.8-flash`: connection test, extraction, recall; ADR 0022).
+Amendment 1 (owner request 2026-10-04, unreleased): **Load key file** in the panel and a model list from Vertex's
+publisher-model catalog. Mocked in CI; the catalog checked against real Vertex with the owner's key (global host, 14
+chat models kept of 26); the picker checked in a real PocketRisu v1.13.0 (Chromium; HOST-FACTS); Safari/iPhone not
+yet checked.
 Outside the phase (owner report 2026-09-26, ADR 0026, D37, released in `v0.1.0-beta.19`): characters forgot settled things (a 반말 agreement
 went back to 존댓말). Reproduced read-only on the owner's database: in a crowded scene the fact ranking was decided by
 `known_by` lists, so trivia took the four facts a 600-token packet holds. Now how the cast stand with each other
@@ -568,17 +879,17 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H22, D1–D72, O2/O3/O4/O5 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H22, D1–D75, O1/O2/O3/O4/O5 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
 | Schema | `migrations/0001`–`0028` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode, thread outcome and cause, summaries, owner repairs, canon, canon facts and lock, model-call usage, reveal checks and dropped-fact restore |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
 | Tests | `apps/sidecar/tests` (754), `adapters/pocketrisu-plugin/test` (193; DOM code under `happy-dom`) | all passing; the M0 real-chat evaluation is `docs/perf/m0-baseline.md` (28 owner-confirmed cases; 9 need memory: 5 before Phase 11, 7 now) and, on a second chat, `docs/perf/m0-sample2.md` (17 cases; 8 of the 13 that need memory); deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k without extraction and embeddings (D24); with both on (15k facts, 15k vectors) 10k takes ≈3.2 s (A-09); K3 on the real host (2026-09-27): rerolls and last-reply swipes stay on the fast path, an edit of an older message at 10k takes 3.6–3.8 s |
-| Known issues | `docs/KNOWN-ISSUES.md` | K1–K42 (K10 resolved; K33–K38 recorded 2026-09-29, K39–K40 in Phase 18, K41 in Phase 19, K42 in Phase 21 and resolved on `main`) current as of `v0.2.0` and Phase 20, each with workaround and tracking (host, Track B stage); resolved limitations listed |
+| Known issues | `docs/KNOWN-ISSUES.md` | K1–K43 (K10 resolved; K33–K38 recorded 2026-09-29, K39–K40 in Phase 18, K41 in Phase 19, K42 in Phase 21 and resolved on `main`, K43 in the live gate's S3 on `9947d2c`, 2026-10-04, resolved by `packet-v12`) current through 2026-10-05, each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–7 of the original roadmap, one release each (R7, 2026-10-01: Stage 8 after 1.0, Stage 6 ends with Phase 20, new phases only for Stage 7; R1, R5, R7 decided, R2–R4 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
-| Decisions | `docs/adr/0001`–`0063` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair; Phase 14: canon sources, names from canon, canon facts and lock; NMOS off for one chat; Phase 15: a packet that fills its budget; Phase 16: NMOS Archive; Phase 17: model-call usage; Phase 18: keyword lexical recall, excerpts that fill their length; Phase 19: `extract-v14`; Phase 20: join preview; Phase 21: first cue; Phase 22: reveal checks; Phase 24: name variants; Phase 25: `role_toward`; Phase 23: portable bundles; the query embedded while recall reads (K34); the chunk cap a setting of the projection (K13); Phase 27: `packet-v11`, the excerpt lands on the answer |
-| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-28.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 met (the owner's iPhone check 2026-10-01; the host's alert is K38); 17 met; 18 met (latency measured over the benchmark's questions, owner accepted); 19 met but for `deepseek-v4.1-flash`'s M0 criterion (owner accepted, K41); 20 met; 21 met; 22 met but the paid run's reveal count missed by one (owner accepted); 23 met (owner Windows and Mac checks 2026-10-02; a second start's notice, the worker after a quit and a real sign-in not run in CI, owner accepted); 24 met; 25 met (the paid run's output tokens 43 % above the estimate, owner accepted); 26 stopped (not merged; Stage 6's criterion reworded); 27 complete (2026-10-02; Q1b the keywords anchor and Q5's bound one-sided by the owner on the measurement); 28 approved (2026-10-03), step 2 next |
+| Decisions | `docs/adr/0001`–`0066` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair; Phase 14: canon sources, names from canon, canon facts and lock; NMOS off for one chat; Phase 15: a packet that fills its budget; Phase 16: NMOS Archive; Phase 17: model-call usage; Phase 18: keyword lexical recall, excerpts that fill their length; Phase 19: `extract-v14`; Phase 20: join preview; Phase 21: first cue; Phase 22: reveal checks; Phase 24: name variants; Phase 25: `role_toward`; Phase 23: portable bundles; the query embedded while recall reads (K34); the chunk cap a setting of the projection (K13); Phase 27: `packet-v11`, the excerpt lands on the answer; Phase 28: `extract-v16`, CURRENT ROLES and a name said two ways (the default); Phase 30: first-sight order; Phase 31: `packet-v12`, recall that knows what changed |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-31.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 met (the owner's iPhone check 2026-10-01; the host's alert is K38); 17 met; 18 met (latency measured over the benchmark's questions, owner accepted); 19 met but for `deepseek-v4.1-flash`'s M0 criterion (owner accepted, K41); 20 met; 21 met; 22 met but the paid run's reveal count missed by one (owner accepted); 23 met (owner Windows and Mac checks 2026-10-02; a second start's notice, the worker after a quit and a real sign-in not run in CI, owner accepted); 24 met; 25 met (the paid run's output tokens 43 % above the estimate, owner accepted); 26 stopped (not merged; Stage 6's criterion reworded); 27 complete (2026-10-02; Q1b the keywords anchor and Q5's bound one-sided by the owner on the measurement); 28 approved (2026-10-03) and 29 approved (2026-10-04), step 2 merged (#251); `extract-v16` the default since 2026-10-04 (28 step 3), the live gate next; 30 approved (2026-10-04), complete (#260); 31 complete (2026-10-05; the second reduced live gate met every bar; `packet-v12` the default) |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 | Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11`, and A-12's markup half in `clean-v3` (both unreleased) |
 
@@ -615,12 +926,24 @@ removing the assertion's `epistemic` field (it is live: `certainty="implied"`; A
 higher `//@version`). Its Stage 5–8 items remain phase work; next, once G1–G3 were fixed: M0 and Stage 5 (owner,
 2026-09-28).
 
+## Anonymous design survey (2026-10-03)
+
+The owner's requested [anonymous comparison](proposals/IDEA-SURVEY-2026-10-03.md) records current NMOS behavior,
+approaches observed in other projects and possible follow-up measurements. Static source reading only: no runtime
+comparison, model calls or claimed recall gains. Current NMO-24 (formerly AGE-24) help is limited to the existing
+Phase 28 role-ending checks and diagnosis; support retrieval, route coverage and story selection wait for corrected
+state and separate scope approval. Optional UI feedback remains a proposal. No new phase or release gate is added.
+The [earlier survey](proposals/IDEA-SURVEY-2026-09-29.md#7-follow-up-2026-10-03) now marks completed candidates and
+later deferrals. External project identities and identifying source references are omitted at the owner's request.
+
 ## Open owner decisions
 
 - Phase 26 (a repair whose item is gone suggests where it belongs now; Stage 6, AGE-23) — approved 2026-10-01, then
   stopped by the owner the same day after the review on the copy (`docs/phases/PHASE-26.md`, "Outcome"); Stage 6's
   criterion reworded and met.
-- O1 — relationship to MIRRA / VEIL.
+- O1 — resolved 2026-09-30: NMOS is an independent project, no longer related to MIRRA or VEIL
+  (owner decision [NMO-16](https://linear.app/sallos725/issue/NMO-16); Git record aligned by NMO-32,
+  `ARCHITECTURE.md` §9).
 - O5 — resolved 2026-09-24: superseded vectors and text pruned (ADR 0015, D29), full-manifest host
   observations compacted losslessly (ADR 0018, D31), everything else on abandoned worldlines kept.
 - Phase 9 (accountable packets): complete, released in `v0.1.0-beta.19`.

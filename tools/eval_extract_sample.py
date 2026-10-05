@@ -12,8 +12,14 @@ scored as if it had it. `--dry` makes no call and prints the calls and an estima
 with `--every-chat` they are found as the tool found them before it took one chat (Phase 19's main copy), and `--dry`
 then says how many of the stored run's checked quotes the chosen turns still contain.
 
+`--compiler` (PHASE-28 Q5 (c)) runs another of the checkout's compilers (`extraction.PROMPTS`), e.g. `extract-v16`,
+which also lists the roles in force (CURRENT ROLES, read from the `--hints` generation's earlier facts like every other
+list) and the NAME PAIRS (a known full name and its part written apart in the turn); each file records the compiler,
+the roles and the pairs it listed.
+
 `score` compares labels: rows, the evidence check, input and output tokens, `addresses`, `relationship` and
-`role_toward` rows, and,
+`role_toward` rows, the role endings (negative `role_toward`) apart: as listed (subject, object and value of a listed
+role) or not, the aliases kept (`also_called`, PHASE-28 Q4: the owner checks each), and,
 with `--ledger` (a fact ledger of a synthetic chat: `must_appear_in_turn`, `subject`, `statement`, `kind`), how many
 ledger facts some row finds (one of the fact's characters named, its object or value overlapping the statement's
 character trigrams by at least 0.5): a recall measure with no precision check.
@@ -44,6 +50,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from nmos_sidecar import extraction as X
+from nmos_sidecar.entities import norm
 from nmos_sidecar.llm import ChatModel, LLMError, metered
 from nmos_sidecar.packet import estimate_tokens
 from nmos_sidecar.predicates import registry_prompt
@@ -132,16 +139,37 @@ def prompts(args: argparse.Namespace) -> list[dict[str, Any]]:
             earlier = X.earlier_assertions(conn, ctx, args.hints)
             hints = X.entity_hints(conn, ctx, args.hints, spec["spec"].get("hints", 0), earlier)
             secrets = X.secret_hints(ctx, earlier)
-            user = X.build_prompt(ctx, hints, X.promise_hints(ctx, earlier), secrets, X.thread_hints(ctx, earlier))
-            out.append({"turn": a["turn"], "user": user, "hints": hints, "secrets": secrets,
-                        "text": "\n".join(r["content"] for r in ctx["members"]),
+            roles = X.role_hints(ctx, earlier) if args.compiler in getattr(X, "ROLES", ()) else []
+            text = "\n".join(r["content"] for r in ctx["members"])
+            pairs = (X.name_pairs(hints, text, X.persona_of(ctx["target"].get("host_persona_name")))
+                     if args.compiler in getattr(X, "PARTS_APART", ()) else [])
+            user = X.build_prompt(ctx, hints, X.promise_hints(ctx, earlier), secrets, X.thread_hints(ctx, earlier),
+                                  **({"roles": roles} if roles else {}), **({"pairs": pairs} if pairs else {}),
+                                  **({"compiler": args.compiler} if hasattr(X, "ALIAS_CHECK") else {}))
+            out.append({"turn": a["turn"], "user": user, "hints": hints, "secrets": secrets, "roles": roles,
+                        "pairs": pairs, "text": text, "persona": X.persona_of(ctx["target"].get("host_persona_name")),
+                        "ctx": {"context": ctx["context"], "members": ctx["members"]},  # a confirmation's turns
                         # what the model saw of the target turn (extract-v14's `shown_target`)
                         "shown": "\n".join(r["content"][:X.TARGET_CHARS] for r in ctx["members"])})
     return out
 
 
+def compiler_of(args: argparse.Namespace) -> str:
+    """The compiler to run: `--compiler`, else the checkout's default; one the checkout does not have is refused."""
+    name = getattr(args, "compiler", None) or getattr(X, "DEFAULT_COMPILER", X.COMPILER_VERSION)  # before PHASE-28 step 3
+    if name not in getattr(X, "PROMPTS", {X.COMPILER_VERSION: X.SYSTEM_PROMPT}):
+        raise SystemExit(f"this checkout has no compiler {name}")
+    return name
+
+
 def run(args: argparse.Namespace) -> None:
-    system = X.SYSTEM_PROMPT.format(registry=registry_prompt())
+    args.compiler = compiler_of(args)
+    base = getattr(X, "PROMPTS", {X.COMPILER_VERSION: X.SYSTEM_PROMPT})[args.compiler]
+
+    def system_for(p: dict) -> str:  # the focused extract-v16 leaves the role-ending rules out without CURRENT ROLES
+        text = X.prompt_of(args.compiler, bool(p["roles"])) if hasattr(X, "SYSTEM_V16") else base
+        return text.format(registry=registry_prompt())
+
     checks = hasattr(X, "shown_target")  # extract-v14 or later: normalize parks a quote not in the turn
     todo, selected = [], prompts(args)
     for p in selected:
@@ -161,8 +189,8 @@ def run(args: argparse.Namespace) -> None:
             if hits < len(quotes):
                 missed.append(p["turn"])
         print(f"stored quotes found in the chosen turns: {found}/{total}; turns with a miss: {sorted(missed)}", flush=True)
-    tokens = sum(estimate_tokens(system + p["user"]) for _, p in todo)
-    print(f"{args.label} ({X.COMPILER_VERSION}): {len(todo)} calls, about {tokens / 1e6:.2f}M input tokens (estimate)",
+    tokens = sum(estimate_tokens(system_for(p) + p["user"]) for _, p in todo)
+    print(f"{args.label} ({args.compiler}): {len(todo)} calls, about {tokens / 1e6:.2f}M input tokens (estimate)",
           flush=True)
     if args.dry or not todo:
         return
@@ -174,18 +202,36 @@ def run(args: argparse.Namespace) -> None:
         for attempt in range(6):
             try:
                 t0 = time.monotonic()
-                parsed, raw, usage = metered(model.complete_metered, system, p["user"])
+                parsed, raw, usage = metered(model.complete_metered, system_for(p), p["user"])
                 items = parsed.get("assertions")
                 if not isinstance(items, list):
                     raise LLMError("model reply has no `assertions` list")
                 items = [x for x in items if not (isinstance(x, dict) and x.get("predicate") in X.DERIVED)]
                 items += X.revealed(parsed, p["secrets"], p["text"])
-                rows = (X.normalize(items, p["text"], p["hints"], p["shown"]) if checks
+                if p["roles"]:  # extract-v16: the listed endings, as the worker writes them
+                    items = X.ended_roles(parsed, items, p["roles"], p["shown"], hints=p["hints"], persona=p["persona"])
+                confirmations, alias_confirmations, confirm_usage = [], [], None
+                if p["roles"] and args.compiler in getattr(X, "CONFIRMS", ()):  # extract-v16: each ending confirmed
+                    confirmations, confirm_usage = X.confirm_endings(model.complete_metered, items, p["ctx"], p["shown"])
+                if p.get("pairs"):  # extract-v16: the confirmed name pairs, as the worker writes them
+                    items = X.same_names(parsed, items, p["pairs"], p["text"])
+                if args.compiler in getattr(X, "CONFIRMS", ()) and hasattr(X, "confirm_aliases"):  # PHASE-29, as the worker
+                    alias_confirmations, alias_usage = X.confirm_aliases(model.complete_metered, items, p["ctx"], p["text"],
+                                                                         p["shown"], p["hints"], p["persona"])
+                    confirm_usage = X.summed(confirm_usage, alias_usage)
+                if confirm_usage is not None:  # a checkout before the confirmations (ADR 0064 item 4) has none to add
+                    usage = X.with_confirmations(usage, confirm_usage)
+                apart = {"apart": True} if args.compiler in getattr(X, "PARTS_APART", ()) else {}
+                rows = (X.normalize(items, p["text"], p["hints"], p["shown"], **apart) if checks
                         else X.normalize(items, p["text"], p["hints"]))
                 for r in rows:
                     r["quote_in_turn"] = in_turn(r.get("evidence"), p["shown"])
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(json.dumps({"turn": p["turn"], "compiler": X.COMPILER_VERSION, "usage": usage,
+                path.write_text(json.dumps({"turn": p["turn"], "compiler": args.compiler, "roles": p["roles"],
+                                            "confirmations": confirmations,
+                                            "alias_confirmations": alias_confirmations,
+                                            "pairs": p.get("pairs") or [],
+                                            "usage": usage,
                                             "secs": round(time.monotonic() - t0, 1), "assertions": rows,
                                             "reveals": len(parsed.get("secrets") or [])},
                                            ensure_ascii=False, default=str), encoding="utf-8")
@@ -228,8 +274,9 @@ def score(args: argparse.Namespace) -> None:
             if x.get("must_appear_in_turn") is not None:
                 gold.setdefault(x["must_appear_in_turn"] - 1, []).append(x)
     print("| label | run | turns | valid rows | quote < 12 | not in the turn | share | ledger facts: any row | valid, checked |"
-          " … lost to the check | addresses | relationship | role_toward | input tokens (sum) | output (median) |")
-    print("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+          " … lost to the check | addresses | relationship | role_toward | role endings: as listed / other"
+          " | also_called | input tokens (sum) | output (median) |")
+    print("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for label in args.labels.split(","):
         for run_dir in sorted((args.out / label).iterdir()):
             files = sorted(run_dir.glob(f"{args.name}-*.json"))
@@ -247,8 +294,12 @@ def score(args: argparse.Namespace) -> None:
                 c["valid"] += len(valid)
                 c["short"] += sum(1 for a in valid if a.get("evidence") and len(a["evidence"]) < QUOTE_MIN_CHARS)
                 c["out"] += len(valid) - len(kept)
-                for predicate in ("addresses", "relationship", "role_toward"):
+                for predicate in ("addresses", "relationship", "role_toward", "also_called"):
                     c[predicate] += sum(1 for a in kept if a["predicate"] == predicate)
+                listed = {(x["by"], x["to"], norm(x["role"])) for x in r.get("roles") or ()}
+                for a in kept:  # an ending closes a role only with the listed value (ADR 0013), PHASE-28 Q1
+                    if a["predicate"] == "role_toward" and a.get("polarity") == "negative":
+                        c["as_listed" if (a["subject"], a["object"], norm(a["value"])) in listed else "other_end"] += 1
                 for item in gold.get(r["turn"], []):
                     found = any(hit(a, item, args.persona) for a in r["assertions"])
                     found_kept = any(hit(a, item, args.persona) for a in kept)
@@ -262,10 +313,10 @@ def score(args: argparse.Namespace) -> None:
             out_median = st.median(u.get("output", 0) for u in usage)
             print(f"| {label} | {run_dir.name} | {len(files)} | {c['valid']} | {c['short']} | {c['out']} | {share:.1f} % |"
                   f" {c['found']}/{c['gold']} | {c['kept']}/{c['gold']} | {c['lost']} | {c['addresses']} | {c['relationship']} |"
-                  f" {c['role_toward']} |"
+                  f" {c['role_toward']} | {c['as_listed']} / {c['other_end']} | {c['also_called']} |"
                   f" {tokens_in / 1e3:.0f}k | {out_median:.0f} |")
             if kinds:
-                print(f"|  | ledger kinds found (valid, checked): {dict(sorted(kinds.items()))} | | | | | | | | | | | | | |")
+                print(f"|  | ledger kinds found (valid, checked): {dict(sorted(kinds.items()))} | | | | | | | | | | | | | | | |")
 
 
 def main() -> None:
@@ -289,6 +340,7 @@ def main() -> None:
     r.add_argument("--url", default="https://ollama.com/v1")
     r.add_argument("--model", default="gemma4:31b")
     r.add_argument("--dry", action="store_true", help="no call: print the calls and an input-token estimate")
+    r.add_argument("--compiler", help="another compiler of this checkout (extraction.PROMPTS), e.g. extract-v16")
     s = sub.add_parser("score", help="compare labels")
     s.add_argument("out", type=Path)
     s.add_argument("--labels", required=True, help="comma-separated")

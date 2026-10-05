@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:4da41dec5a72".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:8593a8480e30".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -145,6 +145,14 @@
   function fillProject(url, key) {
     const project = serviceAccountProject(key);
     return project && url.includes("{project}") ? url.replace("{project}", encodeURIComponent(project)) : url;
+  }
+  function isVertexEndpoint(url) {
+    return /^https:\/\/(?:[a-z0-9-]+-)?aiplatform\.googleapis\.com\//.test(url.trim());
+  }
+  var VERTEX_OPENAPI = /^https:\/\/(?:[a-z0-9-]+-)?aiplatform\.googleapis\.com\/v1(?:beta1)?\/projects\/[^/]+\/locations\/[^/]+\/endpoints\/openapi\/?$/;
+  function endpointForKey(url, key) {
+    const u = url.trim();
+    return VERTEX_OPENAPI.test(u) && !u.includes("{project}") && !presetMatches(VERTEX_URL, u) ? u : fillProject(VERTEX_URL, key);
   }
   function presetMatches(presetUrl, url) {
     if (!presetUrl.includes("{project}")) return presetUrl === url;
@@ -399,6 +407,8 @@
     "rp.fact_correct": ["\uC815\uC815({n})", "Correct {n}"],
     "rp.fact_lock": ["\uACE0\uC815", "Lock"],
     // a canon fact or a correction stays current against the story (ADR 0047)
+    "rp.alias_join": ["\uD55C \uC0AC\uB78C\uC73C\uB85C \uC5F0\uACB0", "Link as one person"],
+    // a held alias, linked by the owner (PHASE-29 Q5)
     "rp.fact_restore": ["\uBCF5\uC6D0", "Restore"],
     // a fact a re-extraction dropped, remembered at its turn again (PHASE-22 Q7)
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
@@ -541,8 +551,14 @@
     "model.key_placeholder": ["\uD544\uC694\uD560 \uB54C\uB9CC \uC785\uB825", "only if needed"],
     "model.key_saved": ["\uC800\uC7A5\uB428 \u2014 \uBC14\uAFC0 \uB54C\uB9CC \uC785\uB825", "saved \u2014 type only to change"],
     "model.vertex_hint": [
-      "\uC11C\uBE44\uC2A4 \uACC4\uC815 JSON \uD0A4 \uD30C\uC77C \uB0B4\uC6A9\uC744 API \uD0A4 \uCE78\uC5D0 \uD1B5\uC9F8\uB85C \uBD99\uC5EC \uB123\uC73C\uC138\uC694. \uC8FC\uC18C\uC758 \uD504\uB85C\uC81D\uD2B8\uB294 \uD0A4\uC5D0\uC11C \uCC44\uC6CC\uC9C0\uACE0, \uD1A0\uD070\uC740 \uC0AC\uC774\uB4DC\uCE74\uAC00 1\uC2DC\uAC04\uB9C8\uB2E4 \uAC31\uC2E0\uD569\uB2C8\uB2E4. Vertex AI User \uC5ED\uD560\uB9CC \uC900 \uC804\uC6A9 \uC11C\uBE44\uC2A4 \uACC4\uC815\uC744 \uC4F0\uC138\uC694.",
-      "Paste the whole service-account JSON key file into the API key field. The project in the endpoint is filled from the key, and the sidecar renews the token every hour. Use a dedicated service account with only the Vertex AI User role."
+      "\u2018\uD0A4 \uD30C\uC77C \uBD88\uB7EC\uC624\uAE30\u2019\uB85C \uC11C\uBE44\uC2A4 \uACC4\uC815 JSON \uD0A4 \uD30C\uC77C\uC744 \uACE0\uB974\uC138\uC694(\uB0B4\uC6A9\uC744 API \uD0A4 \uCE78\uC5D0 \uD1B5\uC9F8\uB85C \uBD99\uC5EC \uB123\uC5B4\uB3C4 \uB429\uB2C8\uB2E4). \uC8FC\uC18C\uC758 \uD504\uB85C\uC81D\uD2B8\uB294 \uD0A4\uC5D0\uC11C \uCC44\uC6CC\uC9C0\uACE0, \uBAA8\uB378 \uBAA9\uB85D\uC744 \uBC14\uB85C \uBD88\uB7EC\uC624\uBA70, \uD1A0\uD070\uC740 \uC0AC\uC774\uB4DC\uCE74\uAC00 1\uC2DC\uAC04\uB9C8\uB2E4 \uAC31\uC2E0\uD569\uB2C8\uB2E4. Vertex AI User \uC5ED\uD560\uB9CC \uC900 \uC804\uC6A9 \uC11C\uBE44\uC2A4 \uACC4\uC815\uC744 \uC4F0\uC138\uC694.",
+      "Pick the service-account JSON key file with \u2018Load key file\u2019 (or paste its whole content into the API key field). The project in the endpoint is filled from the key, the model list loads right away, and the sidecar renews the token every hour. Use a dedicated service account with only the Vertex AI User role."
+    ],
+    "model.key_file": ["\uD0A4 \uD30C\uC77C \uBD88\uB7EC\uC624\uAE30", "Load key file"],
+    "model.key_file_ok": ["\uD0A4 \uD30C\uC77C\uC744 \uC77D\uC5C8\uC2B5\uB2C8\uB2E4 (\uD504\uB85C\uC81D\uD2B8 {project}). \uC800\uC7A5\uD574\uC57C \uC801\uC6A9\uB429\uB2C8\uB2E4.", "Key file read (project {project}). Save to apply it."],
+    "model.key_file_bad": [
+      'Google \uC11C\uBE44\uC2A4 \uACC4\uC815 JSON \uD0A4 \uD30C\uC77C\uC774 \uC544\uB2D9\uB2C8\uB2E4 ("type": "service_account"\uC640 project_id\uAC00 \uC788\uC5B4\uC57C \uD569\uB2C8\uB2E4).',
+      'Not a Google service-account JSON key file (it needs "type": "service_account" and a project_id).'
     ],
     "model.load": ["\uBAA8\uB378 \uBAA9\uB85D", "Load models"],
     "model.test": ["\uC5F0\uACB0 \uD14C\uC2A4\uD2B8", "Test"],
@@ -1816,7 +1832,7 @@ ${revisionHash}`;
     const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
-  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|undo):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|undo|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
   function repairAction(value) {
     const m = value ? REPAIR.exec(value) : null;
     if (!m?.[1] || !m[2]) return null;
@@ -1830,6 +1846,13 @@ ${revisionHash}`;
       if (!extra.trim() || extra.length > 120 || /[\u0000-\u001f\u007f]/.test(extra)) return null;
     }
     return { kind: m[1], item: m[2], extra };
+  }
+  function aliasPair(action) {
+    if (action.kind !== "alias_join" || !action.extra || !/^[0-9]+$/.test(action.item)) return null;
+    const at = action.extra.indexOf("|");
+    const name = at > 0 ? action.extra.slice(0, at).trim() : "";
+    const same_as = at > 0 ? action.extra.slice(at + 1).trim() : "";
+    return name && same_as ? { name, same_as } : null;
   }
   function closeOutcomes(extra) {
     return (extra ?? "").split(",").filter((o) => /^[a-z_]{1,24}$/.test(o));
@@ -2045,7 +2068,8 @@ ${revisionHash}`;
     { label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
     { label: "OpenAI", url: "https://api.openai.com/v1", model: "gpt-4o-mini" },
     { label: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.5-flash" },
-    { label: "Google Vertex AI", url: VERTEX_URL, model: "google/gemini-2.5-flash" },
+    { label: "Google Vertex AI", url: VERTEX_URL, model: "google/gemini-3.8-flash" },
+    // checked on real Vertex (ADR 0022)
     { label: "preset.custom", url: "custom" }
   ];
   var EMBED_PRESETS = [
@@ -2495,6 +2519,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       button.addEventListener("click", () => {
         if (action.kind === "fact_correct") correctForm(action, button);
         else if (action.kind === "undo" && action.extra === "name_split") void undoSplit(action, button, spot);
+        else if (action.kind === "alias_join") void aliasJoin(action, button, spot);
         else void repairNow(action, button);
       });
       return [button, spot];
@@ -2574,6 +2599,18 @@ html,body{margin:0;background:${PALETTE.bg}}
       });
       spot.replaceChildren(el("span", { class: "rpform" }, text2, turn, save2, cancel));
       text2.focus();
+    }
+    async function aliasJoin(action, button, spot) {
+      const conversation = inspectorConversation(inspectorPath);
+      const pair = aliasPair(action);
+      if (!conversation || !pair) return;
+      const path = `/v1/conversations/${conversation}/entity-links`;
+      const body = { entity_type: "character", ...pair, held_alias: Number(action.item) };
+      await withPreview(spot, button, `${path}/preview`, body, "pv.confirm_join", async (expect) => {
+        await deps.api("POST", path, { ...body, expect }, 15e3);
+        say(actionMsg, L("link.done", { a: pair.name, b: pair.same_as }), "ok");
+        await showInspector();
+      });
     }
     async function undoSplit(action, button, spot) {
       const conversation = inspectorConversation(inspectorPath);
@@ -3128,14 +3165,43 @@ html,body{margin:0;background:${PALETTE.bg}}
       const msg = el("div", { class: "msg" });
       const load = el("button", { text: L("model.load") });
       const test = el("button", { text: L("model.test") });
+      const keyFile = el("input", { type: "file", accept: ".json,application/json", style: "display:none" });
+      const pickKey = el("button", { text: L("model.key_file"), style: "display:none" });
+      const syncPickKey = () => {
+        pickKey.style.display = kind === "llm" && isVertexEndpoint(endpoint.value) ? "" : "none";
+      };
+      pickKey.addEventListener("click", () => keyFile.click());
+      keyFile.addEventListener("change", async () => {
+        const file = keyFile.files?.[0];
+        keyFile.value = "";
+        if (!file) return;
+        let text2;
+        try {
+          text2 = (await file.text()).trim();
+        } catch (error) {
+          return say(msg, errorText(lang, error), "err");
+        }
+        const project = serviceAccountProject(text2);
+        if (!project) return say(msg, L("model.key_file_bad"), "err");
+        const vertexModel = presets.find((p) => p.url === VERTEX_URL)?.model;
+        key.value = text2;
+        endpoint.value = endpointForKey(endpoint.value, text2);
+        preset.value = String(presetIndex(presets, endpoint.value));
+        if (!model.value.trim().startsWith("google/") && vertexModel) model.value = vertexModel;
+        update();
+        say(msg, L("model.key_file_ok", { project }), "ok");
+        load.click();
+      });
       preset.addEventListener("change", () => {
         const p = presets[Number(preset.value)];
         if (p.url !== "custom") endpoint.value = fillProject(p.url, key.value);
         if (p.model) model.value = p.model;
         if (!p.url) model.value = "";
         say(msg, p.url.includes("{project}") ? L("model.vertex_hint") : "");
+        syncPickKey();
         update();
       });
+      endpoint.addEventListener("input", syncPickKey);
       key.addEventListener("input", () => {
         endpoint.value = fillProject(endpoint.value, key.value);
       });
@@ -3188,7 +3254,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         field(L("model.model"), model),
         list,
         field(L("model.key"), key),
-        el("div", { class: "btns" }, load, test),
+        el("div", { class: "btns" }, pickKey, load, test),
+        keyFile,
         msg
       ));
       return {
@@ -3199,6 +3266,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           model.value = cfg.model;
           key.value = "";
           key.placeholder = L(cfg.api_key_set ? "model.key_saved" : "model.key_placeholder");
+          syncPickKey();
         }
       };
     }
