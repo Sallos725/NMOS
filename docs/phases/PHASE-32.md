@@ -30,17 +30,24 @@ narrow screen.
   plain link, so the page works without the script. In the panel, the plugin's own code handles taps. A user only
   updates the sidecar and the plugin as usual.
 - No migration, no new endpoint, no model call. The packet, recall and extraction are untouched.
+- **Where a bar ends** (owner, 2026-10-05, option A, after the PR review). `facts.version_key` keeps one history for a
+  pair's relationship (both directions) and for an item (every holder and place), so the next entry is not always
+  where one ended.
+  - `facts.py` records, on each closed history entry, the turn of the statement that closed it (`closed_turn`). The
+    fold already knows that statement.
+  - A lane draws only its own character's entries.
+  - The field is for display only: what the fold chooses and every recall path are unchanged.
 - The layout is one line per character over the turn axis, then the chosen character's tracks: their state, the
   relationships that go **from** them, their threads and their events.
 
 ## Scope
 
 1. **The character page** (`/inspector/c/<conv>/e/<entity>`) gets a timeline section above its tables:
-   - **State**: one lane per current fact of this character that has history or is a standing fact. Each history
-     entry is a bar from its turn to the next entry's turn, or to the current turn while it is `current`. Superseded
-     and ended entries are drawn outlined, the current one filled.
-   - **Relationships from this character**: `relationship`, `role_toward` and `feels_toward` with this character as
-     subject, one lane per object and predicate.
+   - **State**: one lane per current fact of this character. Each of the character's own history entries is a bar
+     from its turn to the turn before the statement that closed it (`closed_turn`), or to the current turn while it
+     is `current`. Superseded and ended entries are drawn outlined, the current one filled.
+   - **Relationships from this character**: `relationship`, `role_toward`, `feels_toward` and `addresses` with this
+     character as subject, one lane per object and predicate.
    - **Threads** this character opened or that are addressed to them: a bar from the opening turn to the closing
      turn, or to now while open.
    - **Events** this character takes part in: dots on one lane, sized by salience.
@@ -52,8 +59,15 @@ narrow screen.
    get that `id` outside `embed` only.
    - Each bar's `title` gives its value, turn span and outcome.
    - In the browser, a short inline script shows the clicked bar's detail in a side column: value, span, outcome,
-     the lane's history, and the owner and canon marks. The details are rendered by the sidecar (escaped) next to
-     the bars, and the script only shows one of them.
+     the lane's history, and the owner and canon marks.
+   - **Page weight** (owner, 2026-10-06, for the iPhone, whose Safari reloads a tab under memory pressure). Only the
+     detail of the bar selected at load is rendered. The script builds any other detail from the clicked bar's data
+     attributes, as text and never as markup, and a lane's history is that lane's own bars.
+     - A first build pre-rendered a hidden detail for every bar, each with its lane's whole history, so it grew with
+       the square of a lane's versions.
+     - On the 240-turn gate copy, the largest character page went from 396 KB (the timeline 261 KB, 2,170 hidden
+       history lines) to 229 KB (94 KB).
+     - At phone width the timeline is 822 of the page's 5,698 elements.
 4. Two time windows, chosen with a query parameter that keeps the token and language: the whole chat (the default)
    and the last 25 turns (owner, 2026-10-05).
 5. The strings are Korean and English through the Inspector's existing `_t`. The page's own tokens work in light and
@@ -104,7 +118,9 @@ narrow screen.
    - the plugin asks for the timeline with a query flag;
    - the sanitizer keeps a bar's position only as numbers (a strict pattern, no free `style`);
    - the panel stylesheet gets the timeline from `palette.ts`;
-   - a tap shows a bar's detail under its lane.
+   - a tap shows a bar's detail under its lane;
+   - the panel asks for the timeline only when its section is opened, so a chat page in PocketRisu never holds it
+     unasked (the iPhone, as above).
 
    Tests:
    - an old plugin's request gets today's bytes;
@@ -124,8 +140,9 @@ narrow screen.
 2. The conversation page has the cast strip with the current scene first and the rest folded (tests).
 3. Without the plugin's flag, the `embed` output of both pages is byte-identical to before (test). With it, the
    panel shows the timeline, and the sanitizer passes only numeric positions (plugin tests).
-4. No change outside the Inspector's rendering, its two routes' query parameters and the plugin's Inspector view.
-   The packet, recall and extraction tests pass unchanged. The browser page's only script is its inline detail
+4. No change outside the Inspector's rendering, its two routes' query parameters, the plugin's Inspector view and
+   `facts.py`'s display-only `closed_turn` on history entries. The packet, recall and extraction tests pass
+   unchanged. The browser page's only script is its inline detail
    script, and the panel runs none from the sidecar.
 5. Every value reaches the page through the Inspector's escaping (test with markup in names and values).
 6. At 400 px wide the page does not scroll sideways: labels go above their tracks.
@@ -137,7 +154,7 @@ narrow screen.
 
 - A lane needs data that `view` does not hold (a new query, column or migration).
 - Any part needs an external script or library, or a change to the plugin beyond its Inspector view and sanitizer.
-- A test outside the Inspector changes.
+- A test outside the Inspector changes (the fold's `closed_turn` adds a field; it changes no outcome).
 
 ## Risk
 

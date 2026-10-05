@@ -325,8 +325,8 @@ wrong timing outside the declared scenes, the 227 class). Next: the owner's merg
 identity and provenance.
 
 **Phase 32 — Memory on a time axis: approved 2026-10-05 as an exception to R7.** Spec `docs/phases/PHASE-32.md` (AGE-39; not a roadmap stage, pulled in by name as Phase 23 was). The browser
-Inspector's character page draws that character's facts, relationships from them, threads and events as bars over
-turns, and the conversation page gets one line per character. Owner amendments: Q2 brings the panel in too (step 3,
+Inspector's character page draws that character's facts, relationships from them and threads as bars over turns, and
+their events as dots, and the conversation page gets one line per character. Owner amendments: Q2 brings the panel in too (step 3,
 high risk: a plugin change to its sanitizer, behind a flag), Q3 adds the mockup's detail column (a short inline script
 in the browser), and Q7 sets the recent window to 25 turns. Step 2 done (the browser Inspector, sidecar only: `timeline.py`, `tests/test_inspector_timeline.py`; the panel's bytes
 checked identical to `main`'s). Next: step 3 (the panel, high risk), then step 4 (timings and the owner's look).

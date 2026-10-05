@@ -8,7 +8,6 @@ The caller passes its translator `t` and draws this only outside the panel (`emb
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from html import escape
@@ -25,13 +24,24 @@ SALIENCE = {"major": "s-major", "minor": "s-minor"}
 
 T = Callable[[str], str]
 
-# The browser page's only script (PHASE-32 Q3): a bar shows its detail, rendered next to it by the sidecar, in the side
-# column. Without it a bar is a link to its fact's row.
-SCRIPT = ("<script>document.addEventListener('click',function(e){var a=e.target.closest('.tl [data-d]');if(!a)return;"
-          "e.preventDefault();var box=a.closest('.tl');box.querySelectorAll('.tl-card').forEach(function(c){"
-          "c.hidden=c.id!==a.dataset.d});box.querySelectorAll('[aria-pressed]').forEach(function(b){"
-          "b.setAttribute('aria-pressed','false')});a.setAttribute('aria-pressed','true')});</script>")
-
+# The browser page's only script (PHASE-32 Q3). One detail column, filled on a click from the clicked bar's data
+# attributes (as text, never markup); a lane's history is its own bars. Nothing is rendered twice, so the page grows
+# with the number of bars only. Without the script a bar is a link to its fact's row.
+SCRIPT = ("<script>document.addEventListener('click',function(e){var a=e.target.closest('.tl [data-v]');if(!a)return;"
+          "e.preventDefault();var tl=a.closest('.tl'),side=tl.querySelector('.tl-side'),c=document.createElement('div');"
+          "c.className='tl-card';function p(t,k){var x=document.createElement('p');x.textContent=t;if(k)x.className=k;"
+          "c.appendChild(x)}var lab=a.closest('.tl-row').querySelector('.tl-lab');p(a.dataset.k||lab.textContent,'muted');"
+          "p(a.dataset.v,'v');p(a.dataset.s+(a.dataset.o?' \u00b7 '+a.dataset.o:''));if(a.dataset.w)p(a.dataset.w,'muted');"
+          "if(a.classList.contains('canon'))p(side.dataset.canon,'muted');if(a.classList.contains('owner'))"
+          "p(side.dataset.owner,'warn');var bars=a.classList.contains('tl-bar')?a.parentNode.querySelectorAll('a.tl-bar'):[];"
+          "if(bars.length>1){var ol=document.createElement('ol');ol.className='tl-hist';bars.forEach(function(b){"
+          "var li=document.createElement('li'),m=document.createElement('span');if(b===a)li.className='cur';"
+          "m.className='muted';m.textContent=b.dataset.s+' ';li.appendChild(m);li.appendChild("
+          "document.createTextNode(b.dataset.v));ol.appendChild(li)});c.appendChild(ol)}var r=document.createElement('a'),"
+          "q=document.createElement('p');r.href=a.getAttribute('href');r.textContent=side.dataset.row;q.appendChild(r);"
+          "c.appendChild(q);var old=side.querySelector('.tl-card');if(old)old.replaceWith(c);else side.prepend(c);"
+          "tl.querySelectorAll('[aria-pressed=\"true\"]').forEach(function(b){b.setAttribute('aria-pressed','false')});"
+          "a.setAttribute('aria-pressed','true')});</script>")
 
 def _v(value: Any) -> str:
     return escape("" if value is None else str(value))
@@ -50,18 +60,28 @@ def _start(entry: dict[str, Any]) -> int | None:
     return entry.get("turn") if isinstance(entry.get("turn"), int) else None
 
 
-def segments(fact: dict[str, Any], now: int) -> list[dict[str, Any]]:
-    """A fact's history as spans of turns: each entry until the next one starts; the current one until now; a closed last
-    one on its own turn. Entries without a turn (legacy rows) are left out."""
-    history = [h for h in (fact.get("history") or [fact]) if _start(h) is not None]
+def own_entries(names: Iterable[str]) -> Callable[[dict[str, Any]], bool]:
+    """A lane draws only its character's entries: a pair's relationship history holds both directions, and an item's
+    history holds every holder and place (`facts.version_key`)."""
+    held = set(names)
+    return lambda h: norm(h.get("subject")) in held
+
+
+def segments(fact: dict[str, Any], now: int,
+             own: Callable[[dict[str, Any]], bool] | None = None) -> list[dict[str, Any]]:
+    """A fact's history as spans of turns: the current entry until now; a closed one until the turn before the
+    statement that closed it (`closed_turn`, which `facts.py` records), or on its own turn when that is unknown or the
+    same turn. `own` keeps the lane's own entries. Entries without a turn (legacy rows) are left out."""
+    history = [h for h in (fact.get("history") or [fact]) if _start(h) is not None and (own is None or own(h))]
     out = []
-    for i, h in enumerate(history):
+    for h in history:
         start = _start(h)
         outcome = h.get("outcome", "current" if h is fact else "superseded")
-        if i + 1 < len(history):
-            end = max(start, _start(history[i + 1]) - 1)
+        closed = h.get("closed_turn")
+        if outcome == "current":
+            end = max(start, now)
         else:
-            end = max(start, now) if outcome == "current" else start
+            end = closed - 1 if isinstance(closed, int) and closed > start else start
         out.append({"start": start, "end": end, "outcome": outcome, "canon": bool(h.get("canon")),
                     "negative": h.get("polarity") == "negative", "value": h.get("value") or h.get("object") or "",
                     "turn": h.get("turn")})
@@ -71,20 +91,20 @@ def segments(fact: dict[str, Any], now: int) -> list[dict[str, Any]]:
 
 
 class _Page:
-    """Bars and their detail cards for one timeline, numbered in order; the first current bar starts selected."""
+    """One timeline's scale; the first current bar starts selected, its detail rendered once (`card`)."""
 
     def __init__(self, t: T, lo: int, hi: int):
-        self.t, self.lo, self.hi, self.cards, self.picked = t, lo, hi, [], None
+        self.t, self.lo, self.hi, self.card = t, lo, hi, None
 
     def pct(self, turn: int) -> float:
         return round((turn - self.lo) / (self.hi - self.lo + 1) * 100, 3)
 
-    def card(self, body: str, selected: bool) -> str:
-        cid = f"tl-{len(self.cards)}"
-        if self.picked is None and selected:
-            self.picked = cid
-        self.cards.append((cid, body))
-        return cid
+    def select(self, current: bool, card: Callable[[], str]) -> bool:
+        """Whether this bar starts selected: the first current one. Only its detail is rendered here."""
+        if self.card is None and current:
+            self.card = card()
+            return True
+        return False
 
     def span_text(self, start: int, end: int, current: bool) -> str:
         return f"t{start} – {self.t('tl.now') if current else f't{end}'}"
@@ -94,31 +114,41 @@ def _outcome(t: T, outcome: str) -> str:
     return t(f"o.{outcome}")
 
 
+def _card(t: T, head: str, value: str, when: str, href: str, notes: list[tuple[str, str]] = (),
+          history: list[tuple[str, str, bool]] = ()) -> str:
+    """The detail the script would show for a bar, rendered once for the bar selected at load (the same parts)."""
+    out = f"<p class=\"muted\">{_v(head)}</p><p class=\"v\">{_v(value)}</p><p>{_v(when)}</p>"
+    out += "".join(f"<p class=\"{cls}\">{_v(text)}</p>" for cls, text in notes)
+    if len(history) > 1:
+        out += "<ol class=\"tl-hist\">" + "".join(
+            f"<li{' class=\"cur\"' if cur else ''}><span class=\"muted\">{_v(s)} </span>{_v(v)}</li>"
+            for s, v, cur in history) + "</ol>"
+    return f"<div class=\"tl-card\">{out}<p><a href=\"{href}\">{_v(t('tl.row'))}</a></p></div>"
+
+
+def _data(value: str, when: str, outcome: str, head: str | None = None, who: str | None = None) -> str:
+    return (f" data-v=\"{_v(value)}\" data-s=\"{_v(when)}\" data-o=\"{_v(outcome)}\""
+            + (f" data-k=\"{_v(head)}\"" if head else "") + (f" data-w=\"{_v(who)}\"" if who else ""))
+
+
 def _bars(p: _Page, lane: str, fact: dict[str, Any], segs: list[dict[str, Any]]) -> str:
-    out = []
-    history = "".join(f"<li{' class=\"cur\"' if s['outcome'] == 'current' else ''}><span class=\"muted\">"
-                      f"{p.span_text(s['start'], s['end'], s['outcome'] == 'current')}</span> {_value(p.t, s)}</li>"
-                      for s in segs)
-    for s in segs:
-        if s["end"] < p.lo:
-            continue
+    out, href = [], f"#a-{_v(fact['id'])}"
+    drawn = [s for s in segs if s["end"] >= p.lo]
+    whens = [p.span_text(s["start"], s["end"], s["outcome"] == "current") for s in drawn]
+    for s, when in zip(drawn, whens):
         a, cur = max(s["start"], p.lo), s["outcome"] == "current"
         left, width = p.pct(a), round(p.pct(s["end"] + 1) - p.pct(a), 3)
-        when = p.span_text(s["start"], s["end"], cur)
-        marks = (f"<p class=\"muted\">{_v(p.t('tl.canon'))}</p>" if s["canon"] else "") + \
-                (f"<p class=\"warn\">{_v(p.t('tl.owner'))}</p>" if s.get("owner") else "")
-        cid = p.card(f"<p class=\"muted\">{_v(lane)}</p><p class=\"v\">{_value(p.t, s)}</p>"
-                     f"<p>{_v(when)} · {_v(_outcome(p.t, s['outcome']))}</p>{marks}"
-                     + (f"<ol class=\"tl-hist\">{history}</ol>" if len(segs) > 1 else "")
-                     + f"<p><a href=\"#a-{_v(fact['id'])}\">{_v(p.t('tl.row'))}</a></p>", cur)
+        outcome = _outcome(p.t, s["outcome"])
+        notes = ([("muted", p.t("tl.canon"))] if s["canon"] else []) + ([("warn", p.t("tl.owner"))] if s.get("owner") else [])
+        picked = p.select(cur, lambda: _card(p.t, lane, _plain(p.t, s), f"{when} · {outcome}", href, notes,
+                                             [(w, _plain(p.t, x), x is s) for x, w in zip(drawn, whens)]))
         cls = "tl-bar" + ("" if cur else " past") + (" neg" if s["negative"] else "") + \
               (" canon" if s["canon"] else "") + (" owner" if s.get("owner") else "")
-        title = f"{lane}: {_plain(p.t, s)} · {when} · {_outcome(p.t, s['outcome'])}"
-        out.append(f"<a class=\"{cls}\" href=\"#a-{_v(fact['id'])}\" data-d=\"{cid}\" aria-pressed=\"{{{cid}}}\" "
-                   f"style=\"left:{left}%;width:calc({width}% - 2px)\" title=\"{_v(title)}\">"
+        out.append(f"<a class=\"{cls}\" href=\"{href}\"{_data(_plain(p.t, s), when, outcome)} "
+                   f"aria-pressed=\"{'true' if picked else 'false'}\" style=\"left:{left}%;width:calc({width}% - 2px)\" "
+                   f"title=\"{_v(f'{lane}: {_plain(p.t, s)} · {when} · {outcome}')}\">"
                    f"{_value(p.t, s) if width >= 8 else ''}</a>")
     return "".join(out)
-
 
 def _plain(t: T, s: dict[str, Any]) -> str:
     return f"{s['value']} ({t('w.not')})" if s["negative"] else str(s["value"])
@@ -166,18 +196,20 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
     def mine(f: dict[str, Any]) -> bool:
         return (f.get("subject_entity") or {}).get("id") == entity_id
 
-    def latest(f: dict[str, Any]) -> int:
-        return max((s["start"] for s in segments(f, hi)), default=-1)
+    own = own_entries(names)
 
-    own = [f for f in facts if mine(f) and f.get("predicate") not in ("event", "knows")]
-    state = sorted((f for f in own if f["predicate"] not in RELATIONS), key=latest, reverse=True)
-    rels = sorted((f for f in own if f["predicate"] in RELATIONS and f.get("object")),
+    def latest(f: dict[str, Any]) -> int:
+        return max((s["start"] for s in segments(f, hi, own)), default=-1)
+
+    theirs = [f for f in facts if mine(f) and f.get("predicate") not in ("event", "knows")]
+    state = sorted((f for f in theirs if f["predicate"] not in RELATIONS), key=latest, reverse=True)
+    rels = sorted((f for f in theirs if f["predicate"] in RELATIONS and f.get("object")),
                   key=lambda f: (f["object"], RELATIONS.index(f["predicate"])))
 
     def lanes(rows: list[dict[str, Any]], label: Callable[[dict[str, Any]], str]) -> tuple[list[str], int]:
         drawn = []
         for f in rows:
-            segs = [s for s in segments(f, hi) if s["end"] >= lo]
+            segs = [s for s in segments(f, hi, own) if s["end"] >= lo]
             if segs:
                 drawn.append((f, segs))
         return [_row(label(f), _bars(p, label(f), f, segs)) for f, segs in drawn[:LANES]], max(0, len(drawn) - LANES)
@@ -203,13 +235,10 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
         state_word = t(f"t.{th.get('status')}")
         lane = th.get("text") or t(f"k.{th.get('kind', 'promise')}")
         when = p.span_text(start, stop, current)
-        cid = p.card(f"<p class=\"muted\">{_v(t('tl.threads'))}</p><p class=\"v\">{_v(lane)}</p>"
-                     f"<p>{_v(when)} · {_v(state_word)}</p>"
-                     f"<p class=\"muted\">{_v(th.get('by') or '')}{' → ' + _v(th['to']) if th.get('to') else ''}</p>"
-                     f"<p><a href=\"#a-{_v(th['id'])}\">{_v(t('tl.row'))}</a></p>", False)
+        who = (th.get("by") or "") + (f" → {th['to']}" if th.get("to") else "")
         thread_rows.append(_row(lane, f"<a class=\"tl-bar{'' if current else ' past'}{' open' if current else ''}\" "
-                                      f"href=\"#a-{_v(th['id'])}\" data-d=\"{cid}\" aria-pressed=\"{{{cid}}}\" "
-                                      f"style=\"left:{left}%;width:calc({width}% - 2px)\" "
+                                      f"href=\"#a-{_v(th['id'])}\"{_data(lane, when, state_word, t('tl.threads'), who)} "
+                                      f"aria-pressed=\"false\" style=\"left:{left}%;width:calc({width}% - 2px)\" "
                                       f"title=\"{_v(f'{lane} · {when} · {state_word}')}\">"
                                       f"{_v(state_word) if width >= 8 else ''}</a>"))
 
@@ -221,11 +250,11 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
     dots = []
     for f in events[-DOTS:]:
         size = SALIENCE.get(f.get("salience") or "", "s-mid")
-        cid = p.card(f"<p class=\"muted\">{_v(t('tl.events'))}</p><p class=\"v\">{_v(f.get('value') or '')}</p>"
-                     f"<p>t{_v(f['turn'])}{' · ' + _v(t('s.' + f['salience'])) if f.get('salience') in SALIENCE else ''}"
-                     f"</p><p><a href=\"#a-{_v(f['id'])}\">{_v(t('tl.row'))}</a></p>", False)
-        title = f"t{f['turn']} · {f.get('value') or ''}"
-        dots.append(f"<a class=\"tl-dot {size}\" href=\"#a-{_v(f['id'])}\" data-d=\"{cid}\" aria-pressed=\"{{{cid}}}\" "
+        weight = t("s." + f["salience"]) if f.get("salience") in SALIENCE else ""
+        when = f"t{f['turn']}"
+        title = f"{when} · {f.get('value') or ''}"
+        dots.append(f"<a class=\"tl-dot {size}\" href=\"#a-{_v(f['id'])}\""
+                    f"{_data(f.get('value') or '', when, weight, t('tl.events'))} aria-pressed=\"false\" "
                     f"style=\"left:{p.pct(f['turn'])}%\" title=\"{_v(title)}\"></a>")
 
     groups = (_group(p, t("tl.state"), state_rows, state_more)
@@ -236,17 +265,14 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
                         max(0, len(events) - DOTS)) if dots else ""))
     if not groups:
         return f"<div class=\"tl\">{switch}<p class=\"muted\">{_v(t('tl.empty'))}</p></div>"
-    cards = "".join(f"<div class=\"tl-card\" id=\"{cid}\"{'' if cid == p.picked else ' hidden'}>{body}</div>"
-                    for cid, body in p.cards)
+    side = (f"<aside class=\"tl-side\" data-row=\"{_v(t('tl.row'))}\" data-canon=\"{_v(t('tl.canon'))}\" "
+            f"data-owner=\"{_v(t('tl.owner'))}\">{p.card or ''}<p class=\"muted tl-hint\">{_v(t('tl.hint'))}</p></aside>")
     html = (f"<div class=\"tl\">{switch}<div class=\"tl-grid\"><div class=\"tl-main\">{_axis(p)}{groups}</div>"
-            f"<aside class=\"tl-side\">{cards or ''}<p class=\"muted tl-hint\">{_v(t('tl.hint'))}</p></aside></div></div>")
-    # the first current bar starts selected; a value never forms a placeholder (its quotes are escaped)
-    html = re.sub(r'aria-pressed="\{(tl-\d+)\}"',
-                  lambda m: f'aria-pressed="{"true" if m.group(1) == p.picked else "false"}"', html)
+            f"{side}</div></div>")
     return html + SCRIPT
 
 
-def changes(entity_id: str, facts: list[dict[str, Any]], now: int) -> list[int]:
+def changes(entity_id: str, facts: list[dict[str, Any]], now: int, names: Iterable[str] = ()) -> list[int]:
     """The turns a character's memory changed: every history entry of their facts starts one, a closed last entry ends
     one, and every event they take part in."""
     turns: set[int] = set()
@@ -259,7 +285,7 @@ def changes(entity_id: str, facts: list[dict[str, Any]], now: int) -> list[int]:
             continue
         if not subject or f.get("predicate") == "knows":
             continue
-        segs = segments(f, now)
+        segs = segments(f, now, own_entries(names) if names else None)
         for s in segs:
             if not s["canon"]:
                 turns.add(s["start"])
@@ -293,7 +319,7 @@ def cast(t: T, entities: list[dict[str, Any]], facts: list[dict[str, Any]], scen
     mine = by_character(facts)
 
     def line(e: dict[str, Any]) -> str:
-        turns = changes(e["id"], mine.get(e["id"], []), hi)
+        turns = changes(e["id"], mine.get(e["id"], []), hi, {norm(n) for n in e.get("names") or [e["name"]]})
         last = turns[-1] if turns else None
         shown = [x for x in turns if x >= lo][-TICKS:]
         ticks = "".join(f"<i class=\"tl-tick\" style=\"left:{p.pct(x)}%\"></i>" for x in shown)

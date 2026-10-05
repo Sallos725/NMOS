@@ -200,10 +200,12 @@ def _pair_versions(history: list[dict[str, Any]], r: Resolution | None = None) -
     slots: dict[str, dict[str, Any] | None] = {}  # direction (the subject's key) -> its current row
     negatives: dict[tuple, dict[str, Any]] = {}
     outcome: dict[int, str] = {}
+    closer: dict[int, dict[str, Any]] = {}  # id() of a closed row -> the statement that closed it (PHASE-32)
 
-    def close(row: dict[str, Any] | None, how: str) -> None:
-        if row is not None:
-            outcome.setdefault(id(row), how)
+    def close(row: dict[str, Any] | None, how: str, by: dict[str, Any]) -> None:
+        if row is not None and id(row) not in outcome:
+            outcome[id(row)] = how
+            closer[id(row)] = by
 
     for a in history:
         d, v = _subject(a, r), _norm(a["value"])
@@ -214,32 +216,37 @@ def _pair_versions(history: list[dict[str, Any]], r: Resolution | None = None) -
             if target is None:
                 negatives[(d, v)] = a
                 continue
-            close(slots[target], "ended")
+            close(slots[target], "ended", a)
             slots[target] = a
             continue
         for key in [k for k in negatives if k[1] == v and (k[0] == d or symmetric(a["value"]))]:
-            close(negatives.pop(key), "superseded")
-        close(slots.get(d), "superseded")
+            close(negatives.pop(key), "superseded", a)
+        close(slots.get(d), "superseded", a)
         slots[d] = a
         for o, held in slots.items():
             if o != d and held is not None and (symmetric(a["value"]) or symmetric(held["value"])):
-                close(held, "superseded")
+                close(held, "superseded", a)
                 slots[o] = None
     current_rows = [s for s in slots.values() if s is not None] + list(negatives.values())
     for row in current_rows:
         outcome[id(row)] = "current"
-    entries = [_entry(h, outcome) for h in history]
+    entries = [_entry(h, outcome, closer) for h in history]
     return [{**row, "versions": len(history), "history": entries, "claims": []} for row in current_rows]
 
 
-def _entry(h: dict[str, Any], outcome: dict[int, str]) -> dict[str, Any]:
-    """One history entry of a fact version; a canon statement names its canon key (ADR 0047)."""
+def _entry(h: dict[str, Any], outcome: dict[int, str], closer: dict[int, dict[str, Any]] | None = None) -> dict[str, Any]:
+    """One history entry of a fact version; a canon statement names its canon key (ADR 0047). A closed entry carries
+    the turn of the statement that closed it (`closed_turn`, PHASE-32): in a pair's or an item's shared history the next
+    entry may belong to the other direction or holder, so it is not where this one ended. Display only."""
     out = {"position": h["position"], "turn": h["turn"], "predicate": h["predicate"], "subject": h["subject"],
            "value": h["value"], "object": h["object"], "polarity": h["polarity"],
            "outcome": outcome.get(id(h), "superseded"), "knowledge": h.get("knowledge"),
            "known_by": h.get("known_by"), "hidden_from": h.get("hidden_from")}
     if h.get("canon"):
         out["canon"] = h["canon"]
+    by = (closer or {}).get(id(h))
+    if by is not None and out["outcome"] != "current":
+        out["closed_turn"] = by["turn"] if by.get("turn") is not None else (0 if by.get("canon") else None)
     return out
 
 
@@ -312,10 +319,12 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
     negatives: dict[tuple, dict[str, Any]] = {}
     disputed_by: dict[str, Any] | None = None
     outcome: dict[int, str] = {}  # id() of a history row -> outcome, for rows that were closed
+    closer: dict[int, dict[str, Any]] = {}  # id() of a closed row -> the statement that closed it (PHASE-32)
 
-    def close(row: dict[str, Any] | None, how: str) -> None:
-        if row is not None:
-            outcome.setdefault(id(row), how)
+    def close(row: dict[str, Any] | None, how: str, by: dict[str, Any]) -> None:
+        if row is not None and id(row) not in outcome:
+            outcome[id(row)] = how
+            closer[id(row)] = by
 
     for a in history:
         slot = a["predicate"] if whereabouts(a) else ""
@@ -325,29 +334,29 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
             end = slots.get("destroyed")
             if end is not None and end["polarity"] == "positive" and _unit(end) != _unit(a):
                 disputed_by = end
-                close(end, "conflicting")
+                close(end, "conflicting", a)
         current = slots.get(slot)
         rel = relation(a, r)
         if a["polarity"] == "negative" and current is not None and relation(current, r) != rel:
             negatives[rel] = a
             continue
-        close(negatives.pop(rel, None), "superseded")
+        close(negatives.pop(rel, None), "superseded", a)
         if slot and a["polarity"] == "positive":
             for other, held in list(slots.items()):
                 if other != slot and held is not None and _unit(held) != _unit(a):
-                    close(held, "ended" if slot == "destroyed" else "superseded")
+                    close(held, "ended" if slot == "destroyed" else "superseded", a)
                     slots[other] = None
-        close(current, "ended" if a["polarity"] == "negative" else "superseded")
+        close(current, "ended" if a["polarity"] == "negative" else "superseded", a)
         slots[slot] = a
     ended = slots.get("destroyed")
     if ended is not None and ended["polarity"] == "positive":
-        close(slots.get("possesses"), "ended")
-        close(slots.get("located_in"), "ended")
+        close(slots.get("possesses"), "ended", ended)
+        close(slots.get("located_in"), "ended", ended)
         slots["possesses"] = slots["located_in"] = None
     current_rows = [s for s in slots.values() if s is not None] + list(negatives.values())
     for row in current_rows:
         outcome[id(row)] = "current"
-    entries = [_entry(h, outcome) for h in history]
+    entries = [_entry(h, outcome, closer) for h in history]
     out = []
     for fact in current_rows:
         f = dict(fact)

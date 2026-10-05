@@ -42,29 +42,55 @@ def view(facts: list[dict], threads: list[dict] | None = None, entities: list[di
 
 def bars(page: str) -> list[tuple[str, str, str]]:
     """(classes, left, width) of every bar, in order."""
-    return re.findall(r'<a class="(tl-bar[^"]*)" href="#a-[^"]+" data-d="tl-\d+" aria-pressed="(?:true|false)" '
+    return re.findall(r'<a class="(tl-bar[^"]*)" href="#a-[^"]+"[^>]*? aria-pressed="(?:true|false)" '
                       r'style="left:([\d.]+)%;width:calc\(([\d.]+)% - 2px\)"', page)
 
 
 def test_a_history_is_spans_of_turns():
-    f = fact(1, HANA, "located_in", [step(None, "old", "superseded"), step(2, "library", "superseded"),
+    f = fact(1, HANA, "located_in", [step(None, "old", "superseded"), step(2, "library", "superseded", closed_turn=7),
                                      step(7, "harbor", "current")])
     assert [(s["start"], s["end"], s["outcome"]) for s in timeline.segments(f, 10)] == \
         [(2, 6, "superseded"), (7, 10, "current")]  # a legacy entry without a turn is left out
-    canon = fact(2, HANA, "identity", [step(None, "squire", "superseded", canon="card"), step(5, "knight", "current")],
-                 owner=True)
+    canon = fact(2, HANA, "identity", [step(None, "squire", "superseded", canon="card", closed_turn=5),
+                                       step(5, "knight", "current")], owner=True)
     s = timeline.segments(canon, 9)
     assert (s[0]["start"], s[0]["end"], s[0]["canon"]) == (0, 4, True)  # canon sits before turn 0 (ADR 0047)
     assert s[1].get("owner") and not s[0].get("owner")  # only the current version carries the owner's mark
-    ended = fact(3, HANA, "has_status", [step(3, "wounded", "ended")])
+    ended = fact(3, HANA, "has_status", [step(3, "wounded", "ended")])  # closed, but by what is unknown
     assert [(x["start"], x["end"]) for x in timeline.segments(ended, 9)] == [(3, 3)]
     assert timeline.window(60, "recent") == (36, 60) and timeline.window(60, None) == (0, 60)
     assert timeline.window(None, None) == (0, 0)
 
 
+def rows(*specs: tuple) -> list[dict]:
+    """Assertion rows as the fold reads them: (position, turn, predicate, subject, object, value[, subject_type])."""
+    return [{"id": pos, "position": pos, "turn": turn, "predicate": pred, "subject": sub, "object": obj, "value": val,
+             "polarity": "positive", "subject_type": rest[0] if rest else "character", "object_type": None,
+             "knowledge": "public"} for pos, turn, pred, sub, obj, val, *rest in specs]
+
+
+def test_a_shared_history_is_drawn_per_direction_and_holder():
+    """facts.version_key keeps one history for a pair's relationship (both directions) and for an item (every holder):
+    a lane draws its own entries, each until the statement that closed it (`closed_turn`), not the next entry."""
+    from nmos_sidecar import facts
+
+    pair = facts._pair_versions(rows((1, 1, "relationship", "Hana", "Kaito", "admires"),
+                                     (2, 3, "relationship", "Kaito", "Hana", "resents"),
+                                     (3, 6, "relationship", "Hana", "Kaito", "pities")))
+    hana = next(f for f in pair if f["subject"] == "Hana")
+    assert hana["history"][0]["closed_turn"] == 6 and "closed_turn" not in hana["history"][2]
+    lane = timeline.segments(hana, 9, timeline.own_entries({"hana"}))
+    assert [(s["start"], s["end"], s["value"]) for s in lane] == [(1, 5, "admires"), (6, 9, "pities")]
+
+    book = facts._versions(rows((1, 2, "possesses", "Ian", "logbook", None), (2, 5, "possesses", "Doyun", "logbook", None)))
+    held = next(f for f in book if f["subject"] == "Doyun")
+    assert held["history"][0]["closed_turn"] == 5  # Ian held it until Doyun did
+    assert [(s["start"], s["end"]) for s in timeline.segments(held, 9, timeline.own_entries({"doyun"}))] == [(5, 9)]
+
+
 def test_the_character_page_draws_bars_that_link_to_their_rows():
-    located = fact(10, HANA, "located_in", [step(2, "library", "superseded"), step(7, "harbor", "current")],
-                   value="harbor", turn=7)
+    located = fact(10, HANA, "located_in", [step(2, "library", "superseded", closed_turn=7),
+                                            step(7, "harbor", "current")], value="harbor", turn=7)
     feels = fact(11, HANA, "feels_toward", [step(4, "wary", "current")], object="Kaito",
                  object_entity={"id": "e2", "name": "Kaito"}, value="wary", turn=4)
     event = fact(12, HANA, "event", None, value="the fire", turn=5, salience="major")
@@ -80,10 +106,11 @@ def test_the_character_page_draws_bars_that_link_to_their_rows():
     assert 'class="tl-bar open"' in page and 'href="#a-14"' in page and '<tr id="a-14">' in page  # the open thread
     assert 'class="tl-dot s-major"' in page and 'href="#a-12"' in page
     assert "the map is fake" not in page.split('id="s-timeline"')[1].split("</details>")[0]  # knows: its own table
-    # The first current bar starts selected, its detail shown; every other detail waits for a click.
-    body = page.split("<main>", 1)[1]  # the style names the selected state too
-    assert body.count('aria-pressed="true"') == 1 and len(re.findall(r'class="tl-card" id="tl-\d+">', body)) == 1
-    assert len(re.findall(r'class="tl-card" id="tl-\d+" hidden>', body)) == 4
+    # The first current bar starts selected with its detail rendered; every other detail is built on a click from the
+    # bar's own data, so nothing is rendered twice (an iPhone's memory, owner 2026-10-06).
+    body = page.split("<main>", 1)[1].replace(timeline.SCRIPT, "")  # the style and the script name it too
+    assert body.count('aria-pressed="true"') == 1 and body.count('class="tl-card"') == 1 and " hidden" not in body
+    assert 'data-v="harbor" data-s="t7 – now" data-o="current"' in page
     assert 'span=recent' in page  # the window switch
 
 
@@ -104,7 +131,7 @@ def test_values_are_escaped():
     assert "<i>cellar" not in page and "<b>Hana" not in page and "&lt;i&gt;cellar&lt;/i&gt;" in page
     # A value shaped like the selection placeholder stays text.
     sly = fact(11, ("e1", "Hana"), "goal", [step(1, 'x" aria-pressed="{tl-0}', "current")])
-    body = inspector.character(CONV, "e1", view([sly]), None, now=3).split("<main>", 1)[1]
+    body = inspector.character(CONV, "e1", view([sly]), None, now=3).split("<main>", 1)[1].replace(timeline.SCRIPT, "")
     assert body.count('aria-pressed="true"') == 1 and 'aria-pressed="{' not in body
 
 
@@ -115,8 +142,8 @@ def test_a_large_chat_is_capped_and_counted():
 
 
 def test_the_recent_window_draws_the_last_25_turns():
-    old = fact(10, HANA, "located_in", [step(3, "village", "superseded"), step(20, "city", "superseded"),
-                                        step(50, "port", "current")])
+    old = fact(10, HANA, "located_in", [step(3, "village", "superseded", closed_turn=20),
+                                        step(20, "city", "superseded", closed_turn=50), step(50, "port", "current")])
     page = inspector.character(CONV, "e1", view([old]), None, lang="en", now=60, span="recent")
     # The village (3–19) ended before turn 36; the city (20–49) reaches into the window from its left edge.
     assert [b[:2] for b in bars(page)] == [("tl-bar past", "0.0"), ("tl-bar", "56.0")]
