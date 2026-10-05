@@ -511,9 +511,9 @@ and reads a job's changed status; the embedded panel has no added form. The full
 `git diff --check` passes, and the diff-scoped self-review found no remaining issue. The native bundles were not
 rebuilt for this UI-only follow-up; the owner's checks above concern the bundles they already ran.
 
-**0.3.0 preparation (2026-10-03): draft, not released.** The [release preparation](releases/0.3.0-preparation.md)
-collects draft highlights, upgrade notes and final checks for NMO-7. NMO-24's Phase 28 gate and the final extractor
-decision still come first; versions and the CHANGELOG release entry are not finalized.
+**0.3.0 preparation (2026-10-03, superseded by the release below):** the [release preparation](releases/0.3.0-preparation.md)
+was first drafted while the Phase 28 gate and the final extractor were still open; it is now the record of how the
+release was checked.
 
 **Release `v0.3.0` (2026-10-05), the second milestone (`docs/ROADMAP-1.0.md`), at the owner's request.** Stage 6
 (verification and repair) complete, with the recall and extraction work since `v0.2.0` (Phase 14 step 6, Phases
