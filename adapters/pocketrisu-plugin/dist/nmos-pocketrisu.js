@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:a63ef4c9406b".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:a9ce9633fe35".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -540,6 +540,10 @@
     "emb.sub": [
       "\uB2E4\uB978 \uB9D0\uB85C \uBB3C\uC5B4\uB3C4 \uC608\uC804 \uC7A5\uBA74\uC744 \uCC3E\uC2B5\uB2C8\uB2E4. Ollama\uC758 qwen3-embedding:0.6b\uB97C \uCD94\uCC9C\uD569\uB2C8\uB2E4.",
       "Finds earlier scenes even when asked in other words. Ollama qwen3-embedding:0.6b is recommended."
+    ],
+    "emb.voyage_hint": [
+      "\uC758\uBBF8 \uC720\uC0AC\uB3C4 \uAE30\uC900\uC744 voyage-4-large\uC5D0\uC11C \uC7B0 \uAC12 0.3\uC73C\uB85C \uB9DE\uCDC4\uC2B5\uB2C8\uB2E4. \uACB0\uC81C \uC218\uB2E8\uC744 \uB4F1\uB85D\uD558\uC9C0 \uC54A\uC740 Voyage \uACC4\uC815\uC740 \uBD84\uB2F9 3\uD68C\uB85C \uC81C\uD55C\uB418\uC5B4, \uB300\uD654\uB97C \uC784\uBCA0\uB529\uD558\uAE30\uC5D0 \uBD80\uC871\uD569\uB2C8\uB2E4. Voyage\uB294 \uBAA8\uB378 \uBAA9\uB85D\uC744 \uC8FC\uC9C0 \uC54A\uC73C\uB2C8 \uB2E4\uB978 \uBAA8\uB378\uC740 \uC774\uB984\uC744 \uC9C1\uC811 \uC801\uC73C\uC138\uC694.",
+      "The vector min similarity is set to 0.3, the value measured for voyage-4-large. A Voyage account with no payment method is limited to 3 requests a minute, too few to embed a chat. Voyage lists no models, so type the name of another model yourself."
     ],
     "preset.off": ["\uC0AC\uC6A9 \uC548 \uD568", "Off"],
     "preset.ollama": ["Ollama (\uC774 PC)", "Ollama (this PC)"],
@@ -2124,8 +2128,9 @@ ${revisionHash}`;
   ];
   var EMBED_PRESETS = [
     { label: "preset.off", url: "" },
-    { label: "preset.ollama", url: "http://host.docker.internal:11434/v1", model: "qwen3-embedding:0.6b" },
+    { label: "preset.ollama", url: "http://host.docker.internal:11434/v1", model: "qwen3-embedding:0.6b", minSim: 0.42 },
     { label: "OpenAI", url: "https://api.openai.com/v1", model: "text-embedding-3-small" },
+    { label: "Voyage AI", url: "https://api.voyageai.com/v1", model: "voyage-4-large", minSim: 0.3, hint: "emb.voyage_hint" },
     { label: "preset.custom", url: "custom" }
   ];
   var PARSER_EXAMPLE = {
@@ -3272,7 +3277,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("p", { class: "sub", text: L("conn.hint") }),
       el("p", { class: "sub", text: L("conn.deadline_hint") })
     ));
-    function modelSection(kind, title, sub, presets) {
+    function modelSection(kind, title, sub, presets, onPreset) {
       const preset = el("select", {}, ...presets.map((p, i) => el("option", {
         value: String(i),
         text: p.label.includes(".") ? L(p.label) : p.label
@@ -3316,7 +3321,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (p.url !== "custom") endpoint.value = fillProject(p.url, key.value);
         if (p.model) model.value = p.model;
         if (!p.url) model.value = "";
-        say(msg, p.url.includes("{project}") ? L("model.vertex_hint") : "");
+        say(msg, p.hint ? L(p.hint) : p.url.includes("{project}") ? L("model.vertex_hint") : "");
+        onPreset?.(p);
         syncPickKey();
         update();
       });
@@ -3390,7 +3396,15 @@ html,body{margin:0;background:${PALETTE.bg}}
       };
     }
     const llm = modelSection("llm", "llm.title", "llm.sub", LLM_PRESETS);
-    const emb = modelSection("embeddings", "emb.title", "emb.sub", EMBED_PRESETS);
+    const emb = modelSection(
+      "embeddings",
+      "emb.title",
+      "emb.sub",
+      EMBED_PRESETS,
+      (p) => {
+        if (p.minSim !== void 0) minSim.value = String(p.minSim);
+      }
+    );
     const threshold = el("input", { type: "number", step: 0.05, min: 0.05, max: 1 });
     const minSim = el("input", { type: "number", step: 0.01, min: 0, max: 1 });
     const topK = el("input", { type: "number", min: 0, max: 20 });

@@ -247,6 +247,8 @@ const STRINGS = {
   'emb.title': ['의미 검색 임베딩', 'Semantic recall embeddings'],
   'emb.sub': ['다른 말로 물어도 예전 장면을 찾습니다. Ollama의 qwen3-embedding:0.6b를 추천합니다.',
     'Finds earlier scenes even when asked in other words. Ollama qwen3-embedding:0.6b is recommended.'],
+  'emb.voyage_hint': ['의미 유사도 기준을 voyage-4-large에서 잰 값 0.3으로 맞췄습니다. 결제 수단을 등록하지 않은 Voyage 계정은 분당 3회로 제한되어, 대화를 임베딩하기에 부족합니다. Voyage는 모델 목록을 주지 않으니 다른 모델은 이름을 직접 적으세요.',
+    'The vector min similarity is set to 0.3, the value measured for voyage-4-large. A Voyage account with no payment method is limited to 3 requests a minute, too few to embed a chat. Voyage lists no models, so type the name of another model yourself.'],
   'preset.off': ['사용 안 함', 'Off'],
   'preset.ollama': ['Ollama (이 PC)', 'Ollama (this PC)'],
   'preset.custom': ['직접 입력 (OpenAI 호환)', 'Custom (OpenAI-compatible)'],

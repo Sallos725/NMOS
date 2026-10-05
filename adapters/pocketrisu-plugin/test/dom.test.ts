@@ -242,6 +242,31 @@ describe('panel', () => {
     expect(reserved.value).toBe('8000');  // and shows what it stored (Phase 15 real-host smoke)
   });
 
+  it("fills an embedding preset's endpoint, model and its own similarity bar (AGE-40)", async () => {
+    const { d, calls } = deps();
+    await openPanel(d, 'settings');
+    const panel = document.getElementById('nmos-panel')!;
+    const pick = [...panel.querySelectorAll('select')].find((s) => [...s.options].some((o) => o.text === 'Voyage AI'))!;
+    const bar = panel.querySelector<HTMLInputElement>('input[type="number"][step="0.01"]')!;
+    const choose = (text: string) => {
+      pick.value = String([...pick.options].findIndex((o) => o.text === text));
+      pick.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    expect(bar.value).toBe('0.3');  // as saved
+    choose('Ollama (this PC)');
+    expect(bar.value).toBe('0.42');
+    choose('OpenAI');  // a preset nobody measured leaves the bar as it is
+    expect(bar.value).toBe('0.42');
+    choose('Voyage AI');
+    expect(bar.value).toBe('0.3');
+    expect(pick.closest('.card')!.querySelector('.msg')!.textContent).toContain('3 requests a minute');
+    choose('Ollama (this PC)');
+    (panel.querySelector('button.primary') as HTMLButtonElement).click();
+    await settle();
+    expect(calls.filter(([method]) => method === 'PUT').at(-1)![2]).toMatchObject({
+      embed_url: 'http://host.docker.internal:11434/v1', embed_model: 'qwen3-embedding:0.6b', vector_min_sim: 0.42 });
+  });
+
   it('exports everything from the settings, with embeddings when asked, and says what it saved (ADR 0050)', async () => {
     const { d, calls, args } = deps();
     await openPanel(d, 'settings');

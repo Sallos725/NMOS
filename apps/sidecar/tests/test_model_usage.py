@@ -85,6 +85,16 @@ def test_embedding_usage_is_input_tokens(monkeypatch):
     assert emb.embed(["a"], timeout_s=1) == [[0.1, 0.2]]
 
 
+def test_embedding_usage_reads_a_total_reported_alone(monkeypatch):
+    # Voyage's embeddings answer carries `total_tokens` and nothing else (AGE-40): an embedding has no output.
+    body = {"model": "voyage-4-large", "data": [{"index": 0, "embedding": [0.1, 0.2]}], "usage": {"total_tokens": 9}}
+    monkeypatch.setattr(llm.httpx, "post", lambda url, json, headers, timeout: httpx.Response(200, json=body))
+    usage = llm.Embedder("http://fake/v1", "voyage-4-large").embed_metered(["a"], timeout_s=1)[1]
+    assert usage["input"] == 9 and "output" not in usage and llm.reported(usage)
+    # a chat reply's total is input and output together: never read as input
+    assert "input" not in llm.usage_of({"usage": {"total_tokens": 9}}, 0.0)
+
+
 def usages(url: str, sql: str) -> list:
     with psycopg.connect(url, row_factory=dict_row) as conn:
         return [r["usage"] for r in conn.execute(sql).fetchall()]

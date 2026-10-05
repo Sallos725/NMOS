@@ -3,6 +3,17 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
+## Unreleased
+
+- **Voyage AI in the embedding presets, with its own similarity bar** (AGE-40; outside a phase, asked for by the
+  owner). Similarity scores differ by embedding model: on the M0 chats `voyage-4-large` matches `qwen3-embedding` only
+  with the vector bar at 0.3 (0.42 is qwen3's), so a preset measured with its own bar now sets "Vector min similarity"
+  when it is picked (Ollama 0.42, Voyage AI 0.3; OpenAI unmeasured, left as it is). `voyage-4-lite` did worse than no
+  vectors and is not offered; the contextual model needs another endpoint and gained nothing
+  (`docs/perf/embedders.md`). Picking Voyage says that an account with no payment method has 3 requests a minute, too
+  few to embed a chat. An embedding answer that reports `total_tokens` alone (Voyage's) is now counted as its input
+  tokens in the model-call usage. No migration, no new generation; the plugin build changes.
+
 ## 0.3.0
 
 The second milestone release (`docs/ROADMAP-1.0.md`): **Stage 6, verification and repair**, is complete (canon sources,
