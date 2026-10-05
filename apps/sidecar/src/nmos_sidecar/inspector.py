@@ -14,7 +14,7 @@ from .entities import norm
 from .predicates import REGISTRY
 from .repairs import default_outcome, outcomes
 from .facts import STANDING, earlier, first, participant_entities, symmetric
-from . import scene
+from . import scene, timeline
 from .retrieval import CAST_GOALS, cast_facts
 from .summaries import LAG, WINDOW
 
@@ -41,7 +41,7 @@ details>summary{cursor:pointer;list-style:none} details>summary::-webkit-details
 details>summary h2{display:inline-block} details>summary h2::before{content:"\\25B8  ";color:var(--muted)}
 details[open]>summary h2::before{content:"\\25BE  "}
 details.meta{margin:4px 0 0;font-size:12px} details.meta p{margin:4px 0}
-"""
+""" + timeline.STYLE
 
 LANGS = ("ko", "en")
 
@@ -182,6 +182,23 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
                  "This character cannot be found. Memory may have been rebuilt, or the name merged with another."),
     "who.empty": ("이 인물에 대해 추출된 내용이 아직 없습니다.", "Nothing has been extracted about this character yet."),
     "now": ("지금 상태 (<Cast>)", "Current state (<Cast>)"), "toc.now": ("지금 상태", "Current state"),
+    # PHASE-32: memory on a time axis
+    "timeline": ("시간축", "Over time"), "toc.timeline": ("시간축", "Over time"),
+    "people": ("등장인물 (시간축)", "Characters over time"), "toc.people": ("등장인물", "Characters"),
+    "tl.all": ("전체", "Whole chat"), "tl.recent": ("최근 {n}턴", "Last {n} turns"),
+    "tl.now": ("현재", "now"), "tl.now_at": ("현재 t{n}", "now t{n}"),
+    "tl.state": ("사실", "Facts"), "tl.relations": ("이 인물에게서 나가는 관계", "Relationships from them"),
+    "tl.threads": ("스레드", "Threads"), "tl.events": ("사건", "Events"), "tl.n_events": ("{n}건", "{n}"),
+    "tl.more": ("+{n}개는 아래 표에 있어요", "+{n} more in the tables below"),
+    "tl.row": ("아래 표에서 보기", "Show in the table below"),
+    "tl.canon": ("설정(canon)에서 시작한 값이에요. 이야기가 바꾸면 그쪽이 이겨요.",
+                 "Starts from the setting (canon); the story wins when it says otherwise."),
+    "tl.owner": ("오너가 고친 값이에요.", "The owner's version."),
+    "tl.hint": ("막대나 점을 누르면 여기에 자세히 나와요.", "Select a bar or a dot to see it here."),
+    "tl.empty": ("이 기간에 그릴 기억이 없어요.", "Nothing to draw in this window."),
+    "tl.cast_note": ("눈금은 그 인물의 기억이 바뀐 턴이에요. 이름을 누르면 그 인물의 시간축으로 가요.",
+                     "A tick is a turn where that character's memory changed. A name opens their timeline."),
+    "tl.others": ("다른 인물 {n}명", "{n} more characters"), "tl.no_cast": ("아직 인물이 없어요.", "No characters yet."),
     "cs.located_in": ("있는 곳", "Place"), "cs.has_status": ("상태", "Condition"),
     "cs.feels_toward": ("페르소나에 대한 감정", "Feeling toward the persona"), "cs.possesses": ("지닌 것", "Carries"),
     "cs.goal": ("열린 목표", "Open goal"), "h.aspect": ("항목", "Aspect"),
@@ -357,6 +374,28 @@ def query(token: str | None, lang: str) -> str:
     return ("?" + "&".join(parts)) if parts else ""
 
 
+def span_of(value: str | None) -> str | None:
+    """The time window a timeline draws (PHASE-32 Q7): `recent`, or the whole chat."""
+    return "recent" if value == "recent" else None
+
+
+def _with_span(q: str, span: str | None) -> str:
+    return q if span is None else (q + "&" if q else "?") + f"span={span}"
+
+
+def _tl_t(lang: str):
+    """The timeline's translator: a stored value without a string of its own shows as itself."""
+    return lambda key: _t(lang, key) if key in T else key.split(".", 1)[-1]
+
+
+def _tl_switch(path: str, q: str, span: str | None, lang: str) -> str:
+    """The two time windows (PHASE-32 Q7) as links that keep the token and the language."""
+    choices = ((None, _t(lang, "tl.all")), ("recent", _t(lang, "tl.recent").format(n=timeline.RECENT)))
+    links = [f"<b>{_v(name)}</b>" if value == span else f"<a href=\"{path}{_with_span(q, value)}\">{_v(name)}</a>"
+             for value, name in choices]
+    return f"<p class=\"tl-switch\">{' · '.join(links)}</p>"
+
+
 def _t(lang: str, key: str) -> str:
     return T[key][0 if lang == "ko" else 1]
 
@@ -380,9 +419,12 @@ def _facts_kept(timings: dict[str, Any], lang: str = "en") -> str | None:
     return kept + (f" ({_t(lang, 'fits_at').format(n=timings['fits_at'])})" if timings.get("fits_at") else "")
 
 
-def table(headers: list[str], rows: Iterable[list[str]]) -> str:
+def table(headers: list[str], rows: Iterable[list[str]], ids: Iterable[str] | None = None) -> str:
+    """A table; `ids` give its rows an anchor (`id`), outside the panel only (PHASE-32)."""
     head = "".join(f"<th>{escape(h)}</th>" for h in headers)
-    body = "".join("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows)
+    rows = list(rows)
+    marks = [f" id=\"{_v(i)}\"" for i in ids] if ids is not None else [""] * len(rows)
+    body = "".join(f"<tr{mark}>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row, mark in zip(rows, marks))
     return f"<div class=\"wrap\"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
 
 
@@ -759,7 +801,7 @@ def _summaries_section(view: dict[str, Any], lang: str, gen: dict[str, Any] | No
                          _v((x["summary"] or {}).get("text") or "")] for x in reversed(view["scenes"])][:200])
 
 
-def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> str:
+def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str, anchors: bool = False) -> str:
     t = lambda k: _t(lang, k)
     # A fact whose turn the active generation has not compiled yet comes from an older one (ADR 0014).
     older = f" <span class=\"chip\">{t('older_gen')}</span>"
@@ -782,7 +824,7 @@ def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> 
           + (f" <span class=\"chip\">{t('legacy')}</span>" if f.get("source") is None else "")
           + _salience(f, lang),
           _v(f.get("versions", 1))]
-         for f in facts])
+         for f in facts], ids=[f"a-{f['id']}" for f in facts] if anchors else None)
 
 
 def _salience(f: dict[str, Any], lang: str) -> str:
@@ -794,7 +836,7 @@ def _salience(f: dict[str, Any], lang: str) -> str:
     return " " + chip(lang, "s", f["salience"])
 
 
-def _threads_table(threads: list[dict[str, Any]], lang: str) -> str:
+def _threads_table(threads: list[dict[str, Any]], lang: str, anchors: bool = False) -> str:
     """Threads with their status and what closed them (PHASE-7, ADR 0019; PHASE-11, ADR 0039), newest first."""
     def closed(t: dict[str, Any]) -> str:
         c = t.get("closed_by")
@@ -817,7 +859,7 @@ def _threads_table(threads: list[dict[str, Any]], lang: str) -> str:
                       else _act("thread_reopen", t["id"]) if not (t.get("closed_by") or {}).get("owner") else ""),
                    closed(t), _v(", ".join(str(r["turn"] if r.get("turn") is not None else r["position"])
                                           for r in t.get("restated") or []))]
-                  for t in threads[:100]])
+                  for t in threads[:100]], ids=[f"a-{t['id']}" for t in threads[:100]] if anchors else None)
 
 
 def _unmatched_table(unmatched: list[dict[str, Any]], lang: str) -> str:
@@ -1102,7 +1144,10 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            canon_history: dict[str, dict[str, Any]] | None = None,
            canon_held: dict[str, dict[str, Any]] | None = None, canon_read: dict[str, dict[str, Any]] | None = None,
            canon_facts: int = 0, dropped: list[dict[str, Any]] | None = None,
-           endings: dict[str, list[dict[str, Any]]] | None = None) -> str:
+           endings: dict[str, list[dict[str, Any]]] | None = None, cast: dict[str, Any] | None = None,
+           span: str | None = None) -> str:
+    """One conversation. `cast` (the full memory view's facts and entities, and the current scene's character keys)
+    draws a line per character over the turns (PHASE-32), outside the panel only."""
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -1123,6 +1168,10 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
                                            for s in state])
          if state else f"<p class=\"muted\">{t('no_state')}</p>{_no_state_example(lang)}", True),
         ("coverage", t("coverage"), None, _coverage_section(coverage or {}, lang), True)]
+    if cast is not None and not embed:
+        parts.insert(1, ("people", t("people"), None, timeline.cast(
+            _tl_t(lang), cast["entities"], cast["facts"], cast.get("scene") or [], last_turn, span,
+            lambda eid: f"{path}/e/{eid}{_with_span(q, span)}", _tl_switch(path, q, span, lang)), True))
     if (coverage or {}).get("usage") is not None:
         parts.append(("usage", t("us.title"), None, _usage_section(coverage["usage"], lang), False))
     if conflicts:
@@ -1249,7 +1298,8 @@ def _cast_state(view: dict[str, Any], entity_id: str, r: Any, lang: str) -> str:
 
 
 def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[str, Any]]], token: str | None,
-              active: str | None = None, lang: str = "ko", embed: bool = False) -> str:
+              active: str | None = None, lang: str = "ko", embed: bool = False, now: int | None = None,
+              span: str | None = None) -> str:
     """One character's side of the conversation: what is true of them, what they hold, know and claim.
 
     Read-only regrouping of the same memory view as the detail page; it changes nothing the packet uses.
@@ -1303,24 +1353,29 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
         [t("h.type"), t("h.names"), t("h.mentions"), t("h.alias_turns"), t("h.owner_links")],
         [[chip(lang, "e", entity["type"]), _v(" · ".join(entity["names"])), _v(entity["mentions"]),
           _v(", ".join(str(a["turn"]) for a in entity["aliases"])), _owner_links(entity)]]), True)]
+    if not embed and entity["type"] == "character":  # PHASE-32: the panel's sanitizer drops `style`
+        parts.append(("timeline", t("timeline"), None, timeline.character(
+            _tl_t(lang), entity_id, facts, view.get("threads", []), names, now, span,
+            _tl_switch(f"{conv_path}/e/{entity_id}", q, span, lang)), True))
     if (r := view.get("resolution")) is not None and entity["type"] == "character" \
             and entity_id != scene.key(r, scene.PERSONA):
         parts.append(("now", _v(t("now")), None, _cast_state(view, entity_id, r, lang), True))
     if conflicts:
         parts.append(("conflicts", t("conflicts"), len(conflicts), _conflicts_table(conflicts, lang), True))
     if threads:
-        parts.append(("threads", t("threads"), len(threads), _threads_table(threads, lang), True))
+        parts.append(("threads", t("threads"), len(threads), _threads_table(threads, lang, anchors=not embed), True))
     if mine_pairs := [p for p in pairs(facts) if entity_id in p["ids"]]:
         parts.append(("pairs", t("pairs"), len(mine_pairs), _pairs_table(mine_pairs, lang), True))
     if held:
         parts.append(("held", t("held"), len(held), table(
             [t("h.item"), t("h.turn"), t("h.timeline")],
-            [[_v(f["object"]), _turn(f), " → ".join(_step(h, lang) for h in f.get("history") or [])] for f in held]),
-            True))
+            [[_v(f["object"]), _turn(f), " → ".join(_step(h, lang) for h in f.get("history") or [])] for f in held],
+            ids=None if embed else [f"a-{f['id']}" for f in held]), True))
     if about:
-        parts.append(("about", t("about"), len(about), _facts_table(about, active, lang), True))
+        parts.append(("about", t("about"), len(about), _facts_table(about, active, lang, anchors=not embed), True))
     if takes_part:
-        parts.append(("takes_part", t("takes_part"), len(takes_part), _facts_table(takes_part, active, lang), True))
+        parts.append(("takes_part", t("takes_part"), len(takes_part),
+                      _facts_table(takes_part, active, lang, anchors=not embed), True))
     if knows:
         parts.append(("knows", t("knows"), len(knows), knowledge(knows), True))
     if hidden:

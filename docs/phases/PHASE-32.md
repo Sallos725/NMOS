@@ -76,7 +76,7 @@ narrow screen.
 | Q1 | Where does it appear? | **Above the tables of the character page, and as a cast strip on the conversation page.** The character page is already the one-person view. | A separate `/timeline` page. |
 | Q2 | The panel (`embed`)? | **Amended by the owner: drawn too, in step 3.** It is drawn only when the plugin asks for it (a query flag a new plugin sends). Without the flag the embed output stays byte-identical to today's. The plugin passes bar positions only as numbers. | Not drawn (the first proposal). |
 | Q3 | How does a bar show its detail? | **Amended by the owner: as in the mockup, a detail column.** In the browser a short inline script shows it; with no script the bar is a link to its fact's row (`#a-<fact id>`, `:target`). In the panel the plugin shows the detail on a tap. | Links only, no script (the first proposal). |
-| Q4 | Which state lanes? | **Every current fact with this character as subject from `facts.py`'s fold**, one lane per fact (its history is the lane). Standing facts come first, then the rest, newest first. Left out: events (their own lane), relationships (Q5) and `knows` (the page's "What they know" table already lists it). | Only standing predicates. |
+| Q4 | Which state lanes? | **Every current fact with this character as subject from `facts.py`'s fold**, one lane per fact (its history is the lane), the most recently changed first. Left out: events (their own lane), relationships (Q5) and `knows` (the page's "What they know" table already lists it). | Only standing predicates. |
 | Q5 | Which relationships? | **Only those going from this character** (subject = character): `relationship`, `role_toward`, `feels_toward` and `addresses` (speech level). Relationships toward the character stay in the existing Pairs table. | Both directions. |
 | Q6 | How is the cast strip ordered, and what folds? | **The current scene's cast first (`scene.py`), then every other character under "N more" in a `<details>`**, each line linking to its character page. | Every character open, by mention count. |
 | Q7 | Time windows? | **Amended by the owner: the whole chat, and the last 25 turns** (`?span=recent`). | The last 50 turns (the first proposal); any range from the query. |
@@ -87,8 +87,8 @@ narrow screen.
 ## Steps
 
 1. This spec, with the owner's answers (approved 2026-10-05).
-2. **Implementation** (one PR): `inspector.py` (timeline and cast strip), strings, styles, and tests in
-   `tests/test_inspector.py`. The tests cover:
+2. **Implementation**: `timeline.py` (the rendering), wired into `inspector.py` (strings, styles, row anchors) and
+   the two Inspector routes (`span`), with tests in `tests/test_inspector_timeline.py`. The tests cover:
    - bars from synthetic history (spans, outcomes, canon at 0, the owner's current version);
    - the caps and their counts;
    - links and anchors;
