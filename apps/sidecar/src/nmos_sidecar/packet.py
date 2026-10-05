@@ -213,7 +213,7 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
 # keywords. Measured on the PHASE-28 live gate's packets (docs/perf/phase28-live-gate-9947d2c.md).
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
             "packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12")
-DEFAULT_POLICY = "packet-v11"
+DEFAULT_POLICY = "packet-v12"
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
              "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2,
              "packet-v11": 1.2, "packet-v12": 1.2}  # estimated tokens per non-ASCII char

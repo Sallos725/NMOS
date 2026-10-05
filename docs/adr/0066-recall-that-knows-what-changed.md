@@ -1,8 +1,9 @@
 # 0066 — Recall that knows what changed (`packet-v12`)
 
 Status: accepted, 2026-10-05 (`docs/phases/PHASE-31.md` Q1–Q4, approved by the owner; AGE-24). Adds the policy
-`packet-v12` behind `NMOS_PACKET_POLICY`; **the default stays `packet-v11`** until step 3's measurement and the owner's
-decision. No prompt, generation key, stored row or migration changes.
+`packet-v12`; **the default since 2026-10-05** (owner, on the second reduced live gate: S3 6/6, S2 full history 23,
+S1 turn 240 23; `docs/perf/phase31-live-gate.md`). `NMOS_PACKET_POLICY=packet-v11` keeps the previous packet. No
+prompt, generation key, stored row or migration changes.
 
 ## Context
 

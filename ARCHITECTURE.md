@@ -642,8 +642,8 @@ selected facts by reused spans; the standing facts and places the question names
 "where" question, a quoted form of address for a "what is … called" question; not a fact whose old value the question
 names), an ended role leaves the facts unless no fact about the same two is current and the question names both, and the
 excerpt's anchor breaks a tie on the question's one-character words. A question with a history cue (`HISTORY_CUE`:
-`FIRST_CUE` plus 전에, 이전, 첫날, before, used to, previously) keeps the old excerpts and the ended roles. Behind
-`NMOS_PACKET_POLICY`; the default stays `packet-v11` until the owner decides on the measurement.
+`FIRST_CUE` plus 전에, 이전, 첫날, before, used to, previously) keeps the old excerpts and the ended roles. The default
+since 2026-10-05 (owner, on the second reduced live gate); `NMOS_PACKET_POLICY=packet-v11` keeps the previous packet.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
