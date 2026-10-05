@@ -881,6 +881,14 @@ search of unverifiable beta.3 vectors (#17), immediate provider disable (#18), s
 (#19), one NMOS panel (status/settings tabs, chat-menu entry, Korean/English), Inspector labels.
 Known issues (current list): `docs/KNOWN-ISSUES.md`.
 
+**Outside a phase, after 0.3.0 (AGE-40, asked for by the owner 2026-10-05):** embedding models compared on the M0
+chats (`docs/perf/embedders.md`). `voyage-4-large` matches `qwen3-embedding` with the vector bar at 0.30
+(main 33 of 40, sample 2 10 of 15; qwen3 0.6b 33 and 9, no vectors 32 and 7), `voyage-4-lite` is worse than no
+vectors, the contextual model gains nothing; a query takes about 340 ms on a new connection, inside what a request
+allows since ADR 0061. The plugin's embedding presets gain Voyage AI, a measured preset sets its own bar, and an
+embedding's `total_tokens` reported alone counts as its input. Not measured: `voyage-4`, OpenAI's embedding model, a
+live request with Voyage, the settings panel on a real host.
+
 ## What exists
 
 | Part | Where | State |

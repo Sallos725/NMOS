@@ -205,7 +205,7 @@ class Embedder:
         return self.embed_metered(texts, timeout_s)[0]
 
     def embed_metered(self, texts: list[str], timeout_s: float) -> tuple[list[list[float]], dict[str, Any]]:
-        """`embed` and the call's usage (`usage_of`; an embedding reports input tokens only)."""
+        """`embed` and the call's usage (`usage_of`; an embedding reports input tokens only, some as the total)."""
         started = time.monotonic()
         try:
             res = httpx.post(f"{self.url}/embeddings", json={"model": self.model, "input": texts},
@@ -217,6 +217,11 @@ class Embedder:
         try:
             reply = res.json()
             data = sorted(reply["data"], key=lambda d: d.get("index", 0))
-            return [list(map(float, d["embedding"])) for d in data], usage_of(reply, started)
+            usage = usage_of(reply, started)
+            # An embedding has no output, so a provider that reports `total_tokens` alone (Voyage) reported its input.
+            if "input" not in usage and isinstance(reply.get("usage"), dict):
+                if (total := _count(reply["usage"].get("total_tokens"))) is not None:
+                    usage["input"] = total
+            return [list(map(float, d["embedding"])) for d in data], usage
         except (KeyError, ValueError, TypeError) as exc:
             raise LLMError(f"unexpected embedding response: {exc}") from exc
