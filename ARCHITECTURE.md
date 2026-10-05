@@ -640,7 +640,7 @@ Every generation; no prompt, generation key or migration changes.
 older than a selected fact's current version that repeats a value the fact replaced (and not the current one) is left
 out, an ended role leaves the facts unless no fact about the same two is current and the question names both, and the
 excerpt's anchor breaks a tie on the question's one-character words. A question with a history cue (`HISTORY_CUE`:
-`FIRST_CUE` plus 전에, 이전, before, used to, previously) keeps the old excerpts and the ended roles. Behind
+`FIRST_CUE` plus 전에, 이전, 첫날, before, used to, previously) keeps the old excerpts and the ended roles. Behind
 `NMOS_PACKET_POLICY`; the default stays `packet-v11` until the owner decides on the measurement.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only

@@ -25,12 +25,13 @@ from test_packet_ledger import db, extract
 
 @pytest.mark.parametrize("message", ["전에 어디 살았지?", "이전에 뭐라고 불렀어?", "예전에 살던 집", "원래 어디 있었어?",
                                      "처음에 뭐 했지?", "Where did she live before?", "What name was he used to calling her?",
-                                     "Where was it previously?", "Who had it at first?"])
+                                     "Where was it previously?", "Who had it at first?", "윤슬포 첫날 저녁에 뭐 먹었지?",
+                                     "첫 날 어디서 잤어?"])
 def test_the_history_cue(message):
     assert HISTORY_CUE.search(message)
 
 
-@pytest.mark.parametrize("message", ["지금 어디 살아?", "하람이는 지금 어디 있어?", "요즘 뭐 해?", "Where does she live now?",
+@pytest.mark.parametrize("message", ["지금 어디 살아?", "첫눈 왔다", "하람이는 지금 어디 있어?", "요즘 뭐 해?", "Where does she live now?",
                                      "beforehand, hi"])
 def test_not_the_history_cue(message):
     assert not HISTORY_CUE.search(message)

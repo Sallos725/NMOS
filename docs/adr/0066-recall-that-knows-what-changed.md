@@ -29,7 +29,7 @@ Under `packet-v12` (`packet.CHANGE_POLICIES`), in `retrieval.gather`:
 3. **The excerpt's anchor breaks a tie on the question's one-character words** (Q3, first part). After the keyword
    count, the number of the question's one-character words (any script but a lone Latin letter) a sentence holds is
    the second key, before the trigram tie-break. A one-character word never outranks a keyword.
-4. **A history cue keeps the past** (Q4). `facts.HISTORY_CUE` is `FIRST_CUE` (ADR 0056) plus 전에, 이전, "before",
+4. **A history cue keeps the past** (Q4). `facts.HISTORY_CUE` is `FIRST_CUE` (ADR 0056) plus 전에, 이전, 첫날, "before",
    "used to" and "previously". A question with it keeps items 1 and 2's excerpts and roles; item 3 applies either way.
 
 Q3's second part (earlier holders counted as mentions and printed) is measured after the first and added only if
