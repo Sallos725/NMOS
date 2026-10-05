@@ -287,27 +287,46 @@ def _apply(conn: psycopg.Connection, settings: dict[str, str]) -> None:
                  [x for kv in settings.items() for x in kv])
 
 
+# The active head revisions a word or message matches (`<%`), at most `limit` (`_lexical_matches`). The matches are
+# found through the trigram index first (`hit`, materialized), then kept if they are on the head: planned from the
+# membership instead, the lookup checks every head message with word_similarity (40 ms instead of 5 at 146 messages,
+# linear in the chat), and the planner chose that whenever its statistics did not hold the head yet — after every sync
+# until the next autoanalyze, since each sync makes a new head commit. `hit` has no other condition (the normalizer is
+# checked after it), so the trigram index is its only way in with sequential scans off: given the normalizer, the
+# planner could scan every revision through the primary key and check each with word_similarity instead.
+_MATCHES = """
+    WITH hit AS MATERIALIZED (
+        SELECT source_revision_id, normalizer FROM revision_text WHERE %(q)s <%% clean_content
+    )
+    SELECT sr.id
+    FROM hit
+    JOIN active_membership am ON am.source_revision_id = hit.source_revision_id
+    JOIN source_revision sr ON sr.id = am.source_revision_id
+    WHERE am.commit_id = %(head)s
+      AND sr.lifecycle = 'accepted'
+      AND am.position > %(cut)s AND am.position <= %(upto)s
+      AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+      AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
+      AND hit.normalizer = %(norm)s
+    LIMIT %(limit)s
+    """
+
+
+def _matches_params(head: UUID, query: str, cut: int, limit: int, upto: int | None = None) -> dict[str, Any]:
+    return {"head": head, "q": query, "cut": cut, "limit": limit, "norm": NORMALIZER_VERSION,
+            "upto": 2**31 - 1 if upto is None else upto}
+
+
 def _lexical_matches(conn: psycopg.Connection, head: UUID, query: str, cut: int, limit: int,
                      upto: int | None = None) -> list[UUID]:
-    """Active head revisions the query matches (`<%`), at most `limit`: the statement stops there, so a
-    broad query costs about `limit` similarity checks instead of one per message."""
-    return [r["id"] for r in conn.execute(
-        """
-        SELECT sr.id
-        FROM active_membership am
-        JOIN source_revision sr ON sr.id = am.source_revision_id
-        JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
-        WHERE am.commit_id = %(head)s
-          AND sr.lifecycle = 'accepted'
-          AND am.position > %(cut)s AND am.position <= %(upto)s
-          AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
-          AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
-          AND %(q)s <%% rt.clean_content
-        LIMIT %(limit)s
-        """,
-        {"head": head, "q": query, "cut": cut, "limit": limit, "norm": NORMALIZER_VERSION,
-         "upto": 2**31 - 1 if upto is None else upto},
-    ).fetchall()]
+    """Active head revisions the query matches (`<%`), at most `limit`: the statement stops there, after checking the
+    trigram index's candidates up to that many head matches (candidates of other chats and earlier revisions are checked
+    too, then left out), so a broad query is dropped by its slice or the timeout. Never prepared on the server: after
+    five runs Postgres may plan a prepared statement without its parameters, and without the word it cannot tell that
+    the trigram index is the narrow way in. Either slow plan took a keyword past its slice, which dropped it as if it
+    were too common, and a replay could find what its request had not (ADR 0027)."""
+    return [r["id"] for r in conn.execute(_MATCHES, _matches_params(head, query, cut, limit, upto),
+                                          prepare=False).fetchall()]
 
 
 def _lexical_candidates(conn: psycopg.Connection, head: UUID, ids: list[UUID], query: str,

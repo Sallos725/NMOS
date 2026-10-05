@@ -139,3 +139,55 @@ def test_with_facts_threads_and_summaries_off_the_scene_still_sets_the_secret_ba
         out = ask(c, chat, "Kaito, anything new?")  # only the keyword route finds the secret's message
     assert seen and any("kaito" in p for p in seen)  # the bar for a scene where Kaito is present
     assert not any("forged" in line for line in out["packet"]["text"].splitlines() if "<Excerpt" in line)
+
+
+def test_the_lexical_lookups_are_planned_with_their_words_every_time(client, migrated):
+    """psycopg prepares a statement on the server after five runs, and Postgres then plans it without its parameters
+    (a generic plan): for `<%` that plan walks every head message with word_similarity instead of asking the trigram
+    index, past a keyword's slice, so a long-lived connection dropped a word every ten or so lookups and a replay of one
+    request found 13 candidates or 3 depending on what the connection had run before. Never prepared, never generic."""
+    from nmos_sidecar import retrieval
+
+    chat = parrot_chat()
+    sync(client, chat)
+    with db(migrated) as conn:
+        head = conn.execute("SELECT head_commit_id FROM conversation").fetchone()["head_commit_id"]
+        cut = retrieval._cut(conn, head)
+        runs = [(retrieval._lexical(conn, head, "The parrot is named Pepper?", "", cut, 0.4, 300)[1],
+                 [r["id"] for r in retrieval._keyword_lexical(conn, head, ["parrot", "pepper"], cut, 300)[0]])
+                for _ in range(12)]
+        prepared = conn.execute("SELECT generic_plans FROM pg_prepared_statements"
+                                " WHERE strpos(statement, '<%') > 0").fetchall()
+    assert runs[0][0] == "on" and runs[0][1] and all(r == runs[0] for r in runs)
+    assert prepared == []
+
+
+def test_a_new_head_is_searched_through_the_trigram_index(client, migrated):
+    """Each sync makes a new head commit, which the planner's statistics on active_membership do not hold until the
+    next autoanalyze: it estimated the head at one row and planned the lookup from the membership, with word_similarity
+    on every head message, past a keyword's slice (live, most requests' keywords were dropped as too broad). The lookup
+    is planned from the trigram index whatever the statistics say."""
+    from nmos_sidecar import retrieval
+
+    chat = parrot_chat()
+    sync(client, chat)
+    with db(migrated) as conn:
+        conn.execute("ANALYZE active_membership")  # the statistics hold this head only
+    chat.reply("The parrot sleeps.")
+    sync(client, chat)  # a new head they do not know
+    with db(migrated) as conn:
+        head = conn.execute("SELECT head_commit_id FROM conversation").fetchone()["head_commit_id"]
+        with conn.transaction():
+            retrieval._apply(conn, {"pg_trgm.word_similarity_threshold": "0.8", "enable_seqscan": "off",
+                                    "enable_indexscan": "off"})  # as the keyword route runs it
+            plan = conn.execute("EXPLAIN (FORMAT JSON) " + retrieval._MATCHES,
+                                retrieval._matches_params(head, "parrot", retrieval._cut(conn, head), 201),
+                                prepare=False).fetchone()["QUERY PLAN"]
+        found = retrieval._lexical_matches(conn, head, "parrot", retrieval._cut(conn, head), 201)
+
+    def nodes(n):
+        yield n
+        for child in n.get("Plans", []):
+            yield from nodes(child)
+    assert any(n.get("Index Name") == "revision_text_trgm" for n in nodes(plan[0]["Plan"]))
+    assert len(found) == 1  # the parrot's first message: the newest reply is still provisional
