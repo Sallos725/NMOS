@@ -356,7 +356,7 @@ NMOS_LLM_MODEL=원하는-모델-이름
 | `NMOS_EMBED_TIMEOUT_MS` | `300` | 요청이 메시지 임베딩을 기다리는 시간. 넘으면 단어가 겹치는 기억만 찾습니다. 임베딩은 동기화가 들어올 때 바로 시작해 사실을 읽는 동안 돌고, 이 값은 그 뒤에 더 기다리는 시간입니다(ADR 0061, K34). 아래 [문제 해결](#문제-해결) 참고 |
 | `NMOS_EMBED_QUERY_INSTRUCTION` | `auto` | 지시문을 받는 임베딩 모델용 질의 지시문(`auto`는 `qwen3-embedding`이면 Qwen3 형식, `none`, 또는 직접 쓴 문구) |
 | `NMOS_TRACE_RETENTION_DAYS` | `30` | 검색 기록(패킷마다의 장부 포함)을 보관하는 날 수 |
-| `NMOS_PACKET_POLICY` | `packet-v11` | 기억 패킷 방식. `packet-v10`이면 Phase 27 이전 방식, 그 이전 값도 쓸 수 있음(README의 표 참고) |
+| `NMOS_PACKET_POLICY` | `packet-v12` | 기억 패킷 방식. `packet-v11`이면 0.3.0 이전 방식(바뀐 값·끝난 역할을 거르지 않음), `packet-v10`이면 Phase 27 이전 방식, 그 이전 값도 쓸 수 있음(README의 표 참고) |
 | `NMOS_AUTH_TOKEN` | 꺼짐 | 사이드카를 루프백 밖으로 열 때 필수. 플러그인의 `auth_token`도 같은 값으로. [보안 주의](#보안-주의) 참고 |
 | `NMOS_ALLOWED_HOSTS` | (비어 있음) | 토큰이 없을 때 IP 주소, `localhost`, `nmos` 같은 점 없는 이름 말고도 받을 도메인 이름. 예: `risu.example.com,*.ts.net`, `*`이면 확인 안 함 |
 | `NMOS_SIDECAR_BIND` / `NMOS_SIDECAR_PORT` | `127.0.0.1` / `8790` | 사이드카가 듣는 주소와 포트 |

@@ -1,6 +1,6 @@
 # NMOS Known Issues
 
-Current as of `v0.2.0` (2026-09-28). This is the single list of what does not work, or works
+Current as of `v0.3.0` (2026-10-05). This is the single list of what does not work, or works
 only partly, in the current release. Each release's "Known limitations" in `CHANGELOG.md` describes
 that release at the time; entries fixed later are listed under [Resolved](#resolved) below.
 
@@ -20,8 +20,8 @@ without a PocketRisu change.
 | K8 | A new name with no stated alias is a new entity, and a wrong alias joins two, until the owner joins or splits them | Memory | closed 2026-10-01 (owner decision): the owner joins (ADR 0025) and splits (ADR 0044, 0.2.0) in the panel; automatic detection not planned |
 | K9 | A destroyed or used-up item keeps its last holder in turns not extracted by `extract-v6` | Memory | fixed for new turns in beta.13 (ADR 0017); older turns: "extract all history" |
 | K11 | A secret is kept by instruction, not isolation: the model can still voice it | Memory | 0.2.0: Private section, strict and narrator modes (Phase 10); hard POV not planned |
-| K12 | A word in more than 200 messages brings no lexical excerpts | Recall | reduced on `main` (Phase 18, ADR 0052): each keyword is looked up alone and only a broad one is dropped |
-| K13 | Very long messages are only partly embedded and extracted | Recall | accepted limit (#13); the embedding cap is a setting on `main`, `NMOS_EMBED_MAX_CHUNKS` (default 8 chunks, 5,600 characters, as before; ADR 0062) |
+| K12 | A word in more than 200 messages brings no lexical excerpts | Recall | reduced in 0.3.0 (Phase 18, ADR 0052): each keyword is looked up alone and only a broad one is dropped |
+| K13 | Very long messages are only partly embedded and extracted | Recall | accepted limit (#13); the embedding cap is a setting since 0.3.0, `NMOS_EMBED_MAX_CHUNKS` (default 8 chunks, 5,600 characters, as before; ADR 0062) |
 | K14 | Rare over-injection into an auxiliary call; transformed input gets no memory | Gating | accepted (ADR 0001) |
 | K15 | Thresholds and extraction quality are checked on limited data | Quality | evaluation (A5 baseline) |
 | K16 | NMOS does not notice a chat deleted in PocketRisu | Data | host (H10) |
@@ -39,10 +39,10 @@ without a PocketRisu change.
 | K28 | Taking turns in one chat from two tabs or devices makes memory of the messages one of them lacks drop out and come back | Data | host (H10); not planned (audit A-13) |
 | K29 | A reveal in the turns first extracted together can be missed (narrowed by Phase 30) | Memory | "Extract all history" after connecting a chat with secrets (ADR 0033 amendment 2) |
 | K30 | A summary can say a secret in other words | Memory | since 0.2.0 (Phase 12, ADR 0042, 0043); summaries off for a chat where it matters |
-| K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases); on `main` a given name with a common family name, and a Hangul spelling of a romanized name (Phase 24, ADR 0058) |
+| K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases); since 0.3.0 a given name with a common family name, and a Hangul spelling of a romanized name (Phase 24, ADR 0058) |
 | K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | recorded, not scheduled (`docs/perf/m0-sample2.md`); canon did not change it; two rules measured in Phase 24, neither gained without a loss |
-| K33 | The packet stops at ≈2,000–3,000 tokens whatever the memory budget | Recall | resolved on `main` by `packet-v9` (Phase 15, ADR 0049): excerpts and facts grow with the budget up to 8,000 |
-| K34 | A request whose query embedding does not answer in 300 ms recalls without vectors | Recall | measured (Phase 15): 70 % of the owner's production requests; the Status tab says so since Phase 15, the progress display since Phase 17; reduced on `main` (ADR 0061): the embedding runs while recall reads, so it has the reads' time (≈100–300 ms) and the 300 ms after them |
+| K33 | The packet stops at ≈2,000–3,000 tokens whatever the memory budget | Recall | resolved in 0.3.0 by `packet-v9` (Phase 15, ADR 0049): excerpts and facts grow with the budget up to 8,000 |
+| K34 | A request whose query embedding does not answer in 300 ms recalls without vectors | Recall | measured (Phase 15): 70 % of the owner's production requests; the Status tab says so since Phase 15, the progress display since Phase 17; reduced in 0.3.0 (ADR 0061): the embedding runs while recall reads, so it has the reads' time (≈100–300 ms) and the 300 ms after them |
 | K35 | "The story so far" is written from every scene summary, with no cap on its input | Memory | recorded, not scheduled |
 | K36 | A chat whose large lorebook NMOS has read almost whole recalls more slowly | Performance | measured, accepted (Phase 14, owner 2026-09-29) |
 | K37 | A story that changes who someone is, against the card or a lorebook, is not flagged | Memory | by decision (ADR 0047 amendment 1); needs a model check |
@@ -50,8 +50,8 @@ without a PocketRisu change.
 | K39 | A grown excerpt can carry a value the story has since replaced | Recall | measured, accepted (Phase 18, owner 2026-09-30) |
 | K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | measured; a lower threshold found less, 0.8 kept (2026-09-30) |
 | K41 | Re-extracted with `extract-v14`, `deepseek-v4.1-flash` passed fewer M0 cases | Memory | measured, accepted (Phase 19, owner 2026-09-30) |
-| K42 | A standing fact's earlier versions are printed under the current version's knowledge marks | Memory | resolved on `main` (ADR 0038 amendment 1, 2026-10-01): a version kept from someone only under the same marks |
-| K43 | A question about what someone lent can miss the item once it has changed hands | Recall | resolved on `main` by `packet-v12` (Phase 31 Q3, ADR 0066, 2026-10-05): the excerpt's anchor breaks a tie on the question's one-character words; S3 6/6 live twice |
+| K42 | A standing fact's earlier versions are printed under the current version's knowledge marks | Memory | resolved in 0.3.0 (ADR 0038 amendment 1, 2026-10-01): a version kept from someone only under the same marks |
+| K43 | A question about what someone lent can miss the item once it has changed hands | Recall | resolved in 0.3.0 by `packet-v12` (Phase 31 Q3, ADR 0066, 2026-10-05): the excerpt's anchor breaks a tie on the question's one-character words; S3 6/6 live twice |
 
 ## Performance
 

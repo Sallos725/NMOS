@@ -511,6 +511,17 @@ and reads a job's changed status; the embedded panel has no added form. The full
 `git diff --check` passes, and the diff-scoped self-review found no remaining issue. The native bundles were not
 rebuilt for this UI-only follow-up; the owner's checks above concern the bundles they already ran.
 
+**0.3.0 preparation (2026-10-03, superseded by the release below):** the [release preparation](releases/0.3.0-preparation.md)
+was first drafted while the Phase 28 gate and the final extractor were still open; it is now the record of how the
+release was checked.
+
+**Release `v0.3.0` (2026-10-05), the second milestone (`docs/ROADMAP-1.0.md`), at the owner's request.** Stage 6
+(verification and repair) complete, with the recall and extraction work since `v0.2.0` (Phase 14 step 6, Phases
+15–31): extractor `extract-v16`, packet policy `packet-v12`, a 4,000-token default budget, first sight in story order,
+bundles without Docker, NMOS Archive, the join preview and repairs that survive a new generation (`extract-v16`: 39/68
+of the owner's repairs on the re-extracted production copy, `extract-v15` 40/68), model-call usage and `/dashboard`;
+migrations 0027–0028. The gate: Phase 31's second reduced live run met every bar (`docs/perf/phase31-live-gate.md`).
+
 **Release `v0.2.0` (2026-09-28), the first milestone (`docs/ROADMAP-1.0.md`), at the owner's request.** Stage 4
 (knowledge and secrets, Phase 10) complete, with Stage 5 (Phases 11–12) and Stage 6 so far (Phase 13, Phase 14 steps
 1–5) from `main`: secrets and memory modes, open business and causes, relationship pairs, summaries in `<Story>` and
@@ -877,7 +888,7 @@ Known issues (current list): `docs/KNOWN-ISSUES.md`.
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
 | Architecture | `ARCHITECTURE.md` | H1–H22, D1–D75, O1/O2/O3/O4/O5 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
-| Schema | `migrations/0001`–`0027` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode, thread outcome and cause, summaries, owner repairs, canon, canon facts and lock, model-call usage |
+| Schema | `migrations/0001`–`0028` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode, thread outcome and cause, summaries, owner repairs, canon, canon facts and lock, model-call usage, reveal checks and dropped-fact restore |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
 | Tests | `apps/sidecar/tests` (754), `adapters/pocketrisu-plugin/test` (193; DOM code under `happy-dom`) | all passing; the M0 real-chat evaluation is `docs/perf/m0-baseline.md` (28 owner-confirmed cases; 9 need memory: 5 before Phase 11, 7 now) and, on a second chat, `docs/perf/m0-sample2.md` (17 cases; 8 of the 13 that need memory); deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |

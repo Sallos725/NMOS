@@ -3,7 +3,33 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
-## Unreleased
+## 0.3.0
+
+The second milestone release (`docs/ROADMAP-1.0.md`): **Stage 6, verification and repair**, is complete (canon sources,
+owner repairs that survive a new extractor, export and restore), with the recall and extraction work since 0.2.0
+(Phase 14 step 6, Phases 15–31; the corrections of AGE-24). The owner asked for this release on 2026-10-05, after the Phase 31 reduced live gate met every
+bar: on the long synthetic chat, questions about now at turn 240 went from 18–19 to 23 of 25, the full-history set from
+19 to 23, and the lent-book set from 5 to 6 of 6 (`docs/perf/phase31-live-gate.md`).
+
+What changes, in short:
+- **Memory knows what changed** (`packet-v12`): an older excerpt of a replaced value (where someone lives, what someone
+  is called) and an ended role stay out of a question about now; a question about the past keeps them.
+- **Roles and names** (`extract-v16`): a role the story ends is ended; a character written in full and by part of the
+  name is one person.
+- **A chat connected for the first time is read in story order**, so each turn sees what came before.
+- **Recall finds more of the answer:** keyword recall, "how it started" questions, given and romanized names, excerpts
+  that land on the answer and grow with a 4,000-token default budget.
+- **Run without Docker:** bundles for Windows x64, macOS arm64 and Linux x64/arm64.
+- **Move or back up memory** with NMOS Archive (export and restore).
+- **Repair with a preview,** and repairs that survive a new extractor generation (or are listed when their item is gone).
+- **See the cost:** model-call usage per chat, `/dashboard` with the version and recent job errors.
+- **Google Vertex AI with the key file alone.**
+
+Generations and schema that change:
+- the extractor `extract-v16` (`extract-v14` and `extract-v15` were never released);
+- the default packet policy `packet-v12` (from `packet-v8`: `packet-v9` to `packet-v12`);
+- canon facts are a new generation (read again once);
+- migrations 0027–0028.
 
 - **Recall knows what changed: `packet-v12` is the default** (ADR 0066, D75; Phase 31, AGE-24, AGE-37). An older
   excerpt that states a value the story has since replaced (where someone lived, what someone was called) is left out
@@ -310,6 +336,40 @@ later, is `docs/KNOWN-ISSUES.md`.
   input's ☰ menu and the sidebar's ☰ menu. It takes the host's text colour. In the sidebar, which shows no name, the
   icon carries it for screen readers and as a hover tooltip. The progress display shows it before
   "Recalling memory…" only. A new plugin build.
+
+### Upgrading from 0.2.0
+
+Back up the database first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS and back up its data
+folder): migrations 0027–0028 run when the new sidecar starts, and a rollback needs the backup. NMOS Archive is for
+moving memory, not for a rollback.
+
+1. **Update the sidecar and the worker** (`docker compose pull`, or the new bundle). At startup migrations 0027–0028 add
+   model-call usage, reveal checks and dropped-fact restore.
+2. **Model calls at the provider's cost** (with an LLM configured):
+   - `extract-v16` becomes active, and each chat's latest `NMOS_EXTRACT_BACKFILL` turns (default 100) are extracted
+     again once, oldest first. Older turns keep their earlier facts until **Extract all history**. Do not use **Rebuild
+     memory** for an upgrade: it discards the chat's facts and extracts the whole chat again.
+   - Canon is read again once.
+   - Embeddings are kept (the chunk cap stays 8).
+3. **Replace the plugin file** (the host offers the update: `//@version 0.3.0`) and reload PocketRisu. The Status tab
+   says whether the plugin matches the sidecar.
+4. **Memory budget:** the default is 4,000 tokens (2,000 before). Leave that much room in the host's context, or set a
+   smaller budget in the panel.
+5. After extraction, look at **Needs attention**: a repair whose item `extract-v16` no longer states is listed there.
+
+### Known limitations
+
+- **Long chats:** beyond about 10,000 messages, or right after editing an old message, memory can miss its deadline and
+  the reply goes without it (K1–K4).
+- **Names and facts can still be wrong;** the owner repairs them. A persona narrated in the third person does not bring
+  its own facts (K8, K32). A short Korean keyword with a particle attached is often not found (K40).
+- **Replaced values:** an excerpt can still carry a value no selected fact is about (K39).
+- **Summaries** have no input cap; a large lorebook adds latency, and a story that changes who someone is is not flagged
+  against canon automatically (K35–K37).
+- **iPhone:** Export everything saves, but the host may show an alert (K38). Vertex's **Load key file** was checked in
+  desktop Chromium only.
+- **macOS bundle** is signed ad hoc: allow it once at first launch.
+- The full list is `docs/KNOWN-ISSUES.md`.
 
 ## 0.2.0
 
