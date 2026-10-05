@@ -23,7 +23,11 @@ Under `packet-v12` (`packet.CHANGE_POLICIES`), in `retrieval.gather`:
    fact's current version, it repeats the old object or value (`spans.reuse` at `REPEATS`, the measure that drops an
    excerpt restating a withheld line, with the current value's and the characters' names' spans not counted) and it
    does not repeat the current one. The freed slot goes to the next candidate. The trace records the count
-   (`replaced_left_out`). *Amended 2026-10-05 (the reduced live gate, narrowed on the replay):* for the standing facts
+   (`replaced_left_out`). "Earlier" is by turn, the unit of extraction: an excerpt from the current version's own turn
+   is never judged (a change and the value it replaces can share a turn, and by message position the user's message
+   that asks for the change would be dropped). No placed form of a kept excerpt says only the old value: when its
+   one-sentence form would, it is placed whole or not at all, and an excerpt that holds the old value at all is never
+   cut (Copilot review of #264). *Amended 2026-10-05 (the reduced live gate, narrowed on the replay):* for the standing facts
    and places the question names (both of a pair; a place's subject; also when the prompt holds them and the packet
    leaves them out), an excerpt is also dropped when it holds a mark of a replaced version and none of the current
    one's: for a place (`located_in`), when the question asks where, a word of its name at the start of a word of the
