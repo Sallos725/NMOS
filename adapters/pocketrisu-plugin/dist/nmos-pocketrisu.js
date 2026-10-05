@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:2ee76da6201f".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:a63ef4c9406b".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2189,28 +2189,34 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}.nmos .insp .top p{margin:0}
 .nmos .insp a{color:var(--c-link);text-decoration:none;cursor:pointer}
 .nmos .insp a:hover{text-decoration:underline}
-.nmos .insp .tl{margin:6px 0 14px}.nmos .insp .tl .tl-h{font-size:11.5px;font-weight:600;color:var(--c-text-muted);margin:12px 0 2px}
-.nmos .insp .tl-switch{font-size:12.5px;margin:0 0 6px}.nmos .insp .tl-span{color:var(--c-link);cursor:pointer}
-.nmos .insp .tl-hint{font-size:11.5px;color:var(--c-text-faint);margin:0 0 6px}
-.nmos .insp .tl-row{display:block;padding:3px 0;color:inherit}.nmos .insp a.tl-line{text-decoration:none}
-.nmos .insp .tl-lab{display:block;font-size:11.5px;color:var(--c-text-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.nmos .insp .tl-track{display:block;position:relative;height:22px}
-.nmos .insp .tl-rule{position:absolute;left:0;right:0;top:11px;height:1px;background:var(--c-line)}
-.nmos .insp .tl-bar{position:absolute;top:2px;height:18px;border-radius:3px;font-size:10.5px;line-height:16px;padding:0 4px;overflow:hidden;white-space:nowrap;background:var(--c-raised);color:var(--c-text);border:1px solid var(--c-line-strong);cursor:pointer}
+.nmos .insp .tl{margin:6px 0 16px}.nmos .insp .tl .tl-h{font-size:11.5px;font-weight:500;letter-spacing:.04em;color:var(--c-text-muted);margin:16px 0 4px;cursor:pointer;list-style:none}
+.nmos .insp .tl .tl-h::-webkit-details-marker{display:none}.nmos .insp .tl .tl-h::before{content:"\\25BE  "}.nmos .insp .tl details:not([open])>.tl-h::before{content:"\\25B8  "}
+.nmos .insp .tl-switch{font-size:12.5px;margin:0 0 8px}.nmos .insp .tl-span{color:var(--c-link);cursor:pointer}
+.nmos .insp .tl-hint{font-size:11.5px;color:var(--c-text-faint);margin:0 0 8px}
+.nmos .insp .tl-row{display:block;padding:4px 0;color:inherit}.nmos .insp a.tl-line{text-decoration:none;border-radius:6px}
+.nmos .insp .tl-lab{display:block;font-size:12.5px;color:var(--c-text);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nmos .insp .tl-last{color:var(--c-text-faint);font-size:11.5px}.nmos .insp .tl-end{display:none}
+.nmos .insp .tl-me{font-size:10.5px;color:var(--c-link);margin-left:6px}
+.nmos .insp .tl-track{display:block;position:relative;height:26px}
+.nmos .insp .tl-rule{position:absolute;left:0;right:0;top:13px;height:1px;background:var(--c-line)}
+.nmos .insp .tl-bar{position:absolute;top:2px;height:22px;border-radius:4px;font-size:11.5px;line-height:20px;padding:0 6px;overflow:hidden;white-space:nowrap;background:var(--c-raised);color:var(--c-text);border:1px solid var(--c-line-strong);cursor:pointer}
 .nmos .insp .tl-bar.past{background:transparent;color:var(--c-text-muted)}.nmos .insp .tl-bar.neg{font-style:italic}
 .nmos .insp .tl-bar.open{border-right-style:dashed}.nmos .insp .tl-bar.canon{border-left:2px dotted var(--c-text-muted)}
 .nmos .insp .tl-bar.owner{border-color:var(--c-warn)}
 .nmos .insp .tl .sel{background:var(--c-accent);border-color:var(--c-accent);color:#fff}
-.nmos .insp .tl-dot{position:absolute;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:var(--c-text-muted);cursor:pointer}
-.nmos .insp .tl-dot.s-major{width:14px;height:14px;margin:-7px 0 0 -7px;background:var(--c-text-strong)}
-.nmos .insp .tl-dot.s-minor{width:8px;height:8px;margin:-4px 0 0 -4px;background:var(--c-bg);border:1.5px solid var(--c-text-muted)}
-.nmos .insp .tl-tick{position:absolute;top:4px;width:2px;height:14px;margin-left:-1px;background:var(--c-text-muted)}
-.nmos .insp .tl-axis .tl-track span{position:absolute;top:2px;font-size:10.5px;color:var(--c-text-faint);transform:translateX(-50%);white-space:nowrap}
+.nmos .insp .tl-dot{position:absolute;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--c-text-muted);cursor:pointer}
+.nmos .insp .tl-dot.s-major{width:16px;height:16px;margin:-8px 0 0 -8px;background:var(--c-text-strong)}
+.nmos .insp .tl-dot.s-minor{width:10px;height:10px;margin:-5px 0 0 -5px;background:var(--c-bg);border:1.5px solid var(--c-text-muted)}
+.nmos .insp .tl-dot.n1{transform:translateX(9px)}.nmos .insp .tl-dot.n2{transform:translateX(18px)}.nmos .insp .tl-dot.n3{transform:translateX(27px)}
+.nmos .insp .tl-tick{position:absolute;top:5px;width:2px;height:16px;margin-left:-1px;border-radius:1px;background:var(--c-text-soft)}
+.nmos .insp .tl-axis .tl-track{height:18px}
+.nmos .insp .tl-axis .tl-track span{position:absolute;top:0;font-size:10.5px;color:var(--c-text-faint);transform:translateX(-50%);white-space:nowrap}
 .nmos .insp .tl-axis .tl-track span.first{transform:none}.nmos .insp .tl-axis .tl-track span.last{transform:translateX(-100%)}
-.nmos .insp .tl-card{margin:4px 0 8px;padding:8px 10px;border-radius:8px;background:var(--c-raised);font-size:12.5px}
-.nmos .insp .tl-card p{margin:2px 0}.nmos .insp .tl-card .v{font-size:15px;font-weight:600;color:var(--c-text-strong)}
-.nmos .insp .tl-hist{margin-top:6px;color:var(--c-text-muted)}.nmos .insp .tl-hist .cur{color:var(--c-text-strong)}
-.nmos .insp .tl-others summary{font-size:12.5px;color:var(--c-text-muted)}
+.nmos .insp .tl-card{margin:6px 0 10px;padding:10px 12px;border-radius:8px;background:var(--c-raised);font-size:12.5px}
+.nmos .insp .tl-card p{margin:2px 0}.nmos .insp .tl-card .v{font-size:17px;font-weight:600;line-height:1.35;color:var(--c-text-strong);overflow-wrap:anywhere}
+.nmos .insp .tl-hist{margin-top:8px;color:var(--c-text-muted)}.nmos .insp .tl-hist .cur{color:var(--c-text-strong)}
+.nmos .insp .tl-more{font-size:11.5px;color:var(--c-text-faint);margin:2px 0}
+.nmos .insp .tl-fold>summary,.nmos .insp .tl-others>summary{font-size:12px;color:var(--c-text-muted);margin:8px 0 2px;cursor:pointer}
 .nmos .insp .ref{display:block;font-family:ui-monospace,monospace;font-size:10.5px;color:var(--c-text-faint)}
 .nmos .insp .wrap{max-width:none;margin:0;padding:0;overflow-x:auto}
 .nmos .insp table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -2815,6 +2821,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       const row = mark.closest(".tl-row");
       if (!timeline || !row) return;
       timeline.querySelector(".tl-card")?.remove();
+      if (mark.classList.contains("sel")) return void mark.classList.remove("sel");
       for (const on of Array.from(timeline.querySelectorAll(".sel"))) on.classList.remove("sel");
       mark.classList.add("sel");
       row.after(markDetail(mark, { canon: L("tl.canon"), owner: L("tl.owner") }));

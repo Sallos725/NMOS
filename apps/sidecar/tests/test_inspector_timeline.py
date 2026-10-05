@@ -59,6 +59,15 @@ def test_a_history_is_spans_of_turns():
     ended = fact(3, HANA, "has_status", [step(3, "wounded", "ended")])  # closed, but by what is unknown
     assert [(x["start"], x["end"]) for x in timeline.segments(ended, 9)] == [(3, 3)]
     assert timeline.window(60, "recent") == (36, 60) and timeline.window(60, None) == (0, 60)
+    # Two values current at once share one history; each lane draws its own current value only.
+    first, second = step(4, "surveyor", "current"), step(6, "former clerk", "current")
+    one = fact(5, HANA, "identity", [step(0, "apprentice", "superseded", closed_turn=6), first, second],
+               value="surveyor", turn=4)
+    assert [x["value"] for x in timeline.segments(one, 9)] == ["apprentice", "surveyor"]
+    # The story restating a value is not a change: one bar until the value changes.
+    held = fact(4, HANA, "possesses", [step(2, "compass", "superseded", closed_turn=4),
+                                       step(4, "compass", "superseded", closed_turn=6), step(6, "map", "current")])
+    assert [(x["start"], x["end"], x["value"]) for x in timeline.segments(held, 9)] == [(2, 5, "compass"), (6, 9, "map")]
     assert timeline.window(None, None) == (0, 0)
 
 
@@ -103,6 +112,7 @@ def test_the_character_page_draws_bars_that_link_to_their_rows():
     assert bars(page)[:2] == [("tl-bar past", "18.182", "45.454"), ("tl-bar", "63.636", "36.364")]
     assert 'href="#a-10"' in page and '<tr id="a-10">' in page  # the bar's fact has its row
     assert "Relationships from them" in page and "feels toward → Kaito" in page
+    assert '<details class="tl-group"><summary class="tl-h">Relationships from them</summary>' in page  # closed at first
     assert 'class="tl-bar open"' in page and 'href="#a-14"' in page and '<tr id="a-14">' in page  # the open thread
     assert 'class="tl-dot s-major"' in page and 'href="#a-12"' in page
     assert "the map is fake" not in page.split('id="s-timeline"')[1].split("</details>")[0]  # knows: its own table
@@ -135,6 +145,21 @@ def test_values_are_escaped():
     assert body.count('aria-pressed="true"') == 1 and 'aria-pressed="{' not in body
 
 
+def test_facts_that_never_changed_fold_away():
+    moved = fact(10, HANA, "located_in", [step(2, "library", "superseded", closed_turn=7), step(7, "harbor", "current")])
+    trait = fact(11, HANA, "has_trait", [step(1, "tall", "current")])
+    few = inspector.character(CONV, "e1", view([moved, trait]), None, lang="en", now=10)
+    assert 'class="tl-fold"' not in few  # an early chat: nothing folded
+    assert '<details class="tl-group" open><summary class="tl-h">Facts</summary>' in few  # a group folds as a whole
+    more = [fact(20 + i, HANA, "has_trait", [step(1, f"trait {i}", "current")]) for i in range(8)]
+    page = inspector.character(CONV, "e1", view([moved, trait, *more]), None, lang="en", now=10)
+    timeline_html = page.split('id="s-timeline"')[1].split("</details></details>")[0]
+    shown, fold = timeline_html.split('<details class="tl-fold">', 1)
+    assert "library" in shown and "tall" not in shown
+    assert "<summary>Unchanged facts (9)</summary>" in fold and "tall" in fold
+    assert 'aria-pressed="true"' not in fold.split('</details>')[0]  # the first detail comes from a lane in sight
+
+
 def test_a_large_chat_is_capped_and_counted():
     many = [fact(100 + i, HANA, f"has_trait", [step(i + 1, f"trait {i}", "current")]) for i in range(45)]
     page = inspector.character(CONV, "e1", view(many), None, lang="en", now=50)
@@ -151,13 +176,15 @@ def test_the_recent_window_draws_the_last_25_turns():
     assert '>t36</span>' in page and 'now t60' in page and "<b>Last 25 turns</b>" in page
 
 
-def test_the_persona_has_a_timeline_but_no_cast_line():
+def test_the_persona_has_a_timeline_and_the_first_cast_line():
     me = entity("p", "Yuma", persona=True)
     own = fact(10, ("p", "Yuma"), "possesses", [step(2, "compass", "current")], object="compass")
     page = inspector.character(CONV, "p", view([own], entities=[me, entity("e1", "Hana")]), None, now=5)
     assert len(bars(page)) == 1 and "소지: compass" in page  # a lane per thing held, named by it
-    strip = timeline.cast(lambda k: k, [me, entity("e1", "Hana")], [own], [], 5, None, lambda e: f"/x/{e}", "")
-    assert "Yuma" not in strip and "Hana" in strip
+    strip = timeline.cast(inspector._tl_t("en"), [entity("e1", "Hana"), me], [own], [], 5, None, lambda e: f"/x/{e}", "")
+    # Owner, 2026-10-06: the persona's facts are memory too; ADR 0023 keeps its names out of recall, not out of view.
+    shown, folded = strip.split("<details", 1)
+    assert 'Yuma<span class="tl-me">you</span>' in shown and "Hana" in folded
 
 
 def test_the_cast_puts_the_scene_first_and_folds_the_rest():

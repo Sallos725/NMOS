@@ -696,6 +696,11 @@ describe('the timeline in the panel (PHASE-32 step 3)', () => {
     expect(cards[0].querySelector('.v')!.textContent).toBe('harbor');
     expect(cards[0].previousElementSibling!.classList.contains('tl-row')).toBe(true); // right under its lane
     expect(panel().querySelectorAll('.tl .sel').length).toBe(1);
+    const selected = panel().querySelector<HTMLElement>('.tl .sel')!;
+    selected.click(); // a second tap closes it
+    expect(panel().querySelectorAll('.tl-card, .tl .sel').length).toBe(0);
+    selected.click();
+    expect(panel().querySelectorAll('.tl-card').length).toBe(1);
     panel().querySelector<HTMLElement>('.tl-span[data-span="recent"]')!.click();
     await settle();
     expect(parts(calls).at(-1)).toBe(`GET /v1/inspector/c/${id}/e/${who}?part=timeline&span=recent&lang=en`);

@@ -95,8 +95,27 @@ narrow screen.
 | Q6 | How is the cast strip ordered, and what folds? | **The current scene's cast first (`scene.py`), then every other character under "N more" in a `<details>`**, each line linking to its character page. | Every character open, by mention count. |
 | Q7 | Time windows? | **Amended by the owner: the whole chat, and the last 25 turns** (`?span=recent`). | The last 50 turns (the first proposal); any range from the query. |
 | Q8 | Caps on a large chat? | **At most 40 lanes per section, 200 event dots and 120 ticks per cast line.** What is left out is counted ("+N in the table below"). | No caps. |
-| Q9 | The persona? | **Drawn on the persona's own character page like any character.** On the conversation page it is not a cast line, since the persona is never in the cast (ADR 0023). | Leave the persona out. |
+| Q9 | The persona? | **Drawn on the persona's own character page like any character. Amended by the owner (2026-10-06, after trying it): the persona is also the first cast line, marked as "you".** ADR 0023 keeps the persona's names out of recall, not out of view. | No cast line for the persona (the first proposal). |
 | Q10 | Canon facts and owner repairs? | **A canon entry's bar starts at turn 0 and is marked as from the setting (history entries carry `canon`). A current version that is the owner's (the fact's `owner`) is marked as such. Earlier versions carry no owner mark in `view`, so they get none.** | Add the owner mark to history entries (a `facts.py` change, out of scope). |
+
+## After the owner's first try (2026-10-06)
+
+The owner used step 3 in a test instance and found it thinner and busier than the mockup, and missing the persona's
+line. The changes, all in rendering:
+- **Sizes as in the mockup.** Bars are 22 px on a 26 px track, with rounded bars, group titles, the last change turn at
+  the end of a cast line, and a larger value in the detail.
+- **A restated value is not a change.** A span that continues the one before it with the same value is one bar. A held
+  item restated each turn had drawn a dozen slivers.
+- **What did not change folds away.** A lane with one span that is still current goes under a closed "Unchanged facts
+  (N)" or "Unchanged relationships (N)". In the recent window, so does a lane whose span began before the window.
+- **Two values current at once** (two identities) share one history, and each lane draws only its own current value.
+- **A held item's lane is named by the item**, for example "소지: 청동 나침반".
+- **The persona's line** (Q9 amended).
+- **An early chat folds nothing.** A section of 8 lanes or fewer shows them all, since nothing has changed yet.
+- **Events of one turn step aside** instead of covering each other.
+- **Tapping a selected mark again closes its detail.**
+- **Each group (facts, relationships, threads, events) folds from its title.** The relationships group starts closed,
+  because a large cast makes it the longest. The first detail is never chosen from a lane out of sight.
 
 ## Steps
 

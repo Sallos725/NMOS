@@ -22,6 +22,7 @@ from .entities import norm
 
 RECENT = 25  # the recent window, in turns (PHASE-32 Q7, owner)
 LANES = 40  # lanes per section (Q8)
+FOLD_OVER = 8  # a section of this many lanes or fewer folds nothing: an early chat has changed nothing yet
 DOTS = 200  # event dots on a character page (Q8)
 TICKS = 120  # ticks on one cast line (Q8)
 RELATIONS = ("relationship", "role_toward", "feels_toward", "addresses")  # from this character (Q5)
@@ -34,6 +35,8 @@ T = Callable[[str], str]
 # with the number of bars only. Without the script a bar is a link to its fact's row.
 SCRIPT = ("<script>document.addEventListener('click',function(e){var a=e.target.closest('.tl [data-v]');if(!a)return;"
           "e.preventDefault();var tl=a.closest('.tl'),side=tl.querySelector('.tl-side'),c=document.createElement('div');"
+          "if(a.getAttribute('aria-pressed')==='true'){var o=side.querySelector('.tl-card');if(o)o.remove();"
+          "a.setAttribute('aria-pressed','false');return}"
           "c.className='tl-card';function p(t,k){var x=document.createElement('p');x.textContent=t;if(k)x.className=k;"
           "c.appendChild(x)}var lab=a.closest('.tl-row').querySelector('.tl-lab');p(a.dataset.k||lab.textContent,'muted');"
           "p(a.dataset.v,'v');p(a.dataset.s+(a.dataset.o?' \u00b7 '+a.dataset.o:''));if(a.dataset.p)p(a.dataset.p,'muted');"
@@ -77,7 +80,15 @@ def segments(fact: dict[str, Any], now: int,
     """A fact's history as spans of turns: the current entry until now; a closed one until the turn before the
     statement that closed it (`closed_turn`, which `facts.py` records), or on its own turn when that is unknown or the
     same turn. `own` keeps the lane's own entries. Entries without a turn (legacy rows) are left out."""
-    history = [h for h in (fact.get("history") or [fact]) if _start(h) is not None and (own is None or own(h))]
+    entries = fact.get("history") or [fact]
+    # Two values current at once share one history (a character with two identities); a lane is one of them.
+    several = sum(1 for h in entries if h.get("outcome", "current") == "current") > 1
+
+    def mine(h: dict[str, Any]) -> bool:
+        return (not several or h.get("outcome", "current") != "current" or h is fact
+                or all(h.get(k) == fact.get(k) for k in ("turn", "value", "object", "polarity")))
+
+    history = [h for h in entries if _start(h) is not None and (own is None or own(h)) and mine(h)]
     out = []
     for h in history:
         start = _start(h)
@@ -92,6 +103,20 @@ def segments(fact: dict[str, Any], now: int,
                     "turn": h.get("turn")})
     if out and fact.get("owner") and out[-1]["outcome"] == "current":
         out[-1]["owner"] = True  # only the current version carries the owner's mark (PHASE-32 Q10)
+    return _merged(out)
+
+
+def _merged(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The story restating a value ("still has the compass") is not a change: a span that continues the one before it
+    with the same value is one bar (owner, 2026-10-06; a held item restated each turn drew a dozen slivers)."""
+    out: list[dict[str, Any]] = []
+    for s in spans:
+        last = out[-1] if out else None
+        if (last is not None and s["value"] == last["value"] and s["negative"] == last["negative"]
+                and s["canon"] == last["canon"] and s["start"] <= last["end"] + 1):
+            last.update(end=max(last["end"], s["end"]), outcome=s["outcome"], owner=s.get("owner", False))
+            continue
+        out.append(dict(s))
     return out
 
 
@@ -99,7 +124,7 @@ class _Page:
     """One timeline's scale; the first current bar starts selected, its detail rendered once (`card`)."""
 
     def __init__(self, t: T, lo: int, hi: int, panel: bool = False):
-        self.t, self.lo, self.hi, self.card, self.panel = t, lo, hi, None, panel
+        self.t, self.lo, self.hi, self.card, self.panel, self.selectable = t, lo, hi, None, panel, True
 
     def pos(self, left: float, width: float | None = None) -> str:
         """Where a mark sits: `style` in the browser, plain numbers in the panel (the plugin places them)."""
@@ -118,7 +143,7 @@ class _Page:
 
     def select(self, current: bool, card: Callable[[], str]) -> bool:
         """Whether this bar starts selected: the first current one. Only its detail is rendered here (browser only)."""
-        if self.card is None and current and not self.panel:
+        if self.card is None and current and not self.panel and self.selectable:
             self.card = card()
             return True
         return False
@@ -199,11 +224,21 @@ def _axis(p: _Page) -> str:
     return f"<div class=\"tl-row tl-axis\"{hidden}><div></div><div class=\"tl-track\">{spans}</div></div>"
 
 
-def _group(p: _Page, title: str, rows: list[str], more: int) -> str:
-    if not rows:
+def _group(p: _Page, title: str, rows: list[str], more: int, folded: list[str] = (), folded_more: int = 0,
+           fold_key: str = "tl.steady", closed: bool = False) -> str:
+    """A titled group of lanes. `folded` are lanes that never changed, kept out of sight under one line (owner,
+    2026-10-06: the timeline is for what changed; a character's many single facts drowned it)."""
+    if not rows and not folded:
         return ""
     rest = f"<p class=\"muted tl-more\">{_v(p.t('tl.more').format(n=more))}</p>" if more else ""
-    return f"<div class=\"tl-group\"><p class=\"tl-h\">{_v(title)}</p>{''.join(rows)}{rest}</div>"
+    fold = ""
+    if folded:
+        tail = f"<p class=\"muted tl-more\">{_v(p.t('tl.more').format(n=folded_more))}</p>" if folded_more else ""
+        fold = (f"<details class=\"tl-fold\"><summary>{_v(p.t(fold_key).format(n=len(folded) + folded_more))}"
+                f"</summary>{''.join(folded)}{tail}</details>")
+    # a group folds as a whole from its title (owner, 2026-10-06: "relationships too")
+    return (f"<details class=\"tl-group\"{'' if closed else ' open'}><summary class=\"tl-h\">{_v(title)}</summary>"
+            f"{''.join(rows)}{rest}{fold}</details>")
 
 
 def _label(t: T, predicate: str, obj: str | None = None) -> str:
@@ -232,20 +267,36 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
     rels = sorted((f for f in theirs if f["predicate"] in RELATIONS and f.get("object")),
                   key=lambda f: (f["object"], RELATIONS.index(f["predicate"])))
 
-    def lanes(rows: list[dict[str, Any]], label: Callable[[dict[str, Any]], str]) -> tuple[list[str], int]:
-        drawn = []
+    def lanes(rows: list[dict[str, Any]], label: Callable[[dict[str, Any]], str],
+              split: bool = False) -> tuple[list[str], int, list[str], int]:
+        """Lanes in order, capped; with `split`, the lanes that never changed (one entry, still current) apart."""
+        changed, steady = [], []
         for f in rows:
             segs = [s for s in segments(f, hi, own) if s["end"] >= lo]
-            if segs:
-                drawn.append((f, segs))
-        return [_row(label(f), _bars(p, label(f), f, segs)) for f, segs in drawn[:LANES]], max(0, len(drawn) - LANES)
+            if not segs:
+                continue
+            # unchanged in the window drawn: one span, still current, and (for the recent window) begun before it
+            quiet = len(segs) == 1 and segs[0]["outcome"] == "current" and (lo == 0 or segs[0]["start"] < lo)
+            if lo == 0:
+                quiet = quiet and len(segments(f, hi, own)) == 1
+            (steady if split and quiet else changed).append((f, segs))
+        if len(changed) + len(steady) <= FOLD_OVER:  # few lanes: nothing to fold away
+            changed, steady = changed + steady, []
+        drawn = [_row(label(f), _bars(p, label(f), f, segs)) for f, segs in changed[:LANES]]
+        before, p.selectable = p.selectable, False  # a folded lane is out of sight: the first detail is from one in sight
+        quiet = [_row(label(f), _bars(p, label(f), f, segs)) for f, segs in steady[:LANES]]
+        p.selectable = before
+        return drawn, max(0, len(changed) - LANES), quiet, max(0, len(steady) - LANES)
 
     def state_label(f: dict[str, Any]) -> str:  # one lane per thing held: the thing names it
         name = _label(t, f["predicate"])
         return f"{name}: {f['object']}" if f["predicate"] == "possesses" and f.get("object") else name
 
-    state_rows, state_more = lanes(state, state_label)
-    rel_rows, rel_more = lanes(rels, lambda f: _label(t, f["predicate"], f["object"]))
+    state_rows, state_more, steady_rows, steady_more = lanes(state, state_label, split=True)
+    p.selectable = False  # relationships start closed: the first detail is not chosen from them
+    rel_rows, rel_more, steady_rels, steady_rels_more = lanes(rels, lambda f: _label(t, f["predicate"], f["object"]),
+                                                              split=True)
+    p.selectable = True
 
     held = set(names)
     thread_rows = []
@@ -277,9 +328,11 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
 
     events = sorted((f for f in facts if f.get("predicate") == "event" and takes_part(f)
                      and isinstance(f.get("turn"), int) and lo <= f["turn"] <= hi), key=lambda f: f["turn"])
-    dots = []
+    dots, same = [], defaultdict(int)
     for f in events[-DOTS:]:
         size = SALIENCE.get(f.get("salience") or "", "s-mid")
+        k = same[f["turn"]] = same[f["turn"]] + 1  # events of one turn step aside instead of covering each other
+        size += f" n{min(k - 1, 3)}" if k > 1 else ""
         weight = t("s." + f["salience"]) if f.get("salience") in SALIENCE else ""
         when = f"t{f['turn']}"
         title = f"{when} · {f.get('value') or ''}"
@@ -288,8 +341,10 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
                            f"{_data(f.get('value') or '', when, weight, t('tl.events'))}{pressed}"
                            f"{p.pos(p.pct(f['turn']))} title=\"{_v(title)}\""))
 
-    groups = (_group(p, t("tl.state"), state_rows, state_more)
-              + _group(p, t("tl.relations"), rel_rows, rel_more)
+    groups = (_group(p, t("tl.state"), state_rows, state_more, steady_rows, steady_more)
+              # closed at first (owner, 2026-10-06): a cast of many makes it the longest group
+              + _group(p, t("tl.relations"), rel_rows, rel_more, steady_rels, steady_rels_more, "tl.steady_rel",
+                       closed=True)
               # the newest threads, as the threads table lists the newest 100
               + _group(p, t("tl.threads"), thread_rows[-LANES:], max(0, len(thread_rows) - LANES))
               + (_group(p, t("tl.events"), [_row(t("tl.n_events").format(n=len(dots)), "".join(dots))],
@@ -342,13 +397,15 @@ def by_character(facts: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]
 
 def cast(t: T, entities: list[dict[str, Any]], facts: list[dict[str, Any]], scene_ids: list[str], now: int | None,
          span: str | None, link: Callable[[str], str], switch: str, panel: bool = False) -> str:
-    """One line per character (PHASE-32 scope 2): the current scene's cast first, every other character folded; a tick
-    where their memory changed, the last change, a link to their page. The persona is not a cast line (ADR 0023)."""
+    """One line per character (PHASE-32 scope 2): the persona first (owner, 2026-10-06: its facts are memory too; ADR
+    0023 keeps its names out of recall, not out of view), then the current scene's cast, every other character
+    folded; a tick where their memory changed, the last change, a link to their page."""
     lo, hi = window(now, span)
     p = _Page(t, lo, hi, panel)
-    people = [e for e in entities if e.get("type") == "character" and not e.get("persona")]
+    people = [e for e in entities if e.get("type") == "character"]
     by_id = {e["id"]: e for e in people}
-    first = [by_id[i] for i in dict.fromkeys(scene_ids) if i in by_id]
+    first = [e for e in people if e.get("persona")] + [by_id[i] for i in dict.fromkeys(scene_ids)
+                                                        if i in by_id and not by_id[i].get("persona")]
     rest = sorted((e for e in people if e not in first), key=lambda e: -(e.get("mentions") or 0))
     mine = by_character(facts)
 
@@ -359,9 +416,11 @@ def cast(t: T, entities: list[dict[str, Any]], facts: list[dict[str, Any]], scen
         ticks = "".join(f"<span class=\"tl-tick\"{p.pos(p.pct(x))}></span>" for x in shown)
         when = f"t{last}" if last is not None else "—"
         label = f"{e['name']} · {when}"
+        me = f"<span class=\"tl-me\">{_v(t('tl.me'))}</span>" if e.get("persona") else ""
         return (f"<a class=\"tl-row tl-line\" href=\"{_v(link(e['id']))}\" title=\"{_v(label)}\">"
-                f"<span class=\"tl-lab\">{_v(e['name'])}<span class=\"muted\"> {_v(when)}</span></span>"
-                f"<span class=\"tl-track\"><span class=\"tl-rule\"></span>{ticks}</span></a>")
+                f"<span class=\"tl-lab\">{_v(e['name'])}{me}<span class=\"tl-last\"> {_v(when)}</span></span>"
+                f"<span class=\"tl-track\"><span class=\"tl-rule\"></span>{ticks}</span>"
+                f"<span class=\"tl-end\">{_v(when)}</span></a>")
 
     if not people:
         return f"<div class=\"tl\">{switch}<p class=\"muted\">{_v(t('tl.no_cast'))}</p></div>"
@@ -376,33 +435,45 @@ def cast(t: T, entities: list[dict[str, Any]], facts: list[dict[str, Any]], scen
 
 
 STYLE = """
-.tl{margin:6px 0 18px} .tl .tl-h{font-size:12px;font-weight:600;color:var(--muted);margin:14px 0 2px}
-.tl-switch{font-size:13px;margin:0 0 8px}
-.tl-grid{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:20px;align-items:start}
-.tl-row{display:grid;grid-template-columns:120px minmax(0,1fr);gap:10px;align-items:center;min-height:24px;color:inherit}
+.tl{margin:8px 0 22px}
+.tl .tl-h{font-size:12px;font-weight:500;letter-spacing:.04em;color:var(--muted);margin:18px 0 4px 6px;cursor:pointer;
+  list-style:none} .tl .tl-h::-webkit-details-marker{display:none}
+.tl .tl-h::before{content:"\\25BE  "} .tl details:not([open])>.tl-h::before{content:"\\25B8  "}
+.tl-switch{font-size:13px;margin:0 0 10px 6px} .tl-hint{font-size:12px;margin:0 0 8px 6px}
+.tl-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:28px;align-items:start}
+.tl-row{display:grid;grid-template-columns:130px minmax(0,1fr);gap:14px;align-items:center;padding:4px 6px;
+  border-radius:6px;color:inherit}
+.tl-cast .tl-row{grid-template-columns:130px minmax(0,1fr) 48px}
 a.tl-row:hover{background:var(--chip);text-decoration:none}
-.tl-lab{font-size:12px;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tl-track{position:relative;height:22px;min-width:0}
-.tl-rule{position:absolute;left:0;right:0;top:11px;height:1px;background:var(--line)}
-.tl-bar{position:absolute;top:2px;height:18px;border-radius:3px;font-size:11px;line-height:16px;padding:0 5px;
+.tl-lab{font-size:13px;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-last{display:none;color:var(--muted);font-size:12px}
+.tl-end{font-size:12px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.tl-me{font-size:11px;color:var(--accent);margin-left:6px}
+.tl-track{position:relative;height:26px;min-width:0}
+.tl-rule{position:absolute;left:0;right:0;top:13px;height:1px;background:var(--line)}
+.tl-bar{position:absolute;top:2px;height:22px;border-radius:4px;font-size:12px;line-height:20px;padding:0 7px;
   overflow:hidden;white-space:nowrap;box-sizing:border-box;background:var(--chip);color:var(--fg);border:1px solid var(--line)}
 .tl-bar:hover{text-decoration:none;border-color:var(--muted)}
-.tl-bar.past{background:var(--bg);color:var(--muted)} .tl-bar.neg{font-style:italic}
+.tl-bar.past{background:transparent;color:var(--muted)} .tl-bar.neg{font-style:italic}
 .tl-bar.open{border-right-style:dashed} .tl-bar.canon{border-left:2px dotted var(--muted)}
 .tl-bar.owner{border-color:#e8590c}
 .tl [aria-pressed="true"]{background:var(--accent);color:var(--bg);border-color:var(--accent)}
-.tl-dot{position:absolute;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:var(--muted)}
-.tl-dot.s-major{width:14px;height:14px;margin:-7px 0 0 -7px;background:var(--fg)}
-.tl-dot.s-minor{width:8px;height:8px;margin:-4px 0 0 -4px;background:var(--bg);border:1.5px solid var(--muted);box-sizing:border-box}
-.tl-tick{position:absolute;top:4px;width:2px;height:14px;margin-left:-1px;background:var(--muted)}
+.tl-dot{position:absolute;top:50%;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;background:var(--muted)}
+.tl-dot.s-major{width:16px;height:16px;margin:-8px 0 0 -8px;background:var(--fg)}
+.tl-dot.s-minor{width:9px;height:9px;margin:-4.5px 0 0 -4.5px;background:var(--bg);border:1.5px solid var(--muted);
+  box-sizing:border-box}
+.tl-dot.n1{transform:translateX(9px)} .tl-dot.n2{transform:translateX(18px)} .tl-dot.n3{transform:translateX(27px)}
+.tl-tick{position:absolute;top:5px;width:2px;height:16px;margin-left:-1px;border-radius:1px;background:var(--fg);opacity:.7}
+.tl-axis .tl-track{height:20px}
 .tl-axis .tl-track span{position:absolute;top:2px;font-size:11px;color:var(--muted);transform:translateX(-50%);white-space:nowrap}
 .tl-axis .tl-track span.first{transform:none} .tl-axis .tl-track span.last{transform:translateX(-100%)}
-.tl-side{border-left:1px solid var(--line);padding-left:14px;font-size:13px;position:sticky;top:12px}
-.tl-side p{margin:2px 0} .tl-side .v{font-size:17px;font-weight:600;margin:4px 0}
-.tl-hist{margin:6px 0;padding-left:18px;color:var(--muted)} .tl-hist .cur{color:var(--fg)}
-.tl-more,.tl-hint{font-size:12px} .tl-others summary{font-size:13px;color:var(--muted);margin:6px 0}
+.tl-side{border-left:1px solid var(--line);padding-left:18px;font-size:13px;position:sticky;top:12px}
+.tl-side p{margin:3px 0} .tl-side .v{font-size:22px;font-weight:600;line-height:1.3;margin:6px 0;overflow-wrap:anywhere}
+.tl-hist{margin:10px 0;padding-left:20px;color:var(--muted)} .tl-hist .cur{color:var(--fg)}
+.tl-more{font-size:12px;margin:2px 6px}
+.tl-fold>summary,.tl-others>summary{font-size:12px;color:var(--muted);margin:8px 0 2px 6px;cursor:pointer}
 tr:target td{background:var(--chip)}
 @media (max-width:720px){.tl-grid{grid-template-columns:minmax(0,1fr)}
-  .tl-side{position:static;border-left:0;border-top:1px solid var(--line);padding:10px 0 0}
-  .tl-row{grid-template-columns:minmax(0,1fr);gap:0}}
+  .tl-side{position:static;border-left:0;border-top:1px solid var(--line);padding:12px 0 0}
+  .tl-row,.tl-cast .tl-row{grid-template-columns:minmax(0,1fr);gap:2px} .tl-end{display:none} .tl-last{display:inline}}
 """
