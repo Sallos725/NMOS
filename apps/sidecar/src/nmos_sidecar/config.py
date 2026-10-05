@@ -70,8 +70,10 @@ class Settings:
     # model name contains "qwen3-embedding", none otherwise. Documents are embedded without it.
     embed_query_instruction: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_QUERY_INSTRUCTION", "auto"))
     trace_retention_days: int = field(default_factory=lambda: int(os.environ.get("NMOS_TRACE_RETENTION_DAYS", "30")))
-    # Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0041, 0043, 0049, 0053, 0063). Empty or unknown:
-    # `packet.DEFAULT_POLICY` (packet-v11: packet-v10 whose excerpt lands on the answer — a word hit with a qualifying
+    # Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0041, 0043, 0049, 0053, 0063, 0066). Empty or unknown:
+    # `packet.DEFAULT_POLICY` (packet-v12: packet-v11 that knows what changed — an older excerpt of a replaced value
+    # and an ended role are left out of a question about now, an excerpt's anchor breaks a tie on the question's
+    # one-character words; packet-v11: packet-v10 whose excerpt lands on the answer — a word hit with a qualifying
     # vector excerpts within its chunk, a why or contents question grows to 320 characters, the question's keywords
     # anchor the excerpt; packet-v10: packet-v9, whose excerpts grow from the sentence holding most keywords by up
     # to four sentences; packet-v9: packet-v8, whose excerpts and facts grow with the budget; packet-v8: room kept

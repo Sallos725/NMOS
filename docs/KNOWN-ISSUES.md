@@ -51,6 +51,7 @@ without a PocketRisu change.
 | K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | measured; a lower threshold found less, 0.8 kept (2026-09-30) |
 | K41 | Re-extracted with `extract-v14`, `deepseek-v4.1-flash` passed fewer M0 cases | Memory | measured, accepted (Phase 19, owner 2026-09-30) |
 | K42 | A standing fact's earlier versions are printed under the current version's knowledge marks | Memory | resolved on `main` (ADR 0038 amendment 1, 2026-10-01): a version kept from someone only under the same marks |
+| K43 | A question about what someone lent can miss the item once it has changed hands | Recall | resolved on `main` by `packet-v12` (Phase 31 Q3, ADR 0066, 2026-10-05): the excerpt's anchor breaks a tie on the question's one-character words; S3 6/6 live twice |
 
 ## Performance
 
@@ -383,6 +384,9 @@ characters with no sentence cap, so such an excerpt can carry more replaced valu
 questions keep the cap. Measured over twelve sets (`docs/perf/answer-span.md`): forbidden phrases 93 → 87 and no set
 worse by more than one case, so the cap's lifting cost nothing measurable there; the risk stays listed.
 *Workaround:* `NMOS_PACKET_POLICY=packet-v9` keeps two-sentence excerpts; `packet-v10` the four-sentence cap.
+*Since Phase 31 (`packet-v12`, ADR 0066, the default):* an excerpt older than a selected fact's current version that
+repeats the value the fact replaced is left out unless the question has a history cue. An excerpt can still carry a
+replaced value no selected fact is about.
 
 **K40 — A short keyword is not found where a particle is attached to it.** The keyword route (ADR 0052) matches a
 keyword at trigram word similarity 0.8. Korean attaches particles to the word, and a keyword of two syllables scores
@@ -396,6 +400,21 @@ of 0.8 differ (`docs/perf/lexical-recall.md`, "K40"). A
 main character's name matched almost every message once its particles counted, and was dropped as too broad; the
 rare words that answer questions stand alone often enough to be found at 0.8. The threshold stays 0.8.
 *Workaround:* none needed; vectors and the whole-message route still answer.
+
+**K43 — A question about what someone lent can miss the item once it has changed hands.** Measured in the live gate's
+S3 (the synthetic story, 2026-10-04): "이안이 빌려준 책 제목이 뭐였지?" (the title of the book 이안 lent) fails in every run
+measured, on `extract-v15` (`e13dee7`) and on the focused `extract-v16` (`9947d2c`) alike, where the historical lane
+passed it. The facts are stored — 백이안 possesses 『북해 조류 일지』, then 서도윤 possesses it — and the packet carries eleven
+other facts about 백이안 and ten excerpts, but neither possession nor the passage where the book is lent. A likely cause,
+not yet confirmed: the current holder's fact does not name who lent the item, the lender's own possession is history
+once the item moves (K9, ADR 0016), and no excerpt about the lending ranks high enough. Only a lent item was measured;
+whether a question about a gift misses the same way is not known. It is the S3 part of the AGE-24 regressions
+(PHASE-28 Q6: excerpt and ranking changes, re-measured after the role and name corrections). *Workaround:* ask by the
+holder or the item ("도윤이 가진 책", "북해 조류 일지"). Tracked in Linear under AGE-37.
+*Resolved on `main` (Phase 31, `packet-v12`, ADR 0066):* the stage diagnosis (`docs/perf/k43-offline-diagnosis.md`) found
+the lending message placed but its excerpt anchored 13 sentences before the title: the question's keywords tied across
+three sentences, and `keywords()` drops the one-character 책. Under `packet-v12` the question's one-character words break
+that tie; S3 passed 6/6 in the replay of every gate run and in both reduced live gates. A gift was still not measured.
 
 ## Data and lifecycle
 

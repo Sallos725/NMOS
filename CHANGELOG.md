@@ -5,6 +5,14 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Recall knows what changed: `packet-v12` is the default** (ADR 0066, D75; Phase 31, AGE-24, AGE-37). An older
+  excerpt that states a value the story has since replaced (where someone lived, what someone was called) is left out
+  of a question about now, and so is a role the story ended; a question that asks about the past ("전에", "예전에",
+  "before", "used to") keeps both. The excerpt of a long message now centres on the sentence that also holds the
+  question's one-letter words (책, 집, 돈), so "이안이 빌려준 책 제목이 뭐였지?" reaches the title (K43). Measured on
+  the live gate's long synthetic chat: the questions about now at turn 240 went from 18–19 to 23 of 25. Nothing is
+  extracted again; `NMOS_PACKET_POLICY=packet-v11` keeps the previous packet.
+
 - **Keyword recall finds its words again on a live chat** (ADR 0052). A keyword's lookup has 25 ms; Postgres often
   planned it from the chat's messages, checking each one, instead of from the trigram index: after a reroll, an edit or
   a deletion, because its statistics did not know the new version of the chat yet, and on a connection that had run the
