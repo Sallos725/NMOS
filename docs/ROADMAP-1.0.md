@@ -67,7 +67,7 @@ original design, and most recent phases (15, 17, 18, 19) were outside it. So:
   "After 1.0". Phase 23 is complete after the owner's Windows and Mac checks (2026-10-02), not released yet.
 - **Pulled in by name (2026-10-05): memory on a time axis in the Inspector** (AGE-39, Phase 32). The owner first set
   it for after 1.0, then pulled it in after reviewing a mockup. It is read-only rendering in the browser Inspector
-  only, with no plugin, packet or schema change.
+  and, behind a plugin flag, the panel, with no packet or schema change.
 
 The road left is Stage 7 (`0.4.0`), publishing Phase 23's bundles with a tagged release, and two quiet weeks on production.
 
