@@ -167,9 +167,12 @@ query vector is not stored).
 The recorded request (with vectors) placed the same excerpt: it ends at "…그의 입가에 아주 옅은 미소가 걸렸다. "서 선생.…".
 The title sentence is the message's last, after a status block: "백이안이 책 한 권을 건넸다. 표지에는 『북해 조류 일지』라고
 적혀 있었다." The query writes the given name (이안); the anchor sentence it picks holds "이안이", the title sentence
-holds the full name "백이안이". **The first loss is the excerpt span**; the likely reason, to be confirmed by
-Phase 31's deterministic case, is that the anchor does not read a known name's variants (ADR 0058 widens fact
-mentions, not the excerpt anchor). The fact route loses too, as described above. Capture:
+holds the full name "백이안이". **The first loss is the excerpt anchor.** Measured on the message: the question's
+keywords are 빌려준, 이안, 제목, 이안이 (one-character words such as 책 are not keywords); "이안" matches inside "백이안이"
+too, so sentences 55, 67 and 80 tie at two keywords and the trigram tie-break picks 67 ("이안이 고개를 숙이고…"); the
+title follows sentence 80 ("백이안이 책 한 권을 건넸다."), out of the four-sentence growth. Breaking the tie on 책 picks 80
+and the excerpt holds the title (Phase 31 Q3). A first guess here, that the anchor ignores name variants, was wrong:
+the anchor matches by substring. The fact route loses too, as described above. Capture:
 `/home/grantkim725/nmos-eval/k43-diag/s3-1-main-lexical-v2.json` (owner-local, private text).
 
 ## Decision boundary
