@@ -469,9 +469,10 @@ def fuse(lexical: list[dict[str, Any]], vector: list[dict[str, Any]], threshold:
 
 
 def one_char_words(query: str) -> tuple[str, ...]:
-    """The question's one-character words (책, 집, 돈), which `keywords` drops; a lone Latin letter is no word here.
+    """The question's one-character words (책, 집, 돈, 3), which `keywords` drops; a lone Latin letter is no word here.
     packet-v12 breaks a tie of the excerpt's anchor sentence on them (PHASE-31 Q3)."""
-    return tuple(dict.fromkeys(w for w in re.findall(r"\w+", query) if len(w) == 1 and not w.isascii()))
+    return tuple(dict.fromkeys(w for w in re.findall(r"\w+", query)
+                               if len(w) == 1 and not (w.isascii() and not w.isdigit())))
 
 
 def _said(fact: dict[str, Any]) -> tuple[str, ...]:
@@ -494,14 +495,14 @@ def replaced_values(facts: list[dict[str, Any]]) -> list[tuple[int, tuple[str, .
 
 
 def states_replaced(text: str, turn: int | None, replaced: list[tuple[int, tuple[str, ...], tuple[str, ...]]],
-                    names: tuple[str, ...] = ()) -> bool:
+                    names: tuple[str, ...] = (), ignore_now: bool = False) -> bool:
     """An excerpt from before a fact's current version that repeats what that version replaced and not what it says
     now, by the measure that drops an excerpt restating a withheld line (`spans.reuse`, PHASE-31 Q1). Spans of the
     current value and of characters' names are not the old value's."""
     if turn is None:
         return False
     for cur_turn, old, now in replaced:
-        if turn >= cur_turn or any(spans.reuse(t, text) >= REPEATS for t in now):
+        if turn >= cur_turn or (not ignore_now and any(spans.reuse(t, text) >= REPEATS for t in now)):
             continue
         if any(spans.reuse(t, text, (*now, *names)) >= REPEATS for t in old):
             return True
@@ -569,12 +570,13 @@ def _has(text: str, quoted: set[str], words: set[str]) -> bool:
                                                 for w in words)
 
 
-def states_marked(text: str, turn: int | None, marks: list[tuple[int, set[str], set[str], set[str], set[str]]]) -> bool:
+def states_marked(text: str, turn: int | None, marks: list[tuple[int, set[str], set[str], set[str], set[str]]],
+                  ignore_now: bool = False) -> bool:
     """An excerpt from before a fact's current version that holds a mark of what that version replaced and none of the
-    current version's (PHASE-31 Q1, amended)."""
+    current version's (PHASE-31 Q1, amended). `ignore_now`: whether it holds an old mark at all."""
     if turn is None:
         return False
-    return any(turn < cur_turn and _has(text, old_q, old_w) and not _has(text, now_q, now_w)
+    return any(turn < cur_turn and _has(text, old_q, old_w) and (ignore_now or not _has(text, now_q, now_w))
                for cur_turn, old_q, old_w, now_q, now_w in marks)
 
 
@@ -634,6 +636,30 @@ def ended_role_kept(f: dict[str, Any], facts: list[dict[str, Any]], query: str, 
         return False
     q = " ".join(query.casefold().split())
     return all(any(n in q for n in _side_names(f, role, r, aliases)) for role in ("subject", "object"))
+
+
+def _replaced_judge(view: dict[str, Any], selected: list[dict[str, Any]], query: str, previous_ai: str,
+                    options: RecallOptions, names_of: dict[int, Any]) -> Callable[..., bool] | None:
+    """packet-v12's test for an excerpt that says a value a fact's current version replaced (PHASE-31 Q1, amended), or
+    None when no fact gives one: the selected facts by reused spans, the facts the question names by marks (a place's
+    words only when it asks where, a form of address's quoted forms only when it asks what someone is called); a fact
+    whose old value the question itself names is not judged."""
+    r = view["resolution"]  # characters' names are never an old value's spans or marks
+    people = (*r.persona_names, *(n for e in r.entities() if e.get("type") == "character"
+                                  for n in (e["name"], *e.get("names", ())))) if r is not None else ()
+    flat_names = frozenset(_flat(n) for n in people if len(_flat(n)) >= 2)
+    replaced = replaced_values([f for f in selected if not asks_about_old(f, query, flat_names)])
+    named = named_facts(view["facts"], query, r, _aliases(r, query, previous_ai, options, view, names_of)
+                        if r is not None else None)
+    marks = replaced_marks([f for f in named if not asks_about_old(f, query, flat_names)], flat_names,
+                           bool(WHERE.search(query)), bool(CALLED.search(query)))
+    if not replaced and not marks:
+        return None
+
+    def stale(text: str, turn: int | None, ignore_now: bool = False) -> bool:
+        return (states_replaced(text, turn, replaced, people, ignore_now)
+                or states_marked(text, turn, marks, ignore_now))
+    return stale
 
 
 @dataclass
@@ -752,11 +778,15 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                     len(view["facts"]) if grow else options.facts_limit,
                                     options.events_limit, persona, scene.names(g.cast, r, aliases), causes=causes,
                                     first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases)
+            if changes:  # an ended role answers a question about the past, not about now (PHASE-31 Q2); the facts
+                # after it take its slot
+                def now_or_kept(f: dict[str, Any]) -> bool:
+                    return not _ended_role(f) or ended_role_kept(f, view["facts"], query, r, aliases)
+                g.ended = sum(1 for f in _grown(ranked[:options.facts_limit], ranked, options.fill_facts)
+                              if not now_or_kept(f))
+                ranked = [f for f in ranked if now_or_kept(f)]
             facts = _grown(ranked[:options.facts_limit], ranked, options.fill_facts)
-            if changes:  # an ended role answers a question about the past, not about now (PHASE-31 Q2)
-                kept = [f for f in facts if not _ended_role(f)
-                        or ended_role_kept(f, view["facts"], query, r, aliases)]
-                g.ended, facts = len(facts) - len(kept), kept
+            if changes:
                 selected = list(facts)
             # Claims after facts, so the budget serves narration first (ADR 0013).
             ranked = relevant_facts(view["claims"], query, previous_ai, in_context,
@@ -815,7 +845,10 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             g.vector_note = f"fallback: {exc}"[:200]
     g.candidates = fuse(lexical, vector, options.threshold, options.vector_min_sim, keyword)
     g.excluded = [c for c in g.candidates if c["host_logical_id"] in in_context]
-    eligible = [c for c in g.candidates if c["host_logical_id"] not in in_context][: options.top_k]
+    eligible = [c for c in g.candidates if c["host_logical_id"] not in in_context]
+    stale = _replaced_judge(view, selected, query, previous_ai, options, names_of) if changes and view is not None else None
+    if stale is None:  # packet-v12 judges each excerpt as it is made and fills a dropped one's slot (PHASE-31 Q1)
+        eligible = eligible[: options.top_k]
     words = keywords(query) if options.policy in GROW_POLICIES else []
     span = options.policy in SPAN_POLICIES  # packet-v11 (ADR 0063)
     cue = span and bool(WHY.search(query) or CONTENTS.search(query))  # a why or contents question (PHASE-27 Q2)
@@ -824,6 +857,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     anchor = (" ".join(words) or query) if span and options.excerpt_anchor == "keywords" else focus
     tie = one_char_words(query) if options.policy in CHANGE_POLICIES else ()  # packet-v12, PHASE-31 Q3
     for c in eligible:
+        if stale is not None and len(g.ranked) >= options.top_k:
+            break
         # a lexical or keyword hit is the whole message; a vector-only hit is its chunk; under packet-v11 a word hit
         # whose vector similarity meets the bar excerpts within its chunk too: the chunk is the part of the message
         # the question is about, the words only say the message is relevant (PHASE-27 Q1)
@@ -839,28 +874,19 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         else:
             text = excerpt(clean, focus, max_chars=options.excerpt_chars)
             short = excerpt(clean, focus, window=1, max_chars=options.excerpt_chars)
-        g.ranked.append(Excerpt(turn=c["turn"] if by_turn else c["position"],
-                                speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
-                                text=text, score=float(c["rrf"]), revision_id=str(c["id"]), short=short,
-                                position=c["position"]))
-    if changes and view is not None and g.ranked:  # packet-v12: an excerpt saying what a fact's current version replaced
-        r = view["resolution"]  # characters' names are never an old value's spans or marks
-        people = (*r.persona_names, *(n for e in r.entities() if e.get("type") == "character"
-                                      for n in (e["name"], *e.get("names", ())))) if r is not None else ()
-        flat_names = frozenset(_flat(n) for n in people if len(_flat(n)) >= 2)
-        judged = [f for f in selected if not asks_about_old(f, query, flat_names)]  # a question about the change keeps it
-        replaced = replaced_values(judged)  # Q1: the selected facts' replaced values, by reused spans
-        named = named_facts(view["facts"], query, r, _aliases(r, query, previous_ai, options, view, names_of)
-                            if r is not None else None)
-        named = [f for f in named if not asks_about_old(f, query, flat_names)]
-        # Q1 amended: marks judge only the facts the question names, a place's words only when it asks where, a form
-        # of address's quoted forms only when it asks what someone is called
-        marks = replaced_marks(named, flat_names, bool(WHERE.search(query)), bool(CALLED.search(query)))
-        if replaced or marks:
-            kept = [e for e in g.ranked if not states_replaced(e.text, e.turn, replaced, people)
-                    and not states_marked(e.text, e.turn, marks)]
-            g.replaced = len(g.ranked) - len(kept)
-            g.ranked = kept
+        item = Excerpt(turn=c["turn"] if by_turn else c["position"],
+                       speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
+                       text=text, score=float(c["rrf"]), revision_id=str(c["id"]), short=short,
+                       position=c["position"])
+        if stale is not None:  # packet-v12 (PHASE-31 Q1): no form of an excerpt says only a replaced value
+            if stale(item.text, item.turn):
+                g.replaced += 1
+                continue
+            if item.short and stale(item.short, item.turn):  # its sentence alone would: placed whole or not at all
+                item = dataclasses.replace(item, short="", cut_ok=False)
+            elif stale(item.text, item.turn, ignore_now=True):  # a cut could keep the old value and lose the new
+                item = dataclasses.replace(item, cut_ok=False)
+        g.ranked.append(item)
     if g.withheld_lines:
         # An excerpt that says what the mode withheld would give it back word for word.
         kept = [e for e in g.ranked

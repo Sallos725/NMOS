@@ -33,7 +33,7 @@ Read these files in this order before changing code:
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
 4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-31.md` is the latest, approved
-   2026-10-05 (recall that knows what changed), step 2 in progress (#264); `PHASE-30.md`, approved 2026-10-04, a correction phase under §7 item 5
+   2026-10-05 (recall that knows what changed), complete with `packet-v12` the default (#264); `PHASE-30.md`, approved 2026-10-04, a correction phase under §7 item 5
    (the first-sight extraction order), complete (#260);
    `PHASE-29.md`, approved 2026-10-04, built on Phase 28's `extract-v16`, and `PHASE-28.md`, approved 2026-10-03,
    both had step 2 merged in #251; `PHASE-27.md` was

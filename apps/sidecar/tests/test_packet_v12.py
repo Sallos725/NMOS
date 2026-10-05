@@ -58,6 +58,7 @@ LENDING = " ".join([
 def test_one_character_words_are_the_questions_and_never_a_lone_latin_letter():
     assert one_char_words(LENT) == ("책",)
     assert one_char_words("a 집 I 돈 집") == ("집", "돈")
+    assert one_char_words("3 번 방 _ x") == ("3", "번", "방")  # a digit is a word; a lone Latin letter or _ is not
     assert "책" not in keywords(LENT)  # what `keywords` drops, the tie-break keeps
 
 
