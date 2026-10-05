@@ -267,7 +267,9 @@ language after a page reload.
   Both are off by default and apply from the next generation.
 - **Settings**: connection (sidecar URL, route, memory budget, deadline, on/off); **fact-extraction LLM**
   and **embeddings** with provider presets (Ollama on this PC, OpenRouter, OpenAI, Gemini, Google Vertex AI for the
-  LLM only, any OpenAI-compatible endpoint), model list, API key and a **connection test** that makes a real call;
+  LLM only, Voyage AI for embeddings only, any OpenAI-compatible endpoint), model list, API key and a **connection
+  test** that makes a real call; an embedding preset measured with its own similarity bar sets it
+  (`docs/perf/embedders.md`);
   recall tuning; status-window parser rules (validated before saving).
   For **Google Vertex AI**, pick the service-account JSON key file with **Load key file** (or paste its whole
   content into the LLM's API key field): the endpoint's project is filled from the key, the Gemini models Vertex
