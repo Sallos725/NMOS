@@ -515,6 +515,13 @@ rebuilt for this UI-only follow-up; the owner's checks above concern the bundles
 collects draft highlights, upgrade notes and final checks for NMO-7. NMO-24's Phase 28 gate and the final extractor
 decision still come first; versions and the CHANGELOG release entry are not finalized.
 
+**Release `v0.3.0` (2026-10-05), the second milestone (`docs/ROADMAP-1.0.md`), at the owner's request.** Stage 6
+(verification and repair) complete, with the recall and extraction work since `v0.2.0` (Phase 14 step 6, Phases
+15–31): extractor `extract-v16`, packet policy `packet-v12`, a 4,000-token default budget, first sight in story order,
+bundles without Docker, NMOS Archive, the join preview and repairs that survive a new generation (`extract-v16`: 39/68
+of the owner's repairs on the re-extracted production copy, `extract-v15` 40/68), model-call usage and `/dashboard`;
+migrations 0027–0028. The gate: Phase 31's second reduced live run met every bar (`docs/perf/phase31-live-gate.md`).
+
 **Release `v0.2.0` (2026-09-28), the first milestone (`docs/ROADMAP-1.0.md`), at the owner's request.** Stage 4
 (knowledge and secrets, Phase 10) complete, with Stage 5 (Phases 11–12) and Stage 6 so far (Phase 13, Phase 14 steps
 1–5) from `main`: secrets and memory modes, open business and causes, relationship pairs, summaries in `<Story>` and

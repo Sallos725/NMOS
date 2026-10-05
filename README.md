@@ -30,7 +30,7 @@ longer see.
 | 📊 **State** | values parsed from your bots' status windows (rule-based, no LLM) | optional parsers |
 | 🧠 **Facts** | where people are, who knows what, promises, relationships — with history and provenance, extracted in the background | an LLM of your choice (optional) |
 
-<p align="center"><img src="docs/images/panel-status.png" alt="NMOS panel, Status tab: sidecar connected, semantic recall on, last request injected 835 characters in 90 ms" width="480"></p>
+<p align="center"><img src="docs/images/panel-status.png" alt="NMOS panel, Status tab: the last request injected 7,137 characters of memory in 399 ms, shown as the packet the model received" width="480"></p>
 
 ```mermaid
 flowchart LR
@@ -320,8 +320,8 @@ scene, changed by an edit and written again, queued, or failed with its error (P
 with **Current state**: what `<Cast>` says of them when they are in the scene (place, condition, feeling toward the
 persona, what they carry) and their open goals.
 
-<p><img src="docs/images/panel-status.png" alt="NMOS panel, Status tab: sidecar connected, semantic recall on, last request injected 835 characters in 90 ms" width="560"></p>
-<p><img src="docs/images/inspector.png" alt="NMOS Inspector: one conversation shown as bot name · chat name, with vector coverage 43/43" width="760"></p>
+<p><img src="docs/images/panel-status.png" alt="NMOS panel, Status tab: the last request injected 7,137 characters of memory in 399 ms, shown as the packet the model received" width="560"></p>
+<p><img src="docs/images/inspector.png" alt="NMOS Inspector in the panel: Needs attention lists threads left open for 30 turns, each with a repair (an outcome and Close)" width="760"></p>
 
 ## Configuration (environment)
 
