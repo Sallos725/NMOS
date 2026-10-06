@@ -434,9 +434,20 @@ def _t(lang: str, key: str) -> str:
     return T[key][0 if lang == "ko" else 1]
 
 
+# The plugin's icon (`adapters/pocketrisu-plugin/src/icon.ts`): a one-stroke N with a memory node. Inline as a data
+# URI, so the tab shows it whatever address the page is opened at (localhost, LAN, tailnet, behind a proxy's path);
+# a favicon has no text colour to inherit, so the stroke follows the colour scheme itself.
+FAVICON = ("data:image/svg+xml," + quote(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" '
+    'stroke-linejoin="round"><style>*{stroke:#3b5bdb;color:#3b5bdb}@media (prefers-color-scheme:dark){*{stroke:#8ea2ff;'
+    'color:#8ea2ff}}</style><path d="M6 19V5l12 14V9.5"/><circle cx="18" cy="5.5" r="1.75" fill="currentColor"/></svg>',
+    safe=" :/=\"'<>;(),.-{}*@"))  # '#' encoded: in a data URI it would start a fragment
+
+
 def page(title: str, body: str, lang: str = "ko") -> str:
     return (f"<!doctype html><html lang=\"{lang}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" "
-            f"content=\"width=device-width,initial-scale=1\"><title>{escape(title)}</title><style>{STYLE}</style>"
+            f"content=\"width=device-width,initial-scale=1\"><title>{escape(title)}</title>"
+            f"<link rel=\"icon\" type=\"image/svg+xml\" href=\"{escape(FAVICON)}\"><style>{STYLE}</style>"
             f"</head><body><main>{body}</main></body></html>")
 
 
