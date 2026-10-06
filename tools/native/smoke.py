@@ -2,7 +2,7 @@
 
     <bundle>/python/bin/python3 tools/native/smoke.py <bundle>      (Windows: <bundle>\\python\\python.exe)
 
-First start (initdb + migrations), health, pgvector and pg_trgm queries, a clean stop that also stops Postgres,
+First start (initdb + migrations), health and the version it reports, pgvector and pg_trgm queries, a clean stop that also stops Postgres,
 then a second start on the same data. Then the refusals: a second launcher on the same data while one runs, data
 written by a newer NMOS (a migration this bundle does not ship), and the sidecar's port taken by another program.
 Last, an update: the data of the version before (this bundle without its last migration) starts here and migrates.
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -22,6 +23,7 @@ from pathlib import Path
 
 WINDOWS = os.name == "nt"
 PORT = os.environ.get("NMOS_SIDECAR_PORT", "8795")
+REPO = Path(__file__).resolve().parents[2]
 
 
 def start(bundle: Path) -> tuple[subprocess.Popen, float]:
@@ -182,6 +184,17 @@ def update_keeps_data(bundle: Path) -> dict:
     return {"migrated": last.name, "migrations": len(after)}
 
 
+def check_version() -> str:
+    """The sidecar reports the version apps/sidecar/pyproject.toml declares (v0.3.0's bundles all said 0.0.0)."""
+    want = re.search(r'^version\s*=\s*"([^"]+)"', (REPO / "apps" / "sidecar" / "pyproject.toml").read_text(encoding="utf-8"),
+                     re.M).group(1)
+    with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/v1/health", timeout=10) as r:
+        got = json.load(r).get("version")
+    if got != want:
+        raise SystemExit(f"the sidecar reports version {got!r}, not {want!r}")
+    return got
+
+
 def check_dashboard() -> str:
     """/dashboard (the tray's and the menu bar's) reaches the Inspector's first page with the version on it."""
     with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/dashboard", timeout=10) as r:
@@ -210,6 +223,7 @@ def main() -> None:
     proc, result["first_start_s"] = start(bundle)
     try:
         result["sql"] = check_sql(bundle)
+        result["version"] = check_version()
         result["dashboard"] = check_dashboard()
         if WINDOWS:
             result["data_acl"] = check_owner_only_acl(bundle / "data")
