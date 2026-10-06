@@ -3,7 +3,12 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
-## Unreleased
+## 0.3.1
+
+A maintenance release of 0.3.0: the portable bundles report their version, and Voyage AI joins the embedding presets.
+No migration, no new extractor or packet generation; the plugin build changes (`//@version 0.3.1`).
+
+What changes:
 
 - **Voyage AI in the embedding presets, with its own similarity bar** (AGE-40; outside a phase, asked for by the
   owner). Similarity scores differ by embedding model: on the M0 chats `voyage-4-large` matches `qwen3-embedding` only
@@ -13,6 +18,18 @@ later, is `docs/KNOWN-ISSUES.md`.
   (`docs/perf/embedders.md`). Picking Voyage says that an account with no payment method has 3 requests a minute, too
   few to embed a chat. An embedding answer that reports `total_tokens` alone (Voyage's) is now counted as its input
   tokens in the model-call usage. No migration, no new generation; the plugin build changes.
+
+### Upgrading from 0.3.0
+
+1. **Docker:** pull the image and restart; nothing else changes.
+2. **Portable bundle:** stop NMOS, unpack 0.3.1 next to the old folder, and move the old `data` folder (and `.env`, if
+   you made one) into it. The new sidecar reports `0.3.1` in the Status tab and on the Inspector's first page.
+3. **Replace the plugin file** (the host offers the update: `//@version 0.3.1`) and reload PocketRisu.
+
+### Known limitations
+
+- Everything listed under 0.3.0 still applies (`docs/KNOWN-ISSUES.md`).
+- **Voyage AI** without a payment method allows 3 requests a minute, too few to embed a chat.
 
 ## 0.3.0
 

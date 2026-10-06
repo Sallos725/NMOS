@@ -515,6 +515,11 @@ rebuilt for this UI-only follow-up; the owner's checks above concern the bundles
 was first drafted while the Phase 28 gate and the final extractor were still open; it is now the record of how the
 release was checked.
 
+**Release `v0.3.1` (draft, pending the owner's check of the Windows bundle), a maintenance release of `v0.3.0`.** The
+portable bundles report their version (every `v0.3.0` bundle said 0.0.0: the build copied the sidecar without its
+package metadata) and Voyage AI joins the embedding presets with its own similarity bar (AGE-40). No migration, no new
+extractor or packet generation.
+
 **Release `v0.3.0` (2026-10-05), the second milestone (`docs/ROADMAP-1.0.md`), at the owner's request.** Stage 6
 (verification and repair) complete, with the recall and extraction work since `v0.2.0` (Phase 14 step 6, Phases
 15–31): extractor `extract-v16`, packet policy `packet-v12`, a 4,000-token default budget, first sight in story order,

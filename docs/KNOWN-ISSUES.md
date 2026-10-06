@@ -1,6 +1,6 @@
 # NMOS Known Issues
 
-Current as of `v0.3.0` (2026-10-05). This is the single list of what does not work, or works
+Current as of `v0.3.1`. This is the single list of what does not work, or works
 only partly, in the current release. Each release's "Known limitations" in `CHANGELOG.md` describes
 that release at the time; entries fixed later are listed under [Resolved](#resolved) below.
 
