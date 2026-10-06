@@ -1,8 +1,8 @@
 # Phase 33 — Forensic recall, part 1 (Stage 7): the source turn, quoted
 
-> **Status: draft 2026-10-06, for the owner's decision.** Stage 7 of `docs/ROADMAP-1.0.md` ("Forensic recall";
+> **Status: approved 2026-10-07 (the owner: every question as proposed), the current phase; step 2 next.** Stage 7 of `docs/ROADMAP-1.0.md` ("Forensic recall";
 > original §46, §48, §78; Track B, B6), part 1 of 2 (Q0). Under AGE-10. Until 1.0 a new phase is a Stage 7 item (R7);
-> this is the roadmap phase, not a correction phase, and it becomes the current phase when approved. Phase 32 (the
+> this is the roadmap phase, not a correction phase, and the current one. Phase 32 (the
 > Inspector timeline, AGE-39, an exception to R7) runs beside it; Q7 links to its bars once it is merged.
 
 ## Why now
