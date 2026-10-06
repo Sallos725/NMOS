@@ -259,6 +259,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       } else if (s.pluginExpected) {
         conn.append(el('div', { class: 'muted', text: L('status.plugin_ok', { b: PLUGIN_BUILD }) }));
       }
+      // No request since load: normal before the first message, a denied permission after it (a hint only).
+      if (s.enabled && !s.last) conn.append(el('div', { class: 'muted', text: L('status.no_requests') }));
     } else {
       conn.append(el('div', { class: 'line' }, el('span', { class: 'dot err' }),
         el('span', { class: 'err', text: `${L('status.unreachable')}: ${base}` })),

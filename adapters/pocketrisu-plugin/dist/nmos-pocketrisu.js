@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:c5cdc0aad54f".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:d6bb4833101f".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -332,6 +332,11 @@
       "This plugin (build {mine}) differs from the sidecar's (build {theirs}). Replace it with the plugin file of the sidecar's version and reload. The Inspector's first page links the matching file."
     ],
     "status.plugin_ok": ["\uD50C\uB7EC\uADF8\uC778 \uBE4C\uB4DC {b} \xB7 \uC0AC\uC774\uB4DC\uCE74\uC640 \uAC19\uC74C", "Plugin build {b} \xB7 matches the sidecar"],
+    // The host registers the request hook only with the "replace content" permission and remembers a denial silently.
+    "status.no_requests": [
+      '\uC774 \uD398\uC774\uC9C0\uB97C \uC5F0 \uB4A4 NMOS\uAC00 \uBC1B\uC740 \uCC44\uD305 \uC694\uCCAD\uC774 \uC544\uC9C1 \uC5C6\uC2B5\uB2C8\uB2E4. \uCC44\uD305\uC744 \uBCF4\uB0C8\uB294\uB370\uB3C4 \uC774\uB300\uB85C\uB77C\uBA74 PocketRisu\uAC00 "\uB0B4\uC6A9 \uAD50\uCCB4" \uAD8C\uD55C \uAC70\uC808\uC744 \uAE30\uC5B5\uD558\uACE0 \uC788\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4: \uC124\uC815 \u2192 \uD50C\uB7EC\uADF8\uC778 \u2192 NMOS \uC904 \uBA54\uB274 \u2192 \uAD8C\uD55C \uC751\uB2F5 \uCD08\uAE30\uD654, \uC0C8\uB85C \uACE0\uCE68 \uD6C4 \uC608.',
+      'No chat request has reached NMOS since this page opened. If you have sent one, PocketRisu may remember a denied "replace content" permission: Settings \u2192 Plugin \u2192 the NMOS row menu \u2192 reset permission responses, reload, and answer Yes.'
+    ],
     "budget.title": ["\uAE30\uC5B5 {c}\uC904\uC774 \uC790\uB9AC\uAC00 \uC5C6\uC5B4 \uBE60\uC84C\uC2B5\uB2C8\uB2E4", "{c} memory lines did not fit"],
     "budget.text": [
       "\uB9C8\uC9C0\uB9C9 \uC751\uB2F5\uC5D0\uC11C \uCC3E\uC740 \uAE30\uC5B5 {m}\uC904 \uC911 {c}\uC904\uC774 \uAE30\uC5B5 \uC608\uC0B0({b}\uD1A0\uD070)\uC5D0 \uB4E4\uC5B4\uAC00\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC608\uC0B0\uC744 {s}\uC73C\uB85C \uC62C\uB9AC\uBA74 \uBAA8\uB450 \uB4E4\uC5B4\uAC11\uB2C8\uB2E4. \uC62C\uB9B0 \uB9CC\uD07C({d}\uD1A0\uD070) PocketRisu\uC758 \uCD5C\uB300 \uCEE8\uD14D\uC2A4\uD2B8\uB3C4 \uC904\uC5EC \uC8FC\uC138\uC694.",
@@ -2264,6 +2269,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         } else if (s.pluginExpected) {
           conn.append(el("div", { class: "muted", text: L("status.plugin_ok", { b: PLUGIN_BUILD }) }));
         }
+        if (s.enabled && !s.last) conn.append(el("div", { class: "muted", text: L("status.no_requests") }));
       } else {
         conn.append(
           el(
