@@ -5,6 +5,10 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **The portable bundles report their version.** Every v0.3.0 bundle (Linux x64 and arm64, macOS, Windows) reported
+  version 0.0.0: the bundle build copies the sidecar in as source, without the package metadata the sidecar reads its
+  version from. The build now writes that metadata from `apps/sidecar/pyproject.toml` and checks that the bundled
+  sidecar reports it, and the bundle smoke test fails on any other version. Docker images were not affected.
 - **A hint when the plugin never receives a chat request.** PocketRisu registers the plugin's request hook only with
   the "replace content" permission and remembers a denial without saying so: the Status tab then says "connected"
   while nothing syncs (reported on a Windows bundle). The Status tab now says when no chat request has reached NMOS
