@@ -5,6 +5,9 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **The Inspector's tab shows NMOS's icon.** The pages carry the plugin's icon inline (a data URI), so it shows at any
+  address the Inspector is opened at, and its colour follows the light or dark scheme. Before, the browser asked for a
+  `/favicon.ico` the sidecar does not serve.
 - **The portable bundles report their version.** Every v0.3.0 bundle (Linux x64 and arm64, macOS, Windows) reported
   version 0.0.0: the bundle build copies the sidecar in as source, without the package metadata the sidecar reads its
   version from. The build now writes that metadata from `apps/sidecar/pyproject.toml` and checks that the bundled
