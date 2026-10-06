@@ -34,17 +34,18 @@ class Slow:
 
 
 def test_an_embedding_slower_than_the_timeout_arrives_when_the_reads_took_the_difference():
-    """Before: a 200 ms embedder under a 100 ms timeout never gave vectors. Now the reads' 150 ms count too."""
-    emb = Slow(0.2)
-    pending = QueryEmbedding(emb, "q", timeout_ms=100)
-    time.sleep(0.15)  # recall's reads
+    """Before: a 400 ms embedder under a 200 ms timeout never gave vectors. Now the reads' 300 ms count too.
+    (Twice the times it had: a busy macOS runner overslept 100 ms of a 50 ms remainder by 43 ms.)"""
+    emb = Slow(0.4)
+    pending = QueryEmbedding(emb, "q", timeout_ms=200)
+    time.sleep(0.3)  # recall's reads
     t0 = time.perf_counter()
     vec = pending.result()
     waited = time.perf_counter() - t0
     assert vec == ANSWER
-    assert waited < 0.1  # the rest of the call, not the whole of it
-    assert pending.call_ms is not None and pending.call_ms >= 190
-    assert emb.calls == [EMBED_CALL_FACTOR * 0.1]  # the call itself is bounded at the factor times the timeout
+    assert waited < 0.3  # the rest of the call (about 0.1 s), not the whole of it (0.4 s)
+    assert pending.call_ms is not None and pending.call_ms >= 390
+    assert emb.calls == [EMBED_CALL_FACTOR * 0.2]  # the call itself is bounded at the factor times the timeout
 
 
 def test_the_wait_after_the_reads_is_at_most_the_timeout():
