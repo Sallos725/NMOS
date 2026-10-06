@@ -5,6 +5,10 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **The portable bundles report their version.** Every v0.3.0 bundle (Linux x64 and arm64, macOS, Windows) reported
+  version 0.0.0: the bundle build copies the sidecar in as source, without the package metadata the sidecar reads its
+  version from. The build now writes that metadata from `apps/sidecar/pyproject.toml` and checks that the bundled
+  sidecar reports it, and the bundle smoke test fails on any other version. Docker images were not affected.
 - **Voyage AI in the embedding presets, with its own similarity bar** (AGE-40; outside a phase, asked for by the
   owner). Similarity scores differ by embedding model: on the M0 chats `voyage-4-large` matches `qwen3-embedding` only
   with the vector bar at 0.3 (0.42 is qwen3's), so a preset measured with its own bar now sets "Vector min similarity"
