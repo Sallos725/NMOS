@@ -51,7 +51,11 @@ SCRIPT = ("<script>document.addEventListener('click',function(e){var a=e.target.
           "tl.querySelectorAll('[aria-pressed=\"true\"]').forEach(function(b){b.setAttribute('aria-pressed','false')});"
           "a.setAttribute('aria-pressed','true');tl.classList.add('tapped');var x=document.createElement('button');"
           "x.type='button';x.className='tl-x';x.textContent=side.dataset.close;x.onclick=function(){c.remove();"
-          "a.setAttribute('aria-pressed','false')};c.prepend(x)});</script>")
+          "a.setAttribute('aria-pressed','false')};c.prepend(x)});"
+          # a row the setting alone gave sits in a closed fold: a link to it opens the fold (owner, 2026-10-07)
+          "function tlOpen(){var e=location.hash&&document.getElementById(location.hash.slice(1));"
+          "for(;e;e=e.parentElement)if(e.tagName==='DETAILS')e.open=true}"
+          "window.addEventListener('hashchange',tlOpen);tlOpen();</script>")
 
 def _v(value: Any) -> str:
     return escape("" if value is None else str(value))
@@ -519,6 +523,7 @@ a.tl-row:hover{background:var(--chip);text-decoration:none}
 .tl-more{font-size:12px;margin:2px 6px}
 .tl-fold>summary,.tl-others>summary{font-size:12px;color:var(--muted);margin:8px 0 2px 6px;cursor:pointer}
 tr:target td{background:var(--chip)}
+.fold-setting>summary{margin:10px 0 4px;cursor:pointer;font-size:13px}
 @media (max-width:720px){.tl-grid{grid-template-columns:minmax(0,1fr)}
   /* the detail rises from the bottom where the tap was made, not under the whole timeline (owner, 2026-10-07) */
   .tl-side{position:fixed;left:0;right:0;top:auto;bottom:0;z-index:20;max-height:46vh;overflow:auto;border-left:0;

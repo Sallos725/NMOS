@@ -318,3 +318,17 @@ def test_threads_start_closed_with_their_counts():
                for i in range(5)]
     page = inspector.character(CONV, "e1", view([], threads), None, lang="en", now=20)
     assert '<details class="tl-group"><summary class="tl-h">Threads · 3 open · 2 closed</summary>' in page
+
+
+def test_the_fact_table_folds_what_the_setting_alone_gave():
+    """Owner, 2026-10-07: the tables too (current facts, relationship pairs): rows only the setting gave fold below."""
+    story = fact(50, HANA, "has_trait", [step(3, "brave", "current")], turn=3, value="brave")
+    setting = fact(51, HANA, "has_trait", [step(0, "Born in the north", "current", canon=True)], turn=0,
+                   value="Born in the north", canon=True)
+    corrected = fact(52, HANA, "has_trait", [step(0, "tall", "current", canon=True)], turn=0, value="tall", canon=True,
+                     owner=True)
+    page = inspector.character(CONV, "e1", view([story, setting, corrected]), None, lang="en", now=10)
+    about = page.split('id="s-about"')[1]
+    shown, fold = about.split('<details class="fold-setting">', 1)
+    assert "brave" in shown and "tall" in shown and "Born in the north" not in shown  # the owner's correction stays up
+    assert "Only from the setting (lorebook, card): 1" in fold and "Born in the north" in fold.split("</details>")[0]

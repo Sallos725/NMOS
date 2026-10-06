@@ -204,6 +204,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "tl.others": ("다른 인물 {n}명", "{n} more characters"), "tl.me": ("나", "you"),
     "tl.steady": ("변하지 않은 사실 {n}개", "Unchanged facts ({n})"),
     "tl.steady_canon": ("설정(로어북)에서 온 사실 {n}개", "From the setting (lorebook, card): {n}"),
+    "setting_fold": ("설정(로어북·카드)에서만 온 것 {n}개", "Only from the setting (lorebook, card): {n}"),
     "tl.steady_canon_rel": ("설정(로어북)에서 온 관계 {n}개", "Relationships from the setting: {n}"),
     "tl.steady_rel": ("변하지 않은 관계 {n}개", "Unchanged relationships ({n})"), "tl.no_cast": ("아직 인물이 없어요.", "No characters yet."),
     "cs.located_in": ("있는 곳", "Place"), "cs.has_status": ("상태", "Condition"),
@@ -459,6 +460,15 @@ def table(headers: list[str], rows: Iterable[list[str]], ids: Iterable[str] | No
     marks = [f" id=\"{_v(i)}\"" for i in ids] if ids is not None else [""] * len(rows)
     body = "".join(f"<tr{mark}>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row, mark in zip(rows, marks))
     return f"<div class=\"wrap\"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
+
+
+def _setting_fold(lang: str, story: str, setting: str, n: int) -> str:
+    """Rows the setting alone gave (lorebook, card; ADR 0047) folded under one line after the story's own (owner,
+    2026-10-07: a lorebook brings many, often in another language, and buried what the story said)."""
+    if not n:
+        return story
+    return (story + f"<details class=\"fold-setting\"><summary class=\"muted\">"
+            f"{_v(_t(lang, 'setting_fold').format(n=n))}</summary>{setting}</details>")
 
 
 # Matches the "status-block" and "hp" rules in config/parsers.example.json.
@@ -773,6 +783,20 @@ def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
                 text += f" <span class=\"muted\">· {_t(lang, key)}: {_v(was.get('value'))} ({_turn(was)})</span>"
         return text
 
+    def setting_only(p: dict[str, Any]) -> bool:
+        said_all = [f for k in ("relationship", "role", "feels", "speech") for f in p[k]]
+        return bool(said_all) and all(f.get("canon") for f in said_all)
+
+    entries = entries[:100]
+    story = [p for p in entries if not setting_only(p)]
+    setting = [p for p in entries if setting_only(p)]
+    if not setting:
+        return _pairs_rows(entries, lang, said)
+    return _setting_fold(lang, _pairs_rows(story, lang, said) if story else "", _pairs_rows(setting, lang, said),
+                         len(setting))
+
+
+def _pairs_rows(entries: list[dict[str, Any]], lang: str, said: Any) -> str:
     return table([_t(lang, k) for k in ("h.pair", "h.relationship", "h.role", "h.feelings", "h.speech")],
                  [[_v(" ↔ ".join(sorted(p["names"].values()))),
                    # a directed value ("엄마") says who is whose only with its direction; a symmetric one needs it
@@ -781,7 +805,7 @@ def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
                                for f in p["relationship"]),
                    "<br>".join(said(f, True) for f in p["role"]),
                    "<br>".join(said(f, True) for f in p["feels"]),
-                   "<br>".join(said(f, True) for f in p["speech"])] for p in entries[:100]])
+                   "<br>".join(said(f, True) for f in p["speech"])] for p in entries])
 
 
 def _job_state(job: dict[str, Any], notes: list[str], lang: str) -> str:
@@ -835,6 +859,15 @@ def _summaries_section(view: dict[str, Any], lang: str, gen: dict[str, Any] | No
 
 
 def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str, anchors: bool = False) -> str:
+    story = [f for f in facts if not f.get("canon") or f.get("owner")]
+    setting = [f for f in facts if f.get("canon") and not f.get("owner")]
+    if not setting:
+        return _facts_rows(facts, active, lang, anchors)
+    return _setting_fold(lang, _facts_rows(story, active, lang, anchors) if story else "",
+                         _facts_rows(setting, active, lang, anchors), len(setting))
+
+
+def _facts_rows(facts: list[dict[str, Any]], active: str | None, lang: str, anchors: bool = False) -> str:
     t = lambda k: _t(lang, k)
     # A fact whose turn the active generation has not compiled yet comes from an older one (ADR 0014).
     older = f" <span class=\"chip\">{t('older_gen')}</span>"
