@@ -191,6 +191,10 @@ revealed secret ends), the strict and narrator cases in the memory evaluation, a
 
 *Original §44–55, §78; Track B, B6.* Has: packet ledger, as-of replay, echo, abstention.
 
+**Phases** (decided 2026-10-07, PHASE-33 Q0): Phase 33 (approved 2026-10-07, current) carries the quote route, the
+turns extraction has not reached, the Inspector's source-turn page and the overuse baseline; Phase 34 carries the
+candidate labels and the overuse penalty. `0.4.0` follows Phase 34.
+
 Scope (draft):
 - fast, normal and forensic recall paths;
 - an exact-quote path that prefers raw text;
