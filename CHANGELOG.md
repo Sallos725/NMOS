@@ -5,11 +5,21 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## 0.3.1
 
-A maintenance release of 0.3.0: the portable bundles report their version, and Voyage AI joins the embedding presets.
+A maintenance release of 0.3.0: the portable bundles report their version, the Status tab hints at a denied host
+permission, and Voyage AI joins the embedding presets.
 No migration, no new extractor or packet generation; the plugin build changes (`//@version 0.3.1`).
 
 What changes:
 
+- **The portable bundles report their version.** Every v0.3.0 bundle (Linux x64 and arm64, macOS, Windows) reported
+  version 0.0.0: the bundle build copies the sidecar in as source, without the package metadata the sidecar reads its
+  version from. The build now writes that metadata from `apps/sidecar/pyproject.toml` and checks that the bundled
+  sidecar reports it, and the bundle smoke test fails on any other version. Docker images were not affected.
+- **A hint when the plugin never receives a chat request.** PocketRisu registers the plugin's request hook only with
+  the "replace content" permission and remembers a denial without saying so: the Status tab then says "connected"
+  while nothing syncs (reported on a Windows bundle). The Status tab now says when no chat request has reached NMOS
+  since the page opened, and the Inspector's "no plugin has synced" line, how to reset the permission. A hint only;
+  nothing else changes.
 - **Voyage AI in the embedding presets, with its own similarity bar** (AGE-40; outside a phase, asked for by the
   owner). Similarity scores differ by embedding model: on the M0 chats `voyage-4-large` matches `qwen3-embedding` only
   with the vector bar at 0.3 (0.42 is qwen3's), so a preset measured with its own bar now sets "Vector min similarity"

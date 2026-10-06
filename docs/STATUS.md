@@ -517,7 +517,8 @@ release was checked.
 
 **Release `v0.3.1` (draft, pending the owner's check of the Windows bundle), a maintenance release of `v0.3.0`.** The
 portable bundles report their version (every `v0.3.0` bundle said 0.0.0: the build copied the sidecar without its
-package metadata) and Voyage AI joins the embedding presets with its own similarity bar (AGE-40). No migration, no new
+package metadata), the Status tab and the Inspector hint at a denied "replace content" permission when no chat request
+reaches NMOS, and Voyage AI joins the embedding presets with its own similarity bar (AGE-40). No migration, no new
 extractor or packet generation.
 
 **Release `v0.3.0` (2026-10-05), the second milestone (`docs/ROADMAP-1.0.md`), at the owner's request.** Stage 6
