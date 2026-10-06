@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **A hint when the plugin never receives a chat request.** PocketRisu registers the plugin's request hook only with
+  the "replace content" permission and remembers a denial without saying so: the Status tab then says "connected"
+  while nothing syncs (reported on a Windows bundle). The Status tab now says when no chat request has reached NMOS
+  since the page opened, and the Inspector's "no plugin has synced" line, how to reset the permission. A hint only;
+  nothing else changes.
 - **Voyage AI in the embedding presets, with its own similarity bar** (AGE-40; outside a phase, asked for by the
   owner). Similarity scores differ by embedding model: on the M0 chats `voyage-4-large` matches `qwen3-embedding` only
   with the vector bar at 0.3 (0.42 is qwen3's), so a preset measured with its own bar now sets "Vector min similarity"
