@@ -157,7 +157,8 @@ export function markDetail(mark: Element, notes: { canon: string; owner: string 
     if (cls) p.className = cls;
     card.append(p);
   };
-  line(mark.getAttribute('data-k') || (mark.closest('.tl-row')?.querySelector('.tl-lab')?.textContent ?? ''), 'muted');
+  const row = mark.closest('.tl-row');  // the lane's name, not its value beside it
+  line(mark.getAttribute('data-k') || ((row?.querySelector('.tl-lab .tl-k') ?? row?.querySelector('.tl-lab'))?.textContent ?? ''), 'muted');
   line(mark.getAttribute('data-v') ?? '', 'v');
   const outcome = mark.getAttribute('data-o');
   line((mark.getAttribute('data-s') ?? '') + (outcome ? ` · ${outcome}` : ''));

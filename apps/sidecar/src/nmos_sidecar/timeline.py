@@ -38,7 +38,7 @@ SCRIPT = ("<script>document.addEventListener('click',function(e){var a=e.target.
           "if(a.getAttribute('aria-pressed')==='true'){var o=side.querySelector('.tl-card');if(o)o.remove();"
           "a.setAttribute('aria-pressed','false');return}"
           "c.className='tl-card';function p(t,k){var x=document.createElement('p');x.textContent=t;if(k)x.className=k;"
-          "c.appendChild(x)}var lab=a.closest('.tl-row').querySelector('.tl-lab');p(a.dataset.k||lab.textContent,'muted');"
+          "c.appendChild(x)}var row=a.closest('.tl-row'),lab=row.querySelector('.tl-lab .tl-k')||row.querySelector('.tl-lab');p(a.dataset.k||lab.textContent,'muted');"
           "p(a.dataset.v,'v');p(a.dataset.s+(a.dataset.o?' \u00b7 '+a.dataset.o:''));if(a.dataset.p)p(a.dataset.p,'muted');"
           "if(a.classList.contains('canon'))p(side.dataset.canon,'muted');if(a.classList.contains('owner'))"
           "p(side.dataset.owner,'warn');var bars=a.classList.contains('tl-bar')?a.parentNode.querySelectorAll('a.tl-bar'):[];"
@@ -49,7 +49,9 @@ SCRIPT = ("<script>document.addEventListener('click',function(e){var a=e.target.
           "q=document.createElement('p');r.href=a.getAttribute('href');r.textContent=side.dataset.row;q.appendChild(r);"
           "c.appendChild(q);var old=side.querySelector('.tl-card');if(old)old.replaceWith(c);else side.prepend(c);"
           "tl.querySelectorAll('[aria-pressed=\"true\"]').forEach(function(b){b.setAttribute('aria-pressed','false')});"
-          "a.setAttribute('aria-pressed','true')});</script>")
+          "a.setAttribute('aria-pressed','true');tl.classList.add('tapped');var x=document.createElement('button');"
+          "x.type='button';x.className='tl-x';x.textContent=side.dataset.close;x.onclick=function(){c.remove();"
+          "a.setAttribute('aria-pressed','false')};c.prepend(x)});</script>")
 
 def _v(value: Any) -> str:
     return escape("" if value is None else str(value))
@@ -193,11 +195,11 @@ def _bars(p: _Page, lane: str, fact: dict[str, Any], segs: list[dict[str, Any]])
         picked = p.select(cur, lambda: _card(p.t, lane, _plain(p.t, s), f"{when} · {outcome}", href, notes,
                                              [(w, _plain(p.t, x), x is s) for x, w in zip(drawn, whens)]))
         cls = "tl-bar" + ("" if cur else " past") + (" neg" if s["negative"] else "") + \
-              (" canon" if s["canon"] else "") + (" owner" if s.get("owner") else "")
+              (" canon" if s["canon"] else "") + (" owner" if s.get("owner") else "") + \
+              (" short" if width < 3 else "")  # drawn above its neighbours: a one-turn value stays reachable
         pressed = "" if p.panel else f" aria-pressed=\"{'true' if picked else 'false'}\""
         out.append(p.mark(cls, href, f"{_data(_plain(p.t, s), when, outcome)}{pressed}{p.pos(left, width)} "
-                                     f"title=\"{_v(f'{lane}: {_plain(p.t, s)} · {when} · {outcome}')}\"",
-                          _value(p.t, s) if width >= 8 else ""))
+                                     f"title=\"{_v(f'{lane}: {_plain(p.t, s)} · {when} · {outcome}')}\""))
     return "".join(out)
 
 def _plain(t: T, s: dict[str, Any]) -> str:
@@ -208,16 +210,36 @@ def _value(t: T, s: dict[str, Any]) -> str:
     return _v(_plain(t, s))
 
 
-def _row(label: str, track: str, cls: str = "") -> str:
-    return (f"<div class=\"tl-row{cls}\"><div class=\"tl-lab\" title=\"{_v(label)}\">{_v(label)}</div>"
-            f"<div class=\"tl-track\"><span class=\"tl-rule\"></span>{track}</div></div>")
+def _row(label: str, track: str, cls: str = "", value: str | None = None, canon: bool = False) -> str:
+    """A lane: its name, and (owner, 2026-10-07) its value now beside it, so the bars carry no text of their own. A value
+    the setting gave (lorebook, card) is drawn quieter than one the story said."""
+    full = f"{label} · {value}" if value else label
+    val = f"<span class=\"tl-val{' canon' if canon else ''}\">{_v(value)}</span>" if value else ""
+    return (f"<div class=\"tl-row{cls}\"><div class=\"tl-lab\" title=\"{_v(full)}\"><span class=\"tl-k\">{_v(label)}</span>"
+            f"{val}</div><div class=\"tl-track\"><span class=\"tl-rule\"></span>{track}</div></div>")
+
+
+def _now_value(t: T, segs: list[dict[str, Any]]) -> str | None:
+    """The lane's value now, or its last one marked as no longer current."""
+    if not segs:
+        return None
+    last = segs[-1]
+    if last["outcome"] == "current":
+        return _plain(t, last)
+    return f"{_plain(t, last)} ({_outcome(t, last['outcome'])})"
 
 
 def _axis(p: _Page) -> str:
     step = 5 if p.hi - p.lo < 40 else 10 if p.hi - p.lo < 200 else 50
     marks = [p.lo] + [x for x in range((p.lo // step + 1) * step, p.hi - step // 2, step)] + [p.hi]
-    spans = "".join(f"<span{p.pos(p.pct(m) if m != p.hi else 100)}"
-                    f"{' class=\"first\"' if i == 0 else ' class=\"last\"' if i == len(marks) - 1 else ''}>"
+    def cls(i: int, m: int) -> str:  # a narrow screen keeps the first, the last and the even marks away from "now"
+        if i == 0:
+            return ' class="first"'
+        if i == len(marks) - 1:
+            return ' class="last"'
+        return f' class="{"near" if p.pct(m) > 66 else "odd" if i % 2 else "mid"}"'
+
+    spans = "".join(f"<span{p.pos(p.pct(m) if m != p.hi else 100)}{cls(i, m)}>"
                     f"{_v(p.t('tl.now_at').format(n=m) if m == p.hi else f't{m}')}</span>"
                     for i, m in enumerate(marks))
     hidden = "" if p.panel else " aria-hidden=\"true\""
@@ -225,10 +247,11 @@ def _axis(p: _Page) -> str:
 
 
 def _group(p: _Page, title: str, rows: list[str], more: int, folded: list[str] = (), folded_more: int = 0,
-           fold_key: str = "tl.steady", closed: bool = False) -> str:
+           fold_key: str = "tl.steady", closed: bool = False, setting: list[str] = (), setting_more: int = 0,
+           setting_key: str = "tl.steady_canon") -> str:
     """A titled group of lanes. `folded` are lanes that never changed, kept out of sight under one line (owner,
     2026-10-06: the timeline is for what changed; a character's many single facts drowned it)."""
-    if not rows and not folded:
+    if not rows and not folded and not setting:
         return ""
     rest = f"<p class=\"muted tl-more\">{_v(p.t('tl.more').format(n=more))}</p>" if more else ""
     fold = ""
@@ -236,6 +259,10 @@ def _group(p: _Page, title: str, rows: list[str], more: int, folded: list[str] =
         tail = f"<p class=\"muted tl-more\">{_v(p.t('tl.more').format(n=folded_more))}</p>" if folded_more else ""
         fold = (f"<details class=\"tl-fold\"><summary>{_v(p.t(fold_key).format(n=len(folded) + folded_more))}"
                 f"</summary>{''.join(folded)}{tail}</details>")
+    if setting:
+        tail = f"<p class=\"muted tl-more\">{_v(p.t('tl.more').format(n=setting_more))}</p>" if setting_more else ""
+        fold += (f"<details class=\"tl-fold tl-setting\"><summary>"
+                 f"{_v(p.t(setting_key).format(n=len(setting) + setting_more))}</summary>{''.join(setting)}{tail}</details>")
     # a group folds as a whole from its title (owner, 2026-10-06: "relationships too")
     return (f"<details class=\"tl-group\"{'' if closed else ' open'}><summary class=\"tl-h\">{_v(title)}</summary>"
             f"{''.join(rows)}{rest}{fold}</details>")
@@ -268,7 +295,7 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
                   key=lambda f: (f["object"], RELATIONS.index(f["predicate"])))
 
     def lanes(rows: list[dict[str, Any]], label: Callable[[dict[str, Any]], str],
-              split: bool = False) -> tuple[list[str], int, list[str], int]:
+              split: bool = False) -> tuple[list[str], int, list[str], int, list[str], int]:
         """Lanes in order, capped; with `split`, the lanes that never changed (one entry, still current) apart."""
         changed, steady = [], []
         for f in rows:
@@ -282,24 +309,34 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
             (steady if split and quiet else changed).append((f, segs))
         if len(changed) + len(steady) <= FOLD_OVER:  # few lanes: nothing to fold away
             changed, steady = changed + steady, []
-        drawn = [_row(label(f), _bars(p, label(f), f, segs)) for f, segs in changed[:LANES]]
+        def row(f: dict[str, Any], segs: list[dict[str, Any]]) -> str:
+            value = None if f["predicate"] == "possesses" else _now_value(t, segs)
+            return _row(label(f), _bars(p, label(f), f, segs), value=value, canon=bool(segs and segs[-1]["canon"]))
+
+        drawn = [row(f, segs) for f, segs in changed[:LANES]]
         before, p.selectable = p.selectable, False  # a folded lane is out of sight: the first detail is from one in sight
-        quiet = [_row(label(f), _bars(p, label(f), f, segs)) for f, segs in steady[:LANES]]
+        # what the setting gave and the story never touched folds apart from the story's own unchanged facts (owner,
+        # 2026-10-07: a lorebook brings 10 to 26 of them per character, often in another language)
+        canon = [(f, segs) for f, segs in steady if all(s["canon"] for s in segs)]
+        story = [(f, segs) for f, segs in steady if not all(s["canon"] for s in segs)]
+        quiet = [row(f, segs) for f, segs in story[:LANES]]
+        setting = [row(f, segs) for f, segs in canon[:LANES]]
         p.selectable = before
-        return drawn, max(0, len(changed) - LANES), quiet, max(0, len(steady) - LANES)
+        return (drawn, max(0, len(changed) - LANES), quiet, max(0, len(story) - LANES), setting,
+                max(0, len(canon) - LANES))
 
     def state_label(f: dict[str, Any]) -> str:  # one lane per thing held: the thing names it
         name = _label(t, f["predicate"])
         return f"{name}: {f['object']}" if f["predicate"] == "possesses" and f.get("object") else name
 
-    state_rows, state_more, steady_rows, steady_more = lanes(state, state_label, split=True)
+    state_rows, state_more, steady_rows, steady_more, canon_rows, canon_more = lanes(state, state_label, split=True)
     p.selectable = False  # relationships start closed: the first detail is not chosen from them
-    rel_rows, rel_more, steady_rels, steady_rels_more = lanes(rels, lambda f: _label(t, f["predicate"], f["object"]),
-                                                              split=True)
+    rel_rows, rel_more, steady_rels, steady_rels_more, canon_rels, canon_rels_more = lanes(
+        rels, lambda f: _label(t, f["predicate"], f["object"]), split=True)
     p.selectable = True
 
     held = set(names)
-    thread_rows = []
+    thread_rows, opened = [], 0
     for th in sorted((th for th in threads if norm(th.get("by")) in held or norm(th.get("to")) in held),
                      key=lambda th: th.get("turn") or 0):
         start = th.get("turn")
@@ -321,7 +358,8 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
         thread_rows.append(_row(lane, p.mark(
             f"tl-bar{'' if current else ' past'}{' open' if current else ''}", f"#a-{_v(th['id'])}",
             f"{_data(lane, when, state_word, t('tl.threads'), who)}{pressed}{p.pos(left, width)} "
-            f"title=\"{_v(f'{lane} · {when} · {state_word}')}\"", _v(state_word) if width >= 8 else "")))
+            f"title=\"{_v(f'{lane} · {when} · {state_word}')}\"")))
+        opened += current
 
     def takes_part(f: dict[str, Any]) -> bool:
         return mine(f) or any((x.get("entity") or {}).get("id") == entity_id for x in f.get("participant_entities") or [])
@@ -341,12 +379,15 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
                            f"{_data(f.get('value') or '', when, weight, t('tl.events'))}{pressed}"
                            f"{p.pos(p.pct(f['turn']))} title=\"{_v(title)}\""))
 
-    groups = (_group(p, t("tl.state"), state_rows, state_more, steady_rows, steady_more)
+    groups = (_group(p, t("tl.state"), state_rows, state_more, steady_rows, steady_more,
+                     setting=canon_rows, setting_more=canon_more)
               # closed at first (owner, 2026-10-06): a cast of many makes it the longest group
               + _group(p, t("tl.relations"), rel_rows, rel_more, steady_rels, steady_rels_more, "tl.steady_rel",
-                       closed=True)
-              # the newest threads, as the threads table lists the newest 100
-              + _group(p, t("tl.threads"), thread_rows[-LANES:], max(0, len(thread_rows) - LANES))
+                       closed=True, setting=canon_rels, setting_more=canon_rels_more, setting_key="tl.steady_canon_rel")
+              # the newest threads, as the threads table lists the newest 100; closed at first (owner, 2026-10-07:
+              # a list of "open" bars filled most of the page), its counts in the title
+              + _group(p, t("tl.threads_n").format(o=opened, c=len(thread_rows) - opened), thread_rows[-LANES:],
+                       max(0, len(thread_rows) - LANES), closed=True)
               + (_group(p, t("tl.events"), [_row(t("tl.n_events").format(n=len(dots)), "".join(dots))],
                         max(0, len(events) - DOTS)) if dots else ""))
     if not groups:
@@ -355,6 +396,7 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
         return (f"<div class=\"tl\">{switch}<p class=\"muted tl-hint\">{_v(t('tl.hint_tap'))}</p>"
                 f"<div class=\"tl-main\">{_axis(p)}{groups}</div></div>")
     side = (f"<aside class=\"tl-side\" data-row=\"{_v(t('tl.row'))}\" data-canon=\"{_v(t('tl.canon'))}\" "
+            f"data-close=\"{_v(t('tl.close'))}\" "
             f"data-owner=\"{_v(t('tl.owner'))}\">{p.card or ''}<p class=\"muted tl-hint\">{_v(t('tl.hint'))}</p></aside>")
     html = (f"<div class=\"tl\">{switch}<div class=\"tl-grid\"><div class=\"tl-main\">{_axis(p)}{groups}</div>"
             f"{side}</div></div>")
@@ -441,28 +483,31 @@ STYLE = """
 .tl .tl-h::before{content:"\\25BE  "} .tl details:not([open])>.tl-h::before{content:"\\25B8  "}
 .tl-switch{font-size:13px;margin:0 0 10px 6px} .tl-hint{font-size:12px;margin:0 0 8px 6px}
 .tl-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:28px;align-items:start}
-.tl-row{display:grid;grid-template-columns:130px minmax(0,1fr);gap:14px;align-items:center;padding:4px 6px;
+.tl-row{display:grid;grid-template-columns:220px minmax(0,1fr);gap:14px;align-items:center;padding:4px 6px;
   border-radius:6px;color:inherit}
 .tl-cast .tl-row{grid-template-columns:130px minmax(0,1fr) 48px}
 a.tl-row:hover{background:var(--chip);text-decoration:none}
 .tl-lab{font-size:13px;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-lab .tl-k{color:var(--muted)} .tl-lab .tl-val{color:var(--fg);margin-left:7px} .tl-lab .tl-val.canon{color:var(--muted)}
+.tl-cast .tl-lab{color:var(--fg)}
 .tl-last{display:none;color:var(--muted);font-size:12px}
 .tl-end{font-size:12px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
 .tl-me{font-size:11px;color:var(--accent);margin-left:6px}
 .tl-track{position:relative;height:26px;min-width:0}
 .tl-rule{position:absolute;left:0;right:0;top:13px;height:1px;background:var(--line)}
-.tl-bar{position:absolute;top:2px;height:22px;border-radius:4px;font-size:12px;line-height:20px;padding:0 7px;
-  overflow:hidden;white-space:nowrap;box-sizing:border-box;background:var(--chip);color:var(--fg);border:1px solid var(--line)}
+.tl-bar{position:absolute;top:5px;height:16px;min-width:6px;border-radius:4px;overflow:hidden;box-sizing:border-box;
+  background:var(--chip);border:1px solid var(--muted)}
+.tl-bar.short{z-index:2}
 .tl-bar:hover{text-decoration:none;border-color:var(--muted)}
-.tl-bar.past{background:transparent;color:var(--muted)} .tl-bar.neg{font-style:italic}
+.tl-bar.past{background:transparent;border-color:var(--line-strong,var(--muted));opacity:.8} .tl-bar.neg{border-style:dotted}
 .tl-bar.open{border-right-style:dashed} .tl-bar.canon{border-left:2px dotted var(--muted)}
 .tl-bar.owner{border-color:#e8590c}
 .tl [aria-pressed="true"]{background:var(--accent);color:var(--bg);border-color:var(--accent)}
-.tl-dot{position:absolute;top:50%;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;background:var(--muted)}
-.tl-dot.s-major{width:16px;height:16px;margin:-8px 0 0 -8px;background:var(--fg)}
-.tl-dot.s-minor{width:9px;height:9px;margin:-4.5px 0 0 -4.5px;background:var(--bg);border:1.5px solid var(--muted);
-  box-sizing:border-box}
-.tl-dot.n1{transform:translateX(9px)} .tl-dot.n2{transform:translateX(18px)} .tl-dot.n3{transform:translateX(27px)}
+.tl-dot{position:absolute;top:2px;bottom:2px;width:9px;margin-left:-4px;background:transparent}
+.tl-dot::after{content:"";position:absolute;left:3.5px;bottom:2px;width:2px;height:10px;border-radius:1px;background:var(--muted)}
+.tl-dot.s-major::after{height:18px;background:var(--fg)} .tl-dot.s-minor::after{height:6px}
+.tl-dot.n1{transform:translateX(4px)} .tl-dot.n2{transform:translateX(8px)} .tl-dot.n3{transform:translateX(12px)}
+.tl .tl-dot[aria-pressed="true"]{background:transparent} .tl .tl-dot[aria-pressed="true"]::after{background:var(--accent)}
 .tl-tick{position:absolute;top:5px;width:2px;height:16px;margin-left:-1px;border-radius:1px;background:var(--fg);opacity:.7}
 .tl-axis .tl-track{height:20px}
 .tl-axis .tl-track span{position:absolute;top:2px;font-size:11px;color:var(--muted);transform:translateX(-50%);white-space:nowrap}
@@ -470,10 +515,20 @@ a.tl-row:hover{background:var(--chip);text-decoration:none}
 .tl-side{border-left:1px solid var(--line);padding-left:18px;font-size:13px;position:sticky;top:12px}
 .tl-side p{margin:3px 0} .tl-side .v{font-size:22px;font-weight:600;line-height:1.3;margin:6px 0;overflow-wrap:anywhere}
 .tl-hist{margin:10px 0;padding-left:20px;color:var(--muted)} .tl-hist .cur{color:var(--fg)}
+.tl-x{display:none}
 .tl-more{font-size:12px;margin:2px 6px}
 .tl-fold>summary,.tl-others>summary{font-size:12px;color:var(--muted);margin:8px 0 2px 6px;cursor:pointer}
 tr:target td{background:var(--chip)}
 @media (max-width:720px){.tl-grid{grid-template-columns:minmax(0,1fr)}
-  .tl-side{position:static;border-left:0;border-top:1px solid var(--line);padding:12px 0 0}
-  .tl-row,.tl-cast .tl-row{grid-template-columns:minmax(0,1fr);gap:2px} .tl-end{display:none} .tl-last{display:inline}}
+  /* the detail rises from the bottom where the tap was made, not under the whole timeline (owner, 2026-10-07) */
+  .tl-side{position:fixed;left:0;right:0;top:auto;bottom:0;z-index:20;max-height:46vh;overflow:auto;border-left:0;
+    border-top:1px solid var(--line);border-radius:14px 14px 0 0;padding:12px 18px 20px;background:var(--bg);
+    box-shadow:0 -10px 28px rgba(0,0,0,.35)}
+  .tl:not(.tapped) .tl-side,.tl-side:not(:has(.tl-card)){display:none}
+  .tl-x{display:block;float:right;font:inherit;font-size:13px;color:var(--accent);background:none;border:0;padding:6px 0 6px 14px}
+  .tl-row{grid-template-columns:118px minmax(0,1fr);gap:8px}
+  .tl-lab{white-space:normal;line-height:1.3;max-height:2.6em} .tl-lab .tl-val{display:block;margin:0}
+  .tl-cast .tl-row{grid-template-columns:minmax(0,1fr);gap:2px} .tl-cast .tl-lab{white-space:nowrap}
+  .tl-axis .tl-track span.odd,.tl-axis .tl-track span.near{display:none}
+  .tl-end{display:none} .tl-last{display:inline}}
 """

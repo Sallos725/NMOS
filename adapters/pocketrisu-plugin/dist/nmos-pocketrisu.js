@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:a9ce9633fe35".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:568dce72fe45".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -1932,7 +1932,8 @@ ${revisionHash}`;
       if (cls) p.className = cls;
       card.append(p);
     };
-    line(mark.getAttribute("data-k") || (mark.closest(".tl-row")?.querySelector(".tl-lab")?.textContent ?? ""), "muted");
+    const row = mark.closest(".tl-row");
+    line(mark.getAttribute("data-k") || ((row?.querySelector(".tl-lab .tl-k") ?? row?.querySelector(".tl-lab"))?.textContent ?? ""), "muted");
     line(mark.getAttribute("data-v") ?? "", "v");
     const outcome = mark.getAttribute("data-o");
     line((mark.getAttribute("data-s") ?? "") + (outcome ? ` \xB7 ${outcome}` : ""));
@@ -1945,10 +1946,10 @@ ${revisionHash}`;
       const list = document.createElement("div");
       list.className = "tl-hist";
       for (const bar of lane) {
-        const row = document.createElement("p");
-        if (bar === mark) row.className = "cur";
-        row.textContent = `${bar.getAttribute("data-s") ?? ""}  ${bar.getAttribute("data-v") ?? ""}`;
-        list.append(row);
+        const row2 = document.createElement("p");
+        if (bar === mark) row2.className = "cur";
+        row2.textContent = `${bar.getAttribute("data-s") ?? ""}  ${bar.getAttribute("data-v") ?? ""}`;
+        list.append(row2);
       }
       card.append(list);
     }
@@ -2198,25 +2199,32 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp .tl .tl-h::-webkit-details-marker{display:none}.nmos .insp .tl .tl-h::before{content:"\\25BE  "}.nmos .insp .tl details:not([open])>.tl-h::before{content:"\\25B8  "}
 .nmos .insp .tl-switch{font-size:12.5px;margin:0 0 8px}.nmos .insp .tl-span{color:var(--c-link);cursor:pointer}
 .nmos .insp .tl-hint{font-size:11.5px;color:var(--c-text-faint);margin:0 0 8px}
-.nmos .insp .tl-row{display:block;padding:4px 0;color:inherit}.nmos .insp a.tl-line{text-decoration:none;border-radius:6px}
-.nmos .insp .tl-lab{display:block;font-size:12.5px;color:var(--c-text);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nmos .insp .tl-row{display:grid;grid-template-columns:112px minmax(0,1fr);gap:8px;align-items:center;padding:3px 0;color:inherit}.nmos .insp a.tl-line{text-decoration:none;border-radius:6px}
+.nmos .insp .tl-cast .tl-row{display:block}
+.nmos .insp .tl-lab{display:block;font-size:12.5px;line-height:1.3;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;max-height:2.6em}
+.nmos .insp .tl-cast .tl-lab{white-space:nowrap;margin-bottom:2px}
+.nmos .insp .tl-lab .tl-k{display:block;font-size:11px;color:var(--c-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nmos .insp .tl-lab .tl-val{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nmos .insp .tl-lab .tl-val.canon{color:var(--c-text-muted)}
 .nmos .insp .tl-last{color:var(--c-text-faint);font-size:11.5px}.nmos .insp .tl-end{display:none}
 .nmos .insp .tl-me{font-size:10.5px;color:var(--c-link);margin-left:6px}
 .nmos .insp .tl-track{display:block;position:relative;height:26px}
 .nmos .insp .tl-rule{position:absolute;left:0;right:0;top:13px;height:1px;background:var(--c-line)}
-.nmos .insp .tl-bar{position:absolute;top:2px;height:22px;border-radius:4px;font-size:11.5px;line-height:20px;padding:0 6px;overflow:hidden;white-space:nowrap;background:var(--c-raised);color:var(--c-text);border:1px solid var(--c-line-strong);cursor:pointer}
-.nmos .insp .tl-bar.past{background:transparent;color:var(--c-text-muted)}.nmos .insp .tl-bar.neg{font-style:italic}
+.nmos .insp .tl-bar{position:absolute;top:5px;height:16px;min-width:6px;border-radius:4px;overflow:hidden;box-sizing:border-box;background:var(--c-raised);border:1px solid var(--c-text-faint);cursor:pointer}
+.nmos .insp .tl-bar.short{z-index:2}
+.nmos .insp .tl-bar.past{background:transparent;border-color:var(--c-line-hover)}.nmos .insp .tl-bar.neg{border-style:dotted}
 .nmos .insp .tl-bar.open{border-right-style:dashed}.nmos .insp .tl-bar.canon{border-left:2px dotted var(--c-text-muted)}
 .nmos .insp .tl-bar.owner{border-color:var(--c-warn)}
 .nmos .insp .tl .sel{background:var(--c-accent);border-color:var(--c-accent);color:#fff}
-.nmos .insp .tl-dot{position:absolute;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--c-text-muted);cursor:pointer}
-.nmos .insp .tl-dot.s-major{width:16px;height:16px;margin:-8px 0 0 -8px;background:var(--c-text-strong)}
-.nmos .insp .tl-dot.s-minor{width:10px;height:10px;margin:-5px 0 0 -5px;background:var(--c-bg);border:1.5px solid var(--c-text-muted)}
-.nmos .insp .tl-dot.n1{transform:translateX(9px)}.nmos .insp .tl-dot.n2{transform:translateX(18px)}.nmos .insp .tl-dot.n3{transform:translateX(27px)}
+.nmos .insp .tl-dot{position:absolute;top:2px;bottom:2px;width:10px;margin-left:-5px;cursor:pointer}
+.nmos .insp .tl-dot::after{content:"";position:absolute;left:4px;bottom:2px;width:2px;height:10px;border-radius:1px;background:var(--c-text-muted)}
+.nmos .insp .tl-dot.s-major::after{height:18px;background:var(--c-text-strong)}.nmos .insp .tl-dot.s-minor::after{height:6px}
+.nmos .insp .tl-dot.n1{transform:translateX(4px)}.nmos .insp .tl-dot.n2{transform:translateX(8px)}.nmos .insp .tl-dot.n3{transform:translateX(12px)}
+.nmos .insp .tl .tl-dot.sel{background:transparent}.nmos .insp .tl .tl-dot.sel::after{background:var(--c-accent)}
 .nmos .insp .tl-tick{position:absolute;top:5px;width:2px;height:16px;margin-left:-1px;border-radius:1px;background:var(--c-text-soft)}
 .nmos .insp .tl-axis .tl-track{height:18px}
 .nmos .insp .tl-axis .tl-track span{position:absolute;top:0;font-size:10.5px;color:var(--c-text-faint);transform:translateX(-50%);white-space:nowrap}
 .nmos .insp .tl-axis .tl-track span.first{transform:none}.nmos .insp .tl-axis .tl-track span.last{transform:translateX(-100%)}
+.nmos .insp .tl-axis .tl-track span.odd,.nmos .insp .tl-axis .tl-track span.near{display:none}
 .nmos .insp .tl-card{margin:6px 0 10px;padding:10px 12px;border-radius:8px;background:var(--c-raised);font-size:12.5px}
 .nmos .insp .tl-card p{margin:2px 0}.nmos .insp .tl-card .v{font-size:17px;font-weight:600;line-height:1.35;color:var(--c-text-strong);overflow-wrap:anywhere}
 .nmos .insp .tl-hist{margin-top:8px;color:var(--c-text-muted)}.nmos .insp .tl-hist .cur{color:var(--c-text-strong)}

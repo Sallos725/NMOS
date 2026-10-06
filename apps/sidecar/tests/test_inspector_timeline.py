@@ -291,3 +291,30 @@ def test_the_panel_routes(migrated):
         panel_safe(people)
         assert f'href="/inspector/c/{conv}/e/{hana}"' in people
         assert '<div class="tl-lazy"></div>' in client.get(f"/v1/inspector/c/{conv}?timeline=lazy").json()["html"]
+
+
+def test_what_the_setting_gave_folds_apart_and_a_lane_says_its_value():
+    """Owner, 2026-10-07: a lorebook brings many facts the story never touches; they fold under their own line, a
+    lane's name carries its value now, and a value from the setting is drawn quieter."""
+    moved = fact(10, HANA, "located_in", [step(0, "dormitory", "superseded", canon=True, closed_turn=2),
+                                          step(2, "room 204", "current")])
+    canon = [fact(30 + i, HANA, "has_trait", [step(0, f"setting trait {i}", "current", canon=True)]) for i in range(6)]
+    story = [fact(40 + i, HANA, "has_trait", [step(1, f"story trait {i}", "current")]) for i in range(4)]
+    page = inspector.character(CONV, "e1", view([moved, *canon, *story]), None, lang="en", now=10)
+    timeline_html = page.split('id="s-timeline"')[1]
+    assert '<span class="tl-k">located in</span><span class="tl-val">room 204</span>' in timeline_html
+    assert "<summary>Unchanged facts (4)</summary>" in timeline_html
+    setting = timeline_html.split('<details class="tl-fold tl-setting"><summary>From the setting (lorebook, card): 6'
+                                  '</summary>', 1)[1].split("</details>")[0]
+    assert "setting trait 0" in setting and "story trait" not in setting
+    assert '<span class="tl-val canon">setting trait 0</span>' in setting
+    assert not re.search(r'class="tl-bar[^"]*"[^>]*>[^<]+</a>', timeline_html)  # bars carry no text
+
+
+def test_threads_start_closed_with_their_counts():
+    threads = [{"id": i, "kind": "goal", "text": f"goal {i}", "by": "Hana", "to": None, "turn": i + 1,
+                "position": i + 1, "status": "open" if i < 3 else "done", "restated": [],
+                "closed_by": None if i < 3 else {"turn": i + 4, "subject": "Hana", "predicate": "event", "value": "done"}}
+               for i in range(5)]
+    page = inspector.character(CONV, "e1", view([], threads), None, lang="en", now=20)
+    assert '<details class="tl-group"><summary class="tl-h">Threads · 3 open · 2 closed</summary>' in page
