@@ -11,7 +11,8 @@ used, and an activation threshold for supportive excerpts.
 **Phase 33 — Forensic recall, part 1 (Stage 7): the source turn, quoted: approved 2026-10-07 (the owner: every
 question as proposed), the current phase; steps 2–4 done (the baselines, `docs/perf/phase33-baseline.md`: the quote set 4 of 24 under
 `packet-v12`, the overuse baseline, K44; `packet-v13`, `docs/perf/phase33-replay.md`: the quote set 21 of 24, every bench set
-equal to `packet-v12`, +102 ms at 10,000 messages; the Inspector's source-turn page), step 5 next.** Spec `docs/phases/PHASE-33.md` (AGE-10). Stage 7 is split in two
+equal to `packet-v12`, +102 ms at 10,000 messages; the Inspector's source-turn page); complete 2026-10-08 (in the default through `packet-v14`; the reduced live run
+dropped by the owner, Q10 d).** Spec `docs/phases/PHASE-33.md` (AGE-10). Stage 7 is split in two
 (Q0): this phase adds a speech-cue quote route with `<Quote turn speaker>` lines and turn and first anchors (no model
 call), lets turns extraction has not reached keep their excerpts while a chat is caught up, diagnoses the missed
 address-history case by replay, adds the Inspector's source-turn page, and reports the overuse baseline; Phase 34
