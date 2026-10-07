@@ -1206,14 +1206,16 @@ def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str],
 
 def _unextracted(conn: psycopg.Connection, head: UUID, ids: list[Any], extractor_key: str) -> set[str]:
     """The revisions among `ids` whose turn on the head the generation has not extracted (PHASE-33 Q5). A turn is
-    extracted once, on its last message, for every message of it."""
+    extracted once, on its last message, for every message of it; an extraction of the turn as it was before an edit
+    (another window, ADR 0008) does not count, as `readmodel.membership` counts it."""
     return {str(r["id"]) for r in conn.execute(
         """
         SELECT am.source_revision_id AS id FROM active_membership am
         WHERE am.commit_id = %(head)s AND am.source_revision_id = ANY(%(ids)s)
           AND NOT EXISTS (SELECT 1 FROM active_membership t JOIN extraction x ON x.source_revision_id = t.source_revision_id
-                          WHERE t.commit_id = %(head)s AND t.turn = am.turn AND x.extractor_key = %(key)s
-                            AND x.discarded_at IS NULL)
+                           AND x.window_hash = t.turn_hash
+                          WHERE t.commit_id = %(head)s AND t.turn = am.turn AND t.turn_hash IS NOT NULL
+                            AND x.extractor_key = %(key)s AND x.discarded_at IS NULL)
         """, {"head": head, "ids": ids, "key": extractor_key}, prepare=False).fetchall()}
 
 

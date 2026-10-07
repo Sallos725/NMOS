@@ -95,3 +95,29 @@ def test_a_quote_only_the_quote_route_found_keeps_a_secret_as_a_keyword_only_exc
     assert trace["latency_ms"]["path"] == "forensic"
     assert not any("forged" in line for line in out["packet"]["text"].splitlines() if "<Quote" in line)
     assert trace["latency_ms"]["quote_withheld"] >= 1  # found by the route alone: no keyword or lexical candidate
+
+
+def test_a_turn_edited_since_its_extraction_is_unextracted_again(v13):
+    """An extraction of the turn as it was before an edit does not count (its window changed, ADR 0008)."""
+    client, url = v13
+    chat = SimChat()
+    chat.reply("Welcome to the story.")
+    chat.user("Hana hid the silver map in the attic.")
+    chat.reply("Noted.")
+    chat.user("Hana smiles.")
+    chat.reply("Noted.")
+    _sync(client, chat)
+    extract(url)
+    chat.edit(1, "Hana hid the silver map under the lighthouse stairs.")  # turn 1, after its extraction
+    for i in range(RECENT):
+        chat.user(f"Idle chatter {i} about clouds.")
+        chat.reply("Noted.")
+    _sync(client, chat)
+    chat.user("Where did Hana hide the silver map?")
+    _sync(client, chat)
+    out = client.post("/v1/retrieve", json={"chat_id": chat.id, "query": "Where did Hana hide the silver map?",
+                                            "previous_ai": "", "budget_tokens": 600,
+                                            "in_context_ids": [m["chatId"] for m in chat.messages[-RECENT:]]}).json()
+    lines = client.get(f"/v1/trace/{out['trace_id']}").json()["lines"]
+    hit = [e for e in lines if e["kind"] == "excerpt" and "lighthouse stairs" in e["text"]]
+    assert hit and hit[0]["marks"] == {"unextracted": True}
