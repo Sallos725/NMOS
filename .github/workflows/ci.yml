@@ -8,7 +8,7 @@ on:
 
 jobs:
   sidecar:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04  # canary, not for merge
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -31,7 +31,7 @@ jobs:
           NMOS_TEST_REQUIRE_DB: "1"  # a Postgres service that never came up fails here, not as skipped tests
 
   plugin:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04  # canary, not for merge
     defaults:
       run:
         working-directory: adapters/pocketrisu-plugin
@@ -52,7 +52,7 @@ jobs:
   edge:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [sidecar, plugin]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04  # canary, not for merge
     permissions:
       contents: read
       packages: write

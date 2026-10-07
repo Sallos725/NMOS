@@ -1,0 +1,38 @@
+# Throwaway canary for the ubuntu-latest move to Ubuntu 26.04 (from 2026-10-19). Not for merge: the PR that
+# carries this file is closed once the runs are read. ci.yml's sidecar and plugin jobs run on 26.04 in the
+# same PR; these jobs cover the paths a pull request never runs (edge, release).
+name: canary-ubuntu-26
+
+on:
+  pull_request:
+
+jobs:
+  # release.yml's image build (amd64 + arm64 through QEMU), and edge's amd64 with it; nothing is pushed.
+  docker:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker version && docker buildx version && uname -r
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/sidecar.Dockerfile
+          push: false
+          platforms: linux/amd64,linux/arm64
+
+  # release.yml's checks that run on the runner's own python3, Bash and awk, against the last release.
+  release-helpers:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 --version && bash --version | head -1 && awk --version | head -1
+      - run: python3 tools/check_release.py v0.3.0
+      - name: Release notes extract
+        run: |
+          GITHUB_REF_NAME=v0.3.0
+          notes=$(awk -v v="## ${GITHUB_REF_NAME#v}" '$0==v{f=1;next} /^## /{f=0} f' CHANGELOG.md)
+          test -n "$notes" && echo "$notes" | head -5
+          flags=""; [[ "$GITHUB_REF_NAME" == *-* || "$GITHUB_REF_NAME" == v0.* ]] && flags="--prerelease"
+          test "$flags" = "--prerelease"
