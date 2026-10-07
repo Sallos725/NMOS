@@ -12,7 +12,10 @@ Per conversation, over its recorded requests in the order they were made (the pa
   before it, averaged over the requests that have three before them;
 - `echo_new`, `echo_repeat`: of the placed lines the next reply could be checked against (`audit.reply_after`), the
   share the reply echoed (`spans.reuse`, ADR 0027), for lines new to the packet and for lines repeated from the
-  request before.
+  request before; `echo_supportive_*` the same on supportive lines when the ledgers carry labels (`packet-v14`).
+
+`--policy` keeps the requests recorded under a policy, so one chat's requests before and after a change are compared
+(PHASE-34 Q8 d). Echo needs real replies: a harness with scripted replies measures the script, not a model.
 
 A line is its kind and its ledger `ref` (a fact, a repair, an excerpt's revision); a line without one is its kind and
 text. Requests whose story changed since cannot be checked for echo and count only toward the other numbers.
@@ -52,10 +55,10 @@ def pct(values: list[float], q: float) -> float | None:
     return s[min(len(s) - 1, int(q * len(s)))]
 
 
-def conversation_report(conn: psycopg.Connection, conv: UUID) -> dict[str, Any]:
+def conversation_report(conn: psycopg.Connection, conv: UUID, policies: list[str] | None = None) -> dict[str, Any]:
     traces = conn.execute(
-        "SELECT id, lines FROM retrieval_trace WHERE conversation_id = %s AND lines IS NOT NULL ORDER BY created_at",
-        (conv,)).fetchall()
+        "SELECT id, lines FROM retrieval_trace WHERE conversation_id = %s AND lines IS NOT NULL"
+        " AND (%s::text[] IS NULL OR policy = ANY(%s)) ORDER BY created_at", (conv, policies, policies)).fetchall()
     placed_sets: list[set[tuple[str, str]]] = []
     tokens: list[dict[tuple[str, str], int]] = []
     for t in traces:
@@ -80,7 +83,7 @@ def conversation_report(conn: psycopg.Connection, conv: UUID) -> dict[str, Any]:
             kept = sum(v for k, v in tokens[i].items() if all(k in placed_sets[j] for j in (i - 1, i - 2, i - 3)))
             stale.append(kept / total)
 
-    echo = {"new": [0, 0], "repeat": [0, 0]}
+    echo = {"new": [0, 0], "repeat": [0, 0], "supportive_new": [0, 0], "supportive_repeat": [0, 0]}
     checked = 0
     for i, t in enumerate(traces):
         result = audit.audit(conn, t["id"])
@@ -93,6 +96,9 @@ def conversation_report(conn: psycopg.Connection, conv: UUID) -> dict[str, Any]:
             kind = "repeat" if i and line_key(e) in placed_sets[i - 1] else "new"
             echo[kind][0] += 1
             echo[kind][1] += bool(e.get("echoed"))
+            if e.get("label") == "supportive":  # packet-v14 ledgers (PHASE-34 Q1)
+                echo["supportive_" + kind][0] += 1
+                echo["supportive_" + kind][1] += bool(e.get("echoed"))
 
     def share(pair: list[int]) -> float | None:
         return round(pair[1] / pair[0], 3) if pair[0] else None
@@ -104,6 +110,7 @@ def conversation_report(conn: psycopg.Connection, conv: UUID) -> dict[str, Any]:
         "stale_token_share": round(statistics.mean(stale), 3) if stale else None,
         "echo_new": share(echo["new"]), "echo_repeat": share(echo["repeat"]),
         "lines_new": echo["new"][0], "lines_repeat": echo["repeat"][0],
+        "echo_supportive_new": share(echo["supportive_new"]), "echo_supportive_repeat": share(echo["supportive_repeat"]),
     }
 
 
@@ -112,6 +119,8 @@ def main() -> None:
     ap.add_argument("--db", default=os.environ.get("NMOS_DATABASE_URL", Settings().database_url))
     ap.add_argument("--conversation", help="one conversation's id (default: every one with recorded requests)")
     ap.add_argument("--min-requests", type=int, default=5, help="skip conversations with fewer recorded requests")
+    ap.add_argument("--policy", action="append", help="only the requests recorded under this policy (repeatable): "
+                                                       "a chat before and after a change (PHASE-34 Q8 d)")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
     with psycopg.connect(a.db, row_factory=dict_row) as conn:
@@ -119,7 +128,7 @@ def main() -> None:
         ids = [UUID(a.conversation)] if a.conversation else [r["conversation_id"] for r in conn.execute(
             "SELECT conversation_id FROM retrieval_trace WHERE lines IS NOT NULL GROUP BY 1 HAVING count(*) >= %s",
             (a.min_requests,)).fetchall()]
-        out = {str(c)[-8:]: conversation_report(conn, c) for c in ids}
+        out = {str(c)[-8:]: conversation_report(conn, c, a.policy) for c in ids}
     if a.json:
         json.dump(out, sys.stdout, indent=1)
         return
