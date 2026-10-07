@@ -213,13 +213,15 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
 # keywords. Measured on the PHASE-28 live gate's packets (docs/perf/phase28-live-gate-9947d2c.md).
 # packet-v13 is packet-v12 with the forensic path (PHASE-33, ADR 0067): a question about what someone said gets up to
 # two <Quote> lines, the words said verbatim from the turn that said them, placed before the excerpts and never cut.
+# packet-v14 is packet-v13 that knows what each line is for (PHASE-34): every ledger line carries a label (required,
+# supportive, risky). Step 2 records the labels only; what a packet places is packet-v13's.
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
-            "packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13")
+            "packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14")
 DEFAULT_POLICY = "packet-v12"
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
              "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2,
-             "packet-v11": 1.2, "packet-v12": 1.2, "packet-v13": 1.2}  # estimated tokens per non-ASCII char
-_V8 = ("packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13")  # packet-v8 and what builds on it
+             "packet-v11": 1.2, "packet-v12": 1.2, "packet-v13": 1.2, "packet-v14": 1.2}  # estimated tokens per non-ASCII char
+_V8 = ("packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14")  # packet-v8 and what builds on it
 PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})  # promises the message is about first (ADR 0019 am. 1)
@@ -228,12 +230,13 @@ CAUSE_POLICIES = frozenset({"packet-v6", "packet-v7", *_V8})  # facts and claims
 TURN_POLICIES = frozenset({"packet-v7", *_V8})  # excerpts and state carry their message's turn index (ADR 0041)
 STORY_POLICIES = frozenset(_V8)  # summaries in a <Story> section (ADR 0043)
 CAST_POLICIES = frozenset(_V8)  # each scene character's state in a <Cast> section (ADR 0043)
-FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13"})  # recall grows with the budget (ADR 0049)
-GROW_POLICIES = frozenset({"packet-v10", "packet-v11", "packet-v12", "packet-v13"})  # an excerpt grows to its length from its best sentence (ADR 0053)
-SPAN_POLICIES = frozenset({"packet-v11", "packet-v12", "packet-v13"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
-CHANGE_POLICIES = frozenset({"packet-v12", "packet-v13"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
-QUOTE_POLICIES = frozenset({"packet-v13"})  # the forensic path's <Quote> lines (PHASE-33, ADR 0067)
-UNEXTRACTED_POLICIES = frozenset({"packet-v13"})  # a turn extraction has not reached is raw evidence (PHASE-33 Q5)
+FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14"})  # recall grows with the budget (ADR 0049)
+GROW_POLICIES = frozenset({"packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14"})  # an excerpt grows to its length from its best sentence (ADR 0053)
+SPAN_POLICIES = frozenset({"packet-v11", "packet-v12", "packet-v13", "packet-v14"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
+CHANGE_POLICIES = frozenset({"packet-v12", "packet-v13", "packet-v14"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
+QUOTE_POLICIES = frozenset({"packet-v13", "packet-v14"})  # the forensic path's <Quote> lines (PHASE-33, ADR 0067)
+UNEXTRACTED_POLICIES = frozenset({"packet-v13", "packet-v14"})  # a turn extraction has not reached is raw evidence (PHASE-33 Q5)
+LABEL_POLICIES = frozenset({"packet-v14"})  # every ledger line labeled required, supportive or risky (PHASE-34 Q1)
 CUE_GROW_CHARS = 320  # packet-v11: a why or contents question's excerpt grows by sentences to this, no sentence cap
 CONTENTS = re.compile(r"내용|\bcontents\b|\bcontent of\b", re.IGNORECASE)  # the contents cue (PHASE-27 Q2); not "is she content"
 FILL_BASE, FILL_MAX, FILL_FACTS_MAX = 2000, 4.0, 2.0  # the budget recall is sized for, and the largest factors
@@ -332,6 +335,31 @@ def _entry(kind: str, ref: dict[str, Any], turn: int | None, text: str, content:
     return out
 
 
+def _label(ledger: list[dict[str, Any]], state: list[StateItem], story: list[Line], cast: list[Line],
+           offered: list[Line], ranked: list[Excerpt], first: int | None, named: frozenset[str],
+           risky: frozenset[str]) -> None:
+    """What each line is for (PHASE-34 Q1), by rule. Required: what the request cannot do without: the state, the
+    cast, a line some in the scene do not know (Private, Secret), a fact, claim or thread the question names
+    (`named`), a quote, the first excerpt (the one the budget keeps room for, ADR 0026). Risky: a disputed or
+    contradicted line (`risky`). Supportive: everything else (Story, what overlap or the previous reply brought)."""
+    def of_line(line: Line, section: str) -> str:
+        if section == "story":
+            return "supportive"
+        if section == "cast" or line.kind == "secret" or line.private:
+            return "required"
+        ref = str(line.ref.get("assertion"))
+        return "required" if ref in named else ("risky" if ref in risky else "supportive")
+
+    sections = ["state"] * len(state) + ["story"] * len(story) + ["cast"] * len(cast) + ["line"] * len(offered)
+    lines: list[Line | None] = [None] * len(state) + story + cast + offered
+    for n, entry in enumerate(ledger):
+        if n < len(sections):
+            entry["label"] = "required" if sections[n] == "state" else of_line(lines[n], sections[n])
+        else:
+            m = n - len(sections)
+            entry["label"] = "required" if ranked[m].quote or m == first else "supportive"
+
+
 def _restates(item: Excerpt, lines: list[Line]) -> Line | None:
     """The first offered line whose content (what it says beyond names) holds REPEATS of the excerpt's
     spans, if any. Names are left out: "Akari is in the chapel" does not repeat "Akari located in
@@ -426,7 +454,8 @@ def secret_line(holders: list[str], missing: list[str], turn: int | None) -> str
 def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateItem] | None = None,
                   threads: list[Line] | None = None, facts: list[Line] | None = None,
                   policy: str = DEFAULT_POLICY, lead: list[Line] | None = None, note: str = "",
-                  story: list[Line] | None = None, cast: list[tuple[str, list[Line]]] | None = None) -> Compiled:
+                  story: list[Line] | None = None, cast: list[tuple[str, list[Line]]] | None = None,
+                  named: frozenset[str] = frozenset(), risky: frozenset[str] = frozenset()) -> Compiled:
     """Fill the budget and record every offered line in a ledger (ADR 0027).
 
     Budget order is fixed: state, lead facts (how the cast stand with each other, ADR 0026), open threads
@@ -468,6 +497,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
                     and (same := _restates(item, story + cast_lines + lead + threads + facts)) is not None):
                 repeats[n] = same
     first = next((n for n in range(len(ranked)) if n not in repeats), None)
+    if policy in LABEL_POLICIES:
+        _label(ledger, state, story, cast_lines, lead + threads + facts, ranked, first, named, risky)
     reserved: tuple[str, str] | None = None
     if reserving and first is not None:
         reserved = _fit_excerpt(ranked[first], int(inner * EXCERPT_SHARE), est)

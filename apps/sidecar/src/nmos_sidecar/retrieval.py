@@ -679,6 +679,8 @@ class Gathered:
     keyword_note: str = "off"  # the keyword route (ADR 0052): "on", "none", "too_broad", "timeout" or "off"
     keyword_withheld: int = 0  # excerpts only the keyword route found, left out for repeating a secret (ADR 0052)
     quote_only: set[str] = dataclasses.field(default_factory=set)  # messages only the quote route found (ADR 0067)
+    named: set[str] = dataclasses.field(default_factory=set)  # assertions the question names: required (PHASE-34 Q1)
+    risky: set[str] = dataclasses.field(default_factory=set)  # disputed or contradicted assertions (PHASE-34 Q1)
     quote_withheld: int = 0  # quotes from them left out for repeating a secret, as the keyword route's (ADR 0067)
     vector_note: str = "off"
     cast: dict[str, str] = field(default_factory=dict)  # scene cast, entity key → name (ADR 0034)
@@ -770,7 +772,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             g.threads = _moded([thread_entry(t, scene.private(t, g.cast, r)) for t in
                                 relevant_threads(view["threads"], query, previous_ai, in_context,
                                                  options.threads_limit, persona,
-                                                 about=options.policy in ABOUT_POLICIES, aliases=aliases)],
+                                                 about=options.policy in ABOUT_POLICIES, aliases=aliases,
+                                                 named=g.named)],
                                 view["threads"], g, r, options)
         if options.facts_limit > 0:
             causes = options.policy in CAUSE_POLICIES
@@ -784,7 +787,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             ranked = relevant_facts(view["facts"], query, previous_ai, in_context,
                                     len(view["facts"]) if grow else options.facts_limit,
                                     options.events_limit, persona, scene.names(g.cast, r, aliases), causes=causes,
-                                    first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases)
+                                    first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases,
+                                    named=g.named)
             if changes:  # an ended role answers a question about the past, not about now (PHASE-31 Q2); the facts
                 # after it take its slot
                 def now_or_kept(f: dict[str, Any]) -> bool:
@@ -798,9 +802,12 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             # Claims after facts, so the budget serves narration first (ADR 0013).
             ranked = relevant_facts(view["claims"], query, previous_ai, in_context,
                                     len(view["claims"]) if grow else claims_limit, persona=persona, causes=causes,
-                                    first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases)
+                                    first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases,
+                                    named=g.named)
             claims = _grown(ranked[:claims_limit], ranked,
                             max(1, (options.facts_limit + options.fill_facts) // 2) - claims_limit)
+            g.risky = ({str(f["id"]) for f in facts + claims if f.get("disputed_by")}
+                       | {str(c["fact"]) for c in view.get("conflicts") or [] if c.get("fact") is not None})
             # How the cast stand with each other takes the budget before threads (ADR 0026).
             before, cause = options.policy in BEFORE_POLICIES, causes
             marks = options.history_marks
@@ -1060,7 +1067,8 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
 def compile_gathered(g: Gathered, budget: int, policy: str) -> Compiled:
     """One request's packet from what `gather` offered (the request and its replay compile alike)."""
     return compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts, policy=policy, lead=g.lead,
-                         note=g.note, story=g.story, cast=g.cast_lines)
+                         note=g.note, story=g.story, cast=g.cast_lines, named=frozenset(g.named),
+                         risky=frozenset(g.risky))
 
 
 def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, options: RecallOptions) -> list[Line]:

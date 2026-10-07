@@ -241,7 +241,8 @@ def fold(rows: list[dict[str, Any]], r: Resolution | None = None,
 
 def relevant_threads(threads: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],
                      limit: int, persona: frozenset[str] = frozenset(), about: bool = False,
-                     aliases: Mapping[str, frozenset[str]] | None = None) -> list[dict[str, Any]]:
+                     aliases: Mapping[str, frozenset[str]] | None = None,
+                     named: set[str] | None = None) -> list[dict[str, Any]]:
     """Open threads whose maker or recipient is mentioned now (Q5): in the user's message first, then in
     the previous reply; newest first within each. The persona does not count as a mention (it is in
     every chat; `persona` adds the names the host reported for it, ADR 0023), and a thread whose opening
@@ -261,6 +262,8 @@ def relevant_threads(threads: list[dict[str, Any]], query: str, previous_ai: str
             words = _grams(t.get("text"))
             if len(words & q_grams) / max(1, len(words)) >= ABOUT_MIN:
                 mention = 3
+        if mention >= 2 and named is not None:  # the question names it or repeats its words (PHASE-34 Q1)
+            named.add(str(t["id"]))
         if mention:
             scored.append((mention, t["position"], t))
     scored.sort(key=lambda x: (x[0], x[1]), reverse=True)

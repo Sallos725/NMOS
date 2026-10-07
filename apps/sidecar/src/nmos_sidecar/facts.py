@@ -741,7 +741,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                    persona: frozenset[str] = frozenset(), present: frozenset[str] = frozenset(),
                    causes: bool = False, first_cue: bool = False,
                    window_start: int | None = None, marks: bool = False,
-                   aliases: Mapping[str, frozenset[str]] | None = None) -> list[dict[str, Any]]:
+                   aliases: Mapping[str, frozenset[str]] | None = None,
+                   named: set[str] | None = None) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
@@ -790,6 +791,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                  if len(n) >= 2 and n not in user]
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
         hidden = [n for n in _widened(f.get("hidden_from") or [], aliases) if len(n) >= 2 and n not in user]
+        if named is not None and any(n in q for n in names + hidden):  # the question names it (PHASE-34 Q1)
+            named.add(str(f["id"]))
         if any(n in q for n in hidden):
             mention += 2.5
         elif mention and any(n in present for n in hidden):
