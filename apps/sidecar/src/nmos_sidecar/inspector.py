@@ -166,7 +166,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "h.kind": ("종류", "Kind"), "h.outcome": ("결과", "Outcome"), "h.echo": ("응답 반영", "Echo"),
     "h.placed": ("배치", "Placed"),
     "lk.state": ("상태", "state"), "lk.thread": ("약속", "thread"), "lk.fact": ("사실", "fact"),
-    "lk.claim": ("주장", "claim"), "lk.excerpt": ("원문", "excerpt"),
+    "lk.claim": ("주장", "claim"), "lk.excerpt": ("원문", "excerpt"), "lk.quote": ("인용", "quote"),
     "lk.summary": ("요약", "summary"), "lk.cast": ("인물 상태", "cast"),
     "pk.placed": ("들어감", "placed"), "pk.budget": ("예산 부족", "no budget"), "pk.state_cap": ("상태 상한", "state cap"),
     "pk.repeats": ("사실과 중복", "repeats a fact"), "pk.restates": ("앞 줄과 같은 내용", "says an earlier line again"),

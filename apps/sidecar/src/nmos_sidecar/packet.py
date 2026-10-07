@@ -211,13 +211,15 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
 # that states a value that version replaced is left out, an ended role is printed only for a question about the past
 # (HISTORY_CUE), and an excerpt's anchor sentence breaks a tie on the question's one-character words (책), which are no
 # keywords. Measured on the PHASE-28 live gate's packets (docs/perf/phase28-live-gate-9947d2c.md).
+# packet-v13 is packet-v12 with the forensic path (PHASE-33, ADR 0067): a question about what someone said gets up to
+# two <Quote> lines, the words said verbatim from the turn that said them, placed before the excerpts and never cut.
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
-            "packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12")
+            "packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13")
 DEFAULT_POLICY = "packet-v12"
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
              "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2,
-             "packet-v11": 1.2, "packet-v12": 1.2}  # estimated tokens per non-ASCII char
-_V8 = ("packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12")  # packet-v8 and what builds on it
+             "packet-v11": 1.2, "packet-v12": 1.2, "packet-v13": 1.2}  # estimated tokens per non-ASCII char
+_V8 = ("packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13")  # packet-v8 and what builds on it
 PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})  # promises the message is about first (ADR 0019 am. 1)
@@ -226,10 +228,11 @@ CAUSE_POLICIES = frozenset({"packet-v6", "packet-v7", *_V8})  # facts and claims
 TURN_POLICIES = frozenset({"packet-v7", *_V8})  # excerpts and state carry their message's turn index (ADR 0041)
 STORY_POLICIES = frozenset(_V8)  # summaries in a <Story> section (ADR 0043)
 CAST_POLICIES = frozenset(_V8)  # each scene character's state in a <Cast> section (ADR 0043)
-FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11", "packet-v12"})  # recall grows with the budget (ADR 0049)
-GROW_POLICIES = frozenset({"packet-v10", "packet-v11", "packet-v12"})  # an excerpt grows to its length from its best sentence (ADR 0053)
-SPAN_POLICIES = frozenset({"packet-v11", "packet-v12"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
-CHANGE_POLICIES = frozenset({"packet-v12"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
+FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13"})  # recall grows with the budget (ADR 0049)
+GROW_POLICIES = frozenset({"packet-v10", "packet-v11", "packet-v12", "packet-v13"})  # an excerpt grows to its length from its best sentence (ADR 0053)
+SPAN_POLICIES = frozenset({"packet-v11", "packet-v12", "packet-v13"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
+CHANGE_POLICIES = frozenset({"packet-v12", "packet-v13"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
+QUOTE_POLICIES = frozenset({"packet-v13"})  # the forensic path's <Quote> lines (PHASE-33, ADR 0067)
 CUE_GROW_CHARS = 320  # packet-v11: a why or contents question's excerpt grows by sentences to this, no sentence cap
 CONTENTS = re.compile(r"내용|\bcontents\b|\bcontent of\b", re.IGNORECASE)  # the contents cue (PHASE-27 Q2); not "is she content"
 FILL_BASE, FILL_MAX, FILL_FACTS_MAX = 2000, 4.0, 2.0  # the budget recall is sized for, and the largest factors
@@ -259,6 +262,7 @@ class Excerpt:
     short: str = ""  # one-sentence form, used by packet-v1 when the full excerpt does not fit
     position: int | None = None  # the message's head position, for story order (None: `turn` is the position)
     cut_ok: bool = True  # False: placed whole or as `short`, never cut to fit (keyword-only excerpts, ADR 0052)
+    quote: bool = False  # a <Quote> line: the words said, verbatim (PHASE-33, ADR 0067)
 
 
 def _turn(name: str, turn: int | None) -> str:
@@ -267,6 +271,9 @@ def _turn(name: str, turn: int | None) -> str:
 
 
 def excerpt_line(item: Excerpt, text: str | None = None) -> str:
+    if item.quote:  # a speaker only when the narration names one; none rather than a guess (PHASE-33 Q2)
+        who = f" speaker={quoteattr(item.speaker)}" if item.speaker else ""
+        return f"  <Quote{_turn('turn', item.turn)}{who}>{escape(item.text if text is None else text)}</Quote>"
     return (f"  <Excerpt{_turn('turn', item.turn)} speaker={quoteattr(item.speaker)}>"
             f"{escape(item.text if text is None else text)}</Excerpt>")
 
@@ -444,7 +451,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     ledger = ([_entry("state", {"key": i.key}, i.turn, f"{i.key}: {i.value}", i.value) for i in state]
               + [_entry(l.kind, l.ref, l.turn, l.text, l.content, l.marks) for l in story + cast_lines + lead + threads
                  + facts]
-              + [_entry("excerpt", {"revision": e.revision_id}, e.turn, e.text, e.text) for e in ranked])
+              + [_entry("quote" if e.quote else "excerpt", {"revision": e.revision_id}, e.turn, e.text, e.text)
+                 for e in ranked])
     frame = [PACKET_OPEN, PACKET_NOTE.removesuffix("</Note>") + note + "</Note>", PACKET_CLOSE]
     used = est("\n".join(frame))
     if used >= budget_tokens:
@@ -453,7 +461,7 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     repeats: dict[int, Line] = {}
     if reserving:
         for n, item in enumerate(ranked):
-            if (same := _restates(item, story + cast_lines + lead + threads + facts)) is not None:
+            if not item.quote and (same := _restates(item, story + cast_lines + lead + threads + facts)) is not None:
                 repeats[n] = same
     first = next((n for n in range(len(ranked)) if n not in repeats), None)
     reserved: tuple[str, str] | None = None

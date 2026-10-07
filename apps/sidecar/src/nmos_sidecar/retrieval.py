@@ -22,12 +22,13 @@ from psycopg.types.json import Jsonb
 
 from .entities import norm
 from .facts import FIRST_CUE, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
-from . import scene, spans, summaries, variants
+from . import quotes, scene, spans, summaries, variants
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
 from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, CHANGE_POLICIES, CONTENTS,
+                     QUOTE_POLICIES,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
@@ -682,6 +683,9 @@ class Gathered:
     withheld: int = 0  # lines and excerpts the chat's memory mode left out or replaced (ADR 0035)
     replaced: int = 0  # excerpts left out for stating a value a selected fact's current version replaced (packet-v12)
     ended: int = 0  # ended roles left out of a question about now (packet-v12, PHASE-31 Q2)
+    path: str = "normal"  # "forensic" when the message asked what was said (packet-v13, PHASE-33 Q4)
+    quote_note: str = "off"  # the quote route's own search: "on", "none" or "timeout"
+    quotes: int = 0  # <Quote> lines offered (packet-v13)
     canon_names: str | None = None  # the canon manifest whose names the read used (ADR 0046)
     canon_facts: str | None = None  # the canon manifest whose facts it used; None: none (ADR 0047)
     withheld_lines: list[Line] = field(default_factory=list)
@@ -887,6 +891,39 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             elif stale(item.text, item.turn, ignore_now=True):  # a cut could keep the old value and lose the new
                 item = dataclasses.replace(item, cut_ok=False)
         g.ranked.append(item)
+    if options.policy in QUOTE_POLICIES and query.strip() and quotes.asks_for_words(query):
+        # The forensic path (PHASE-33, ADR 0067): the words said, from the messages recall found and the turns a turn
+        # number names; placed before the excerpts, never cut. The filters below apply to them as to any excerpt.
+        t0 = time.perf_counter()
+        g.path = "forensic"
+        resolution = (view or {}).get("resolution")
+        names = quotes.character_names(resolution.entities()) if resolution is not None else {}
+        first = bool(quotes.FIRST_QUOTE.search(query)) and quotes.named_turn(query) is None
+        found = [c for c in g.candidates if c["host_logical_id"] not in in_context][:quotes.CANDIDATES]
+        extra: list[dict[str, Any]] = []
+        if (named := quotes.named_turn(query)) is not None:
+            extra = _turn_messages(conn, head, named - quotes.TURN_SPAN, named + quotes.TURN_SPAN, upto)
+        met = None
+        if first:  # how it started: the opening, and the turns where everyone the question names had appeared
+            asked, others = quotes.named(query, names)
+            met = _first_met(conn, head, [[k for k, d in names.items() if d == who] for who in asked | others], upto)
+            if met == 0:
+                met = None  # all there from the opening: no meeting to anchor on, the earliness bonus decides
+            extra = _turn_messages(conn, head, 0, quotes.TURN_SPAN, upto)
+            if met is not None:
+                extra += _turn_messages(conn, head, met, met + quotes.TURN_SPAN, upto)
+        searched, rarity, g.quote_note = _quote_messages(conn, head, quotes.query_words(query), upto)
+        seen = {str(c["id"]) for c in found}
+        for c in extra + searched:
+            if c["host_logical_id"] not in in_context and str(c["id"]) not in seen:
+                found.append(c)
+                seen.add(str(c["id"]))
+        picked = quotes.pick(found, query, names, _last_position(conn, head, upto), first, rarity, met)
+        g.quotes = len(picked)
+        g.ranked = [Excerpt(turn=q.turn if by_turn else q.position, speaker=q.speaker or "", text=q.text,
+                            score=q.score, revision_id=q.revision_id, position=q.position, cut_ok=False, quote=True)
+                    for q in picked] + g.ranked
+        g.timings["quotes"] = round((time.perf_counter() - t0) * 1000, 2)
     if g.withheld_lines:
         # An excerpt that says what the mode withheld would give it back word for word.
         kept = [e for e in g.ranked
@@ -1045,6 +1082,111 @@ def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, o
     return out
 
 
+def _turn_messages(conn: psycopg.Connection, head: UUID, lo: int, hi: int, upto: int | None) -> list[dict[str, Any]]:
+    """The messages of turns lo…hi on the head (PHASE-33 Q3), as candidates are shaped."""
+    return conn.execute(
+        """
+        SELECT sr.id, am.position, am.turn, so.host_logical_id, rt.clean_content AS clean,
+               sr.metadata->>'role' AS role, sr.metadata->>'name' AS name
+        FROM active_membership am
+        JOIN source_revision sr ON sr.id = am.source_revision_id
+        JOIN source_object so ON so.id = sr.source_object_id
+        JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+        WHERE am.commit_id = %(head)s AND am.turn BETWEEN %(lo)s AND %(hi)s AND am.position <= %(upto)s
+          AND sr.lifecycle = 'accepted'
+          AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+          AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
+        ORDER BY am.position LIMIT 20
+        """,
+        {"head": head, "lo": lo, "hi": hi, "norm": NORMALIZER_VERSION,
+         "upto": 2**31 - 1 if upto is None else upto}, prepare=False).fetchall()
+
+
+def _first_met(conn: psycopg.Connection, head: UUID, keys: list[list[str]], upto: int | None) -> int | None:
+    """The turn by which every one of these characters (each a list of its normalized names) had been named in the
+    chat: where they met. None when one of them never was, or when there is nobody."""
+    keys = [k for k in keys if k]
+    if not keys:
+        return None
+    turns = []
+    for names in keys:
+        pats = ["%" + n.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for n in names]
+        row = conn.execute(
+            """
+            SELECT min(am.turn) AS t FROM active_membership am
+            JOIN source_revision sr ON sr.id = am.source_revision_id
+            JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+            WHERE am.commit_id = %(head)s AND am.position <= %(upto)s AND sr.lifecycle = 'accepted'
+              AND rt.clean_content ILIKE ANY(%(pats)s)
+            """,
+            {"head": head, "pats": pats, "norm": NORMALIZER_VERSION,
+             "upto": 2**31 - 1 if upto is None else upto}, prepare=False).fetchone()
+        if row["t"] is None:
+            return None
+        turns.append(row["t"])
+    return max(turns)
+
+
+def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str],
+                    upto: int | None) -> tuple[list[dict[str, Any]], dict[str, float], str]:
+    """The quote route's own search (PHASE-33 Q2): messages on the head that hold a quote and the question's words,
+    rarest words first, lexically (quotes prefer lexical to embeddings, original §78), and each word's rarity on the
+    head: ln(1 + N/df) / ln(1 + N), 1 for a word one message holds, 0 for one none does. Abstains on its time slice."""
+    if not words:
+        return [], {}, "none"
+    words = words[:8]
+    pats = ["%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for w in words]
+    try:
+        with conn.transaction():
+            previous = conn.execute("SELECT current_setting('statement_timeout') AS t").fetchone()
+            _apply(conn, {"statement_timeout": str(quotes.TIMEOUT_MS)})
+            rows = conn.execute(
+                """
+                WITH m AS MATERIALIZED (
+                    SELECT sr.id, am.position, am.turn, so.host_logical_id, rt.clean_content AS clean,
+                           sr.metadata->>'role' AS role, sr.metadata->>'name' AS name,
+                           ARRAY(SELECT rt.clean_content ILIKE p FROM unnest(%(pats)s::text[]) p) AS hit
+                    FROM active_membership am
+                    JOIN source_revision sr ON sr.id = am.source_revision_id
+                    JOIN source_object so ON so.id = sr.source_object_id
+                    JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+                    WHERE am.commit_id = %(head)s AND am.position <= %(upto)s
+                      AND sr.lifecycle = 'accepted'
+                      AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+                      AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
+                      AND rt.clean_content ILIKE ANY(%(pats)s)
+                ), df AS (
+                    SELECT i, count(*) FILTER (WHERE m.hit[i]) AS n FROM m, generate_subscripts(%(pats)s::text[], 1) i
+                    GROUP BY i
+                ), total AS (
+                    SELECT count(*) AS n FROM active_membership WHERE commit_id = %(head)s AND position <= %(upto)s
+                ), weight AS (
+                    SELECT df.i, CASE WHEN df.n = 0 THEN 0
+                                      ELSE ln(1 + total.n::float / df.n) / ln(1 + greatest(total.n, 1)) END AS w
+                    FROM df, total
+                )
+                SELECT m.id, m.position, m.turn, m.host_logical_id, m.clean, m.role, m.name,
+                       (SELECT array_agg(w ORDER BY i) FROM weight) AS weights,
+                       (SELECT sum(w) FROM weight WHERE m.hit[weight.i]) AS score
+                FROM m WHERE m.clean ~ '["“「『]'
+                ORDER BY score DESC, m.position
+                LIMIT %(limit)s
+                """,
+                {"head": head, "pats": pats, "norm": NORMALIZER_VERSION, "limit": quotes.SEARCHED,
+                 "upto": 2**31 - 1 if upto is None else upto}, prepare=False).fetchall()
+            _apply(conn, {"statement_timeout": previous["t"]})
+    except psycopg.errors.QueryCanceled:
+        return [], {}, "timeout"
+    rarity = dict(zip(words, rows[0]["weights"])) if rows and rows[0]["weights"] else {}
+    return rows, rarity, "on"
+
+
+def _last_position(conn: psycopg.Connection, head: UUID, upto: int | None) -> int | None:
+    row = conn.execute("SELECT max(position) AS p FROM active_membership WHERE commit_id = %s AND position <= %s",
+                       (head, 2**31 - 1 if upto is None else upto)).fetchone()
+    return row["p"] if row else None
+
+
 def _head_turn(conn: psycopg.Connection, head: UUID, upto: int | None = None) -> int | None:
     """The turn of the head's last message (as of `upto`): the turn a request answers."""
     return conn.execute("SELECT max(turn) AS t FROM active_membership WHERE commit_id = %s AND position <= %s",
@@ -1130,7 +1272,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                    "state_items": len(g.state), "facts": len(g.lead) + len(g.facts), "threads": len(g.threads),
                    "kept_state": kept["state"], "kept_facts": kept["facts"], "kept_threads": kept["threads"],
                    "placed": {k: sum(1 for e in placed if e["kind"] == k)
-                              for k in ("state", "thread", "fact", "claim", "secret", "summary", "excerpt")},
+                              for k in ("state", "thread", "fact", "claim", "secret", "summary", "excerpt", "quote")},
+                   "path": g.path, "quotes": g.quotes, "quote_mode": g.quote_note,  # the forensic path (PHASE-33 Q4)
                    "cast": sum(1 for e in placed if e.get("section") == "cast"),
                    "scene_cast": sorted(g.cast.values()), "memory_mode_withheld": g.withheld,
                    "replaced_left_out": g.replaced, "ended_left_out": g.ended,  # packet-v12 (PHASE-31 Q1, Q2)
