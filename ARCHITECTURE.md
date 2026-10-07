@@ -645,6 +645,22 @@ excerpt's anchor breaks a tie on the question's one-character words. A question 
 `FIRST_CUE` plus 전에, 이전, 첫날, before, used to, previously) keeps the old excerpts and the ended roles. The default
 since 2026-10-05 (owner, on the second reduced live gate); `NMOS_PACKET_POLICY=packet-v11` keeps the previous packet.
 
+**D76 — What was said, and the turns not extracted yet (`packet-v13`; ADR 0067; Phase 33, AGE-10).** A message with a
+speech cue (말했, 뭐라고, 대사, "said", a phrase in quotes; a question about what someone is called only with a history
+cue) takes the quote route: the quoted speech of the chat's messages searched lexically with the question's words,
+narrowed by a turn number, a first cue or the first meeting of the characters it names, and at most two `<Quote>`
+lines with the words verbatim, placed before the excerpts. A speaker is written only when the quote's own sentence
+names one; a quote only the route found passes the secret test. An excerpt from a turn the active extractor has not
+extracted is raw evidence: never dropped for restating a fact, and it may take one more slot.
+
+**D77 — What a line is for (`packet-v14`; ADR 0068; Phase 34, AGE-10).** Every ledger line is required (state, cast,
+the story so far, knowledge boundaries, what the question names, quotes, the first excerpt), supportive or risky (a
+disputed line). A supportive line placed in each of the last `rest_after` requests (recorded, `NMOS_REST_AFTER`, 2)
+that none of their replies echoed rests for the next two requests; the question naming it, its own words finding it
+or a history cue keeps it. Nothing is stored: the requests are the recorded traces. An excerpt after the first needs
+half the best fused score or a word hit. **The default since 2026-10-08** (owner, on a live run on a real chat: no
+repetition felt; repeated lines' echo 0.29 → 0.39); `NMOS_PACKET_POLICY=packet-v12` keeps the previous packet.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

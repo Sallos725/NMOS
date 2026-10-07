@@ -2,6 +2,12 @@
 
 ## Current phase
 
+**Phase 34 — Forensic recall, part 2 (Stage 7): what a line is for: approved 2026-10-07 (the owner: every question as
+proposed), steps 2–5 done; `packet-v14` the default since 2026-10-08 (the owner, on the live run: echo of repeated lines
+0.29 → 0.39, no repetition felt; `docs/perf/phase34-rest.md`, ADR 0068); `0.4.0` next.** Spec `docs/phases/PHASE-34.md`
+(AGE-10): labels (required, supportive, risky), supportive memory that rests after `rest_after` placements no reply
+used, and an activation threshold for supportive excerpts.
+
 **Phase 33 — Forensic recall, part 1 (Stage 7): the source turn, quoted: approved 2026-10-07 (the owner: every
 question as proposed), the current phase; steps 2–4 done (the baselines, `docs/perf/phase33-baseline.md`: the quote set 4 of 24 under
 `packet-v12`, the overuse baseline, K44; `packet-v13`, `docs/perf/phase33-replay.md`: the quote set 21 of 24, every bench set
@@ -904,7 +910,7 @@ live request with Voyage, the settings panel on a real host.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H22, D1–D75, O1/O2/O3/O4/O5 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H22, D1–D77, O1/O2/O3/O4/O5 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
 | Schema | `migrations/0001`–`0028` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode, thread outcome and cause, summaries, owner repairs, canon, canon facts and lock, model-call usage, reveal checks and dropped-fact restore |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |

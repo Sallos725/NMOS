@@ -52,11 +52,14 @@ Cases passed, each of three replays.
 | S6 | 25 | 0 | 21 | 21 | 2 → 2 |
 | first-cue probes (S0main, S0s2, S2, S6) | 1 each | 0 | 0, 1, 1, 1 | same | 0 → 0 |
 
-Every set is equal case by case except S4, where one question with no speech cue ("…동물 이름이 뭐였지?") failed in
-two `packet-v13` replays with the lexical route finding nothing: its 300 ms slice. The path to the lexical route is the
-same code under both policies for a question without a cue; 30 further replays of the case (cold processes, one
-process, `eval_rp` as run) passed under both. S6, the first-sight catch-up set, holds at 21 of 25; no S6 case was
-compiled during a catch-up, so Q5 is not exercised by it (the reduced live run, Q10 d, is).
+Every set is equal case by case except S4, where one question with no speech cue ("…동물 이름이 뭐였지?") failed in two
+`packet-v13` replays with the lexical route finding nothing: its 300 ms slice. The path to the lexical route is the same
+code under both policies for a question without a cue; 30 further replays of the case (cold processes, one process,
+`eval_rp` as run) passed under both. S6, the first-sight catch-up set, holds at 21 of 25. Its questions are asked after
+the catch-up, but first sight extracts only the latest 100 turns, so turns 0–19 stay unextracted and Q5 marks every
+excerpt the questions place from them (corrected 2026-10-08: an earlier note said Q5 was not exercised); each packet,
+replayed without vectors, is the same as `packet-v12`'s, since none of those excerpts restated a fact or needed the
+extra slot.
 
 **The address questions.** As first built, a question about what someone is called ("뭐라고 불러?") took the forensic
 path on its 뭐라고, and S1 turn 120 and S6 each lost two cases with three more forbidden phrases: quotes brought back

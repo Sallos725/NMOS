@@ -883,7 +883,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     # packet-v13 (PHASE-33 Q5): a turn this generation has not extracted yet (a first sight still catching up) has no
     # fact to restate, so its excerpt is raw evidence; one such excerpt may take one more slot than top_k (packet-v13
     # judges excerpts as packet-v12 does: `stale` is set whenever there is an extractor to ask)
-    unextracted = (_unextracted(conn, head, [c["id"] for c in eligible], options.extractor_key)
+    unextracted = (_unextracted(conn, head, [c["id"] for c in eligible], options.extractor_key, known_at)
                    if options.policy in UNEXTRACTED_POLICIES and options.extractor_key and eligible else set())
     if rest:  # a tired excerpt is left out while it rests (PHASE-34 Q3)
         eligible = _rested(eligible, "excerpt", rest, g, ident=lambda c: str(c["id"]),
@@ -1259,10 +1259,12 @@ def _rested(rows: list[Any], kind: str, rest: frozenset[tuple[str, str]], g: Gat
     return awake
 
 
-def _unextracted(conn: psycopg.Connection, head: UUID, ids: list[Any], extractor_key: str) -> set[str]:
+def _unextracted(conn: psycopg.Connection, head: UUID, ids: list[Any], extractor_key: str,
+                 known_at: datetime | None = None) -> set[str]:
     """The revisions among `ids` whose turn on the head the generation has not extracted (PHASE-33 Q5). A turn is
     extracted once, on its last message, for every message of it; an extraction of the turn as it was before an edit
-    (another window, ADR 0008) does not count, as `readmodel.membership` counts it."""
+    (another window, ADR 0008) does not count, as `readmodel.membership` counts it. With `known_at`, as of an earlier
+    request (a replay): an extraction written since does not count, one discarded since still does."""
     return {str(r["id"]) for r in conn.execute(
         """
         SELECT am.source_revision_id AS id FROM active_membership am
@@ -1270,8 +1272,10 @@ def _unextracted(conn: psycopg.Connection, head: UUID, ids: list[Any], extractor
           AND NOT EXISTS (SELECT 1 FROM active_membership t JOIN extraction x ON x.source_revision_id = t.source_revision_id
                            AND x.window_hash = t.turn_hash
                           WHERE t.commit_id = %(head)s AND t.turn = am.turn AND t.turn_hash IS NOT NULL
-                            AND x.extractor_key = %(key)s AND x.discarded_at IS NULL)
-        """, {"head": head, "ids": ids, "key": extractor_key}, prepare=False).fetchall()}
+                            AND x.extractor_key = %(key)s
+                            AND x.created_at <= coalesce(%(at)s::timestamptz, now())
+                            AND (x.discarded_at IS NULL OR x.discarded_at > coalesce(%(at)s::timestamptz, now())))
+        """, {"head": head, "ids": ids, "key": extractor_key, "at": known_at}, prepare=False).fetchall()}
 
 
 def _last_position(conn: psycopg.Connection, head: UUID, upto: int | None) -> int | None:

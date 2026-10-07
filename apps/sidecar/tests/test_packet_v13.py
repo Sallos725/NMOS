@@ -4,12 +4,17 @@ evidence: never dropped for restating a fact. packet-v12 compiles as before."""
 from __future__ import annotations
 
 from collections.abc import Iterator
+from uuid import UUID
 
+import psycopg
 import pytest
+from psycopg.rows import dict_row
 
 from conftest import make_client
 from memeval import RECENT, _sync, settings_for
+from nmos_sidecar import audit
 from nmos_sidecar.packet import Excerpt, compile_lines
+from nmos_sidecar.retrieval import RecallOptions
 from simchat import SimChat
 from test_packet_ledger import extract, fact
 
@@ -70,6 +75,11 @@ def test_a_turn_extraction_has_not_reached_is_marked_in_the_ledger(v13):
     hit = [e for e in trace["lines"] if e["kind"] == "excerpt" and "silver map" in e["text"]]
     assert hit and hit[0]["marks"] == {"unextracted": True}
     assert not any((e.get("marks") or {}).get("unextracted") for e in trace["lines"] if "brass key" in e["text"])
+    extract(url)  # every turn is extracted now; a replay reads the request as it was
+    with psycopg.connect(url, row_factory=dict_row) as conn:
+        again = audit.replay(conn, UUID(out["trace_id"]), RecallOptions())
+    assert again["status"] == "ok" and again["reproduced"] is True
+    assert [e.get("marks") for e in again["lines"] if "silver map" in e["text"]][:1] == [{"unextracted": True}]
 
 
 def test_a_quote_only_the_quote_route_found_keeps_a_secret_as_a_keyword_only_excerpt_does(v13):

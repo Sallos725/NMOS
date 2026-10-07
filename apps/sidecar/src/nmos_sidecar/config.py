@@ -72,17 +72,19 @@ class Settings:
     # model name contains "qwen3-embedding", none otherwise. Documents are embedded without it.
     embed_query_instruction: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_QUERY_INSTRUCTION", "auto"))
     trace_retention_days: int = field(default_factory=lambda: int(os.environ.get("NMOS_TRACE_RETENTION_DAYS", "30")))
-    # Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0041, 0043, 0049, 0053, 0063, 0066). Empty or unknown:
-    # `packet.DEFAULT_POLICY` (packet-v12: packet-v11 that knows what changed — an older excerpt of a replaced value
-    # and an ended role are left out of a question about now, an excerpt's anchor breaks a tie on the question's
-    # one-character words; packet-v11: packet-v10 whose excerpt lands on the answer — a word hit with a qualifying
-    # vector excerpts within its chunk, a why or contents question grows to 320 characters, the question's keywords
-    # anchor the excerpt; packet-v10: packet-v9, whose excerpts grow from the sentence holding most keywords by up
-    # to four sentences; packet-v9: packet-v8, whose excerpts and facts grow with the budget; packet-v8: room kept
-    # for the best excerpt, Korean estimate 1.2, a <Private> section, no line that says an earlier line again, what
-    # standing facts replaced, stated causes, excerpts and state numbered by turn, and summaries in <Story> and each
-    # scene character's state in <Cast>); v7 … v0 are earlier. The compose files pass
-    # it empty, so a pinned value cannot outlive a new default.
+    # Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0041, 0043, 0049, 0053, 0063, 0066, 0067, 0068). Empty or
+    # unknown: `packet.DEFAULT_POLICY` (packet-v14: packet-v13 that knows what each line is for — labels, and supportive
+    # memory that rests after `rest_after` placements no reply used; packet-v13: packet-v12 with the quote route for
+    # what was said and room for the turns extraction has not reached; packet-v12: packet-v11 that knows what changed —
+    # an older excerpt of a replaced value and an ended role are left out of a question about now, an excerpt's anchor
+    # breaks a tie on the question's one-character words; packet-v11: packet-v10 whose excerpt lands on the answer — a
+    # word hit with a qualifying vector excerpts within its chunk, a why or contents question grows to 320 characters,
+    # the question's keywords anchor the excerpt; packet-v10: packet-v9, whose excerpts grow from the sentence holding
+    # most keywords by up to four sentences; packet-v9: packet-v8, whose excerpts and facts grow with the budget;
+    # packet-v8: room kept for the best excerpt, Korean estimate 1.2, a <Private> section, no line that says an earlier
+    # line again, what standing facts replaced, stated causes, excerpts and state numbered by turn, and summaries in
+    # <Story> and each scene character's state in <Cast>); v7 … v0 are earlier. The compose files pass it empty, so a
+    # pinned value cannot outlive a new default.
     packet_policy: str = field(default_factory=lambda: os.environ.get("NMOS_PACKET_POLICY", ""))
     parsers_file: str = field(default_factory=lambda: os.environ.get("NMOS_PARSERS_FILE", ""))
     # Test hook for the "sidecar slower than deadlineMs" acceptance check. Never set in production.

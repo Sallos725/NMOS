@@ -5,6 +5,18 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **`packet-v14` is the default: memory that knows what each line is for, and stops repeating itself** (Phase 34,
+  AGE-10, ADR 0068). Every packet line is labeled required, supportive or risky (the Inspector shows the label and how
+  much of the packet came back from the requests before). A supportive line placed in each of the last two requests
+  that no reply used rests for the next two and its room goes to other memory; what the question names, what its own
+  words found, a question about the past and every knowledge boundary never rest. On a 240-turn bench chat supportive
+  lines repeat 24 % less; on the owner's real chat the replies used repeated lines more (0.29 → 0.39) and no
+  repetition was felt. `NMOS_REST_AFTER=3` rests less often; `NMOS_PACKET_POLICY=packet-v12` keeps the previous packet.
+- **What someone said, found by its words** (`packet-v13`, part of the default above; Phase 33, ADR 0067). A question
+  about what was said ("그때 뭐라고 했지?", "what did she say on the first night?", turn 12) brings up to two `<Quote>`
+  lines with the words verbatim and their turn: exact-quote questions on the bench chat 4 → 21 of 24. Turns the
+  extractor has not reached yet (a chat NMOS has just met) keep their excerpts as raw evidence. In the Inspector a turn
+  number opens that turn's page: its messages, what was extracted from it and which packets used it.
 - **The portable bundles report their version.** Every v0.3.0 bundle (Linux x64 and arm64, macOS, Windows) reported
   version 0.0.0: the bundle build copies the sidecar in as source, without the package metadata the sidecar reads its
   version from. The build now writes that metadata from `apps/sidecar/pyproject.toml` and checks that the bundled

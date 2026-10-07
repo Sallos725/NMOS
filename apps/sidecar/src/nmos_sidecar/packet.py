@@ -214,12 +214,12 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
 # packet-v13 is packet-v12 with the forensic path (PHASE-33, ADR 0067): a question about what someone said gets up to
 # two <Quote> lines, the words said verbatim from the turn that said them, placed before the excerpts and never cut.
 # packet-v14 is packet-v13 that knows what each line is for (PHASE-34): every ledger line carries a label (required,
-# supportive, risky); a supportive line placed in each of the last three requests and echoed by none of their replies
-# rests (left out for up to two requests, `overuse`), and an excerpt after the first needs EXCERPT_FLOOR of the best
-# fused score or a word hit (PHASE-34 Q2–Q4).
+# supportive, risky); a supportive line placed in each of the last `rest_after` requests (2 by default) and echoed by
+# none of their replies rests (left out for up to two requests, `overuse`), and an excerpt after the first needs
+# EXCERPT_FLOOR of the best fused score or a word hit (PHASE-34 Q2–Q4). The default since 2026-10-08.
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
             "packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14")
-DEFAULT_POLICY = "packet-v12"
+DEFAULT_POLICY = "packet-v14"  # the owner, 2026-10-08, on the live run (PHASE-34 Q6)
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
              "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2,
              "packet-v11": 1.2, "packet-v12": 1.2, "packet-v13": 1.2, "packet-v14": 1.2}  # estimated tokens per non-ASCII char

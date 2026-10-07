@@ -54,3 +54,22 @@ no embedder.
 | 10,000 | 18.8 / 103.5 ms | 20.7 / 104.2 ms | **+0.7 ms** | 0.9 / 1.7 ms |
 
 **Q9 (e) met** (bar +30 ms).
+
+## The live run on a real chat (Q8 d) and the default (Q6)
+
+The owner's own chat on the isolated test sidecar (real replies of the same model, `packet-v13` then `packet-v14`,
+`rest_after` 2; aggregates only, the chat stays private). `tools/overuse_report.py --policy`, read-only:
+
+| Requests recorded under | Requests (echo checked) | Repeated lines checked | Echo of repeated lines | Echo of new lines | Supportive repeated: echo |
+|---|---:|---:|---:|---:|---:|
+| `packet-v13` | 15 (14) | 45 | 0.289 | 0.444 | — (no labels) |
+| `packet-v14` | 13 (11) | 215 | **0.391** | 0.477 | 0.549 |
+
+**Q9 (d) met**: the replies used repeated lines no less (more) under `packet-v14`, at least 30 lines each, and the
+owner felt no repetition or memory stuck in place over nine turns. The raw repeat share rose (0.54 → 0.78), but the
+two windows are not alike: the `packet-v13` requests came right after the chat was extracted again, with packets of
+660 tokens on average against 2,500 once memory had filled. On the same 37 requests replayed in order (no vectors, so
+packets smaller than live), supportive lines repeat 0.677 → 0.561 and their stale tokens 0.283 → 0.125; the whole
+packet only 0.729 → 0.694, as required lines are about three quarters of this chat's packet and never rest.
+
+`packet-v14` is the default since 2026-10-08 (the owner, on this run; ADR 0068).

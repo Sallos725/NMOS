@@ -1,8 +1,9 @@
 # 0067 — The words said, from the turn that said them (`packet-v13`)
 
-Status: proposed, 2026-10-07 (`docs/phases/PHASE-33.md` Q1–Q5, approved by the owner as proposed; AGE-10). Adds the
-policy `packet-v13`; `packet-v12` stays the default until the owner decides on the measurement (Q9). No prompt,
-generation key, stored row or migration changes.
+Status: accepted, in the default through `packet-v14` since 2026-10-08 (ADR 0068); proposed 2026-10-07
+(`docs/phases/PHASE-33.md` Q1–Q5, approved by the owner as proposed; AGE-10). Adds the policy `packet-v13`, which
+`packet-v14` (ADR 0068) builds on and which is in the default through it. No prompt, generation key, stored row or
+migration changes.
 
 ## Context
 
