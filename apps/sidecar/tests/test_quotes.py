@@ -16,6 +16,8 @@ def test_a_question_about_words_is_the_cue():
     assert asks_for_words('누가 "등불"이라고 말했어?')
     assert asks_for_words("What did Ryu say at the dock?")
     assert not asks_for_words("한솔은 지금 어디 있어?")
+    assert not asks_for_words("류진은 한솔을 뭐라고 부르지?")  # the form of address now: the facts hold it
+    assert asks_for_words("류진은 처음에 한솔을 뭐라고 불렀더라?")  # the older forms are the answer
     assert named_turn("12턴에 류진이 뭐라고 했어?") == 12
     assert named_turn("what was said on turn 7") == 7
     assert named_turn("류진이 뭐라고 했어?") is None

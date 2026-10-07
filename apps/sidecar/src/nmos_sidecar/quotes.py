@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from .entities import norm
-from .facts import FIRST_CUE
+from .facts import FIRST_CUE, HISTORY_CUE
 from .keywords import _HANGUL, _QUESTION_STARTS, _VERBISH, _WORD, _stems, MIN_HANGUL, MIN_LATIN, STOP_WORDS
 
 # A question about what was said (Q1). The words are recorded here and reported per case by the measurement.
@@ -63,7 +63,15 @@ class Quote:
     score: float
 
 
+# A question about what someone is called ("뭐라고 불러?") asks for the form of address now, which the facts hold; quotes
+# would bring back every older form (the v0.3.0 bench replay, S1 turn 120). With a history cue ("처음에 뭐라고 불렀더라?")
+# the older forms are what it asks for. The same words as `retrieval.CALLED`.
+ADDRESS_CUE = re.compile(r"부르|불러|부름|호칭|\bcalls?\b|\bcalled\b", re.IGNORECASE)
+
+
 def asks_for_words(query: str) -> bool:
+    if ADDRESS_CUE.search(query) and not HISTORY_CUE.search(query):
+        return False
     return bool(SPEECH_CUE.search(query) or QUERY_QUOTE.search(query))
 
 
