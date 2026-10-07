@@ -93,3 +93,57 @@ def traces(conn: psycopg.Connection, conv_id: UUID, limit: int = 30) -> list[dic
         """,
         (conv_id, limit),
     ).fetchall()
+
+
+# --- the source-turn page (PHASE-33 Q7) ---------------------------------------------------------------------------
+
+TURN_TRACES = 300  # the latest requests a turn's uses are looked for in
+
+
+def turn_messages(conn: psycopg.Connection, head: UUID, turn: int) -> list[dict[str, Any]]:
+    """The messages of one turn on the head, in order, with the text NMOS read (the normalized projection)."""
+    return conn.execute(
+        """
+        SELECT am.position, am.turn, am.turn_hash, sr.id AS revision_id, sr.lifecycle,
+               sr.metadata->>'role' AS role, sr.metadata->>'name' AS name, sr.metadata->>'disabled' AS disabled,
+               length(sr.content) AS length, coalesce(rt.clean_content, sr.content) AS text
+        FROM active_membership am
+        JOIN source_revision sr ON sr.id = am.source_revision_id
+        LEFT JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+        WHERE am.commit_id = %(head)s AND am.turn = %(turn)s ORDER BY am.position
+        """, {"head": head, "turn": turn, "norm": NORMALIZER_VERSION}).fetchall()
+
+
+def turn_bounds(conn: psycopg.Connection, head: UUID) -> tuple[int | None, int | None]:
+    row = conn.execute("SELECT min(turn) AS lo, max(turn) AS hi FROM active_membership WHERE commit_id = %s",
+                       (head,)).fetchone()
+    return row["lo"], row["hi"]
+
+
+def turn_generations(conn: psycopg.Connection, revision_ids: list[UUID]) -> list[dict[str, Any]]:
+    """Every extractor generation's extraction of these messages: when, and how many assertions it made."""
+    return conn.execute(
+        """
+        SELECT x.extractor_key, max(x.created_at) AS created_at, count(a.id) AS assertions,
+               bool_or(x.window_hash = am.turn_hash) AS current_window
+        FROM extraction x
+        JOIN active_membership am ON am.source_revision_id = x.source_revision_id
+        LEFT JOIN assertion a ON a.extraction_id = x.id
+        WHERE x.source_revision_id = ANY(%s) AND x.discarded_at IS NULL
+        GROUP BY x.extractor_key ORDER BY max(x.created_at) DESC
+        """, (revision_ids,)).fetchall()
+
+
+def turn_uses(conn: psycopg.Connection, conv_id: UUID, revisions: set[str], assertions: set[str],
+              limit: int = TURN_TRACES) -> list[dict[str, Any]]:
+    """The packet lines of the latest `limit` requests that came from this turn: an excerpt or quote of one of its
+    messages, a fact or claim one of its assertions made (the ledger's `ref`, ADR 0027). Newest first."""
+    out = []
+    for t in conn.execute(
+            "SELECT id, created_at, policy, lines FROM retrieval_trace WHERE conversation_id = %s AND lines IS NOT NULL"
+            " ORDER BY created_at DESC LIMIT %s", (conv_id, limit)).fetchall():
+        for e in t["lines"] or []:
+            ref = e.get("ref") or {}
+            if str(ref.get("revision")) in revisions or str(ref.get("assertion")) in assertions:
+                out.append({"trace": str(t["id"]), "created_at": t["created_at"], "policy": t["policy"], **e})
+    return out

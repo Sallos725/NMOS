@@ -6,18 +6,21 @@ import type { Lang, StringKey } from './i18n';
 const TAGS = new Set(['DIV', 'P', 'H1', 'H2', 'SPAN', 'B', 'BR', 'A', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD',
   'DETAILS', 'SUMMARY']);
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+// A source-turn page (PHASE-33 Q7): a turn index.
+const TURN = '/t/(?:0|[1-9][0-9]{0,6})';
 // Section folds and the contents that links to them (`s-facts`, `#s-facts`).
 const SECTION = /^s-[a-z]{1,20}$/;
 
-/** The sidecar API path for an inspector link (`/inspector`, `/inspector/c/<id>`, `/inspector/c/<id>/e/<id>`), or null. */
+/** The sidecar API path for an inspector link (`/inspector`, `/inspector/c/<id>`, `/inspector/c/<id>/e/<id>`,
+ * `/inspector/c/<id>/t/<turn>`), or null. */
 export function inspectorApiPath(href: string | null): string | null {
-  const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID})?)?(?:[?#]|$)`, 'i').exec(href ?? '');
+  const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, 'i').exec(href ?? '');
   return m ? `/v1/inspector${m[1] ?? ''}` : null;
 }
 
-/** The conversation id of an inspector conversation or character API path, or null. */
+/** The conversation id of an inspector conversation, character or source-turn API path, or null. */
 export function inspectorConversation(path: string): string | null {
-  const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID})?$`, 'i').exec(path);
+  const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, 'i').exec(path);
   return m ? (m[1] as string) : null;
 }
 

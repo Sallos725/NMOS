@@ -4,7 +4,10 @@ with `?lang=en`. `embed=True` returns only the body, without the language switch
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import re
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from html import escape
 from typing import Any
@@ -15,6 +18,8 @@ from .predicates import REGISTRY
 from .repairs import default_outcome, outcomes
 from .facts import STANDING, earlier, first, participant_entities, symmetric
 from . import scene
+from .packet import TURN_POLICIES
+from .readmodel import TURN_TRACES
 from .retrieval import CAST_GOALS, cast_facts
 from .summaries import LAG, WINDOW
 
@@ -33,7 +38,7 @@ pre.mono{white-space:pre-wrap;background:var(--chip);padding:8px 10px;border-rad
 .ref{display:block;font-family:ui-monospace,monospace;font-size:11px;color:var(--muted)}
 table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 th{font-weight:600;color:var(--muted);font-size:12px}
-.chip{display:inline-block;padding:0 6px;border-radius:4px;background:var(--chip);font-size:12px}
+.chip{display:inline-block;padding:0 6px;border-radius:4px;background:var(--chip);font-size:12px;white-space:nowrap}
 .wrap{overflow-x:auto}
 .warn{color:#e8590c} .n{color:var(--muted);font-weight:400;font-size:12px}
 .toc,.who{font-size:13px;line-height:1.9;margin:8px 0}
@@ -167,6 +172,19 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "h.placed": ("배치", "Placed"),
     "lk.state": ("상태", "state"), "lk.thread": ("약속", "thread"), "lk.fact": ("사실", "fact"),
     "lk.claim": ("주장", "claim"), "lk.excerpt": ("원문", "excerpt"), "lk.quote": ("인용", "quote"),
+    # the source-turn page (PHASE-33 Q7)
+    "turn.title": ("턴 {n}", "Turn {n}"), "turn.prev": ("← 턴 {n}", "← Turn {n}"), "turn.next": ("턴 {n} →", "Turn {n} →"),
+    "turn.none": ("이 턴은 지금 헤드에 없습니다.", "This turn is not on the head."),
+    "toc.source": ("원문", "Source"), "toc.made": ("이 턴의 사실", "Facts from this turn"),
+    "toc.used": ("이 턴을 쓴 패킷 줄", "Packet lines that used it"),
+    "turn.source_note": ("NMOS가 읽은 글(정규화한 본문)입니다. 굵은 글씨는 아래 사실의 근거로 확인된 구절입니다.",
+                         "The text NMOS read (normalized). Bold: the words a fact below was checked against."),
+    "turn.no_facts": ("이 세대가 이 턴에서 만든 사실이 없습니다.", "This generation made no facts from this turn."),
+    "turn.generations": ("세대별 추출: {gens}", "Extractions by generation: {gens}"),
+    "turn.stale": ("편집 전 내용", "before an edit"),
+    "turn.no_uses": ("최근 {n}개 요청 가운데 이 턴을 쓴 줄이 없습니다.", "No line from this turn in the latest {n} requests."),
+    "turn.uses_note": ("최근 {n}개 요청 기준, 새것부터.", "The latest {n} requests, newest first."),
+    "h.evidence": ("근거", "Evidence"), "h.assertion": ("사실", "Fact"),
     "lk.summary": ("요약", "summary"), "lk.cast": ("인물 상태", "cast"),
     "pk.placed": ("들어감", "placed"), "pk.budget": ("예산 부족", "no budget"), "pk.state_cap": ("상태 상한", "state cap"),
     "pk.repeats": ("사실과 중복", "repeats a fact"), "pk.restates": ("앞 줄과 같은 내용", "says an earlier line again"),
@@ -626,10 +644,32 @@ def _step(h: dict[str, Any], lang: str) -> str:
             f"<span class=\"chip\" title=\"{_v(outcome)}\">{_v(_t(lang, f'o.{outcome}'))}</span>")
 
 
+# While a page renders, a turn cell links to its source-turn page (PHASE-33 Q7): "/inspector/c/<id>/t/{turn}?…".
+_TURN_HREF: ContextVar[str | None] = ContextVar("turn_href", default=None)
+
+
+@contextmanager
+def turn_links(conv_id: Any, token: str | None, lang: str) -> Iterator[None]:
+    mark = _TURN_HREF.set(f"/inspector/c/{conv_id}/t/{{turn}}{query(token, lang)}")
+    try:
+        yield
+    finally:
+        _TURN_HREF.reset(mark)
+
+
+def turn_link(turn: Any, text: str | None = None) -> str:
+    """A turn index as a link to its page while a page renders; the plain index otherwise."""
+    shown = _v(turn if text is None else text)
+    href = _TURN_HREF.get()
+    if href is None or not isinstance(turn, int) or isinstance(turn, bool):
+        return shown
+    return f"<a href=\"{href.replace('{turn}', str(turn))}\">{shown}</a>"
+
+
 def _turn(a: dict[str, Any]) -> str:
     if a.get("canon"):  # before turn 0 (ADR 0047): the canon text it came from
         return f"<span class=\"chip\" title=\"{_v(a['canon'])}\">canon</span>"
-    return _v(a["turn"] if a.get("turn") is not None else a["position"])
+    return turn_link(a["turn"]) if a.get("turn") is not None else _v(a["position"])
 
 
 def with_participants(view: dict[str, Any]) -> dict[str, Any]:
@@ -1187,7 +1227,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
          for c in commits]), False))
     parts.append(("members", t("members"), len(members), table(
         [t(k) for k in ("h.position", "h.turn", "h.role", "h.lifecycle", "h.disabled", "h.processed", "h.text")],
-        [[_v(m["position"]), _v(m.get("turn")), _v(m["role"]), chip(lang, "l", m["lifecycle"]),
+        [[_v(m["position"]), turn_link(m.get("turn")), _v(m["role"]), chip(lang, "l", m["lifecycle"]),
           _v(m["disabled"] or ""), _processed(m, lang), _v(m["preview"]) + ("…" if m["length"] > 240 else "")]
          for m in members]), False))
     body = head + sections(lang, parts)
@@ -1216,7 +1256,9 @@ def _packet_section(packet: dict[str, Any], trace: dict[str, Any], lang: str) ->
         if e.get("possible_leak"):
             echo += f" <span class=\"warn\">{_v(t('leak'))}</span>"
         kind = chip(lang, "lk", e["kind"]) + (f" {chip(lang, 'lk', 'cast')}" if e.get("section") == "cast" else "")
-        rows.append([kind, _v(e.get("turn")), _v(e.get("text")), outcome, _v(e.get("tok")), echo])
+        by_turn = packet.get("policy") in TURN_POLICIES  # the ledger's turn is the message's turn (ADR 0041)
+        rows.append([kind, turn_link(e.get("turn")) if by_turn else _v(e.get("turn")), _v(e.get("text")), outcome,
+                     _v(e.get("tok")), echo])
     timings, options = trace.get("latency_ms") or {}, trace.get("recall_options") or {}
     scene = ""
     if "scene_cast" in timings:  # recorded since packet-v3 (ADR 0034) and the memory mode (ADR 0035)
@@ -1343,4 +1385,80 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
     body = head + sections(lang, parts)
     if len(parts) == 1:
         body += f"<p class=\"muted\">{t('who.empty')}</p>"
+    return body if embed else page(f"NMOS · {title}", body, lang)
+
+
+def _marked(text: str, spans: list[str]) -> str:
+    """The text escaped, with every occurrence of the evidence spans in bold and line breaks kept. An evidence quote
+    the extractor elided ("추오월은… 붓 한 자루를 …") is looked for piece by piece, pieces of 6 characters or more."""
+    found: list[tuple[int, int]] = []
+    pieces = {piece.strip(" \"'“”") for x in spans if x for piece in re.split(r"…|\.\.\.", x)}
+    for span in {x for x in pieces if len(x) >= 6}:
+        start = text.find(span)
+        while start >= 0:
+            found.append((start, start + len(span)))
+            start = text.find(span, start + 1)
+    merged: list[list[int]] = []
+    for a, b in sorted(found):
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    out, at = [], 0
+    for a, b in merged:
+        out += [_v(text[at:a]), f"<b class=\"hl\">{_v(text[a:b])}</b>"]
+        at = b
+    out.append(_v(text[at:]))
+    return "".join(out).replace("\n", "<br>")
+
+
+def source_turn(conv: dict[str, Any], turn: int, messages: list[dict[str, Any]], made: list[dict[str, Any]],
+                generations: list[dict[str, Any]], uses: list[dict[str, Any]], bounds: tuple[int | None, int | None],
+                token: str | None, lang: str = "ko", embed: bool = False, active: str | None = None) -> str:
+    """One turn as the source of memory (PHASE-33 Q7): the text NMOS read, with the words its facts were checked
+    against in bold; what the active generation made of it (current, superseded or ended; the other generations
+    counted); the packet lines of recent requests that came from it; and the turns either side. Read-only."""
+    t = lambda k: _t(lang, k)
+    q = query(token, lang)
+    conv_path = f"/inspector/c/{conv['id']}"
+    title = t("turn.title").format(n=turn)
+    lo, hi = bounds
+    nav = []
+    with turn_links(conv["id"], token, lang):
+        if lo is not None and turn - 1 >= lo:
+            nav.append(turn_link(turn - 1, t("turn.prev").format(n=turn - 1)))
+        if hi is not None and turn + 1 <= hi:
+            nav.append(turn_link(turn + 1, t("turn.next").format(n=turn + 1)))
+        head = (f"<div class=\"top\"><p><a href=\"{conv_path}{q}\">← {_v(label(conv))}</a></p>"
+                f"{'' if embed else _lang_switch(f'{conv_path}/t/{turn}', token, lang)}</div>"
+                f"<h1>{_v(title)}</h1>" + (f"<p>{' · '.join(nav)}</p>" if nav else ""))
+        if not messages:
+            body = head + f"<p class=\"muted\">{t('turn.none')}</p>"
+            return body if embed else page(f"NMOS · {title}", body, lang)
+        evidence = [a.get("evidence") or "" for a in made]
+        source = "".join(
+            f"<p><span class=\"chip\">{_v(m.get('name') or m.get('role') or '?')}</span> "
+            f"<span class=\"muted\">#{_v(m['position'])}</span></p><p>{_marked(m.get('text') or '', evidence)}</p>"
+            for m in messages)
+        source += f"<p class=\"muted\">{_v(t('turn.source_note'))}</p>"
+        rows = [[chip(lang, "o", a.get("outcome") or "current"), _v(fact_line_text(a)), _v(a.get("evidence") or "")]
+                for a in made]
+        facts_body = (table([t("h.outcome"), t("h.assertion"), t("h.evidence")], rows) if rows
+                      else f"<p class=\"muted\">{_v(t('turn.no_facts'))}</p>")
+        if generations:
+            gens = ", ".join(f"{g['extractor_key'][:20]}{' ✓' if g['extractor_key'] == active else ''} "
+                             f"{g['assertions']}" + ("" if g.get("current_window") else f" ({t('turn.stale')})")
+                             for g in generations)
+            facts_body += f"<p class=\"muted\">{_v(t('turn.generations').format(gens=gens))}</p>"
+        if uses:
+            used = table([t("h.when"), t("h.kind"), t("h.outcome"), t("h.text")],
+                         [[timestamp(e.get("created_at")), chip(lang, "lk", e.get("kind")), chip(lang, "pk", e.get("why")),
+                           _v(e.get("text"))] for e in uses[:50]])
+            used += f"<p class=\"muted\">{_v(t('turn.uses_note').format(n=TURN_TRACES))}</p>"
+        else:
+            used = f"<p class=\"muted\">{_v(t('turn.no_uses').format(n=TURN_TRACES))}</p>"
+        parts: list[Section] = [("source", t("toc.source"), len(messages), source, True),
+                                ("made", t("toc.made"), len(made), facts_body, True),
+                                ("used", t("toc.used"), len(uses), used, True)]
+        body = head + sections(lang, parts)
     return body if embed else page(f"NMOS · {title}", body, lang)

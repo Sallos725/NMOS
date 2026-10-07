@@ -1123,23 +1123,25 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                                               facts_links_of(conn, conv_id))}
             traces = readmodel.traces(conn, conv_id)
             cov = coverage_view(conn, conv_id, usage=True, lost=len(lost))
-            return inspector.detail(conv, current_state(conn, head, rt["rules"].version),
-                                    readmodel.membership(conn, head, ex_key, pj_key),
-                                    readmodel.commits(conn, conv_id), traces,
-                                    view["facts"][:300], token, cov,
-                                    lang=inspector.lang_of(lang), embed=embed, claims=view["claims"],
-                                    other=view["other"], entities=view["entities"], ambiguous=view["ambiguous"],
-                                    conflicts=view["conflicts"], items=view["items"], threads=view["threads"],
-                                    unmatched=view["unmatched"], secrets=view["secrets"],
-                                    unrevealed=view["unrevealed"],
-                                    standing=[f for f in view["facts"] if f["predicate"] in STANDING],
-                                    packet=audit.audit(conn, traces[0]["id"]) if traces else None,
-                                    summaries=summary_view(conn, conv_id, head, view["secrets"]),
-                                    repairs=repair_rows(conn, conv_id, view["repairs"]), last_turn=head_turn(conn, head),
-                                    canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
-                                    canon_held=canon.held(conn, conv_id), canon_read=cov["canon"].get("keys"),
-                                    canon_facts=view.get("canon_facts", 0), dropped=lost,
-                                    endings=role_ends)
+            with inspector.turn_links(conv_id, token, inspector.lang_of(lang)):  # turn cells lead to their turns
+                html = inspector.detail(conv, current_state(conn, head, rt["rules"].version),
+                                        readmodel.membership(conn, head, ex_key, pj_key),
+                                        readmodel.commits(conn, conv_id), traces,
+                                        view["facts"][:300], token, cov,
+                                        lang=inspector.lang_of(lang), embed=embed, claims=view["claims"],
+                                        other=view["other"], entities=view["entities"], ambiguous=view["ambiguous"],
+                                        conflicts=view["conflicts"], items=view["items"], threads=view["threads"],
+                                        unmatched=view["unmatched"], secrets=view["secrets"],
+                                        unrevealed=view["unrevealed"],
+                                        standing=[f for f in view["facts"] if f["predicate"] in STANDING],
+                                        packet=audit.audit(conn, traces[0]["id"]) if traces else None,
+                                        summaries=summary_view(conn, conv_id, head, view["secrets"]),
+                                        repairs=repair_rows(conn, conv_id, view["repairs"]), last_turn=head_turn(conn, head),
+                                        canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
+                                        canon_held=canon.held(conn, conv_id), canon_read=cov["canon"].get("keys"),
+                                        canon_facts=view.get("canon_facts", 0), dropped=lost,
+                                        endings=role_ends)
+            return html
 
     def summary_view(conn, conv_id: UUID, head: UUID, secrets: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The Inspector's summaries of a chat (PHASE-12 step 6), with the generation and whether packets use them."""
@@ -1157,8 +1159,27 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             view = inspector.with_participants(view_of(conn, conv["head_commit_id"]))
-            return inspector.character(conv, str(entity_id), view, token, active=rt["active_extractor"],
-                                       lang=inspector.lang_of(lang), embed=embed)
+            with inspector.turn_links(conv_id, token, inspector.lang_of(lang)):
+                return inspector.character(conv, str(entity_id), view, token, active=rt["active_extractor"],
+                                           lang=inspector.lang_of(lang), embed=embed)
+
+    def inspector_turn_html(conv_id: UUID, turn: int, request: Request, token: str | None, lang: str | None,
+                            embed: bool = False) -> str:
+        """The source-turn page (PHASE-33 Q7): read-only, the same token handling as the other pages."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            head = conv["head_commit_id"]
+            messages = readmodel.turn_messages(conn, head, turn)
+            revisions = {str(m["revision_id"]) for m in messages}
+            view = view_of(conn, head)
+            made = [a for a in view.get("assertions") or [] if a.get("turn") == turn]
+            return inspector.source_turn(
+                conv, turn, messages, made, readmodel.turn_generations(conn, [m["revision_id"] for m in messages]),
+                readmodel.turn_uses(conn, conv_id, revisions, {str(a["id"]) for a in made}),
+                readmodel.turn_bounds(conn, head), token, lang=inspector.lang_of(lang), embed=embed,
+                active=rt["active_extractor"])
 
     @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_index(request: Request, token: str | None = None, lang: str | None = None):
@@ -1180,6 +1201,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                             lang: str | None = None):
         return inspector_character_html(conv_id, entity_id, request, token, lang)
 
+    @app.get("/inspector/c/{conv_id}/t/{turn}", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def inspector_turn(conv_id: UUID, turn: int, request: Request, token: str | None = None, lang: str | None = None):
+        return inspector_turn_html(conv_id, turn, request, token, lang)
+
     # The same pages as body fragments for the plugin panel, which cannot open a browser tab (H15).
     @app.get("/v1/inspector", dependencies=[Depends(auth)])
     def inspector_index_embed(request: Request, lang: str | None = None):
@@ -1192,6 +1217,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     @app.get("/v1/inspector/c/{conv_id}/e/{entity_id}", dependencies=[Depends(auth)])
     def inspector_character_embed(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None):
         return {"html": inspector_character_html(conv_id, entity_id, request, None, lang, embed=True)}
+
+    @app.get("/v1/inspector/c/{conv_id}/t/{turn}", dependencies=[Depends(auth)])
+    def inspector_turn_embed(conv_id: UUID, turn: int, request: Request, lang: str | None = None):
+        return {"html": inspector_turn_html(conv_id, turn, request, None, lang, embed=True)}
 
     return app
 

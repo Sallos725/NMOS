@@ -14,9 +14,12 @@ describe('inspector links', () => {
     expect(inspectorApiPath(`/inspector/c/${id}`)).toBe(`/v1/inspector/c/${id}`);
     expect(inspectorApiPath(`/inspector/c/${id}?token=x&lang=en`)).toBe(`/v1/inspector/c/${id}`);
     expect(inspectorApiPath(`/inspector/c/${id}/e/${who}?lang=en`)).toBe(`/v1/inspector/c/${id}/e/${who}`);
+    expect(inspectorApiPath(`/inspector/c/${id}/t/12?lang=en`)).toBe(`/v1/inspector/c/${id}/t/12`);
+    expect(inspectorApiPath(`/inspector/c/${id}/t/0`)).toBe(`/v1/inspector/c/${id}/t/0`);
     for (const href of [null, '', 'https://example.com/inspector', 'javascript:alert(1)', '/inspector/c/../../v1/config',
       '/inspectorx', `/inspector/c/${id}/x`, '//evil/inspector', `/inspector/c/${id}/e/x`, `/inspector/e/${who}`,
-      `/inspector/c/${id}/e/${who}/x`]) {
+      `/inspector/c/${id}/e/${who}/x`, `/inspector/c/${id}/t/-1`, `/inspector/c/${id}/t/01`, `/inspector/c/${id}/t/x`,
+      `/inspector/c/${id}/t/12/x`, `/inspector/c/${id}/t/123456789`, `/inspector/t/3`]) {
       expect(inspectorApiPath(href), String(href)).toBeNull();
     }
   });
@@ -27,6 +30,7 @@ describe('inspectorConversation', () => {
     const conv = '0199a3b2-1c2d-7e3f-8a4b-5c6d7e8f9a0b';
     expect(inspectorConversation(`/v1/inspector/c/${conv}`)).toBe(conv);
     expect(inspectorConversation(`/v1/inspector/c/${conv}/e/${who}`)).toBe(conv);
+    expect(inspectorConversation(`/v1/inspector/c/${conv}/t/7`)).toBe(conv);
     expect(inspectorConversation('/v1/inspector')).toBeNull();
     expect(inspectorConversation(`/v1/inspector/c/${conv}/x`)).toBeNull();
     expect(inspectorConversation('/v1/inspector/c/not-a-uuid')).toBeNull();
