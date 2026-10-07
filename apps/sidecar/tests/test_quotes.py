@@ -41,7 +41,7 @@ def test_a_line_grows_both_ways_from_its_quote_within_the_cap():
     assert spoken.words == "닻은 내일 올린다."
     assert len(spoken.line) <= QUOTE_CHARS
     assert spoken.line.index("닻은") > 100 and len(spoken.line) - spoken.line.index("닻은") > 100  # not cut at the quote
-    assert "류진" in spoken.attribution[0]
+    assert "류진" in spoken.after
 
 
 def test_rare_words_decide_between_two_lines():
@@ -84,3 +84,14 @@ def test_the_user_speaks_as_the_persona_and_an_unclear_line_names_nobody():
     assert unclear.speaker is None  # two subjects: no guess
     [said] = pick([_msg(4, '"등대는 가깝다." 백도가 류진에게 말했다.')], "등대 얘기할 때 뭐라고 했어?", NAMES, 5, False)
     assert said.speaker == "백도"
+
+
+def test_only_the_quotes_own_sentence_names_the_speaker():
+    [listener] = pick([_msg(5, '"등대까지는 내가 노를 젓지." 류진이 말없이 그를 보았다.')], "등대 얘기할 때 뭐라고 했어?",
+                      NAMES, 9, False)
+    assert listener.speaker is None  # a look is no verb of speaking: the listener, not the speaker
+    [nearest] = pick([_msg(6, '한솔이 웃자 늙은 선원이 "등대는 저쪽이다" 하고 손을 들었다.')], "등대 얘기할 때 뭐라고 했어?",
+                     NAMES, 9, False)
+    assert nearest.speaker is None  # the nearest subject is no known character: none rather than 한솔
+    [quoted] = pick([_msg(7, '부두 끝에서 백도가 "등대 불 켜라!" 하고 소리쳤다.')], "등대 얘기할 때 뭐라고 했어?", NAMES, 9, False)
+    assert quoted.speaker == "백도"

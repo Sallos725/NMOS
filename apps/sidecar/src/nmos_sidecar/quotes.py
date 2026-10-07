@@ -39,6 +39,12 @@ CANDIDATES = 12  # the found messages a quote is looked for in, best ranked firs
 SEARCHED = 30  # messages with quotes the route's own search adds, most of the question's words first
 TIMEOUT_MS = 150  # the route's own search (Q4): abstains past it
 _SUBJECT = "(?:이|가|은|는|께서|도)"
+_SUBJECT_WORD = re.compile(r"([가-힣]+?)(?:께서|이|가|은|는)")
+_HANGUL_WORD = re.compile(r"[가-힣]+")
+_QUOTATIVE = re.compile(r"(?:하고|하며|하면서|라고|라며|이라고|하는|하자|했다|한다)(?![가-힣])")
+# a verb of speaking after the quote: the subject before it said the words
+_SPEAKING = re.compile(r"말했|말하|물었|묻|대답|답했|되물|외쳤|소리쳤|중얼|속삭|덧붙|호통|불렀|투덜|웅얼|내뱉|입을 열|"
+                       r"말을 이|쏘아붙|받아쳤|타일렀|설명했|재촉했|혼잣말")
 # words a question uses to ask about speech; they say nothing about which line
 _SPEECH_WORDS = ("말했", "말한", "말하", "뭐라", "대답", "물었", "물어", "중얼", "외쳤", "소리쳤", "호통", "속삭", "대사", "한마디",
                  "했어", "했지", "했더", "했던", "said", "say", "says", "told", "asked", "answered", "words")
@@ -122,8 +128,8 @@ class Spoken:
     line: str  # what is placed: the quote's sentence and the sentences around it, up to QUOTE_CHARS, verbatim
     near: str  # its own sentence and the next, without quoted words (weight 1)
     wide: str  # two sentences either side, without quoted words (weight 0.5)
-    attribution: tuple[str, ...]  # where the speaker is named: its own sentence without the quote, then the next
-    # unless that holds another quote (the sentence before is more often the listener's, so it is not read)
+    before: str  # its sentence's narration before the quote, from the sentence start or the quote before it
+    after: str  # its sentence's narration after the quote, to the sentence end or the quote after it
     first: int  # the first and last sentence index the line covers
     last: int
     at: int  # the quote's own sentence
@@ -154,31 +160,34 @@ def quotes_in(text: str) -> list[Spoken]:
             line = text[spans[lo][0]:spans[hi][1]].strip()
         near = text[spans[i][0]:spans[min(i + 1, len(spans) - 1)][1]]
         wide = text[spans[max(i - 2, 0)][0]:spans[min(i + 2, len(spans) - 1)][1]]
-        own = QUOTE.sub(" ", text[spans[i][0]:m.start()] + " " + text[m.end():spans[i][1]])
-        after = text[spans[i + 1][0]:spans[i + 1][1]] if i + 1 < len(spans) else ""
-        attribution = (own, after) if after and not QUOTE.search(after) else (own,)
-        out.append(Spoken(m.group(1), line, QUOTE.sub(" ", near), QUOTE.sub(" ", wide), attribution, lo, hi, i))
+        before = re.split(QUOTE, text[spans[i][0]:m.start()])[-1]
+        after = QUOTE.split(text[m.end():spans[i][1]], maxsplit=1)[0]
+        out.append(Spoken(m.group(1), line, QUOTE.sub(" ", near), QUOTE.sub(" ", wide), before, after, lo, hi, i))
     return out
 
 
-def _speaker(attribution: tuple[str, ...], names: dict[str, str], role: str | None,
-             message_speaker: str | None) -> str | None:
-    """Who said it: the user's own message is the persona's (Q2); otherwise the first place of the attribution that
-    names anyone decides: the one character it names as a subject (이안이, 곽은비가 …), else the one it names at all;
-    none when it names more than one."""
+def _subject(word: str, names: dict[str, str]) -> str | None:
+    """The character a subject-marked word names ("이안이", "곽은비가"), else None."""
+    m = _SUBJECT_WORD.fullmatch(word)
+    return names.get(norm(m.group(1))) if m else None
+
+
+def _speaker(spoken: Spoken, names: dict[str, str], role: str | None, message_speaker: str | None) -> str | None:
+    """Who said it (Q2), only where the quote's own sentence says so: the user's own message is the persona's;
+    `X가 "…" 하고/라고 …` is X's, the subject nearest before the quote; `"…" X가 … 말했다` is X's, the first subject
+    after it, with a verb of speaking in the clause. The nearest subject decides: one that is no known character
+    (주인 할머니가, 수염 선원이) leaves the line unattributed rather than guessed. The sentences around are not read:
+    the next is most often the listener's (추오월이 말없이 그를 보았다), so they named the wrong speaker."""
     if role == "user" and message_speaker:
         return message_speaker
-    for part in attribution:
-        flat = norm(part)
-        named_here = {display for key, display in names.items() if key and key in flat}
-        if not named_here:
-            continue
-        subject = {display for key, display in names.items()
-                   if key and re.search(re.escape(key) + _SUBJECT + r"(?![가-힣])", flat)}
-        for found in (subject, named_here):
-            if len(found) == 1:
-                return next(iter(found))
-        return None
+    after = spoken.after.strip()
+    if _QUOTATIVE.match(after):
+        words = [w for w in _HANGUL_WORD.findall(spoken.before) if _SUBJECT_WORD.fullmatch(w)]
+        return _subject(words[-1], names) if words else None
+    clause = re.split(r"[,.!?…]|(?<=[가-힣])자\s|(?<=[가-힣])고\s", after, maxsplit=1)[0]
+    words = [w for w in _HANGUL_WORD.findall(clause) if _SUBJECT_WORD.fullmatch(w)]
+    if words and _SPEAKING.search(after):
+        return _subject(words[0], names)
     return None
 
 
@@ -207,12 +216,15 @@ def pick(candidates: list[dict[str, Any]], query: str, names: dict[str, str], la
             hits = sum(v * (2 if w in in_quote else 1.5 if w in near else 1 if w in line else 0)
                        for w, v in weights.items())
             phrase = any(norm(p) in in_quote for p in wanted)
-            speaker = _speaker(sp.attribution, names, c.get("role"), c.get("name"))
+            speaker = _speaker(sp, names, c.get("role"), c.get("name"))
             if not hits and not phrase and not (turn is not None and c.get("turn") == turn):
                 continue
             score = hits + (5 if phrase else 0) + 0.5 / (1 + rank)
-            if asked and speaker:  # the words of the one asked about; attribution in prose is a hint, not a fact
-                score += 1.5 if speaker in asked else -0.5
+            if asked:  # the words of the one asked about: said by them, or by nobody named with them in the narration
+                if speaker:
+                    score += 1.5 if speaker in asked else -1
+                elif any(k in near for k in asked_keys):
+                    score += 1.5
             if turn is not None and c.get("turn") is not None:
                 score += 4 if c["turn"] == turn else 1 if abs(c["turn"] - turn) <= TURN_SPAN else -2
             if first and met is not None and c.get("turn") is not None:  # where they met (Q3)
