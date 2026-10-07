@@ -33,6 +33,11 @@ checked on the 240 with a reply); the S0 and S2 requests are probes, which have 
 | S0 main (real chat, probes) | 81 | 0.607 | 1 / 3 / 80 | 0.316 | — |
 | S2 (240 turns, probes) | 52 | 0.508 | 1 / 3 / 50 | 0.254 | — |
 
+*Note (2026-10-07, Phase 34):* the bench's chat model is a stub that plays scripted replies (`mode: script`), so a
+reply never depends on the packet: the echo columns measure how much of a line the script happens to reuse, not how a
+model uses memory. The placement numbers (repeat share, streaks, stale tokens) do not depend on the replies and stand.
+Echo before and after Phase 34 is measured on real replies (`docs/phases/PHASE-34.md` Q8 d).
+
 In live play 61 % of a packet's lines were placed in the request before it too, and 38 % of its tokens went to lines
 placed in each of the three requests before it; a repeated line was echoed by the reply less than half as often as a
 new one (10.6 % against 24.6 %). Phase 34's overuse penalty is measured against these.
