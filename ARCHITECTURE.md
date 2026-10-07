@@ -661,6 +661,12 @@ or a history cue keeps it. Nothing is stored: the requests are the recorded trac
 half the best fused score or a word hit. **The default since 2026-10-08** (owner, on a live run on a real chat: no
 repetition felt; repeated lines' echo 0.29 → 0.39); `NMOS_PACKET_POLICY=packet-v12` keeps the previous packet.
 
+**D78 — The anchor is what was asked (`packet-v15`; ADR 0069; Phase 35, AGE-10; proposed).** Under `packet-v15` a
+history cue's keywords (처음, 첫날, 예전) break ties in `grown_excerpt` instead of picking its best sentence, and a first
+cue adds 처음 and 첫 to the tie words; one-syllable function words (`retrieval.FUNCTION_SYLLABLES`) break no tie; and a
+word hit's vector chunk gives way to the whole message when the question names a one-syllable noun and the message
+holds a sentence with more of those nouns, then of the anchor words (`packet.anchor_rank`). The keyword route and lexical recall are unchanged.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **`packet-v15`: an excerpt lands on what the question asks, not on when** (Phase 35, ADR 0069; not the default
+  yet). "하람이가 처음 권해 준 빵이 뭐였어?" found the right scene but showed the sentence that says 처음 about something
+  else; "…온 지 얼마 안 됐을 때 … 달 기억나?" showed the sentence with "온 지". Words that say when (처음, 첫날, 예전) and
+  one-syllable function words (온, 지, 때) no longer pick the excerpt's sentence, and a vector chunk gives way to its whole
+  message when the message says more of what the question names. On the bench replay: 289 of 314 against 286, no case
+  lost; S6 (questions while NMOS catches up on a chat) 23 of 25 against 21.
 - **`packet-v14` is the default: memory that knows what each line is for, and stops repeating itself** (Phase 34,
   AGE-10, ADR 0068). Every packet line is labeled required, supportive or risky (the Inspector shows the label and how
   much of the packet came back from the requests before). A supportive line placed in each of the last two requests

@@ -28,12 +28,14 @@ from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
-from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, CHANGE_POLICIES, CONTENTS,
+from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES,
+                     CHANGE_POLICIES, CONTENTS,
                      QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
-                     StateItem, clean_text, compile_lines, cut_lines, excerpt, fill, fits_at, kept_counts, secret_line,
+                     StateItem, anchor_rank, clean_text, compile_lines, cut_lines, excerpt, fill, fits_at, kept_counts,
+                     secret_line,
                      secret_text)
 from .state import current_state
 from .threads import relevant_threads, similarity
@@ -478,6 +480,24 @@ def one_char_words(query: str) -> tuple[str, ...]:
                                if len(w) == 1 and not (w.isascii() and not w.isdigit())))
 
 
+# One-syllable words that say how or when, not what (PHASE-35 Q2): a verb's or an ending's piece (온, 준, 한), a
+# dependent noun (지, 때, 것, 게), a negation or an adverb (안, 못, 더), a pronoun or a determiner (그, 이, 제).
+FUNCTION_SYLLABLES = frozenset(
+    "온 간 갈 올 본 볼 한 할 된 될 준 줄 난 넌 날 때 적 지 수 것 거 게 걸 데 뿐 듯 안 못 잘 더 또 좀 다 왜 뭐 "
+    "그 이 저 제 내 네 너 나 걔 얘 쟤 두 세 첫 건 곳 쪽 번".split())
+
+
+def anchor_words(query: str, words: list[str], tie: tuple[str, ...]) -> tuple[list[str], tuple[str, ...]]:
+    """packet-v15 (PHASE-35): the words an excerpt's best sentence is chosen by. A history cue's words (처음, 첫날,
+    예전) say when the thing happened, not what it was: they leave the anchor words and only break a tie, as 처음 and
+    첫 both do for a first cue (the story says 첫 빵 where the question says 처음). The question's one-syllable words
+    break a tie only when they name something (빵, 달), not when they are FUNCTION_SYLLABLES."""
+    when = [w for w in words if HISTORY_CUE.search(w)]
+    cue_ties = tuple(dict.fromkeys(w for w in (*when, *(("처음", "첫") if FIRST_CUE.search(query) else ()))))
+    return ([w for w in words if w not in when],
+            tuple(dict.fromkeys((*cue_ties, *(w for w in tie if w not in FUNCTION_SYLLABLES)))))
+
+
 def _said(fact: dict[str, Any]) -> tuple[str, ...]:
     return tuple(t for t in (fact.get("object"), fact.get("value")) if t)
 
@@ -880,6 +900,11 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     # prototype's rule: never the previous reply); every other case anchors on the question and the previous reply
     anchor = (" ".join(words) or query) if span and options.excerpt_anchor == "keywords" else focus
     tie = one_char_words(query) if options.policy in CHANGE_POLICIES else ()  # packet-v12, PHASE-31 Q3
+    nouns: tuple[str, ...] = ()  # packet-v15: the question's one-syllable nouns (PHASE-35 Q3)
+    if options.policy in ANCHOR_POLICIES:  # packet-v15: the anchor is what the question asks, not when (PHASE-35)
+        words, tie = anchor_words(query, words, tie)
+        nouns = tuple(w for w in tie if len(w) == 1 and w != "첫")
+        anchor = (" ".join(words) or query) if span and options.excerpt_anchor == "keywords" else focus
     # packet-v13 (PHASE-33 Q5): a turn this generation has not extracted yet (a first sight still catching up) has no
     # fact to restate, so its excerpt is raw evidence; one such excerpt may take one more slot than top_k (packet-v13
     # judges excerpts as packet-v12 does: `stale` is set whenever there is an extractor to ask)
@@ -906,6 +931,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         in_chunk = not word_hit or (span and c.get("sim") is not None and c["sim"] >= options.vector_min_sim
                                     and c.get("text_end") is not None)
         clean = c["clean"][c["text_start"]:c["text_end"]] if in_chunk else c["clean"]
+        if (in_chunk and word_hit and nouns
+                and anchor_rank(c["clean"], nouns, words) > anchor_rank(clean, nouns, words)):
+            clean = c["clean"]  # packet-v15: the whole message says more of what the question names (PHASE-35 Q3)
         if cue:  # packet-v11: by whole sentences up to CUE_GROW_CHARS, no sentence cap (PHASE-27 Q2)
             text, short = grown_excerpt(clean, anchor, words, min(options.excerpt_chars, CUE_GROW_CHARS),
                                         max_sentences=None, tie_words=tie)
