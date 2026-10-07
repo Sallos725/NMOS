@@ -97,3 +97,20 @@ def test_only_the_quotes_own_sentence_names_the_speaker():
     assert nearest.speaker is None  # the nearest subject is no known character: none rather than 한솔
     [quoted] = pick([_msg(7, '부두 끝에서 백도가 "등대 불 켜라!" 하고 소리쳤다.')], "등대 얘기할 때 뭐라고 했어?", NAMES, 9, False)
     assert quoted.speaker == "백도"
+
+
+def test_what_the_question_says_the_words_did_breaks_a_tie():
+    # every line holds 등대 in its words: a tie the first line would win
+    text = ('"등대는 언제 켜져요." 류진이 말했다. "등대는 몇 시에 켜지니?" 백도가 물었다. '
+            '"등대는 해가 지면 켜져." 류진이 대답했다.')
+    [asked, *_] = pick([_msg(5, text)], "등대 얘기 때 뭐라고 물었어?", NAMES, 9, False)
+    assert asked.words == "등대는 몇 시에 켜지니?"
+    [answered, *_] = pick([_msg(5, text)], "등대 얘기 때 뭐라고 대답했어?", NAMES, 9, False)
+    assert answered.words == "등대는 해가 지면 켜져."
+
+
+def test_the_sentence_before_a_quote_counts_as_near():
+    # 달력 is in both lines; it sets the scene for the second quote only
+    text = '"오늘은 쉰다." 백도가 말했다. 바람이 불었다. 파도가 쳤다. 류진이 달력을 펼쳤다. "하루라도 늦으면 다 밀린다."'
+    [top, *_] = pick([_msg(5, text)], "달력 볼 때 뭐라고 했지?", NAMES, 9, False)
+    assert top.words == "하루라도 늦으면 다 밀린다."

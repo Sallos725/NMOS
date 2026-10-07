@@ -30,11 +30,14 @@ Under `packet-v13` (`packet.QUOTE_POLICIES`), in `retrieval.gather`, the module 
    statement timeout (Q4: it abstains past it).
 3. **Scoring.** Every quoted span ("…", “…”, 「…」, 『…』, 4 to 300 characters) of a candidate is a quote; its line is
    its sentence and the sentences around it, grown outward up to 600 characters, verbatim. A quote scores by the
-   question's words: twice in the quote, 1.5 in its sentence or the next, once anywhere else in its line; each word
+   question's words: twice in the quote, 1.5 in its sentence or the one either side (narration before a quote often
+   sets its scene), once anywhere else in its line; each word
    weighted by its rarity on the head (ln(1 + N/df) / ln(1 + N), scaled so the question's rarest word weighs 1; a
    verb-like word half; speech words, question words, first cues and "…에 대해" not counted); plus a phrase the
    question quotes, the message's rank, the named turn (+4 on it, +1 within two, −2 elsewhere), the first-met turns
-   (+3) or, without them, earliness, and the one asked about (below). Of two quotes one line would hold, one is placed.
+   (+3) or, without them, earliness, what the question says the words did (+1: "물었어" for a line that is a question,
+   "대답했어" for a line right after one), and the one asked about (below). Of two quotes one line would hold, one is
+   placed.
 4. **The speaker only where the quote's own sentence says so** (Q2). The user's own message is the persona's;
    `X가 "…" 하고/라고 …` is X's (the subject nearest before the quote); `"…" X가 … 말했다` is X's (the first subject
    after it, with a verb of speaking in its clause). A nearest subject that is no known character leaves the line
@@ -51,11 +54,11 @@ Under `packet-v13` (`packet.QUOTE_POLICIES`), in `retrieval.gather`, the module 
 
 ## Consequences
 
-- On the exact-quote set: 19 of 24 with the source turn and the words, three replays alike (`packet-v12`: 4); placed
-  quotes attributed: 3 of 48, none wrong. The bar was 20 (PHASE-33 Q11); the five misses are two named turns
-  whose message is long and whose question's words sit in other exchanges of it, a first-cue answer two turns after
-  the turn the two had met, a near tie with another line of the same speaker, and one message the candidates did not
-  reach.
+- On the exact-quote set: 21 of 24 with the source turn and the words in four replays of six, 20 in two
+  (`packet-v12`: 4); the bar is 20 (PHASE-33 Q11). Placed quotes attributed: 4 of 48, none wrong. The misses: a named
+  turn whose message is long and whose question's words sit in another exchange of it; a first-cue question whose
+  first visit spans two turns; one message the candidates did not reach; and one near tie (0.001) that recall's order
+  decides.
 - On the v0.3.0 bench replayed (`docs/perf/phase33-replay.md`): every set equal to `packet-v12` case by case, forbidden
   phrases equal; `packet-v12`'s compiled output unchanged on all 314 probes.
 - Attribution is rare by design. An earlier rule that also read the next sentence named a speaker on about 40 of 48

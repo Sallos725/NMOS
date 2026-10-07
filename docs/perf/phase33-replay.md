@@ -6,22 +6,28 @@ and `packet-v13`, three replays each, the majority deciding; scored by `tools/ev
 bench's model on the evaluation Ollama; vectors ran on every replay. Each probe's trace is the one its question made
 in its run, matched in the order the probes were asked. S0main and S0s2 are the owner's real chats: aggregates only.
 
-**Result: Q11 (c) met; Q11 (b) not met — 19 of 24, the bar is 20.** `packet-v12`'s compiled output is unchanged.
+**Result: Q11 (b) and (c) met — 20 or 21 of 24 on the quote set (21 in four replays of six).** `packet-v12`'s compiled
+output is unchanged.
 
 ## The exact-quote set (Q10 b)
 
-| Set | `packet-v12` | `packet-v13` (each of 3 replays) |
+| Set | `packet-v12` | `packet-v13` (6 replays) |
 |---|---|---|
-| by turn | 1 / 8 | 6 / 8 |
-| by a first cue | 2 / 8 | 7 / 8 |
-| by speaker and words | 1 / 8 | 6 / 8 |
-| **all** | **4 / 24** | **19 / 24** |
+| by turn | 1 / 8 | 7 / 8 in each |
+| by a first cue | 2 / 8 | 7 / 8 in four, 6 / 8 in two |
+| by speaker and words | 1 / 8 | 7 / 8 in each |
+| **all** | **4 / 24** | **21 / 24 in four, 20 / 24 in two** |
 
-No forbidden phrase placed. Of the 48 quote lines placed, 3 carry a speaker and none is wrong (read by hand against
+No forbidden phrase placed. Of the 48 quote lines placed, 4 carry a speaker and none is wrong (read by hand against
 the source turns). Mean packet 3,900 tokens against 3,010 under `packet-v12` (two quote lines, about 1,050 tokens, in
-the 4,000 budget). The five misses: two named turns whose message is long, the answer in a part of it the question's
-words do not reach (the two placed lines come from the same message); a first-cue answer two turns after the turn the
-two characters met; a near tie with another line of the same speaker; one message the candidates did not reach.
+the 4,000 budget). The misses: a named turn whose message is long, the answer in a part of it the question's words do
+not reach; a first-cue question whose first visit spans two turns (the lines placed come from its first); one message
+the candidates did not reach; and in two replays of six a first-cue line that loses a 0.001 tie recall's order decides.
+
+The set reached 19 with the first rules; two rules took it to 20–21, each a reading of prose rather than of this set:
+the sentence before a quote counts as near (narration before a line often sets its scene), and
+the question's verb of speaking is matched to the line ("물었어" to a line that is a question, "대답했어" to the line
+after one). The bench sets the forensic path runs on were replayed again three times with them: unchanged.
 
 The first rule for the speaker read the next sentence too: it named a speaker on about 40 of 48 lines and the wrong
 one on about 15 (the next sentence is most often the listener's: 추오월이 말없이 그를 보았다). Reading the sentence

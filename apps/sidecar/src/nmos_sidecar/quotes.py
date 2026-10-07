@@ -49,6 +49,11 @@ _SPEAKING = re.compile(r"말했|말하|물었|묻|대답|답했|되물|외쳤|�
 _SPEECH_WORDS = ("말했", "말한", "말하", "뭐라", "대답", "물었", "물어", "중얼", "외쳤", "소리쳤", "호통", "속삭", "대사", "한마디",
                  "했어", "했지", "했더", "했던", "said", "say", "says", "told", "asked", "answered", "words")
 _ABOUT = ("대해", "대한", "관해", "관한")  # "…에 대해": what the question is about follows; the word itself says nothing
+# What the question says the words did: asked ("뭐라고 물었어?") takes a line that is a question; answered ("뭐라고
+# 대답했어?") a line right after one that is.
+ASKING = re.compile(r"물었|물어|묻[고는던]|질문|\basked\b", re.IGNORECASE)
+ANSWERING = re.compile(r"대답|답했|답한|되받|\banswered\b|\breplied\b", re.IGNORECASE)
+_QUESTION_END = re.compile(r"(?:\?|(?:냐|니|까|나요|가요|는가|던가|래요)[.!…]*)\s*$")
 VERB_WEIGHT = 0.5  # a word that ends like a verb ("보고", "놀리면서") says what happened around the line, weakly
 
 
@@ -134,13 +139,14 @@ def _sentences(text: str) -> list[tuple[int, int]]:
 class Spoken:
     words: str  # the quoted words
     line: str  # what is placed: the quote's sentence and the sentences around it, up to QUOTE_CHARS, verbatim
-    near: str  # its own sentence and the next, without quoted words (weight 1)
+    near: str  # its own sentence and the ones either side, without quoted words
     wide: str  # two sentences either side, without quoted words (weight 0.5)
     before: str  # its sentence's narration before the quote, from the sentence start or the quote before it
     after: str  # its sentence's narration after the quote, to the sentence end or the quote after it
     first: int  # the first and last sentence index the line covers
     last: int
     at: int  # the quote's own sentence
+    after_question: bool = False  # the quote before it in the message is a question
 
 
 def quotes_in(text: str) -> list[Spoken]:
@@ -149,6 +155,7 @@ def quotes_in(text: str) -> list[Spoken]:
     exchange the words were said in, verbatim."""
     spans = _sentences(text)
     out = []
+    asked = False  # whether the quote before is a question
     for m in QUOTE.finditer(text):
         i = next((n for n, (a, b) in enumerate(spans) if a <= m.start() < b), None)
         if i is None:
@@ -166,12 +173,18 @@ def quotes_in(text: str) -> list[Spoken]:
                 if lo > 0 and spans[hi][1] - spans[lo - 1][0] <= QUOTE_CHARS:
                     lo, grow = lo - 1, True
             line = text[spans[lo][0]:spans[hi][1]].strip()
-        near = text[spans[i][0]:spans[min(i + 1, len(spans) - 1)][1]]
+        near = text[spans[max(i - 1, 0)][0]:spans[min(i + 1, len(spans) - 1)][1]]
         wide = text[spans[max(i - 2, 0)][0]:spans[min(i + 2, len(spans) - 1)][1]]
         before = re.split(QUOTE, text[spans[i][0]:m.start()])[-1]
         after = QUOTE.split(text[m.end():spans[i][1]], maxsplit=1)[0]
-        out.append(Spoken(m.group(1), line, QUOTE.sub(" ", near), QUOTE.sub(" ", wide), before, after, lo, hi, i))
+        out.append(Spoken(m.group(1), line, QUOTE.sub(" ", near), QUOTE.sub(" ", wide), before, after, lo, hi, i,
+                          asked))
+        asked = is_question(m.group(1))
     return out
+
+
+def is_question(words: str) -> bool:
+    return bool(_QUESTION_END.search(words.strip()))
 
 
 def _subject(word: str, names: dict[str, str]) -> str | None:
@@ -210,6 +223,7 @@ def pick(candidates: list[dict[str, Any]], query: str, names: dict[str, str], la
     turn = named_turn(query)
     first = first and turn is None  # a named turn says where; "첫째 장" is no first cue then
     asked, _ = named(query, names)  # whose words are asked for
+    asking, answering = bool(ASKING.search(query)), bool(ANSWERING.search(query))
     asked_keys = {norm(d) for d in asked} | {key for key, d in names.items() if d in asked}
     weights = {w: v * (rarity or {}).get(w, 1.0) for w, v in terms.items()
                if not any(w in k or k in w for k in asked_keys)}  # the speaker is scored as a speaker, below
@@ -228,6 +242,8 @@ def pick(candidates: list[dict[str, Any]], query: str, names: dict[str, str], la
             if not hits and not phrase and not (turn is not None and c.get("turn") == turn):
                 continue
             score = hits + (5 if phrase else 0) + 0.5 / (1 + rank)
+            if asking and is_question(sp.words) or answering and sp.after_question:
+                score += 1
             if asked:  # the words of the one asked about: said by them, or by nobody named with them in the narration
                 if speaker:
                     score += 1.5 if speaker in asked else -1
