@@ -41,3 +41,16 @@ Every set equal case by case but S4's `s4_del_pet`, which `packet-v13` missed in
 time slice (`docs/perf/phase33-replay.md`). **Q9 (c) met.**
 
 S0main and S0s2 are the owner's real chats: aggregates only. Latency (Q8 e) and the live run (Q8 d) are step 5.
+
+## Latency (Q8 e)
+
+`tools/bench_rest.py` (new): `/v1/retrieve` under `packet-v13` and `packet-v14` on `bench_scale.py`'s synthetic chat as
+it goes on for 30 turns (each `packet-v14` request reads the chat's last traces and the replies after them), in-process,
+no embedder.
+
+| Messages | `packet-v13` p50 / p95 | `packet-v14` p50 / p95 | Over `packet-v13` at p95 | `overuse.recent` p50 / p95 |
+|---:|---|---|---:|---|
+| 1,000 | 11.8 / 95.9 ms | 12.9 / 96.3 ms | +0.4 ms | 0.7 / 1.8 ms |
+| 10,000 | 18.8 / 103.5 ms | 20.7 / 104.2 ms | **+0.7 ms** | 0.9 / 1.7 ms |
+
+**Q9 (e) met** (bar +30 ms).
