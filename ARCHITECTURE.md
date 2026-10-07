@@ -653,19 +653,21 @@ lines with the words verbatim, placed before the excerpts. A speaker is written 
 names one; a quote only the route found passes the secret test. An excerpt from a turn the active extractor has not
 extracted is raw evidence: never dropped for restating a fact, and it may take one more slot.
 
-**D77 — What a line is for (`packet-v14`; ADR 0068; Phase 34, AGE-10).** Every ledger line is required (state, cast,
-the story so far, knowledge boundaries, what the question names, quotes, the first excerpt), supportive or risky (a
-disputed line). A supportive line placed in each of the last `rest_after` requests (recorded, `NMOS_REST_AFTER`, 2)
-that none of their replies echoed rests for the next two requests; the question naming it, its own words finding it
-or a history cue keeps it. Nothing is stored: the requests are the recorded traces. An excerpt after the first needs
-half the best fused score or a word hit. **The default since 2026-10-08** (owner, on a live run on a real chat: no
-repetition felt; repeated lines' echo 0.29 → 0.39); `NMOS_PACKET_POLICY=packet-v12` keeps the previous packet.
+**D77 — What a line is for (`packet-v14`; ADR 0068; Phase 34, AGE-10).** Every ledger line is required (state, cast, the
+story so far, knowledge boundaries, what the question names, quotes, the first excerpt), supportive or risky (a disputed
+line). A supportive line placed in each of the last `rest_after` requests (recorded, `NMOS_REST_AFTER`, 2) that none of
+their replies echoed rests for the next two requests; the question naming it, its own words finding it or a history cue
+keeps it. Nothing is stored: the requests are the recorded traces. An excerpt after the first needs half the best fused
+score or a word hit. **The default on 2026-10-08** (owner, on a live run on a real chat: no repetition felt; repeated
+lines' echo 0.29 → 0.39), then in the default through `packet-v15` (D78).
 
-**D78 — The anchor is what was asked (`packet-v15`; ADR 0069; Phase 35, AGE-10; proposed).** Under `packet-v15` a
-history cue's keywords (처음, 첫날, 예전) break ties in `grown_excerpt` instead of picking its best sentence, and a first
-cue adds 처음 and 첫 to the tie words; one-syllable function words (`retrieval.FUNCTION_SYLLABLES`) break no tie; and a
-word hit's vector chunk gives way to the whole message when the question names a one-syllable noun and the message
-holds a sentence with more of those nouns, then of the anchor words (`packet.anchor_rank`). The keyword route and lexical recall are unchanged.
+**D78 — The anchor is what was asked (`packet-v15`; ADR 0069; Phase 35, AGE-10).** Under `packet-v15` a history cue's
+keywords (처음, 첫날, 예전) break ties in `grown_excerpt` instead of picking its best sentence, and a first cue adds 처음 and 첫
+to the tie words; one-syllable function words (`retrieval.FUNCTION_SYLLABLES`) break no tie; and a word hit's vector
+chunk gives way to the whole message when the question names a one-syllable noun and the message holds a sentence with
+more of those nouns, then of the anchor words (`packet.anchor_rank`). The keyword route and lexical recall are
+unchanged. **The default since 2026-10-08** (the owner, on the zero-call replay: the bench 289 of 314 against 286, no
+case lost); `NMOS_PACKET_POLICY=packet-v14` keeps the previous packet.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

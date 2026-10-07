@@ -1,9 +1,9 @@
 # 0068 — What a line is for, and memory that stops repeating itself (`packet-v14`)
 
-Status: accepted, the default since 2026-10-08 (owner, on the live run, PHASE-34 Q6); proposed 2026-10-07
-(`docs/phases/PHASE-34.md` Q1–Q5, approved by the owner, Q1/Q2/Q3/Q9 amended on the measurement; AGE-10). Adds the
-policy `packet-v14` on top of `packet-v13`; it replaces `packet-v12` as the default. No prompt, generation key, stored
-row or migration changes.
+Status: accepted, in the default through `packet-v15` (ADR 0069); the default on its own from 2026-10-08 (owner, on the
+live run, PHASE-34 Q6); proposed 2026-10-07 (`docs/phases/PHASE-34.md` Q1–Q5, approved by the owner, Q1/Q2/Q3/Q9 amended
+on the measurement; AGE-10). Adds the policy `packet-v14` on top of `packet-v13`; it replaces `packet-v12` as the
+default. No prompt, generation key, stored row or migration changes.
 
 ## Context
 

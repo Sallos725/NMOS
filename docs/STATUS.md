@@ -2,14 +2,16 @@
 
 ## Current phase
 
-**Phase 35 — The excerpt lands on what was asked, not on when (`packet-v15`): proposed 2026-10-08, a correction phase
-(AGENTS §7 item 5) beside Phase 34.** Spec `docs/phases/PHASE-35.md` (AGE-10), ADR 0069. S6's two missed early-detail
-cases were found and placed but excerpted from the wrong sentence (a history cue's words and one-syllable function
-words anchored it, and a vector chunk missed the answer); `0.4.0` waits for it (the owner).
+**Phase 35 — The excerpt lands on what was asked, not on when (`packet-v15`): approved 2026-10-08 (the owner, as
+proposed), a correction phase (AGENTS §7 item 5) beside Phase 34; complete, `packet-v15` the default (the owner, on the
+replay: the bench 289 of 314 against 286, S6 23 of 25 against 21, no case lost); no live run.** Spec
+`docs/phases/PHASE-35.md` (AGE-10), ADR 0069. S6's two missed early-detail cases were found and placed but excerpted
+from the wrong sentence (a history cue's words and one-syllable function words anchored it, and a vector chunk missed
+the answer); `0.4.0` next.
 
 **Phase 34 — Forensic recall, part 2 (Stage 7): what a line is for: approved 2026-10-07 (the owner: every question as
-proposed), steps 2–5 done; `packet-v14` the default since 2026-10-08 (the owner, on the live run: echo of repeated lines
-0.29 → 0.39, no repetition felt; `docs/perf/phase34-rest.md`, ADR 0068); `0.4.0` next.** Spec `docs/phases/PHASE-34.md`
+proposed), steps 2–5 done; `packet-v14` the default on 2026-10-08 (the owner, on the live run: echo of repeated lines
+0.29 → 0.39, no repetition felt; `docs/perf/phase34-rest.md`, ADR 0068), in the default through `packet-v15` since.** Spec `docs/phases/PHASE-34.md`
 (AGE-10): labels (required, supportive, risky), supportive memory that rests after `rest_after` placements no reply
 used, and an activation threshold for supportive excerpts.
 

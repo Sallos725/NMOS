@@ -1,7 +1,8 @@
 # 0069 — An excerpt anchors on what the question asks, not on when (`packet-v15`)
 
-Status: proposed, 2026-10-08 (`docs/phases/PHASE-35.md` Q1–Q4; AGE-10). Adds the policy `packet-v15` on top of
-`packet-v14`; the default is the owner's decision on the replay. No prompt, generation key, stored row or migration
+Status: accepted, the default since 2026-10-08 (the owner, on the replay, PHASE-35 Q4); proposed the same day
+(`docs/phases/PHASE-35.md` Q1–Q4; AGE-10). Adds the policy `packet-v15` on top of `packet-v14` and replaces it as the
+default. No prompt, generation key, stored row or migration
 changes.
 
 ## Context
