@@ -12,9 +12,11 @@
 
 Phase 33 measured the overuse baseline (`docs/perf/phase33-baseline.md`, Q8). In live play (S1, 240 turns, 340
 requests) **61 % of a packet's lines were placed in the request before it too**, and **38 % of its tokens went to
-lines placed in each of the three requests before it**. A repeated line was echoed by the reply less than half as
-often as a new one (10.6 % against 24.6 %). The same memories hold the packet request after request while the reply
-uses them less and less: the original's "a character should not constantly bring up old events" (§49), measured.
+lines placed in each of the three requests before it**. The same memories hold the packet request after request: the
+original's "a character should not constantly bring up old events" (§49). *(Corrected 2026-10-07: this paragraph
+also cited the bench's echo, 10.6 % for repeated lines against 24.6 % for new ones, as the reply using repeated memory
+less; the bench's replies are scripted, so those figures are the script's overlap with memory, not a model's use of it.
+Whether a model uses repeated memory less is measured on real replies, Q8 d.)*
 
 Today nothing looks across requests: each packet is chosen from scratch (`retrieval.gather`; the only state carried
 between requests is the prefetched query embedding). Every line is offered by relevance alone, and `audit.py` says of
