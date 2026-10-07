@@ -1,8 +1,9 @@
 # Phase 34 — Forensic recall, part 2 (Stage 7): what a line is for, and memory that stops repeating itself
 
-> **Status: draft, 2026-10-07, for the owner's review.** Stage 7 of `docs/ROADMAP-1.0.md` ("Forensic recall"; original
+> **Status: approved 2026-10-07 (the owner: every question as proposed; the live run (Q8 d) after a cost estimate),
+> the current phase; step 2 next.** Stage 7 of `docs/ROADMAP-1.0.md` ("Forensic recall"; original
 > §48–50, §53; Track B, B6), part 2 of 2 (PHASE-33 Q0). Under AGE-10. Follows Phase 33 (`packet-v13`, ADR 0067, PRs
-> #273, #274, #276); `0.4.0` follows this phase (R7). Nothing here is built until the owner approves it.
+> #273, #274, #276); `0.4.0` follows this phase (R7).
 
 ## Why now
 

@@ -32,9 +32,9 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-34.md` is the latest, a draft of
-   Stage 7 part 2 (labels and overuse) for the owner's review; `PHASE-33.md`, approved
-   2026-10-07 as proposed, Stage 7 part 1 (forensic recall), the current phase; `PHASE-31.md`, approved
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-34.md` is the latest, approved
+   2026-10-07 as proposed, Stage 7 part 2 (labels and overuse), the current phase; `PHASE-33.md`, approved
+   2026-10-07 as proposed, Stage 7 part 1 (forensic recall), steps 2–4 done, its default decision and live run open; `PHASE-31.md`, approved
    2026-10-05 (recall that knows what changed), complete with `packet-v12` the default (#264); `PHASE-30.md`, approved 2026-10-04, a correction phase under §7 item 5
    (the first-sight extraction order), complete (#260);
    `PHASE-29.md`, approved 2026-10-04, built on Phase 28's `extract-v16`, and `PHASE-28.md`, approved 2026-10-03,
@@ -101,6 +101,7 @@ If two normative documents appear to conflict:
 | 30 — a chat seen for the first time is extracted in story order: the first-sight window oldest first, live turns behind it (NMO-36 under AGE-24; a correction found by measurement on Phase 28's S1 runs, not a roadmap stage) | complete (2026-10-04, owner 2026-10-07): #260 merged (every generation, no key or prompt change; ADR 0065, D74) | `PHASE-30.md` |
 | 31 — recall that knows what changed: `packet-v12` leaves out a replaced value's excerpt and an ended role in a question about now, and anchors an excerpt on the question's one-character words on a tie (AGE-24, AGE-37 K43; a correction found by the PHASE-28 live gate, not a roadmap stage) | **approved** (2026-10-05); steps 2–3 done (#264: `packet-v12` behind the policy, ADR 0066, D75; replay `docs/perf/phase31-replay.md`); Q1 amended (owner) and replayed; the second reduced live gate met every bar (`docs/perf/phase31-live-gate.md`); **complete**, `packet-v12` the default (owner, 2026-10-05) | `PHASE-31.md` |
 | 33 — forensic recall, part 1 (Stage 7; AGE-10): the source turn, quoted (a speech-cue quote route, turns extraction has not reached, the Inspector's source-turn page, the overuse baseline) | **approved** (2026-10-07, as proposed), **current**; step 2 next | `PHASE-33.md` |
+| 34 — forensic recall, part 2 (Stage 7; AGE-10): what a line is for, and memory that stops repeating itself (labels, the overuse rest, the activation threshold; `packet-v14`) | **approved** (2026-10-07, as proposed), **current**; step 2 next | `PHASE-34.md` |
 | 34+ (Stage 7 part 2: labels and the overuse penalty; Stage 8 after 1.0) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
