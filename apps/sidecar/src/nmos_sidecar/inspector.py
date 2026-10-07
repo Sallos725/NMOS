@@ -172,6 +172,22 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "h.placed": ("배치", "Placed"),
     "lk.state": ("상태", "state"), "lk.thread": ("약속", "thread"), "lk.fact": ("사실", "fact"),
     "lk.claim": ("주장", "claim"), "lk.excerpt": ("원문", "excerpt"), "lk.quote": ("인용", "quote"),
+    # what a line is for, and repetition (PHASE-34 Q1, Q7)
+    "lb.required": ("필수", "required"), "lb.supportive": ("보조", "supportive"), "lb.risky": ("위험", "risky"),
+    "rest_counts": ("이 요청에서 쉬느라 빠진 보조 줄 {n}개 · 문턱 아래라 빠진 원문 {m}개 (같은 줄이 {k}번 연속 들어갔는데 "
+                    "답변이 쓰지 않으면 다음 2번 쉽니다).",
+                    "This request left out {n} resting supportive lines and {m} excerpts under the threshold (a line "
+                    "placed {k} times in a row that no reply used rests for the next two requests)."),
+    "overuse": ("반복 (최근 요청 {n}개)", "Repetition (latest {n} requests)"), "toc.overuse": ("반복", "Repetition"),
+    "ov.what": ("무엇", "What"), "ov.value": ("값", "Value"),
+    "ov.repeat": ("직전 요청에도 들어간 줄의 비율", "Lines also placed in the request before"),
+    "ov.stale": ("최근 3번 내리 들어간 줄이 차지한 토큰의 비율", "Tokens on lines placed in each of the three before"),
+    "ov.sup_repeat": ("보조 줄 가운데 직전 요청에도 들어간 비율", "Supportive lines also placed in the request before"),
+    "ov.sup_stale": ("보조 줄 토큰 가운데 최근 3번 내리 들어간 비율", "Supportive tokens on lines placed in each of the three before"),
+    "ov.note": ("필수 줄(상태, 장면 인물, 질문이 가리킨 것, 지금까지의 이야기 등)은 매번 들어가는 게 정상입니다. 반복이 "
+                "문제인 것은 보조 줄입니다.",
+                "Required lines (state, the cast, what the question names, the story so far) belong in every packet; "
+                "repetition matters for supportive lines."),
     # the source-turn page (PHASE-33 Q7)
     "turn.title": ("턴 {n}", "Turn {n}"), "turn.prev": ("← 턴 {n}", "← Turn {n}"), "turn.next": ("턴 {n} →", "Turn {n} →"),
     "turn.none": ("이 턴은 지금 헤드에 없습니다.", "This turn is not on the head."),
@@ -1146,7 +1162,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            canon_history: dict[str, dict[str, Any]] | None = None,
            canon_held: dict[str, dict[str, Any]] | None = None, canon_read: dict[str, dict[str, Any]] | None = None,
            canon_facts: int = 0, dropped: list[dict[str, Any]] | None = None,
-           endings: dict[str, list[dict[str, Any]]] | None = None) -> str:
+           endings: dict[str, list[dict[str, Any]]] | None = None, overuse: dict[str, Any] | None = None) -> str:
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -1214,6 +1230,9 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     if packet and packet.get("lines"):
         parts.append(("packet", t("packet"), sum(e["placed"] for e in packet["lines"]),
                       _packet_section(packet, traces[0] if traces else {}, lang), True))
+    if overuse and overuse.get("requests", 0) >= 4:
+        parts.append(("overuse", t("overuse").format(n=overuse["requests"]), None, _overuse_section(overuse, lang),
+                      False))
     parts.append(("retrievals", t("retrievals"), len(traces), table(
         [t(k) for k in ("h.when", "h.query", "h.fresh", "h.cand", "h.sel", "h.in_ctx", "h.facts_kept", "h.placed",
                         "h.tokens")] + ["ms"],
@@ -1240,6 +1259,17 @@ def _placed(trace: dict[str, Any], lang: str) -> str:
     return _v(" · ".join(f"{_t(lang, f'lk.{k}')} {n}" for k, n in placed.items() if n))
 
 
+def _overuse_section(o: dict[str, Any], lang: str) -> str:
+    """The chat's repetition over its latest requests (PHASE-34 Q7): the overuse report's placement numbers."""
+    t = lambda k: _t(lang, k)
+    pct = lambda x: "—" if x is None else f"{round(x * 100)}%"
+    rows = [[_v(t("ov.repeat")), _v(pct(o.get("repeat_share")))], [_v(t("ov.stale")), _v(pct(o.get("stale_token_share")))]]
+    if "supportive_repeat_share" in o:
+        rows += [[_v(t("ov.sup_repeat")), _v(pct(o.get("supportive_repeat_share")))],
+                 [_v(t("ov.sup_stale")), _v(pct(o.get("supportive_stale_token_share")))]]
+    return table([t("ov.what"), t("ov.value")], rows) + f"<p class=\"muted\">{_v(t('ov.note'))}</p>"
+
+
 def _packet_section(packet: dict[str, Any], trace: dict[str, Any], lang: str) -> str:
     """The latest request's ledger: every offered line with its outcome, cost and echo (ADR 0027)."""
     t = lambda k: _t(lang, k)
@@ -1256,6 +1286,8 @@ def _packet_section(packet: dict[str, Any], trace: dict[str, Any], lang: str) ->
         if e.get("possible_leak"):
             echo += f" <span class=\"warn\">{_v(t('leak'))}</span>"
         kind = chip(lang, "lk", e["kind"]) + (f" {chip(lang, 'lk', 'cast')}" if e.get("section") == "cast" else "")
+        if e.get("label"):  # packet-v14 (PHASE-34 Q1)
+            kind += f" {chip(lang, 'lb', e['label'])}"
         by_turn = packet.get("policy") in TURN_POLICIES  # the ledger's turn is the message's turn (ADR 0041)
         rows.append([kind, turn_link(e.get("turn")) if by_turn else _v(e.get("turn")), _v(e.get("text")), outcome,
                      _v(e.get("tok")), echo])
@@ -1268,6 +1300,10 @@ def _packet_section(packet: dict[str, Any], trace: dict[str, Any], lang: str) ->
             mode.append(t("mode.withheld").format(n=timings["memory_mode_withheld"]))
         scene = (f"<p class=\"muted\">{_v(t('scene').format(cast=', '.join(timings['scene_cast']) or '—',
                                                           mode=' · '.join(mode) or t('mode.default')))}</p>")
+    if "rested" in timings:  # packet-v14 (PHASE-34 Q3, Q4)
+        counts = t("rest_counts").format(n=timings.get("rested") or 0, m=timings.get("below_floor") or 0,
+                                         k=options.get("rest_after") or 2)
+        scene += f"<p class=\"muted\">{_v(counts)}</p>"
     return (f"<p class=\"muted\">{intro}</p>" + scene
             + table([t(k) for k in ("h.kind", "h.turn", "h.text", "h.outcome", "h.tokens", "h.echo")], rows)
             + f"<p class=\"muted\">{_v(t('packet_echo'))}</p>")

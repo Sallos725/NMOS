@@ -163,3 +163,47 @@ def test_a_request_records_how_many_lines_rested_and_a_question_about_the_past_r
     assert "rested" in first["latency_ms"]
     then = ask("What was the map like at first?")  # a question about how it started: old memory is the answer
     assert then["latency_ms"]["rested"] == 0
+
+
+# --- the Inspector (Q7) --------------------------------------------------------------------------------------------
+
+def test_placement_numbers_on_the_whole_packet_and_on_supportive_lines():
+    from nmos_sidecar.overuse import placement
+
+    def line(n, label, tok=10):
+        return {"kind": "fact", "ref": {"assertion": n}, "placed": True, "tok": tok, "label": label}
+
+    ledgers = [[line(1, "required"), line(2, "supportive")], [line(1, "required"), line(3, "supportive")],
+               [line(1, "required"), line(3, "supportive")], [line(1, "required"), line(3, "supportive")]]
+    out = placement(ledgers)
+    assert out["requests"] == 4
+    assert out["repeat_share"] == round((1 / 2 + 2 / 2 + 2 / 2) / 3, 3)
+    assert out["supportive_repeat_share"] == round((0 + 1 + 1) / 3, 3)
+    assert out["stale_token_share"] == 0.5 and out["supportive_stale_token_share"] == 0.0  # 3 was new in request 2
+    assert "supportive_repeat_share" not in placement([[{"kind": "fact", "ref": {"assertion": 1}, "placed": True}]])
+
+
+def test_the_inspector_shows_labels_rest_counts_and_repetition(v14):
+    client, url = v14
+    chat = SimChat()
+    chat.reply("Welcome to the story.")
+    chat.user("Hana has the map.")
+    chat.reply("Noted.")
+    for i in range(RECENT + 2):
+        chat.user(f"Idle chatter {i} about clouds.")
+        chat.reply("Noted.")
+    _sync(client, chat)
+    extract(url)
+    for i in range(4):
+        chat.user(f"Hana, the map? ({i})")
+        _sync(client, chat)
+        client.post("/v1/retrieve", json={"chat_id": chat.id, "query": f"Hana, the map? ({i})", "previous_ai": "",
+                                          "budget_tokens": 600,
+                                          "in_context_ids": [m["chatId"] for m in chat.messages[-RECENT:]]})
+        chat.reply("Quiet waves.")
+        _sync(client, chat)
+    conv = client.get("/v1/conversations").json()[0]["id"]
+    page = client.get(f"/inspector/c/{conv}").text
+    assert 'title="required">필수</span>' in page
+    assert "쉬느라 빠진 보조 줄" in page
+    assert "반복 (최근 요청 4개)" in page and "직전 요청에도 들어간 줄의 비율" in page

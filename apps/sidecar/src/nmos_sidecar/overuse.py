@@ -85,3 +85,28 @@ def tired(history: list[Recent], rest_after: int = REST_AFTER) -> frozenset[tupl
         return now
     resting_still = frozenset(k for k in run(1) if k not in history[0].placed)  # left out once: still resting
     return now | resting_still
+
+
+def placement(ledgers: list[list[dict[str, Any]]]) -> dict[str, Any]:
+    """How much of a chat's packets came back request after request (PHASE-34 Q7, the Inspector; the overuse report's
+    numbers): of a request's placed lines, the share placed in the request before too; of its placed tokens, the share
+    on lines placed in each of the three before; the same on supportive lines when the ledgers carry labels. Oldest
+    first."""
+    placed = [{key(e["kind"], e.get("ref")): (int(e.get("tok") or 0), e.get("label")) for e in lines if e.get("placed")}
+              for lines in ledgers]
+
+    def shares(only: str | None) -> tuple[float | None, float | None]:
+        rows = [{k: tok for k, (tok, label) in p.items() if only is None or label == only} for p in placed]
+        sets = [set(p) for p in placed]
+        repeat = [len(set(r) & sets[i - 1]) / len(r) for i, r in enumerate(rows) if i and r]
+        stale = [sum(t for k, t in r.items() if all(k in sets[j] for j in (i - 1, i - 2, i - 3))) / (sum(r.values()) or 1)
+                 for i, r in enumerate(rows) if i >= 3 and r]
+        mean = lambda xs: round(sum(xs) / len(xs), 3) if xs else None
+        return mean(repeat), mean(stale)
+
+    whole = shares(None)
+    out: dict[str, Any] = {"requests": len(placed), "repeat_share": whole[0], "stale_token_share": whole[1]}
+    if any(label for p in placed for _, label in p.values()):
+        sup = shares("supportive")
+        out.update(supportive_repeat_share=sup[0], supportive_stale_token_share=sup[1])
+    return out

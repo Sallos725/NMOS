@@ -147,3 +147,10 @@ def turn_uses(conn: psycopg.Connection, conv_id: UUID, revisions: set[str], asse
             if str(ref.get("revision")) in revisions or str(ref.get("assertion")) in assertions:
                 out.append({"trace": str(t["id"]), "created_at": t["created_at"], "policy": t["policy"], **e})
     return out
+
+
+def ledgers(conn: psycopg.Connection, conv_id: UUID, limit: int = 100) -> list[list[dict[str, Any]]]:
+    """The ledgers of the chat's latest `limit` requests, oldest first (PHASE-34 Q7)."""
+    rows = conn.execute("SELECT lines FROM retrieval_trace WHERE conversation_id = %s AND lines IS NOT NULL"
+                        " ORDER BY created_at DESC LIMIT %s", (conv_id, limit)).fetchall()
+    return [r["lines"] or [] for r in reversed(rows)]

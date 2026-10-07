@@ -27,7 +27,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from . import (__version__, archive, audit, canon, canonfacts, dropped, endings, extraction, generations, inspector, ledger,
-               normtext,
+               normtext, overuse,
                plugin, preview, readmodel, retention, repairs, reveals, runtime, summaries, vectors)
 from . import usage as model_usage
 from .config import Settings
@@ -1140,7 +1140,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                         canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
                                         canon_held=canon.held(conn, conv_id), canon_read=cov["canon"].get("keys"),
                                         canon_facts=view.get("canon_facts", 0), dropped=lost,
-                                        endings=role_ends)
+                                        endings=role_ends,
+                                        overuse=overuse.placement(readmodel.ledgers(conn, conv_id)))
             return html
 
     def summary_view(conn, conv_id: UUID, head: UUID, secrets: list[dict[str, Any]]) -> dict[str, Any] | None:
