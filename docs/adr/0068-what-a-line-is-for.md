@@ -24,7 +24,7 @@ Under `packet-v14` (`packet.LABEL_POLICIES`, `REST_POLICIES`):
    (`spans.reuse`, ADR 0027), is **left out** for the next two requests and its slot goes to the next candidate. It does
    not rest when the question names it, when the question's own words found it (an excerpt hit lexically or by
    keyword), when the question asks about the past or how it started (`HISTORY_CUE`), or when a reply used it. Required
-   lines never rest. The requests are the chat's recorded traces and the replies the messages after them; nothing is
+   lines never rest, a line with a knowledge mark among them wherever it is placed. The requests are the chat's recorded traces and the replies the messages after them; nothing is
    stored. The trace counts the lines left out (`rested`).
 3. **The activation threshold** (Q4): an excerpt after the first needs `EXCERPT_FLOOR` (0.5) of the best fused score or
    a word hit (`below_floor`).
@@ -34,7 +34,7 @@ Under `packet-v14` (`packet.LABEL_POLICIES`, `REST_POLICIES`):
 ## Consequences
 
 - On S1's live run replayed request by request (241 requests, three replays alike; `docs/perf/phase34-rest.md`):
-  supportive lines repeat 23 % less and their stale tokens fall 76 %; the whole packet repeats less too. The bench and
+  supportive lines repeat 24 % less and their stale tokens fall 76 %; the whole packet repeats less too. The bench and
   the quote set answer as `packet-v13` does.
 - A resting line is out of the packet for two requests: a later question that needs it without naming it, without its
   words and without asking about the past finds it missing then. The live run (Q8 d) measures it; `NMOS_REST_AFTER=3`

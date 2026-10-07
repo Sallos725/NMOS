@@ -127,6 +127,8 @@ def test_what_the_question_names_or_its_words_found_never_rests():
     rows = [{"id": 1}, {"id": 2}, {"id": 3}]
     assert _rested(rows, "fact", frozenset({("fact", "1"), ("fact", "2")}), g) == [{"id": 2}, {"id": 3}]
     assert g.rested == 1
+    secret = [{"id": 4, "hidden_from": ["Kaito"]}, {"id": 5, "known_by": ["Hana"]}]
+    assert _rested(secret, "fact", frozenset({("fact", "4"), ("fact", "5")}), Gathered()) == secret  # boundaries stay
     excerpts = [{"id": "r1", "user_score": 0.6}, {"id": "r2", "sim": 0.5}]
     rest = frozenset({("excerpt", "r1"), ("excerpt", "r2")})
     kept = _rested(excerpts, "excerpt", rest, Gathered(), ident=lambda c: c["id"],

@@ -1251,6 +1251,8 @@ def _rested(rows: list[Any], kind: str, rest: frozenset[tuple[str, str]], g: Gat
     if not rest:
         return rows
     def tired(r: Any) -> bool:
+        if kind != "excerpt" and (r.get("hidden_from") or r.get("known_by")):
+            return False  # a knowledge boundary is required wherever it is placed (Private, Secret): it never rests
         return (kind, ident(r)) in rest and ident(r) not in g.named and not hit(r)
     awake = [r for r in rows if not tired(r)]
     g.rested += len(rows) - len(awake)

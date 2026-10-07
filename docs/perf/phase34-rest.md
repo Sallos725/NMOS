@@ -14,9 +14,12 @@ required since the Q1 amendment).
 |---|---:|---:|---:|---:|---:|---:|
 | without the rest | 0.524 | 0.214 | 0.315 | 0.063 | 0.685 | 0 |
 | `rest_after` 3 | 0.509 | 0.200 | 0.273 (−13 %) | 0.018 (−71 %) | 0.728 | 267 |
-| **`rest_after` 2 (default)** | **0.498** | **0.196** | **0.242 (−23 %)** | **0.016 (−75 %)** | **0.758** | **519** |
+| `rest_after` 2, knowledge boundaries resting too (first build) | 0.498 | 0.196 | 0.242 (−23 %) | 0.016 (−75 %) | 0.758 | 519 |
+| **`rest_after` 2 (default)** | **0.503** | **0.200** | **0.240 (−24 %)** | **0.015 (−76 %)** | **0.760** | **366** |
 
-Three replays agreed within 0.003. **Q9 (b) met** with the default: supportive repeats at least a fifth lower, their
+Three replays agreed within 0.003. The self-review found that a line with a knowledge mark (Private or Secret, required by
+Q1) could rest, since a kept secret is rarely echoed: 153 of the 519 lines left out were such lines. They never rest now
+(the row above the default is the first build's). **Q9 (b) met** with the default: supportive repeats at least a fifth lower, their
 stale tokens at least a third lower, the whole packet not higher; a resting line's slot went to lines new to the
 packet (their share rose from 0.685 to 0.758).
 
@@ -30,9 +33,9 @@ line: without the two, the bench lost a question about an old detail (S6 `c120_2
 
 | | `packet-v13` | `packet-v14` (`rest_after` 2) |
 |---|---|---|
-| The v0.3.0 bench, every probe of S0–S6 (sum over 20 sets, per replay) | 286, 285, 285 | 286, 286, 286 |
+| The v0.3.0 bench, every probe of S0–S6 (sum over 20 sets, per replay) | 286, 285, 285 | 286, 286, 286 (286 after the boundary fix) |
 | Forbidden phrases placed (per replay) | 14, 14, 14 | 14, 14, 14 |
-| The quote set | 20–21 / 24 | 21, 20, 20 / 24 |
+| The quote set | 20–21 / 24 | 21, 20, 20 / 24 (20 after the boundary fix) |
 
 Every set equal case by case but S4's `s4_del_pet`, which `packet-v13` missed in two replays on its lexical route's
 time slice (`docs/perf/phase33-replay.md`). **Q9 (c) met.**
