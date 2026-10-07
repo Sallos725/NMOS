@@ -67,5 +67,8 @@ Under `packet-v13` (`packet.QUOTE_POLICIES`), in `retrieval.gather`, the module 
   as often and was not adopted.
 - A forensic question spends up to about 1,050 tokens of the packet on two quote lines; they displace excerpts and
   facts lower in the order.
+- Latency (Q4): at 10,000 messages the forensic path adds 102 ms at p95 over the normal path (bar 150); a question
+  without a cue adds nothing. The route's search marks words with `strpos` and fetches only the best messages' text;
+  `ILIKE` over every message timed out at that size (`docs/perf/phase33-replay.md`).
 - Rejected: a model call to classify the question or to attribute a quote (C8; cost and latency on the request path);
   scoring the quote's neighbourhood only (9 of 24 then, the line placed was not the one scored); more than two lines.
