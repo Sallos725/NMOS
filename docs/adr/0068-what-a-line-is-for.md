@@ -7,8 +7,9 @@ owner decides (Q6). No prompt, generation key, stored row or migration changes.
 ## Context
 
 Phase 33's baseline (`docs/perf/phase33-baseline.md`): in live play 61 % of a packet's lines were placed in the request
-before it too, and a repeated line was echoed by the reply less than half as often as a new one. Nothing looked across
-requests: every packet was chosen from scratch. The original asks for labels (§48) and for supportive memory to stop
+before it too. (Its echo figures came from the bench's scripted replies and say nothing of how a model uses repeated
+memory; that is measured on real replies, PHASE-34 Q8 d.) Nothing looked across requests: every packet was chosen from
+scratch. The original asks for labels (§48) and for supportive memory to stop
 coming back merely because it is related (§49).
 
 ## Decision
@@ -35,7 +36,8 @@ Under `packet-v14` (`packet.LABEL_POLICIES`, `REST_POLICIES`):
 
 - On S1's live run replayed request by request (241 requests, three replays alike; `docs/perf/phase34-rest.md`):
   supportive lines repeat 24 % less and their stale tokens fall 76 %; the whole packet repeats less too. The bench and
-  the quote set answer as `packet-v13` does.
+  the quote set answer as `packet-v13` does. That memory repeats less does not by itself show that replies use memory
+  better: the bench's replies are scripted; real replies are compared under Q8 (d).
 - A resting line is out of the packet for two requests: a later question that needs it without naming it, without its
   words and without asking about the past finds it missing then. The live run (Q8 d) measures it; `NMOS_REST_AFTER=3`
   rests less often.
