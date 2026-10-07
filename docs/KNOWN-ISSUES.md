@@ -52,6 +52,7 @@ without a PocketRisu change.
 | K41 | Re-extracted with `extract-v14`, `deepseek-v4.1-flash` passed fewer M0 cases | Memory | measured, accepted (Phase 19, owner 2026-09-30) |
 | K42 | A standing fact's earlier versions are printed under the current version's knowledge marks | Memory | resolved in 0.3.0 (ADR 0038 amendment 1, 2026-10-01): a version kept from someone only under the same marks |
 | K43 | A question about what someone lent can miss the item once it has changed hands | Recall | resolved in 0.3.0 by `packet-v12` (Phase 31 Q3, ADR 0066, 2026-10-05): the excerpt's anchor breaks a tie on the question's one-character words; S3 6/6 live twice |
+| K44 | A form of address used before the first one extracted is not remembered | Memory | recorded (Phase 33 Q6, 2026-10-07): an extraction cause, for a later generation |
 
 ## Performance
 
@@ -251,6 +252,13 @@ model, stayed within one case per run with no more forbidden phrases, and `deeps
 case more. The evidence check is not the cause (restoring its parked rows changes nothing). Whether the new prompt or
 run-to-run variance caused the drop was not measured. *Workaround:* none; a chat extracted with `deepseek` keeps its
 `extract-v13` rows until its recent window is extracted again.
+
+**K44 — A form of address used before the first one extracted is not remembered.** Diagnosed by replay in Phase 33
+(Q6, 2026-10-07) on the owner's main M0 chat at v0.3.0: a question about how one character first addressed another
+("처음에 … 어떻게 불렀더라?") misses because no `addresses` fact holds that first form — the chat's 17 address facts start
+later (a speech level, then a name). The packet's address history (ADR 0038 amendment 1) prints what the facts hold, so
+no recall rule can bring it back: an extraction cause, for a later generator generation. The quote route of Phase 33 may
+still reach the earliest lines a character said (step 3 measures it). *Workaround:* none.
 
 **K42 — A standing fact's earlier versions are printed under the current version's knowledge marks.** Since
 `packet-v5` (ADR 0038) the packet names what a relationship, a feeling or a form of address replaced, and how it
