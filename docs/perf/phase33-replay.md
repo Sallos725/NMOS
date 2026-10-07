@@ -65,3 +65,23 @@ the older forms of address. Such a question no longer takes it unless it carries
 **`packet-v12` unchanged.** All 314 bench probes compiled under `packet-v12` give the same packet text byte for byte
 on `main` (`556dab6`) and on this branch, with the lexical and keyword slices lifted so the comparison is deterministic
 (with them, `main` against itself differs on about 11 of S0main's long-chat probes).
+
+## Latency at scale (Q10 e)
+
+`tools/bench_forensic.py` (new): `/v1/retrieve` under `packet-v12` and `packet-v13` on `bench_scale.py`'s synthetic
+chat, in-process, no embedder, one throwaway database per size; five questions with a speech cue (the forensic path
+under `packet-v13`) and five without, six rounds. Every reply of that chat holds a quoted line many times: the worst
+case for the quote route. Bar (Q4): forensic p95 at most 150 ms above normal p95 at 10,000 messages.
+
+| Messages | Without a cue, v12 → v13 (p95) | With a cue, v12 → v13 (p95) | Forensic over normal | Quote route (p50 / p95) |
+|---:|---|---|---:|---|
+| 1,000 | 39.7 → 39.6 ms | 97 → 134 ms | +37 ms | 36 / 53 ms |
+| 5,000 | 49.0 → 47.6 ms | 106 → 181 ms | +76 ms | 56 / 82 ms |
+| 10,000 | 49.4 → 49.0 ms | 153 → 255 ms | **+102 ms** | 83 / 120 ms |
+
+**Met.** A question without a cue costs nothing more. As first built the route's own search ran `ILIKE` over every
+message, twice per word, carrying the text: 160 ms at 10,000 messages, past its 150 ms slice, so it timed out and
+the forensic path cost +151 ms p95 for nothing (+162 at 5,000). It now marks which words each message holds with
+`strpos` (Korean has no case; a Latin word is matched as written and capitalized), returns no text, and fetches the
+text of the best 30 only: 38–54 ms at 10,000. The first-met lookup does the same. The quote set and the bench sets
+the forensic path runs on were replayed again: unchanged (21 of 24 in three replays).

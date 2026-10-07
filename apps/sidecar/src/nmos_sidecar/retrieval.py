@@ -18,6 +18,7 @@ from typing import Any
 from uuid import UUID
 
 import psycopg
+from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from .entities import norm
@@ -1118,8 +1119,7 @@ def _turn_messages(conn: psycopg.Connection, head: UUID, lo: int, hi: int, upto:
 
 def _first_met(conn: psycopg.Connection, head: UUID, keys: list[list[str]], upto: int | None) -> int | None:
     """The turn by which every one of these characters (each a list of its normalized names) had been named in the
-    chat: where they met. None when one of them never was, when there is nobody, or past the route's time slice (a
-    two-syllable name is too short for the trigram index)."""
+    chat: where they met. None when one of them never was, when there is nobody, or past the route's time slice."""
     keys = [k for k in keys if k]
     if not keys:
         return None
@@ -1129,17 +1129,18 @@ def _first_met(conn: psycopg.Connection, head: UUID, keys: list[list[str]], upto
             previous = conn.execute("SELECT current_setting('statement_timeout') AS t").fetchone()
             _apply(conn, {"statement_timeout": str(quotes.TIMEOUT_MS)})
             for names in keys:
-                pats = ["%" + n.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for n in names]
-                row = conn.execute(
+                forms = sorted({f for n in names for f in ((n, n[:1].upper() + n[1:]) if n.isascii() else (n,))})
+                row = conn.execute(sql.SQL(
                     """
                     SELECT min(am.turn) AS t FROM active_membership am
                     JOIN source_revision sr ON sr.id = am.source_revision_id
                     JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
                     WHERE am.commit_id = %(head)s AND am.position <= %(upto)s AND sr.lifecycle = 'accepted'
-                      AND rt.clean_content ILIKE ANY(%(pats)s)
-                    """,
-                    {"head": head, "pats": pats, "norm": NORMALIZER_VERSION,
-                     "upto": 2**31 - 1 if upto is None else upto}, prepare=False).fetchone()
+                      AND ({named})
+                    """).format(named=sql.SQL(" OR ").join(  # strpos, as the route's search (no case in Korean)
+                        sql.SQL("strpos(rt.clean_content, {}) > 0").format(sql.Literal(f)) for f in forms)),
+                    {"head": head, "norm": NORMALIZER_VERSION, "upto": 2**31 - 1 if upto is None else upto},
+                    prepare=False).fetchone()
                 if row["t"] is None:
                     turns = []
                     break
@@ -1150,58 +1151,68 @@ def _first_met(conn: psycopg.Connection, head: UUID, keys: list[list[str]], upto
     return max(turns) if turns else None
 
 
+_QUOTE_MARKS = ('"', "“", "「", "『")
+
+
 def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str],
                     upto: int | None) -> tuple[list[dict[str, Any]], dict[str, float], str]:
     """The quote route's own search (PHASE-33 Q2): messages on the head that hold a quote and the question's words,
     rarest words first, lexically (quotes prefer lexical to embeddings, original §78), and each word's rarity on the
-    head: ln(1 + N/df) / ln(1 + N), 1 for a word one message holds, 0 for one none does. Abstains on its time slice."""
+    head: ln(1 + N/df) / ln(1 + N), 1 for a word one message holds, 0 for one none does. Abstains on its time slice.
+
+    Two passes: which words each message holds (`strpos`, no text returned: ILIKE and carrying the text cost three
+    times as much at 10,000 messages), then the text of the best SEARCHED. A Latin word is matched as written and
+    capitalized; Korean has no case."""
     if not words:
         return [], {}, "none"
     words = words[:8]
-    pats = ["%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for w in words]
+
+    def holds(w: str) -> sql.Composable:
+        forms = {w, w[:1].upper() + w[1:]} if w.isascii() else {w}
+        return sql.SQL("({})").format(sql.SQL(" OR ").join(
+            sql.SQL("strpos(rt.clean_content, {}) > 0").format(sql.Literal(f)) for f in sorted(forms)))
+
+    quoted = sql.SQL(" OR ").join(sql.SQL("strpos(rt.clean_content, {}) > 0").format(sql.Literal(m))
+                                  for m in _QUOTE_MARKS)
     try:
         with conn.transaction():
             previous = conn.execute("SELECT current_setting('statement_timeout') AS t").fetchone()
             _apply(conn, {"statement_timeout": str(quotes.TIMEOUT_MS)})
+            marks = conn.execute(sql.SQL(
+                """
+                SELECT sr.id, am.position, ARRAY[{hits}] AS hit, ({quoted}) AS quoted
+                FROM active_membership am
+                JOIN source_revision sr ON sr.id = am.source_revision_id
+                JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+                WHERE am.commit_id = %(head)s AND am.position <= %(upto)s
+                  AND sr.lifecycle = 'accepted'
+                  AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+                  AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
+                """).format(hits=sql.SQL(", ").join(holds(w) for w in words), quoted=quoted),
+                {"head": head, "norm": NORMALIZER_VERSION, "upto": 2**31 - 1 if upto is None else upto},
+                prepare=False).fetchall()
+            total = len(marks)
+            df = [sum(1 for m in marks if m["hit"][i]) for i in range(len(words))]
+            weight = [0.0 if not n else math.log(1 + total / n) / math.log(1 + max(total, 1)) for n in df]
+            best = sorted((m for m in marks if m["quoted"] and any(m["hit"])),
+                          key=lambda m: (-sum(w for w, h in zip(weight, m["hit"]) if h), m["position"]))
+            ids = [m["id"] for m in best[:quotes.SEARCHED]]
             rows = conn.execute(
                 """
-                WITH m AS MATERIALIZED (
-                    SELECT sr.id, am.position, am.turn, so.host_logical_id, rt.clean_content AS clean,
-                           sr.metadata->>'role' AS role, sr.metadata->>'name' AS name,
-                           ARRAY(SELECT rt.clean_content ILIKE p FROM unnest(%(pats)s::text[]) p) AS hit
-                    FROM active_membership am
-                    JOIN source_revision sr ON sr.id = am.source_revision_id
-                    JOIN source_object so ON so.id = sr.source_object_id
-                    JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
-                    WHERE am.commit_id = %(head)s AND am.position <= %(upto)s
-                      AND sr.lifecycle = 'accepted'
-                      AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
-                      AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
-                      AND rt.clean_content ILIKE ANY(%(pats)s)
-                ), df AS (
-                    SELECT i, count(*) FILTER (WHERE m.hit[i]) AS n FROM m, generate_subscripts(%(pats)s::text[], 1) i
-                    GROUP BY i
-                ), total AS (
-                    SELECT count(*) AS n FROM active_membership WHERE commit_id = %(head)s AND position <= %(upto)s
-                ), weight AS (
-                    SELECT df.i, CASE WHEN df.n = 0 THEN 0
-                                      ELSE ln(1 + total.n::float / df.n) / ln(1 + greatest(total.n, 1)) END AS w
-                    FROM df, total
-                )
-                SELECT m.id, m.position, m.turn, m.host_logical_id, m.clean, m.role, m.name,
-                       (SELECT array_agg(w ORDER BY i) FROM weight) AS weights,
-                       (SELECT sum(w) FROM weight WHERE m.hit[weight.i]) AS score
-                FROM m WHERE m.clean ~ '["“「『]'
-                ORDER BY score DESC, m.position
-                LIMIT %(limit)s
-                """,
-                {"head": head, "pats": pats, "norm": NORMALIZER_VERSION, "limit": quotes.SEARCHED,
-                 "upto": 2**31 - 1 if upto is None else upto}, prepare=False).fetchall()
+                SELECT sr.id, am.position, am.turn, so.host_logical_id, rt.clean_content AS clean,
+                       sr.metadata->>'role' AS role, sr.metadata->>'name' AS name
+                FROM active_membership am
+                JOIN source_revision sr ON sr.id = am.source_revision_id
+                JOIN source_object so ON so.id = sr.source_object_id
+                JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+                WHERE am.commit_id = %(head)s AND sr.id = ANY(%(ids)s)
+                """, {"head": head, "norm": NORMALIZER_VERSION, "ids": ids}, prepare=False).fetchall()
             _apply(conn, {"statement_timeout": previous["t"]})
     except psycopg.errors.QueryCanceled:
         return [], {}, "timeout"
-    rarity = dict(zip(words, rows[0]["weights"])) if rows and rows[0]["weights"] else {}
-    return rows, rarity, "on"
+    order = {i: n for n, i in enumerate(ids)}
+    rows.sort(key=lambda r: order[r["id"]])
+    return rows, dict(zip(words, weight)), "on"
 
 
 def _unextracted(conn: psycopg.Connection, head: UUID, ids: list[Any], extractor_key: str) -> set[str]:
