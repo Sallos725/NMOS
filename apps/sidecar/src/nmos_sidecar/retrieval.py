@@ -934,7 +934,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.ranked = [Excerpt(turn=q.turn if by_turn else q.position, speaker=q.speaker or "", text=q.text,
                             score=q.score, revision_id=q.revision_id, position=q.position, cut_ok=False, quote=True)
                     for q in picked] + g.ranked
-        g.timings["quotes"] = round((time.perf_counter() - t0) * 1000, 2)
+        g.timings["quote_route"] = round((time.perf_counter() - t0) * 1000, 2)  # ms; `quotes` is the count placed
     if g.withheld_lines:
         # An excerpt that says what the mode withheld would give it back word for word.
         kept = [e for e in g.ranked
