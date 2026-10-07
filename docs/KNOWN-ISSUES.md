@@ -360,8 +360,9 @@ had them took 280 ms (median) and 452 ms (95th percentile) to embed the query.**
 through the public proxy address, so even a warm model is close to 300 ms. Since Phase 15 the retrieve answer says
 whether vectors ran, and the panel's Status tab tells the user when they did not (a timeout, or an embedding error);
 since Phase 17 the progress display says "· lexical only" on that request's outcome too.
-*Workaround:* keep the embedding model loaded (Ollama `keep_alive`, e.g. `OLLAMA_KEEP_ALIVE=-1`), and raise
-`NMOS_EMBED_TIMEOUT_MS` (e.g. 1000) for a remote or slow embedder; it is not part of the projection, so nothing is
+*Workaround:* keep the embedding model loaded (Ollama `keep_alive`, e.g. `OLLAMA_KEEP_ALIVE=-1`), and raise the
+embedding wait (e.g. 1000) for a remote or slow embedder: the panel's Settings → Recall tuning → Embedding wait (ms)
+since 2026-10-08, or `NMOS_EMBED_TIMEOUT_MS`; it is not part of the projection, so nothing is
 embedded again. Pointing the embedding URL at a closer address would help too, but a new endpoint is a new projection
 and re-embeds every chat (K18).
 *On `main` (ADR 0061, D70):* the embedding call starts when recall starts and runs while the state, facts, threads,

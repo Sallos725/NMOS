@@ -68,8 +68,8 @@ export interface FormValues {
   conn: { url: string; route: string; enabled: boolean; reserved: string; deadline: string };
   llm: ModelValues;
   emb: ModelValues;
-  tune: { threshold: string; minSim: string; topK: string; facts: string; backfill: string; summaries: boolean;
-    canonFacts: boolean };
+  tune: { threshold: string; minSim: string; embedWait: string; topK: string; facts: string; backfill: string;
+    summaries: boolean; canonFacts: boolean };
   rules: string;
 }
 
@@ -100,6 +100,8 @@ export function configBody(dirty: Section[], v: FormValues): Record<string, unkn
       facts_limit: num(v.tune.facts), extract_backfill: num(v.tune.backfill), summaries: v.tune.summaries,
       canon_facts: v.tune.canonFacts,
     });
+    // empty when the sidecar is older than the setting: sending it would be refused as not editable
+    if (v.tune.embedWait.trim() !== '') body.embed_timeout_ms = num(v.tune.embedWait);
   }
   if (dirty.includes('rules')) body.parsers = v.rules.trim() ? v.rules : null;
   return body;

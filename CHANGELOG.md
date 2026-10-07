@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **The embedding wait is a setting in the panel** (outside a phase, asked for by the owner). How long a request waits
+  for the embedding model before recalling by shared words only (`NMOS_EMBED_TIMEOUT_MS`, 300 ms) could be changed
+  only by an environment variable, which a bundle without Docker hardly allows, while the Status tab's advice for a
+  slow or remote embedder was to raise it (K34). Settings → Recall tuning → Embedding wait (ms) sets it now (100–5,000
+  ms; it should stay below the connection's deadline), and the Status tab points there. A panel on a sidecar older than
+  this shows the field disabled and sends nothing.
 - **The portable bundles report their version.** Every v0.3.0 bundle (Linux x64 and arm64, macOS, Windows) reported
   version 0.0.0: the bundle build copies the sidecar in as source, without the package metadata the sidecar reads its
   version from. The build now writes that metadata from `apps/sidecar/pyproject.toml` and checks that the bundled

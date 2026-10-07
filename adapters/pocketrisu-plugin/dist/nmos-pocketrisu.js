@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:d6bb4833101f".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:aaff372c749f".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -184,6 +184,7 @@
         summaries: v.tune.summaries,
         canon_facts: v.tune.canonFacts
       });
+      if (v.tune.embedWait.trim() !== "") body.embed_timeout_ms = num(v.tune.embedWait);
     }
     if (dirty.includes("rules")) body.parsers = v.rules.trim() ? v.rules : null;
     return body;
@@ -323,8 +324,8 @@
     ],
     "vectors.title": ["\uAE30\uC5B5\uC744 \uC758\uBBF8 \uAC80\uC0C9 \uC5C6\uC774 \uCC3E\uC558\uC2B5\uB2C8\uB2E4", "Memory was recalled without semantic search"],
     "vectors.text": [
-      "\uB9C8\uC9C0\uB9C9 \uC694\uCCAD\uC5D0\uC11C \uC784\uBCA0\uB529 \uBAA8\uB378\uC774 \uC81C\uB54C \uB2F5\uD558\uC9C0 \uC54A\uC558\uAC70\uB098 \uC624\uB958\uB97C \uB0B4\uC11C, \uAE30\uC5B5\uC744 \uB2E8\uC5B4\uAC00 \uACB9\uCE58\uB294 \uAC83\uC73C\uB85C\uB9CC \uCC3E\uC558\uC2B5\uB2C8\uB2E4. \uB9D0\uC744 \uBC14\uAFD4 \uC4F4 \uC61B \uC7A5\uBA74\uC740 \uC774\uB54C \uBE60\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uBA3C\uC800 \uC124\uC815 \uD0ED\uC758 \uC758\uBBF8 \uAC80\uC0C9 \uC784\uBCA0\uB529 \uC5F0\uACB0 \uD14C\uC2A4\uD2B8\uB85C \uC8FC\uC18C\uC640 \uD0A4\uB97C \uD655\uC778\uD558\uC138\uC694. \uBAA8\uB378\uC774 \uC26C\uB2E4\uAC00 \uB2E4\uC2DC \uC62C\uB77C\uC624\uB294 \uC911\uC774\uC5C8\uB2E4\uBA74(Ollama\uB294 5\uBD84 \uC26C\uBA74 \uB0B4\uB9BC) \uB2E4\uC74C \uC694\uCCAD\uC740 \uAD1C\uCC2E\uC2B5\uB2C8\uB2E4. \uC5F0\uACB0\uC740 \uB418\uB294\uB370 \uC790\uC8FC \uB728\uBA74 \uC784\uBCA0\uB529 \uBAA8\uB378\uC744 \uACC4\uC18D \uC62C\uB824 \uB450\uAC70\uB098(Ollama keep_alive) \uC0AC\uC774\uB4DC\uCE74\uC758 NMOS_EMBED_TIMEOUT_MS\uB97C \uB298\uB824 \uC8FC\uC138\uC694.",
-      "On the last request the embedding model did not answer in time or answered with an error, so memory was found by shared words only; an earlier scene in other words can be missed then. First check the address and key with the embedding connection test in the Settings tab. If the model was loading after a pause (Ollama unloads it after 5 minutes idle), the next request is fine. If it connects and this still shows often, keep the embedding model loaded (Ollama keep_alive) or raise the sidecar's NMOS_EMBED_TIMEOUT_MS."
+      "\uB9C8\uC9C0\uB9C9 \uC694\uCCAD\uC5D0\uC11C \uC784\uBCA0\uB529 \uBAA8\uB378\uC774 \uC81C\uB54C \uB2F5\uD558\uC9C0 \uC54A\uC558\uAC70\uB098 \uC624\uB958\uB97C \uB0B4\uC11C, \uAE30\uC5B5\uC744 \uB2E8\uC5B4\uAC00 \uACB9\uCE58\uB294 \uAC83\uC73C\uB85C\uB9CC \uCC3E\uC558\uC2B5\uB2C8\uB2E4. \uB9D0\uC744 \uBC14\uAFD4 \uC4F4 \uC61B \uC7A5\uBA74\uC740 \uC774\uB54C \uBE60\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uBA3C\uC800 \uC124\uC815 \uD0ED\uC758 \uC758\uBBF8 \uAC80\uC0C9 \uC784\uBCA0\uB529 \uC5F0\uACB0 \uD14C\uC2A4\uD2B8\uB85C \uC8FC\uC18C\uC640 \uD0A4\uB97C \uD655\uC778\uD558\uC138\uC694. \uBAA8\uB378\uC774 \uC26C\uB2E4\uAC00 \uB2E4\uC2DC \uC62C\uB77C\uC624\uB294 \uC911\uC774\uC5C8\uB2E4\uBA74(Ollama\uB294 5\uBD84 \uC26C\uBA74 \uB0B4\uB9BC) \uB2E4\uC74C \uC694\uCCAD\uC740 \uAD1C\uCC2E\uC2B5\uB2C8\uB2E4. \uC5F0\uACB0\uC740 \uB418\uB294\uB370 \uC790\uC8FC \uB728\uBA74 \uC784\uBCA0\uB529 \uBAA8\uB378\uC744 \uACC4\uC18D \uC62C\uB824 \uB450\uAC70\uB098(Ollama keep_alive) \uC124\uC815 \uD0ED \uAC80\uC0C9 \uC870\uC815\uC758 \uC758\uBBF8 \uAC80\uC0C9 \uB300\uAE30(ms)\uB97C 1000 \uC815\uB3C4\uB85C \uB298\uB824 \uC8FC\uC138\uC694.",
+      "On the last request the embedding model did not answer in time or answered with an error, so memory was found by shared words only; an earlier scene in other words can be missed then. First check the address and key with the embedding connection test in the Settings tab. If the model was loading after a pause (Ollama unloads it after 5 minutes idle), the next request is fine. If it connects and this still shows often, keep the embedding model loaded (Ollama keep_alive) or raise Embedding wait (ms) under Recall tuning in the Settings tab to about 1000."
     ],
     "deadline.took": [" (\uC2E4\uC81C\uB85C\uB294 \uC57D {n}ms \uAC78\uB9BC)", " (it took about {n} ms)"],
     "status.plugin_mismatch": [
@@ -587,6 +588,11 @@
     ],
     "tune.threshold": ["\uAE00\uC790 \uC77C\uCE58 \uAE30\uC900", "Lexical threshold"],
     "tune.min_sim": ["\uC758\uBBF8 \uC720\uC0AC\uB3C4 \uAE30\uC900", "Vector min similarity"],
+    "tune.embed_wait": ["\uC758\uBBF8 \uAC80\uC0C9 \uB300\uAE30(ms)", "Embedding wait (ms)"],
+    "tune.embed_wait_hint": [
+      "\uC784\uBCA0\uB529 \uB2F5\uC744 \uAE30\uB2E4\uB9AC\uB294 \uC2DC\uAC04\uC785\uB2C8\uB2E4. \uB118\uC73C\uBA74 \uADF8 \uC694\uCCAD\uC740 \uC758\uBBF8 \uAC80\uC0C9 \uC5C6\uC774 \uB2E8\uC5B4\uAC00 \uACB9\uCE58\uB294 \uAE30\uC5B5\uB9CC \uCC3E\uC2B5\uB2C8\uB2E4. \uAE30\uBCF8 300ms. \uC0C1\uD0DC \uD0ED\uC5D0 \uC758\uBBF8 \uAC80\uC0C9 \uC5C6\uC774 \uCC3E\uC558\uB2E4\uB294 \uC54C\uB9BC\uC774 \uC790\uC8FC \uB728\uBA74(\uC6D0\uACA9 \uC784\uBCA0\uB529, \uB290\uB9B0 PC) 1000 \uC815\uB3C4\uB85C \uB298\uB9AC\uC138\uC694. \uB298\uB9B0 \uB9CC\uD07C \uB2F5\uC7A5 \uC2DC\uC791\uC774 \uB2A6\uC5B4\uC9C8 \uC218 \uC788\uACE0, \uC704\uC758 \uC81C\uD55C \uC2DC\uAC04\uBCF4\uB2E4 \uC9E7\uC544\uC57C \uD569\uB2C8\uB2E4.",
+      "How long a request waits for the embedding. Past it, that request recalls by shared words only. Default 300 ms. If the Status tab often warns that semantic search was skipped (a remote embedder, a slow PC), raise it to about 1000. Replies may start that much later, and it must stay below the deadline above."
+    ],
     "tune.top_k": ["\uBC1C\uCDCC \uC218", "Excerpts"],
     "tune.facts": ["\uC0AC\uC2E4 \uC218", "Facts"],
     "tune.backfill": ["\uCC98\uC74C \uC5F0\uACB0 \uC2DC \uCD94\uCD9C\uD560 \uD134 \uC218", "Turns extracted on first sync"],
@@ -3294,6 +3300,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     );
     const threshold = el("input", { type: "number", step: 0.05, min: 0.05, max: 1 });
     const minSim = el("input", { type: "number", step: 0.01, min: 0, max: 1 });
+    const embedWait = el("input", { type: "number", step: 100, min: 100, max: 5e3 });
     const topK = el("input", { type: "number", min: 0, max: 20 });
     const factsLimit = el("input", { type: "number", min: 0, max: 30 });
     const backfill = el("input", { type: "number", min: 0, max: 5e3 });
@@ -3304,7 +3311,14 @@ html,body{margin:0;background:${PALETTE.bg}}
       { class: "card" },
       el("h2", { text: L("tune.title") }),
       el("p", { class: "sub", text: L("tune.sub") }),
-      el("div", { class: "row" }, field(L("tune.threshold"), threshold), field(L("tune.min_sim"), minSim)),
+      el(
+        "div",
+        { class: "row" },
+        field(L("tune.threshold"), threshold),
+        field(L("tune.min_sim"), minSim),
+        field(L("tune.embed_wait"), embedWait)
+      ),
+      el("p", { class: "sub", text: L("tune.embed_wait_hint") }),
       el("div", { class: "row" }, field(L("tune.top_k"), topK), field(L("tune.facts"), factsLimit), field(L("tune.backfill"), backfill)),
       el("div", { class: "check" }, summaries, el("span", { text: L("tune.summaries") })),
       el("p", { class: "sub", text: L("tune.summaries_hint") }),
@@ -3356,6 +3370,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         tune: {
           threshold: threshold.value,
           minSim: minSim.value,
+          embedWait: embedWait.value,
           topK: topK.value,
           facts: factsLimit.value,
           backfill: backfill.value,
@@ -3391,6 +3406,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       emb.fill(cfg.embeddings);
       threshold.value = String(cfg.recall.threshold);
       minSim.value = String(cfg.recall.vector_min_sim);
+      embedWait.value = cfg.recall.embed_timeout_ms === void 0 ? "" : String(cfg.recall.embed_timeout_ms);
+      embedWait.disabled = cfg.recall.embed_timeout_ms === void 0;
       topK.value = String(cfg.recall.top_k);
       factsLimit.value = String(cfg.recall.facts_limit);
       backfill.value = String(cfg.extraction.backfill);
