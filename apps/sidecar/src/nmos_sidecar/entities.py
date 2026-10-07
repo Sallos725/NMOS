@@ -103,8 +103,11 @@ class Resolution:
                     edges.setdefault(a, set()).add(b)
                     edges.setdefault(b, set()).add(a)
                     self.alias_rows.append((a, b, row))
-                    whole, part = (a, b) if len(a[1]) > len(b[1]) else (b, a)
-                    if row.get("compiler") in PART_EDGES and part[1] in whole[1]:
+                    # By the names as written: the persona's node is {{user}}, but 한서윤 → 서윤 is still a full name
+                    # and its given name (a persona with one more alias read as ambiguous before).
+                    sa, sb = norm(row.get("subject")), norm(row["value"])
+                    whole, part = (a, b) if len(sa) > len(sb) else (b, a)
+                    if row.get("compiler") in PART_EDGES and min(sa, sb, key=len) in max(sa, sb, key=len):
                         parts.setdefault(whole, set()).add(part)
         for row in rows:  # second pass: participants rank below every resolve-v1 name source
             for p in row.get("participants") or ():  # stored by predicates.participants(): typed, named

@@ -106,3 +106,16 @@ def test_the_worker_s_two_aliases_resolve_to_one_person_under_extract_v16_only(m
         names = [set(e["names"]) for e in c.get(f"/v1/conversations/{conv}/entities").json()]
     one = {"윤하람", "하람", "람이"} in names
     assert one == ((compiler or extraction.DEFAULT_COMPILER) == "extract-v16"), names  # empty: the default
+
+
+def test_the_persona_s_given_name_is_a_part_of_the_name_the_host_reports():
+    """The persona's node is {{user}}: the part is read from the names as written (한서윤 → 서윤), so the persona with
+    its given name and one more name is one person, not an ambiguous name that hides every fact of the persona."""
+    r = resolve(uuid.uuid4(), [alias(0, "한서윤", "서윤", **V16), alias(1, "한서윤", "은빛 사냥꾼", **V16)],
+                persona=["한서윤"])
+    a, b, c = keys(r, "한서윤", "서윤", "은빛 사냥꾼")
+    assert a == b == c and r.status("character", "한서윤") == "resolved"
+    assert r.is_persona("character", "서윤")
+    r = resolve(uuid.uuid4(), [alias(0, "한서윤", "서윤", **V16), alias(1, "한서윤", "사냥꾼", **V16),
+                               alias(2, "한서윤", "은빛", **V16)], persona=["한서윤"])
+    assert r.status("character", "한서윤") == "ambiguous"  # two names besides the part, as for any full name
