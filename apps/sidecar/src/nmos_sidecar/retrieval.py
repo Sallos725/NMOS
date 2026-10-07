@@ -28,7 +28,7 @@ from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
 from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, CHANGE_POLICIES, CONTENTS,
-                     QUOTE_POLICIES,
+                     QUOTE_POLICIES, UNEXTRACTED_POLICIES,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
@@ -860,9 +860,17 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     # prototype's rule: never the previous reply); every other case anchors on the question and the previous reply
     anchor = (" ".join(words) or query) if span and options.excerpt_anchor == "keywords" else focus
     tie = one_char_words(query) if options.policy in CHANGE_POLICIES else ()  # packet-v12, PHASE-31 Q3
+    # packet-v13 (PHASE-33 Q5): a turn this generation has not extracted yet (a first sight still catching up) has no
+    # fact to restate, so its excerpt is raw evidence; one such excerpt may take one more slot than top_k (packet-v13
+    # judges excerpts as packet-v12 does: `stale` is set whenever there is an extractor to ask)
+    unextracted = (_unextracted(conn, head, [c["id"] for c in eligible], options.extractor_key)
+                   if options.policy in UNEXTRACTED_POLICIES and options.extractor_key and eligible else set())
     for c in eligible:
-        if stale is not None and len(g.ranked) >= options.top_k:
+        extra = any(e.unextracted for e in g.ranked)
+        if stale is not None and len(g.ranked) >= options.top_k + extra:
             break
+        if stale is not None and len(g.ranked) == options.top_k and str(c["id"]) not in unextracted:
+            continue  # the one more slot is for an unextracted turn only
         # a lexical or keyword hit is the whole message; a vector-only hit is its chunk; under packet-v11 a word hit
         # whose vector similarity meets the bar excerpts within its chunk too: the chunk is the part of the message
         # the question is about, the words only say the message is relevant (PHASE-27 Q1)
@@ -881,7 +889,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         item = Excerpt(turn=c["turn"] if by_turn else c["position"],
                        speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
                        text=text, score=float(c["rrf"]), revision_id=str(c["id"]), short=short,
-                       position=c["position"])
+                       position=c["position"], unextracted=str(c["id"]) in unextracted)
         if stale is not None:  # packet-v12 (PHASE-31 Q1): no form of an excerpt says only a replaced value
             if stale(item.text, item.turn):
                 g.replaced += 1
@@ -1179,6 +1187,19 @@ def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str],
         return [], {}, "timeout"
     rarity = dict(zip(words, rows[0]["weights"])) if rows and rows[0]["weights"] else {}
     return rows, rarity, "on"
+
+
+def _unextracted(conn: psycopg.Connection, head: UUID, ids: list[Any], extractor_key: str) -> set[str]:
+    """The revisions among `ids` whose turn on the head the generation has not extracted (PHASE-33 Q5). A turn is
+    extracted once, on its last message, for every message of it."""
+    return {str(r["id"]) for r in conn.execute(
+        """
+        SELECT am.source_revision_id AS id FROM active_membership am
+        WHERE am.commit_id = %(head)s AND am.source_revision_id = ANY(%(ids)s)
+          AND NOT EXISTS (SELECT 1 FROM active_membership t JOIN extraction x ON x.source_revision_id = t.source_revision_id
+                          WHERE t.commit_id = %(head)s AND t.turn = am.turn AND x.extractor_key = %(key)s
+                            AND x.discarded_at IS NULL)
+        """, {"head": head, "ids": ids, "key": extractor_key}, prepare=False).fetchall()}
 
 
 def _last_position(conn: psycopg.Connection, head: UUID, upto: int | None) -> int | None:

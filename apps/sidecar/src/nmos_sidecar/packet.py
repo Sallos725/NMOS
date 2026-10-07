@@ -233,6 +233,7 @@ GROW_POLICIES = frozenset({"packet-v10", "packet-v11", "packet-v12", "packet-v13
 SPAN_POLICIES = frozenset({"packet-v11", "packet-v12", "packet-v13"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
 CHANGE_POLICIES = frozenset({"packet-v12", "packet-v13"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
 QUOTE_POLICIES = frozenset({"packet-v13"})  # the forensic path's <Quote> lines (PHASE-33, ADR 0067)
+UNEXTRACTED_POLICIES = frozenset({"packet-v13"})  # a turn extraction has not reached is raw evidence (PHASE-33 Q5)
 CUE_GROW_CHARS = 320  # packet-v11: a why or contents question's excerpt grows by sentences to this, no sentence cap
 CONTENTS = re.compile(r"내용|\bcontents\b|\bcontent of\b", re.IGNORECASE)  # the contents cue (PHASE-27 Q2); not "is she content"
 FILL_BASE, FILL_MAX, FILL_FACTS_MAX = 2000, 4.0, 2.0  # the budget recall is sized for, and the largest factors
@@ -263,6 +264,7 @@ class Excerpt:
     position: int | None = None  # the message's head position, for story order (None: `turn` is the position)
     cut_ok: bool = True  # False: placed whole or as `short`, never cut to fit (keyword-only excerpts, ADR 0052)
     quote: bool = False  # a <Quote> line: the words said, verbatim (PHASE-33, ADR 0067)
+    unextracted: bool = False  # its turn has no extraction yet: no fact of it to restate (PHASE-33 Q5)
 
 
 def _turn(name: str, turn: int | None) -> str:
@@ -451,7 +453,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     ledger = ([_entry("state", {"key": i.key}, i.turn, f"{i.key}: {i.value}", i.value) for i in state]
               + [_entry(l.kind, l.ref, l.turn, l.text, l.content, l.marks) for l in story + cast_lines + lead + threads
                  + facts]
-              + [_entry("quote" if e.quote else "excerpt", {"revision": e.revision_id}, e.turn, e.text, e.text)
+              + [_entry("quote" if e.quote else "excerpt", {"revision": e.revision_id}, e.turn, e.text, e.text,
+                        {"unextracted": True} if e.unextracted else None)
                  for e in ranked])
     frame = [PACKET_OPEN, PACKET_NOTE.removesuffix("</Note>") + note + "</Note>", PACKET_CLOSE]
     used = est("\n".join(frame))
@@ -461,7 +464,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     repeats: dict[int, Line] = {}
     if reserving:
         for n, item in enumerate(ranked):
-            if not item.quote and (same := _restates(item, story + cast_lines + lead + threads + facts)) is not None:
+            if (not item.quote and not item.unextracted
+                    and (same := _restates(item, story + cast_lines + lead + threads + facts)) is not None):
                 repeats[n] = same
     first = next((n for n in range(len(ranked)) if n not in repeats), None)
     reserved: tuple[str, str] | None = None
