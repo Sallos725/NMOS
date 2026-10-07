@@ -677,6 +677,8 @@ class Gathered:
     lexical_note: str = "off"
     keyword_note: str = "off"  # the keyword route (ADR 0052): "on", "none", "too_broad", "timeout" or "off"
     keyword_withheld: int = 0  # excerpts only the keyword route found, left out for repeating a secret (ADR 0052)
+    quote_only: set[str] = dataclasses.field(default_factory=set)  # messages only the quote route found (ADR 0067)
+    quote_withheld: int = 0  # quotes from them left out for repeating a secret, as the keyword route's (ADR 0067)
     vector_note: str = "off"
     cast: dict[str, str] = field(default_factory=dict)  # scene cast, entity key → name (ADR 0034)
     note: str = ""  # added to the packet's Note (a first-person narrator, ADR 0035)
@@ -922,6 +924,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 extra += _turn_messages(conn, head, met, met + quotes.TURN_SPAN, upto)
         searched, rarity, g.quote_note = _quote_messages(conn, head, quotes.query_words(query), upto)
         seen = {str(c["id"]) for c in found}
+        g.quote_only = {str(c["id"]) for c in extra + searched} - {str(c["id"]) for c in g.candidates}
         for c in extra + searched:
             if c["host_logical_id"] not in in_context and str(c["id"]) not in seen:
                 found.append(c)
@@ -941,7 +944,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     # The keyword route adds no raw text that repeats a secret still kept from someone (ADR 0052, owner 2026-09-30):
     # an excerpt only it found is left out when it does, so it places no secret the other routes would not. The same
     # test as a summary's (PHASE-12 Q3), stricter when someone it is kept from is in the scene.
-    keyword_only = {str(c["id"]) for c in g.candidates if _keyword_only(c, options)}
+    # The same for a quote from a message only the quote route found (the named turn's, its own search): raw text no
+    # other route would place (ADR 0067).
+    keyword_only = {str(c["id"]) for c in g.candidates if _keyword_only(c, options)} | g.quote_only
     if keyword_only and any(e.revision_id in keyword_only for e in g.ranked) and options.extractor_key:
         if view is None:
             view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
@@ -960,7 +965,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 kept.append(e)
             elif not any(summaries.leaks(form, view["secrets"], present) for form in (e.text, e.short) if form):
                 kept.append(dataclasses.replace(e, cut_ok=False))  # the forms checked are the only ones placed
-        g.keyword_withheld = len(g.ranked) - len(kept)
+        g.quote_withheld = sum(e.quote for e in g.ranked) - sum(e.quote for e in kept)
+        g.keyword_withheld = len(g.ranked) - len(kept) - g.quote_withheld
         g.ranked = kept
     return g
 
@@ -1112,27 +1118,36 @@ def _turn_messages(conn: psycopg.Connection, head: UUID, lo: int, hi: int, upto:
 
 def _first_met(conn: psycopg.Connection, head: UUID, keys: list[list[str]], upto: int | None) -> int | None:
     """The turn by which every one of these characters (each a list of its normalized names) had been named in the
-    chat: where they met. None when one of them never was, or when there is nobody."""
+    chat: where they met. None when one of them never was, when there is nobody, or past the route's time slice (a
+    two-syllable name is too short for the trigram index)."""
     keys = [k for k in keys if k]
     if not keys:
         return None
     turns = []
-    for names in keys:
-        pats = ["%" + n.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for n in names]
-        row = conn.execute(
-            """
-            SELECT min(am.turn) AS t FROM active_membership am
-            JOIN source_revision sr ON sr.id = am.source_revision_id
-            JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
-            WHERE am.commit_id = %(head)s AND am.position <= %(upto)s AND sr.lifecycle = 'accepted'
-              AND rt.clean_content ILIKE ANY(%(pats)s)
-            """,
-            {"head": head, "pats": pats, "norm": NORMALIZER_VERSION,
-             "upto": 2**31 - 1 if upto is None else upto}, prepare=False).fetchone()
-        if row["t"] is None:
-            return None
-        turns.append(row["t"])
-    return max(turns)
+    try:
+        with conn.transaction():
+            previous = conn.execute("SELECT current_setting('statement_timeout') AS t").fetchone()
+            _apply(conn, {"statement_timeout": str(quotes.TIMEOUT_MS)})
+            for names in keys:
+                pats = ["%" + n.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for n in names]
+                row = conn.execute(
+                    """
+                    SELECT min(am.turn) AS t FROM active_membership am
+                    JOIN source_revision sr ON sr.id = am.source_revision_id
+                    JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+                    WHERE am.commit_id = %(head)s AND am.position <= %(upto)s AND sr.lifecycle = 'accepted'
+                      AND rt.clean_content ILIKE ANY(%(pats)s)
+                    """,
+                    {"head": head, "pats": pats, "norm": NORMALIZER_VERSION,
+                     "upto": 2**31 - 1 if upto is None else upto}, prepare=False).fetchone()
+                if row["t"] is None:
+                    turns = []
+                    break
+                turns.append(row["t"])
+            _apply(conn, {"statement_timeout": previous["t"]})
+    except psycopg.errors.QueryCanceled:
+        return None
+    return max(turns) if turns else None
 
 
 def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str],
@@ -1288,7 +1303,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             Jsonb([brief(c) for c in g.excluded]),
             compiled.tokens,
             Jsonb({**timings, "lexical_mode": g.lexical_note, "keyword_mode": g.keyword_note,
-                   "keyword_withheld": g.keyword_withheld,
+                   "keyword_withheld": g.keyword_withheld, "quote_withheld": g.quote_withheld,
                    "vector_mode": g.vector_note,
                    "state_items": len(g.state), "facts": len(g.lead) + len(g.facts), "threads": len(g.threads),
                    "kept_state": kept["state"], "kept_facts": kept["facts"], "kept_threads": kept["threads"],

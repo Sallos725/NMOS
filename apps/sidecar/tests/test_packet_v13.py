@@ -70,3 +70,28 @@ def test_a_turn_extraction_has_not_reached_is_marked_in_the_ledger(v13):
     hit = [e for e in trace["lines"] if e["kind"] == "excerpt" and "silver map" in e["text"]]
     assert hit and hit[0]["marks"] == {"unextracted": True}
     assert not any((e.get("marks") or {}).get("unextracted") for e in trace["lines"] if "brass key" in e["text"])
+
+
+def test_a_quote_only_the_quote_route_found_keeps_a_secret_as_a_keyword_only_excerpt_does(v13):
+    """ADR 0052's rule for raw text no other route would place holds for the quote route's own messages (ADR 0067)."""
+    client, url = v13
+    chat = SimChat()
+    chat.reply("Welcome to the story.")
+    chat.user("Hana keeps a secret from Kaito: the letter is forged.")
+    chat.reply("Noted.")
+    chat.user('Hana whispered "burn it, the letter is forged".')  # turn 2: nothing the question says
+    chat.reply("Noted.")
+    for i in range(RECENT + 2):
+        chat.user(f"Idle chatter {i} about clouds.")
+        chat.reply("Noted.")
+    _sync(client, chat)
+    extract(url)
+    question = "Kaito here. What was said on turn 2?"
+    chat.user(question)
+    _sync(client, chat)
+    out = client.post("/v1/retrieve", json={"chat_id": chat.id, "query": question, "previous_ai": "", "budget_tokens": 600,
+                                            "in_context_ids": [m["chatId"] for m in chat.messages[-RECENT:]]}).json()
+    trace = client.get(f"/v1/trace/{out['trace_id']}").json()
+    assert trace["latency_ms"]["path"] == "forensic"
+    assert not any("forged" in line for line in out["packet"]["text"].splitlines() if "<Quote" in line)
+    assert trace["latency_ms"]["quote_withheld"] >= 1  # found by the route alone: no keyword or lexical candidate
