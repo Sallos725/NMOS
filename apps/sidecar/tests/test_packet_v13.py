@@ -121,3 +121,20 @@ def test_a_turn_edited_since_its_extraction_is_unextracted_again(v13):
     lines = client.get(f"/v1/trace/{out['trace_id']}").json()["lines"]
     hit = [e for e in lines if e["kind"] == "excerpt" and "lighthouse stairs" in e["text"]]
     assert hit and hit[0]["marks"] == {"unextracted": True}
+
+
+def test_the_trace_records_the_route_s_time_apart_from_the_quotes_placed(v13):
+    client, url = v13
+    chat = SimChat()
+    chat.reply('Welcome. Hana said "the lighthouse opens at dawn".')
+    for i in range(RECENT + 2):
+        chat.user(f"Idle chatter {i} about clouds.")
+        chat.reply("Noted.")
+    _sync(client, chat)
+    question = "What did Hana say about the lighthouse?"
+    chat.user(question)
+    _sync(client, chat)
+    out = client.post("/v1/retrieve", json={"chat_id": chat.id, "query": question, "previous_ai": "", "budget_tokens": 600,
+                                            "in_context_ids": [m["chatId"] for m in chat.messages[-RECENT:]]}).json()
+    lat = client.get(f"/v1/trace/{out['trace_id']}").json()["latency_ms"]
+    assert lat["path"] == "forensic" and isinstance(lat["quotes"], int) and isinstance(lat["quote_route"], float)
