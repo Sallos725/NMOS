@@ -1,11 +1,12 @@
 # Phase 33 — Forensic recall, part 1 (Stage 7): the source turn, quoted
 
-> **Status: approved 2026-10-07 (the owner: every question as proposed), the current phase; steps 2–4 done (the
+> **Status: approved 2026-10-07 (the owner: every question as proposed), complete 2026-10-08: steps 2–5 done (the
 > baselines, `docs/perf/phase33-baseline.md`; `packet-v13` and its replay with latency at scale,
-> `docs/perf/phase33-replay.md`, ADR 0067; the source-turn page), step 5 next (the owner's default decision, then the
-> reduced live run).** Stage 7 of `docs/ROADMAP-1.0.md` ("Forensic recall";
+> `docs/perf/phase33-replay.md`, ADR 0067; the source-turn page); `packet-v13` is in the default through `packet-v14`
+> (the owner, PHASE-34 Q6); the reduced live run (Q10 d) dropped by the owner (Q10 amended).** Stage 7 of
+> `docs/ROADMAP-1.0.md` ("Forensic recall";
 > original §46, §48, §78; Track B, B6), part 1 of 2 (Q0). Under AGE-10. Until 1.0 a new phase is a Stage 7 item (R7);
-> this is the roadmap phase, not a correction phase, and the current one. Phase 32 (the
+> this is the roadmap phase, not a correction phase; Phase 34 is part 2. Phase 32 (the
 > Inspector timeline, AGE-39, an exception to R7) runs beside it; Q7 links to its bars once it is merged.
 
 ## Why now
@@ -40,8 +41,8 @@ set answered with the source turn, has no path today:
 | Q7 | What is evidence traversal in the Inspector? | **A source-turn page and links to it.** `/inspector/c/{conv}/t/{turn}`: the turn's raw text with every checked evidence quote of its facts highlighted, the facts it produced (current and superseded, by generation), the packet lines that used it, and links to the turns before and after. Links lead there from each packet-ledger line (a fact or claim to its source turn, an excerpt or quote to its turn), from each fact row and fact version, and from Phase 32's timeline bars once Phase 32 is merged. The same read-only rules and token handling as the rest of the browser Inspector (H15, K21); the panel's Inspector tab shows the page. | A side panel inside the fact table (cramped on a phone); a full-text browser of the chat (the host already shows the chat). |
 | Q8 | How is overuse measured before Phase 34? | **A report, not a ranking input.** Per chat, over the recorded requests: how many consecutive requests placed the same `ref`, how often a placed line was echoed by the next reply (`spans.reuse`, ADR 0027), and the share of packet tokens spent on lines placed in each of the last three requests. `tools/` reports it on the v0.3.0 bench databases and the owner's restored copy (counts only). Phase 34's penalty is measured against it. | A penalty now (no baseline); the host's request log (outside NMOS). |
 | Q9 | How does it ship? | **`packet-v13` behind `NMOS_PACKET_POLICY`** (Q1–Q6), `packet-v12` unchanged and still selectable; recorded requests replay as they were (ADR 0027). The Inspector page (Q7) and the overuse report (Q8) ship without a policy: they change no packet. The default is the owner's decision on the measurement. | A recall option per rule (several options to keep in step). |
-| Q10 | How is it measured? | **(a)** Deterministic cases for each cue, the anchor, attribution, abstention and the unextracted rule. **(b)** An exact-quote case set on the synthetic 240-turn bench chat (committed with the cases; synthetic text only): 24 questions, 8 by turn number, 8 by a first cue, 8 by a speaker and words, each with the source turn and the quoted words as gold. **(c)** A zero-call replay (AGENTS §7 item 6, recall only) of the v0.3.0 bench databases under `packet-v12` and `packet-v13`, three replays with the majority deciding. **(d)** One reduced live run of the sets the change is for, once each: S6 and the quote set on fresh extraction (about 300–400 model calls at the corrected pacing; the owner's estimate of the cloud cost first, since the eval account's credit is limited). **(e)** Latency at scale (Q4). | The full live gate (an extraction change only); real-chat quote cases (kept local by the owner if wanted; aggregates only in the repository). |
-| Q11 | What is the bar? | On (b): at least 20 of 24 with the source turn and the quoted words in the packet; no quote attributed to the wrong speaker. On (c): every set no worse by more than one case than `packet-v12` in the same replay; forbidden totals not higher; S6 at least two of three. On (d): S6 at least two of three and the quote set at least 18 of 24 on fresh extraction. On (e): Q4's bar. | — |
+| Q10 | How is it measured? | **(a)** Deterministic cases for each cue, the anchor, attribution, abstention and the unextracted rule. **(b)** An exact-quote case set on the synthetic 240-turn bench chat (committed with the cases; synthetic text only): 24 questions, 8 by turn number, 8 by a first cue, 8 by a speaker and words, each with the source turn and the quoted words as gold. **(c)** A zero-call replay (AGENTS §7 item 6, recall only) of the v0.3.0 bench databases under `packet-v12` and `packet-v13`, three replays with the majority deciding. **(d)** One reduced live run of the sets the change is for, once each: S6 and the quote set on fresh extraction (about 300–400 model calls at the corrected pacing; the owner's estimate of the cloud cost first, since the eval account's credit is limited; dropped 2026-10-08, step 5). **(e)** Latency at scale (Q4). | The full live gate (an extraction change only); real-chat quote cases (kept local by the owner if wanted; aggregates only in the repository). |
+| Q11 | What is the bar? | On (b): at least 20 of 24 with the source turn and the quoted words in the packet; no quote attributed to the wrong speaker. On (c): every set no worse by more than one case than `packet-v12` in the same replay; forbidden totals not higher; S6 at least two of three. On (d) (dropped, step 5): S6 at least two of three and the quote set at least 18 of 24 on fresh extraction. On (e): Q4's bar. | — |
 | Q12 | Release? | **None at the end of this phase.** `0.4.0` follows Phase 34 (Stage 7 complete, R7). | Release after each part. |
 
 ## Baseline
@@ -74,6 +75,12 @@ a migration unless Q7's page needs an index (then stop and ask).
 3. `packet-v13` with deterministic cases and the ADR, behind the policy; the zero-call replay (Q10 c) and its report.
 4. The source-turn page and links (Q7), with a real-host smoke of the panel's Inspector tab.
 5. The owner's decision on the default; then the reduced live run (Q10 d) and latency at scale (Q10 e).
+   Amended 2026-10-08 (the owner): the reduced live run is not run. The zero-call replay showed Q5 at work on S6
+   (first sight extracts the latest 100 turns, so turns 0–19 stay unextracted and every excerpt placed from them is
+   marked) with every S6 packet the same as `packet-v12`'s: a live run on fresh extraction would measure the
+   extractor's variance, not this phase's change (about $0.8 of the eval account's credit). The quote set's 21 of 24
+   was measured on the bench's live `extract-v16` extraction. S6's missed memory cases are therefore not the
+   unextracted turns' slots (the diagnosis in Why now); their cause is left open.
 
 ## Stop conditions
 
