@@ -1,7 +1,9 @@
 # Phase 33 — Forensic recall, part 1 (Stage 7): the source turn, quoted
 
-> **Status: approved 2026-10-07 (the owner: every question as proposed), the current phase; step 2 done (the baselines,
-> `docs/perf/phase33-baseline.md`), step 3 next.** Stage 7 of `docs/ROADMAP-1.0.md` ("Forensic recall";
+> **Status: approved 2026-10-07 (the owner: every question as proposed), the current phase; steps 2–4 done (the
+> baselines, `docs/perf/phase33-baseline.md`; `packet-v13` and its replay with latency at scale,
+> `docs/perf/phase33-replay.md`, ADR 0067; the source-turn page), step 5 next (the owner's default decision, then the
+> reduced live run).** Stage 7 of `docs/ROADMAP-1.0.md` ("Forensic recall";
 > original §46, §48, §78; Track B, B6), part 1 of 2 (Q0). Under AGE-10. Until 1.0 a new phase is a Stage 7 item (R7);
 > this is the roadmap phase, not a correction phase, and the current one. Phase 32 (the
 > Inspector timeline, AGE-39, an exception to R7) runs beside it; Q7 links to its bars once it is merged.

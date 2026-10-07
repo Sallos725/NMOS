@@ -195,6 +195,12 @@ revealed secret ends), the strict and narrator cases in the memory evaluation, a
 turns extraction has not reached, the Inspector's source-turn page and the overuse baseline; Phase 34 carries the
 candidate labels and the overuse penalty. `0.4.0` follows Phase 34.
 
+**Progress** (2026-10-07): the overuse baseline is measured (`docs/perf/phase33-baseline.md`). `packet-v13` (ADR 0067,
+opt-in) answers the exact-quote set with the source turn and the words in 21 of 24 (`packet-v12`: 4), leaves every
+other bench set as it was, and adds 102 ms at p95 to a cued question at 10,000 messages
+(`docs/perf/phase33-replay.md`). The Inspector links every turn to its source-turn page. Left in Phase 33: the
+default decision and the reduced live run on fresh extraction.
+
 Scope (draft):
 - fast, normal and forensic recall paths;
 - an exact-quote path that prefers raw text;
