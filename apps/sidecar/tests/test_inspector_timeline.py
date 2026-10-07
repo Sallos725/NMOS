@@ -332,3 +332,24 @@ def test_the_fact_table_folds_what_the_setting_alone_gave():
     shown, fold = about.split('<details class="fold-setting">', 1)
     assert "brave" in shown and "tall" in shown and "Born in the north" not in shown  # the owner's correction stays up
     assert "Only from the setting (lorebook, card): 1" in fold and "Born in the north" in fold.split("</details>")[0]
+
+
+def test_item_timelines_only_the_setting_gave_fold_and_names_follow_the_story():
+    """Owner, 2026-10-07: item timelines fold like the facts; a lorebook's spelling of a name the story writes another
+    way shows as the story's, the written one in the tooltip."""
+    from nmos_sidecar.inspector import _items_table, _named_cell, fact_line_text
+
+    story_item = {"item": "brass key", "position": 5, "history": [
+        {"predicate": "possesses", "subject": "Hana", "object": "brass key", "turn": 3, "position": 5, "outcome": "current"}]}
+    setting_item = {"item": "silver spear", "position": 0, "history": [
+        {"predicate": "possesses", "subject": "Hana", "object": "silver spear", "turn": 0, "position": 0,
+         "outcome": "current", "canon": True}]}
+    html = _items_table([story_item, setting_item], "en")
+    shown, fold = html.split('<details class="fold-setting">', 1)
+    assert "brass key" in shown and "silver spear" not in shown and "silver spear" in fold
+    row = {"subject": "Seo Ha-neul", "subject_entity": {"id": "e1", "name": "서하늘"}, "predicate": "has_trait",
+           "value": "kind"}
+    assert _named_cell(row, "subject") == '<span title="Seo Ha-neul">서하늘</span>'
+    assert fact_line_text(row) == "서하늘 has trait: kind"
+    persona = {"subject": "도윤", "subject_entity": {"id": "p", "name": "{{user}}"}, "predicate": "has_trait", "value": "x"}
+    assert fact_line_text(persona) == "도윤 has trait: x"  # never the placeholder

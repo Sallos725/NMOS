@@ -10,7 +10,7 @@ from html import escape
 from typing import Any
 from urllib.parse import quote
 
-from .entities import norm
+from .entities import USER_NAMES, norm
 from .predicates import REGISTRY
 from .repairs import default_outcome, outcomes
 from .facts import STANDING, earlier, first, participant_entities, symmetric
@@ -702,9 +702,35 @@ def _processed(m: dict[str, Any], lang: str) -> str:
     return (f"<span class=\"chip\">{_t(lang, 'partial')}</span> " if partial else "") + _v(" · ".join(parts))
 
 
+def _named(a: dict[str, Any], side: str) -> str:
+    """The subject or object as the story names its entity ("서하늘" for a lorebook's "Seo Ha-neul": the resolver already
+    joined them, owner 2026-10-07); the spelling as written when there is no entity or it is a persona placeholder."""
+    ref = a.get(f"{side}_entity") or {}
+    name = ref.get("name") if isinstance(ref, dict) else None
+    return name if name and norm(name) not in USER_NAMES else (a.get(side) or "")
+
+
+def _named_cell(a: dict[str, Any], side: str) -> str:
+    shown, written = _named(a, side), a.get(side) or ""
+    return f"<span title=\"{_v(written)}\">{_v(shown)}</span>" if written and shown != written else _v(shown)
+
+
 def fact_line_text(a: dict[str, Any]) -> str:
-    text = f"{a['subject']} {a['predicate'].replace('_', ' ')}" + (f" {a['object']}" if a.get("object") else "")
+    text = f"{_named(a, 'subject')} {a['predicate'].replace('_', ' ')}" + (f" {_named(a, 'object')}" if a.get("object") else "")
     return f"{text}: {a['value']}" if a.get("value") else text
+
+
+def _items_table(items: list[dict[str, Any]], lang: str) -> str:
+    """Item timelines, those only the setting gave (every step from canon, ADR 0047) folded as the facts' are."""
+    def rows(group: list[dict[str, Any]]) -> str:
+        return table([_t(lang, "h.item"), _t(lang, "h.timeline")],
+                     [[_v(i["item"]), " → ".join(_step(h, lang) for h in i["history"])] for i in group])
+
+    setting = [i for i in items if i["history"] and all(h.get("canon") for h in i["history"])]
+    story = [i for i in items if i not in setting]
+    if not setting:
+        return rows(items)
+    return _setting_fold(lang, rows(story) if story else "", rows(setting), len(setting))
 
 
 def _step(h: dict[str, Any], lang: str) -> str:
@@ -783,7 +809,7 @@ def pairs(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
     def said(f: dict[str, Any], directed: bool) -> str:
-        who = f"{f['subject']} → {f['object']}: " if directed else ""
+        who = f"{_named(f, 'subject')} → {_named(f, 'object')}: " if directed else ""
         text = _v(who + (f.get("value") or "")) + f" <span class=\"muted\">{_turn(f)}</span>"
         if f.get("polarity") == "negative":
             text += f" <span class=\"chip\">{_t(lang, 'negated')}</span>"
@@ -884,7 +910,8 @@ def _facts_rows(facts: list[dict[str, Any]], active: str | None, lang: str, anch
     older = f" <span class=\"chip\">{t('older_gen')}</span>"
     return table(
         [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.with", "h.knowledge", "h.turn", "h.versions")],
-        [[_v(f["subject"]), chip(lang, "p", f["predicate"]), _v(f.get("object") or f.get("value")) + _cause(f, lang)
+        [[_named_cell(f, "subject"), chip(lang, "p", f["predicate"]),
+          (_named_cell(f, "object") if f.get("object") else _v(f.get("value"))) + _cause(f, lang)
           + ("" if f.get("owner") else _act("fact_retract", f["id"]) + "".join(_act("fact_correct", f["id"], x) for x in _corrections(f)))
           + (_act("fact_lock", f["id"]) if (f.get("canon") or f.get("owner")) and not f.get("locked") else ""),
           _with(f, lang),
@@ -1279,9 +1306,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     if facts:
         parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
     if items:
-        parts.append(("items", t("items"), len(items), table(
-            [t("h.item"), t("h.timeline")],
-            [[_v(i["item"]), " → ".join(_step(h, lang) for h in i["history"])] for i in items[:100]]), True))
+        parts.append(("items", t("items"), len(items), _items_table(items[:100], lang), True))
     if entities:
         parts.append(("entities", t("entities"), len(entities), table(
             [t(k) for k in ("h.type", "h.names", "h.mentions", "h.alias_turns", "h.owner_links")],
