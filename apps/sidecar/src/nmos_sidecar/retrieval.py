@@ -23,13 +23,13 @@ from psycopg.types.json import Jsonb
 
 from .entities import norm
 from .facts import FIRST_CUE, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
-from . import quotes, scene, spans, summaries, variants
+from . import overuse, quotes, scene, spans, summaries, variants
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
 from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, CHANGE_POLICIES, CONTENTS,
-                     QUOTE_POLICIES, UNEXTRACTED_POLICIES,
+                     QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
@@ -178,6 +178,7 @@ class RecallOptions:
     extractor_key: str | None = None  # facts of this extractor generation only (D20)
     embed_timeout_ms: int = 300
     lexical_timeout_ms: int = 300
+    rest_after: int = 2  # packet-v14: a supportive line rests after this many placements in a row (PHASE-34 Q2)
     vector_min_sim: float = 0.42
     query_prefix: str = ""
     policy: str = DEFAULT_POLICY  # packet compiler (ADR 0027)
@@ -202,7 +203,7 @@ class RecallOptions:
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
 RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit", "vector_min_sim", "query_prefix",
             "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator", "summarize_key", "canon_key",
-            "lexical_keywords", "first_cue", "history_marks", "name_variants", "excerpt_anchor")
+            "lexical_keywords", "first_cue", "history_marks", "name_variants", "excerpt_anchor", "rest_after")
 CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
@@ -680,6 +681,8 @@ class Gathered:
     keyword_withheld: int = 0  # excerpts only the keyword route found, left out for repeating a secret (ADR 0052)
     quote_only: set[str] = dataclasses.field(default_factory=set)  # messages only the quote route found (ADR 0067)
     named: set[str] = dataclasses.field(default_factory=set)  # assertions the question names: required (PHASE-34 Q1)
+    rested: int = 0  # candidates left out while they rest (PHASE-34 Q3)
+    below_floor: int = 0  # supportive excerpts under EXCERPT_FLOOR (PHASE-34 Q4)
     risky: set[str] = dataclasses.field(default_factory=set)  # disputed or contradicted assertions (PHASE-34 Q1)
     quote_withheld: int = 0  # quotes from them left out for repeating a secret, as the keyword route's (ADR 0067)
     vector_note: str = "off"
@@ -702,13 +705,18 @@ class Gathered:
 def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, in_context: set[str],
            options: RecallOptions, upto: int | None = None, known_at: datetime | None = None,
            canon_manifest: str | None = None, canon_exact: bool = False, canon_held: Iterable[str] = (),
-           canon_facts: Any = LIVE, vectors_now: bool = False) -> Gathered:
+           canon_facts: Any = LIVE, vectors_now: bool = False,
+           recent: list[overuse.Recent] | None = None) -> Gathered:
     """Candidates for one request, already normalized (`clean_text`). `upto` and `known_at` gather them as
     of an earlier request: the head up to that position, and what NMOS had derived by that time. The canon keys the
     prompt held count as in context: the host sent their text, so their facts are not sent again (D3, ADR 0047).
     `vectors_now` searches vectors as they are now whatever `known_at` says (a replay's named projection)."""
     started = time.perf_counter()
     g = Gathered()
+    # packet-v14 (PHASE-34 Q2, Q3): the supportive lines overused in the requests before this one rest
+    # A question about the past or how it started asks for old memory: nothing rests then
+    rest = (overuse.tired(recent or [], options.rest_after)
+            if options.policy in REST_POLICIES and not HISTORY_CUE.search(query) else frozenset())
     if canon_held:
         in_context = in_context | {"canon:" + k for k in canon_held}
     # The head's last message is always in the prompt (the host sends the latest message; D13 injects
@@ -769,12 +777,12 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                             _head_turn(conn, head, upto), aliases=aliases,
                             marks=_thread_marks(view, aliases))
         if options.threads_limit > 0:
-            g.threads = _moded([thread_entry(t, scene.private(t, g.cast, r)) for t in
-                                relevant_threads(view["threads"], query, previous_ai, in_context,
-                                                 options.threads_limit, persona,
-                                                 about=options.policy in ABOUT_POLICIES, aliases=aliases,
-                                                 named=g.named)],
-                                view["threads"], g, r, options)
+            picked = relevant_threads(view["threads"], query, previous_ai, in_context,
+                                      len(view["threads"]) if rest else options.threads_limit, persona,
+                                      about=options.policy in ABOUT_POLICIES, aliases=aliases, named=g.named)
+            picked = _rested(picked, "thread", rest, g)[:options.threads_limit]
+            g.threads = _moded([thread_entry(t, scene.private(t, g.cast, r)) for t in picked],
+                               view["threads"], g, r, options)
         if options.facts_limit > 0:
             causes = options.policy in CAUSE_POLICIES
             # packet-v9 ranks every candidate once: the configured limit's share is its head (relevant_facts keeps
@@ -785,10 +793,11 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             first = options.first_cue and bool(FIRST_CUE.search(query))
             start = _window_start(conn, head, in_context, upto) if first else None
             ranked = relevant_facts(view["facts"], query, previous_ai, in_context,
-                                    len(view["facts"]) if grow else options.facts_limit,
+                                    len(view["facts"]) if grow or rest else options.facts_limit,
                                     options.events_limit, persona, scene.names(g.cast, r, aliases), causes=causes,
                                     first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases,
                                     named=g.named)
+            ranked = _rested(ranked, "fact", rest, g)
             if changes:  # an ended role answers a question about the past, not about now (PHASE-31 Q2); the facts
                 # after it take its slot
                 def now_or_kept(f: dict[str, Any]) -> bool:
@@ -801,9 +810,10 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 selected = list(facts)
             # Claims after facts, so the budget serves narration first (ADR 0013).
             ranked = relevant_facts(view["claims"], query, previous_ai, in_context,
-                                    len(view["claims"]) if grow else claims_limit, persona=persona, causes=causes,
-                                    first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases,
-                                    named=g.named)
+                                    len(view["claims"]) if grow or rest else claims_limit, persona=persona,
+                                    causes=causes, first_cue=first, window_start=start, marks=options.history_marks,
+                                    aliases=aliases, named=g.named)
+            ranked = _rested(ranked, "claim", rest, g)
             claims = _grown(ranked[:claims_limit], ranked,
                             max(1, (options.facts_limit + options.fill_facts) // 2) - claims_limit)
             g.risky = ({str(f["id"]) for f in facts + claims if f.get("disputed_by")}
@@ -875,7 +885,15 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     # judges excerpts as packet-v12 does: `stale` is set whenever there is an extractor to ask)
     unextracted = (_unextracted(conn, head, [c["id"] for c in eligible], options.extractor_key)
                    if options.policy in UNEXTRACTED_POLICIES and options.extractor_key and eligible else set())
+    if rest:  # a tired excerpt is left out while it rests (PHASE-34 Q3)
+        eligible = _rested(eligible, "excerpt", rest, g, ident=lambda c: str(c["id"]),
+                           hit=lambda c: bool(c.get("user_score") or c.get("keyword_score")))
+    floor = (EXCERPT_FLOOR * max((float(c["rrf"]) for c in eligible), default=0.0)
+             if options.policy in REST_POLICIES else 0.0)
     for c in eligible:
+        if floor and g.ranked and float(c["rrf"]) < floor and not (c.get("user_score") or c.get("keyword_score")):
+            g.below_floor += 1  # supportive memory's activation threshold (PHASE-34 Q4): the first excerpt is required
+            continue
         extra = any(e.unextracted for e in g.ranked)
         if stale is not None and len(g.ranked) >= options.top_k + extra:
             break
@@ -1223,6 +1241,22 @@ def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str],
     return rows, dict(zip(words, weight)), "on"
 
 
+def _rested(rows: list[Any], kind: str, rest: frozenset[tuple[str, str]], g: Gathered,
+            ident: Callable[[Any], str] = lambda r: str(r["id"]),
+            hit: Callable[[Any], bool] = lambda r: False) -> list[Any]:
+    """`rows` without the tired ones (PHASE-34 Q3, amended: a resting line is left out; moved behind the others it was
+    placed anyway whenever the budget had room, which on S1 was nearly always). A line the question names (`named`;
+    for an excerpt, `hit`: the question's words found it, lexically or by keyword) is required and never rests; one a
+    reply used is not tired (`overuse.tired` reads the echo)."""
+    if not rest:
+        return rows
+    def tired(r: Any) -> bool:
+        return (kind, ident(r)) in rest and ident(r) not in g.named and not hit(r)
+    awake = [r for r in rows if not tired(r)]
+    g.rested += len(rows) - len(awake)
+    return awake
+
+
 def _unextracted(conn: psycopg.Connection, head: UUID, ids: list[Any], extractor_key: str) -> set[str]:
     """The revisions among `ids` whose turn on the head the generation has not extracted (PHASE-33 Q5). A turn is
     extracted once, on its last message, for every message of it; an extraction of the turn as it was before an edit
@@ -1287,9 +1321,11 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     previous_ai = clean_text(request.previous_ai or "")
     options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator)
     in_context = set(request.in_context_ids)
+    history = (overuse.recent(conn, conv.id, head, n=options.rest_after + 1)
+               if options.policy in REST_POLICIES and fresh else None)
     g = (gather(conn, head, query, previous_ai, in_context, filled(options, request.budget_tokens), upto,
                 canon_manifest=getattr(request, "canon_manifest_id", None),
-                canon_held=getattr(request, "canon_held", None) or ()) if fresh else Gathered())
+                canon_held=getattr(request, "canon_held", None) or (), recent=history) if fresh else Gathered())
     def compile_at(budget: int) -> Compiled:
         return compile_gathered(g, budget, options.policy)
 
@@ -1325,6 +1361,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             compiled.tokens,
             Jsonb({**timings, "lexical_mode": g.lexical_note, "keyword_mode": g.keyword_note,
                    "keyword_withheld": g.keyword_withheld, "quote_withheld": g.quote_withheld,
+                   "rested": g.rested, "below_floor": g.below_floor,
                    "vector_mode": g.vector_note,
                    "state_items": len(g.state), "facts": len(g.lead) + len(g.facts), "threads": len(g.threads),
                    "kept_state": kept["state"], "kept_facts": kept["facts"], "kept_threads": kept["threads"],

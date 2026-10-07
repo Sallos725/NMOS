@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval_rp import options as recall_options, warm  # noqa: E402
 from overuse_report import line_key, pct  # noqa: E402
 
-from nmos_sidecar import audit  # noqa: E402
+from nmos_sidecar import audit, overuse as rest  # noqa: E402
 
 
 def overuse(packets: list[dict[tuple[str, str], int]]) -> dict[str, Any]:
@@ -59,9 +59,16 @@ def overuse(packets: list[dict[tuple[str, str], int]]) -> dict[str, Any]:
             "mean_tokens": round(statistics.mean(sum(p.values()) for p in packets), 1) if packets else None}
 
 
-def sequence(conn: psycopg.Connection, conv: UUID, policy: str, opts: Any) -> dict[str, Any]:
-    traces = conn.execute("SELECT id FROM retrieval_trace WHERE conversation_id = %s AND lines IS NOT NULL"
-                          " ORDER BY created_at", (conv,)).fetchall()
+def sequence(conn: psycopg.Connection, conv: UUID, policy: str, opts: Any, rest_on: bool = True,
+             rest_after: int | None = None) -> dict[str, Any]:
+    traces = conn.execute(
+        "SELECT t.id, t.upto_position, t.query, t.previous_ai, c.head_commit_id FROM retrieval_trace t"
+        " JOIN conversation c ON c.id = t.conversation_id WHERE t.conversation_id = %s AND t.lines IS NOT NULL"
+        " ORDER BY t.created_at", (conv,)).fetchall()
+    history: list[rest.Recent] = []  # the replayed requests, newest first: what the next one reads (PHASE-34 Q5)
+    supportive: list[dict[tuple[str, str], int]] = []
+    rested = 0  # candidates left out while they rested
+    level_of: dict[tuple[str, str], str] = {}
     packets: list[dict[tuple[str, str], int]] = []
     labels: Counter = Counter()
     label_tokens: Counter = Counter()
@@ -70,11 +77,19 @@ def sequence(conn: psycopg.Connection, conv: UUID, policy: str, opts: Any) -> di
     label_of: list[dict[tuple[str, str], str]] = []
     skipped = 0
     for t in traces:
-        out = audit.replay(conn, t["id"], opts, policy)
+        extra = {"rest_after": rest_after} if rest_after else {}
+        out = audit.replay(conn, t["id"], opts, policy, recent=history[:8] if rest_on else [], **extra)
         if out is None or out.get("status") != "ok":
             skipped += 1
             continue
+        history.insert(0, rest.of_ledger(out["lines"], rest.reply_text(conn, t["head_commit_id"], t["upto_position"]),
+                                            (t["query"] or "", t["previous_ai"] or "")))
+        rested += out.get("rested") or 0
         placed = [e for e in out["lines"] if e.get("placed")]
+        supportive.append({line_key(e): int(e.get("tok") or 0) for e in placed if e.get("label") == "supportive"})
+        for e in placed:
+            if e["kind"] == "summary":
+                level_of[line_key(e)] = "summary:" + (e.get("text") or "?").split(" ", 1)[0]
         packets.append({line_key(e): int(e.get("tok") or 0) for e in placed})
         label_of.append({line_key(e): e.get("label") or "" for e in placed})
         for e in placed:
@@ -88,6 +103,28 @@ def sequence(conn: psycopg.Connection, conv: UUID, policy: str, opts: Any) -> di
             if i >= 3 and all(k in packets[j] for j in (i - 1, i - 2, i - 3)):
                 stale_tokens[label_of[i][k]] += tok
     report = overuse(packets) | {"skipped": skipped, "policy": policy}
+    if any(supportive):
+        # On supportive lines (PHASE-34 Q9 amended): of a request's supportive lines, the share placed in the request
+        # before too; of their tokens, the share on lines placed in each of the three before; and how many of the
+        # supportive lines placed were new to the packet (what took a resting line's place).
+        sets = [set(p) for p in packets]
+        rep = [len(set(p) & sets[i - 1]) / len(p) for i, p in enumerate(supportive) if i and p]
+        stale = [sum(v for k, v in p.items() if all(k in sets[j] for j in (i - 1, i - 2, i - 3))) / (sum(p.values()) or 1)
+                 for i, p in enumerate(supportive) if i >= 3 and p]
+        new = [len(set(p) - sets[i - 1]) / len(p) for i, p in enumerate(supportive) if i and p]
+        by_kind_rep: Counter = Counter()
+        by_kind_stale: Counter = Counter()
+        for i, p in enumerate(supportive):
+            for k, v in p.items():
+                if i and k in sets[i - 1]:
+                    by_kind_rep[level_of.get(k, k[0])] += 1
+                if i >= 3 and all(k in sets[j] for j in (i - 1, i - 2, i - 3)):
+                    by_kind_stale[level_of.get(k, k[0])] += v
+        report["supportive_by_kind"] = {"repeats": dict(by_kind_rep), "stale_tokens": dict(by_kind_stale)}
+        report["supportive"] = {"repeat_share": round(statistics.mean(rep), 3) if rep else None,
+                                "stale_token_share": round(statistics.mean(stale), 3) if stale else None,
+                                "new_share": round(statistics.mean(new), 3) if new else None,
+                                "rested": rested}
     if labels:
         n, tok = sum(labels.values()), sum(label_tokens.values()) or 1
         rep, st = sum(repeated.values()) or 1, sum(stale_tokens.values()) or 1
@@ -103,6 +140,8 @@ def main() -> None:
     ap.add_argument("--policy", required=True)
     ap.add_argument("--conversation", help="one conversation's id (default: the one with the most recorded requests)")
     ap.add_argument("--no-vectors", action="store_true")
+    ap.add_argument("--no-rest", action="store_true", help="the policy without the rest (its baseline on labels)")
+    ap.add_argument("--rest-after", type=int, help="placements in a row before a line rests (default: as recorded)")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
     with psycopg.connect(a.db, row_factory=dict_row) as conn:
@@ -112,7 +151,7 @@ def main() -> None:
             " LIMIT 1").fetchone()["conversation_id"]
         opts = recall_options(conn, not a.no_vectors)
         warm(opts)
-        report = {"conversation": str(conv)[-8:]} | sequence(conn, conv, a.policy, opts)
+        report = {"conversation": str(conv)[-8:]} | sequence(conn, conv, a.policy, opts, not a.no_rest, a.rest_after)
     if a.json:
         json.dump(report, sys.stdout, indent=1)
         return

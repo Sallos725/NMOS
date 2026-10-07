@@ -214,7 +214,9 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
 # packet-v13 is packet-v12 with the forensic path (PHASE-33, ADR 0067): a question about what someone said gets up to
 # two <Quote> lines, the words said verbatim from the turn that said them, placed before the excerpts and never cut.
 # packet-v14 is packet-v13 that knows what each line is for (PHASE-34): every ledger line carries a label (required,
-# supportive, risky). Step 2 records the labels only; what a packet places is packet-v13's.
+# supportive, risky); a supportive line placed in each of the last three requests and echoed by none of their replies
+# rests (left out for up to two requests, `overuse`), and an excerpt after the first needs EXCERPT_FLOOR of the best
+# fused score or a word hit (PHASE-34 Q2–Q4).
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
             "packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14")
 DEFAULT_POLICY = "packet-v12"
@@ -237,6 +239,8 @@ CHANGE_POLICIES = frozenset({"packet-v12", "packet-v13", "packet-v14"})  # repla
 QUOTE_POLICIES = frozenset({"packet-v13", "packet-v14"})  # the forensic path's <Quote> lines (PHASE-33, ADR 0067)
 UNEXTRACTED_POLICIES = frozenset({"packet-v13", "packet-v14"})  # a turn extraction has not reached is raw evidence (PHASE-33 Q5)
 LABEL_POLICIES = frozenset({"packet-v14"})  # every ledger line labeled required, supportive or risky (PHASE-34 Q1)
+REST_POLICIES = frozenset({"packet-v14"})  # an overused supportive line rests; supportive excerpts meet a bar (Q2–Q4)
+EXCERPT_FLOOR = 0.5  # packet-v14: an excerpt after the first needs this share of the best fused score, or a word hit
 CUE_GROW_CHARS = 320  # packet-v11: a why or contents question's excerpt grows by sentences to this, no sentence cap
 CONTENTS = re.compile(r"내용|\bcontents\b|\bcontent of\b", re.IGNORECASE)  # the contents cue (PHASE-27 Q2); not "is she content"
 FILL_BASE, FILL_MAX, FILL_FACTS_MAX = 2000, 4.0, 2.0  # the budget recall is sized for, and the largest factors
@@ -339,12 +343,13 @@ def _label(ledger: list[dict[str, Any]], state: list[StateItem], story: list[Lin
            offered: list[Line], ranked: list[Excerpt], first: int | None, named: frozenset[str],
            risky: frozenset[str]) -> None:
     """What each line is for (PHASE-34 Q1), by rule. Required: what the request cannot do without: the state, the
-    cast, a line some in the scene do not know (Private, Secret), a fact, claim or thread the question names
-    (`named`), a quote, the first excerpt (the one the budget keeps room for, ADR 0026). Risky: a disputed or
-    contradicted line (`risky`). Supportive: everything else (Story, what overlap or the previous reply brought)."""
+    cast, the story so far (owner, 2026-10-07: the continuity every packet carries), a line some in the scene do not
+    know (Private, Secret), a fact, claim or thread the question names (`named`), a quote, the first excerpt (the one
+    the budget keeps room for, ADR 0026). Risky: a disputed or contradicted line (`risky`). Supportive: everything
+    else (scene summaries, what overlap or the previous reply brought)."""
     def of_line(line: Line, section: str) -> str:
-        if section == "story":
-            return "supportive"
+        if section == "story":  # the story so far carries the chat's continuity; a scene summary is one episode
+            return "required" if '<Summary kind="story"' in line.xml else "supportive"
         if section == "cast" or line.kind == "secret" or line.private:
             return "required"
         ref = str(line.ref.get("assertion"))

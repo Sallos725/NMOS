@@ -141,7 +141,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             facts_limit=cur.facts_limit, events_limit=cur.events_limit,
             threads_limit=cur.threads_limit, embedder=emb if pj else None, embed_projection=pj.key if pj else "",
             extractor_key=rt.get("active_extractor"), embed_timeout_ms=cur.embed_timeout_ms,
-            lexical_timeout_ms=cur.lexical_timeout_ms,
+            lexical_timeout_ms=cur.lexical_timeout_ms, rest_after=cur.rest_after,
             vector_min_sim=cur.vector_min_sim, query_prefix=query_prefix(cur.embed_model, cur.embed_query_instruction),
             policy=cur.packet_policy if cur.packet_policy in POLICIES else DEFAULT_POLICY,
             summarize_key=sm.key if sm else None, canon_key=rt.get("active_canon") if cur.canon_facts else None,

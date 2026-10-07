@@ -34,8 +34,8 @@ from uuid import UUID
 
 import psycopg
 
-from . import spans
-from .packet import POLICIES, clean_text
+from . import overuse, spans
+from .packet import POLICIES, REST_POLICIES, clean_text
 from .retrieval import RECORDED, RecallOptions, compile_gathered, filled, gather
 
 echo, echoed = spans.reuse, spans.reused
@@ -128,7 +128,7 @@ def _canon_of(t: dict[str, Any]) -> dict[str, Any]:
 
 def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, policy: str | None = None,
            known_at: datetime | None = None, query: str | None = None, budget: int | None = None,
-           projection: str | None = None, **overrides: Any) -> dict[str, Any] | None:
+           projection: str | None = None, recent: list[Any] | None = None, **overrides: Any) -> dict[str, Any] | None:
     """Compile a recorded request again, as of its time, with its own recall options, generations and
     budget; `policy`, `query` (a probe in place of the request's user message, as the request would have sent
     it), `budget` (tokens) and `overrides` (RecallOptions fields) change what is being tested. `options` gives
@@ -177,17 +177,20 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     if query is not None:
         query = clean_text(query)  # as the live request normalizes it
         notes.append("query replaced")
+    if recent is None and policy in REST_POLICIES:  # the requests before it, as it read them (PHASE-34 Q5)
+        recent = overuse.recent(conn, t["conversation_id"], t["head_commit_id"], before=t["created_at"],
+                                n=opts.rest_after + 1)
     g = gather(conn, t["head_commit_id"], t["query"] if query is None else query, t["previous_ai"] or "",
                set(t["in_context"] or []), filled(opts, t["budget_tokens"] if budget is None else budget),
                upto=kept, known_at=known_at or t["created_at"],
-               canon_held=t.get("canon_held") or (), vectors_now=other, **_canon_of(t))
+               canon_held=t.get("canon_held") or (), vectors_now=other, recent=recent, **_canon_of(t))
     if opts.embedder is not None and g.vector_note != "on":
         notes.append(f"vectors {g.vector_note}")  # an embedder that failed now cannot reproduce the request
     if budget is not None:
         notes.append("budget changed")
     c = compile_gathered(g, t["budget_tokens"] if budget is None else budget, policy)
     out = {"trace": str(t["id"]), "status": "ok", "policy": policy, "recorded_policy": t["policy"],
-           "text": c.text, "tokens": c.tokens, "lines": c.ledger, "notes": notes,
+           "text": c.text, "tokens": c.tokens, "lines": c.ledger, "notes": notes, "rested": g.rested,
            "vectors": g.vector_note if opts.embedder is not None else "off",
            # lexical recall's outcome (PHASE-18): the whole-message and keyword routes' modes, and how many candidates
            # either found; a candidate found by vectors only has neither score

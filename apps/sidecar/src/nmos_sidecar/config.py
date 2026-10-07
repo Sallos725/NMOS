@@ -65,6 +65,8 @@ class Settings:
     embed_timeout_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_EMBED_TIMEOUT_MS", "300")))
     # Budget for the lexical recall query; beyond it lexical abstains for that request (#12).
     lexical_timeout_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_LEXICAL_TIMEOUT_MS", "300")))
+    # packet-v14: placements in a row before an unused supportive line rests (PHASE-34 Q2)
+    rest_after: int = field(default_factory=lambda: int(os.environ.get("NMOS_REST_AFTER", "2")))
     vector_min_sim: float = field(default_factory=lambda: float(os.environ.get("NMOS_VECTOR_MIN_SIM", "0.42")))
     # Query-side instruction for instruction-tuned embedders. "auto": Qwen3-Embedding format when the
     # model name contains "qwen3-embedding", none otherwise. Documents are embedded without it.
