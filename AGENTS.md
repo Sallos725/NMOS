@@ -32,7 +32,8 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-36.md` is the latest, approved
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-37.md` is the latest, proposed
+   2026-10-08 (the bundle's data outside the bundle, high risk); `PHASE-36.md`, approved
    2026-10-08 and complete (named facts, `packet-v16`, the default);
    `PHASE-35.md`, approved 2026-10-08 and complete, a correction phase beside Stage 7 (the excerpt anchor,
    `packet-v15`);
@@ -106,6 +107,7 @@ If two normative documents appear to conflict:
 | 33 — forensic recall, part 1 (Stage 7; AGE-10): the source turn, quoted (a speech-cue quote route, turns extraction has not reached, the Inspector's source-turn page, the overuse baseline) | **approved** (2026-10-07, as proposed), **current**; steps 2–4 done (baselines; `packet-v13` replayed, quotes 21/24, latency +102 ms at 10k; the source-turn page), step 5 next | `PHASE-33.md` |
 | 35 — the excerpt lands on what was asked, not on when (`packet-v15`; AGE-10, from Phase 33's S6 diagnosis; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-08, as proposed); complete: `packet-v15` the default (the owner), no live run | `PHASE-35.md`, ADR 0069 |
 | 36 — a name in the message is not a question about everything (`packet-v16`; AGE-10, from Phase 34's live run; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-08, as proposed; Q1 amended twice on the replay); complete: `packet-v16` the default (the owner) | `PHASE-36.md`, ADR 0070 |
+| 37 — the bundle's data lives outside the bundle: a per-user folder on Windows and Linux, existing data adopted on the first start (a correction found on a user's report, not a roadmap stage; amends PHASE-23 Q3) | **proposed** (2026-10-08), high risk | `PHASE-37.md` |
 | 34+ (Stage 7 part 2: labels and the overuse penalty; Stage 8 after 1.0) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
