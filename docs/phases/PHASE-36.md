@@ -2,7 +2,7 @@
 
 > **Status: approved 2026-10-08 (the owner: as proposed), a correction phase (AGENTS §7 item 5) found on Phase 34's
 > live run, Q1 amended twice on the replay; step 2 done (#283: `packet-v16`, ADR 0070, `docs/perf/phase36-replay.md`:
-> the bench 289 of 314 in each replay as `packet-v15`, required lines 76 % → 67 % on the trial chat); the default next.** Under AGE-10,
+> the bench 289 of 314 by the majority of three replays as `packet-v15`, required lines 76 % → 67 % on the trial chat); the default next.** Under AGE-10,
 > after Phase 35; `0.4.0` waits for it (the owner, 2026-10-08: in the release, then two weeks of use before 1.0).
 > Recall only: no extraction prompt, generation key, stored row or migration changes.
 

@@ -3,7 +3,7 @@
 ## Current phase
 
 **Phase 36 — A name in the message is not a question about everything (`packet-v16`): approved 2026-10-08 (the owner,
-as proposed), a correction phase (AGENTS §7 item 5) beside Phase 34; step 2 done (the bench 289 of 314 in each replay as
+as proposed), a correction phase (AGENTS §7 item 5) beside Phase 34; step 2 done (the bench 289 of 314 by majority as
 `packet-v15`; required lines 76 % → 67 % on the trial chat); the owner's default decision next.** Spec `docs/phases/PHASE-36.md`
 (AGE-10), ADR 0070. A message naming a
 character makes every fact about it required (PHASE-34 Q1 as built), so it never rests: on the owner's trial chat 27 %

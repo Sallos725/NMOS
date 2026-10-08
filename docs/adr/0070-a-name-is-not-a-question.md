@@ -31,7 +31,7 @@ when no reply used it. Claims follow the same rule.
 
 - On the trial chat's 37 recorded requests replayed in order (no vectors): required lines 76 % → 67 % of the placed
   lines, supportive repeats 0.561 → 0.519, their stale tokens 0.126 → 0.067, the whole packet's repeats not higher; on
-  S1's 241, required lines 63 % → 57 %. The bench answers as `packet-v15` does: 289 of 314 in each of three replays, no
+  S1's 241, required lines 63 % → 57 %. The bench answers as `packet-v15` does: 289 of 314 by the majority of three, no
   case lost (`docs/perf/phase36-replay.md`).
 - A trait or past event the next reply needs, named only by the character's name, may be out for two requests after
   two placements no reply used. A question about it in its own words, a history cue, or a reply that uses it keeps it.
