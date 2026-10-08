@@ -1,5 +1,6 @@
 // Request-path orchestration. Host access comes in through `HostPort`; everything fails open.
 
+import type { Method } from './restore';
 import type { MemoryFit } from './budget';
 import { PLUGIN_BUILD } from './build';
 import { canonHash, canonManifestId, canonTexts, heldKeys, type CanonEntry, type CanonText, type HostCard, type HostLoreEntry,
@@ -55,7 +56,7 @@ export interface HostPort {
    * permission dialog, so it is made at load (`warmPersonas`) and never awaited on the request path.
    */
   personas?(): Promise<HostPersonas | null>;
-  request(method: 'GET' | 'POST' | 'PUT', url: string, body: unknown, headers: Record<string, string>,
+  request(method: Method, url: string, body: unknown, headers: Record<string, string>,
           timeoutMs: number, route: Settings['route']): Promise<HttpResult>;
   /** A GET whose answer is a file, as bytes (the panel's Export, H21). */
   requestFile?(url: string, headers: Record<string, string>, timeoutMs: number,
@@ -336,7 +337,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
 
   /** `onLate`: when this call is cut at the deadline, called with the time its answer arrives anyway. */
   async function call<T>(settings: Settings, path: string, body: unknown, deadline: number,
-                         method?: 'GET' | 'POST' | 'PUT', onLate?: (at: number) => void): Promise<T> {
+                         method?: Method, onLate?: (at: number) => void): Promise<T> {
     const remaining = deadline - host.now();
     if (remaining <= 0) throw new DeadlineError(`deadline before ${path}`);
     const url = settings.sidecarUrl.replace(/\/+$/, '') + path;
@@ -555,7 +556,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
   }
 
   /** Sidecar API for the settings UI (longer timeout: connection tests call real models). */
-  async function api<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeoutMs = 90_000): Promise<T> {
+  async function api<T>(method: Method, path: string, body?: unknown, timeoutMs = 90_000): Promise<T> {
     const settings = await host.settings();
     // A settings save, rebuild or delete changes what a packet would contain: a reroll of an unchanged chat must not
     // reuse a packet built before it (a deleted chat's memory, old facts), nor one fetched while it ran. Also when the

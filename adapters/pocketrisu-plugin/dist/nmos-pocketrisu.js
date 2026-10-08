@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:1bfd02459b51".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:a3f558835261".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -41,7 +41,10 @@
 
   // src/hash.ts
   async function sha256Hex(text2) {
-    const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text2));
+    return sha256HexOf(new TextEncoder().encode(text2));
+  }
+  async function sha256HexOf(bytes) {
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
     return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
   }
 
@@ -391,6 +394,31 @@
     "exp.all": ["\uC804\uBD80 \uB0B4\uBCF4\uB0B4\uAE30", "Export everything"],
     "exp.working": ["\uD30C\uC77C\uC744 \uC900\uBE44\uD558\uB294 \uC911\u2026", "Preparing the file\u2026"],
     "exp.saved": ["{mb} MB\uB97C \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. \uBE0C\uB77C\uC6B0\uC800\uC758 \uB2E4\uC6B4\uB85C\uB4DC\uB97C \uD655\uC778\uD558\uC138\uC694.", "Saved {mb} MB. Check the browser's downloads."],
+    // restore from the panel (PHASE-38)
+    "rst.title": ["\uC544\uCE74\uC774\uBE0C\uC5D0\uC11C \uBCF5\uC6D0", "Restore from an archive"],
+    "rst.sub": [
+      "\uB0B4\uBCF4\uB0B8 .nmos.zip\uC744 \uC774 NMOS\uC5D0 \uB123\uC2B5\uB2C8\uB2E4. \uC774\uBBF8 \uC788\uB294 \uB300\uD654\uC640\uB294 \uD569\uCE58\uC9C0 \uC54A\uC544\uC694: \uADF8 \uB300\uD654\uAC00 \uC5EC\uAE30 \uC788\uC73C\uBA74 \uBCF5\uC6D0 \uC804\uCCB4\uB97C \uAC70\uBD80\uD569\uB2C8\uB2E4(\uBA3C\uC800 \uC778\uC2A4\uD399\uD130\uC5D0\uC11C \uC9C0\uC6B0\uC138\uC694). \uBCF5\uC6D0\uD558\uB294 \uB3D9\uC548\uC5D0\uB3C4 \uD68C\uC0C1\uC740 \uB418\uACE0, \uAE30\uC5B5 \uC800\uC7A5\uB9CC \uC7A0\uAE50 \uAE30\uB2E4\uB9BD\uB2C8\uB2E4.",
+      "Puts an exported .nmos.zip into this NMOS. It never merges into a chat that is here: one of its chats here refuses the whole restore (delete it in the Inspector first). While it runs, recall goes on; saving memory waits briefly."
+    ],
+    "rst.pick": ["\uD30C\uC77C \uACE0\uB974\uAE30\u2026", "Choose a file\u2026"],
+    "rst.uploading": ["\uC62C\uB9AC\uB294 \uC911\u2026 {pct}% ({sent} / {total} MB)", "Uploading\u2026 {pct}% ({sent} of {total} MB)"],
+    "rst.checking": ["\uD30C\uC77C\uC744 \uAC80\uC0AC\uD558\uB294 \uC911\u2026", "Checking the file\u2026"],
+    "rst.summary": ["{scope} \xB7 \uB300\uD654 {n}\uAC1C \xB7 NMOS {version} \xB7 {date}", "{scope} \xB7 {n} chats \xB7 NMOS {version} \xB7 {date}"],
+    "rst.scope_install": ["\uC124\uCE58 \uC804\uCCB4", "The whole install"],
+    "rst.scope_chats": ["\uACE0\uB978 \uB300\uD654", "Chosen chats"],
+    "rst.here": ["\uC774\uBBF8 \uC788\uC74C", "already here"],
+    "rst.blocked": [
+      "\uC774\uBBF8 \uC788\uB294 \uB300\uD654\uAC00 \uC788\uC5B4\uC11C \uBCF5\uC6D0\uD560 \uC218 \uC5C6\uC5B4\uC694. \uC778\uC2A4\uD399\uD130\uC5D0\uC11C \uADF8 \uB300\uD654\uB97C \uC9C0\uC6B4 \uB4A4 \uB2E4\uC2DC \uC62C\uB824 \uC8FC\uC138\uC694.",
+      "Chats already here block the restore. Delete them in the Inspector, then upload the file again."
+    ],
+    "rst.settings": ["\uC0C8\uB85C \uB4E4\uC5B4\uC62C \uC124\uC815: {keys}", "Settings it adds: {keys}"],
+    "rst.migrations": ["\uC61B NMOS\uC758 \uD30C\uC77C\uC774\uB77C \uBCF5\uC6D0\uD558\uBA70 \uC62C\uB9BD\uB2C8\uB2E4: {list}", "Made by an older NMOS; upgraded as it is restored: {list}"],
+    "rst.restore": ["\uBCF5\uC6D0", "Restore"],
+    "rst.cancel": ["\uCDE8\uC18C", "Cancel"],
+    "rst.restoring": ["\uBCF5\uC6D0\uD558\uB294 \uC911\u2026", "Restoring\u2026"],
+    "rst.done": ["\uBCF5\uC6D0\uD588\uC5B4\uC694: \uB300\uD654 {n}\uAC1C, \uC0C8\uB85C \uCC98\uB9AC\uD560 \uC791\uC5C5 {jobs}\uAC1C.", "Restored: {n} chats; {jobs} jobs queued."],
+    "rst.refused": ["\uC774 \uD30C\uC77C\uC740 \uBCF5\uC6D0\uD560 \uC218 \uC5C6\uC5B4\uC694: {why}", "This file cannot be restored: {why}"],
+    "rst.failed": ["\uBCF5\uC6D0\uD558\uC9C0 \uBABB\uD588\uC5B4\uC694. \uC544\uBB34\uAC83\uB3C4 \uBC14\uB00C\uC9C0 \uC54A\uC558\uC5B4\uC694: {why}", "Not restored; nothing changed: {why}"],
     "act.delete_done": ["\uB300\uD654\uB97C \uC0AD\uC81C\uD588\uC2B5\uB2C8\uB2E4 (\uBA54\uC2DC\uC9C0 {m}\uAC1C\uC758 \uAE30\uB85D).", "Conversation deleted (records of {m} messages)."],
     "link.title": ["\uAC19\uC740 \uB300\uC0C1\uC73C\uB85C \uD569\uCE58\uAE30", "Same as another entity"],
     "link.sub": [
@@ -2050,6 +2078,38 @@ ${revisionHash}`;
     return out;
   }
 
+  // src/restore.ts
+  function base64Of(bytes) {
+    let s = "";
+    for (let i = 0; i < bytes.length; i += 32768) s += String.fromCharCode(...bytes.subarray(i, i + 32768));
+    return btoa(s);
+  }
+  var CHUNK_TIMEOUT_MS = 12e4;
+  async function uploadArchive(api, file, progress) {
+    const up = await api("POST", "/v1/archive/uploads", { bytes: file.size });
+    const size = up.chunk_bytes;
+    progress(0, file.size);
+    for (let index = 0, offset = 0; offset < file.size; index++, offset += size) {
+      const bytes = await file.slice(offset, offset + size).arrayBuffer();
+      const body = { data: base64Of(new Uint8Array(bytes)), sha256: await sha256HexOf(bytes) };
+      const path = `/v1/archive/uploads/${up.id}/chunks/${index}`;
+      try {
+        await api("PUT", path, body, CHUNK_TIMEOUT_MS);
+      } catch {
+        await api("PUT", path, body, CHUNK_TIMEOUT_MS);
+      }
+      progress(Math.min(offset + size, file.size), file.size);
+    }
+    return up;
+  }
+  async function waitFor(api, id, states, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), everyMs = 1e3) {
+    for (; ; ) {
+      const view2 = await api("GET", `/v1/archive/uploads/${id}`);
+      if (states.includes(view2.state)) return view2;
+      await sleep(everyMs);
+    }
+  }
+
   // src/usage.ts
   var count = (n) => n.toLocaleString("en-US");
   var calls = (n, lang) => lang === "en" ? `${count(n)} call${n === 1 ? "" : "s"}` : count(n);
@@ -3343,6 +3403,106 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("div", { class: "check" }, exportEmbeddings, el("span", { text: L("exp.embeddings") })),
       el("div", { class: "btns" }, exportAll),
       exportMsg
+    ));
+    const restoreFile = el("input", { type: "file", accept: ".zip,application/zip", style: "display:none" });
+    const restorePick = el("button", { text: L("rst.pick") });
+    const restoreMsg = el("div", { class: "msg" });
+    const restoreSummary = el("div", {});
+    const restoreGo = el("button", { text: L("rst.restore"), style: "display:none" });
+    const restoreCancel = el("button", { text: L("rst.cancel"), style: "display:none" });
+    let restoreId = null;
+    const restoreIdle = (id) => {
+      restoreId = id;
+      restorePick.disabled = false;
+      restoreGo.style.display = restoreCancel.style.display = id ? "" : "none";
+      restoreGo.disabled = restoreCancel.disabled = false;
+    };
+    restorePick.addEventListener("click", () => restoreFile.click());
+    restoreFile.addEventListener("change", async () => {
+      const file = restoreFile.files?.[0];
+      restoreFile.value = "";
+      if (!file) return;
+      restoreSummary.replaceChildren();
+      restoreIdle(null);
+      restorePick.disabled = true;
+      try {
+        const up = await uploadArchive(deps.api, file, (sent, total) => say(restoreMsg, L("rst.uploading", {
+          pct: total ? Math.floor(sent / total * 100) : 100,
+          sent: (sent / 1048576).toFixed(1),
+          total: (total / 1048576).toFixed(1)
+        })));
+        say(restoreMsg, L("rst.checking"));
+        await deps.api("POST", `/v1/archive/uploads/${up.id}/check`);
+        const view2 = await waitFor(deps.api, up.id, ["checked", "refused"]);
+        if (view2.state === "refused" || !view2.summary) {
+          say(restoreMsg, L("rst.refused", { why: view2.detail ?? "" }), "err");
+          restoreIdle(null);
+          return;
+        }
+        showSummary(view2.summary);
+        const blocked = view2.summary.conversations.some((c) => c.here);
+        say(restoreMsg, blocked ? L("rst.blocked") : "", blocked ? "err" : "muted");
+        restoreIdle(up.id);
+        restoreGo.disabled = blocked;
+      } catch (error) {
+        say(restoreMsg, errorText(lang, error), "err");
+        restoreIdle(null);
+      }
+    });
+    function showSummary(s) {
+      const head = L("rst.summary", {
+        scope: L(s.scope === "install" ? "rst.scope_install" : "rst.scope_chats"),
+        n: s.conversations.length,
+        version: s.nmos_version ?? "?",
+        date: (s.created_at ?? "").slice(0, 10)
+      });
+      const list = el("ul", {}, ...s.conversations.map((c) => el("li", {
+        text: `${c.character ?? "?"} \u2014 ${c.chat ?? c.host_chat_ref}${c.here ? ` (${L("rst.here")})` : ""}`
+      })));
+      restoreSummary.replaceChildren(
+        el("p", { class: "sub", text: head }),
+        list,
+        ...s.settings_added.length ? [el("p", { class: "sub", text: L("rst.settings", {
+          keys: s.settings_added.map((x) => x.value !== void 0 ? `${x.key} = ${String(x.value)}` : x.key).join(", ")
+        }) })] : [],
+        ...s.migrations.length ? [el("p", { class: "sub", text: L("rst.migrations", { list: s.migrations.join(", ") }) })] : []
+      );
+    }
+    restoreGo.addEventListener("click", async () => {
+      const id = restoreId;
+      if (!id) return;
+      restoreGo.disabled = restoreCancel.disabled = restorePick.disabled = true;
+      say(restoreMsg, L("rst.restoring"));
+      try {
+        await deps.api("POST", `/v1/archive/uploads/${id}/restore`);
+        const view2 = await waitFor(deps.api, id, ["restored", "failed"]);
+        if (view2.state === "restored" && view2.result) {
+          say(restoreMsg, L("rst.done", { n: view2.result.conversations.length, jobs: view2.result.queued_jobs ?? 0 }) + (view2.detail ? ` ${view2.detail}` : ""), "ok");
+        } else {
+          say(restoreMsg, L("rst.failed", { why: view2.detail ?? "" }), "err");
+        }
+        restoreSummary.replaceChildren();
+      } catch (error) {
+        say(restoreMsg, errorText(lang, error), "err");
+      }
+      restoreIdle(null);
+    });
+    restoreCancel.addEventListener("click", async () => {
+      const id = restoreId;
+      restoreIdle(null);
+      restoreSummary.replaceChildren();
+      say(restoreMsg, "");
+      if (id) await deps.api("DELETE", `/v1/archive/uploads/${id}`).catch(() => void 0);
+    });
+    settingsView.append(el(
+      "div",
+      { class: "card" },
+      el("h2", { text: L("rst.title") }),
+      el("p", { class: "sub", text: L("rst.sub") }),
+      el("div", { class: "btns" }, restorePick, restoreGo, restoreCancel),
+      restoreFile,
+      restoreSummary,
+      restoreMsg
     ));
     const barText = el("span", { class: "text muted" });
     const revert = el("button", { text: L("revert") });

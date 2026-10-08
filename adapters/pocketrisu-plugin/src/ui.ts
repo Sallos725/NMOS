@@ -15,6 +15,7 @@ import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConve
 import type { EntityRow, Preview, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
+import { uploadArchive, waitFor, type ArchiveSummary, type Method } from './restore';
 import { usageText, type UsageTotal } from './usage';
 
 export type Tab = 'status' | 'inspector' | 'settings';
@@ -31,7 +32,7 @@ export interface HudControl {
 }
 
 export interface PanelDeps {
-  api<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeoutMs?: number): Promise<T>;
+  api<T>(method: Method, path: string, body?: unknown, timeoutMs?: number): Promise<T>;
   status(): Promise<StatusInfo>;
   getArg(key: string): Promise<string>;
   setArg(key: string, value: string | number): Promise<void>;
@@ -1167,6 +1168,92 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     el('h2', { text: L('exp.title') }), el('p', { class: 'sub', text: L('exp.sub') }),
     el('div', { class: 'check' }, exportEmbeddings, el('span', { text: L('exp.embeddings') })),
     el('div', { class: 'btns' }, exportAll), exportMsg));
+
+  // --- settings tab: restore from an archive (applied at once; PHASE-38) -----------------------
+  const restoreFile = el('input', { type: 'file', accept: '.zip,application/zip', style: 'display:none' });
+  const restorePick = el('button', { text: L('rst.pick') });
+  const restoreMsg = el('div', { class: 'msg' });
+  const restoreSummary = el('div', {});
+  const restoreGo = el('button', { text: L('rst.restore'), style: 'display:none' });
+  const restoreCancel = el('button', { text: L('rst.cancel'), style: 'display:none' });
+  let restoreId: string | null = null;
+  const restoreIdle = (id: string | null) => {
+    restoreId = id;
+    restorePick.disabled = false;
+    restoreGo.style.display = restoreCancel.style.display = id ? '' : 'none';
+    restoreGo.disabled = restoreCancel.disabled = false;
+  };
+  restorePick.addEventListener('click', () => restoreFile.click());
+  restoreFile.addEventListener('change', async () => {
+    const file = restoreFile.files?.[0];
+    restoreFile.value = '';  // picking the same file again fires `change` again
+    if (!file) return;
+    restoreSummary.replaceChildren();
+    restoreIdle(null);
+    restorePick.disabled = true;
+    try {
+      const up = await uploadArchive(deps.api, file, (sent, total) => say(restoreMsg, L('rst.uploading', {
+        pct: total ? Math.floor((sent / total) * 100) : 100, sent: (sent / 1_048_576).toFixed(1),
+        total: (total / 1_048_576).toFixed(1) })));
+      say(restoreMsg, L('rst.checking'));
+      await deps.api('POST', `/v1/archive/uploads/${up.id}/check`);
+      const view = await waitFor(deps.api, up.id, ['checked', 'refused']);
+      if (view.state === 'refused' || !view.summary) {
+        say(restoreMsg, L('rst.refused', { why: view.detail ?? '' }), 'err');
+        restoreIdle(null);
+        return;
+      }
+      showSummary(view.summary);
+      const blocked = view.summary.conversations.some((c) => c.here);
+      say(restoreMsg, blocked ? L('rst.blocked') : '', blocked ? 'err' : 'muted');
+      restoreIdle(up.id);
+      restoreGo.disabled = blocked;
+    } catch (error) {
+      say(restoreMsg, errorText(lang, error), 'err');
+      restoreIdle(null);
+    }
+  });
+  /** What the checked archive holds: its scope, chats (those already here marked), settings and upgrades (Q2, Q5). */
+  function showSummary(s: ArchiveSummary): void {
+    const head = L('rst.summary', { scope: L(s.scope === 'install' ? 'rst.scope_install' : 'rst.scope_chats'),
+      n: s.conversations.length, version: s.nmos_version ?? '?', date: (s.created_at ?? '').slice(0, 10) });
+    const list = el('ul', {}, ...s.conversations.map((c) => el('li', {
+      text: `${c.character ?? '?'} — ${c.chat ?? c.host_chat_ref}${c.here ? ` (${L('rst.here')})` : ''}` })));
+    restoreSummary.replaceChildren(el('p', { class: 'sub', text: head }), list,
+      ...(s.settings_added.length ? [el('p', { class: 'sub', text: L('rst.settings', {
+        keys: s.settings_added.map((x) => (x.value !== undefined ? `${x.key} = ${String(x.value)}` : x.key)).join(', ') }) })] : []),
+      ...(s.migrations.length ? [el('p', { class: 'sub', text: L('rst.migrations', { list: s.migrations.join(', ') }) })] : []));
+  }
+  restoreGo.addEventListener('click', async () => {
+    const id = restoreId;
+    if (!id) return;
+    restoreGo.disabled = restoreCancel.disabled = restorePick.disabled = true;
+    say(restoreMsg, L('rst.restoring'));
+    try {
+      await deps.api('POST', `/v1/archive/uploads/${id}/restore`);
+      const view = await waitFor(deps.api, id, ['restored', 'failed']);
+      if (view.state === 'restored' && view.result) {
+        say(restoreMsg, L('rst.done', { n: view.result.conversations.length, jobs: view.result.queued_jobs ?? 0 })
+          + (view.detail ? ` ${view.detail}` : ''), 'ok');
+      } else {
+        say(restoreMsg, L('rst.failed', { why: view.detail ?? '' }), 'err');
+      }
+      restoreSummary.replaceChildren();
+    } catch (error) {
+      say(restoreMsg, errorText(lang, error), 'err');
+    }
+    restoreIdle(null);
+  });
+  restoreCancel.addEventListener('click', async () => {
+    const id = restoreId;
+    restoreIdle(null);
+    restoreSummary.replaceChildren();
+    say(restoreMsg, '');
+    if (id) await deps.api('DELETE', `/v1/archive/uploads/${id}`).catch(() => undefined);
+  });
+  settingsView.append(el('div', { class: 'card' },
+    el('h2', { text: L('rst.title') }), el('p', { class: 'sub', text: L('rst.sub') }),
+    el('div', { class: 'btns' }, restorePick, restoreGo, restoreCancel), restoreFile, restoreSummary, restoreMsg));
 
   // --- settings tab: one save bar ---------------------------------------------------------------
   const barText = el('span', { class: 'text muted' });
