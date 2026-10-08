@@ -24,12 +24,13 @@ upper bound: the count per kind of key is what a watch list would give. No model
 
 - **A place is not a count** (5). A place's name holds numbers (a floor, a zone, a rank); a move changed its words and
   its numbers, and (ii) read a number change. (ii) now needs the value's words to stay the same: only numbers moved.
-- **Money in words** (1). The reply said "백만 원" for the bar's +1,000,000. The story's numbers now include Korean
+- **Money in words** (1). The reply wrote the bar's +1,000,000 in Korean words. The story's numbers now include Korean
   amounts: digits with 만, 억 or 조, and Hangul numerals before a unit of money or count.
 - **A revert the story names** (1). After a reroll the place went back to the one two bars before, and the reply
   walks there, naming it. (iii) now leaves out a revert whose key or value the reply names.
 
-One more change came from reading the flags: a Latin key is looked for as a word ("SP" was found in "## Response").
+One more change came from reading the flags: a Latin key is looked for as a word (a two-letter key was found inside
+an English word of the reply).
 
 **As merged**, card A's flags:
 

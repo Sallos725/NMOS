@@ -57,7 +57,7 @@ line (40 to 100 tokens for a number, ≈400 for six inventories). The default mo
 Between two neighbouring entries of a watched key's history, NMOS flags (i) an item added to or dropped from a list
 value (split on `/`, `,` or `·`; "없음" is no item) that the reply's prose (the reply without what the rules read) does
 not name; (ii) a number that changes, the value's words staying the same, where the prose names neither the key, nor
-the new number (in digits or Korean words: "백만 원"), nor the difference; (iii) on a reply that was rerolled, swiped
+the new number (in digits or Korean words: "삼십만 원"), nor the difference; (iii) on a reply that was rerolled, swiped
 or edited (its message holds swipes, as a reroll leaves it (H4), or has more than one revision), a value that goes back
 to the one two bars before while the single bar between said otherwise, unless the prose names the key or the value.
 A flag names the key, both values, the turn and the reason, in "Needs attention", with one action: dismiss

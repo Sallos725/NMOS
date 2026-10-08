@@ -6,7 +6,7 @@ values of a watched key (`state.history`), a read flags:
 
 - (i) an item added to or dropped from a list value ("물약 ×2 / 해독제 ×1") that the reply's prose does not name;
 - (ii) a number that changes, the value's words staying the same, where the prose names neither the key, nor the new
-  number (in digits or in Korean words: "백만 원"), nor the difference;
+  number (in digits or in Korean words: "삼십만 원"), nor the difference;
 - (iii) on a reply that was rerolled, swiped or edited, a value that goes back to the one two bars before while the
   single bar between said otherwise, unless the prose names the key or that value.
 
@@ -33,8 +33,8 @@ SPLIT = re.compile(r"\s*[/,·、]\s*")
 COUNT = re.compile(r"\s*(?:[×xX*]\s*\d+|\(\s*\d+\s*\)|\d+\s*개)\s*$")  # "물약 ×2", "(3)", "3개"
 BRACKETS = re.compile(r"\([^)]*\)|\[[^\]]*\]")
 NUMBER = re.compile(r"(?<![\d.])-?\d[\d,]*(?:\.\d+)?")
-# Korean amounts the story writes in words (PHASE-39 step 4, measured: "백만 원" for a bar's +1,000,000): digits with
-# 만, 억 or 조 ("100만", "1억 2천만"), and Hangul numerals before a unit of money or count ("백만 원", "삼십 골드").
+# Korean amounts the story writes in words (PHASE-39 step 4, measured: a bar's +1,000,000 written in words): digits
+# with 만, 억 or 조 ("100만", "1억 2천만"), and Hangul numerals before a unit of money or count ("삼십만 원", "삼십 골드").
 HANGUL_DIGITS = {"일": 1, "이": 2, "삼": 3, "사": 4, "오": 5, "육": 6, "칠": 7, "팔": 8, "구": 9}
 SMALL = {"십": 10, "백": 100, "천": 1000}
 LARGE = {"만": 10**4, "억": 10**8, "조": 10**12}
@@ -74,7 +74,7 @@ def _numbers(text: str) -> list[str]:
 
 
 def _hangul(text: str) -> int | None:
-    """A Korean numeral ("백만", "천오백", "3천", "1억 2천만") as a number; None when it is not one."""
+    """A Korean numeral ("이백", "천오백", "3천", "1억 2천만") as a number; None when it is not one."""
     total = section = 0
     num: int | None = None
     for ch in text.replace(",", "").replace(" ", ""):
