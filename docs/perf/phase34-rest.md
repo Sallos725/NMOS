@@ -12,18 +12,19 @@ required since the Q1 amendment).
 
 | `packet-v14` | Whole: repeat share | Whole: stale token share | Supportive: repeat share | Supportive: stale token share | Supportive lines new to the packet | Lines left out resting |
 |---|---:|---:|---:|---:|---:|---:|
-| without the rest | 0.524 | 0.214 | 0.314 | 0.063 | 0.686 | 0 |
-| `rest_after` 3 | 0.510 | 0.202 | 0.271 (−14 %) | 0.016 (−75 %) | 0.729 | 203 |
+| without the rest | 0.523 | 0.214 | 0.314 | 0.062 | 0.686 | 0 |
+| `rest_after` 3 | 0.510 | 0.202 | 0.268 (−15 %) | 0.016 (−74 %) | 0.732 | 204 |
 | `rest_after` 2, knowledge boundaries resting too (first build) | 0.498 | 0.196 | 0.242 | 0.016 | 0.758 | 519 |
-| **`rest_after` 2 (default)** | **0.503** | **0.200** | **0.242 (−23 %)** | **0.018 (−71 %)** | **0.758** | **356** |
+| **`rest_after` 2 (default)** | **0.503** | **0.200** | **0.243 (−23 %)** | **0.016 (−74 %)** | **0.757** | **360** |
 
-Re-measured 2026-10-08 after the review fixes and their follow-up (the reserved first excerpt never rests, scene
-summaries rest, risky lines last before the limits, replies read as they stood at each request); the first-build row is the earlier measurement. Three replays of the default agreed
-within 0.004 (before the fixes: supportive repeats 0.240, stale tokens 0.015, 366 left out). The self-review found that a line with a knowledge mark (Private or Secret, required by
+Re-measured 2026-10-08 after the review fixes and their two follow-ups (the reserved first excerpt never rests nor
+falls below the threshold, scene summaries rest, risky lines last before every limit, replies read as they stood at
+each request); the first-build row is the earlier measurement. Three replays of the default agreed within 0.004 (before
+the fixes: supportive repeats 0.240, stale tokens 0.015, 366 left out; after the first follow-up: 0.242, 0.018, 356). The self-review found that a line with a knowledge mark (Private or Secret, required by
 Q1) could rest, since a kept secret is rarely echoed: 153 of the 519 lines left out were such lines. They never rest now
 (the row above the default is the first build's). **Q9 (b) met** with the default: supportive repeats at least a fifth lower, their
 stale tokens at least a third lower, the whole packet not higher; a resting line's slot went to lines new to the
-packet (their share rose from 0.685 to 0.758).
+packet (their share rose from 0.686 to 0.757).
 
 How it got there, on the same replay: a tired line moved behind the others (the first Q3) was placed anyway whenever the
 budget had room, nearly always on S1 (supportive repeats −6 %); the story-so-far summary held 70 % of the supportive
@@ -35,12 +36,15 @@ line: without the two, the bench lost a question about an old detail (S6 `c120_2
 
 | | `packet-v13` | `packet-v14` (`rest_after` 2) |
 |---|---|---|
-| The v0.3.0 bench, every probe of S0–S6 (sum over 20 sets, per replay) | 285, 285, 286 | 286, 285, 286 |
+| The v0.3.0 bench, every probe of S0–S6 (sum over 20 sets, per replay) | 285, 285, 286 | 285, 286, 286 |
 | Forbidden phrases placed (per replay) | 14, 14, 14 | 14, 14, 14 |
-| The quote set (scored from its source turn) | 21, 21, 20 / 24 | 21, 20, 21 / 24 |
+| The quote set (scored from its source turn) | 20, 21, 21 / 24 | 20, 20, 21 / 24 |
 
-Re-measured 2026-10-08 after the review fixes (the earlier figures: the bench 286, 285, 285 against 286 in each; the
-quote set 20–21 against 21, 20, 20); no case changed against the measurement before the fixes.
+Re-measured 2026-10-08 after the review fixes and their two follow-ups (the earlier figures: the bench 286, 285, 285
+against 286 in each; the quote set 20–21 against 21, 20, 20); no bench case changed against the measurement before
+the fixes. The quote set's one difference is `q-first-07`, which passes one or two replays of three under every
+policy, `packet-v13` included (the excerpt's best sentence moves within its chunk on the lexical route's time slice):
+over the last two measurements 4 of 6 under `packet-v13`, 3 of 6 under `packet-v14`.
 
 Every set equal case by case but S4's `s4_del_pet`, which `packet-v13` missed in two replays on its lexical route's
 time slice (`docs/perf/phase33-replay.md`). **Q9 (c) met.**
