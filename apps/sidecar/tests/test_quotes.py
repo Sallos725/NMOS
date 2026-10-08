@@ -114,3 +114,13 @@ def test_the_sentence_before_a_quote_counts_as_near():
     text = '"오늘은 쉰다." 백도가 말했다. 바람이 불었다. 파도가 쳤다. 류진이 달력을 펼쳤다. "하루라도 늦으면 다 밀린다."'
     [top, *_] = pick([_msg(5, text)], "달력 볼 때 뭐라고 했지?", NAMES, 9, False)
     assert top.words == "하루라도 늦으면 다 밀린다."
+
+
+def test_a_speaking_verb_licenses_only_its_own_clauses_subject():
+    """Codex review (#274): `"…" 민수가 다가오자 영희가 말했다` named 민수, the subject of the clause before the speaking
+    verb's own. The verb must be in the subject's clause; otherwise the line names nobody rather than the listener."""
+    [line] = pick([_msg(4, '"등대 문은 새벽에 열려요." 류진이 다가오자 백도가 말했다.')], "등대 얘기할 때 뭐라고 했어?",
+                  NAMES, 9, False)
+    assert line.speaker != "류진"
+    [plain] = pick([_msg(5, '"등대 문은 새벽에 열려요." 백도가 말했다.')], "등대 얘기할 때 뭐라고 했어?", NAMES, 9, False)
+    assert plain.speaker == "백도"
