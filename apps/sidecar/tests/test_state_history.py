@@ -293,3 +293,51 @@ def test_an_archive_made_at_schema_0028_restores_into_0029(migrated, database_ur
         assert mine and mine == source.execute("SELECT kind, target FROM owner_repair ORDER BY id").fetchall()
         conn.execute("INSERT INTO owner_repair (id, conversation_id, kind, target) SELECT gen_random_uuid(),"
                      " conversation_id, 'state_dismiss', '{}' FROM owner_repair LIMIT 1")  # the new kind is allowed
+
+
+# --- 3b: packet-v17 ------------------------------------------------------------------------------------------------
+
+def test_a_question_about_a_key_s_changes_gets_its_history_under_packet_v17(migrated, rules):
+    from test_sidecar_integration import recall
+
+    path = rules()
+    chat = SimChat()
+    for level, gold in ((1, 100), (1, 120), (2, 120), (2, 90), (2, 95), (3, 95), (3, 60), (3, 61), (4, 61)):
+        chat.user("계속.")
+        chat.reply(bar(level, gold))
+    chat.user("다음.")
+    tail = [m["chatId"] for m in chat.messages[-4:]]  # the last bars are in the prompt; the line counts them anyway
+    with make_client(migrated, parsers_file=path, packet_policy="packet-v17") as c:
+        sync(c, chat)
+        out = recall(c, chat, "골드 언제 이렇게 줄었지?", in_context=tail, budget=1200)
+        text = out["packet"]["text"]
+        line = '<StateHistory key="Gold"><At turn="1">120</At><At turn="3">90</At><At turn="4">95</At>' \
+               '<At turn="6">60</At><At turn="7">61</At></StateHistory>'
+        assert line.replace('<At turn="1">120</At>', '<At turn="0">100</At><At turn="1">120</At>') in text  # 6 at most
+        assert "<Item " not in text  # the last bar is in the prompt: no current value repeated, the history still there
+        whole = recall(c, chat, "골드 언제 이렇게 줄었지?", budget=1200)["packet"]["text"]
+        assert whole.index("<StateHistory") < whole.index("<Item ")  # first: the message asked for it
+        trace = c.get(f"/v1/trace/{out['trace_id']}").json()
+        assert trace["latency_ms"]["placed"]["state_history"] == 1
+        assert [e["label"] for e in trace["lines"] if e["kind"] == "state_history"] == ["required"]
+        assert c.get(f"/v1/trace/{out['trace_id']}/replay").json()["reproduced"] is True
+
+        assert "<StateHistory" not in recall(c, chat, "골드가 얼마 있지?", in_context=tail)["packet"]["text"]  # no cue
+        assert "<StateHistory" not in recall(c, chat, "언제 끝나?", in_context=tail)["packet"]["text"]  # no key
+        both = recall(c, chat, "Level이랑 골드 언제 바뀌었어?", in_context=tail, budget=1200)["packet"]["text"]
+        assert both.index('<StateHistory key="Level">') < both.index('<StateHistory key="Gold">')
+    with make_client(migrated, parsers_file=path, packet_policy="packet-v16") as c:
+        assert "<StateHistory" not in recall(c, chat, "골드 언제 이렇게 줄었지?", in_context=tail)["packet"]["text"]
+
+
+def test_asked_keys_words_and_boundaries():
+    from nmos_sidecar.retrieval import STATE_CHANGE_CUE, asked_keys
+
+    keys = ["Level", "HP", "MP", "Items", "Stat Points", "하나.기분", "소지금"]
+    assert asked_keys("레벨 언제 올랐어?", keys) == ["Level"]  # the bar in English, the chat in Korean
+    assert asked_keys("HP랑 MP 언제 줄었어", keys) == ["HP", "MP"]
+    assert asked_keys("스탯 포인트 언제 받았지", keys) == asked_keys("stat points?", keys) == ["Stat Points"]
+    assert asked_keys("시간이 얼마나 지났어", keys) == []  # 마나 inside 얼마나 is no word
+    assert asked_keys("마나가 언제 줄었지", keys) == ["MP"] and asked_keys("chp", keys) == []
+    assert asked_keys("하나 기분 언제부터 이랬어", keys) == ["하나.기분"] and asked_keys("기분 어때", keys) == []
+    assert STATE_CHANGE_CUE.search("레벨 언제 올랐어?") and not STATE_CHANGE_CUE.search("레벨이 몇이야?")

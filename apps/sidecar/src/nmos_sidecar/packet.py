@@ -224,16 +224,19 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
 # supportive, risky); a supportive line placed in each of the last `rest_after` requests (2 by default) and echoed by
 # none of their replies rests (left out for up to two requests, `overuse`), and an excerpt after the first needs
 # EXCERPT_FLOOR of the best fused score or a word hit (PHASE-34 Q2–Q4). The default since 2026-10-08.
+# packet-v17 is packet-v16 that holds a status window's history (PHASE-39 Q3b): a message that names a status key and
+# asks about change (`retrieval.STATE_CHANGE_CUE`) gets, inside <State>, a <StateHistory> line of that key's last
+# changes (at most STATE_HISTORY_MAX, oldest first, each its turn and value), required as <State>'s items are.
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
             "packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14",
-            "packet-v15", "packet-v16")
+            "packet-v15", "packet-v16", "packet-v17")
 DEFAULT_POLICY = "packet-v16"  # the owner, 2026-10-08, on the replay (PHASE-36 Q3)
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
              "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2,
              "packet-v11": 1.2, "packet-v12": 1.2, "packet-v13": 1.2, "packet-v14": 1.2,
-             "packet-v15": 1.2, "packet-v16": 1.2}  # estimated tokens per non-ASCII char
+             "packet-v15": 1.2, "packet-v16": 1.2, "packet-v17": 1.2}  # estimated tokens per non-ASCII char
 _V8 = ("packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15",
-       "packet-v16")  # packet-v8 and what builds on it
+       "packet-v16", "packet-v17")  # packet-v8 and what builds on it
 PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})  # promises the message is about first (ADR 0019 am. 1)
@@ -242,16 +245,19 @@ CAUSE_POLICIES = frozenset({"packet-v6", "packet-v7", *_V8})  # facts and claims
 TURN_POLICIES = frozenset({"packet-v7", *_V8})  # excerpts and state carry their message's turn index (ADR 0041)
 STORY_POLICIES = frozenset(_V8)  # summaries in a <Story> section (ADR 0043)
 CAST_POLICIES = frozenset(_V8)  # each scene character's state in a <Cast> section (ADR 0043)
-FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16"})  # recall grows with the budget (ADR 0049)
-GROW_POLICIES = frozenset({"packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16"})  # an excerpt grows to its length from its best sentence (ADR 0053)
-SPAN_POLICIES = frozenset({"packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
-CHANGE_POLICIES = frozenset({"packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
-QUOTE_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16"})  # the forensic path's <Quote> lines (PHASE-33, ADR 0067)
-UNEXTRACTED_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16"})  # a turn extraction has not reached is raw evidence (PHASE-33 Q5)
-LABEL_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16"})  # every ledger line labeled required, supportive or risky (PHASE-34 Q1)
-REST_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16"})  # an overused supportive line rests; supportive excerpts meet a bar (Q2–Q4)
-ANCHOR_POLICIES = frozenset({"packet-v15", "packet-v16"})  # an excerpt anchors on what the question asks, not when (PHASE-35)
-NAMED_POLICIES = frozenset({"packet-v16"})  # a name alone makes only a now or standing fact required (PHASE-36)
+FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # recall grows with the budget (ADR 0049)
+GROW_POLICIES = frozenset({"packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # an excerpt grows to its length from its best sentence (ADR 0053)
+SPAN_POLICIES = frozenset({"packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
+CHANGE_POLICIES = frozenset({"packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
+QUOTE_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # the forensic path's <Quote> lines (PHASE-33, ADR 0067)
+UNEXTRACTED_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # a turn extraction has not reached is raw evidence (PHASE-33 Q5)
+LABEL_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # every ledger line labeled required, supportive or risky (PHASE-34 Q1)
+REST_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # an overused supportive line rests; supportive excerpts meet a bar (Q2–Q4)
+ANCHOR_POLICIES = frozenset({"packet-v15", "packet-v16", "packet-v17"})  # an excerpt anchors on what the question asks, not when (PHASE-35)
+NAMED_POLICIES = frozenset({"packet-v16", "packet-v17"})  # a name alone makes only a now or standing fact required (PHASE-36)
+STATE_HISTORY_POLICIES = frozenset({"packet-v17"})  # a status key's last changes for a question about them (PHASE-39 Q3b)
+STATE_HISTORY_MAX = 6  # changes on one <StateHistory> line
+STATE_HISTORY_KEYS = 2  # keys one message gets a line for
 EXCERPT_FLOOR = 0.5  # packet-v14: an excerpt after the first needs this share of the best fused score, or a word hit
 CUE_GROW_CHARS = 320  # packet-v11: a why or contents question's excerpt grows by sentences to this, no sentence cap
 CONTENTS = re.compile(r"내용|\bcontents\b|\bcontent of\b", re.IGNORECASE)  # the contents cue (PHASE-27 Q2); not "is she content"
@@ -259,7 +265,7 @@ FILL_BASE, FILL_MAX, FILL_FACTS_MAX = 2000, 4.0, 2.0  # the budget recall is siz
 STORY_SHARE = 0.3  # packet-v8: <Story> may take at most this share of the budget inside the frame (PHASE-12 Q5)
 RESTATES = 0.6  # packet-v4: a claim this close to a fact of the same head says it again (ADR 0019's match)
 # What the memory budget is for, and how far a suggested budget may go (ADR 0036).
-MEMORY_KINDS = frozenset({"state", "thread", "fact", "claim", "secret", "summary"})
+MEMORY_KINDS = frozenset({"state", "state_history", "thread", "fact", "claim", "secret", "summary"})
 FIT_STEP, FIT_CAP = 100, 8000  # the panel's largest suggestion: recall grows up to it (ADR 0049; 6,000 until then)
 # The pilot's rule, shortened to fit a 600-token Korean packet (47 estimated tokens instead of 88).
 PRIVATE_NOTE = (" Private: only its holders (known_by) know it. Others must not mention, hint at or act on it; holders"
@@ -306,15 +312,27 @@ class StateItem:
     key: str
     value: str
     turn: int | None  # as for Excerpt.turn
+    # packet-v17 (PHASE-39 Q3b): the key's last changes, oldest first, each (turn, value); the item is then that line
+    history: tuple[tuple[int | None, str], ...] = ()
+
+    @property
+    def text(self) -> str:
+        if not self.history:
+            return f"{self.key}: {self.value}"
+        return f"{self.key}: " + " → ".join(f"t{t}: {v}" if t is not None else v for t, v in self.history)
+
+
+def _state_line(i: StateItem) -> str:
+    if i.history:
+        return (f"    <StateHistory key={quoteattr(i.key)}>"
+                + "".join(f"<At{_turn('turn', t)}>{escape(v)}</At>" for t, v in i.history) + "</StateHistory>")
+    return f"    <Item key={quoteattr(i.key)}{_turn('as_of_turn', i.turn)}>{escape(i.value)}</Item>"
 
 
 def state_block(items: list[StateItem]) -> list[str]:
     if not items:
         return []
-    lines = ["  <State>"]
-    lines += [f"    <Item key={quoteattr(i.key)}{_turn('as_of_turn', i.turn)}>{escape(i.value)}</Item>" for i in items]
-    lines.append("  </State>")
-    return lines
+    return ["  <State>", *(_state_line(i) for i in items), "  </State>"]
 
 
 @dataclass(frozen=True)
@@ -506,7 +524,8 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     state, threads, facts, lead, story, cast = state or [], threads or [], facts or [], lead or [], story or [], cast or []
     note = escape(note)  # a narrator's name is not markup: it stays inside the Note
     cast_lines = [line for _, lines in cast for line in lines]
-    ledger = ([_entry("state", {"key": i.key}, i.turn, f"{i.key}: {i.value}", i.value) for i in state]
+    ledger = ([_entry("state_history" if i.history else "state", {"key": i.key}, i.turn, i.text,
+                      i.value if not i.history else i.text) for i in state]
               + [_entry(l.kind, l.ref, l.turn, l.text, l.content, l.marks) for l in story + cast_lines + lead + threads
                  + facts]
               + [_entry("quote" if e.quote else "excerpt", {"revision": e.revision_id}, e.turn, e.text, e.text,

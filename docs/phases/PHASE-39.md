@@ -41,15 +41,17 @@ last changes of one key from it (3b), and the flags compare its neighbouring ent
 changed folded under one line. Drawn by `timeline.py` in both forms; the panel's form uses only the markup its
 sanitizer already keeps (no plugin change). Nothing here is read by recall.
 
-**3b, recall (`packet-v17`).** A message that names a status key (the key as the bar writes it, two characters or
-more, case and spacing ignored) and asks about change (`HISTORY_CUE`, or 언제, 얼마나, 부터, 동안, 바뀌, 변화, 올랐,
-늘었, 줄었, 떨어졌, when, since, how much, changed) gets, inside `<State>`, one `<StateHistory key="…">` line: that
-key's last changes, at most 6, oldest first, each as its turn and value. The line is required, as `<State>`'s items
-are (`packet-v14` labels): the message asked for it. It lists changes whose bar is still in the prompt too: the line is
-the sequence, which the prompt shows only scattered across replies. A key named without such a cue, or a chat without
-rules, changes nothing. Traced as its own kind (`state_history`). Measured by replaying the trial install's requests
-(a copy, read only): which change, and what the line says for probe questions; the default moves only on the owner's
-word.
+**3b, recall (`packet-v17`).** A message that names a status key and asks about change (`HISTORY_CUE`, or 언제,
+얼마나, 부터, 동안, 바뀌, 변화, 올랐, 늘었, 줄었, 떨어졌, when, since, how much, changed) gets, inside `<State>` and
+before its items, one `<StateHistory key="…">` line per key it names (at most 2): that key's last changes, at most 6,
+oldest first, each as its turn and value. A key is named as the bar writes it (two characters or more, case and
+spacing aside, where a word starts: 마나 is not the 마나 of 얼마나), or by a word of its group in `STATUS_WORDS`: a
+card's bar is often in English while its chat is in Korean ("Level", "레벨 언제 올랐어?"). The line is required, as
+`<State>`'s items are (`packet-v14` labels): the message asked for it. It lists changes whose bar is still in the
+prompt too: the line is the sequence, which the prompt shows only scattered across replies. A key named without such a
+cue, or a chat without rules, changes nothing. Traced as its own kind (`state_history`). **Replayed 2026-10-08**
+(`docs/perf/phase39-history.md`), read only: none of the 67 recorded requests changes; probes on both chats place the
+line (40 to 100 tokens for a number, ≈400 for six inventories). The default moves only on the owner's word.
 
 **4, the flags.** A rule may list `watch` keys (they do not change the rules' version: nothing is read again).
 Between two neighbouring entries of a watched key's history, NMOS flags (i) an item added to or dropped from a list
@@ -74,7 +76,7 @@ chooses the keys.
    plugin's sanitizer unchanged (tests).
 6. Under `packet-v17` a question naming a key with a change cue gets one `<StateHistory>` line of at most 6 changes;
    without the cue, or under `packet-v16`, the packet is unchanged (tests); on the replay of the trial install no
-   request without such a question changes.
+   request without such a question changes (done 2026-10-08: 0 of 67).
 7. Each flag (i)–(iii) fires on a synthetic bar and stays quiet when the prose names the change; a dismissed flag
    stays dismissed and comes back on undo; an archive made at schema `0028` restores into `0029` (tests). The false
    alarms on the owner's two chats are counted and shown before `watch` is set there (done 2026-10-08).

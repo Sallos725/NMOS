@@ -29,7 +29,8 @@ from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
 from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POLICIES, CAST_POLICIES, CAUSE_POLICIES,
-                     CHANGE_POLICIES, CONTENTS, LABEL_POLICIES,
+                     CHANGE_POLICIES, CONTENTS, LABEL_POLICIES, STATE_HISTORY_KEYS, STATE_HISTORY_MAX,
+                     STATE_HISTORY_POLICIES,
                      QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
@@ -37,12 +38,65 @@ from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POL
                      StateItem, anchor_rank, clean_text, compile_lines, cut_lines, excerpt, fill, fits_at, kept_counts,
                      secret_line,
                      secret_text)
-from .state import current_state
+from .state import current_state, history as state_history
 from .threads import relevant_threads, similarity
 from .vectors import vector_candidates
 from .keywords import keywords
 
 CANDIDATE_LIMIT = 50
+# packet-v17 (PHASE-39 Q3b): a message that asks how a status value changed: the past (HISTORY_CUE), when, how much,
+# since, or a word of change.
+STATE_CHANGE_CUE = re.compile(HISTORY_CUE.pattern + r"|언제|얼마나|부터|동안|바뀌|바꼈|변화|변했|올랐|올라갔|늘었|늘어났|줄었"
+                              r"|줄어들|떨어졌|\bwhen\b|\bsince\b|how much|how many|\bchanged?\b|went (?:up|down)"
+                              r"|\brose\b|\bdropped\b|\bgained\b|\blost\b", re.IGNORECASE)
+
+
+def _turn_of(entry: dict[str, Any], by_turn: bool) -> int | None:
+    return entry["turn"] if by_turn else entry["position"]
+
+
+# Words a status bar and a message use for the same key (PHASE-39 Q3b): a card's bar is often in English while its
+# chat is in Korean ("Level", "레벨 언제 올랐어?"). Each group names one thing; a key in a group is asked about by any
+# word of it.
+STATUS_WORDS = tuple(frozenset(g) for g in (
+    ("level", "lv", "lvl", "레벨"), ("exp", "xp", "experience", "경험치"), ("hp", "health", "체력", "생명력"),
+    ("mp", "mana", "마나", "마력"), ("sp", "stamina", "스태미나", "기력"),
+    ("gold", "money", "coin", "coins", "currency", "currencies", "골드", "재화", "소지금", "코인"),
+    ("item", "items", "inventory", "아이템", "인벤토리", "소지품"), ("statpoints", "statpoint", "스탯포인트"),
+    ("weapon", "weapons", "무기"), ("armor", "armour", "방어구", "갑옷"), ("skill", "skills", "스킬"),
+    ("quest", "quests", "퀘스트"), ("location", "place", "위치", "장소"), ("time", "시간"), ("date", "날짜"),
+    ("mood", "기분"), ("weather", "날씨")))
+
+
+def asked_keys(query: str, keys: list[str]) -> list[str]:
+    """The status keys a message names (PHASE-39 Q3b), in the order it names them: a key of two characters or more as
+    the bar writes it, case and spacing aside, or a word of its STATUS_WORDS group; a word where a word starts ("HP",
+    not the "hp" of another word; 마나, not the 마나 of 얼마나), a Korean one with any particle after it; a sim bot's
+    "<character>.<key>" when the message names both."""
+    text = query.casefold()
+
+    def at(word: str) -> int:
+        word = re.sub(r"\s+", "", word.casefold())
+        if len(word) < 2:
+            return -1
+        spaced = r"\s*".join(map(re.escape, word))  # spacing aside: "stat points", "스탯 포인트"
+        m = re.search(rf"(?<![a-z0-9]){spaced}(?![a-z0-9])" if word.isascii() else rf"(?<![가-힣]){spaced}", text)
+        return m.start() if m else -1
+
+    def first(name: str) -> int:
+        plain = re.sub(r"\s+", "", name.casefold())
+        words = {name, *(w for g in STATUS_WORDS if plain in g for w in g)}
+        return min((x for x in map(at, words) if x >= 0), default=-1)
+
+    found = []
+    for key in keys:
+        entity, _, name = key.rpartition(".")
+        where = first(name)
+        if where >= 0 and (not entity or at(entity) >= 0):
+            found.append((where, -len(name), key))
+    return [k for _, _, k in sorted(found)]
+
+
 # A query that matches more head messages than this is too broad to score (a character's name alone,
 # a phrase every reply repeats): lexical recall abstains for it instead of scoring most of the chat
 # (Track A, A3; docs/perf/scale.md). Vectors, state and facts still run.
@@ -769,11 +823,20 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     # on the candidates, and the query embedding answers meanwhile (ADR 0061). The excerpts follow, then what the
     # memory mode withheld is taken out of them.
     if options.rules_version != "none":
+        held = current_state(conn, head, options.rules_version, upto)
         g.state = [StateItem(key=r["key"], value=r["value"], turn=r["turn"] if by_turn else r["position"])
-                   for r in current_state(conn, head, options.rules_version, upto)
-                   if r["host_logical_id"] not in in_context]
+                   for r in held if r["host_logical_id"] not in in_context]
         # Sim bots track many characters: state of characters mentioned right now gets the budget first.
         g.state.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in focus), reverse=True)
+        if options.policy in STATE_HISTORY_POLICIES and held and STATE_CHANGE_CUE.search(query):
+            # packet-v17: the history of each key the message asks about, first: it asked for it. Changes whose bar
+            # is still in the prompt count too: the line is the sequence, which the prompt shows only scattered.
+            asked = asked_keys(query, [r["key"] for r in held])[:STATE_HISTORY_KEYS]
+            lines = state_history(conn, head, options.rules_version, upto, keys=asked) if asked else {}
+            g.state[:0] = [StateItem(key=k, value=lines[k][-1]["value"], turn=_turn_of(lines[k][-1], by_turn),
+                                     history=tuple((_turn_of(e, by_turn), e["value"])
+                                                   for e in lines[k][-STATE_HISTORY_MAX:]))
+                           for k in asked if lines.get(k)]
     view = None
     names_of: dict[int, Any] = {}  # one mapping of name variants per view, whichever path asks first (ADR 0058)
     changes = options.policy in CHANGE_POLICIES and not HISTORY_CUE.search(query)  # packet-v12, PHASE-31 Q1/Q2
@@ -1440,7 +1503,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                    "state_items": len(g.state), "facts": len(g.lead) + len(g.facts), "threads": len(g.threads),
                    "kept_state": kept["state"], "kept_facts": kept["facts"], "kept_threads": kept["threads"],
                    "placed": {k: sum(1 for e in placed if e["kind"] == k)
-                              for k in ("state", "thread", "fact", "claim", "secret", "summary", "excerpt", "quote")},
+                              for k in ("state", "state_history", "thread", "fact", "claim", "secret", "summary",
+                                        "excerpt", "quote")},
                    "path": g.path, "quotes": g.quotes, "quote_mode": g.quote_note,  # the forensic path (PHASE-33 Q4)
                    "cast": sum(1 for e in placed if e.get("section") == "cast"),
                    "scene_cast": sorted(g.cast.values()), "memory_mode_withheld": g.withheld,
