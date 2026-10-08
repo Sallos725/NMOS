@@ -805,11 +805,14 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             # How it started (ADR 0056): where the window starts, read only when the message asks.
             first = options.first_cue and bool(FIRST_CUE.search(query))
             start = _window_start(conn, head, in_context, upto) if first else None
+            # the label policies rank a risky line after the others before the limits choose (PHASE-34 Q1)
+            contradicted = (frozenset(str(c["fact"]) for c in view.get("conflicts") or [] if c.get("fact") is not None)
+                            if options.policy in LABEL_POLICIES else None)
             ranked = relevant_facts(view["facts"], query, previous_ai, in_context,
                                     len(view["facts"]) if grow or rest else options.facts_limit,
                                     options.events_limit, persona, scene.names(g.cast, r, aliases), causes=causes,
                                     first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases,
-                                    named=g.named, named_by_words=options.policy in NAMED_POLICIES)
+                                    named=g.named, named_by_words=options.policy in NAMED_POLICIES, risky=contradicted)
             ranked = _rested(ranked, "fact", rest, g)
             if options.policy in LABEL_POLICIES:  # before the limits: a risky fact never takes an ordinary one's slot
                 ranked = _risky_last(ranked, view, g.named)
@@ -827,7 +830,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             ranked = relevant_facts(view["claims"], query, previous_ai, in_context,
                                     len(view["claims"]) if grow or rest else claims_limit, persona=persona,
                                     causes=causes, first_cue=first, window_start=start, marks=options.history_marks,
-                                    aliases=aliases, named=g.named, named_by_words=options.policy in NAMED_POLICIES)
+                                    aliases=aliases, named=g.named, named_by_words=options.policy in NAMED_POLICIES,
+                                    risky=contradicted)
             ranked = _rested(ranked, "claim", rest, g)
             if options.policy in LABEL_POLICIES:
                 ranked = _risky_last(ranked, view, g.named)
@@ -921,14 +925,13 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         # A resting excerpt is offered marked, outside the count: the compiler places it only when it holds the reserved
         # first place, which is known only after its repeat check and the filters below (a review's follow-up)
         tired = resting(c)
-        awake = [e for e in g.ranked if not e.resting]
-        if floor and awake and float(c["rrf"]) < floor and not (c.get("user_score") or c.get("keyword_score")):
-            g.below_floor += 1  # supportive memory's activation threshold (PHASE-34 Q4): the first excerpt is required
-            continue
+        # the activation threshold (PHASE-34 Q4) is the compiler's too, at the reserved place's stage (third review)
+        low = bool(floor) and float(c["rrf"]) < floor and not (c.get("user_score") or c.get("keyword_score"))
+        awake = [e for e in g.ranked if not e.resting and not e.below_floor]
         extra = any(e.unextracted for e in awake)
         if stale is not None and len(awake) >= options.top_k + extra:
             break
-        if stale is not None and not tired and len(awake) == options.top_k and str(c["id"]) not in unextracted:
+        if stale is not None and not (tired or low) and len(awake) == options.top_k and str(c["id"]) not in unextracted:
             continue  # the one more slot is for an unextracted turn only
         # a lexical or keyword hit is the whole message; a vector-only hit is its chunk; under packet-v11 a word hit
         # whose vector similarity meets the bar excerpts within its chunk too: the chunk is the part of the message
@@ -951,7 +954,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         item = Excerpt(turn=c["turn"] if by_turn else c["position"],
                        speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
                        text=text, score=float(c["rrf"]), revision_id=str(c["id"]), short=short,
-                       position=c["position"], unextracted=str(c["id"]) in unextracted, resting=tired)
+                       position=c["position"], unextracted=str(c["id"]) in unextracted, resting=tired,
+                       below_floor=low)
         if stale is not None:  # packet-v12 (PHASE-31 Q1): no form of an excerpt says only a replaced value
             if stale(item.text, item.turn):
                 g.replaced += 1
@@ -1128,6 +1132,11 @@ def rested(g: Gathered, compiled: Compiled) -> int:
     """Lines left out resting (PHASE-34 Q3): those gather left out, and the excerpts the compiler did (a resting
     excerpt is offered marked and placed only when it holds the reserved first place)."""
     return g.rested + sum(1 for e in compiled.ledger if e.get("why") == "resting")
+
+
+def below_floor(g: Gathered, compiled: Compiled) -> int:
+    """Excerpts under the activation threshold (PHASE-34 Q4), left out by the compiler as resting ones are."""
+    return g.below_floor + sum(1 for e in compiled.ledger if e.get("why") == "below_floor")
 
 
 def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, options: RecallOptions) -> list[Line]:
@@ -1426,7 +1435,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             compiled.tokens,
             Jsonb({**timings, "lexical_mode": g.lexical_note, "keyword_mode": g.keyword_note,
                    "keyword_withheld": g.keyword_withheld, "quote_withheld": g.quote_withheld,
-                   "rested": rested(g, compiled), "below_floor": g.below_floor,
+                   "rested": rested(g, compiled), "below_floor": below_floor(g, compiled),
                    "vector_mode": g.vector_note,
                    "state_items": len(g.state), "facts": len(g.lead) + len(g.facts), "threads": len(g.threads),
                    "kept_state": kept["state"], "kept_facts": kept["facts"], "kept_threads": kept["threads"],

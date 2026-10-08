@@ -285,6 +285,7 @@ class Excerpt:
     quote: bool = False  # a <Quote> line: the words said, verbatim (PHASE-33, ADR 0067)
     unextracted: bool = False  # its turn has no extraction yet: no fact of it to restate (PHASE-33 Q5)
     resting: bool = False  # overused and unused (PHASE-34 Q3): placed only if it holds the reserved first place
+    below_floor: bool = False  # under the activation threshold (PHASE-34 Q4): likewise
 
 
 def _turn(name: str, turn: int | None) -> str:
@@ -522,9 +523,11 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
             if (not item.quote and not item.unextracted
                     and (same := _restates(item, story + cast_lines + lead + threads + facts)) is not None):
                 repeats[n] = same
-    # The reserved, required excerpt (ADR 0026): the first that survives the repeat check and is not resting, or a
-    # resting one when no other survives (PHASE-34 Q3, a review and its follow-up: it never rests).
-    first = next((n for n in range(len(ranked)) if n not in repeats and not ranked[n].resting),
+    # The reserved, required excerpt (ADR 0026): the first that survives the repeat check and is neither resting nor
+    # under the activation threshold, or else the first that survives it (PHASE-34 Q3, Q4; a review and its follow-ups:
+    # the required excerpt never rests and needs no threshold).
+    first = next((n for n in range(len(ranked))
+                  if n not in repeats and not ranked[n].resting and not ranked[n].below_floor),
                  next((n for n in range(len(ranked)) if n not in repeats), None))
     if policy in LABEL_POLICIES:
         _label(ledger, state, story, cast_lines, lead + threads + facts, ranked, first, named, risky)
@@ -634,6 +637,9 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
             continue
         if item.resting and n != first:  # left out while it rests (PHASE-34 Q3)
             entry["why"] = "resting"
+            continue
+        if item.below_floor and n != first:  # under the activation threshold (PHASE-34 Q4)
+            entry["why"] = "below_floor"
             continue
         if reserving:
             # The best excerpt had room kept for it; what the other sections left may fit more of it.

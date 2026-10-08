@@ -776,7 +776,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                    causes: bool = False, first_cue: bool = False,
                    window_start: int | None = None, marks: bool = False,
                    aliases: Mapping[str, frozenset[str]] | None = None,
-                   named: set[str] | None = None, named_by_words: bool = False) -> list[dict[str, Any]]:
+                   named: set[str] | None = None, named_by_words: bool = False,
+                   risky: frozenset[str] | None = None) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
@@ -813,6 +814,9 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     holds. With `named_by_words` (packet-v16, PHASE-36 Q1) a name alone names only how its character stands now or
     with another (NOW, STANDING), a knowledge boundary and a fact of the kind the question asks for (`asked_predicates`);
     any other fact also needs the message's words (overlap at least LEXICAL_BAR). Ranking is unchanged.
+
+    `risky` (the label policies, PHASE-34 Q1): the ids of contradicted facts; with it, a disputed or contradicted fact
+    that is not named, private or secret ranks after the others, before `limit` and `events_limit` choose.
     """
     q = _norm(query)
     ai = _norm(previous_ai)
@@ -851,13 +855,20 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         if mention or lexical >= LEXICAL_BAR:
             scored.append((score, f["position"], f, mention))
     age = (lambda x: -x[1]) if oldest else (lambda x: x[1])  # equal scores: the newer, or the older with the cue
-    scored.sort(key=lambda x: (x[0], age(x)), reverse=True)
+
+    def plain(f: dict[str, Any]) -> bool:  # not risky (PHASE-34 Q1): a disputed or contradicted line comes after the
+        # others, before the limit and the event quota choose (a review's follow-ups); named, private and secret lines
+        # keep their place
+        return risky is None or not (f.get("disputed_by") or str(f["id"]) in risky) \
+            or str(f["id"]) in (named or set()) or bool(f.get("hidden_from") or f.get("known_by"))
+    scored.sort(key=lambda x: (plain(x[2]), x[0], age(x)), reverse=True)
     if oldest:
         events = sorted((x for x in scored if x[2]["predicate"] == "event"),
-                        key=lambda x: (x[3] > 0, -x[1], x[2].get("salience") == "major", x[0]), reverse=True)
+                        key=lambda x: (plain(x[2]), x[3] > 0, -x[1], x[2].get("salience") == "major", x[0]),
+                        reverse=True)
     else:
         events = sorted((x for x in scored if x[2]["predicate"] == "event"),
-                        key=lambda x: (x[3], x[2].get("salience") == "major", x[0], x[1]), reverse=True)
+                        key=lambda x: (plain(x[2]), x[3], x[2].get("salience") == "major", x[0], x[1]), reverse=True)
     kept_events = {id(x[2]) for x in events[:events_limit]} if events_limit is not None else None
     out: list[dict[str, Any]] = []
     for _, _, f, _ in scored:
