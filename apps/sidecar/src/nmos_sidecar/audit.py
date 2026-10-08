@@ -36,7 +36,7 @@ import psycopg
 
 from . import overuse, spans
 from .packet import POLICIES, REST_POLICIES, clean_text
-from .retrieval import RECORDED, RecallOptions, compile_gathered, filled, gather
+from .retrieval import RECORDED, RecallOptions, compile_gathered, filled, gather, rested
 
 echo, echoed = spans.reuse, spans.reused
 
@@ -190,7 +190,7 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
         notes.append("budget changed")
     c = compile_gathered(g, t["budget_tokens"] if budget is None else budget, policy)
     out = {"trace": str(t["id"]), "status": "ok", "policy": policy, "recorded_policy": t["policy"],
-           "text": c.text, "tokens": c.tokens, "lines": c.ledger, "notes": notes, "rested": g.rested,
+           "text": c.text, "tokens": c.tokens, "lines": c.ledger, "notes": notes, "rested": rested(g, c),
            "vectors": g.vector_note if opts.embedder is not None else "off",
            # lexical recall's outcome (PHASE-18): the whole-message and keyword routes' modes, and how many candidates
            # either found; a candidate found by vectors only has neither score

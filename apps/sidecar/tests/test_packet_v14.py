@@ -306,3 +306,78 @@ def test_a_risky_line_is_offered_after_an_ordinary_supportive_one():
     assert placed[2] is True
     assert placed[1] is False or out.ledger.index(next(e for e in out.ledger if (e.get("ref") or {}).get("assertion") == 1)) \
         > out.ledger.index(next(e for e in out.ledger if (e.get("ref") or {}).get("assertion") == 2))
+
+
+def test_the_first_excerpt_that_survives_the_repeat_check_is_reserved_even_if_resting():
+    """Follow-up review (P1): a higher-ranked excerpt the compiler drops as a repeat of the story so far made the
+    answer, a resting excerpt, look like a second one; it was rested and nothing was placed. The compiler now
+    reserves the first excerpt that survives the repeat check, a resting one when no other does, and leaves out only
+    the other resting ones."""
+    story = [Line("summary", '    <Summary kind="story" turns="0–9">하나는 은빛 열쇠를 등대 지하에 숨겼다</Summary>',
+                  {"summary": "s1"}, None, "story 0–9", "하나는 은빛 열쇠를 등대 지하에 숨겼다")]
+    repeat = Excerpt(turn=3, speaker="user", text="하나는 은빛 열쇠를 등대 지하에 숨겼다.", score=0.9, revision_id="rA")
+    answer = Excerpt(turn=5, speaker="user", text="검은 상자는 부두 창고 맨 아래 칸에 있다.", score=0.5, revision_id="rB",
+                     resting=True)
+    other = Excerpt(turn=7, speaker="user", text="갈매기들이 돛대 위를 맴돌았다.", score=0.4, revision_id="rC", resting=True)
+    out = compile_lines([repeat, answer, other], 800, story=story, policy="packet-v14")
+    why = {e["ref"]["revision"]: (e["placed"], e["why"], e.get("label")) for e in out.ledger if e["kind"] == "excerpt"}
+    assert why["rA"][1] == "repeats"
+    assert why["rB"][:2] == (True, "placed") and why["rB"][2] == "required"  # the reserved place: it never rests
+    assert why["rC"][:2] == (False, "resting")
+    awake = Excerpt(turn=9, speaker="user", text="등대지기는 새벽마다 불을 끈다.", score=0.3, revision_id="rD")
+    out = compile_lines([repeat, answer, awake], 800, story=story, policy="packet-v14")
+    why = {e["ref"]["revision"]: (e["placed"], e["why"]) for e in out.ledger if e["kind"] == "excerpt"}
+    assert why["rD"] == (True, "placed") and why["rB"] == (False, "resting")  # another holds the place: it rests
+
+
+def test_a_risky_fact_goes_last_before_the_limits_and_out_of_lead():
+    """Follow-up review (P2): the order was applied to the final fact list only, after `facts_limit` had chosen, and
+    never to the lead (how two stand), which the compiler places first."""
+    from nmos_sidecar.retrieval import _risky_last
+    rows = [{"id": 1, "disputed_by": [9]}, {"id": 2}, {"id": 3}, {"id": 4, "disputed_by": [9], "hidden_from": ["Kaito"]}]
+    view = {"conflicts": [{"fact": 3}]}
+    assert [r["id"] for r in _risky_last(rows, view, set())] == [2, 4, 1, 3]  # limit 1 now keeps the ordinary fact
+    assert [r["id"] for r in _risky_last(rows, view, {"1"})][0] == 1  # named: required, it keeps its place
+    risky_lead, ordinary = _line("fact", 1), _line("fact", 2)
+    out = compile_lines([], 140, lead=[risky_lead], facts=[ordinary], policy="packet-v14", risky=frozenset({"1"}))  # room for one
+    placed = {(e.get("ref") or {}).get("assertion"): e["placed"] for e in out.ledger if e["kind"] == "fact"}
+    assert placed[2] is True
+
+
+def test_a_replay_reads_the_reply_as_it_stood_after_an_edit_and_its_undo(v14):
+    """Follow-up review (P2): a reply edited (A -> B) and edited back (B -> A, the stored revision A reused) before a
+    request read A live; ordering revisions by when they were recorded made its replay read B."""
+    client, url = v14
+    chat = SimChat()
+    chat.reply("Welcome to the story.")
+    chat.user("Hana is a cartographer.")
+    chat.reply("Noted.")
+    for i in range(RECENT + 2):
+        chat.user(f"Idle chatter {i} about clouds.")
+        chat.reply("Noted.")
+    _sync(client, chat)
+    extract(url)
+    chat.user("What now?")
+    _sync(client, chat)
+
+    def ask(question: str) -> str:
+        return client.post("/v1/retrieve", json={"chat_id": chat.id, "query": question, "previous_ai": "Hana smiled.",
+                                                 "budget_tokens": 600,
+                                                 "in_context_ids": [m["chatId"] for m in chat.messages[-RECENT:]]}
+                           ).json()["trace_id"]
+    first = [ask("What now?") for _ in range(2)]  # retried before any reply was shown
+    placed = [e for e in client.get(f"/v1/trace/{first[0]}").json()["lines"] if e.get("placed")
+              and "cartographer" in (e.get("content") or e["text"])]
+    assert placed
+    echo = f"{placed[0].get('content') or placed[0]['text']}, she said."
+    chat.reply(echo)  # A: uses the line
+    _sync(client, chat)
+    chat.edit(-1, "The wind rose over the harbour.")  # B: does not
+    _sync(client, chat)
+    chat.edit(-1, echo)  # back to A: the stored revision is reused
+    _sync(client, chat)
+    chat.user("And then?")
+    _sync(client, chat)
+    live = ask("And then?")
+    replay = client.get(f"/v1/trace/{live}/replay").json()
+    assert replay["status"] == "ok" and replay["reproduced"] is True, replay.get("notes")
