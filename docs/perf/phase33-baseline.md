@@ -8,7 +8,9 @@ Zero-call measurements on the v0.3.0 bench databases (`0ace76c`, `extract-v16`, 
 24 questions on the synthetic chat (`fixtures/quotes/s3-quotes.json`): 8 ask by turn number ("14턴에 … 뭐라고 했어?"), 8 by a
 first cue ("처음 만난 날 …"), 8 by a speaker and words. Every quote is said in turns 1–58 and the request is the S3 set's
 recorded request at turn 100 (32k context, about 22 turns in the prompt), so none is in the prompt: memory must bring it.
-`tools/eval_rp.py --policy packet-v12`, the query embedded by the bench's embedder (local), three replays.
+`tools/eval_rp.py --policy packet-v12`, the query embedded by the bench's embedder (local), three replays. A case passes
+only when the words said are inside a quote or an excerpt of its source turn (`turn`, 0-based as the packet numbers it;
+scoring corrected 2026-10-08 on a review: the words anywhere in the packet passed before; the count is unchanged).
 
 | Set | Passed (each of 3 replays) |
 |---|---|
