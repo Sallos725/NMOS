@@ -666,14 +666,17 @@ keywords (처음, 첫날, 예전) break ties in `grown_excerpt` instead of picki
 to the tie words; one-syllable function words (`retrieval.FUNCTION_SYLLABLES`) break no tie; and a word hit's vector
 chunk gives way to the whole message when the question names a one-syllable noun and the message holds a sentence with
 more of those nouns, then of the anchor words (`packet.anchor_rank`). The keyword route and lexical recall are
-unchanged. **The default since 2026-10-08** (the owner, on the zero-call replay: the bench 289 of 314 against 286, no
-case lost); `NMOS_PACKET_POLICY=packet-v14` keeps the previous packet.
+unchanged. **The default on 2026-10-08** (the owner, on the zero-call replay: the bench 289 of 314 against 286, no
+case lost), then in the default through `packet-v16` (D79).
 
-**D79 — A name is not a question about everything (`packet-v16`; ADR 0070; Phase 36, AGE-10).** Under `packet-v16`
-a message that holds a character's name makes required (never resting, ADR 0068) only that character's facts about how
-it stands now (`facts.NOW`) or with another (`facts.STANDING`), its knowledge boundaries, and any of its facts the
+**D79 — A name is not a question about everything (`packet-v16`; ADR 0070; Phase 36, AGE-10).** Under `packet-v16` a
+message that holds a character's name makes required (never resting, ADR 0068) only that character's facts about how it
+stands now (`facts.NOW`) or with another (`facts.STANDING`), its knowledge boundaries, and any of its facts the
 message's words point at (overlap at least `LEXICAL_BAR`); its other facts, a past event or a trait named by the name
-alone, are supportive and rest when unused. Ranking and limits are unchanged.
+alone, are supportive and rest when unused, unless the question asks for its kind (`facts.ASKS`) or the fact holds one
+of the question's one-syllable nouns. Ranking and limits are unchanged. **The default since 2026-10-08** (the owner, on
+the zero-call replay: the bench as `packet-v15`, required lines 76 % → 67 % on the trial chat);
+`NMOS_PACKET_POLICY=packet-v15` keeps the previous packet.
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

@@ -227,7 +227,7 @@ def test_a_trace_records_every_offered_line_with_provenance(full):
     chat = story(client, url)
     out = ask(client, chat, "Kaito, what do you know about the letter?")
     trace = client.get(f"/v1/trace/{out['trace_id']}").json()
-    assert trace["policy"] == "packet-v15" and trace["budget_tokens"] == 600
+    assert trace["policy"] == "packet-v16" and trace["budget_tokens"] == 600
     assert trace["recall_options"]["fill"] == 1.0  # below 2,000: packet-v8's recall (ADR 0049)
     assert trace["upto_position"] == len(chat.messages) - 1 and trace["previous_ai"] == ""
     assert trace["recall_options"]["facts_limit"] == 8
@@ -332,14 +332,14 @@ def test_compare_policies_over_traces(full):
     with db(url) as conn:
         report = audit.compare(conn, ids, RecallOptions())
     assert report["traces"] == 2 and report["skipped"] == {}
-    v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v15 = (report["policies"][p] for p in (
+    v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v16 = (report["policies"][p] for p in (
         "packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", "packet-v8",
-        "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v15"))
+        "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v16"))
     assert v8["packets"] == v7["packets"] == v6["packets"] == v5["packets"] == v4["packets"] == v3["packets"] \
         == v2["packets"] == v1["packets"] == 2
     assert v0["packets"] == 2
     assert v11["packets"] == 2
-    assert v15["replayed_same_policy"] == v15["reproduced"] == 2  # recorded by the default, packet-v15 (ADR 0069)
+    assert v16["replayed_same_policy"] == v16["reproduced"] == 2  # recorded by the default, packet-v16 (ADR 0070)
     assert v12["packets"] == 2 and v12["replayed_same_policy"] == 0
     assert v10["replayed_same_policy"] == v9["replayed_same_policy"] == v8["replayed_same_policy"] == 0
     assert v8["placed"] == v9["placed"]  # at 600 tokens they are one (ADR 0049)
@@ -396,7 +396,7 @@ def test_inspector_shows_the_last_packet_ledger(full):
     _sync(client, chat)
     conv = client.get("/v1/conversations").json()[0]["id"]
     page = client.get(f"/inspector/c/{conv}", params={"lang": "en"}).text
-    assert "Last packet: what went in" in page and "policy packet-v15" in page and "next reply: present" in page
+    assert "Last packet: what went in" in page and "policy packet-v16" in page and "next reply: present" in page
     assert "a hidden fact reappears" in page and "the letter is forged" in page
     assert "fact 2" in page or "fact 1" in page  # the retrievals table counts what each packet held
     ko = client.get(f"/inspector/c/{conv}").text

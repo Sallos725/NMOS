@@ -2,13 +2,12 @@
 
 ## Current phase
 
-**Phase 36 — A name in the message is not a question about everything (`packet-v16`): approved 2026-10-08 (the owner,
-as proposed), a correction phase (AGENTS §7 item 5) beside Phase 34; step 2 done (the bench 289 of 314 by majority as
-`packet-v15`; required lines 76 % → 67 % on the trial chat); the owner's default decision next.** Spec `docs/phases/PHASE-36.md`
-(AGE-10), ADR 0070. A message naming a
-character makes every fact about it required (PHASE-34 Q1 as built), so it never rests: on the owner's trial chat 27 %
-of the required tokens were a named character's past events and traits the message's words did not touch. `0.4.0`
-waits for it (the owner).
+**Phase 36 — A name in the message is not a question about everything (`packet-v16`): approved 2026-10-08 (the owner, as
+proposed), a correction phase (AGENTS §7 item 5) beside Phase 34; complete: `packet-v16` the default (the owner; the
+bench 289 of 314 by majority as `packet-v15`; required lines 76 % → 67 % on the trial chat).** Spec
+`docs/phases/PHASE-36.md` (AGE-10), ADR 0070. A message naming a character makes every fact about it required (PHASE-34
+Q1 as built), so it never rests: on the owner's trial chat 27 % of the required tokens were a named character's past
+events and traits the message's words did not touch. `0.4.0` waits for it (the owner).
 
 **Phase 35 — The excerpt lands on what was asked, not on when (`packet-v15`): approved 2026-10-08 (the owner, as
 proposed), a correction phase (AGENTS §7 item 5) beside Phase 34; complete, `packet-v15` the default (the owner, on the

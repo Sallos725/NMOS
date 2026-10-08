@@ -1,10 +1,11 @@
 # Phase 36 — A name in the message is not a question about everything (`packet-v16`)
 
-> **Status: approved 2026-10-08 (the owner: as proposed), a correction phase (AGENTS §7 item 5) found on Phase 34's
-> live run, Q1 amended twice on the replay; step 2 done (#283: `packet-v16`, ADR 0070, `docs/perf/phase36-replay.md`:
-> the bench 289 of 314 by the majority of three replays as `packet-v15`, required lines 76 % → 67 % on the trial chat); the default next.** Under AGE-10,
-> after Phase 35; `0.4.0` waits for it (the owner, 2026-10-08: in the release, then two weeks of use before 1.0).
-> Recall only: no extraction prompt, generation key, stored row or migration changes.
+> **Status: approved 2026-10-08 (the owner: as proposed), a correction phase (AGENTS §7 item 5) found on Phase 34's live
+> run, Q1 amended twice on the replay; step 2 done (#283: `packet-v16`, ADR 0070, `docs/perf/phase36-replay.md`: the
+> bench 289 of 314 by the majority of three replays as `packet-v15`, required lines 76 % → 67 % on the trial chat);
+> `packet-v16` the default since 2026-10-08 (the owner, Q3). Complete.** Under AGE-10, after Phase 35; `0.4.0` waits for
+> it (the owner, 2026-10-08: in the release, then two weeks of use before 1.0). Recall only: no extraction prompt,
+> generation key, stored row or migration changes.
 
 ## Why now
 
@@ -42,7 +43,7 @@ to compare (the canon was read in English, the story in Korean).
 | Q1 | When does naming a character make its fact required? | **When the fact is how things stand now or between them, or the message's own words point at it.** A fact the message names (as now) stays required when its predicate is a current-state one (`located_in`, `has_status`, `feels_toward`, `possesses`) or a standing one (`relationship`, `role_toward`, `addresses`: how two characters speak and stand shapes every reply, ADR 0026), when it is a knowledge boundary (`known_by`, `hidden_from`), when the message's words hit it (overlap at least `LEXICAL_BAR` with the fact's words), or (amended 2026-10-08, the owner, on the replay: a real-chat question asking what a character does for work lost its answer, an identity in words the fact does not share) when the question asks for its kind (`facts.ASKS`: "무슨 일을 해", 직업, 정체 → identity, role_toward; 소속, 길드 → member_of; 성격, 어떤 사람, 생김새 → has_trait; "무슨 일이 있었어" → event; 알고 있어 → knows), or (amended again the same day: a place's fact holding 달 rested on a question about the moon) when it
 holds one of the question's one-syllable nouns (`facts.asked_nouns`). **Otherwise it is supportive**: a past `event`, `member_of`, `identity`, `has_trait`, `knows`, a world fact, named and nothing more. It is offered exactly as before (ranking and limits unchanged); only its label changes, so it rests when no reply used it (ADR 0068). | Leave out a fact the canon in the prompt states (1.6 % of the required tokens on the trial chat; needs a translation to compare); demote every named fact (relationship and address lines set the speech level of every reply); keep the rule (the rest has little to act on). |
 | Q2 | Do current-state facts ever rest? | **No**, as now: they and the Cast stay required. | Rest them too (the scene changes with them). |
-| Q3 | How does it ship? | **`packet-v16`** behind `NMOS_PACKET_POLICY`, on top of `packet-v15`. The default is the owner's decision on the measurement. | A recall option. |
+| Q3 | How does it ship? | **`packet-v16`** behind `NMOS_PACKET_POLICY`, on top of `packet-v15`. The default is the owner's decision on the measurement (decided 2026-10-08: `packet-v16`). | A recall option. |
 | Q4 | How is it measured? | **(a)** Deterministic cases: a named event and trait are supportive and rest when unused; a named location, relationship, address and boundary stay required; a named event the message's words hit stays required. **(b)** The sequential replay of the trial chat's recorded requests (`tools/replay_sequence.py`, as PHASE-34 Q8 b) and of S1's live run, under `packet-v15` and `packet-v16`: the required share, the supportive repeat and stale shares, the whole packet's. **(c)** The zero-call replay of every probe of the v0.3.0 bench and the quote set, three replays each (AGENTS §7 item 6). **(d)** No live run proposed; the owner's two weeks of use after `0.4.0` are the live check, with testers' comments. | A paid paired run (the extraction is unchanged). |
 | Q5 | What is the bar? | On (b): the required share of placed tokens lower on the trial chat; the whole packet's repeat share not higher. On (c): no case lost against `packet-v15` on the majority of three replays; forbidden totals not higher; the quote set at least as `packet-v15`. | — |
 

@@ -1,9 +1,8 @@
 # 0069 — An excerpt anchors on what the question asks, not on when (`packet-v15`)
 
-Status: accepted, the default since 2026-10-08 (the owner, on the replay, PHASE-35 Q4); proposed the same day
-(`docs/phases/PHASE-35.md` Q1–Q4; AGE-10). Adds the policy `packet-v15` on top of `packet-v14` and replaces it as the
-default. No prompt, generation key, stored row or migration
-changes.
+Status: accepted, in the default through `packet-v16` (ADR 0070); the default on its own from 2026-10-08 (the owner, on
+the replay, PHASE-35 Q4); proposed the same day (`docs/phases/PHASE-35.md` Q1–Q4; AGE-10). Adds the policy `packet-v15`
+on top of `packet-v14` and replaces it as the default. No prompt, generation key, stored row or migration changes.
 
 ## Context
 

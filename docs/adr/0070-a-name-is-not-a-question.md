@@ -1,7 +1,8 @@
 # 0070 — A name in the message is not a question about everything (`packet-v16`)
 
-Status: proposed, 2026-10-08 (`docs/phases/PHASE-36.md` Q1–Q3, approved by the owner as proposed; AGE-10). Adds the
-policy `packet-v16` on top of `packet-v15`; the default is the owner's decision on the measurement. No prompt,
+Status: accepted, the default since 2026-10-08 (the owner, on the replay, PHASE-36 Q3); proposed the same day
+(`docs/phases/PHASE-36.md` Q1–Q3, approved by the owner as proposed, Q1 amended twice on the replay; AGE-10). Adds the
+policy `packet-v16` on top of `packet-v15` and replaces it as the default. No prompt,
 generation key, stored row or migration changes.
 
 ## Context
