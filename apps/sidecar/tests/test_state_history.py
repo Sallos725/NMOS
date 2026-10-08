@@ -233,6 +233,11 @@ def test_a_watched_key_is_flagged_dismissed_and_back_on_undo(migrated, rules):
 
     unwatched = rules()  # the same rules without `watch`: the same version, nothing flagged
     assert load_rules(unwatched).version == load_rules(path).version
+    from nmos_sidecar.parsers import compile_rules
+    two = lambda **extra: compile_rules({"rules": [RULE, {**RULE, "id": "other", **extra}]})
+    broken = two(watch="Gold")  # not a list: the rule is left out, and that counts (it is read again once fixed)
+    assert broken.errors and len(broken.rules) == 1
+    assert broken.version != two(watch=["Gold"]).version == two().version
     with make_client(migrated, parsers_file=unwatched) as c:
         assert 'data-repair="state_dismiss:' not in c.get(f"/v1/inspector/c/{conv}?lang=en").json()["html"]
 

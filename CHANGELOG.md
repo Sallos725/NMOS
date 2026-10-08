@@ -74,6 +74,16 @@ later, is `docs/KNOWN-ISSUES.md`.
   ending it at `\]\s*$` keeps brackets inside a value; the story's own bracket windows are not read. `card` reads a
   rule only in the chats of that character name. The guide's "한 줄짜리 상태창" shows how; `config/parsers.example.json`
   has a `status-bar` rule. Existing rules read as before.
+- **A status window over time** (Phase 39). The Inspector's conversation page draws each status key as a lane of the
+  values it held, the value now beside it and keys that never changed folded; the panel loads it when its section
+  opens. Under `packet-v17` (not the default) a message that names a status key and asks how it changed ("레벨 언제
+  올랐어?") gets that key's last six changes as one `<StateHistory>` line; the replay of the trial install's requests
+  changed none of them.
+- **Changes the story did not make** (Phase 39). A rule's `watch` keys raise a "Needs attention" entry when an item
+  appears in or leaves a list, or a number moves, while the reply's own text says nothing of it, and when a rerolled
+  reply puts a value back to the one before. No model call; each entry can be dismissed, and taken back from the
+  repairs. Measured on two real chats: watching inventory and equipment raised 5 entries in 23 replies, each an item
+  the story never named. **Upgrade:** migration `0029` (a repair kind); archives of `0.3.0` restore as before.
 
 ## 0.3.0
 

@@ -19,7 +19,8 @@
       "role": "char",
       "start": "☆ \\[",
       "end": "\\]\\s*$",
-      "separator": "|"
+      "separator": "|",
+      "watch": ["Items", "Gold"]
     },
     {
       "id": "html-status",

@@ -50,13 +50,19 @@ EMPTY = RuleSet(rules=(), version="none")
 WATCH_MAX = 40  # watched keys per rule
 
 
+def _watch_ok(watch: Any) -> bool:
+    return (isinstance(watch, list) and len(watch) <= WATCH_MAX
+            and all(isinstance(k, str) and 0 < len(k.strip()) <= 60 for k in watch))
+
+
 def _version_spec(spec: Any) -> Any:
-    """The rules as reading depends on them: `watch` changes what is flagged, not what is read (PHASE-39 Q4), so adding
-    it keeps the rules' version and the stored observations."""
+    """The rules as reading depends on them: a valid `watch` changes what is flagged, not what is read (PHASE-39 Q4), so
+    it keeps the rules' version and the stored observations. One that is not valid leaves its rule out, so it counts:
+    the rule is read again once it is fixed."""
     if not isinstance(spec, dict) or not isinstance(spec.get("rules"), list):
         return spec
-    return {**spec, "rules": [{k: v for k, v in r.items() if k != "watch"} if isinstance(r, dict) else r
-                              for r in spec["rules"]]}
+    return {**spec, "rules": [{k: v for k, v in r.items() if k != "watch"}
+                              if isinstance(r, dict) and _watch_ok(r.get("watch", [])) else r for r in spec["rules"]]}
 
 
 def compile_rules(spec: Any) -> RuleSet:
@@ -72,8 +78,7 @@ def compile_rules(spec: Any) -> RuleSet:
             if card is not None and (not isinstance(card, str) or not card.strip()):
                 raise ValueError("card must be a character name")
             watch = item.get("watch", [])
-            if (not isinstance(watch, list) or len(watch) > WATCH_MAX
-                    or not all(isinstance(k, str) and 0 < len(k.strip()) <= 60 for k in watch)):
+            if not _watch_ok(watch):
                 raise ValueError(f"watch must be a list of at most {WATCH_MAX} keys")
             common = {"id": rid, "kind": kind, "prefix": str(item.get("prefix", "")),
                       "role": item.get("role"), "character": item.get("character"), "card": card,

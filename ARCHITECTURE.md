@@ -681,6 +681,12 @@ of the question's one-syllable nouns. Ranking and limits are unchanged. **The de
 the zero-call replay: the bench as `packet-v15`, required lines 76 % → 67 % on the trial chat);
 `NMOS_PACKET_POLICY=packet-v15` keeps the previous packet.
 
+**D80 — A status window over time (`packet-v17`, status flags; ADR 0071; Phase 39, AGE-43).** One history of every
+status key along the head (`state.history`) feeds the Inspector's lanes, a `<StateHistory>` line under `packet-v17`
+for a message that names a key and asks how it changed (required; not the default), and the flags of a rule's `watch`
+keys: a change the reply's prose does not name goes to "Needs attention", deterministic, nothing stored; a dismissal is
+an owner repair (`state_dismiss`, migration 0029). The replay of the trial install's requests changes none.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

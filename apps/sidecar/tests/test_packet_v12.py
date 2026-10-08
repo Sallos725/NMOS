@@ -44,7 +44,7 @@ def test_the_history_cue_holds_the_first_cue():
 
 def test_the_policy_is_registered_and_v11_is_not_a_change_policy():
     assert "packet-v12" in POLICIES and CHANGE_POLICIES == {"packet-v12", "packet-v13", "packet-v14", "packet-v15",
-                                                         "packet-v16"}  # v13–v16 build on v12
+                                                         "packet-v16", "packet-v17"}  # v13–v17 build on v12
 
 
 # --- Q3: the excerpt's anchor breaks a tie on the question's one-character words --------------------------------------
