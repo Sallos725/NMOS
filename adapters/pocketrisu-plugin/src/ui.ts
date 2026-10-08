@@ -8,7 +8,7 @@ import type { ChatSwitch } from './chatoff';
 import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
 import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, endpointForKey, fillProject,
-  isVertexEndpoint, MAX_DEADLINE_MS, PANEL_MAX_RESERVED_TOKENS, presetMatches, serviceAccountProject, VERTEX_URL, type FormValues, type Section } from './form';
+  isVertexEndpoint, MAX_DEADLINE_MS, PANEL_MAX_RESERVED_TOKENS, presetMatches, serviceAccountProject, VERTEX_URL, type FormValues, type Section, embedWaitTooLong } from './form';
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
 import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices,
   localTime, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
@@ -1249,7 +1249,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       baseline = { ...baseline, conn: values().conn };
     }
     const body = configBody(d, v);
-    if (!Object.keys(body).length) { update({ text: L('saved'), kind: 'ok' }); return true; }
+    // Said with any save that touches either value; the save itself goes ahead (audit F20).
+    const tight = (d.includes('tune') || d.includes('conn')) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline)
+      ? ` ${L('tune.embed_wait_tight', { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : '';
+    if (!Object.keys(body).length) { update({ text: L('saved') + tight, kind: tight ? 'warn' : 'ok' }); return true; }
     try {
       const r = await deps.api<ServerConfig>('PUT', '/v1/config', body);
       fillServer(r);
@@ -1257,7 +1260,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       const parts = [r.queued_jobs ? L('saved_queued', { n: r.queued_jobs }) : L('saved')];
       if (r.queued_jobs) deps.hud.background();
       if (d.includes('rules') && r.parsers.active_rules) parts.push(L('saved_rules', { n: r.parsers.active_rules }));
-      update({ text: parts.join(' '), kind: 'ok' });
+      update({ text: parts.join(' ') + tight, kind: tight ? 'warn' : 'ok' });
       return true;
     } catch (error) {
       const text = errorText(lang, error);

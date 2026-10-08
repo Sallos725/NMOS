@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:aaff372c749f".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:8032bb8c26e8".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -188,6 +188,12 @@
     }
     if (dirty.includes("rules")) body.parsers = v.rules.trim() ? v.rules : null;
     return body;
+  }
+  var EMBED_WAIT_MARGIN_MS = 500;
+  function embedWaitTooLong(wait, deadline) {
+    const w = Number(wait.trim());
+    const d = Number(deadline.trim()) || DEFAULT_DEADLINE_MS;
+    return wait.trim() !== "" && Number.isFinite(w) && w > d - EMBED_WAIT_MARGIN_MS;
   }
   function connArgs(v) {
     return {
@@ -592,6 +598,10 @@
     "tune.embed_wait_hint": [
       "\uC784\uBCA0\uB529 \uB2F5\uC744 \uAE30\uB2E4\uB9AC\uB294 \uC2DC\uAC04\uC785\uB2C8\uB2E4. \uB118\uC73C\uBA74 \uADF8 \uC694\uCCAD\uC740 \uC758\uBBF8 \uAC80\uC0C9 \uC5C6\uC774 \uB2E8\uC5B4\uAC00 \uACB9\uCE58\uB294 \uAE30\uC5B5\uB9CC \uCC3E\uC2B5\uB2C8\uB2E4. \uAE30\uBCF8 300ms. \uC0C1\uD0DC \uD0ED\uC5D0 \uC758\uBBF8 \uAC80\uC0C9 \uC5C6\uC774 \uCC3E\uC558\uB2E4\uB294 \uC54C\uB9BC\uC774 \uC790\uC8FC \uB728\uBA74(\uC6D0\uACA9 \uC784\uBCA0\uB529, \uB290\uB9B0 PC) 1000 \uC815\uB3C4\uB85C \uB298\uB9AC\uC138\uC694. \uB298\uB9B0 \uB9CC\uD07C \uB2F5\uC7A5 \uC2DC\uC791\uC774 \uB2A6\uC5B4\uC9C8 \uC218 \uC788\uACE0, \uC704\uC758 \uC81C\uD55C \uC2DC\uAC04\uBCF4\uB2E4 \uC9E7\uC544\uC57C \uD569\uB2C8\uB2E4.",
       "How long a request waits for the embedding. Past it, that request recalls by shared words only. Default 300 ms. If the Status tab often warns that semantic search was skipped (a remote embedder, a slow PC), raise it to about 1000. Replies may start that much later, and it must stay below the deadline above."
+    ],
+    "tune.embed_wait_tight": [
+      "\uB2E4\uB9CC \uC784\uBCA0\uB529 \uB300\uAE30({w}ms)\uAC00 \uC81C\uD55C \uC2DC\uAC04({d}ms)\uC5D0\uC11C 500ms\uB97C \uBE80 \uAC83\uBCF4\uB2E4 \uAE38\uC5B4\uC11C, \uC784\uBCA0\uB529\uC774 \uB2A6\uC73C\uBA74 \uADF8 \uC694\uCCAD\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uAC11\uB2C8\uB2E4. \uB300\uAE30\uB97C \uC904\uC774\uAC70\uB098 \uC81C\uD55C \uC2DC\uAC04\uC744 \uB298\uB9AC\uC138\uC694.",
+      "But the embedding wait ({w} ms) is longer than the deadline ({d} ms) minus 500 ms: a slow embedding then sends the request without memory. Lower the wait or raise the deadline."
     ],
     "tune.top_k": ["\uBC1C\uCDCC \uC218", "Excerpts"],
     "tune.facts": ["\uC0AC\uC2E4 \uC218", "Facts"],
@@ -3442,8 +3452,9 @@ html,body{margin:0;background:${PALETTE.bg}}
         baseline = { ...baseline, conn: values().conn };
       }
       const body = configBody(d, v);
+      const tight = (d.includes("tune") || d.includes("conn")) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline) ? ` ${L("tune.embed_wait_tight", { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : "";
       if (!Object.keys(body).length) {
-        update({ text: L("saved"), kind: "ok" });
+        update({ text: L("saved") + tight, kind: tight ? "warn" : "ok" });
         return true;
       }
       try {
@@ -3453,7 +3464,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         const parts = [r.queued_jobs ? L("saved_queued", { n: r.queued_jobs }) : L("saved")];
         if (r.queued_jobs) deps.hud.background();
         if (d.includes("rules") && r.parsers.active_rules) parts.push(L("saved_rules", { n: r.parsers.active_rules }));
-        update({ text: parts.join(" "), kind: "ok" });
+        update({ text: parts.join(" ") + tight, kind: tight ? "warn" : "ok" });
         return true;
       } catch (error) {
         const text2 = errorText(lang, error);

@@ -286,6 +286,8 @@ const STRINGS = {
   'tune.embed_wait': ['의미 검색 대기(ms)', 'Embedding wait (ms)'],
   'tune.embed_wait_hint': ['임베딩 답을 기다리는 시간입니다. 넘으면 그 요청은 의미 검색 없이 단어가 겹치는 기억만 찾습니다. 기본 300ms. 상태 탭에 의미 검색 없이 찾았다는 알림이 자주 뜨면(원격 임베딩, 느린 PC) 1000 정도로 늘리세요. 늘린 만큼 답장 시작이 늦어질 수 있고, 위의 제한 시간보다 짧아야 합니다.',
     'How long a request waits for the embedding. Past it, that request recalls by shared words only. Default 300 ms. If the Status tab often warns that semantic search was skipped (a remote embedder, a slow PC), raise it to about 1000. Replies may start that much later, and it must stay below the deadline above.'],
+  'tune.embed_wait_tight': ['다만 임베딩 대기({w}ms)가 제한 시간({d}ms)에서 500ms를 뺀 것보다 길어서, 임베딩이 늦으면 그 요청은 기억 없이 갑니다. 대기를 줄이거나 제한 시간을 늘리세요.',
+    'But the embedding wait ({w} ms) is longer than the deadline ({d} ms) minus 500 ms: a slow embedding then sends the request without memory. Lower the wait or raise the deadline.'],
   'tune.top_k': ['발췌 수', 'Excerpts'],
   'tune.facts': ['사실 수', 'Facts'],
   'tune.backfill': ['처음 연결 시 추출할 턴 수', 'Turns extracted on first sync'],

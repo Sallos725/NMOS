@@ -261,6 +261,14 @@ describe('panel', () => {
       (document.querySelector('#nmos-panel button.primary') as HTMLButtonElement).click();
       await settle();
       expect(calls.filter(([method]) => method === 'PUT').at(-1)![2]).toMatchObject({ embed_timeout_ms: 1000 });
+      const bar = () => document.querySelector('#nmos-panel .bar .text')!;
+      expect(bar().textContent).not.toContain('minus 500 ms');
+      wait().value = '2800';  // the deadline is the default 3000: the wait leaves it too little (audit F20)
+      wait().dispatchEvent(new Event('input', { bubbles: true }));
+      (document.querySelector('#nmos-panel button.primary') as HTMLButtonElement).click();
+      await settle();
+      expect(calls.filter(([method]) => method === 'PUT').at(-1)![2]).toMatchObject({ embed_timeout_ms: 2800 });
+      expect(bar().textContent).toContain('minus 500 ms');
     } finally {
       delete (config.recall as Record<string, number>).embed_timeout_ms;
     }

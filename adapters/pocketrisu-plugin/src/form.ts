@@ -107,6 +107,18 @@ export function configBody(dirty: Section[], v: FormValues): Record<string, unkn
   return body;
 }
 
+/** Room the rest of a request needs besides the embedding wait (the sync, the reads, the packet). */
+export const EMBED_WAIT_MARGIN_MS = 500;
+
+/** Whether the embedding wait leaves the request too little of its deadline (pre-0.4.0 audit F20): a slow embedder
+ * then costs the whole memory, not only semantic search. The wait is a sidecar setting and the deadline a per-device
+ * plugin argument, so this warns and does not refuse. */
+export function embedWaitTooLong(wait: string, deadline: string): boolean {
+  const w = Number(wait.trim());
+  const d = Number(deadline.trim()) || DEFAULT_DEADLINE_MS;
+  return wait.trim() !== '' && Number.isFinite(w) && w > d - EMBED_WAIT_MARGIN_MS;
+}
+
 /** Plugin args for the connection section (stored in PocketRisu, not the sidecar). */
 export function connArgs(v: FormValues['conn']): Record<string, string | number> {
   return {

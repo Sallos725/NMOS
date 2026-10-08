@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { configBody, connArgs, dirtySections, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, VERTEX_URL,
+import { configBody, connArgs, dirtySections, embedWaitTooLong, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, VERTEX_URL,
   type FormValues } from '../src/form';
 import { STRING_KEYS, langOf, t } from '../src/i18n';
 
@@ -32,6 +32,11 @@ describe('batch save', () => {
     expect(configBody(['tune'], edited)).toMatchObject({ embed_timeout_ms: 1200 });
     edited.tune.embedWait = '';
     expect(configBody(['tune'], edited)).not.toHaveProperty('embed_timeout_ms');
+    // a wait that leaves the request less than 500 ms of its deadline is said, not refused (audit F20)
+    expect(embedWaitTooLong('2500', '3000')).toBe(false);
+    expect(embedWaitTooLong('2600', '3000')).toBe(true);
+    expect(embedWaitTooLong('3000', '')).toBe(true);  // the default deadline, 3000
+    expect(embedWaitTooLong('', '1000')).toBe(false);  // an older sidecar: no wait to compare
   });
 
   it('sends an API key only when one was typed, and clears parser rules with null', () => {
