@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:a3f558835261".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:9e19194d0576".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -3432,7 +3432,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           total: (total / 1048576).toFixed(1)
         })));
         say(restoreMsg, L("rst.checking"));
-        await deps.api("POST", `/v1/archive/uploads/${up.id}/check`);
+        await deps.api("POST", `/v1/archive/uploads/${up.id}/check`, {});
         const view2 = await waitFor(deps.api, up.id, ["checked", "refused"]);
         if (view2.state === "refused" || !view2.summary) {
           say(restoreMsg, L("rst.refused", { why: view2.detail ?? "" }), "err");
@@ -3474,7 +3474,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       restoreGo.disabled = restoreCancel.disabled = restorePick.disabled = true;
       say(restoreMsg, L("rst.restoring"));
       try {
-        await deps.api("POST", `/v1/archive/uploads/${id}/restore`);
+        await deps.api("POST", `/v1/archive/uploads/${id}/restore`, {});
         const view2 = await waitFor(deps.api, id, ["restored", "failed"]);
         if (view2.state === "restored" && view2.result) {
           say(restoreMsg, L("rst.done", { n: view2.result.conversations.length, jobs: view2.result.queued_jobs ?? 0 }) + (view2.detail ? ` ${view2.detail}` : ""), "ok");

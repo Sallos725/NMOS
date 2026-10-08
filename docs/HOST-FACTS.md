@@ -594,6 +594,9 @@ length and SHA-256. Probe, scripts and output: `fixtures/host/upload-v1.13.0-202
    9.5 s against 22.0 s (both routes alike). Firefox was quicker with both (4 MB: 0.10–0.13 s against 0.15–0.21 s;
    30 MB: 0.64–0.87 s against 1.3–1.4 s).
 5. **Not observed:** WebKit and mobile browsers (the iPhone is not a target, PHASE-38 Q3).
+6. **A POST without a body is refused** (found running the panel's restore on an isolated v1.13.0, server route,
+   2026-10-08): `nativeFetch` throws `Body is required for POST and PUT requests` before any request leaves. Every
+   other panel POST already sent `{}`; the restore's check and start now do too.
 
 Conclusion: H23. What NMOS does with it: the panel's restore uploads an archive in 8 MB chunks as base64 in JSON, the
 form every panel call already uses (PHASE-38 Q3).

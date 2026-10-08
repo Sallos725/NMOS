@@ -1196,7 +1196,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
         pct: total ? Math.floor((sent / total) * 100) : 100, sent: (sent / 1_048_576).toFixed(1),
         total: (total / 1_048_576).toFixed(1) })));
       say(restoreMsg, L('rst.checking'));
-      await deps.api('POST', `/v1/archive/uploads/${up.id}/check`);
+      await deps.api('POST', `/v1/archive/uploads/${up.id}/check`, {});  // nativeFetch refuses a POST without a body
       const view = await waitFor(deps.api, up.id, ['checked', 'refused']);
       if (view.state === 'refused' || !view.summary) {
         say(restoreMsg, L('rst.refused', { why: view.detail ?? '' }), 'err');
@@ -1230,7 +1230,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     restoreGo.disabled = restoreCancel.disabled = restorePick.disabled = true;
     say(restoreMsg, L('rst.restoring'));
     try {
-      await deps.api('POST', `/v1/archive/uploads/${id}/restore`);
+      await deps.api('POST', `/v1/archive/uploads/${id}/restore`, {});
       const view = await waitFor(deps.api, id, ['restored', 'failed']);
       if (view.state === 'restored' && view.result) {
         say(restoreMsg, L('rst.done', { n: view.result.conversations.length, jobs: view.result.queued_jobs ?? 0 })

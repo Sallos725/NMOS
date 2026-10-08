@@ -102,8 +102,10 @@ describe('the Settings card', () => {
     const calls: [string, string][] = [];
     let state: UploadView['state'] = 'receiving';
     const d: PanelDeps = {
-      api: async <T>(method: Method, path: string): Promise<T> => {
+      api: async <T>(method: Method, path: string, body?: unknown): Promise<T> => {
         calls.push([method, path]);
+        // PocketRisu's nativeFetch refuses a POST or PUT without a body ("Body is required for POST and PUT requests").
+        if ((method === 'POST' || method === 'PUT') && body === undefined) throw new Error('Body is required');
         if (path === '/v1/config') return config as T;
         if (path === '/v1/archive/uploads') return { id: 'u9', state, bytes: 30, received: 0, chunk_bytes: 16 } as T;
         if (path.endsWith('/check')) { state = 'checked'; return {} as T; }
