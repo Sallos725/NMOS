@@ -87,6 +87,8 @@ class Settings:
     # pinned value cannot outlive a new default.
     packet_policy: str = field(default_factory=lambda: os.environ.get("NMOS_PACKET_POLICY", ""))
     parsers_file: str = field(default_factory=lambda: os.environ.get("NMOS_PARSERS_FILE", ""))
+    # PHASE-38 Q3: the largest archive the panel may upload for a restore.
+    restore_max_mb: int = field(default_factory=lambda: int(os.environ.get("NMOS_RESTORE_MAX_MB", "2048")))
     # Test hook for the "sidecar slower than deadlineMs" acceptance check. Never set in production.
     debug_delay_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_DEBUG_DELAY_MS", "0")))
 

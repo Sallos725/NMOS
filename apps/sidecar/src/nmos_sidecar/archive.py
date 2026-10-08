@@ -95,6 +95,10 @@ class NoSuchConversation(ArchiveError):
     """A chosen conversation is not in this install."""
 
 
+class ArchiveBusy(ArchiveError):
+    """A restore could not take the shared ids' locks in time: other work is writing; nothing was written."""
+
+
 @dataclass
 class Written:
     path: str
@@ -308,6 +312,9 @@ SEQUENCED = {"assertion": "id", "worldline_commit": "seq", "worldline_append": "
 # already chosen stay).
 GLOBAL = {"projection_generation": "key", "app_config": "key"}
 BATCH = 500
+# How long a restore waits for a lock (the shared ids' sequences, a row another transaction holds) before it is
+# refused as busy, writing nothing (PHASE-38 Q4).
+LOCK_TIMEOUT = "30s"
 
 
 @dataclass
@@ -464,6 +471,8 @@ def restore_archive(database_url: str, checked: Checked) -> Restored:
         with psycopg.connect(database_url, row_factory=tuple_row) as conn, zipfile.ZipFile(checked.path) as zf:
             with conn.transaction():
                 _restore_in(conn, zf, checked, scratch, before, after, out)
+    except psycopg.errors.LockNotAvailable:
+        raise ArchiveBusy(f"NMOS is busy writing (no lock within {LOCK_TIMEOUT}); nothing was written, try again") from None
     except psycopg.Error as error:
         raise ArchiveError(f"the archive's rows could not be restored here; none were written: {error}") from None
     except (OSError, zipfile.BadZipFile, KeyError) as error:  # the file changed or went since its check
@@ -471,9 +480,21 @@ def restore_archive(database_url: str, checked: Checked) -> Restored:
     return out
 
 
+def _hold_sequences(conn: psycopg.Connection) -> None:
+    """While NMOS runs (PHASE-38 Q4): hold the sequences of the shared ids until the commit. A no-op `ALTER SEQUENCE`
+    takes the lock that every `nextval` waits for, so a sync or a job that would draw one of these ids waits for the
+    restore; reads, and writes that draw none (a recorded request), go on. Tables are not locked: a foreign key's
+    check on them would make reads that record a request wait too."""
+    for table, col in SEQUENCED.items():
+        seq = _q(conn, "SELECT pg_get_serial_sequence(%s, %s)", (f"public.{table}", col))[0][0]
+        conn.execute(f"ALTER SEQUENCE {seq} INCREMENT BY 1")
+
+
 def _restore_in(conn: psycopg.Connection, zf: zipfile.ZipFile, checked: Checked, scratch: str, before: list,
                 after: list, out: Restored) -> None:
     conn.execute("SELECT pg_advisory_xact_lock(727003)")
+    conn.execute(f"SET LOCAL lock_timeout = '{LOCK_TIMEOUT}'")
+    _hold_sequences(conn)
     conn.execute("SET LOCAL TimeZone = 'UTC'")
     # The archive's schema, in a scratch schema: tables as its NMOS made them, without foreign keys.
     conn.execute(f'CREATE SCHEMA "{scratch}"')
@@ -613,9 +634,44 @@ def _copy_in(conn: psycopg.Connection, scratch: str, checked: Checked, out: Rest
                                                 " JOIN public.conversation c ON c.id = s.id"
                                                 " WHERE s.branched_from_conversation_id IS NOT NULL"
                                                 " AND c.branched_from_conversation_id IS NULL")]
-    for table, col in SEQUENCED.items():
-        conn.execute(f"SELECT setval(pg_get_serial_sequence('public.{table}', %s),"
-                     f" greatest((SELECT max({col}) FROM public.{table}), 1))", (col,))
+    for table, col in SEQUENCED.items():  # never back: an id drawn before the restore's lock may not be committed yet
+        seq = _q(conn, "SELECT pg_get_serial_sequence(%s, %s)", (f"public.{table}", col))[0][0]
+        conn.execute(f"SELECT setval('{seq}', greatest((SELECT max({col}) FROM public.{table}),"
+                     f" (SELECT last_value FROM {seq}), 1))")
+
+
+def summary(database_url: str, checked: Checked) -> dict[str, Any]:
+    """What a checked archive would bring into this install, read without writing (PHASE-38 Q2, Q5): its chats, those
+    already here (which refuse the whole restore), and the settings it would add (those not set here)."""
+    m = checked.manifest
+    convs = [c for c in (m.get("conversations") or []) if isinstance(c, dict)]
+    with psycopg.connect(database_url, row_factory=tuple_row) as conn:
+        here_ids = {r[0] for r in _q(conn, "SELECT id::text FROM conversation WHERE id::text = ANY(%s)",
+                                     ([str(c.get("id")) for c in convs],))}
+        here_refs = set(_q(conn, "SELECT host, host_chat_ref FROM conversation WHERE host_chat_ref = ANY(%s)",
+                           ([str(c.get("host_chat_ref")) for c in convs],)))
+        set_here = {r[0] for r in _q(conn, "SELECT key FROM app_config")}
+    added: list[dict[str, Any]] = []
+    if "app_config" in checked.files:
+        with zipfile.ZipFile(checked.path) as zf:
+            for batch in _rows(zf, checked.files["app_config"]):
+                for line in batch:
+                    row = json.loads(line)
+                    if row.get("key") not in set_here:
+                        shown = row.get("value") if row.get("key") in URL_SETTINGS else None
+                        added.append({"key": row.get("key"), **({"value": shown} if shown is not None else {})})
+    level = m["schema"]["level"]
+    from .migrate import migration_files
+    return {
+        "scope": m["scope"], "nmos_version": m.get("nmos_version"), "created_at": m.get("created_at"),
+        "schema": level, "migrations": [f.name for f in migration_files() if f.name > level],
+        "contents": m.get("contents") or {},
+        "conversations": [{"id": c.get("id"), "host": c.get("host"), "host_chat_ref": c.get("host_chat_ref"),
+                           "character": c.get("character"), "chat": c.get("chat"),
+                           "here": str(c.get("id")) in here_ids or (c.get("host"), c.get("host_chat_ref")) in here_refs}
+                          for c in convs],
+        "settings_added": sorted(added, key=lambda s: str(s["key"])),
+    }
 
 
 def restore_file(database_url: str, path: str) -> Restored:

@@ -215,3 +215,14 @@ class ReextractRequest(BaseModel):
 class ExpectRequest(BaseModel):
     """An undo of a join or a split, made from its preview (PHASE-20 Q4): the preview's fingerprint."""
     expect: str | None = Field(default=None, max_length=64)
+
+
+class ArchiveUploadCreate(BaseModel):
+    """An archive the panel is about to upload for a restore (PHASE-38 Q3): its size in bytes."""
+    bytes: int = Field(ge=1, strict=True)
+
+
+class ArchiveUploadChunk(BaseModel):
+    """One chunk of it: base64 of its bytes (H23) and their SHA-256 (8 MB of bytes is 11,184,812 base64 characters)."""
+    data: str = Field(max_length=11_184_812)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")

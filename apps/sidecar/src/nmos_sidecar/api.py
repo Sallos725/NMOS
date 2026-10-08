@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hmac
 import logging
 import os
@@ -28,7 +30,7 @@ from psycopg_pool import ConnectionPool
 
 from . import (__version__, archive, audit, canon, canonfacts, dropped, endings, extraction, generations, inspector, ledger,
                normtext, overuse,
-               plugin, preview, readmodel, retention, repairs, reveals, runtime, summaries, vectors)
+               plugin, preview, readmodel, retention, repairs, reveals, runtime, summaries, uploads, vectors)
 from . import usage as model_usage
 from .config import Settings
 from .db import make_pool
@@ -37,6 +39,8 @@ from .extraction import enqueue_after_apply, job_counts, recent_errors
 from .facts import STANDING, links_of as facts_links_of, memory_view, version_key
 from .ids import uuid7
 from .models import (
+    ArchiveUploadChunk,
+    ArchiveUploadCreate,
     BodiesRequest,
     BodiesResponse,
     CanonSyncRequest, CanonSyncResponse,
@@ -228,10 +232,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         if queued:
             log.info("canon jobs queued conversation=%s jobs=%d", conv_id, queued)
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        # Each startup step commits on its own, the batched backfills batch by batch, so a restart during
-        # a long backfill resumes it instead of starting over (audit A-08).
+    def startup_steps() -> int:
+        """What every start does, idempotent: the stored settings, the derived text, turn data and state the ledger is
+        missing, and each generation's missing jobs. A restore while NMOS runs (PHASE-38 Q4) runs it again for the rows
+        it added. Each step commits on its own, the batched backfills batch by batch, so a restart during a long
+        backfill resumes it instead of starting over (audit A-08)."""
         with psycopg.connect(settings.database_url, row_factory=dict_row, autocommit=True) as conn:
             rebuild(runtime.stored(conn))
             normalized = normtext.backfill(conn)
@@ -248,9 +253,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             log.info("generations: extract=%s embed=%s summarize=%s; queued %d missing jobs",
                      rt["active_extractor"], rt["projection"].key if rt["projection"] else None,
                      rt["summarizer"].key if rt["summarizer"] else None, queued)
-        app.state.pool = pool or make_pool(settings.database_url)
         if backfilled:
             log.info("state backfilled: %d observations for rules %s", backfilled, rt["rules"].version)
+        return queued
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        startup_steps()
+        app.state.pool = pool or make_pool(settings.database_url)
         try:
             yield
         finally:
@@ -1032,6 +1042,96 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                  len(result.manifest["conversations"]), os.path.getsize(tmp.name))
         chosen = None if result.manifest["scope"] == "install" else len(result.manifest["conversations"])
         return FileResponse(tmp.name, media_type="application/zip", filename=archive.default_name(chosen))
+
+    # --- restore from the panel (PHASE-38; ADR 0050 amendment 2) ------------------------------------------------------
+    spool = uploads.Uploads(uploads.spool_dir(), settings.restore_max_mb * 1024 * 1024)
+
+    def upload_error(error: uploads.UploadError) -> HTTPException:
+        return HTTPException(status_code=error.status, detail=error.detail)
+
+    @app.post("/v1/archive/uploads", dependencies=[Depends(auth)])
+    def upload_create(body: ArchiveUploadCreate):
+        """Start an upload of `bytes` bytes, sent in chunks of `chunk_bytes`; it replaces any other upload (Q2)."""
+        try:
+            return spool.create(body.bytes).view()
+        except uploads.UploadError as e:
+            raise upload_error(e) from None
+
+    @app.put("/v1/archive/uploads/{upload_id}/chunks/{index}", dependencies=[Depends(auth)])
+    def upload_chunk(upload_id: str, index: int, body: ArchiveUploadChunk):
+        try:
+            data = base64.b64decode(body.data, validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(status_code=422, detail=f"chunk {index} is not base64") from None
+        try:
+            up = spool.chunk(upload_id, index, data, body.sha256)
+        except uploads.UploadError as e:
+            raise upload_error(e) from None
+        return {"state": up.state, "received": up.received, "bytes": up.size}
+
+    @app.get("/v1/archive/uploads/{upload_id}", dependencies=[Depends(auth)])
+    def upload_status(upload_id: str):
+        try:
+            return spool.get(upload_id).view()
+        except uploads.UploadError as e:
+            raise upload_error(e) from None
+
+    @app.delete("/v1/archive/uploads/{upload_id}", dependencies=[Depends(auth)])
+    def upload_discard(upload_id: str):
+        try:
+            spool.discard(upload_id)
+        except uploads.UploadError as e:
+            raise upload_error(e) from None
+        return {"discarded": True}
+
+    def check_upload(up: uploads.Upload) -> None:
+        try:
+            up.checked = archive.check_archive(str(up.path))
+            up.summary = archive.summary(settings.database_url, up.checked)
+            up.state = "checked"
+        except archive.ArchiveError as e:
+            up.state, up.detail = "refused", str(e)
+        except Exception as e:  # noqa: BLE001 — the panel shows it; the log has the trace
+            log.exception("archive check failed upload=%s", up.id)
+            up.state, up.detail = "refused", f"the archive could not be checked: {e}"
+        log.info("archive upload=%s %s %s", up.id, up.state, up.detail)
+
+    def restore_upload(up: uploads.Upload) -> None:
+        try:
+            done = archive.restore_archive(settings.database_url, up.checked)
+        except archive.ArchiveError as e:
+            up.state, up.detail = "failed", str(e)
+            log.info("archive restore upload=%s refused: %s", up.id, e)
+            return
+        except Exception as e:  # noqa: BLE001
+            log.exception("archive restore failed upload=%s", up.id)
+            up.state, up.detail = "failed", f"the archive could not be restored; none of it was written: {e}"
+            return
+        up.result = dataclasses.asdict(done)
+        try:  # the rows it added get what a start would write for them (Q4)
+            up.result["queued_jobs"] = startup_steps()
+        except Exception as e:  # noqa: BLE001 — the restore is committed; the next start writes them
+            log.exception("after the restore of upload=%s", up.id)
+            up.detail = f"restored; the derived rows will be written at the next start ({e})"
+        up.state = "restored"
+        log.info("archive restored upload=%s conversations=%d rows=%s", up.id, len(done.conversations), done.rows)
+
+    @app.post("/v1/archive/uploads/{upload_id}/check", status_code=202, dependencies=[Depends(auth)])
+    def upload_check(upload_id: str):
+        """Check the whole archive (every file's size, rows and hash; its schema) and summarize what it would bring
+        (Q2); in the background: poll the upload."""
+        try:
+            return spool.run(upload_id, "received", "checking", check_upload).view()
+        except uploads.UploadError as e:
+            raise upload_error(e) from None
+
+    @app.post("/v1/archive/uploads/{upload_id}/restore", status_code=202, dependencies=[Depends(auth)])
+    def upload_restore(upload_id: str):
+        """Restore a checked archive while NMOS runs (Q4): writes that draw a shared id wait; reads go on."""
+        try:
+            return spool.run(upload_id, "checked", "restoring", restore_upload).view()
+        except uploads.UploadError as e:
+            raise upload_error(e) from None
 
     @app.get("/v1/config", dependencies=[Depends(auth)])
     def get_config():
