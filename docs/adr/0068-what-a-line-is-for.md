@@ -46,7 +46,7 @@ Under `packet-v14` (`packet.LABEL_POLICIES`, `REST_POLICIES`):
 ## Consequences
 
 - On S1's live run replayed request by request (241 requests, three replays alike; `docs/perf/phase34-rest.md`):
-  supportive lines repeat 23 % less and their stale tokens fall 72 % (re-measured after the review fixes); the whole
+  supportive lines repeat 23 % less and their stale tokens fall 71 % (re-measured after the review fixes); the whole
   packet repeats less too. The bench and the quote set answer as `packet-v13` does. That memory repeats less does not by itself show that replies use memory
   better: the bench's replies are scripted; real replies are compared under Q8 (d).
 - A resting line is out of the packet for two requests: a later question that needs it without naming it, without its
