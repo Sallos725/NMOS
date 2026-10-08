@@ -10,6 +10,7 @@ import pytest
 
 from conftest import make_client
 from memeval import RECENT, _sync, settings_for
+from nmos_sidecar.facts import asked_nouns, asked_predicates
 from nmos_sidecar.packet import NAMED_POLICIES, POLICIES
 from simchat import SimChat
 from test_packet_ledger import extract
@@ -71,3 +72,25 @@ def test_a_name_alone_names_how_a_character_stands_not_everything_about_it(story
 def test_the_messages_own_words_still_name_a_fact(story):
     v16 = labels(story, "packet-v16", "Hana, are you a knight?")
     assert v16[next(t for t in v16 if "knight" in t)] == "required"
+
+
+def test_the_kind_of_fact_a_question_asks_for():
+    """PHASE-36 Q1, amended on the replay: "하나는 무슨 일을 해?" asks for an identity in words the fact does not share."""
+    assert asked_predicates("하나는 무슨 일을 해?") == {"identity", "role_toward"}
+    assert asked_predicates("하나 직업이 뭐야?") == {"identity", "role_toward"}
+    assert asked_predicates("무슨 일이 있었어?") == {"event"} == asked_predicates("하나는 어제 무슨 일을 했어?")
+    assert asked_predicates("하나 소속 길드는?") == {"member_of"}
+    assert asked_predicates("하나는 어떤 사람이야?") == {"has_trait"}
+    assert asked_predicates("하나 지금 어디야?") == frozenset()  # where: a NOW fact, required by the name already
+
+
+def test_a_question_about_the_kind_names_the_fact(story):
+    v16 = labels(story, "packet-v16", "What does Hana do for a living?")
+    assert v16[next(t for t in v16 if "knight" in t)] == "required"
+
+
+def test_a_fact_holding_the_questions_one_syllable_noun_is_named():
+    """PHASE-36 Q1, amended on the replay: "…밤하늘에 떴던 달 기억나?" asks about the moon; a place's fact that holds 달
+    stays required when the question names the place."""
+    assert asked_nouns("도윤이 항구에 온 지 얼마 안 됐을 때 밤하늘에 떴던 달 기억나?") == ("달",)  # not 온, 지, 안, 때
+    assert asked_nouns("Hana, are you there?") == ()

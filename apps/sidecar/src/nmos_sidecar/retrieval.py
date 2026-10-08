@@ -22,7 +22,7 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from .entities import norm
-from .facts import FIRST_CUE, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
+from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
 from . import overuse, quotes, scene, spans, summaries, variants
 from .ids import uuid7
 from .ledger import find_conversation
@@ -478,13 +478,6 @@ def one_char_words(query: str) -> tuple[str, ...]:
     packet-v12 breaks a tie of the excerpt's anchor sentence on them (PHASE-31 Q3)."""
     return tuple(dict.fromkeys(w for w in re.findall(r"\w+", query)
                                if len(w) == 1 and not (w.isascii() and not w.isdigit())))
-
-
-# One-syllable words that say how or when, not what (PHASE-35 Q2): a verb's or an ending's piece (온, 준, 한), a
-# dependent noun (지, 때, 것, 게), a negation or an adverb (안, 못, 더), a pronoun or a determiner (그, 이, 제).
-FUNCTION_SYLLABLES = frozenset(
-    "온 간 갈 올 본 볼 한 할 된 될 준 줄 난 넌 날 때 적 지 수 것 거 게 걸 데 뿐 듯 안 못 잘 더 또 좀 다 왜 뭐 "
-    "그 이 저 제 내 네 너 나 걔 얘 쟤 두 세 첫 건 곳 쪽 번".split())
 
 
 def anchor_words(query: str, words: list[str], tie: tuple[str, ...]) -> tuple[list[str], tuple[str, ...]]:

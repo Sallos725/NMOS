@@ -710,6 +710,37 @@ STANDING = frozenset({"relationship", "role_toward", "feels_toward", "addresses"
 # How a character stands now (the Cast's predicates, PHASE-12 Q4): with STANDING, what a message naming the character
 # needs whatever it asks (PHASE-36 Q1).
 NOW = frozenset({"located_in", "has_status", "feels_toward", "possesses"})
+# What kind of fact a question asks for, by its own words (PHASE-36 Q1, amended on the replay: "하나는 무슨 일을 해?"
+# asks for an identity in words the fact does not share). A fact of the kind asked for is named by a name alone.
+# "무슨 일을 해" asks for a job, "무슨 일이 있었어" and "무슨 일을 했어" for an event.
+ASKS: tuple[tuple[re.Pattern[str], frozenset[str]], ...] = (
+    (re.compile(r"무슨\s?일을?\s?(해|하는|하니|하지)|하는\s?일|직업|정체|뭐\s?하는\s?(사람|분|애)|\bjob\b|\bfor a living\b"
+                r"|\bwhat does \w+ do\b|\bwho is\b", re.IGNORECASE), frozenset({"identity", "role_toward"})),
+    (re.compile(r"소속|길드|출신|\bguild\b|\bmember of\b", re.IGNORECASE), frozenset({"member_of"})),
+    (re.compile(r"성격|어떤\s?사람|생김새|외모|어떻게\s?생겼|특징|\blook like\b|\bpersonality\b", re.IGNORECASE),
+     frozenset({"has_trait"})),
+    (re.compile(r"무슨\s?일이?\s?있|무슨\s?일을\s?했|뭘\s?했|뭐\s?했|무엇을\s?했|\bwhat happened\b", re.IGNORECASE), frozenset({"event"})),
+    (re.compile(r"알고\s?있|아는\s?(것|거|게)|\bknows?\b", re.IGNORECASE), frozenset({"knows"})),
+)
+
+
+# One-syllable words that say how or when, not what (PHASE-35 Q2): a verb's or an ending's piece (온, 준, 한), a
+# dependent noun (지, 때, 것, 게), a negation or an adverb (안, 못, 더), a pronoun or a determiner (그, 이, 제).
+FUNCTION_SYLLABLES = frozenset(
+    "온 간 갈 올 본 볼 한 할 된 될 준 줄 난 넌 날 때 적 지 수 것 거 게 걸 데 뿐 듯 안 못 잘 더 또 좀 다 왜 뭐 "
+    "그 이 저 제 내 네 너 나 걔 얘 쟤 두 세 첫 건 곳 쪽 번".split())
+
+
+def asked_nouns(query: str) -> tuple[str, ...]:
+    """The question's one-syllable Hangul words that can name something (빵, 달): what a short question asks about
+    (PHASE-35 Q2; PHASE-36 Q1, amended: a fact holding one is named by its character's name)."""
+    return tuple(dict.fromkeys(w for w in re.findall(r"[가-힣]+", query)
+                               if len(w) == 1 and w not in FUNCTION_SYLLABLES))
+
+
+def asked_predicates(query: str) -> frozenset[str]:
+    """The predicates the question's own words ask for (ASKS)."""
+    return frozenset(p for pattern, preds in ASKS if pattern.search(query) for p in preds)
 # Added to the score of a mentioned fact (ADR 0026). Below the gap between a mention in the user's message
 # and one in the previous reply (1.0), so they order facts of equal mention only.
 PRIOR_STANDING = 0.5
@@ -780,8 +811,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
 
     `named` collects the facts the question names (PHASE-34 Q1: required, never resting): one whose names the message
     holds. With `named_by_words` (packet-v16, PHASE-36 Q1) a name alone names only how its character stands now or
-    with another (NOW, STANDING) and a knowledge boundary; any other fact also needs the message's words (overlap at
-    least LEXICAL_BAR). Ranking is unchanged.
+    with another (NOW, STANDING), a knowledge boundary and a fact of the kind the question asks for (`asked_predicates`);
+    any other fact also needs the message's words (overlap at least LEXICAL_BAR). Ranking is unchanged.
     """
     q = _norm(query)
     ai = _norm(previous_ai)
@@ -789,6 +820,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     first_person = bool(FIRST_PERSON.search(query))
     why = causes and bool(WHY.search(query))
     oldest = first_cue and bool(FIRST_CUE.search(query))
+    asked = asked_predicates(query) if named_by_words else frozenset()
+    nouns = asked_nouns(query) if named_by_words else ()
     user = USER_NAMES | persona
     scored = []
     for f in facts:
@@ -802,8 +835,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         grams = _grams(fact_text(f) + (f" {f['because']}" if causes and f.get("because") else ""))
         lexical = len(grams & q_grams) / max(1, len(q_grams))
         if named is not None and any(n in q for n in names + hidden) and (  # the question names it (PHASE-34 Q1)
-                not named_by_words or f["predicate"] in NOW | STANDING or f.get("known_by") or f.get("hidden_from")
-                or lexical >= LEXICAL_BAR):
+                not named_by_words or f["predicate"] in NOW | STANDING | asked or f.get("known_by")
+                or f.get("hidden_from") or lexical >= LEXICAL_BAR or any(n in fact_text(f) for n in nouns)):
             named.add(str(f["id"]))
         if any(n in q for n in hidden):
             mention += 2.5
