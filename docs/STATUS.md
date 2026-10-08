@@ -2,6 +2,13 @@
 
 ## Current phase
 
+**Phase 38 — Restore from the panel, while NMOS runs: approved 2026-10-08 (the owner: the phase and a live restore), high
+risk (stored data, an HTTP route that writes the database); Q1–Q7 await the owner.** Spec `docs/phases/PHASE-38.md`.
+The panel exports an NMOS Archive but only a command restores one, with the services stopped and only documented for
+Docker, so a bundle user cannot restore at all. Proposed: Settings → Restore from an archive…, uploaded in 4 MB chunks,
+checked and summarized first, then restored under write locks on the shared-id tables (readers continue, writers wait)
+with the startup steps run after it. Aimed at `0.4.0`.
+
 **Phase 37 — The bundle's data lives outside the bundle: approved 2026-10-08 (the owner, as proposed; Q6 amended), high
 risk (stored data, upgrades); complete 2026-10-08 (#285 green on four targets; the owner's Windows check passed).** Spec `docs/phases/PHASE-37.md`, ADR 0060
 amendment 1. A user lost their database updating 0.2.0 → 0.3.0 (cause unconfirmed: the Docker install cannot drop it; a
