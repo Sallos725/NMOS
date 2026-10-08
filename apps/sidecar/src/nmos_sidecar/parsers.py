@@ -28,6 +28,11 @@ class Rule:
     role: str | None = None
     character: str | None = None
     entity_line: re.Pattern[str] | None = None  # block rules: a line like "[하나]" switches the entity
+    # PHASE-39 Q1: block rules: the text between start and end is split by this string instead of by lines, so a
+    # one-line status bar ("[Status:a=1|b=2]", "☆ [A: 1 | B: 2]") is read field by field.
+    separator: str | None = None
+    # PHASE-39 Q2: the rule reads only the chats of this card (the conversation's character name), exactly.
+    card: str | None = None
 
 
 @dataclass(frozen=True)
@@ -49,8 +54,11 @@ def compile_rules(spec: Any) -> RuleSet:
         rid = str(item.get("id") or f"rule{i}")
         try:
             kind = item.get("kind")
+            card = item.get("card")
+            if card is not None and (not isinstance(card, str) or not card.strip()):
+                raise ValueError("card must be a character name")
             common = {"id": rid, "kind": kind, "prefix": str(item.get("prefix", "")),
-                      "role": item.get("role"), "character": item.get("character")}
+                      "role": item.get("role"), "character": item.get("character"), "card": card}
             if kind == "regex":
                 pattern = re.compile(item["pattern"], re.MULTILINE)
                 names = set(pattern.groupindex)
@@ -61,8 +69,12 @@ def compile_rules(spec: Any) -> RuleSet:
                 entity_line = re.compile(item["entity_line"]) if item.get("entity_line") else None
                 if entity_line is not None and "entity" not in entity_line.groupindex:
                     raise ValueError("entity_line needs an 'entity' group")
+                separator = item.get("separator")
+                if separator is not None and (not isinstance(separator, str) or not 1 <= len(separator) <= 8):
+                    raise ValueError("separator must be a string of 1 to 8 characters")
                 rules.append(Rule(start=re.compile(item["start"], re.MULTILINE),
-                                  end=re.compile(item["end"], re.MULTILINE), entity_line=entity_line, **common))
+                                  end=re.compile(item["end"], re.MULTILINE), entity_line=entity_line,
+                                  separator=separator, **common))
             else:
                 raise ValueError(f"unknown kind {kind!r}")
         except (KeyError, ValueError, re.error) as exc:
@@ -96,8 +108,14 @@ def _key(rule: Rule, key: str, entity: str | None) -> str:
     return f"{entity}.{key}" if entity else key
 
 
-def parse(ruleset: RuleSet, content: str, role: str | None, character: str | None) -> list[tuple[str, str, str]]:
-    """(rule_id, key, value) pairs found in one message. Later matches of a key win.
+def needs_card(ruleset: RuleSet) -> bool:
+    return any(rule.card for rule in ruleset.rules)
+
+
+def parse(ruleset: RuleSet, content: str, role: str | None, character: str | None,
+          card: str | None = None) -> list[tuple[str, str, str]]:
+    """(rule_id, key, value) pairs found in one message. Later matches of a key win. `card`: the chat's character
+    name, for rules bound to one card.
 
     Keys are "<entity>.<key>" when a rule captures an entity (sim bots: one card, many characters)."""
     out: dict[str, tuple[str, str, str]] = {}
@@ -105,6 +123,8 @@ def parse(ruleset: RuleSet, content: str, role: str | None, character: str | Non
         if rule.role and rule.role != role:
             continue
         if rule.character and rule.character != character:
+            continue
+        if rule.card and rule.card != card:
             continue
         if rule.kind == "regex" and rule.pattern:
             for m in rule.pattern.finditer(content):
@@ -119,8 +139,8 @@ def parse(ruleset: RuleSet, content: str, role: str | None, character: str | Non
                 e = rule.end.search(content, s.end())
                 block = content[s.end(): e.start() if e else len(content)]
                 entity = s.groupdict().get("entity")
-                for line in block.splitlines():
-                    line = _clean(line)
+                for line in (block.split(rule.separator) if rule.separator else block.splitlines()):
+                    line = _clean(line.replace("\n", " ") if rule.separator else line)
                     if rule.entity_line and (em := rule.entity_line.fullmatch(line.strip())):
                         entity = em.group("entity")
                         continue

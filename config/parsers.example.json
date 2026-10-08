@@ -14,6 +14,14 @@
       "key": "HP"
     },
     {
+      "id": "status-bar",
+      "kind": "block",
+      "role": "char",
+      "start": "☆ \\[",
+      "end": "\\]\\s*$",
+      "separator": "|"
+    },
+    {
       "id": "html-status",
       "kind": "regex",
       "pattern": "<span class=\"stat-(?P<key>[a-z]+)\">(?P<value>[^<]+)</span>"

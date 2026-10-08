@@ -199,3 +199,71 @@ def test_clean_text_does_not_read_prose_as_a_tag():
     from nmos_sidecar.packet import clean_text
     assert clean_text("x<b 는 크다\n그리고 3 > 2") == "x<b 는 크다\n그리고 3 > 2"
     assert clean_text('<a href="x"\n  title=\'y\'>링크</a> <b>굵게</b><br/>끝') == "링크 굵게\n끝"
+
+
+# --- PHASE-39 Q1, Q2: a one-line status bar, read field by field; a rule bound to one card --------------------------
+
+BAR = ("The bell rang twice.\n[Notice: guild | To: Hana]\n"
+       "☆ [Date: 2024-01-02 (Tue) | Time: 10:45 | Level: 3 | HP: 40 / 50 | Items: 물약 ×2 / 해독제 ×1 | Gold: 1,200]\n")
+EQUALS = "기숙사로 돌아왔다.\n[Status:date=1214-09-03|time=10:30|location=기숙사 204호|mood=평온|magic=없음]"
+
+
+def test_a_one_line_status_bar_is_read_field_by_field():
+    ruleset = compile_rules({"rules": [
+        {"id": "bar", "kind": "block", "role": "char", "start": r"☆ \[", "end": r"\]", "separator": "|"},
+        {"id": "eq", "kind": "block", "role": "char", "start": r"\[Status:", "end": r"\]", "separator": "|"},
+    ]})
+    assert not ruleset.errors
+    assert {k: v for _, k, v in parse(ruleset, BAR, "char", None)} == {
+        "Date": "2024-01-02 (Tue)", "Time": "10:45", "Level": "3", "HP": "40 / 50", "Items": "물약 ×2 / 해독제 ×1",
+        "Gold": "1,200"}  # the story's own bracket window ([Notice: … | To: …]) is not the bar
+    assert {k: v for _, k, v in parse(ruleset, EQUALS, "char", None)} == {
+        "date": "1214-09-03", "time": "10:30", "location": "기숙사 204호", "mood": "평온", "magic": "없음"}
+    # A bar longer than one value's limit still gives every field (each is cleaned on its own).
+    long = "☆ [" + " | ".join(f"Skill{i}: {'x' * 40}" for i in range(30)) + "]"
+    assert len(parse(ruleset, long, "char", None)) == 30
+
+
+def test_a_rule_bound_to_a_card_reads_only_its_chats():
+    ruleset = compile_rules({"rules": [
+        {"id": "bar", "kind": "block", "start": r"☆ \[", "end": r"\]", "separator": "|", "card": "Card A"}]})
+    assert parse(ruleset, BAR, "char", None, "Card A")
+    assert parse(ruleset, BAR, "char", None, "Card B") == []
+    assert parse(ruleset, BAR, "char", None) == []
+    bad = compile_rules({"rules": [
+        {"id": "s", "kind": "block", "start": "a", "end": "b", "separator": ""},
+        {"id": "c", "kind": "block", "start": "a", "end": "b", "card": " "}]})
+    assert not bad.rules and len(bad.errors) == 2
+
+
+def test_a_card_bound_rule_follows_the_chat_s_character_name(migrated, tmp_path):
+    rules = tmp_path / "rules.json"
+    rules.write_text(json.dumps({"rules": [
+        {"id": "bar", "kind": "block", "role": "char", "start": r"☆ \[", "end": r"\]", "separator": "|",
+         "card": "Card A"}]}), encoding="utf-8")
+    a, b = SimChat(), SimChat()
+    for chat in (a, b):
+        chat.user("Go on.")
+        chat.reply(BAR)
+        chat.user("And then?")  # the reply is accepted once the next turn comes (Phase 1: a provisional tail waits)
+    with make_client(migrated, parsers_file=str(rules)) as c:
+        sync(c, a, character_name="Card A")
+        sync(c, b, character_name="Card B")
+        convs = {x["host_chat_ref"]: x["id"] for x in c.get("/v1/conversations").json()}
+        state = lambda chat: {s["key"]: s["value"] for s in c.get(f"/v1/conversations/{convs[chat.id]}/state").json()}
+        assert state(a)["Level"] == "3" and state(a)["Items"] == "물약 ×2 / 해독제 ×1"
+        assert state(b) == {}
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:  # a rebuild reads the names as well
+        from nmos_sidecar.parsers import load_rules
+        rebuild_state(conn, load_rules(str(rules)))
+        keys = conn.execute("SELECT c.host_chat_ref, count(*) AS n FROM state_observation s"
+                            " JOIN conversation c ON c.id = s.conversation_id GROUP BY 1").fetchall()
+    assert {r["host_chat_ref"]: r["n"] for r in keys} == {a.id: 6}
+
+
+def test_a_bar_ending_at_the_line_s_end_keeps_brackets_inside_a_value():
+    ruleset = compile_rules({"rules": [
+        {"id": "bar", "kind": "block", "start": r"☆ \[", "end": r"\]\s*$", "separator": "|"}]})
+    content = "광산 깊숙한 곳.\n***☆ [Location: 구리시 던전 [버려진 광산] 보스룸 | Level: 32]\n[Profile| None ]"
+    assert {k: v for _, k, v in parse(ruleset, content, "char", None)} == {
+        "Location": "구리시 던전 [버려진 광산] 보스룸", "Level": "32"}
