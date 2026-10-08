@@ -72,11 +72,28 @@ def spool_dir() -> Path:
 
 
 class Uploads:
-    def __init__(self, directory: Path, max_bytes: int, clock: Callable[[], float] = time.monotonic) -> None:
-        self.dir, self.max_bytes, self.clock = directory, max_bytes, clock
+    def __init__(self, max_bytes: int, make_dir: Callable[[], Path] = lambda: spool_dir(),
+                 clock: Callable[[], float] = time.monotonic) -> None:
+        self.max_bytes, self.make_dir, self.clock = max_bytes, make_dir, clock
+        self._dir: Path | None = None  # made at the first upload, removed by close()
         self.items: dict[str, Upload] = {}
         self.lock = threading.Lock()
-        self.dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def dir(self) -> Path:
+        if self._dir is None:
+            self._dir = self.make_dir()
+            self._dir.mkdir(parents=True, exist_ok=True)
+        return self._dir
+
+    def close(self) -> None:
+        """At the sidecar's shutdown: every upload and the directory go (a check or restore still running keeps its
+        file open; its thread is a daemon and the transaction is rolled back with the process)."""
+        with self.lock:
+            self.items.clear()
+            if self._dir is not None:
+                shutil.rmtree(self._dir, ignore_errors=True)
+                self._dir = None
 
     def _drop(self, up: Upload) -> None:
         self.items.pop(up.id, None)

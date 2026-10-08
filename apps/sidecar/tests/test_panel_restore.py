@@ -25,9 +25,21 @@ from test_sidecar_integration import recall, sync
 SMALL = 64 * 1024  # chunks in these tests: several per archive
 
 
+SPOOLS: list[Path] = []
+
+
 @pytest.fixture(autouse=True)
-def small_chunks(monkeypatch):
+def small_chunks(monkeypatch, tmp_path):
+    """Small chunks, and each sidecar's spool in this test's own directory (another process's is not ours)."""
     monkeypatch.setattr(uploads, "CHUNK", SMALL)
+    SPOOLS.clear()
+
+    def spool_dir() -> Path:
+        d = tmp_path / f"spool-{len(SPOOLS)}"
+        SPOOLS.append(d)
+        return d
+
+    monkeypatch.setattr(uploads, "spool_dir", spool_dir)
 
 
 def sha(data: bytes) -> str:
@@ -72,8 +84,7 @@ def restore(c, upload_id: str) -> dict:
 
 
 def files_left() -> list[Path]:
-    import tempfile
-    return [f for d in Path(tempfile.gettempdir()).glob("nmos-restore-*") for f in d.iterdir()]
+    return [f for d in SPOOLS if d.exists() for f in d.iterdir()]
 
 
 def test_an_archive_from_the_panel_restores_while_nmos_runs(migrated, database_url_factory, tmp_path):
@@ -252,7 +263,7 @@ def test_the_routes_need_the_token(migrated):
 # --- the spool, without a database ------------------------------------------------------------------------------------
 
 def test_an_upload_too_large_or_without_room_is_refused(tmp_path, monkeypatch):
-    spool = uploads.Uploads(tmp_path, max_bytes=1000)
+    spool = uploads.Uploads(1000, make_dir=lambda: tmp_path)
     with pytest.raises(uploads.UploadError) as e:
         spool.create(1001)
     assert e.value.status == 413
@@ -265,7 +276,7 @@ def test_an_upload_too_large_or_without_room_is_refused(tmp_path, monkeypatch):
 
 def test_a_new_upload_replaces_the_others_and_an_old_one_expires(tmp_path):
     now = [0.0]
-    spool = uploads.Uploads(tmp_path, max_bytes=10_000, clock=lambda: now[0])
+    spool = uploads.Uploads(10_000, make_dir=lambda: tmp_path, clock=lambda: now[0])
     a = spool.create(10)
     b = spool.create(10)
     assert not a.path.exists() and b.path.exists()
@@ -278,7 +289,7 @@ def test_a_new_upload_replaces_the_others_and_an_old_one_expires(tmp_path):
 
 
 def test_a_finished_or_refused_upload_leaves_no_file(tmp_path):
-    spool = uploads.Uploads(tmp_path, max_bytes=10_000)
+    spool = uploads.Uploads(10_000, make_dir=lambda: tmp_path)
     up = spool.create(3)
     spool.chunk(up.id, 0, b"abc", sha(b"abc"))
     finished = threading.Event()
@@ -294,3 +305,12 @@ def test_a_finished_or_refused_upload_leaves_no_file(tmp_path):
             break
         time.sleep(0.01)
     assert not up.path.exists() and spool.get(up.id).state == "refused"
+
+
+def test_the_spool_is_made_at_the_first_upload_and_goes_with_the_sidecar(migrated):
+    with client(migrated) as c:
+        assert SPOOLS == []  # no directory for a sidecar that never takes an upload
+        c.post("/v1/archive/uploads", json={"bytes": 10})
+        (spool,) = SPOOLS
+        assert [p.suffix for p in spool.iterdir()] == [".zip"]
+    assert not spool.exists()

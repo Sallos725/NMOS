@@ -264,6 +264,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         try:
             yield
         finally:
+            spool.close()  # uploads do not outlive the sidecar (PHASE-38)
             if pool is None:
                 app.state.pool.close()
 
@@ -1044,7 +1045,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return FileResponse(tmp.name, media_type="application/zip", filename=archive.default_name(chosen))
 
     # --- restore from the panel (PHASE-38; ADR 0050 amendment 2) ------------------------------------------------------
-    spool = uploads.Uploads(uploads.spool_dir(), settings.restore_max_mb * 1024 * 1024)
+    spool = uploads.Uploads(settings.restore_max_mb * 1024 * 1024, make_dir=lambda: uploads.spool_dir())
 
     def upload_error(error: uploads.UploadError) -> HTTPException:
         return HTTPException(status_code=error.status, detail=error.detail)
