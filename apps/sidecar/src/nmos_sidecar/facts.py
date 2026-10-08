@@ -707,6 +707,9 @@ LEXICAL_BAR = 0.35  # trigram overlap with the query that makes an unmentioned f
 # 0028), or a role one holds toward the other (ADR 0059). Read side only, like HOLDER_PER_ITEM: outside REGISTRY, so
 # changing it needs no new generation.
 STANDING = frozenset({"relationship", "role_toward", "feels_toward", "addresses"})
+# How a character stands now (the Cast's predicates, PHASE-12 Q4): with STANDING, what a message naming the character
+# needs whatever it asks (PHASE-36 Q1).
+NOW = frozenset({"located_in", "has_status", "feels_toward", "possesses"})
 # Added to the score of a mentioned fact (ADR 0026). Below the gap between a mention in the user's message
 # and one in the previous reply (1.0), so they order facts of equal mention only.
 PRIOR_STANDING = 0.5
@@ -742,7 +745,7 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                    causes: bool = False, first_cue: bool = False,
                    window_start: int | None = None, marks: bool = False,
                    aliases: Mapping[str, frozenset[str]] | None = None,
-                   named: set[str] | None = None) -> list[dict[str, Any]]:
+                   named: set[str] | None = None, named_by_words: bool = False) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
@@ -774,6 +777,11 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     `aliases` (`name_variants`, ADR 0058): the other names a character goes by in this request (`variants.aliases`, a
     given name or a Hangul spelling of a romanized name); they count as its names, for a mention and for a secret's
     holder addressed.
+
+    `named` collects the facts the question names (PHASE-34 Q1: required, never resting): one whose names the message
+    holds. With `named_by_words` (packet-v16, PHASE-36 Q1) a name alone names only how its character stands now or
+    with another (NOW, STANDING) and a knowledge boundary; any other fact also needs the message's words (overlap at
+    least LEXICAL_BAR). Ranking is unchanged.
     """
     q = _norm(query)
     ai = _norm(previous_ai)
@@ -791,7 +799,11 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                  if len(n) >= 2 and n not in user]
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
         hidden = [n for n in _widened(f.get("hidden_from") or [], aliases) if len(n) >= 2 and n not in user]
-        if named is not None and any(n in q for n in names + hidden):  # the question names it (PHASE-34 Q1)
+        grams = _grams(fact_text(f) + (f" {f['because']}" if causes and f.get("because") else ""))
+        lexical = len(grams & q_grams) / max(1, len(q_grams))
+        if named is not None and any(n in q for n in names + hidden) and (  # the question names it (PHASE-34 Q1)
+                not named_by_words or f["predicate"] in NOW | STANDING or f.get("known_by") or f.get("hidden_from")
+                or lexical >= LEXICAL_BAR):
             named.add(str(f["id"]))
         if any(n in q for n in hidden):
             mention += 2.5
@@ -799,8 +811,6 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
             mention += PRIOR_HIDDEN_PRESENT
         if first_person and (_norm(f["subject"]) in user or _norm(f.get("value")).startswith(tuple(user))):
             mention += 1.0
-        grams = _grams(fact_text(f) + (f" {f['because']}" if causes and f.get("because") else ""))
-        lexical = len(grams & q_grams) / max(1, len(q_grams))
         score = mention + lexical + (prior(f) if mention else 0.0) + (PRIOR_CAUSE if why and f.get("because") else 0.0)
         if not oldest and f["predicate"] == "event" and f.get("salience") == "minor" and (
                 len(_grams(f.get("value") or "") & q_grams) / max(1, len(q_grams)) < LEXICAL_BAR):

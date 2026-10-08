@@ -669,6 +669,12 @@ more of those nouns, then of the anchor words (`packet.anchor_rank`). The keywor
 unchanged. **The default since 2026-10-08** (the owner, on the zero-call replay: the bench 289 of 314 against 286, no
 case lost); `NMOS_PACKET_POLICY=packet-v14` keeps the previous packet.
 
+**D79 — A name is not a question about everything (`packet-v16`; ADR 0070; Phase 36, AGE-10).** Under `packet-v16`
+a message that holds a character's name makes required (never resting, ADR 0068) only that character's facts about how
+it stands now (`facts.NOW`) or with another (`facts.STANDING`), its knowledge boundaries, and any of its facts the
+message's words point at (overlap at least `LEXICAL_BAR`); its other facts, a past event or a trait named by the name
+alone, are supportive and rest when unused. Ranking and limits are unchanged.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

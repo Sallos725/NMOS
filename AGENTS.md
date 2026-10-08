@@ -32,7 +32,7 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-36.md` is the latest, proposed
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-36.md` is the latest, approved
    2026-10-08 (named facts, `packet-v16`); `PHASE-35.md`, approved 2026-10-08 and complete, a correction phase beside Stage 7 (the excerpt anchor, `packet-v15`);
    `PHASE-33.md`, approved
    2026-10-07 as proposed, Stage 7 part 1 (forensic recall), the current phase; `PHASE-31.md`, approved
@@ -103,7 +103,7 @@ If two normative documents appear to conflict:
 | 31 — recall that knows what changed: `packet-v12` leaves out a replaced value's excerpt and an ended role in a question about now, and anchors an excerpt on the question's one-character words on a tie (AGE-24, AGE-37 K43; a correction found by the PHASE-28 live gate, not a roadmap stage) | **approved** (2026-10-05); steps 2–3 done (#264: `packet-v12` behind the policy, ADR 0066, D75; replay `docs/perf/phase31-replay.md`); Q1 amended (owner) and replayed; the second reduced live gate met every bar (`docs/perf/phase31-live-gate.md`); **complete**, `packet-v12` the default (owner, 2026-10-05) | `PHASE-31.md` |
 | 33 — forensic recall, part 1 (Stage 7; AGE-10): the source turn, quoted (a speech-cue quote route, turns extraction has not reached, the Inspector's source-turn page, the overuse baseline) | **approved** (2026-10-07, as proposed), **current**; steps 2–4 done (baselines; `packet-v13` replayed, quotes 21/24, latency +102 ms at 10k; the source-turn page), step 5 next | `PHASE-33.md` |
 | 35 — the excerpt lands on what was asked, not on when (`packet-v15`; AGE-10, from Phase 33's S6 diagnosis; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-08, as proposed); complete: `packet-v15` the default (the owner), no live run | `PHASE-35.md`, ADR 0069 |
-| 36 — a name in the message is not a question about everything (`packet-v16`; AGE-10, from Phase 34's live run; a correction found by measurement, not a roadmap stage) | **proposed** (2026-10-08), awaiting the owner's approval | `PHASE-36.md` |
+| 36 — a name in the message is not a question about everything (`packet-v16`; AGE-10, from Phase 34's live run; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-08, as proposed); step 2 under way | `PHASE-36.md`, ADR 0070 |
 | 34+ (Stage 7 part 2: labels and the overuse penalty; Stage 8 after 1.0) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,

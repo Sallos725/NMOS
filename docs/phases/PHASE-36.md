@@ -1,6 +1,7 @@
 # Phase 36 — A name in the message is not a question about everything (`packet-v16`)
 
-> **Status: proposed 2026-10-08, a correction phase (AGENTS §7 item 5) found on Phase 34's live run.** Under AGE-10,
+> **Status: approved 2026-10-08 (the owner: as proposed), a correction phase (AGENTS §7 item 5) found on Phase 34's
+> live run; step 2 under way (#283: `packet-v16`, ADR 0070, the trial chat replayed).** Under AGE-10,
 > after Phase 35; `0.4.0` waits for it (the owner, 2026-10-08: in the release, then two weeks of use before 1.0).
 > Recall only: no extraction prompt, generation key, stored row or migration changes.
 

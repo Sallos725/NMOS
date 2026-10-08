@@ -28,7 +28,7 @@ from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
-from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES,
+from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POLICIES, CAST_POLICIES, CAUSE_POLICIES,
                      CHANGE_POLICIES, CONTENTS,
                      QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
@@ -816,7 +816,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                     len(view["facts"]) if grow or rest else options.facts_limit,
                                     options.events_limit, persona, scene.names(g.cast, r, aliases), causes=causes,
                                     first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases,
-                                    named=g.named)
+                                    named=g.named, named_by_words=options.policy in NAMED_POLICIES)
             ranked = _rested(ranked, "fact", rest, g)
             if changes:  # an ended role answers a question about the past, not about now (PHASE-31 Q2); the facts
                 # after it take its slot
@@ -832,7 +832,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             ranked = relevant_facts(view["claims"], query, previous_ai, in_context,
                                     len(view["claims"]) if grow or rest else claims_limit, persona=persona,
                                     causes=causes, first_cue=first, window_start=start, marks=options.history_marks,
-                                    aliases=aliases, named=g.named)
+                                    aliases=aliases, named=g.named, named_by_words=options.policy in NAMED_POLICIES)
             ranked = _rested(ranked, "claim", rest, g)
             claims = _grown(ranked[:claims_limit], ranked,
                             max(1, (options.facts_limit + options.fill_facts) // 2) - claims_limit)

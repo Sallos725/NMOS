@@ -226,13 +226,14 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
 # EXCERPT_FLOOR of the best fused score or a word hit (PHASE-34 Q2–Q4). The default since 2026-10-08.
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
             "packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14",
-            "packet-v15")
+            "packet-v15", "packet-v16")
 DEFAULT_POLICY = "packet-v15"  # the owner, 2026-10-08, on the replay (PHASE-35 Q4)
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
              "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2,
              "packet-v11": 1.2, "packet-v12": 1.2, "packet-v13": 1.2, "packet-v14": 1.2,
-             "packet-v15": 1.2}  # estimated tokens per non-ASCII char
-_V8 = ("packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15")  # packet-v8 and what builds on it
+             "packet-v15": 1.2, "packet-v16": 1.2}  # estimated tokens per non-ASCII char
+_V8 = ("packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15",
+       "packet-v16")  # packet-v8 and what builds on it
 PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})  # promises the message is about first (ADR 0019 am. 1)
@@ -241,15 +242,16 @@ CAUSE_POLICIES = frozenset({"packet-v6", "packet-v7", *_V8})  # facts and claims
 TURN_POLICIES = frozenset({"packet-v7", *_V8})  # excerpts and state carry their message's turn index (ADR 0041)
 STORY_POLICIES = frozenset(_V8)  # summaries in a <Story> section (ADR 0043)
 CAST_POLICIES = frozenset(_V8)  # each scene character's state in a <Cast> section (ADR 0043)
-FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15"})  # recall grows with the budget (ADR 0049)
-GROW_POLICIES = frozenset({"packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15"})  # an excerpt grows to its length from its best sentence (ADR 0053)
-SPAN_POLICIES = frozenset({"packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
-CHANGE_POLICIES = frozenset({"packet-v12", "packet-v13", "packet-v14", "packet-v15"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
-QUOTE_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15"})  # the forensic path's <Quote> lines (PHASE-33, ADR 0067)
-UNEXTRACTED_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15"})  # a turn extraction has not reached is raw evidence (PHASE-33 Q5)
-LABEL_POLICIES = frozenset({"packet-v14", "packet-v15"})  # every ledger line labeled required, supportive or risky (PHASE-34 Q1)
-REST_POLICIES = frozenset({"packet-v14", "packet-v15"})  # an overused supportive line rests; supportive excerpts meet a bar (Q2–Q4)
-ANCHOR_POLICIES = frozenset({"packet-v15"})  # an excerpt anchors on what the question asks, not when (PHASE-35)
+FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16"})  # recall grows with the budget (ADR 0049)
+GROW_POLICIES = frozenset({"packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16"})  # an excerpt grows to its length from its best sentence (ADR 0053)
+SPAN_POLICIES = frozenset({"packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
+CHANGE_POLICIES = frozenset({"packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
+QUOTE_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16"})  # the forensic path's <Quote> lines (PHASE-33, ADR 0067)
+UNEXTRACTED_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16"})  # a turn extraction has not reached is raw evidence (PHASE-33 Q5)
+LABEL_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16"})  # every ledger line labeled required, supportive or risky (PHASE-34 Q1)
+REST_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16"})  # an overused supportive line rests; supportive excerpts meet a bar (Q2–Q4)
+ANCHOR_POLICIES = frozenset({"packet-v15", "packet-v16"})  # an excerpt anchors on what the question asks, not when (PHASE-35)
+NAMED_POLICIES = frozenset({"packet-v16"})  # a name alone makes only a now or standing fact required (PHASE-36)
 EXCERPT_FLOOR = 0.5  # packet-v14: an excerpt after the first needs this share of the best fused score, or a word hit
 CUE_GROW_CHARS = 320  # packet-v11: a why or contents question's excerpt grows by sentences to this, no sentence cap
 CONTENTS = re.compile(r"내용|\bcontents\b|\bcontent of\b", re.IGNORECASE)  # the contents cue (PHASE-27 Q2); not "is she content"
