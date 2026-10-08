@@ -440,11 +440,14 @@ def _t(lang: str, key: str) -> str:
 
 # The plugin's icon (`adapters/pocketrisu-plugin/src/icon.ts`): a one-stroke N with a memory node. Inline as a data
 # URI, so the tab shows it whatever address the page is opened at (localhost, LAN, tailnet, behind a proxy's path);
-# a favicon has no text colour to inherit, so the stroke follows the colour scheme itself.
+# a favicon has no text colour to inherit, and a tab or a home screen may lay it on white: it brings its own tile, dark
+# like the Inspector by default (a browser that ignores the media query keeps it), light in a light colour scheme.
 FAVICON = ("data:image/svg+xml," + quote(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" '
-    'stroke-linejoin="round"><style>*{stroke:#3b5bdb;color:#3b5bdb}@media (prefers-color-scheme:dark){*{stroke:#8ea2ff;'
-    'color:#8ea2ff}}</style><path d="M6 19V5l12 14V9.5"/><circle cx="18" cy="5.5" r="1.75" fill="currentColor"/></svg>',
+    'stroke-linejoin="round"><style>rect{fill:#18181a}path,circle{stroke:#8ea2ff}circle{fill:#8ea2ff}'
+    '@media (prefers-color-scheme:light){rect{fill:#fbfbfa}path,circle{stroke:#3b5bdb}circle{fill:#3b5bdb}}</style>'
+    '<rect width="24" height="24" rx="5.5" stroke="none"/><g transform="translate(2.4 2.4) scale(.8)">'
+    '<path d="M6 19V5l12 14V9.5"/><circle cx="18" cy="5.5" r="1.75"/></g></svg>',
     safe=" :/=\"'<>;(),.-{}*@"))  # '#' encoded: in a data URI it would start a fragment
 
 
