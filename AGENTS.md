@@ -32,8 +32,9 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-37.md` is the latest, proposed
-   2026-10-08 (the bundle's data outside the bundle, high risk); `PHASE-36.md`, approved
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-38.md` is the latest, approved
+   2026-10-08 with Q1–Q7 open (restore from the panel, high risk); `PHASE-37.md`, approved 2026-10-08 and complete (the
+   bundle's data outside the bundle, high risk); `PHASE-36.md`, approved
    2026-10-08 and complete (named facts, `packet-v16`, the default);
    `PHASE-35.md`, approved 2026-10-08 and complete, a correction phase beside Stage 7 (the excerpt anchor,
    `packet-v15`);
