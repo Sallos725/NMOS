@@ -6,6 +6,11 @@ First start (initdb + migrations), health and the version it reports, pgvector a
 then a second start on the same data. Then the refusals: a second launcher on the same data while one runs, data
 written by a newer NMOS (a migration this bundle does not ship), and the sidecar's port taken by another program.
 Last, an update: the data of the version before (this bundle without its last migration) starts here and migrates.
+
+The data lives in a per-user folder outside the bundle (Phase 37); this smoke points that folder at one of its own,
+beside the bundle (the platform's LOCALAPPDATA, XDG_DATA_HOME or HOME). Its last check is the move from 0.3.0's
+layout: data/ beside the launcher is adopted on the first start, a database in both places is refused, and on a second
+drive, where the runner has one, the adoption copies and keeps the old folder.
 """
 
 from __future__ import annotations
@@ -24,6 +29,18 @@ from pathlib import Path
 WINDOWS = os.name == "nt"
 PORT = os.environ.get("NMOS_SIDECAR_PORT", "8795")
 REPO = Path(__file__).resolve().parents[2]
+DATA = Path()  # the per-user data folder, set by use_user_base()
+
+
+def use_user_base(bundle: Path, base: Path) -> Path:
+    """Point the launcher's per-user folder below base (this process and the launchers it starts); its data folder."""
+    sys.path.insert(0, str(bundle))
+    import nmos_launcher
+
+    base.mkdir(parents=True, exist_ok=True)
+    key = "LOCALAPPDATA" if WINDOWS else "HOME" if sys.platform == "darwin" else "XDG_DATA_HOME"
+    os.environ[key] = str(base)
+    return nmos_launcher.user_data_dir(dict(os.environ))
 
 
 def start(bundle: Path) -> tuple[subprocess.Popen, float]:
@@ -60,7 +77,7 @@ def stop(proc: subprocess.Popen, bundle: Path) -> float:
 
 
 def pg_running(bundle: Path, data: Path | None = None) -> bool:
-    pgsql, data = bundle / "pgsql", data or bundle / "data"
+    pgsql, data = bundle / "pgsql", data or DATA
     if WINDOWS:  # pg_ctl reads its arguments through the ANSI code page, as the launcher works around
         sys.path.insert(0, str(bundle))
         from nmos_launcher import ascii_path
@@ -84,7 +101,7 @@ def refused(bundle: Path, expect: str) -> str:
 def connect(bundle: Path, data: Path | None = None, port: str | None = None):
     import psycopg
 
-    pw = ((data or bundle / "data") / "db-password").read_text(encoding="utf-8").strip()
+    pw = ((data or DATA) / "db-password").read_text(encoding="utf-8").strip()
     return psycopg.connect(f"postgresql://nmos:{pw}@127.0.0.1:{port or os.environ.get('NMOS_DB_PORT', '54390')}/nmos")
 
 
@@ -184,6 +201,90 @@ def update_keeps_data(bundle: Path) -> dict:
     return {"migrated": last.name, "migrations": len(after)}
 
 
+def adoption(bundle: Path) -> dict:
+    """Phase 37, Q3–Q5: data/ beside the launcher as 0.3.0 kept it (written here with a relative NMOS_DATA_DIR=data,
+    the version before being this bundle without its last migration) is moved to the per-user folder on the first
+    start and migrated with what it held; a database in both places stops the start with neither changed; on another
+    drive (Linux /dev/shm, Windows D:), the adoption copies, checks the copy and keeps the old folder."""
+    import shutil
+
+    import nmos_launcher
+
+    os.environ.update(NMOS_SIDECAR_PORT="8796", NMOS_DB_PORT="54396")
+    last = max((bundle / "migrations").glob("[0-9][0-9][0-9][0-9]_*.sql"))
+    held_back = last.with_name(last.name + ".next")
+    old = bundle / "data"
+    result: dict = {}
+
+    def write_old_data(note: str) -> None:
+        os.environ["NMOS_DATA_DIR"] = "data"  # Q5: relative to the bundle, today's layout on purpose
+        last.rename(held_back)
+        try:
+            services = nmos_launcher.Services()
+            services.start()
+            try:
+                with connect(bundle, old, "54396") as conn:
+                    conn.execute("CREATE TABLE smoke_adoption_marker (note text)")
+                    conn.execute("INSERT INTO smoke_adoption_marker VALUES (%s)", (note,))
+            finally:
+                services.stop()
+        finally:
+            held_back.rename(last)
+            del os.environ["NMOS_DATA_DIR"]
+        if not (old / "pg" / "PG_VERSION").is_file():
+            raise SystemExit(f"NMOS_DATA_DIR=data did not put the database beside the launcher: {old}")
+
+    def start_adopting(data: Path, note: str) -> set[str]:
+        services = nmos_launcher.Services()
+        if services.data != data or not services.per_user:
+            raise SystemExit(f"the start did not use the per-user folder {data}: {services.data}")
+        services.start()
+        try:
+            with connect(bundle, data, "54396") as conn:
+                if conn.execute("SELECT note FROM smoke_adoption_marker").fetchone() != (note,):
+                    raise SystemExit("the data written beside the launcher is not in the per-user folder")
+                return {r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()}
+        finally:
+            services.stop()
+            if pg_running(bundle, data):
+                raise SystemExit("Postgres is still running after the adoption check's stop")
+
+    try:
+        data = use_user_base(bundle, bundle.parent / "옮긴 데이터")
+        write_old_data("beside the launcher, before the update")
+        applied = start_adopting(data, "beside the launcher, before the update")
+        moved = bundle / "data.moved"
+        if last.name not in applied or old.exists() or not (moved / "MOVED.txt").is_file() or (moved / "pg").exists():
+            raise SystemExit(f"the adoption by a rename left {sorted(p.name for p in bundle.iterdir())}")
+        result["renamed"] = {"to": str(data), "migrated": last.name}
+
+        write_old_data("a second database beside the launcher")  # Q4: now both places hold one
+        before = nmos_launcher.tree_digest(old / "pg"), nmos_launcher.tree_digest(data / "pg")
+        result["refused_both"] = refused(bundle, "two places")
+        if (nmos_launcher.tree_digest(old / "pg"), nmos_launcher.tree_digest(data / "pg")) != before:
+            raise SystemExit("the refusal of two databases changed one of them")
+
+        other = Path("D:/") if WINDOWS else Path("/dev/shm") if sys.platform.startswith("linux") else None
+        if other is None or not other.is_dir() or other.stat().st_dev == bundle.stat().st_dev:
+            result["copied"] = "no second drive on this runner"
+        else:
+            far = other / "nmos-adoption"
+            try:
+                data = use_user_base(bundle, far)
+                start_adopting(data, "a second database beside the launcher")
+                kept = bundle / "data.moved-2"
+                if old.exists() or nmos_launcher.tree_digest(kept / "pg") != before[0] or \
+                        "copy" not in (kept / "MOVED.txt").read_text(encoding="utf-8"):
+                    raise SystemExit(f"the adoption by a copy did not keep the old folder: {kept}")
+                result["copied"] = {"to": str(data), "kept": str(kept)}
+            finally:
+                shutil.rmtree(far, ignore_errors=True)
+    finally:
+        for key in ("NMOS_DATA_DIR", "NMOS_SIDECAR_PORT", "NMOS_DB_PORT"):
+            os.environ.pop(key, None)
+    return result
+
+
 def check_version() -> str:
     """The sidecar reports the version apps/sidecar/pyproject.toml declares (v0.3.0's bundles all said 0.0.0)."""
     want = re.search(r'^version\s*=\s*"([^"]+)"', (REPO / "apps" / "sidecar" / "pyproject.toml").read_text(encoding="utf-8"),
@@ -219,14 +320,18 @@ def check_sql(bundle: Path) -> dict:
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
     bundle = Path(sys.argv[1]).resolve()
-    result: dict = {"bundle": str(bundle), "platform": sys.platform}
+    global DATA
+    DATA = use_user_base(bundle, bundle.parent / "사용자 데이터")  # Korean, with a space: as a user folder can be
+    result: dict = {"bundle": str(bundle), "platform": sys.platform, "data": str(DATA)}
     proc, result["first_start_s"] = start(bundle)
     try:
+        if not (DATA / "pg" / "PG_VERSION").is_file() or (bundle / "data").exists():
+            raise SystemExit(f"the first start did not make its database in {DATA} alone")
         result["sql"] = check_sql(bundle)
         result["version"] = check_version()
         result["dashboard"] = check_dashboard()
         if WINDOWS:
-            result["data_acl"] = check_owner_only_acl(bundle / "data")
+            result["data_acl"] = check_owner_only_acl(DATA)
         result["refused_second_launcher"] = refused(bundle, "already running")
     finally:
         result["stop_s"] = stop(proc, bundle)
@@ -247,6 +352,7 @@ def main() -> None:
         result["refused_port"] = refused(bundle, f"Port {PORT}")
     result["stop_while_starting"] = stop_while_starting(bundle)
     result["update_keeps_data"] = update_keeps_data(bundle)
+    result["adoption"] = adoption(bundle)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

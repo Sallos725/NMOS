@@ -73,10 +73,12 @@ def refuse(bundle: Path, text: str) -> int:
 
 
 def suite(bundle: Path) -> int:
-    """Start the bundle, then run apps/sidecar's pytest against its PostgreSQL as the test admin."""
+    """Start the bundle, then run apps/sidecar's pytest against its PostgreSQL as the test admin. Its data folder is
+    its own (NMOS_DATA_DIR): the per-user one may hold another step's (the macOS app's, with its token in .env)."""
     kw = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {"start_new_session": True}
+    data = bundle.parent / "suite-data"
     launcher = subprocess.Popen([str(bundle_python(bundle)), str(bundle / "nmos_launcher.py")], cwd=bundle,
-                                env=dict(os.environ, NMOS_SIDECAR_PORT="8795"), **kw)
+                                env=dict(os.environ, NMOS_SIDECAR_PORT="8795", NMOS_DATA_DIR=str(data)), **kw)
     try:
         deadline = time.monotonic() + 240
         while True:
@@ -90,7 +92,7 @@ def suite(bundle: Path) -> int:
                 print("the bundle did not start")
                 return 1
             time.sleep(0.5)
-        pw = (bundle / "data" / "db-password").read_text(encoding="utf-8").strip()
+        pw = (data / "db-password").read_text(encoding="utf-8").strip()
         # UTF-8 mode, as the launcher runs the sidecar: on Windows the tests read the repository's docs and fixtures,
         # which a cp1252 default cannot decode.
         env = dict(os.environ, NMOS_TEST_ADMIN_URL=f"postgresql://nmos:{pw}@127.0.0.1:54390/postgres", PYTHONUTF8="1")
