@@ -10,7 +10,8 @@ replaces; the launcher now keeps it in a per-user folder and moves 0.3.0's `data
 one drive; across drives a copy checked file by file and started once; the old folder renamed `data.moved`, never
 deleted), refuses a database in both places, honours `NMOS_DATA_DIR` (relative to the bundle), and on Windows asks for a
 folder when the per-user path is one PostgreSQL cannot open. Unit tests `apps/sidecar/tests/test_native_launcher.py`
-(20, failures injected at each adoption step); the bundle smoke adopts real clusters on each target. Locally, a real
+(20, failures injected at each adoption step); the bundle smoke adopts real clusters on each target, and on Windows
+CI asks the Q6 question in the console on a drive without short names (`ci_smoke.py ask`). Locally, a real
 v0.3.0 linux-x64 bundle's data was adopted by the new launcher with its rows and migrations, and the full smoke passed
 on it with the copy across drives (`/dev/shm`) (its version check skipped: v0.3.0 reports 0.0.0, fixed by #269). Next:
 the owner's Windows check (a real update from a 0.3.0 bundle folder), a look on macOS that nothing moved. Aimed at
