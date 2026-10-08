@@ -1,0 +1,37 @@
+## Chromium 1223 (1 and 4 MB, then 30 and 64 MB)
+[NMOS-PROBE] send mb=1 route=server form=binary status=200 sent=0 got=1048576 sha=b13261ceffb2 sink=b13261ceffb2 match=true ct=application/octet-stream len=1048576 ms=313
+[NMOS-PROBE] send mb=4 route=server form=binary status=200 sent=0 got=4194304 sha=80dd235b2972 sink=80dd235b2972 match=true ct=application/octet-stream len=4194304 ms=1305
+[NMOS-PROBE] send mb=4 route=server form=blob threw Invalid body type after_ms=2
+[NMOS-PROBE] send mb=1 route=server form=base64 status=200 sent=1048576 got=1048576 sha=b13261ceffb2 sink=b13261ceffb2 match=true ct=application/json len=1398115 ms=144
+[NMOS-PROBE] send mb=4 route=server form=base64 status=200 sent=4194304 got=4194304 sha=80dd235b2972 sink=80dd235b2972 match=true ct=application/json len=5592419 ms=543
+[NMOS-PROBE] send mb=1 route=direct form=binary status=200 sent=0 got=1048576 sha=b13261ceffb2 sink=b13261ceffb2 match=true ct=application/octet-stream len=1048576 ms=316
+[NMOS-PROBE] send mb=4 route=direct form=binary status=200 sent=0 got=4194304 sha=80dd235b2972 sink=80dd235b2972 match=true ct=application/octet-stream len=4194304 ms=1308
+[NMOS-PROBE] send mb=4 route=direct form=blob threw Invalid body type after_ms=1
+[NMOS-PROBE] send mb=1 route=direct form=base64 status=200 sent=1048576 got=1048576 sha=b13261ceffb2 sink=b13261ceffb2 match=true ct=application/json len=1398115 ms=142
+[NMOS-PROBE] send mb=4 route=direct form=base64 status=200 sent=4194304 got=4194304 sha=80dd235b2972 sink=80dd235b2972 match=true ct=application/json len=5592419 ms=536
+[NMOS-PROBE] send mb=30 route=server form=base64 status=200 sent=31457280 got=31457280 sha=760855449e6f sink=760855449e6f match=true ct=application/json len=41943051 ms=4421
+[NMOS-PROBE] send mb=30 route=direct form=base64 status=200 sent=31457280 got=31457280 sha=760855449e6f sink=760855449e6f match=true ct=application/json len=41943051 ms=4371
+[NMOS-PROBE] send mb=30 route=server form=binary status=200 sent=0 got=31457280 sha=760855449e6f sink=760855449e6f match=true ct=application/octet-stream len=31457280 ms=9997
+[NMOS-PROBE] send mb=30 route=direct form=binary status=200 sent=0 got=31457280 sha=760855449e6f sink=760855449e6f match=true ct=application/octet-stream len=31457280 ms=10145
+[NMOS-PROBE] send mb=64 route=server form=base64 status=200 sent=67108864 got=67108864 sha=8bb7390b79b4 sink=8bb7390b79b4 match=true ct=application/json len=89478499 ms=9541
+[NMOS-PROBE] send mb=64 route=direct form=base64 status=200 sent=67108864 got=67108864 sha=8bb7390b79b4 sink=8bb7390b79b4 match=true ct=application/json len=89478499 ms=9546
+[NMOS-PROBE] send mb=64 route=server form=binary status=200 sent=0 got=67108864 sha=8bb7390b79b4 sink=8bb7390b79b4 match=true ct=application/octet-stream len=67108864 ms=21966
+[NMOS-PROBE] send mb=64 route=direct form=binary status=200 sent=0 got=67108864 sha=8bb7390b79b4 sink=8bb7390b79b4 match=true ct=application/octet-stream len=67108864 ms=22022
+
+## Firefox 1543
+[NMOS-PROBE] send mb=4 route=server form=binary status=200 sent=0 got=4194304 sha=80dd235b2972 sink=80dd235b2972 match=true ct=application/octet-stream len=4194304 ms=150
+[NMOS-PROBE] send mb=4 route=server form=blob threw Invalid body type after_ms=1
+[NMOS-PROBE] send mb=4 route=server form=base64 status=200 sent=4194304 got=4194304 sha=80dd235b2972 sink=80dd235b2972 match=true ct=application/json len=5592419 ms=131
+[NMOS-PROBE] send mb=4 route=direct form=binary status=200 sent=0 got=4194304 sha=80dd235b2972 sink=80dd235b2972 match=true ct=application/octet-stream len=4194304 ms=205
+[NMOS-PROBE] send mb=4 route=direct form=blob threw Invalid body type after_ms=0
+[NMOS-PROBE] send mb=4 route=direct form=base64 status=200 sent=4194304 got=4194304 sha=80dd235b2972 sink=80dd235b2972 match=true ct=application/json len=5592419 ms=105
+[NMOS-PROBE] send mb=30 route=server form=base64 status=200 sent=31457280 got=31457280 sha=760855449e6f sink=760855449e6f match=true ct=application/json len=41943051 ms=870
+[NMOS-PROBE] send mb=30 route=direct form=base64 status=200 sent=31457280 got=31457280 sha=760855449e6f sink=760855449e6f match=true ct=application/json len=41943051 ms=639
+[NMOS-PROBE] send mb=30 route=server form=binary status=200 sent=0 got=31457280 sha=760855449e6f sink=760855449e6f match=true ct=application/octet-stream len=31457280 ms=1404
+[NMOS-PROBE] send mb=30 route=direct form=binary status=200 sent=0 got=31457280 sha=760855449e6f sink=760855449e6f match=true ct=application/octet-stream len=31457280 ms=1308
+
+## The sink's user agents (server route: PocketRisu's server; direct: the browser)
+      1 'ua': 'curl/8.5.0'
+      8 'ua': 'Mozilla/5.0 (X11; Linux x86_64) AppleWeb'
+      4 'ua': 'Mozilla/5.0 (X11; Linux x86_64; rv:155.0'
+     12 'ua': 'node'
