@@ -207,3 +207,102 @@ def test_the_inspector_shows_labels_rest_counts_and_repetition(v14):
     assert 'title="required">필수</span>' in page
     assert "쉬느라 빠진 보조 줄" in page
     assert "반복 (최근 요청 4개)" in page and "직전 요청에도 들어간 줄의 비율" in page
+
+
+# --- Codex review on #278 ----------------------------------------------------------------------------------------
+
+def test_the_reserved_first_excerpt_never_rests(migrated):
+    """P1: a vector-only best hit, the request's only memory, was left out on the third request: the rest ran before
+    the compiler chose the reserved (required) excerpt."""
+    from test_sidecar_integration import recall
+    from test_vectors import FakeEmbedder, drain_embeddings
+    with make_client(migrated, embedder=FakeEmbedder(), packet_policy="packet-v14", embed_url="http://fake/v1",
+                     embed_model="fake-embed") as client:
+        chat = SimChat()
+        chat.reply("Welcome to the story.")
+        chat.user("하나는 은빛 열쇠를 등대 지하에 숨겼다.")
+        chat.reply("Noted.")
+        _sync(client, chat)
+        drain_embeddings(migrated)
+        lines = []
+        for _ in range(3):
+            chat.user("Where is the key at the lighthouse?")
+            _sync(client, chat)
+            out = recall(client, chat, "Where is the key at the lighthouse?",  # all but the source in the prompt
+                         in_context=[m["chatId"] for m in chat.messages[3:]])
+            lines.append(client.get(f"/v1/trace/{out['trace_id']}").json()["lines"])
+            chat.reply("Quiet waves.")
+            _sync(client, chat)
+        placed = [[e for e in ls if e["kind"] == "excerpt" and e.get("placed") and "열쇠" in e["text"]] for ls in lines]
+        assert all(placed), [len(p) for p in placed]
+        assert placed[2][0]["label"] == "required"
+
+
+def test_a_replay_reads_only_the_replies_written_before_its_request(v14):
+    """P2: a reply appended after the replayed request counted as an echo of the requests before it and changed what
+    it rested."""
+    client, url = v14
+    chat = SimChat()
+    chat.reply("Welcome to the story.")
+    chat.user("Hana is a cartographer.")
+    chat.reply("Noted.")
+    for i in range(RECENT + 2):
+        chat.user(f"Idle chatter {i} about clouds.")
+        chat.reply("Noted.")
+    _sync(client, chat)
+    extract(url)
+    chat.user("What now?")
+    _sync(client, chat)
+    traces = [client.post("/v1/retrieve", json={"chat_id": chat.id, "query": "What now?", "previous_ai": "Hana smiled.",
+                                                "budget_tokens": 600,
+                                                "in_context_ids": [m["chatId"] for m in chat.messages[-RECENT:]]}
+                          ).json()["trace_id"] for _ in range(3)]  # retried before any reply was shown
+    rested = client.get(f"/v1/trace/{traces[2]}").json()
+    assert rested["latency_ms"]["rested"] >= 1, [e["text"] for e in rested["lines"] if e.get("placed")]
+    first = client.get(f"/v1/trace/{traces[2]}/replay").json()
+    assert first["status"] == "ok" and first["reproduced"] is True
+    gone = [e for e in client.get(f"/v1/trace/{traces[0]}").json()["lines"] if e.get("placed")
+            and not any(x.get("placed") and x["kind"] == e["kind"] and x.get("ref") == e.get("ref")
+                        for x in rested["lines"])]
+    assert gone  # the supportive identity fact, placed twice and never used, rests
+    chat.reply(f"{gone[0].get('content') or gone[0]['text']}, she said.")  # written after all three: echoes the rested line
+    _sync(client, chat)
+    again = client.get(f"/v1/trace/{traces[2]}/replay").json()
+    assert again["status"] == "ok" and again["reproduced"] is True, again.get("notes")
+
+
+def test_an_unused_scene_summary_rests(migrated):
+    """P2: a scene summary was labeled supportive but never passed through the rest; the story so far stays."""
+    from test_summaries import ON, drain, story_chat
+    with make_client(migrated, **ON, packet_policy="packet-v14") as client:
+        chat = story_chat(30)
+        _sync(client, chat)
+        drain(migrated)
+        traces = []
+        for _ in range(3):
+            chat.user("Turn 1 begins.")
+            _sync(client, chat)
+            out = client.post("/v1/retrieve", json={"chat_id": chat.id, "query": "Turn 1 begins.", "previous_ai": "",
+                                                    "budget_tokens": 2000,
+                                                    "in_context_ids": [m["chatId"] for m in chat.messages[-6:]]}).json()
+            traces.append(client.get(f"/v1/trace/{out['trace_id']}").json())
+            chat.reply("Quiet waves.")
+            _sync(client, chat)
+
+    def summaries(trace, label):
+        return {str(e["ref"]) for e in trace["lines"] if e["kind"] == "summary" and e.get("placed")
+                and e.get("label") == label}
+    scene = summaries(traces[0], "supportive") & summaries(traces[1], "supportive")
+    assert scene and not scene & summaries(traces[2], "supportive")
+    assert summaries(traces[2], "required")  # the story so far never rests
+    assert traces[2]["latency_ms"]["rested"] >= 1
+
+
+def test_a_risky_line_is_offered_after_an_ordinary_supportive_one():
+    """P2: a disputed fact first in relevance order took the room an ordinary supportive fact needed."""
+    disputed, ordinary = _line("fact", 1), _line("fact", 2)
+    out = compile_lines([], 150, facts=[disputed, ordinary], policy="packet-v14", risky=frozenset({"1"}))
+    placed = {(e.get("ref") or {}).get("assertion"): e.get("placed") for e in out.ledger if e["kind"] == "fact"}
+    assert placed[2] is True
+    assert placed[1] is False or out.ledger.index(next(e for e in out.ledger if (e.get("ref") or {}).get("assertion") == 1)) \
+        > out.ledger.index(next(e for e in out.ledger if (e.get("ref") or {}).get("assertion") == 2))
