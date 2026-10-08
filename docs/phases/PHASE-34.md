@@ -2,7 +2,7 @@
 
 > **Status: approved 2026-10-07 (the owner: every question as proposed; the live run (Q8 d) after a cost estimate),
 > the current phase; steps 2–4 done (#278: labels, the rest, the threshold, the Inspector; S1 replayed: supportive
-> repeats −24 %, stale tokens −76 %, the bench and the quote set as `packet-v13`; latency +0.7 ms at 10,000 messages),
+> repeats −23 %, stale tokens −72 % after the review fixes, the bench and the quote set as `packet-v13`; latency +0.7 ms at 10,000 messages),
 > step 5 done: the live run on the owner's chat met Q9 (d) (echo of repeated lines 0.29 → 0.39, no repetition felt;
 > `docs/perf/phase34-rest.md`), and `packet-v14` is the default since 2026-10-08 (the owner, Q6); `0.4.0` next.** Stage 7 of `docs/ROADMAP-1.0.md` ("Forensic recall"; original
 > §48–50, §53; Track B, B6), part 2 of 2 (PHASE-33 Q0). Under AGE-10. Follows Phase 33 (`packet-v13`, ADR 0067, PRs
