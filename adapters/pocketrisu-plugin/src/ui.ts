@@ -11,7 +11,7 @@ import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dir
   isVertexEndpoint, MAX_DEADLINE_MS, PANEL_MAX_RESERVED_TOKENS, presetMatches, serviceAccountProject, VERTEX_URL, type FormValues, type Section } from './form';
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
 import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices,
-  localTime, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
+  localTime, markDetail, placeMarks, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
 import type { EntityRow, Preview, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
@@ -138,6 +138,41 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}.nmos .insp .top p{margin:0}
 .nmos .insp a{color:var(--c-link);text-decoration:none;cursor:pointer}
 .nmos .insp a:hover{text-decoration:underline}
+.nmos .insp .tl{margin:6px 0 16px}.nmos .insp .tl .tl-h{font-size:11.5px;font-weight:500;letter-spacing:.04em;color:var(--c-text-muted);margin:16px 0 4px;cursor:pointer;list-style:none}
+.nmos .insp .tl .tl-h::-webkit-details-marker{display:none}.nmos .insp .tl .tl-h::before{content:"\\25BE  "}.nmos .insp .tl details:not([open])>.tl-h::before{content:"\\25B8  "}
+.nmos .insp .tl-switch{font-size:12.5px;margin:0 0 8px}.nmos .insp .tl-span{color:var(--c-link);cursor:pointer}
+.nmos .insp .tl-hint{font-size:11.5px;color:var(--c-text-faint);margin:0 0 8px}
+.nmos .insp .tl-row{display:grid;grid-template-columns:112px minmax(0,1fr);gap:8px;align-items:center;padding:3px 0;color:inherit}.nmos .insp a.tl-line{text-decoration:none;border-radius:6px}
+.nmos .insp .tl-cast .tl-row{display:block}
+.nmos .insp .tl-lab{display:block;font-size:12.5px;line-height:1.3;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;max-height:2.6em}
+.nmos .insp .tl-cast .tl-lab{white-space:nowrap;margin-bottom:2px}
+.nmos .insp .tl-lab .tl-k{display:block;font-size:11px;color:var(--c-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nmos .insp .tl-lab .tl-val{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nmos .insp .tl-lab .tl-val.canon{color:var(--c-text-muted)}
+.nmos .insp .tl-last{color:var(--c-text-faint);font-size:11.5px}.nmos .insp .tl-end{display:none}
+.nmos .insp .tl-me{font-size:10.5px;color:var(--c-link);margin-left:6px}
+.nmos .insp .tl-track{display:block;position:relative;height:26px}
+.nmos .insp .tl-rule{position:absolute;left:0;right:0;top:13px;height:1px;background:var(--c-line)}
+.nmos .insp .tl-bar{position:absolute;top:5px;height:16px;min-width:6px;border-radius:4px;overflow:hidden;box-sizing:border-box;background:var(--c-raised);border:1px solid var(--c-text-faint);cursor:pointer}
+.nmos .insp .tl-bar.short{z-index:2}
+.nmos .insp .tl-bar.past{background:transparent;border-color:var(--c-line-hover)}.nmos .insp .tl-bar.neg{border-style:dotted}
+.nmos .insp .tl-bar.open{border-right-style:dashed}.nmos .insp .tl-bar.canon{border-left:2px dotted var(--c-text-muted)}
+.nmos .insp .tl-bar.owner{border-color:var(--c-warn)}
+.nmos .insp .tl .sel{background:var(--c-accent);border-color:var(--c-accent);color:#fff}
+.nmos .insp .tl-dot{position:absolute;top:2px;bottom:2px;width:10px;margin-left:-5px;cursor:pointer}
+.nmos .insp .tl-dot::after{content:"";position:absolute;left:4px;bottom:2px;width:2px;height:10px;border-radius:1px;background:var(--c-text-muted)}
+.nmos .insp .tl-dot.s-major::after{height:18px;background:var(--c-text-strong)}.nmos .insp .tl-dot.s-minor::after{height:6px}
+.nmos .insp .tl-dot.n1{transform:translateX(4px)}.nmos .insp .tl-dot.n2{transform:translateX(8px)}.nmos .insp .tl-dot.n3{transform:translateX(12px)}
+.nmos .insp .tl .tl-dot.sel{background:transparent}.nmos .insp .tl .tl-dot.sel::after{background:var(--c-accent)}
+.nmos .insp .tl-tick{position:absolute;top:5px;width:2px;height:16px;margin-left:-1px;border-radius:1px;background:var(--c-text-soft)}
+.nmos .insp .tl-axis .tl-track{height:18px}
+.nmos .insp .tl-axis .tl-track span{position:absolute;top:0;font-size:10.5px;color:var(--c-text-faint);transform:translateX(-50%);white-space:nowrap}
+.nmos .insp .tl-axis .tl-track span.first{transform:none}.nmos .insp .tl-axis .tl-track span.last{transform:translateX(-100%)}
+.nmos .insp .tl-axis .tl-track span.odd,.nmos .insp .tl-axis .tl-track span.near{display:none}
+.nmos .insp .tl-card{margin:6px 0 10px;padding:10px 12px;border-radius:8px;background:var(--c-raised);font-size:12.5px}
+.nmos .insp .tl-card p{margin:2px 0}.nmos .insp .tl-card .v{font-size:17px;font-weight:600;line-height:1.35;color:var(--c-text-strong);overflow-wrap:anywhere}
+.nmos .insp .tl-hist{margin-top:8px;color:var(--c-text-muted)}.nmos .insp .tl-hist .cur{color:var(--c-text-strong)}
+.nmos .insp .tl-more{font-size:11.5px;color:var(--c-text-faint);margin:2px 0}
+.nmos .insp .tl-fold>summary,.nmos .insp .tl-others>summary{font-size:12px;color:var(--c-text-muted);margin:8px 0 2px;cursor:pointer}
 .nmos .insp .ref{display:block;font-family:ui-monospace,monospace;font-size:10.5px;color:var(--c-text-faint)}
 .nmos .insp .wrap{max-width:none;margin:0;padding:0;overflow-x:auto}
 .nmos .insp table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -630,6 +665,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   /** Adapt a page to the panel: times in the viewer's zone, the character links as a drop-down. */
   function enhance(page: DocumentFragment): void {
     closers = new Map();
+    // The timeline is asked for only when its section is opened, so a chat page never holds it unasked (an iPhone's
+    // Safari reloads a page under memory pressure; PHASE-32 step 3). The listener goes with the page it is on.
+    for (const box of Array.from(page.querySelectorAll<HTMLElement>('details > .tl-lazy'))) {
+      const section = box.parentElement as HTMLDetailsElement;
+      section.addEventListener('toggle', () => {
+        if (section.open && !box.dataset.state) void loadTimeline(box, '');
+      });
+    }
     for (const spot of Array.from(page.querySelectorAll('span.rp[data-repair]'))) {
       const action = repairAction(spot.getAttribute('data-repair'));
       if (action) spot.replaceChildren(...repairControls(action));
@@ -652,6 +695,35 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
     picker.addEventListener('change', () => go(picker.value));
     who.replaceChildren(el('span', { class: 'muted', text: name }), picker);
+  }
+  async function loadTimeline(box: HTMLElement, span: string): Promise<void> {
+    const from = inspectorPath;
+    box.dataset.state = 'loading';
+    box.replaceChildren(el('div', { class: 'muted', text: L('insp.loading') }));
+    try {
+      const query = ['part=timeline', span ? `span=${span}` : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
+      const r = await deps.api<{ html: string }>('GET', `${from}?${query}`, undefined, 15_000);
+      if (!box.isConnected || inspectorPath !== from) return; // the reader moved on
+      const part = safeFragment(r.html);
+      placeMarks(part);
+      box.replaceChildren(part);
+      box.dataset.state = 'loaded';
+    } catch (error) {
+      if (!box.isConnected) return;
+      delete box.dataset.state; // opening the section again retries
+      box.replaceChildren(el('div', { class: 'card err', text: errorText(lang, error) }));
+    }
+  }
+  // A tapped mark shows its detail right under its lane; one detail at a time, replaced, never piled up.
+  function showMark(mark: Element): void {
+    const timeline = mark.closest('.tl');
+    const row = mark.closest('.tl-row');
+    if (!timeline || !row) return;
+    timeline.querySelector('.tl-card')?.remove();
+    if (mark.classList.contains('sel')) return void mark.classList.remove('sel'); // a second tap closes it
+    for (const on of Array.from(timeline.querySelectorAll('.sel'))) on.classList.remove('sel');
+    mark.classList.add('sel');
+    row.after(markDetail(mark, { canon: L('tl.canon'), owner: L('tl.owner') }));
   }
   function go(path: string): void {
     if (path === inspectorPath) return void showInspector();
@@ -689,7 +761,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const direct = routeFor(base, await deps.getArg('route')) === 'direct';
     inspectorAddress.textContent = direct ? L('insp.browser', { url: `${base}/inspector${lang === 'en' ? '?lang=en' : ''}` }) : '';
     try {
-      const r = await deps.api<{ html: string }>('GET', `${path}${lang === 'en' ? '?lang=en' : ''}`, undefined, 15_000);
+      // A chat's and a character's page get a closed timeline section, filled when it is opened (PHASE-32 step 3);
+      // a sidecar without it ignores the ask.
+      const query = [conversation ? 'timeline=lazy' : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
+      const r = await deps.api<{ html: string }>('GET', `${path}${query ? `?${query}` : ''}`, undefined, 15_000);
       if (load !== loads) return;
       const page = safeFragment(r.html);
       enhance(page);
@@ -897,7 +972,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     linkCard.style.display = '';
   }
   inspectorBody.addEventListener('click', (event) => {
-    const link = event.target instanceof Element ? event.target.closest('a') : null;
+    const clicked = event.target instanceof Element ? event.target : null;
+    const choice = clicked?.closest('.tl-span[data-span]');
+    const box = choice?.closest<HTMLElement>('.tl-lazy');
+    if (choice && box) return void loadTimeline(box, choice.getAttribute('data-span') ?? '');
+    const mark = clicked?.closest('.tl [data-v]');
+    if (mark) return showMark(mark);
+    const link = clicked ? clicked.closest('a') : null;
     if (!link) return;
     event.preventDefault();
     const href = link.getAttribute('href');

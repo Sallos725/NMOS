@@ -30,7 +30,7 @@ from psycopg_pool import ConnectionPool
 
 from . import (__version__, archive, audit, canon, canonfacts, dropped, endings, extraction, generations, inspector, ledger,
                normtext, overuse,
-               plugin, preview, readmodel, retention, repairs, reveals, runtime, summaries, uploads, vectors)
+               plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, summaries, uploads, vectors)
 from . import usage as model_usage
 from .config import Settings
 from .db import make_pool
@@ -1208,7 +1208,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                    version=__version__, errors=recent_errors(conn))
 
     def inspector_detail_html(conv_id: UUID, request: Request, token: str | None, lang: str | None,
-                              embed: bool = False) -> str:
+                              embed: bool = False, span: str | None = None, lazy: bool = False) -> str:
         with request.app.state.pool.connection() as conn:
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
@@ -1241,9 +1241,29 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                         canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
                                         canon_held=canon.held(conn, conv_id), canon_read=cov["canon"].get("keys"),
                                         canon_facts=view.get("canon_facts", 0), dropped=lost,
-                                        endings=role_ends,
+                                        endings=role_ends, span=inspector.span_of(span),
+                                        cast=None if embed else cast_of(view, traces), lazy=lazy,
                                         overuse=overuse.placement(readmodel.ledgers(conn, conv_id)))
             return html
+
+    def inspector_cast_html(conv_id: UUID, request: Request, lang: str | None, span: str | None) -> str:
+        """The conversation's cast lines alone for the panel (PHASE-32 step 3), asked for when their section opens."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            view = inspector.with_participants(view_of(conn, conv["head_commit_id"]))
+            return inspector.conversation_cast(conv, cast_of(view, readmodel.traces(conn, conv_id)),
+                                               head_turn(conn, conv["head_commit_id"]), inspector.lang_of(lang),
+                                               inspector.span_of(span))
+
+    def cast_of(view: dict[str, Any], traces: list[dict[str, Any]]) -> dict[str, Any]:
+        """What the conversation page's cast lines draw (PHASE-32): every fact and entity, and the characters of the
+        newest request's scene (its trace records their names), first."""
+        r = view.get("resolution")
+        names = ((traces[0].get("latency_ms") or {}).get("scene_cast") or []) if traces else []
+        return {"facts": view["facts"], "entities": view["entities"],
+                "scene": [scene.key(r, n) for n in names] if r is not None else []}
 
     def summary_view(conn, conv_id: UUID, head: UUID, secrets: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The Inspector's summaries of a chat (PHASE-12 step 6), with the generation and whether packets use them."""
@@ -1255,15 +1275,21 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return view
 
     def inspector_character_html(conv_id: UUID, entity_id: UUID, request: Request, token: str | None,
-                                 lang: str | None, embed: bool = False) -> str:
+                                 lang: str | None, embed: bool = False, span: str | None = None, lazy: bool = False,
+                                 part: bool = False) -> str:
         with request.app.state.pool.connection() as conn:
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             view = inspector.with_participants(view_of(conn, conv["head_commit_id"]))
             with inspector.turn_links(conv_id, token, inspector.lang_of(lang)):
+                if part:  # the timeline alone, for the panel (PHASE-32 step 3)
+                    return inspector.character_timeline(conv, str(entity_id), view, inspector.lang_of(lang),
+                                                        head_turn(conn, conv["head_commit_id"]), inspector.span_of(span))
                 return inspector.character(conv, str(entity_id), view, token, active=rt["active_extractor"],
-                                           lang=inspector.lang_of(lang), embed=embed)
+                                           lang=inspector.lang_of(lang), embed=embed,
+                                           now=None if embed else head_turn(conn, conv["head_commit_id"]),
+                                           span=inspector.span_of(span), lazy=lazy)
 
     def inspector_turn_html(conv_id: UUID, turn: int, request: Request, token: str | None, lang: str | None,
                             embed: bool = False) -> str:
@@ -1295,13 +1321,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return RedirectResponse("/inspector" + (f"?{q}" if q else ""), status_code=307)
 
     @app.get("/inspector/c/{conv_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
-    def inspector_detail(conv_id: UUID, request: Request, token: str | None = None, lang: str | None = None):
-        return inspector_detail_html(conv_id, request, token, lang)
+    def inspector_detail(conv_id: UUID, request: Request, token: str | None = None, lang: str | None = None,
+                         span: str | None = None):
+        return inspector_detail_html(conv_id, request, token, lang, span=span)
 
     @app.get("/inspector/c/{conv_id}/e/{entity_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_character(conv_id: UUID, entity_id: UUID, request: Request, token: str | None = None,
-                            lang: str | None = None):
-        return inspector_character_html(conv_id, entity_id, request, token, lang)
+                            lang: str | None = None, span: str | None = None):
+        return inspector_character_html(conv_id, entity_id, request, token, lang, span=span)
 
     @app.get("/inspector/c/{conv_id}/t/{turn}", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_turn(conv_id: UUID, turn: int, request: Request, token: str | None = None, lang: str | None = None):
@@ -1312,13 +1339,20 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     def inspector_index_embed(request: Request, lang: str | None = None):
         return {"html": inspector_index_html(request, None, lang, embed=True)}
 
+    # PHASE-32 step 3: a plugin that can show the timeline asks with `timeline=lazy` (a closed section to fill), then
+    # for the timeline alone with `part=timeline` when that section opens. Without them the answer is as before.
     @app.get("/v1/inspector/c/{conv_id}", dependencies=[Depends(auth)])
-    def inspector_detail_embed(conv_id: UUID, request: Request, lang: str | None = None):
-        return {"html": inspector_detail_html(conv_id, request, None, lang, embed=True)}
+    def inspector_detail_embed(conv_id: UUID, request: Request, lang: str | None = None, timeline: str | None = None,
+                               part: str | None = None, span: str | None = None):
+        if part == "timeline":
+            return {"html": inspector_cast_html(conv_id, request, lang, span)}
+        return {"html": inspector_detail_html(conv_id, request, None, lang, embed=True, lazy=timeline == "lazy")}
 
     @app.get("/v1/inspector/c/{conv_id}/e/{entity_id}", dependencies=[Depends(auth)])
-    def inspector_character_embed(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None):
-        return {"html": inspector_character_html(conv_id, entity_id, request, None, lang, embed=True)}
+    def inspector_character_embed(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None,
+                                  timeline: str | None = None, part: str | None = None, span: str | None = None):
+        return {"html": inspector_character_html(conv_id, entity_id, request, None, lang, embed=True, span=span,
+                                                 lazy=timeline == "lazy", part=part == "timeline")}
 
     @app.get("/v1/inspector/c/{conv_id}/t/{turn}", dependencies=[Depends(auth)])
     def inspector_turn_embed(conv_id: UUID, turn: int, request: Request, lang: str | None = None):

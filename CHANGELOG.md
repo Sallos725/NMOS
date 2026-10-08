@@ -40,6 +40,12 @@ later, is `docs/KNOWN-ISSUES.md`.
   lines with the words verbatim and their turn: exact-quote questions on the bench chat 4 → 21 of 24. Turns the
   extractor has not reached yet (a chat NMOS has just met) keep their excerpts as raw evidence. In the Inspector a turn
   number opens that turn's page: its messages, what was extracted from it and which packets used it.
+- **Memory on a time axis in the Inspector** (Phase 32). A character's page draws its facts, relationships and threads
+  as bars over turns and its events as ticks, each linking to its row below; a tap shows what it was, when and how it
+  ended. The conversation page gets one line per character, the current scene first. The whole chat or the last 25
+  turns. In the plugin's panel the timeline is a closed section, fetched only when opened. What only the setting
+  (lorebook, card) gave folds under its own line in the timeline and the tables, and the tables name a character as
+  the story writes it.
 - **The portable bundles report their version.** Every v0.3.0 bundle (Linux x64 and arm64, macOS, Windows) reported
   version 0.0.0: the bundle build copies the sidecar in as source, without the package metadata the sidecar reads its
   version from. The build now writes that metadata from `apps/sidecar/pyproject.toml` and checks that the bundled

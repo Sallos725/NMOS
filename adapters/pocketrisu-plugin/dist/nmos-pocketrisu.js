@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:1c9f1deae7db".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:795822e2bbef".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -365,6 +365,8 @@
     // inspector view
     "insp.loading": ["\uC778\uC2A4\uD399\uD130\uB97C \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Loading the inspector\u2026"],
     "insp.back": ["\u2190 \uB4A4\uB85C", "\u2190 Back"],
+    "tl.canon": ["\uC124\uC815(canon)\uC5D0\uC11C \uC2DC\uC791\uD55C \uAC12\uC774\uC5D0\uC694. \uC774\uC57C\uAE30\uAC00 \uBC14\uAFB8\uBA74 \uADF8\uCABD\uC774 \uC774\uACA8\uC694.", "Starts from the setting (canon); the story wins when it says otherwise."],
+    "tl.owner": ["\uC624\uB108\uAC00 \uACE0\uCE5C \uAC12\uC774\uC5D0\uC694.", "The owner's version."],
     "insp.browser": ["\uBE0C\uB77C\uC6B0\uC800\uC5D0\uC11C \uC9C1\uC811 \uC5F4 \uC218\uB3C4 \uC788\uC2B5\uB2C8\uB2E4: {url}", "Also available in a browser: {url}"],
     "act.history": ["\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C", "Extract all history"],
     "act.rebuild": ["\uAE30\uC5B5 \uC7AC\uAD6C\uCD95", "Rebuild memory"],
@@ -1928,6 +1930,9 @@ ${revisionHash}`;
     const id = href?.startsWith("#") ? href.slice(1) : "";
     return SECTION.test(id) ? id : null;
   }
+  var PERCENT = /^(?:100(?:\.0{1,3})?|\d{1,2}(?:\.\d{1,3})?)$/;
+  var MARK_TEXT = /* @__PURE__ */ new Set(["data-v", "data-s", "data-o", "data-k", "data-p"]);
+  var MARK_TEXT_MAX = 400;
   function keepAttribute(name, value) {
     switch (name) {
       case "class":
@@ -1940,9 +1945,55 @@ ${revisionHash}`;
         return inspectorApiPath(value) !== null || sectionTarget(value) !== null;
       case "data-repair":
         return repairAction(value) !== null;
+      case "data-l":
+      case "data-w":
+        return PERCENT.test(value);
+      case "data-span":
+        return value === "" || value === "recent";
       default:
-        return false;
+        return MARK_TEXT.has(name) && value.length <= MARK_TEXT_MAX;
     }
+  }
+  function placeMarks(root) {
+    for (const mark of Array.from(root.querySelectorAll("[data-l]"))) {
+      const left = mark.getAttribute("data-l") ?? "";
+      if (!PERCENT.test(left)) continue;
+      mark.style.left = `${Number(left)}%`;
+      const width = mark.getAttribute("data-w");
+      if (width !== null && PERCENT.test(width)) mark.style.width = `calc(${Number(width)}% - 2px)`;
+    }
+  }
+  function markDetail(mark, notes) {
+    const card = document.createElement("div");
+    card.className = "tl-card";
+    const line = (text2, cls = "") => {
+      const p = document.createElement("p");
+      p.textContent = text2;
+      if (cls) p.className = cls;
+      card.append(p);
+    };
+    const row = mark.closest(".tl-row");
+    line(mark.getAttribute("data-k") || ((row?.querySelector(".tl-lab .tl-k") ?? row?.querySelector(".tl-lab"))?.textContent ?? ""), "muted");
+    line(mark.getAttribute("data-v") ?? "", "v");
+    const outcome = mark.getAttribute("data-o");
+    line((mark.getAttribute("data-s") ?? "") + (outcome ? ` \xB7 ${outcome}` : ""));
+    const who = mark.getAttribute("data-p");
+    if (who) line(who, "muted");
+    if (mark.classList.contains("canon")) line(notes.canon, "muted");
+    if (mark.classList.contains("owner")) line(notes.owner, "warn");
+    const lane = mark.classList.contains("tl-bar") && mark.parentElement ? Array.from(mark.parentElement.children).filter((b) => b.classList.contains("tl-bar")) : [];
+    if (lane.length > 1) {
+      const list = document.createElement("div");
+      list.className = "tl-hist";
+      for (const bar of lane) {
+        const row2 = document.createElement("p");
+        if (bar === mark) row2.className = "cur";
+        row2.textContent = `${bar.getAttribute("data-s") ?? ""}  ${bar.getAttribute("data-v") ?? ""}`;
+        list.append(row2);
+      }
+      card.append(list);
+    }
+    return card;
   }
   function safeFragment(html) {
     const template = document.createElement("template");
@@ -2216,6 +2267,41 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}.nmos .insp .top p{margin:0}
 .nmos .insp a{color:var(--c-link);text-decoration:none;cursor:pointer}
 .nmos .insp a:hover{text-decoration:underline}
+.nmos .insp .tl{margin:6px 0 16px}.nmos .insp .tl .tl-h{font-size:11.5px;font-weight:500;letter-spacing:.04em;color:var(--c-text-muted);margin:16px 0 4px;cursor:pointer;list-style:none}
+.nmos .insp .tl .tl-h::-webkit-details-marker{display:none}.nmos .insp .tl .tl-h::before{content:"\\25BE  "}.nmos .insp .tl details:not([open])>.tl-h::before{content:"\\25B8  "}
+.nmos .insp .tl-switch{font-size:12.5px;margin:0 0 8px}.nmos .insp .tl-span{color:var(--c-link);cursor:pointer}
+.nmos .insp .tl-hint{font-size:11.5px;color:var(--c-text-faint);margin:0 0 8px}
+.nmos .insp .tl-row{display:grid;grid-template-columns:112px minmax(0,1fr);gap:8px;align-items:center;padding:3px 0;color:inherit}.nmos .insp a.tl-line{text-decoration:none;border-radius:6px}
+.nmos .insp .tl-cast .tl-row{display:block}
+.nmos .insp .tl-lab{display:block;font-size:12.5px;line-height:1.3;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;max-height:2.6em}
+.nmos .insp .tl-cast .tl-lab{white-space:nowrap;margin-bottom:2px}
+.nmos .insp .tl-lab .tl-k{display:block;font-size:11px;color:var(--c-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nmos .insp .tl-lab .tl-val{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nmos .insp .tl-lab .tl-val.canon{color:var(--c-text-muted)}
+.nmos .insp .tl-last{color:var(--c-text-faint);font-size:11.5px}.nmos .insp .tl-end{display:none}
+.nmos .insp .tl-me{font-size:10.5px;color:var(--c-link);margin-left:6px}
+.nmos .insp .tl-track{display:block;position:relative;height:26px}
+.nmos .insp .tl-rule{position:absolute;left:0;right:0;top:13px;height:1px;background:var(--c-line)}
+.nmos .insp .tl-bar{position:absolute;top:5px;height:16px;min-width:6px;border-radius:4px;overflow:hidden;box-sizing:border-box;background:var(--c-raised);border:1px solid var(--c-text-faint);cursor:pointer}
+.nmos .insp .tl-bar.short{z-index:2}
+.nmos .insp .tl-bar.past{background:transparent;border-color:var(--c-line-hover)}.nmos .insp .tl-bar.neg{border-style:dotted}
+.nmos .insp .tl-bar.open{border-right-style:dashed}.nmos .insp .tl-bar.canon{border-left:2px dotted var(--c-text-muted)}
+.nmos .insp .tl-bar.owner{border-color:var(--c-warn)}
+.nmos .insp .tl .sel{background:var(--c-accent);border-color:var(--c-accent);color:#fff}
+.nmos .insp .tl-dot{position:absolute;top:2px;bottom:2px;width:10px;margin-left:-5px;cursor:pointer}
+.nmos .insp .tl-dot::after{content:"";position:absolute;left:4px;bottom:2px;width:2px;height:10px;border-radius:1px;background:var(--c-text-muted)}
+.nmos .insp .tl-dot.s-major::after{height:18px;background:var(--c-text-strong)}.nmos .insp .tl-dot.s-minor::after{height:6px}
+.nmos .insp .tl-dot.n1{transform:translateX(4px)}.nmos .insp .tl-dot.n2{transform:translateX(8px)}.nmos .insp .tl-dot.n3{transform:translateX(12px)}
+.nmos .insp .tl .tl-dot.sel{background:transparent}.nmos .insp .tl .tl-dot.sel::after{background:var(--c-accent)}
+.nmos .insp .tl-tick{position:absolute;top:5px;width:2px;height:16px;margin-left:-1px;border-radius:1px;background:var(--c-text-soft)}
+.nmos .insp .tl-axis .tl-track{height:18px}
+.nmos .insp .tl-axis .tl-track span{position:absolute;top:0;font-size:10.5px;color:var(--c-text-faint);transform:translateX(-50%);white-space:nowrap}
+.nmos .insp .tl-axis .tl-track span.first{transform:none}.nmos .insp .tl-axis .tl-track span.last{transform:translateX(-100%)}
+.nmos .insp .tl-axis .tl-track span.odd,.nmos .insp .tl-axis .tl-track span.near{display:none}
+.nmos .insp .tl-card{margin:6px 0 10px;padding:10px 12px;border-radius:8px;background:var(--c-raised);font-size:12.5px}
+.nmos .insp .tl-card p{margin:2px 0}.nmos .insp .tl-card .v{font-size:17px;font-weight:600;line-height:1.35;color:var(--c-text-strong);overflow-wrap:anywhere}
+.nmos .insp .tl-hist{margin-top:8px;color:var(--c-text-muted)}.nmos .insp .tl-hist .cur{color:var(--c-text-strong)}
+.nmos .insp .tl-more{font-size:11.5px;color:var(--c-text-faint);margin:2px 0}
+.nmos .insp .tl-fold>summary,.nmos .insp .tl-others>summary{font-size:12px;color:var(--c-text-muted);margin:8px 0 2px;cursor:pointer}
 .nmos .insp .ref{display:block;font-family:ui-monospace,monospace;font-size:10.5px;color:var(--c-text-faint)}
 .nmos .insp .wrap{max-width:none;margin:0;padding:0;overflow-x:auto}
 .nmos .insp table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -2769,6 +2855,12 @@ html,body{margin:0;background:${PALETTE.bg}}
     }
     function enhance(page) {
       closers = /* @__PURE__ */ new Map();
+      for (const box of Array.from(page.querySelectorAll("details > .tl-lazy"))) {
+        const section = box.parentElement;
+        section.addEventListener("toggle", () => {
+          if (section.open && !box.dataset.state) void loadTimeline(box, "");
+        });
+      }
       for (const spot of Array.from(page.querySelectorAll("span.rp[data-repair]"))) {
         const action = repairAction(spot.getAttribute("data-repair"));
         if (action) spot.replaceChildren(...repairControls(action));
@@ -2791,6 +2883,34 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       picker.addEventListener("change", () => go(picker.value));
       who.replaceChildren(el("span", { class: "muted", text: name }), picker);
+    }
+    async function loadTimeline(box, span) {
+      const from = inspectorPath;
+      box.dataset.state = "loading";
+      box.replaceChildren(el("div", { class: "muted", text: L("insp.loading") }));
+      try {
+        const query = ["part=timeline", span ? `span=${span}` : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
+        const r = await deps.api("GET", `${from}?${query}`, void 0, 15e3);
+        if (!box.isConnected || inspectorPath !== from) return;
+        const part = safeFragment(r.html);
+        placeMarks(part);
+        box.replaceChildren(part);
+        box.dataset.state = "loaded";
+      } catch (error) {
+        if (!box.isConnected) return;
+        delete box.dataset.state;
+        box.replaceChildren(el("div", { class: "card err", text: errorText(lang, error) }));
+      }
+    }
+    function showMark(mark) {
+      const timeline = mark.closest(".tl");
+      const row = mark.closest(".tl-row");
+      if (!timeline || !row) return;
+      timeline.querySelector(".tl-card")?.remove();
+      if (mark.classList.contains("sel")) return void mark.classList.remove("sel");
+      for (const on of Array.from(timeline.querySelectorAll(".sel"))) on.classList.remove("sel");
+      mark.classList.add("sel");
+      row.after(markDetail(mark, { canon: L("tl.canon"), owner: L("tl.owner") }));
     }
     function go(path) {
       if (path === inspectorPath) return void showInspector();
@@ -2826,7 +2946,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       const direct = routeFor(base, await deps.getArg("route")) === "direct";
       inspectorAddress.textContent = direct ? L("insp.browser", { url: `${base}/inspector${lang === "en" ? "?lang=en" : ""}` }) : "";
       try {
-        const r = await deps.api("GET", `${path}${lang === "en" ? "?lang=en" : ""}`, void 0, 15e3);
+        const query = [conversation ? "timeline=lazy" : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
+        const r = await deps.api("GET", `${path}${query ? `?${query}` : ""}`, void 0, 15e3);
         if (load !== loads) return;
         const page = safeFragment(r.html);
         enhance(page);
@@ -3073,7 +3194,13 @@ html,body{margin:0;background:${PALETTE.bg}}
       linkCard.style.display = "";
     }
     inspectorBody.addEventListener("click", (event) => {
-      const link = event.target instanceof Element ? event.target.closest("a") : null;
+      const clicked = event.target instanceof Element ? event.target : null;
+      const choice = clicked?.closest(".tl-span[data-span]");
+      const box = choice?.closest(".tl-lazy");
+      if (choice && box) return void loadTimeline(box, choice.getAttribute("data-span") ?? "");
+      const mark = clicked?.closest(".tl [data-v]");
+      if (mark) return showMark(mark);
+      const link = clicked ? clicked.closest("a") : null;
       if (!link) return;
       event.preventDefault();
       const href = link.getAttribute("href");

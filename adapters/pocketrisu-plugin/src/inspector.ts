@@ -117,16 +117,72 @@ export function sectionTarget(href: string | null): string | null {
   return SECTION.test(id) ? id : null;
 }
 
-/** Whether an attribute of the inspector markup survives: styling, tooltips, folds, inspector links and where a
- * repair can be made (ADR 0044). */
+// The timeline's marks (PHASE-32 step 3). A position passes only as a plain number from 0 to 100 (`data-l`, `data-w`),
+// which `placeMarks` turns into a position; the time window only as one of its two names; a mark's own text only to be
+// shown with textContent (`showMark`). A free `style` never passes.
+const PERCENT = /^(?:100(?:\.0{1,3})?|\d{1,2}(?:\.\d{1,3})?)$/;
+const MARK_TEXT = new Set(['data-v', 'data-s', 'data-o', 'data-k', 'data-p']);
+const MARK_TEXT_MAX = 400;
+
+/** Whether an attribute of the inspector markup survives: styling, tooltips, folds, inspector links, where a
+ * repair can be made (ADR 0044) and the timeline's marks (PHASE-32). */
 export function keepAttribute(name: string, value: string): boolean {
   switch (name) {
     case 'class': case 'title': case 'open': return true;
     case 'id': return SECTION.test(value);
     case 'href': return inspectorApiPath(value) !== null || sectionTarget(value) !== null;
     case 'data-repair': return repairAction(value) !== null;
-    default: return false;
+    case 'data-l': case 'data-w': return PERCENT.test(value);
+    case 'data-span': return value === '' || value === 'recent';
+    default: return MARK_TEXT.has(name) && value.length <= MARK_TEXT_MAX;
   }
+}
+
+/** Place the timeline's marks (PHASE-32 step 3): each `data-l` / `data-w` number becomes the mark's position. */
+export function placeMarks(root: ParentNode): void {
+  for (const mark of Array.from(root.querySelectorAll<HTMLElement>('[data-l]'))) {
+    const left = mark.getAttribute('data-l') ?? '';
+    if (!PERCENT.test(left)) continue;
+    mark.style.left = `${Number(left)}%`;
+    const width = mark.getAttribute('data-w');
+    if (width !== null && PERCENT.test(width)) mark.style.width = `calc(${Number(width)}% - 2px)`;
+  }
+}
+
+/** A tapped mark's detail (PHASE-32 Q3), built as text from the mark's own data: what it is, its value, when and how
+ * it ended, and the lane's history, which is its lane's bars. */
+export function markDetail(mark: Element, notes: { canon: string; owner: string }): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'tl-card';
+  const line = (text: string, cls = ''): void => {
+    const p = document.createElement('p');
+    p.textContent = text;
+    if (cls) p.className = cls;
+    card.append(p);
+  };
+  const row = mark.closest('.tl-row');  // the lane's name, not its value beside it
+  line(mark.getAttribute('data-k') || ((row?.querySelector('.tl-lab .tl-k') ?? row?.querySelector('.tl-lab'))?.textContent ?? ''), 'muted');
+  line(mark.getAttribute('data-v') ?? '', 'v');
+  const outcome = mark.getAttribute('data-o');
+  line((mark.getAttribute('data-s') ?? '') + (outcome ? ` · ${outcome}` : ''));
+  const who = mark.getAttribute('data-p');
+  if (who) line(who, 'muted');
+  if (mark.classList.contains('canon')) line(notes.canon, 'muted');
+  if (mark.classList.contains('owner')) line(notes.owner, 'warn');
+  const lane = mark.classList.contains('tl-bar') && mark.parentElement
+    ? Array.from(mark.parentElement.children).filter((b) => b.classList.contains('tl-bar')) : [];
+  if (lane.length > 1) {
+    const list = document.createElement('div');
+    list.className = 'tl-hist';
+    for (const bar of lane) {
+      const row = document.createElement('p');
+      if (bar === mark) row.className = 'cur';
+      row.textContent = `${bar.getAttribute('data-s') ?? ''}  ${bar.getAttribute('data-v') ?? ''}`;
+      list.append(row);
+    }
+    card.append(list);
+  }
+  return card;
 }
 
 /** Parse inspector HTML inertly and drop every element and attribute the inspector does not use. */

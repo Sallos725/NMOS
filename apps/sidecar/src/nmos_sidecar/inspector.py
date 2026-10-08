@@ -13,11 +13,11 @@ from html import escape
 from typing import Any
 from urllib.parse import quote
 
-from .entities import norm
+from .entities import USER_NAMES, norm
 from .predicates import REGISTRY
 from .repairs import default_outcome, outcomes
 from .facts import STANDING, earlier, first, participant_entities, symmetric
-from . import scene
+from . import scene, timeline
 from .packet import TURN_POLICIES
 from .readmodel import TURN_TRACES
 from .retrieval import CAST_GOALS, cast_facts
@@ -46,7 +46,7 @@ details>summary{cursor:pointer;list-style:none} details>summary::-webkit-details
 details>summary h2{display:inline-block} details>summary h2::before{content:"\\25B8  ";color:var(--muted)}
 details[open]>summary h2::before{content:"\\25BE  "}
 details.meta{margin:4px 0 0;font-size:12px} details.meta p{margin:4px 0}
-"""
+""" + timeline.STYLE
 
 LANGS = ("ko", "en")
 
@@ -216,6 +216,31 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
                  "This character cannot be found. Memory may have been rebuilt, or the name merged with another."),
     "who.empty": ("이 인물에 대해 추출된 내용이 아직 없습니다.", "Nothing has been extracted about this character yet."),
     "now": ("지금 상태 (<Cast>)", "Current state (<Cast>)"), "toc.now": ("지금 상태", "Current state"),
+    # PHASE-32: memory on a time axis
+    "timeline": ("시간축", "Over time"), "toc.timeline": ("시간축", "Over time"),
+    "people": ("등장인물 (시간축)", "Characters over time"), "toc.people": ("등장인물", "Characters"),
+    "tl.all": ("전체", "Whole chat"), "tl.recent": ("최근 {n}턴", "Last {n} turns"),
+    "tl.now": ("현재", "now"), "tl.now_at": ("현재 t{n}", "now t{n}"),
+    "tl.state": ("사실", "Facts"), "tl.relations": ("이 인물에게서 나가는 관계", "Relationships from them"),
+    "tl.threads": ("스레드", "Threads"), "tl.events": ("사건", "Events"), "tl.n_events": ("{n}건", "{n}"),
+    "tl.threads_n": ("스레드 · 열린 {o} · 닫힌 {c}", "Threads · {o} open · {c} closed"),
+    "tl.close": ("닫기", "Close"),
+    "tl.more": ("+{n}개는 아래 표에 있어요", "+{n} more in the tables below"),
+    "tl.row": ("아래 표에서 보기", "Show in the table below"),
+    "tl.canon": ("설정(canon)에서 시작한 값이에요. 이야기가 바꾸면 그쪽이 이겨요.",
+                 "Starts from the setting (canon); the story wins when it says otherwise."),
+    "tl.owner": ("오너가 고친 값이에요.", "The owner's version."),
+    "tl.hint": ("막대나 눈금을 누르면 여기에 자세히 나와요.", "Select a bar or a mark to see it here."),
+    "tl.hint_tap": ("막대나 눈금을 누르면 바로 아래에 자세히 나와요.", "Tap a bar or a mark to see it right below."),
+    "tl.empty": ("이 기간에 그릴 기억이 없어요.", "Nothing to draw in this window."),
+    "tl.cast_note": ("눈금은 그 인물의 기억이 바뀐 턴이에요. 이름을 누르면 그 인물의 시간축으로 가요.",
+                     "A tick is a turn where that character's memory changed. A name opens their timeline."),
+    "tl.others": ("다른 인물 {n}명", "{n} more characters"), "tl.me": ("나", "you"),
+    "tl.steady": ("변하지 않은 사실 {n}개", "Unchanged facts ({n})"),
+    "tl.steady_canon": ("설정(로어북)에서 온 사실 {n}개", "From the setting (lorebook, card): {n}"),
+    "setting_fold": ("설정(로어북·카드)에서만 온 것 {n}개", "Only from the setting (lorebook, card): {n}"),
+    "tl.steady_canon_rel": ("설정(로어북)에서 온 관계 {n}개", "Relationships from the setting: {n}"),
+    "tl.steady_rel": ("변하지 않은 관계 {n}개", "Unchanged relationships ({n})"), "tl.no_cast": ("아직 인물이 없어요.", "No characters yet."),
     "cs.located_in": ("있는 곳", "Place"), "cs.has_status": ("상태", "Condition"),
     "cs.feels_toward": ("페르소나에 대한 감정", "Feeling toward the persona"), "cs.possesses": ("지닌 것", "Carries"),
     "cs.goal": ("열린 목표", "Open goal"), "h.aspect": ("항목", "Aspect"),
@@ -395,13 +420,75 @@ def query(token: str | None, lang: str) -> str:
     return ("?" + "&".join(parts)) if parts else ""
 
 
+def span_of(value: str | None) -> str | None:
+    """The time window a timeline draws (PHASE-32 Q7): `recent`, or the whole chat."""
+    return "recent" if value == "recent" else None
+
+
+def _with_span(q: str, span: str | None) -> str:
+    return q if span is None else (q + "&" if q else "?") + f"span={span}"
+
+
+def _tl_t(lang: str):
+    """The timeline's translator: a stored value without a string of its own shows as itself."""
+    return lambda key: _t(lang, key) if key in T else key.split(".", 1)[-1]
+
+
+def _tl_switch(path: str, q: str, span: str | None, lang: str, panel: bool = False) -> str:
+    """The two time windows (PHASE-32 Q7): links that keep the token and the language, or in the panel plain choices
+    the plugin answers (`data-span`) by asking for the timeline again."""
+    choices = ((None, _t(lang, "tl.all")), ("recent", _t(lang, "tl.recent").format(n=timeline.RECENT)))
+    links = [f"<b>{_v(name)}</b>" if value == span
+             else f"<span class=\"tl-span\" data-span=\"{value or ''}\">{_v(name)}</span>" if panel
+             else f"<a href=\"{path}{_with_span(q, value)}\">{_v(name)}</a>"
+             for value, name in choices]
+    return f"<p class=\"tl-switch\">{' · '.join(links)}</p>"
+
+
+LAZY = "<div class=\"tl-lazy\"></div>"  # where the plugin puts the timeline when its section is opened (PHASE-32 step 3)
+
+
+def character_timeline(conv: dict[str, Any], entity_id: str, view: dict[str, Any], lang: str = "ko",
+                       now: int | None = None, span: str | None = None) -> str:
+    """A character's timeline alone, in the panel's form (PHASE-32 step 3): the plugin asks for it when the section
+    opens. Empty when the entity is gone or is not a character."""
+    entity = next((e for e in view["entities"] if e["id"] == entity_id), None)
+    if entity is None or entity["type"] != "character":
+        return ""
+    return timeline.character(_tl_t(lang), entity_id, view["facts"], view.get("threads", []),
+                              {norm(n) for n in entity["names"]}, now, span,
+                              _tl_switch("", "", span, lang, panel=True), panel=True)
+
+
+def conversation_cast(conv: dict[str, Any], cast: dict[str, Any], now: int | None, lang: str = "ko",
+                      span: str | None = None) -> str:
+    """The conversation's cast lines alone, in the panel's form (PHASE-32 step 3); a line opens that character's page."""
+    path = f"/inspector/c/{conv['id']}"
+    return timeline.cast(_tl_t(lang), cast["entities"], cast["facts"], cast.get("scene") or [], now, span,
+                         lambda eid: f"{path}/e/{eid}", _tl_switch("", "", span, lang, panel=True), panel=True)
+
+
 def _t(lang: str, key: str) -> str:
     return T[key][0 if lang == "ko" else 1]
 
 
+# The plugin's icon (`adapters/pocketrisu-plugin/src/icon.ts`): a one-stroke N with a memory node. Inline as a data
+# URI, so the tab shows it whatever address the page is opened at (localhost, LAN, tailnet, behind a proxy's path);
+# a favicon has no text colour to inherit, and a tab or a home screen may lay it on white: it brings its own tile, dark
+# like the Inspector by default (a browser that ignores the media query keeps it), light in a light colour scheme.
+FAVICON = ("data:image/svg+xml," + quote(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" '
+    'stroke-linejoin="round"><style>rect{fill:#18181a}path,circle{stroke:#8ea2ff}circle{fill:#8ea2ff}'
+    '@media (prefers-color-scheme:light){rect{fill:#fbfbfa}path,circle{stroke:#3b5bdb}circle{fill:#3b5bdb}}</style>'
+    '<rect width="24" height="24" rx="5.5" stroke="none"/><g transform="translate(2.4 2.4) scale(.8)">'
+    '<path d="M6 19V5l12 14V9.5"/><circle cx="18" cy="5.5" r="1.75"/></g></svg>',
+    safe=" :/=\"'<>;(),.-{}*@"))  # '#' encoded: in a data URI it would start a fragment
+
+
 def page(title: str, body: str, lang: str = "ko") -> str:
     return (f"<!doctype html><html lang=\"{lang}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" "
-            f"content=\"width=device-width,initial-scale=1\"><title>{escape(title)}</title><style>{STYLE}</style>"
+            f"content=\"width=device-width,initial-scale=1\"><title>{escape(title)}</title>"
+            f"<link rel=\"icon\" type=\"image/svg+xml\" href=\"{escape(FAVICON)}\"><style>{STYLE}</style>"
             f"</head><body><main>{body}</main></body></html>")
 
 
@@ -418,10 +505,22 @@ def _facts_kept(timings: dict[str, Any], lang: str = "en") -> str | None:
     return kept + (f" ({_t(lang, 'fits_at').format(n=timings['fits_at'])})" if timings.get("fits_at") else "")
 
 
-def table(headers: list[str], rows: Iterable[list[str]]) -> str:
+def table(headers: list[str], rows: Iterable[list[str]], ids: Iterable[str] | None = None) -> str:
+    """A table; `ids` give its rows an anchor (`id`), outside the panel only (PHASE-32)."""
     head = "".join(f"<th>{escape(h)}</th>" for h in headers)
-    body = "".join("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows)
+    rows = list(rows)
+    marks = [f" id=\"{_v(i)}\"" for i in ids] if ids is not None else [""] * len(rows)
+    body = "".join(f"<tr{mark}>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row, mark in zip(rows, marks))
     return f"<div class=\"wrap\"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
+
+
+def _setting_fold(lang: str, story: str, setting: str, n: int) -> str:
+    """Rows the setting alone gave (lorebook, card; ADR 0047) folded under one line after the story's own (owner,
+    2026-10-07: a lorebook brings many, often in another language, and buried what the story said)."""
+    if not n:
+        return story
+    return (story + f"<details class=\"fold-setting\"><summary class=\"muted\">"
+            f"{_v(_t(lang, 'setting_fold').format(n=n))}</summary>{setting}</details>")
 
 
 # Matches the "status-block" and "hp" rules in config/parsers.example.json.
@@ -644,9 +743,35 @@ def _processed(m: dict[str, Any], lang: str) -> str:
     return (f"<span class=\"chip\">{_t(lang, 'partial')}</span> " if partial else "") + _v(" · ".join(parts))
 
 
+def _named(a: dict[str, Any], side: str) -> str:
+    """The subject or object as the story names its entity ("서하늘" for a lorebook's "Seo Ha-neul": the resolver already
+    joined them, owner 2026-10-07); the spelling as written when there is no entity or it is a persona placeholder."""
+    ref = a.get(f"{side}_entity") or {}
+    name = ref.get("name") if isinstance(ref, dict) else None
+    return name if name and norm(name) not in USER_NAMES else (a.get(side) or "")
+
+
+def _named_cell(a: dict[str, Any], side: str) -> str:
+    shown, written = _named(a, side), a.get(side) or ""
+    return f"<span title=\"{_v(written)}\">{_v(shown)}</span>" if written and shown != written else _v(shown)
+
+
 def fact_line_text(a: dict[str, Any]) -> str:
-    text = f"{a['subject']} {a['predicate'].replace('_', ' ')}" + (f" {a['object']}" if a.get("object") else "")
+    text = f"{_named(a, 'subject')} {a['predicate'].replace('_', ' ')}" + (f" {_named(a, 'object')}" if a.get("object") else "")
     return f"{text}: {a['value']}" if a.get("value") else text
+
+
+def _items_table(items: list[dict[str, Any]], lang: str) -> str:
+    """Item timelines, those only the setting gave (every step from canon, ADR 0047) folded as the facts' are."""
+    def rows(group: list[dict[str, Any]]) -> str:
+        return table([_t(lang, "h.item"), _t(lang, "h.timeline")],
+                     [[_v(i["item"]), " → ".join(_step(h, lang) for h in i["history"])] for i in group])
+
+    setting = [i for i in items if i["history"] and all(h.get("canon") for h in i["history"])]
+    story = [i for i in items if i not in setting]
+    if not setting:
+        return rows(items)
+    return _setting_fold(lang, rows(story) if story else "", rows(setting), len(setting))
 
 
 def _step(h: dict[str, Any], lang: str) -> str:
@@ -747,7 +872,7 @@ def pairs(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
     def said(f: dict[str, Any], directed: bool) -> str:
-        who = f"{f['subject']} → {f['object']}: " if directed else ""
+        who = f"{_named(f, 'subject')} → {_named(f, 'object')}: " if directed else ""
         text = _v(who + (f.get("value") or "")) + f" <span class=\"muted\">{_turn(f)}</span>"
         if f.get("polarity") == "negative":
             text += f" <span class=\"chip\">{_t(lang, 'negated')}</span>"
@@ -758,6 +883,20 @@ def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
                 text += f" <span class=\"muted\">· {_t(lang, key)}: {_v(was.get('value'))} ({_turn(was)})</span>"
         return text
 
+    def setting_only(p: dict[str, Any]) -> bool:
+        said_all = [f for k in ("relationship", "role", "feels", "speech") for f in p[k]]
+        return bool(said_all) and all(f.get("canon") for f in said_all)
+
+    entries = entries[:100]
+    story = [p for p in entries if not setting_only(p)]
+    setting = [p for p in entries if setting_only(p)]
+    if not setting:
+        return _pairs_rows(entries, lang, said)
+    return _setting_fold(lang, _pairs_rows(story, lang, said) if story else "", _pairs_rows(setting, lang, said),
+                         len(setting))
+
+
+def _pairs_rows(entries: list[dict[str, Any]], lang: str, said: Any) -> str:
     return table([_t(lang, k) for k in ("h.pair", "h.relationship", "h.role", "h.feelings", "h.speech")],
                  [[_v(" ↔ ".join(sorted(p["names"].values()))),
                    # a directed value ("엄마") says who is whose only with its direction; a symmetric one needs it
@@ -766,7 +905,7 @@ def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
                                for f in p["relationship"]),
                    "<br>".join(said(f, True) for f in p["role"]),
                    "<br>".join(said(f, True) for f in p["feels"]),
-                   "<br>".join(said(f, True) for f in p["speech"])] for p in entries[:100]])
+                   "<br>".join(said(f, True) for f in p["speech"])] for p in entries])
 
 
 def _job_state(job: dict[str, Any], notes: list[str], lang: str) -> str:
@@ -819,13 +958,23 @@ def _summaries_section(view: dict[str, Any], lang: str, gen: dict[str, Any] | No
                          _v((x["summary"] or {}).get("text") or "")] for x in reversed(view["scenes"])][:200])
 
 
-def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> str:
+def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str, anchors: bool = False) -> str:
+    story = [f for f in facts if not f.get("canon") or f.get("owner")]
+    setting = [f for f in facts if f.get("canon") and not f.get("owner")]
+    if not setting:
+        return _facts_rows(facts, active, lang, anchors)
+    return _setting_fold(lang, _facts_rows(story, active, lang, anchors) if story else "",
+                         _facts_rows(setting, active, lang, anchors), len(setting))
+
+
+def _facts_rows(facts: list[dict[str, Any]], active: str | None, lang: str, anchors: bool = False) -> str:
     t = lambda k: _t(lang, k)
     # A fact whose turn the active generation has not compiled yet comes from an older one (ADR 0014).
     older = f" <span class=\"chip\">{t('older_gen')}</span>"
     return table(
         [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.with", "h.knowledge", "h.turn", "h.versions")],
-        [[_v(f["subject"]), chip(lang, "p", f["predicate"]), _v(f.get("object") or f.get("value")) + _cause(f, lang)
+        [[_named_cell(f, "subject"), chip(lang, "p", f["predicate"]),
+          (_named_cell(f, "object") if f.get("object") else _v(f.get("value"))) + _cause(f, lang)
           + ("" if f.get("owner") else _act("fact_retract", f["id"]) + "".join(_act("fact_correct", f["id"], x) for x in _corrections(f)))
           + (_act("fact_lock", f["id"]) if (f.get("canon") or f.get("owner")) and not f.get("locked") else ""),
           _with(f, lang),
@@ -842,7 +991,7 @@ def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> 
           + (f" <span class=\"chip\">{t('legacy')}</span>" if f.get("source") is None else "")
           + _salience(f, lang),
           _v(f.get("versions", 1))]
-         for f in facts])
+         for f in facts], ids=[f"a-{f['id']}" for f in facts] if anchors else None)
 
 
 def _salience(f: dict[str, Any], lang: str) -> str:
@@ -854,7 +1003,7 @@ def _salience(f: dict[str, Any], lang: str) -> str:
     return " " + chip(lang, "s", f["salience"])
 
 
-def _threads_table(threads: list[dict[str, Any]], lang: str) -> str:
+def _threads_table(threads: list[dict[str, Any]], lang: str, anchors: bool = False) -> str:
     """Threads with their status and what closed them (PHASE-7, ADR 0019; PHASE-11, ADR 0039), newest first."""
     def closed(t: dict[str, Any]) -> str:
         c = t.get("closed_by")
@@ -877,7 +1026,7 @@ def _threads_table(threads: list[dict[str, Any]], lang: str) -> str:
                       else _act("thread_reopen", t["id"]) if not (t.get("closed_by") or {}).get("owner") else ""),
                    closed(t), _v(", ".join(str(r["turn"] if r.get("turn") is not None else r["position"])
                                           for r in t.get("restated") or []))]
-                  for t in threads[:100]])
+                  for t in threads[:100]], ids=[f"a-{t['id']}" for t in threads[:100]] if anchors else None)
 
 
 def _unmatched_table(unmatched: list[dict[str, Any]], lang: str) -> str:
@@ -1162,7 +1311,10 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            canon_history: dict[str, dict[str, Any]] | None = None,
            canon_held: dict[str, dict[str, Any]] | None = None, canon_read: dict[str, dict[str, Any]] | None = None,
            canon_facts: int = 0, dropped: list[dict[str, Any]] | None = None,
-           endings: dict[str, list[dict[str, Any]]] | None = None, overuse: dict[str, Any] | None = None) -> str:
+           endings: dict[str, list[dict[str, Any]]] | None = None, overuse: dict[str, Any] | None = None,
+           cast: dict[str, Any] | None = None, span: str | None = None, lazy: bool = False) -> str:
+    """One conversation. `cast` (the full memory view's facts and entities, and the current scene's character keys)
+    draws a line per character over the turns (PHASE-32), outside the panel only."""
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -1183,6 +1335,12 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
                                            for s in state])
          if state else f"<p class=\"muted\">{t('no_state')}</p>{_no_state_example(lang)}", True),
         ("coverage", t("coverage"), None, _coverage_section(coverage or {}, lang), True)]
+    if cast is not None and not embed:
+        parts.insert(1, ("people", t("people"), None, timeline.cast(
+            _tl_t(lang), cast["entities"], cast["facts"], cast.get("scene") or [], last_turn, span,
+            lambda eid: f"{path}/e/{eid}{_with_span(q, span)}", _tl_switch(path, q, span, lang)), True))
+    elif lazy and embed:  # a plugin that asked for it fills this when it is opened (PHASE-32 step 3)
+        parts.insert(1, ("people", t("people"), None, LAZY, False))
     if (coverage or {}).get("usage") is not None:
         parts.append(("usage", t("us.title"), None, _usage_section(coverage["usage"], lang), False))
     if conflicts:
@@ -1211,9 +1369,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     if facts:
         parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
     if items:
-        parts.append(("items", t("items"), len(items), table(
-            [t("h.item"), t("h.timeline")],
-            [[_v(i["item"]), " → ".join(_step(h, lang) for h in i["history"])] for i in items[:100]]), True))
+        parts.append(("items", t("items"), len(items), _items_table(items[:100], lang), True))
     if entities:
         parts.append(("entities", t("entities"), len(entities), table(
             [t(k) for k in ("h.type", "h.names", "h.mentions", "h.alias_turns", "h.owner_links")],
@@ -1331,7 +1487,8 @@ def _cast_state(view: dict[str, Any], entity_id: str, r: Any, lang: str) -> str:
 
 
 def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[str, Any]]], token: str | None,
-              active: str | None = None, lang: str = "ko", embed: bool = False) -> str:
+              active: str | None = None, lang: str = "ko", embed: bool = False, now: int | None = None,
+              span: str | None = None, lazy: bool = False) -> str:
     """One character's side of the conversation: what is true of them, what they hold, know and claim.
 
     Read-only regrouping of the same memory view as the detail page; it changes nothing the packet uses.
@@ -1385,24 +1542,31 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
         [t("h.type"), t("h.names"), t("h.mentions"), t("h.alias_turns"), t("h.owner_links")],
         [[chip(lang, "e", entity["type"]), _v(" · ".join(entity["names"])), _v(entity["mentions"]),
           _v(", ".join(str(a["turn"]) for a in entity["aliases"])), _owner_links(entity)]]), True)]
+    if not embed and entity["type"] == "character":  # PHASE-32
+        parts.append(("timeline", t("timeline"), None, timeline.character(
+            _tl_t(lang), entity_id, facts, view.get("threads", []), names, now, span,
+            _tl_switch(f"{conv_path}/e/{entity_id}", q, span, lang)), True))
+    elif lazy and entity["type"] == "character":  # a plugin that asked for it fills this when it is opened
+        parts.append(("timeline", t("timeline"), None, LAZY, False))
     if (r := view.get("resolution")) is not None and entity["type"] == "character" \
             and entity_id != scene.key(r, scene.PERSONA):
         parts.append(("now", _v(t("now")), None, _cast_state(view, entity_id, r, lang), True))
     if conflicts:
         parts.append(("conflicts", t("conflicts"), len(conflicts), _conflicts_table(conflicts, lang), True))
     if threads:
-        parts.append(("threads", t("threads"), len(threads), _threads_table(threads, lang), True))
+        parts.append(("threads", t("threads"), len(threads), _threads_table(threads, lang, anchors=not embed), True))
     if mine_pairs := [p for p in pairs(facts) if entity_id in p["ids"]]:
         parts.append(("pairs", t("pairs"), len(mine_pairs), _pairs_table(mine_pairs, lang), True))
     if held:
         parts.append(("held", t("held"), len(held), table(
             [t("h.item"), t("h.turn"), t("h.timeline")],
-            [[_v(f["object"]), _turn(f), " → ".join(_step(h, lang) for h in f.get("history") or [])] for f in held]),
-            True))
+            [[_v(f["object"]), _turn(f), " → ".join(_step(h, lang) for h in f.get("history") or [])] for f in held],
+            ids=None if embed else [f"a-{f['id']}" for f in held]), True))
     if about:
-        parts.append(("about", t("about"), len(about), _facts_table(about, active, lang), True))
+        parts.append(("about", t("about"), len(about), _facts_table(about, active, lang, anchors=not embed), True))
     if takes_part:
-        parts.append(("takes_part", t("takes_part"), len(takes_part), _facts_table(takes_part, active, lang), True))
+        parts.append(("takes_part", t("takes_part"), len(takes_part),
+                      _facts_table(takes_part, active, lang, anchors=not embed), True))
     if knows:
         parts.append(("knows", t("knows"), len(knows), knowledge(knows), True))
     if hidden:
