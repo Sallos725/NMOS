@@ -18,7 +18,9 @@ output is unchanged.
 | by speaker and words | 1 / 8 | 7 / 8 in each |
 | **all** | **4 / 24** | **21 / 24 in four, 20 / 24 in two** |
 
-No forbidden phrase placed. Of the 48 quote lines placed, 4 carry a speaker and none is wrong (read by hand against
+A case passes only when its words are in a quote or excerpt of its source turn (the scorer corrected 2026-10-08 on a
+review; re-measured: 21, 21, 20 of 24 under `packet-v13`, the same cases; `packet-v12` 4 of 24). No forbidden phrase
+placed. Of the 48 quote lines placed, 4 carry a speaker and none is wrong (read by hand against
 the source turns). Mean packet 3,900 tokens against 3,010 under `packet-v12` (two quote lines, about 1,050 tokens, in
 the 4,000 budget). The misses: a named turn whose message is long, the answer in a part of it the question's words do
 not reach; a first-cue question whose first visit spans two turns (the lines placed come from its first); one message

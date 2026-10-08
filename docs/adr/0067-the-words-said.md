@@ -27,7 +27,8 @@ Under `packet-v13` (`packet.QUOTE_POLICIES`), in `retrieval.gather`, the module 
    the question names a turn ("N턴", "turn N"); under a first cue, the opening turns and the turns where every character
    the question names had first been named (`first met`, unless that is the opening); and the route's own lexical search
    for messages holding a quote and the question's words, 30 at most, rarest words first, under its own 150 ms
-   statement timeout (Q4: it abstains past it).
+   statement timeout (Q4: it abstains past it). Every one of these searches stops at the `allBefore` cut, as lexical
+   and vector recall do (invariant 7; corrected 2026-10-08 on a review: the route's own searches had crossed it).
 3. **Scoring.** Every quoted span ("…", “…”, 「…」, 『…』, 4 to 300 characters) of a candidate is a quote; its line is
    its sentence and the sentences around it, grown outward up to 600 characters, verbatim. A quote scores by the
    question's words: twice in the quote, 1.5 in its sentence or the one either side (narration before a quote often
@@ -40,8 +41,9 @@ Under `packet-v13` (`packet.QUOTE_POLICIES`), in `retrieval.gather`, the module 
    placed.
 4. **The speaker only where the quote's own sentence says so** (Q2). The user's own message is the persona's;
    `X가 "…" 하고/라고 …` is X's (the subject nearest before the quote); `"…" X가 … 말했다` is X's (the first subject
-   after it, with a verb of speaking in its clause). A nearest subject that is no known character leaves the line
-   unattributed. A character the question names as its subject ("이안이 … 도윤한테") is the one asked about: a quote
+   after it, with a verb of speaking in that subject's own clause: in `"…" 민수가 다가오자 영희가 말했다` the verb is
+   영희's, so 민수 is not named and the line is left unattributed, corrected 2026-10-08 on a review). A nearest subject
+   that is no known character leaves the line unattributed. A character the question names as its subject ("이안이 … 도윤한테") is the one asked about: a quote
    attributed to them gains, one attributed to someone else loses, and an unattributed quote with their name in its
    narration gains as one attributed to them.
 5. **`<Quote turn="N" speaker="X">…</Quote>`**, two at most, before the excerpts, never cut (placed whole or not at
