@@ -381,3 +381,78 @@ def test_a_replay_reads_the_reply_as_it_stood_after_an_edit_and_its_undo(v14):
     live = ask("And then?")
     replay = client.get(f"/v1/trace/{live}/replay").json()
     assert replay["status"] == "ok" and replay["reproduced"] is True, replay.get("notes")
+
+
+def test_the_activation_threshold_never_takes_the_reserved_excerpt():
+    """Third review (P1): the threshold ran in gather before the compiler's repeat check, so when the best excerpt was
+    later dropped as a repeat, the answer below half its score was already gone. The threshold is now the compiler's,
+    at the same stage as the reserved place: a below-threshold excerpt is placed only when it holds that place."""
+    story = [Line("summary", '    <Summary kind="story" turns="0–9">하나는 은빛 열쇠를 등대 지하에 숨겼다</Summary>',
+                  {"summary": "s1"}, None, "story 0–9", "하나는 은빛 열쇠를 등대 지하에 숨겼다")]
+    repeat = Excerpt(turn=3, speaker="user", text="하나는 은빛 열쇠를 등대 지하에 숨겼다.", score=0.03, revision_id="rA")
+    low = Excerpt(turn=5, speaker="user", text="검은 상자는 부두 창고 맨 아래 칸에 있다.", score=0.01, revision_id="rB",
+                  below_floor=True)
+    out = compile_lines([repeat, low], 800, story=story, policy="packet-v14")
+    why = {e["ref"]["revision"]: (e["placed"], e["why"], e.get("label")) for e in out.ledger if e["kind"] == "excerpt"}
+    assert why["rA"][1] == "repeats" and why["rB"] == (True, "placed", "required")
+    awake = Excerpt(turn=7, speaker="user", text="등대지기는 새벽마다 불을 끈다.", score=0.03, revision_id="rC")
+    out = compile_lines([awake, low], 800, policy="packet-v14")
+    why = {e["ref"]["revision"]: (e["placed"], e["why"]) for e in out.ledger if e["kind"] == "excerpt"}
+    assert why["rC"] == (True, "placed") and why["rB"] == (False, "below_floor")
+
+
+def test_a_risky_fact_goes_last_before_relevant_facts_cuts_its_quotas():
+    """Third review (P2): relevant_facts applied its own limit and event quota before the risky order, so with
+    facts_limit 1 (no fill) the ordinary fact was already gone."""
+    from nmos_sidecar.facts import relevant_facts
+
+    def row(i, predicate, value, **kw):
+        return {"id": i, "host_logical_id": f"m{i}", "position": i, "turn": i, "subject": "Hana", "object": None,
+                "predicate": predicate, "value": value, "names": ["Hana"], "polarity": "positive", **kw}
+    traits = [row(1, "has_trait", "brave"), row(2, "has_trait", "kind", disputed_by=[9])]  # the newer one disputed
+    kept = relevant_facts(traits, "What now?", "Hana smiled.", set(), 1, risky=frozenset())
+    assert [f["id"] for f in kept] == [1]
+    events = [row(3, "event", "rescued a gull", salience="major"),
+              row(4, "event", "sank a boat", salience="major", disputed_by=[9])]
+    kept = relevant_facts(events, "What now?", "Hana smiled.", set(), 4, events_limit=1, risky=frozenset())
+    assert [f["id"] for f in kept] == [3]
+    contradicted = relevant_facts(traits[:1] + [row(5, "has_trait", "calm")], "What now?", "Hana smiled.", set(), 1,
+                                  risky=frozenset({"5"}))
+    assert [f["id"] for f in contradicted] == [1]
+
+
+def test_a_replay_reads_the_reply_at_its_position_after_a_reorder(v14):
+    """Third review (P2): a pure reorder records no change, only a `set` op, so the last change at a position named
+    the message that had left it. A replay now rebuilds the membership as of the request from the ops."""
+    client, url = v14
+    chat = SimChat()
+    chat.reply("Welcome to the story.")
+    chat.user("Hana is a cartographer.")
+    chat.reply("Noted.")
+    for i in range(RECENT + 2):
+        chat.user(f"Idle chatter {i} about clouds.")
+        chat.reply("Noted.")
+    _sync(client, chat)
+    extract(url)
+    chat.user("What now?")
+    _sync(client, chat)
+
+    def ask(question: str) -> str:
+        return client.post("/v1/retrieve", json={"chat_id": chat.id, "query": question, "previous_ai": "Hana smiled.",
+                                                 "budget_tokens": 600,
+                                                 "in_context_ids": [m["chatId"] for m in chat.messages[-RECENT:]]}
+                           ).json()["trace_id"]
+    first = [ask("What now?") for _ in range(2)]
+    placed = [e for e in client.get(f"/v1/trace/{first[0]}").json()["lines"] if e.get("placed")
+              and "cartographer" in (e.get("content") or e["text"])]
+    assert placed
+    chat.reply(f"{placed[0].get('content') or placed[0]['text']}, she said.")  # A: uses the line
+    chat.reply("The wind rose over the harbour.")  # B: does not
+    _sync(client, chat)
+    chat.messages[-1], chat.messages[-2] = chat.messages[-2], chat.messages[-1]  # [u, B, A]: B now right after u
+    _sync(client, chat)
+    chat.user("And then?")
+    _sync(client, chat)
+    live = ask("And then?")
+    replay = client.get(f"/v1/trace/{live}/replay").json()
+    assert replay["status"] == "ok" and replay["reproduced"] is True, replay.get("notes")

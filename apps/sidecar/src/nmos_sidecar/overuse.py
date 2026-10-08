@@ -19,6 +19,7 @@ from uuid import UUID
 import psycopg
 
 from . import spans
+from .reconcile import apply_ops
 
 REST_AFTER = 2  # the default: placed in this many requests in a row, echoed by none of their replies (owner, 2026-10-07)
 
@@ -42,9 +43,9 @@ def key(kind: str, ref: dict[str, Any] | None) -> tuple[str, str]:
 def reply_text(conn: psycopg.Connection, head: UUID, upto_position: int | None,
                before: datetime | None = None) -> str | None:
     """The character's message right after a request's last position on the head, if there is one. With `before` (a
-    replay), as it stood then: the last change to that position recorded before it, along the head's own commits and
-    their appends (a review and its follow-up: a reply written later must not count, and a reply edited and edited
-    back, its stored revision reused, is the one it was then)."""
+    replay), as it stood then: the membership rebuilt from the ops recorded before it (a review and its follow-ups: a
+    reply written later must not count, a reply edited and edited back is the one it was then, and a reorder moves
+    the message at that position)."""
     if upto_position is None:
         return None
     if before is None:
@@ -55,38 +56,32 @@ def reply_text(conn: psycopg.Connection, head: UUID, upto_position: int | None,
             " WHERE am.commit_id = %s AND am.position = %s ORDER BY rt.normalizer DESC LIMIT 1",
             (head, upto_position + 1)).fetchone()
         return (row["clean_content"] or "") if row and row["role"] == "char" else None
-    commits = {r["id"]: r for r in conn.execute(
-        "SELECT c.id, c.parent_commit_ids FROM worldline_commit c"
-        " WHERE c.conversation_id = (SELECT conversation_id FROM worldline_commit WHERE id = %s)", (head,))}
-    chain, at = [], commits.get(head)
-    while at is not None:  # the head's own line of commits, newest first
-        chain.append(at["id"])
-        at = commits.get(at["parent_commit_ids"][0]) if at["parent_commit_ids"] else None
-    change = conn.execute(
-        """
-        WITH changes AS (
-            SELECT c.created_at, 0 AS seq, e.change, e.n FROM worldline_commit c
-            CROSS JOIN LATERAL jsonb_array_elements(c.delta->'changes') WITH ORDINALITY AS e(change, n)
-            WHERE c.id = ANY(%(chain)s)
-            UNION ALL
-            SELECT a.created_at, a.seq, e.change, e.n FROM worldline_append a
-            CROSS JOIN LATERAL jsonb_array_elements(a.changes) WITH ORDINALITY AS e(change, n)
-            WHERE a.commit_id = ANY(%(chain)s)
-        )
-        SELECT change->'new' AS new FROM changes
-        WHERE (change->>'position')::int = %(pos)s AND created_at < %(before)s
-        ORDER BY created_at DESC, seq DESC, n DESC LIMIT 1
-        """, {"chain": chain, "pos": upto_position + 1, "before": before}).fetchone()
-    if change is None or not change["new"]:
+    # The membership as it stood then, rebuilt from the commits' and appends' ops recorded before it, in the order
+    # `ledger.rebuild_membership` replays them: a reorder records no change, only a `set` (the third review).
+    conversation = conn.execute("SELECT conversation_id FROM worldline_commit WHERE id = %s", (head,)).fetchone()
+    if conversation is None:
         return None
-    logical, revision_hash = change["new"]
+    conv = conversation["conversation_id"]
+    commits = conn.execute("SELECT id, delta FROM worldline_commit WHERE conversation_id = %s AND created_at < %s"
+                           " ORDER BY seq", (conv, before)).fetchall()
+    appends: dict[Any, list[list[dict]]] = {}
+    for a in conn.execute("SELECT commit_id, ops FROM worldline_append WHERE commit_id = ANY(%s) AND created_at < %s"
+                          " ORDER BY seq", ([c["id"] for c in commits], before)).fetchall():
+        appends.setdefault(a["commit_id"], []).append(a["ops"])
+    members: list[tuple] = []
+    for c in commits:
+        members = apply_ops(members, c["delta"]["ops"])
+        for ops in appends.get(c["id"], []):
+            members = apply_ops(members, ops)
+    if upto_position + 1 >= len(members):
+        return None
+    logical, revision_hash = members[upto_position + 1]
     row = conn.execute(
         "SELECT sr.metadata->>'role' AS role, rt.clean_content FROM source_object so"
         " JOIN source_revision sr ON sr.source_object_id = so.id AND sr.revision_hash = %s"
         " LEFT JOIN revision_text rt ON rt.source_revision_id = sr.id"
-        " WHERE so.host_logical_id = %s AND so.conversation_id ="
-        "  (SELECT conversation_id FROM worldline_commit WHERE id = %s)"
-        " ORDER BY rt.normalizer DESC LIMIT 1", (revision_hash, logical, head)).fetchone()
+        " WHERE so.host_logical_id = %s AND so.conversation_id = %s"
+        " ORDER BY rt.normalizer DESC LIMIT 1", (revision_hash, logical, conv)).fetchone()
     return (row["clean_content"] or "") if row and row["role"] == "char" else None
 
 
