@@ -12,13 +12,13 @@ required since the Q1 amendment).
 
 | `packet-v14` | Whole: repeat share | Whole: stale token share | Supportive: repeat share | Supportive: stale token share | Supportive lines new to the packet | Lines left out resting |
 |---|---:|---:|---:|---:|---:|---:|
-| without the rest | 0.525 | 0.214 | 0.320 | 0.065 | 0.680 | 0 |
-| `rest_after` 3 | 0.512 | 0.203 | 0.275 (−14 %) | 0.023 (−65 %) | 0.725 | 202 |
+| without the rest | 0.524 | 0.214 | 0.314 | 0.063 | 0.686 | 0 |
+| `rest_after` 3 | 0.510 | 0.202 | 0.271 (−14 %) | 0.016 (−75 %) | 0.729 | 203 |
 | `rest_after` 2, knowledge boundaries resting too (first build) | 0.498 | 0.196 | 0.242 | 0.016 | 0.758 | 519 |
-| **`rest_after` 2 (default)** | **0.503** | **0.200** | **0.246 (−23 %)** | **0.018 (−72 %)** | **0.754** | **357** |
+| **`rest_after` 2 (default)** | **0.503** | **0.200** | **0.242 (−23 %)** | **0.018 (−71 %)** | **0.758** | **356** |
 
-Re-measured 2026-10-08 after the review fixes (the first excerpt never rests, scene summaries rest, risky lines last,
-replies read as of each request); the first-build row is the earlier measurement. Three replays of the default agreed
+Re-measured 2026-10-08 after the review fixes and their follow-up (the reserved first excerpt never rests, scene
+summaries rest, risky lines last before the limits, replies read as they stood at each request); the first-build row is the earlier measurement. Three replays of the default agreed
 within 0.004 (before the fixes: supportive repeats 0.240, stale tokens 0.015, 366 left out). The self-review found that a line with a knowledge mark (Private or Secret, required by
 Q1) could rest, since a kept secret is rarely echoed: 153 of the 519 lines left out were such lines. They never rest now
 (the row above the default is the first build's). **Q9 (b) met** with the default: supportive repeats at least a fifth lower, their
@@ -35,9 +35,9 @@ line: without the two, the bench lost a question about an old detail (S6 `c120_2
 
 | | `packet-v13` | `packet-v14` (`rest_after` 2) |
 |---|---|---|
-| The v0.3.0 bench, every probe of S0–S6 (sum over 20 sets, per replay) | 285, 285, 286 | 286, 286, 286 |
+| The v0.3.0 bench, every probe of S0–S6 (sum over 20 sets, per replay) | 285, 285, 286 | 286, 285, 286 |
 | Forbidden phrases placed (per replay) | 14, 14, 14 | 14, 14, 14 |
-| The quote set (scored from its source turn) | 21, 21, 21 / 24 | 20, 20, 21 / 24 |
+| The quote set (scored from its source turn) | 21, 21, 20 / 24 | 21, 20, 21 / 24 |
 
 Re-measured 2026-10-08 after the review fixes (the earlier figures: the bench 286, 285, 285 against 286 in each; the
 quote set 20–21 against 21, 20, 20); no case changed against the measurement before the fixes.
