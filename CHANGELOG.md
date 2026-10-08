@@ -57,6 +57,12 @@ later, is `docs/KNOWN-ISSUES.md`.
   (`docs/perf/embedders.md`). Picking Voyage says that an account with no payment method has 3 requests a minute, too
   few to embed a chat. An embedding answer that reports `total_tokens` alone (Voyage's) is now counted as its input
   tokens in the model-call usage. No migration, no new generation; the plugin build changes.
+- **Restore an archive from the panel, while NMOS runs** (Phase 38, ADR 0050 amendment 2). Settings → **Restore from
+  an archive…** uploads a `.nmos.zip` in 8 MB chunks, checks it and shows its chats (one already here blocks it; nothing
+  is merged), the settings it adds and the upgrades it needs, then restores it without stopping anything: recall goes
+  on, a sync that would store a new message waits for the restore's commit (1.6 s at 10,000 messages), and the new
+  chats' derived text and jobs follow without a restart. Docker and bundle installs alike: until now a bundle could
+  not restore at all. The command (`archive restore`) is unchanged. `NMOS_RESTORE_MAX_MB` (2048) bounds an upload.
 - **One-line status bars, and a status rule for one card** (Phase 39). A `block` rule with `separator` (`"|"`) reads a
   status bar written on one line (`☆ [Level: 3 | HP: 40 / 50 | …]`, `[Status:date=…|mood=…]`) field by field, and
   ending it at `\]\s*$` keeps brackets inside a value; the story's own bracket windows are not read. `card` reads a

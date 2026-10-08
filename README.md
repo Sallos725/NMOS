@@ -206,7 +206,16 @@ install's archive also holds the settings without keys. It holds chat text: keep
 If NMOS finds a key or the token anywhere in what it would write (a key pasted into a chat), it refuses and says in
 which table. `pg_dump` backups stay the way to roll back an upgrade.
 
-Restore (a command; into a fresh install, or one that does not hold the archive's chats):
+Restore from the panel (Phase 38; Docker and without Docker alike): **Settings → Restore from an archive…**, pick the
+`.nmos.zip`. It is uploaded in 8 MB chunks and checked first; the panel then shows its chats (one already here blocks
+the restore: delete it in the Inspector first; nothing is merged), the settings it adds and the upgrades it needs.
+**Restore** writes it while NMOS keeps running: recall goes on in every chat; a sync that would store a new message
+waits until the restore commits (about 1.6 s for an archive of 10,000 messages, `docs/perf/panel-restore.md`), and the
+plugin's deadline sends that reply without it, as when NMOS is slow. The new chats' derived text and missing jobs are
+written right after; no restart. `NMOS_RESTORE_MAX_MB` (default 2048) bounds an upload, and it needs twice its size
+free in the temporary directory.
+
+Or with a command (into a fresh install, or one that does not hold the archive's chats):
 
 ```bash
 docker compose stop sidecar worker

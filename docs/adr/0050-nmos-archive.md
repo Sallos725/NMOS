@@ -76,6 +76,27 @@ normalized text and the parsed state are recomputed from the rest.
 - The export holds the whole archive in a temporary file (≈ the zip's size) while it is sent.
 - Production-sized numbers are measured in step 5.
 
+## Amendment 2 — restore from the panel, while NMOS runs (2026-10-08, Phase 38)
+
+Item 1 of amendment 1 ("a command, never the panel") is replaced for the panel; the command is unchanged.
+
+1. **Settings → Restore from an archive…** picks the file; it travels in 8 MB chunks of base64 in JSON (H23), each
+   with its SHA-256, into a spool file of the sidecar's own (made at the first upload, removed at shutdown; one
+   upload at a time, gone after an hour, `NMOS_RESTORE_MAX_MB` 2048, twice its size free). The check and the restore
+   run in the sidecar's background; the panel polls.
+2. **The check summarizes before anything is written:** every file as amendment 1 item 2, then the archive's chats
+   (those already here marked: they refuse the restore), the settings it would add (model endpoints shown), the
+   migrations it needs.
+3. **While NMOS runs:** the restore's transaction holds the sequences of the three shared ids with a no-op
+   `ALTER SEQUENCE … INCREMENT BY 1` under a 30 s lock timeout (else refused as busy, nothing written). Every
+   `nextval` waits for that lock, and it waits for every transaction that drew an id, since `nextval` keeps its lock
+   to the commit; so no id drawn before or after can collide, and `setval` never goes back. Tables are not locked: a
+   recorded request checks foreign keys into `conversation` and `worldline_commit`, so a table lock would stall
+   recall. A chat created by a sync meanwhile fails the restore whole on its unique key.
+4. **Then the startup steps run for the new rows** (settings, normalized text, turn data, state, each generation's
+   missing jobs): no restart. At 10,000 messages a sync waited at most 1.6 s, recall in other chats not at all
+   (`docs/perf/panel-restore.md`).
+
 ## Amendment 1 — restore (2026-09-29, Phase 16 step 4; Q4, Q5)
 
 1. **A command, never the panel:** `python -m nmos_sidecar.archive restore [--check] FILE|-`, with the sidecar and
