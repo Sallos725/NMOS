@@ -95,7 +95,8 @@ describe('the Settings card', () => {
   const summary = (here: boolean) => ({
     scope: 'install', nmos_version: '0.4.0', created_at: '2026-10-08T07:00:00+00:00', schema: '0028_reveal_checks.sql',
     migrations: [], settings_added: [{ key: 'llm_url', value: 'https://llm.example/v1' }, { key: 'recall_top_k' }],
-    conversations: [{ id: 'c1', host: 'pocketrisu', host_chat_ref: 'chat-1', character: 'Mina', chat: 'Tower', here }],
+    conversations: [{ id: 'c1', host: 'pocketrisu', host_chat_ref: 'chat-1', character: 'Mina', chat: 'Tower', here },
+      { id: 'c2', host: 'pocketrisu', host_chat_ref: '91cbbf0f-bf9e-4494', character: null, chat: null, here: false }],
   });
 
   function deps(here: boolean) {
@@ -145,7 +146,8 @@ describe('the Settings card', () => {
     const panel = document.getElementById('nmos-panel')!;
     await pick(panel);
     await vi.waitFor(() => expect(panel.textContent).toContain('Mina — Tower'), { timeout: 5000 });
-    expect(panel.textContent).toContain('The whole install · 1 chats · NMOS 0.4.0 · 2026-10-08');
+    expect(panel.textContent).toContain('The whole install · 2 chats · NMOS 0.4.0 · 2026-10-08');
+    expect(panel.textContent).toContain('no character name — untitled chat (91cbbf0f)');
     expect(panel.textContent).toContain('Settings it adds: llm_url = https://llm.example/v1, recall_top_k');
     expect(calls.filter(([m, p]) => m === 'PUT' && p.includes('/chunks/')).map(([, p]) => p))
       .toEqual(['/v1/archive/uploads/u9/chunks/0', '/v1/archive/uploads/u9/chunks/1']);
@@ -156,6 +158,20 @@ describe('the Settings card', () => {
     await vi.waitFor(() => expect(panel.textContent).toContain('Restored: 1 chats; 12 jobs queued.'), { timeout: 5000 });
     expect(calls.some(([m, p]) => m === 'POST' && p === '/v1/archive/uploads/u9/restore')).toBe(true);
     expect(button(panel, 'Restore').style.display).toBe('none');
+  });
+
+  it('a page without crypto.subtle says to open PocketRisu securely and sends nothing', async () => {
+    const { d, calls } = deps(false);
+    await openPanel(d, 'settings');
+    const panel = document.getElementById('nmos-panel')!;
+    vi.stubGlobal('crypto', {});  // plain HTTP on a LAN address: not a secure context
+    try {
+      await pick(panel);
+      await vi.waitFor(() => expect(panel.textContent).toContain('not a secure context'));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(calls.filter(([, p]) => p.startsWith('/v1/archive'))).toEqual([]);
   });
 
   it('a chat already here blocks the restore, and cancel discards the upload', async () => {

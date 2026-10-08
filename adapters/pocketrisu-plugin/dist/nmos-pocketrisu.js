@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:9e19194d0576".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:1c9f1deae7db".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -401,12 +401,18 @@
       "Puts an exported .nmos.zip into this NMOS. It never merges into a chat that is here: one of its chats here refuses the whole restore (delete it in the Inspector first). While it runs, recall goes on; saving memory waits briefly."
     ],
     "rst.pick": ["\uD30C\uC77C \uACE0\uB974\uAE30\u2026", "Choose a file\u2026"],
+    "rst.insecure": [
+      "\uC774 \uD398\uC774\uC9C0\uB294 \uBCF4\uC548 \uC5F0\uACB0\uC774 \uC544\uB2C8\uB77C\uC11C \uD30C\uC77C\uC744 \uD655\uC778\uD560 \uC218 \uC5C6\uC5B4\uC694. PocketRisu\uB97C HTTPS \uC8FC\uC18C\uB098 localhost\uB85C \uC5F4\uC5B4 \uC8FC\uC138\uC694.",
+      "This page is not a secure context, so the file cannot be checked. Open PocketRisu over HTTPS or on localhost."
+    ],
     "rst.uploading": ["\uC62C\uB9AC\uB294 \uC911\u2026 {pct}% ({sent} / {total} MB)", "Uploading\u2026 {pct}% ({sent} of {total} MB)"],
     "rst.checking": ["\uD30C\uC77C\uC744 \uAC80\uC0AC\uD558\uB294 \uC911\u2026", "Checking the file\u2026"],
     "rst.summary": ["{scope} \xB7 \uB300\uD654 {n}\uAC1C \xB7 NMOS {version} \xB7 {date}", "{scope} \xB7 {n} chats \xB7 NMOS {version} \xB7 {date}"],
     "rst.scope_install": ["\uC124\uCE58 \uC804\uCCB4", "The whole install"],
     "rst.scope_chats": ["\uACE0\uB978 \uB300\uD654", "Chosen chats"],
     "rst.here": ["\uC774\uBBF8 \uC788\uC74C", "already here"],
+    "rst.no_character": ["\uCE90\uB9AD\uD130 \uC774\uB984 \uC5C6\uC74C", "no character name"],
+    "rst.no_chat": ["\uC774\uB984 \uC5C6\uB294 \uB300\uD654", "untitled chat"],
     "rst.blocked": [
       "\uC774\uBBF8 \uC788\uB294 \uB300\uD654\uAC00 \uC788\uC5B4\uC11C \uBCF5\uC6D0\uD560 \uC218 \uC5C6\uC5B4\uC694. \uC778\uC2A4\uD399\uD130\uC5D0\uC11C \uADF8 \uB300\uD654\uB97C \uC9C0\uC6B4 \uB4A4 \uB2E4\uC2DC \uC62C\uB824 \uC8FC\uC138\uC694.",
       "Chats already here block the restore. Delete them in the Inspector, then upload the file again."
@@ -3424,6 +3430,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       if (!file) return;
       restoreSummary.replaceChildren();
       restoreIdle(null);
+      if (!globalThis.crypto?.subtle) return say(restoreMsg, L("rst.insecure"), "err");
       restorePick.disabled = true;
       try {
         const up = await uploadArchive(deps.api, file, (sent, total) => say(restoreMsg, L("rst.uploading", {
@@ -3457,7 +3464,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         date: (s.created_at ?? "").slice(0, 10)
       });
       const list = el("ul", {}, ...s.conversations.map((c) => el("li", {
-        text: `${c.character ?? "?"} \u2014 ${c.chat ?? c.host_chat_ref}${c.here ? ` (${L("rst.here")})` : ""}`
+        text: `${c.character ?? L("rst.no_character")} \u2014 ${c.chat ?? `${L("rst.no_chat")} (${c.host_chat_ref.slice(0, 8)})`}` + (c.here ? ` (${L("rst.here")})` : "")
       })));
       restoreSummary.replaceChildren(
         el("p", { class: "sub", text: head }),
