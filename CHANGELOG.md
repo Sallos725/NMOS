@@ -10,7 +10,7 @@ later, is `docs/KNOWN-ISSUES.md`.
   much of the packet came back from the requests before). A supportive line placed in each of the last two requests
   that no reply used rests for the next two and its room goes to other memory; what the question names, what its own
   words found, a question about the past and every knowledge boundary never rest. On a 240-turn bench chat supportive
-  lines repeat 24 % less; on the owner's real chat the replies used repeated lines more (0.29 → 0.39) and no
+  lines repeat 23 % less; on the owner's real chat the replies used repeated lines more (0.29 → 0.39) and no
   repetition was felt. `NMOS_REST_AFTER=3` rests less often; `NMOS_PACKET_POLICY=packet-v12` keeps the previous packet.
 - **What someone said, found by its words** (`packet-v13`, part of the default above; Phase 33, ADR 0067). A question
   about what was said ("그때 뭐라고 했지?", "what did she say on the first night?", turn 12) brings up to two `<Quote>`
