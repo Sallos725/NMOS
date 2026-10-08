@@ -32,15 +32,16 @@ This phase removes the last cause. The other two get their own small fixes (Out 
 | Q3 | What happens to data already beside the launcher? | **It is adopted on the first start:** when the per-user folder has no database and `data/` beside the launcher has one, the launcher moves it there. On the same drive this is a rename. Across drives it copies, starts PostgreSQL on the copy, checks it, then renames the old folder `data.moved` and writes a note in it; it never deletes. Any failure leaves the old folder as it was and stops with the reason. | Keep using `data/` beside the launcher when it exists: no move at all, but the trap stays for every current user. |
 | Q4 | What if both hold a database? | **Refuse to start**, naming both folders and changing nothing. The user removes or renames one. Never choose silently. | Prefer the per-user one and warn: silently hides the other user's data. |
 | Q5 | Can it still be portable on purpose (a USB drive)? | **Yes, with `NMOS_DATA_DIR`**, which keeps the last word. A relative path is resolved against the launcher's folder, so `NMOS_DATA_DIR=data` in the `.env` beside it keeps today's layout. | No portable mode. |
-| Q6 | Windows: a user name with Korean letters on a drive without 8.3 short names? | **Refuse with the fix**, as the launcher already does for its own folder: set `NMOS_DATA_DIR` to a path with English letters only. PostgreSQL on Windows cannot open a non-ASCII data path (`ascii_path`). C: has short names by default, so this is rare. | Fall back to `data/` beside the launcher with a warning: the trap again, for the users least likely to read the warning. |
+| Q6 | Windows: a user name with Korean letters on a drive without 8.3 short names? | **Amended by the owner: ask, do not refuse.** PostgreSQL on Windows cannot open a non-ASCII data path (`ascii_path`); NMOS itself can. The tray says so and opens a folder picker (Win32 through ctypes, as the tray already does), suggesting `C:\NMOS-data`; `NMOS.bat` asks in its console. The choice is written to a one-line pointer file in the per-user folder, which Python reads whatever its letters, so an update does not ask again. Cancel starts nothing. `NMOS_DATA_DIR` still wins (Q5). Linux and macOS take any path, so they never ask. C: has short names by default, so this is rare. | Refuse and tell the user to set `NMOS_DATA_DIR` in `.env` (the first proposal): it works, but asks the user to edit a file. |
 | Q7 | Removing NMOS? | Deleting the bundle no longer deletes the memory. **The guide says where the data is and how to remove it**, and the tray's "open data folder" already follows the new folder (it reads `Services().data`). | An uninstall command: more surface for a portable folder. |
 
 ## In scope
 
 - `tools/native/launcher/nmos_launcher.py`: the data folder per Q1, `.env` per Q2, the adoption per Q3, the refusal per
-  Q4, `NMOS_DATA_DIR` per Q5, the Windows path per Q6. The ACL step (`restrict_to_this_user`) and the lock run on the
+  Q4, `NMOS_DATA_DIR` per Q5, the Windows path per Q6 (the pointer file and the console question). The ACL step (`restrict_to_this_user`) and the lock run on the
   new folder as before.
-- `tools/native/windows/nmos_tray.py` and `start.sh`/`NMOS.bat` only where they name `data/`.
+- `tools/native/windows/nmos_tray.py`: the folder picker (Q6); it and `start.sh`/`NMOS.bat` otherwise only where they
+  name `data/`.
 - Tests and the bundle smoke (`tools/native/smoke.py`, `.github/workflows/native.yml`): a fresh start makes the per-user
   folder; data written beside the launcher by the version before is adopted and migrated with what it held (same drive,
   and a second temporary drive or mount where CI has one); both present is refused with nothing changed; a relative
@@ -77,7 +78,9 @@ This phase removes the last cause. The other two get their own small fixes (Out 
 4. An adoption that fails at any point leaves the old `data/` byte-identical and the per-user folder without a
    database (test with an injected failure).
 5. `NMOS_DATA_DIR`, absolute or relative, wins (test). macOS is unchanged (its app sets it).
-6. The owner's check passes on Windows.
+6. Q6: a non-ASCII per-user path without a short name asks once; the pointer file brings the next start (and the next
+   version) to the chosen folder; cancel starts nothing (tests with the short-name lookup stubbed).
+7. The owner's check passes on Windows.
 
 ## Stop conditions
 
