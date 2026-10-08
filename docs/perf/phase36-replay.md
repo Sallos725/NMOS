@@ -11,8 +11,8 @@ Ollama (`qwen3-embedding:8b`); the trial chat without vectors (its embedder is t
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Trial chat, `packet-v15` | 37 | 0.760 | 0.838 | 0.561 | 0.126 | 27 | 0.694 |
 | Trial chat, `packet-v16` | 37 | **0.674** | **0.801** | 0.519 | 0.067 | 38 | 0.675 |
-| S1, `packet-v15` | 241 | 0.632 | 0.686 | 0.235 | 0.013 | 354 | 0.502 |
-| S1, `packet-v16` | 241 | **0.569** | **0.656** | 0.240 | 0.013 | 408 | 0.501 |
+| S1, `packet-v15` | 241 | 0.632 | 0.686 | 0.240 | 0.015 | 359 | 0.502 |
+| S1, `packet-v16` | 241 | **0.569** | **0.656** | 0.243 | 0.016 | 409 | 0.501 |
 
 The trial chat is the owner's (aggregates only); its replayed packets are smaller than live (no vectors). **Q5 (b) met**:
 the required share is lower on both chats and the whole packet repeats no more.
@@ -21,13 +21,15 @@ the required share is lower on both chats and the whole packet repeats no more.
 
 | | `packet-v15` | `packet-v16` |
 |---|---|---|
-| The v0.3.0 bench, every probe of S0–S6 (314) | 289, 289, 289 | **288, 289, 289** |
+| The v0.3.0 bench, every probe of S0–S6 (314) | 289, 289, 289 | **289, 289, 289** |
 | Forbidden phrases placed | 14, 14, 14 | 14, 14, 14 |
-| The quote set (scored from its source turn) | 21, 20, 20 / 24 | 21, 20, 21 / 24 |
+| The quote set (scored from its source turn) | 21, 20, 21 / 24 | 20, 21, 20 / 24 |
 
-No case lost or gained on the majority of three replays (`packet-v16`'s one miss is S4's `s4_del_pet` on the lexical
-route's time slice). **Q5 (c) met.** Re-measured 2026-10-08 after the review follow-up on #274 and #278 (the reserved
-first excerpt, risky lines before the limits, replay replies as they stood); the trial chat's rows are unchanged.
+No bench case lost or gained on the majority of three replays (in the measurement before, one `packet-v16` replay
+missed S4's `s4_del_pet` on the lexical route's time slice). The quote set's one moving case is `q-first-07`, which
+passes one or two replays of three under every policy, `packet-v13` included (`docs/perf/phase35-replay.md`). **Q5 (c)
+met.** Re-measured 2026-10-08 after the review follow-ups on #274 and #278 (the reserved first excerpt through the
+threshold, risky lines before every limit, replay replies as they stood); the trial chat's rows are unchanged.
 
 ## How the rule got there (Q1 amended twice on the replay)
 
