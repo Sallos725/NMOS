@@ -134,6 +134,13 @@ Environment notes: one run environment (headless Chromium, homelab CPU). No mobi
 
 Conclusion: wherever an NMOS V3 plugin can run at all, `crypto.subtle` is available. That is localhost or HTTPS; the plugin cannot run over plain-HTTP LAN. The sidecar-side hashing fallback in the Phase 0B plan is therefore not needed for the plugin. Deployments must use localhost or HTTPS (PocketRisu Remote Access).
 
+*Note 2026-10-08 (PocketRisu v1.13.0; observed in the owner's Phase 38 check, not a spike re-run):* an isolated v1.13.0
+opened over plain HTTP on a LAN address loaded the NMOS plugin and its panel, and the panel's restore failed at
+`crypto.subtle.digest` ("Cannot read properties of undefined (reading 'digest')"). On that build the plugin can load
+where `crypto.subtle` is missing, so the conclusion above holds for `a14c911` only. The plugin now checks for it: without
+it every request is skipped with a message, the Status tab says so first, and a one-time alert follows the first reply
+on a page that went without memory (K6). Deployments must still use localhost or HTTPS.
+
 ---
 
 ## Q6 — `getChatFromIndex()` cost

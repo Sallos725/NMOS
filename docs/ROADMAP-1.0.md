@@ -68,6 +68,16 @@ original design, and most recent phases (15, 17, 18, 19) were outside it. So:
 - **Pulled in by name (2026-10-05): memory on a time axis in the Inspector** (AGE-39, Phase 32). The owner first set
   it for after 1.0, then pulled it in after reviewing a mockup. It is read-only rendering in the browser Inspector
   and, behind a plugin flag, the panel, with no packet or schema change.
+- **Pulled in by name (2026-10-08): the bundle's data outside the bundle** (Phase 37). A correction found on a user's
+  report of memory lost in an update: Windows and Linux bundles kept the database in the folder an update replaces. It
+  is of the urgent kind (`AGENTS.md` §13, data loss), and the owner approved it to ship in `0.4.0` rather than as a
+  patch release. Complete 2026-10-08.
+- **Pulled in by name (2026-10-08): restore from the panel** (Phase 38). It completes Phase 16, a Stage 6 item, after
+  Stage 6 ended with Phase 20 (above): the export had reached the panel, while the restore stayed a command that a
+  bundle could not run. In `0.4.0`; complete 2026-10-08.
+- **Pulled in by name (2026-10-08): status windows NMOS holds** (AGE-43, Phase 39). NMOS has read status windows since
+  Phase 1 but could not read the common one-line bar; the owner chose the parser over a documented limit, then its
+  history, the flags for changes the story did not make, and the anchor, all in `0.4.0`.
 
 The road left is Stage 7 (`0.4.0`), publishing Phase 23's bundles with a tagged release, and two quiet weeks on production.
 

@@ -59,7 +59,8 @@ persona's name (HOST-FACTS).
 - PocketRisu shows a second dialog at load: *"Plugin nmos_memory is requesting to access the full
   database, which may expose sensitive information."* The plugin reads only persona names and ids with
   it. Refusing is permanent until the permission responses are reset; NMOS then keeps working without
-  the name.
+  the name. *(Note 2026-10-09: since Phase 14 (ADR 0045, H19) the plugin also reads the chat persona's prompt with
+  this permission and keeps it as canon; without the permission it reads neither.)*
 - A different persona bound to the same chat later takes over the persona role; facts written under the
   old name become an ordinary character again. The host does the same with `{{user}}`.
 - A persona name that is also another character's name merges them. The resolver cannot tell them

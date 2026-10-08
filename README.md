@@ -53,9 +53,10 @@ or RisuAI.</sub>
 
 - Docker with Compose, **or** no Docker: a portable bundle for Windows x64, macOS on Apple Silicon, or Linux
   x64/ARM64 (the systems PocketRisu ships portable packages for; see [Without Docker](#without-docker)).
-- PocketRisu opened at **`http://localhost…` or HTTPS** (PocketRisu Remote Access). Browsers do not run
-  PocketRisu plugins on plain-HTTP LAN addresses such as `http://192.168.x.x:6001`.
-  If PocketRisu runs on another machine, use an SSH tunnel
+- PocketRisu opened at **`http://localhost…` or HTTPS** (PocketRisu Remote Access). NMOS hashes the chat with the
+  browser's Web Crypto, which a page has only there. On a plain-HTTP LAN address such as `http://192.168.x.x:6001`,
+  PocketRisu v1.12.0 did not load plugins at all; v1.13.0 loads NMOS, but every request goes without memory, and the
+  plugin says so on its Status tab and once in an alert (K6). If PocketRisu runs on another machine, use an SSH tunnel
   (`ssh -L 6001:localhost:6001 -L 8790:localhost:8790 server`) and open `http://localhost:6001`.
 - Optional: an OpenAI-compatible LLM endpoint (Ollama, OpenRouter, vLLM, LM Studio…) for facts, and an
   embedding endpoint (e.g. Ollama `qwen3-embedding:0.6b`) for semantic recall.
@@ -72,9 +73,10 @@ or RisuAI.</sub>
    ```
 
 2. In PocketRisu: **Settings → Plugin → Import plugin** → `nmos-pocketrisu.js` from the same release.
-   Allow the "replace content" permission, and the "access the full database" one that follows: NMOS
-   reads only your persona's name with it, so that `{{user}}` and the name are one person in memory
-   (ADR 0023). Without it NMOS still works.
+   Allow the "replace content" permission, and the "access the full database" one that follows: with it NMOS
+   reads your personas' names and ids and the chat persona's prompt. The name makes `{{user}}` and the name one person
+   in memory (ADR 0023); the prompt is kept as canon, a source of facts (ADR 0045). Without it NMOS still works,
+   without either.
 3. Set the plugin argument `sidecar_url` to `http://127.0.0.1:8790`.
 4. **Reload the PocketRisu page.** Always reload after installing, updating or disabling a plugin —
    otherwise PocketRisu can hang on the next message (a PocketRisu bug, see ARCHITECTURE H13).
@@ -166,14 +168,30 @@ ADR 0037). Each release's CHANGELOG entry says what the upgrade re-processes, fo
 (0.1.0-beta.7, 0.1.0-beta.16 and 0.1.0-beta.21) and upgrades them (`apps/sidecar/tests/test_upgrade.py`).
 
 Rollback: migrations only go forward, and an older image on a newer database is not tested. To go back,
-restore the backup you took before upgrading, then start the older release:
+restore the backup you took before upgrading, then start the older release. First stop the services and check that
+the backup is there and not empty:
 
 ```bash
 docker compose stop sidecar worker
-docker compose exec -T postgres dropdb -U nmos nmos
-docker compose exec -T postgres createdb -U nmos nmos
-docker compose exec -T postgres pg_restore -U nmos -d nmos < nmos-backup.dump
-NMOS_VERSION=0.1.0-beta.19 docker compose up -d   # the release you are going back to
+ls -l nmos-backup.dump
+```
+
+> [!WARNING]
+> The next block deletes NMOS's database and replaces it with the backup. It is not part of an update: run it only to
+> roll back, and only with a backup you have just checked. It stops before deleting anything if the file is missing
+> or empty.
+
+```bash
+test -s nmos-backup.dump && \
+  docker compose exec -T postgres dropdb -U nmos nmos && \
+  docker compose exec -T postgres createdb -U nmos nmos && \
+  docker compose exec -T postgres pg_restore -U nmos -d nmos < nmos-backup.dump
+```
+
+Then start the release you are going back to (replace `<version>`, e.g. `0.3.0`):
+
+```bash
+NMOS_VERSION=<version> docker compose up -d
 ```
 
 Put the older plugin file back and reload PocketRisu. Your chats themselves live in PocketRisu. The next
@@ -183,12 +201,16 @@ provider's cost.
 **Without Docker:** quit NMOS, then back up its data folder (above), which also holds `.env`. To upgrade, unpack the
 new version anywhere, or over the old one, and start it: the data and `.env` stay where they are, and the start
 applies the migrations (macOS: replace `NMOS.app` in Applications). Replace the plugin file and reload PocketRisu as
-above. **Upgrading from 0.3.0** on Windows or Linux: the first start of the new version moves the `data` folder of the
+above. If start at login is on, turn it off in the old version's menu and on again in the new one (on Windows the
+entry names the old copy's `NMOS.exe`), and point a systemd unit's `ExecStart` at the new folder.
+**Upgrading from 0.3.0** on Windows or Linux: the first start of the new version moves the `data` folder of the
 bundle it starts from, so unpack the new version beside the old one and move `data` into it, as before, or start it
-from the old folder; the old bundle folder can be deleted after that. An older version refuses data a newer one has
-written and changes nothing; to go back, restore the backed-up data folder (0.3.0 reads it from `data` beside its
-launcher). A bundle stays on PostgreSQL 16; a later major moves through the NMOS Archive (export, then restore in the
-new version). **Removing NMOS:** deleting the bundle folder no longer deletes your memory; delete the data folder too.
+from the old folder. Don't delete the old bundle folder before the new version has started once; after that it can be
+deleted. 0.3.0 does not see the per-user folder: started again (by hand, at login or by a unit) it starts with an
+empty database on the same port. To go back to 0.3.0, restore the backed-up data folder as `data` beside its
+launcher. A bundle stays on PostgreSQL 16; a later major moves through the NMOS Archive (export, then restore in the
+new version). **Removing NMOS:** turn start at login off (or disable the systemd unit) first; deleting the bundle
+folder no longer deletes your memory; delete the data folder too.
 
 ### Export (NMOS Archive)
 
@@ -228,6 +250,25 @@ NMOS and a chat this install already holds (delete it there first; nothing is me
 an older NMOS as the upgrade would. Settings already set on this install stay. On start the sidecar writes what it
 derives and queues what is missing: with extractions in the archive nothing is extracted again. Include embeddings if
 you want the Inspector's replays of old requests that used vectors to stay exact.
+
+### Moving between Docker and a bundle
+
+The Docker install and a bundle each keep their own database: switching from one to the other does not carry the
+memory over, and the new one starts empty while the old data stays where it was. Move it with an archive:
+
+1. In the panel, while it talks to the install you leave: **Settings → Export → Export everything**, with
+   **Include embeddings** ticked (without them the new install embeds every message again, at the provider's cost
+   with a paid embedder).
+2. Stop the old install and keep its data: `docker compose stop`, **not** `docker compose down -v` (which deletes the
+   volume), or quit the bundle. Both listen on `127.0.0.1:8790`, and a bundle does not start on a port in use.
+3. Start the new install. The plugin's `sidecar_url` stays `http://127.0.0.1:8790`.
+4. **Settings → Restore from an archive…** with the file (Phase 38).
+5. Enter the API keys again: an archive never holds them.
+6. Check the model addresses, which the archive does carry: an address that resolves only inside Docker fails on a
+   bundle. For Ollama on the same PC, Docker uses `http://host.docker.internal:11434/v1` and a bundle
+   `http://127.0.0.1:11434/v1`; picking the panel's Ollama preset again fills in the right one.
+
+Keep the old install's data until the new one shows your chats. From a bundle to Docker the steps are the same.
 
 ## NMOS panel (status, inspector, settings)
 
@@ -341,18 +382,34 @@ scene, changed by an edit and written again, queued, or failed with its error (P
 with **Current state**: what `<Cast>` says of them when they are in the scene (place, condition, feeling toward the
 persona, what they carry) and their open goals.
 
+Since 0.4.0 the Inspector also shows memory over time and where it came from:
+
+- **Over time** (Phase 32): a character's page draws its facts, relationships and threads as bars over turns and its
+  events as ticks, each linking to its row below; a tap shows what it was, when and how it ended. The conversation
+  page has one line per character (**Characters over time**). The whole chat or the last 25 turns; in the panel it is
+  a closed section, fetched only when opened.
+- **The turn page** (Phase 33): a turn number in the tables opens that turn's page: its text as NMOS read it (the
+  passages a fact cites in bold), what was extracted from it, which of the last 300 packets used it, and links to the
+  turns around it.
+- **Labels and repetition** (Phase 34): each line of the **Last packet** carries its label (required, supportive or
+  risky) and says when it rested, and a **Repetition** section shows how much of the recent packets came back from the
+  requests before.
+- **Status window over time** (Phase 39): each status key as a lane of the values it held (see
+  [State parsers](#state-parsers)).
+
 <p><img src="docs/images/panel-status.png" alt="NMOS panel, Status tab: the last request injected 7,137 characters of memory in 399 ms, shown as the packet the model received" width="560"></p>
 <p><img src="docs/images/inspector.png" alt="NMOS Inspector in the panel: Needs attention lists threads left open for 30 turns, each with a repair (an outcome and Close)" width="760"></p>
 
 ## Configuration (environment)
 
 Everything above can be set in the panel. The environment only provides defaults (useful for
-headless setups): put a `.env` file next to `docker-compose.yml`.
+headless setups): put a `.env` file next to `docker-compose.yml` (without Docker: the `.env` in the data folder, see
+[Without Docker](#without-docker)).
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `NMOS_CORS_ORIGINS` | `http://localhost:6001,…` | Address(es) you open PocketRisu at |
-| `NMOS_LLM_URL` / `NMOS_LLM_MODEL` / `NMOS_LLM_API_KEY` | off | Background fact extraction. Ollama on the host: `http://host.docker.internal:11434/v1` |
+| `NMOS_LLM_URL` / `NMOS_LLM_MODEL` / `NMOS_LLM_API_KEY` | off | Background fact extraction. Ollama on the host: `http://host.docker.internal:11434/v1`. Without Docker (a bundle) use `http://127.0.0.1:11434/v1`; the panel's Ollama preset fills that in on a bundle (`NMOS_INSTALL`) |
 | `NMOS_EMBED_URL` / `NMOS_EMBED_MODEL` | off | Semantic recall, e.g. `qwen3-embedding:0.6b` |
 | `NMOS_EXTRACT_BACKFILL` | `100` | On first sight of a chat, extract only the latest N **turns** (cost control; the rest on request) |
 | `NMOS_EXTRACT_COMPILER` | *(empty: `extract-v16`)* | The extractor (Phases 28–29): `extract-v16` also shows the model the roles in force and closes the one the story ends (a stay over, a job left), asking once more before it does, and links a character the story writes in full and by part of the name (윤하나 and 하나), asking once more about a nickname whose two names are both in the turn. A change re-extracts every chat once; `extract-v15` selects the earlier extractor |
@@ -374,6 +431,7 @@ headless setups): put a `.env` file next to `docker-compose.yml`.
 | `NMOS_AUTH_TOKEN` | off | Required if you expose the sidecar beyond loopback (`NMOS_SIDECAR_BIND`); set the plugin's `auth_token` too. See [Security](#security) |
 | `NMOS_ALLOWED_HOSTS` | (empty) | Without a token, domain names the sidecar answers to besides IP addresses, `localhost` and single-label names such as `nmos`: e.g. `risu.example.com,*.ts.net`; `*` turns the check off. See [Security](#security) |
 | `NMOS_SIDECAR_BIND` / `NMOS_SIDECAR_PORT` | `127.0.0.1` / `8790` | Where the sidecar listens |
+| `NMOS_INSTALL` | *(empty)* | Set to `bundle` by the bundle's launcher; not for you to set. `/v1/health` and `/v1/config` report it, and the panel's Ollama presets then use `http://127.0.0.1:11434/v1` instead of `host.docker.internal` |
 
 Plugin arguments: `sidecar_url`, `auth_token`, `disabled` (1 = off), `reserved_memory_tokens`
 (0 = 4000), `deadline_ms` (0 = 3000), `inject_position` (`before_last_user` or `end`), `route` (`auto`,
@@ -405,6 +463,29 @@ The inspector's Current state section shows this same example while no state has
 `block` rules read `key: value` lines between a start and end pattern; `regex` rules use named groups
 `key`/`value`. Changing rules re-parses history at the next sidecar start.
 
+**One-line status bars** (Phase 39). Game-like cards often end a reply with a bar on one line
+(`☆ [Date: 0003-05-17 (Sun) | Time: 06:20 | Level: 3 | HP: 40 / 50 | Items: 물약 ×2]`). A `block` rule with `separator`
+reads it field by field (`key: value` or `key=value`), and `card` reads the rule only in the chats of that character
+name (as PocketRisu shows it; without `card` the rule reads every chat):
+
+```json
+{"rules": [
+  {"id": "bar", "kind": "block", "role": "char", "start": "☆ \\[", "end": "\\]\\s*$", "separator": "|",
+   "card": "Card name"}
+]}
+```
+
+End the rule at `\]\s*$` (the `]` at the end of the line) so a bracket inside a value does not end it; the story's
+own bracket windows are not read. `config/parsers.example.json` has a `status-bar` rule, and the Korean guide's
+"한 줄짜리 상태창" has more advice.
+
+**A status window over time** (Phase 39, ADR 0071). The Inspector's conversation page draws each status key as a lane
+of the values it held (**Status window over time**). A rule's `watch` keys (`"watch": ["Items", "Equipment", "Gold"]`)
+put an entry in **Needs attention** when an item appears in or leaves a list, or a number moves, while the reply's own
+text says nothing of it, and when a rerolled reply puts a value back; each can be dismissed. Watch items, equipment
+and money, not keys that change every turn (place, time, date). Under `packet-v17` (not the default) a message that
+names a key and asks how it changed ("레벨 언제 올랐어?") gets that key's last changes as one `<StateHistory>` line.
+
 ## What gets injected
 
 A system message right before your latest message (at the very end of the prompt with the plugin argument
@@ -421,6 +502,13 @@ A system message right before your latest message (at the very end of the prompt
 
 On the tested PocketRisu build, only main generations get a packet (not summaries, translations or
 suggestions), retries inject once, and excerpts already in the prompt are not repeated.
+
+A question about what someone said ("그때 뭐라고 했지?", at a turn or the first time) brings up to two quote lines with
+the words verbatim and their turn, before the excerpts (since 0.4.0, `packet-v13`, ADR 0067):
+`<Quote turn="12">"…"</Quote>`, with `speaker` only when the narration names one (K47). Every line of the packet is
+also labeled required, supportive or risky (`packet-v14`, ADR 0068): a supportive line placed in each of the last two
+requests that no reply used rests for the next two, and its room goes to other memory; what the question names, what
+its own words found, a question about the past and every knowledge boundary never rest (K45; `NMOS_REST_AFTER`).
 
 The memory budget buys memory (`packet-v9`, Phase 15, ADR 0049; `packet-v10`, Phase 18, ADR 0053): above 2,000 tokens,
 the number of excerpts, each excerpt's length and the number of facts grow with it, from your own excerpt and fact settings, up to four times the
@@ -494,7 +582,8 @@ and a form of address, and the Inspector's Relationships section shows it in a R
 ## Privacy
 
 Chat text is stored in the local Postgres volume. Text leaves your machine only if you configure an
-LLM or embedding endpoint that is remote. `docker compose down -v` deletes all NMOS data.
+LLM or embedding endpoint that is remote. `docker compose down -v` deletes all NMOS data; export an archive first if
+you may want it back.
 
 ## Security
 

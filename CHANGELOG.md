@@ -5,6 +5,38 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+### Upgrading from 0.3.0
+
+Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS and back up its data folder).
+
+1. **Docker:** `docker compose pull && docker compose up -d`. At startup migration 0029 adds a repair kind (dismissing
+   a status flag); it is the only schema change. Nothing is extracted or embedded again, so the update itself makes no
+   provider calls.
+2. **Without Docker (Windows, Linux):** the first start of this version moves 0.3.0's `data` folder into the per-user
+   data folder (Phase 37, below). Unpack the new version beside the old one and move `data` into it, or start the new
+   version from the old folder, and don't delete the old folder before the new version has started once. From now on
+   edit the `.env` in the data folder: the one beside NMOS is copied there once, and where the two differ the data
+   folder's wins (the log says so). If start at login is
+   on, turn it off in the old version and on in the new one, and point a systemd unit at the new folder: 0.3.0 does
+   not see the moved data, and started again it starts with an empty database.
+3. **Replace the plugin and the sidecar together**, then reload PocketRisu. The Status tab says whether they match and
+   offers the matching plugin file.
+4. **Memory:** the default packet becomes `packet-v16` (quotes, labels and resting lines; Phases 33–36, below).
+   `NMOS_PACKET_POLICY=packet-v12` keeps the packet of 0.3.0.
+5. **Switching between Docker and a bundle** does not carry the memory over: move it with an archive (README, "Moving
+   between Docker and a bundle").
+
+### Changes
+
+- **NMOS that cannot help says so, and the panel offers the fix** (the pre-0.4.0 audit). Once per page, after a reply
+  that went without memory because the sidecar could not be reached, refused the token or refused the host, or because
+  the page is not a secure context, a PocketRisu alert says which and what to do. On a page without Web Crypto
+  (PocketRisu v1.13.0 over plain HTTP on a LAN address) the plugin skips each request with a readable reason, and the
+  Status tab says so first (K6). The Connection settings have a token field, and a refused token or host gets its own
+  fix on the Status tab. A plugin that differs from the sidecar's gets a button that saves the matching file. The
+  bundle's launcher sets `NMOS_INSTALL=bundle`; `/v1/health` and `/v1/config` report it, the panel's Ollama presets
+  fill in `http://127.0.0.1:11434/v1` on a bundle instead of `host.docker.internal`, and the hint for an unreachable
+  sidecar names the bundle's tray or menu bar beside `docker compose up -d`.
 - **Without Docker, the data now lives outside the bundle, and the first start moves it there** (Phase 37, ADR 0060
   amendment 1). Windows and Linux bundles kept the database, its password, the log and `.env` inside the bundle folder,
   so the natural update (delete the old folder, unpack the new one) deleted the memory with it. From this version they
