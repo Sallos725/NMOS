@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:a3100b8e5741".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:d6bb4833101f".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -332,6 +332,11 @@
       "This plugin (build {mine}) differs from the sidecar's (build {theirs}). Replace it with the plugin file of the sidecar's version and reload. The Inspector's first page links the matching file."
     ],
     "status.plugin_ok": ["\uD50C\uB7EC\uADF8\uC778 \uBE4C\uB4DC {b} \xB7 \uC0AC\uC774\uB4DC\uCE74\uC640 \uAC19\uC74C", "Plugin build {b} \xB7 matches the sidecar"],
+    // The host registers the request hook only with the "replace content" permission and remembers a denial silently.
+    "status.no_requests": [
+      '\uC774 \uD398\uC774\uC9C0\uB97C \uC5F0 \uB4A4 NMOS\uAC00 \uBC1B\uC740 \uCC44\uD305 \uC694\uCCAD\uC774 \uC544\uC9C1 \uC5C6\uC2B5\uB2C8\uB2E4. \uCC44\uD305\uC744 \uBCF4\uB0C8\uB294\uB370\uB3C4 \uC774\uB300\uB85C\uB77C\uBA74 PocketRisu\uAC00 "\uB0B4\uC6A9 \uAD50\uCCB4" \uAD8C\uD55C \uAC70\uC808\uC744 \uAE30\uC5B5\uD558\uACE0 \uC788\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4: \uC124\uC815 \u2192 \uD50C\uB7EC\uADF8\uC778 \u2192 NMOS \uC904 \uBA54\uB274 \u2192 \uAD8C\uD55C \uC751\uB2F5 \uCD08\uAE30\uD654, \uC0C8\uB85C \uACE0\uCE68 \uD6C4 \uC608.',
+      'No chat request has reached NMOS since this page opened. If you have sent one, PocketRisu may remember a denied "replace content" permission: Settings \u2192 Plugin \u2192 the NMOS row menu \u2192 reset permission responses, reload, and answer Yes.'
+    ],
     "budget.title": ["\uAE30\uC5B5 {c}\uC904\uC774 \uC790\uB9AC\uAC00 \uC5C6\uC5B4 \uBE60\uC84C\uC2B5\uB2C8\uB2E4", "{c} memory lines did not fit"],
     "budget.text": [
       "\uB9C8\uC9C0\uB9C9 \uC751\uB2F5\uC5D0\uC11C \uCC3E\uC740 \uAE30\uC5B5 {m}\uC904 \uC911 {c}\uC904\uC774 \uAE30\uC5B5 \uC608\uC0B0({b}\uD1A0\uD070)\uC5D0 \uB4E4\uC5B4\uAC00\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC608\uC0B0\uC744 {s}\uC73C\uB85C \uC62C\uB9AC\uBA74 \uBAA8\uB450 \uB4E4\uC5B4\uAC11\uB2C8\uB2E4. \uC62C\uB9B0 \uB9CC\uD07C({d}\uD1A0\uD070) PocketRisu\uC758 \uCD5C\uB300 \uCEE8\uD14D\uC2A4\uD2B8\uB3C4 \uC904\uC5EC \uC8FC\uC138\uC694.",
@@ -538,6 +543,10 @@
     "emb.sub": [
       "\uB2E4\uB978 \uB9D0\uB85C \uBB3C\uC5B4\uB3C4 \uC608\uC804 \uC7A5\uBA74\uC744 \uCC3E\uC2B5\uB2C8\uB2E4. Ollama\uC758 qwen3-embedding:0.6b\uB97C \uCD94\uCC9C\uD569\uB2C8\uB2E4.",
       "Finds earlier scenes even when asked in other words. Ollama qwen3-embedding:0.6b is recommended."
+    ],
+    "emb.voyage_hint": [
+      "\uC758\uBBF8 \uC720\uC0AC\uB3C4 \uAE30\uC900\uC744 voyage-4-large\uC5D0\uC11C \uC7B0 \uAC12 0.3\uC73C\uB85C \uB9DE\uCDC4\uC2B5\uB2C8\uB2E4. \uACB0\uC81C \uC218\uB2E8\uC744 \uB4F1\uB85D\uD558\uC9C0 \uC54A\uC740 Voyage \uACC4\uC815\uC740 \uBD84\uB2F9 3\uD68C\uB85C \uC81C\uD55C\uB418\uC5B4, \uB300\uD654\uB97C \uC784\uBCA0\uB529\uD558\uAE30\uC5D0 \uBD80\uC871\uD569\uB2C8\uB2E4. Voyage\uB294 \uBAA8\uB378 \uBAA9\uB85D\uC744 \uC8FC\uC9C0 \uC54A\uC73C\uB2C8 \uB2E4\uB978 \uBAA8\uB378\uC740 \uC774\uB984\uC744 \uC9C1\uC811 \uC801\uC73C\uC138\uC694.",
+      "The vector min similarity is set to 0.3, the value measured for voyage-4-large. A Voyage account with no payment method is limited to 3 requests a minute, too few to embed a chat. Voyage lists no models, so type the name of another model yourself."
     ],
     "preset.off": ["\uC0AC\uC6A9 \uC548 \uD568", "Off"],
     "preset.ollama": ["Ollama (\uC774 PC)", "Ollama (this PC)"],
@@ -2074,8 +2083,9 @@ ${revisionHash}`;
   ];
   var EMBED_PRESETS = [
     { label: "preset.off", url: "" },
-    { label: "preset.ollama", url: "http://host.docker.internal:11434/v1", model: "qwen3-embedding:0.6b" },
+    { label: "preset.ollama", url: "http://host.docker.internal:11434/v1", model: "qwen3-embedding:0.6b", minSim: 0.42 },
     { label: "OpenAI", url: "https://api.openai.com/v1", model: "text-embedding-3-small" },
+    { label: "Voyage AI", url: "https://api.voyageai.com/v1", model: "voyage-4-large", minSim: 0.3, hint: "emb.voyage_hint" },
     { label: "preset.custom", url: "custom" }
   ];
   var PARSER_EXAMPLE = {
@@ -2259,6 +2269,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         } else if (s.pluginExpected) {
           conn.append(el("div", { class: "muted", text: L("status.plugin_ok", { b: PLUGIN_BUILD }) }));
         }
+        if (s.enabled && !s.last) conn.append(el("div", { class: "muted", text: L("status.no_requests") }));
       } else {
         conn.append(
           el(
@@ -3153,7 +3164,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("p", { class: "sub", text: L("conn.hint") }),
       el("p", { class: "sub", text: L("conn.deadline_hint") })
     ));
-    function modelSection(kind, title, sub, presets) {
+    function modelSection(kind, title, sub, presets, onPreset) {
       const preset = el("select", {}, ...presets.map((p, i) => el("option", {
         value: String(i),
         text: p.label.includes(".") ? L(p.label) : p.label
@@ -3197,7 +3208,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (p.url !== "custom") endpoint.value = fillProject(p.url, key.value);
         if (p.model) model.value = p.model;
         if (!p.url) model.value = "";
-        say(msg, p.url.includes("{project}") ? L("model.vertex_hint") : "");
+        say(msg, p.hint ? L(p.hint) : p.url.includes("{project}") ? L("model.vertex_hint") : "");
+        onPreset?.(p);
         syncPickKey();
         update();
       });
@@ -3271,7 +3283,15 @@ html,body{margin:0;background:${PALETTE.bg}}
       };
     }
     const llm = modelSection("llm", "llm.title", "llm.sub", LLM_PRESETS);
-    const emb = modelSection("embeddings", "emb.title", "emb.sub", EMBED_PRESETS);
+    const emb = modelSection(
+      "embeddings",
+      "emb.title",
+      "emb.sub",
+      EMBED_PRESETS,
+      (p) => {
+        if (p.minSim !== void 0) minSim.value = String(p.minSim);
+      }
+    );
     const threshold = el("input", { type: "number", step: 0.05, min: 0.05, max: 1 });
     const minSim = el("input", { type: "number", step: 0.01, min: 0, max: 1 });
     const topK = el("input", { type: "number", min: 0, max: 20 });

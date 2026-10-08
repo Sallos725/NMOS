@@ -300,10 +300,21 @@ def build_dmg(app: Path, dmg: Path) -> Path:
     return dmg
 
 
+def sidecar_version() -> str:
+    """The sidecar's version as apps/sidecar/pyproject.toml declares it: what the Docker image reports too."""
+    text = (REPO / "apps" / "sidecar" / "pyproject.toml").read_text(encoding="utf-8")
+    m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
+    if not m:
+        raise SystemExit("no version in apps/sidecar/pyproject.toml")
+    return m.group(1)
+
+
 def install_sidecar(python: Path, work: Path) -> None:
     """The sidecar's dependencies from uv.lock, each checked against the lock's SHA-256 and taken only as a built
     wheel (no build step that could fetch an unpinned build backend); the sidecar itself is pure Python and is copied
-    in as source, so its own build backend (hatchling) is never downloaded either."""
+    in as source, so its own build backend (hatchling) is never downloaded either. The copy gets the package metadata
+    an install would write, since the sidecar reads its version from it (`importlib.metadata`): without it every
+    bundle reported 0.0.0."""
     sidecar = REPO / "apps" / "sidecar"
     req = work / "requirements.txt"
     subprocess.run(["uv", "export", "--frozen", "--no-dev", "--no-emit-project", "-q", "-o", str(req)],
@@ -314,6 +325,15 @@ def install_sidecar(python: Path, work: Path) -> None:
                              capture_output=True, text=True, check=True).stdout.strip()
     shutil.copytree(sidecar / "src" / "nmos_sidecar", Path(purelib) / "nmos_sidecar",
                     ignore=shutil.ignore_patterns("__pycache__"))
+    version = sidecar_version()
+    info = Path(purelib) / f"nmos_sidecar-{version}.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: nmos-sidecar\nVersion: {version}\n", encoding="utf-8")
+    (info / "INSTALLER").write_text("nmos-bundle\n", encoding="utf-8")
+    reported = subprocess.run([str(python), "-c", "from importlib.metadata import version; print(version('nmos-sidecar'))"],
+                              capture_output=True, text=True, check=True).stdout.strip()
+    if reported != version:
+        raise SystemExit(f"the bundled sidecar reports version {reported!r}, not {version!r}")
 
 
 PG_KEEP_BINS = {"initdb", "pg_ctl", "postgres", "pg_dump", "pg_restore", "pg_controldata"}

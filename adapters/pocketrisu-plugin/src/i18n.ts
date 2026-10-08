@@ -84,6 +84,9 @@ const STRINGS = {
   'status.plugin_mismatch': ['이 플러그인(빌드 {mine})이 사이드카의 플러그인(빌드 {theirs})과 다릅니다. 사이드카와 같은 버전의 플러그인 파일로 교체하고 새로 고침하세요. 인스펙터 첫 화면에서 맞는 파일을 받을 수 있습니다.',
     "This plugin (build {mine}) differs from the sidecar's (build {theirs}). Replace it with the plugin file of the sidecar's version and reload. The Inspector's first page links the matching file."],
   'status.plugin_ok': ['플러그인 빌드 {b} · 사이드카와 같음', 'Plugin build {b} · matches the sidecar'],
+  // The host registers the request hook only with the "replace content" permission and remembers a denial silently.
+  'status.no_requests': ['이 페이지를 연 뒤 NMOS가 받은 채팅 요청이 아직 없습니다. 채팅을 보냈는데도 이대로라면 PocketRisu가 "내용 교체" 권한 거절을 기억하고 있을 수 있습니다: 설정 → 플러그인 → NMOS 줄 메뉴 → 권한 응답 초기화, 새로 고침 후 예.',
+    'No chat request has reached NMOS since this page opened. If you have sent one, PocketRisu may remember a denied "replace content" permission: Settings → Plugin → the NMOS row menu → reset permission responses, reload, and answer Yes.'],
   'budget.title': ['기억 {c}줄이 자리가 없어 빠졌습니다', '{c} memory lines did not fit'],
   'budget.text': ['마지막 응답에서 찾은 기억 {m}줄 중 {c}줄이 기억 예산({b}토큰)에 들어가지 못했습니다. 예산을 {s}으로 올리면 모두 들어갑니다. 올린 만큼({d}토큰) PocketRisu의 최대 컨텍스트도 줄여 주세요.',
     'The last reply found {m} memory lines and {c} did not fit the memory budget ({b} tokens). A budget of {s} holds them all. Lower PocketRisu\'s max context by the same amount ({d} tokens).'],
@@ -245,6 +248,8 @@ const STRINGS = {
   'emb.title': ['의미 검색 임베딩', 'Semantic recall embeddings'],
   'emb.sub': ['다른 말로 물어도 예전 장면을 찾습니다. Ollama의 qwen3-embedding:0.6b를 추천합니다.',
     'Finds earlier scenes even when asked in other words. Ollama qwen3-embedding:0.6b is recommended.'],
+  'emb.voyage_hint': ['의미 유사도 기준을 voyage-4-large에서 잰 값 0.3으로 맞췄습니다. 결제 수단을 등록하지 않은 Voyage 계정은 분당 3회로 제한되어, 대화를 임베딩하기에 부족합니다. Voyage는 모델 목록을 주지 않으니 다른 모델은 이름을 직접 적으세요.',
+    'The vector min similarity is set to 0.3, the value measured for voyage-4-large. A Voyage account with no payment method is limited to 3 requests a minute, too few to embed a chat. Voyage lists no models, so type the name of another model yourself.'],
   'preset.off': ['사용 안 함', 'Off'],
   'preset.ollama': ['Ollama (이 PC)', 'Ollama (this PC)'],
   'preset.custom': ['직접 입력 (OpenAI 호환)', 'Custom (OpenAI-compatible)'],

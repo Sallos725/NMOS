@@ -3,6 +3,26 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
+## Unreleased
+
+- **The portable bundles report their version.** Every v0.3.0 bundle (Linux x64 and arm64, macOS, Windows) reported
+  version 0.0.0: the bundle build copies the sidecar in as source, without the package metadata the sidecar reads its
+  version from. The build now writes that metadata from `apps/sidecar/pyproject.toml` and checks that the bundled
+  sidecar reports it, and the bundle smoke test fails on any other version. Docker images were not affected.
+- **A hint when the plugin never receives a chat request.** PocketRisu registers the plugin's request hook only with
+  the "replace content" permission and remembers a denial without saying so: the Status tab then says "connected"
+  while nothing syncs (reported on a Windows bundle). The Status tab now says when no chat request has reached NMOS
+  since the page opened, and the Inspector's "no plugin has synced" line, how to reset the permission. A hint only;
+  nothing else changes.
+- **Voyage AI in the embedding presets, with its own similarity bar** (AGE-40; outside a phase, asked for by the
+  owner). Similarity scores differ by embedding model: on the M0 chats `voyage-4-large` matches `qwen3-embedding` only
+  with the vector bar at 0.3 (0.42 is qwen3's), so a preset measured with its own bar now sets "Vector min similarity"
+  when it is picked (Ollama 0.42, Voyage AI 0.3; OpenAI unmeasured, left as it is). `voyage-4-lite` did worse than no
+  vectors and is not offered; the contextual model needs another endpoint and gained nothing
+  (`docs/perf/embedders.md`). Picking Voyage says that an account with no payment method has 3 requests a minute, too
+  few to embed a chat. An embedding answer that reports `total_tokens` alone (Voyage's) is now counted as its input
+  tokens in the model-call usage. No migration, no new generation; the plugin build changes.
+
 ## 0.3.0
 
 The second milestone release (`docs/ROADMAP-1.0.md`): **Stage 6, verification and repair**, is complete (canon sources,

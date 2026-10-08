@@ -57,8 +57,8 @@ def chat_with(reply: str, *, filler: str = "Idle chatter {i} about the pier.",
     return chat
 
 
-def client_for(url: str, policy: str):
-    return make_client(url, embedder=FakeEmbedder(), packet_policy=policy, **EMB)
+def client_for(url: str, policy: str, **overrides):
+    return make_client(url, embedder=FakeEmbedder(), packet_policy=policy, **EMB, **overrides)
 
 
 def packet_and_candidate(client, url: str, chat: SimChat, query: str, **extra) -> tuple[str, dict, dict]:
@@ -106,10 +106,14 @@ def test_a_lexical_hit_with_a_qualifying_vector_excerpts_within_its_chunk_too(mi
     question = "captain harbor morning weather key"  # four broad keywords (the longest four); "key" is not looked up
     texts = {}
     for policy in ("packet-v11", "packet-v10"):
-        with client_for(migrated, policy) as c:
+        # Every message ties on the trigram route, and the fillers on vectors too, so their order (and with it which
+        # five reach the packet) is whatever order the database returns ties in: Windows' differs from Linux's. Room
+        # for every candidate keeps the case about the story's excerpt, not about tie order.
+        with client_for(migrated, policy, recall_top_k=20) as c:
             text, cand, trace = packet_and_candidate(c, migrated, chat_with(story, filler=broad, idle=broad), question)
             assert trace["latency_ms"]["keyword_mode"] == "too_broad" and cand["keyword_score"] == 0, trace["latency_ms"]
             assert cand["user_score"] >= 0.4 and cand["sim"] >= 0.42, cand
+            assert trace["latency_ms"]["placed"]["excerpt"] == len(trace["candidates"]), trace["latency_ms"]["placed"]
             texts[policy] = text
     assert "named the parrot Pepper" in texts["packet-v10"] and "behind the stove" not in texts["packet-v10"]
     assert "behind the stove" in texts["packet-v11"] and "named the parrot Pepper" not in texts["packet-v11"]

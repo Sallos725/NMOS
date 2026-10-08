@@ -53,7 +53,9 @@ interface ServerConfig {
   queued_jobs?: number;
 }
 
-interface Preset { label: string | StringKey; url: string; model?: string }
+/** `minSim`: the vector similarity bar measured for the preset's model (`docs/perf/embedders.md`); `hint`: said when
+ *  the preset is picked. */
+interface Preset { label: string | StringKey; url: string; model?: string; minSim?: number; hint?: StringKey }
 /** `GET /v1/conversations/<id>/memory-mode` (ADR 0035). */
 interface MemoryMode { strict: boolean; narrator: string | null; characters: string[] }
 
@@ -69,8 +71,9 @@ const LLM_PRESETS: Preset[] = [
 
 const EMBED_PRESETS: Preset[] = [
   { label: 'preset.off', url: '' },
-  { label: 'preset.ollama', url: 'http://host.docker.internal:11434/v1', model: 'qwen3-embedding:0.6b' },
+  { label: 'preset.ollama', url: 'http://host.docker.internal:11434/v1', model: 'qwen3-embedding:0.6b', minSim: 0.42 },
   { label: 'OpenAI', url: 'https://api.openai.com/v1', model: 'text-embedding-3-small' },
+  { label: 'Voyage AI', url: 'https://api.voyageai.com/v1', model: 'voyage-4-large', minSim: 0.3, hint: 'emb.voyage_hint' },
   { label: 'preset.custom', url: 'custom' },
 ];
 
@@ -256,6 +259,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       } else if (s.pluginExpected) {
         conn.append(el('div', { class: 'muted', text: L('status.plugin_ok', { b: PLUGIN_BUILD }) }));
       }
+      // No request since load: normal before the first message, a denied permission after it (a hint only).
+      if (s.enabled && !s.last) conn.append(el('div', { class: 'muted', text: L('status.no_requests') }));
     } else {
       conn.append(el('div', { class: 'line' }, el('span', { class: 'dot err' }),
         el('span', { class: 'err', text: `${L('status.unreachable')}: ${base}` })),
@@ -1036,7 +1041,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     el('div', { class: 'check' }, enabled, el('span', { text: L('conn.enabled') })),
     el('p', { class: 'sub', text: L('conn.hint') }), el('p', { class: 'sub', text: L('conn.deadline_hint') })));
 
-  function modelSection(kind: 'llm' | 'embeddings', title: StringKey, sub: StringKey, presets: Preset[]) {
+  function modelSection(kind: 'llm' | 'embeddings', title: StringKey, sub: StringKey, presets: Preset[],
+    onPreset?: (p: Preset) => void) {
     const preset = el('select', {}, ...presets.map((p, i) => el('option', { value: String(i),
       text: p.label.includes('.') ? L(p.label as StringKey) : p.label })));
     const endpoint = el('input', { placeholder: 'https://…/v1', spellcheck: 'false' });
@@ -1076,7 +1082,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (p.url !== 'custom') endpoint.value = fillProject(p.url, key.value);
       if (p.model) model.value = p.model;
       if (!p.url) model.value = '';
-      say(msg, p.url.includes('{project}') ? L('model.vertex_hint') : '');
+      say(msg, p.hint ? L(p.hint) : p.url.includes('{project}') ? L('model.vertex_hint') : '');
+      onPreset?.(p);
       syncPickKey();
       update();
     });
@@ -1123,7 +1130,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     };
   }
   const llm = modelSection('llm', 'llm.title', 'llm.sub', LLM_PRESETS);
-  const emb = modelSection('embeddings', 'emb.title', 'emb.sub', EMBED_PRESETS);
+  // Similarity scores differ by embedding model, so a preset measured with its own bar brings it (AGE-40).
+  const emb = modelSection('embeddings', 'emb.title', 'emb.sub', EMBED_PRESETS,
+    (p) => { if (p.minSim !== undefined) minSim.value = String(p.minSim); });
 
   const threshold = el('input', { type: 'number', step: 0.05, min: 0.05, max: 1 });
   const minSim = el('input', { type: 'number', step: 0.01, min: 0, max: 1 });
