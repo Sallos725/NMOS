@@ -224,8 +224,12 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "who_claims": ("주장 (이 인물이 했거나 이 인물에 대한)", "Claims (by or about this character)"),
     "who_other": ("실제가 아닌 단언", "Not actual"),
     # the plugin build (ADR 0037)
-    "plugin.none": ("플러그인: 이 사이드카가 시작된 뒤 아직 동기화한 플러그인이 없습니다. 다음 생성 뒤에 확인됩니다 (맞는 빌드 {want}).",
-                    "Plugin: none has synced since this sidecar started; the next generation shows it (matching build {want})."),
+    "plugin.none": ("플러그인: 이 사이드카가 시작된 뒤 아직 동기화한 플러그인이 없습니다. 다음 생성 뒤에 확인됩니다 (맞는 빌드 {want}). "
+                    "생성했는데도 이대로라면 PocketRisu가 \"내용 교체\" 권한 거절을 기억하고 있을 수 있습니다: 설정 → 플러그인 → "
+                    "NMOS 줄 메뉴 → 권한 응답 초기화, 새로 고침 후 예.",
+                    "Plugin: none has synced since this sidecar started; the next generation shows it (matching build {want}). "
+                    "If you have generated and it still says so, PocketRisu may remember a denied \"replace content\" "
+                    "permission: Settings → Plugin → the NMOS row menu → reset permission responses, reload, and answer Yes."),
     "plugin.ok": ("플러그인: 사이드카와 같은 빌드 {build} ({when})", "Plugin: the sidecar's build {build} ({when})"),
     "plugin.old": ("⚠ 플러그인이 이 사이드카와 다른 빌드입니다: 사용 중 {build} ({when}), 맞는 빌드 {want}. 플러그인 파일을 교체하고 PocketRisu를 새로 고침하세요.",
                    "⚠ The plugin is not this sidecar's build: in use {build} ({when}), matching build {want}. Replace the plugin file and reload PocketRisu."),
