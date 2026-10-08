@@ -282,6 +282,7 @@ class Excerpt:
     cut_ok: bool = True  # False: placed whole or as `short`, never cut to fit (keyword-only excerpts, ADR 0052)
     quote: bool = False  # a <Quote> line: the words said, verbatim (PHASE-33, ADR 0067)
     unextracted: bool = False  # its turn has no extraction yet: no fact of it to restate (PHASE-33 Q5)
+    resting: bool = False  # overused and unused (PHASE-34 Q3): placed only if it holds the reserved first place
 
 
 def _turn(name: str, turn: int | None) -> str:
@@ -491,7 +492,10 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         def demoted(line: Line) -> bool:
             ref = str(line.ref.get("assertion"))
             return ref in risky and ref not in named and not line.private and line.kind != "secret"
-        facts = [f for f in (facts or []) if not demoted(f)] + [f for f in (facts or []) if demoted(f)]
+        # a risky lead line (how two stand, disputed) goes after the ordinary facts too: lead is placed first
+        facts = ([f for f in (facts or []) if not demoted(f)] + [f for f in (lead or []) if demoted(f)]
+                 + [f for f in (facts or []) if demoted(f)])
+        lead = [f for f in (lead or []) if not demoted(f)]
     if policy not in POLICIES:
         raise ValueError(f"unknown packet policy: {policy}")
     est = partial(estimate_tokens, non_ascii=NON_ASCII[policy])
@@ -516,7 +520,10 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
             if (not item.quote and not item.unextracted
                     and (same := _restates(item, story + cast_lines + lead + threads + facts)) is not None):
                 repeats[n] = same
-    first = next((n for n in range(len(ranked)) if n not in repeats), None)
+    # The reserved, required excerpt (ADR 0026): the first that survives the repeat check and is not resting, or a
+    # resting one when no other survives (PHASE-34 Q3, a review and its follow-up: it never rests).
+    first = next((n for n in range(len(ranked)) if n not in repeats and not ranked[n].resting),
+                 next((n for n in range(len(ranked)) if n not in repeats), None))
     if policy in LABEL_POLICIES:
         _label(ledger, state, story, cast_lines, lead + threads + facts, ranked, first, named, risky)
     reserved: tuple[str, str] | None = None
@@ -622,6 +629,9 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
         room = budget_tokens - used
         if n in repeats:
             entry["why"], entry["repeats"] = "repeats", repeats[n].ref
+            continue
+        if item.resting and n != first:  # left out while it rests (PHASE-34 Q3)
+            entry["why"] = "resting"
             continue
         if reserving:
             # The best excerpt had room kept for it; what the other sections left may fit more of it.

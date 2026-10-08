@@ -29,7 +29,7 @@ from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
 from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES,
-                     CHANGE_POLICIES, CONTENTS,
+                     CHANGE_POLICIES, CONTENTS, LABEL_POLICIES,
                      QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
@@ -818,6 +818,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                     first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases,
                                     named=g.named)
             ranked = _rested(ranked, "fact", rest, g)
+            if options.policy in LABEL_POLICIES:  # before the limits: a risky fact never takes an ordinary one's slot
+                ranked = _risky_last(ranked, view, g.named)
             if changes:  # an ended role answers a question about the past, not about now (PHASE-31 Q2); the facts
                 # after it take its slot
                 def now_or_kept(f: dict[str, Any]) -> bool:
@@ -834,6 +836,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                     causes=causes, first_cue=first, window_start=start, marks=options.history_marks,
                                     aliases=aliases, named=g.named)
             ranked = _rested(ranked, "claim", rest, g)
+            if options.policy in LABEL_POLICIES:
+                ranked = _risky_last(ranked, view, g.named)
             claims = _grown(ranked[:claims_limit], ranked,
                             max(1, (options.facts_limit + options.fill_facts) // 2) - claims_limit)
             g.risky = ({str(f["id"]) for f in facts + claims if f.get("disputed_by")}
@@ -921,16 +925,17 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     floor = (EXCERPT_FLOOR * max((float(c["rrf"]) for c in eligible if not resting(c)), default=0.0)
              if options.policy in REST_POLICIES else 0.0)
     for c in eligible:
-        if g.ranked and resting(c):  # the first excerpt is the reserved, required one: it never rests (a review)
-            g.rested += 1
-            continue
-        if floor and g.ranked and float(c["rrf"]) < floor and not (c.get("user_score") or c.get("keyword_score")):
+        # A resting excerpt is offered marked, outside the count: the compiler places it only when it holds the reserved
+        # first place, which is known only after its repeat check and the filters below (a review's follow-up)
+        tired = resting(c)
+        awake = [e for e in g.ranked if not e.resting]
+        if floor and awake and float(c["rrf"]) < floor and not (c.get("user_score") or c.get("keyword_score")):
             g.below_floor += 1  # supportive memory's activation threshold (PHASE-34 Q4): the first excerpt is required
             continue
-        extra = any(e.unextracted for e in g.ranked)
-        if stale is not None and len(g.ranked) >= options.top_k + extra:
+        extra = any(e.unextracted for e in awake)
+        if stale is not None and len(awake) >= options.top_k + extra:
             break
-        if stale is not None and len(g.ranked) == options.top_k and str(c["id"]) not in unextracted:
+        if stale is not None and not tired and len(awake) == options.top_k and str(c["id"]) not in unextracted:
             continue  # the one more slot is for an unextracted turn only
         # a lexical or keyword hit is the whole message; a vector-only hit is its chunk; under packet-v11 a word hit
         # whose vector similarity meets the bar excerpts within its chunk too: the chunk is the part of the message
@@ -953,7 +958,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         item = Excerpt(turn=c["turn"] if by_turn else c["position"],
                        speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
                        text=text, score=float(c["rrf"]), revision_id=str(c["id"]), short=short,
-                       position=c["position"], unextracted=str(c["id"]) in unextracted)
+                       position=c["position"], unextracted=str(c["id"]) in unextracted, resting=tired)
         if stale is not None:  # packet-v12 (PHASE-31 Q1): no form of an excerpt says only a replaced value
             if stale(item.text, item.turn):
                 g.replaced += 1
@@ -1126,6 +1131,12 @@ def compile_gathered(g: Gathered, budget: int, policy: str) -> Compiled:
                          risky=frozenset(g.risky))
 
 
+def rested(g: Gathered, compiled: Compiled) -> int:
+    """Lines left out resting (PHASE-34 Q3): those gather left out, and the excerpts the compiler did (a resting
+    excerpt is offered marked and placed only when it holds the reserved first place)."""
+    return g.rested + sum(1 for e in compiled.ledger if e.get("why") == "resting")
+
+
 def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, options: RecallOptions) -> list[Line]:
     """This chat's memory mode applied to offered lines (ADR 0035). A first-person narrator drops what the
     narrator is not shown to know. Strict mode replaces a private line with a Secret line naming its holders
@@ -1284,6 +1295,18 @@ def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str], upto
     return rows, dict(zip(words, weight)), "on"
 
 
+def _risky_last(rows: list[dict[str, Any]], view: dict[str, Any], named: set[str]) -> list[dict[str, Any]]:
+    """`rows` with the risky ones last (PHASE-34 Q1: a disputed or contradicted line is offered after the other
+    supportive ones), applied before the limits so that it never takes an ordinary line's slot (a review's
+    follow-up). A named, private or secret line keeps its place: it is required."""
+    contradicted = {str(c["fact"]) for c in view.get("conflicts") or [] if c.get("fact") is not None}
+
+    def risky(r: dict[str, Any]) -> bool:
+        return (bool(r.get("disputed_by")) or str(r["id"]) in contradicted) and str(r["id"]) not in named \
+            and not (r.get("hidden_from") or r.get("known_by"))
+    return [r for r in rows if not risky(r)] + [r for r in rows if risky(r)]
+
+
 def _rested(rows: list[Any], kind: str, rest: frozenset[tuple[str, str]], g: Gathered,
             ident: Callable[[Any], str] = lambda r: str(r["id"]),
             hit: Callable[[Any], bool] = lambda r: False) -> list[Any]:
@@ -1410,7 +1433,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             compiled.tokens,
             Jsonb({**timings, "lexical_mode": g.lexical_note, "keyword_mode": g.keyword_note,
                    "keyword_withheld": g.keyword_withheld, "quote_withheld": g.quote_withheld,
-                   "rested": g.rested, "below_floor": g.below_floor,
+                   "rested": rested(g, compiled), "below_floor": g.below_floor,
                    "vector_mode": g.vector_note,
                    "state_items": len(g.state), "facts": len(g.lead) + len(g.facts), "threads": len(g.threads),
                    "kept_state": kept["state"], "kept_facts": kept["facts"], "kept_threads": kept["threads"],

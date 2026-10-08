@@ -43,7 +43,8 @@ Under `packet-v13` (`packet.QUOTE_POLICIES`), in `retrieval.gather`, the module 
 4. **The speaker only where the quote's own sentence says so** (Q2). The user's own message is the persona's;
    `X가 "…" 하고/라고 …` is X's (the subject nearest before the quote); `"…" X가 … 말했다` is X's (the first subject
    after it, with a verb of speaking in that subject's own clause: in `"…" 민수가 다가오자 영희가 말했다` the verb is
-   영희's, so 민수 is not named and the line is left unattributed, corrected 2026-10-08 on a review). A nearest subject
+   영희's, so 민수 is not named and the line is left unattributed, corrected 2026-10-08 on a review; and when two subjects
+   remain in the span, as with 다가오며 or 다가오는데, the line names nobody, on the review's follow-up). A nearest subject
    that is no known character leaves the line unattributed. A character the question names as its subject ("이안이 … 도윤한테") is the one asked about: a quote
    attributed to them gains, one attributed to someone else loses, and an unattributed quote with their name in its
    narration gains as one attributed to them.

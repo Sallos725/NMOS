@@ -124,3 +124,8 @@ def test_a_speaking_verb_licenses_only_its_own_clauses_subject():
     assert line.speaker != "류진"
     [plain] = pick([_msg(5, '"등대 문은 새벽에 열려요." 백도가 말했다.')], "등대 얘기할 때 뭐라고 했어?", NAMES, 9, False)
     assert plain.speaker == "백도"
+    # another connector keeps both subjects in one span: two competing subjects name nobody (follow-up review)
+    for joined in ("다가오며", "다가오면서", "다가오는데", "다가오니"):
+        [two] = pick([_msg(6, f'"등대 문은 새벽에 열려요." 류진이 {joined} 백도가 말했다.')], "등대 얘기할 때 뭐라고 했어?",
+                     NAMES, 9, False)
+        assert two.speaker != "류진", joined
