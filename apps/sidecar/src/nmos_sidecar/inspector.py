@@ -1366,15 +1366,14 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
             lambda eid: f"{path}/e/{eid}{_with_span(q, span)}", _tl_switch(path, q, span, lang)), True))
     elif lazy and embed:  # a plugin that asked for it fills this when it is opened (PHASE-32 step 3)
         parts.insert(1, ("people", t("people"), None, LAZY, False))
-    if status:  # PHASE-39 Q3a: after the current state; in the panel, asked for when opened (as the cast)
-        at = next(i for i, part in enumerate(parts) if part[0] == "state") + 1
+    at = next(i for i, part in enumerate(parts) if part[0] == "state") + 1  # PHASE-39 Q3a: after the current state
+    if status and not embed:
         changed = sum(1 for entries in status.values() if len(entries) > 1)
-        if not embed:
-            parts.insert(at, ("status", t("status"), changed, timeline.status(
-                _tl_t(lang), status, last_turn, span, _tl_switch(path, q, span, lang),
-                link=lambda turn: f"{path}/t/{turn}{q}"), True))
-        elif status_lazy:
-            parts.insert(at, ("status", t("status"), changed, LAZY_STATUS, False))
+        parts.insert(at, ("status", t("status"), changed, timeline.status(
+            _tl_t(lang), status, last_turn, span, _tl_switch(path, q, span, lang),
+            link=lambda turn: f"{path}/t/{turn}{q}"), True))
+    elif status_lazy and embed:  # the panel asks for the lanes when it opens the section (as the cast)
+        parts.insert(at, ("status", t("status"), None, LAZY_STATUS, False))
     if (coverage or {}).get("usage") is not None:
         parts.append(("usage", t("us.title"), None, _usage_section(coverage["usage"], lang), False))
     if conflicts:

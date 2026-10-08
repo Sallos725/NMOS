@@ -143,7 +143,7 @@ def test_the_conversation_page_and_the_panel_show_the_status_lanes(migrated, rul
 
         embed = lambda q: c.get(f"/v1/inspector/c/{conv}{q}").json()["html"]
         assert 's-status' not in embed("") and 's-status' not in embed("?timeline=lazy")  # a plugin that cannot fill it
-        assert '<details id="s-status"><summary><h2>상태창 변화 <span class="n">2</span></h2></summary>' \
+        assert '<details id="s-status"><summary><h2>상태창 변화</h2></summary>' \
                '<div class="tl-lazy tl-status"></div></details>' in embed("?timeline=lazy&status=lazy")
         part = embed("?part=status&span=recent")
         panel_safe(part)

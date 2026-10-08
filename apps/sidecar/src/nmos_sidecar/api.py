@@ -1269,8 +1269,12 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                         cast=None if embed else cast_of(view, traces), lazy=lazy,
                                         overuse=overuse.placement(readmodel.ledgers(conn, conv_id)),
                                         status=state_history(conn, head, rt["rules"].version)
-                                        if rt["rules"].rules and (status_lazy or not embed) else None,
-                                        status_lazy=status_lazy, state_flags=[f for f in flags if f["id"] not in off])
+                                        if rt["rules"].rules and not embed else None,
+                                        # the panel's closed section needs only to know there is something to draw
+                                        status_lazy=status_lazy and rt["rules"].rules != () and conn.execute(
+                                            "SELECT 1 FROM state_observation WHERE conversation_id = %s"
+                                            " AND rules_version = %s LIMIT 1",
+                                            (conv_id, rt["rules"].version)).fetchone() is not None, state_flags=[f for f in flags if f["id"] not in off])
             return html
 
     def inspector_status_html(conv_id: UUID, request: Request, lang: str | None, span: str | None) -> str:
