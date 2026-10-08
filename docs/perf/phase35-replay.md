@@ -21,9 +21,9 @@ bench (`0ace76c`, `extract-v16`, the S0–S6 runs of 2026-10-05/06, databases `n
 | first-cue probes (S0main, S0s2, S2, S6) | 1 each | 0, 1, 1, 1 | same | 0 → 0 |
 | **All** | 314 | **286** in every replay | **289** in every replay | 14 → 14 |
 
-Re-measured 2026-10-08 after the review fixes on #273, #274 and #278 and their follow-up (the quote route's allBefore
-cut and its attribution, the reserved first excerpt never resting, scene summaries resting, risky lines last before the
-limits, replay replies as they stood): `packet-v14` 286, 285, 286 and `packet-v15` 289 in each replay (`packet-v14`'s
+Re-measured 2026-10-08 after the review fixes on #273, #274 and #278 and their two follow-ups (the quote route's
+allBefore cut and its attribution, the reserved first excerpt never resting nor falling below the threshold, scene
+summaries resting, risky lines last before every limit, replay replies as they stood): `packet-v14` 285, 286, 286 and `packet-v15` 289 in each replay (`packet-v14`'s
 one miss is S4's `s4_del_pet` on the lexical route's time slice), the same cases gained and none lost; forbidden
 14 = 14.
 
@@ -35,10 +35,11 @@ aggregates only; their missed memory cases are not this class (no case changed).
 
 | | `packet-v14` | `packet-v15` |
 |---|---|---|
-| Replays (scored from the source turn, after the review fixes and their follow-up) | 21, 20, 21 / 24 | 21, 20, 20 / 24 |
+| Replays (scored from the source turn, after the review fixes and their two follow-ups) | 20, 20, 21 / 24 | 21, 20, 21 / 24 |
 
-`q-first-07` ("…처음 … 뭐라고 했어?") failed in one `packet-v15` replay of three: its turn's chunk holds the quote, and
-with 처음 no longer an anchor word the excerpt's best sentence moves within the chunk on the lexical route's time slice.
+The one case that moves is `q-first-07` ("…처음 … 뭐라고 했어?"): its turn's chunk holds the quote, and the excerpt's
+best sentence moves within the chunk on the lexical route's time slice. It passes one or two replays of three under
+every policy, `packet-v13` included: over the last two measurements 3 of 6 under `packet-v14` and `packet-v15` alike.
 
 ## How the rules were chosen
 
@@ -48,7 +49,7 @@ Measured on the prototype, in order:
    ends one sentence before "그런데 그 달이 붉었다".
 2. Q3 by the anchor words first (the whole message when it holds a sentence with more of the question's keywords)
    recovered the moon, but gave up a chunk for a sentence holding the two main characters' names, and the quote set
-   lost `q-first-07` in two replays of three.
+   lost `q-first-07` in two replays of three (a case that flips under every policy, see above).
 3. Q3 only when the chunk held none of the tie words lost the moon again: the chunk holds "하늘에 달이 떠 있었다".
 4. Q3 by the question's one-syllable nouns first, then the anchor words (ADR 0069 item 3): the numbers above.
 
