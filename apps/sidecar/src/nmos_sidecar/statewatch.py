@@ -5,9 +5,10 @@ ways a ledger can see: an item appears that nothing gave, a number moves that no
 values of a watched key (`state.history`), a read flags:
 
 - (i) an item added to or dropped from a list value ("물약 ×2 / 해독제 ×1") that the reply's prose does not name;
-- (ii) a number that changes where the prose names neither the key, nor the new number, nor the difference;
+- (ii) a number that changes, the value's words staying the same, where the prose names neither the key, nor the new
+  number (in digits or in Korean words: "백만 원"), nor the difference;
 - (iii) on a reply that was rerolled, swiped or edited, a value that goes back to the one two bars before while the
-  single bar between said otherwise.
+  single bar between said otherwise, unless the prose names the key or that value.
 
 The prose is the reply without what the rules read (`parsers.prose`). Deterministic, no model call, nothing stored: a
 flag is named by what it says (`flag_id`), and the owner's dismissal is an owner repair (`state_dismiss`, migration
@@ -32,6 +33,14 @@ SPLIT = re.compile(r"\s*[/,·、]\s*")
 COUNT = re.compile(r"\s*(?:[×xX*]\s*\d+|\(\s*\d+\s*\)|\d+\s*개)\s*$")  # "물약 ×2", "(3)", "3개"
 BRACKETS = re.compile(r"\([^)]*\)|\[[^\]]*\]")
 NUMBER = re.compile(r"(?<![\d.])-?\d[\d,]*(?:\.\d+)?")
+# Korean amounts the story writes in words (PHASE-39 step 4, measured: "백만 원" for a bar's +1,000,000): digits with
+# 만, 억 or 조 ("100만", "1억 2천만"), and Hangul numerals before a unit of money or count ("백만 원", "삼십 골드").
+HANGUL_DIGITS = {"일": 1, "이": 2, "삼": 3, "사": 4, "오": 5, "육": 6, "칠": 7, "팔": 8, "구": 9}
+SMALL = {"십": 10, "백": 100, "천": 1000}
+LARGE = {"만": 10**4, "억": 10**8, "조": 10**12}
+_PART = r"\d[\d,]*\s?(?:[천백십]\s?[만억조]?|[만억조])"  # "3천", "2천만", "100만", "1억"
+WITH_UNIT = re.compile(rf"(?<![\d,.]){_PART}(?:\s?{_PART})*")
+HANGUL_AMOUNT = re.compile(r"(?<![가-힣\d])[일이삼사오육칠팔구십백천만억조]+\s?(?=원|골드|코인|개|포인트|점|레벨)")
 WORD = re.compile(r"\w{2,}")
 NOTHING = frozenset({"", "-", "—", "x", "none", "nothing", "empty", "n/a", "없음", "無", "없다", "비어있음", "비어 있음"})
 REASONS = ("added", "dropped", "number", "reverted")
@@ -64,6 +73,38 @@ def _numbers(text: str) -> list[str]:
     return [n.replace(",", "") for n in NUMBER.findall(text)]
 
 
+def _hangul(text: str) -> int | None:
+    """A Korean numeral ("백만", "천오백", "3천", "1억 2천만") as a number; None when it is not one."""
+    total = section = 0
+    num: int | None = None
+    for ch in text.replace(",", "").replace(" ", ""):
+        if ch.isdigit():
+            num = (num or 0) * 10 + int(ch)
+        elif ch in HANGUL_DIGITS:
+            num = HANGUL_DIGITS[ch]
+        elif ch in SMALL:
+            section += (num if num is not None else 1) * SMALL[ch]
+            num = None
+        elif ch in LARGE:
+            total += (section + (num or 0) or 1) * LARGE[ch]
+            section, num = 0, None
+        else:
+            return None
+    return total + section + (num or 0)
+
+
+def _story_numbers(text: str) -> set[str]:
+    out = {n.lstrip("-") for n in _numbers(text)}
+    for m in (*WITH_UNIT.finditer(text), *HANGUL_AMOUNT.finditer(text)):
+        if (n := _hangul(m.group(0))) is not None:
+            out.add(str(n))
+    return out
+
+
+def _template(value: str) -> str:
+    return NUMBER.sub("#", value).strip()
+
+
 def _plain(n: float) -> str:
     return str(int(n)) if n == int(n) else f"{n:g}"
 
@@ -73,7 +114,14 @@ class Prose:
 
     def __init__(self, text: str):
         self.text = text.casefold()
-        self.numbers = set(_numbers(text))
+        self.numbers = _story_numbers(text)
+
+    def says(self, word: str) -> bool:
+        """The word in the story: a Korean word anywhere (a particle follows it: 물약을), a Latin one as a word ("SP" is
+        not the "sp" of "Response")."""
+        if not word.isascii():
+            return word in self.text
+        return re.search(rf"(?<![a-z0-9]){re.escape(word)}(?![a-z0-9])", self.text) is not None
 
     def names(self, word: str) -> bool:
         """The word itself, or (a name of several words, or with a bracketed note) one of its words of two characters
@@ -81,15 +129,19 @@ class Prose:
         word = word.strip().casefold()
         if not word:
             return False
-        if word in self.text:
+        if self.says(word):
             return True
-        return any(w in self.text for w in WORD.findall(BRACKETS.sub(" ", word)) if not w.isdigit())
+        return any(self.says(w) for w in WORD.findall(BRACKETS.sub(" ", word)) if not w.isdigit())
 
     def number(self, n: str) -> bool:
-        return n.lstrip("-") in {x.lstrip("-") for x in self.numbers}
+        return n.lstrip("-") in self.numbers
 
 
 def _number_changes(old: str, new: str) -> list[tuple[str, str]]:
+    """The numbers that changed, when only numbers changed: a value whose words changed too ("7층 회의실" → "1층 로비")
+    is a place, not a count (measured: every such flag on the owner's chats was a place)."""
+    if _template(old) != _template(new):
+        return []
     a, b = _numbers(old), _numbers(new)
     if len(a) == len(b):
         return [(x, y) for x, y in zip(a, b) if float(x) != float(y)]
@@ -148,11 +200,14 @@ def detect(hist: Mapping[str, list[dict[str, Any]]], watch: Mapping[str, frozens
                 continue
             base = {"key": key, "rule_id": e["rule_id"], "old": before["value"], "new": e["value"], "turn": e["turn"],
                     "position": e["position"], "revision_id": e["revision_id"]}
+            story = Prose(prose_of.get(e["revision_id"], ""))
             if (k >= 2 and e.get("redone") and entries[k - 2]["value"] == e["value"]
                     and before["position"] == before["last_position"]):
-                out.append({**base, "reason": "reverted", "item": None})
+                # the story saying where it went back to explains it (measured: back to a place the reply names)
+                if not (story.names(key) or story.names(e["value"])
+                        or all(story.number(n) for n in _numbers(e["value"])) and _numbers(e["value"])):
+                    out.append({**base, "reason": "reverted", "item": None})
                 continue
-            story = Prose(prose_of.get(e["revision_id"], ""))
             out += [{**base, "reason": reason, "item": item} for reason, item in changes(key, before["value"],
                                                                                         e["value"], story)]
     for f in out:

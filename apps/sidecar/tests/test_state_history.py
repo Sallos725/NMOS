@@ -171,6 +171,30 @@ def test_what_a_flag_is_and_what_the_story_explains():
     assert changes("HP", "120/150", "100/150", Prose("20의 피해를 입었다.")) == []
     assert changes("HP", "120/150", "100/150", Prose("120의 공격력")) == [("number", None)]  # not 100, not 20
     assert changes("HP", "120/150", "1200/150", Prose("120")) == [("number", None)]
+    # measured on the owner's chats (PHASE-39 step 4): a place is not a count, and money is written in words
+    assert changes("Place", "길드 본부 7층 회의실", "길드 본부 7층 복도", quiet) == []
+    assert changes("Place", "B-3 구역", "B-4 구역", quiet) == [("number", None)]  # only the number changed
+    assert changes("Money", "121,500,000 원", "122,500,000 원", Prose("통장에 백만 원이 꽂혔다!")) == []
+    assert changes("Money", "3,000", "6,000", Prose("3천 골드를 받았다.")) == []
+    assert changes("Money", "100,000,000", "220,000,000", Prose("1억 2천만 원")) == []
+    assert changes("Money", "100", "130", Prose("천천히 걸었다. 백련 길드 7층.")) == [("number", None)]  # no amount
+    assert changes("SP", "420 / 440", "400 / 440", Prose("## Response")) == [("number", None)]  # not a word: "sp"
+    assert changes("SP", "420 / 440", "400 / 440", Prose("SP가 줄었다.")) == []
+
+
+def test_a_revert_the_story_names_is_no_flag():
+    from nmos_sidecar.statewatch import detect
+
+    def entry(value, position, redone=False):
+        return {"value": value, "position": position, "last_position": position, "turn": position, "rule_id": "bar",
+                "revision_id": position, "redone": redone}
+    hist = {"Place": [entry("협회 로비", 1), entry("분식집", 2), entry("협회 로비", 3, redone=True)],
+            "SP": [entry("420 / 440", 1), entry("440 / 440", 2), entry("420 / 440", 3, redone=True)]}
+    watch = {"bar": frozenset({"Place", "SP"})}
+    before = "분식집에서 쉬며 SP를 채웠다."
+    found = detect(hist, watch, {2: before, 3: "아침 7시, 협회 로비 앞 광장."})
+    assert [(f["key"], f["reason"]) for f in found] == [("SP", "reverted")]
+    assert detect(hist, watch, {2: before, 3: "SP가 420으로 줄었다. 협회 로비."}) == []
 
 
 def test_a_watched_key_is_flagged_dismissed_and_back_on_undo(migrated, rules):

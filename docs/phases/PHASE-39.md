@@ -26,7 +26,7 @@ recomputes it each turn and gets it wrong in ways a ledger can see. NMOS has rea
 | Q1 | How are bars read? | **Decided: the parser, documented.** A `block` rule takes `separator`; the text between start and end is split by it and each field read as `key: value` or `key=value`, each cleaned on its own (a long bar keeps every field). A rule ending at `\]\s*$` keeps brackets inside a value. Detecting rules automatically is not done: cards differ (the owner); the guide shows how. |
 | Q2 | How is a rule bound to a card? | **Decided: `card`, the chat's character name** (`conversation.host_character_name`, the name PocketRisu shows), exactly; without it a rule reads every chat. `character` is unchanged. |
 | Q3 | History (step 3) | **Decided as proposed (the owner, 2026-10-08)**, in two parts. **3a (Inspector):** a "status window" section on the conversation page, drawn by the Phase 32 timeline renderer: one lane per key, a bar per value held, the value now beside it, keys that never changed folded; the panel shows it as it shows the timeline. From the observations NMOS keeps per revision, through the head's membership (D8), so a swipe or an edit shows the values of the path taken. **3b (recall):** a question naming a status key with a "when / how much / since" cue gets one `<StateHistory>` line of that key's last changes (turn → value, at most 6). 3b changes the packet: `packet-v17`, the default only after the owner sees its replay. Details below. |
-| Q4 | Changes without a cause (step 4) | **Decided as proposed (the owner, 2026-10-08)**: deterministic (no model call): a rule lists `watch` keys. Between two consecutive accepted bars, (i) an item added to or dropped from a list value (fields split on `/` or `,`), or (ii) a number in a watched value that changes, is flagged when the reply's prose outside the bar names neither the item nor the key; (iii) a watched value that goes back to an earlier value right after a reroll, a swipe or an edit is flagged too. Flags go to "Needs attention" with both bars and the turn; the owner dismisses them as other entries. Off until measured: false alarms counted read-only on the owner's two game-like chats (23 and 6 replies) and shown before it is on. |
+| Q4 | Changes without a cause (step 4) | **Decided as proposed (the owner, 2026-10-08)**; measured and refined (details below): deterministic (no model call): a rule lists `watch` keys. Between two consecutive accepted bars, (i) an item added to or dropped from a list value (fields split on `/` or `,`), or (ii) a number in a watched value that changes, is flagged when the reply's prose outside the bar names neither the item nor the key; (iii) a watched value that goes back to an earlier value right after a reroll, a swipe or an edit is flagged too. Flags go to "Needs attention" with both bars and the turn; the owner dismisses them as other entries. Off until measured: false alarms counted read-only on the owner's two game-like chats (23 and 6 replies) and shown before it is on. |
 | Q5 | The anchor (step 5) | **Decided: no packet change (the owner, 2026-10-08, as proposed).** Found 2026-10-08: mostly already the case. State lines are required lines, placed only when their message is no longer in the prompt (`retrieval.py`: `host_logical_id not in in_context`), and a reply waiting for the next turn is not state yet, so a reroll or a swipe already starts from the previous accepted bar. Read only, the host's request log of the owner's install shows both game-like cards keep their bars in the prompt the model receives (10 and 6 bars in recent requests; no display-only stripping). Step 5 is this record; 3b is the only packet change. |
 
 ## Steps 3–4 in detail
@@ -51,15 +51,20 @@ rules, changes nothing. Traced as its own kind (`state_history`). Measured by re
 (a copy, read only): which change, and what the line says for probe questions; the default moves only on the owner's
 word.
 
-**4, the flags.** A rule may list `watch` keys. Between two neighbouring entries of a watched key's history, NMOS
-flags (i) an item added to or dropped from a list value (split on `/`, `,` or `·`) that the reply's prose (the reply
-without the bar the rule matched) does not name; (ii) a number that changes where the prose names neither the key,
-nor the new number, nor the difference; (iii) on a reply that was rerolled, swiped or edited (its message holds swipes, as a
-reroll leaves it (H4), or has more than one revision), a value that goes back to the one two bars before while the bar between said otherwise. A flag
-names the key, both values, the turn and the reason, in "Needs attention", with one action: dismiss
+**4, the flags.** A rule may list `watch` keys (they do not change the rules' version: nothing is read again).
+Between two neighbouring entries of a watched key's history, NMOS flags (i) an item added to or dropped from a list
+value (split on `/`, `,` or `·`; "없음" is no item) that the reply's prose (the reply without what the rules read) does
+not name; (ii) a number that changes, the value's words staying the same, where the prose names neither the key, nor
+the new number (in digits or Korean words: "백만 원"), nor the difference; (iii) on a reply that was rerolled, swiped
+or edited (its message holds swipes, as a reroll leaves it (H4), or has more than one revision), a value that goes back
+to the one two bars before while the single bar between said otherwise, unless the prose names the key or the value.
+A flag names the key, both values, the turn and the reason, in "Needs attention", with one action: dismiss
 (`owner_repair` kind `state_dismiss`, migration 0029; undone like other repairs). A rule without `watch` flags
-nothing. Before any `watch` goes into the owner's install, the flags are counted read only on the two game-like chats
-and the list shown to the owner.
+nothing. **Measured 2026-10-08** (`docs/perf/phase39-flags.md`), read only, every key watched: the first rules flagged
+15 on the owner's two chats, 7 of them no change without a cause (a place's numbers, money in words, a revert the reply
+names); as merged, card A's inventory and equipment keys raise 5 flags in 23 replies, each an item the story never
+names, and its resources one borderline flag in 66 changes. `watch` goes into the owner's install only when the owner
+chooses the keys.
 
 ## Acceptance criteria (steps 3–4)
 
@@ -72,7 +77,7 @@ and the list shown to the owner.
    request without such a question changes.
 7. Each flag (i)–(iii) fires on a synthetic bar and stays quiet when the prose names the change; a dismissed flag
    stays dismissed and comes back on undo; an archive made at schema `0028` restores into `0029` (tests). The false
-   alarms on the owner's two chats are counted and shown before `watch` is set there.
+   alarms on the owner's two chats are counted and shown before `watch` is set there (done 2026-10-08).
 
 ## In scope (step 2)
 
