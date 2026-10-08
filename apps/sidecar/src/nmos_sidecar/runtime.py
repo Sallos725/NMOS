@@ -180,6 +180,7 @@ def save(conn: psycopg.Connection, clean: dict[str, Any]) -> None:
 def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -> dict[str, Any]:
     """Settings as the UI sees them. Secrets are reported as set/unset only."""
     return {
+        "install": settings.install or None,  # `bundle` from the portable launcher: the panel's Ollama address
         "llm": {"url": settings.llm_url, "model": settings.llm_model, "api_key_set": bool(settings.llm_api_key),
                 "json_mode": settings.llm_json_mode},
         "embeddings": {"url": settings.embed_url, "model": settings.embed_model,

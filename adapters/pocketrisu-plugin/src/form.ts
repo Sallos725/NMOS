@@ -55,7 +55,16 @@ export function endpointForKey(url: string, key: string): string {
 }
 
 /** A preset URL matches a saved one exactly, or with any project in place of `{project}`. */
+/** The panel's Ollama preset: Docker reaches the PC's Ollama by host.docker.internal, a bundle (the sidecar says
+ * `install: bundle`) at 127.0.0.1, where that name does not resolve (pre-0.4.0 audit F18). */
+export const OLLAMA_DOCKER = 'http://host.docker.internal:11434/v1';
+export const OLLAMA_LOCAL = 'http://127.0.0.1:11434/v1';
+export function presetUrl(url: string, install: string | null | undefined): string {
+  return url === OLLAMA_DOCKER && install === 'bundle' ? OLLAMA_LOCAL : url;
+}
+
 export function presetMatches(presetUrl: string, url: string): boolean {
+  if (presetUrl === OLLAMA_DOCKER && url === OLLAMA_LOCAL) return true;
   if (!presetUrl.includes('{project}')) return presetUrl === url;
   const [head, tail] = presetUrl.split('{project}') as [string, string];
   return url.startsWith(head) && url.endsWith(tail) && url.length > head.length + tail.length
@@ -65,7 +74,7 @@ export function presetMatches(presetUrl: string, url: string): boolean {
 export interface ModelValues { url: string; model: string; key: string }
 
 export interface FormValues {
-  conn: { url: string; route: string; enabled: boolean; reserved: string; deadline: string };
+  conn: { url: string; route: string; enabled: boolean; reserved: string; deadline: string; token: string };
   llm: ModelValues;
   emb: ModelValues;
   tune: { threshold: string; minSim: string; topK: string; facts: string; backfill: string; summaries: boolean;
@@ -114,5 +123,6 @@ export function connArgs(v: FormValues['conn']): Record<string, string | number>
     reserved_memory_tokens: Math.min(PANEL_MAX_RESERVED_TOKENS, Math.floor(Number(v.reserved)) > 0
       ? Math.floor(Number(v.reserved)) : DEFAULT_RESERVED_TOKENS),
     deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS)),
+    auth_token: v.token.trim(),
   };
 }

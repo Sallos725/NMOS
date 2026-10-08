@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { configBody, connArgs, dirtySections, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, VERTEX_URL,
+import { configBody, connArgs, dirtySections, OLLAMA_DOCKER, presetUrl, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, VERTEX_URL,
   type FormValues } from '../src/form';
 import { STRING_KEYS, langOf, t } from '../src/i18n';
 
 const base: FormValues = {
-  conn: { url: 'http://127.0.0.1:8790', route: 'auto', enabled: true, reserved: '800', deadline: '3000' },
+  conn: { url: 'http://127.0.0.1:8790', route: 'auto', enabled: true, reserved: '800', deadline: '3000', token: '' },
   llm: { url: 'http://llm/v1', model: 'm', key: '' },
   emb: { url: '', model: '', key: '' },
   tune: { threshold: '0.4', minSim: '0.42', topK: '5', facts: '8', backfill: '100', summaries: true, canonFacts: true },
@@ -44,11 +44,19 @@ describe('batch save', () => {
 
   it('keeps connection settings on the plugin side', () => {
     const edited = structuredClone(base);
-    edited.conn = { url: ' http://10.0.0.2:8790 ', route: 'server', enabled: false, reserved: '', deadline: '1200' };
+    edited.conn = { url: ' http://10.0.0.2:8790 ', route: 'server', enabled: false, reserved: '', deadline: '1200',
+      token: ' s3cret ' };
     expect(dirtySections(base, edited)).toEqual(['conn']);
     expect(configBody(['conn'], edited)).toEqual({});
     expect(connArgs(edited.conn)).toEqual({ sidecar_url: 'http://10.0.0.2:8790', route: 'server', disabled: 1,
-      reserved_memory_tokens: 4000, deadline_ms: 1200 });
+      reserved_memory_tokens: 4000, deadline_ms: 1200, auth_token: 's3cret' });  // the token, trimmed (audit F27)
+  });
+
+  it("picks the PC's own Ollama address on a bundle (audit F18)", () => {
+    expect(presetUrl(OLLAMA_DOCKER, 'bundle')).toBe('http://127.0.0.1:11434/v1');
+    expect(presetUrl(OLLAMA_DOCKER, null)).toBe(OLLAMA_DOCKER);
+    expect(presetUrl('https://api.openai.com/v1', 'bundle')).toBe('https://api.openai.com/v1');
+    expect(presetMatches(OLLAMA_DOCKER, 'http://127.0.0.1:11434/v1')).toBe(true);  // shown as the Ollama preset
   });
 
   it('keeps the memory budget within what the sidecar accepts', () => {

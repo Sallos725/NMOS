@@ -117,6 +117,43 @@ describe('panel', () => {
     expect(text).toContain('http://127.0.0.1:8790');
   });
 
+  it('offers the matching plugin file, the token fix and the insecure page (pre-0.4.0 audit F24, F26, F27)', async () => {
+    const mismatch = deps({ pluginExpected: 'other-build' });
+    await openPanel(mismatch.d, 'status');
+    await settle();
+    const get = Array.from(document.querySelectorAll<HTMLButtonElement>('#nmos-panel button'))
+      .find((b) => b.textContent === 'Get the matching plugin file')!;
+    get.click();
+    await settle();
+    expect(mismatch.calls).toContainEqual(['DOWNLOAD', '/v1/plugin/nmos-pocketrisu.js', 'nmos-pocketrisu.js']);
+    expect(document.getElementById('nmos-panel')!.textContent).toContain('Saved nmos-pocketrisu.js');
+    document.body.replaceChildren();
+
+    const refused = deps({ connected: false, error: '/v1/health -> HTTP 401: unauthorized' });
+    await openPanel(refused.d, 'status');
+    await settle();
+    expect(document.getElementById('nmos-panel')!.textContent).toContain('The token does not match');
+    document.body.replaceChildren();
+
+    const insecure = deps({ insecure: true });
+    await openPanel(insecure.d, 'status');
+    await settle();
+    const cards = Array.from(document.querySelectorAll('#nmos-panel .card'));
+    expect(cards.some((c) => c.classList.contains('err') && (c.textContent ?? '').includes('not a secure context'))).toBe(true);
+  });
+
+  it('keeps the token with the connection settings (audit F27)', async () => {
+    const { d, args } = deps();
+    await openPanel(d, 'settings');
+    await settle();
+    const token = document.querySelector<HTMLInputElement>('#nmos-panel input[type="password"][placeholder^="Leave empty"]')!;
+    token.value = 'abc';
+    token.dispatchEvent(new Event('input', { bubbles: true }));
+    Array.from(document.querySelectorAll<HTMLButtonElement>('#nmos-panel button')).find((b) => b.textContent === 'Save')!.click();
+    await settle(); await settle();
+    expect(args.auth_token).toBe('abc');
+  });
+
   it('shows this chat first and switches NMOS off and back on for it (ADR 0048)', async () => {
     const { d, args } = deps();
     args.disabled_chats = 'chat-0';

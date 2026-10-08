@@ -434,7 +434,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                              "vectors": rt["recall"].embedder is not None},
                 "generations": {"extract": rt["active_extractor"],
                                 "embed": rt["projection"].key if rt["projection"] else None},
-                "plugin": {"expected": plugin.expected(), "seen": plugins.recent()}}
+                "plugin": {"expected": plugin.expected(), "seen": plugins.recent()},
+                "install": settings.install or None}
 
     @app.get(f"/v1/plugin/{plugin.FILENAME}", dependencies=[Depends(auth)])
     def plugin_download():

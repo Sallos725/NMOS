@@ -9,11 +9,12 @@ import { canonicalJson } from './canonical';
 import { sha256Hex } from './hash';
 import { deadlineAdvice, formatMs } from './deadline';
 import { DEFAULT_DEADLINE_MS } from './form';
-import { t, type Lang } from './i18n';
+import { t, type Lang, type StringKey } from './i18n';
 import { bodyKey, createManifestBuilder, hashPayload, type Bodies } from './manifest';
 import type { ActivityEvent } from './hud';
 import { hasPacket, inContextIds, injectPacket, queryTexts, userTurnIndex, type InjectPosition } from './prompt';
 import type { HostChat, HostMessage, HostPersonas, PromptMessage, ReconcileRequest } from './types';
+import { failureKind, INSECURE_ERROR, secureContext } from './failure';
 
 export interface Settings {
   sidecarUrl: string;
@@ -126,6 +127,10 @@ export interface StatusInfo {
   last: LastRequest | null;
   /** The plugin build the sidecar ships (ADR 0037); null when it does not know one. */
   pluginExpected?: string | null;
+  /** The page has no Web Crypto (plain HTTP on a LAN address): no request can be prepared (audit F24). */
+  insecure?: boolean;
+  /** How the sidecar was installed (`bundle`), when it says. */
+  install?: string | null;
 }
 
 const NAME_TTL_MS = 10 * 60_000;
@@ -401,6 +406,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // The deadline is in the settings, so reading them has the default one.
       settings = await within(host.settings(), started + DEFAULT_DEADLINE_MS, 'the plugin settings');
       if (!settings.enabled || !settings.sidecarUrl) return prompt;
+      // Without Web Crypto nothing can be hashed: say why in words instead of a TypeError (audit F24).
+      if (!secureContext()) throw new Error(INSECURE_ERROR);
       const deadline = started + settings.deadlineMs;
       emit({ type: 'request-start' });
       announced = true;
@@ -512,6 +519,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const settings = await host.settings();
       if (!settings.enabled || !settings.sidecarUrl || !arg?.chat?.id || settings.offChats?.includes(arg.chat.id)) return;
       adviseOnce(settings.language);
+      reachOnce(settings.language, settings.sidecarUrl);
       emit({ type: 'background', conversationId: conversations.get(arg.chat.id) ?? null });
       const index = arg.messageIndex ?? -1;
       const message = index >= 0 ? arg.chat.message?.[index] : undefined;
@@ -539,16 +547,29 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     host.alert(t(lang, 'deadline.alert', { d: formatMs(advice.deadlineMs), took, s: formatMs(advice.suggestMs) }));
   }
 
+  /**
+   * Once per page, after a reply that went without memory because NMOS could not be reached (stopped, a wrong address
+   * or token, a refused host, an insecure page), say so in the host's dialog (pre-0.4.0 audit F25): with default
+   * settings nothing else in the chat shows it.
+   */
+  let reachAlerted = false;
+  function reachOnce(lang: Lang, url: string): void {
+    const kind = last?.outcome === 'failed' ? failureKind(last.error) : null;
+    if (reachAlerted || !host.alert || !kind || kind === 'deadline' || kind === 'other') return;
+    reachAlerted = true;
+    host.alert(t(lang, `reach.${kind}` as StringKey, { url: url.replace(/\/+$/, '') }));
+  }
+
   /** Human-readable status for the settings menu (Korean first, English second). */
   async function status(): Promise<StatusInfo> {
     const settings = await host.settings();
     const info: StatusInfo = { enabled: settings.enabled, sidecarUrl: settings.sidecarUrl, language: settings.language,
-      connected: false, last };
+      connected: false, last, insecure: !secureContext() };
     try {
-      const res = await call<{ version: string; features: Record<string, boolean>; plugin?: { expected: string | null } }>(
-        settings, '/v1/health', undefined, host.now() + 3000);
+      const res = await call<{ version: string; features: Record<string, boolean>; plugin?: { expected: string | null };
+        install?: string | null }>(settings, '/v1/health', undefined, host.now() + 3000);
       Object.assign(info, { connected: true, version: res.version, features: res.features ?? {},
-        pluginExpected: res.plugin?.expected ?? null });
+        pluginExpected: res.plugin?.expected ?? null, install: res.install ?? null });
     } catch (error) {
       info.error = error instanceof Error ? error.message : String(error);
     }

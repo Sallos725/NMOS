@@ -213,3 +213,12 @@ def test_raising_extraction_backfill_queues_older_turns_without_restart(migrated
         assert c.put("/v1/config", json={"extract_backfill": 5}).json()["queued_jobs"] == 3
         assert c.put("/v1/config", json={"extract_backfill": 1}).json()["queued_jobs"] == 0
     assert db.execute("SELECT count(*) AS n FROM job WHERE kind = 'extract'").fetchone()["n"] == 5
+
+
+def test_the_install_kind_reaches_the_panel(migrated):
+    """Pre-0.4.0 audit F18: the portable launcher says `bundle`, so the panel's Ollama preset is 127.0.0.1."""
+    with make_client(migrated, install="bundle") as c:
+        assert c.get("/v1/health").json()["install"] == "bundle"
+        assert c.get("/v1/config").json()["install"] == "bundle"
+    with make_client(migrated) as c:
+        assert c.get("/v1/health").json()["install"] is None and c.get("/v1/config").json()["install"] is None

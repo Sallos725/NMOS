@@ -89,6 +89,9 @@ class Settings:
     parsers_file: str = field(default_factory=lambda: os.environ.get("NMOS_PARSERS_FILE", ""))
     # PHASE-38 Q3: the largest archive the panel may upload for a restore.
     restore_max_mb: int = field(default_factory=lambda: int(os.environ.get("NMOS_RESTORE_MAX_MB", "2048")))
+    # How NMOS was installed, as the portable launcher says (`bundle`); empty for Docker and a source checkout. The
+    # panel picks addresses by it: a bundle reaches the PC's own Ollama at 127.0.0.1, not host.docker.internal.
+    install: str = field(default_factory=lambda: os.environ.get("NMOS_INSTALL", "").strip().lower())
     # Test hook for the "sidecar slower than deadlineMs" acceptance check. Never set in production.
     debug_delay_ms: int = field(default_factory=lambda: int(os.environ.get("NMOS_DEBUG_DELAY_MS", "0")))
 

@@ -545,6 +545,7 @@ class Services:
             "NMOS_DATABASE_URL": f"postgresql://nmos:{password}@127.0.0.1:{self.pg_port}/nmos",
             "NMOS_MIGRATIONS_DIR": str(ROOT / "migrations"),
             "NMOS_PLUGIN_FILE": str(ROOT / "plugin" / "nmos-pocketrisu.js"),
+            "NMOS_INSTALL": "bundle",  # the panel reaches the PC's own Ollama at 127.0.0.1 (no host.docker.internal here)
         })
         env.setdefault("NMOS_CORS_ORIGINS", "http://localhost:6001,http://127.0.0.1:6001")
         py = sys.executable

@@ -7,7 +7,7 @@
 //@arg sidecar_url string NMOS sidecar URL (empty = http://127.0.0.1:8790)
 //@arg auth_token string Optional; only if the sidecar sets NMOS_AUTH_TOKEN
 //@arg disabled int 1 = pass every request through untouched
-//@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 2000)
+//@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 4000)
 //@arg deadline_ms int Hard request-path deadline in ms (0 = 3000)
 //@arg inject_position string before_last_user (default) or end
 //@arg route string auto (default) / direct / server — how to reach the sidecar
@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:7bcd17274db8".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:46a0533b54da".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -157,9 +157,15 @@
     const u = url.trim();
     return VERTEX_OPENAPI.test(u) && !u.includes("{project}") && !presetMatches(VERTEX_URL, u) ? u : fillProject(VERTEX_URL, key);
   }
-  function presetMatches(presetUrl, url) {
-    if (!presetUrl.includes("{project}")) return presetUrl === url;
-    const [head, tail] = presetUrl.split("{project}");
+  var OLLAMA_DOCKER = "http://host.docker.internal:11434/v1";
+  var OLLAMA_LOCAL = "http://127.0.0.1:11434/v1";
+  function presetUrl(url, install) {
+    return url === OLLAMA_DOCKER && install === "bundle" ? OLLAMA_LOCAL : url;
+  }
+  function presetMatches(presetUrl2, url) {
+    if (presetUrl2 === OLLAMA_DOCKER && url === OLLAMA_LOCAL) return true;
+    if (!presetUrl2.includes("{project}")) return presetUrl2 === url;
+    const [head, tail] = presetUrl2.split("{project}");
     return url.startsWith(head) && url.endsWith(tail) && url.length > head.length + tail.length && !url.slice(head.length, url.length - tail.length).includes("/");
   }
   function dirtySections(baseline, current2) {
@@ -197,7 +203,8 @@
       route: v.route,
       disabled: v.enabled ? 0 : 1,
       reserved_memory_tokens: Math.min(PANEL_MAX_RESERVED_TOKENS, Math.floor(Number(v.reserved)) > 0 ? Math.floor(Number(v.reserved)) : DEFAULT_RESERVED_TOKENS),
-      deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS))
+      deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS)),
+      auth_token: v.token.trim()
     };
   }
 
@@ -246,8 +253,43 @@
     "status.connected": ["\uC5F0\uACB0\uB428", "Connected"],
     "status.unreachable": ["\uC5F0\uACB0\uD560 \uC218 \uC5C6\uC74C", "Cannot reach"],
     "status.fix": [
-      "\uD655\uC778: docker compose up -d \xB7 \uC8FC\uC18C \xB7 NMOS_CORS_ORIGINS\uC5D0 \uC774 PocketRisu \uC8FC\uC18C \uD3EC\uD568 \xB7 localhost \uB610\uB294 HTTPS\uB85C \uC811\uC18D",
-      "Check: docker compose up -d \xB7 the address \xB7 NMOS_CORS_ORIGINS includes this PocketRisu address \xB7 open via localhost or HTTPS"
+      "\uD655\uC778: NMOS\uAC00 \uCF1C\uC838 \uC788\uB294\uC9C0(Docker: docker compose up -d \xB7 \uC124\uCE58\uD310: \uD2B8\uB808\uC774\uB098 \uBA54\uB274 \uB9C9\uB300\uC758 NMOS) \xB7 \uC8FC\uC18C \xB7 NMOS_CORS_ORIGINS\uC5D0 \uC774 PocketRisu \uC8FC\uC18C \uD3EC\uD568 \xB7 localhost \uB610\uB294 HTTPS\uB85C \uC811\uC18D",
+      "Check: NMOS is running (Docker: docker compose up -d \xB7 bundle: NMOS in the tray or menu bar) \xB7 the address \xB7 NMOS_CORS_ORIGINS includes this PocketRisu address \xB7 open via localhost or HTTPS"
+    ],
+    // why a request could not reach NMOS (pre-0.4.0 audit F24, F27)
+    "status.fix_token": [
+      "\uD1A0\uD070\uC774 \uB9DE\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED \u2192 \uC5F0\uACB0\uC758 \uD1A0\uD070\uC744 \uC0AC\uC774\uB4DC\uCE74\uC758 NMOS_AUTH_TOKEN\uACFC \uAC19\uAC8C \uB123\uC5B4 \uC8FC\uC138\uC694.",
+      "The token does not match. Set Settings \u2192 Connection \u2192 token to the sidecar's NMOS_AUTH_TOKEN."
+    ],
+    "status.fix_host": [
+      "\uC0AC\uC774\uB4DC\uCE74\uAC00 \uC774 \uC8FC\uC18C\uB97C \uD1A0\uD070 \uC5C6\uC774 \uBC1B\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uC758 NMOS_ALLOWED_HOSTS\uC5D0 \uC774 \uC8FC\uC18C\uB97C \uB123\uAC70\uB098, NMOS_AUTH_TOKEN\uC744 \uC815\uD558\uACE0 \uAC19\uC740 \uD1A0\uD070\uC744 \uC5F0\uACB0 \uC124\uC815\uC5D0 \uB123\uC5B4 \uC8FC\uC138\uC694.",
+      "The sidecar refuses this address without a token. Add it to the sidecar's NMOS_ALLOWED_HOSTS, or set NMOS_AUTH_TOKEN and the same token in Settings \u2192 Connection."
+    ],
+    "status.insecure": [
+      "\uC774 \uD398\uC774\uC9C0\uB294 \uBCF4\uC548 \uC5F0\uACB0\uC774 \uC544\uB2C8\uB77C\uC11C NMOS\uAC00 \uAE30\uC5B5\uC744 \uC900\uBE44\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4(\uBAA8\uB4E0 \uCC44\uD305\uC774 \uAE30\uC5B5 \uC5C6\uC774 \uAC11\uB2C8\uB2E4). PocketRisu\uB97C HTTPS \uC8FC\uC18C\uB098 localhost\uB85C \uC5F4\uC5B4 \uC8FC\uC138\uC694.",
+      "This page is not a secure context, so NMOS cannot prepare memory (every chat goes without it). Open PocketRisu over HTTPS or on localhost."
+    ],
+    "status.plugin_file": ["\uB9DE\uB294 \uD50C\uB7EC\uADF8\uC778 \uD30C\uC77C \uBC1B\uAE30", "Get the matching plugin file"],
+    "status.plugin_saved": [
+      "{name}\uC744(\uB97C) \uBC1B\uC558\uC2B5\uB2C8\uB2E4. PocketRisu \uC124\uC815 \u2192 \uD50C\uB7EC\uADF8\uC778\uC5D0\uC11C \uC774 \uD30C\uC77C\uB85C \uAD50\uCCB4\uD558\uACE0 \uC0C8\uB85C \uACE0\uCE68\uD558\uC138\uC694.",
+      "Saved {name}. Replace the plugin with it in PocketRisu Settings \u2192 Plugin, then reload."
+    ],
+    // once per page, after a reply that went without memory (pre-0.4.0 audit F25)
+    "reach.unreachable": [
+      "NMOS: \uC774\uBC88 \uB2F5\uC7A5\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74({url})\uC5D0 \uC5F0\uACB0\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. NMOS\uAC00 \uCF1C\uC838 \uC788\uB294\uC9C0(Docker: docker compose up -d, \uC124\uCE58\uD310: \uD2B8\uB808\uC774\uB098 \uBA54\uB274 \uB9C9\uB300\uC758 NMOS)\uC640 NMOS \uD328\uB110 \u2192 \uC124\uC815\uC758 \uC0AC\uC774\uB4DC\uCE74 \uC8FC\uC18C\uB97C \uD655\uC778\uD574 \uC8FC\uC138\uC694. (\uC774 \uC54C\uB9BC\uC740 \uD398\uC774\uC9C0\uB97C \uC0C8\uB85C \uC5F4 \uB54C\uAE4C\uC9C0 \uB2E4\uC2DC \uB728\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.)",
+      "NMOS: this reply went without memory. The sidecar ({url}) cannot be reached. Check that NMOS is running (Docker: docker compose up -d; bundle: NMOS in the tray or menu bar) and the sidecar address in the NMOS panel \u2192 Settings. (This notice does not come back until the page is reloaded.)"
+    ],
+    "reach.unauthorized": [
+      "NMOS: \uC774\uBC88 \uB2F5\uC7A5\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uAC00 \uD1A0\uD070\uC744 \uBC1B\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. NMOS \uD328\uB110 \u2192 \uC124\uC815 \u2192 \uC5F0\uACB0\uC758 \uD1A0\uD070\uC744 \uC0AC\uC774\uB4DC\uCE74\uC758 NMOS_AUTH_TOKEN\uACFC \uAC19\uAC8C \uB123\uC5B4 \uC8FC\uC138\uC694. (\uC774 \uC54C\uB9BC\uC740 \uD398\uC774\uC9C0\uB97C \uC0C8\uB85C \uC5F4 \uB54C\uAE4C\uC9C0 \uB2E4\uC2DC \uB728\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.)",
+      "NMOS: this reply went without memory. The sidecar refused the token. Set the NMOS panel \u2192 Settings \u2192 Connection \u2192 token to the sidecar's NMOS_AUTH_TOKEN. (This notice does not come back until the page is reloaded.)"
+    ],
+    "reach.host_refused": [
+      "NMOS: \uC774\uBC88 \uB2F5\uC7A5\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uAC00 \uC774 \uC8FC\uC18C\uB97C \uD1A0\uD070 \uC5C6\uC774 \uBC1B\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4(NMOS_ALLOWED_HOSTS). NMOS \uD328\uB110 \u2192 \uC0C1\uD0DC \uD0ED\uC5D0\uC11C \uACE0\uCE58\uB294 \uBC95\uC744 \uBCFC \uC218 \uC788\uC2B5\uB2C8\uB2E4. (\uC774 \uC54C\uB9BC\uC740 \uD398\uC774\uC9C0\uB97C \uC0C8\uB85C \uC5F4 \uB54C\uAE4C\uC9C0 \uB2E4\uC2DC \uB728\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.)",
+      "NMOS: this reply went without memory. The sidecar refuses this address without a token (NMOS_ALLOWED_HOSTS). The NMOS panel \u2192 Status tab shows the fix. (This notice does not come back until the page is reloaded.)"
+    ],
+    "reach.insecure": [
+      "NMOS: \uC774\uBC88 \uB2F5\uC7A5\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4. \uC774 \uD398\uC774\uC9C0\uAC00 \uBCF4\uC548 \uC5F0\uACB0\uC774 \uC544\uB2C8\uB77C\uC11C(HTTP\uB85C \uC5F0 LAN \uC8FC\uC18C) \uAE30\uC5B5\uC744 \uC900\uBE44\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. PocketRisu\uB97C HTTPS \uC8FC\uC18C\uB098 localhost\uB85C \uC5F4\uC5B4 \uC8FC\uC138\uC694. (\uC774 \uC54C\uB9BC\uC740 \uD398\uC774\uC9C0\uB97C \uC0C8\uB85C \uC5F4 \uB54C\uAE4C\uC9C0 \uB2E4\uC2DC \uB728\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.)",
+      "NMOS: this reply went without memory. This page is not a secure context (a LAN address over HTTP), so memory cannot be prepared. Open PocketRisu over HTTPS or on localhost. (This notice does not come back until the page is reloaded.)"
     ],
     "status.memory_off": ["\uAE30\uC5B5 \uB123\uAE30\uAC00 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED\uC5D0\uC11C \uCF24 \uC218 \uC788\uC2B5\uB2C8\uB2E4.", "Memory is switched off. Turn it on in Settings."],
     "status.features": ["\uAE30\uB2A5", "Features"],
@@ -331,8 +373,8 @@
     ],
     "deadline.took": [" (\uC2E4\uC81C\uB85C\uB294 \uC57D {n}ms \uAC78\uB9BC)", " (it took about {n} ms)"],
     "status.plugin_mismatch": [
-      "\uC774 \uD50C\uB7EC\uADF8\uC778(\uBE4C\uB4DC {mine})\uC774 \uC0AC\uC774\uB4DC\uCE74\uC758 \uD50C\uB7EC\uADF8\uC778(\uBE4C\uB4DC {theirs})\uACFC \uB2E4\uB985\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uC640 \uAC19\uC740 \uBC84\uC804\uC758 \uD50C\uB7EC\uADF8\uC778 \uD30C\uC77C\uB85C \uAD50\uCCB4\uD558\uACE0 \uC0C8\uB85C \uACE0\uCE68\uD558\uC138\uC694. \uC778\uC2A4\uD399\uD130 \uCCAB \uD654\uBA74\uC5D0\uC11C \uB9DE\uB294 \uD30C\uC77C\uC744 \uBC1B\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
-      "This plugin (build {mine}) differs from the sidecar's (build {theirs}). Replace it with the plugin file of the sidecar's version and reload. The Inspector's first page links the matching file."
+      "\uC774 \uD50C\uB7EC\uADF8\uC778(\uBE4C\uB4DC {mine})\uC774 \uC0AC\uC774\uB4DC\uCE74\uC758 \uD50C\uB7EC\uADF8\uC778(\uBE4C\uB4DC {theirs})\uACFC \uB2E4\uB985\uB2C8\uB2E4. \uC544\uB798 \uBC84\uD2BC\uC73C\uB85C \uC0AC\uC774\uB4DC\uCE74\uC640 \uAC19\uC740 \uBC84\uC804\uC758 \uD30C\uC77C\uC744 \uBC1B\uC544 \uAD50\uCCB4\uD558\uACE0 \uC0C8\uB85C \uACE0\uCE68\uD558\uC138\uC694.",
+      "This plugin (build {mine}) differs from the sidecar's (build {theirs}). Get the file of the sidecar's version with the button below, replace the plugin with it and reload."
     ],
     "status.plugin_ok": ["\uD50C\uB7EC\uADF8\uC778 \uBE4C\uB4DC {b} \xB7 \uC0AC\uC774\uB4DC\uCE74\uC640 \uAC19\uC74C", "Plugin build {b} \xB7 matches the sidecar"],
     // The host registers the request hook only with the "replace content" permission and remembers a denial silently.
@@ -566,6 +608,9 @@
     "conn.budget": ["\uAE30\uC5B5 \uC608\uC0B0(\uD1A0\uD070)", "Memory budget (tokens)"],
     "conn.deadline": ["\uC81C\uD55C \uC2DC\uAC04(ms)", "Deadline (ms)"],
     "conn.enabled": ["\uAE30\uC5B5 \uB123\uAE30 \uCF1C\uAE30", "Memory on"],
+    "conn.token": ["\uD1A0\uD070", "Token"],
+    // the sidecar's NMOS_AUTH_TOKEN, when it has one (audit F27)
+    "conn.token_placeholder": ["\uC0AC\uC774\uB4DC\uCE74\uC5D0 \uD1A0\uD070\uC774 \uC5C6\uC73C\uBA74 \uBE44\uC6CC \uB450\uC138\uC694", "Leave empty when the sidecar has no token"],
     "conn.hint": ["PocketRisu\uC758 \uCD5C\uB300 \uCEE8\uD14D\uC2A4\uD2B8\uB97C \uAE30\uC5B5 \uC608\uC0B0\uB9CC\uD07C \uC904\uC5EC \uB450\uC138\uC694.", "Lower PocketRisu's max context by the memory budget."],
     "conn.deadline_hint": [
       "\uC81C\uD55C \uC2DC\uAC04 \uC548\uC5D0 \uAE30\uC5B5\uC744 \uC900\uBE44\uD558\uC9C0 \uBABB\uD558\uBA74 \uADF8 \uC694\uCCAD\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C5\uB2C8\uB2E4. \uAE30\uBCF8 3000ms. \uC544\uC8FC \uAE34 \uCC44\uD305(1\uB9CC \uAC1C \uC774\uC0C1)\uC5D0\uC11C \uAE30\uC5B5\uC774 \uC790\uC8FC \uBE60\uC9C0\uBA74 \uB298\uB9AC\uC138\uC694. \uB298\uB9B0 \uB9CC\uD07C \uB2F5\uC7A5 \uC2DC\uC791\uC774 \uB2A6\uC5B4\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
@@ -970,6 +1015,24 @@ ${revisionHash}`;
     return { query, previousAi };
   }
 
+  // src/failure.ts
+  var INSECURE_ERROR = "insecure page: open PocketRisu over HTTPS or localhost (crypto.subtle is missing)";
+  function secureContext() {
+    return typeof globalThis.crypto?.subtle?.digest === "function";
+  }
+  function failureKind(error) {
+    if (!error) return null;
+    if (error.startsWith("deadline")) return "deadline";
+    if (error.startsWith("insecure page")) return "insecure";
+    const status = /-> HTTP (\d{3})/.exec(error);
+    if (status) {
+      if (status[1] === "401") return "unauthorized";
+      if (status[1] === "400" && /not allowed without a token/.test(error)) return "host_refused";
+      return ["502", "503", "504"].includes(status[1]) ? "unreachable" : "other";
+    }
+    return /^sidecar /.test(error) ? "other" : "unreachable";
+  }
+
   // src/core.ts
   var DeadlineError = class extends Error {
   };
@@ -1201,6 +1264,7 @@ ${revisionHash}`;
         if (mode !== "model" || hasPacket(prompt)) return prompt;
         settings = await within(host.settings(), started + DEFAULT_DEADLINE_MS, "the plugin settings");
         if (!settings.enabled || !settings.sidecarUrl) return prompt;
+        if (!secureContext()) throw new Error(INSECURE_ERROR);
         const deadline = started + settings.deadlineMs;
         emit({ type: "request-start" });
         announced = true;
@@ -1344,6 +1408,7 @@ ${revisionHash}`;
         const settings = await host.settings();
         if (!settings.enabled || !settings.sidecarUrl || !arg2?.chat?.id || settings.offChats?.includes(arg2.chat.id)) return;
         adviseOnce(settings.language);
+        reachOnce(settings.language, settings.sidecarUrl);
         emit({ type: "background", conversationId: conversations.get(arg2.chat.id) ?? null });
         const index = arg2.messageIndex ?? -1;
         const message = index >= 0 ? arg2.chat.message?.[index] : void 0;
@@ -1365,6 +1430,13 @@ ${revisionHash}`;
       const took = advice.tookMs === null ? "" : t(lang, "deadline.took", { n: formatMs(advice.tookMs) });
       host.alert(t(lang, "deadline.alert", { d: formatMs(advice.deadlineMs), took, s: formatMs(advice.suggestMs) }));
     }
+    let reachAlerted = false;
+    function reachOnce(lang, url) {
+      const kind = last?.outcome === "failed" ? failureKind(last.error) : null;
+      if (reachAlerted || !host.alert || !kind || kind === "deadline" || kind === "other") return;
+      reachAlerted = true;
+      host.alert(t(lang, `reach.${kind}`, { url: url.replace(/\/+$/, "") }));
+    }
     async function status() {
       const settings = await host.settings();
       const info = {
@@ -1372,20 +1444,17 @@ ${revisionHash}`;
         sidecarUrl: settings.sidecarUrl,
         language: settings.language,
         connected: false,
-        last
+        last,
+        insecure: !secureContext()
       };
       try {
-        const res = await call(
-          settings,
-          "/v1/health",
-          void 0,
-          host.now() + 3e3
-        );
+        const res = await call(settings, "/v1/health", void 0, host.now() + 3e3);
         Object.assign(info, {
           connected: true,
           version: res.version,
           features: res.features ?? {},
-          pluginExpected: res.plugin?.expected ?? null
+          pluginExpected: res.plugin?.expected ?? null,
+          install: res.install ?? null
         });
       } catch (error) {
         info.error = error instanceof Error ? error.message : String(error);
@@ -2193,7 +2262,7 @@ ${revisionHash}`;
   // src/ui.ts
   var LLM_PRESETS = [
     { label: "preset.off", url: "" },
-    { label: "preset.ollama", url: "http://host.docker.internal:11434/v1" },
+    { label: "preset.ollama", url: OLLAMA_DOCKER },
     { label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
     { label: "OpenAI", url: "https://api.openai.com/v1", model: "gpt-4o-mini" },
     { label: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.5-flash" },
@@ -2203,7 +2272,7 @@ ${revisionHash}`;
   ];
   var EMBED_PRESETS = [
     { label: "preset.off", url: "" },
-    { label: "preset.ollama", url: "http://host.docker.internal:11434/v1", model: "qwen3-embedding:0.6b", minSim: 0.42 },
+    { label: "preset.ollama", url: OLLAMA_DOCKER, model: "qwen3-embedding:0.6b", minSim: 0.42 },
     { label: "OpenAI", url: "https://api.openai.com/v1", model: "text-embedding-3-small" },
     { label: "Voyage AI", url: "https://api.voyageai.com/v1", model: "voyage-4-large", minSim: 0.3, hint: "emb.voyage_hint" },
     { label: "preset.custom", url: "custom" }
@@ -2357,6 +2426,10 @@ html,body{margin:0;background:${PALETTE.bg}}
     const i = presets.findIndex((p) => presetMatches(p.url, url));
     return i >= 0 ? i : presets.length - 1;
   }
+  function fixFor(error) {
+    const kind = failureKind(error);
+    return kind === "unauthorized" ? "status.fix_token" : kind === "host_refused" ? "status.fix_host" : "status.fix";
+  }
   function errorText(lang, error) {
     const text2 = error instanceof Error ? error.message : String(error);
     return text2.replace(/^\/v1\/\S+ -> HTTP 422: /, t(lang, "invalid")).replace(/^\/v1\/\S+ -> /, t(lang, "sidecar_error"));
@@ -2415,12 +2488,29 @@ html,body{margin:0;background:${PALETTE.bg}}
           el("div", { class: "mono muted", text: base })
         );
         if (s.pluginExpected && s.pluginExpected !== PLUGIN_BUILD) {
-          conn.append(el(
-            "div",
-            { class: "line warn" },
-            el("span", { class: "dot warn" }),
-            el("span", { text: L("status.plugin_mismatch", { mine: PLUGIN_BUILD, theirs: s.pluginExpected }) })
-          ));
+          const get = el("button", { class: "mini", text: L("status.plugin_file") });
+          const got = el("div", { class: "msg" });
+          get.addEventListener("click", async () => {
+            get.disabled = true;
+            try {
+              await deps.download("/v1/plugin/nmos-pocketrisu.js", "nmos-pocketrisu.js");
+              say(got, L("status.plugin_saved", { name: "nmos-pocketrisu.js" }), "ok");
+            } catch (error) {
+              say(got, errorText(lang, error), "err");
+            } finally {
+              get.disabled = false;
+            }
+          });
+          conn.append(
+            el(
+              "div",
+              { class: "line warn" },
+              el("span", { class: "dot warn" }),
+              el("span", { text: L("status.plugin_mismatch", { mine: PLUGIN_BUILD, theirs: s.pluginExpected }) })
+            ),
+            el("div", { class: "btns" }, get),
+            got
+          );
         } else if (s.pluginExpected) {
           conn.append(el("div", { class: "muted", text: L("status.plugin_ok", { b: PLUGIN_BUILD }) }));
         }
@@ -2434,7 +2524,7 @@ html,body{margin:0;background:${PALETTE.bg}}
             el("span", { class: "err", text: `${L("status.unreachable")}: ${base}` })
           ),
           el("div", { class: "muted", text: s.error ?? "" }),
-          el("p", { class: "sub", text: L("status.fix") })
+          el("p", { class: "sub", text: L(fixFor(s.error)) })
         );
       }
       if (!s.enabled) conn.append(el(
@@ -2469,6 +2559,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         lastCard.append(el("div", { class: "muted", text: L("status.none") }));
       }
       const cards = [conn, features, lastCard];
+      if (s.insecure) cards.unshift(el("div", { class: "card err" }, el("div", { text: L("status.insecure") })));
       const advice = deadlineAdvice(s.last);
       if (advice) {
         const open = el("button", { text: L("deadline.open_settings") });
@@ -3350,12 +3441,15 @@ html,body{margin:0;background:${PALETTE.bg}}
     const enabled = el("input", { type: "checkbox" });
     const reserved = el("input", { type: "number", min: 100, max: PANEL_MAX_RESERVED_TOKENS });
     const deadline = el("input", { type: "number", min: 200, max: MAX_DEADLINE_MS, step: 100 });
+    const token = el("input", { type: "password", placeholder: L("conn.token_placeholder"), autocomplete: "off" });
+    let install = null;
     settingsView.append(el(
       "div",
       { class: "card" },
       el("h2", { text: L("conn.title") }),
       el("p", { class: "sub", text: L("conn.sub") }),
       field(L("conn.url"), url),
+      field(L("conn.token"), token),
       el("div", { class: "row" }, field(L("conn.route"), route), field(L("conn.budget"), reserved), field(L("conn.deadline"), deadline)),
       el("div", { class: "check" }, enabled, el("span", { text: L("conn.enabled") })),
       el("p", { class: "sub", text: L("conn.hint") }),
@@ -3402,7 +3496,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       });
       preset.addEventListener("change", () => {
         const p = presets[Number(preset.value)];
-        if (p.url !== "custom") endpoint.value = fillProject(p.url, key.value);
+        if (p.url !== "custom") endpoint.value = fillProject(presetUrl(p.url, install), key.value);
         if (p.model) model.value = p.model;
         if (!p.url) model.value = "";
         say(msg, p.hint ? L(p.hint) : p.url.includes("{project}") ? L("model.vertex_hint") : "");
@@ -3648,7 +3742,14 @@ html,body{margin:0;background:${PALETTE.bg}}
     root.append(bar);
     function values() {
       return {
-        conn: { url: url.value, route: route.value, enabled: enabled.checked, reserved: reserved.value, deadline: deadline.value },
+        conn: {
+          url: url.value,
+          route: route.value,
+          enabled: enabled.checked,
+          reserved: reserved.value,
+          deadline: deadline.value,
+          token: token.value
+        },
         llm: llm.values(),
         emb: emb.values(),
         tune: {
@@ -3682,9 +3783,11 @@ html,body{margin:0;background:${PALETTE.bg}}
       enabled.checked = Number(await deps.getArg("disabled")) !== 1;
       reserved.value = String(Number(await deps.getArg("reserved_memory_tokens")) || DEFAULT_RESERVED_TOKENS);
       deadline.value = String(Number(await deps.getArg("deadline_ms")) || DEFAULT_DEADLINE_MS);
+      token.value = await deps.getArg("auth_token") || "";
       hudBox.checked = Number(await deps.getArg("hud")) === 1;
     }
     function fillServer(cfg) {
+      install = cfg.install ?? null;
       llm.fill(cfg.llm);
       emb.fill(cfg.embeddings);
       threshold.value = String(cfg.recall.threshold);

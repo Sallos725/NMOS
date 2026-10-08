@@ -8,7 +8,9 @@ import type { ChatSwitch } from './chatoff';
 import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
 import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, endpointForKey, fillProject,
-  isVertexEndpoint, MAX_DEADLINE_MS, PANEL_MAX_RESERVED_TOKENS, presetMatches, serviceAccountProject, VERTEX_URL, type FormValues, type Section } from './form';
+  isVertexEndpoint, MAX_DEADLINE_MS, OLLAMA_DOCKER, PANEL_MAX_RESERVED_TOKENS, presetMatches, presetUrl, serviceAccountProject,
+  VERTEX_URL, type FormValues, type Section } from './form';
+import { failureKind } from './failure';
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
 import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices,
   localTime, markDetail, placeMarks, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
@@ -52,6 +54,7 @@ interface ServerConfig {
   extraction: { backfill: number; summaries?: boolean; canon_facts?: boolean };
   parsers: { rules: unknown; source: string; active_rules: number; errors: string[] };
   queued_jobs?: number;
+  install?: string | null;
 }
 
 /** `minSim`: the vector similarity bar measured for the preset's model (`docs/perf/embedders.md`); `hint`: said when
@@ -62,7 +65,7 @@ interface MemoryMode { strict: boolean; narrator: string | null; characters: str
 
 const LLM_PRESETS: Preset[] = [
   { label: 'preset.off', url: '' },
-  { label: 'preset.ollama', url: 'http://host.docker.internal:11434/v1' },
+  { label: 'preset.ollama', url: OLLAMA_DOCKER },
   { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
   { label: 'OpenAI', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
   { label: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
@@ -72,7 +75,7 @@ const LLM_PRESETS: Preset[] = [
 
 const EMBED_PRESETS: Preset[] = [
   { label: 'preset.off', url: '' },
-  { label: 'preset.ollama', url: 'http://host.docker.internal:11434/v1', model: 'qwen3-embedding:0.6b', minSim: 0.42 },
+  { label: 'preset.ollama', url: OLLAMA_DOCKER, model: 'qwen3-embedding:0.6b', minSim: 0.42 },
   { label: 'OpenAI', url: 'https://api.openai.com/v1', model: 'text-embedding-3-small' },
   { label: 'Voyage AI', url: 'https://api.voyageai.com/v1', model: 'voyage-4-large', minSim: 0.3, hint: 'emb.voyage_hint' },
   { label: 'preset.custom', url: 'custom' },
@@ -235,6 +238,12 @@ function presetIndex(presets: Preset[], url: string): number {
   return i >= 0 ? i : presets.length - 1;
 }
 
+/** The Status tab's fix for a sidecar it cannot use: a token, a refused host, or the usual checks (audit F27). */
+function fixFor(error: string | undefined): StringKey {
+  const kind = failureKind(error);
+  return kind === 'unauthorized' ? 'status.fix_token' : kind === 'host_refused' ? 'status.fix_host' : 'status.fix';
+}
+
 function errorText(lang: Lang, error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
   return text.replace(/^\/v1\/\S+ -> HTTP 422: /, t(lang, 'invalid')).replace(/^\/v1\/\S+ -> /, t(lang, 'sidecar_error'));
@@ -290,8 +299,23 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       el('div', { class: 'mono muted', text: base }));
       // A plugin from another build than the sidecar's (ADR 0037): features on one side are missing on the other.
       if (s.pluginExpected && s.pluginExpected !== PLUGIN_BUILD) {
+        // The matching file, saved as the archives are (H21): a server-routed sidecar has no browser path to it (F26).
+        const get = el('button', { class: 'mini', text: L('status.plugin_file') });
+        const got = el('div', { class: 'msg' });
+        get.addEventListener('click', async () => {
+          get.disabled = true;
+          try {
+            await deps.download('/v1/plugin/nmos-pocketrisu.js', 'nmos-pocketrisu.js');
+            say(got, L('status.plugin_saved', { name: 'nmos-pocketrisu.js' }), 'ok');
+          } catch (error) {
+            say(got, errorText(lang, error), 'err');
+          } finally {
+            get.disabled = false;
+          }
+        });
         conn.append(el('div', { class: 'line warn' }, el('span', { class: 'dot warn' }),
-          el('span', { text: L('status.plugin_mismatch', { mine: PLUGIN_BUILD, theirs: s.pluginExpected }) })));
+          el('span', { text: L('status.plugin_mismatch', { mine: PLUGIN_BUILD, theirs: s.pluginExpected }) })),
+        el('div', { class: 'btns' }, get), got);
       } else if (s.pluginExpected) {
         conn.append(el('div', { class: 'muted', text: L('status.plugin_ok', { b: PLUGIN_BUILD }) }));
       }
@@ -300,7 +324,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     } else {
       conn.append(el('div', { class: 'line' }, el('span', { class: 'dot err' }),
         el('span', { class: 'err', text: `${L('status.unreachable')}: ${base}` })),
-      el('div', { class: 'muted', text: s.error ?? '' }), el('p', { class: 'sub', text: L('status.fix') }));
+      el('div', { class: 'muted', text: s.error ?? '' }), el('p', { class: 'sub', text: L(fixFor(s.error)) }));
     }
     if (!s.enabled) conn.append(el('div', { class: 'line warn' }, el('span', { class: 'dot warn' }),
       el('span', { text: L('status.memory_off') })));
@@ -328,6 +352,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
 
     const cards: HTMLElement[] = [conn, features, lastCard];
+    // No Web Crypto on this page: every request is skipped, so it comes first (pre-0.4.0 audit F24).
+    if (s.insecure) cards.unshift(el('div', { class: 'card err' }, el('div', { text: L('status.insecure') })));
     // A long chat that runs out of time gets no memory at all (fail open), silently: say it first, with
     // the value to set, and warn before it happens (owner decision on audit A-09).
     const advice = deadlineAdvice(s.last);
@@ -1118,9 +1144,11 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const enabled = el('input', { type: 'checkbox' });
   const reserved = el('input', { type: 'number', min: 100, max: PANEL_MAX_RESERVED_TOKENS });
   const deadline = el('input', { type: 'number', min: 200, max: MAX_DEADLINE_MS, step: 100 });
+  const token = el('input', { type: 'password', placeholder: L('conn.token_placeholder'), autocomplete: 'off' });
+  let install: string | null = null;  // what the sidecar says it is (`bundle`): the Ollama preset's address
   settingsView.append(el('div', { class: 'card' },
     el('h2', { text: L('conn.title') }), el('p', { class: 'sub', text: L('conn.sub') }),
-    field(L('conn.url'), url),
+    field(L('conn.url'), url), field(L('conn.token'), token),
     el('div', { class: 'row' }, field(L('conn.route'), route), field(L('conn.budget'), reserved), field(L('conn.deadline'), deadline)),
     el('div', { class: 'check' }, enabled, el('span', { text: L('conn.enabled') })),
     el('p', { class: 'sub', text: L('conn.hint') }), el('p', { class: 'sub', text: L('conn.deadline_hint') })));
@@ -1163,7 +1191,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     });
     preset.addEventListener('change', () => {
       const p = presets[Number(preset.value)] as Preset;
-      if (p.url !== 'custom') endpoint.value = fillProject(p.url, key.value);
+      if (p.url !== 'custom') endpoint.value = fillProject(presetUrl(p.url, install), key.value);
       if (p.model) model.value = p.model;
       if (!p.url) model.value = '';
       say(msg, p.hint ? L(p.hint) : p.url.includes('{project}') ? L('model.vertex_hint') : '');
@@ -1350,7 +1378,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
 
   function values(): FormValues {
     return {
-      conn: { url: url.value, route: route.value, enabled: enabled.checked, reserved: reserved.value, deadline: deadline.value },
+      conn: { url: url.value, route: route.value, enabled: enabled.checked, reserved: reserved.value, deadline: deadline.value,
+        token: token.value },
       llm: llm.values(), emb: emb.values(),
       tune: { threshold: threshold.value, minSim: minSim.value, topK: topK.value, facts: factsLimit.value, backfill: backfill.value,
         summaries: summaries.checked, canonFacts: canonFacts.checked },
@@ -1378,10 +1407,12 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     enabled.checked = Number(await deps.getArg('disabled')) !== 1;
     reserved.value = String(Number(await deps.getArg('reserved_memory_tokens')) || DEFAULT_RESERVED_TOKENS);
     deadline.value = String(Number(await deps.getArg('deadline_ms')) || DEFAULT_DEADLINE_MS);
+    token.value = (await deps.getArg('auth_token')) || '';
     hudBox.checked = Number(await deps.getArg('hud')) === 1;
   }
 
   function fillServer(cfg: ServerConfig): void {
+    install = cfg.install ?? null;
     llm.fill(cfg.llm); emb.fill(cfg.embeddings);
     threshold.value = String(cfg.recall.threshold);
     minSim.value = String(cfg.recall.vector_min_sim);
