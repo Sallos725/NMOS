@@ -203,9 +203,9 @@ def test_clean_text_does_not_read_prose_as_a_tag():
 
 # --- PHASE-39 Q1, Q2: a one-line status bar, read field by field; a rule bound to one card --------------------------
 
-BAR = ("The bell rang twice.\n[Notice: guild | To: Hana]\n"
-       "☆ [Date: 2024-01-02 (Tue) | Time: 10:45 | Level: 3 | HP: 40 / 50 | Items: 물약 ×2 / 해독제 ×1 | Gold: 1,200]\n")
-EQUALS = "기숙사로 돌아왔다.\n[Status:date=1214-09-03|time=10:30|location=기숙사 204호|mood=평온|magic=없음]"
+BAR = ("The bell rang twice.\n[Notice: harbor | To: Hana]\n"
+       "☆ [Date: 0003-05-17 (Sun) | Time: 06:20 | Level: 3 | HP: 40 / 50 | Items: 물약 ×2 / 해독제 ×1 | Gold: 1,200]\n")
+EQUALS = "선실로 돌아왔다.\n[Status:date=0712-03-21|time=07:05|location=3번 선실|mood=느긋|wind=없음]"
 
 
 def test_a_one_line_status_bar_is_read_field_by_field():
@@ -215,10 +215,10 @@ def test_a_one_line_status_bar_is_read_field_by_field():
     ]})
     assert not ruleset.errors
     assert {k: v for _, k, v in parse(ruleset, BAR, "char", None)} == {
-        "Date": "2024-01-02 (Tue)", "Time": "10:45", "Level": "3", "HP": "40 / 50", "Items": "물약 ×2 / 해독제 ×1",
+        "Date": "0003-05-17 (Sun)", "Time": "06:20", "Level": "3", "HP": "40 / 50", "Items": "물약 ×2 / 해독제 ×1",
         "Gold": "1,200"}  # the story's own bracket window ([Notice: … | To: …]) is not the bar
     assert {k: v for _, k, v in parse(ruleset, EQUALS, "char", None)} == {
-        "date": "1214-09-03", "time": "10:30", "location": "기숙사 204호", "mood": "평온", "magic": "없음"}
+        "date": "0712-03-21", "time": "07:05", "location": "3번 선실", "mood": "느긋", "wind": "없음"}
     # A bar longer than one value's limit still gives every field (each is cleaned on its own).
     long = "☆ [" + " | ".join(f"Skill{i}: {'x' * 40}" for i in range(30)) + "]"
     assert len(parse(ruleset, long, "char", None)) == 30
@@ -264,6 +264,6 @@ def test_a_card_bound_rule_follows_the_chat_s_character_name(migrated, tmp_path)
 def test_a_bar_ending_at_the_line_s_end_keeps_brackets_inside_a_value():
     ruleset = compile_rules({"rules": [
         {"id": "bar", "kind": "block", "start": r"☆ \[", "end": r"\]\s*$", "separator": "|"}]})
-    content = "광산 깊숙한 곳.\n***☆ [Location: 구리시 던전 [버려진 광산] 보스룸 | Level: 32]\n[Profile| None ]"
+    content = "등대 계단 위.\n***☆ [Location: 항구 마을 [낡은 등대] 꼭대기 | Level: 7]\n[Memo| None ]"
     assert {k: v for _, k, v in parse(ruleset, content, "char", None)} == {
-        "Location": "구리시 던전 [버려진 광산] 보스룸", "Level": "32"}
+        "Location": "항구 마을 [낡은 등대] 꼭대기", "Level": "7"}
