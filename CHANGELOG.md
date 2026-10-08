@@ -22,6 +22,9 @@ later, is `docs/KNOWN-ISSUES.md`.
   (`docs/perf/embedders.md`). Picking Voyage says that an account with no payment method has 3 requests a minute, too
   few to embed a chat. An embedding answer that reports `total_tokens` alone (Voyage's) is now counted as its input
   tokens in the model-call usage. No migration, no new generation; the plugin build changes.
+- **CI upgrades a database that 0.3.0 wrote**, as it does those of 0.1.0-beta.7, .16, .21 and 0.2.0
+  (`fixtures/upgrade/v0.3.0.sql`, made by `tools/make_upgrade_fixture.py`). 0.3.0 → this version adds no migration;
+  the test now accepts an upgrade with nothing left to apply and still goes on with the story.
 
 ## 0.3.0
 

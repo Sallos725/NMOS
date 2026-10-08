@@ -153,7 +153,7 @@ Upgrade: replace `docker-compose.yml` with the new release's `nmos-docker-compos
 Replace the plugin file too and reload PocketRisu: the Inspector's first page then says whether the plugin
 in use is the sidecar's build, and links the matching file (`/v1/plugin/nmos-pocketrisu.js` on the sidecar;
 ADR 0037). Each release's CHANGELOG entry says what the upgrade re-processes, for example a new extractor generation. CI restores databases written by earlier releases
-(0.1.0-beta.7, 0.1.0-beta.16 and 0.1.0-beta.21) and upgrades them (`apps/sidecar/tests/test_upgrade.py`).
+(0.1.0-beta.7, 0.1.0-beta.16, 0.1.0-beta.21, 0.2.0 and 0.3.0) and upgrades them (`apps/sidecar/tests/test_upgrade.py`).
 
 Rollback: migrations only go forward, and an older image on a newer database is not tested. To go back,
 restore the backup you took before upgrading, then start the older release:

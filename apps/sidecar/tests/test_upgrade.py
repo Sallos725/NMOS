@@ -56,7 +56,10 @@ def test_a_database_of_an_earlier_release_upgrades_and_keeps_working(dump, datab
             "SELECT EXISTS (SELECT 1 FROM extraction e JOIN projection_generation g ON g.key = e.extractor_key"
             " WHERE coalesce(g.spec->>'unit', 'message') = 'message')").fetchone()[0]
     applied = apply_migrations(database_url)
-    assert applied and applied[-1] == LATEST
+    # A release with today's schema (0.3.0 → 0.4.0 adds no migration) has nothing left to apply.
+    assert (applied or [LATEST])[-1] == LATEST
+    with psycopg.connect(database_url) as conn:
+        assert conn.execute("SELECT 1 FROM schema_migrations WHERE version = %s", (LATEST,)).fetchone()
 
     with make_client(database_url, embedder=FakeEmbedder(), **LLM, **EMB) as c:  # startup backfills run here
         assert c.get("/v1/health").status_code == 200
