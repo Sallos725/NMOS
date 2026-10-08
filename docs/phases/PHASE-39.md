@@ -68,6 +68,11 @@ names); as merged, card A's inventory and equipment keys raise 5 flags in 23 rep
 names, and its resources one borderline flag in 66 changes. `watch` goes into the owner's install only when the owner
 chooses the keys.
 
+**Found by the pre-0.4.0 audit (2026-10-08), fixed here:** a `block` rule whose start matches empty text looped
+forever (refused now, and every block search moves forward); a restored chat got no state when the install already had
+some (the next start reads every revision no append saw, `normtext.missing`); a chat whose character name arrived
+after its messages was not read by card-bound rules (read again when the name changes).
+
 ## Acceptance criteria (steps 3–4)
 
 4. The history folds a restated value, follows a swipe or an edit through the head's membership, and leaves out a

@@ -346,3 +346,51 @@ def test_asked_keys_words_and_boundaries():
     assert asked_keys("마나가 언제 줄었지", keys) == ["MP"] and asked_keys("chp", keys) == []
     assert asked_keys("하나 기분 언제부터 이랬어", keys) == ["하나.기분"] and asked_keys("기분 어때", keys) == []
     assert STATE_CHANGE_CUE.search("레벨 언제 올랐어?") and not STATE_CHANGE_CUE.search("레벨이 몇이야?")
+
+
+# --- found by the pre-0.4.0 audit: rules that hang, restored chats, a name that comes late -------------------------
+
+def test_a_start_that_matches_empty_text_is_refused_and_zero_width_marks_end():
+    from nmos_sidecar.parsers import compile_rules, parse, prose
+
+    refused = compile_rules({"rules": [{"id": "x", "kind": "block", "start": "", "end": ""},
+                                       {"id": "y", "kind": "block", "start": "^", "end": "$"}]})
+    assert not refused.rules and all("start must not match empty text" in e for e in refused.errors)
+    looking = compile_rules({"rules": [{"id": "z", "kind": "block", "start": "(?=☆)", "end": "(?=☆)|\\]"}]})
+    assert parse(looking, "a ☆ [HP: 3] ☆ [MP: 4] b", "char", None) == []  # ends at once, and the loop ends
+    assert prose(looking, "a ☆ [HP: 3] b", "char", None) == "a ☆ [HP: 3] b"
+
+
+def test_chats_no_append_saw_get_their_state_at_the_next_start(migrated, rules):
+    path = rules()
+    seen, restored = SimChat(), SimChat()
+    for chat in (seen, restored):
+        chat.user("시작.")
+        chat.reply(bar(1, 100))
+        chat.user("다음.")
+    with make_client(migrated, parsers_file=path) as c:
+        sync(c, seen)
+        sync(c, restored)
+    with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:  # as a restore writes them
+        cid = conn.execute("SELECT id FROM conversation WHERE host_chat_ref = %s", (restored.id,)).fetchone()["id"]
+        conn.execute("DELETE FROM state_observation WHERE conversation_id = %s", (cid,))
+        conn.execute("DELETE FROM revision_text WHERE source_revision_id IN (SELECT sr.id FROM source_revision sr"
+                     " JOIN source_object so ON so.id = sr.source_object_id WHERE so.conversation_id = %s)", (cid,))
+        assert conn.execute("SELECT count(*) AS n FROM state_observation").fetchone()["n"] > 0  # the other chat's
+    with make_client(migrated, parsers_file=path) as c:
+        assert values(read(migrated, restored, path), "Gold") == [(0, 0, "100")]
+
+
+def test_a_card_bound_rule_reads_a_chat_again_when_its_name_arrives(migrated, rules):
+    path = rules({"card": "Card A"})
+    chat = SimChat()
+    chat.user("시작.")
+    chat.reply(bar(1, 100))
+    chat.user("다음.")
+    with make_client(migrated, parsers_file=path) as c:
+        sync(c, chat)  # no character name yet
+        assert read(migrated, chat, path) == {}
+        sync(c, chat, character_name="Card A")
+        assert values(read(migrated, chat, path), "Gold") == [(0, 0, "100")]
+        sync(c, chat, character_name="Card B")  # renamed in the host: no longer this card's chat
+        assert read(migrated, chat, path) == {}

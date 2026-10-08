@@ -33,29 +33,39 @@ def write_state(conn: psycopg.Connection, ruleset: RuleSet, conv_id: UUID, revis
     return len(pairs)
 
 
-def sync_rules(conn: psycopg.Connection, ruleset: RuleSet) -> int:
-    """Drop rows from other rule versions and backfill the current version if it is missing."""
+def sync_rules(conn: psycopg.Connection, ruleset: RuleSet, unseen: list[UUID] = ()) -> int:
+    """Drop rows from other rule versions and backfill the current version if it is missing; otherwise read the
+    `unseen` revisions, which no append parsed (a restore's rows, `normtext.missing`)."""
     conn.execute("DELETE FROM state_observation WHERE rules_version <> %s", (ruleset.version,))
     if not ruleset.rules:
         return 0
     has = conn.execute("SELECT 1 FROM state_observation LIMIT 1").fetchone()
     if has:
-        return 0
+        return _parse(conn, ruleset, "sr.id = ANY(%s)", (list(unseen),)) if unseen else 0
     return rebuild_state(conn, ruleset)
 
 
-def rebuild_state(conn: psycopg.Connection, ruleset: RuleSet) -> int:
-    conn.execute("DELETE FROM state_observation")
+def reparse_conversation(conn: psycopg.Connection, ruleset: RuleSet, conv_id: UUID) -> int:
+    """Read one chat's messages again, as when its character name changed under rules bound to a card (PHASE-39)."""
+    conn.execute("DELETE FROM state_observation WHERE conversation_id = %s", (conv_id,))
+    return _parse(conn, ruleset, "so.conversation_id = %s", (conv_id,)) if ruleset.rules else 0
+
+
+def _parse(conn: psycopg.Connection, ruleset: RuleSet, where: str, params: tuple) -> int:
     total = 0
     rows = conn.execute(
         "SELECT sr.id, sr.content, sr.metadata, so.conversation_id, c.host_character_name FROM source_revision sr"
         " JOIN source_object so ON so.id = sr.source_object_id JOIN conversation c ON c.id = so.conversation_id"
-        " WHERE so.source_kind = 'message'"  # not canon (ADR 0045)
-    ).fetchall()
+        f" WHERE so.source_kind = 'message' AND {where}", params).fetchall()  # not canon (ADR 0045)
     for r in rows:
         total += write_state(conn, ruleset, r["conversation_id"], r["id"], r["content"], r["metadata"],
                              r["host_character_name"])
     return total
+
+
+def rebuild_state(conn: psycopg.Connection, ruleset: RuleSet) -> int:
+    conn.execute("DELETE FROM state_observation")
+    return _parse(conn, ruleset, "true", ())
 
 
 def history(conn: psycopg.Connection, head_commit_id: UUID, rules_version: str, upto: int | None = None,

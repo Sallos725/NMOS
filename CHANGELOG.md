@@ -84,6 +84,10 @@ later, is `docs/KNOWN-ISSUES.md`.
   reply puts a value back to the one before. No model call; each entry can be dismissed, and taken back from the
   repairs. Measured on two real chats: watching inventory and equipment raised 5 entries in 23 replies, each an item
   the story never named. **Upgrade:** migration `0029` (a repair kind); archives of `0.3.0` restore as before.
+- **Status rules: three fixes** (found by the pre-0.4.0 audit). A `block` rule whose start matches empty text is
+  refused: it searched the same place forever and hung the sync (every version since Phase 1). A chat restored into an
+  install that already had status values gets its own at the next start (Phase 38's restore left them out). A chat
+  whose character name reaches NMOS after its messages is read again for the rules bound to that card.
 
 ## 0.3.0
 

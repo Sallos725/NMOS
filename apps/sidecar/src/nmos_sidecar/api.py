@@ -59,8 +59,8 @@ from .reconcile import Entry, plan, plan_append
 from .llm import Embedder
 from .packet import DEFAULT_POLICY, POLICIES, clean_text
 from .retrieval import RecallOptions, prefetched, query_prefix, retrieve
-from .state import current_state, rebuild_state, sync_rules, write_state
-from .parsers import watched
+from .state import current_state, rebuild_state, reparse_conversation, sync_rules, write_state
+from .parsers import needs_card, watched
 from .state import history as state_history
 
 log = logging.getLogger("nmos.sidecar")
@@ -242,6 +242,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         backfill resumes it instead of starting over (audit A-08)."""
         with psycopg.connect(settings.database_url, row_factory=dict_row, autocommit=True) as conn:
             rebuild(runtime.stored(conn))
+            unseen = normtext.missing(conn)  # rows no append saw (a restore's): their state is owed too (PHASE-39)
             normalized = normtext.backfill(conn)
             if normalized:
                 log.info("normalized text written for %d revisions (%s)", normalized, normtext.NORMALIZER_VERSION)
@@ -250,7 +251,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if turned := ledger.refresh_turns(conn, settings.extract_turns):
                 log.info("turn data written for %d head members (K=%d)", turned, settings.extract_turns)
             with conn.transaction():  # drop other rule versions and backfill as one: a partial backfill looks done
-                backfilled = sync_rules(conn, rt["rules"])
+                backfilled = sync_rules(conn, rt["rules"], unseen)
             with conn.transaction():  # a generation becomes active together with the jobs it is missing
                 queued = activate(conn, None, None, None, None)
             log.info("generations: extract=%s embed=%s summarize=%s; queued %d missing jobs",
@@ -392,6 +393,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         plugins.saw(body.plugin_build)
         conv = ledger.lock_conversation(conn, body.host, body.chat_id, body.character_ref, body.character_name,
                                         body.chat_name, body.persona_name)
+        if conv.card_renamed and needs_card(rt["rules"]):  # rules bound to a card read this chat by its new name
+            reparse_conversation(conn, rt["rules"], conv.id)
         if settings.append_fast_path and conv.head_commit_id is not None:
             fast = append_reconcile(conn, conv, body)
             if fast is not None:

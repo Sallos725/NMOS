@@ -93,10 +93,13 @@ def compile_rules(spec: Any) -> RuleSet:
                 entity_line = re.compile(item["entity_line"]) if item.get("entity_line") else None
                 if entity_line is not None and "entity" not in entity_line.groupindex:
                     raise ValueError("entity_line needs an 'entity' group")
+                start = re.compile(item["start"], re.MULTILINE)
+                if start.search("") is not None:  # it would start a block everywhere (PHASE-39: a hung sync)
+                    raise ValueError("start must not match empty text")
                 separator = item.get("separator")
                 if separator is not None and (not isinstance(separator, str) or not 1 <= len(separator) <= 8):
                     raise ValueError("separator must be a string of 1 to 8 characters")
-                rules.append(Rule(start=re.compile(item["start"], re.MULTILINE),
+                rules.append(Rule(start=start,
                                   end=re.compile(item["end"], re.MULTILINE), entity_line=entity_line,
                                   separator=separator, **common))
             else:
@@ -132,6 +135,12 @@ def _key(rule: Rule, key: str, entity: str | None) -> str:
     return f"{entity}.{key}" if entity else key
 
 
+def _past(pos: int, end: int) -> int:
+    """Where the next block search starts: after this block, and always further than the last search (a start and an
+    end that match empty text, as a lookahead does, would otherwise search the same place forever)."""
+    return end if end > pos else pos + 1
+
+
 def needs_card(ruleset: RuleSet) -> bool:
     return any(rule.card for rule in ruleset.rules)
 
@@ -160,7 +169,7 @@ def prose(ruleset: RuleSet, content: str, role: str | None, character: str | Non
             while (s := rule.start.search(content, pos)) is not None:
                 e = rule.end.search(content, s.end())
                 spans.append((s.start(), e.end() if e else len(content)))
-                pos = e.end() if e else len(content)
+                pos = _past(pos, e.end() if e else len(content))
     out, at = [], 0
     for a, b in sorted(spans):
         if a > at:
@@ -202,5 +211,5 @@ def parse(ruleset: RuleSet, content: str, role: str | None, character: str | Non
                     if m:
                         k = _key(rule, m.group("key").strip(), entity)
                         out[k] = (rule.id, k, m.group("value").strip()[:MAX_VALUE])
-                pos = e.end() if e else len(content)
+                pos = _past(pos, e.end() if e else len(content))
     return list(out.values())
