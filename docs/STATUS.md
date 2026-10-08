@@ -3,7 +3,7 @@
 ## Current phase
 
 **Phase 37 — The bundle's data lives outside the bundle: approved 2026-10-08 (the owner, as proposed; Q6 amended), high
-risk (stored data, upgrades); steps 2–4 done, step 5 the owner's check.** Spec `docs/phases/PHASE-37.md`, ADR 0060
+risk (stored data, upgrades); complete 2026-10-08 (#285 green on four targets; the owner's Windows check passed).** Spec `docs/phases/PHASE-37.md`, ADR 0060
 amendment 1. A user lost their database updating 0.2.0 → 0.3.0 (cause unconfirmed: the Docker install cannot drop it; a
 switch to the new bundle starts empty). On Windows and Linux the bundle kept its database in the folder an update
 replaces; the launcher now keeps it in a per-user folder and moves 0.3.0's `data/` there on the first start (a rename on
@@ -13,9 +13,9 @@ folder when the per-user path is one PostgreSQL cannot open. Unit tests `apps/si
 (20, failures injected at each adoption step); the bundle smoke adopts real clusters on each target, and on Windows
 CI asks the Q6 question in the console on a drive without short names (`ci_smoke.py ask`). Locally, a real
 v0.3.0 linux-x64 bundle's data was adopted by the new launcher with its rows and migrations, and the full smoke passed
-on it with the copy across drives (`/dev/shm`) (its version check skipped: v0.3.0 reports 0.0.0, fixed by #269). Next:
-the owner's Windows check (a real update from a 0.3.0 bundle folder), a look on macOS that nothing moved. Aimed at
-`0.4.0`.
+on it with the copy across drives (`/dev/shm`) (its version check skipped: v0.3.0 reports 0.0.0, fixed by #269). The owner's
+Windows check (2026-10-08): a real v0.3.0 bundle's data, with a marker row, adopted by `NMOS.exe` into the per-user
+folder, then the bundle folder deleted and a fresh one started on the same data. In `0.4.0`.
 
 **Phase 36 — A name in the message is not a question about everything (`packet-v16`): approved 2026-10-08 (the owner, as
 proposed), a correction phase (AGENTS §7 item 5) beside Phase 34; complete: `packet-v16` the default (the owner; the

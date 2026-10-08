@@ -1,7 +1,13 @@
 # Phase 37 — The bundle's data lives outside the bundle
 
-> **Status: approved 2026-10-08 (the owner, as proposed; Q6 amended by the owner before the approval). Steps 2–4
-> done; step 5, the owner's check on Windows (and a look on macOS), is next.** A correction phase (AGENTS §7 item 5) found on a user's report, not a
+> **Status: approved 2026-10-08 (the owner, as proposed; Q6 amended by the owner before the approval); complete
+> 2026-10-08: every acceptance criterion met.** Steps 2–4 on #285, green on all four targets (on Windows: the smoke's
+> adoption by rename and across C: → D:, the Q6 console question on a drive without short names, the tray, 1,241
+> sidecar tests). Step 5, the owner's Windows check: a real v0.3.0 win-x64 bundle wrote a marker row, its `data/` and
+> `.env` were moved into the new bundle as 0.3.0's guide said, `NMOS.exe` adopted them into the per-user folder (the
+> log names the move and `data.moved`; `.env` copied), then the new bundle folder was deleted outright and a fresh one
+> started on the same data with the row there. Not seen on a device, by choice: the Q6 and Q4 dialogs themselves and
+> macOS (its app smoke covers it). A correction phase (AGENTS §7 item 5) found on a user's report, not a
 > roadmap stage. It amends PHASE-23 Q3 (ADR 0060) for Windows and Linux; macOS already works this way. Aimed at
 > `0.4.0`, so that the update to it is the last one where the data sits inside the folder being replaced. **High risk
 > (AGENTS §14): stored data, upgrades.**
