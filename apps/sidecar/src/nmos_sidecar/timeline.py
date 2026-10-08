@@ -131,6 +131,7 @@ class _Page:
 
     def __init__(self, t: T, lo: int, hi: int, panel: bool = False):
         self.t, self.lo, self.hi, self.card, self.panel, self.selectable = t, lo, hi, None, panel, True
+        self.row = "tl.row"  # what a bar's detail links to: its row in the tables (a status lane: its turn)
 
     def pos(self, left: float, width: float | None = None) -> str:
         """Where a mark sits: `style` in the browser, plain numbers in the panel (the plugin places them)."""
@@ -163,7 +164,7 @@ def _outcome(t: T, outcome: str) -> str:
 
 
 def _card(t: T, head: str, value: str, when: str, href: str, notes: list[tuple[str, str]] = (),
-          history: list[tuple[str, str, bool]] = ()) -> str:
+          history: list[tuple[str, str, bool]] = (), row: str = "tl.row") -> str:
     """The detail the script would show for a bar, rendered once for the bar selected at load (the same parts)."""
     out = f"<p class=\"muted\">{_v(head)}</p><p class=\"v\">{_v(value)}</p><p>{_v(when)}</p>"
     out += "".join(f"<p class=\"{cls}\">{_v(text)}</p>" for cls, text in notes)
@@ -171,7 +172,7 @@ def _card(t: T, head: str, value: str, when: str, href: str, notes: list[tuple[s
         out += "<ol class=\"tl-hist\">" + "".join(
             f"<li{' class=\"cur\"' if cur else ''}><span class=\"muted\">{_v(s)} </span>{_v(v)}</li>"
             for s, v, cur in history) + "</ol>"
-    return f"<div class=\"tl-card\">{out}<p><a href=\"{href}\">{_v(t('tl.row'))}</a></p></div>"
+    return f"<div class=\"tl-card\">{out}<p><a href=\"{href}\">{_v(t(row))}</a></p></div>"
 
 
 DATA_MAX = 300  # the panel keeps a mark's text up to 400 characters (its sanitizer); a longer value is cut here
@@ -187,17 +188,20 @@ def _data(value: str, when: str, outcome: str, head: str | None = None, who: str
             + (f" data-k=\"{_v(head)}\"" if head else "") + (f" data-p=\"{_v(who)}\"" if who else ""))
 
 
-def _bars(p: _Page, lane: str, fact: dict[str, Any], segs: list[dict[str, Any]]) -> str:
-    out, href = [], f"#a-{_v(fact['id'])}"
+def _bars(p: _Page, lane: str, fact: dict[str, Any], segs: list[dict[str, Any]],
+          link: Callable[[dict[str, Any]], str] | None = None) -> str:
+    """A lane's bars. Each links to its fact's row, or with `link` to where that span says (a status value's turn)."""
+    out, row = [], f"#a-{_v(fact['id'])}"
     drawn = [s for s in segs if s["end"] >= p.lo]
     whens = [p.span_text(s["start"], s["end"], s["outcome"] == "current") for s in drawn]
     for s, when in zip(drawn, whens):
         a, cur = max(s["start"], p.lo), s["outcome"] == "current"
+        href = _v(link(s)) if link else row
         left, width = p.pct(a), round(p.pct(s["end"] + 1) - p.pct(a), 3)
         outcome = _outcome(p.t, s["outcome"])
         notes = ([("muted", p.t("tl.canon"))] if s["canon"] else []) + ([("warn", p.t("tl.owner"))] if s.get("owner") else [])
         picked = p.select(cur, lambda: _card(p.t, lane, _plain(p.t, s), f"{when} · {outcome}", href, notes,
-                                             [(w, _plain(p.t, x), x is s) for x, w in zip(drawn, whens)]))
+                                             [(w, _plain(p.t, x), x is s) for x, w in zip(drawn, whens)], p.row))
         cls = "tl-bar" + ("" if cur else " past") + (" neg" if s["negative"] else "") + \
               (" canon" if s["canon"] else "") + (" owner" if s.get("owner") else "") + \
               (" short" if width < 3 else "")  # drawn above its neighbours: a one-turn value stays reachable
@@ -405,6 +409,65 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
     html = (f"<div class=\"tl\">{switch}<div class=\"tl-grid\"><div class=\"tl-main\">{_axis(p)}{groups}</div>"
             f"{side}</div></div>")
     return html + SCRIPT
+
+
+STATUS_BARS = 120  # bars per status lane (as TICKS): a value that changes every turn draws its last ones
+
+
+def status_segments(entries: list[dict[str, Any]], now: int) -> list[dict[str, Any]]:
+    """A status key's history (`state.history`, PHASE-39 Q3) as spans of turns: each value from the turn its bar first
+    said it to the turn before the next value's, the last one until now. Entries without a turn are left out."""
+    held = [e for e in entries if isinstance(e.get("turn"), int)]
+    out = []
+    for i, e in enumerate(held):
+        last = i == len(held) - 1
+        end = max(e["turn"], now) if last else max(e["turn"], held[i + 1]["turn"] - 1)
+        out.append({"start": e["turn"], "end": end, "outcome": "current" if last else "superseded", "canon": False,
+                    "negative": False, "value": e["value"], "turn": e["turn"]})
+    return out
+
+
+def status(t: T, hist: dict[str, list[dict[str, Any]]], now: int | None, span: str | None, switch: str,
+           link: Callable[[int], str] | None = None, panel: bool = False) -> str:
+    """A status window's history (PHASE-39 Q3a): one lane per key, a bar per value held, the value now beside the key;
+    keys that never changed fold under one line. In the browser a bar links to its turn's page (`link`)."""
+    lo, hi = window(now, span)
+    p = _Page(t, lo, hi, panel)
+    p.row = "tl.turn"
+    changed, steady, cut = [], [], 0
+    for key, entries in hist.items():
+        segs = [s for s in status_segments(entries, hi) if s["end"] >= lo]
+        if not segs:
+            continue
+        cut += len(segs) > STATUS_BARS
+        segs = segs[-STATUS_BARS:]
+        # unchanged in the window drawn: one value, held since before it (the whole chat: since its first bar)
+        (steady if len(segs) == 1 and (lo == 0 or segs[0]["start"] < lo) else changed).append((key, segs))
+    if len(changed) + len(steady) <= FOLD_OVER:  # few keys: nothing to fold away
+        changed, steady = changed + steady, []
+    changed.sort(key=lambda ks: (-ks[1][-1]["start"], ks[0]))  # the latest change first
+    steady.sort(key=lambda ks: ks[0])
+    to_turn = (lambda s: link(s["start"])) if link and not panel else None
+
+    def row(key: str, segs: list[dict[str, Any]]) -> str:
+        return _row(key, _bars(p, key, {"id": key}, segs, to_turn), value=_now_value(t, segs))
+
+    drawn = [row(k, segs) for k, segs in changed[:LANES]]
+    p.selectable = False  # a folded lane is out of sight: the first detail is from one in sight
+    quiet = [row(k, segs) for k, segs in steady[:LANES]]
+    group = _group(p, t("tl.status"), drawn, max(0, len(changed) - LANES), quiet, max(0, len(steady) - LANES),
+                   "tl.steady_status")
+    if not group:
+        return f"<div class=\"tl\">{switch}<p class=\"muted\">{_v(t('tl.empty'))}</p></div>"
+    note = f"<p class=\"muted tl-more\">{_v(t('tl.status_cut').format(n=STATUS_BARS))}</p>" if cut else ""
+    if panel:  # the plugin shows a tapped bar's detail under its lane
+        return (f"<div class=\"tl\">{switch}<p class=\"muted tl-hint\">{_v(t('tl.hint_tap'))}</p>"
+                f"<div class=\"tl-main\">{_axis(p)}{group}{note}</div></div>")
+    side = (f"<aside class=\"tl-side\" data-row=\"{_v(t('tl.turn'))}\" data-canon=\"\" "
+            f"data-close=\"{_v(t('tl.close'))}\" data-owner=\"\">{p.card or ''}"
+            f"<p class=\"muted tl-hint\">{_v(t('tl.hint'))}</p></aside>")
+    return (f"<div class=\"tl\">{switch}<div class=\"tl-grid\"><div class=\"tl-main\">{_axis(p)}{group}{note}</div>"
+            f"{side}</div></div>") + SCRIPT
 
 
 def changes(entity_id: str, facts: list[dict[str, Any]], now: int, names: Iterable[str] = ()) -> list[int]:

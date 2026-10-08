@@ -219,6 +219,11 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     # PHASE-32: memory on a time axis
     "timeline": ("시간축", "Over time"), "toc.timeline": ("시간축", "Over time"),
     "people": ("등장인물 (시간축)", "Characters over time"), "toc.people": ("등장인물", "Characters"),
+    # PHASE-39 Q3a: a status window's values over time
+    "status": ("상태창 변화", "Status window over time"), "toc.status": ("상태창 변화", "Status over time"),
+    "tl.status": ("상태창", "Status window"), "tl.steady_status": ("바뀐 적 없는 항목 {n}개", "Unchanged fields ({n})"),
+    "tl.turn": ("그 턴 보기", "Open that turn"),
+    "tl.status_cut": ("항목마다 최근 {n}개 값까지만 그렸어요.", "Each field draws its last {n} values."),
     "tl.all": ("전체", "Whole chat"), "tl.recent": ("최근 {n}턴", "Last {n} turns"),
     "tl.now": ("현재", "now"), "tl.now_at": ("현재 t{n}", "now t{n}"),
     "tl.state": ("사실", "Facts"), "tl.relations": ("이 인물에게서 나가는 관계", "Relationships from them"),
@@ -301,6 +306,12 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "at.alias_held": ("확인되지 않아 보류된 별명: {why} (연결하면 한 사람으로 읽음)",
                       "an alias held, not confirmed: {why} (link it to read them as one person)"),
     "at.repair": ("지금 맞는 항목이 없는 수리", "a repair that matches nothing now"),
+    # PHASE-39 Q4: a watched status value changed while the reply's story did not say so
+    "at.state_added": ("상태창에 생긴 항목, 본문에는 없음", "a status item added that the reply never mentions"),
+    "at.state_dropped": ("상태창에서 사라진 항목, 본문에는 없음", "a status item gone that the reply never mentions"),
+    "at.state_number": ("상태창 숫자가 바뀜, 본문에는 없음", "a status number changed without the reply saying so"),
+    "at.state_reverted": ("다시 쓴 답에서 상태창 값이 예전으로 돌아감",
+                          "back to an earlier value in a rerolled, swiped or edited reply"),
     "at.split": ("아직 한 인물인 이름 분리", "a split whose names are still one entity"),
     "at.ambiguous": ("모호한 이름 (연결 안 함)", "an ambiguous name (not linked)"),
     "at.none": ("확인할 것이 없습니다.", "Nothing needs a look."),
@@ -361,6 +372,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "rk.secret_found_out": ("비밀을 알게 됨", "secret found out"), "rk.secret_keep": ("비밀 유지", "secret still kept"),
     "rk.fact_restore": ("사실 복원", "restore a fact"), "rk.fact_retract": ("사실 철회", "retract a fact"), "rk.fact_correct": ("사실 정정", "correct a fact"),
     "rk.name_split": ("이름 분리", "split two names"),
+    "rk.state_dismiss": ("상태창 확인 표시 넘김", "status flag dismissed"),
     "rs.applied": ("적용됨", "applied"), "rs.unmatched": ("지금 맞는 항목 없음", "matches nothing now"),
     "rs.removed": ("되돌림", "taken back"),
     "h.repair": ("수리", "Repair"), "h.target": ("대상", "Target"), "h.value": ("내용", "Value"), "h.made": ("만든 때", "Made"),
@@ -446,6 +458,7 @@ def _tl_switch(path: str, q: str, span: str | None, lang: str, panel: bool = Fal
 
 
 LAZY = "<div class=\"tl-lazy\"></div>"  # where the plugin puts the timeline when its section is opened (PHASE-32 step 3)
+LAZY_STATUS = "<div class=\"tl-lazy tl-status\"></div>"  # the status window's, asked for as `part=status` (PHASE-39)
 
 
 def character_timeline(conv: dict[str, Any], entity_id: str, view: dict[str, Any], lang: str = "ko",
@@ -458,6 +471,12 @@ def character_timeline(conv: dict[str, Any], entity_id: str, view: dict[str, Any
     return timeline.character(_tl_t(lang), entity_id, view["facts"], view.get("threads", []),
                               {norm(n) for n in entity["names"]}, now, span,
                               _tl_switch("", "", span, lang, panel=True), panel=True)
+
+
+def conversation_status(hist: dict[str, list[dict[str, Any]]], now: int | None, lang: str = "ko",
+                        span: str | None = None) -> str:
+    """The status window's lanes alone, in the panel's form (PHASE-39 Q3a), asked for when their section opens."""
+    return timeline.status(_tl_t(lang), hist, now, span, _tl_switch("", "", span, lang, panel=True), panel=True)
 
 
 def conversation_cast(conv: dict[str, Any], cast: dict[str, Any], now: int | None, lang: str = "ko",
@@ -1133,7 +1152,7 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
         act = _act("undo", owned[c["fact"]]) if c["fact"] in owned else _act("fact_retract", c["fact"])
         rows.append([_v(_t(lang, "at.disputed")), _v(c["text"]), _v(c.get("turn")), act])
     for rep in repairs:
-        if rep.get("removed_at"):
+        if rep.get("removed_at") or rep.get("kind") == "state_dismiss":  # a dismissed flag that is gone is no problem
             continue
         if rep.get("via"):
             rows.append([_v(_t(lang, "at.split")), _repair_target(rep), "", _undo(rep)])
@@ -1141,6 +1160,10 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
             rows.append([_v(_t(lang, "at.repair")), _repair_target(rep), "", _undo(rep)])
     for a in view.get("ambiguous", []):
         rows.append([_v(_t(lang, "at.ambiguous")), _v(f"{a['name']}: " + ", ".join(a.get("candidates") or [])), "", ""])
+    for f in view.get("state_flags", []):  # PHASE-39 Q4, each with its one action: dismiss
+        what = f"{f['key']}: {f['old']} → {f['new']}" + (f" ({f['item']})" if f.get("item") else "")
+        rows.append([_v(_t(lang, f"at.state_{f['reason']}")), _v(what), turn_link(f["turn"]) if f.get("turn") is not None
+                     else "", _act("state_dismiss", f["id"])])
     return rows
 
 
@@ -1312,7 +1335,9 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            canon_held: dict[str, dict[str, Any]] | None = None, canon_read: dict[str, dict[str, Any]] | None = None,
            canon_facts: int = 0, dropped: list[dict[str, Any]] | None = None,
            endings: dict[str, list[dict[str, Any]]] | None = None, overuse: dict[str, Any] | None = None,
-           cast: dict[str, Any] | None = None, span: str | None = None, lazy: bool = False) -> str:
+           cast: dict[str, Any] | None = None, span: str | None = None, lazy: bool = False,
+           status: dict[str, list[dict[str, Any]]] | None = None, status_lazy: bool = False,
+           state_flags: list[dict[str, Any]] | None = None) -> str:
     """One conversation. `cast` (the full memory view's facts and entities, and the current scene's character keys)
     draws a line per character over the turns (PHASE-32), outside the panel only."""
     t = lambda k: _t(lang, k)
@@ -1324,8 +1349,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     active = (((coverage or {}).get("extraction") or {}).get("generation") or {}).get("key")
     # What needs a look comes first; logs of the machinery start folded.
     queue = _attention({"threads": threads or [], "unmatched": unmatched or [], "conflicts": conflicts or [],
-                        "ambiguous": ambiguous or [], "dropped": dropped or [], "endings": endings or {}},
-                       repairs or [], last_turn, lang)
+                        "ambiguous": ambiguous or [], "dropped": dropped or [], "endings": endings or {},
+                        "state_flags": state_flags or []}, repairs or [], last_turn, lang)
     parts: list[Section] = [
         ("attention", t("attention"), len(queue),
          table([t(k) for k in ("h.issue", "h.text", "h.turn", "h.repair")], queue) + f"<p class=\"muted\">{t('at.note')}</p>"
@@ -1341,6 +1366,15 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
             lambda eid: f"{path}/e/{eid}{_with_span(q, span)}", _tl_switch(path, q, span, lang)), True))
     elif lazy and embed:  # a plugin that asked for it fills this when it is opened (PHASE-32 step 3)
         parts.insert(1, ("people", t("people"), None, LAZY, False))
+    if status:  # PHASE-39 Q3a: after the current state; in the panel, asked for when opened (as the cast)
+        at = next(i for i, part in enumerate(parts) if part[0] == "state") + 1
+        changed = sum(1 for entries in status.values() if len(entries) > 1)
+        if not embed:
+            parts.insert(at, ("status", t("status"), changed, timeline.status(
+                _tl_t(lang), status, last_turn, span, _tl_switch(path, q, span, lang),
+                link=lambda turn: f"{path}/t/{turn}{q}"), True))
+        elif status_lazy:
+            parts.insert(at, ("status", t("status"), changed, LAZY_STATUS, False))
     if (coverage or {}).get("usage") is not None:
         parts.append(("usage", t("us.title"), None, _usage_section(coverage["usage"], lang), False))
     if conflicts:

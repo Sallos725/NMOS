@@ -33,6 +33,8 @@ class Rule:
     separator: str | None = None
     # PHASE-39 Q2: the rule reads only the chats of this card (the conversation's character name), exactly.
     card: str | None = None
+    # PHASE-39 Q4: keys whose changes without a cause in the reply are flagged ("Needs attention"); reading is unchanged.
+    watch: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -45,8 +47,20 @@ class RuleSet:
 EMPTY = RuleSet(rules=(), version="none")
 
 
+WATCH_MAX = 40  # watched keys per rule
+
+
+def _version_spec(spec: Any) -> Any:
+    """The rules as reading depends on them: `watch` changes what is flagged, not what is read (PHASE-39 Q4), so adding
+    it keeps the rules' version and the stored observations."""
+    if not isinstance(spec, dict) or not isinstance(spec.get("rules"), list):
+        return spec
+    return {**spec, "rules": [{k: v for k, v in r.items() if k != "watch"} if isinstance(r, dict) else r
+                              for r in spec["rules"]]}
+
+
 def compile_rules(spec: Any) -> RuleSet:
-    raw = json.dumps(spec, sort_keys=True, ensure_ascii=False)
+    raw = json.dumps(_version_spec(spec), sort_keys=True, ensure_ascii=False)
     items = spec.get("rules", []) if isinstance(spec, dict) else []
     rules: list[Rule] = []
     errors: list[str] = []
@@ -57,8 +71,13 @@ def compile_rules(spec: Any) -> RuleSet:
             card = item.get("card")
             if card is not None and (not isinstance(card, str) or not card.strip()):
                 raise ValueError("card must be a character name")
+            watch = item.get("watch", [])
+            if (not isinstance(watch, list) or len(watch) > WATCH_MAX
+                    or not all(isinstance(k, str) and 0 < len(k.strip()) <= 60 for k in watch)):
+                raise ValueError(f"watch must be a list of at most {WATCH_MAX} keys")
             common = {"id": rid, "kind": kind, "prefix": str(item.get("prefix", "")),
-                      "role": item.get("role"), "character": item.get("character"), "card": card}
+                      "role": item.get("role"), "character": item.get("character"), "card": card,
+                      "watch": frozenset(k.strip() for k in watch)}
             if kind == "regex":
                 pattern = re.compile(item["pattern"], re.MULTILINE)
                 names = set(pattern.groupindex)
@@ -112,6 +131,40 @@ def needs_card(ruleset: RuleSet) -> bool:
     return any(rule.card for rule in ruleset.rules)
 
 
+def watched(ruleset: RuleSet) -> dict[str, frozenset[str]]:
+    """Each rule's watched keys (PHASE-39 Q4), for the rules that have some."""
+    return {rule.id: rule.watch for rule in ruleset.rules if rule.watch}
+
+
+def _applies(rule: Rule, role: str | None, character: str | None, card: str | None) -> bool:
+    return not ((rule.role and rule.role != role) or (rule.character and rule.character != character)
+                or (rule.card and rule.card != card))
+
+
+def prose(ruleset: RuleSet, content: str, role: str | None, character: str | None, card: str | None = None) -> str:
+    """The message without what the rules read: each regex match and each block from its start to its end mark
+    (PHASE-39 Q4: whether the story itself says what a bar changed)."""
+    spans: list[tuple[int, int]] = []
+    for rule in ruleset.rules:
+        if not _applies(rule, role, character, card):
+            continue
+        if rule.kind == "regex" and rule.pattern:
+            spans += [m.span() for m in rule.pattern.finditer(content)]
+        elif rule.kind == "block" and rule.start and rule.end:
+            pos = 0
+            while (s := rule.start.search(content, pos)) is not None:
+                e = rule.end.search(content, s.end())
+                spans.append((s.start(), e.end() if e else len(content)))
+                pos = e.end() if e else len(content)
+    out, at = [], 0
+    for a, b in sorted(spans):
+        if a > at:
+            out.append(content[at:a])
+        at = max(at, b)
+    out.append(content[at:])
+    return "".join(out)
+
+
 def parse(ruleset: RuleSet, content: str, role: str | None, character: str | None,
           card: str | None = None) -> list[tuple[str, str, str]]:
     """(rule_id, key, value) pairs found in one message. Later matches of a key win. `card`: the chat's character
@@ -120,11 +173,7 @@ def parse(ruleset: RuleSet, content: str, role: str | None, character: str | Non
     Keys are "<entity>.<key>" when a rule captures an entity (sim bots: one card, many characters)."""
     out: dict[str, tuple[str, str, str]] = {}
     for rule in ruleset.rules:
-        if rule.role and rule.role != role:
-            continue
-        if rule.character and rule.character != character:
-            continue
-        if rule.card and rule.card != card:
+        if not _applies(rule, role, character, card):
             continue
         if rule.kind == "regex" and rule.pattern:
             for m in rule.pattern.finditer(content):

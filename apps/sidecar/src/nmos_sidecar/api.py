@@ -30,7 +30,8 @@ from psycopg_pool import ConnectionPool
 
 from . import (__version__, archive, audit, canon, canonfacts, dropped, endings, extraction, generations, inspector, ledger,
                normtext, overuse,
-               plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, summaries, uploads, vectors)
+               plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, statewatch, summaries, uploads,
+               vectors)
 from . import usage as model_usage
 from .config import Settings
 from .db import make_pool
@@ -59,6 +60,8 @@ from .llm import Embedder
 from .packet import DEFAULT_POLICY, POLICIES, clean_text
 from .retrieval import RecallOptions, prefetched, query_prefix, retrieve
 from .state import current_state, rebuild_state, sync_rules, write_state
+from .parsers import watched
+from .state import history as state_history
 
 log = logging.getLogger("nmos.sidecar")
 
@@ -806,12 +809,22 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             return {"turns": [t["turn"] for t in turns], "discarded": discarded, "queued": queued,
                     "coverage": coverage_view(conn, conv_id)}
 
-    def repair_rows(conn, conv_id: UUID, live: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Every repair of a chat, newest first, with the item each in force applies to now (ADR 0044)."""
+    def repair_rows(conn, conv_id: UUID, live: list[dict[str, Any]],
+                    flags: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+        """Every repair of a chat, newest first, with the item each in force applies to now (ADR 0044); a status
+        flag's dismissal, the flag while the chat still raises it (`flags`, PHASE-39 Q4)."""
         applied = {str(x["id"]): x["applied"] for x in live}
+        raised = {f["id"] for f in flags or ()}
         rows = conn.execute("SELECT id, kind, target, value, note, created_at, removed_at FROM owner_repair"
                             " WHERE conversation_id = %s ORDER BY created_at DESC, id DESC", (conv_id,)).fetchall()
-        return [{**row, "applied": applied.get(str(row["id"]))} for row in rows]
+        return [{**row, "applied": ((row["target"] or {}).get("id") if (row["target"] or {}).get("id") in raised else None)
+                 if row["kind"] == "state_dismiss" else applied.get(str(row["id"]))} for row in rows]
+
+    def state_flags(conn, conv: dict[str, Any]) -> list[dict[str, Any]]:
+        """A chat's status flags (PHASE-39 Q4), every one, dismissed or not; none without a watched key."""
+        if not watched(rt["rules"]) or conv["head_commit_id"] is None:
+            return []
+        return statewatch.flags_of(conn, conv["head_commit_id"], rt["rules"], conv.get("host_character_name"))
 
     def head_turn(conn, head: UUID) -> int | None:
         return conn.execute("SELECT max(turn) AS t FROM active_membership WHERE commit_id = %s", (head,)).fetchone()["t"]
@@ -886,6 +899,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if body.kind == "fact_restore":  # a fact a re-extraction dropped, or a held role ending (PHASE-28 Q7)
                 view["dropped"] = (dropped.find(conn, head, rt["active_extractor"], view)
                                    + endings.held(conn, head, rt["active_extractor"], view))
+            if body.kind == "state_dismiss":  # a status flag not yet dismissed (PHASE-39 Q4)
+                off = statewatch.dismissed(repair_rows(conn, conv_id, []))
+                view["state_flags"] = [f for f in state_flags(conn, conv) if f["id"] not in off]
             try:
                 target, value = repairs.plan(body.kind, body.item, view,
                                              head_turn(conn, head), body.outcome, body.character, body.turn,
@@ -901,8 +917,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     "INSERT INTO owner_repair (id, conversation_id, kind, target, value, note) VALUES (%s, %s, %s, %s, %s, %s)"
                     " RETURNING id, kind, target, value, note, created_at",
                     (uuid7(), conv_id, body.kind, Jsonb(target), Jsonb(value), (body.note or "").strip() or None)).fetchone()
-            applied = next((x["applied"] for x in view_of(conn, head)["repairs"]
-                            if x["id"] == row["id"]), None)
+            applied = target["id"] if body.kind == "state_dismiss" else next(
+                (x["applied"] for x in view_of(conn, head)["repairs"] if x["id"] == row["id"]), None)
         log.info("owner repair conversation=%s repair=%s kind=%s applied=%s", conv_id, row["id"], body.kind,
                  applied is not None)
         return {"repair": row, "applied": applied}
@@ -1208,7 +1224,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                    version=__version__, errors=recent_errors(conn))
 
     def inspector_detail_html(conv_id: UUID, request: Request, token: str | None, lang: str | None,
-                              embed: bool = False, span: str | None = None, lazy: bool = False) -> str:
+                              embed: bool = False, span: str | None = None, lazy: bool = False,
+                              status_lazy: bool = False) -> str:
         with request.app.state.pool.connection() as conn:
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
@@ -1224,6 +1241,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                                               facts_links_of(conn, conv_id))}
             traces = readmodel.traces(conn, conv_id)
             cov = coverage_view(conn, conv_id, usage=True, lost=len(lost))
+            flags = state_flags(conn, conv)  # PHASE-39 Q4
+            fixed = repair_rows(conn, conv_id, view["repairs"], flags)
+            off = statewatch.dismissed(fixed)
             with inspector.turn_links(conv_id, token, inspector.lang_of(lang)):  # turn cells lead to their turns
                 html = inspector.detail(conv, current_state(conn, head, rt["rules"].version),
                                         readmodel.membership(conn, head, ex_key, pj_key),
@@ -1237,14 +1257,28 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                         standing=[f for f in view["facts"] if f["predicate"] in STANDING],
                                         packet=audit.audit(conn, traces[0]["id"]) if traces else None,
                                         summaries=summary_view(conn, conv_id, head, view["secrets"]),
-                                        repairs=repair_rows(conn, conv_id, view["repairs"]), last_turn=head_turn(conn, head),
+                                        repairs=fixed, last_turn=head_turn(conn, head),
                                         canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
                                         canon_held=canon.held(conn, conv_id), canon_read=cov["canon"].get("keys"),
                                         canon_facts=view.get("canon_facts", 0), dropped=lost,
                                         endings=role_ends, span=inspector.span_of(span),
                                         cast=None if embed else cast_of(view, traces), lazy=lazy,
-                                        overuse=overuse.placement(readmodel.ledgers(conn, conv_id)))
+                                        overuse=overuse.placement(readmodel.ledgers(conn, conv_id)),
+                                        status=state_history(conn, head, rt["rules"].version)
+                                        if rt["rules"].rules and (status_lazy or not embed) else None,
+                                        status_lazy=status_lazy, state_flags=[f for f in flags if f["id"] not in off])
             return html
+
+    def inspector_status_html(conv_id: UUID, request: Request, lang: str | None, span: str | None) -> str:
+        """The status window's lanes alone for the panel (PHASE-39 Q3a), asked for when their section opens."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            head = conv["head_commit_id"]
+            hist = state_history(conn, head, rt["rules"].version) if rt["rules"].rules else {}
+            return inspector.conversation_status(hist, head_turn(conn, head), inspector.lang_of(lang),
+                                                 inspector.span_of(span))
 
     def inspector_cast_html(conv_id: UUID, request: Request, lang: str | None, span: str | None) -> str:
         """The conversation's cast lines alone for the panel (PHASE-32 step 3), asked for when their section opens."""
@@ -1343,10 +1377,14 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
     # for the timeline alone with `part=timeline` when that section opens. Without them the answer is as before.
     @app.get("/v1/inspector/c/{conv_id}", dependencies=[Depends(auth)])
     def inspector_detail_embed(conv_id: UUID, request: Request, lang: str | None = None, timeline: str | None = None,
-                               part: str | None = None, span: str | None = None):
+                               part: str | None = None, span: str | None = None, status: str | None = None):
         if part == "timeline":
             return {"html": inspector_cast_html(conv_id, request, lang, span)}
-        return {"html": inspector_detail_html(conv_id, request, None, lang, embed=True, lazy=timeline == "lazy")}
+        if part == "status":  # PHASE-39 Q3a
+            return {"html": inspector_status_html(conv_id, request, lang, span)}
+        # PHASE-39: a plugin that asks with `status=lazy` gets the status window's section to fill as `part=status`
+        return {"html": inspector_detail_html(conv_id, request, None, lang, embed=True, lazy=timeline == "lazy",
+                                              status_lazy=status == "lazy")}
 
     @app.get("/v1/inspector/c/{conv_id}/e/{entity_id}", dependencies=[Depends(auth)])
     def inspector_character_embed(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None,

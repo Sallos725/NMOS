@@ -81,6 +81,7 @@ describe('repair marks (ADR 0044)', () => {
     expect(repairAction('fact_correct:42:object')).toEqual({ kind: 'fact_correct', item: '42', extra: 'object' });
     expect(repairAction('fact_lock:42')).toEqual({ kind: 'fact_lock', item: '42', extra: null });  // ADR 0047
     expect(repairAction('fact_restore:42')).toEqual({ kind: 'fact_restore', item: '42', extra: null });  // PHASE-22 Q7
+    expect(repairAction('state_dismiss:0f3a9c2b7d1e4a56')).toEqual({ kind: 'state_dismiss', item: '0f3a9c2b7d1e4a56', extra: null });  // PHASE-39 Q4
     expect(repairAction(`undo:${who}`)?.kind).toBe('undo');
     for (const value of [null, '', 'thread_close', 'thread_close:', 'name_split:1:x', 'drop:1', 'thread_close:xyz',
       'thread_close:1:a:b', 'secret_keep:1:<b>', 'secret_keep:1:"x"', 'THREAD_CLOSE:1', ` thread_close:1`,

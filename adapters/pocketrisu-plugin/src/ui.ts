@@ -701,7 +701,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     box.dataset.state = 'loading';
     box.replaceChildren(el('div', { class: 'muted', text: L('insp.loading') }));
     try {
-      const query = ['part=timeline', span ? `span=${span}` : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
+      // the status window's lanes (PHASE-39) are their own part; every other lazy box is the cast's timeline
+      const asked = box.classList.contains('tl-status') ? 'part=status' : 'part=timeline';
+      const query = [asked, span ? `span=${span}` : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
       const r = await deps.api<{ html: string }>('GET', `${from}?${query}`, undefined, 15_000);
       if (!box.isConnected || inspectorPath !== from) return; // the reader moved on
       const part = safeFragment(r.html);
@@ -761,9 +763,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const direct = routeFor(base, await deps.getArg('route')) === 'direct';
     inspectorAddress.textContent = direct ? L('insp.browser', { url: `${base}/inspector${lang === 'en' ? '?lang=en' : ''}` }) : '';
     try {
-      // A chat's and a character's page get a closed timeline section, filled when it is opened (PHASE-32 step 3);
-      // a sidecar without it ignores the ask.
-      const query = [conversation ? 'timeline=lazy' : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
+      // A chat's and a character's page get a closed timeline section, filled when it is opened (PHASE-32 step 3), and
+      // a chat's page one for its status window (PHASE-39); a sidecar without them ignores the ask.
+      const query = [conversation ? 'timeline=lazy&status=lazy' : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
       const r = await deps.api<{ html: string }>('GET', `${path}${query ? `?${query}` : ''}`, undefined, 15_000);
       if (load !== loads) return;
       const page = safeFragment(r.html);

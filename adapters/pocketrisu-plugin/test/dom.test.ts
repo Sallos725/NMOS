@@ -690,7 +690,7 @@ describe('the timeline in the panel (PHASE-32 step 3)', () => {
   it('asks for the timeline only when its section opens, and only once', async () => {
     const { d, calls } = deps();
     await openHana(d);
-    expect(calls).toContain(`GET /v1/inspector/c/${id}/e/${who}?timeline=lazy&lang=en`);
+    expect(calls).toContain(`GET /v1/inspector/c/${id}/e/${who}?timeline=lazy&status=lazy&lang=en`);
     expect(parts(calls)).toEqual([]); // closed: nothing asked
     const section = panel().querySelector<HTMLDetailsElement>('#s-timeline')!;
     for (let i = 0; i < 4; i += 1) { // open and close it again and again
@@ -731,5 +731,36 @@ describe('the timeline in the panel (PHASE-32 step 3)', () => {
     expect(parts(calls).at(-1)).toBe(`GET /v1/inspector/c/${id}/e/${who}?part=timeline&span=recent&lang=en`);
     expect(panel().querySelector('.tl-switch b')!.textContent).toBe('Last 25 turns');
     expect(panel().querySelectorAll('.tl-card').length).toBe(0); // the old detail went with the old timeline
+  });
+
+  it('asks for the status window\'s lanes as their own part (PHASE-39 Q3a)', async () => {
+    const { d, calls } = deps();
+    const api = d.api;
+    d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string, ...rest: unknown[]) => {
+      if (path.startsWith(`/v1/inspector/c/${id}?`) && !path.includes('part=')) {
+        calls.push(`${method} ${path}`);
+        return { html: '<details id="s-people"><summary><h2>Characters</h2></summary><div class="tl-lazy"></div></details>'
+          + '<details id="s-status"><summary><h2>Status over time</h2></summary><div class="tl-lazy tl-status"></div>'
+          + '</details>' } as T;
+      }
+      if (path.includes('part=status')) {
+        calls.push(`${method} ${path}`);
+        return { html: fragment('') } as T;
+      }
+      return (api as (...a: unknown[]) => Promise<T>)(method, path, ...rest);
+    };
+    await openPanel(d, 'inspector');
+    await settle();
+    panel().querySelector<HTMLAnchorElement>(`a[href="/inspector/c/${id}"]`)!.click();
+    await settle();
+    const section = panel().querySelector<HTMLDetailsElement>('#s-status')!;
+    section.open = true;
+    section.dispatchEvent(new Event('toggle'));
+    await settle();
+    expect(calls.filter((c) => c.includes('part='))).toEqual([`GET /v1/inspector/c/${id}?part=status&lang=en`]);
+    expect(Array.from(section.querySelectorAll<HTMLElement>('.tl-bar')).map((b) => b.style.left)).toEqual(['18.182%', '63.636%']);
+    section.querySelector<HTMLElement>('.tl-span[data-span="recent"]')!.click();
+    await settle();
+    expect(calls.at(-1)).toBe(`GET /v1/inspector/c/${id}?part=status&span=recent&lang=en`);
   });
 });

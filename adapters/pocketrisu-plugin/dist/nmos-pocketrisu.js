@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:795822e2bbef".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:7bcd17274db8".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -452,6 +452,8 @@
     // a held alias, linked by the owner (PHASE-29 Q5)
     "rp.fact_restore": ["\uBCF5\uC6D0", "Restore"],
     // a fact a re-extraction dropped, remembered at its turn again (PHASE-22 Q7)
+    "rp.state_dismiss": ["\uAD1C\uCC2E\uC74C", "Dismiss"],
+    // a status flag the owner looked at (PHASE-39 Q4)
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
     "rp.select": ["\uC77C\uAD04 \uB2EB\uAE30\uC5D0 \uB123\uAE30", "Select to close"],
     "rp.outcome": ["\uB2EB\uB294 \uACB0\uACFC", "Outcome"],
@@ -1878,7 +1880,7 @@ ${revisionHash}`;
     const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
-  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|undo|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|undo|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
   function repairAction(value) {
     const m = value ? REPAIR.exec(value) : null;
     if (!m?.[1] || !m[2]) return null;
@@ -2889,7 +2891,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       box.dataset.state = "loading";
       box.replaceChildren(el("div", { class: "muted", text: L("insp.loading") }));
       try {
-        const query = ["part=timeline", span ? `span=${span}` : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
+        const asked = box.classList.contains("tl-status") ? "part=status" : "part=timeline";
+        const query = [asked, span ? `span=${span}` : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
         const r = await deps.api("GET", `${from}?${query}`, void 0, 15e3);
         if (!box.isConnected || inspectorPath !== from) return;
         const part = safeFragment(r.html);
@@ -2946,7 +2949,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       const direct = routeFor(base, await deps.getArg("route")) === "direct";
       inspectorAddress.textContent = direct ? L("insp.browser", { url: `${base}/inspector${lang === "en" ? "?lang=en" : ""}` }) : "";
       try {
-        const query = [conversation ? "timeline=lazy" : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
+        const query = [conversation ? "timeline=lazy&status=lazy" : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
         const r = await deps.api("GET", `${path}${query ? `?${query}` : ""}`, void 0, 15e3);
         if (load !== loads) return;
         const page = safeFragment(r.html);

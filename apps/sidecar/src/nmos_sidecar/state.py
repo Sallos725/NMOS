@@ -58,6 +58,53 @@ def rebuild_state(conn: psycopg.Connection, ruleset: RuleSet) -> int:
     return total
 
 
+def history(conn: psycopg.Connection, head_commit_id: UUID, rules_version: str, upto: int | None = None,
+            keys: list[str] | None = None, redone: bool = False) -> dict[str, list[dict[str, Any]]]:
+    """Every value each key held along the head (PHASE-39 Q3), oldest first, from the bars `current_state` reads (D8:
+    via membership; accepted, active, visible). A bar restating the value before it extends that entry (`last_turn`)
+    instead of adding one: a bar repeats every field each turn. With `keys`, only those keys. With `redone`, each entry
+    says whether its first bar's reply was rerolled, swiped or edited (it holds swipes, H4, or its message has another
+    revision)."""
+    rows = conn.execute(
+        """
+        WITH m AS (
+            SELECT am.position, am.turn, sr.id, sr.lifecycle, sr.metadata, so.host_logical_id, so.id AS object_id
+            FROM active_membership am
+            JOIN source_revision sr ON sr.id = am.source_revision_id
+            JOIN source_object so ON so.id = sr.source_object_id
+            WHERE am.commit_id = %(head)s AND am.position <= %(upto)s
+        )
+        SELECT st.key, st.value, st.rule_id, m.position, m.turn, m.host_logical_id, m.id AS revision_id,
+               CASE WHEN NOT %(redone)s THEN false
+                    ELSE coalesce(jsonb_typeof(m.metadata->'swipeCount') = 'number'
+                                  AND (m.metadata->>'swipeCount')::numeric > 1, false)
+                         OR EXISTS (SELECT 1 FROM source_revision o WHERE o.source_object_id = m.object_id AND o.id <> m.id)
+               END AS redone
+        FROM state_observation st
+        JOIN m ON m.id = st.source_revision_id
+        WHERE st.rules_version = %(version)s
+          AND (%(keys)s::text[] IS NULL OR st.key = ANY(%(keys)s::text[]))
+          AND m.lifecycle = 'accepted'
+          AND m.position > (SELECT coalesce(max(position), -1) FROM m WHERE metadata->>'disabled' = 'allBefore')
+          AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+        ORDER BY st.key, m.position
+        """,
+        {"head": head_commit_id, "version": rules_version, "upto": 2**31 - 1 if upto is None else upto,
+         "keys": keys, "redone": redone},
+    ).fetchall()
+    out: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        entries = out.setdefault(r["key"], [])
+        if entries and entries[-1]["value"] == r["value"]:
+            entries[-1].update(last_position=r["position"], last_turn=r["turn"])
+            continue
+        entries.append({"value": r["value"], "position": r["position"], "turn": r["turn"],
+                        "last_position": r["position"], "last_turn": r["turn"], "rule_id": r["rule_id"],
+                        "host_logical_id": r["host_logical_id"], "revision_id": r["revision_id"],
+                        "redone": bool(r["redone"])})
+    return out
+
+
 def current_state(conn: psycopg.Connection, head_commit_id: UUID, rules_version: str,
                   upto: int | None = None) -> list[dict[str, Any]]:
     """Latest value per key from accepted, active, visible revisions of the head (D8: via membership);

@@ -34,11 +34,13 @@ import psycopg
 from .entities import Resolution, norm
 from .predicates import OUTCOMES, REGISTRY
 from .secrets import secret_text
+from .statewatch import target as flag_target
 from .threads import MATCH_MIN, similarity
 
 KINDS = ("thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
-         "name_split", "fact_lock", "fact_restore")
-# threads and secrets since step 3, facts and names since step 4, locks since Phase 14, restores since Phase 22
+         "name_split", "fact_lock", "fact_restore", "state_dismiss")
+# threads and secrets since step 3, facts and names since step 4, locks since Phase 14, restores since Phase 22, a
+# status flag's dismissal since Phase 39 (Q4: no memory read applies it; the Inspector leaves the flag out)
 ENABLED = frozenset(KINDS)
 PROMISE_OUTCOMES = ("kept", "broken")
 # A quote names the same item when it shares this many characters with the stored one: extract-v14's own minimum for
@@ -505,6 +507,11 @@ def plan(kind: str, item: str, view: dict[str, Any], last_turn: int | None, outc
     r = view.get("resolution")
     if kind == "name_split":
         return _plan_split(item, other, entity_type, r)
+    if kind == "state_dismiss":  # the caller lists the chat's undismissed status flags (`state_flags`, PHASE-39 Q4)
+        flag = next((f for f in view.get("state_flags") or () if f["id"] == item), None)
+        if flag is None:
+            raise RepairError("no status flag with that id in this chat now")
+        return flag_target(flag), {}
     if kind == "fact_restore":  # the caller lists the dropped facts and held role endings (`dropped`, `endings.held`)
         f = next((d for d in view.get("dropped") or () if str(d["id"]) == item), None)
         if f is None:
