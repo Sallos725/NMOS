@@ -76,9 +76,13 @@ changes for any recorded request; the sequential replay cannot reproduce a recor
 recorded with; latency exceeds Q9's bar; a migration, a runtime dependency or a model call on the request path would be
 needed.
 
-**Known risk.** A resting line can be the one a later question needs without naming it; the threshold and the rest
-both drop it to the back, not out, and a mention brings it back. The penalty keys on placement and echo, so a line the
-reply uses in its own words (no shared spans) may rest though it was used; the live run (d) measures how often.
+**Known risk.** A resting line is left out of the packet for two requests (Q3 as amended), and an excerpt below the
+threshold is not offered (Q4): a later question that needs it without naming it, without its own words and without
+asking about the past finds it missing for those two requests. A mention, the question's words, a history cue or a reply
+that used it keeps it in (Q3's exemptions); required lines, knowledge boundaries and the first excerpt never rest. The
+penalty keys on placement and echo, so a line the reply uses in its own words (no shared spans) may rest though it was
+used; the live run (d) measures how often. (Corrected 2026-10-08 on a review: this paragraph had described the first
+build's demotion to the back.)
 
 **High risk (AGENTS §14):** recall semantics (what a packet carries, now depending on the requests before it) and
 replay of recorded requests.
