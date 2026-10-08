@@ -1,8 +1,8 @@
 # Phase 38 — Restore from the panel, while NMOS runs
 
 > **Status: approved 2026-10-08 (the owner: the phase, and a restore that runs while NMOS runs); Q1, Q2, Q4–Q7 as
-> proposed, Q3 amended by the owner (2026-10-08); Q4's mechanism corrected in step 3 (sequences, not tables). Steps 2–4
-> done; step 5 next.** A correction phase (AGENTS §7 item 5),
+> proposed, Q3 amended by the owner (2026-10-08); Q4's mechanism corrected in step 3 (sequences, not tables). Steps 2–5
+> done (`docs/perf/panel-restore.md`, ADR 0050 amendment 2); step 6, the owner's desktop check, next.** A correction phase (AGENTS §7 item 5),
 > not a roadmap stage: it completes Phase 16 (ADR 0050), whose export reached the panel while its restore stayed a
 > command. It amends ADR 0050 amendment 1 item 1 ("a command, never the panel"). Aimed at `0.4.0`. **High risk
 > (AGENTS §14): stored data, and an HTTP route that writes the database.**

@@ -518,7 +518,9 @@ written from one read-only snapshot by `GET /v1/archive`, `python -m nmos_sideca
 Export buttons, which save it as a Blob (H21). `python -m nmos_sidecar.archive restore` checks every file first, refuses
 a newer archive or a conversation already present (never merged), builds the archive's schema level in a scratch
 schema, loads the rows, applies the later migrations and copies them in with ids and timestamps kept (shared
-sequenced ids moved past the install's own when taken, recorded requests' assertion refs with them).
+sequenced ids moved past the install's own when taken, recorded requests' assertion refs with them). The panel's
+**Restore from an archive…** (Phase 38, ADR 0050 amendment 2) uploads it in 8 MB chunks (H23) and runs the same
+restore while NMOS runs, the shared ids' sequences held to the commit, then the startup steps for the new rows.
 
 **D61 — Model-call usage (Phase 17, ADR 0051).** Each row a model call of the worker produced (a turn's or canon
 part's extraction, a scene or story summary, an embedded chunk) keeps that call's usage as the provider reported it,
