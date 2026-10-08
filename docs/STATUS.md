@@ -6,7 +6,7 @@
 A `block` rule reads a one-line status bar field by field (`separator`), and a rule can be bound to a card (`card`,
 the chat's character name). On the owner's trial install, read only: every bar of two game-like chats read whole
 (23/23 replies × 23 fields; 6/6 × 9), no key from the story's bracket windows. Steps 3–5 (history, changes without a
-cause, the anchor) wait for their questions. Release placement open.
+cause, the anchor) wait for their questions; all in `0.4.0` (the owner).
 
 **Phase 38 — Restore from the panel, while NMOS runs: approved 2026-10-08 (the owner: the phase and a live restore), high
 risk (stored data, an HTTP route that writes the database); Q1–Q7 answered (Q3 amended: chunks for the host's proxy,

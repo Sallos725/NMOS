@@ -2,7 +2,7 @@
 
 > **Status: approved 2026-10-08 (the owner: the parser rather than a documented limit; the history, the flags and the
 > anchor as directions). Step 2 done (the parser and the guide); steps 3–5 each get their questions answered before
-> they start. Release placement open (`0.4.0` or after).** A phase the owner pulled in (R7 allows owner exceptions):
+> they start. **In `0.4.0`** (the owner, 2026-10-08: steps 3–5 too).** A phase the owner pulled in (R7 allows owner exceptions):
 > NMOS's deterministic state (Phase 1, D10) exists but is barely used.
 
 ## Why now
@@ -24,9 +24,9 @@ recomputes it each turn and gets it wrong in ways a ledger can see. NMOS has rea
 |---|---|---|
 | Q1 | How are bars read? | **Decided: the parser, documented.** A `block` rule takes `separator`; the text between start and end is split by it and each field read as `key: value` or `key=value`, each cleaned on its own (a long bar keeps every field). A rule ending at `\]\s*$` keeps brackets inside a value. Detecting rules automatically is not done: cards differ (the owner); the guide shows how. |
 | Q2 | How is a rule bound to a card? | **Decided: `card`, the chat's character name** (`conversation.host_character_name`, the name PocketRisu shows), exactly; without it a rule reads every chat. `character` is unchanged. |
-| Q3 | History (step 3) | Proposed: each key's values by turn in the Inspector (a lane of the Phase 32 timeline) and in recall ("when did the level go up?"), from the observations NMOS already keeps per revision. |
-| Q4 | Changes without a cause (step 4) | Proposed: a watched key (`watch` on the rule: items, money) that changes with no event in the turn goes to "Needs attention"; measured on copies of the owner's chats for false alarms before it is on. |
-| Q5 | The anchor (step 5) | Proposed: the previous accepted bar as a required line, so a reroll or a swipe starts from the same values. A packet change: the recall gate of AGENTS §7 item 6 (a replay first). |
+| Q3 | History (step 3) | Proposed, in two parts. **3a (Inspector):** a "status window" section on the conversation page, drawn by the Phase 32 timeline renderer: one lane per key, a bar per value held, the value now beside it, keys that never changed folded; the panel shows it as it shows the timeline. From the observations NMOS keeps per revision, through the head's membership (D8), so a swipe or an edit shows the values of the path taken. **3b (recall):** a question naming a status key with a "when / how much / since" cue gets one `<StateHistory>` line of that key's last changes (turn → value, at most 6). 3b changes the packet (a new policy), so it goes with Q5's measurement. |
+| Q4 | Changes without a cause (step 4) | Proposed, deterministic (no model call): a rule lists `watch` keys. Between two consecutive accepted bars, (i) an item added to or dropped from a list value (fields split on `/` or `,`), or (ii) a number in a watched value that changes, is flagged when the reply's prose outside the bar names neither the item nor the key; (iii) a watched value that goes back to an earlier value right after a reroll, a swipe or an edit is flagged too. Flags go to "Needs attention" with both bars and the turn; the owner dismisses them as other entries. Off until measured: false alarms counted read-only on the owner's two game-like chats (23 and 6 replies) and shown before it is on. |
+| Q5 | The anchor (step 5) | **Found 2026-10-08: mostly already the case.** State lines are required lines, placed only when their message is no longer in the prompt (`retrieval.py`: `host_logical_id not in in_context`), and a reply waiting for the next turn is not state yet, so a reroll or a swipe already starts from the previous accepted bar. Read only, the host's request log of the owner's install shows both game-like cards keep their bars in the prompt the model receives (10 and 6 bars in recent requests; no display-only stripping). Proposed: no packet change for the anchor; record this, and add only 3b. |
 
 ## In scope (step 2)
 
