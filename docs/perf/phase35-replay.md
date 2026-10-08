@@ -21,6 +21,11 @@ bench (`0ace76c`, `extract-v16`, the S0–S6 runs of 2026-10-05/06, databases `n
 | first-cue probes (S0main, S0s2, S2, S6) | 1 each | 0, 1, 1, 1 | same | 0 → 0 |
 | **All** | 314 | **286** in every replay | **289** in every replay | 14 → 14 |
 
+Re-measured 2026-10-08 after the review fixes on #273, #274 and #278 (the quote route's allBefore cut, the first
+excerpt never resting, scene summaries resting, risky lines last, replay replies as of each request): `packet-v14` 286
+in each replay, `packet-v15` 288, 289, 289 (S4's `s4_del_pet` on the lexical route's time slice once), the same cases
+gained and none lost; forbidden 14 = 14.
+
 Gained: S6 `c120_21_early` and `c120_22_early` (PHASE-35 "Why now"), and S1 turn 120's `c120_21_early` (the same
 question on the same story). **No case lost** in any replay. **Q6 met.** S0main and S0s2 are the owner's real chats:
 aggregates only; their missed memory cases are not this class (no case changed).
@@ -29,7 +34,7 @@ aggregates only; their missed memory cases are not this class (no case changed).
 
 | | `packet-v14` | `packet-v15` |
 |---|---|---|
-| Replays | 21, 21, 21 / 24 | 21, 21, 20 / 24 (majority 21) |
+| Replays (scored from the source turn, after the review fixes) | 20, 20, 21 / 24 | 21, 21, 21 / 24 |
 
 `q-first-07` ("…처음 … 뭐라고 했어?") failed in one `packet-v15` replay of three: its turn's chunk holds the quote, and
 with 처음 no longer an anchor word the excerpt's best sentence moves within the chunk on the lexical route's time slice.
