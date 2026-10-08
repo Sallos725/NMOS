@@ -62,10 +62,10 @@ def overuse(packets: list[dict[tuple[str, str], int]]) -> dict[str, Any]:
 def sequence(conn: psycopg.Connection, conv: UUID, policy: str, opts: Any, rest_on: bool = True,
              rest_after: int | None = None) -> dict[str, Any]:
     traces = conn.execute(
-        "SELECT t.id, t.upto_position, t.query, t.previous_ai, c.head_commit_id FROM retrieval_trace t"
+        "SELECT t.id, t.upto_position, t.query, t.previous_ai, t.created_at, c.head_commit_id FROM retrieval_trace t"
         " JOIN conversation c ON c.id = t.conversation_id WHERE t.conversation_id = %s AND t.lines IS NOT NULL"
         " ORDER BY t.created_at", (conv,)).fetchall()
-    history: list[rest.Recent] = []  # the replayed requests, newest first: what the next one reads (PHASE-34 Q5)
+    history: list[tuple[list, Any, tuple[str, str]]] = []  # the replayed requests, newest first (PHASE-34 Q5)
     supportive: list[dict[tuple[str, str], int]] = []
     rested = 0  # candidates left out while they rested
     level_of: dict[tuple[str, str], str] = {}
@@ -78,12 +78,14 @@ def sequence(conn: psycopg.Connection, conv: UUID, policy: str, opts: Any, rest_
     skipped = 0
     for t in traces:
         extra = {"rest_after": rest_after} if rest_after else {}
-        out = audit.replay(conn, t["id"], opts, policy, recent=history[:8] if rest_on else [], **extra)
+        # what this request reads: the requests before it, each with its reply as it stood then (a review)
+        recent = [rest.of_ledger(lines, rest.reply_text(conn, t["head_commit_id"], upto, t["created_at"]), request)
+                  for lines, upto, request in history[:8]] if rest_on else []
+        out = audit.replay(conn, t["id"], opts, policy, recent=recent, **extra)
         if out is None or out.get("status") != "ok":
             skipped += 1
             continue
-        history.insert(0, rest.of_ledger(out["lines"], rest.reply_text(conn, t["head_commit_id"], t["upto_position"]),
-                                            (t["query"] or "", t["previous_ai"] or "")))
+        history.insert(0, (out["lines"], t["upto_position"], (t["query"] or "", t["previous_ai"] or "")))
         rested += out.get("rested") or 0
         placed = [e for e in out["lines"] if e.get("placed")]
         supportive.append({line_key(e): int(e.get("tok") or 0) for e in placed if e.get("label") == "supportive"})

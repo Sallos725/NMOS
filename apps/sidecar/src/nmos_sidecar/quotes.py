@@ -207,7 +207,7 @@ def _speaker(spoken: Spoken, names: dict[str, str], role: str | None, message_sp
         return _subject(words[-1], names) if words else None
     clause = re.split(r"[,.!?…]|(?<=[가-힣])자\s|(?<=[가-힣])고\s", after, maxsplit=1)[0]
     words = [w for w in _HANGUL_WORD.findall(clause) if _SUBJECT_WORD.fullmatch(w)]
-    if words and _SPEAKING.search(after):
+    if words and _SPEAKING.search(clause):  # the verb in the subject's own clause (a review: 다가오자 … 말했다)
         return _subject(words[0], names)
     return None
 

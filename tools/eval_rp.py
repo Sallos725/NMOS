@@ -68,10 +68,27 @@ BEFORE = re.compile(r"; before, turn -?\d+: [^<]*")  # packet-v5: what a standin
 STORY = re.compile(r"<Story>.*?</Story>", re.S)  # summaries tell the past (packet-v8, ADR 0043)
 
 
+SOURCE = re.compile(r'<(Quote|Excerpt)\b([^>]*)>(.*?)</\1>', re.S)  # a line that says what a turn said
+
+
+def _sourced(text: str, turn: int, speaker: str | None) -> str:
+    """The packet's quotes and excerpts from `turn` (and by `speaker`, when given), one per line: where an exact-quote
+    case's words must be (PHASE-33 Q10 b), not merely somewhere in the packet."""
+    out = []
+    for _, attrs, body in SOURCE.findall(text):
+        at = dict(re.findall(r'(\w+)="([^"]*)"', attrs))
+        if at.get("turn") == str(turn) and (speaker is None or at.get("speaker") == speaker):
+            out.append(body)
+    return "\n".join(out)
+
+
 def score(case: dict[str, Any], text: str, prompt: str = "") -> dict[str, Any]:
     """How a packet's text answers one case: gold phrases the model has (in the packet, or in the prompt's own
-    messages: `prompt`), forbidden ones placed as current, pass."""
+    messages: `prompt`), forbidden ones placed as current, pass. A case with a source `turn` (an exact quote) holds a
+    gold phrase only in a quote or excerpt of that turn, by its `speaker` when the case names one."""
     held, in_prompt, packet, current, window = [], 0, norm(text), norm(BEFORE.sub("", STORY.sub("", text))), norm(prompt)
+    if case.get("turn") is not None:
+        packet = norm(_sourced(text, int(case["turn"]), case.get("speaker")))
     for phrase in case.get("gold") or []:
         wordings = [norm(w) for w in ([phrase] if isinstance(phrase, str) else phrase) if w.strip()]
         if any(w in packet for w in wordings):

@@ -148,3 +148,30 @@ def test_the_trace_records_the_route_s_time_apart_from_the_quotes_placed(v13):
                                             "in_context_ids": [m["chatId"] for m in chat.messages[-RECENT:]]}).json()
     lat = client.get(f"/v1/trace/{out['trace_id']}").json()["latency_ms"]
     assert lat["path"] == "forensic" and isinstance(lat["quotes"], int) and isinstance(lat["quote_route"], float)
+
+
+def test_a_quote_before_an_allbefore_cut_never_reaches_the_packet(v13):
+    """Invariant 7 (Codex review, #274): what the host hides behind an `allBefore` cut is no memory. The quote route's
+    own searches (the words, a named turn, a first cue) stop at the cut as lexical and vector recall do."""
+    client, url = v13
+    chat = SimChat()
+    chat.reply("Welcome to the story.")
+    chat.user('Hana said "The ruby is kept in the lighthouse." to Kaito.')
+    chat.reply("Noted.")
+    chat.user("A new start.")
+    chat.disable(-1, "allBefore")
+    chat.reply("Noted.")
+    for i in range(RECENT + 2):
+        chat.user(f"Idle chatter {i} about clouds.")
+        chat.reply("Noted.")
+    _sync(client, chat)
+    for question in ("What did Hana say about the ruby?", "What was said on turn 1?",
+                     "What did Hana say the first time she met Kaito?"):
+        chat.user(question)
+        _sync(client, chat)
+        out = client.post("/v1/retrieve", json={"chat_id": chat.id, "query": question, "previous_ai": "",
+                                                "budget_tokens": 600,
+                                                "in_context_ids": [m["chatId"] for m in chat.messages[-RECENT:]]}).json()
+        assert "lighthouse" not in out["packet"]["text"], question
+        chat.reply("Noted.")
+        _sync(client, chat)

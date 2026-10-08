@@ -38,6 +38,17 @@ def test_a_case_passes_on_every_gold_phrase_in_any_wording_and_no_forbidden_one(
         "gold": 1, "held": 1, "in_prompt": 1, "forbidden": 1, "placed": 0, "passed": True, "needs_memory": False}
 
 
+def test_an_exact_quote_case_holds_its_words_only_from_its_source_turn():
+    """PHASE-33 Q10 (b): the right words from another turn, or outside any quote or excerpt, do not pass."""
+    case = {"turn": 2, "gold": ["the ruby is in the lighthouse"]}
+    said = '<Quote turn="2" speaker="Hana">"The ruby is in the lighthouse."</Quote>'
+    assert eval_rp.score(case, said)["passed"] is True
+    assert eval_rp.score(case, said.replace('turn="2"', 'turn="999"'))["passed"] is False
+    assert eval_rp.score(case, '<Excerpt turn="2">…she said the ruby is in the lighthouse…</Excerpt>')["passed"] is True
+    assert eval_rp.score(case, '<Fact turn="2">Hana said: the ruby is in the lighthouse</Fact>')["passed"] is False
+    assert eval_rp.score(case | {"speaker": "Kaito"}, said)["passed"] is False  # the case names who said it
+
+
 def test_a_probe_replaces_the_requests_message_as_the_live_request_would_send_it(full):
     client, url = full
     chat = story(client, url)

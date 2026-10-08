@@ -873,6 +873,11 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.story = summaries.packet_lines(conn, head, options.summarize_key, view["secrets"] if view else [], query,
                                          in_context, upto, known_at,
                                          scene.names(g.cast, r, aliases) if r is not None else frozenset())
+        if rest:  # a scene summary is supportive and rests as the others do (a review); the story so far never rests
+            awake = [line for line in g.story
+                     if '<Summary kind="story"' in line.xml or overuse.key(line.kind, line.ref) not in rest]
+            g.rested += len(g.story) - len(awake)
+            g.story = awake
     if pending is not None:
         t0 = time.perf_counter()
         try:
@@ -910,12 +915,15 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     # judges excerpts as packet-v12 does: `stale` is set whenever there is an extractor to ask)
     unextracted = (_unextracted(conn, head, [c["id"] for c in eligible], options.extractor_key, known_at)
                    if options.policy in UNEXTRACTED_POLICIES and options.extractor_key and eligible else set())
-    if rest:  # a tired excerpt is left out while it rests (PHASE-34 Q3)
-        eligible = _rested(eligible, "excerpt", rest, g, ident=lambda c: str(c["id"]),
-                           hit=lambda c: bool(c.get("user_score") or c.get("keyword_score")))
-    floor = (EXCERPT_FLOOR * max((float(c["rrf"]) for c in eligible), default=0.0)
+    def resting(c: dict[str, Any]) -> bool:  # a tired excerpt is left out while it rests (PHASE-34 Q3) ...
+        return bool(rest) and ("excerpt", str(c["id"])) in rest and str(c["id"]) not in g.named \
+            and not (c.get("user_score") or c.get("keyword_score"))  # ... unless the question's words found it
+    floor = (EXCERPT_FLOOR * max((float(c["rrf"]) for c in eligible if not resting(c)), default=0.0)
              if options.policy in REST_POLICIES else 0.0)
     for c in eligible:
+        if g.ranked and resting(c):  # the first excerpt is the reserved, required one: it never rests (a review)
+            g.rested += 1
+            continue
         if floor and g.ranked and float(c["rrf"]) < floor and not (c.get("user_score") or c.get("keyword_score")):
             g.below_floor += 1  # supportive memory's activation threshold (PHASE-34 Q4): the first excerpt is required
             continue
@@ -966,17 +974,18 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         found = [c for c in g.candidates if c["host_logical_id"] not in in_context][:quotes.CANDIDATES]
         extra: list[dict[str, Any]] = []
         if (named := quotes.named_turn(query)) is not None:
-            extra = _turn_messages(conn, head, named - quotes.TURN_SPAN, named + quotes.TURN_SPAN, upto)
+            extra = _turn_messages(conn, head, named - quotes.TURN_SPAN, named + quotes.TURN_SPAN, upto, cut)
         met = None
         if first:  # how it started: the opening, and the turns where everyone the question names had appeared
             asked, others = quotes.named(query, names)
-            met = _first_met(conn, head, [[k for k, d in names.items() if d == who] for who in asked | others], upto)
+            met = _first_met(conn, head, [[k for k, d in names.items() if d == who] for who in asked | others], upto,
+                             cut)
             if met == 0:
                 met = None  # all there from the opening: no meeting to anchor on, the earliness bonus decides
-            extra = _turn_messages(conn, head, 0, quotes.TURN_SPAN, upto)
+            extra = _turn_messages(conn, head, 0, quotes.TURN_SPAN, upto, cut)
             if met is not None:
-                extra += _turn_messages(conn, head, met, met + quotes.TURN_SPAN, upto)
-        searched, rarity, g.quote_note = _quote_messages(conn, head, quotes.query_words(query), upto)
+                extra += _turn_messages(conn, head, met, met + quotes.TURN_SPAN, upto, cut)
+        searched, rarity, g.quote_note = _quote_messages(conn, head, quotes.query_words(query), upto, cut)
         seen = {str(c["id"]) for c in found}
         g.quote_only = {str(c["id"]) for c in extra + searched} - {str(c["id"]) for c in g.candidates}
         for c in extra + searched:
@@ -1151,8 +1160,10 @@ def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, o
     return out
 
 
-def _turn_messages(conn: psycopg.Connection, head: UUID, lo: int, hi: int, upto: int | None) -> list[dict[str, Any]]:
-    """The messages of turns lo…hi on the head (PHASE-33 Q3), as candidates are shaped."""
+def _turn_messages(conn: psycopg.Connection, head: UUID, lo: int, hi: int, upto: int | None,
+                   cut: int) -> list[dict[str, Any]]:
+    """The messages of turns lo…hi on the head (PHASE-33 Q3), as candidates are shaped; none at or before the
+    `allBefore` cut (invariant 7), as lexical and vector recall."""
     return conn.execute(
         """
         SELECT sr.id, am.position, am.turn, so.host_logical_id, rt.clean_content AS clean,
@@ -1161,17 +1172,19 @@ def _turn_messages(conn: psycopg.Connection, head: UUID, lo: int, hi: int, upto:
         JOIN source_revision sr ON sr.id = am.source_revision_id
         JOIN source_object so ON so.id = sr.source_object_id
         JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
-        WHERE am.commit_id = %(head)s AND am.turn BETWEEN %(lo)s AND %(hi)s AND am.position <= %(upto)s
+        WHERE am.commit_id = %(head)s AND am.turn BETWEEN %(lo)s AND %(hi)s
+          AND am.position > %(cut)s AND am.position <= %(upto)s
           AND sr.lifecycle = 'accepted'
           AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
           AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
         ORDER BY am.position LIMIT 20
         """,
-        {"head": head, "lo": lo, "hi": hi, "norm": NORMALIZER_VERSION,
+        {"head": head, "lo": lo, "hi": hi, "norm": NORMALIZER_VERSION, "cut": cut,
          "upto": 2**31 - 1 if upto is None else upto}, prepare=False).fetchall()
 
 
-def _first_met(conn: psycopg.Connection, head: UUID, keys: list[list[str]], upto: int | None) -> int | None:
+def _first_met(conn: psycopg.Connection, head: UUID, keys: list[list[str]], upto: int | None,
+               cut: int) -> int | None:
     """The turn by which every one of these characters (each a list of its normalized names) had been named in the
     chat: where they met. None when one of them never was, when there is nobody, or past the route's time slice."""
     keys = [k for k in keys if k]
@@ -1189,12 +1202,14 @@ def _first_met(conn: psycopg.Connection, head: UUID, keys: list[list[str]], upto
                     SELECT min(am.turn) AS t FROM active_membership am
                     JOIN source_revision sr ON sr.id = am.source_revision_id
                     JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
-                    WHERE am.commit_id = %(head)s AND am.position <= %(upto)s AND sr.lifecycle = 'accepted'
+                    WHERE am.commit_id = %(head)s AND am.position > %(cut)s AND am.position <= %(upto)s
+                      AND sr.lifecycle = 'accepted'
+                      AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
                       AND ({named})
                     """).format(named=sql.SQL(" OR ").join(  # strpos, as the route's search (no case in Korean)
                         sql.SQL("strpos(rt.clean_content, {}) > 0").format(sql.Literal(f)) for f in forms)),
-                    {"head": head, "norm": NORMALIZER_VERSION, "upto": 2**31 - 1 if upto is None else upto},
-                    prepare=False).fetchone()
+                    {"head": head, "norm": NORMALIZER_VERSION, "cut": cut,
+                     "upto": 2**31 - 1 if upto is None else upto}, prepare=False).fetchone()
                 if row["t"] is None:
                     turns = []
                     break
@@ -1208,8 +1223,8 @@ def _first_met(conn: psycopg.Connection, head: UUID, keys: list[list[str]], upto
 _QUOTE_MARKS = ('"', "“", "「", "『")
 
 
-def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str],
-                    upto: int | None) -> tuple[list[dict[str, Any]], dict[str, float], str]:
+def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str], upto: int | None,
+                    cut: int) -> tuple[list[dict[str, Any]], dict[str, float], str]:
     """The quote route's own search (PHASE-33 Q2): messages on the head that hold a quote and the question's words,
     rarest words first, lexically (quotes prefer lexical to embeddings, original §78), and each word's rarity on the
     head: ln(1 + N/df) / ln(1 + N), 1 for a word one message holds, 0 for one none does. Abstains on its time slice.
@@ -1238,12 +1253,12 @@ def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str],
                 FROM active_membership am
                 JOIN source_revision sr ON sr.id = am.source_revision_id
                 JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
-                WHERE am.commit_id = %(head)s AND am.position <= %(upto)s
+                WHERE am.commit_id = %(head)s AND am.position > %(cut)s AND am.position <= %(upto)s
                   AND sr.lifecycle = 'accepted'
                   AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
                   AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
                 """).format(hits=sql.SQL(", ").join(holds(w) for w in words), quoted=quoted),
-                {"head": head, "norm": NORMALIZER_VERSION, "upto": 2**31 - 1 if upto is None else upto},
+                {"head": head, "norm": NORMALIZER_VERSION, "cut": cut, "upto": 2**31 - 1 if upto is None else upto},
                 prepare=False).fetchall()
             total = len(marks)
             df = [sum(1 for m in marks if m["hit"][i]) for i in range(len(words))]
