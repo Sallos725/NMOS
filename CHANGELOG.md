@@ -5,7 +5,6 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-<<<<<<< HEAD
 - **`packet-v15` is the default: an excerpt lands on what the question asks, not on when** (Phase 35, ADR 0069). "하람이가
   처음 권해 준 빵이 뭐였어?" found the right scene but showed the sentence that says 처음 about something else; "…온 지 얼마 안 됐을 때 … 달
   기억나?" showed the sentence with "온 지". Words that say when (처음, 첫날, 예전) and one-syllable function words (온, 지, 때) no
@@ -17,17 +16,8 @@ later, is `docs/KNOWN-ISSUES.md`.
   and how much of the packet came back from the requests before). A supportive line placed in each of the last two
   requests that no reply used rests for the next two and its room goes to other memory; what the question names, what
   its own words found, a question about the past and every knowledge boundary never rest. On a 240-turn bench chat
-  supportive lines repeat 24 % less; on the owner's real chat the replies used repeated lines more (0.29 → 0.39) and no
+  supportive lines repeat 23 % less; on the owner's real chat the replies used repeated lines more (0.29 → 0.39) and no
   repetition was felt. `NMOS_REST_AFTER=3` rests less often; `NMOS_PACKET_POLICY=packet-v12` keeps the packet of 0.3.0.
-=======
-- **`packet-v14` is the default: memory that knows what each line is for, and stops repeating itself** (Phase 34,
-  AGE-10, ADR 0068). Every packet line is labeled required, supportive or risky (the Inspector shows the label and how
-  much of the packet came back from the requests before). A supportive line placed in each of the last two requests
-  that no reply used rests for the next two and its room goes to other memory; what the question names, what its own
-  words found, a question about the past and every knowledge boundary never rest. On a 240-turn bench chat supportive
-  lines repeat 23 % less; on the owner's real chat the replies used repeated lines more (0.29 → 0.39) and no
-  repetition was felt. `NMOS_REST_AFTER=3` rests less often; `NMOS_PACKET_POLICY=packet-v12` keeps the previous packet.
->>>>>>> phase34/step2-labels
 - **What someone said, found by its words** (`packet-v13`, part of the default above; Phase 33, ADR 0067). A question
   about what was said ("그때 뭐라고 했지?", "what did she say on the first night?", turn 12) brings up to two `<Quote>`
   lines with the words verbatim and their turn: exact-quote questions on the bench chat 4 → 21 of 24. Turns the
