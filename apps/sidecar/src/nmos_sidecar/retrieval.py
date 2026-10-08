@@ -853,6 +853,11 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.story = summaries.packet_lines(conn, head, options.summarize_key, view["secrets"] if view else [], query,
                                          in_context, upto, known_at,
                                          scene.names(g.cast, r, aliases) if r is not None else frozenset())
+        if rest:  # a scene summary is supportive and rests as the others do (a review); the story so far never rests
+            awake = [line for line in g.story
+                     if '<Summary kind="story"' in line.xml or overuse.key(line.kind, line.ref) not in rest]
+            g.rested += len(g.story) - len(awake)
+            g.story = awake
     if pending is not None:
         t0 = time.perf_counter()
         try:
@@ -885,12 +890,15 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     # judges excerpts as packet-v12 does: `stale` is set whenever there is an extractor to ask)
     unextracted = (_unextracted(conn, head, [c["id"] for c in eligible], options.extractor_key, known_at)
                    if options.policy in UNEXTRACTED_POLICIES and options.extractor_key and eligible else set())
-    if rest:  # a tired excerpt is left out while it rests (PHASE-34 Q3)
-        eligible = _rested(eligible, "excerpt", rest, g, ident=lambda c: str(c["id"]),
-                           hit=lambda c: bool(c.get("user_score") or c.get("keyword_score")))
-    floor = (EXCERPT_FLOOR * max((float(c["rrf"]) for c in eligible), default=0.0)
+    def resting(c: dict[str, Any]) -> bool:  # a tired excerpt is left out while it rests (PHASE-34 Q3) ...
+        return bool(rest) and ("excerpt", str(c["id"])) in rest and str(c["id"]) not in g.named \
+            and not (c.get("user_score") or c.get("keyword_score"))  # ... unless the question's words found it
+    floor = (EXCERPT_FLOOR * max((float(c["rrf"]) for c in eligible if not resting(c)), default=0.0)
              if options.policy in REST_POLICIES else 0.0)
     for c in eligible:
+        if g.ranked and resting(c):  # the first excerpt is the reserved, required one: it never rests (a review)
+            g.rested += 1
+            continue
         if floor and g.ranked and float(c["rrf"]) < floor and not (c.get("user_score") or c.get("keyword_score")):
             g.below_floor += 1  # supportive memory's activation threshold (PHASE-34 Q4): the first excerpt is required
             continue

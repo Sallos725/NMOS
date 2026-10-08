@@ -39,16 +39,22 @@ def key(kind: str, ref: dict[str, Any] | None) -> tuple[str, str]:
     return kind, str(sorted(ref.items()))
 
 
-def reply_text(conn: psycopg.Connection, head: UUID, upto_position: int | None) -> str | None:
-    """The character's message right after a request's last position on the head, if there is one."""
+def reply_text(conn: psycopg.Connection, head: UUID, upto_position: int | None,
+               before: datetime | None = None) -> str | None:
+    """The character's message right after a request's last position on the head, if there is one. With `before` (a
+    replay), as it was then: the latest revision of that message recorded before it, none when it came later (a
+    review: a reply written after the replayed request had counted as an echo of the requests before it)."""
     if upto_position is None:
         return None
     row = conn.execute(
         "SELECT sr.metadata->>'role' AS role, rt.clean_content FROM active_membership am"
-        " JOIN source_revision sr ON sr.id = am.source_revision_id"
+        " JOIN source_revision cur ON cur.id = am.source_revision_id"
+        " JOIN source_revision sr ON sr.source_object_id = cur.source_object_id"
+        "  AND (CASE WHEN %(before)s::timestamptz IS NULL THEN sr.id = cur.id ELSE sr.recorded_at < %(before)s END)"
         " LEFT JOIN revision_text rt ON rt.source_revision_id = sr.id"
-        " WHERE am.commit_id = %s AND am.position = %s ORDER BY rt.normalizer DESC LIMIT 1",
-        (head, upto_position + 1)).fetchone()
+        " WHERE am.commit_id = %(head)s AND am.position = %(pos)s"
+        " ORDER BY sr.recorded_at DESC, rt.normalizer DESC LIMIT 1",
+        {"head": head, "pos": upto_position + 1, "before": before}).fetchone()
     return (row["clean_content"] or "") if row and row["role"] == "char" else None
 
 
@@ -62,12 +68,13 @@ def of_ledger(lines: list[dict[str, Any]], reply: str | None, request: tuple[str
 
 def recent(conn: psycopg.Connection, conversation: UUID, head: UUID, before: datetime | None = None,
            n: int = REST_AFTER + 1) -> list[Recent]:
-    """The chat's last `n` recorded requests before `before` (all, when None), newest first."""
+    """The chat's last `n` recorded requests before `before` (all, when None), newest first, each with the reply
+    after it as it stood at `before` (a replay reads no reply written since)."""
     rows = conn.execute(
         "SELECT upto_position, query, previous_ai, lines FROM retrieval_trace WHERE conversation_id = %s"
         " AND lines IS NOT NULL AND (%s::timestamptz IS NULL OR created_at < %s) ORDER BY created_at DESC LIMIT %s",
         (conversation, before, before, n)).fetchall()
-    return [of_ledger(r["lines"] or [], reply_text(conn, head, r["upto_position"]),
+    return [of_ledger(r["lines"] or [], reply_text(conn, head, r["upto_position"], before),
                       (r["query"] or "", r["previous_ai"] or "")) for r in rows]
 
 

@@ -26,12 +26,17 @@ Under `packet-v14` (`packet.LABEL_POLICIES`, `REST_POLICIES`):
    (`spans.reuse`, ADR 0027), is **left out** for the next two requests and its slot goes to the next candidate. It does
    not rest when the question names it, when the question's own words found it (an excerpt hit lexically or by
    keyword), when the question asks about the past or how it started (`HISTORY_CUE`), or when a reply used it. Required
-   lines never rest, a line with a knowledge mark among them wherever it is placed. The requests are the chat's recorded traces and the replies the messages after them; nothing is
+   lines never rest, a line with a knowledge mark among them wherever it is placed, and the first excerpt (the
+   reserved one) among them: an excerpt rests only once another holds the first place. A scene summary rests as the
+   other supportive lines do; the story so far never does. A risky line is offered after the other supportive lines.
+   (Corrected 2026-10-08 on a review: the rest had run before the first excerpt was chosen, scene summaries had
+   never rested, and risky lines had only been labeled.) The requests are the chat's recorded traces and the replies the messages after them; nothing is
    stored. The trace counts the lines left out (`rested`).
 3. **The activation threshold** (Q4): an excerpt after the first needs `EXCERPT_FLOOR` (0.5) of the best fused score or
    a word hit (`below_floor`).
-4. **Replay** (Q5): a replay reads the traces recorded before the request (`audit.replay`), and a sequential replay
-   passes its own packets instead (`tools/replay_sequence.py`).
+4. **Replay** (Q5): a replay reads the traces recorded before the request (`audit.replay`), each with the reply after
+   it as it stood then (the latest revision recorded before the request; corrected 2026-10-08 on a review: a reply
+   written later had counted), and a sequential replay passes its own packets instead (`tools/replay_sequence.py`).
 
 ## Consequences
 

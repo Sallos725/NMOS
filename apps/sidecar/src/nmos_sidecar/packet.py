@@ -477,6 +477,11 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
     packet-v8 (ADR 0043): `story` (summary lines) is placed after state, in at most STORY_SHARE, and emitted first;
     `cast` ((character, lines) groups) after it, emitted as <Cast> before Threads. The callers offer them only
     under packet-v8 and keep private lines out of `cast`."""
+    if policy in LABEL_POLICIES and risky:  # a risky line is offered after the other supportive ones (PHASE-34 Q1)
+        def demoted(line: Line) -> bool:
+            ref = str(line.ref.get("assertion"))
+            return ref in risky and ref not in named and not line.private and line.kind != "secret"
+        facts = [f for f in (facts or []) if not demoted(f)] + [f for f in (facts or []) if demoted(f)]
     if policy not in POLICIES:
         raise ValueError(f"unknown packet policy: {policy}")
     est = partial(estimate_tokens, non_ascii=NON_ASCII[policy])
