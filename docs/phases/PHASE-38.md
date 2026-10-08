@@ -1,8 +1,14 @@
 # Phase 38 — Restore from the panel, while NMOS runs
 
 > **Status: approved 2026-10-08 (the owner: the phase, and a restore that runs while NMOS runs); Q1, Q2, Q4–Q7 as
-> proposed, Q3 amended by the owner (2026-10-08); Q4's mechanism corrected in step 3 (sequences, not tables). Steps 2–5
-> done (`docs/perf/panel-restore.md`, ADR 0050 amendment 2); step 6, the owner's desktop check, next.** A correction phase (AGENTS §7 item 5),
+> proposed, Q3 amended by the owner (2026-10-08); Q4's mechanism corrected in step 3 (sequences, not tables). **Complete
+> 2026-10-08:** steps 2–5 done (`docs/perf/panel-restore.md`, ADR 0050 amendment 2); step 6 passed: the owner exported
+> the trial install from its panel and restored it through the panel of a fresh install (an isolated PocketRisu
+> v1.13.0 and a sidecar on a new database): 9 chats, 369 revisions, 13 commits, 235 extractions and 2,052 assertions,
+> as many as the source, with every revision's normalized text, the restored status rules' state and the missing jobs
+> written without a restart. Opened first over plain HTTP on a LAN address, the card failed (no `crypto.subtle`, H8);
+> it now says to open PocketRisu over HTTPS or on localhost. Running it first found the host's refusal of a body-less
+> POST (H23 item 6).** A correction phase (AGENTS §7 item 5),
 > not a roadmap stage: it completes Phase 16 (ADR 0050), whose export reached the panel while its restore stayed a
 > command. It amends ADR 0050 amendment 1 item 1 ("a command, never the panel"). Aimed at `0.4.0`. **High risk
 > (AGENTS §14): stored data, and an HTTP route that writes the database.**
