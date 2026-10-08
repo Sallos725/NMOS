@@ -33,7 +33,7 @@ Read these files in this order before changing code:
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
 4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-38.md` is the latest, approved
-   2026-10-08 with Q1–Q7 open (restore from the panel, high risk); `PHASE-37.md`, approved 2026-10-08 and complete (the
+   2026-10-08 (restore from the panel, high risk); `PHASE-37.md`, approved 2026-10-08 and complete (the
    bundle's data outside the bundle, high risk); `PHASE-36.md`, approved
    2026-10-08 and complete (named facts, `packet-v16`, the default);
    `PHASE-35.md`, approved 2026-10-08 and complete, a correction phase beside Stage 7 (the excerpt anchor,
@@ -109,7 +109,7 @@ If two normative documents appear to conflict:
 | 35 — the excerpt lands on what was asked, not on when (`packet-v15`; AGE-10, from Phase 33's S6 diagnosis; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-08, as proposed); complete: `packet-v15` the default (the owner), no live run | `PHASE-35.md`, ADR 0069 |
 | 36 — a name in the message is not a question about everything (`packet-v16`; AGE-10, from Phase 34's live run; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-08, as proposed; Q1 amended twice on the replay); complete: `packet-v16` the default (the owner) | `PHASE-36.md`, ADR 0070 |
 | 37 — the bundle's data lives outside the bundle: a per-user folder on Windows and Linux, existing data adopted on the first start (a correction found on a user's report, not a roadmap stage; amends PHASE-23 Q3) | **approved** (2026-10-08, as proposed; Q6 amended), high risk; **complete** (2026-10-08): CI green on four targets, the owner's Windows update from a real v0.3.0 bundle passed | `PHASE-37.md`, ADR 0060 amendment 1 |
-| 38 — restore from the panel, while NMOS runs: an archive uploaded in chunks, checked, then restored under write locks with the startup steps after it (a correction completing Phase 16, not a roadmap stage; amends ADR 0050 amendment 1) | **approved** (2026-10-08, the phase and a live restore), high risk; Q1–Q7 await the owner | `PHASE-38.md` |
+| 38 — restore from the panel, while NMOS runs: an archive uploaded in chunks, checked, then restored under write locks with the startup steps after it (a correction completing Phase 16, not a roadmap stage; amends ADR 0050 amendment 1) | **approved** (2026-10-08, the phase and a live restore; Q1–Q7 answered, Q3 amended), high risk; step 2 (host evidence) next | `PHASE-38.md` |
 | 34+ (Stage 7 part 2: labels and the overuse penalty; Stage 8 after 1.0) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
