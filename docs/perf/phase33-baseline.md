@@ -8,7 +8,9 @@ Zero-call measurements on the v0.3.0 bench databases (`0ace76c`, `extract-v16`, 
 24 questions on the synthetic chat (`fixtures/quotes/s3-quotes.json`): 8 ask by turn number ("14턴에 … 뭐라고 했어?"), 8 by a
 first cue ("처음 만난 날 …"), 8 by a speaker and words. Every quote is said in turns 1–58 and the request is the S3 set's
 recorded request at turn 100 (32k context, about 22 turns in the prompt), so none is in the prompt: memory must bring it.
-`tools/eval_rp.py --policy packet-v12`, the query embedded by the bench's embedder (local), three replays.
+`tools/eval_rp.py --policy packet-v12`, the query embedded by the bench's embedder (local), three replays. A case passes
+only when the words said are inside a quote or an excerpt of its source turn (`turn`, 0-based as the packet numbers it;
+scoring corrected 2026-10-08 on a review: the words anywhere in the packet passed before; the count is unchanged).
 
 | Set | Passed (each of 3 replays) |
 |---|---|
@@ -32,6 +34,11 @@ checked on the 240 with a reply); the S0 and S2 requests are probes, which have 
 | S3 (main chat) | 46 | 0.340 | 1 / 3 / 12 | 0.077 | 0.285 / 0.173 |
 | S0 main (real chat, probes) | 81 | 0.607 | 1 / 3 / 80 | 0.316 | — |
 | S2 (240 turns, probes) | 52 | 0.508 | 1 / 3 / 50 | 0.254 | — |
+
+*Note (2026-10-07, Phase 34):* the bench's chat model is a stub that plays scripted replies (`mode: script`), so a
+reply never depends on the packet: the echo columns measure how much of a line the script happens to reuse, not how a
+model uses memory. The placement numbers (repeat share, streaks, stale tokens) do not depend on the replies and stand.
+Echo before and after Phase 34 is measured on real replies (`docs/phases/PHASE-34.md` Q8 d).
 
 In live play 61 % of a packet's lines were placed in the request before it too, and 38 % of its tokens went to lines
 placed in each of the three requests before it; a repeated line was echoed by the reply less than half as often as a
