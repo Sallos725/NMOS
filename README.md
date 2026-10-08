@@ -87,9 +87,19 @@ stored and what it injected.
 
 From 0.3.0 each release also carries a bundle per system with NMOS, its own PostgreSQL 16 and Python, and the
 plugin of the same build (Phase 23, ADR 0060). Nothing else is installed; NMOS listens on `127.0.0.1:8790` as with
-Docker, and its database on `127.0.0.1:54390`. Settings that the Docker install reads from `.env` go in a `.env`
-beside NMOS. Copy `.env.example`, then change `NMOS_DB_PORT=5436` to `NMOS_DB_PORT=54390` for the portable
-database (the example is shared with Docker); a port in use stops the start and names the setting to change.
+Docker, and its database on `127.0.0.1:54390`. Settings that the Docker install reads from `.env` go in the `.env` in
+NMOS's data folder (below). Copy `.env.example` there, then change `NMOS_DB_PORT=5436` to `NMOS_DB_PORT=54390` for
+the portable database (the example is shared with Docker); a port in use stops the start and names the file and the
+setting to change. A `.env` beside NMOS is read too, under the data folder's, and copied there on the first start.
+
+**Where the data lives.** From 0.4.0 the database, its password, the log and `.env` are kept outside the bundle, so
+replacing the bundle folder keeps your memory (Phase 37): Windows `%LOCALAPPDATA%\NMOS`, Linux `~/.local/share/nmos`
+(`$XDG_DATA_HOME/nmos`), macOS `~/Library/Application Support/NMOS`. A `data` folder that 0.3.0 kept beside NMOS
+moves there on the first start; what is left of it is renamed `data.moved`, with a note, and nothing is deleted. If
+both places hold a database, NMOS stops and names both: keep the one you use and move the other away. To keep the data
+somewhere else, set `NMOS_DATA_DIR` in the `.env` beside NMOS; a relative path is beside NMOS (`NMOS_DATA_DIR=data` for
+a portable copy on a USB drive). On Windows, when your user folder's path has non-English letters on a drive without
+short names (PostgreSQL cannot open it), NMOS asks once where to keep the data, suggesting `C:\NMOS-data`.
 
 The dashboard's **Refresh** button reads the latest job counts, errors and conversation list, keeping the token and
 language. It is a read-only status page; settings stay in the PocketRisu panel.
@@ -101,7 +111,7 @@ language. It is a read-only status page; settings stay in the PocketRisu panel.
 2. Double-click `NMOS.exe`. Windows may warn that it protects your PC (the program is not code-signed): choose
    **More info → Run anyway**, once. The first start takes about 15 seconds; later starts 1–2 seconds.
 3. NMOS sits in the notification area. Its menu shows the status, copies the sidecar URL, opens the dashboard, the
-   plugin's folder (`plugin\nmos-pocketrisu.js`) and the log folder (`data\nmos.log`), turns on start at login,
+   plugin's folder (`plugin\nmos-pocketrisu.js`) and the data folder (with `nmos.log`), turns on start at login,
    and quits (which stops the database too). `NMOS.bat` starts it in a console window instead, for servers.
 
 **macOS (Apple Silicon, macOS 13 or later)** — `NMOS-v<version>-macos-arm64.dmg`
@@ -170,15 +180,15 @@ Put the older plugin file back and reload PocketRisu. Your chats themselves live
 generation in each chat syncs what changed since the backup, and the worker extracts it again at the
 provider's cost.
 
-**Without Docker:** quit NMOS, then back up its `data` folder and, if present, the `.env` beside NMOS (macOS:
-back up `~/Library/Application Support/NMOS`, which also holds `.env`). To upgrade on Windows/Linux, unpack the new
-version beside the old one, move `data` into it and copy the existing `.env` beside the new launcher to keep your
-token, ports and model settings (macOS: replace `NMOS.app` in Applications; the data and `.env` stay where they are).
-Then start the new version: it applies
-the migrations. Replace the plugin file and reload PocketRisu as above. An older version refuses data a newer one has
-written and changes nothing; to go back, restore the backed-up `data` and `.env` in the older version's folder
-(macOS: restore the Application Support folder). A bundle stays on
-PostgreSQL 16; a later major moves through the NMOS Archive (export, then restore in the new version).
+**Without Docker:** quit NMOS, then back up its data folder (above), which also holds `.env`. To upgrade, unpack the
+new version anywhere, or over the old one, and start it: the data and `.env` stay where they are, and the start
+applies the migrations (macOS: replace `NMOS.app` in Applications). Replace the plugin file and reload PocketRisu as
+above. **Upgrading from 0.3.0** on Windows or Linux: the first start of the new version moves the `data` folder of the
+bundle it starts from, so unpack the new version beside the old one and move `data` into it, as before, or start it
+from the old folder; the old bundle folder can be deleted after that. An older version refuses data a newer one has
+written and changes nothing; to go back, restore the backed-up data folder (0.3.0 reads it from `data` beside its
+launcher). A bundle stays on PostgreSQL 16; a later major moves through the NMOS Archive (export, then restore in the
+new version). **Removing NMOS:** deleting the bundle folder no longer deletes your memory; delete the data folder too.
 
 ### Export (NMOS Archive)
 

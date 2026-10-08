@@ -5,6 +5,17 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Without Docker, the data now lives outside the bundle, and the first start moves it there** (Phase 37, ADR 0060
+  amendment 1). Windows and Linux bundles kept the database, its password, the log and `.env` inside the bundle folder,
+  so the natural update (delete the old folder, unpack the new one) deleted the memory with it. From this version they
+  live in `%LOCALAPPDATA%\NMOS` (Windows) or `~/.local/share/nmos` (Linux; macOS already used Application Support),
+  and replacing the bundle folder keeps them. **The first start of this version moves the `data` folder beside the
+  launcher there**: on one drive by a rename, across drives by a copy that is checked before the old folder is renamed
+  `data.moved` (with a note; nothing is deleted). So when updating from 0.3.0, move `data` into the new folder as
+  before, or start the new version from the old folder, before deleting the old one. A database in both places stops
+  the start and names both. The `.env` beside the launcher is copied into the data folder once and read under it.
+  `NMOS_DATA_DIR` (relative to the bundle: `NMOS_DATA_DIR=data` keeps the old layout) names another folder. On Windows,
+  a user folder with non-English letters on a drive without short names asks once where the data goes.
 - **`packet-v16` is the default: a name in the message is not a question about everything** (Phase 36, ADR 0070). A
   message that only names a character made every fact about it required, so none of them could rest. Now how the
   character stands now or with another, its knowledge boundaries, what the message's words point at, the kind of fact

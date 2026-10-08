@@ -41,6 +41,26 @@ part of a Docker-free NMOS is a PostgreSQL with `pg_trgm` and `pgvector` that ru
 6. **The dashboard** (Q8) is the Inspector's first page at `/dashboard` with the version and recent job errors,
    read-only, behind the sidecar's auth; the tray and the menu bar open it.
 
+## Amendment 1 (Phase 37, 2026-10-08; the owner, as proposed, Q6 amended)
+
+Item 4 changes for Windows and Linux: **the data lives outside the bundle**, so an update is replacing the bundle
+folder and nothing else. A user lost their database updating 0.2.0 → 0.3.0; the natural way to update a folder,
+deleting the old one and unpacking the new one, deleted a bundle's database with it.
+
+- **Where** (Q1, Q2): a per-user folder, Windows `%LOCALAPPDATA%\NMOS`, Linux `$XDG_DATA_HOME/nmos`
+  (`~/.local/share/nmos`), macOS unchanged (`~/Library/Application Support/NMOS`, which the launcher now also uses
+  when started without the app). It holds the cluster, the password, the logs, the lock and `.env`; a `.env` beside the
+  launcher is read under it and copied into it once.
+- **Adoption** (Q3, Q4): when the per-user folder has no database and `data/` beside the launcher has one, the first
+  start moves it, under both folders' locks: on one drive a rename; across drives a copy compared file by file and
+  started once before it is put in place. The old folder is renamed `data.moved` with a note, never deleted; any
+  failure leaves it byte-identical and the per-user folder without a database. A database in both places refuses the
+  start, changing neither.
+- **Elsewhere on purpose** (Q5): `NMOS_DATA_DIR` keeps the last word, relative to the bundle (`data` is the old layout).
+- **Windows paths PostgreSQL cannot open** (Q6): when the per-user path has non-ASCII letters and no 8.3 short name,
+  the tray asks for a folder (`C:\NMOS-data` suggested, or a folder picker) and `NMOS.bat` asks in its console; the
+  choice is a one-line pointer file in the per-user folder. Cancel starts nothing.
+
 ## Consequences
 
 - A user without Docker unpacks one archive and double-clicks; the plugin and the URL are the same as with Docker.

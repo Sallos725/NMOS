@@ -1,6 +1,7 @@
 # Phase 37 — The bundle's data lives outside the bundle
 
-> **Status: proposed 2026-10-08, not approved.** A correction phase (AGENTS §7 item 5) found on a user's report, not a
+> **Status: approved 2026-10-08 (the owner, as proposed; Q6 amended by the owner before the approval). Steps 2–4
+> done; step 5, the owner's check on Windows (and a look on macOS), is next.** A correction phase (AGENTS §7 item 5) found on a user's report, not a
 > roadmap stage. It amends PHASE-23 Q3 (ADR 0060) for Windows and Linux; macOS already works this way. Aimed at
 > `0.4.0`, so that the update to it is the last one where the data sits inside the folder being replaced. **High risk
 > (AGENTS §14): stored data, upgrades.**
