@@ -9,7 +9,8 @@ call), lets turns extraction has not reached keep their excerpts while a chat is
 address-history case by replay, adds the Inspector's source-turn page, and reports the overuse baseline; Phase 34
 (labels and the overuse penalty) follows, then `0.4.0`. Measured by a 24-case synthetic quote set, a zero-call replay
 of the v0.3.0 bench databases and one reduced live run (S6 and the quote set; the cloud cost estimated for the owner
-first). Phase 32 (the Inspector timeline, AGE-39, an exception to R7) is open beside it (#266), held by the owner.
+first). Phase 32 (the Inspector timeline, AGE-39, an exception to R7) is open beside it (#266 and its panel step
+stacked on it), in `0.4.0` with the panel (owner, 2026-10-08).
 
 **Phase 28 — A role that ends, and a name said two ways: approved 2026-10-03, complete (owner, 2026-10-07); step 2 merged (#251, 2026-10-04); step 3: `extract-v16` the default (2026-10-04, ADR 0064 accepted);
 step 4, the live gate: paused after S0main ×3 on `7b7cc14` (memory cases 7, 5, 8 of 10: new roles and first events
@@ -337,8 +338,9 @@ Inspector's character page draws that character's facts, relationships from them
 their events as dots, and the conversation page gets one line per character. Owner amendments: Q2 brings the panel in too (step 3,
 high risk: a plugin change to its sanitizer, behind a flag), Q3 adds the mockup's detail column (a short inline script
 in the browser), and Q7 sets the recent window to 25 turns. Step 2 done (the browser Inspector, sidecar only: `timeline.py`, `tests/test_inspector_timeline.py`; the panel's bytes
-checked identical to `main`'s). Step 3 (the panel, **high risk**: the plugin's sanitizer) implemented on `claude/phase32-panel`. The owner tries it in a
-test instance before its PR. Then step 4 (timings and the owner's look).
+checked identical to `main`'s). Step 3 (the panel, **high risk**: the plugin's sanitizer) done after the owner's try and design review (2026-10-06 and
+2026-10-07, the spec's two amendment sections), in review on a draft PR stacked on #266. Then step 4 (timings and the
+owner's look).
 
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
 dashboard Refresh follow-up is recorded below. Stage 7 part 2 (Phase 34) and Stage 8 remain unauthorized.

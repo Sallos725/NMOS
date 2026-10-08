@@ -177,14 +177,14 @@ def test_the_recent_window_draws_the_last_25_turns():
 
 
 def test_the_persona_has_a_timeline_and_the_first_cast_line():
-    me = entity("p", "Yuma", persona=True)
-    own = fact(10, ("p", "Yuma"), "possesses", [step(2, "compass", "current")], object="compass")
+    me = entity("p", "Takumi", persona=True)
+    own = fact(10, ("p", "Takumi"), "possesses", [step(2, "compass", "current")], object="compass")
     page = inspector.character(CONV, "p", view([own], entities=[me, entity("e1", "Hana")]), None, now=5)
     assert len(bars(page)) == 1 and "소지: compass" in page  # a lane per thing held, named by it
     strip = timeline.cast(inspector._tl_t("en"), [entity("e1", "Hana"), me], [own], [], 5, None, lambda e: f"/x/{e}", "")
     # Owner, 2026-10-06: the persona's facts are memory too; ADR 0023 keeps its names out of recall, not out of view.
     shown, folded = strip.split("<details", 1)
-    assert 'Yuma<span class="tl-me">you</span>' in shown and "Hana" in folded
+    assert 'Takumi<span class="tl-me">you</span>' in shown and "Hana" in folded
 
 
 def test_the_cast_puts_the_scene_first_and_folds_the_rest():

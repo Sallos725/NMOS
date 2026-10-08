@@ -117,6 +117,25 @@ line. The changes, all in rendering:
 - **Each group (facts, relationships, threads, events) folds from its title.** The relationships group starts closed,
   because a large cast makes it the longest. The first detail is never chosen from a lane out of sight.
 
+## After the owner's design review (2026-10-07)
+
+The owner reviewed #266 against their trial chat, where a lorebook in another language supplied most of the facts:
+- **Quieter lanes.** A lane's name carries its value; bars carry no text, are thinner (6 px minimum), and a one-turn
+  bar is drawn above its neighbours. Events are thin ticks, their height by salience. A value from the setting is drawn
+  muted.
+- **What only the setting gave folds apart.** Lanes, item timelines, rows of the current-facts table and relationship
+  pairs whose every step came from the setting (lorebook, card; ADR 0047) fold under their own line ("Only from the
+  setting: N") below the story's own. An owner-corrected canon fact stays up.
+- **Names as the story writes them.** The fact tables and pair directions show a subject or object by its entity's
+  name (the story's spelling, which the resolver already joined to the lorebook's), the written spelling in the
+  tooltip, never the persona placeholder. Values stay as written.
+- **Threads start closed**, their open and closed counts in the title.
+- **On a phone the detail rises as a sheet** from the bottom, after a tap, with a close button; lane names sit beside
+  the track; the axis keeps the first, last and every other mark away from "now".
+
+The setting fold and the names apply to the tables of every page, the panel's included: they are how the tables read,
+not the timeline. Criterion 3 is amended accordingly.
+
 ## Steps
 
 1. This spec, with the owner's answers (approved 2026-10-05).
@@ -174,8 +193,10 @@ line. The changes, all in rendering:
 1. On the character page, every bar and dot corresponds to one history entry, thread or event in the tables below
    it, with the same turns and outcome, and links to the row of its fact, thread or event (tests).
 2. The conversation page has the cast strip with the current scene first and the rest folded (tests).
-3. Without the plugin's flag, the `embed` output of both pages is byte-identical to before (test). With it, the
-   panel shows the timeline, and the sanitizer passes only numeric positions (plugin tests).
+3. Without the plugin's flag, the `embed` output of both pages holds no timeline and is byte-identical to before
+   (test), but for the setting fold and the names of the design review (2026-10-07; their own `<details>` and text,
+   which the sanitizer already keeps). With the flag, the panel shows the timeline, and the sanitizer passes only
+   numeric positions (plugin tests).
 4. No change outside the Inspector's rendering, its two routes' query parameters, the plugin's Inspector view and
    `facts.py`'s display-only `closed_turn` on history entries. The packet, recall and extraction tests pass
    unchanged. The browser page's only script is its inline detail
@@ -198,4 +219,4 @@ Step 2 is not high risk under `AGENTS.md` §14. It is read-only rendering on the
 stored data, no memory selection and no security boundary.
 
 Step 3 is **high risk**, because it changes what the panel's sanitizer lets through, which is a security boundary.
-It stays narrow: numbers only, behind a flag, with an old plugin's bytes unchanged.
+It stays narrow: numbers only, behind a flag, with no timeline reaching an old plugin.
