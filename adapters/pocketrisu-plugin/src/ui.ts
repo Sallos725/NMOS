@@ -1190,6 +1190,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     if (!file) return;
     restoreSummary.replaceChildren();
     restoreIdle(null);
+    // Each chunk is hashed with crypto.subtle, which a page over plain HTTP on another host does not have (H8).
+    if (!globalThis.crypto?.subtle) return say(restoreMsg, L('rst.insecure'), 'err');
     restorePick.disabled = true;
     try {
       const up = await uploadArchive(deps.api, file, (sent, total) => say(restoreMsg, L('rst.uploading', {
@@ -1218,7 +1220,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const head = L('rst.summary', { scope: L(s.scope === 'install' ? 'rst.scope_install' : 'rst.scope_chats'),
       n: s.conversations.length, version: s.nmos_version ?? '?', date: (s.created_at ?? '').slice(0, 10) });
     const list = el('ul', {}, ...s.conversations.map((c) => el('li', {
-      text: `${c.character ?? '?'} — ${c.chat ?? c.host_chat_ref}${c.here ? ` (${L('rst.here')})` : ''}` })));
+      text: `${c.character ?? L('rst.no_character')} — ${c.chat ?? `${L('rst.no_chat')} (${c.host_chat_ref.slice(0, 8)})`}`
+        + (c.here ? ` (${L('rst.here')})` : '') })));
     restoreSummary.replaceChildren(el('p', { class: 'sub', text: head }), list,
       ...(s.settings_added.length ? [el('p', { class: 'sub', text: L('rst.settings', {
         keys: s.settings_added.map((x) => (x.value !== undefined ? `${x.key} = ${String(x.value)}` : x.key)).join(', ') }) })] : []),
