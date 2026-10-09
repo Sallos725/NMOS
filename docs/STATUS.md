@@ -30,9 +30,12 @@ separate negative-selection control retained (packet review 5/7 to 7/7), 42 pair
 replays, no new failure. These are source-linked packets, not generated answers.
 Native macOS then failed 30 tests: the core regex word boundary differs from
 its patched pg_trgm classification. A compact explicit East Asian boundary fix
-passes focused Linux/default and C-collation controls; full replays, performance
-and real native CI are being rerun on this correction. Do not treat the earlier
-Linux results as proof of macOS behavior. See ADR 0073.
+passes all 1,500 general CI tests and repeats the full replay/compatibility gates.
+Native macOS now passes 1,498 tests but fails two injected-SQL-delay tests; exact
+boundaries and stories pass. A test-only diagnostic records effective timeouts
+and actual elapsed SQL while retaining the original expectations. Acceptance
+remains open until this deadline question is resolved. Voyage also has one
+unstable packet with reduced useful context; it is recorded, not hidden by scores. See ADR 0073.
 The owner selected **packet-v18 as the 0.4.0 default**; code/default verification
 is implemented and focused tests pass in this unmerged candidate; the full change
 is not accepted. This supersedes older default-decision-pending paragraphs below.

@@ -227,3 +227,42 @@ hidden lines and does not establish hidden-gate coverage or persona-event quota
 competition; those remain separate unit/replay checks. No final response model
 or PocketRisu UI was used. Query vectors are now durable, so r3 can re-evaluate
 this exact fresh extraction without any additional provider calls.
+
+
+### r3 executed evidence and remaining native boundary
+
+Frozen runtime-source manifest (52 files):
+`ebf8c084ad4460882880463edf3b1ad43f85bdd345e701ea7e8742e5b8a7d19b`.
+All 338 probes ran three times per snapshot again: recall 289 to 291/314,
+quotes 21/24 unchanged, no new failed majority or forbidden phrase and no
+pass/fail instability. The 22 authored queries, 66 explicit-v17 comparisons
+and 12 original traces keep their earlier results. All 42 fresh-provider-data
+replays are identical to r2 in text, tokens and ledger, using durable cached
+vectors with zero additional calls. K32 remains 10/17 with original options and
+14/17 with current options, each all three rounds and no forbidden value.
+
+Voyage's 510 cached replays have no hidden or budget violation. One candidate
+packet (`7838ed9fd92c0c1f`) differs from the r2 majority: r3 round two matches r2,
+while rounds one and three have fewer keyword/lexical contributions. Two useful
+training-context excerpts disappear and emotional-context required noise grows;
+the non-excerpt facts/claims/summaries remain identical. With no answer gold,
+this is selection instability and context loss, not a measured accuracy score.
+A bounded six-replay diagnostic then reproduced the 3,342-token r2 packet on both
+r2 and r3, all three times: one whole-message lexical candidate, eleven keyword
+candidates. That does not identify which earlier word lookup varied or erase the
+observed worse packet. The partial keyword path remains timing-sensitive.
+
+The repeated 10k measurement (132 alternating API requests) is p50
+21.642 to 36.375 ms and p95 346.185 to 369.281 ms: +14.733/+23.096 ms.
+No whole keyword-route timeout occurred. This is an explained added lookup cost,
+not evidence of unchanged latency or host performance.
+
+General CI on `262f85a` passes all 1,500 sidecar tests (283.97 s) and the plugin
+checks. Native Linux passes. macOS now passes 1,498 tests, including exact
+boundaries and synthetic stories, but fails two injected-SQL-delay tests:
+supplemental results were returned where the word-slice test expected cancellation.
+The existing log lacks effective timeout and elapsed-query evidence. A test-only
+diagnostic now records legacy results, the exact-query timeout, elapsed execution
+and sleep/cancellation results without weakening the expectations. Instrumentation
+adds a SHOW query, so a pass by itself would not explain the earlier failures.
+Do not accept the correction until this native deadline question is resolved.
