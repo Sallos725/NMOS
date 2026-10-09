@@ -88,3 +88,23 @@ cold requests. A preceding run concurrent with the full suite had API p95
 isolated task run did not reproduce that large tail difference. An initial
 broad-query harness did not exercise clock additions and is not evidence for
 the enabled route; the final harness asserts that the route added clocks.
+
+## Final CI: separate semantic fixtures from scheduling
+
+General CI on `73f420f` failed S06-a twice (1 failed, 1,530 passed each time).
+The correct vector source was present but below the activation floor; this
+question has no time cue and the source-clock branch does not execute. Both
+Linux x64 and macOS native full suites passed the same runtime. Baseline and
+candidate each passed five local S06 repetitions. The CI log did not retain
+route timings, so the exact runner-side cause is unproved.
+
+A controlled 30 ms delay after the successful legacy lookup for 김서윤 reproduced
+the identical source-selection assertion under the production 25 ms word slice.
+The fixture now uses a test-local 1,000 ms word/route allowance, following the
+existing index/preparation fixture. With the same delay, the unchanged source
+assertion passed (one case). This test asserts actor/action/source association
+and isolation, not guaranteed sub-25 ms scheduling. It now reports route timing
+diagnostics on failure. Runtime limits, source/forbidden/hidden/budget oracles,
+and the separate real SQL cancellation and late-result admission tests are
+unchanged. Existing measured replay/performance results retain their original
+production budgets; the semantic fixture must not be cited as latency evidence.

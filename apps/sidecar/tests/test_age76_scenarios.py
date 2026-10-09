@@ -19,7 +19,7 @@ import pytest
 from psycopg.rows import dict_row
 
 from conftest import make_client
-from nmos_sidecar import audit
+from nmos_sidecar import audit, retrieval
 from nmos_sidecar.llm import ChatModel, Embedder
 from nmos_sidecar.retrieval import RecallOptions
 from simchat import SimChat
@@ -80,7 +80,7 @@ def _assert_packet(run: dict[str, Any], query: dict[str, Any], revisions: dict[i
     if query["expected"] == "associated_source_placed":
         assert any(line.get("ref", {}).get("revision") == revisions[query["answer_index"]]
                    and query["expected_quote"] in line.get("text", "") for line in placed), \
-            f"{case_id}: asked actor/action/source must be placed"
+            f"{case_id}: asked actor/action/source must be placed; diagnostics={run.get('diagnostics')}"
     if "forbid_source_index" in query:
         assert all(line.get("ref", {}).get("revision") != revisions[query["forbid_source_index"]]
                    for line in placed), f"{case_id}: excluded source was placed"
@@ -106,11 +106,14 @@ def test_frozen_particle_stories_preserve_source_association_and_guards(
         for method in methods:
             if hasattr(cls, method):
                 monkeypatch.setattr(cls, method, no_provider)
+    # These fixtures assert source association and isolation, not sub-25ms scheduling.
+    # Real cancellation and late-result admission keep the production budget in test_keyword_particles.py.
+    monkeypatch.setattr(retrieval, "KEYWORD_SLICE_MS", 1000)
     embedder = LocalVectors(story)
     with make_client(migrated, packet_policy="packet-v18", llm_url="http://unused.invalid/v1",
                      llm_model="synthetic-age76", embedder=embedder, embed_url="http://unused.invalid/v1",
                      embed_model="deterministic-age76", vector_min_sim=0.3, summaries=False,
-                     canon_facts=False, parsers_file="") as client:
+                     canon_facts=False, parsers_file="", lexical_timeout_ms=1000) as client:
         chat = SimChat()
         for i, text in enumerate(story["messages"]):
             (chat.user if i % 2 == 0 else chat.reply)(text)
@@ -143,7 +146,7 @@ def test_frozen_particle_stories_preserve_source_association_and_guards(
             trace = client.get(f"/v1/trace/{payload['trace_id']}").json()
             assert trace["recall_options"]["keyword_particles"] is True
             _assert_packet({"text": payload["packet"]["text"], "tokens": trace["token_estimate"],
-                            "lines": trace["lines"]}, query, revisions)
+                            "lines": trace["lines"], "diagnostics": trace["latency_ms"]}, query, revisions)
             # Repeat the exact recorded request, without changing its prompt, flags or source window.
             for _ in range(3):
                 with psycopg.connect(migrated, row_factory=dict_row,
