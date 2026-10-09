@@ -23,7 +23,7 @@ from psycopg.types.json import Jsonb
 
 from .entities import norm
 from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
-from . import overuse, quotes, scene, spans, summaries, variants
+from . import overuse, quotes, scene, spans, summaries, variants, source_time
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
@@ -256,6 +256,7 @@ class RecallOptions:
     summarize_key: str | None = None  # summaries of this generation in <Story> (packet-v8, ADR 0043); None: off
     canon_key: str | None = None  # canon facts of this generation (ADR 0047); None: off
     lexical_keywords: bool = True  # the keyword route (ADR 0052); a trace that did not record it replays with it off
+    source_clock: bool = True  # PHASE-42: source-status clock on temporal questions; old traces default off
     keyword_particles: bool = True  # PHASE-41: v18 exact Korean particle hits; old traces default off
     first_cue: bool = True  # how it started, when the message asks (ADR 0056); a trace without it replays with it off
     history_marks: bool = True  # earlier versions only under marks that cover them (ADR 0038 amendment 1); same replay rule
@@ -273,7 +274,7 @@ class RecallOptions:
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
 RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit", "vector_min_sim", "query_prefix",
             "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator", "summarize_key", "canon_key",
-            "lexical_keywords", "keyword_particles", "first_cue", "history_marks", "name_variants", "excerpt_anchor", "rest_after")
+            "lexical_keywords", "keyword_particles", "source_clock", "first_cue", "history_marks", "name_variants", "excerpt_anchor", "rest_after")
 CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
@@ -820,6 +821,7 @@ def _replaced_judge(view: dict[str, Any], selected: list[dict[str, Any]], query:
 class Gathered:
     """Everything a request offers the packet, before the budget (ADR 0027)."""
     ranked: list[Excerpt] = field(default_factory=list)
+    source_clocks: dict[str, source_time.Clock] = field(default_factory=dict)
     state: list[StateItem] = field(default_factory=list)
     threads: list[Line] = field(default_factory=list)
     lead: list[Line] = field(default_factory=list)  # how the cast stand with each other (ADR 0026)
@@ -1215,6 +1217,23 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.quote_withheld = sum(e.quote for e in g.ranked) - sum(e.quote for e in kept)
         g.keyword_withheld = len(g.ranked) - len(kept) - g.quote_withheld
         g.ranked = kept
+    if (options.policy == "packet-v18" and options.source_clock and source_time.CUE.search(query)
+            and options.rules_version != "none" and g.ranked and not options.strict and not options.narrator):
+        started_clock = time.perf_counter()
+        clocks = source_time.read(conn, head, options.rules_version,
+                                  list(dict.fromkeys(e.revision_id for e in g.ranked)), upto, cut)
+        if clocks and options.extractor_key:
+            if view is None:
+                view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
+                                   options.canon_key, canon_facts)
+            # A clock is additional text from the source. Conservatively withhold any known secret overlap,
+            # including a fabricated parser value, regardless of which characters are in this scene.
+            protected = frozenset(norm(n) for secret in view["secrets"] for n in secret.get("open", ()))
+            clocks = {rid: clock for rid, clock in clocks.items()
+                      if not any(summaries.leaks(value, view["secrets"], protected)
+                                 for _, value, _ in clock.fields)}
+        g.source_clocks = clocks
+        g.timings["source_clock"] = round((time.perf_counter() - started_clock) * 1000, 2)
     return g
 
 
@@ -1308,6 +1327,7 @@ def compile_gathered(g: Gathered, budget: int, policy: str) -> Compiled:
     compiled = compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts, policy=policy, lead=g.lead,
                              note=g.note, story=g.story, cast=g.cast_lines, named=frozenset(g.named),
                              risky=frozenset(g.risky))
+    compiled = source_time.supplement(compiled, g.ranked, g.source_clocks, budget, policy)
     if policy in LABEL_POLICIES:
         # Diagnostics never take part in selection, token fitting or the rest/echo calculation.
         compiled.ledger.extend(dict(e) for e in g.hidden_entries)
@@ -1632,7 +1652,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
                    "kept_state": kept["state"], "kept_facts": kept["facts"], "kept_threads": kept["threads"],
                    "placed": {k: sum(1 for e in placed if e["kind"] == k)
                               for k in ("state", "state_history", "thread", "fact", "claim", "secret", "summary",
-                                        "excerpt", "quote")},
+                                        "excerpt", "quote", "source_time")},
                    "path": g.path, "quotes": g.quotes, "quote_mode": g.quote_note,  # the forensic path (PHASE-33 Q4)
                    "cast": sum(1 for e in placed if e.get("section") == "cast"),
                    "scene_cast": sorted(g.cast.values()), "memory_mode_withheld": g.withheld,

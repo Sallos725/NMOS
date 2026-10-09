@@ -498,6 +498,10 @@ text says nothing of it, and when a rerolled reply puts a value back; each can b
 and money, not keys that change every turn (place, time, date). Under `packet-v17` and the default `packet-v18`, a message that
 names a key and asks how it changed ("레벨 언제 올랐어?") gets that key's last changes as one `<StateHistory>` line.
 
+For explicit time questions, `packet-v18` can append the literal status-window date/time on an already
+recalled excerpt or quote (at most two sources, spare budget only). This is source context, not an inferred
+event date or calendar calculation. Missing clocks and strict/first-person modes abstain (Phase 42).
+
 ## What gets injected
 
 The default `packet-v18` also checks exact Korean words followed by supported particles when keyword recall has

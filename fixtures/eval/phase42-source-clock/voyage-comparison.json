@@ -1,0 +1,11 @@
+{
+  "requests": 85,
+  "rounds": 3,
+  "lanes": 2,
+  "comparisons": 255,
+  "packet_changed": 16,
+  "budget_violations": 0,
+  "hidden_contract_violations": 0,
+  "provider_calls": 0,
+  "answer_accuracy": "not scored"
+}

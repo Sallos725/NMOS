@@ -170,6 +170,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
                     "Echo = how much of the line's content reappears in the next reply (a surface measure of use)."),
     "h.kind": ("종류", "Kind"), "h.outcome": ("결과", "Outcome"), "h.echo": ("응답 반영", "Echo"),
     "h.placed": ("배치", "Placed"),
+    "lk.source_time": ("원문 시점", "source clock"),
     "lk.state": ("상태", "state"), "lk.state_history": ("상태 변화", "state history"), "lk.thread": ("약속", "thread"), "lk.fact": ("사실", "fact"),
     "lk.claim": ("주장", "claim"), "lk.excerpt": ("원문", "excerpt"), "lk.quote": ("인용", "quote"),
     # what a line is for, and repetition (PHASE-34 Q1, Q7)

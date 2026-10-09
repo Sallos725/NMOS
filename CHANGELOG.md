@@ -5,7 +5,7 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## 0.4.0
 
-The third milestone, Stage 7 (forensic recall), with Phases 32–41 and the pre-release audit corrections.
+The third milestone, Stage 7 (forensic recall), with Phases 32–42 and the pre-release audit corrections.
 The owner authorized this release on 2026-10-10. Like every release before 1.0, it is a GitHub pre-release.
 The default is `packet-v18`; extraction stays on `extract-v16` and normalization on `clean-v3`.
 
@@ -33,6 +33,14 @@ Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS a
    between Docker and a bundle").
 
 ### Changes
+
+- **A recalled scene can carry its source's status-window clock** (Phase 42, AGE-78).
+  When an explicit time question recalls an old excerpt or quote, packet-v18 can append the literal date/time
+  from that exact source revision, for up to two sources, using spare packet space only. Existing selected lines
+  stay unchanged. This is the clock shown on the source's status window, not an inferred event occurrence date.
+  Missing/ambiguous stored clocks, full budgets and strict/first-person narrator modes abstain; no date arithmetic.
+  Replay: 291/314 recall and 21/24 quotes unchanged, 85 Voyage request ledger majorities preserved.
+  See `docs/perf/phase42-source-clock.md`; these checks do not score generated answers.
 
 - **Explicit status-window setup** (Phase 39 amendment 2). Status drafts, character targets and preset selection
   start blank. Importing JSON, saving/selecting a named preset and general settings Save cannot activate rules.
