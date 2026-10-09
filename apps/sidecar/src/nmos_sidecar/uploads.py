@@ -1,8 +1,9 @@
 """An archive uploaded from the panel for a restore (PHASE-38 Q2, Q3): received in chunks into a spool file, checked,
 then restored, each step in the background so no request waits for minutes behind the host's proxy.
 
-One upload at a time: a new one discards the others. An upload not restored within an hour is discarded, and so is
-its file once it is restored, refused or discarded. Chunks come in order, each with its SHA-256; the same chunk sent
+One upload at a time: a new one discards the others. Idle uploads expire after an hour; periodic cleanup removes
+them within 60 seconds without another request. A running check/restore keeps its file until completion. Files
+also go once restored, refused or discarded. Chunks come in order, each with its SHA-256; the same chunk sent
 again (a retry after a lost answer) is accepted once more without being written twice. The archive's own manifest
 hashes check its content (`archive.check_archive`); the chunk hashes check its transport."""
 
@@ -21,6 +22,7 @@ from typing import Any, Callable
 
 CHUNK = 8 * 1024 * 1024  # H23: 8 MB of base64 in JSON per request
 TTL = 3600.0
+CLEANUP_INTERVAL = 60.0  # an idle expired spool is reclaimed within this many seconds, without another request
 
 
 class UploadError(Exception):
@@ -73,11 +75,14 @@ def spool_dir() -> Path:
 
 class Uploads:
     def __init__(self, max_bytes: int, make_dir: Callable[[], Path] = lambda: spool_dir(),
-                 clock: Callable[[], float] = time.monotonic) -> None:
+                 clock: Callable[[], float] = time.monotonic, cleanup_interval: float = CLEANUP_INTERVAL) -> None:
         self.max_bytes, self.make_dir, self.clock = max_bytes, make_dir, clock
         self._dir: Path | None = None  # made at the first upload, removed by close()
         self.items: dict[str, Upload] = {}
         self.lock = threading.Lock()
+        self.cleanup_interval = cleanup_interval
+        self._timer: threading.Timer | None = None
+        self._closed = False
 
     @property
     def dir(self) -> Path:
@@ -87,13 +92,37 @@ class Uploads:
         return self._dir
 
     def close(self) -> None:
-        """At the sidecar's shutdown: every upload and the directory go (a check or restore still running keeps its
-        file open; its thread is a daemon and the transaction is rolled back with the process)."""
+        """Stop idle cleanup at shutdown; a running check/restore keeps its file until its worker finishes."""
         with self.lock:
-            self.items.clear()
-            if self._dir is not None:
-                shutil.rmtree(self._dir, ignore_errors=True)
-                self._dir = None
+            self._closed = True
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+            for up in list(self.items.values()):
+                if not up.busy:
+                    self._drop(up)
+            self._remove_closed_dir()
+
+    def _remove_closed_dir(self) -> None:
+        if self._closed and not self.items and self._dir is not None:
+            shutil.rmtree(self._dir, ignore_errors=True)
+            self._dir = None
+
+    def _start_cleanup(self) -> None:
+        """Called under the lock: at most one daemon timer, and only while this spool holds uploads."""
+        if self._closed or self._timer is not None or not self.items:
+            return
+        self._timer = threading.Timer(self.cleanup_interval, self._cleanup)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _cleanup(self) -> None:
+        with self.lock:
+            self._timer = None
+            if self._closed:
+                return
+            self._expire()
+            self._start_cleanup()
 
     def _drop(self, up: Upload) -> None:
         self.items.pop(up.id, None)
@@ -101,7 +130,7 @@ class Uploads:
 
     def _expire(self) -> None:
         for up in list(self.items.values()):
-            if not up.busy and self.clock() - up.created > TTL:
+            if not up.busy and self.clock() - up.created >= TTL:
                 self._drop(up)
 
     def create(self, size: int) -> Upload:
@@ -111,6 +140,8 @@ class Uploads:
             raise UploadError(413, f"the archive is {size} bytes; this NMOS takes up to {self.max_bytes}"
                                    " (NMOS_RESTORE_MAX_MB)")
         with self.lock:
+            if self._closed:
+                raise UploadError(503, "the upload spool is closed")
             if any(up.busy for up in self.items.values()):
                 raise UploadError(409, "another archive is being checked or restored; wait for it")
             for up in list(self.items.values()):  # Q2: a new upload replaces the others
@@ -122,10 +153,13 @@ class Uploads:
                         created=self.clock())
             up.path.touch(mode=0o600)
             self.items[up.id] = up
+            self._start_cleanup()
             return up
 
     def get(self, upload_id: str) -> Upload:
         with self.lock:
+            if self._closed:
+                raise UploadError(404, "the upload spool is closed")
             self._expire()
             up = self.items.get(upload_id)
             if up is None:
@@ -163,6 +197,8 @@ class Uploads:
         """Start `work` in the background on an upload in state `want`, moving it to `then` (checking, restoring)."""
         up = self.get(upload_id)
         with self.lock:
+            if self._closed or self.items.get(upload_id) is not up:
+                raise UploadError(404, "no such upload (it expired, or another replaced it)")
             if up.state != want or up.busy:
                 raise UploadError(409, f"the upload is {up.state}; it must be {want}")
             up.state, up.busy, up.detail = then, True, ""
@@ -173,8 +209,12 @@ class Uploads:
             finally:
                 with self.lock:
                     up.busy = False
-                    if up.state in ("refused", "restored", "failed"):
+                    if self._closed:
+                        self._drop(up)
+                        self._remove_closed_dir()
+                    elif up.state in ("refused", "restored", "failed"):
                         up.path.unlink(missing_ok=True)
+                    self._expire()
 
         threading.Thread(target=go, name=f"nmos-{then}", daemon=True).start()
         return up
@@ -182,6 +222,8 @@ class Uploads:
     def discard(self, upload_id: str) -> None:
         up = self.get(upload_id)
         with self.lock:
+            if self._closed or self.items.get(upload_id) is not up:
+                raise UploadError(404, "no such upload (it expired, or another replaced it)")
             if up.busy:
                 raise UploadError(409, f"the upload is {up.state}; it cannot be discarded now")
             self._drop(up)
