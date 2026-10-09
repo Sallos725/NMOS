@@ -75,6 +75,57 @@ def test_no_llm_means_no_jobs(client, db):
     assert db.execute("SELECT count(*) AS n FROM job").fetchone()["n"] == 0
 
 
+def test_old_worker_failure_after_rebuild_preserves_new_claim(llm_client, db):
+    from nmos_sidecar.extraction import finish
+    from nmos_sidecar.llm import LLMError
+
+    chat = SimChat()
+    chat.user("Akari is in the old chapel.")
+    chat.reply("The chapel is quiet.")
+    chat.user("Next?")
+    sync(llm_client, chat)
+    gen = active_generation(db, "extract")
+    replacement = None
+
+    def interrupted(system, user):
+        nonlocal replacement
+        cid = db.execute("SELECT id FROM conversation WHERE host_chat_ref = %s", (chat.id,)).fetchone()["id"]
+        response = llm_client.post(f"/v1/conversations/{cid}/rebuild")
+        assert response.status_code == 200
+        replacement = claim(db, {"extract": gen.key})
+        assert replacement is not None
+        raise LLMError("old request failed after rebuild")
+
+    assert run_once(db, jobs_for(db, interrupted))
+    assert replacement is not None
+    current = db.execute("SELECT * FROM job WHERE id = %s", (replacement["id"],)).fetchone()
+    assert current == replacement
+    assert process_extract(db, replacement, fake_complete, gen, gen.spec["context_turns"]) == "done"
+    finish(db, replacement["id"], "done", replacement["locked_at"])
+    assert db.execute("SELECT count(*) AS n FROM extraction WHERE discarded_at IS NULL").fetchone()["n"] == 1
+    assert facts(llm_client, chat)[0]["object"] == "old chapel"
+
+
+@pytest.mark.parametrize("attempts", [1, 5])
+def test_current_claim_failure_keeps_retry_and_dead_policy(llm_client, db, attempts):
+    from nmos_sidecar.extraction import MAX_ATTEMPTS, fail
+
+    chat = SimChat()
+    filler(chat, 1)
+    chat.user("Next?")
+    sync(llm_client, chat)
+    gen = active_generation(db, "extract")
+    job = claim(db, {"extract": gen.key})
+    db.execute("UPDATE job SET attempts = %s WHERE id = %s", (attempts, job["id"]))
+    job["attempts"] = attempts
+    fail(db, job, "x" * 1200)
+    row = db.execute("SELECT *, extract(epoch FROM run_after - updated_at) AS delay FROM job WHERE id = %s",
+                     (job["id"],)).fetchone()
+    assert row["status"] == ("dead" if attempts >= MAX_ATTEMPTS else "queued")
+    assert row["locked_at"] is None and row["last_error"] == "x" * 1000
+    assert row["delay"] == min(600, 15 * 2 ** attempts)
+
+
 def test_extraction_fact_versions_and_packet(llm_client, migrated, db):
     chat = SimChat()
     chat.user("Akari is in the old chapel.")

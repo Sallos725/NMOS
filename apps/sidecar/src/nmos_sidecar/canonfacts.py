@@ -195,7 +195,7 @@ def requeue(conn: psycopg.Connection, conv: UUID) -> int:
     """A per-chat rebuild (D22) discarded this chat's canon extractions too: its canon jobs become obsolete, so
     `schedule` queues them again."""
     return conn.execute("UPDATE job SET status = 'obsolete', locked_at = NULL, updated_at = now()"
-                        " WHERE kind = 'canon' AND conversation_id = %s AND status <> 'running'", (conv,)).rowcount
+                        " WHERE kind = 'canon' AND conversation_id = %s", (conv,)).rowcount
 
 
 def named(text: str, character: str | None, user: str | None) -> str:
@@ -308,6 +308,10 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
                 a["status"], a["reason"] = "pending", "not a canon predicate"
         coverage = {"chars": len(text), "part": i, "parts": count, "part_chars": len(piece), "unread_chars": unread}
         with conn.transaction():
+            if job.get("locked_at") is not None and conn.execute(
+                    "SELECT 1 FROM job WHERE id = %s AND status = 'running' AND locked_at = %s FOR UPDATE",
+                    (job["id"], job["locked_at"])).fetchone() is None:
+                return "obsolete"
             xid = uuid7()
             inserted = conn.execute(
                 "INSERT INTO extraction (id, source_revision_id, window_hash, compiler_version, extractor_key, model,"
