@@ -115,3 +115,29 @@ def test_a_query_matching_too_many_messages_abstains_and_says_so(client, monkeyp
     narrow = recall(client, chat, "what was the vault password?", in_context=[])
     assert client.get(f"/v1/trace/{narrow['trace_id']}").json()["latency_ms"]["lexical_mode"] == "on"
     assert "violet-seven" in narrow["packet"]["text"]
+
+
+def test_block_removal_preserves_the_original_normalizer_semantics():
+    """A deterministic differential corpus covers nested, malformed and Unicode case-equivalent tags."""
+    import random
+    import re
+    from nmos_sidecar.packet import _drop_blocks
+
+    original = re.compile(r"<(style|script|thoughts|think|thinking)\b[^>]*>.*?</\1\s*>", re.I | re.S)
+    parts = ["x", " ", "\n", ">", "<think", "<style a='<think>", "<think/>hidden</think>",
+             "<think>outer<script>inner</think>end</script>", "<thinking>why</thinking>"]
+    for tag in ("style", "script", "thoughts", "think", "thinking", "THINK", "thİnk", "thınk", "ſtyle"):
+        parts.extend((f"<{tag}>", f"</{tag}>", f"<{tag} attr='x'>", f"</{tag}\n >", f"<{tag}!>"))
+    rng = random.Random(73)
+    for _ in range(6000):
+        text = "".join(rng.choices(parts, k=rng.randrange(1, 25)))
+        assert _drop_blocks(text) == original.sub(" ", text), repr(text)
+
+
+def test_repeated_unclosed_reasoning_tags_do_not_rescan_the_suffix():
+    from nmos_sidecar.packet import clean_text
+    text = "<think>" * 10000 + "x"
+    started = time.perf_counter()
+    assert clean_text(text) == "x"
+    # The confirmed baseline takes ~2 seconds for this 70 KB message. Leave ample runner headroom.
+    assert time.perf_counter() - started < 1.0

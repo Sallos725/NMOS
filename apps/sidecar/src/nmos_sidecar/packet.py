@@ -48,7 +48,10 @@ MAX_EXCERPT_CHARS = 480
 GROW_MAX_SENTENCES = 4
 
 # Markup and model reasoning that is not story: style/script blocks and <Thoughts>/<think> sections.
-_DROP_BLOCKS = re.compile(r"<(style|script|thoughts|think|thinking)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+_DROP_NAMES = ("style", "script", "thoughts", "think", "thinking")
+_DROP_PATTERN = "|".join(_DROP_NAMES)
+_DROP_OPEN = re.compile(r"<(" + _DROP_PATTERN + r")\b", re.IGNORECASE)
+_DROP_CLOSE = re.compile(r"</(" + _DROP_PATTERN + r")\s*>", re.IGNORECASE)
 # NMOS's own memory markup, spelled as the packet writes it (case-sensitive), is not story either: a reply
 # that echoes the packet, or text shaped like its lines, would otherwise reach the extractor as narration
 # once the tags are stripped (K27, audit A-12). Dropped with its content: the whole packet, and one line
@@ -76,11 +79,48 @@ _SPACES = re.compile(r"[ \t\u00a0]+")
 _BLANK_LINES = re.compile(r"\n\s*\n+")
 
 
+def _drop_blocks(content: str) -> str:
+    """The original non-greedy block substitution without rescanning an unclosed suffix.
+
+    Pair each opening tag with its first matching close after the opening's first `>`; nested tags retain
+    the regex's original behavior. Both scans and each close cursor only move forward. Backreferences use
+    simple lowercase equality: dotted capital I lowers to i, while dotless i and long s stay distinct.
+    """
+    closes: dict[str, list[tuple[int, int]]] = {}
+    for match in _DROP_CLOSE.finditer(content):
+        name = match.group(1).replace("İ", "i").lower()
+        closes.setdefault(name, []).append((match.start(), match.end()))
+    cursors = dict.fromkeys(closes, 0)
+    out: list[str] = []
+    consumed = 0
+    opening_end = -1
+    for match in _DROP_OPEN.finditer(content):
+        if match.start() < consumed:
+            continue
+        if opening_end < match.end():
+            opening_end = content.find(">", match.end())
+            if opening_end < 0:
+                break  # no later opening can be complete either
+        name = match.group(1).replace("İ", "i").lower()
+        ends = closes.get(name)
+        if not ends:
+            continue
+        index = cursors[name]
+        while index < len(ends) and ends[index][0] <= opening_end:
+            index += 1
+        cursors[name] = index
+        if index < len(ends):
+            out.extend((content[consumed:match.start()], " "))
+            consumed = ends[index][1]
+    out.append(content[consumed:])
+    return "".join(out)
+
+
 def clean_text(content: str) -> str:
     """Readable text for recall/embedding/extraction: bots (especially sim bots) wrap replies in
     status HTML. Keeps visible text, drops markup, style/script blocks and NMOS's own memory markup. Raw
     evidence is untouched."""
-    text = _DROP_BLOCKS.sub(" ", content)
+    text = _drop_blocks(content)
     text = _MEMORY_MARKUP.sub(" ", text)
     text = _MEDIA_TOKEN.sub("", text)
     text = _BLOCK_TAG.sub("\n", text)
@@ -539,9 +579,6 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
                  for e in ranked])
     frame = [PACKET_OPEN, PACKET_NOTE.removesuffix("</Note>") + note + "</Note>", PACKET_CLOSE]
     used = est("\n".join(frame))
-    if used >= budget_tokens:
-        return Compiled("", 0, [], ledger)
-    inner = budget_tokens - used
     repeats: dict[int, Line] = {}
     if reserving:
         for n, item in enumerate(ranked):
@@ -556,6 +593,9 @@ def compile_lines(ranked: list[Excerpt], budget_tokens: int, state: list[StateIt
                  next((n for n in range(len(ranked)) if n not in repeats), None))
     if policy in LABEL_POLICIES:
         _label(ledger, state, story, cast_lines, lead + threads + facts, ranked, first, named, risky)
+    if used >= budget_tokens:
+        return Compiled("", 0, [], ledger)
+    inner = budget_tokens - used
     reserved: tuple[str, str] | None = None
     if reserving and first is not None:
         reserved = _fit_excerpt(ranked[first], int(inner * EXCERPT_SHARE), est)

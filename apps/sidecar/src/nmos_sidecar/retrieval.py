@@ -115,10 +115,14 @@ QWEN3_QUERY_INSTRUCTION = ("Instruct: Given a question or remark from a role-pla
 # Candidates must match the user's message; the previous AI turn only breaks ties in ranking
 # (as a filter it pulled in near-duplicate filler during manual testing).
 AI_TIEBREAK_WEIGHT = 0.2
-# The query embedding's own call runs this many times `embed_timeout_ms` (per network phase, as before): long enough
+# The query embedding's whole HTTP exchange runs this many times `embed_timeout_ms`: long enough
 # to answer while recall reads and for the wait after them (QueryEmbedding), short enough that a call the request has
 # given up on ends soon after, instead of holding the embedder for the next request (ADR 0061).
 EMBED_CALL_FACTOR = 2
+# Bound abandoned calls even when OS resolver/transport cleanup outlives async cancellation. Saturation falls back
+# to lexical recall immediately. Prefetch shares the same bound; no waiting work queue accumulates.
+QUERY_EMBED_MAX_INFLIGHT = 8
+_QUERY_EMBED_SLOTS = threading.BoundedSemaphore(QUERY_EMBED_MAX_INFLIGHT)
 # A prefetched embedding (Prefetched, ADR 0061 item 7) is asked for at the sync, before its request exists: its call
 # may run at least this long, since the request follows the sync by the sync's own time (0.3–2.5 s on a long chat,
 # docs/perf/scale.md), and an entry no request took within PREFETCH_TTL_S is dropped.
@@ -135,7 +139,8 @@ class QueryEmbedding:
     the facts, threads, scene and summaries are read, and the request waits for it at most `embed_timeout_ms` after
     those reads: it never waits longer for the embedding than before, and the embedder gets the reads' time as well.
     (A request that now has vectors pays the vector search and a fuller packet, as one with vectors always did.) The
-    call itself is bounded at EMBED_CALL_FACTOR × the timeout. The thread touches no database connection."""
+    HTTP task has a total deadline of EMBED_CALL_FACTOR × the timeout. OS DNS resolution/transport cleanup can
+    outlive cancellation; the shared slot cap bounds these outstanding threads too. No thread touches a DB connection."""
 
     def __init__(self, embedder: Embedder, text: str, timeout_ms: int, call_timeout_ms: int | None = None):
         self.timeout_ms = timeout_ms
@@ -149,12 +154,17 @@ class QueryEmbedding:
         self._thread.start()
 
     def _run(self, embedder: Embedder, text: str) -> None:
+        if not _QUERY_EMBED_SLOTS.acquire(blocking=False):
+            self._future.set_exception(LLMError("query embedding concurrency limit reached"))
+            return
         started = time.perf_counter()
         try:
             (vec,) = embedder.embed([text], timeout_s=self.call_timeout_ms / 1000)
         except BaseException as exc:  # noqa: BLE001 — re-raised to the waiter, which classifies it
             self._future.set_exception(exc)
             return
+        finally:
+            _QUERY_EMBED_SLOTS.release()
         self.call_ms = round((time.perf_counter() - started) * 1000, 2)
         self._future.set_result(vec)
 
@@ -165,7 +175,7 @@ class QueryEmbedding:
 
     def result(self) -> list[float]:
         """The vector, waiting at most `timeout_ms` from now. LLMError when it is not there by then (the thread's call
-        ends on its own soon after; its answer is dropped), or when the call failed; a ValueError (an answer of the
+        is cancelled at its HTTP deadline; cleanup can outlast it), or when the call failed; a ValueError (an answer of the
         wrong shape) comes through as it did."""
         try:
             return self._future.result(timeout=self.timeout_ms / 1000)
@@ -876,8 +886,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                     len(view["facts"]) if grow or rest else options.facts_limit,
                                     options.events_limit, persona, scene.names(g.cast, r, aliases), causes=causes,
                                     first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases,
-                                    named=g.named, named_by_words=options.policy in NAMED_POLICIES, risky=contradicted)
-            ranked = _rested(ranked, "fact", rest, g)
+                                    named=g.named, named_by_words=options.policy in NAMED_POLICIES, risky=contradicted,
+                                    keep=(lambda f: bool(_rested([f], "fact", rest, g))) if rest else None)
             if options.policy in LABEL_POLICIES:  # before the limits: a risky fact never takes an ordinary one's slot
                 ranked = _risky_last(ranked, view, g.named)
             if changes:  # an ended role answers a question about the past, not about now (PHASE-31 Q2); the facts
@@ -962,7 +972,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     g.excluded = [c for c in g.candidates if c["host_logical_id"] in in_context]
     eligible = [c for c in g.candidates if c["host_logical_id"] not in in_context]
     stale = _replaced_judge(view, selected, query, previous_ai, options, names_of) if changes and view is not None else None
-    if stale is None:  # packet-v12 judges each excerpt as it is made and fills a dropped one's slot (PHASE-31 Q1)
+    scan_slots = stale is not None or options.policy in UNEXTRACTED_POLICIES
+    if not scan_slots:  # older policies keep the original top-k cut
         eligible = eligible[: options.top_k]
     words = keywords(query) if options.policy in GROW_POLICIES else []
     span = options.policy in SPAN_POLICIES  # packet-v11 (ADR 0063)
@@ -977,8 +988,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         nouns = tuple(w for w in tie if len(w) == 1 and w != "첫")
         anchor = (" ".join(words) or query) if span and options.excerpt_anchor == "keywords" else focus
     # packet-v13 (PHASE-33 Q5): a turn this generation has not extracted yet (a first sight still catching up) has no
-    # fact to restate, so its excerpt is raw evidence; one such excerpt may take one more slot than top_k (packet-v13
-    # judges excerpts as packet-v12 does: `stale` is set whenever there is an extractor to ask)
+    # fact to restate, so its excerpt is raw evidence; one such excerpt may take one more slot than top_k,
+    # even before there are facts to build a stale-value judge, or when a history question disables that judge.
     unextracted = (_unextracted(conn, head, [c["id"] for c in eligible], options.extractor_key, known_at)
                    if options.policy in UNEXTRACTED_POLICIES and options.extractor_key and eligible else set())
     def resting(c: dict[str, Any]) -> bool:  # a tired excerpt is left out while it rests (PHASE-34 Q3) ...
@@ -993,10 +1004,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         # the activation threshold (PHASE-34 Q4) is the compiler's too, at the reserved place's stage (third review)
         low = bool(floor) and float(c["rrf"]) < floor and not (c.get("user_score") or c.get("keyword_score"))
         awake = [e for e in g.ranked if not e.resting and not e.below_floor]
-        extra = any(e.unextracted for e in awake)
-        if stale is not None and len(awake) >= options.top_k + extra:
+        if scan_slots and len(awake) >= options.top_k + bool(unextracted):
             break
-        if stale is not None and not (tired or low) and len(awake) == options.top_k and str(c["id"]) not in unextracted:
+        if scan_slots and not (tired or low) and len(awake) == options.top_k and str(c["id"]) not in unextracted:
             continue  # the one more slot is for an unextracted turn only
         # a lexical or keyword hit is the whole message; a vector-only hit is its chunk; under packet-v11 a word hit
         # whose vector similarity meets the bar excerpts within its chunk too: the chunk is the part of the message

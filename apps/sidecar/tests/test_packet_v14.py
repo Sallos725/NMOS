@@ -456,3 +456,17 @@ def test_a_replay_reads_the_reply_at_its_position_after_a_reorder(v14):
     live = ask("And then?")
     replay = client.get(f"/v1/trace/{live}/replay").json()
     assert replay["status"] == "ok" and replay["reproduced"] is True, replay.get("notes")
+
+
+@pytest.mark.parametrize("policy", ["packet-v14", "packet-v16", "packet-v17"])
+def test_labels_survive_a_budget_smaller_than_the_frame(policy):
+    from dataclasses import replace
+    excerpts = [replace(_excerpt(1), resting=True), _excerpt(2)]
+    args = dict(state=[StateItem("HP", "80", 9)], facts=[_line("fact", 10), _line("fact", 11)],
+                policy=policy, risky=frozenset({"11"}))
+    empty = compile_lines(excerpts, 1, **args)
+    full = compile_lines(excerpts, 4000, **args)
+    assert empty.text == "" and empty.tokens == 0
+    assert all(not row["placed"] for row in empty.ledger)
+    assert [row["label"] for row in empty.ledger] == [row["label"] for row in full.ledger]
+    assert [row["label"] for row in empty.ledger[-2:]] == ["supportive", "required"]

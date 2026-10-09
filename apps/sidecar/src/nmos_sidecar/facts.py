@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import lru_cache
 from typing import Any
@@ -786,7 +786,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                    window_start: int | None = None, marks: bool = False,
                    aliases: Mapping[str, frozenset[str]] | None = None,
                    named: set[str] | None = None, named_by_words: bool = False,
-                   risky: frozenset[str] | None = None) -> list[dict[str, Any]]:
+                   risky: frozenset[str] | None = None,
+                   keep: Callable[[dict[str, Any]], bool] | None = None) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
@@ -871,6 +872,10 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         return risky is None or not (f.get("disputed_by") or str(f["id"]) in risky) \
             or str(f["id"]) in (named or set()) or bool(f.get("hidden_from") or f.get("known_by"))
     scored.sort(key=lambda x: (plain(x[2]), x[0], age(x)), reverse=True)
+    # Rest is decided after `named` is complete, but before the event quota chooses its winners.
+    # Preserve the event-specific ordering below (especially the history cue's oldest-first rule).
+    if keep is not None:
+        scored = [x for x in scored if keep(x[2])]
     if oldest:
         events = sorted((x for x in scored if x[2]["predicate"] == "event"),
                         key=lambda x: (plain(x[2]), x[3] > 0, -x[1], x[2].get("salience") == "major", x[0]),
