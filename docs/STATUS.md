@@ -11,9 +11,21 @@ over time; `packet-v17` (not the default) answers "레벨 언제 올랐어?" wit
 recorded requests change, `docs/perf/phase39-history.md`). Step 4: a rule's `watch` keys flag changes the reply's
 story does not name (read only on the two chats: 5 flags on inventory and equipment in 23 replies, each real;
 `docs/perf/phase39-flags.md`). Step 5: the anchor was already in place (no packet change). Open for the owner: the
-default policy. The owner reaffirmed on 2026-10-09 that watch setup was already approved. A read-only dump of
-the 6113 trial install at 12:40 KST found no `watch` field on either saved rule: application is pending, not approval.
-All in `0.4.0` (the owner).
+global default policy. The owner reaffirmed on 2026-10-09 that watch setup was already approved and explicitly
+selected packet-v17 for the 6113 trial install. At 13:50 KST the verified `1e86796` image was deployed there after
+a fresh backup; both services now run it, with schema 0029. The first saved rule now watches `Armor`, `Items` and
+`Weapons`, the exact three keys behind the earlier 16-change/5-flag measurement; the second rule is unchanged.
+The config API rebuilt 974 state observations with identical values and rules version; all 430 raw revisions and
+five model generation keys stayed unchanged, with no new queued jobs. The served plugin is build `4d4a525ed230`;
+installation/reload in the host remains unverified. Live read-only checks found six current watch flags,
+matching the Inspector; no new natural retrieve trace had arrived after deployment. Repository default remains
+v16. All in `0.4.0` (the owner).
+
+**Integrated PR and trial deployment (2026-10-09):** PR #291 now targets `main` and includes the contents of
+20 PRs (#266, #272–#279, #281–#291); #280 remains excluded. The deployed runtime commit `1e86796` passed
+sidecar/plugin and all four native CI jobs (37883424269/37883424276; Linux arm64 builds without smoke).
+The later deployment documentation does not change runtime code. Original containers and the fresh database
+dump are retained; no main merge or release tag was made. See the audit record for deployment/rollback evidence.
 
 **Authorized `0.4.0` gate corrections (2026-10-09, candidate branch work):**
 [audit and evidence boundaries](audits/0.4.0-2026-10-09.md). Missing independent fixes from
