@@ -283,13 +283,17 @@ def test_supplement_sql_has_only_the_legacy_words_remaining_slice_and_keeps_lega
     chat = story("민지는 은빛 나침반을 감췄다.", "민지, 주전자 뚜껑을 닫았다.")
     sync(client, chat)
     real = retrieval._lexical_matches
+    clock = retrieval.time.perf_counter
+    consumed = [0.0]
 
     def delayed(conn, head, query, cut, limit, upto=None):
-        conn.execute("SELECT pg_sleep(0.015)")
-        return real(conn, head, query, cut, limit, upto)
+        ids = real(conn, head, query, cut, limit, upto)
+        consumed[0] += 0.015  # a completed lookup used 15 ms; OS sleep can overshoot and cancel it
+        return ids
 
+    monkeypatch.setattr(retrieval.time, "perf_counter", lambda: clock() + consumed[0])
     monkeypatch.setattr(retrieval, "_lexical_matches", delayed)
-    # 20 ms fits a fresh 25 ms slice but not what remains after the legacy lookup.
+    # Real SQL delay: 20 ms fits a fresh slice, but not the completed lookup's remainder.
     monkeypatch.setattr(retrieval, "_PARTICLE_MATCHES",
                         retrieval._PARTICLE_MATCHES.replace("SELECT sr.id", "SELECT sr.id, pg_sleep(0.020)"))
     rows, mode = keyword_rows(migrated, ["민지"], particles=True)

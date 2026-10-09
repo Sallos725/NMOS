@@ -309,7 +309,8 @@ text, tokens and ledger. No new provider calls or original-database writes occur
 K32 stays 10/17 with original options and 14/17 with current options, all rounds,
 with zero forbidden values and zero new failed majority.
 
-The 510 Voyage replays retain zero hidden/budget violation. r4's 85 candidate
+The 510 Voyage replays retain zero hidden/budget violation. They contain no hidden
+ledger rows, so they do not establish hidden-gate coverage; separate tests do. r4's 85 candidate
 majorities match r2 exactly and all three r4 rounds agree. The r3-degraded
 `7838ed9fd92c0c1f` packet returns to its r2 3,342-token form. This does not erase
 the earlier timing sensitivity or establish a new accuracy result. The same four
@@ -337,3 +338,15 @@ Earlier r3 green general CI or failed native diagnostics do not substitute for t
 No deployment, release, final response-model answer or PocketRisu host check is
 claimed by this correction. The next host evidence uses the updated build after
 its platform checks; the existing 6113 deployment remains fb095aa.
+
+
+The completed `53968c6` Windows diagnostic ran 1,499 passed/one failed. Its
+remaining-slice fixture's *legacy* `pg_sleep(0.015)` actually took 26.853 ms and
+was canceled under 25 ms, so no valid legacy result existed to preserve. The
+fixture now completes the real legacy lookup and advances its observed clock by
+15 ms, then retains the real 20 ms supplemental SQL delay and the same expected
+legacy result. This removes an OS sleep-precision assumption; it does not relax
+product deadlines or the candidate-preservation assertion. The deterministic
+late-success controls and both original route/word SQL-delay controls remain.
+This is a test-only correction; the frozen r4 runtime and all replay/performance
+evidence are unchanged.
