@@ -586,8 +586,10 @@ its own thread before lexical recall, reads the state, the facts, threads, cast 
 needs the vector), and then waits for the embedding at most `embed_timeout_ms` (300): a request never waits longer for
 the embedding than when the call alone had that time, and the embedder gets the reads' time as well (≈100–300 ms at
 the measured sizes, where the owner's production fallbacks sat: 70 % of recalls, behind a proxy at 280–450 ms). A
-request that now has vectors pays the vector search and a fuller packet, as a request with vectors always did. The call itself is
-bounded at twice the timeout, so one the request gave up on does not hold the embedder for the next request. A sync
+request that now has vectors pays the vector search and a fuller packet, as a request with vectors always did.
+The query HTTP task has a total deadline of twice the timeout (AGE-74 correction, 2026-10-09). DNS/transport cleanup
+can outlive cancellation; eight shared non-waiting slots bound outstanding query/prefetch calls including cleanup,
+and saturation falls back to lexical search. Worker batch transport is unchanged. A sync
 whose bodies carry the chat's newest user message starts that text's embedding at once, and the retrieve that follows
 (the plugin sends the same text as its query) takes it instead of calling: the embedder has the sync's time too, and
 such a request waits for nothing. Fail-open to lexical, the vector search, the fusion and the ranking are as before;

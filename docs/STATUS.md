@@ -17,15 +17,27 @@ a fresh backup; both services now run it, with schema 0029. The first saved rule
 `Weapons`, the exact three keys behind the earlier 16-change/5-flag measurement; the second rule is unchanged.
 The config API rebuilt 974 state observations with identical values and rules version; all 430 raw revisions and
 five model generation keys stayed unchanged, with no new queued jobs. The served plugin is build `4d4a525ed230`;
-installation/reload in the host remains unverified. Live read-only checks found six current watch flags,
-matching the Inspector; no new natural retrieve trace had arrived after deployment. Repository default remains
+a 14:26 KST natural retrieve subsequently recorded that exact plugin fingerprint, packet-v17 and vectors on
+(3,955/4,000 tokens). This confirms the installed plugin reached the sidecar; it is not a scored answer-quality gate.
+Live read-only checks found six current watch flags, matching the Inspector. Repository default remains
 v16. All in `0.4.0` (the owner).
 
 **Integrated PR and trial deployment (2026-10-09):** PR #291 now targets `main` and includes the contents of
 20 PRs (#266, #272–#279, #281–#291); #280 remains excluded. The deployed runtime commit `1e86796` passed
-sidecar/plugin and all four native CI jobs (37883424269/37883424276; Linux arm64 builds without smoke).
+sidecar/plugin and all four native CI jobs (37883424269/37883424276). The later documentation HEAD `fc588ec`
+also passed CI (37886118924/37886118946); Linux arm64's actual Smoke step passed (job 113676391801), while its
+full pytest step was skipped. Earlier "builds without smoke" descriptions were inaccurate.
 The later deployment documentation does not change runtime code. Original containers and the fresh database
 dump are retained; no main merge or release tag was made. See the audit record for deployment/rollback evidence.
+
+**Release audit follow-up (2026-10-09, owner authorized all eleven fixes):**
+[causes, corrections and verification](audits/0.4.0-fixes-2026-10-09.md). AGE-65–75 cover source-cluster status,
+worker leases and canon rebuild races, unextracted recall slots and event rest quotas, malformed parser settings,
+panel save failures, labels under a tiny budget, normalization CPU, query HTTP deadlines and idle upload cleanup.
+This candidate changes no schema, extractor/normalizer output, provider payload or global packet default.
+High risk: original data preservation, claim ownership, derived-memory recovery and recall selection. The 6113
+runtime remains `1e86796`; these new corrections have not been deployed. Verification and release boundaries
+are recorded in the linked follow-up; a local fix does not complete a fresh live gate or authorize a release.
 
 **Authorized `0.4.0` gate corrections (2026-10-09, candidate branch work):**
 [audit and evidence boundaries](audits/0.4.0-2026-10-09.md). Missing independent fixes from

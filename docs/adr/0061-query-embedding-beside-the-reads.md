@@ -34,11 +34,14 @@ reply and the window, not on the candidates. Only the vector search, the fusion 
    not on the whole request: a request that now has vectors where it fell back before pays the vector search and
    compiles a fuller packet, as every request with vectors always did (`docs/perf/query-embedding.md`: ≈60 ms at the
    95th percentile on the requests that gained vectors from a 700 ms embedder, at an unchanged median).
-3. **The call is bounded at `EMBED_CALL_FACTOR` (2) × the timeout**, per network phase as before (httpx: the time to
-   connect, to write, and until the answer starts). It must outlast the reads plus the wait to be of use, and it must
-   end soon after the request has given up on it, since an embedder serves one request at a time (`vectors.process_embed`:
-   a queued batch delayed a query by 582 ms) and a call nobody waits for would hold it for the next request's query. The
-   result of a call the request gave up on is dropped; the thread ends with the call.
+3. **The HTTP task has a total deadline of `EMBED_CALL_FACTOR` (2) × the timeout** (corrected
+   2026-10-09, AGE-74). The original httpx timeout bounded inactivity in each network phase, so a server sending
+   a few bytes repeatedly could keep an abandoned call alive. Query transport now uses an async deadline around
+   the entire HTTP exchange; worker batches retain their existing metered transport. Request and prefetch calls
+   share eight non-waiting slots. When all are occupied, recall immediately falls back to lexical search.
+   OS DNS resolution or transport cleanup can outlive cancellation and keeps its slot until it finishes: the
+   deadline is not a hard guarantee that the thread has exited. This bounds outstanding calls/cleanup without an
+   unbounded waiting queue. The provider payload, projection and caller's wait budget are unchanged.
 4. **Fail open as before.** A call that fails (an address, a key, the server) or is not collected in time leaves the
    request lexical; the trace's `vector_mode` says `fallback: …` with the reason (now "embedding not answered within N ms
    after recall's reads" for the timeout), the retrieve answer says `fallback`, and the panel and the progress display
@@ -71,8 +74,10 @@ reply and the window, not on the candidates. Only the vector search, the fusion 
 - A request whose embedder answers within the reads' time plus the timeout has vectors, where before it needed to
   answer within the timeout alone. The wait's worst case is unchanged; a request whose embedder answers during the
   reads is faster than before by the time it no longer waits; one that gains vectors spends what vectors cost.
-- The sidecar runs one extra thread per request with an embedder, for the length of the call. A call abandoned by its
-  request runs on to at most twice the timeout (a prefetched one to at least 2 s).
+- The sidecar permits at most eight simultaneous query/prefetch embedding calls, including cleanup after
+  cancellation. Their HTTP deadlines are twice the timeout (at least 2 s for prefetch). DNS/transport cleanup
+  can outlast that deadline; an occupied pool falls back immediately. Synthetic trickle and blocked-resolver
+  checks are recorded in `docs/audits/0.4.0-fixes-2026-10-09.md`.
 - A request that follows its sync finds its embedding under way or done: on a long chat the sync alone outlasts a
   production embedder's call, so such a request waits for nothing and has vectors. One embedding call per generation
   as before (the retrieve reuses the sync's); a sync whose retrieve never comes (a reroll served from the plugin's
