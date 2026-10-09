@@ -281,8 +281,13 @@ def ask_data_dir_in_console(base: Path) -> Path | None:
 
 def pg_running(pgdata: Path) -> bool:
     pgdata = ascii_path(pgdata) if WINDOWS else pgdata
-    return subprocess.run([pg_bin("pg_ctl"), "-D", str(pgdata), "status"],
-                          **{**CHILD_KW, "stdout": subprocess.DEVNULL}).returncode == 0
+    status = subprocess.run([pg_bin("pg_ctl"), "-D", str(pgdata), "status"],
+                            **{**CHILD_KW, "stdout": subprocess.DEVNULL}).returncode
+    if status not in (0, 3):
+        raise SystemExit(f"PostgreSQL's state at {pgdata} could not be determined (pg_ctl status returned {status}). "
+                         "Adoption stopped; the original and any copy were kept.\n"
+                         f"{pgdata}의 PostgreSQL 상태를 확인하지 못해 이전을 중단했어요. 원본과 복사본을 보존했습니다.")
+    return status == 0
 
 
 def tree_digest(root: Path) -> dict[str, tuple[int, str]]:
@@ -369,14 +374,14 @@ def adopt_bundle_data(data: Path, pg_port: int) -> None:
                          "아무것도 바뀌지 않았어요.")
     old_lock = lock_data_dir(old)  # an older NMOS still running on it stops this start here
     try:
-        staging = data / "pg.adopting"
-        if staging.exists():
-            stop_copied_cluster(staging)  # a previous start may have left a running copy
-            shutil.rmtree(staging)  # only after pg_ctl confirms it is stopped
         if pg_running(old / "pg"):  # left by an earlier run that did not stop it; no launcher holds it (the lock)
             log(f"stopping the PostgreSQL an earlier run left running on {old}")
             subprocess.run([pg_bin("pg_ctl"), "-D", str(ascii_path(old / "pg") if WINDOWS else old / "pg"), "-m",
                             "fast", "-w", "stop"], check=True, **{**CHILD_KW, "stdout": subprocess.DEVNULL})
+        staging = data / "pg.adopting"
+        if staging.exists():
+            stop_copied_cluster(staging)  # a previous start may have left a running copy
+            shutil.rmtree(staging)  # only after pg_ctl confirms it is stopped
         password = old_pw.read_text(encoding="utf-8").strip()
         log(f"moving the database from {old} to {data} (Phase 37: the data lives outside the bundle)")
         write_private(data / "db-password", password)

@@ -21,6 +21,7 @@ _spec = importlib.util.spec_from_file_location("nmos_launcher", TOOL)
 launcher = importlib.util.module_from_spec(_spec)
 assert _spec.loader is not None
 _spec.loader.exec_module(launcher)
+_pg_running = launcher.pg_running
 
 
 def digest(root: Path) -> dict[str, tuple[int, str]]:
@@ -121,6 +122,78 @@ def test_the_env_beside_the_launcher_is_copied_once_and_read_under_the_data_fold
 
 
 # --- Q3: adoption -----------------------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("status", [1, 4])
+@pytest.mark.parametrize("staging", [False, True])
+def test_unknown_source_status_preserves_original_and_staging(bundle, monkeypatch, status, staging):
+    from types import SimpleNamespace
+
+    old = old_data(bundle)
+    data = per_user()
+    if staging:
+        shutil.copytree(old / "pg", data / "pg.adopting")
+    before, target = digest(old), digest(data)
+    calls = []
+
+    def child(args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=status)
+
+    monkeypatch.setattr(launcher, "pg_running", _pg_running)
+    monkeypatch.setattr(launcher.subprocess, "run", child)
+    with pytest.raises(SystemExit, match="could not be determined"):
+        launcher.adopt_bundle_data(data, 54390)
+    assert digest(old) == before and digest(data) == target
+    assert len(calls) == 1 and calls[0][-1] == "status" and calls[0][2] == str(old / "pg")
+    assert not (bundle / "data.moved").exists()
+
+
+@pytest.mark.parametrize("status", [0, 3])
+def test_source_is_adopted_only_when_stopped_or_successfully_stopped(bundle, monkeypatch, status):
+    from types import SimpleNamespace
+
+    old = old_data(bundle)
+    cluster = digest(old / "pg")
+    data = per_user()
+    calls = []
+
+    def child(args, **kwargs):
+        calls.append(args[-1])
+        return SimpleNamespace(returncode=status if args[-1] == "status" else 0)
+
+    monkeypatch.setattr(launcher, "pg_running", _pg_running)
+    monkeypatch.setattr(launcher.subprocess, "run", child)
+    launcher.adopt_bundle_data(data, 54390)
+    assert calls == (["status", "stop"] if status == 0 else ["status"])
+    assert digest(data / "pg") == cluster and (bundle / "data.moved").exists()
+
+
+@pytest.mark.parametrize("failure", ["status", "stop", "interrupt"])
+def test_source_command_failure_preserves_original_and_staging(bundle, monkeypatch, failure):
+    from types import SimpleNamespace
+
+    old = old_data(bundle)
+    data = per_user()
+    shutil.copytree(old / "pg", data / "pg.adopting")
+    before, target = digest(old), digest(data)
+
+    def child(args, **kwargs):
+        if failure == "interrupt":
+            raise KeyboardInterrupt
+        if failure == "status":
+            raise OSError("status unavailable")
+        if args[-1] == "stop":
+            raise launcher.subprocess.CalledProcessError(1, args)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(launcher, "pg_running", _pg_running)
+    monkeypatch.setattr(launcher.subprocess, "run", child)
+    expected = KeyboardInterrupt if failure == "interrupt" else (
+        OSError if failure == "status" else launcher.subprocess.CalledProcessError)
+    with pytest.raises(expected):
+        launcher.adopt_bundle_data(data, 54390)
+    assert digest(old) == before and digest(data) == target
+    assert not (bundle / "data.moved").exists()
 
 def test_data_beside_the_launcher_moves_to_the_per_user_folder_by_a_rename(bundle):
     old = old_data(bundle)
