@@ -66,14 +66,29 @@ def _version_spec(spec: Any) -> Any:
 
 
 def compile_rules(spec: Any) -> RuleSet:
+    if not isinstance(spec, dict):
+        return RuleSet(rules=(), version="none", errors=("parser spec must be an object with a rules list",))
+    if not isinstance(spec.get("rules"), list):
+        return RuleSet(rules=(), version="none", errors=("rules must be a list",))
     raw = json.dumps(_version_spec(spec), sort_keys=True, ensure_ascii=False)
-    items = spec.get("rules", []) if isinstance(spec, dict) else []
+    items = spec["rules"]
     rules: list[Rule] = []
     errors: list[str] = []
     for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            errors.append(f"rule{i}: rule must be an object")
+            continue
         rid = str(item.get("id") or f"rule{i}")
         try:
             kind = item.get("kind")
+            for name in ("key", "prefix", "role", "character"):
+                if name in item and item[name] is not None and not isinstance(item[name], str):
+                    raise ValueError(f"{name} must be a string")
+            for name in (("pattern",) if kind == "regex" else ("start", "end") if kind == "block" else ()):
+                if not isinstance(item.get(name), str):
+                    raise ValueError(f"{name} must be a regex string")
+            if item.get("entity_line") is not None and not isinstance(item["entity_line"], str):
+                raise ValueError("entity_line must be a regex string")
             card = item.get("card")
             if card is not None and (not isinstance(card, str) or not card.strip()):
                 raise ValueError("card must be a character name")

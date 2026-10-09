@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:4d4a525ed230".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:0f1801e59066".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -723,6 +723,10 @@
     "cancel": ["\uCDE8\uC18C", "Cancel"],
     "lang_unsaved": ["\uC5B8\uC5B4\uB97C \uBC14\uAFB8\uAE30 \uC804\uC5D0 \uBCC0\uACBD\uC744 \uC800\uC7A5\uD558\uAC70\uB098 \uB418\uB3CC\uB9AC\uC138\uC694.", "Save or revert your changes before switching the language."],
     "conn_saved_server_failed": ["\uC5F0\uACB0 \uC124\uC815\uC740 \uC800\uC7A5\uD588\uC9C0\uB9CC \uC11C\uBC84 \uC124\uC815\uC740 \uC800\uC7A5\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: {e}", "Connection saved, but the server settings were not: {e}"],
+    "conn_save_failed": [
+      "\uC5F0\uACB0 \uC124\uC815 \uC800\uC7A5\uC744 \uB9C8\uCE58\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4({n}/{total}\uAC1C \uC800\uC7A5 \uD655\uC778). \uC11C\uBC84 \uC124\uC815\uC740 \uBCF4\uB0B4\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uC800\uC7A5\uB41C \uC5F0\uACB0\uC744 \uD655\uC778\uD558\uAC70\uB098 \uB2E4\uC2DC \uC800\uC7A5\uD558\uC138\uC694: {e}",
+      "Could not finish saving the connection ({n}/{total} settings confirmed saved). Server settings were not sent. Check the saved connection or retry: {e}"
+    ],
     // progress display (HUD) on the chat screen
     "hud.recalling": ["\uAE30\uC5B5 \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Recalling memory\u2026"],
     "hud.injected": ["\u2713 \uAE30\uC5B5 \uC8FC\uC785 ({n}\uC790)", "\u2713 Memory injected ({n} chars)"],
@@ -3845,20 +3849,28 @@ html,body{margin:0;background:${PALETTE.bg}}
       save.disabled = true;
       say(barText, L("saving"));
       const v = values();
-      if (d.includes("conn")) {
-        const args = connArgs(v.conn);
-        for (const [k, value] of Object.entries(args)) await deps.setArg(k, value);
-        reserved.value = String(args.reserved_memory_tokens);
-        deadline.value = String(args.deadline_ms);
-        baseline = { ...baseline, conn: values().conn };
-      }
-      const body = configBody(d, v);
-      const tight = (d.includes("tune") || d.includes("conn")) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline) ? ` ${L("tune.embed_wait_tight", { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : "";
-      if (!Object.keys(body).length) {
-        update({ text: L("saved") + tight, kind: tight ? "warn" : "ok" });
-        return true;
-      }
+      let connSaved = 0;
+      let connTotal = 0;
+      let connComplete = !d.includes("conn");
       try {
+        if (d.includes("conn")) {
+          const args = connArgs(v.conn);
+          connTotal = Object.keys(args).length;
+          for (const [k, value] of Object.entries(args)) {
+            await deps.setArg(k, value);
+            connSaved += 1;
+          }
+          connComplete = true;
+          reserved.value = String(args.reserved_memory_tokens);
+          deadline.value = String(args.deadline_ms);
+          baseline = { ...baseline, conn: values().conn };
+        }
+        const body = configBody(d, v);
+        const tight = (d.includes("tune") || d.includes("conn")) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline) ? ` ${L("tune.embed_wait_tight", { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : "";
+        if (!Object.keys(body).length) {
+          update({ text: L("saved") + tight, kind: tight ? "warn" : "ok" });
+          return true;
+        }
         const r = await deps.api("PUT", "/v1/config", body);
         fillServer(r);
         baseline = values();
@@ -3869,7 +3881,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         return true;
       } catch (error) {
         const text2 = errorText(lang, error);
-        update({ text: d.includes("conn") ? L("conn_saved_server_failed", { e: text2 }) : text2, kind: "err" });
+        update({ text: !connComplete ? L("conn_save_failed", { n: connSaved, total: connTotal, e: text2 }) : d.includes("conn") ? L("conn_saved_server_failed", { e: text2 }) : text2, kind: "err" });
         return false;
       }
     }
@@ -3886,17 +3898,18 @@ html,body{margin:0;background:${PALETTE.bg}}
       const saveClose = el("button", { class: "primary", text: L("save_and_close") });
       const discard = el("button", { text: L("discard_and_close") });
       const cancel = el("button", { text: L("cancel") });
-      const restore2 = () => {
+      const restore2 = (refresh = true) => {
         closing = false;
         bar.replaceChildren(barText, revert, save);
-        update();
+        if (refresh) update();
       };
       saveClose.addEventListener("click", async () => {
+        saveClose.disabled = true;
         if (await saveAll()) shut();
-        else restore2();
+        else restore2(false);
       });
       discard.addEventListener("click", shut);
-      cancel.addEventListener("click", restore2);
+      cancel.addEventListener("click", () => restore2());
       select("settings");
       bar.replaceChildren(el("span", { class: "text warn", text: L("close_unsaved") }), cancel, discard, saveClose);
     });

@@ -368,6 +368,8 @@ const STRINGS = {
   'cancel': ['취소', 'Cancel'],
   'lang_unsaved': ['언어를 바꾸기 전에 변경을 저장하거나 되돌리세요.', 'Save or revert your changes before switching the language.'],
   'conn_saved_server_failed': ['연결 설정은 저장했지만 서버 설정은 저장하지 못했습니다: {e}', 'Connection saved, but the server settings were not: {e}'],
+  'conn_save_failed': ['연결 설정 저장을 마치지 못했습니다({n}/{total}개 저장 확인). 서버 설정은 보내지 않았습니다. 저장된 연결을 확인하거나 다시 저장하세요: {e}',
+    'Could not finish saving the connection ({n}/{total} settings confirmed saved). Server settings were not sent. Check the saved connection or retry: {e}'],
   // progress display (HUD) on the chat screen
   'hud.recalling': ['기억 불러오는 중…', 'Recalling memory…'],
   'hud.injected': ['✓ 기억 주입 ({n}자)', '✓ Memory injected ({n} chars)'],

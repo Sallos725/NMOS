@@ -1443,21 +1443,29 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     save.disabled = true;
     say(barText, L('saving'));
     const v = values();
-    if (d.includes('conn')) {
-      // First, so the server update below already goes to a changed sidecar address.
-      const args = connArgs(v.conn);
-      for (const [k, value] of Object.entries(args)) await deps.setArg(k, value);
-      // Show what was stored: the budget is capped at PANEL_MAX_RESERVED_TOKENS, the deadline kept in range.
-      reserved.value = String(args.reserved_memory_tokens);
-      deadline.value = String(args.deadline_ms);
-      baseline = { ...baseline, conn: values().conn };
-    }
-    const body = configBody(d, v);
-    // Said with any save that touches either value; the save itself goes ahead (audit F20).
-    const tight = (d.includes('tune') || d.includes('conn')) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline)
-      ? ` ${L('tune.embed_wait_tight', { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : '';
-    if (!Object.keys(body).length) { update({ text: L('saved') + tight, kind: tight ? 'warn' : 'ok' }); return true; }
+    let connSaved = 0;
+    let connTotal = 0;
+    let connComplete = !d.includes('conn');
     try {
+      if (d.includes('conn')) {
+        // First, so the server update below already goes to a changed sidecar address.
+        const args = connArgs(v.conn);
+        connTotal = Object.keys(args).length;
+        for (const [k, value] of Object.entries(args)) {
+          await deps.setArg(k, value);
+          connSaved += 1;
+        }
+        connComplete = true;
+        // Show what was stored: the budget is capped at PANEL_MAX_RESERVED_TOKENS, the deadline kept in range.
+        reserved.value = String(args.reserved_memory_tokens);
+        deadline.value = String(args.deadline_ms);
+        baseline = { ...baseline, conn: values().conn };
+      }
+      const body = configBody(d, v);
+      // Said with any save that touches either value; the save itself goes ahead (audit F20).
+      const tight = (d.includes('tune') || d.includes('conn')) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline)
+        ? ` ${L('tune.embed_wait_tight', { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : '';
+      if (!Object.keys(body).length) { update({ text: L('saved') + tight, kind: tight ? 'warn' : 'ok' }); return true; }
       const r = await deps.api<ServerConfig>('PUT', '/v1/config', body);
       fillServer(r);
       baseline = values();
@@ -1468,7 +1476,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       return true;
     } catch (error) {
       const text = errorText(lang, error);
-      update({ text: d.includes('conn') ? L('conn_saved_server_failed', { e: text }) : text, kind: 'err' });
+      update({ text: !connComplete ? L('conn_save_failed', { n: connSaved, total: connTotal, e: text })
+        : d.includes('conn') ? L('conn_saved_server_failed', { e: text }) : text, kind: 'err' });
       return false;
     }
   }
@@ -1488,10 +1497,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const saveClose = el('button', { class: 'primary', text: L('save_and_close') });
     const discard = el('button', { text: L('discard_and_close') });
     const cancel = el('button', { text: L('cancel') });
-    const restore = () => { closing = false; bar.replaceChildren(barText, revert, save); update(); };
-    saveClose.addEventListener('click', async () => { if (await saveAll()) shut(); else restore(); });
+    const restore = (refresh = true) => { closing = false; bar.replaceChildren(barText, revert, save); if (refresh) update(); };
+    saveClose.addEventListener('click', async () => {
+      saveClose.disabled = true;
+      if (await saveAll()) shut(); else restore(false);
+    });
     discard.addEventListener('click', shut);
-    cancel.addEventListener('click', restore);
+    cancel.addEventListener('click', () => restore());
     select('settings');
     bar.replaceChildren(el('span', { class: 'text warn', text: L('close_unsaved') }), cancel, discard, saveClose);
   });

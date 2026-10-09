@@ -154,6 +154,60 @@ describe('panel', () => {
     expect(args.auth_token).toBe('abc');
   });
 
+  it.each(['sidecar_url', 'route'])('recovers Save after the host rejects %s, showing confirmed partial writes', async (failed) => {
+    const { d, args, calls } = deps();
+    const setArg = d.setArg;
+    let reject = true;
+    d.setArg = async (key, value) => {
+      if (reject && key === failed) throw new Error('host connection write failed');
+      await setArg(key, value);
+    };
+    await openPanel(d, 'settings');
+    const panel = document.getElementById('nmos-panel')!;
+    const url = [...panel.querySelectorAll('input')].find((i) => i.value === args.sidecar_url)!;
+    url.value = 'http://127.0.0.1:8801';
+    url.dispatchEvent(new Event('input', { bubbles: true }));
+    const save = [...panel.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Save')!;
+    save.click();
+    await vi.waitFor(() => expect(save.disabled).toBe(false));
+    const bar = panel.querySelector('.bar .text')!;
+    expect(bar.textContent).toContain(`${failed === 'route' ? 1 : 0}/6 settings confirmed saved`);
+    expect(bar.textContent).toContain('host connection write failed');
+    expect(args.sidecar_url).toBe(failed === 'route' ? url.value : 'http://127.0.0.1:8790');
+    expect(calls.filter(([method]) => method === 'PUT')).toEqual([]);
+    reject = false;
+    save.click();
+    await vi.waitFor(() => expect(bar.textContent).toBe('Saved.'));
+    expect(args.sidecar_url).toBe(url.value);
+    expect(save.disabled).toBe(true);
+  });
+
+  it('keeps Save and close failures visible and allows retry from the restored save bar', async () => {
+    const { d, args } = deps();
+    const setArg = d.setArg;
+    d.setArg = async (key, value) => {
+      if (key === 'route') throw new Error('host connection write failed');
+      await setArg(key, value);
+    };
+    await openPanel(d, 'settings');
+    const panel = document.getElementById('nmos-panel')!;
+    const url = [...panel.querySelectorAll('input')].find((i) => i.value === args.sidecar_url)!;
+    url.value = 'http://127.0.0.1:8801';
+    url.dispatchEvent(new Event('input', { bubbles: true }));
+    const button = (text: string) => [...panel.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === text)!;
+    button('Close').click();
+    button('Save and close').click();
+    await vi.waitFor(() => expect(button('Save')).toBeDefined());
+    expect(document.getElementById('nmos-panel')).toBe(panel);
+    expect(button('Save').disabled).toBe(false);
+    expect(panel.querySelector('.bar .text')!.textContent).toContain('1/6 settings confirmed saved');
+    expect(panel.querySelector('.bar .text')!.textContent).toContain('host connection write failed');
+    d.setArg = setArg;
+    button('Close').click();
+    button('Save and close').click();
+    await vi.waitFor(() => expect(document.getElementById('nmos-panel')).toBeNull());
+  });
+
   it('shows this chat first and switches NMOS off and back on for it (ADR 0048)', async () => {
     const { d, args } = deps();
     args.disabled_chats = 'chat-0';

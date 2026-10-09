@@ -33,6 +33,53 @@ def test_parser_rules_block_and_regex():
     assert parse(ruleset, STATUS, "user", None) == [("hp", "HP", "42/100")]  # block rule is char-only
 
 
+@pytest.mark.parametrize("spec", [[], None, {}, {"rules": None}, {"rules": {}}, {"rules": [None]},
+    {"rules": [{"kind": "regex", "pattern": None, "key": "HP"}]},
+    {"rules": [{"kind": "block", "start": 7, "end": "END"}]},
+    {"rules": [{"kind": "block", "start": "START", "end": None}]},
+    {"rules": [{"kind": "block", "start": "START", "end": "END", "entity_line": []}]},
+    {"rules": [{"kind": "regex", "pattern": "(?P<value>.+)", "key": 7}]}])
+def test_malformed_parser_structure_is_reported_without_crashing(spec):
+    ruleset = compile_rules(spec)
+    assert ruleset.errors and not ruleset.rules
+
+
+def test_parser_file_skips_malformed_rules_but_keeps_valid_ones(tmp_path, caplog):
+    from nmos_sidecar.parsers import load_rules
+
+    path = tmp_path / "rules.json"
+    path.write_text(json.dumps({"rules": [None, {"kind": "regex", "pattern": None}, RULES["rules"][1]]}))
+    ruleset = load_rules(str(path))
+    assert len(ruleset.errors) == 2 and len(ruleset.rules) == 1
+    assert parse(ruleset, STATUS, "char", None) == [("hp", "HP", "42/100")]
+    assert "parser rule skipped" in caplog.text
+    assert compile_rules({"rules": []}).errors == ()
+
+
+def test_bad_parser_config_keeps_saved_rules_and_state(client, migrated):
+    valid = {"rules": [RULES["rules"][1]]}
+    assert client.put("/v1/config", json={"parsers": valid}).status_code == 200
+    chat = SimChat()
+    chat.user("Begin.")
+    chat.reply(STATUS)
+    chat.user("Next.")
+    conv = sync(client, chat)["conversation_id"]
+    before_config = client.get("/v1/config").json()["parsers"]
+    before_state = client.get(f"/v1/conversations/{conv}/state").json()
+    assert before_state
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        before_rows = conn.execute("SELECT * FROM state_observation ORDER BY source_revision_id, key").fetchall()
+    for bad in [[], {"rules": None}, {"rules": [None]}, {"rules": [{"kind": "regex", "pattern": None}]}]:
+        rejected = client.put("/v1/config", json={"parsers": bad})
+        assert rejected.status_code == 422 and "parsers" in rejected.text
+        assert client.get("/v1/config").json()["parsers"] == before_config
+        assert client.get(f"/v1/conversations/{conv}/state").json() == before_state
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        assert conn.execute("SELECT * FROM state_observation ORDER BY source_revision_id, key").fetchall() == before_rows
+    assert client.put("/v1/config", json={"parsers": {"rules": []}}).status_code == 200
+    assert client.get(f"/v1/conversations/{conv}/state").json() == []
+
+
 @pytest.fixture
 def state_client(migrated, tmp_path):
     rules = tmp_path / "rules.json"
