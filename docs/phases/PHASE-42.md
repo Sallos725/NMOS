@@ -67,4 +67,4 @@ High risk: recall provenance, secret isolation, historical replay and token boun
 ## Evidence record
 
 Implementation and copied-data evidence: [source-clock report](../perf/phase42-source-clock.md).
-Platform CI remains the adoption gate; final host-answer quality is not claimed.
+The correction is included in v0.4.0 (merge 41f410d). Required PR CI passed 1,531 server tests; the tag workflow runs its own platform gates before publication. Final host-answer quality is not claimed.
