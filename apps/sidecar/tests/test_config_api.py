@@ -42,6 +42,22 @@ def test_runtime_config_rejects_wrong_scalar_types(client):
     assert client.put("/v1/config", json={"recall_top_k": 21}).status_code == 422  # ranges unchanged
 
 
+def test_the_embedding_wait_is_a_setting_and_requests_use_it(client):
+    """NMOS_EMBED_TIMEOUT_MS was the only way to give a slow embedder more time (K34); the settings UI sets it now."""
+    assert client.get("/v1/config").json()["recall"]["embed_timeout_ms"] == 300
+    for bad in (50, 6000, 1.5, "800"):
+        assert client.put("/v1/config", json={"embed_timeout_ms": bad}).status_code == 422
+    assert client.put("/v1/config", json={"embed_timeout_ms": 1200}).json()["recall"]["embed_timeout_ms"] == 1200
+    chat = SimChat()
+    chat.user("Hana keeps the brass key.")
+    chat.reply("Noted.")
+    chat.user("Where is the key?")
+    sync(client, chat)
+    trace = client.get(f"/v1/trace/{recall(client, chat, 'Where is the key?')['trace_id']}").json()
+    assert trace["recall_options"]["embed_timeout_ms"] == 1200  # recorded, so a replay waits as the request did
+    assert client.put("/v1/config", json={"embed_timeout_ms": None}).json()["recall"]["embed_timeout_ms"] == 300
+
+
 def test_runtime_config_null_still_resets_to_environment_default(migrated):
     with make_client(migrated, llm_json_mode=False, recall_top_k=7) as c:
         c.put("/v1/config", json={"llm_json_mode": True, "recall_top_k": 2})
@@ -62,10 +78,10 @@ def test_parsers_from_ui_rebuild_state(client):
     chat.user("start")
     chat.reply("<status>\n[하나]\n장소: 성당\n</status>")
     chat.user("go on")
-    sync(client, chat)
+    sync(client, chat, character_name="Status test")
     bad = client.put("/v1/config", json={"parsers": "{not json"})
     assert bad.status_code == 422
-    rules = {"rules": [{"id": "r", "kind": "block", "start": "<status>", "end": "</status>",
+    rules = {"rules": [{"card": "Status test", "id": "r", "kind": "block", "start": "<status>", "end": "</status>",
                         "entity_line": r"\[(?P<entity>[^\]]+)\]"}]}
     view = client.put("/v1/config", json={"parsers": rules}).json()
     assert view["parsers"]["source"] == "ui" and view["parsers"]["active_rules"] == 1
@@ -213,3 +229,12 @@ def test_raising_extraction_backfill_queues_older_turns_without_restart(migrated
         assert c.put("/v1/config", json={"extract_backfill": 5}).json()["queued_jobs"] == 3
         assert c.put("/v1/config", json={"extract_backfill": 1}).json()["queued_jobs"] == 0
     assert db.execute("SELECT count(*) AS n FROM job WHERE kind = 'extract'").fetchone()["n"] == 5
+
+
+def test_the_install_kind_reaches_the_panel(migrated):
+    """Pre-0.4.0 audit F18: the portable launcher says `bundle`, so the panel's Ollama preset is 127.0.0.1."""
+    with make_client(migrated, install="bundle") as c:
+        assert c.get("/v1/health").json()["install"] == "bundle"
+        assert c.get("/v1/config").json()["install"] == "bundle"
+    with make_client(migrated) as c:
+        assert c.get("/v1/health").json()["install"] is None and c.get("/v1/config").json()["install"] is None

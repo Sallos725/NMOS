@@ -1,0 +1,694 @@
+{
+  "messages": 10000,
+  "model_calls": 0,
+  "method": "Synthetic 10k long-message corpus, 5000 clocks; in-process retrieve API; six alternating rounds of eight temporal queries, v18 source_clock off/on. No extraction, vectors, providers, warmup or individually cold-cache claims. Shared host runs other test jobs.",
+  "rows": [
+    {
+      "round": 1,
+      "enabled": false,
+      "api_ms": 109.708,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 1,
+      "enabled": true,
+      "api_ms": 240.857,
+      "clock_ms": 2.47,
+      "added": 2
+    },
+    {
+      "round": 1,
+      "enabled": false,
+      "api_ms": 106.029,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 1,
+      "enabled": true,
+      "api_ms": 108.155,
+      "clock_ms": 2.6,
+      "added": 2
+    },
+    {
+      "round": 1,
+      "enabled": false,
+      "api_ms": 107.535,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 1,
+      "enabled": true,
+      "api_ms": 104.755,
+      "clock_ms": 2.48,
+      "added": 2
+    },
+    {
+      "round": 1,
+      "enabled": false,
+      "api_ms": 93.81,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 1,
+      "enabled": true,
+      "api_ms": 105.675,
+      "clock_ms": 2.18,
+      "added": 2
+    },
+    {
+      "round": 1,
+      "enabled": false,
+      "api_ms": 99.876,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 1,
+      "enabled": true,
+      "api_ms": 101.431,
+      "clock_ms": 2.44,
+      "added": 2
+    },
+    {
+      "round": 1,
+      "enabled": false,
+      "api_ms": 111.971,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 1,
+      "enabled": true,
+      "api_ms": 104.103,
+      "clock_ms": 2.46,
+      "added": 2
+    },
+    {
+      "round": 1,
+      "enabled": false,
+      "api_ms": 100.907,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 1,
+      "enabled": true,
+      "api_ms": 109.283,
+      "clock_ms": 2.02,
+      "added": 2
+    },
+    {
+      "round": 1,
+      "enabled": false,
+      "api_ms": 100.854,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 1,
+      "enabled": true,
+      "api_ms": 104.496,
+      "clock_ms": 2.39,
+      "added": 2
+    },
+    {
+      "round": 2,
+      "enabled": true,
+      "api_ms": 114.51,
+      "clock_ms": 2.21,
+      "added": 2
+    },
+    {
+      "round": 2,
+      "enabled": false,
+      "api_ms": 105.687,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 2,
+      "enabled": true,
+      "api_ms": 106.369,
+      "clock_ms": 2.52,
+      "added": 2
+    },
+    {
+      "round": 2,
+      "enabled": false,
+      "api_ms": 100.998,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 2,
+      "enabled": true,
+      "api_ms": 112.047,
+      "clock_ms": 2.05,
+      "added": 2
+    },
+    {
+      "round": 2,
+      "enabled": false,
+      "api_ms": 98.406,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 2,
+      "enabled": true,
+      "api_ms": 122.415,
+      "clock_ms": 1.66,
+      "added": 2
+    },
+    {
+      "round": 2,
+      "enabled": false,
+      "api_ms": 100.034,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 2,
+      "enabled": true,
+      "api_ms": 102.441,
+      "clock_ms": 1.63,
+      "added": 2
+    },
+    {
+      "round": 2,
+      "enabled": false,
+      "api_ms": 109.49,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 2,
+      "enabled": true,
+      "api_ms": 107.684,
+      "clock_ms": 2.0,
+      "added": 2
+    },
+    {
+      "round": 2,
+      "enabled": false,
+      "api_ms": 102.801,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 2,
+      "enabled": true,
+      "api_ms": 136.239,
+      "clock_ms": 1.99,
+      "added": 2
+    },
+    {
+      "round": 2,
+      "enabled": false,
+      "api_ms": 100.749,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 2,
+      "enabled": true,
+      "api_ms": 99.266,
+      "clock_ms": 2.35,
+      "added": 2
+    },
+    {
+      "round": 2,
+      "enabled": false,
+      "api_ms": 100.196,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 3,
+      "enabled": false,
+      "api_ms": 91.74,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 3,
+      "enabled": true,
+      "api_ms": 89.14,
+      "clock_ms": 2.15,
+      "added": 2
+    },
+    {
+      "round": 3,
+      "enabled": false,
+      "api_ms": 75.552,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 3,
+      "enabled": true,
+      "api_ms": 74.799,
+      "clock_ms": 1.57,
+      "added": 2
+    },
+    {
+      "round": 3,
+      "enabled": false,
+      "api_ms": 74.57,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 3,
+      "enabled": true,
+      "api_ms": 80.433,
+      "clock_ms": 1.72,
+      "added": 2
+    },
+    {
+      "round": 3,
+      "enabled": false,
+      "api_ms": 75.041,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 3,
+      "enabled": true,
+      "api_ms": 88.395,
+      "clock_ms": 1.9,
+      "added": 2
+    },
+    {
+      "round": 3,
+      "enabled": false,
+      "api_ms": 89.823,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 3,
+      "enabled": true,
+      "api_ms": 287.533,
+      "clock_ms": 1.7,
+      "added": 2
+    },
+    {
+      "round": 3,
+      "enabled": false,
+      "api_ms": 100.735,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 3,
+      "enabled": true,
+      "api_ms": 190.395,
+      "clock_ms": 1.72,
+      "added": 2
+    },
+    {
+      "round": 3,
+      "enabled": false,
+      "api_ms": 77.667,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 3,
+      "enabled": true,
+      "api_ms": 83.267,
+      "clock_ms": 1.77,
+      "added": 2
+    },
+    {
+      "round": 3,
+      "enabled": false,
+      "api_ms": 82.281,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 3,
+      "enabled": true,
+      "api_ms": 84.382,
+      "clock_ms": 1.76,
+      "added": 2
+    },
+    {
+      "round": 4,
+      "enabled": true,
+      "api_ms": 87.615,
+      "clock_ms": 1.73,
+      "added": 2
+    },
+    {
+      "round": 4,
+      "enabled": false,
+      "api_ms": 80.707,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 4,
+      "enabled": true,
+      "api_ms": 80.252,
+      "clock_ms": 1.66,
+      "added": 2
+    },
+    {
+      "round": 4,
+      "enabled": false,
+      "api_ms": 86.761,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 4,
+      "enabled": true,
+      "api_ms": 84.801,
+      "clock_ms": 1.82,
+      "added": 2
+    },
+    {
+      "round": 4,
+      "enabled": false,
+      "api_ms": 78.249,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 4,
+      "enabled": true,
+      "api_ms": 80.507,
+      "clock_ms": 1.78,
+      "added": 2
+    },
+    {
+      "round": 4,
+      "enabled": false,
+      "api_ms": 75.841,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 4,
+      "enabled": true,
+      "api_ms": 82.106,
+      "clock_ms": 1.88,
+      "added": 2
+    },
+    {
+      "round": 4,
+      "enabled": false,
+      "api_ms": 93.81,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 4,
+      "enabled": true,
+      "api_ms": 80.314,
+      "clock_ms": 1.55,
+      "added": 2
+    },
+    {
+      "round": 4,
+      "enabled": false,
+      "api_ms": 81.896,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 4,
+      "enabled": true,
+      "api_ms": 82.688,
+      "clock_ms": 1.72,
+      "added": 2
+    },
+    {
+      "round": 4,
+      "enabled": false,
+      "api_ms": 84.044,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 4,
+      "enabled": true,
+      "api_ms": 82.13,
+      "clock_ms": 1.58,
+      "added": 2
+    },
+    {
+      "round": 4,
+      "enabled": false,
+      "api_ms": 77.964,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 5,
+      "enabled": false,
+      "api_ms": 77.667,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 5,
+      "enabled": true,
+      "api_ms": 78.377,
+      "clock_ms": 1.57,
+      "added": 2
+    },
+    {
+      "round": 5,
+      "enabled": false,
+      "api_ms": 78.206,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 5,
+      "enabled": true,
+      "api_ms": 99.568,
+      "clock_ms": 1.84,
+      "added": 2
+    },
+    {
+      "round": 5,
+      "enabled": false,
+      "api_ms": 77.103,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 5,
+      "enabled": true,
+      "api_ms": 78.024,
+      "clock_ms": 1.58,
+      "added": 2
+    },
+    {
+      "round": 5,
+      "enabled": false,
+      "api_ms": 80.484,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 5,
+      "enabled": true,
+      "api_ms": 101.771,
+      "clock_ms": 2.04,
+      "added": 2
+    },
+    {
+      "round": 5,
+      "enabled": false,
+      "api_ms": 92.297,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 5,
+      "enabled": true,
+      "api_ms": 91.469,
+      "clock_ms": 1.8,
+      "added": 2
+    },
+    {
+      "round": 5,
+      "enabled": false,
+      "api_ms": 85.784,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 5,
+      "enabled": true,
+      "api_ms": 94.936,
+      "clock_ms": 1.77,
+      "added": 2
+    },
+    {
+      "round": 5,
+      "enabled": false,
+      "api_ms": 95.201,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 5,
+      "enabled": true,
+      "api_ms": 92.548,
+      "clock_ms": 1.89,
+      "added": 2
+    },
+    {
+      "round": 5,
+      "enabled": false,
+      "api_ms": 129.318,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 5,
+      "enabled": true,
+      "api_ms": 92.354,
+      "clock_ms": 1.82,
+      "added": 2
+    },
+    {
+      "round": 6,
+      "enabled": true,
+      "api_ms": 83.701,
+      "clock_ms": 1.78,
+      "added": 2
+    },
+    {
+      "round": 6,
+      "enabled": false,
+      "api_ms": 84.78,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 6,
+      "enabled": true,
+      "api_ms": 86.01,
+      "clock_ms": 1.66,
+      "added": 2
+    },
+    {
+      "round": 6,
+      "enabled": false,
+      "api_ms": 79.387,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 6,
+      "enabled": true,
+      "api_ms": 81.112,
+      "clock_ms": 1.93,
+      "added": 2
+    },
+    {
+      "round": 6,
+      "enabled": false,
+      "api_ms": 83.342,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 6,
+      "enabled": true,
+      "api_ms": 85.01,
+      "clock_ms": 1.65,
+      "added": 2
+    },
+    {
+      "round": 6,
+      "enabled": false,
+      "api_ms": 86.732,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 6,
+      "enabled": true,
+      "api_ms": 94.789,
+      "clock_ms": 1.84,
+      "added": 2
+    },
+    {
+      "round": 6,
+      "enabled": false,
+      "api_ms": 81.541,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 6,
+      "enabled": true,
+      "api_ms": 79.509,
+      "clock_ms": 1.74,
+      "added": 2
+    },
+    {
+      "round": 6,
+      "enabled": false,
+      "api_ms": 84.289,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 6,
+      "enabled": true,
+      "api_ms": 81.737,
+      "clock_ms": 1.75,
+      "added": 2
+    },
+    {
+      "round": 6,
+      "enabled": false,
+      "api_ms": 95.593,
+      "clock_ms": 0,
+      "added": 0
+    },
+    {
+      "round": 6,
+      "enabled": true,
+      "api_ms": 87.266,
+      "clock_ms": 1.71,
+      "added": 2
+    },
+    {
+      "round": 6,
+      "enabled": false,
+      "api_ms": 80.3,
+      "clock_ms": 0,
+      "added": 0
+    }
+  ],
+  "api_ms": {
+    "False": {
+      "p50": 89.823,
+      "p95": 109.708
+    },
+    "True": {
+      "p50": 92.354,
+      "p95": 190.395
+    }
+  },
+  "clock_ms": {
+    "p50": 1.82,
+    "p95": 2.48,
+    "max": 2.6
+  }
+}

@@ -78,7 +78,7 @@ Evidence for every runtime claim is in `docs/HOST-FACTS.md`.
 | H5 | Chat branching calls `reissueMessageIds()` and copies messages up to and including the branch point. The copied AI messages **keep their origin `generationId`**. A `{{specialcomment::branchedfrom::<origin chat.id>::<origin chat name>::<origin branch-point chatId>::}}` message is appended last (`role: 'char'`, `isComment`, `disabled: true`). | Cross-chat branches are new conversations unless we parse this marker; the prefix maps to the origin by position (and by `generationId` for AI messages). |
 | H6 | `normalizeChat()` assigns UUID `chatId` to messages missing one at hydration and import. Message ids are unique only **within** a chat: importing a chat keeps every message `chatId` under a new `chat.id`. | Logical message identity is `(host chat id, Message.chatId)`, never `chatId` alone. |
 | H7 | `output` listeners are awaited sequentially; snapshots are plain copies. The `output` snapshot precedes some host post-processing (reroll `swipes` are attached after it). | Listener must return immediately; background work is fire-and-forget. Output notifications are provisional hints; the next request snapshot is authoritative. |
-| H8 | V3 plugins run only in a secure context (sandbox uses `crypto.randomUUID`). Over plain-HTTP LAN they do not load; on localhost/HTTPS `crypto.subtle` is available in the sandbox. | Plugin-side SHA-256 is always available where NMOS can run; deployment must be localhost or HTTPS (Remote Access). |
+| H8 | V3 plugins run only in a secure context (sandbox uses `crypto.randomUUID`). Over plain-HTTP LAN they do not load; on localhost/HTTPS `crypto.subtle` is available in the sandbox (`a14c911`, v1.12.0). *2026-10-08, PocketRisu v1.13.0 (the owner's Phase 38 check):* over plain-HTTP LAN the plugin loads, but `crypto.subtle` is missing. | Plugin-side SHA-256 is available on localhost/HTTPS; deployment must be localhost or HTTPS (Remote Access). Where `crypto.subtle` is missing the plugin skips every request and says so (K6). |
 | H9 | The current chat index is positional: importing a chat prepends it without changing `chatPage`, so the same index then names a different chat. | Never use character/chat index as identity; key conversations by `chat.id`. |
 | H10 | Edit, delete, disable, swipe switch, branch, import and reload fire no plugin hook. | Divergence is discovered only at the next main-generation snapshot. |
 | H11 | Build `a14c911` has no group-chat type (`character.type` is only `"character"`; `isGroupChat` is hard-coded `false`). | Group-chat principal logic has no host surface on this build. |
@@ -93,6 +93,7 @@ Evidence for every runtime claim is in `docs/HOST-FACTS.md`.
 | H20 | Card and lorebook texts can hold the host's CBS blocks, rendered in the prompt, not sent verbatim (v1.13.0, source reading): `{{#if …}}`, `{{#if_pure …}}`, `{{#when …}}`, `{{#each …}}` and `{{#func name …}}` show their body only for some values of the chat's variables, or not as written; `{{#pure}}`, `{{#pure_display}}`, `{{#code}}` and `{{#escape…}}` show it; `{{/…}}` closes the innermost block; any other `{{#…}}` is no block. | NMOS reads a canon text raw, with every branch; a canon fact whose evidence is only inside a conditional block is not served (ADR 0047 amendment 2). |
 | H21 | A V3 plugin's frame can save a file (v1.13.0, Chromium and Firefox; an iPhone home-screen app, where the host may then alert, K38; Android not observed): a Blob on an `<a download>` clicked by script, even seconds after the owner's tap, is saved under its name. `nativeFetch` returns binary bodies whole on both routes (30 MB: ≈0.15–0.26 s). A link from the frame to a file on another origin does not download; it navigates the frame to an error page. | The panel's Export fetches the archive through `nativeFetch` and saves it as a Blob, never by a link (PHASE-16 Q6). |
 | H22 | The V3 API has no chat-list call (v1.13.0). `getDatabase(['characters'])` (H17's permission) returns every active character with every chat's `id`: a chat not opened since the page loaded is a placeholder without messages, while an opened one carries all of them and stays loaded until reload (≈0.5 ms with none open, ≈100 ms with 10,000 messages open, ≈130–150 ms with 15,000; a probe round making two such copies showed host tasks of 50–66 ms). A deleted chat and a character moved to the trash or deactivated (restorable, same chat ids) both just leave the list. | Not used yet (C10, AGE-4). A chat missing from the list is not necessarily deleted, and the read costs more with every chat the owner has opened, so it cannot sit on the request path. |
+| H23 | A V3 plugin's frame can send a request body whole through `nativeFetch` on both routes (v1.13.0, Chromium and Firefox; up to 64 MB observed): a `Uint8Array` (transferred: the frame's copy is emptied) or a JSON string; a `Blob` is refused (`Invalid body type`), and so is a POST or PUT without a body. base64 in JSON is ≈2.3× faster than a `Uint8Array` in Chromium. | The panel's restore sends an archive in 8 MB chunks of base64 in JSON (PHASE-38 Q3). |
 
 ## 5. Key decisions
 
@@ -517,7 +518,9 @@ written from one read-only snapshot by `GET /v1/archive`, `python -m nmos_sideca
 Export buttons, which save it as a Blob (H21). `python -m nmos_sidecar.archive restore` checks every file first, refuses
 a newer archive or a conversation already present (never merged), builds the archive's schema level in a scratch
 schema, loads the rows, applies the later migrations and copies them in with ids and timestamps kept (shared
-sequenced ids moved past the install's own when taken, recorded requests' assertion refs with them).
+sequenced ids moved past the install's own when taken, recorded requests' assertion refs with them). The panel's
+**Restore from an archive…** (Phase 38, ADR 0050 amendment 2) uploads it in 8 MB chunks (H23) and runs the same
+restore while NMOS runs, the shared ids' sequences held to the commit, then the startup steps for the new rows.
 
 **D61 — Model-call usage (Phase 17, ADR 0051).** Each row a model call of the worker produced (a turn's or canon
 part's extraction, a scene or story summary, an embedded chunk) keeps that call's usage as the provider reported it,
@@ -529,6 +532,14 @@ question endings off, names kept whole, question and stop words out) are each lo
 a keyword in more than 200 or more than half of the head messages, or not found within its 25 ms slice, is dropped;
 scores sum `log(messages / matches)` under the lexical timeout. A keyword hit is its own admission signal in fusion. An excerpt only this route found is
 left out when it repeats a secret still kept from someone. Recorded as `lexical_keywords`; older traces replay without it.
+Amendment (Phase 41, ADR 0073, owner 2026-10-09): fresh v18 requests record
+`keyword_particles`. Exact Hangul word-plus-particle matches may fill unused keyword candidate slots after the
+unchanged fuzzy list; existing weights/order and the 50-candidate cap remain. Combined fuzzy/exact breadth gates
+only additions. Lookups share the original route deadline and each word's remaining 25 ms; canceled or broad
+legacy lookups cannot authorize additions. Supplement admission also checks elapsed time after the SQL returns,
+so late backend cancellation cannot admit an over-budget addition; this does not promise immediate server interruption.
+A full old list adds nothing. Missing historical flags replay off,
+and v16/v17 bypass the correction. This changes no stored generation, canonical fact or packet activation floor.
 
 **D63 — Excerpts that fill their length (Phase 18, ADR 0053).** `packet-v10` (the default until Phase 27 made `packet-v11`
 the default, D72; available as `NMOS_PACKET_POLICY=packet-v10`) is `packet-v9` whose excerpt
@@ -583,8 +594,10 @@ its own thread before lexical recall, reads the state, the facts, threads, cast 
 needs the vector), and then waits for the embedding at most `embed_timeout_ms` (300): a request never waits longer for
 the embedding than when the call alone had that time, and the embedder gets the reads' time as well (≈100–300 ms at
 the measured sizes, where the owner's production fallbacks sat: 70 % of recalls, behind a proxy at 280–450 ms). A
-request that now has vectors pays the vector search and a fuller packet, as a request with vectors always did. The call itself is
-bounded at twice the timeout, so one the request gave up on does not hold the embedder for the next request. A sync
+request that now has vectors pays the vector search and a fuller packet, as a request with vectors always did.
+The query HTTP task has a total deadline of twice the timeout (AGE-74 correction, 2026-10-09). DNS/transport cleanup
+can outlive cancellation; eight shared non-waiting slots bound outstanding query/prefetch calls including cleanup,
+and saturation falls back to lexical search. Worker batch transport is unchanged. A sync
 whose bodies carry the chat's newest user message starts that text's embedding at once, and the retrieve that follows
 (the plugin sends the same text as its query) takes it instead of calling: the embedder has the sync's time too, and
 such a request waits for nothing. Fail-open to lexical, the vector search, the fusion and the ranking are as before;
@@ -644,6 +657,53 @@ names), an ended role leaves the facts unless no fact about the same two is curr
 excerpt's anchor breaks a tie on the question's one-character words. A question with a history cue (`HISTORY_CUE`:
 `FIRST_CUE` plus 전에, 이전, 첫날, before, used to, previously) keeps the old excerpts and the ended roles. The default
 since 2026-10-05 (owner, on the second reduced live gate); `NMOS_PACKET_POLICY=packet-v11` keeps the previous packet.
+
+**D76 — What was said, and the turns not extracted yet (`packet-v13`; ADR 0067; Phase 33, AGE-10).** A message with a
+speech cue (말했, 뭐라고, 대사, "said", a phrase in quotes; a question about what someone is called only with a history
+cue) takes the quote route: the quoted speech of the chat's messages searched lexically with the question's words,
+narrowed by a turn number, a first cue or the first meeting of the characters it names, and at most two `<Quote>`
+lines with the words verbatim, placed before the excerpts. A speaker is written only when the quote's own sentence
+names one; a quote only the route found passes the secret test. An excerpt from a turn the active extractor has not
+extracted is raw evidence: never dropped for restating a fact, and it may take one more slot.
+
+**D77 — What a line is for (`packet-v14`; ADR 0068; Phase 34, AGE-10).** Every ledger line is required (state, cast, the
+story so far, knowledge boundaries, what the question names, quotes, the first excerpt), supportive or risky (a disputed
+line). A supportive line placed in each of the last `rest_after` requests (recorded, `NMOS_REST_AFTER`, 2) that none of
+their replies echoed rests for the next two requests; the question naming it, its own words finding it or a history cue
+keeps it. Nothing is stored: the requests are the recorded traces. An excerpt after the first needs half the best fused
+score or a word hit. **The default on 2026-10-08** (owner, on a live run on a real chat: no repetition felt; repeated
+lines' echo 0.29 → 0.39), then in the default through `packet-v15` (D78).
+
+**D78 — The anchor is what was asked (`packet-v15`; ADR 0069; Phase 35, AGE-10).** Under `packet-v15` a history cue's
+keywords (처음, 첫날, 예전) break ties in `grown_excerpt` instead of picking its best sentence, and a first cue adds 처음 and 첫
+to the tie words; one-syllable function words (`retrieval.FUNCTION_SYLLABLES`) break no tie; and a word hit's vector
+chunk gives way to the whole message when the question names a one-syllable noun and the message holds a sentence with
+more of those nouns, then of the anchor words (`packet.anchor_rank`). The keyword route and lexical recall are
+unchanged. **The default on 2026-10-08** (the owner, on the zero-call replay: the bench 289 of 314 against 286, no
+case lost), then in the default through `packet-v16` (D79).
+
+**D79 — A name is not a question about everything (`packet-v16`; ADR 0070; Phase 36, AGE-10).** Under `packet-v16` a
+message that holds a character's name makes required (never resting, ADR 0068) only that character's facts about how it
+stands now (`facts.NOW`) or with another (`facts.STANDING`), its knowledge boundaries, and any of its facts the
+message's words point at (overlap at least `LEXICAL_BAR`); its other facts, a past event or a trait named by the name
+alone, are supportive and rest when unused, unless the question asks for its kind (`facts.ASKS`) or the fact holds one
+of the question's one-syllable nouns. Ranking and limits are unchanged. **The default since 2026-10-08** (the owner, on
+the zero-call replay: the bench as `packet-v15`, required lines 76 % → 67 % on the trial chat);
+`NMOS_PACKET_POLICY=packet-v15` keeps the previous packet.
+
+**D80 — A status window over time (`packet-v17`, status flags; ADR 0071; Phase 39, AGE-43).** One history of every
+status key along the head (`state.history`) feeds the Inspector's lanes, a `<StateHistory>` line under `packet-v17`
+for a message that names a key and asks how it changed (required; not the default), and the flags of a rule's `watch`
+keys: a change the reply's prose does not name goes to "Needs attention", deterministic, nothing stored; a dismissal is
+an owner repair (`state_dismiss`, migration 0029). The replay of the trial install's requests changes none.
+
+**D81 — Questions about the persona (`packet-v18`; ADR 0072; Phase 40, AGE-18).** Explicit third-person questions
+can rank at most two matching facts or attributed claims about the resolved persona between a current-query
+name mention and a previous-reply name mention,
+sharing the cap across both. An unshared Korean given name is accepted only on this route; ordinary persona
+mentions, entity resolution and Cast are unchanged. Existing history, event, rest, mode and token rules apply.
+The owner includes the correction in `0.4.0`; zero-call replay found no new majority failure (see `docs/perf/phase40-persona-questions.md`). The reduced live host answer check is open. After actual-model synthetic verification and
+6113 trial deployment, the owner selected `packet-v18` as the 0.4.0 default (2026-10-09).
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

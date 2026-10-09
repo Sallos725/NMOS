@@ -1,0 +1,90 @@
+[
+  {
+    "index": 32,
+    "original_majority_equal": true,
+    "baseline_votes": 3,
+    "candidate_votes": 2,
+    "clocks_added": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "index": 35,
+    "original_majority_equal": true,
+    "baseline_votes": 3,
+    "candidate_votes": 2,
+    "clocks_added": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "index": 36,
+    "original_majority_equal": true,
+    "baseline_votes": 2,
+    "candidate_votes": 3,
+    "clocks_added": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "index": 39,
+    "original_majority_equal": true,
+    "baseline_votes": 3,
+    "candidate_votes": 2,
+    "clocks_added": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "index": 75,
+    "original_majority_equal": true,
+    "baseline_votes": 3,
+    "candidate_votes": 3,
+    "clocks_added": [
+      2,
+      2,
+      2
+    ]
+  },
+  {
+    "index": 78,
+    "original_majority_equal": true,
+    "baseline_votes": 3,
+    "candidate_votes": 3,
+    "clocks_added": [
+      2,
+      2,
+      2
+    ]
+  },
+  {
+    "index": 83,
+    "original_majority_equal": true,
+    "baseline_votes": 3,
+    "candidate_votes": 3,
+    "clocks_added": [
+      2,
+      2,
+      2
+    ]
+  },
+  {
+    "index": 84,
+    "original_majority_equal": true,
+    "baseline_votes": 2,
+    "candidate_votes": 3,
+    "clocks_added": [
+      2,
+      2,
+      2
+    ]
+  }
+]

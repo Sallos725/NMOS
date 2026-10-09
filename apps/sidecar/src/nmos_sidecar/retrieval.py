@@ -18,27 +18,85 @@ from typing import Any
 from uuid import UUID
 
 import psycopg
+from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from .entities import norm
-from .facts import FIRST_CUE, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
-from . import scene, spans, summaries, variants
+from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
+from . import overuse, quotes, scene, spans, summaries, variants, source_time
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
-from .packet import (ABOUT_POLICIES, BEFORE_POLICIES, CAST_POLICIES, CAUSE_POLICIES, CHANGE_POLICIES, CONTENTS,
+from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POLICIES, CAST_POLICIES, CAUSE_POLICIES,
+                     CHANGE_POLICIES, CONTENTS, LABEL_POLICIES, STATE_HISTORY_KEYS, STATE_HISTORY_MAX,
+                     STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES,
+                     QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
-                     StateItem, clean_text, compile_lines, cut_lines, excerpt, fill, fits_at, kept_counts, secret_line,
+                     StateItem, anchor_rank, clean_text, compile_lines, cut_lines, excerpt, fill, fits_at, kept_counts,
+                     hidden_entry, secret_line,
                      secret_text)
-from .state import current_state
+from .state import current_state, history as state_history
 from .threads import relevant_threads, similarity
 from .vectors import vector_candidates
-from .keywords import keywords
+from .keywords import keywords, particle_lookup
 
 CANDIDATE_LIMIT = 50
+# packet-v17 (PHASE-39 Q3b): a message that asks how a status value changed: the past (HISTORY_CUE), when, how much,
+# since, or a word of change.
+STATE_CHANGE_CUE = re.compile(HISTORY_CUE.pattern + r"|언제|얼마나|부터|동안|바뀌|바꼈|변화|변했|올랐|올라갔|늘었|늘어났|줄었"
+                              r"|줄어들|떨어졌|\bwhen\b|\bsince\b|how much|how many|\bchanged?\b|went (?:up|down)"
+                              r"|\brose\b|\bdropped\b|\bgained\b|\blost\b", re.IGNORECASE)
+
+
+def _turn_of(entry: dict[str, Any], by_turn: bool) -> int | None:
+    return entry["turn"] if by_turn else entry["position"]
+
+
+# Words a status bar and a message use for the same key (PHASE-39 Q3b): a card's bar is often in English while its
+# chat is in Korean ("Level", "레벨 언제 올랐어?"). Each group names one thing; a key in a group is asked about by any
+# word of it.
+STATUS_WORDS = tuple(frozenset(g) for g in (
+    ("level", "lv", "lvl", "레벨"), ("exp", "xp", "experience", "경험치"), ("hp", "health", "체력", "생명력"),
+    ("mp", "mana", "마나", "마력"), ("sp", "stamina", "스태미나", "기력"),
+    ("gold", "money", "coin", "coins", "currency", "currencies", "골드", "재화", "소지금", "코인"),
+    ("item", "items", "inventory", "아이템", "인벤토리", "소지품"), ("statpoints", "statpoint", "스탯포인트"),
+    ("weapon", "weapons", "무기"), ("armor", "armour", "방어구", "갑옷"), ("skill", "skills", "스킬"),
+    ("quest", "quests", "퀘스트"), ("location", "place", "위치", "장소"), ("time", "시간"), ("date", "날짜"),
+    ("mood", "기분"), ("weather", "날씨")))
+
+
+def asked_keys(query: str, keys: list[str]) -> list[str]:
+    """The status keys a message names (PHASE-39 Q3b), in the order it names them: a key of two characters or more as
+    the bar writes it, case and spacing aside, or a word of its STATUS_WORDS group; a word where a word starts ("HP",
+    not the "hp" of another word; 마나, not the 마나 of 얼마나), a Korean one with any particle after it; a sim bot's
+    "<character>.<key>" when the message names both."""
+    text = query.casefold()
+
+    def at(word: str) -> int:
+        word = re.sub(r"\s+", "", word.casefold())
+        if len(word) < 2:
+            return -1
+        spaced = r"\s*".join(map(re.escape, word))  # spacing aside: "stat points", "스탯 포인트"
+        m = re.search(rf"(?<![a-z0-9]){spaced}(?![a-z0-9])" if word.isascii() else rf"(?<![가-힣]){spaced}", text)
+        return m.start() if m else -1
+
+    def first(name: str) -> int:
+        plain = re.sub(r"\s+", "", name.casefold())
+        words = {name, *(w for g in STATUS_WORDS if plain in g for w in g)}
+        return min((x for x in map(at, words) if x >= 0), default=-1)
+
+    found = []
+    for key in keys:
+        entity, _, name = key.rpartition(".")
+        where = first(name)
+        if where >= 0 and (not entity or at(entity) >= 0):
+            found.append((where, -len(name), key))
+    return [k for _, _, k in sorted(found)]
+
+
 # A query that matches more head messages than this is too broad to score (a character's name alone,
 # a phrase every reply repeats): lexical recall abstains for it instead of scoring most of the chat
 # (Track A, A3; docs/perf/scale.md). Vectors, state and facts still run.
@@ -48,6 +106,9 @@ RRF_K = 60
 # this word_similarity bar, near an exact match of the word. A keyword in more than BROAD_LIMIT head messages, or in
 # more than half of them, names what every scene holds (a main character) and is dropped.
 KEYWORD_THRESHOLD = 0.8
+# Index envelope only: a whole two-syllable keyword before a particle retains
+# at least two of its three boundary trigrams. Exact admission is checked below.
+PARTICLE_PREFILTER = 0.6
 # Each keyword's lookup gets at most this long; a word that takes longer is as common as a dropped one (a two-syllable
 # word's three trigrams can leave the index thousands of long messages to recheck), so it is dropped and the other
 # keywords still run (measured at 10,000 messages: 2–3 ms for a rare word, 37 ms for one capped at 201 matches).
@@ -57,10 +118,14 @@ QWEN3_QUERY_INSTRUCTION = ("Instruct: Given a question or remark from a role-pla
 # Candidates must match the user's message; the previous AI turn only breaks ties in ranking
 # (as a filter it pulled in near-duplicate filler during manual testing).
 AI_TIEBREAK_WEIGHT = 0.2
-# The query embedding's own call runs this many times `embed_timeout_ms` (per network phase, as before): long enough
+# The query embedding's whole HTTP exchange runs this many times `embed_timeout_ms`: long enough
 # to answer while recall reads and for the wait after them (QueryEmbedding), short enough that a call the request has
 # given up on ends soon after, instead of holding the embedder for the next request (ADR 0061).
 EMBED_CALL_FACTOR = 2
+# Bound abandoned calls even when OS resolver/transport cleanup outlives async cancellation. Saturation falls back
+# to lexical recall immediately. Prefetch shares the same bound; no waiting work queue accumulates.
+QUERY_EMBED_MAX_INFLIGHT = 8
+_QUERY_EMBED_SLOTS = threading.BoundedSemaphore(QUERY_EMBED_MAX_INFLIGHT)
 # A prefetched embedding (Prefetched, ADR 0061 item 7) is asked for at the sync, before its request exists: its call
 # may run at least this long, since the request follows the sync by the sync's own time (0.3–2.5 s on a long chat,
 # docs/perf/scale.md), and an entry no request took within PREFETCH_TTL_S is dropped.
@@ -77,7 +142,8 @@ class QueryEmbedding:
     the facts, threads, scene and summaries are read, and the request waits for it at most `embed_timeout_ms` after
     those reads: it never waits longer for the embedding than before, and the embedder gets the reads' time as well.
     (A request that now has vectors pays the vector search and a fuller packet, as one with vectors always did.) The
-    call itself is bounded at EMBED_CALL_FACTOR × the timeout. The thread touches no database connection."""
+    HTTP task has a total deadline of EMBED_CALL_FACTOR × the timeout. OS DNS resolution/transport cleanup can
+    outlive cancellation; the shared slot cap bounds these outstanding threads too. No thread touches a DB connection."""
 
     def __init__(self, embedder: Embedder, text: str, timeout_ms: int, call_timeout_ms: int | None = None):
         self.timeout_ms = timeout_ms
@@ -91,12 +157,17 @@ class QueryEmbedding:
         self._thread.start()
 
     def _run(self, embedder: Embedder, text: str) -> None:
+        if not _QUERY_EMBED_SLOTS.acquire(blocking=False):
+            self._future.set_exception(LLMError("query embedding concurrency limit reached"))
+            return
         started = time.perf_counter()
         try:
             (vec,) = embedder.embed([text], timeout_s=self.call_timeout_ms / 1000)
         except BaseException as exc:  # noqa: BLE001 — re-raised to the waiter, which classifies it
             self._future.set_exception(exc)
             return
+        finally:
+            _QUERY_EMBED_SLOTS.release()
         self.call_ms = round((time.perf_counter() - started) * 1000, 2)
         self._future.set_result(vec)
 
@@ -107,7 +178,7 @@ class QueryEmbedding:
 
     def result(self) -> list[float]:
         """The vector, waiting at most `timeout_ms` from now. LLMError when it is not there by then (the thread's call
-        ends on its own soon after; its answer is dropped), or when the call failed; a ValueError (an answer of the
+        is cancelled at its HTTP deadline; cleanup can outlast it), or when the call failed; a ValueError (an answer of the
         wrong shape) comes through as it did."""
         try:
             return self._future.result(timeout=self.timeout_ms / 1000)
@@ -176,6 +247,7 @@ class RecallOptions:
     extractor_key: str | None = None  # facts of this extractor generation only (D20)
     embed_timeout_ms: int = 300
     lexical_timeout_ms: int = 300
+    rest_after: int = 2  # packet-v14: a supportive line rests after this many placements in a row (PHASE-34 Q2)
     vector_min_sim: float = 0.42
     query_prefix: str = ""
     policy: str = DEFAULT_POLICY  # packet compiler (ADR 0027)
@@ -184,6 +256,8 @@ class RecallOptions:
     summarize_key: str | None = None  # summaries of this generation in <Story> (packet-v8, ADR 0043); None: off
     canon_key: str | None = None  # canon facts of this generation (ADR 0047); None: off
     lexical_keywords: bool = True  # the keyword route (ADR 0052); a trace that did not record it replays with it off
+    source_clock: bool = True  # PHASE-42: source-status clock on temporal questions; old traces default off
+    keyword_particles: bool = True  # PHASE-41: v18 exact Korean particle hits; old traces default off
     first_cue: bool = True  # how it started, when the message asks (ADR 0056); a trace without it replays with it off
     history_marks: bool = True  # earlier versions only under marks that cover them (ADR 0038 amendment 1); same replay rule
     name_variants: bool = True  # a given name, a Hangul spelling of a romanized name (ADR 0058); same replay rule
@@ -200,7 +274,7 @@ class RecallOptions:
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
 RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit", "vector_min_sim", "query_prefix",
             "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator", "summarize_key", "canon_key",
-            "lexical_keywords", "first_cue", "history_marks", "name_variants", "excerpt_anchor")
+            "lexical_keywords", "keyword_particles", "source_clock", "first_cue", "history_marks", "name_variants", "excerpt_anchor", "rest_after")
 CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
@@ -296,10 +370,7 @@ def _apply(conn: psycopg.Connection, settings: dict[str, str]) -> None:
 # an edit or a deletion makes a new head commit (D4), until the next autoanalyze. It could also plan a known head
 # through revision_text's primary key, checking every revision. `hit` has no other condition (the normalizer is checked
 # after it), so the trigram index is its only way in with sequential scans off.
-_MATCHES = """
-    WITH hit AS MATERIALIZED (
-        SELECT source_revision_id, normalizer FROM revision_text WHERE %(q)s <%% clean_content
-    )
+_MATCHES_HEAD = """
     SELECT sr.id
     FROM hit
     JOIN active_membership am ON am.source_revision_id = hit.source_revision_id
@@ -310,6 +381,23 @@ _MATCHES = """
       AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
       AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
       AND hit.normalizer = %(norm)s
+    """
+_MATCHES = """
+    WITH hit AS MATERIALIZED (
+        SELECT source_revision_id, normalizer FROM revision_text WHERE %(q)s <%% clean_content
+    )
+    """ + _MATCHES_HEAD + " LIMIT %(limit)s"
+# Exact-particle lookup only, after legacy keyword lookups (PHASE-41). The
+# coarse trigram envelope covers every word boundary; two cheap LIKE guards
+# avoid expensive trigram rechecks for common start/space-prefixed occurrences.
+# Both boundaries and the finite particle suffix are checked before counting.
+_PARTICLE_MATCHES = """
+    WITH hit AS MATERIALIZED (
+        SELECT source_revision_id, normalizer, clean_content FROM revision_text
+        WHERE clean_content LIKE ANY(%(prefixes)s) OR %(q)s <%% clean_content
+    )
+    """ + _MATCHES_HEAD + """
+      AND hit.clean_content ~ %(particle)s
     LIMIT %(limit)s
     """
 
@@ -356,10 +444,12 @@ def _lexical_candidates(conn: psycopg.Connection, head: UUID, ids: list[UUID], q
 
 
 def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut: int, timeout_ms: int,
-                     upto: int | None = None) -> tuple[list[dict[str, Any]], str]:
+                     upto: int | None = None, *, particles: bool = False) -> tuple[list[dict[str, Any]], str]:
     """The keyword route (ADR 0052): messages holding the message's keywords, scored by the keywords' rarity
     (log of messages over matches, summed), best first, and the trace mode: "on", "none" (no keyword), "too_broad"
-    (every keyword dropped as too common) or "timeout". All keywords share one budget of `timeout_ms`."""
+    (every keyword dropped as too common) or "timeout". All keywords share one budget of `timeout_ms`.
+    With particles, exact additions spend only each word's unused slice and follow the unchanged legacy list.
+    """
     if not words:
         return [], "none"
     counted: list[int] = []
@@ -382,14 +472,21 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
 
     deadline = time.perf_counter() + timeout_ms / 1000  # every statement of the route runs before it
 
-    def within(most: float | None = None) -> None:
+    def within(most: float | None = None, *, threshold: float | None = None) -> None:
         """This connection's statement timeout: what is left of the route's budget (at most `most` ms)."""
         left = (deadline - time.perf_counter()) * 1000
         if left < 1:
             raise psycopg.errors.QueryCanceled()
-        _apply(conn, {"statement_timeout": str(max(1, int(left if most is None else min(left, most))))})
+        settings = {"statement_timeout": str(max(1, int(left if most is None else min(left, most))))}
+        if threshold is not None:
+            settings["pg_trgm.word_similarity_threshold"] = str(threshold)
+        _apply(conn, settings)
 
     weights: dict[Any, float] = {}
+    additions: dict[Any, float] = {}
+    # Only complete, non-broad legacy lookups can supply a trustworthy combined
+    # denominator. Each supplemental lookup spends the same word's unused slice.
+    supplements: list[tuple[str, set[UUID], float]] = []
     found = dropped = 0
     try:
         with conn.transaction():  # savepoint: a cancelled statement does not abort the request
@@ -398,8 +495,9 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
             _apply(conn, {"pg_trgm.word_similarity_threshold": str(KEYWORD_THRESHOLD), "enable_seqscan": "off",
                           "enable_indexscan": "off"})
             for word in words:
+                started = time.perf_counter() if particles else 0.0
                 try:
-                    with conn.transaction():  # a word past its slice is dropped; the others still run
+                    with conn.transaction():  # the original legacy lookup and its original slice
                         within(KEYWORD_SLICE_MS)
                         ids = _lexical_matches(conn, head, word, cut, BROAD_LIMIT + 1, upto)
                 except psycopg.errors.QueryCanceled:
@@ -408,7 +506,10 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
                     found += 1
                     dropped += 1
                     continue
+                remaining = KEYWORD_SLICE_MS - (time.perf_counter() - started) * 1000 if particles else 0.0
                 if not ids:
+                    if particles:
+                        supplements.append((word, set(), remaining))
                     continue
                 found += 1
                 within()
@@ -416,11 +517,53 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
                 if len(ids) > BROAD_LIMIT or len(ids) * 2 > n:
                     dropped += 1
                     continue
-                weight = math.log(n / len(ids))  # at least log 2: a keyword in more than half is dropped above
+                weight = math.log(n / len(ids))  # the original rarity and order are preserved
                 for i in ids:
                     weights[i] = weights.get(i, 0.0) + weight
+                if particles:
+                    supplements.append((word, set(ids), remaining))
+            if particles and len(weights) < CANDIDATE_LIMIT:
+                for word, legacy_ids, remaining in supplements:
+                    particle = particle_lookup(word)
+                    if particle is None or remaining < 1:
+                        continue
+                    prefixes, pattern = particle
+                    started = time.perf_counter()
+                    try:
+                        with conn.transaction():  # losing an addition must not discard a valid legacy hit
+                            within(remaining, threshold=PARTICLE_PREFILTER)
+                            params = _matches_params(head, word, cut, BROAD_LIMIT + 1, upto)
+                            exact_ids = {r["id"] for r in conn.execute(
+                                _PARTICLE_MATCHES, params | {"prefixes": prefixes, "particle": pattern},
+                                prepare=False).fetchall()}
+                            # A backend may deliver a result after its SQL timeout.
+                            # Do not admit it beyond this word's remaining allowance.
+                            finished = time.perf_counter()
+                            if (finished - started) * 1000 >= remaining or (deadline - finished) * 1000 < 1:
+                                raise psycopg.errors.QueryCanceled()
+                    except psycopg.errors.QueryCanceled:
+                        if (deadline - time.perf_counter()) * 1000 < 1:
+                            raise
+                        found += 1
+                        dropped += 1
+                        continue
+                    if not exact_ids:
+                        continue
+                    found += 1
+                    combined = legacy_ids | exact_ids
+                    if len(combined) > BROAD_LIMIT:
+                        dropped += 1  # already broad; no full-head count is needed
+                        continue
+                    within()
+                    n = total()
+                    if len(combined) * 2 > n:
+                        dropped += 1
+                        continue
+                    weight = math.log(n / len(combined))
+                    for i in exact_ids - weights.keys():
+                        additions[i] = additions.get(i, 0.0) + weight
             rows = []
-            if weights:
+            if weights or additions:
                 within()
                 rows = conn.execute(
                     """
@@ -431,16 +574,17 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
                     JOIN source_object so ON so.id = sr.source_object_id
                     JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
                     WHERE am.commit_id = %(head)s AND sr.id = ANY(%(ids)s)
-                    """, {"head": head, "ids": list(weights), "norm": NORMALIZER_VERSION}).fetchall()
+                    """, {"head": head, "ids": list(weights.keys() | additions.keys()), "norm": NORMALIZER_VERSION}).fetchall()
             _apply(conn, dict(previous))
     except psycopg.errors.QueryCanceled:
         return [], "timeout"
-    if not weights:
+    if not weights and not additions:
         return [], "too_broad" if found and dropped == found else "on"
     for r in rows:
-        r["keyword_score"] = round(weights[r["id"]], 4)
-    # deterministic whatever order the index returned matches in: score, then the later message, then the id
-    rows.sort(key=lambda r: (-r["keyword_score"], -r["position"], str(r["id"])))
+        r["keyword_score"] = round((weights if r["id"] in weights else additions)[r["id"]], 4)
+    # Keep the original list and weights first, then fill only its unused slots.
+    # Within each tier: score, later message, id, independent of index scan order.
+    rows.sort(key=lambda r: (r["id"] not in weights, -r["keyword_score"], -r["position"], str(r["id"])))
     return rows[:CANDIDATE_LIMIT], "on"
 
 
@@ -473,6 +617,17 @@ def one_char_words(query: str) -> tuple[str, ...]:
     packet-v12 breaks a tie of the excerpt's anchor sentence on them (PHASE-31 Q3)."""
     return tuple(dict.fromkeys(w for w in re.findall(r"\w+", query)
                                if len(w) == 1 and not (w.isascii() and not w.isdigit())))
+
+
+def anchor_words(query: str, words: list[str], tie: tuple[str, ...]) -> tuple[list[str], tuple[str, ...]]:
+    """packet-v15 (PHASE-35): the words an excerpt's best sentence is chosen by. A history cue's words (처음, 첫날,
+    예전) say when the thing happened, not what it was: they leave the anchor words and only break a tie, as 처음 and
+    첫 both do for a first cue (the story says 첫 빵 where the question says 처음). The question's one-syllable words
+    break a tie only when they name something (빵, 달), not when they are FUNCTION_SYLLABLES."""
+    when = [w for w in words if HISTORY_CUE.search(w)]
+    cue_ties = tuple(dict.fromkeys(w for w in (*when, *(("처음", "첫") if FIRST_CUE.search(query) else ()))))
+    return ([w for w in words if w not in when],
+            tuple(dict.fromkeys((*cue_ties, *(w for w in tie if w not in FUNCTION_SYLLABLES)))))
 
 
 def _said(fact: dict[str, Any]) -> tuple[str, ...]:
@@ -666,6 +821,7 @@ def _replaced_judge(view: dict[str, Any], selected: list[dict[str, Any]], query:
 class Gathered:
     """Everything a request offers the packet, before the budget (ADR 0027)."""
     ranked: list[Excerpt] = field(default_factory=list)
+    source_clocks: dict[str, source_time.Clock] = field(default_factory=dict)
     state: list[StateItem] = field(default_factory=list)
     threads: list[Line] = field(default_factory=list)
     lead: list[Line] = field(default_factory=list)  # how the cast stand with each other (ADR 0026)
@@ -676,30 +832,60 @@ class Gathered:
     lexical_note: str = "off"
     keyword_note: str = "off"  # the keyword route (ADR 0052): "on", "none", "too_broad", "timeout" or "off"
     keyword_withheld: int = 0  # excerpts only the keyword route found, left out for repeating a secret (ADR 0052)
+    quote_only: set[str] = dataclasses.field(default_factory=set)  # messages only the quote route found (ADR 0067)
+    named: set[str] = dataclasses.field(default_factory=set)  # assertions the question names: required (PHASE-34 Q1)
+    rested: int = 0  # candidates left out while they rest (PHASE-34 Q3)
+    below_floor: int = 0  # supportive excerpts under EXCERPT_FLOOR (PHASE-34 Q4)
+    risky: set[str] = dataclasses.field(default_factory=set)  # disputed or contradicted assertions (PHASE-34 Q1)
+    quote_withheld: int = 0  # quotes from them left out for repeating a secret, as the keyword route's (ADR 0067)
     vector_note: str = "off"
     cast: dict[str, str] = field(default_factory=dict)  # scene cast, entity key → name (ADR 0034)
     note: str = ""  # added to the packet's Note (a first-person narrator, ADR 0035)
     withheld: int = 0  # lines and excerpts the chat's memory mode left out or replaced (ADR 0035)
     replaced: int = 0  # excerpts left out for stating a value a selected fact's current version replaced (packet-v12)
     ended: int = 0  # ended roles left out of a question about now (packet-v12, PHASE-31 Q2)
+    path: str = "normal"  # "forensic" when the message asked what was said (packet-v13, PHASE-33 Q4)
+    quote_note: str = "off"  # the quote route's own search: "on", "none" or "timeout"
+    quotes: int = 0  # <Quote> lines offered (packet-v13)
     canon_names: str | None = None  # the canon manifest whose names the read used (ADR 0046)
     canon_facts: str | None = None  # the canon manifest whose facts it used; None: none (ADR 0047)
     withheld_lines: list[Line] = field(default_factory=list)
+    hidden_entries: list[dict[str, Any]] = field(default_factory=list)
     secret_pairs: set[tuple[frozenset[str], frozenset[str]]] = field(default_factory=set)  # (holders, absent) given a Secret line
     story: list[Line] = field(default_factory=list)  # summaries (packet-v8, ADR 0043)
     cast_lines: list[tuple[str, list[Line]]] = field(default_factory=list)  # each scene character's state (packet-v8)
 
 
+def persona_question_names(r: Any) -> frozenset[str]:
+    """Resolved persona spellings, plus an unshared Korean given name, for PHASE-40 questions only."""
+    if r is None:
+        return frozenset()
+    entity = r.entity("character", "{{user}}")
+    if not entity:
+        return frozenset()
+    others = [e for e in r.entities() if e["id"] != entity["id"]]
+    held = {norm(n) for e in others for n in e["names"]}
+    derived = {g for e in others if e["type"] == "character" for n in e["names"]
+               if (g := variants.given(norm(n)))}
+    names = {norm(n) for n in r.persona_names if r.status("character", n) == "resolved"} - held
+    return frozenset(names | {g for n in names if (g := variants.given(n)) and g not in held | derived})
+
+
 def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, in_context: set[str],
            options: RecallOptions, upto: int | None = None, known_at: datetime | None = None,
            canon_manifest: str | None = None, canon_exact: bool = False, canon_held: Iterable[str] = (),
-           canon_facts: Any = LIVE, vectors_now: bool = False) -> Gathered:
+           canon_facts: Any = LIVE, vectors_now: bool = False,
+           recent: list[overuse.Recent] | None = None) -> Gathered:
     """Candidates for one request, already normalized (`clean_text`). `upto` and `known_at` gather them as
     of an earlier request: the head up to that position, and what NMOS had derived by that time. The canon keys the
     prompt held count as in context: the host sent their text, so their facts are not sent again (D3, ADR 0047).
     `vectors_now` searches vectors as they are now whatever `known_at` says (a replay's named projection)."""
     started = time.perf_counter()
     g = Gathered()
+    # packet-v14 (PHASE-34 Q2, Q3): the supportive lines overused in the requests before this one rest
+    # A question about the past or how it started asks for old memory: nothing rests then
+    rest = (overuse.tired(recent or [], options.rest_after)
+            if options.policy in REST_POLICIES and not HISTORY_CUE.search(query) else frozenset())
     if canon_held:
         in_context = in_context | {"canon:" + k for k in canon_held}
     # The head's last message is always in the prompt (the host sends the latest message; D13 injects
@@ -733,17 +919,27 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         if options.lexical_keywords:
             t0 = time.perf_counter()
             keyword, g.keyword_note = _keyword_lexical(conn, head, keywords(query), cut, options.lexical_timeout_ms,
-                                                       upto)
+                                                       upto, particles=options.keyword_particles
+                                                       and options.policy == "packet-v18")
             g.timings["keywords"] = round((time.perf_counter() - t0) * 1000, 2)
     # State, facts, threads, the scene and the summaries are read before the excerpts are chosen: none of them depends
     # on the candidates, and the query embedding answers meanwhile (ADR 0061). The excerpts follow, then what the
     # memory mode withheld is taken out of them.
     if options.rules_version != "none":
+        held = current_state(conn, head, options.rules_version, upto)
         g.state = [StateItem(key=r["key"], value=r["value"], turn=r["turn"] if by_turn else r["position"])
-                   for r in current_state(conn, head, options.rules_version, upto)
-                   if r["host_logical_id"] not in in_context]
+                   for r in held if r["host_logical_id"] not in in_context]
         # Sim bots track many characters: state of characters mentioned right now gets the budget first.
         g.state.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in focus), reverse=True)
+        if options.policy in STATE_HISTORY_POLICIES and held and STATE_CHANGE_CUE.search(query):
+            # packet-v17: the history of each key the message asks about, first: it asked for it. Changes whose bar
+            # is still in the prompt count too: the line is the sequence, which the prompt shows only scattered.
+            asked = asked_keys(query, [r["key"] for r in held])[:STATE_HISTORY_KEYS]
+            lines = state_history(conn, head, options.rules_version, upto, keys=asked) if asked else {}
+            g.state[:0] = [StateItem(key=k, value=lines[k][-1]["value"], turn=_turn_of(lines[k][-1], by_turn),
+                                     history=tuple((_turn_of(e, by_turn), e["value"])
+                                                   for e in lines[k][-STATE_HISTORY_MAX:]))
+                           for k in asked if lines.get(k)]
     view = None
     names_of: dict[int, Any] = {}  # one mapping of name variants per view, whichever path asks first (ADR 0058)
     changes = options.policy in CHANGE_POLICIES and not HISTORY_CUE.search(query)  # packet-v12, PHASE-31 Q1/Q2
@@ -760,13 +956,18 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                             _head_turn(conn, head, upto), aliases=aliases,
                             marks=_thread_marks(view, aliases))
         if options.threads_limit > 0:
-            g.threads = _moded([thread_entry(t, scene.private(t, g.cast, r)) for t in
-                                relevant_threads(view["threads"], query, previous_ai, in_context,
-                                                 options.threads_limit, persona,
-                                                 about=options.policy in ABOUT_POLICIES, aliases=aliases)],
-                                view["threads"], g, r, options)
+            picked = relevant_threads(view["threads"], query, previous_ai, in_context,
+                                      len(view["threads"]) if rest else options.threads_limit, persona,
+                                      about=options.policy in ABOUT_POLICIES, aliases=aliases, named=g.named)
+            picked = _rested(picked, "thread", rest, g)[:options.threads_limit]
+            g.threads = _moded([thread_entry(t, scene.private(t, g.cast, r)) for t in picked],
+                               view["threads"], g, r, options)
         if options.facts_limit > 0:
             causes = options.policy in CAUSE_POLICIES
+            persona_questions = options.policy in PERSONA_QUESTION_POLICIES
+            persona_entity = (r.entity("character", "{{user}}") or {}).get("id") if persona_questions and r else None
+            question_names = persona_question_names(r) if persona_questions else frozenset()
+            persona_added: set[str] = set()  # one cap across narrated facts and attributed claims
             # packet-v9 ranks every candidate once: the configured limit's share is its head (relevant_facts keeps
             # its order and event cap at any limit), and the added slots go to what no one is kept from (ADR 0049).
             grow = options.fill_facts > 0
@@ -774,10 +975,19 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             # How it started (ADR 0056): where the window starts, read only when the message asks.
             first = options.first_cue and bool(FIRST_CUE.search(query))
             start = _window_start(conn, head, in_context, upto) if first else None
+            # the label policies rank a risky line after the others before the limits choose (PHASE-34 Q1)
+            contradicted = (frozenset(str(c["fact"]) for c in view.get("conflicts") or [] if c.get("fact") is not None)
+                            if options.policy in LABEL_POLICIES else None)
             ranked = relevant_facts(view["facts"], query, previous_ai, in_context,
-                                    len(view["facts"]) if grow else options.facts_limit,
+                                    len(view["facts"]) if grow or rest else options.facts_limit,
                                     options.events_limit, persona, scene.names(g.cast, r, aliases), causes=causes,
-                                    first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases)
+                                    first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases,
+                                    named=g.named, named_by_words=options.policy in NAMED_POLICIES, risky=contradicted,
+                                    keep=(lambda f: bool(_rested([f], "fact", rest, g))) if rest else None,
+                                    persona_questions=persona_questions, persona_entity=persona_entity,
+                                    persona_query_names=question_names, persona_added=persona_added)
+            if options.policy in LABEL_POLICIES:  # before the limits: a risky fact never takes an ordinary one's slot
+                ranked = _risky_last(ranked, view, g.named)
             if changes:  # an ended role answers a question about the past, not about now (PHASE-31 Q2); the facts
                 # after it take its slot
                 def now_or_kept(f: dict[str, Any]) -> bool:
@@ -786,14 +996,24 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                               if not now_or_kept(f))
                 ranked = [f for f in ranked if now_or_kept(f)]
             facts = _grown(ranked[:options.facts_limit], ranked, options.fill_facts)
+            persona_added.intersection_update(str(f["id"]) for f in facts)
             if changes:
                 selected = list(facts)
             # Claims after facts, so the budget serves narration first (ADR 0013).
             ranked = relevant_facts(view["claims"], query, previous_ai, in_context,
-                                    len(view["claims"]) if grow else claims_limit, persona=persona, causes=causes,
-                                    first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases)
+                                    len(view["claims"]) if grow or rest else claims_limit, persona=persona,
+                                    causes=causes, first_cue=first, window_start=start, marks=options.history_marks,
+                                    aliases=aliases, named=g.named, named_by_words=options.policy in NAMED_POLICIES,
+                                    risky=contradicted, persona_questions=persona_questions,
+                                    persona_entity=persona_entity, persona_query_names=question_names,
+                                    persona_added=persona_added)
+            ranked = _rested(ranked, "claim", rest, g)
+            if options.policy in LABEL_POLICIES:
+                ranked = _risky_last(ranked, view, g.named)
             claims = _grown(ranked[:claims_limit], ranked,
                             max(1, (options.facts_limit + options.fill_facts) // 2) - claims_limit)
+            g.risky = ({str(f["id"]) for f in facts + claims if f.get("disputed_by")}
+                       | {str(c["fact"]) for c in view.get("conflicts") or [] if c.get("fact") is not None})
             # How the cast stand with each other takes the budget before threads (ADR 0026).
             before, cause = options.policy in BEFORE_POLICIES, causes
             marks = options.history_marks
@@ -828,7 +1048,13 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                 marks=_thread_marks(view, aliases))
         g.story = summaries.packet_lines(conn, head, options.summarize_key, view["secrets"] if view else [], query,
                                          in_context, upto, known_at,
-                                         scene.names(g.cast, r, aliases) if r is not None else frozenset())
+                                         scene.names(g.cast, r, aliases) if r is not None else frozenset(),
+                                         hidden_entries=g.hidden_entries if options.policy in LABEL_POLICIES else None)
+        if rest:  # a scene summary is supportive and rests as the others do (a review); the story so far never rests
+            awake = [line for line in g.story
+                     if '<Summary kind="story"' in line.xml or overuse.key(line.kind, line.ref) not in rest]
+            g.rested += len(g.story) - len(awake)
+            g.story = awake
     if pending is not None:
         t0 = time.perf_counter()
         try:
@@ -847,7 +1073,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     g.excluded = [c for c in g.candidates if c["host_logical_id"] in in_context]
     eligible = [c for c in g.candidates if c["host_logical_id"] not in in_context]
     stale = _replaced_judge(view, selected, query, previous_ai, options, names_of) if changes and view is not None else None
-    if stale is None:  # packet-v12 judges each excerpt as it is made and fills a dropped one's slot (PHASE-31 Q1)
+    scan_slots = stale is not None or options.policy in UNEXTRACTED_POLICIES
+    if not scan_slots:  # older policies keep the original top-k cut
         eligible = eligible[: options.top_k]
     words = keywords(query) if options.policy in GROW_POLICIES else []
     span = options.policy in SPAN_POLICIES  # packet-v11 (ADR 0063)
@@ -856,9 +1083,32 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     # prototype's rule: never the previous reply); every other case anchors on the question and the previous reply
     anchor = (" ".join(words) or query) if span and options.excerpt_anchor == "keywords" else focus
     tie = one_char_words(query) if options.policy in CHANGE_POLICIES else ()  # packet-v12, PHASE-31 Q3
+    nouns: tuple[str, ...] = ()  # packet-v15: the question's one-syllable nouns (PHASE-35 Q3)
+    if options.policy in ANCHOR_POLICIES:  # packet-v15: the anchor is what the question asks, not when (PHASE-35)
+        words, tie = anchor_words(query, words, tie)
+        nouns = tuple(w for w in tie if len(w) == 1 and w != "첫")
+        anchor = (" ".join(words) or query) if span and options.excerpt_anchor == "keywords" else focus
+    # packet-v13 (PHASE-33 Q5): a turn this generation has not extracted yet (a first sight still catching up) has no
+    # fact to restate, so its excerpt is raw evidence; one such excerpt may take one more slot than top_k,
+    # even before there are facts to build a stale-value judge, or when a history question disables that judge.
+    unextracted = (_unextracted(conn, head, [c["id"] for c in eligible], options.extractor_key, known_at)
+                   if options.policy in UNEXTRACTED_POLICIES and options.extractor_key and eligible else set())
+    def resting(c: dict[str, Any]) -> bool:  # a tired excerpt is left out while it rests (PHASE-34 Q3) ...
+        return bool(rest) and ("excerpt", str(c["id"])) in rest and str(c["id"]) not in g.named \
+            and not (c.get("user_score") or c.get("keyword_score"))  # ... unless the question's words found it
+    floor = (EXCERPT_FLOOR * max((float(c["rrf"]) for c in eligible if not resting(c)), default=0.0)
+             if options.policy in REST_POLICIES else 0.0)
     for c in eligible:
-        if stale is not None and len(g.ranked) >= options.top_k:
+        # A resting excerpt is offered marked, outside the count: the compiler places it only when it holds the reserved
+        # first place, which is known only after its repeat check and the filters below (a review's follow-up)
+        tired = resting(c)
+        # the activation threshold (PHASE-34 Q4) is the compiler's too, at the reserved place's stage (third review)
+        low = bool(floor) and float(c["rrf"]) < floor and not (c.get("user_score") or c.get("keyword_score"))
+        awake = [e for e in g.ranked if not e.resting and not e.below_floor]
+        if scan_slots and len(awake) >= options.top_k + bool(unextracted):
             break
+        if scan_slots and not (tired or low) and len(awake) == options.top_k and str(c["id"]) not in unextracted:
+            continue  # the one more slot is for an unextracted turn only
         # a lexical or keyword hit is the whole message; a vector-only hit is its chunk; under packet-v11 a word hit
         # whose vector similarity meets the bar excerpts within its chunk too: the chunk is the part of the message
         # the question is about, the words only say the message is relevant (PHASE-27 Q1)
@@ -866,6 +1116,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         in_chunk = not word_hit or (span and c.get("sim") is not None and c["sim"] >= options.vector_min_sim
                                     and c.get("text_end") is not None)
         clean = c["clean"][c["text_start"]:c["text_end"]] if in_chunk else c["clean"]
+        if (in_chunk and word_hit and nouns
+                and anchor_rank(c["clean"], nouns, words) > anchor_rank(clean, nouns, words)):
+            clean = c["clean"]  # packet-v15: the whole message says more of what the question names (PHASE-35 Q3)
         if cue:  # packet-v11: by whole sentences up to CUE_GROW_CHARS, no sentence cap (PHASE-27 Q2)
             text, short = grown_excerpt(clean, anchor, words, min(options.excerpt_chars, CUE_GROW_CHARS),
                                         max_sentences=None, tie_words=tie)
@@ -877,7 +1130,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         item = Excerpt(turn=c["turn"] if by_turn else c["position"],
                        speaker=c["name"] or ("user" if c["role"] == "user" else "character"),
                        text=text, score=float(c["rrf"]), revision_id=str(c["id"]), short=short,
-                       position=c["position"])
+                       position=c["position"], unextracted=str(c["id"]) in unextracted, resting=tired,
+                       below_floor=low)
         if stale is not None:  # packet-v12 (PHASE-31 Q1): no form of an excerpt says only a replaced value
             if stale(item.text, item.turn):
                 g.replaced += 1
@@ -887,16 +1141,58 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             elif stale(item.text, item.turn, ignore_now=True):  # a cut could keep the old value and lose the new
                 item = dataclasses.replace(item, cut_ok=False)
         g.ranked.append(item)
+    if options.policy in QUOTE_POLICIES and query.strip() and quotes.asks_for_words(query):
+        # The forensic path (PHASE-33, ADR 0067): the words said, from the messages recall found and the turns a turn
+        # number names; placed before the excerpts, never cut. The filters below apply to them as to any excerpt.
+        t0 = time.perf_counter()
+        g.path = "forensic"
+        resolution = (view or {}).get("resolution")
+        names = quotes.character_names(resolution.entities()) if resolution is not None else {}
+        first = bool(quotes.FIRST_QUOTE.search(query)) and quotes.named_turn(query) is None
+        found = [c for c in g.candidates if c["host_logical_id"] not in in_context][:quotes.CANDIDATES]
+        extra: list[dict[str, Any]] = []
+        if (named := quotes.named_turn(query)) is not None:
+            extra = _turn_messages(conn, head, named - quotes.TURN_SPAN, named + quotes.TURN_SPAN, upto, cut)
+        met = None
+        if first:  # how it started: the opening, and the turns where everyone the question names had appeared
+            asked, others = quotes.named(query, names)
+            met = _first_met(conn, head, [[k for k, d in names.items() if d == who] for who in asked | others], upto,
+                             cut)
+            if met == 0:
+                met = None  # all there from the opening: no meeting to anchor on, the earliness bonus decides
+            extra = _turn_messages(conn, head, 0, quotes.TURN_SPAN, upto, cut)
+            if met is not None:
+                extra += _turn_messages(conn, head, met, met + quotes.TURN_SPAN, upto, cut)
+        searched, rarity, g.quote_note = _quote_messages(conn, head, quotes.query_words(query), upto, cut)
+        seen = {str(c["id"]) for c in found}
+        g.quote_only = {str(c["id"]) for c in extra + searched} - {str(c["id"]) for c in g.candidates}
+        for c in extra + searched:
+            if c["host_logical_id"] not in in_context and str(c["id"]) not in seen:
+                found.append(c)
+                seen.add(str(c["id"]))
+        picked = quotes.pick(found, query, names, _last_position(conn, head, upto), first, rarity, met)
+        g.quotes = len(picked)
+        g.ranked = [Excerpt(turn=q.turn if by_turn else q.position, speaker=q.speaker or "", text=q.text,
+                            score=q.score, revision_id=q.revision_id, position=q.position, cut_ok=False, quote=True)
+                    for q in picked] + g.ranked
+        g.timings["quote_route"] = round((time.perf_counter() - t0) * 1000, 2)  # ms; `quotes` is the count placed
     if g.withheld_lines:
         # An excerpt that says what the mode withheld would give it back word for word.
-        kept = [e for e in g.ranked
-                if not any(spans.reuse(line.content, e.text) >= REPEATS for line in g.withheld_lines)]
+        kept = []
+        for e in g.ranked:
+            if not any(spans.reuse(line.content, e.text) >= REPEATS for line in g.withheld_lines):
+                kept.append(e)
+            elif options.policy in LABEL_POLICIES:
+                g.hidden_entries.append(hidden_entry("quote" if e.quote else "excerpt",
+                                                     {"revision": e.revision_id}, e.turn, "mode_withheld"))
         g.withheld += len(g.ranked) - len(kept)
         g.ranked = kept
     # The keyword route adds no raw text that repeats a secret still kept from someone (ADR 0052, owner 2026-09-30):
     # an excerpt only it found is left out when it does, so it places no secret the other routes would not. The same
     # test as a summary's (PHASE-12 Q3), stricter when someone it is kept from is in the scene.
-    keyword_only = {str(c["id"]) for c in g.candidates if _keyword_only(c, options)}
+    # The same for a quote from a message only the quote route found (the named turn's, its own search): raw text no
+    # other route would place (ADR 0067).
+    keyword_only = {str(c["id"]) for c in g.candidates if _keyword_only(c, options)} | g.quote_only
     if keyword_only and any(e.revision_id in keyword_only for e in g.ranked) and options.extractor_key:
         if view is None:
             view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
@@ -915,8 +1211,29 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 kept.append(e)
             elif not any(summaries.leaks(form, view["secrets"], present) for form in (e.text, e.short) if form):
                 kept.append(dataclasses.replace(e, cut_ok=False))  # the forms checked are the only ones placed
-        g.keyword_withheld = len(g.ranked) - len(kept)
+            elif options.policy in LABEL_POLICIES:
+                g.hidden_entries.append(hidden_entry("quote" if e.quote else "excerpt",
+                                                     {"revision": e.revision_id}, e.turn, "secret_gate"))
+        g.quote_withheld = sum(e.quote for e in g.ranked) - sum(e.quote for e in kept)
+        g.keyword_withheld = len(g.ranked) - len(kept) - g.quote_withheld
         g.ranked = kept
+    if (options.policy == "packet-v18" and options.source_clock and source_time.CUE.search(query)
+            and options.rules_version != "none" and g.ranked and not options.strict and not options.narrator):
+        started_clock = time.perf_counter()
+        clocks = source_time.read(conn, head, options.rules_version,
+                                  list(dict.fromkeys(e.revision_id for e in g.ranked)), upto, cut)
+        if clocks and options.extractor_key:
+            if view is None:
+                view = memory_view(conn, head, options.extractor_key, upto, known_at, canon_manifest, canon_exact,
+                                   options.canon_key, canon_facts)
+            # A clock is additional text from the source. Conservatively withhold any known secret overlap,
+            # including a fabricated parser value, regardless of which characters are in this scene.
+            protected = frozenset(norm(n) for secret in view["secrets"] for n in secret.get("open", ()))
+            clocks = {rid: clock for rid, clock in clocks.items()
+                      if not any(summaries.leaks(value, view["secrets"], protected)
+                                 for _, value, _ in clock.fields)}
+        g.source_clocks = clocks
+        g.timings["source_clock"] = round((time.perf_counter() - started_clock) * 1000, 2)
     return g
 
 
@@ -1007,8 +1324,25 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
 
 def compile_gathered(g: Gathered, budget: int, policy: str) -> Compiled:
     """One request's packet from what `gather` offered (the request and its replay compile alike)."""
-    return compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts, policy=policy, lead=g.lead,
-                         note=g.note, story=g.story, cast=g.cast_lines)
+    compiled = compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts, policy=policy, lead=g.lead,
+                             note=g.note, story=g.story, cast=g.cast_lines, named=frozenset(g.named),
+                             risky=frozenset(g.risky))
+    compiled = source_time.supplement(compiled, g.ranked, g.source_clocks, budget, policy)
+    if policy in LABEL_POLICIES:
+        # Diagnostics never take part in selection, token fitting or the rest/echo calculation.
+        compiled.ledger.extend(dict(e) for e in g.hidden_entries)
+    return compiled
+
+
+def rested(g: Gathered, compiled: Compiled) -> int:
+    """Lines left out resting (PHASE-34 Q3): those gather left out, and the excerpts the compiler did (a resting
+    excerpt is offered marked and placed only when it holds the reserved first place)."""
+    return g.rested + sum(1 for e in compiled.ledger if e.get("why") == "resting")
+
+
+def below_floor(g: Gathered, compiled: Compiled) -> int:
+    """Excerpts under the activation threshold (PHASE-34 Q4), left out by the compiler as resting ones are."""
+    return g.below_floor + sum(1 for e in compiled.ledger if e.get("why") == "below_floor")
 
 
 def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, options: RecallOptions) -> list[Line]:
@@ -1028,11 +1362,15 @@ def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, o
         if options.narrator and not scene.narrator_knows(row, options.narrator, r):
             g.withheld += 1
             g.withheld_lines.append(line)
+            if options.policy in LABEL_POLICIES:
+                g.hidden_entries.append(hidden_entry(line.kind, line.ref, line.turn, "mode_withheld"))
             continue
         if options.strict and line.private and r is not None:
             holders, absent = scene.missing(row, g.cast, r)
             g.withheld += 1
             g.withheld_lines.append(line)
+            if options.policy in LABEL_POLICIES:
+                g.hidden_entries.append(hidden_entry(line.kind, line.ref, line.turn, "mode_withheld"))
             pair = (frozenset(holders), frozenset(absent))
             if pair in seen:
                 continue
@@ -1043,6 +1381,185 @@ def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, o
             continue
         out.append(line)
     return out
+
+
+def _turn_messages(conn: psycopg.Connection, head: UUID, lo: int, hi: int, upto: int | None,
+                   cut: int) -> list[dict[str, Any]]:
+    """The messages of turns lo…hi on the head (PHASE-33 Q3), as candidates are shaped; none at or before the
+    `allBefore` cut (invariant 7), as lexical and vector recall."""
+    return conn.execute(
+        """
+        SELECT sr.id, am.position, am.turn, so.host_logical_id, rt.clean_content AS clean,
+               sr.metadata->>'role' AS role, sr.metadata->>'name' AS name
+        FROM active_membership am
+        JOIN source_revision sr ON sr.id = am.source_revision_id
+        JOIN source_object so ON so.id = sr.source_object_id
+        JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+        WHERE am.commit_id = %(head)s AND am.turn BETWEEN %(lo)s AND %(hi)s
+          AND am.position > %(cut)s AND am.position <= %(upto)s
+          AND sr.lifecycle = 'accepted'
+          AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+          AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
+        ORDER BY am.position LIMIT 20
+        """,
+        {"head": head, "lo": lo, "hi": hi, "norm": NORMALIZER_VERSION, "cut": cut,
+         "upto": 2**31 - 1 if upto is None else upto}, prepare=False).fetchall()
+
+
+def _first_met(conn: psycopg.Connection, head: UUID, keys: list[list[str]], upto: int | None,
+               cut: int) -> int | None:
+    """The turn by which every one of these characters (each a list of its normalized names) had been named in the
+    chat: where they met. None when one of them never was, when there is nobody, or past the route's time slice."""
+    keys = [k for k in keys if k]
+    if not keys:
+        return None
+    turns = []
+    try:
+        with conn.transaction():
+            previous = conn.execute("SELECT current_setting('statement_timeout') AS t").fetchone()
+            _apply(conn, {"statement_timeout": str(quotes.TIMEOUT_MS)})
+            for names in keys:
+                forms = sorted({f for n in names for f in ((n, n[:1].upper() + n[1:]) if n.isascii() else (n,))})
+                row = conn.execute(sql.SQL(
+                    """
+                    SELECT min(am.turn) AS t FROM active_membership am
+                    JOIN source_revision sr ON sr.id = am.source_revision_id
+                    JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+                    WHERE am.commit_id = %(head)s AND am.position > %(cut)s AND am.position <= %(upto)s
+                      AND sr.lifecycle = 'accepted'
+                      AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+                      AND ({named})
+                    """).format(named=sql.SQL(" OR ").join(  # strpos, as the route's search (no case in Korean)
+                        sql.SQL("strpos(rt.clean_content, {}) > 0").format(sql.Literal(f)) for f in forms)),
+                    {"head": head, "norm": NORMALIZER_VERSION, "cut": cut,
+                     "upto": 2**31 - 1 if upto is None else upto}, prepare=False).fetchone()
+                if row["t"] is None:
+                    turns = []
+                    break
+                turns.append(row["t"])
+            _apply(conn, {"statement_timeout": previous["t"]})
+    except psycopg.errors.QueryCanceled:
+        return None
+    return max(turns) if turns else None
+
+
+_QUOTE_MARKS = ('"', "“", "「", "『")
+
+
+def _quote_messages(conn: psycopg.Connection, head: UUID, words: list[str], upto: int | None,
+                    cut: int) -> tuple[list[dict[str, Any]], dict[str, float], str]:
+    """The quote route's own search (PHASE-33 Q2): messages on the head that hold a quote and the question's words,
+    rarest words first, lexically (quotes prefer lexical to embeddings, original §78), and each word's rarity on the
+    head: ln(1 + N/df) / ln(1 + N), 1 for a word one message holds, 0 for one none does. Abstains on its time slice.
+
+    Two passes: which words each message holds (`strpos`, no text returned: ILIKE and carrying the text cost three
+    times as much at 10,000 messages), then the text of the best SEARCHED. A Latin word is matched as written and
+    capitalized; Korean has no case."""
+    if not words:
+        return [], {}, "none"
+    words = words[:8]
+
+    def holds(w: str) -> sql.Composable:
+        forms = {w, w[:1].upper() + w[1:]} if w.isascii() else {w}
+        return sql.SQL("({})").format(sql.SQL(" OR ").join(
+            sql.SQL("strpos(rt.clean_content, {}) > 0").format(sql.Literal(f)) for f in sorted(forms)))
+
+    quoted = sql.SQL(" OR ").join(sql.SQL("strpos(rt.clean_content, {}) > 0").format(sql.Literal(m))
+                                  for m in _QUOTE_MARKS)
+    try:
+        with conn.transaction():
+            previous = conn.execute("SELECT current_setting('statement_timeout') AS t").fetchone()
+            _apply(conn, {"statement_timeout": str(quotes.TIMEOUT_MS)})
+            marks = conn.execute(sql.SQL(
+                """
+                SELECT sr.id, am.position, ARRAY[{hits}] AS hit, ({quoted}) AS quoted
+                FROM active_membership am
+                JOIN source_revision sr ON sr.id = am.source_revision_id
+                JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+                WHERE am.commit_id = %(head)s AND am.position > %(cut)s AND am.position <= %(upto)s
+                  AND sr.lifecycle = 'accepted'
+                  AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+                  AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
+                """).format(hits=sql.SQL(", ").join(holds(w) for w in words), quoted=quoted),
+                {"head": head, "norm": NORMALIZER_VERSION, "cut": cut, "upto": 2**31 - 1 if upto is None else upto},
+                prepare=False).fetchall()
+            total = len(marks)
+            df = [sum(1 for m in marks if m["hit"][i]) for i in range(len(words))]
+            weight = [0.0 if not n else math.log(1 + total / n) / math.log(1 + max(total, 1)) for n in df]
+            best = sorted((m for m in marks if m["quoted"] and any(m["hit"])),
+                          key=lambda m: (-sum(w for w, h in zip(weight, m["hit"]) if h), m["position"]))
+            ids = [m["id"] for m in best[:quotes.SEARCHED]]
+            rows = conn.execute(
+                """
+                SELECT sr.id, am.position, am.turn, so.host_logical_id, rt.clean_content AS clean,
+                       sr.metadata->>'role' AS role, sr.metadata->>'name' AS name
+                FROM active_membership am
+                JOIN source_revision sr ON sr.id = am.source_revision_id
+                JOIN source_object so ON so.id = sr.source_object_id
+                JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
+                WHERE am.commit_id = %(head)s AND sr.id = ANY(%(ids)s)
+                """, {"head": head, "norm": NORMALIZER_VERSION, "ids": ids}, prepare=False).fetchall()
+            _apply(conn, {"statement_timeout": previous["t"]})
+    except psycopg.errors.QueryCanceled:
+        return [], {}, "timeout"
+    order = {i: n for n, i in enumerate(ids)}
+    rows.sort(key=lambda r: order[r["id"]])
+    return rows, dict(zip(words, weight)), "on"
+
+
+def _risky_last(rows: list[dict[str, Any]], view: dict[str, Any], named: set[str]) -> list[dict[str, Any]]:
+    """`rows` with the risky ones last (PHASE-34 Q1: a disputed or contradicted line is offered after the other
+    supportive ones), applied before the limits so that it never takes an ordinary line's slot (a review's
+    follow-up). A named, private or secret line keeps its place: it is required."""
+    contradicted = {str(c["fact"]) for c in view.get("conflicts") or [] if c.get("fact") is not None}
+
+    def risky(r: dict[str, Any]) -> bool:
+        return (bool(r.get("disputed_by")) or str(r["id"]) in contradicted) and str(r["id"]) not in named \
+            and not (r.get("hidden_from") or r.get("known_by"))
+    return [r for r in rows if not risky(r)] + [r for r in rows if risky(r)]
+
+
+def _rested(rows: list[Any], kind: str, rest: frozenset[tuple[str, str]], g: Gathered,
+            ident: Callable[[Any], str] = lambda r: str(r["id"]),
+            hit: Callable[[Any], bool] = lambda r: False) -> list[Any]:
+    """`rows` without the tired ones (PHASE-34 Q3, amended: a resting line is left out; moved behind the others it was
+    placed anyway whenever the budget had room, which on S1 was nearly always). A line the question names (`named`;
+    for an excerpt, `hit`: the question's words found it, lexically or by keyword) is required and never rests; one a
+    reply used is not tired (`overuse.tired` reads the echo)."""
+    if not rest:
+        return rows
+    def tired(r: Any) -> bool:
+        if kind != "excerpt" and (r.get("hidden_from") or r.get("known_by")):
+            return False  # a knowledge boundary is required wherever it is placed (Private, Secret): it never rests
+        return (kind, ident(r)) in rest and ident(r) not in g.named and not hit(r)
+    awake = [r for r in rows if not tired(r)]
+    g.rested += len(rows) - len(awake)
+    return awake
+
+
+def _unextracted(conn: psycopg.Connection, head: UUID, ids: list[Any], extractor_key: str,
+                 known_at: datetime | None = None) -> set[str]:
+    """The revisions among `ids` whose turn on the head the generation has not extracted (PHASE-33 Q5). A turn is
+    extracted once, on its last message, for every message of it; an extraction of the turn as it was before an edit
+    (another window, ADR 0008) does not count, as `readmodel.membership` counts it. With `known_at`, as of an earlier
+    request (a replay): an extraction written since does not count, one discarded since still does."""
+    return {str(r["id"]) for r in conn.execute(
+        """
+        SELECT am.source_revision_id AS id FROM active_membership am
+        WHERE am.commit_id = %(head)s AND am.source_revision_id = ANY(%(ids)s)
+          AND NOT EXISTS (SELECT 1 FROM active_membership t JOIN extraction x ON x.source_revision_id = t.source_revision_id
+                           AND x.window_hash = t.turn_hash
+                          WHERE t.commit_id = %(head)s AND t.turn = am.turn AND t.turn_hash IS NOT NULL
+                            AND x.extractor_key = %(key)s
+                            AND x.created_at <= coalesce(%(at)s::timestamptz, now())
+                            AND (x.discarded_at IS NULL OR x.discarded_at > coalesce(%(at)s::timestamptz, now())))
+        """, {"head": head, "ids": ids, "key": extractor_key, "at": known_at}, prepare=False).fetchall()}
+
+
+def _last_position(conn: psycopg.Connection, head: UUID, upto: int | None) -> int | None:
+    row = conn.execute("SELECT max(position) AS p FROM active_membership WHERE commit_id = %s AND position <= %s",
+                       (head, 2**31 - 1 if upto is None else upto)).fetchone()
+    return row["p"] if row else None
 
 
 def _head_turn(conn: psycopg.Connection, head: UUID, upto: int | None = None) -> int | None:
@@ -1088,9 +1605,11 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     previous_ai = clean_text(request.previous_ai or "")
     options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator)
     in_context = set(request.in_context_ids)
+    history = (overuse.recent(conn, conv.id, head, n=options.rest_after + 1)
+               if options.policy in REST_POLICIES and fresh else None)
     g = (gather(conn, head, query, previous_ai, in_context, filled(options, request.budget_tokens), upto,
                 canon_manifest=getattr(request, "canon_manifest_id", None),
-                canon_held=getattr(request, "canon_held", None) or ()) if fresh else Gathered())
+                canon_held=getattr(request, "canon_held", None) or (), recent=history) if fresh else Gathered())
     def compile_at(budget: int) -> Compiled:
         return compile_gathered(g, budget, options.policy)
 
@@ -1100,7 +1619,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     fit_started = time.perf_counter()
     cut = cut_lines(compiled.ledger)
     fit = fits_at(compile_at, request.budget_tokens) if cut else None
-    memory = {"offered": sum(1 for e in compiled.ledger if e["kind"] in MEMORY_KINDS and e["why"] != "restates"),
+    memory = {"offered": sum(1 for e in compiled.ledger if e["kind"] in MEMORY_KINDS
+                            and e["why"] != "restates" and e.get("label") != "hidden"),
               "cut": cut, "fits_at": fit}
     timings = {**g.timings, "fit": round((time.perf_counter() - fit_started) * 1000, 2),
                "sidecar_total": round((time.perf_counter() - started) * 1000, 2)}
@@ -1125,12 +1645,15 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
             Jsonb([brief(c) for c in g.excluded]),
             compiled.tokens,
             Jsonb({**timings, "lexical_mode": g.lexical_note, "keyword_mode": g.keyword_note,
-                   "keyword_withheld": g.keyword_withheld,
+                   "keyword_withheld": g.keyword_withheld, "quote_withheld": g.quote_withheld,
+                   "rested": rested(g, compiled), "below_floor": below_floor(g, compiled),
                    "vector_mode": g.vector_note,
                    "state_items": len(g.state), "facts": len(g.lead) + len(g.facts), "threads": len(g.threads),
                    "kept_state": kept["state"], "kept_facts": kept["facts"], "kept_threads": kept["threads"],
                    "placed": {k: sum(1 for e in placed if e["kind"] == k)
-                              for k in ("state", "thread", "fact", "claim", "secret", "summary", "excerpt")},
+                              for k in ("state", "state_history", "thread", "fact", "claim", "secret", "summary",
+                                        "excerpt", "quote", "source_time")},
+                   "path": g.path, "quotes": g.quotes, "quote_mode": g.quote_note,  # the forensic path (PHASE-33 Q4)
                    "cast": sum(1 for e in placed if e.get("section") == "cast"),
                    "scene_cast": sorted(g.cast.values()), "memory_mode_withheld": g.withheld,
                    "replaced_left_out": g.replaced, "ended_left_out": g.ended,  # packet-v12 (PHASE-31 Q1, Q2)

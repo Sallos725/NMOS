@@ -1,6 +1,6 @@
 // Settings form model: which sections changed, and the single sidecar update they add up to.
 
-export type Section = 'conn' | 'llm' | 'emb' | 'tune' | 'rules';
+export type Section = 'conn' | 'llm' | 'emb' | 'tune';
 
 /** Request-path deadline when the plugin arg is unset (0). 3 s: on PocketRisu v1.12.0 a warm
  *  generation needs ≈1.5 s at 5,000 messages and ≈2.7 s at 10,000 (docs/perf/scale.md). */
@@ -17,7 +17,7 @@ export const DEFAULT_RESERVED_TOKENS = 4000;
 export const MAX_RESERVED_TOKENS = 20_000;
 /** The largest budget the panel saves (ADR 0049): recall grows up to it, and a larger one recalls as it does. */
 export const PANEL_MAX_RESERVED_TOKENS = 8000;
-export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune', 'rules'];
+export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune'];
 
 /** Google Vertex AI's OpenAI-compatible endpoint; `{project}` comes from the pasted key (ADR 0022). */
 export const VERTEX_URL = 'https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi';
@@ -55,7 +55,16 @@ export function endpointForKey(url: string, key: string): string {
 }
 
 /** A preset URL matches a saved one exactly, or with any project in place of `{project}`. */
+/** The panel's Ollama preset: Docker reaches the PC's Ollama by host.docker.internal, a bundle (the sidecar says
+ * `install: bundle`) at 127.0.0.1, where that name does not resolve (pre-0.4.0 audit F18). */
+export const OLLAMA_DOCKER = 'http://host.docker.internal:11434/v1';
+export const OLLAMA_LOCAL = 'http://127.0.0.1:11434/v1';
+export function presetUrl(url: string, install: string | null | undefined): string {
+  return url === OLLAMA_DOCKER && install === 'bundle' ? OLLAMA_LOCAL : url;
+}
+
 export function presetMatches(presetUrl: string, url: string): boolean {
+  if (presetUrl === OLLAMA_DOCKER && url === OLLAMA_LOCAL) return true;
   if (!presetUrl.includes('{project}')) return presetUrl === url;
   const [head, tail] = presetUrl.split('{project}') as [string, string];
   return url.startsWith(head) && url.endsWith(tail) && url.length > head.length + tail.length
@@ -65,12 +74,11 @@ export function presetMatches(presetUrl: string, url: string): boolean {
 export interface ModelValues { url: string; model: string; key: string }
 
 export interface FormValues {
-  conn: { url: string; route: string; enabled: boolean; reserved: string; deadline: string };
+  conn: { url: string; route: string; enabled: boolean; reserved: string; deadline: string; token: string };
   llm: ModelValues;
   emb: ModelValues;
-  tune: { threshold: string; minSim: string; topK: string; facts: string; backfill: string; summaries: boolean;
-    canonFacts: boolean };
-  rules: string;
+  tune: { threshold: string; minSim: string; embedWait: string; topK: string; facts: string; backfill: string;
+    summaries: boolean; canonFacts: boolean };
 }
 
 /** Sections whose values differ from the last loaded or saved baseline. */
@@ -100,9 +108,22 @@ export function configBody(dirty: Section[], v: FormValues): Record<string, unkn
       facts_limit: num(v.tune.facts), extract_backfill: num(v.tune.backfill), summaries: v.tune.summaries,
       canon_facts: v.tune.canonFacts,
     });
+    // empty when the sidecar is older than the setting: sending it would be refused as not editable
+    if (v.tune.embedWait.trim() !== '') body.embed_timeout_ms = num(v.tune.embedWait);
   }
-  if (dirty.includes('rules')) body.parsers = v.rules.trim() ? v.rules : null;
   return body;
+}
+
+/** Room the rest of a request needs besides the embedding wait (the sync, the reads, the packet). */
+export const EMBED_WAIT_MARGIN_MS = 500;
+
+/** Whether the embedding wait leaves the request too little of its deadline (pre-0.4.0 audit F20): a slow embedder
+ * then costs the whole memory, not only semantic search. The wait is a sidecar setting and the deadline a per-device
+ * plugin argument, so this warns and does not refuse. */
+export function embedWaitTooLong(wait: string, deadline: string): boolean {
+  const w = Number(wait.trim());
+  const d = Number(deadline.trim()) || DEFAULT_DEADLINE_MS;
+  return wait.trim() !== '' && Number.isFinite(w) && w > d - EMBED_WAIT_MARGIN_MS;
 }
 
 /** Plugin args for the connection section (stored in PocketRisu, not the sidecar). */
@@ -114,5 +135,6 @@ export function connArgs(v: FormValues['conn']): Record<string, string | number>
     reserved_memory_tokens: Math.min(PANEL_MAX_RESERVED_TOKENS, Math.floor(Number(v.reserved)) > 0
       ? Math.floor(Number(v.reserved)) : DEFAULT_RESERVED_TOKENS),
     deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS)),
+    auth_token: v.token.trim(),
   };
 }

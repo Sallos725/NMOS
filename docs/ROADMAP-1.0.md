@@ -65,6 +65,19 @@ original design, and most recent phases (15, 17, 18, 19) were outside it. So:
   cannot run the Docker install, so a 1.0 they cannot attach misses part of the host's users. Phase 23 covers the four
   portable targets; Termux follows separately (its Q2) and is not a 1.0 condition (owner, 2026-10-01): it waits under
   "After 1.0". Phase 23 is complete after the owner's Windows and Mac checks (2026-10-02), not released yet.
+- **Pulled in by name (2026-10-05): memory on a time axis in the Inspector** (AGE-39, Phase 32). The owner first set
+  it for after 1.0, then pulled it in after reviewing a mockup. It is read-only rendering in the browser Inspector
+  and, behind a plugin flag, the panel, with no packet or schema change.
+- **Pulled in by name (2026-10-08): the bundle's data outside the bundle** (Phase 37). A correction found on a user's
+  report of memory lost in an update: Windows and Linux bundles kept the database in the folder an update replaces. It
+  is of the urgent kind (`AGENTS.md` §13, data loss), and the owner approved it to ship in `0.4.0` rather than as a
+  patch release. Complete 2026-10-08.
+- **Pulled in by name (2026-10-08): restore from the panel** (Phase 38). It completes Phase 16, a Stage 6 item, after
+  Stage 6 ended with Phase 20 (above): the export had reached the panel, while the restore stayed a command that a
+  bundle could not run. In `0.4.0`; complete 2026-10-08.
+- **Pulled in by name (2026-10-08): status windows NMOS holds** (AGE-43, Phase 39). NMOS has read status windows since
+  Phase 1 but could not read the common one-line bar; the owner chose the parser over a documented limit, then its
+  history, the flags for changes the story did not make, and the anchor, all in `0.4.0`.
 
 The road left is Stage 7 (`0.4.0`), publishing Phase 23's bundles with a tagged release, and two quiet weeks on production.
 
@@ -191,9 +204,21 @@ revealed secret ends), the strict and narrator cases in the memory evaluation, a
 
 *Original §44–55, §78; Track B, B6.* Has: packet ledger, as-of replay, echo, abstention.
 
-**Phases** (decided 2026-10-07, PHASE-33 Q0): Phase 33 (approved 2026-10-07, current) carries the quote route, the
+**Phases** (decided 2026-10-07, PHASE-33 Q0): Phase 33 (approved 2026-10-07, complete 2026-10-08) carries the quote route, the
 turns extraction has not reached, the Inspector's source-turn page and the overuse baseline; Phase 34 carries the
 candidate labels and the overuse penalty. `0.4.0` follows Phase 34.
+
+**Progress** (2026-10-09, candidate branch; unreleased): Phases 33–36 are complete. The owner selected `packet-v18`
+as the 0.4.0 default after the Phase 40 correction and trial deployment. The historical Phase 33 replay (`docs/perf/phase33-replay.md`) put the source turn and words in
+21 of 24 exact-quote cases (`packet-v12`: 4), kept the other bench sets and added 102 ms at p95 at 10,000 messages.
+The owner dropped Phase 33's reduced live run (2026-10-08, Q10 d). Phase 34 added the labels and resting lines;
+Phases 35–36 corrected excerpt anchors and which named facts are required. Phase 39's status history and flags are
+implemented and inherited by v18. The 6113 trial has v18 and the approved Armor/Items/Weapons watch setup
+(see `STATUS.md` for deployment evidence). The owner also requested the
+missing Phase 34 `hidden` label: the candidate now records redacted gate diagnostics and shows the Inspector chip,
+without changing the model-facing packet (AGE-64, `docs/audits/0.4.0-2026-10-09.md`). The `0.4.0` release
+gates and publication remain open; historical phase evidence does not establish current-candidate CI or a release.
+
 
 Scope (draft):
 - fast, normal and forensic recall paths;

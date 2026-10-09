@@ -181,9 +181,9 @@ class RepairRequest(BaseModel):
     secret or a fact (for a name split, a name of the entity), what to do, and what the kind needs: a close's outcome,
     a secret's character, a correction's new object or value, a split's other name, and the turn it takes effect.
     `fact_lock` keeps a canon fact or a correction current against the story (ADR 0047); `fact_restore` adds back a fact
-    a re-extraction dropped (PHASE-22 Q7)."""
+    a re-extraction dropped (PHASE-22 Q7); `state_dismiss` dismisses a status flag (PHASE-39 Q4)."""
     kind: Literal["thread_close", "thread_reopen", "secret_found_out", "secret_keep", "fact_retract", "fact_correct",
-                  "name_split", "fact_lock", "fact_restore"]
+                  "name_split", "fact_lock", "fact_restore", "state_dismiss"]
     item: Text = Field(min_length=1, max_length=120)
     outcome: Text | None = Field(default=None, max_length=32)
     character: Text | None = Field(default=None, max_length=120)
@@ -215,3 +215,14 @@ class ReextractRequest(BaseModel):
 class ExpectRequest(BaseModel):
     """An undo of a join or a split, made from its preview (PHASE-20 Q4): the preview's fingerprint."""
     expect: str | None = Field(default=None, max_length=64)
+
+
+class ArchiveUploadCreate(BaseModel):
+    """An archive the panel is about to upload for a restore (PHASE-38 Q3): its size in bytes."""
+    bytes: int = Field(ge=1, strict=True)
+
+
+class ArchiveUploadChunk(BaseModel):
+    """One chunk of it: base64 of its bytes (H23) and their SHA-256 (8 MB of bytes is 11,184,812 base64 characters)."""
+    data: str = Field(max_length=11_184_812)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")

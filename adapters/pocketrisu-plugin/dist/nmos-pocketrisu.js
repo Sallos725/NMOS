@@ -1,13 +1,13 @@
 //@name nmos_memory
 //@display-name NMOS Narrative Memory
 //@api 3.0
-//@version 0.3.0
+//@version 0.4.0
 //@link https://github.com/Sallos725/NMOS Documentation
 //@update-url https://raw.githubusercontent.com/Sallos725/NMOS/main/adapters/pocketrisu-plugin/dist/nmos-pocketrisu.js
 //@arg sidecar_url string NMOS sidecar URL (empty = http://127.0.0.1:8790)
 //@arg auth_token string Optional; only if the sidecar sets NMOS_AUTH_TOKEN
 //@arg disabled int 1 = pass every request through untouched
-//@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 2000)
+//@arg reserved_memory_tokens int Max packet tokens; lower the host max context by this much (0 = 4000)
 //@arg deadline_ms int Hard request-path deadline in ms (0 = 3000)
 //@arg inject_position string before_last_user (default) or end
 //@arg route string auto (default) / direct / server — how to reach the sidecar
@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:d6bb4833101f".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:5105809be9d6".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -41,7 +41,10 @@
 
   // src/hash.ts
   async function sha256Hex(text2) {
-    const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text2));
+    return sha256HexOf(new TextEncoder().encode(text2));
+  }
+  async function sha256HexOf(bytes) {
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
     return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
   }
 
@@ -130,7 +133,7 @@
   var DEFAULT_RESERVED_TOKENS = 4e3;
   var MAX_RESERVED_TOKENS = 2e4;
   var PANEL_MAX_RESERVED_TOKENS = 8e3;
-  var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
+  var SECTIONS = ["conn", "llm", "emb", "tune"];
   var VERTEX_URL = "https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi";
   function serviceAccountProject(key) {
     const text2 = key.trim();
@@ -154,9 +157,15 @@
     const u = url.trim();
     return VERTEX_OPENAPI.test(u) && !u.includes("{project}") && !presetMatches(VERTEX_URL, u) ? u : fillProject(VERTEX_URL, key);
   }
-  function presetMatches(presetUrl, url) {
-    if (!presetUrl.includes("{project}")) return presetUrl === url;
-    const [head, tail] = presetUrl.split("{project}");
+  var OLLAMA_DOCKER = "http://host.docker.internal:11434/v1";
+  var OLLAMA_LOCAL = "http://127.0.0.1:11434/v1";
+  function presetUrl(url, install) {
+    return url === OLLAMA_DOCKER && install === "bundle" ? OLLAMA_LOCAL : url;
+  }
+  function presetMatches(presetUrl2, url) {
+    if (presetUrl2 === OLLAMA_DOCKER && url === OLLAMA_LOCAL) return true;
+    if (!presetUrl2.includes("{project}")) return presetUrl2 === url;
+    const [head, tail] = presetUrl2.split("{project}");
     return url.startsWith(head) && url.endsWith(tail) && url.length > head.length + tail.length && !url.slice(head.length, url.length - tail.length).includes("/");
   }
   function dirtySections(baseline, current2) {
@@ -184,9 +193,15 @@
         summaries: v.tune.summaries,
         canon_facts: v.tune.canonFacts
       });
+      if (v.tune.embedWait.trim() !== "") body.embed_timeout_ms = num(v.tune.embedWait);
     }
-    if (dirty.includes("rules")) body.parsers = v.rules.trim() ? v.rules : null;
     return body;
+  }
+  var EMBED_WAIT_MARGIN_MS = 500;
+  function embedWaitTooLong(wait, deadline) {
+    const w = Number(wait.trim());
+    const d = Number(deadline.trim()) || DEFAULT_DEADLINE_MS;
+    return wait.trim() !== "" && Number.isFinite(w) && w > d - EMBED_WAIT_MARGIN_MS;
   }
   function connArgs(v) {
     return {
@@ -194,7 +209,8 @@
       route: v.route,
       disabled: v.enabled ? 0 : 1,
       reserved_memory_tokens: Math.min(PANEL_MAX_RESERVED_TOKENS, Math.floor(Number(v.reserved)) > 0 ? Math.floor(Number(v.reserved)) : DEFAULT_RESERVED_TOKENS),
-      deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS))
+      deadline_ms: Math.min(MAX_DEADLINE_MS, Math.max(200, Math.floor(Number(v.deadline)) || DEFAULT_DEADLINE_MS)),
+      auth_token: v.token.trim()
     };
   }
 
@@ -243,8 +259,43 @@
     "status.connected": ["\uC5F0\uACB0\uB428", "Connected"],
     "status.unreachable": ["\uC5F0\uACB0\uD560 \uC218 \uC5C6\uC74C", "Cannot reach"],
     "status.fix": [
-      "\uD655\uC778: docker compose up -d \xB7 \uC8FC\uC18C \xB7 NMOS_CORS_ORIGINS\uC5D0 \uC774 PocketRisu \uC8FC\uC18C \uD3EC\uD568 \xB7 localhost \uB610\uB294 HTTPS\uB85C \uC811\uC18D",
-      "Check: docker compose up -d \xB7 the address \xB7 NMOS_CORS_ORIGINS includes this PocketRisu address \xB7 open via localhost or HTTPS"
+      "\uD655\uC778: NMOS\uAC00 \uCF1C\uC838 \uC788\uB294\uC9C0(Docker: docker compose up -d \xB7 \uC124\uCE58\uD310: \uD2B8\uB808\uC774\uB098 \uBA54\uB274 \uB9C9\uB300\uC758 NMOS) \xB7 \uC8FC\uC18C \xB7 NMOS_CORS_ORIGINS\uC5D0 \uC774 PocketRisu \uC8FC\uC18C \uD3EC\uD568 \xB7 localhost \uB610\uB294 HTTPS\uB85C \uC811\uC18D",
+      "Check: NMOS is running (Docker: docker compose up -d \xB7 bundle: NMOS in the tray or menu bar) \xB7 the address \xB7 NMOS_CORS_ORIGINS includes this PocketRisu address \xB7 open via localhost or HTTPS"
+    ],
+    // why a request could not reach NMOS (pre-0.4.0 audit F24, F27)
+    "status.fix_token": [
+      "\uD1A0\uD070\uC774 \uB9DE\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED \u2192 \uC5F0\uACB0\uC758 \uD1A0\uD070\uC744 \uC0AC\uC774\uB4DC\uCE74\uC758 NMOS_AUTH_TOKEN\uACFC \uAC19\uAC8C \uB123\uC5B4 \uC8FC\uC138\uC694.",
+      "The token does not match. Set Settings \u2192 Connection \u2192 token to the sidecar's NMOS_AUTH_TOKEN."
+    ],
+    "status.fix_host": [
+      "\uC0AC\uC774\uB4DC\uCE74\uAC00 \uC774 \uC8FC\uC18C\uB97C \uD1A0\uD070 \uC5C6\uC774 \uBC1B\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uC758 NMOS_ALLOWED_HOSTS\uC5D0 \uC774 \uC8FC\uC18C\uB97C \uB123\uAC70\uB098, NMOS_AUTH_TOKEN\uC744 \uC815\uD558\uACE0 \uAC19\uC740 \uD1A0\uD070\uC744 \uC5F0\uACB0 \uC124\uC815\uC5D0 \uB123\uC5B4 \uC8FC\uC138\uC694.",
+      "The sidecar refuses this address without a token. Add it to the sidecar's NMOS_ALLOWED_HOSTS, or set NMOS_AUTH_TOKEN and the same token in Settings \u2192 Connection."
+    ],
+    "status.insecure": [
+      "\uC774 \uD398\uC774\uC9C0\uB294 \uBCF4\uC548 \uC5F0\uACB0\uC774 \uC544\uB2C8\uB77C\uC11C NMOS\uAC00 \uAE30\uC5B5\uC744 \uC900\uBE44\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4(\uBAA8\uB4E0 \uCC44\uD305\uC774 \uAE30\uC5B5 \uC5C6\uC774 \uAC11\uB2C8\uB2E4). PocketRisu\uB97C HTTPS \uC8FC\uC18C\uB098 localhost\uB85C \uC5F4\uC5B4 \uC8FC\uC138\uC694.",
+      "This page is not a secure context, so NMOS cannot prepare memory (every chat goes without it). Open PocketRisu over HTTPS or on localhost."
+    ],
+    "status.plugin_file": ["\uB9DE\uB294 \uD50C\uB7EC\uADF8\uC778 \uD30C\uC77C \uBC1B\uAE30", "Get the matching plugin file"],
+    "status.plugin_saved": [
+      "{name}\uC744(\uB97C) \uBC1B\uC558\uC2B5\uB2C8\uB2E4. PocketRisu \uC124\uC815 \u2192 \uD50C\uB7EC\uADF8\uC778\uC5D0\uC11C \uC774 \uD30C\uC77C\uB85C \uAD50\uCCB4\uD558\uACE0 \uC0C8\uB85C \uACE0\uCE68\uD558\uC138\uC694.",
+      "Saved {name}. Replace the plugin with it in PocketRisu Settings \u2192 Plugin, then reload."
+    ],
+    // once per page, after a reply that went without memory (pre-0.4.0 audit F25)
+    "reach.unreachable": [
+      "NMOS: \uC774\uBC88 \uB2F5\uC7A5\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74({url})\uC5D0 \uC5F0\uACB0\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. NMOS\uAC00 \uCF1C\uC838 \uC788\uB294\uC9C0(Docker: docker compose up -d, \uC124\uCE58\uD310: \uD2B8\uB808\uC774\uB098 \uBA54\uB274 \uB9C9\uB300\uC758 NMOS)\uC640 NMOS \uD328\uB110 \u2192 \uC124\uC815\uC758 \uC0AC\uC774\uB4DC\uCE74 \uC8FC\uC18C\uB97C \uD655\uC778\uD574 \uC8FC\uC138\uC694. (\uC774 \uC54C\uB9BC\uC740 \uD398\uC774\uC9C0\uB97C \uC0C8\uB85C \uC5F4 \uB54C\uAE4C\uC9C0 \uB2E4\uC2DC \uB728\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.)",
+      "NMOS: this reply went without memory. The sidecar ({url}) cannot be reached. Check that NMOS is running (Docker: docker compose up -d; bundle: NMOS in the tray or menu bar) and the sidecar address in the NMOS panel \u2192 Settings. (This notice does not come back until the page is reloaded.)"
+    ],
+    "reach.unauthorized": [
+      "NMOS: \uC774\uBC88 \uB2F5\uC7A5\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uAC00 \uD1A0\uD070\uC744 \uBC1B\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. NMOS \uD328\uB110 \u2192 \uC124\uC815 \u2192 \uC5F0\uACB0\uC758 \uD1A0\uD070\uC744 \uC0AC\uC774\uB4DC\uCE74\uC758 NMOS_AUTH_TOKEN\uACFC \uAC19\uAC8C \uB123\uC5B4 \uC8FC\uC138\uC694. (\uC774 \uC54C\uB9BC\uC740 \uD398\uC774\uC9C0\uB97C \uC0C8\uB85C \uC5F4 \uB54C\uAE4C\uC9C0 \uB2E4\uC2DC \uB728\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.)",
+      "NMOS: this reply went without memory. The sidecar refused the token. Set the NMOS panel \u2192 Settings \u2192 Connection \u2192 token to the sidecar's NMOS_AUTH_TOKEN. (This notice does not come back until the page is reloaded.)"
+    ],
+    "reach.host_refused": [
+      "NMOS: \uC774\uBC88 \uB2F5\uC7A5\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uAC00 \uC774 \uC8FC\uC18C\uB97C \uD1A0\uD070 \uC5C6\uC774 \uBC1B\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4(NMOS_ALLOWED_HOSTS). NMOS \uD328\uB110 \u2192 \uC0C1\uD0DC \uD0ED\uC5D0\uC11C \uACE0\uCE58\uB294 \uBC95\uC744 \uBCFC \uC218 \uC788\uC2B5\uB2C8\uB2E4. (\uC774 \uC54C\uB9BC\uC740 \uD398\uC774\uC9C0\uB97C \uC0C8\uB85C \uC5F4 \uB54C\uAE4C\uC9C0 \uB2E4\uC2DC \uB728\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.)",
+      "NMOS: this reply went without memory. The sidecar refuses this address without a token (NMOS_ALLOWED_HOSTS). The NMOS panel \u2192 Status tab shows the fix. (This notice does not come back until the page is reloaded.)"
+    ],
+    "reach.insecure": [
+      "NMOS: \uC774\uBC88 \uB2F5\uC7A5\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4. \uC774 \uD398\uC774\uC9C0\uAC00 \uBCF4\uC548 \uC5F0\uACB0\uC774 \uC544\uB2C8\uB77C\uC11C(HTTP\uB85C \uC5F0 LAN \uC8FC\uC18C) \uAE30\uC5B5\uC744 \uC900\uBE44\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. PocketRisu\uB97C HTTPS \uC8FC\uC18C\uB098 localhost\uB85C \uC5F4\uC5B4 \uC8FC\uC138\uC694. (\uC774 \uC54C\uB9BC\uC740 \uD398\uC774\uC9C0\uB97C \uC0C8\uB85C \uC5F4 \uB54C\uAE4C\uC9C0 \uB2E4\uC2DC \uB728\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.)",
+      "NMOS: this reply went without memory. This page is not a secure context (a LAN address over HTTP), so memory cannot be prepared. Open PocketRisu over HTTPS or on localhost. (This notice does not come back until the page is reloaded.)"
     ],
     "status.memory_off": ["\uAE30\uC5B5 \uB123\uAE30\uAC00 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uC124\uC815 \uD0ED\uC5D0\uC11C \uCF24 \uC218 \uC788\uC2B5\uB2C8\uB2E4.", "Memory is switched off. Turn it on in Settings."],
     "status.features": ["\uAE30\uB2A5", "Features"],
@@ -323,13 +374,13 @@
     ],
     "vectors.title": ["\uAE30\uC5B5\uC744 \uC758\uBBF8 \uAC80\uC0C9 \uC5C6\uC774 \uCC3E\uC558\uC2B5\uB2C8\uB2E4", "Memory was recalled without semantic search"],
     "vectors.text": [
-      "\uB9C8\uC9C0\uB9C9 \uC694\uCCAD\uC5D0\uC11C \uC784\uBCA0\uB529 \uBAA8\uB378\uC774 \uC81C\uB54C \uB2F5\uD558\uC9C0 \uC54A\uC558\uAC70\uB098 \uC624\uB958\uB97C \uB0B4\uC11C, \uAE30\uC5B5\uC744 \uB2E8\uC5B4\uAC00 \uACB9\uCE58\uB294 \uAC83\uC73C\uB85C\uB9CC \uCC3E\uC558\uC2B5\uB2C8\uB2E4. \uB9D0\uC744 \uBC14\uAFD4 \uC4F4 \uC61B \uC7A5\uBA74\uC740 \uC774\uB54C \uBE60\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uBA3C\uC800 \uC124\uC815 \uD0ED\uC758 \uC758\uBBF8 \uAC80\uC0C9 \uC784\uBCA0\uB529 \uC5F0\uACB0 \uD14C\uC2A4\uD2B8\uB85C \uC8FC\uC18C\uC640 \uD0A4\uB97C \uD655\uC778\uD558\uC138\uC694. \uBAA8\uB378\uC774 \uC26C\uB2E4\uAC00 \uB2E4\uC2DC \uC62C\uB77C\uC624\uB294 \uC911\uC774\uC5C8\uB2E4\uBA74(Ollama\uB294 5\uBD84 \uC26C\uBA74 \uB0B4\uB9BC) \uB2E4\uC74C \uC694\uCCAD\uC740 \uAD1C\uCC2E\uC2B5\uB2C8\uB2E4. \uC5F0\uACB0\uC740 \uB418\uB294\uB370 \uC790\uC8FC \uB728\uBA74 \uC784\uBCA0\uB529 \uBAA8\uB378\uC744 \uACC4\uC18D \uC62C\uB824 \uB450\uAC70\uB098(Ollama keep_alive) \uC0AC\uC774\uB4DC\uCE74\uC758 NMOS_EMBED_TIMEOUT_MS\uB97C \uB298\uB824 \uC8FC\uC138\uC694.",
-      "On the last request the embedding model did not answer in time or answered with an error, so memory was found by shared words only; an earlier scene in other words can be missed then. First check the address and key with the embedding connection test in the Settings tab. If the model was loading after a pause (Ollama unloads it after 5 minutes idle), the next request is fine. If it connects and this still shows often, keep the embedding model loaded (Ollama keep_alive) or raise the sidecar's NMOS_EMBED_TIMEOUT_MS."
+      "\uB9C8\uC9C0\uB9C9 \uC694\uCCAD\uC5D0\uC11C \uC784\uBCA0\uB529 \uBAA8\uB378\uC774 \uC81C\uB54C \uB2F5\uD558\uC9C0 \uC54A\uC558\uAC70\uB098 \uC624\uB958\uB97C \uB0B4\uC11C, \uAE30\uC5B5\uC744 \uB2E8\uC5B4\uAC00 \uACB9\uCE58\uB294 \uAC83\uC73C\uB85C\uB9CC \uCC3E\uC558\uC2B5\uB2C8\uB2E4. \uB9D0\uC744 \uBC14\uAFD4 \uC4F4 \uC61B \uC7A5\uBA74\uC740 \uC774\uB54C \uBE60\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uBA3C\uC800 \uC124\uC815 \uD0ED\uC758 \uC758\uBBF8 \uAC80\uC0C9 \uC784\uBCA0\uB529 \uC5F0\uACB0 \uD14C\uC2A4\uD2B8\uB85C \uC8FC\uC18C\uC640 \uD0A4\uB97C \uD655\uC778\uD558\uC138\uC694. \uBAA8\uB378\uC774 \uC26C\uB2E4\uAC00 \uB2E4\uC2DC \uC62C\uB77C\uC624\uB294 \uC911\uC774\uC5C8\uB2E4\uBA74(Ollama\uB294 5\uBD84 \uC26C\uBA74 \uB0B4\uB9BC) \uB2E4\uC74C \uC694\uCCAD\uC740 \uAD1C\uCC2E\uC2B5\uB2C8\uB2E4. \uC5F0\uACB0\uC740 \uB418\uB294\uB370 \uC790\uC8FC \uB728\uBA74 \uC784\uBCA0\uB529 \uBAA8\uB378\uC744 \uACC4\uC18D \uC62C\uB824 \uB450\uAC70\uB098(Ollama keep_alive) \uC124\uC815 \uD0ED \uAC80\uC0C9 \uC870\uC815\uC758 \uC758\uBBF8 \uAC80\uC0C9 \uB300\uAE30(ms)\uB97C 1000 \uC815\uB3C4\uB85C \uB298\uB824 \uC8FC\uC138\uC694.",
+      "On the last request the embedding model did not answer in time or answered with an error, so memory was found by shared words only; an earlier scene in other words can be missed then. First check the address and key with the embedding connection test in the Settings tab. If the model was loading after a pause (Ollama unloads it after 5 minutes idle), the next request is fine. If it connects and this still shows often, keep the embedding model loaded (Ollama keep_alive) or raise Embedding wait (ms) under Recall tuning in the Settings tab to about 1000."
     ],
     "deadline.took": [" (\uC2E4\uC81C\uB85C\uB294 \uC57D {n}ms \uAC78\uB9BC)", " (it took about {n} ms)"],
     "status.plugin_mismatch": [
-      "\uC774 \uD50C\uB7EC\uADF8\uC778(\uBE4C\uB4DC {mine})\uC774 \uC0AC\uC774\uB4DC\uCE74\uC758 \uD50C\uB7EC\uADF8\uC778(\uBE4C\uB4DC {theirs})\uACFC \uB2E4\uB985\uB2C8\uB2E4. \uC0AC\uC774\uB4DC\uCE74\uC640 \uAC19\uC740 \uBC84\uC804\uC758 \uD50C\uB7EC\uADF8\uC778 \uD30C\uC77C\uB85C \uAD50\uCCB4\uD558\uACE0 \uC0C8\uB85C \uACE0\uCE68\uD558\uC138\uC694. \uC778\uC2A4\uD399\uD130 \uCCAB \uD654\uBA74\uC5D0\uC11C \uB9DE\uB294 \uD30C\uC77C\uC744 \uBC1B\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
-      "This plugin (build {mine}) differs from the sidecar's (build {theirs}). Replace it with the plugin file of the sidecar's version and reload. The Inspector's first page links the matching file."
+      "\uC774 \uD50C\uB7EC\uADF8\uC778(\uBE4C\uB4DC {mine})\uC774 \uC0AC\uC774\uB4DC\uCE74\uC758 \uD50C\uB7EC\uADF8\uC778(\uBE4C\uB4DC {theirs})\uACFC \uB2E4\uB985\uB2C8\uB2E4. \uC544\uB798 \uBC84\uD2BC\uC73C\uB85C \uC0AC\uC774\uB4DC\uCE74\uC640 \uAC19\uC740 \uBC84\uC804\uC758 \uD30C\uC77C\uC744 \uBC1B\uC544 \uAD50\uCCB4\uD558\uACE0 \uC0C8\uB85C \uACE0\uCE68\uD558\uC138\uC694.",
+      "This plugin (build {mine}) differs from the sidecar's (build {theirs}). Get the file of the sidecar's version with the button below, replace the plugin with it and reload."
     ],
     "status.plugin_ok": ["\uD50C\uB7EC\uADF8\uC778 \uBE4C\uB4DC {b} \xB7 \uC0AC\uC774\uB4DC\uCE74\uC640 \uAC19\uC74C", "Plugin build {b} \xB7 matches the sidecar"],
     // The host registers the request hook only with the "replace content" permission and remembers a denial silently.
@@ -362,6 +413,8 @@
     // inspector view
     "insp.loading": ["\uC778\uC2A4\uD399\uD130\uB97C \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Loading the inspector\u2026"],
     "insp.back": ["\u2190 \uB4A4\uB85C", "\u2190 Back"],
+    "tl.canon": ["\uC124\uC815(canon)\uC5D0\uC11C \uC2DC\uC791\uD55C \uAC12\uC774\uC5D0\uC694. \uC774\uC57C\uAE30\uAC00 \uBC14\uAFB8\uBA74 \uADF8\uCABD\uC774 \uC774\uACA8\uC694.", "Starts from the setting (canon); the story wins when it says otherwise."],
+    "tl.owner": ["\uC624\uB108\uAC00 \uACE0\uCE5C \uAC12\uC774\uC5D0\uC694.", "The owner's version."],
     "insp.browser": ["\uBE0C\uB77C\uC6B0\uC800\uC5D0\uC11C \uC9C1\uC811 \uC5F4 \uC218\uB3C4 \uC788\uC2B5\uB2C8\uB2E4: {url}", "Also available in a browser: {url}"],
     "act.history": ["\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C", "Extract all history"],
     "act.rebuild": ["\uAE30\uC5B5 \uC7AC\uAD6C\uCD95", "Rebuild memory"],
@@ -391,6 +444,37 @@
     "exp.all": ["\uC804\uBD80 \uB0B4\uBCF4\uB0B4\uAE30", "Export everything"],
     "exp.working": ["\uD30C\uC77C\uC744 \uC900\uBE44\uD558\uB294 \uC911\u2026", "Preparing the file\u2026"],
     "exp.saved": ["{mb} MB\uB97C \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. \uBE0C\uB77C\uC6B0\uC800\uC758 \uB2E4\uC6B4\uB85C\uB4DC\uB97C \uD655\uC778\uD558\uC138\uC694.", "Saved {mb} MB. Check the browser's downloads."],
+    // restore from the panel (PHASE-38)
+    "rst.title": ["\uC544\uCE74\uC774\uBE0C\uC5D0\uC11C \uBCF5\uC6D0", "Restore from an archive"],
+    "rst.sub": [
+      "\uB0B4\uBCF4\uB0B8 .nmos.zip\uC744 \uC774 NMOS\uC5D0 \uB123\uC2B5\uB2C8\uB2E4. \uC774\uBBF8 \uC788\uB294 \uB300\uD654\uC640\uB294 \uD569\uCE58\uC9C0 \uC54A\uC544\uC694: \uADF8 \uB300\uD654\uAC00 \uC5EC\uAE30 \uC788\uC73C\uBA74 \uBCF5\uC6D0 \uC804\uCCB4\uB97C \uAC70\uBD80\uD569\uB2C8\uB2E4(\uBA3C\uC800 \uC778\uC2A4\uD399\uD130\uC5D0\uC11C \uC9C0\uC6B0\uC138\uC694). \uBCF5\uC6D0\uD558\uB294 \uB3D9\uC548\uC5D0\uB3C4 \uD68C\uC0C1\uC740 \uB418\uACE0, \uAE30\uC5B5 \uC800\uC7A5\uB9CC \uC7A0\uAE50 \uAE30\uB2E4\uB9BD\uB2C8\uB2E4.",
+      "Puts an exported .nmos.zip into this NMOS. It never merges into a chat that is here: one of its chats here refuses the whole restore (delete it in the Inspector first). While it runs, recall goes on; saving memory waits briefly."
+    ],
+    "rst.pick": ["\uD30C\uC77C \uACE0\uB974\uAE30\u2026", "Choose a file\u2026"],
+    "rst.insecure": [
+      "\uC774 \uD398\uC774\uC9C0\uB294 \uBCF4\uC548 \uC5F0\uACB0\uC774 \uC544\uB2C8\uB77C\uC11C \uD30C\uC77C\uC744 \uD655\uC778\uD560 \uC218 \uC5C6\uC5B4\uC694. PocketRisu\uB97C HTTPS \uC8FC\uC18C\uB098 localhost\uB85C \uC5F4\uC5B4 \uC8FC\uC138\uC694.",
+      "This page is not a secure context, so the file cannot be checked. Open PocketRisu over HTTPS or on localhost."
+    ],
+    "rst.uploading": ["\uC62C\uB9AC\uB294 \uC911\u2026 {pct}% ({sent} / {total} MB)", "Uploading\u2026 {pct}% ({sent} of {total} MB)"],
+    "rst.checking": ["\uD30C\uC77C\uC744 \uAC80\uC0AC\uD558\uB294 \uC911\u2026", "Checking the file\u2026"],
+    "rst.summary": ["{scope} \xB7 \uB300\uD654 {n}\uAC1C \xB7 NMOS {version} \xB7 {date}", "{scope} \xB7 {n} chats \xB7 NMOS {version} \xB7 {date}"],
+    "rst.scope_install": ["\uC124\uCE58 \uC804\uCCB4", "The whole install"],
+    "rst.scope_chats": ["\uACE0\uB978 \uB300\uD654", "Chosen chats"],
+    "rst.here": ["\uC774\uBBF8 \uC788\uC74C", "already here"],
+    "rst.no_character": ["\uCE90\uB9AD\uD130 \uC774\uB984 \uC5C6\uC74C", "no character name"],
+    "rst.no_chat": ["\uC774\uB984 \uC5C6\uB294 \uB300\uD654", "untitled chat"],
+    "rst.blocked": [
+      "\uC774\uBBF8 \uC788\uB294 \uB300\uD654\uAC00 \uC788\uC5B4\uC11C \uBCF5\uC6D0\uD560 \uC218 \uC5C6\uC5B4\uC694. \uC778\uC2A4\uD399\uD130\uC5D0\uC11C \uADF8 \uB300\uD654\uB97C \uC9C0\uC6B4 \uB4A4 \uB2E4\uC2DC \uC62C\uB824 \uC8FC\uC138\uC694.",
+      "Chats already here block the restore. Delete them in the Inspector, then upload the file again."
+    ],
+    "rst.settings": ["\uC0C8\uB85C \uB4E4\uC5B4\uC62C \uC124\uC815: {keys}", "Settings it adds: {keys}"],
+    "rst.migrations": ["\uC61B NMOS\uC758 \uD30C\uC77C\uC774\uB77C \uBCF5\uC6D0\uD558\uBA70 \uC62C\uB9BD\uB2C8\uB2E4: {list}", "Made by an older NMOS; upgraded as it is restored: {list}"],
+    "rst.restore": ["\uBCF5\uC6D0", "Restore"],
+    "rst.cancel": ["\uCDE8\uC18C", "Cancel"],
+    "rst.restoring": ["\uBCF5\uC6D0\uD558\uB294 \uC911\u2026", "Restoring\u2026"],
+    "rst.done": ["\uBCF5\uC6D0\uD588\uC5B4\uC694: \uB300\uD654 {n}\uAC1C, \uC0C8\uB85C \uCC98\uB9AC\uD560 \uC791\uC5C5 {jobs}\uAC1C.", "Restored: {n} chats; {jobs} jobs queued."],
+    "rst.refused": ["\uC774 \uD30C\uC77C\uC740 \uBCF5\uC6D0\uD560 \uC218 \uC5C6\uC5B4\uC694: {why}", "This file cannot be restored: {why}"],
+    "rst.failed": ["\uBCF5\uC6D0\uD558\uC9C0 \uBABB\uD588\uC5B4\uC694. \uC544\uBB34\uAC83\uB3C4 \uBC14\uB00C\uC9C0 \uC54A\uC558\uC5B4\uC694: {why}", "Not restored; nothing changed: {why}"],
     "act.delete_done": ["\uB300\uD654\uB97C \uC0AD\uC81C\uD588\uC2B5\uB2C8\uB2E4 (\uBA54\uC2DC\uC9C0 {m}\uAC1C\uC758 \uAE30\uB85D).", "Conversation deleted (records of {m} messages)."],
     "link.title": ["\uAC19\uC740 \uB300\uC0C1\uC73C\uB85C \uD569\uCE58\uAE30", "Same as another entity"],
     "link.sub": [
@@ -416,6 +500,8 @@
     // a held alias, linked by the owner (PHASE-29 Q5)
     "rp.fact_restore": ["\uBCF5\uC6D0", "Restore"],
     // a fact a re-extraction dropped, remembered at its turn again (PHASE-22 Q7)
+    "rp.state_dismiss": ["\uAD1C\uCC2E\uC74C", "Dismiss"],
+    // a status flag the owner looked at (PHASE-39 Q4)
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
     "rp.select": ["\uC77C\uAD04 \uB2EB\uAE30\uC5D0 \uB123\uAE30", "Select to close"],
     "rp.outcome": ["\uB2EB\uB294 \uACB0\uACFC", "Outcome"],
@@ -528,6 +614,9 @@
     "conn.budget": ["\uAE30\uC5B5 \uC608\uC0B0(\uD1A0\uD070)", "Memory budget (tokens)"],
     "conn.deadline": ["\uC81C\uD55C \uC2DC\uAC04(ms)", "Deadline (ms)"],
     "conn.enabled": ["\uAE30\uC5B5 \uB123\uAE30 \uCF1C\uAE30", "Memory on"],
+    "conn.token": ["\uD1A0\uD070", "Token"],
+    // the sidecar's NMOS_AUTH_TOKEN, when it has one (audit F27)
+    "conn.token_placeholder": ["\uC0AC\uC774\uB4DC\uCE74\uC5D0 \uD1A0\uD070\uC774 \uC5C6\uC73C\uBA74 \uBE44\uC6CC \uB450\uC138\uC694", "Leave empty when the sidecar has no token"],
     "conn.hint": ["PocketRisu\uC758 \uCD5C\uB300 \uCEE8\uD14D\uC2A4\uD2B8\uB97C \uAE30\uC5B5 \uC608\uC0B0\uB9CC\uD07C \uC904\uC5EC \uB450\uC138\uC694.", "Lower PocketRisu's max context by the memory budget."],
     "conn.deadline_hint": [
       "\uC81C\uD55C \uC2DC\uAC04 \uC548\uC5D0 \uAE30\uC5B5\uC744 \uC900\uBE44\uD558\uC9C0 \uBABB\uD558\uBA74 \uADF8 \uC694\uCCAD\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uBCF4\uB0C5\uB2C8\uB2E4. \uAE30\uBCF8 3000ms. \uC544\uC8FC \uAE34 \uCC44\uD305(1\uB9CC \uAC1C \uC774\uC0C1)\uC5D0\uC11C \uAE30\uC5B5\uC774 \uC790\uC8FC \uBE60\uC9C0\uBA74 \uB298\uB9AC\uC138\uC694. \uB298\uB9B0 \uB9CC\uD07C \uB2F5\uC7A5 \uC2DC\uC791\uC774 \uB2A6\uC5B4\uC9C8 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
@@ -587,6 +676,15 @@
     ],
     "tune.threshold": ["\uAE00\uC790 \uC77C\uCE58 \uAE30\uC900", "Lexical threshold"],
     "tune.min_sim": ["\uC758\uBBF8 \uC720\uC0AC\uB3C4 \uAE30\uC900", "Vector min similarity"],
+    "tune.embed_wait": ["\uC758\uBBF8 \uAC80\uC0C9 \uB300\uAE30(ms)", "Embedding wait (ms)"],
+    "tune.embed_wait_hint": [
+      "\uC784\uBCA0\uB529 \uB2F5\uC744 \uAE30\uB2E4\uB9AC\uB294 \uC2DC\uAC04\uC785\uB2C8\uB2E4. \uB118\uC73C\uBA74 \uADF8 \uC694\uCCAD\uC740 \uC758\uBBF8 \uAC80\uC0C9 \uC5C6\uC774 \uB2E8\uC5B4\uAC00 \uACB9\uCE58\uB294 \uAE30\uC5B5\uB9CC \uCC3E\uC2B5\uB2C8\uB2E4. \uAE30\uBCF8 300ms. \uC0C1\uD0DC \uD0ED\uC5D0 \uC758\uBBF8 \uAC80\uC0C9 \uC5C6\uC774 \uCC3E\uC558\uB2E4\uB294 \uC54C\uB9BC\uC774 \uC790\uC8FC \uB728\uBA74(\uC6D0\uACA9 \uC784\uBCA0\uB529, \uB290\uB9B0 PC) 1000 \uC815\uB3C4\uB85C \uB298\uB9AC\uC138\uC694. \uB298\uB9B0 \uB9CC\uD07C \uB2F5\uC7A5 \uC2DC\uC791\uC774 \uB2A6\uC5B4\uC9C8 \uC218 \uC788\uACE0, \uC704\uC758 \uC81C\uD55C \uC2DC\uAC04\uBCF4\uB2E4 \uC9E7\uC544\uC57C \uD569\uB2C8\uB2E4.",
+      "How long a request waits for the embedding. Past it, that request recalls by shared words only. Default 300 ms. If the Status tab often warns that semantic search was skipped (a remote embedder, a slow PC), raise it to about 1000. Replies may start that much later, and it must stay below the deadline above."
+    ],
+    "tune.embed_wait_tight": [
+      "\uB2E4\uB9CC \uC784\uBCA0\uB529 \uB300\uAE30({w}ms)\uAC00 \uC81C\uD55C \uC2DC\uAC04({d}ms)\uC5D0\uC11C 500ms\uB97C \uBE80 \uAC83\uBCF4\uB2E4 \uAE38\uC5B4\uC11C, \uC784\uBCA0\uB529\uC774 \uB2A6\uC73C\uBA74 \uADF8 \uC694\uCCAD\uC740 \uAE30\uC5B5 \uC5C6\uC774 \uAC11\uB2C8\uB2E4. \uB300\uAE30\uB97C \uC904\uC774\uAC70\uB098 \uC81C\uD55C \uC2DC\uAC04\uC744 \uB298\uB9AC\uC138\uC694.",
+      "But the embedding wait ({w} ms) is longer than the deadline ({d} ms) minus 500 ms: a slow embedding then sends the request without memory. Lower the wait or raise the deadline."
+    ],
     "tune.top_k": ["\uBC1C\uCDCC \uC218", "Excerpts"],
     "tune.facts": ["\uC0AC\uC2E4 \uC218", "Facts"],
     "tune.backfill": ["\uCC98\uC74C \uC5F0\uACB0 \uC2DC \uCD94\uCD9C\uD560 \uD134 \uC218", "Turns extracted on first sync"],
@@ -607,7 +705,57 @@
       'block: reads "key: value" lines between start and end; entity_line splits them per [character] line (sim bots). regex: named groups key/value.'
     ],
     "rules.example": ["\uC608\uC2DC \uB123\uAE30", "Insert example"],
-    "rules.none": ['\uADDC\uCE59 \uC5C6\uC74C \u2014 "\uC608\uC2DC \uB123\uAE30"\uB85C \uC2DC\uC791\uD558\uC138\uC694', 'No rules \u2014 start with "Insert example"'],
+    "rules.none": [
+      "JSON \uD30C\uC77C\uC774\uB098 \uD504\uB9AC\uC14B\uC744 \uC120\uD0DD\uD558\uC138\uC694. \uC801\uC6A9 \uC804\uAE4C\uC9C0 \uD65C\uC131 \uADDC\uCE59\uC740 \uBC14\uB00C\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "Choose a JSON file or preset. Active rules stay unchanged until Apply."
+    ],
+    "rules.scope": [
+      "\uCE90\uB9AD\uD130\uC758 \uD45C\uC2DC \uC774\uB984\uC5D0 \uC815\uD655\uD788 \uC5F0\uACB0\uD569\uB2C8\uB2E4. \uC774\uB984\uC774 \uAC19\uC740 \uCE74\uB4DC\uB294 \uADDC\uCE59\uC744 \uACF5\uC720\uD558\uC9C0\uB9CC \uB300\uD654\uBCC4 \uC0C1\uD0DC\uAC12\uC740 \uB530\uB85C \uC720\uC9C0\uD569\uB2C8\uB2E4.",
+      "Rules match the character display name exactly. Same-name cards share rules; each chat keeps its own state."
+    ],
+    "rules.target": ["\uC801\uC6A9\uD560 \uCE90\uB9AD\uD130 \uC774\uB984", "Target character name"],
+    "rules.choose_target": ["\uC801\uC6A9\uD560 \uCE90\uB9AD\uD130 \uC774\uB984\uC744 \uC9C1\uC811 \uC120\uD0DD\uD558\uAC70\uB098 \uC785\uB825\uD558\uC138\uC694.", "Choose or enter the target character name."],
+    "rules.draft": ["\uADDC\uCE59 JSON \uCD08\uC548", "Rules JSON draft"],
+    "rules.apply": ["\uC774 \uCE90\uB9AD\uD130\uC5D0 \uC801\uC6A9", "Apply to this character"],
+    "rules.disable": ["\uC774 \uCE90\uB9AD\uD130\uC758 \uC0C1\uD0DC\uCC3D \uADDC\uCE59 \uD574\uC81C", "Disable rules for this character"],
+    "rules.prepare_disable": ["\uD574\uC81C\uD560 \uBE48 \uADDC\uCE59 \uC900\uBE44", "Prepare empty rules to disable"],
+    "rules.import": ["JSON \uD30C\uC77C \uC120\uD0DD", "Choose JSON file"],
+    "rules.preset": ["\uC800\uC7A5\uB41C \uD504\uB9AC\uC14B", "Saved preset"],
+    "rules.choose_preset": ["\uD504\uB9AC\uC14B \uC120\uD0DD\u2026", "Choose a preset\u2026"],
+    "rules.preset_name": ["\uD504\uB9AC\uC14B \uC774\uB984", "Preset name"],
+    "rules.save_preset": ["\uD504\uB9AC\uC14B \uC800\uC7A5\xB7\uC5C5\uB370\uC774\uD2B8", "Save or update preset"],
+    "rules.remove_preset": ["\uC120\uD0DD\uD55C \uD504\uB9AC\uC14B \uC0AD\uC81C", "Remove selected preset"],
+    "rules.preview": [
+      "\uB300\uC0C1: {card} \xB7 \uADDC\uCE59 {n}\uAC1C. \uC801\uC6A9\uD558\uBA74 \uC774 \uCE90\uB9AD\uD130\uC758 \uADDC\uCE59\uB9CC \uAD50\uCCB4\uD569\uB2C8\uB2E4.",
+      "Target: {card} \xB7 {n} rules. Apply replaces only this character\u2019s rules."
+    ],
+    "rules.binding": ["{card}: \uC5F0\uACB0\uB41C \uADDC\uCE59 {n}\uAC1C", "{card}: {n} bound rules"],
+    "rules.unbound": [
+      "\uBBF8\uC5F0\uACB0 \uADDC\uCE59 {n}\uAC1C\uB294 \uBE44\uD65C\uC131 \uC0C1\uD0DC\uC785\uB2C8\uB2E4. JSON\uC744 \uD655\uC778\uD558\uACE0 \uCE90\uB9AD\uD130\uC5D0 \uB2E4\uC2DC \uC5F0\uACB0\uD558\uC138\uC694.",
+      "{n} unbound rules are inactive. Review their JSON and bind them to a character."
+    ],
+    "rules.no_active": ["\uC5F0\uACB0\uB41C \uC0C1\uD0DC\uCC3D \uADDC\uCE59\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No bound status rules."],
+    "rules.upgrade": [
+      "\uC774 \uAE30\uB2A5\uC744 \uC4F0\uB824\uBA74 NMOS\uB97C \uC5C5\uB370\uC774\uD2B8\uD558\uC138\uC694. \uAE30\uC874 \uC804\uC5ED \uC800\uC7A5\uC73C\uB85C \uC801\uC6A9\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "Update NMOS to use this feature. The old global save will not be used."
+    ],
+    "rules.stored": ["\uC800\uC7A5\uB41C \uADDC\uCE59 JSON \uBCF4\uAE30", "View stored rules JSON"],
+    "rules.blank": [
+      "\uCD08\uC548\uC774 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4. \uBE48\uCE78\uC740 \uD65C\uC131 \uADDC\uCE59\uC744 \uBCC0\uACBD\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "The draft is blank. A blank draft does not change active rules."
+    ],
+    "rules.invalid_json": ["\uC62C\uBC14\uB978 JSON\uC744 \uC785\uB825\uD558\uC138\uC694.", "Enter valid JSON."],
+    "rules.invalid_shape": [
+      "rules \uBC30\uC5F4\uC5D0 \uADDC\uCE59 \uAC1D\uCCB4\uB97C \uB2F4\uC740 JSON\uC774 \uD544\uC694\uD569\uB2C8\uB2E4.",
+      "Use a JSON object with a rules array containing rule objects."
+    ],
+    "rules.loaded": ["\uD30C\uC77C\uC744 \uCD08\uC548\uC73C\uB85C \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4. \uC544\uC9C1 \uC801\uC6A9\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.", "File loaded into the draft; not applied."],
+    "rules.applied": ["{card}\uC5D0 \uADDC\uCE59 {n}\uAC1C\uB97C \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4.", "Applied {n} rules to {card}."],
+    "rules.preset_saved": ["\uD504\uB9AC\uC14B \uBAA9\uB85D\uC744 \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. \uD65C\uC131 \uADDC\uCE59\uC740 \uADF8\uB300\uB85C\uC785\uB2C8\uB2E4.", "Preset library saved. Active rules are unchanged."],
+    "rules.close_draft": [
+      "\uC544\uC9C1 \uC801\uC6A9\uD558\uC9C0 \uC54A\uC740 \uC0C1\uD0DC\uCC3D \uCD08\uC548\uC774 \uC788\uC2B5\uB2C8\uB2E4. \uC801\uC6A9\uD558\uB824\uBA74 \uCDE8\uC18C \uD6C4 \uC0C1\uD0DC\uCC3D\uC758 \uC801\uC6A9 \uBC84\uD2BC\uC744 \uB204\uB974\uC138\uC694.",
+      "There is an unapplied status draft. Cancel and use its Apply button to activate it."
+    ],
     "rules.from_file": ["\uD30C\uC77C\uC5D0\uC11C \uADDC\uCE59 {n}\uAC1C\uB97C \uC77D\uB294 \uC911 (\uC5EC\uAE30\uC5D0 \uC800\uC7A5\uD558\uBA74 \uB300\uCCB4\uB429\uB2C8\uB2E4)", "Reading {n} rules from a file (saving here replaces them)"],
     // save bar
     "save": ["\uC800\uC7A5", "Save"],
@@ -624,6 +772,10 @@
     "cancel": ["\uCDE8\uC18C", "Cancel"],
     "lang_unsaved": ["\uC5B8\uC5B4\uB97C \uBC14\uAFB8\uAE30 \uC804\uC5D0 \uBCC0\uACBD\uC744 \uC800\uC7A5\uD558\uAC70\uB098 \uB418\uB3CC\uB9AC\uC138\uC694.", "Save or revert your changes before switching the language."],
     "conn_saved_server_failed": ["\uC5F0\uACB0 \uC124\uC815\uC740 \uC800\uC7A5\uD588\uC9C0\uB9CC \uC11C\uBC84 \uC124\uC815\uC740 \uC800\uC7A5\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: {e}", "Connection saved, but the server settings were not: {e}"],
+    "conn_save_failed": [
+      "\uC5F0\uACB0 \uC124\uC815 \uC800\uC7A5\uC744 \uB9C8\uCE58\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4({n}/{total}\uAC1C \uC800\uC7A5 \uD655\uC778). \uC11C\uBC84 \uC124\uC815\uC740 \uBCF4\uB0B4\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uC800\uC7A5\uB41C \uC5F0\uACB0\uC744 \uD655\uC778\uD558\uAC70\uB098 \uB2E4\uC2DC \uC800\uC7A5\uD558\uC138\uC694: {e}",
+      "Could not finish saving the connection ({n}/{total} settings confirmed saved). Server settings were not sent. Check the saved connection or retry: {e}"
+    ],
     // progress display (HUD) on the chat screen
     "hud.recalling": ["\uAE30\uC5B5 \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Recalling memory\u2026"],
     "hud.injected": ["\u2713 \uAE30\uC5B5 \uC8FC\uC785 ({n}\uC790)", "\u2713 Memory injected ({n} chars)"],
@@ -932,6 +1084,24 @@ ${revisionHash}`;
     return { query, previousAi };
   }
 
+  // src/failure.ts
+  var INSECURE_ERROR = "insecure page: open PocketRisu over HTTPS or localhost (crypto.subtle is missing)";
+  function secureContext() {
+    return typeof globalThis.crypto?.subtle?.digest === "function";
+  }
+  function failureKind(error) {
+    if (!error) return null;
+    if (error.startsWith("deadline")) return "deadline";
+    if (error.startsWith("insecure page")) return "insecure";
+    const status = /-> HTTP (\d{3})/.exec(error);
+    if (status) {
+      if (status[1] === "401") return "unauthorized";
+      if (status[1] === "400" && /not allowed without a token/.test(error)) return "host_refused";
+      return ["502", "503", "504"].includes(status[1]) ? "unreachable" : "other";
+    }
+    return /^sidecar /.test(error) ? "other" : "unreachable";
+  }
+
   // src/core.ts
   var DeadlineError = class extends Error {
   };
@@ -1163,6 +1333,7 @@ ${revisionHash}`;
         if (mode !== "model" || hasPacket(prompt)) return prompt;
         settings = await within(host.settings(), started + DEFAULT_DEADLINE_MS, "the plugin settings");
         if (!settings.enabled || !settings.sidecarUrl) return prompt;
+        if (!secureContext()) throw new Error(INSECURE_ERROR);
         const deadline = started + settings.deadlineMs;
         emit({ type: "request-start" });
         announced = true;
@@ -1306,6 +1477,7 @@ ${revisionHash}`;
         const settings = await host.settings();
         if (!settings.enabled || !settings.sidecarUrl || !arg2?.chat?.id || settings.offChats?.includes(arg2.chat.id)) return;
         adviseOnce(settings.language);
+        reachOnce(settings.language, settings.sidecarUrl);
         emit({ type: "background", conversationId: conversations.get(arg2.chat.id) ?? null });
         const index = arg2.messageIndex ?? -1;
         const message = index >= 0 ? arg2.chat.message?.[index] : void 0;
@@ -1327,6 +1499,13 @@ ${revisionHash}`;
       const took = advice.tookMs === null ? "" : t(lang, "deadline.took", { n: formatMs(advice.tookMs) });
       host.alert(t(lang, "deadline.alert", { d: formatMs(advice.deadlineMs), took, s: formatMs(advice.suggestMs) }));
     }
+    let reachAlerted = false;
+    function reachOnce(lang, url) {
+      const kind = last?.outcome === "failed" ? failureKind(last.error) : null;
+      if (reachAlerted || !host.alert || !kind || kind === "deadline" || kind === "other") return;
+      reachAlerted = true;
+      host.alert(t(lang, `reach.${kind}`, { url: url.replace(/\/+$/, "") }));
+    }
     async function status() {
       const settings = await host.settings();
       const info = {
@@ -1334,20 +1513,17 @@ ${revisionHash}`;
         sidecarUrl: settings.sidecarUrl,
         language: settings.language,
         connected: false,
-        last
+        last,
+        insecure: !secureContext()
       };
       try {
-        const res = await call(
-          settings,
-          "/v1/health",
-          void 0,
-          host.now() + 3e3
-        );
+        const res = await call(settings, "/v1/health", void 0, host.now() + 3e3);
         Object.assign(info, {
           connected: true,
           version: res.version,
           features: res.features ?? {},
-          pluginExpected: res.plugin?.expected ?? null
+          pluginExpected: res.plugin?.expected ?? null,
+          install: res.install ?? null
         });
       } catch (error) {
         info.error = error instanceof Error ? error.message : String(error);
@@ -1808,6 +1984,34 @@ ${revisionHash}`;
     return { cut: r.memory.cut, offered: r.memory.offered, budget: r.budgetTokens, suggest, all };
   }
 
+  // src/parser-form.ts
+  function parserDraft(text2) {
+    if (!text2.trim()) return { ok: false, error: "blank" };
+    let spec;
+    try {
+      spec = JSON.parse(text2);
+    } catch {
+      return { ok: false, error: "json" };
+    }
+    if (!spec || typeof spec !== "object" || Array.isArray(spec) || !("rules" in spec) || !Array.isArray(spec.rules) || spec.rules.some((r) => !r || typeof r !== "object" || Array.isArray(r))) {
+      return { ok: false, error: "shape" };
+    }
+    return { ok: true, rules: spec.rules };
+  }
+  function presetRules(rules) {
+    return rules.map(({ card: _card, ...rule }) => rule);
+  }
+  function parserBindings(spec) {
+    const parsed = parserDraft(JSON.stringify(spec) ?? "");
+    const cards = /* @__PURE__ */ new Map();
+    let unbound = 0;
+    if (parsed.ok) for (const rule of parsed.rules) {
+      if (typeof rule.card !== "string" || !rule.card.trim()) unbound += 1;
+      else cards.set(rule.card, (cards.get(rule.card) ?? 0) + 1);
+    }
+    return { cards: [...cards].map(([name, count2]) => ({ name, count: count2 })), unbound };
+  }
+
   // src/inspector.ts
   var TAGS = /* @__PURE__ */ new Set([
     "DIV",
@@ -1828,20 +2032,21 @@ ${revisionHash}`;
     "SUMMARY"
   ]);
   var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+  var TURN = "/t/(?:0|[1-9][0-9]{0,6})";
   var SECTION = /^s-[a-z]{1,20}$/;
   function inspectorApiPath(href) {
-    const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID})?)?(?:[?#]|$)`, "i").exec(href ?? "");
+    const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, "i").exec(href ?? "");
     return m ? `/v1/inspector${m[1] ?? ""}` : null;
   }
   function inspectorConversation(path) {
-    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID})?$`, "i").exec(path);
+    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, "i").exec(path);
     return m ? m[1] : null;
   }
   function inspectorEntity(path) {
     const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
-  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|undo|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|undo|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
   function repairAction(value) {
     const m = value ? REPAIR.exec(value) : null;
     if (!m?.[1] || !m[2]) return null;
@@ -1893,6 +2098,9 @@ ${revisionHash}`;
     const id = href?.startsWith("#") ? href.slice(1) : "";
     return SECTION.test(id) ? id : null;
   }
+  var PERCENT = /^(?:100(?:\.0{1,3})?|\d{1,2}(?:\.\d{1,3})?)$/;
+  var MARK_TEXT = /* @__PURE__ */ new Set(["data-v", "data-s", "data-o", "data-k", "data-p"]);
+  var MARK_TEXT_MAX = 400;
   function keepAttribute(name, value) {
     switch (name) {
       case "class":
@@ -1905,9 +2113,55 @@ ${revisionHash}`;
         return inspectorApiPath(value) !== null || sectionTarget(value) !== null;
       case "data-repair":
         return repairAction(value) !== null;
+      case "data-l":
+      case "data-w":
+        return PERCENT.test(value);
+      case "data-span":
+        return value === "" || value === "recent";
       default:
-        return false;
+        return MARK_TEXT.has(name) && value.length <= MARK_TEXT_MAX;
     }
+  }
+  function placeMarks(root) {
+    for (const mark of Array.from(root.querySelectorAll("[data-l]"))) {
+      const left = mark.getAttribute("data-l") ?? "";
+      if (!PERCENT.test(left)) continue;
+      mark.style.left = `${Number(left)}%`;
+      const width = mark.getAttribute("data-w");
+      if (width !== null && PERCENT.test(width)) mark.style.width = `calc(${Number(width)}% - 2px)`;
+    }
+  }
+  function markDetail(mark, notes) {
+    const card = document.createElement("div");
+    card.className = "tl-card";
+    const line = (text2, cls = "") => {
+      const p = document.createElement("p");
+      p.textContent = text2;
+      if (cls) p.className = cls;
+      card.append(p);
+    };
+    const row = mark.closest(".tl-row");
+    line(mark.getAttribute("data-k") || ((row?.querySelector(".tl-lab .tl-k") ?? row?.querySelector(".tl-lab"))?.textContent ?? ""), "muted");
+    line(mark.getAttribute("data-v") ?? "", "v");
+    const outcome = mark.getAttribute("data-o");
+    line((mark.getAttribute("data-s") ?? "") + (outcome ? ` \xB7 ${outcome}` : ""));
+    const who = mark.getAttribute("data-p");
+    if (who) line(who, "muted");
+    if (mark.classList.contains("canon")) line(notes.canon, "muted");
+    if (mark.classList.contains("owner")) line(notes.owner, "warn");
+    const lane = mark.classList.contains("tl-bar") && mark.parentElement ? Array.from(mark.parentElement.children).filter((b) => b.classList.contains("tl-bar")) : [];
+    if (lane.length > 1) {
+      const list = document.createElement("div");
+      list.className = "tl-hist";
+      for (const bar of lane) {
+        const row2 = document.createElement("p");
+        if (bar === mark) row2.className = "cur";
+        row2.textContent = `${bar.getAttribute("data-s") ?? ""}  ${bar.getAttribute("data-v") ?? ""}`;
+        list.append(row2);
+      }
+      card.append(list);
+    }
+    return card;
   }
   function safeFragment(html) {
     const template = document.createElement("template");
@@ -2049,6 +2303,38 @@ ${revisionHash}`;
     return out;
   }
 
+  // src/restore.ts
+  function base64Of(bytes) {
+    let s = "";
+    for (let i = 0; i < bytes.length; i += 32768) s += String.fromCharCode(...bytes.subarray(i, i + 32768));
+    return btoa(s);
+  }
+  var CHUNK_TIMEOUT_MS = 12e4;
+  async function uploadArchive(api, file, progress) {
+    const up = await api("POST", "/v1/archive/uploads", { bytes: file.size });
+    const size = up.chunk_bytes;
+    progress(0, file.size);
+    for (let index = 0, offset = 0; offset < file.size; index++, offset += size) {
+      const bytes = await file.slice(offset, offset + size).arrayBuffer();
+      const body = { data: base64Of(new Uint8Array(bytes)), sha256: await sha256HexOf(bytes) };
+      const path = `/v1/archive/uploads/${up.id}/chunks/${index}`;
+      try {
+        await api("PUT", path, body, CHUNK_TIMEOUT_MS);
+      } catch {
+        await api("PUT", path, body, CHUNK_TIMEOUT_MS);
+      }
+      progress(Math.min(offset + size, file.size), file.size);
+    }
+    return up;
+  }
+  async function waitFor(api, id, states, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), everyMs = 1e3) {
+    for (; ; ) {
+      const view2 = await api("GET", `/v1/archive/uploads/${id}`);
+      if (states.includes(view2.state)) return view2;
+      await sleep(everyMs);
+    }
+  }
+
   // src/usage.ts
   var count = (n) => n.toLocaleString("en-US");
   var calls = (n, lang) => lang === "en" ? `${count(n)} call${n === 1 ? "" : "s"}` : count(n);
@@ -2073,7 +2359,7 @@ ${revisionHash}`;
   // src/ui.ts
   var LLM_PRESETS = [
     { label: "preset.off", url: "" },
-    { label: "preset.ollama", url: "http://host.docker.internal:11434/v1" },
+    { label: "preset.ollama", url: OLLAMA_DOCKER },
     { label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
     { label: "OpenAI", url: "https://api.openai.com/v1", model: "gpt-4o-mini" },
     { label: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.5-flash" },
@@ -2083,7 +2369,7 @@ ${revisionHash}`;
   ];
   var EMBED_PRESETS = [
     { label: "preset.off", url: "" },
-    { label: "preset.ollama", url: "http://host.docker.internal:11434/v1", model: "qwen3-embedding:0.6b", minSim: 0.42 },
+    { label: "preset.ollama", url: OLLAMA_DOCKER, model: "qwen3-embedding:0.6b", minSim: 0.42 },
     { label: "OpenAI", url: "https://api.openai.com/v1", model: "text-embedding-3-small" },
     { label: "Voyage AI", url: "https://api.voyageai.com/v1", model: "voyage-4-large", minSim: 0.3, hint: "emb.voyage_hint" },
     { label: "preset.custom", url: "custom" }
@@ -2098,8 +2384,7 @@ ${revisionHash}`;
     conn: "conn.title",
     llm: "llm.title",
     emb: "emb.title",
-    tune: "tune.title",
-    rules: "rules.title"
+    tune: "tune.title"
   };
   var CSS = `
 html,body{margin:0;background:${PALETTE.bg}}
@@ -2149,6 +2434,41 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}.nmos .insp .top p{margin:0}
 .nmos .insp a{color:var(--c-link);text-decoration:none;cursor:pointer}
 .nmos .insp a:hover{text-decoration:underline}
+.nmos .insp .tl{margin:6px 0 16px}.nmos .insp .tl .tl-h{font-size:11.5px;font-weight:500;letter-spacing:.04em;color:var(--c-text-muted);margin:16px 0 4px;cursor:pointer;list-style:none}
+.nmos .insp .tl .tl-h::-webkit-details-marker{display:none}.nmos .insp .tl .tl-h::before{content:"\\25BE  "}.nmos .insp .tl details:not([open])>.tl-h::before{content:"\\25B8  "}
+.nmos .insp .tl-switch{font-size:12.5px;margin:0 0 8px}.nmos .insp .tl-span{color:var(--c-link);cursor:pointer}
+.nmos .insp .tl-hint{font-size:11.5px;color:var(--c-text-faint);margin:0 0 8px}
+.nmos .insp .tl-row{display:grid;grid-template-columns:112px minmax(0,1fr);gap:8px;align-items:center;padding:3px 0;color:inherit}.nmos .insp a.tl-line{text-decoration:none;border-radius:6px}
+.nmos .insp .tl-cast .tl-row{display:block}
+.nmos .insp .tl-lab{display:block;font-size:12.5px;line-height:1.3;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;max-height:2.6em}
+.nmos .insp .tl-cast .tl-lab{white-space:nowrap;margin-bottom:2px}
+.nmos .insp .tl-lab .tl-k{display:block;font-size:11px;color:var(--c-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nmos .insp .tl-lab .tl-val{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nmos .insp .tl-lab .tl-val.canon{color:var(--c-text-muted)}
+.nmos .insp .tl-last{color:var(--c-text-faint);font-size:11.5px}.nmos .insp .tl-end{display:none}
+.nmos .insp .tl-me{font-size:10.5px;color:var(--c-link);margin-left:6px}
+.nmos .insp .tl-track{display:block;position:relative;height:26px}
+.nmos .insp .tl-rule{position:absolute;left:0;right:0;top:13px;height:1px;background:var(--c-line)}
+.nmos .insp .tl-bar{position:absolute;top:5px;height:16px;min-width:6px;border-radius:4px;overflow:hidden;box-sizing:border-box;background:var(--c-raised);border:1px solid var(--c-text-faint);cursor:pointer}
+.nmos .insp .tl-bar.short{z-index:2}
+.nmos .insp .tl-bar.past{background:transparent;border-color:var(--c-line-hover)}.nmos .insp .tl-bar.neg{border-style:dotted}
+.nmos .insp .tl-bar.open{border-right-style:dashed}.nmos .insp .tl-bar.canon{border-left:2px dotted var(--c-text-muted)}
+.nmos .insp .tl-bar.owner{border-color:var(--c-warn)}
+.nmos .insp .tl .sel{background:var(--c-accent);border-color:var(--c-accent);color:#fff}
+.nmos .insp .tl-dot{position:absolute;top:2px;bottom:2px;width:10px;margin-left:-5px;cursor:pointer}
+.nmos .insp .tl-dot::after{content:"";position:absolute;left:4px;bottom:2px;width:2px;height:10px;border-radius:1px;background:var(--c-text-muted)}
+.nmos .insp .tl-dot.s-major::after{height:18px;background:var(--c-text-strong)}.nmos .insp .tl-dot.s-minor::after{height:6px}
+.nmos .insp .tl-dot.n1{transform:translateX(4px)}.nmos .insp .tl-dot.n2{transform:translateX(8px)}.nmos .insp .tl-dot.n3{transform:translateX(12px)}
+.nmos .insp .tl .tl-dot.sel{background:transparent}.nmos .insp .tl .tl-dot.sel::after{background:var(--c-accent)}
+.nmos .insp .tl-tick{position:absolute;top:5px;width:2px;height:16px;margin-left:-1px;border-radius:1px;background:var(--c-text-soft)}
+.nmos .insp .tl-axis .tl-track{height:18px}
+.nmos .insp .tl-axis .tl-track span{position:absolute;top:0;font-size:10.5px;color:var(--c-text-faint);transform:translateX(-50%);white-space:nowrap}
+.nmos .insp .tl-axis .tl-track span.first{transform:none}.nmos .insp .tl-axis .tl-track span.last{transform:translateX(-100%)}
+.nmos .insp .tl-axis .tl-track span.odd,.nmos .insp .tl-axis .tl-track span.near{display:none}
+.nmos .insp .tl-card{margin:6px 0 10px;padding:10px 12px;border-radius:8px;background:var(--c-raised);font-size:12.5px}
+.nmos .insp .tl-card p{margin:2px 0}.nmos .insp .tl-card .v{font-size:17px;font-weight:600;line-height:1.35;color:var(--c-text-strong);overflow-wrap:anywhere}
+.nmos .insp .tl-hist{margin-top:8px;color:var(--c-text-muted)}.nmos .insp .tl-hist .cur{color:var(--c-text-strong)}
+.nmos .insp .tl-more{font-size:11.5px;color:var(--c-text-faint);margin:2px 0}
+.nmos .insp .tl-fold>summary,.nmos .insp .tl-others>summary{font-size:12px;color:var(--c-text-muted);margin:8px 0 2px;cursor:pointer}
 .nmos .insp .ref{display:block;font-family:ui-monospace,monospace;font-size:10.5px;color:var(--c-text-faint)}
 .nmos .insp .wrap{max-width:none;margin:0;padding:0;overflow-x:auto}
 .nmos .insp table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -2201,6 +2521,10 @@ html,body{margin:0;background:${PALETTE.bg}}
     if (!url) return 0;
     const i = presets.findIndex((p) => presetMatches(p.url, url));
     return i >= 0 ? i : presets.length - 1;
+  }
+  function fixFor(error) {
+    const kind = failureKind(error);
+    return kind === "unauthorized" ? "status.fix_token" : kind === "host_refused" ? "status.fix_host" : "status.fix";
   }
   function errorText(lang, error) {
     const text2 = error instanceof Error ? error.message : String(error);
@@ -2260,12 +2584,29 @@ html,body{margin:0;background:${PALETTE.bg}}
           el("div", { class: "mono muted", text: base })
         );
         if (s.pluginExpected && s.pluginExpected !== PLUGIN_BUILD) {
-          conn.append(el(
-            "div",
-            { class: "line warn" },
-            el("span", { class: "dot warn" }),
-            el("span", { text: L("status.plugin_mismatch", { mine: PLUGIN_BUILD, theirs: s.pluginExpected }) })
-          ));
+          const get = el("button", { class: "mini", text: L("status.plugin_file") });
+          const got = el("div", { class: "msg" });
+          get.addEventListener("click", async () => {
+            get.disabled = true;
+            try {
+              await deps.download("/v1/plugin/nmos-pocketrisu.js", "nmos-pocketrisu.js");
+              say(got, L("status.plugin_saved", { name: "nmos-pocketrisu.js" }), "ok");
+            } catch (error) {
+              say(got, errorText(lang, error), "err");
+            } finally {
+              get.disabled = false;
+            }
+          });
+          conn.append(
+            el(
+              "div",
+              { class: "line warn" },
+              el("span", { class: "dot warn" }),
+              el("span", { text: L("status.plugin_mismatch", { mine: PLUGIN_BUILD, theirs: s.pluginExpected }) })
+            ),
+            el("div", { class: "btns" }, get),
+            got
+          );
         } else if (s.pluginExpected) {
           conn.append(el("div", { class: "muted", text: L("status.plugin_ok", { b: PLUGIN_BUILD }) }));
         }
@@ -2279,7 +2620,7 @@ html,body{margin:0;background:${PALETTE.bg}}
             el("span", { class: "err", text: `${L("status.unreachable")}: ${base}` })
           ),
           el("div", { class: "muted", text: s.error ?? "" }),
-          el("p", { class: "sub", text: L("status.fix") })
+          el("p", { class: "sub", text: L(fixFor(s.error)) })
         );
       }
       if (!s.enabled) conn.append(el(
@@ -2314,6 +2655,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         lastCard.append(el("div", { class: "muted", text: L("status.none") }));
       }
       const cards = [conn, features, lastCard];
+      if (s.insecure) cards.unshift(el("div", { class: "card err" }, el("div", { text: L("status.insecure") })));
       const advice = deadlineAdvice(s.last);
       if (advice) {
         const open = el("button", { text: L("deadline.open_settings") });
@@ -2702,6 +3044,12 @@ html,body{margin:0;background:${PALETTE.bg}}
     }
     function enhance(page) {
       closers = /* @__PURE__ */ new Map();
+      for (const box of Array.from(page.querySelectorAll("details > .tl-lazy"))) {
+        const section = box.parentElement;
+        section.addEventListener("toggle", () => {
+          if (section.open && !box.dataset.state) void loadTimeline(box, "");
+        });
+      }
       for (const spot of Array.from(page.querySelectorAll("span.rp[data-repair]"))) {
         const action = repairAction(spot.getAttribute("data-repair"));
         if (action) spot.replaceChildren(...repairControls(action));
@@ -2724,6 +3072,35 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       picker.addEventListener("change", () => go(picker.value));
       who.replaceChildren(el("span", { class: "muted", text: name }), picker);
+    }
+    async function loadTimeline(box, span) {
+      const from = inspectorPath;
+      box.dataset.state = "loading";
+      box.replaceChildren(el("div", { class: "muted", text: L("insp.loading") }));
+      try {
+        const asked = box.classList.contains("tl-status") ? "part=status" : "part=timeline";
+        const query = [asked, span ? `span=${span}` : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
+        const r = await deps.api("GET", `${from}?${query}`, void 0, 15e3);
+        if (!box.isConnected || inspectorPath !== from) return;
+        const part = safeFragment(r.html);
+        placeMarks(part);
+        box.replaceChildren(part);
+        box.dataset.state = "loaded";
+      } catch (error) {
+        if (!box.isConnected) return;
+        delete box.dataset.state;
+        box.replaceChildren(el("div", { class: "card err", text: errorText(lang, error) }));
+      }
+    }
+    function showMark(mark) {
+      const timeline = mark.closest(".tl");
+      const row = mark.closest(".tl-row");
+      if (!timeline || !row) return;
+      timeline.querySelector(".tl-card")?.remove();
+      if (mark.classList.contains("sel")) return void mark.classList.remove("sel");
+      for (const on of Array.from(timeline.querySelectorAll(".sel"))) on.classList.remove("sel");
+      mark.classList.add("sel");
+      row.after(markDetail(mark, { canon: L("tl.canon"), owner: L("tl.owner") }));
     }
     function go(path) {
       if (path === inspectorPath) return void showInspector();
@@ -2759,7 +3136,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       const direct = routeFor(base, await deps.getArg("route")) === "direct";
       inspectorAddress.textContent = direct ? L("insp.browser", { url: `${base}/inspector${lang === "en" ? "?lang=en" : ""}` }) : "";
       try {
-        const r = await deps.api("GET", `${path}${lang === "en" ? "?lang=en" : ""}`, void 0, 15e3);
+        const query = [conversation ? "timeline=lazy&status=lazy" : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
+        const r = await deps.api("GET", `${path}${query ? `?${query}` : ""}`, void 0, 15e3);
         if (load !== loads) return;
         const page = safeFragment(r.html);
         enhance(page);
@@ -3006,7 +3384,13 @@ html,body{margin:0;background:${PALETTE.bg}}
       linkCard.style.display = "";
     }
     inspectorBody.addEventListener("click", (event) => {
-      const link = event.target instanceof Element ? event.target.closest("a") : null;
+      const clicked = event.target instanceof Element ? event.target : null;
+      const choice = clicked?.closest(".tl-span[data-span]");
+      const box = choice?.closest(".tl-lazy");
+      if (choice && box) return void loadTimeline(box, choice.getAttribute("data-span") ?? "");
+      const mark = clicked?.closest(".tl [data-v]");
+      if (mark) return showMark(mark);
+      const link = clicked ? clicked.closest("a") : null;
       if (!link) return;
       event.preventDefault();
       const href = link.getAttribute("href");
@@ -3153,12 +3537,15 @@ html,body{margin:0;background:${PALETTE.bg}}
     const enabled = el("input", { type: "checkbox" });
     const reserved = el("input", { type: "number", min: 100, max: PANEL_MAX_RESERVED_TOKENS });
     const deadline = el("input", { type: "number", min: 200, max: MAX_DEADLINE_MS, step: 100 });
+    const token = el("input", { type: "password", placeholder: L("conn.token_placeholder"), autocomplete: "off" });
+    let install = null;
     settingsView.append(el(
       "div",
       { class: "card" },
       el("h2", { text: L("conn.title") }),
       el("p", { class: "sub", text: L("conn.sub") }),
       field(L("conn.url"), url),
+      field(L("conn.token"), token),
       el("div", { class: "row" }, field(L("conn.route"), route), field(L("conn.budget"), reserved), field(L("conn.deadline"), deadline)),
       el("div", { class: "check" }, enabled, el("span", { text: L("conn.enabled") })),
       el("p", { class: "sub", text: L("conn.hint") }),
@@ -3205,7 +3592,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       });
       preset.addEventListener("change", () => {
         const p = presets[Number(preset.value)];
-        if (p.url !== "custom") endpoint.value = fillProject(p.url, key.value);
+        if (p.url !== "custom") endpoint.value = fillProject(presetUrl(p.url, install), key.value);
         if (p.model) model.value = p.model;
         if (!p.url) model.value = "";
         say(msg, p.hint ? L(p.hint) : p.url.includes("{project}") ? L("model.vertex_hint") : "");
@@ -3294,6 +3681,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     );
     const threshold = el("input", { type: "number", step: 0.05, min: 0.05, max: 1 });
     const minSim = el("input", { type: "number", step: 0.01, min: 0, max: 1 });
+    const embedWait = el("input", { type: "number", step: 100, min: 100, max: 5e3 });
     const topK = el("input", { type: "number", min: 0, max: 20 });
     const factsLimit = el("input", { type: "number", min: 0, max: 30 });
     const backfill = el("input", { type: "number", min: 0, max: 5e3 });
@@ -3304,27 +3692,183 @@ html,body{margin:0;background:${PALETTE.bg}}
       { class: "card" },
       el("h2", { text: L("tune.title") }),
       el("p", { class: "sub", text: L("tune.sub") }),
-      el("div", { class: "row" }, field(L("tune.threshold"), threshold), field(L("tune.min_sim"), minSim)),
+      el(
+        "div",
+        { class: "row" },
+        field(L("tune.threshold"), threshold),
+        field(L("tune.min_sim"), minSim),
+        field(L("tune.embed_wait"), embedWait)
+      ),
+      el("p", { class: "sub", text: L("tune.embed_wait_hint") }),
       el("div", { class: "row" }, field(L("tune.top_k"), topK), field(L("tune.facts"), factsLimit), field(L("tune.backfill"), backfill)),
       el("div", { class: "check" }, summaries, el("span", { text: L("tune.summaries") })),
       el("p", { class: "sub", text: L("tune.summaries_hint") }),
       el("div", { class: "check" }, canonFacts, el("span", { text: L("tune.canon_facts") })),
       el("p", { class: "sub", text: L("tune.canon_facts_hint") })
     ));
-    const rules = el("textarea", { spellcheck: "false" });
+    const rules = el("textarea", {
+      id: "nmos-parser-draft",
+      spellcheck: "false",
+      "aria-label": L("rules.draft"),
+      placeholder: L("rules.none")
+    });
+    const parserTarget = el("input", {
+      id: "nmos-parser-target",
+      list: "nmos-parser-cards",
+      "aria-label": L("rules.target"),
+      placeholder: L("rules.choose_target")
+    });
+    const parserCards = el("datalist", { id: "nmos-parser-cards" });
+    const parserActive = el("div", { id: "nmos-parser-active", class: "sub", style: "white-space:pre-line" });
+    const parserStored = el("pre", {});
+    const parserPreview = el("p", { id: "nmos-parser-preview", class: "sub" });
+    const parserMessage = el("div", { class: "msg", role: "status" });
+    const parserApply = el("button", { id: "nmos-parser-apply", text: L("rules.apply") });
+    const parserClear = el("button", { text: L("rules.prepare_disable") });
+    const parserFile = el("input", { id: "nmos-parser-file", type: "file", accept: ".json,application/json", style: "display:none" });
+    const parserPick = el("button", { text: L("rules.import") });
+    const parserPreset = el("select", { id: "nmos-parser-preset", "aria-label": L("rules.preset") });
+    const parserName = el("input", { id: "nmos-parser-name", "aria-label": L("rules.preset_name") });
+    const parserSavePreset = el("button", { id: "nmos-parser-save-preset", text: L("rules.save_preset") });
+    const parserRemovePreset = el("button", { id: "nmos-parser-remove-preset", text: L("rules.remove_preset") });
     const example = el("button", { text: L("rules.example") });
+    let parserSupported = false;
+    let parserBusy = false;
+    let parserPresets = [];
+    let appliedDraft = "";
+    let appliedTarget = "";
+    const knownCards = /* @__PURE__ */ new Set();
+    const parserDirty = () => rules.value !== appliedDraft || parserTarget.value !== appliedTarget;
+    function updateParser() {
+      const parsed = parserDraft(rules.value);
+      const target = parserTarget.value.trim();
+      parserApply.disabled = parserBusy || !parserSupported || !target || !parsed.ok;
+      parserApply.textContent = L(parsed.ok && parsed.rules.length === 0 ? "rules.disable" : "rules.apply");
+      parserSavePreset.disabled = parserBusy || !parserSupported || !parserName.value.trim() || !parsed.ok;
+      parserRemovePreset.disabled = parserBusy || !parserSupported || !parserPreset.value;
+      parserPreview.textContent = !target ? L("rules.choose_target") : !parsed.ok ? L(parsed.error === "blank" ? "rules.blank" : parsed.error === "json" ? "rules.invalid_json" : "rules.invalid_shape") : L("rules.preview", { card: target, n: parsed.rules.length });
+    }
+    function fillParsers(cfg) {
+      parserSupported = cfg.parsers.spec !== void 0 && Array.isArray(cfg.parsers.presets);
+      const spec = cfg.parsers.spec ?? cfg.parsers.rules;
+      const bindings = parserBindings(spec);
+      const notes = bindings.cards.map(({ name, count: count2 }) => L("rules.binding", { card: name, n: count2 }));
+      if (bindings.unbound) notes.push(L("rules.unbound", { n: bindings.unbound }));
+      if (!notes.length) notes.push(L("rules.no_active"));
+      if (!parserSupported) notes.push(L("rules.upgrade"));
+      notes.push(...cfg.parsers.errors);
+      parserActive.textContent = notes.join("\n");
+      parserStored.textContent = JSON.stringify(spec ?? { rules: [] }, null, 2);
+      for (const { name } of bindings.cards) knownCards.add(name);
+      parserCards.replaceChildren(...[...knownCards].sort().map((name) => el("option", { value: name })));
+      parserPresets = cfg.parsers.presets ?? [];
+      const selected = parserPreset.value;
+      parserPreset.replaceChildren(
+        el("option", { value: "", text: L("rules.choose_preset") }),
+        ...parserPresets.map((p) => el("option", { value: p.name, text: p.name }))
+      );
+      parserPreset.value = parserPresets.some((p) => p.name === selected) ? selected : "";
+      updateParser();
+    }
+    parserPick.addEventListener("click", () => parserFile.click());
+    parserFile.addEventListener("change", async () => {
+      const file = parserFile.files?.[0];
+      parserFile.value = "";
+      if (!file) return;
+      try {
+        rules.value = await file.text();
+        parserPreset.value = "";
+        say(parserMessage, L("rules.loaded"));
+        updateParser();
+      } catch (error) {
+        say(parserMessage, errorText(lang, error), "err");
+      }
+    });
+    parserPreset.addEventListener("change", () => {
+      const chosen2 = parserPresets.find((p) => p.name === parserPreset.value);
+      if (chosen2) {
+        rules.value = JSON.stringify({ rules: chosen2.rules }, null, 2);
+        parserName.value = chosen2.name;
+      }
+      updateParser();
+    });
+    for (const control of [rules, parserTarget, parserName]) control.addEventListener("input", updateParser);
     example.addEventListener("click", () => {
       rules.value = JSON.stringify(PARSER_EXAMPLE, null, 2);
-      update();
+      updateParser();
+    });
+    parserClear.addEventListener("click", () => {
+      rules.value = JSON.stringify({ rules: [] }, null, 2);
+      updateParser();
+    });
+    parserApply.addEventListener("click", async () => {
+      const parsed = parserDraft(rules.value);
+      const card = parserTarget.value.trim();
+      if (parserBusy || !parserSupported || !card || !parsed.ok) return;
+      const draft = rules.value;
+      const target = parserTarget.value;
+      parserBusy = true;
+      updateParser();
+      try {
+        const cfg = await deps.api("PUT", "/v1/parsers/card", { card, rules: parsed.rules });
+        fillParsers(cfg);
+        appliedDraft = draft;
+        appliedTarget = target;
+        say(parserMessage, L("rules.applied", { card, n: parsed.rules.length }), "ok");
+      } catch (error) {
+        say(parserMessage, errorText(lang, error), "err");
+      } finally {
+        parserBusy = false;
+        updateParser();
+      }
+    });
+    async function savePresets(next, selected) {
+      if (parserBusy || !parserSupported) return;
+      parserBusy = true;
+      updateParser();
+      try {
+        const cfg = await deps.api("PUT", "/v1/config", { parser_presets: next });
+        fillParsers(cfg);
+        parserPreset.value = selected;
+        say(parserMessage, L("rules.preset_saved"), "ok");
+      } catch (error) {
+        say(parserMessage, errorText(lang, error), "err");
+      } finally {
+        parserBusy = false;
+        updateParser();
+      }
+    }
+    parserSavePreset.addEventListener("click", () => {
+      const parsed = parserDraft(rules.value);
+      const name = parserName.value.trim();
+      if (!parsed.ok || !name) return;
+      void savePresets([...parserPresets.filter((p) => p.name !== name), { name, rules: presetRules(parsed.rules) }], name);
+    });
+    parserRemovePreset.addEventListener("click", () => {
+      const name = parserPreset.value;
+      if (name) void savePresets(parserPresets.filter((p) => p.name !== name), "");
     });
     settingsView.append(el(
       "div",
       { class: "card" },
       el("h2", { text: L("rules.title") }),
+      el("p", { class: "sub", text: L("rules.scope") }),
+      parserActive,
+      el("details", {}, el("summary", { text: L("rules.stored") }), parserStored),
+      field(L("rules.target"), parserTarget),
+      parserCards,
+      el("div", { class: "btns" }, parserPick, example),
+      parserFile,
+      field(L("rules.preset"), parserPreset),
+      field(L("rules.draft"), rules),
       el("p", { class: "sub", text: L("rules.sub") }),
-      rules,
-      el("div", { class: "btns" }, example)
+      field(L("rules.preset_name"), parserName),
+      el("div", { class: "btns" }, parserSavePreset, parserRemovePreset),
+      parserPreview,
+      el("div", { class: "btns" }, parserApply, parserClear),
+      parserMessage
     ));
+    updateParser();
     const exportEmbeddings = el("input", { type: "checkbox" });
     const exportAll = el("button", { text: L("exp.all") });
     const exportMsg = el("div", { class: "msg" });
@@ -3343,6 +3887,107 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("div", { class: "btns" }, exportAll),
       exportMsg
     ));
+    const restoreFile = el("input", { type: "file", accept: ".zip,application/zip", style: "display:none" });
+    const restorePick = el("button", { text: L("rst.pick") });
+    const restoreMsg = el("div", { class: "msg" });
+    const restoreSummary = el("div", {});
+    const restoreGo = el("button", { text: L("rst.restore"), style: "display:none" });
+    const restoreCancel = el("button", { text: L("rst.cancel"), style: "display:none" });
+    let restoreId = null;
+    const restoreIdle = (id) => {
+      restoreId = id;
+      restorePick.disabled = false;
+      restoreGo.style.display = restoreCancel.style.display = id ? "" : "none";
+      restoreGo.disabled = restoreCancel.disabled = false;
+    };
+    restorePick.addEventListener("click", () => restoreFile.click());
+    restoreFile.addEventListener("change", async () => {
+      const file = restoreFile.files?.[0];
+      restoreFile.value = "";
+      if (!file) return;
+      restoreSummary.replaceChildren();
+      restoreIdle(null);
+      if (!globalThis.crypto?.subtle) return say(restoreMsg, L("rst.insecure"), "err");
+      restorePick.disabled = true;
+      try {
+        const up = await uploadArchive(deps.api, file, (sent, total) => say(restoreMsg, L("rst.uploading", {
+          pct: total ? Math.floor(sent / total * 100) : 100,
+          sent: (sent / 1048576).toFixed(1),
+          total: (total / 1048576).toFixed(1)
+        })));
+        say(restoreMsg, L("rst.checking"));
+        await deps.api("POST", `/v1/archive/uploads/${up.id}/check`, {});
+        const view2 = await waitFor(deps.api, up.id, ["checked", "refused"]);
+        if (view2.state === "refused" || !view2.summary) {
+          say(restoreMsg, L("rst.refused", { why: view2.detail ?? "" }), "err");
+          restoreIdle(null);
+          return;
+        }
+        showSummary(view2.summary);
+        const blocked = view2.summary.conversations.some((c) => c.here);
+        say(restoreMsg, blocked ? L("rst.blocked") : "", blocked ? "err" : "muted");
+        restoreIdle(up.id);
+        restoreGo.disabled = blocked;
+      } catch (error) {
+        say(restoreMsg, errorText(lang, error), "err");
+        restoreIdle(null);
+      }
+    });
+    function showSummary(s) {
+      const head = L("rst.summary", {
+        scope: L(s.scope === "install" ? "rst.scope_install" : "rst.scope_chats"),
+        n: s.conversations.length,
+        version: s.nmos_version ?? "?",
+        date: (s.created_at ?? "").slice(0, 10)
+      });
+      const list = el("ul", {}, ...s.conversations.map((c) => el("li", {
+        text: `${c.character ?? L("rst.no_character")} \u2014 ${c.chat ?? `${L("rst.no_chat")} (${c.host_chat_ref.slice(0, 8)})`}` + (c.here ? ` (${L("rst.here")})` : "")
+      })));
+      restoreSummary.replaceChildren(
+        el("p", { class: "sub", text: head }),
+        list,
+        ...s.settings_added.length ? [el("p", { class: "sub", text: L("rst.settings", {
+          keys: s.settings_added.map((x) => x.value !== void 0 ? `${x.key} = ${String(x.value)}` : x.key).join(", ")
+        }) })] : [],
+        ...s.migrations.length ? [el("p", { class: "sub", text: L("rst.migrations", { list: s.migrations.join(", ") }) })] : []
+      );
+    }
+    restoreGo.addEventListener("click", async () => {
+      const id = restoreId;
+      if (!id) return;
+      restoreGo.disabled = restoreCancel.disabled = restorePick.disabled = true;
+      say(restoreMsg, L("rst.restoring"));
+      try {
+        await deps.api("POST", `/v1/archive/uploads/${id}/restore`, {});
+        const view2 = await waitFor(deps.api, id, ["restored", "failed"]);
+        if (view2.state === "restored" && view2.result) {
+          say(restoreMsg, L("rst.done", { n: view2.result.conversations.length, jobs: view2.result.queued_jobs ?? 0 }) + (view2.detail ? ` ${view2.detail}` : ""), "ok");
+        } else {
+          say(restoreMsg, L("rst.failed", { why: view2.detail ?? "" }), "err");
+        }
+        restoreSummary.replaceChildren();
+      } catch (error) {
+        say(restoreMsg, errorText(lang, error), "err");
+      }
+      restoreIdle(null);
+    });
+    restoreCancel.addEventListener("click", async () => {
+      const id = restoreId;
+      restoreIdle(null);
+      restoreSummary.replaceChildren();
+      say(restoreMsg, "");
+      if (id) await deps.api("DELETE", `/v1/archive/uploads/${id}`).catch(() => void 0);
+    });
+    settingsView.append(el(
+      "div",
+      { class: "card" },
+      el("h2", { text: L("rst.title") }),
+      el("p", { class: "sub", text: L("rst.sub") }),
+      el("div", { class: "btns" }, restorePick, restoreGo, restoreCancel),
+      restoreFile,
+      restoreSummary,
+      restoreMsg
+    ));
     const barText = el("span", { class: "text muted" });
     const revert = el("button", { text: L("revert") });
     const save = el("button", { class: "primary", text: L("save") });
@@ -3350,19 +3995,26 @@ html,body{margin:0;background:${PALETTE.bg}}
     root.append(bar);
     function values() {
       return {
-        conn: { url: url.value, route: route.value, enabled: enabled.checked, reserved: reserved.value, deadline: deadline.value },
+        conn: {
+          url: url.value,
+          route: route.value,
+          enabled: enabled.checked,
+          reserved: reserved.value,
+          deadline: deadline.value,
+          token: token.value
+        },
         llm: llm.values(),
         emb: emb.values(),
         tune: {
           threshold: threshold.value,
           minSim: minSim.value,
+          embedWait: embedWait.value,
           topK: topK.value,
           facts: factsLimit.value,
           backfill: backfill.value,
           summaries: summaries.checked,
           canonFacts: canonFacts.checked
-        },
-        rules: rules.value
+        }
       };
     }
     let baseline = values();
@@ -3384,20 +4036,23 @@ html,body{margin:0;background:${PALETTE.bg}}
       enabled.checked = Number(await deps.getArg("disabled")) !== 1;
       reserved.value = String(Number(await deps.getArg("reserved_memory_tokens")) || DEFAULT_RESERVED_TOKENS);
       deadline.value = String(Number(await deps.getArg("deadline_ms")) || DEFAULT_DEADLINE_MS);
+      token.value = await deps.getArg("auth_token") || "";
       hudBox.checked = Number(await deps.getArg("hud")) === 1;
     }
     function fillServer(cfg) {
+      install = cfg.install ?? null;
       llm.fill(cfg.llm);
       emb.fill(cfg.embeddings);
       threshold.value = String(cfg.recall.threshold);
       minSim.value = String(cfg.recall.vector_min_sim);
+      embedWait.value = cfg.recall.embed_timeout_ms === void 0 ? "" : String(cfg.recall.embed_timeout_ms);
+      embedWait.disabled = cfg.recall.embed_timeout_ms === void 0;
       topK.value = String(cfg.recall.top_k);
       factsLimit.value = String(cfg.recall.facts_limit);
       backfill.value = String(cfg.extraction.backfill);
       summaries.checked = cfg.extraction.summaries !== false;
       canonFacts.checked = cfg.extraction.canon_facts !== false;
-      rules.value = cfg.parsers.source === "ui" ? JSON.stringify(cfg.parsers.rules, null, 2) : "";
-      rules.placeholder = cfg.parsers.source === "file" ? L("rules.from_file", { n: cfg.parsers.active_rules }) : L("rules.none");
+      fillParsers(cfg);
     }
     async function loadAll() {
       await loadConn();
@@ -3407,6 +4062,12 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       baseline = values();
       update();
+      void deps.api("GET", "/v1/conversations?host=pocketrisu", void 0, 5e3).then((chats) => {
+        if (!Array.isArray(chats)) return;
+        for (const c of chats) if (c.host_character_name?.trim()) knownCards.add(c.host_character_name.trim());
+        parserCards.replaceChildren(...[...knownCards].sort().map((name) => el("option", { value: name })));
+      }).catch(() => {
+      });
     }
     async function saveAll() {
       const d = dirty();
@@ -3417,30 +4078,42 @@ html,body{margin:0;background:${PALETTE.bg}}
       save.disabled = true;
       say(barText, L("saving"));
       const v = values();
-      if (d.includes("conn")) {
-        const args = connArgs(v.conn);
-        for (const [k, value] of Object.entries(args)) await deps.setArg(k, value);
-        reserved.value = String(args.reserved_memory_tokens);
-        deadline.value = String(args.deadline_ms);
-        baseline = { ...baseline, conn: values().conn };
-      }
-      const body = configBody(d, v);
-      if (!Object.keys(body).length) {
-        update({ text: L("saved"), kind: "ok" });
-        return true;
-      }
+      let connSaved = 0;
+      let connTotal = 0;
+      let connComplete = !d.includes("conn");
       try {
+        if (d.includes("conn")) {
+          parserSupported = false;
+          updateParser();
+          const args = connArgs(v.conn);
+          connTotal = Object.keys(args).length;
+          for (const [k, value] of Object.entries(args)) {
+            await deps.setArg(k, value);
+            connSaved += 1;
+          }
+          connComplete = true;
+          reserved.value = String(args.reserved_memory_tokens);
+          deadline.value = String(args.deadline_ms);
+          baseline = { ...baseline, conn: values().conn };
+        }
+        const body = configBody(d, v);
+        const tight = (d.includes("tune") || d.includes("conn")) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline) ? ` ${L("tune.embed_wait_tight", { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : "";
+        if (!Object.keys(body).length) {
+          fillServer(await deps.api("GET", "/v1/config", void 0, 5e3));
+          baseline = values();
+          update({ text: L("saved") + tight, kind: tight ? "warn" : "ok" });
+          return true;
+        }
         const r = await deps.api("PUT", "/v1/config", body);
         fillServer(r);
         baseline = values();
         const parts = [r.queued_jobs ? L("saved_queued", { n: r.queued_jobs }) : L("saved")];
         if (r.queued_jobs) deps.hud.background();
-        if (d.includes("rules") && r.parsers.active_rules) parts.push(L("saved_rules", { n: r.parsers.active_rules }));
-        update({ text: parts.join(" "), kind: "ok" });
+        update({ text: parts.join(" ") + tight, kind: tight ? "warn" : "ok" });
         return true;
       } catch (error) {
         const text2 = errorText(lang, error);
-        update({ text: d.includes("conn") ? L("conn_saved_server_failed", { e: text2 }) : text2, kind: "err" });
+        update({ text: !connComplete ? L("conn_save_failed", { n: connSaved, total: connTotal, e: text2 }) : d.includes("conn") ? L("conn_saved_server_failed", { e: text2 }) : text2, kind: "err" });
         return false;
       }
     }
@@ -3452,27 +4125,34 @@ html,body{margin:0;background:${PALETTE.bg}}
       void deps.hide();
     }
     close.addEventListener("click", () => {
-      if (!dirty().length || closing) return shut();
+      if (closing) return;
+      if (!dirty().length && !parserDirty()) return shut();
       closing = true;
       const saveClose = el("button", { class: "primary", text: L("save_and_close") });
       const discard = el("button", { text: L("discard_and_close") });
       const cancel = el("button", { text: L("cancel") });
-      const restore2 = () => {
+      const restore2 = (refresh = true) => {
         closing = false;
         bar.replaceChildren(barText, revert, save);
-        update();
+        if (refresh) update();
       };
       saveClose.addEventListener("click", async () => {
+        saveClose.disabled = true;
         if (await saveAll()) shut();
-        else restore2();
+        else restore2(false);
       });
       discard.addEventListener("click", shut);
-      cancel.addEventListener("click", restore2);
+      cancel.addEventListener("click", () => restore2());
       select("settings");
-      bar.replaceChildren(el("span", { class: "text warn", text: L("close_unsaved") }), cancel, discard, saveClose);
+      bar.replaceChildren(
+        el("span", { class: "text warn", text: L(parserDirty() ? "rules.close_draft" : "close_unsaved") }),
+        cancel,
+        discard,
+        ...parserDirty() ? [] : [saveClose]
+      );
     });
     language.addEventListener("change", async () => {
-      if (dirty().length) {
+      if (dirty().length || parserDirty()) {
         language.value = lang;
         select("settings");
         update({ text: L("lang_unsaved"), kind: "warn" });
@@ -3746,6 +4426,6 @@ html,body{margin:0;background:${PALETTE.bg}}
       hud
     );
     adapter.warmPersonas();
-    console.log("[NMOS] adapter loaded", { version: "0.3.0" });
+    console.log("[NMOS] adapter loaded", { version: "0.4.0" });
   })().catch((error) => console.error("[NMOS] adapter failed to load", error));
 })();

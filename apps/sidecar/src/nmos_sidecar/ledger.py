@@ -24,6 +24,7 @@ class Conversation:
     head_manifest_hash: str | None
     memory_strict: bool = False  # per-chat memory mode (ADR 0035)
     memory_narrator: str | None = None
+    card_renamed: bool = False  # this lock wrote a new character name (PHASE-39: rules bound to a card)
 
 
 @dataclass
@@ -44,7 +45,8 @@ def lock_conversation(conn: psycopg.Connection, host: str, chat_ref: str, charac
         (uuid7(), host, chat_ref, character_ref),
     )
     row = conn.execute(
-        "SELECT id, head_commit_id, head_manifest_hash FROM conversation WHERE host = %s AND host_chat_ref = %s FOR UPDATE",
+        "SELECT id, head_commit_id, head_manifest_hash, host_character_name FROM conversation"
+        " WHERE host = %s AND host_chat_ref = %s FOR UPDATE",
         (host, chat_ref),
     ).fetchone()
     assert row is not None
@@ -59,7 +61,8 @@ def lock_conversation(conn: psycopg.Connection, host: str, chat_ref: str, charac
         sets = ", ".join(f"{k} = %({k})s" for k in names)
         changed = " OR ".join(f"{k} IS DISTINCT FROM %({k})s" for k in names)
         conn.execute(f"UPDATE conversation SET {sets} WHERE id = %(id)s AND ({changed})", {**names, "id": row["id"]})
-    return Conversation(row["id"], row["head_commit_id"], row["head_manifest_hash"])
+    renamed = "host_character_name" in names and names["host_character_name"] != row["host_character_name"]
+    return Conversation(row["id"], row["head_commit_id"], row["head_manifest_hash"], card_renamed=renamed)
 
 
 def find_conversation(conn: psycopg.Connection, host: str, chat_ref: str) -> Conversation | None:

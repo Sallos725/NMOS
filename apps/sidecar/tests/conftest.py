@@ -17,6 +17,8 @@ from nmos_sidecar.config import Settings
 from nmos_sidecar.migrate import apply_migrations
 
 ADMIN_URL = os.environ.get("NMOS_TEST_ADMIN_URL", "postgresql://nmos:nmos@127.0.0.1:5436/postgres")
+# CI sets this: an unreachable Postgres there fails the run instead of skipping every database test.
+REQUIRE_DB = os.environ.get("NMOS_TEST_REQUIRE_DB") == "1"
 TOKEN = "test-token"
 
 
@@ -25,14 +27,21 @@ def _db_url(name: str) -> str:
     return f"{base}/{name}"
 
 
+def connect_admin() -> psycopg.Connection:
+    """The admin connection; without Postgres the test skips, or fails when NMOS_TEST_REQUIRE_DB=1."""
+    try:
+        return psycopg.connect(ADMIN_URL, autocommit=True)
+    except psycopg.OperationalError as exc:  # pragma: no cover
+        message = f"Postgres not reachable at {ADMIN_URL}: {exc}"
+        if REQUIRE_DB:
+            pytest.fail(message, pytrace=False)
+        pytest.skip(message)
+
+
 @pytest.fixture
 def database_url() -> Iterator[str]:
     name = f"nmos_test_{uuid.uuid4().hex[:12]}"
-    try:
-        admin = psycopg.connect(ADMIN_URL, autocommit=True)
-    except psycopg.OperationalError as exc:  # pragma: no cover
-        pytest.skip(f"Postgres not reachable at {ADMIN_URL}: {exc}")
-    with admin:
+    with connect_admin() as admin:
         admin.execute(f'CREATE DATABASE "{name}"')
     url = _db_url(name)
     try:

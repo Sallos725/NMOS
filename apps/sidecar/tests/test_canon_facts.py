@@ -5,8 +5,11 @@ reaches the packet, and replays."""
 from __future__ import annotations
 
 import re
+import threading
+import time
 
 import psycopg
+import pytest
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
@@ -295,6 +298,104 @@ def test_a_rebuild_reads_the_canon_again(migrated):
         left = conn.execute("SELECT (SELECT count(*) FROM assertion) + (SELECT count(*) FROM extraction)"
                             " + (SELECT count(*) FROM job) AS n").fetchone()["n"]
         assert left == 0
+
+
+@pytest.mark.parametrize("reclaim", [False, True])
+def test_rebuild_during_second_canon_part_revokes_old_claim_and_restores_every_part(migrated, reclaim):
+    from nmos_sidecar.extraction import claim, finish
+
+    chat, model = story(), Model()
+    text = "Hana is a keeper. " + "x" * 5900 + "\n\nKaito is a squire. " + "y" * 200
+    assert len(canonfacts.parts(text)[0]) == 2
+    with make_client(migrated, **LLM) as c, psycopg.connect(
+            migrated, row_factory=dict_row, autocommit=True) as conn:
+        sync(c, chat)
+        mid = push(c, chat, {"card:desc": (text, {"field": "desc"})})["manifest_id"]
+        cid = view(migrated, chat)["conversation"]
+        gen = active_generation(conn, "canon")
+        replacement = None
+
+        def interrupted(system, user):
+            nonlocal replacement
+            if "TEXT (part 2 of 2):" in user:
+                response = c.post(f"/v1/conversations/{cid}/rebuild")
+                assert response.status_code == 200
+                assert response.json()["queued"]["canon"] == 1
+                if reclaim:
+                    replacement = claim(conn, {"canon": gen.key})
+                    assert replacement is not None
+            return model(system, user)
+
+        assert run_once(conn, {"canon": (gen.key, lambda cn, job: canonfacts.process(cn, job, interrupted, gen))})
+        rows = conn.execute("SELECT window_hash, discarded_at FROM extraction").fetchall()
+        assert len(rows) == 1 and rows[0]["window_hash"] == "canon:0:plain" and rows[0]["discarded_at"]
+        job = conn.execute("SELECT * FROM job WHERE kind = 'canon'").fetchone()
+        assert job["status"] == ("running" if reclaim else "queued")
+        if reclaim:
+            assert job == replacement
+            assert canonfacts.process(conn, replacement, model, gen) == "done"
+            finish(conn, replacement["id"], "done", replacement["locked_at"])
+        else:
+            assert run_once(conn, {"canon": (gen.key, lambda cn, job: canonfacts.process(cn, job, model, gen))})
+        cov = canonfacts.coverage(conn, gen.key, cid)
+        assert (cov["read"], cov["calls"], cov["pending"], cov["failed"]) == (1, 2, 0, 0)
+        assert canonfacts.schedule(conn, gen.key, cid) == 0
+        assert {a["value"] for a in canonfacts.rows(conn, cid, mid, gen.key)} == {
+            "keeper", "squire"}
+        assert conn.execute("SELECT count(*) AS n FROM extraction WHERE discarded_at IS NOT NULL").fetchone()["n"] == 1
+
+
+def test_rebuild_waits_for_canon_commit_before_discarding_its_parts(migrated):
+    from nmos_sidecar.extraction import claim, discard
+
+    chat, model = story(), Model()
+    with make_client(migrated, **LLM) as c, psycopg.connect(
+            migrated, row_factory=dict_row, autocommit=True) as conn:
+        sync(c, chat)
+        push(c, chat, {"card:desc": ("Hana is a keeper.", {"field": "desc"})})
+        cid = view(migrated, chat)["conversation"]
+        gen = active_generation(conn, "canon")
+        job = claim(conn, {"canon": gen.key})
+        ready = threading.Event()
+        result = {}
+
+        def rebuild():
+            try:
+                with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as other:
+                    result["pid"] = other.info.backend_pid
+                    ready.set()
+                    with other.transaction():
+                        other.execute("SET LOCAL statement_timeout = '5s'")
+                        result["discarded"] = discard(other, cid)
+                        canonfacts.requeue(other, cid)
+                    result["queued"] = canonfacts.schedule(other, gen.key, cid)
+            except BaseException as error:
+                result["error"] = error
+                ready.set()
+
+        thread = threading.Thread(target=rebuild)
+        try:
+            with conn.transaction():
+                conn.execute("SELECT id FROM job WHERE id = %s FOR UPDATE", (job["id"],))
+                thread.start()
+                assert ready.wait(3)
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    blocked = conn.execute("SELECT pg_blocking_pids(%s) AS pids", (result["pid"],)).fetchone()
+                    if conn.info.backend_pid in blocked["pids"]:
+                        break
+                    time.sleep(0.01)
+                else:
+                    pytest.fail("rebuild never waited on the worker's claim")
+                assert canonfacts.process(conn, job, model, gen) == "done"
+        finally:
+            thread.join(6)
+        assert not thread.is_alive()
+        assert "error" not in result, repr(result.get("error"))
+        assert (result["discarded"], result["queued"]) == (1, 1)
+        assert conn.execute("SELECT count(*) AS n FROM extraction WHERE discarded_at IS NULL").fetchone()["n"] == 0
+        assert run_once(conn, {"canon": (gen.key, lambda cn, j: canonfacts.process(cn, j, model, gen))})
+        assert canonfacts.coverage(conn, gen.key, cid)["read"] == 1
 
 
 def test_a_request_whose_manifest_has_not_arrived_reads_no_canon_facts(migrated):

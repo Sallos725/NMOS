@@ -82,6 +82,11 @@ def test_embedding_usage_is_input_tokens(monkeypatch):
     emb = llm.Embedder("http://fake/v1", "qwen3-embedding:8b")
     vectors, usage = emb.embed_metered(["a"], timeout_s=1)
     assert vectors == [[0.1, 0.2]] and usage["input"] == 9 and "output" not in usage
+    async def post(_client, url, json, headers):
+        assert url == "http://fake/v1/embeddings"
+        assert json == {"model": "qwen3-embedding:8b", "input": ["a"]}
+        return httpx.Response(200, json=body)
+    monkeypatch.setattr(llm.httpx.AsyncClient, "post", post)
     assert emb.embed(["a"], timeout_s=1) == [[0.1, 0.2]]
 
 

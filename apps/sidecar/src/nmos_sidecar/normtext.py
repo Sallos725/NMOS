@@ -10,6 +10,7 @@ from typing import Any
 from uuid import UUID
 
 import psycopg
+from psycopg.rows import tuple_row
 
 from .packet import clean_text
 
@@ -38,6 +39,17 @@ def get(conn: psycopg.Connection, revision_id: UUID) -> dict[str, Any] | None:
         write(conn, revision_id, src["content"])
         row = conn.execute(sql, (revision_id, NORMALIZER_VERSION)).fetchone()
     return row
+
+
+def missing(conn: psycopg.Connection) -> list[UUID]:
+    """The message revisions no append has seen: without the current normalizer's text, as rows a restore wrote are
+    (the archive carries no derived text, ADR 0050) or rows from before the normalizer. What else an append derives
+    (the parser state) is owed to them too (PHASE-39)."""
+    with conn.cursor(row_factory=tuple_row) as cur:
+        return [r[0] for r in cur.execute(
+            "SELECT sr.id FROM source_revision sr JOIN source_object so ON so.id = sr.source_object_id"
+            " WHERE so.source_kind = 'message' AND NOT EXISTS (SELECT 1 FROM revision_text rt"
+            " WHERE rt.source_revision_id = sr.id AND rt.normalizer = %s)", (NORMALIZER_VERSION,)).fetchall()]
 
 
 def backfill(conn: psycopg.Connection, batch: int = 500) -> int:

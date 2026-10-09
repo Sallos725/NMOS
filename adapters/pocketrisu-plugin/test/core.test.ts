@@ -242,6 +242,45 @@ describe('beforeRequest', () => {
     expect(String(alert.mock.calls[0]?.[0])).toMatch(/100ms.*설정 탭/s);
   });
 
+  it('says once per page that NMOS could not be reached, with what to fix (audit F25, F27)', async () => {
+    const down = () => { throw new Error('TypeError: Failed to fetch'); };
+    const { host } = fakeHost(down);
+    const alert = vi.fn();
+    const adapter = createAdapter({ ...host, alert });
+    for (let i = 0; i < 2; i++) {
+      expect(await adapter.beforeRequest(structuredClone(prompt), 'model')).toEqual(prompt);  // fail open
+      adapter.onOutput({ chat, messageIndex: 1 });
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(String(alert.mock.calls[0]?.[0])).toMatch(/연결할 수 없습니다.*트레이/s);
+
+    const refused = fakeHost(() => ({ status: 401, json: { detail: 'unauthorized' } }));
+    const tokenAlert = vi.fn();
+    const other = createAdapter({ ...refused.host, alert: tokenAlert });
+    await other.beforeRequest(structuredClone(prompt), 'model');
+    other.onOutput({ chat, messageIndex: 1 });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(String(tokenAlert.mock.calls[0]?.[0])).toMatch(/토큰/);
+  });
+
+  it('on a page without Web Crypto, skips the request in words and says so in the status (audit F24)', async () => {
+    const { host, calls } = fakeHost(happy);
+    const own = Object.getOwnPropertyDescriptor(globalThis.crypto, 'subtle');  // usually a getter on the prototype
+    Object.defineProperty(globalThis.crypto, 'subtle', { value: undefined, configurable: true });
+    try {
+      const adapter = createAdapter(host);
+      expect(await adapter.beforeRequest(structuredClone(prompt), 'model')).toEqual(prompt);
+      const status = await adapter.status();
+      expect(status.insecure).toBe(true);
+      expect(status.last).toMatchObject({ outcome: 'failed', error: expect.stringMatching(/^insecure page/) });
+      expect(calls.filter((c) => c.startsWith('/v1/sync'))).toEqual([]);
+    } finally {
+      if (own) Object.defineProperty(globalThis.crypto, 'subtle', own);
+      else delete (globalThis.crypto as unknown as Record<string, unknown>).subtle;
+    }
+  });
+
   it('does not pop up after a request that made it', async () => {
     const { host } = fakeHost(happy);
     const alert = vi.fn();

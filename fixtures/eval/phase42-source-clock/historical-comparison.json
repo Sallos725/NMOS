@@ -1,0 +1,22 @@
+{
+  "cases": 338,
+  "rounds": 3,
+  "new_failures": [],
+  "improvements": [],
+  "new_forbidden": [],
+  "unstable": {
+    "baseline-v18": [],
+    "candidate-v18": []
+  },
+  "totals": {
+    "baseline-v18": {
+      "recall": 291,
+      "quotes": 21
+    },
+    "candidate-v18": {
+      "recall": 291,
+      "quotes": 21
+    }
+  },
+  "acceptance_pass": true
+}

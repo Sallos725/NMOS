@@ -250,10 +250,10 @@ def test_packet_v11_anchors_on_the_questions_keywords_and_packet_v10_on_the_prev
 
 # ---- Q3: the policy, the default since step 3; packet-v10 selected by the setting; both recorded and replayed -------
 
-def test_packet_v12_is_the_default_and_packet_v11_and_v10_stay_available_by_the_setting(migrated):
-    with make_client(migrated, embedder=FakeEmbedder(), **EMB) as c:  # NMOS_PACKET_POLICY unset (ADR 0066)
+def test_packet_v18_is_the_default_and_packet_v11_and_v10_stay_available_by_the_setting(migrated):
+    with make_client(migrated, embedder=FakeEmbedder(), **EMB) as c:  # NMOS_PACKET_POLICY unset (owner, PHASE-40)
         text, _, trace = packet_and_candidate(c, migrated, chat_with(LONG), Q1_QUESTION)
-        assert trace["policy"] == "packet-v12" and "behind the stove" in text
+        assert trace["policy"] == "packet-v18" and "behind the stove" in text
         assert c.get(f"/v1/trace/{trace['id']}/replay").json()["reproduced"] is True
     with client_for(migrated, "packet-v11") as c:
         text, _, trace = packet_and_candidate(c, migrated, chat_with(LONG), Q1_QUESTION)

@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { configBody, connArgs, dirtySections, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, VERTEX_URL,
+import { configBody, connArgs, dirtySections, embedWaitTooLong, OLLAMA_DOCKER, presetUrl, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, VERTEX_URL,
   type FormValues } from '../src/form';
 import { STRING_KEYS, langOf, t } from '../src/i18n';
 
 const base: FormValues = {
-  conn: { url: 'http://127.0.0.1:8790', route: 'auto', enabled: true, reserved: '800', deadline: '3000' },
+  conn: { url: 'http://127.0.0.1:8790', route: 'auto', enabled: true, reserved: '800', deadline: '3000', token: '' },
   llm: { url: 'http://llm/v1', model: 'm', key: '' },
   emb: { url: '', model: '', key: '' },
-  tune: { threshold: '0.4', minSim: '0.42', topK: '5', facts: '8', backfill: '100', summaries: true, canonFacts: true },
-  rules: '',
+  tune: { threshold: '0.4', minSim: '0.42', embedWait: '300', topK: '5', facts: '8', backfill: '100', summaries: true,
+    canonFacts: true },
 };
 
 describe('batch save', () => {
@@ -21,18 +21,29 @@ describe('batch save', () => {
     expect(configBody(dirty, edited)).toEqual({
       llm_url: 'http://llm/v1', llm_model: 'm2',
       recall_threshold: 0.4, vector_min_sim: 0.42, recall_top_k: 3, facts_limit: 8, extract_backfill: 100, summaries: true,
-      canon_facts: true,
+      canon_facts: true, embed_timeout_ms: 300,
     });
   });
 
-  it('sends an API key only when one was typed, and clears parser rules with null', () => {
+  it('sends the embedding wait only when the sidecar reported one (an older sidecar refuses the key)', () => {
+    const edited = structuredClone(base);
+    edited.tune.embedWait = '1200';
+    expect(configBody(['tune'], edited)).toMatchObject({ embed_timeout_ms: 1200 });
+    edited.tune.embedWait = '';
+    expect(configBody(['tune'], edited)).not.toHaveProperty('embed_timeout_ms');
+    // a wait that leaves the request less than 500 ms of its deadline is said, not refused (audit F20)
+    expect(embedWaitTooLong('2500', '3000')).toBe(false);
+    expect(embedWaitTooLong('2600', '3000')).toBe(true);
+    expect(embedWaitTooLong('3000', '')).toBe(true);  // the default deadline, 3000
+    expect(embedWaitTooLong('', '1000')).toBe(false);  // an older sidecar: no wait to compare
+  });
+
+  it('sends an API key only when one was typed and never includes status rules', () => {
     const edited = structuredClone(base);
     edited.emb = { url: 'http://emb/v1', model: 'e', key: ' sk-1 ' };
-    edited.rules = '   ';
-    const other = structuredClone(base);
-    other.rules = '{"rules": []}';
-    expect(configBody(dirtySections(other, edited), edited)).toEqual({
-      embed_url: 'http://emb/v1', embed_model: 'e', embed_api_key: 'sk-1', parsers: null });
+    expect(configBody(dirtySections(base, edited), edited)).toEqual({
+      embed_url: 'http://emb/v1', embed_model: 'e', embed_api_key: 'sk-1' });
+    expect(configBody(['llm', 'emb', 'tune'], edited)).not.toHaveProperty('parsers');
   });
 
   it('passes unparsable numbers through so the sidecar rejects them instead of resetting', () => {
@@ -44,11 +55,19 @@ describe('batch save', () => {
 
   it('keeps connection settings on the plugin side', () => {
     const edited = structuredClone(base);
-    edited.conn = { url: ' http://10.0.0.2:8790 ', route: 'server', enabled: false, reserved: '', deadline: '1200' };
+    edited.conn = { url: ' http://10.0.0.2:8790 ', route: 'server', enabled: false, reserved: '', deadline: '1200',
+      token: ' s3cret ' };
     expect(dirtySections(base, edited)).toEqual(['conn']);
     expect(configBody(['conn'], edited)).toEqual({});
     expect(connArgs(edited.conn)).toEqual({ sidecar_url: 'http://10.0.0.2:8790', route: 'server', disabled: 1,
-      reserved_memory_tokens: 4000, deadline_ms: 1200 });
+      reserved_memory_tokens: 4000, deadline_ms: 1200, auth_token: 's3cret' });  // the token, trimmed (audit F27)
+  });
+
+  it("picks the PC's own Ollama address on a bundle (audit F18)", () => {
+    expect(presetUrl(OLLAMA_DOCKER, 'bundle')).toBe('http://127.0.0.1:11434/v1');
+    expect(presetUrl(OLLAMA_DOCKER, null)).toBe(OLLAMA_DOCKER);
+    expect(presetUrl('https://api.openai.com/v1', 'bundle')).toBe('https://api.openai.com/v1');
+    expect(presetMatches(OLLAMA_DOCKER, 'http://127.0.0.1:11434/v1')).toBe(true);  // shown as the Ollama preset
   });
 
   it('keeps the memory budget within what the sidecar accepts', () => {

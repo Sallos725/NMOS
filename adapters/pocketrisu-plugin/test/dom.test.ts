@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { StatusInfo } from '../src/core';
 import { createChatSwitch } from '../src/chatoff';
-import { safeFragment } from '../src/inspector';
+import { markDetail, placeMarks, safeFragment } from '../src/inspector';
 import { openPanel, type PanelDeps } from '../src/ui';
 
 const id = '0190f3a4-1b2c-7d3e-8f40-123456789abc';
@@ -35,6 +35,33 @@ describe('safeFragment', () => {
     const out = safeFragment('<p>&lt;script&gt;__ran=true&lt;/script&gt; &amp; more</p>');
     expect(out.textContent).toBe('<script>__ran=true</script> & more');
     expect(out.querySelector('script')).toBeNull();
+  });
+});
+
+describe('timeline marks (PHASE-32 step 3)', () => {
+  const lane = '<div class="tl"><div class="tl-row"><div class="tl-lab">located in</div><div class="tl-track">'
+    + '<span class="tl-rule"></span>'
+    + '<span class="tl-bar past" data-v="library" data-s="t2 – t6" data-o="superseded" data-l="18.182" data-w="45.454" '
+    + 'style="background:url(https://x)" onclick="__ran=true" title="t">library</span>'
+    + '<span class="tl-bar owner" data-v="&lt;b&gt;harbor&lt;/b&gt;" data-s="t7 – now" data-o="current" data-l="63.636" '
+    + 'data-w="36.364">harbor</span><span class="tl-dot" data-l="50;left:0" data-v="x"></span></div></div>'
+    + '<script>__ran=true</script></div>';
+
+  it('places marks from their numbers, drops what could run, and shows a mark\'s text as text', () => {
+    ran.__ran = false;
+    const part = safeFragment(lane);
+    placeMarks(part);
+    const [past, current] = Array.from(part.querySelectorAll<HTMLElement>('.tl-bar'));
+    expect(past.getAttribute('style')).toBe('left: 18.182%; width: calc(45.454% - 2px);');
+    expect(past.getAttribute('onclick')).toBeNull();
+    expect(part.querySelector('script')).toBeNull();
+    expect(part.querySelector<HTMLElement>('.tl-dot')!.getAttribute('style')).toBeNull(); // not a plain number
+    const card = markDetail(current, { canon: 'canon', owner: "The owner's version." });
+    expect(card.querySelector('.v')!.textContent).toBe('<b>harbor</b>');
+    expect(card.querySelector('b')).toBeNull();
+    expect(card.textContent).toContain("The owner's version.");
+    expect(Array.from(card.querySelectorAll('.tl-hist p')).map((p) => p.className)).toEqual(['', 'cur']);
+    expect(ran.__ran).toBe(false);
   });
 });
 
@@ -88,6 +115,97 @@ describe('panel', () => {
     const text = document.getElementById('nmos-panel')!.textContent ?? '';
     expect(text).toContain('0.1.0b21');
     expect(text).toContain('http://127.0.0.1:8790');
+  });
+
+  it('offers the matching plugin file, the token fix and the insecure page (pre-0.4.0 audit F24, F26, F27)', async () => {
+    const mismatch = deps({ pluginExpected: 'other-build' });
+    await openPanel(mismatch.d, 'status');
+    await settle();
+    const get = Array.from(document.querySelectorAll<HTMLButtonElement>('#nmos-panel button'))
+      .find((b) => b.textContent === 'Get the matching plugin file')!;
+    get.click();
+    await settle();
+    expect(mismatch.calls).toContainEqual(['DOWNLOAD', '/v1/plugin/nmos-pocketrisu.js', 'nmos-pocketrisu.js']);
+    expect(document.getElementById('nmos-panel')!.textContent).toContain('Saved nmos-pocketrisu.js');
+    document.body.replaceChildren();
+
+    const refused = deps({ connected: false, error: '/v1/health -> HTTP 401: unauthorized' });
+    await openPanel(refused.d, 'status');
+    await settle();
+    expect(document.getElementById('nmos-panel')!.textContent).toContain('The token does not match');
+    document.body.replaceChildren();
+
+    const insecure = deps({ insecure: true });
+    await openPanel(insecure.d, 'status');
+    await settle();
+    const cards = Array.from(document.querySelectorAll('#nmos-panel .card'));
+    expect(cards.some((c) => c.classList.contains('err') && (c.textContent ?? '').includes('not a secure context'))).toBe(true);
+  });
+
+  it('keeps the token with the connection settings (audit F27)', async () => {
+    const { d, args } = deps();
+    await openPanel(d, 'settings');
+    await settle();
+    const token = document.querySelector<HTMLInputElement>('#nmos-panel input[type="password"][placeholder^="Leave empty"]')!;
+    token.value = 'abc';
+    token.dispatchEvent(new Event('input', { bubbles: true }));
+    Array.from(document.querySelectorAll<HTMLButtonElement>('#nmos-panel button')).find((b) => b.textContent === 'Save')!.click();
+    await settle(); await settle();
+    expect(args.auth_token).toBe('abc');
+  });
+
+  it.each(['sidecar_url', 'route'])('recovers Save after the host rejects %s, showing confirmed partial writes', async (failed) => {
+    const { d, args, calls } = deps();
+    const setArg = d.setArg;
+    let reject = true;
+    d.setArg = async (key, value) => {
+      if (reject && key === failed) throw new Error('host connection write failed');
+      await setArg(key, value);
+    };
+    await openPanel(d, 'settings');
+    const panel = document.getElementById('nmos-panel')!;
+    const url = [...panel.querySelectorAll('input')].find((i) => i.value === args.sidecar_url)!;
+    url.value = 'http://127.0.0.1:8801';
+    url.dispatchEvent(new Event('input', { bubbles: true }));
+    const save = [...panel.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Save')!;
+    save.click();
+    await vi.waitFor(() => expect(save.disabled).toBe(false));
+    const bar = panel.querySelector('.bar .text')!;
+    expect(bar.textContent).toContain(`${failed === 'route' ? 1 : 0}/6 settings confirmed saved`);
+    expect(bar.textContent).toContain('host connection write failed');
+    expect(args.sidecar_url).toBe(failed === 'route' ? url.value : 'http://127.0.0.1:8790');
+    expect(calls.filter(([method]) => method === 'PUT')).toEqual([]);
+    reject = false;
+    save.click();
+    await vi.waitFor(() => expect(bar.textContent).toBe('Saved.'));
+    expect(args.sidecar_url).toBe(url.value);
+    expect(save.disabled).toBe(true);
+  });
+
+  it('keeps Save and close failures visible and allows retry from the restored save bar', async () => {
+    const { d, args } = deps();
+    const setArg = d.setArg;
+    d.setArg = async (key, value) => {
+      if (key === 'route') throw new Error('host connection write failed');
+      await setArg(key, value);
+    };
+    await openPanel(d, 'settings');
+    const panel = document.getElementById('nmos-panel')!;
+    const url = [...panel.querySelectorAll('input')].find((i) => i.value === args.sidecar_url)!;
+    url.value = 'http://127.0.0.1:8801';
+    url.dispatchEvent(new Event('input', { bubbles: true }));
+    const button = (text: string) => [...panel.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === text)!;
+    button('Close').click();
+    button('Save and close').click();
+    await vi.waitFor(() => expect(button('Save')).toBeDefined());
+    expect(document.getElementById('nmos-panel')).toBe(panel);
+    expect(button('Save').disabled).toBe(false);
+    expect(panel.querySelector('.bar .text')!.textContent).toContain('1/6 settings confirmed saved');
+    expect(panel.querySelector('.bar .text')!.textContent).toContain('host connection write failed');
+    d.setArg = setArg;
+    button('Close').click();
+    button('Save and close').click();
+    await vi.waitFor(() => expect(document.getElementById('nmos-panel')).toBeNull());
   });
 
   it('shows this chat first and switches NMOS off and back on for it (ADR 0048)', async () => {
@@ -181,7 +299,9 @@ describe('panel', () => {
       await settle();
       const text = document.getElementById('nmos-panel')!.textContent!;
       expect(text.includes('Memory was recalled without semantic search')).toBe(shown);
-      if (shown) expect(text).toContain('NMOS_EMBED_TIMEOUT_MS');
+      const warning = [...document.querySelectorAll('#nmos-panel .card')]
+        .find((c) => c.textContent!.includes('Memory was recalled without semantic search'));
+      if (shown) expect(warning!.textContent).toContain('raise Embedding wait (ms)');
       document.getElementById('nmos-panel')?.remove();
     }
   });
@@ -238,6 +358,38 @@ describe('panel', () => {
     await settle();
     expect(calls.filter(([method]) => method === 'PUT').at(-1)![2]).toMatchObject({
       embed_url: 'http://host.docker.internal:11434/v1', embed_model: 'qwen3-embedding:0.6b', vector_min_sim: 0.42 });
+  });
+
+  it('sets the embedding wait, and leaves it alone on a sidecar that has no such setting (K34)', async () => {
+    const wait = () => document.querySelector<HTMLInputElement>('#nmos-panel input[type="number"][max="5000"][min="100"]')!;
+    let { d, calls } = deps();
+    await openPanel(d, 'settings');
+    await settle();
+    expect(wait().disabled).toBe(true);  // an older sidecar: nothing to show, nothing sent
+    document.body.replaceChildren();
+    (config.recall as Record<string, number>).embed_timeout_ms = 300;
+    try {
+      ({ d, calls } = deps());
+      await openPanel(d, 'settings');
+      await settle();
+      expect(wait().disabled).toBe(false);
+      expect(wait().value).toBe('300');
+      wait().value = '1000';
+      wait().dispatchEvent(new Event('input', { bubbles: true }));
+      (document.querySelector('#nmos-panel button.primary') as HTMLButtonElement).click();
+      await settle();
+      expect(calls.filter(([method]) => method === 'PUT').at(-1)![2]).toMatchObject({ embed_timeout_ms: 1000 });
+      const bar = () => document.querySelector('#nmos-panel .bar .text')!;
+      expect(bar().textContent).not.toContain('minus 500 ms');
+      wait().value = '2800';  // the deadline is the default 3000: the wait leaves it too little (audit F20)
+      wait().dispatchEvent(new Event('input', { bubbles: true }));
+      (document.querySelector('#nmos-panel button.primary') as HTMLButtonElement).click();
+      await settle();
+      expect(calls.filter(([method]) => method === 'PUT').at(-1)![2]).toMatchObject({ embed_timeout_ms: 2800 });
+      expect(bar().textContent).toContain('minus 500 ms');
+    } finally {
+      delete (config.recall as Record<string, number>).embed_timeout_ms;
+    }
   });
 
   it('exports everything from the settings, with embeddings when asked, and says what it saved (ADR 0050)', async () => {
@@ -599,5 +751,141 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     await settle();
     expect(panel().querySelector('.preview')).toBeNull();  // the late answer for 유이 is not shown
     expect(button('Join')?.disabled).toBe(false);
+  });
+});
+
+describe('the timeline in the panel (PHASE-32 step 3)', () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+    document.head.replaceChildren();
+  });
+  const who = '5c6d7e8f-9a0b-5c2d-8e3f-0123456789ab';
+  const fragment = (span: string) => '<div class="tl"><p class="tl-switch">'
+    + (span ? '<span class="tl-span" data-span="">Whole chat</span> · <b>Last 25 turns</b>'
+      : '<b>Whole chat</b> · <span class="tl-span" data-span="recent">Last 25 turns</span>')
+    + '</p><div class="tl-main"><div class="tl-group"><p class="tl-h">Facts</p><div class="tl-row">'
+    + '<div class="tl-lab">located in</div><div class="tl-track"><span class="tl-rule"></span>'
+    + '<span class="tl-bar past" data-v="library" data-s="t2 – t6" data-o="superseded" data-l="18.182" data-w="45.454">library</span>'
+    + '<span class="tl-bar" data-v="harbor" data-s="t7 – now" data-o="current" data-l="63.636" data-w="36.364">harbor</span>'
+    + '</div></div></div></div></div>';
+
+  function deps() {
+    const calls: string[] = [];
+    const d: PanelDeps = {
+      api: async <T>(method: 'GET' | 'POST' | 'PUT', path: string) => {
+        calls.push(`${method} ${path}`);
+        if (path.startsWith('/v1/inspector/c/') && path.includes('part=timeline')) {
+          return { html: fragment(path.includes('span=recent') ? 'recent' : '') } as T;
+        }
+        if (path.startsWith(`/v1/inspector/c/${id}/e/${who}`)) {
+          return { html: '<h1>Hana</h1><details id="s-timeline"><summary><h2>Over time</h2></summary>'
+            + '<div class="tl-lazy"></div></details><details id="s-about" open><summary><h2>Facts</h2></summary>'
+            + '<p>table</p></details>' } as T;
+        }
+        if (path.startsWith(`/v1/inspector/c/${id}`)) return { html: `<a href="/inspector/c/${id}/e/${who}">Hana</a>` } as T;
+        if (path.startsWith('/v1/inspector')) return { html: `<a href="/inspector/c/${id}">chat</a>` } as T;
+        if (path.endsWith('/entities')) return [] as T;
+        throw new Error('404');
+      },
+      status: async () => ({ enabled: true, sidecarUrl: 'http://127.0.0.1:8790', language: 'en', connected: true,
+        version: '0.1.0b21', features: {}, last: null }),
+      getArg: async (key) => (key === 'language' ? 'en' : ''),
+      setArg: async () => {},
+      show: async () => {},
+      hide: async () => {},
+      hud: { enable: async () => 'unsupported', disable: async () => {}, problem: () => null, background: () => {} },
+      chat: createChatSwitch({ getArg: async () => '', setArg: async () => {}, currentChatId: async () => null }),
+      download: async () => 0,
+    };
+    return { d, calls };
+  }
+  const settle = async () => { for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setTimeout(resolve, 0)); };
+  const panel = () => document.getElementById('nmos-panel')!;
+  const parts = (calls: string[]) => calls.filter((c) => c.includes('part=timeline'));
+
+  async function openHana(d: PanelDeps): Promise<void> {
+    await openPanel(d, 'inspector');
+    await settle();
+    panel().querySelector<HTMLAnchorElement>(`a[href="/inspector/c/${id}"]`)!.click();
+    await settle();
+    panel().querySelector<HTMLAnchorElement>(`a[href="/inspector/c/${id}/e/${who}"]`)!.click();
+    await settle();
+  }
+
+  it('asks for the timeline only when its section opens, and only once', async () => {
+    const { d, calls } = deps();
+    await openHana(d);
+    expect(calls).toContain(`GET /v1/inspector/c/${id}/e/${who}?timeline=lazy&status=lazy&lang=en`);
+    expect(parts(calls)).toEqual([]); // closed: nothing asked
+    const section = panel().querySelector<HTMLDetailsElement>('#s-timeline')!;
+    for (let i = 0; i < 4; i += 1) { // open and close it again and again
+      section.open = true;
+      section.dispatchEvent(new Event('toggle'));
+      await settle();
+      section.open = false;
+      section.dispatchEvent(new Event('toggle'));
+      await settle();
+    }
+    expect(parts(calls)).toEqual([`GET /v1/inspector/c/${id}/e/${who}?part=timeline&lang=en`]);
+    const bars = Array.from(panel().querySelectorAll<HTMLElement>('.tl-bar'));
+    expect(bars.map((b) => b.style.left)).toEqual(['18.182%', '63.636%']);
+  });
+
+  it('shows a tapped mark under its lane, one detail at a time, and switches the window', async () => {
+    const { d, calls } = deps();
+    await openHana(d);
+    const section = panel().querySelector<HTMLDetailsElement>('#s-timeline')!;
+    section.open = true;
+    section.dispatchEvent(new Event('toggle'));
+    await settle();
+    for (let i = 0; i < 50; i += 1) {
+      for (const bar of Array.from(panel().querySelectorAll<HTMLElement>('.tl-bar'))) bar.click();
+    }
+    const cards = panel().querySelectorAll('.tl-card');
+    expect(cards.length).toBe(1);
+    expect(cards[0].querySelector('.v')!.textContent).toBe('harbor');
+    expect(cards[0].previousElementSibling!.classList.contains('tl-row')).toBe(true); // right under its lane
+    expect(panel().querySelectorAll('.tl .sel').length).toBe(1);
+    const selected = panel().querySelector<HTMLElement>('.tl .sel')!;
+    selected.click(); // a second tap closes it
+    expect(panel().querySelectorAll('.tl-card, .tl .sel').length).toBe(0);
+    selected.click();
+    expect(panel().querySelectorAll('.tl-card').length).toBe(1);
+    panel().querySelector<HTMLElement>('.tl-span[data-span="recent"]')!.click();
+    await settle();
+    expect(parts(calls).at(-1)).toBe(`GET /v1/inspector/c/${id}/e/${who}?part=timeline&span=recent&lang=en`);
+    expect(panel().querySelector('.tl-switch b')!.textContent).toBe('Last 25 turns');
+    expect(panel().querySelectorAll('.tl-card').length).toBe(0); // the old detail went with the old timeline
+  });
+
+  it('asks for the status window\'s lanes as their own part (PHASE-39 Q3a)', async () => {
+    const { d, calls } = deps();
+    const api = d.api;
+    d.api = async <T>(method: 'GET' | 'POST' | 'PUT', path: string, ...rest: unknown[]) => {
+      if (path.startsWith(`/v1/inspector/c/${id}?`) && !path.includes('part=')) {
+        calls.push(`${method} ${path}`);
+        return { html: '<details id="s-people"><summary><h2>Characters</h2></summary><div class="tl-lazy"></div></details>'
+          + '<details id="s-status"><summary><h2>Status over time</h2></summary><div class="tl-lazy tl-status"></div>'
+          + '</details>' } as T;
+      }
+      if (path.includes('part=status')) {
+        calls.push(`${method} ${path}`);
+        return { html: fragment('') } as T;
+      }
+      return (api as (...a: unknown[]) => Promise<T>)(method, path, ...rest);
+    };
+    await openPanel(d, 'inspector');
+    await settle();
+    panel().querySelector<HTMLAnchorElement>(`a[href="/inspector/c/${id}"]`)!.click();
+    await settle();
+    const section = panel().querySelector<HTMLDetailsElement>('#s-status')!;
+    section.open = true;
+    section.dispatchEvent(new Event('toggle'));
+    await settle();
+    expect(calls.filter((c) => c.includes('part='))).toEqual([`GET /v1/inspector/c/${id}?part=status&lang=en`]);
+    expect(Array.from(section.querySelectorAll<HTMLElement>('.tl-bar')).map((b) => b.style.left)).toEqual(['18.182%', '63.636%']);
+    section.querySelector<HTMLElement>('.tl-span[data-span="recent"]')!.click();
+    await settle();
+    expect(calls.at(-1)).toBe(`GET /v1/inspector/c/${id}?part=status&span=recent&lang=en`);
   });
 });

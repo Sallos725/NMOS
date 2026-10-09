@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import lru_cache
 from typing import Any
@@ -19,6 +19,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
+from .keywords import keywords
 from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
 from . import canon, canonfacts
 from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, live, quoted_turns, secret_events,
@@ -200,10 +201,12 @@ def _pair_versions(history: list[dict[str, Any]], r: Resolution | None = None) -
     slots: dict[str, dict[str, Any] | None] = {}  # direction (the subject's key) -> its current row
     negatives: dict[tuple, dict[str, Any]] = {}
     outcome: dict[int, str] = {}
+    closer: dict[int, dict[str, Any]] = {}  # id() of a closed row -> the statement that closed it (PHASE-32)
 
-    def close(row: dict[str, Any] | None, how: str) -> None:
-        if row is not None:
-            outcome.setdefault(id(row), how)
+    def close(row: dict[str, Any] | None, how: str, by: dict[str, Any]) -> None:
+        if row is not None and id(row) not in outcome:
+            outcome[id(row)] = how
+            closer[id(row)] = by
 
     for a in history:
         d, v = _subject(a, r), _norm(a["value"])
@@ -214,32 +217,37 @@ def _pair_versions(history: list[dict[str, Any]], r: Resolution | None = None) -
             if target is None:
                 negatives[(d, v)] = a
                 continue
-            close(slots[target], "ended")
+            close(slots[target], "ended", a)
             slots[target] = a
             continue
         for key in [k for k in negatives if k[1] == v and (k[0] == d or symmetric(a["value"]))]:
-            close(negatives.pop(key), "superseded")
-        close(slots.get(d), "superseded")
+            close(negatives.pop(key), "superseded", a)
+        close(slots.get(d), "superseded", a)
         slots[d] = a
         for o, held in slots.items():
             if o != d and held is not None and (symmetric(a["value"]) or symmetric(held["value"])):
-                close(held, "superseded")
+                close(held, "superseded", a)
                 slots[o] = None
     current_rows = [s for s in slots.values() if s is not None] + list(negatives.values())
     for row in current_rows:
         outcome[id(row)] = "current"
-    entries = [_entry(h, outcome) for h in history]
+    entries = [_entry(h, outcome, closer) for h in history]
     return [{**row, "versions": len(history), "history": entries, "claims": []} for row in current_rows]
 
 
-def _entry(h: dict[str, Any], outcome: dict[int, str]) -> dict[str, Any]:
-    """One history entry of a fact version; a canon statement names its canon key (ADR 0047)."""
+def _entry(h: dict[str, Any], outcome: dict[int, str], closer: dict[int, dict[str, Any]] | None = None) -> dict[str, Any]:
+    """One history entry of a fact version; a canon statement names its canon key (ADR 0047). A closed entry carries
+    the turn of the statement that closed it (`closed_turn`, PHASE-32): in a pair's or an item's shared history the next
+    entry may belong to the other direction or holder, so it is not where this one ended. Display only."""
     out = {"position": h["position"], "turn": h["turn"], "predicate": h["predicate"], "subject": h["subject"],
            "value": h["value"], "object": h["object"], "polarity": h["polarity"],
            "outcome": outcome.get(id(h), "superseded"), "knowledge": h.get("knowledge"),
            "known_by": h.get("known_by"), "hidden_from": h.get("hidden_from")}
     if h.get("canon"):
         out["canon"] = h["canon"]
+    by = (closer or {}).get(id(h))
+    if by is not None and out["outcome"] != "current":
+        out["closed_turn"] = by["turn"] if by.get("turn") is not None else (0 if by.get("canon") else None)
     return out
 
 
@@ -312,10 +320,12 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
     negatives: dict[tuple, dict[str, Any]] = {}
     disputed_by: dict[str, Any] | None = None
     outcome: dict[int, str] = {}  # id() of a history row -> outcome, for rows that were closed
+    closer: dict[int, dict[str, Any]] = {}  # id() of a closed row -> the statement that closed it (PHASE-32)
 
-    def close(row: dict[str, Any] | None, how: str) -> None:
-        if row is not None:
-            outcome.setdefault(id(row), how)
+    def close(row: dict[str, Any] | None, how: str, by: dict[str, Any]) -> None:
+        if row is not None and id(row) not in outcome:
+            outcome[id(row)] = how
+            closer[id(row)] = by
 
     for a in history:
         slot = a["predicate"] if whereabouts(a) else ""
@@ -325,29 +335,29 @@ def _versions(history: list[dict[str, Any]], r: Resolution | None = None) -> lis
             end = slots.get("destroyed")
             if end is not None and end["polarity"] == "positive" and _unit(end) != _unit(a):
                 disputed_by = end
-                close(end, "conflicting")
+                close(end, "conflicting", a)
         current = slots.get(slot)
         rel = relation(a, r)
         if a["polarity"] == "negative" and current is not None and relation(current, r) != rel:
             negatives[rel] = a
             continue
-        close(negatives.pop(rel, None), "superseded")
+        close(negatives.pop(rel, None), "superseded", a)
         if slot and a["polarity"] == "positive":
             for other, held in list(slots.items()):
                 if other != slot and held is not None and _unit(held) != _unit(a):
-                    close(held, "ended" if slot == "destroyed" else "superseded")
+                    close(held, "ended" if slot == "destroyed" else "superseded", a)
                     slots[other] = None
-        close(current, "ended" if a["polarity"] == "negative" else "superseded")
+        close(current, "ended" if a["polarity"] == "negative" else "superseded", a)
         slots[slot] = a
     ended = slots.get("destroyed")
     if ended is not None and ended["polarity"] == "positive":
-        close(slots.get("possesses"), "ended")
-        close(slots.get("located_in"), "ended")
+        close(slots.get("possesses"), "ended", ended)
+        close(slots.get("located_in"), "ended", ended)
         slots["possesses"] = slots["located_in"] = None
     current_rows = [s for s in slots.values() if s is not None] + list(negatives.values())
     for row in current_rows:
         outcome[id(row)] = "current"
-    entries = [_entry(h, outcome) for h in history]
+    entries = [_entry(h, outcome, closer) for h in history]
     out = []
     for fact in current_rows:
         f = dict(fact)
@@ -707,6 +717,40 @@ LEXICAL_BAR = 0.35  # trigram overlap with the query that makes an unmentioned f
 # 0028), or a role one holds toward the other (ADR 0059). Read side only, like HOLDER_PER_ITEM: outside REGISTRY, so
 # changing it needs no new generation.
 STANDING = frozenset({"relationship", "role_toward", "feels_toward", "addresses"})
+# How a character stands now (the Cast's predicates, PHASE-12 Q4): with STANDING, what a message naming the character
+# needs whatever it asks (PHASE-36 Q1).
+NOW = frozenset({"located_in", "has_status", "feels_toward", "possesses"})
+# What kind of fact a question asks for, by its own words (PHASE-36 Q1, amended on the replay: "하나는 무슨 일을 해?"
+# asks for an identity in words the fact does not share). A fact of the kind asked for is named by a name alone.
+# "무슨 일을 해" asks for a job, "무슨 일이 있었어" and "무슨 일을 했어" for an event.
+ASKS: tuple[tuple[re.Pattern[str], frozenset[str]], ...] = (
+    (re.compile(r"무슨\s?일을?\s?(해|하는|하니|하지)|하는\s?일|직업|정체|뭐\s?하는\s?(사람|분|애)|\bjob\b|\bfor a living\b"
+                r"|\bwhat does \w+ do\b|\bwho is\b", re.IGNORECASE), frozenset({"identity", "role_toward"})),
+    (re.compile(r"소속|길드|출신|\bguild\b|\bmember of\b", re.IGNORECASE), frozenset({"member_of"})),
+    (re.compile(r"성격|어떤\s?사람|생김새|외모|어떻게\s?생겼|특징|\blook like\b|\bpersonality\b", re.IGNORECASE),
+     frozenset({"has_trait"})),
+    (re.compile(r"무슨\s?일이?\s?있|무슨\s?일을\s?했|뭘\s?했|뭐\s?했|무엇을\s?했|\bwhat happened\b", re.IGNORECASE), frozenset({"event"})),
+    (re.compile(r"알고\s?있|아는\s?(것|거|게)|\bknows?\b", re.IGNORECASE), frozenset({"knows"})),
+)
+
+
+# One-syllable words that say how or when, not what (PHASE-35 Q2): a verb's or an ending's piece (온, 준, 한), a
+# dependent noun (지, 때, 것, 게), a negation or an adverb (안, 못, 더), a pronoun or a determiner (그, 이, 제).
+FUNCTION_SYLLABLES = frozenset(
+    "온 간 갈 올 본 볼 한 할 된 될 준 줄 난 넌 날 때 적 지 수 것 거 게 걸 데 뿐 듯 안 못 잘 더 또 좀 다 왜 뭐 "
+    "그 이 저 제 내 네 너 나 걔 얘 쟤 두 세 첫 건 곳 쪽 번".split())
+
+
+def asked_nouns(query: str) -> tuple[str, ...]:
+    """The question's one-syllable Hangul words that can name something (빵, 달): what a short question asks about
+    (PHASE-35 Q2; PHASE-36 Q1, amended: a fact holding one is named by its character's name)."""
+    return tuple(dict.fromkeys(w for w in re.findall(r"[가-힣]+", query)
+                               if len(w) == 1 and w not in FUNCTION_SYLLABLES))
+
+
+def asked_predicates(query: str) -> frozenset[str]:
+    """The predicates the question's own words ask for (ASKS)."""
+    return frozenset(p for pattern, preds in ASKS if pattern.search(query) for p in preds)
 # Added to the score of a mentioned fact (ADR 0026). Below the gap between a mention in the user's message
 # and one in the previous reply (1.0), so they order facts of equal mention only.
 PRIOR_STANDING = 0.5
@@ -736,12 +780,73 @@ FIRST_CUE = re.compile(r"(처음|최초|예전|옛날|원래|초반|첫(\s|번|�
 HISTORY_CUE = re.compile(FIRST_CUE.pattern + r"|전에|이전|첫\s?날|\bbefore\b|\bused to\b|\bpreviously\b", re.IGNORECASE)
 
 
+# PHASE-40: a question must identify its subject, not merely mention the persona somewhere.
+# Keep this deliberately narrower than a natural-language parser: uncertain clauses abstain.
+_PERSONA_WH = re.compile(r"(?:^|\s)(?:무슨|무엇|어떤|누구|뭐|어디)(?!론가)|\b(?:what|where|who|which)\b", re.I)
+_PERSONA_GENERIC = frozenset({"처음", "최초", "예전", "이전", "원래", "초반", "이름", "혼자", "before", "first",
+                               "time", "originally", "previously", "job", "identity", "일을", "일이", "하는", "다니는"})
+
+
+def _persona_questions(query: str, names: set[str], other_names: set[str]) -> list[tuple[frozenset[str], tuple[str, ...]]]:
+    """Explicit same-clause subject questions, with predicate and content cues (read side only)."""
+    questions = []
+    for part in re.finditer(r"([^.!?;\n。！？]+)([.!?;\n。！？]|$)", _norm(query)):
+        clause = part.group(1).strip(" \"'“”‘’")
+        if not _PERSONA_WH.search(clause):
+            continue
+        if any(re.search(r"(?<!\w)" + re.escape(n) + r"(?=$|\W|[은는이가의])", clause)
+               for n in other_names if len(n) >= 2):
+            continue
+        for name in sorted(names, key=len, reverse=True):
+            n = re.escape(name)
+            korean = re.match(r"^" + n + r"(?P<particle>은|는|이|가|의)\s+(?P<body>.*)$", clause)
+            english = re.fullmatch(
+                r"(?:where (?:is|was) " + n + r"(?: (?:now|before|previously|originally))?"
+                r"|where (?:does|did) " + n + r" (?:live|stay)"
+                r"|who (?:is|was) " + n + r"|what (?:does|did) " + n + r" (?:do(?: for a living)?|have|own|possess|know)"
+                r"|what (?:is|was) " + n + r"['’]s (?:job|identity|personality|guild)"
+                r"|what happened to " + n + r")", clause)
+            if not korean and not english:
+                continue
+            body = korean.group("body") if korean else clause.replace(name, " ")
+            if korean and re.search(r"(?:인지|는지|냐고|라고)\s", body):
+                continue  # an indirect/reported question can have a different, unnamed subject
+            if korean and part.group(2) not in ("?", "？") and not re.search(r"(?:까|니|냐|지|어|해|야|더라|요)$", body):
+                continue
+            if korean and korean.group("particle") == "의" and not re.match(
+                    r"^(?:직업|정체|성격|외모|소속|길드|출신|특징)(?:은|는|이|가)?\s", body):
+                continue  # "the persona's friend" is another subject, not the persona.
+            if korean and re.search(r"(?:친구|동료|아내|남편|선생|딸|아들|그녀)(?:은|는|이|가)\s", body):
+                continue
+            # Narration followed by a question about somebody else is not a persona question.
+            if korean and re.search(r"(?:지만|면서|그리고|그러고|(?:[가-힣]+고))\s", body.replace("가지고", "").replace("갖고", "")):
+                continue
+            predicates = set(asked_predicates(clause))
+            if re.search(r"어디|\bwhere\b", body):
+                predicates.add("located_in")
+            if re.search(r"가지고|갖고|소유|\b(?:have|own|possess)\b", body):
+                predicates.add("possesses")
+            if re.search(r"회사|\bcompany\b", body):
+                predicates.update(("member_of", "identity"))
+            words = tuple(w for w in keywords(body) if w not in _PERSONA_GENERIC and w not in names)
+            questions.append((frozenset(predicates), words))
+            break
+    return questions
+
+
 def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],
                    limit: int, events_limit: int | None = None,
                    persona: frozenset[str] = frozenset(), present: frozenset[str] = frozenset(),
                    causes: bool = False, first_cue: bool = False,
                    window_start: int | None = None, marks: bool = False,
-                   aliases: Mapping[str, frozenset[str]] | None = None) -> list[dict[str, Any]]:
+                   aliases: Mapping[str, frozenset[str]] | None = None,
+                   named: set[str] | None = None, named_by_words: bool = False,
+                   risky: frozenset[str] | None = None,
+                   keep: Callable[[dict[str, Any]], bool] | None = None, *,
+                   persona_questions: bool = False, persona_entity: str | None = None,
+                   persona_query_names: frozenset[str] | None = None,
+                   persona_added: set[str] | None = None,
+                   _question_facts: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
@@ -757,8 +862,14 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     `minor` one needs the lexical bar: a name mention alone does not bring it (ADR 0020). Unlabeled
     events (older generations) rank as before.
 
+    With `persona_questions` (packet-v18, PHASE-40), an explicit same-clause question about the resolved
+    `persona_entity` can offer at most two matching subject facts at mention score 1.5, between a name in
+    the current question (2) and the previous reply (1). `persona_query_names` is a caller-validated,
+    unambiguous name set, separate from ordinary mentions. `persona_added` shares the cap across fact/claim
+    selections. The normal fact/event quotas, history ordering and token budget still apply.
+
     The persona's names (`USER_NAMES` and `persona`, the resolver's `persona_names`; ADR 0023) are never
-    a mention: the persona is in every chat, and a user who narrates it by name writes that name in every
+    an ordinary mention: the persona is in every chat, and a user who narrates it by name writes that name in every
     message. A first-person question still brings the persona's own facts.
 
     With `causes` (packet-v6, ADR 0040) a stated cause counts as part of the fact's words, and when the message asks
@@ -773,6 +884,14 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     `aliases` (`name_variants`, ADR 0058): the other names a character goes by in this request (`variants.aliases`, a
     given name or a Hangul spelling of a romanized name); they count as its names, for a mention and for a secret's
     holder addressed.
+
+    `named` collects the facts the question names (PHASE-34 Q1: required, never resting): one whose names the message
+    holds. With `named_by_words` (packet-v16, PHASE-36 Q1) a name alone names only how its character stands now or
+    with another (NOW, STANDING), a knowledge boundary and a fact of the kind the question asks for (`asked_predicates`);
+    any other fact also needs the message's words (overlap at least LEXICAL_BAR). Ranking is unchanged.
+
+    `risky` (the label policies, PHASE-34 Q1): the ids of contradicted facts; with it, a disputed or contradicted fact
+    that is not named, private or secret ranks after the others, before `limit` and `events_limit` choose.
     """
     q = _norm(query)
     ai = _norm(previous_ai)
@@ -780,7 +899,36 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     first_person = bool(FIRST_PERSON.search(query))
     why = causes and bool(WHY.search(query))
     oldest = first_cue and bool(FIRST_CUE.search(query))
+    asked = asked_predicates(query) if named_by_words else frozenset()
+    nouns = asked_nouns(query) if named_by_words else ()
     user = USER_NAMES | persona
+    matches: list[dict[str, Any]] = []
+    if persona_questions and persona_entity:
+        # Classify explicit answers before risk ordering and rest, including already lexical candidates.
+        persona_names = ({_norm(n) for n in persona_query_names} if persona_query_names is not None
+                         else _widened(list(persona), aliases)) - USER_NAMES
+        other_names = {_norm(f[role]) for f in facts for role in ("subject", "object")
+                       if f.get(role) and f.get(role + "_type") == "character"
+                       and f.get(role + "_entity", {}).get("id") != persona_entity}
+        persona_names -= other_names
+        questions = _persona_questions(query, persona_names, other_names)
+        matches = [f for f in facts if f.get("subject_entity", {}).get("id") == persona_entity
+                   and any(f["predicate"] in predicates or any(
+                       w in _norm((f.get("object") or "") + " " + (f.get("value") or "")) for w in words)
+                           for predicates, words in questions)]
+        if named is not None:
+            named.update(str(f["id"]) for f in matches)
+        extra_limit = max(0, 2 - len(persona_added or ()))
+        if matches and extra_limit:
+            # Resolve the small question set with the same history, context, rest and event rules.
+            # The recursive pass cannot open another persona route. Only its winners gain a mention
+            # in the full selection, so a chat with many matching persona facts never gains every slot.
+            targets = relevant_facts(matches, query, previous_ai, in_context, min(extra_limit, limit),
+                                     events_limit, persona=persona, present=present, causes=causes,
+                                     first_cue=first_cue, window_start=window_start, marks=marks, aliases=aliases,
+                                     named=named, named_by_words=named_by_words, risky=risky, keep=keep,
+                                     _question_facts=frozenset(str(f["id"]) for f in matches))
+            _question_facts = frozenset(str(f["id"]) for f in targets)
     scored = []
     for f in facts:
         if f["host_logical_id"] in in_context and not f.get("held_off"):  # a lock holds against the story (ADR 0047)
@@ -789,15 +937,21 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         names = [n for n in _widened(f.get("names") or [f["subject"], f.get("object")], aliases)
                  if len(n) >= 2 and n not in user]
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
+        if _question_facts and str(f["id"]) in _question_facts:
+            mention = max(mention, 1.5)
         hidden = [n for n in _widened(f.get("hidden_from") or [], aliases) if len(n) >= 2 and n not in user]
+        grams = _grams(fact_text(f) + (f" {f['because']}" if causes and f.get("because") else ""))
+        lexical = len(grams & q_grams) / max(1, len(q_grams))
+        if named is not None and any(n in q for n in names + hidden) and (  # the question names it (PHASE-34 Q1)
+                not named_by_words or f["predicate"] in NOW | STANDING | asked or f.get("known_by")
+                or f.get("hidden_from") or lexical >= LEXICAL_BAR or any(n in fact_text(f) for n in nouns)):
+            named.add(str(f["id"]))
         if any(n in q for n in hidden):
             mention += 2.5
         elif mention and any(n in present for n in hidden):
             mention += PRIOR_HIDDEN_PRESENT
         if first_person and (_norm(f["subject"]) in user or _norm(f.get("value")).startswith(tuple(user))):
             mention += 1.0
-        grams = _grams(fact_text(f) + (f" {f['because']}" if causes and f.get("because") else ""))
-        lexical = len(grams & q_grams) / max(1, len(q_grams))
         score = mention + lexical + (prior(f) if mention else 0.0) + (PRIOR_CAUSE if why and f.get("because") else 0.0)
         if not oldest and f["predicate"] == "event" and f.get("salience") == "minor" and (
                 len(_grams(f.get("value") or "") & q_grams) / max(1, len(q_grams)) < LEXICAL_BAR):
@@ -805,13 +959,24 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         if mention or lexical >= LEXICAL_BAR:
             scored.append((score, f["position"], f, mention))
     age = (lambda x: -x[1]) if oldest else (lambda x: x[1])  # equal scores: the newer, or the older with the cue
-    scored.sort(key=lambda x: (x[0], age(x)), reverse=True)
+
+    def plain(f: dict[str, Any]) -> bool:  # not risky (PHASE-34 Q1): a disputed or contradicted line comes after the
+        # others, before the limit and the event quota choose (a review's follow-ups); named, private and secret lines
+        # keep their place
+        return risky is None or not (f.get("disputed_by") or str(f["id"]) in risky) \
+            or str(f["id"]) in (named or set()) or bool(f.get("hidden_from") or f.get("known_by"))
+    scored.sort(key=lambda x: (plain(x[2]), x[0], age(x)), reverse=True)
+    # Rest is decided after `named` is complete, but before the event quota chooses its winners.
+    # Preserve the event-specific ordering below (especially the history cue's oldest-first rule).
+    if keep is not None:
+        scored = [x for x in scored if keep(x[2])]
     if oldest:
         events = sorted((x for x in scored if x[2]["predicate"] == "event"),
-                        key=lambda x: (x[3] > 0, -x[1], x[2].get("salience") == "major", x[0]), reverse=True)
+                        key=lambda x: (plain(x[2]), x[3] > 0, -x[1], x[2].get("salience") == "major", x[0]),
+                        reverse=True)
     else:
         events = sorted((x for x in scored if x[2]["predicate"] == "event"),
-                        key=lambda x: (x[3], x[2].get("salience") == "major", x[0], x[1]), reverse=True)
+                        key=lambda x: (plain(x[2]), x[3], x[2].get("salience") == "major", x[0], x[1]), reverse=True)
     kept_events = {id(x[2]) for x in events[:events_limit]} if events_limit is not None else None
     out: list[dict[str, Any]] = []
     for _, _, f, _ in scored:
@@ -820,6 +985,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         if f["predicate"] == "event" and kept_events is not None and id(f) not in kept_events:
             continue
         out.append(f)
+    if persona_questions and persona_added is not None:
+        persona_added.update(str(f["id"]) for f in out if str(f["id"]) in _question_facts)
     return out
 
 

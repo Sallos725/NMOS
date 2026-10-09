@@ -10,12 +10,13 @@ from contextlib import ExitStack
 import pytest
 
 from conftest import make_client
-from memeval import _sync, settings_for
+from memeval import settings_for
+from test_sidecar_integration import sync as _sync
 from nmos_sidecar.packet import Excerpt, StateItem, compile_lines, excerpt_line, state_block
 from simchat import SimChat
 from test_packet_ledger import extract
 
-RULES = {"rules": [{"id": "status", "kind": "block", "start": r"```status", "end": r"```", "role": "char"}]}
+RULES = {"rules": [{"card": "Status test", "id": "status", "kind": "block", "start": r"```status", "end": r"```", "role": "char"}]}
 STATUS = "The vault password is violet-seven.\n```status\n장소: 폐허가 된 성당\n```"
 
 
@@ -39,14 +40,14 @@ def story(client, url: str) -> SimChat:
     for i in range(4):  # positions 3-10, turns 2-5
         chat.user(f"Idle chatter {i} about clouds.")
         chat.reply(f"Idle reply {i} about the weather.")
-    _sync(client, chat)
+    _sync(client, chat, character_name="Status test")
     extract(url)
     return chat
 
 
 def ask(client, chat: SimChat, text: str) -> dict:
     chat.user(text)
-    _sync(client, chat)
+    _sync(client, chat, character_name="Status test")
     recent = chat.messages[-4:]
     return client.post("/v1/retrieve", json={"chat_id": chat.id, "query": text, "previous_ai": "",
                                              "in_context_ids": [m["chatId"] for m in recent],

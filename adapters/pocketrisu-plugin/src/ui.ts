@@ -1,20 +1,24 @@
 // NMOS panel, rendered inside the plugin's own sandboxed iframe (full screen): status, inspector and
-// settings tabs. Plugin-side settings are PocketRisu plugin args; model/recall/parser settings live in
-// the sidecar and are saved together with one request.
+// settings tabs. Plugin-side settings are PocketRisu plugin args. The sidecar saves model/recall settings
+// together; status rules have a separate explicit card-bound Apply (PHASE-39 amendment 2).
 
 import type { StatusInfo } from './core';
 import { budgetAdvice } from './budget';
 import type { ChatSwitch } from './chatoff';
 import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
-import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, endpointForKey, fillProject,
-  isVertexEndpoint, MAX_DEADLINE_MS, PANEL_MAX_RESERVED_TOKENS, presetMatches, serviceAccountProject, VERTEX_URL, type FormValues, type Section } from './form';
+import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, embedWaitTooLong, endpointForKey, fillProject,
+  isVertexEndpoint, MAX_DEADLINE_MS, OLLAMA_DOCKER, PANEL_MAX_RESERVED_TOKENS, presetMatches, presetUrl, serviceAccountProject,
+  VERTEX_URL, type FormValues, type Section } from './form';
+import { failureKind } from './failure';
+import { parserBindings, parserDraft, presetRules, type ParserPreset } from './parser-form';
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
 import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices,
-  localTime, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
+  localTime, markDetail, placeMarks, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
 import type { EntityRow, Preview, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
+import { uploadArchive, waitFor, type ArchiveSummary, type Method } from './restore';
 import { usageText, type UsageTotal } from './usage';
 
 export type Tab = 'status' | 'inspector' | 'settings';
@@ -31,7 +35,7 @@ export interface HudControl {
 }
 
 export interface PanelDeps {
-  api<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, timeoutMs?: number): Promise<T>;
+  api<T>(method: Method, path: string, body?: unknown, timeoutMs?: number): Promise<T>;
   status(): Promise<StatusInfo>;
   getArg(key: string): Promise<string>;
   setArg(key: string, value: string | number): Promise<void>;
@@ -47,10 +51,12 @@ export interface PanelDeps {
 interface ServerConfig {
   llm: { url: string; model: string; api_key_set: boolean; json_mode: boolean };
   embeddings: { url: string; model: string; api_key_set: boolean; query_instruction: string };
-  recall: { threshold: number; vector_min_sim: number; top_k: number; facts_limit: number };
+  recall: { threshold: number; vector_min_sim: number; embed_timeout_ms?: number; top_k: number; facts_limit: number };
   extraction: { backfill: number; summaries?: boolean; canon_facts?: boolean };
-  parsers: { rules: unknown; source: string; active_rules: number; errors: string[] };
+  parsers: { rules: unknown; source: string; active_rules: number; errors: string[];
+    spec?: unknown; presets?: ParserPreset[] };
   queued_jobs?: number;
+  install?: string | null;
 }
 
 /** `minSim`: the vector similarity bar measured for the preset's model (`docs/perf/embedders.md`); `hint`: said when
@@ -61,7 +67,7 @@ interface MemoryMode { strict: boolean; narrator: string | null; characters: str
 
 const LLM_PRESETS: Preset[] = [
   { label: 'preset.off', url: '' },
-  { label: 'preset.ollama', url: 'http://host.docker.internal:11434/v1' },
+  { label: 'preset.ollama', url: OLLAMA_DOCKER },
   { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
   { label: 'OpenAI', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
   { label: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
@@ -71,7 +77,7 @@ const LLM_PRESETS: Preset[] = [
 
 const EMBED_PRESETS: Preset[] = [
   { label: 'preset.off', url: '' },
-  { label: 'preset.ollama', url: 'http://host.docker.internal:11434/v1', model: 'qwen3-embedding:0.6b', minSim: 0.42 },
+  { label: 'preset.ollama', url: OLLAMA_DOCKER, model: 'qwen3-embedding:0.6b', minSim: 0.42 },
   { label: 'OpenAI', url: 'https://api.openai.com/v1', model: 'text-embedding-3-small' },
   { label: 'Voyage AI', url: 'https://api.voyageai.com/v1', model: 'voyage-4-large', minSim: 0.3, hint: 'emb.voyage_hint' },
   { label: 'preset.custom', url: 'custom' },
@@ -85,7 +91,7 @@ const PARSER_EXAMPLE = {
 };
 
 const SECTION_TITLE: Record<Section, StringKey> = {
-  conn: 'conn.title', llm: 'llm.title', emb: 'emb.title', tune: 'tune.title', rules: 'rules.title',
+  conn: 'conn.title', llm: 'llm.title', emb: 'emb.title', tune: 'tune.title',
 };
 
 // Opaque on purpose: the host settings page behind the full-screen frame must not show through.
@@ -137,6 +143,41 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}.nmos .insp .top p{margin:0}
 .nmos .insp a{color:var(--c-link);text-decoration:none;cursor:pointer}
 .nmos .insp a:hover{text-decoration:underline}
+.nmos .insp .tl{margin:6px 0 16px}.nmos .insp .tl .tl-h{font-size:11.5px;font-weight:500;letter-spacing:.04em;color:var(--c-text-muted);margin:16px 0 4px;cursor:pointer;list-style:none}
+.nmos .insp .tl .tl-h::-webkit-details-marker{display:none}.nmos .insp .tl .tl-h::before{content:"\\25BE  "}.nmos .insp .tl details:not([open])>.tl-h::before{content:"\\25B8  "}
+.nmos .insp .tl-switch{font-size:12.5px;margin:0 0 8px}.nmos .insp .tl-span{color:var(--c-link);cursor:pointer}
+.nmos .insp .tl-hint{font-size:11.5px;color:var(--c-text-faint);margin:0 0 8px}
+.nmos .insp .tl-row{display:grid;grid-template-columns:112px minmax(0,1fr);gap:8px;align-items:center;padding:3px 0;color:inherit}.nmos .insp a.tl-line{text-decoration:none;border-radius:6px}
+.nmos .insp .tl-cast .tl-row{display:block}
+.nmos .insp .tl-lab{display:block;font-size:12.5px;line-height:1.3;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;max-height:2.6em}
+.nmos .insp .tl-cast .tl-lab{white-space:nowrap;margin-bottom:2px}
+.nmos .insp .tl-lab .tl-k{display:block;font-size:11px;color:var(--c-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nmos .insp .tl-lab .tl-val{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nmos .insp .tl-lab .tl-val.canon{color:var(--c-text-muted)}
+.nmos .insp .tl-last{color:var(--c-text-faint);font-size:11.5px}.nmos .insp .tl-end{display:none}
+.nmos .insp .tl-me{font-size:10.5px;color:var(--c-link);margin-left:6px}
+.nmos .insp .tl-track{display:block;position:relative;height:26px}
+.nmos .insp .tl-rule{position:absolute;left:0;right:0;top:13px;height:1px;background:var(--c-line)}
+.nmos .insp .tl-bar{position:absolute;top:5px;height:16px;min-width:6px;border-radius:4px;overflow:hidden;box-sizing:border-box;background:var(--c-raised);border:1px solid var(--c-text-faint);cursor:pointer}
+.nmos .insp .tl-bar.short{z-index:2}
+.nmos .insp .tl-bar.past{background:transparent;border-color:var(--c-line-hover)}.nmos .insp .tl-bar.neg{border-style:dotted}
+.nmos .insp .tl-bar.open{border-right-style:dashed}.nmos .insp .tl-bar.canon{border-left:2px dotted var(--c-text-muted)}
+.nmos .insp .tl-bar.owner{border-color:var(--c-warn)}
+.nmos .insp .tl .sel{background:var(--c-accent);border-color:var(--c-accent);color:#fff}
+.nmos .insp .tl-dot{position:absolute;top:2px;bottom:2px;width:10px;margin-left:-5px;cursor:pointer}
+.nmos .insp .tl-dot::after{content:"";position:absolute;left:4px;bottom:2px;width:2px;height:10px;border-radius:1px;background:var(--c-text-muted)}
+.nmos .insp .tl-dot.s-major::after{height:18px;background:var(--c-text-strong)}.nmos .insp .tl-dot.s-minor::after{height:6px}
+.nmos .insp .tl-dot.n1{transform:translateX(4px)}.nmos .insp .tl-dot.n2{transform:translateX(8px)}.nmos .insp .tl-dot.n3{transform:translateX(12px)}
+.nmos .insp .tl .tl-dot.sel{background:transparent}.nmos .insp .tl .tl-dot.sel::after{background:var(--c-accent)}
+.nmos .insp .tl-tick{position:absolute;top:5px;width:2px;height:16px;margin-left:-1px;border-radius:1px;background:var(--c-text-soft)}
+.nmos .insp .tl-axis .tl-track{height:18px}
+.nmos .insp .tl-axis .tl-track span{position:absolute;top:0;font-size:10.5px;color:var(--c-text-faint);transform:translateX(-50%);white-space:nowrap}
+.nmos .insp .tl-axis .tl-track span.first{transform:none}.nmos .insp .tl-axis .tl-track span.last{transform:translateX(-100%)}
+.nmos .insp .tl-axis .tl-track span.odd,.nmos .insp .tl-axis .tl-track span.near{display:none}
+.nmos .insp .tl-card{margin:6px 0 10px;padding:10px 12px;border-radius:8px;background:var(--c-raised);font-size:12.5px}
+.nmos .insp .tl-card p{margin:2px 0}.nmos .insp .tl-card .v{font-size:17px;font-weight:600;line-height:1.35;color:var(--c-text-strong);overflow-wrap:anywhere}
+.nmos .insp .tl-hist{margin-top:8px;color:var(--c-text-muted)}.nmos .insp .tl-hist .cur{color:var(--c-text-strong)}
+.nmos .insp .tl-more{font-size:11.5px;color:var(--c-text-faint);margin:2px 0}
+.nmos .insp .tl-fold>summary,.nmos .insp .tl-others>summary{font-size:12px;color:var(--c-text-muted);margin:8px 0 2px;cursor:pointer}
 .nmos .insp .ref{display:block;font-family:ui-monospace,monospace;font-size:10.5px;color:var(--c-text-faint)}
 .nmos .insp .wrap{max-width:none;margin:0;padding:0;overflow-x:auto}
 .nmos .insp table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -199,6 +240,12 @@ function presetIndex(presets: Preset[], url: string): number {
   return i >= 0 ? i : presets.length - 1;
 }
 
+/** The Status tab's fix for a sidecar it cannot use: a token, a refused host, or the usual checks (audit F27). */
+function fixFor(error: string | undefined): StringKey {
+  const kind = failureKind(error);
+  return kind === 'unauthorized' ? 'status.fix_token' : kind === 'host_refused' ? 'status.fix_host' : 'status.fix';
+}
+
 function errorText(lang: Lang, error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
   return text.replace(/^\/v1\/\S+ -> HTTP 422: /, t(lang, 'invalid')).replace(/^\/v1\/\S+ -> /, t(lang, 'sidecar_error'));
@@ -254,8 +301,23 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       el('div', { class: 'mono muted', text: base }));
       // A plugin from another build than the sidecar's (ADR 0037): features on one side are missing on the other.
       if (s.pluginExpected && s.pluginExpected !== PLUGIN_BUILD) {
+        // The matching file, saved as the archives are (H21): a server-routed sidecar has no browser path to it (F26).
+        const get = el('button', { class: 'mini', text: L('status.plugin_file') });
+        const got = el('div', { class: 'msg' });
+        get.addEventListener('click', async () => {
+          get.disabled = true;
+          try {
+            await deps.download('/v1/plugin/nmos-pocketrisu.js', 'nmos-pocketrisu.js');
+            say(got, L('status.plugin_saved', { name: 'nmos-pocketrisu.js' }), 'ok');
+          } catch (error) {
+            say(got, errorText(lang, error), 'err');
+          } finally {
+            get.disabled = false;
+          }
+        });
         conn.append(el('div', { class: 'line warn' }, el('span', { class: 'dot warn' }),
-          el('span', { text: L('status.plugin_mismatch', { mine: PLUGIN_BUILD, theirs: s.pluginExpected }) })));
+          el('span', { text: L('status.plugin_mismatch', { mine: PLUGIN_BUILD, theirs: s.pluginExpected }) })),
+        el('div', { class: 'btns' }, get), got);
       } else if (s.pluginExpected) {
         conn.append(el('div', { class: 'muted', text: L('status.plugin_ok', { b: PLUGIN_BUILD }) }));
       }
@@ -264,7 +326,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     } else {
       conn.append(el('div', { class: 'line' }, el('span', { class: 'dot err' }),
         el('span', { class: 'err', text: `${L('status.unreachable')}: ${base}` })),
-      el('div', { class: 'muted', text: s.error ?? '' }), el('p', { class: 'sub', text: L('status.fix') }));
+      el('div', { class: 'muted', text: s.error ?? '' }), el('p', { class: 'sub', text: L(fixFor(s.error)) }));
     }
     if (!s.enabled) conn.append(el('div', { class: 'line warn' }, el('span', { class: 'dot warn' }),
       el('span', { text: L('status.memory_off') })));
@@ -292,6 +354,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
 
     const cards: HTMLElement[] = [conn, features, lastCard];
+    // No Web Crypto on this page: every request is skipped, so it comes first (pre-0.4.0 audit F24).
+    if (s.insecure) cards.unshift(el('div', { class: 'card err' }, el('div', { text: L('status.insecure') })));
     // A long chat that runs out of time gets no memory at all (fail open), silently: say it first, with
     // the value to set, and warn before it happens (owner decision on audit A-09).
     const advice = deadlineAdvice(s.last);
@@ -629,6 +693,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   /** Adapt a page to the panel: times in the viewer's zone, the character links as a drop-down. */
   function enhance(page: DocumentFragment): void {
     closers = new Map();
+    // The timeline is asked for only when its section is opened, so a chat page never holds it unasked (an iPhone's
+    // Safari reloads a page under memory pressure; PHASE-32 step 3). The listener goes with the page it is on.
+    for (const box of Array.from(page.querySelectorAll<HTMLElement>('details > .tl-lazy'))) {
+      const section = box.parentElement as HTMLDetailsElement;
+      section.addEventListener('toggle', () => {
+        if (section.open && !box.dataset.state) void loadTimeline(box, '');
+      });
+    }
     for (const spot of Array.from(page.querySelectorAll('span.rp[data-repair]'))) {
       const action = repairAction(spot.getAttribute('data-repair'));
       if (action) spot.replaceChildren(...repairControls(action));
@@ -651,6 +723,37 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     }
     picker.addEventListener('change', () => go(picker.value));
     who.replaceChildren(el('span', { class: 'muted', text: name }), picker);
+  }
+  async function loadTimeline(box: HTMLElement, span: string): Promise<void> {
+    const from = inspectorPath;
+    box.dataset.state = 'loading';
+    box.replaceChildren(el('div', { class: 'muted', text: L('insp.loading') }));
+    try {
+      // the status window's lanes (PHASE-39) are their own part; every other lazy box is the cast's timeline
+      const asked = box.classList.contains('tl-status') ? 'part=status' : 'part=timeline';
+      const query = [asked, span ? `span=${span}` : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
+      const r = await deps.api<{ html: string }>('GET', `${from}?${query}`, undefined, 15_000);
+      if (!box.isConnected || inspectorPath !== from) return; // the reader moved on
+      const part = safeFragment(r.html);
+      placeMarks(part);
+      box.replaceChildren(part);
+      box.dataset.state = 'loaded';
+    } catch (error) {
+      if (!box.isConnected) return;
+      delete box.dataset.state; // opening the section again retries
+      box.replaceChildren(el('div', { class: 'card err', text: errorText(lang, error) }));
+    }
+  }
+  // A tapped mark shows its detail right under its lane; one detail at a time, replaced, never piled up.
+  function showMark(mark: Element): void {
+    const timeline = mark.closest('.tl');
+    const row = mark.closest('.tl-row');
+    if (!timeline || !row) return;
+    timeline.querySelector('.tl-card')?.remove();
+    if (mark.classList.contains('sel')) return void mark.classList.remove('sel'); // a second tap closes it
+    for (const on of Array.from(timeline.querySelectorAll('.sel'))) on.classList.remove('sel');
+    mark.classList.add('sel');
+    row.after(markDetail(mark, { canon: L('tl.canon'), owner: L('tl.owner') }));
   }
   function go(path: string): void {
     if (path === inspectorPath) return void showInspector();
@@ -688,7 +791,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const direct = routeFor(base, await deps.getArg('route')) === 'direct';
     inspectorAddress.textContent = direct ? L('insp.browser', { url: `${base}/inspector${lang === 'en' ? '?lang=en' : ''}` }) : '';
     try {
-      const r = await deps.api<{ html: string }>('GET', `${path}${lang === 'en' ? '?lang=en' : ''}`, undefined, 15_000);
+      // A chat's and a character's page get a closed timeline section, filled when it is opened (PHASE-32 step 3), and
+      // a chat's page one for its status window (PHASE-39); a sidecar without them ignores the ask.
+      const query = [conversation ? 'timeline=lazy&status=lazy' : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
+      const r = await deps.api<{ html: string }>('GET', `${path}${query ? `?${query}` : ''}`, undefined, 15_000);
       if (load !== loads) return;
       const page = safeFragment(r.html);
       enhance(page);
@@ -896,7 +1002,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     linkCard.style.display = '';
   }
   inspectorBody.addEventListener('click', (event) => {
-    const link = event.target instanceof Element ? event.target.closest('a') : null;
+    const clicked = event.target instanceof Element ? event.target : null;
+    const choice = clicked?.closest('.tl-span[data-span]');
+    const box = choice?.closest<HTMLElement>('.tl-lazy');
+    if (choice && box) return void loadTimeline(box, choice.getAttribute('data-span') ?? '');
+    const mark = clicked?.closest('.tl [data-v]');
+    if (mark) return showMark(mark);
+    const link = clicked ? clicked.closest('a') : null;
     if (!link) return;
     event.preventDefault();
     const href = link.getAttribute('href');
@@ -1034,9 +1146,11 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const enabled = el('input', { type: 'checkbox' });
   const reserved = el('input', { type: 'number', min: 100, max: PANEL_MAX_RESERVED_TOKENS });
   const deadline = el('input', { type: 'number', min: 200, max: MAX_DEADLINE_MS, step: 100 });
+  const token = el('input', { type: 'password', placeholder: L('conn.token_placeholder'), autocomplete: 'off' });
+  let install: string | null = null;  // what the sidecar says it is (`bundle`): the Ollama preset's address
   settingsView.append(el('div', { class: 'card' },
     el('h2', { text: L('conn.title') }), el('p', { class: 'sub', text: L('conn.sub') }),
-    field(L('conn.url'), url),
+    field(L('conn.url'), url), field(L('conn.token'), token),
     el('div', { class: 'row' }, field(L('conn.route'), route), field(L('conn.budget'), reserved), field(L('conn.deadline'), deadline)),
     el('div', { class: 'check' }, enabled, el('span', { text: L('conn.enabled') })),
     el('p', { class: 'sub', text: L('conn.hint') }), el('p', { class: 'sub', text: L('conn.deadline_hint') })));
@@ -1079,7 +1193,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     });
     preset.addEventListener('change', () => {
       const p = presets[Number(preset.value)] as Preset;
-      if (p.url !== 'custom') endpoint.value = fillProject(p.url, key.value);
+      if (p.url !== 'custom') endpoint.value = fillProject(presetUrl(p.url, install), key.value);
       if (p.model) model.value = p.model;
       if (!p.url) model.value = '';
       say(msg, p.hint ? L(p.hint) : p.url.includes('{project}') ? L('model.vertex_hint') : '');
@@ -1136,6 +1250,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
 
   const threshold = el('input', { type: 'number', step: 0.05, min: 0.05, max: 1 });
   const minSim = el('input', { type: 'number', step: 0.01, min: 0, max: 1 });
+  const embedWait = el('input', { type: 'number', step: 100, min: 100, max: 5000 });  // NMOS_EMBED_TIMEOUT_MS (K34)
   const topK = el('input', { type: 'number', min: 0, max: 20 });
   const factsLimit = el('input', { type: 'number', min: 0, max: 30 });
   const backfill = el('input', { type: 'number', min: 0, max: 5000 });
@@ -1143,19 +1258,141 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const canonFacts = el('input', { type: 'checkbox' });  // facts read from the canon (ADR 0047)
   settingsView.append(el('div', { class: 'card' },
     el('h2', { text: L('tune.title') }), el('p', { class: 'sub', text: L('tune.sub') }),
-    el('div', { class: 'row' }, field(L('tune.threshold'), threshold), field(L('tune.min_sim'), minSim)),
+    el('div', { class: 'row' }, field(L('tune.threshold'), threshold), field(L('tune.min_sim'), minSim),
+      field(L('tune.embed_wait'), embedWait)),
+    el('p', { class: 'sub', text: L('tune.embed_wait_hint') }),
     el('div', { class: 'row' }, field(L('tune.top_k'), topK), field(L('tune.facts'), factsLimit), field(L('tune.backfill'), backfill)),
     el('div', { class: 'check' }, summaries, el('span', { text: L('tune.summaries') })),
     el('p', { class: 'sub', text: L('tune.summaries_hint') }),
     el('div', { class: 'check' }, canonFacts, el('span', { text: L('tune.canon_facts') })),
     el('p', { class: 'sub', text: L('tune.canon_facts_hint') })));
 
-  const rules = el('textarea', { spellcheck: 'false' });
+  // Status drafts have their own Apply; the general Save never reads or resets these controls.
+  const rules = el('textarea', { id: 'nmos-parser-draft', spellcheck: 'false', 'aria-label': L('rules.draft'),
+    placeholder: L('rules.none') });
+  const parserTarget = el('input', { id: 'nmos-parser-target', list: 'nmos-parser-cards',
+    'aria-label': L('rules.target'), placeholder: L('rules.choose_target') });
+  const parserCards = el('datalist', { id: 'nmos-parser-cards' });
+  const parserActive = el('div', { id: 'nmos-parser-active', class: 'sub', style: 'white-space:pre-line' });
+  const parserStored = el('pre', {});
+  const parserPreview = el('p', { id: 'nmos-parser-preview', class: 'sub' });
+  const parserMessage = el('div', { class: 'msg', role: 'status' });
+  const parserApply = el('button', { id: 'nmos-parser-apply', text: L('rules.apply') });
+  const parserClear = el('button', { text: L('rules.prepare_disable') });
+  const parserFile = el('input', { id: 'nmos-parser-file', type: 'file', accept: '.json,application/json', style: 'display:none' });
+  const parserPick = el('button', { text: L('rules.import') });
+  const parserPreset = el('select', { id: 'nmos-parser-preset', 'aria-label': L('rules.preset') });
+  const parserName = el('input', { id: 'nmos-parser-name', 'aria-label': L('rules.preset_name') });
+  const parserSavePreset = el('button', { id: 'nmos-parser-save-preset', text: L('rules.save_preset') });
+  const parserRemovePreset = el('button', { id: 'nmos-parser-remove-preset', text: L('rules.remove_preset') });
   const example = el('button', { text: L('rules.example') });
-  example.addEventListener('click', () => { rules.value = JSON.stringify(PARSER_EXAMPLE, null, 2); update(); });
+  let parserSupported = false;
+  let parserBusy = false;
+  let parserPresets: ParserPreset[] = [];
+  let appliedDraft = '';
+  let appliedTarget = '';
+  const knownCards = new Set<string>();
+  const parserDirty = () => rules.value !== appliedDraft || parserTarget.value !== appliedTarget;
+
+  function updateParser(): void {
+    const parsed = parserDraft(rules.value);
+    const target = parserTarget.value.trim();
+    parserApply.disabled = parserBusy || !parserSupported || !target || !parsed.ok;
+    parserApply.textContent = L(parsed.ok && parsed.rules.length === 0 ? 'rules.disable' : 'rules.apply');
+    parserSavePreset.disabled = parserBusy || !parserSupported || !parserName.value.trim() || !parsed.ok;
+    parserRemovePreset.disabled = parserBusy || !parserSupported || !parserPreset.value;
+    parserPreview.textContent = !target ? L('rules.choose_target') : !parsed.ok
+      ? L(parsed.error === 'blank' ? 'rules.blank' : parsed.error === 'json' ? 'rules.invalid_json' : 'rules.invalid_shape')
+      : L('rules.preview', { card: target, n: parsed.rules.length });
+  }
+
+  function fillParsers(cfg: ServerConfig): void {
+    parserSupported = cfg.parsers.spec !== undefined && Array.isArray(cfg.parsers.presets);
+    const spec = cfg.parsers.spec ?? cfg.parsers.rules;
+    const bindings = parserBindings(spec);
+    const notes = bindings.cards.map(({ name, count }) => L('rules.binding', { card: name, n: count }));
+    if (bindings.unbound) notes.push(L('rules.unbound', { n: bindings.unbound }));
+    if (!notes.length) notes.push(L('rules.no_active'));
+    if (!parserSupported) notes.push(L('rules.upgrade'));
+    notes.push(...cfg.parsers.errors);
+    parserActive.textContent = notes.join('\n');
+    parserStored.textContent = JSON.stringify(spec ?? { rules: [] }, null, 2);
+    for (const { name } of bindings.cards) knownCards.add(name);
+    parserCards.replaceChildren(...[...knownCards].sort().map((name) => el('option', { value: name })));
+    parserPresets = cfg.parsers.presets ?? [];
+    const selected = parserPreset.value;
+    parserPreset.replaceChildren(el('option', { value: '', text: L('rules.choose_preset') }),
+      ...parserPresets.map((p) => el('option', { value: p.name, text: p.name })));
+    parserPreset.value = parserPresets.some((p) => p.name === selected) ? selected : '';
+    updateParser();
+  }
+
+  parserPick.addEventListener('click', () => parserFile.click());
+  parserFile.addEventListener('change', async () => {
+    const file = parserFile.files?.[0];
+    parserFile.value = '';
+    if (!file) return;
+    try {
+      rules.value = await file.text();
+      parserPreset.value = '';
+      say(parserMessage, L('rules.loaded'));
+      updateParser();
+    } catch (error) { say(parserMessage, errorText(lang, error), 'err'); }
+  });
+  parserPreset.addEventListener('change', () => {
+    const chosen = parserPresets.find((p) => p.name === parserPreset.value);
+    if (chosen) { rules.value = JSON.stringify({ rules: chosen.rules }, null, 2); parserName.value = chosen.name; }
+    updateParser();
+  });
+  for (const control of [rules, parserTarget, parserName]) control.addEventListener('input', updateParser);
+  example.addEventListener('click', () => { rules.value = JSON.stringify(PARSER_EXAMPLE, null, 2); updateParser(); });
+  parserClear.addEventListener('click', () => { rules.value = JSON.stringify({ rules: [] }, null, 2); updateParser(); });
+  parserApply.addEventListener('click', async () => {
+    const parsed = parserDraft(rules.value);
+    const card = parserTarget.value.trim();
+    if (parserBusy || !parserSupported || !card || !parsed.ok) return;
+    const draft = rules.value;
+    const target = parserTarget.value;
+    parserBusy = true; updateParser();
+    try {
+      const cfg = await deps.api<ServerConfig>('PUT', '/v1/parsers/card', { card, rules: parsed.rules });
+      fillParsers(cfg);
+      appliedDraft = draft; appliedTarget = target;
+      say(parserMessage, L('rules.applied', { card, n: parsed.rules.length }), 'ok');
+    } catch (error) { say(parserMessage, errorText(lang, error), 'err'); }
+    finally { parserBusy = false; updateParser(); }
+  });
+  async function savePresets(next: ParserPreset[], selected: string): Promise<void> {
+    if (parserBusy || !parserSupported) return;
+    parserBusy = true; updateParser();
+    try {
+      const cfg = await deps.api<ServerConfig>('PUT', '/v1/config', { parser_presets: next });
+      fillParsers(cfg);
+      parserPreset.value = selected;
+      say(parserMessage, L('rules.preset_saved'), 'ok');
+    } catch (error) { say(parserMessage, errorText(lang, error), 'err'); }
+    finally { parserBusy = false; updateParser(); }
+  }
+  parserSavePreset.addEventListener('click', () => {
+    const parsed = parserDraft(rules.value);
+    const name = parserName.value.trim();
+    if (!parsed.ok || !name) return;
+    void savePresets([...parserPresets.filter((p) => p.name !== name), { name, rules: presetRules(parsed.rules) }], name);
+  });
+  parserRemovePreset.addEventListener('click', () => {
+    const name = parserPreset.value;
+    if (name) void savePresets(parserPresets.filter((p) => p.name !== name), '');
+  });
   settingsView.append(el('div', { class: 'card' },
-    el('h2', { text: L('rules.title') }), el('p', { class: 'sub', text: L('rules.sub') }),
-    rules, el('div', { class: 'btns' }, example)));
+    el('h2', { text: L('rules.title') }), el('p', { class: 'sub', text: L('rules.scope') }), parserActive,
+    el('details', {}, el('summary', { text: L('rules.stored') }), parserStored),
+    field(L('rules.target'), parserTarget), parserCards,
+    el('div', { class: 'btns' }, parserPick, example), parserFile,
+    field(L('rules.preset'), parserPreset), field(L('rules.draft'), rules),
+    el('p', { class: 'sub', text: L('rules.sub') }),
+    field(L('rules.preset_name'), parserName), el('div', { class: 'btns' }, parserSavePreset, parserRemovePreset),
+    parserPreview, el('div', { class: 'btns' }, parserApply, parserClear), parserMessage));
+  updateParser();
 
   // --- settings tab: export (applied at once; ADR 0050) ------------------------------------------
   const exportEmbeddings = el('input', { type: 'checkbox' });
@@ -1168,6 +1405,95 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     el('div', { class: 'check' }, exportEmbeddings, el('span', { text: L('exp.embeddings') })),
     el('div', { class: 'btns' }, exportAll), exportMsg));
 
+  // --- settings tab: restore from an archive (applied at once; PHASE-38) -----------------------
+  const restoreFile = el('input', { type: 'file', accept: '.zip,application/zip', style: 'display:none' });
+  const restorePick = el('button', { text: L('rst.pick') });
+  const restoreMsg = el('div', { class: 'msg' });
+  const restoreSummary = el('div', {});
+  const restoreGo = el('button', { text: L('rst.restore'), style: 'display:none' });
+  const restoreCancel = el('button', { text: L('rst.cancel'), style: 'display:none' });
+  let restoreId: string | null = null;
+  const restoreIdle = (id: string | null) => {
+    restoreId = id;
+    restorePick.disabled = false;
+    restoreGo.style.display = restoreCancel.style.display = id ? '' : 'none';
+    restoreGo.disabled = restoreCancel.disabled = false;
+  };
+  restorePick.addEventListener('click', () => restoreFile.click());
+  restoreFile.addEventListener('change', async () => {
+    const file = restoreFile.files?.[0];
+    restoreFile.value = '';  // picking the same file again fires `change` again
+    if (!file) return;
+    restoreSummary.replaceChildren();
+    restoreIdle(null);
+    // Each chunk is hashed with crypto.subtle, which a page over plain HTTP on another host does not have (H8).
+    if (!globalThis.crypto?.subtle) return say(restoreMsg, L('rst.insecure'), 'err');
+    restorePick.disabled = true;
+    try {
+      const up = await uploadArchive(deps.api, file, (sent, total) => say(restoreMsg, L('rst.uploading', {
+        pct: total ? Math.floor((sent / total) * 100) : 100, sent: (sent / 1_048_576).toFixed(1),
+        total: (total / 1_048_576).toFixed(1) })));
+      say(restoreMsg, L('rst.checking'));
+      await deps.api('POST', `/v1/archive/uploads/${up.id}/check`, {});  // nativeFetch refuses a POST without a body
+      const view = await waitFor(deps.api, up.id, ['checked', 'refused']);
+      if (view.state === 'refused' || !view.summary) {
+        say(restoreMsg, L('rst.refused', { why: view.detail ?? '' }), 'err');
+        restoreIdle(null);
+        return;
+      }
+      showSummary(view.summary);
+      const blocked = view.summary.conversations.some((c) => c.here);
+      say(restoreMsg, blocked ? L('rst.blocked') : '', blocked ? 'err' : 'muted');
+      restoreIdle(up.id);
+      restoreGo.disabled = blocked;
+    } catch (error) {
+      say(restoreMsg, errorText(lang, error), 'err');
+      restoreIdle(null);
+    }
+  });
+  /** What the checked archive holds: its scope, chats (those already here marked), settings and upgrades (Q2, Q5). */
+  function showSummary(s: ArchiveSummary): void {
+    const head = L('rst.summary', { scope: L(s.scope === 'install' ? 'rst.scope_install' : 'rst.scope_chats'),
+      n: s.conversations.length, version: s.nmos_version ?? '?', date: (s.created_at ?? '').slice(0, 10) });
+    const list = el('ul', {}, ...s.conversations.map((c) => el('li', {
+      text: `${c.character ?? L('rst.no_character')} — ${c.chat ?? `${L('rst.no_chat')} (${c.host_chat_ref.slice(0, 8)})`}`
+        + (c.here ? ` (${L('rst.here')})` : '') })));
+    restoreSummary.replaceChildren(el('p', { class: 'sub', text: head }), list,
+      ...(s.settings_added.length ? [el('p', { class: 'sub', text: L('rst.settings', {
+        keys: s.settings_added.map((x) => (x.value !== undefined ? `${x.key} = ${String(x.value)}` : x.key)).join(', ') }) })] : []),
+      ...(s.migrations.length ? [el('p', { class: 'sub', text: L('rst.migrations', { list: s.migrations.join(', ') }) })] : []));
+  }
+  restoreGo.addEventListener('click', async () => {
+    const id = restoreId;
+    if (!id) return;
+    restoreGo.disabled = restoreCancel.disabled = restorePick.disabled = true;
+    say(restoreMsg, L('rst.restoring'));
+    try {
+      await deps.api('POST', `/v1/archive/uploads/${id}/restore`, {});
+      const view = await waitFor(deps.api, id, ['restored', 'failed']);
+      if (view.state === 'restored' && view.result) {
+        say(restoreMsg, L('rst.done', { n: view.result.conversations.length, jobs: view.result.queued_jobs ?? 0 })
+          + (view.detail ? ` ${view.detail}` : ''), 'ok');
+      } else {
+        say(restoreMsg, L('rst.failed', { why: view.detail ?? '' }), 'err');
+      }
+      restoreSummary.replaceChildren();
+    } catch (error) {
+      say(restoreMsg, errorText(lang, error), 'err');
+    }
+    restoreIdle(null);
+  });
+  restoreCancel.addEventListener('click', async () => {
+    const id = restoreId;
+    restoreIdle(null);
+    restoreSummary.replaceChildren();
+    say(restoreMsg, '');
+    if (id) await deps.api('DELETE', `/v1/archive/uploads/${id}`).catch(() => undefined);
+  });
+  settingsView.append(el('div', { class: 'card' },
+    el('h2', { text: L('rst.title') }), el('p', { class: 'sub', text: L('rst.sub') }),
+    el('div', { class: 'btns' }, restorePick, restoreGo, restoreCancel), restoreFile, restoreSummary, restoreMsg));
+
   // --- settings tab: one save bar ---------------------------------------------------------------
   const barText = el('span', { class: 'text muted' });
   const revert = el('button', { text: L('revert') });
@@ -1177,11 +1503,11 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
 
   function values(): FormValues {
     return {
-      conn: { url: url.value, route: route.value, enabled: enabled.checked, reserved: reserved.value, deadline: deadline.value },
+      conn: { url: url.value, route: route.value, enabled: enabled.checked, reserved: reserved.value, deadline: deadline.value,
+        token: token.value },
       llm: llm.values(), emb: emb.values(),
-      tune: { threshold: threshold.value, minSim: minSim.value, topK: topK.value, facts: factsLimit.value, backfill: backfill.value,
-        summaries: summaries.checked, canonFacts: canonFacts.checked },
-      rules: rules.value,
+      tune: { threshold: threshold.value, minSim: minSim.value, embedWait: embedWait.value, topK: topK.value,
+        facts: factsLimit.value, backfill: backfill.value, summaries: summaries.checked, canonFacts: canonFacts.checked },
     };
   }
   let baseline: FormValues = values();
@@ -1205,20 +1531,23 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     enabled.checked = Number(await deps.getArg('disabled')) !== 1;
     reserved.value = String(Number(await deps.getArg('reserved_memory_tokens')) || DEFAULT_RESERVED_TOKENS);
     deadline.value = String(Number(await deps.getArg('deadline_ms')) || DEFAULT_DEADLINE_MS);
+    token.value = (await deps.getArg('auth_token')) || '';
     hudBox.checked = Number(await deps.getArg('hud')) === 1;
   }
 
   function fillServer(cfg: ServerConfig): void {
+    install = cfg.install ?? null;
     llm.fill(cfg.llm); emb.fill(cfg.embeddings);
     threshold.value = String(cfg.recall.threshold);
     minSim.value = String(cfg.recall.vector_min_sim);
+    embedWait.value = cfg.recall.embed_timeout_ms === undefined ? '' : String(cfg.recall.embed_timeout_ms);
+    embedWait.disabled = cfg.recall.embed_timeout_ms === undefined;  // a sidecar older than the setting
     topK.value = String(cfg.recall.top_k);
     factsLimit.value = String(cfg.recall.facts_limit);
     backfill.value = String(cfg.extraction.backfill);
     summaries.checked = cfg.extraction.summaries !== false;
     canonFacts.checked = cfg.extraction.canon_facts !== false;
-    rules.value = cfg.parsers.source === 'ui' ? JSON.stringify(cfg.parsers.rules, null, 2) : '';
-    rules.placeholder = cfg.parsers.source === 'file' ? L('rules.from_file', { n: cfg.parsers.active_rules }) : L('rules.none');
+    fillParsers(cfg);
   }
 
   async function loadAll(): Promise<void> {
@@ -1226,6 +1555,12 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     try { fillServer(await deps.api<ServerConfig>('GET', '/v1/config', undefined, 5000)); } catch { /* the status tab shows why */ }
     baseline = values();
     update();
+    void deps.api<{ host_character_name?: string | null }[]>('GET', '/v1/conversations?host=pocketrisu', undefined, 5000)
+      .then((chats) => {
+        if (!Array.isArray(chats)) return;
+        for (const c of chats) if (c.host_character_name?.trim()) knownCards.add(c.host_character_name.trim());
+        parserCards.replaceChildren(...[...knownCards].sort().map((name) => el('option', { value: name })));
+      }).catch(() => {});
   }
 
   async function saveAll(): Promise<boolean> {
@@ -1234,29 +1569,48 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     save.disabled = true;
     say(barText, L('saving'));
     const v = values();
-    if (d.includes('conn')) {
-      // First, so the server update below already goes to a changed sidecar address.
-      const args = connArgs(v.conn);
-      for (const [k, value] of Object.entries(args)) await deps.setArg(k, value);
-      // Show what was stored: the budget is capped at PANEL_MAX_RESERVED_TOKENS, the deadline kept in range.
-      reserved.value = String(args.reserved_memory_tokens);
-      deadline.value = String(args.deadline_ms);
-      baseline = { ...baseline, conn: values().conn };
-    }
-    const body = configBody(d, v);
-    if (!Object.keys(body).length) { update({ text: L('saved'), kind: 'ok' }); return true; }
+    let connSaved = 0;
+    let connTotal = 0;
+    let connComplete = !d.includes('conn');
     try {
+      if (d.includes('conn')) {
+        // The prior connection's capabilities must not enable status writes to a changed sidecar.
+        parserSupported = false; updateParser();
+        // First, so the server update below already goes to a changed sidecar address.
+        const args = connArgs(v.conn);
+        connTotal = Object.keys(args).length;
+        for (const [k, value] of Object.entries(args)) {
+          await deps.setArg(k, value);
+          connSaved += 1;
+        }
+        connComplete = true;
+        // Show what was stored: the budget is capped at PANEL_MAX_RESERVED_TOKENS, the deadline kept in range.
+        reserved.value = String(args.reserved_memory_tokens);
+        deadline.value = String(args.deadline_ms);
+        baseline = { ...baseline, conn: values().conn };
+      }
+      const body = configBody(d, v);
+      // Said with any save that touches either value; the save itself goes ahead (audit F20).
+      const tight = (d.includes('tune') || d.includes('conn')) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline)
+        ? ` ${L('tune.embed_wait_tight', { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : '';
+      if (!Object.keys(body).length) {
+        // First connection: load its active bindings and capabilities without reopening or applying the draft.
+        fillServer(await deps.api<ServerConfig>('GET', '/v1/config', undefined, 5000));
+        baseline = values();
+        update({ text: L('saved') + tight, kind: tight ? 'warn' : 'ok' });
+        return true;
+      }
       const r = await deps.api<ServerConfig>('PUT', '/v1/config', body);
       fillServer(r);
       baseline = values();
       const parts = [r.queued_jobs ? L('saved_queued', { n: r.queued_jobs }) : L('saved')];
       if (r.queued_jobs) deps.hud.background();
-      if (d.includes('rules') && r.parsers.active_rules) parts.push(L('saved_rules', { n: r.parsers.active_rules }));
-      update({ text: parts.join(' '), kind: 'ok' });
+      update({ text: parts.join(' ') + tight, kind: tight ? 'warn' : 'ok' });
       return true;
     } catch (error) {
       const text = errorText(lang, error);
-      update({ text: d.includes('conn') ? L('conn_saved_server_failed', { e: text }) : text, kind: 'err' });
+      update({ text: !connComplete ? L('conn_save_failed', { n: connSaved, total: connTotal, e: text })
+        : d.includes('conn') ? L('conn_saved_server_failed', { e: text }) : text, kind: 'err' });
       return false;
     }
   }
@@ -1271,21 +1625,27 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     void deps.hide();
   }
   close.addEventListener('click', () => {
-    if (!dirty().length || closing) return shut();
+    if (closing) return;
+    if (!dirty().length && !parserDirty()) return shut();
     closing = true;
     const saveClose = el('button', { class: 'primary', text: L('save_and_close') });
     const discard = el('button', { text: L('discard_and_close') });
     const cancel = el('button', { text: L('cancel') });
-    const restore = () => { closing = false; bar.replaceChildren(barText, revert, save); update(); };
-    saveClose.addEventListener('click', async () => { if (await saveAll()) shut(); else restore(); });
+    const restore = (refresh = true) => { closing = false; bar.replaceChildren(barText, revert, save); if (refresh) update(); };
+    saveClose.addEventListener('click', async () => {
+      saveClose.disabled = true;
+      if (await saveAll()) shut(); else restore(false);
+    });
     discard.addEventListener('click', shut);
-    cancel.addEventListener('click', restore);
+    cancel.addEventListener('click', () => restore());
     select('settings');
-    bar.replaceChildren(el('span', { class: 'text warn', text: L('close_unsaved') }), cancel, discard, saveClose);
+    // A status draft must be applied by its own button, never by Save-and-close.
+    bar.replaceChildren(el('span', { class: 'text warn', text: L(parserDirty() ? 'rules.close_draft' : 'close_unsaved') }),
+      cancel, discard, ...(parserDirty() ? [] : [saveClose]));
   });
 
   language.addEventListener('change', async () => {
-    if (dirty().length) {
+    if (dirty().length || parserDirty()) {
       language.value = lang;
       select('settings');
       update({ text: L('lang_unsaved'), kind: 'warn' });

@@ -1,15 +1,245 @@
 # NMOS Status
 
+## Release v0.4.0 — owner authorized 2026-10-10
+
+The owner requested the main merge, tag, publication and cleanup of integrated PRs/branches.
+PR #291 carries Stage 7, Phases 32–42 and the approved audit corrections; #280 remains excluded.
+The release metadata is 0.4.0, with `packet-v18`, `extract-v16`, `clean-v3` and migrations through 0029.
+The tag workflow must pass CI, four native builds and publication before the release is reported published.
+All pre-1.0 releases are GitHub pre-releases. No future phase is unlocked by this release decision.
+
+The deployed code candidate `adf0baa` passed CI [37941055331](https://github.com/Sallos725/NMOS/actions/runs/37941055331)
+and native [37941055301](https://github.com/Sallos725/NMOS/actions/runs/37941055301): sidecar 1,518 tests on
+Linux x64, macOS and Windows; plugin 237 tests; Linux arm64 build/smoke (no full pytest there).
+The release metadata/build fingerprint change is checked separately on PR #291 and the tag workflow.
+
+6113 runs that candidate with `packet-v18` and the existing card-bound Armor/Items/Weapons watch settings.
+The stopped originals, private database dump and PocketRisu save backup are retained. Deployment checks preserved
+all 11 inspected database table hashes, 423 raw revisions, settings and generation keys. PocketRisu on 6131 is
+1.14.0; the owner confirmed the HTTPS panel connected normally after reload. Its transient null-version error's
+root cause was not established. The nine status-configuration UI checks used isolated PocketRisu 1.13.0.
+
+Final replay: 291/314 recall, 21/24 quotes; authored scenarios 22/22; fresh extraction six positive questions
+and one negative control passed. These are packet checks, not final-answer accuracy. Known remaining misses,
+name-based rule binding and capacity/time bounds are in the 0.4.0 changelog. Fresh host-answer scoring and the
+1.0 two-week stability gate remain open; the release authorization does not turn them into passed tests.
+
+This summary supersedes the earlier candidate, deployment, default-pending and release-authorization notes below;
+those dated notes are retained as history.
+
+GigaTrans original-only derived text and the GT-CTRL button marker are deferred to a follow-up patch by the owner (2026-10-10, AGE-79). The prototype is not adopted; clean-v3 remains unchanged.
+
 ## Current phase
 
+**Phase 42 — source status-window clock: approved 2026-10-10.** The owner asked to correct past-scene time recall before release if feasible and authorized existing measured-data access. Publication is held until the correction passes platform CI. [Scope](phases/PHASE-42.md). Current clock storage works; the source-clock supplement is implemented. Local replay passes with 291/314 recall and 21/24 quotes unchanged; copied Voyage replay preserves original ledger majorities for all 85 requests. Full local suite: 1,528 passed; final focused module: 13 passed, including three subsequently added boundaries. Platform CI runs the combined 1,531-test tree. An existing S06 source-selection fixture failed twice on general CI while Linux/macOS native suites passed; its semantic check now has a test-local scheduling allowance, with product deadlines and dedicated cancellation tests unchanged. Exact runner timing was not logged; a controlled delay reproduced the assertion. [Evidence](perf/phase42-source-clock.md). No date arithmetic or inferred event timestamp is claimed.
+
+**Phase 39 amendment 2 — status configuration UX and required card binding:
+approved by the owner, 2026-10-09.** Blank initial draft, explicit JSON/preset
+selection and Apply to a named card; other cards preserved. Presets remain
+separate from active rules. Unbound legacy rules remain reviewable but inactive;
+existing bound rules keep their behavior. Implementation and local verification are done:
+sidecar 1,518 tests and plugin 237 tests pass, including config rollback and preset archive restore.
+The isolated PocketRisu v1.13.0 panel passed nine real UI checks (desktop Chromium, also a 390 px viewport).
+Updated-head CI and all four native builds passed on `adf0baa`; it is deployed on 6113.
+The current 6113 rules are both bound by name; deployment preserved live settings. Final host-answer checks remain separate. [Scope](phases/PHASE-39.md#amendment-2--explicit-card-bound-status-configuration-owner-2026-10-09).
+
+**Phase 41 — AGE-76 Korean-particle keyword correction: approved 2026-10-09.**
+Phase 39 remains current. The owner approved preserving legacy keyword scores and
+order, then supplementing only free positions within 50, with the original
+word/route budgets. The owner separately selected **packet-v18 as the 0.4.0
+default**; this supersedes older default-pending paragraphs below.
+
+The first candidate was rejected for one recall/two quote regressions. The r2/r3
+correction passed 338 historical probes three times per snapshot: recall
+289 to 291/314, quotes 21/24 unchanged, no new failed majority or forbidden phrase.
+Authored stories improved 11/22 to 22/22 (21 acceptance, one observation), with
+v17 and historical traces unchanged. A separately authorized fresh-model run
+used 9 generative calls/28 embedded texts, USD 0.25171341 conservatively accounted:
+six positive questions improved 4/6 to 6/6; the separate negative-selection
+control stayed valid. These are source-linked packets, not generated answers.
+
+Native macOS exposed two platform issues: locale-dependent CJK word boundaries
+(fixed in r3) and SQL results arriving after their statement timeout. The r4
+admission guard rejects a late supplement while preserving valid legacy hits;
+a whole-route expiry still abstains. All 42 keyword checks pass, including a
+regression that failed before the guard. All 22 authored queries, 66 v17 packets
+and 12 historical packets retain their r3 results. The final r4 historical gate repeats 291/314 recall and 21/24 quotes with no new
+failure or forbidden phrase; all 42 actual-model-data packets remain identical.
+K32 results are unchanged. At `0c39265`, general CI 37934550605 and all four native
+jobs in 37934550887 passed: sidecar 1,502 tests on Linux x64/macOS/Windows,
+plugin 225 tests (arm64 Linux uses build/smoke). This precedes the status-configuration
+amendment above; its newer source needs separate [PR #291 checks](https://github.com/Sallos725/NMOS/pull/291/checks).
+Host evidence remains open.
+
+The bounded design still cannot supplement a full 50-candidate list. Added
+lookups cost time; r4 measured API p95 +23.565 ms at 10k synthetic messages, with zero whole-route
+timeouts in 132 requests.
+Voyage has weakly relevant required context in a changed packet and one unstable
+packet with reduced useful context in r3. All r4 Voyage rounds match the earlier
+r2 majority, but that does not erase the observed instability. No answer oracle exists for those records,
+so hidden/budget compliance is not an accuracy score. [Scope](phases/PHASE-41.md),
+[executed evidence](perf/phase41-keyword-particles.md), ADR 0073. The correction
+is deployed on 6113 at `adf0baa`; fresh host answers and two-week stability remain
+unverified. The current trial install is described above.
+
+**Historical deployment (2026-10-09, 18:44 KST; superseded by `adf0baa` above):** fb095aa sidecar and worker
+now run on 6113 with packet-v18 and Armor/Items/Weapons watch. Fresh private DB
+backup and startup comparison preserved all 11 inspected table hashes, config,
+source revisions and generations. Health and initial worker logs were normal.
+This supersedes older 1e86796/v17 deployment notes below; it is not host answer
+quality or two-week stability evidence. Actual-model synthetic tests on fb095aa
+scored packet review 18/20 with no new v18 regression; AGE-76 remains unresolved.
+
+
+**Phase 39 — Status windows NMOS holds: approved 2026-10-08 (the owner); Q3–Q5 decided as proposed; steps 2–5 done,
+high risk (migration 0029, a packet policy).** Spec `docs/phases/PHASE-39.md`, ADR 0071.
+A `block` rule reads a one-line status bar field by field (`separator`), and a rule can be bound to a card (`card`,
+the chat's character name). On the owner's trial install, read only: every bar of two game-like chats read whole
+(23/23 replies × 23 fields; 6/6 × 9), no key from the story's bracket windows. Step 3: the Inspector draws each key
+over time; `packet-v17` (not the default) answers "레벨 언제 올랐어?" with the key's last changes (replay: 0 of 67
+recorded requests change, `docs/perf/phase39-history.md`). Step 4: a rule's `watch` keys flag changes the reply's
+story does not name (read only on the two chats: 5 flags on inventory and equipment in 23 replies, each real;
+`docs/perf/phase39-flags.md`). Step 5: the anchor was already in place (no packet change). Open for the owner: the
+global default policy. The owner reaffirmed on 2026-10-09 that watch setup was already approved and explicitly
+selected packet-v17 for the 6113 trial install. At 13:50 KST the verified `1e86796` image was deployed there after
+a fresh backup; both services now run it, with schema 0029. The first saved rule now watches `Armor`, `Items` and
+`Weapons`, the exact three keys behind the earlier 16-change/5-flag measurement; the second rule is unchanged.
+The config API rebuilt 974 state observations with identical values and rules version; all 430 raw revisions and
+five model generation keys stayed unchanged, with no new queued jobs. The served plugin is build `4d4a525ed230`;
+a 14:26 KST natural retrieve subsequently recorded that exact plugin fingerprint, packet-v17 and vectors on
+(3,955/4,000 tokens). This confirms the installed plugin reached the sidecar; it is not a scored answer-quality gate.
+Live read-only checks found six current watch flags, matching the Inspector. Repository default remains
+v16. All in `0.4.0` (the owner).
+
+**Historical integrated PR and trial deployment (2026-10-09; superseded above):** PR #291 now targets `main` and includes the contents of
+20 PRs (#266, #272–#279, #281–#291); #280 remains excluded. The deployed runtime commit `1e86796` passed
+sidecar/plugin and all four native CI jobs (37883424269/37883424276). The later documentation HEAD `fc588ec`
+also passed CI (37886118924/37886118946); Linux arm64's actual Smoke step passed (job 113676391801), while its
+full pytest step was skipped. Earlier "builds without smoke" descriptions were inaccurate.
+The later deployment documentation does not change runtime code. Original containers and the fresh database
+dump are retained; no main merge or release tag was made. See the audit record for deployment/rollback evidence.
+
+**Release audit follow-up (2026-10-09, owner authorized all eleven fixes):**
+[causes, corrections and verification](audits/0.4.0-fixes-2026-10-09.md). AGE-65–75 cover source-cluster status,
+worker leases and canon rebuild races, unextracted recall slots and event rest quotas, malformed parser settings,
+panel save failures, labels under a tiny budget, normalization CPU, query HTTP deadlines and idle upload cleanup.
+This candidate changes no schema, extractor/normalizer output, provider payload or global packet default.
+High risk: original data preservation, claim ownership, derived-memory recovery and recall selection. These corrections are now deployed on 6113 at `adf0baa`. Verification boundaries
+are recorded in the linked follow-up; the owner separately authorized release on 2026-10-10.
+
+**Authorized `0.4.0` gate corrections (2026-10-09, candidate branch work):**
+[audit and evidence boundaries](audits/0.4.0-2026-10-09.md). Missing independent fixes from
+#275 (persona part alias), #279 (CI requires its database), #281 (embedding wait setting and deadline warning), and
+#286 (the byte-identical v0.3.0 database fixture) are integrated; #272's favicon was already in the candidate.
+The fixture upgrades from 0028 through the current 0029 migration, checks the new repair kind and migration
+idempotence; no old migration is changed. The query-embedding regression uses events and a logical duration, while
+the separate test keeps the actual timeout check. Scoped correctness fixes also cover the final upload chunk's lost
+acknowledgement, restored state after interrupted normalization, inactive replies affecting supportive-memory rest,
+and an adoption copy whose PostgreSQL cannot be confirmed stopped. High risk: identity, derived-state recovery,
+inactive-source isolation and preserving stored data during adoption. Defaults, watched keys and generations are
+unchanged. Plugin verification: 222 tests, typecheck and actual dist build passed; the fixed snapshot reproduces the
+same dist. Independent focused fix checks: 44 passed, no skips. The synthetic 10,000-message missing-state scan
+visited each candidate once, kept the existing positive and took a median 1000.978 ms (old code skipped the scan;
+0.718 ms); this is not a host latency gate. The isolated sidecar full suite passed 1,316 tests with no skips, failures
+or errors (DB required on dedicated 55439; actual v0.3.0 upgrade included). Current Linux x64 artifact build
+and smoke passed, including 0028→0029 and real cross-drive adoption; this does not prove every OS failure condition.
+The Linux libxml2 pin was corrected to Ubuntu's verified security patch `.14` for both architectures, keeping the
+version guard; arm64 smoke execution is unverified. The pre-hidden candidate `a17963f` subsequently passed sidecar,
+plugin and all four native CI jobs (runs 37879393146/37879393148); the arm64 job builds without smoke. These results
+are for that commit, not the hidden follow-up below. Historical measurements above do not claim current gates passed.
+#280's Ubuntu canary remains excluded. The owner requested a follow-up PR on 2026-10-09; release publication remains pending.
+
+**Known-issue priorities (owner, 2026-10-09):** K45–K47 improvements follow `0.4.0`, with their timing relative to
+`1.0.0` undecided; K48 improvements follow `1.0.0`. K49 keeps the approved iPhone restore exclusion. Additional
+K50 accounting is low priority and unscheduled; the partial-usage explanation remains. See `docs/KNOWN-ISSUES.md`.
+These priorities do not change the packet default or complete the remaining live/device gates. Watch setup is
+approved as recorded above. The owner reported the mobile timeline UI passed on 2026-10-09; a separate desktop
+browser confirmation has not been recorded in this follow-up.
+
+**Phase 40 — AGE-18 / K32 correction (owner, 2026-10-09), beside Phase 39:**
+the owner reversed the brief deferral and includes the question-limited correction in `0.4.0`.
+`packet-v18` is implemented and is now the owner-selected default: at most two matching facts/attributed claims compete between current-query
+and previous-reply mentions; existing event/token limits apply. This is separate from AGE-58's identity repair.
+[Evidence](perf/phase40-persona-questions.md): original 17-probe case majority 9→10 with old flags retained,
+12→14 with explicitly recorded current options, both target questions 3/3. Standard Recall 289/314 and quotes
+21/24 by case majority remain; no newly failed/forbidden case. One quote run was 20/24 and is preserved.
+Voyage 85×3 cached replays had no hidden/budget violation. Focused tests: 157 passed. Full checks belong to
+this candidate's PR #291 CI, not the earlier commit. Synthetic 10k-message p95 was 223–248 ms for v17 and
+225–241 ms for v18; no latency improvement claimed. Reduced live verification and adoption remain open;
+The later owner decision selects repository default v18, and fb095aa/v18 is deployed on 6113; AGE-76 is not yet deployed. The owner also gave positive feedback on AGE-39's timeline; no additional
+device/build details were supplied. AGE-39, AGE-58 and AGE-64 remain pending integration/merge in PR #291.
+
+**Phase 38 — Restore from the panel, while NMOS runs: approved 2026-10-08 (the owner: the phase and a live restore), high
+risk (stored data, an HTTP route that writes the database); Q1–Q7 answered (Q3 amended: chunks for the host's proxy,
+the iPhone not a target); complete 2026-10-08 (the owner's restore of the trial install into a fresh one
+matched the source row for row).** Spec `docs/phases/PHASE-38.md`.
+The panel exports an NMOS Archive but only a command restores one, with the services stopped and only documented for
+Docker, so a bundle user cannot restore at all. Decided: Settings → Restore from an archive…, uploaded in 8 MB chunks of
+base64 in JSON (H23: a request body reaches the sidecar whole on both routes, Chromium and Firefox, up to 64 MB),
+checked and summarized first, then restored with the shared ids' sequences held to the commit (readers continue, writers wait;
+1.6 s at 10,000 messages, `docs/perf/panel-restore.md`)
+with the startup steps run after it. Aimed at `0.4.0`.
+
+**Phase 37 — The bundle's data lives outside the bundle: approved 2026-10-08 (the owner, as proposed; Q6 amended), high
+risk (stored data, upgrades); complete 2026-10-08 (historical #285 at `c662930` green on four targets; the owner's Windows check passed).** Spec `docs/phases/PHASE-37.md`, ADR 0060
+amendment 1. A user lost their database updating 0.2.0 → 0.3.0 (cause unconfirmed: the Docker install cannot drop it; a
+switch to the new bundle starts empty). On Windows and Linux the bundle kept its database in the folder an update
+replaces; the launcher now keeps it in a per-user folder and moves 0.3.0's `data/` there on the first start (a rename on
+one drive; across drives a copy checked file by file and started once; the old folder renamed `data.moved`, never
+deleted), refuses a database in both places, honours `NMOS_DATA_DIR` (relative to the bundle), and on Windows asks for a
+folder when the per-user path is one PostgreSQL cannot open. Unit tests `apps/sidecar/tests/test_native_launcher.py`
+(20, failures injected at each adoption step); the bundle smoke adopts real clusters on each target, and on Windows
+CI asks the Q6 question in the console on a drive without short names (`ci_smoke.py ask`). Locally, a real
+v0.3.0 linux-x64 bundle's data was adopted by the new launcher with its rows and migrations, and the full smoke passed
+on it with the copy across drives (`/dev/shm`) (its version check skipped: v0.3.0 reports 0.0.0, fixed by #269). The owner's
+Windows check (2026-10-08): a real v0.3.0 bundle's data, with a marker row, adopted by `NMOS.exe` into the per-user
+folder, then the bundle folder deleted and a fresh one started on the same data. In `0.4.0`. The current candidate's macOS native run on #290 (`d4c98bd`, run 37800192235/job 113390008153) failed
+one query-embedding timing assertion (1,288 passed, one failed); the historical `c662930` success above remains
+historical. The event-based correction subsequently passed macOS, Windows and Linux x64 native CI at `a17963f`
+(run 37879393148). A later candidate must be judged on its own CI.
+
+**Phase 36 — A name in the message is not a question about everything (`packet-v16`): approved 2026-10-08 (the owner, as
+proposed), a correction phase (AGENTS §7 item 5) beside Phase 34; complete: `packet-v16` the default (the owner; the
+bench 289 of 314 by majority as `packet-v15`; required lines 76 % → 67 % on the trial chat).** Spec
+`docs/phases/PHASE-36.md` (AGE-10), ADR 0070. A message naming a character makes every fact about it required (PHASE-34
+Q1 as built), so it never rests: on the owner's trial chat 27 % of the required tokens were a named character's past
+events and traits the message's words did not touch. `0.4.0` waits for it (the owner).
+
+**Phase 35 — The excerpt lands on what was asked, not on when (`packet-v15`): approved 2026-10-08 (the owner, as
+proposed), a correction phase (AGENTS §7 item 5) beside Phase 34; complete, `packet-v15` the default (the owner, on the
+replay: the bench 289 of 314 against 286, S6 23 of 25 against 21, no case lost); no live run.** Spec
+`docs/phases/PHASE-35.md` (AGE-10), ADR 0069. S6's two missed early-detail cases were found and placed but excerpted
+from the wrong sentence (a history cue's words and one-syllable function words anchored it, and a vector chunk missed
+the answer); `0.4.0` next.
+
+**Phase 34 — Forensic recall, part 2 (Stage 7): what a line is for: approved 2026-10-07 (the owner: every question as
+proposed), steps 2–5 done; `packet-v14` the default on 2026-10-08 (the owner, on the live run: echo of repeated lines
+0.29 → 0.39, no repetition felt; `docs/perf/phase34-rest.md`, ADR 0068), in the default through `packet-v15` and
+`packet-v16` since (ADR 0069, 0070); complete 2026-10-08.** Spec `docs/phases/PHASE-34.md`
+(AGE-10): labels, supportive memory that rests after `rest_after` placements no reply used, and an activation threshold
+for supportive excerpts. **Completion correction, 2026-10-09 (AGE-64):** Q1/Q7 promised `hidden` as the fourth label,
+but it was missing from the original code. On the owner's request, the candidate now records redacted provenance and
+the exclusion reason for candidates withheld by a mode or secret gate, and shows the Inspector's hidden chip.
+These diagnostics never reach the model or affect packet tokens, selection, rest, offered or echo statistics.
+The default remains `packet-v16`; the label applies to v14–v17. See the follow-up evidence in
+`docs/audits/0.4.0-2026-10-09.md`; implementation in a candidate does not mean the running 6113 install was updated.
+The frozen candidate's full sidecar suite passed **1,342 tests, zero skips/failures/errors** in 569.36 seconds on
+dedicated 55439 with the database required, including 26 new hidden regressions. Lead and independent scoped review
+found no unresolved defect. A lexical-only read-only replay of the 6113 copy matched all 84 eligible requests by
+three-run majority (20 changed-prefix exclusions); it contained no hidden candidates and is not a live recall gate.
+
 **Phase 33 — Forensic recall, part 1 (Stage 7): the source turn, quoted: approved 2026-10-07 (the owner: every
-question as proposed), the current phase; step 2 next.** Spec `docs/phases/PHASE-33.md` (AGE-10). Stage 7 is split in two
+question as proposed); steps 2–4 done (the baselines, `docs/perf/phase33-baseline.md`: the quote set 4 of 24 under
+`packet-v12`, the overuse baseline, K44; `packet-v13`, `docs/perf/phase33-replay.md`: the quote set 21 of 24, every bench set
+equal to `packet-v12`, +102 ms at 10,000 messages; the Inspector's source-turn page); complete 2026-10-08 (in the default through `packet-v14`; the reduced live run
+dropped by the owner, Q10 d).** Spec `docs/phases/PHASE-33.md` (AGE-10). Stage 7 is split in two
 (Q0): this phase adds a speech-cue quote route with `<Quote turn speaker>` lines and turn and first anchors (no model
 call), lets turns extraction has not reached keep their excerpts while a chat is caught up, diagnoses the missed
 address-history case by replay, adds the Inspector's source-turn page, and reports the overuse baseline; Phase 34
 (labels and the overuse penalty) follows, then `0.4.0`. Measured by a 24-case synthetic quote set, a zero-call replay
 of the v0.3.0 bench databases and one reduced live run (S6 and the quote set; the cloud cost estimated for the owner
-first). Phase 32 (the Inspector timeline, AGE-39, an exception to R7) is open beside it (#266), held by the owner.
+first). Phase 32 (the Inspector timeline, AGE-39, an exception to R7) is open beside it (#266 and its panel step
+stacked on it), in `0.4.0` with the panel (owner, 2026-10-08).
 
 **Phase 28 — A role that ends, and a name said two ways: approved 2026-10-03, complete (owner, 2026-10-07); step 2 merged (#251, 2026-10-04); step 3: `extract-v16` the default (2026-10-04, ADR 0064 accepted);
 step 4, the live gate: paused after S0main ×3 on `7b7cc14` (memory cases 7, 5, 8 of 10: new roles and first events
@@ -332,8 +562,19 @@ Measured (b) on `1388ea2`: S1 first connection 7/7 and 3/3, no false join, $0.51
 wrong timing outside the declared scenes, the 227 class). Next: the owner's merge decision (step 4). **High risk (AGENTS.md §14)**: extraction order and generations, current versus historical role state,
 identity and provenance.
 
+**Phase 32 — Memory on a time axis: approved 2026-10-05 as an exception to R7; in `0.4.0` with the panel (owner,
+2026-10-08).** Spec `docs/phases/PHASE-32.md` (AGE-39; not a roadmap stage, pulled in by name as Phase 23 was). The browser
+Inspector's character page draws that character's facts, relationships from them and threads as bars over turns, and
+their events as dots, and the conversation page gets one line per character. Owner amendments: Q2 brings the panel in too (step 3,
+high risk: a plugin change to its sanitizer, behind a flag), Q3 adds the mockup's detail column (a short inline script
+in the browser), and Q7 sets the recent window to 25 turns. Step 2 done (the browser Inspector, sidecar only: `timeline.py`, `tests/test_inspector_timeline.py`; the panel's bytes
+checked identical to `main`'s). Step 3 (the panel, **high risk**: the plugin's sanitizer) done after the owner's try and design review (2026-10-06 and
+2026-10-07, the spec's two amendment sections), in review on a draft PR stacked on #266. Step 4: the timings at 10,000 messages measured (criterion 7 met,
+`docs/perf/inspector-timeline.md`); the owner's look open.
+
 **No other phase is current.** Phase 23's final owner check passed on Windows and Mac (2026-10-02); the small
-dashboard Refresh follow-up is recorded below. Stage 7 part 2 (Phase 34) and Stage 8 remain unauthorized.
+dashboard Refresh follow-up is recorded below. Stage 7 part 2 is Phase 34 (complete 2026-10-08); Stage 8 is not
+authorized (after 1.0, R7).
 
 **Phase 27 — The excerpt lands on the answer (`packet-v11`): approved, measured and complete 2026-10-02, not
 released.** Spec `docs/phases/PHASE-27.md` (AGE-31 under AGE-24; a correction found by measurement, not a roadmap
@@ -902,17 +1143,17 @@ live request with Voyage, the settings panel on a real host.
 | Part | Where | State |
 |---|---|---|
 | Host evidence | `docs/HOST-FACTS.md`, `fixtures/host/a14c911-2026-09-22/` | S1–S14 (S13 N/A), Q1–Q8, 0B runtime findings |
-| Architecture | `ARCHITECTURE.md` | H1–H22, D1–D75, O1/O2/O3/O4/O5 resolved |
+| Architecture | `ARCHITECTURE.md` | H1–H23, D1–D81, O1/O2/O3/O4/O5 resolved |
 | Sidecar + worker | `apps/sidecar` (Python 3.12, FastAPI, psycopg 3, httpx) | sync, hybrid recall, state, facts, inspector; `nmos-worker` jobs |
-| Schema | `migrations/0001`–`0028` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode, thread outcome and cause, summaries, owner repairs, canon, canon facts and lock, model-call usage, reveal checks and dropped-fact restore |
+| Schema | `migrations/0001`–`0029` | source layer, state, extraction/jobs, embeddings, config, knowledge, normalized text, projection generations, knowledge scope, conversation labels, turn extraction, conversation delete, append rows, assertion semantics, observation compaction, event salience, assertion participants, conversation persona, owner entity links, packet ledger, conversation memory mode, thread outcome and cause, summaries, owner repairs, canon, canon facts and lock, model-call usage, reveal checks and dropped-fact restore, status-flag dismissal |
 | Plugin | `adapters/pocketrisu-plugin` → `dist/nmos-pocketrisu.js` | gating (D13), manifest, sync, recall injection, fail-open |
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
 | Tests | `apps/sidecar/tests` (754), `adapters/pocketrisu-plugin/test` (193; DOM code under `happy-dom`) | all passing; the M0 real-chat evaluation is `docs/perf/m0-baseline.md` (28 owner-confirmed cases; 9 need memory: 5 before Phase 11, 7 now) and, on a second chat, `docs/perf/m0-sample2.md` (17 cases; 8 of the 13 that need memory); deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k without extraction and embeddings (D24); with both on (15k facts, 15k vectors) 10k takes ≈3.2 s (A-09); K3 on the real host (2026-09-27): rerolls and last-reply swipes stay on the fast path, an edit of an older message at 10k takes 3.6–3.8 s |
-| Known issues | `docs/KNOWN-ISSUES.md` | K1–K43 (K10 resolved; K33–K38 recorded 2026-09-29, K39–K40 in Phase 18, K41 in Phase 19, K42 in Phase 21 and resolved on `main`, K43 in the live gate's S3 on `9947d2c`, 2026-10-04, resolved by `packet-v12`) current through 2026-10-05, each with workaround and tracking (host, Track B stage); resolved limitations listed |
+| Known issues | `docs/KNOWN-ISSUES.md` | K1–K50 (K10, K33, K42 and K43 resolved; K33–K38 recorded 2026-09-29, K39–K40 in Phase 18, K41 in Phase 19, K42 in Phase 21 and resolved in 0.3.0, K43 in the live gate's S3 on `9947d2c`, 2026-10-04, resolved by `packet-v12`; K44 in Phase 33 step 2; K45–K50, recorded 2026-10-09: the limits Phases 33–38 accepted and ADR 0051's uncounted failed calls; K45–K47 improvements follow 0.4.0 with 1.0 timing undecided, K48 follows 1.0.0, K49 retains the approved iPhone scope exclusion, and extra K50 accounting is low priority and unscheduled) current through the `0.4.0` candidate (2026-10-09), each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–7 of the original roadmap, one release each (R7, 2026-10-01: Stage 8 after 1.0, Stage 6 ends with Phase 20, new phases only for Stage 7; R1, R5, R7 decided, R2–R4 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
-| Decisions | `docs/adr/0001`–`0066` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair; Phase 14: canon sources, names from canon, canon facts and lock; NMOS off for one chat; Phase 15: a packet that fills its budget; Phase 16: NMOS Archive; Phase 17: model-call usage; Phase 18: keyword lexical recall, excerpts that fill their length; Phase 19: `extract-v14`; Phase 20: join preview; Phase 21: first cue; Phase 22: reveal checks; Phase 24: name variants; Phase 25: `role_toward`; Phase 23: portable bundles; the query embedded while recall reads (K34); the chunk cap a setting of the projection (K13); Phase 27: `packet-v11`, the excerpt lands on the answer; Phase 28: `extract-v16`, CURRENT ROLES and a name said two ways (the default); Phase 30: first-sight order; Phase 31: `packet-v12`, recall that knows what changed |
-| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-33.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 met (the owner's iPhone check 2026-10-01; the host's alert is K38); 17 met; 18 met (latency measured over the benchmark's questions, owner accepted); 19 met but for `deepseek-v4.1-flash`'s M0 criterion (owner accepted, K41); 20 met; 21 met; 22 met but the paid run's reveal count missed by one (owner accepted); 23 met (owner Windows and Mac checks 2026-10-02; a second start's notice, the worker after a quit and a real sign-in not run in CI, owner accepted); 24 met; 25 met (the paid run's output tokens 43 % above the estimate, owner accepted); 26 stopped (not merged; Stage 6's criterion reworded); 27 complete (2026-10-02; Q1b the keywords anchor and Q5's bound one-sided by the owner on the measurement); 28 approved (2026-10-03) and 29 approved (2026-10-04), step 2 merged (#251); `extract-v16` the default since 2026-10-04 (28 step 3), the live gate next; 30 approved (2026-10-04), complete (#260); 31 complete (2026-10-05; the second reduced live gate met every bar; `packet-v12` the default); 33 approved (2026-10-07), current (Stage 7 part 1) |
+| Decisions | `docs/adr/0001`–`0074` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair; Phase 14: canon sources, names from canon, canon facts and lock; NMOS off for one chat; Phase 15: a packet that fills its budget; Phase 16: NMOS Archive; Phase 17: model-call usage; Phase 18: keyword lexical recall, excerpts that fill their length; Phase 19: `extract-v14`; Phase 20: join preview; Phase 21: first cue; Phase 22: reveal checks; Phase 24: name variants; Phase 25: `role_toward`; Phase 23: portable bundles; the query embedded while recall reads (K34); the chunk cap a setting of the projection (K13); Phase 27: `packet-v11`, the excerpt lands on the answer; Phase 28: `extract-v16`, CURRENT ROLES and a name said two ways (the default); Phase 30: first-sight order; Phase 31: `packet-v12`, recall that knows what changed; Phase 33: `packet-v13`, the words said; Phase 34: `packet-v14`, what a line is for; Phase 35: `packet-v15`, the anchor is what was asked; Phase 36: `packet-v16`, a name is not a question; Phase 39: a status window over time (`packet-v17`, flags); Phase 40: explicit third-person persona questions (`packet-v18`, owner-selected default); Phase 41: bounded particle supplementation (verified for release, host answers open); Phase 42: source status-window clocks (local verification done, platform CI pending) |
+| Phase specs | `docs/phases/PHASE-0.md`–`PHASE-42.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 met (the owner's iPhone check 2026-10-01; the host's alert is K38); 17 met; 18 met (latency measured over the benchmark's questions, owner accepted); 19 met but for `deepseek-v4.1-flash`'s M0 criterion (owner accepted, K41); 20 met; 21 met; 22 met but the paid run's reveal count missed by one (owner accepted); 23 met (owner Windows and Mac checks 2026-10-02; a second start's notice, the worker after a quit and a real sign-in not run in CI, owner accepted); 24 met; 25 met (the paid run's output tokens 43 % above the estimate, owner accepted); 26 stopped (not merged; Stage 6's criterion reworded); 27 complete (2026-10-02; Q1b the keywords anchor and Q5's bound one-sided by the owner on the measurement); 28 approved (2026-10-03) and 29 approved (2026-10-04), step 2 merged (#251); `extract-v16` the default since 2026-10-04 (28 step 3), the live gate next; 30 approved (2026-10-04), complete (#260); 31 complete (2026-10-05; the second reduced live gate met every bar; `packet-v12` the default); 32 approved (2026-10-05, an exception to R7; in `0.4.0`); 33 complete (2026-10-08; Stage 7 part 1; the reduced live run dropped by the owner, Q10 d); 34 complete (2026-10-08; Stage 7 part 2; `packet-v14` the default, in the default through `packet-v16`); 35 complete (2026-10-08; `packet-v15`); 36 complete (2026-10-08; `packet-v16` the default); 37 complete (2026-10-08); 38 complete (2026-10-08); 39 approved (2026-10-08), steps 2–5 done (inherited by v18; 6113 v18/watch applied); 40 approved (2026-10-09), bounded persona-question correction implemented and replayed, default v18 selected, host answer check open; 41 approved (2026-10-09), bounded particle supplementation under amendment 1, verified for release with host answers open; 42 approved (2026-10-10), source-clock supplement verified locally, platform CI pending |
 | Retro | `docs/phases/PHASE-0-RETRO.md` | |
 | Audits | `docs/audits/NMOS-AUDIT-2026-09-26.md` + `-REVIEW.md` | A-01 (ADR 0029, D40), A-02, A-04 fixed in `v0.1.0-beta.20`; A-03, A-05 (ADR 0030), A-06, A-07, A-08, A-10 (verified), A-15 (ADR 0031), A-16 fixed, A-09 measured with deadline warnings, A-12 measured (K27), in `v0.1.0-beta.21`; after it, A-11 fixed (access log), A-13 documented (K28), A-18 documented (K21), A-19 fixed (plugin tests); A-17 is a caution (K15), not a defect; A-12's prompt line and A-14 in `extract-v11`, and A-12's markup half in `clean-v3` (both unreleased) |
 
@@ -1022,7 +1263,8 @@ later deferrals. External project identities and identifying source references a
   for): approved 2026-10-01 (`docs/phases/PHASE-25.md`); the owner chose Q1's alternative, a new predicate
   `role_toward`, over widening `relationship` ("quality before time"), the rest as proposed; the paid run's estimate
   (about 450 calls, ≈3.8M input tokens) is part of the spec; complete 2026-10-01 (449 calls, 3.90M input and 0.57M
-  output tokens, the output above the estimate, owner accepted). Phase 26+ (Stages 7–8): not authorized.
+  output tokens, the output above the estimate, owner accepted). Phase 26+ (Stages 7–8): not authorized then (Stage 7
+  later as Phases 33 and 34, approved 2026-10-07; Stage 8 after 1.0, R7).
 - K26 — decided 2026-09-26: change the estimate (1.5 → 1.2 tokens per non-ASCII character, `packet-v2`,
   ADR 0032, D42); the default reserve stays 600. Raised to 800 on 2026-09-27 (owner; ADR 0035).
 - Release cadence — decided 2026-09-26, revised 2026-09-27: one release per roadmap stage, urgent patches

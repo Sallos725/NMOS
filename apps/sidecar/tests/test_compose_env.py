@@ -12,6 +12,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_ONLY = {"NMOS_DB_PASSWORD", "NMOS_DB_PORT", "NMOS_SIDECAR_BIND", "NMOS_SIDECAR_PORT", "NMOS_VERSION"}
+# the portable launcher's data folder (Phase 37; Docker keeps its data in a volume) and the install kind it reports
+BUNDLE_ONLY = {"NMOS_DATA_DIR", "NMOS_INSTALL"}
 
 
 def service_env(text: str) -> dict[str, str]:
@@ -33,7 +35,7 @@ def anchor_vars(text: str) -> set[str]:
 def documented() -> set[str]:
     names = set(re.findall(r"`(NMOS_\w+)`", (ROOT / "README.md").read_text()))
     names |= set(re.findall(r"^#?\s*(NMOS_\w+)=", (ROOT / ".env.example").read_text(), re.M))
-    return names - COMPOSE_ONLY
+    return names - COMPOSE_ONLY - BUNDLE_ONLY
 
 
 @pytest.mark.parametrize("path", ["docker-compose.yml", "deploy/docker-compose.yml"])

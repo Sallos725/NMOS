@@ -14,9 +14,12 @@ describe('inspector links', () => {
     expect(inspectorApiPath(`/inspector/c/${id}`)).toBe(`/v1/inspector/c/${id}`);
     expect(inspectorApiPath(`/inspector/c/${id}?token=x&lang=en`)).toBe(`/v1/inspector/c/${id}`);
     expect(inspectorApiPath(`/inspector/c/${id}/e/${who}?lang=en`)).toBe(`/v1/inspector/c/${id}/e/${who}`);
+    expect(inspectorApiPath(`/inspector/c/${id}/t/12?lang=en`)).toBe(`/v1/inspector/c/${id}/t/12`);
+    expect(inspectorApiPath(`/inspector/c/${id}/t/0`)).toBe(`/v1/inspector/c/${id}/t/0`);
     for (const href of [null, '', 'https://example.com/inspector', 'javascript:alert(1)', '/inspector/c/../../v1/config',
       '/inspectorx', `/inspector/c/${id}/x`, '//evil/inspector', `/inspector/c/${id}/e/x`, `/inspector/e/${who}`,
-      `/inspector/c/${id}/e/${who}/x`]) {
+      `/inspector/c/${id}/e/${who}/x`, `/inspector/c/${id}/t/-1`, `/inspector/c/${id}/t/01`, `/inspector/c/${id}/t/x`,
+      `/inspector/c/${id}/t/12/x`, `/inspector/c/${id}/t/123456789`, `/inspector/t/3`]) {
       expect(inspectorApiPath(href), String(href)).toBeNull();
     }
   });
@@ -27,6 +30,7 @@ describe('inspectorConversation', () => {
     const conv = '0199a3b2-1c2d-7e3f-8a4b-5c6d7e8f9a0b';
     expect(inspectorConversation(`/v1/inspector/c/${conv}`)).toBe(conv);
     expect(inspectorConversation(`/v1/inspector/c/${conv}/e/${who}`)).toBe(conv);
+    expect(inspectorConversation(`/v1/inspector/c/${conv}/t/7`)).toBe(conv);
     expect(inspectorConversation('/v1/inspector')).toBeNull();
     expect(inspectorConversation(`/v1/inspector/c/${conv}/x`)).toBeNull();
     expect(inspectorConversation('/v1/inspector/c/not-a-uuid')).toBeNull();
@@ -51,6 +55,22 @@ describe('inspector markup', () => {
   });
 });
 
+describe('timeline marks (PHASE-32 step 3)', () => {
+  it('pass a position only as a plain number from 0 to 100, and a mark\'s text only as text', () => {
+    for (const value of ['0', '7', '45.454', '100', '100.0', '99.999']) expect(keepAttribute('data-l', value), value).toBe(true);
+    for (const value of ['', '-5', '100.5', '101', '1e2', '50;background:url(x)', '50%', ' 5', '5.1234', 'calc(5%)']) {
+      expect(keepAttribute('data-l', value), value).toBe(false);
+      expect(keepAttribute('data-w', value), value).toBe(false);
+    }
+    expect(keepAttribute('data-span', '')).toBe(true);
+    expect(keepAttribute('data-span', 'recent')).toBe(true);
+    expect(keepAttribute('data-span', 'all')).toBe(false);
+    expect(keepAttribute('data-v', '<b>harbor</b>')).toBe(true); // shown with textContent only
+    expect(keepAttribute('data-v', 'x'.repeat(401))).toBe(false);
+    for (const name of ['data-x', 'data-repairs', 'style', 'aria-pressed']) expect(keepAttribute(name, '5'), name).toBe(false);
+  });
+});
+
 describe('repair marks (ADR 0044)', () => {
   it('parse a kind, an item and a character or field, and nothing else', () => {
     expect(repairAction(`thread_close:${id}`)).toEqual({ kind: 'thread_close', item: id, extra: null });
@@ -61,6 +81,7 @@ describe('repair marks (ADR 0044)', () => {
     expect(repairAction('fact_correct:42:object')).toEqual({ kind: 'fact_correct', item: '42', extra: 'object' });
     expect(repairAction('fact_lock:42')).toEqual({ kind: 'fact_lock', item: '42', extra: null });  // ADR 0047
     expect(repairAction('fact_restore:42')).toEqual({ kind: 'fact_restore', item: '42', extra: null });  // PHASE-22 Q7
+    expect(repairAction('state_dismiss:0f3a9c2b7d1e4a56')).toEqual({ kind: 'state_dismiss', item: '0f3a9c2b7d1e4a56', extra: null });  // PHASE-39 Q4
     expect(repairAction(`undo:${who}`)?.kind).toBe('undo');
     for (const value of [null, '', 'thread_close', 'thread_close:', 'name_split:1:x', 'drop:1', 'thread_close:xyz',
       'thread_close:1:a:b', 'secret_keep:1:<b>', 'secret_keep:1:"x"', 'THREAD_CLOSE:1', ` thread_close:1`,

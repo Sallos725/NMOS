@@ -28,6 +28,13 @@ class Rule:
     role: str | None = None
     character: str | None = None
     entity_line: re.Pattern[str] | None = None  # block rules: a line like "[하나]" switches the entity
+    # PHASE-39 Q1: block rules: the text between start and end is split by this string instead of by lines, so a
+    # one-line status bar ("[Status:a=1|b=2]", "☆ [A: 1 | B: 2]") is read field by field.
+    separator: str | None = None
+    # PHASE-39 Q2: the rule reads only the chats of this card (the conversation's character name), exactly.
+    card: str | None = None
+    # PHASE-39 Q4: keys whose changes without a cause in the reply are flagged ("Needs attention"); reading is unchanged.
+    watch: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -40,17 +47,63 @@ class RuleSet:
 EMPTY = RuleSet(rules=(), version="none")
 
 
-def compile_rules(spec: Any) -> RuleSet:
-    raw = json.dumps(spec, sort_keys=True, ensure_ascii=False)
-    items = spec.get("rules", []) if isinstance(spec, dict) else []
+WATCH_MAX = 40  # watched keys per rule
+
+
+def _watch_ok(watch: Any) -> bool:
+    return (isinstance(watch, list) and len(watch) <= WATCH_MAX
+            and all(isinstance(k, str) and 0 < len(k.strip()) <= 60 for k in watch))
+
+
+def _version_spec(spec: Any) -> Any:
+    """The rules as reading depends on them: a valid `watch` changes what is flagged, not what is read (PHASE-39 Q4), so
+    it keeps the rules' version and the stored observations. One that is not valid leaves its rule out, so it counts:
+    the rule is read again once it is fixed."""
+    if not isinstance(spec, dict) or not isinstance(spec.get("rules"), list):
+        return spec
+    return {**spec, "rules": [{k: v for k, v in r.items() if k != "watch"}
+                              if isinstance(r, dict) and _watch_ok(r.get("watch", [])) else r for r in spec["rules"]]}
+
+
+def compile_rules(spec: Any, *, template: bool = False) -> RuleSet:
+    if not isinstance(spec, dict):
+        return RuleSet(rules=(), version="none", errors=("parser spec must be an object with a rules list",))
+    if not isinstance(spec.get("rules"), list):
+        return RuleSet(rules=(), version="none", errors=("rules must be a list",))
+    version_spec = _version_spec(spec)
+    # Already-bound documents keep their generation. A legacy global rule no longer contributes observations.
+    if not template and any(isinstance(r, dict) and not r.get("card") for r in spec["rules"]):
+        version_spec = {"card_binding_required": 1, "spec": version_spec}
+    raw = json.dumps(version_spec, sort_keys=True, ensure_ascii=False)
+    items = spec["rules"]
     rules: list[Rule] = []
     errors: list[str] = []
     for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            errors.append(f"rule{i}: rule must be an object")
+            continue
         rid = str(item.get("id") or f"rule{i}")
         try:
             kind = item.get("kind")
+            for name in ("key", "prefix", "role", "character"):
+                if name in item and item[name] is not None and not isinstance(item[name], str):
+                    raise ValueError(f"{name} must be a string")
+            for name in (("pattern",) if kind == "regex" else ("start", "end") if kind == "block" else ()):
+                if not isinstance(item.get(name), str):
+                    raise ValueError(f"{name} must be a regex string")
+            if item.get("entity_line") is not None and not isinstance(item["entity_line"], str):
+                raise ValueError("entity_line must be a regex string")
+            card = item.get("card")
+            if not template and card is None:
+                raise ValueError("card is required; bind this rule to a character name")
+            if card is not None and (not isinstance(card, str) or not card.strip()):
+                raise ValueError("card must be a character name")
+            watch = item.get("watch", [])
+            if not _watch_ok(watch):
+                raise ValueError(f"watch must be a list of at most {WATCH_MAX} keys")
             common = {"id": rid, "kind": kind, "prefix": str(item.get("prefix", "")),
-                      "role": item.get("role"), "character": item.get("character")}
+                      "role": item.get("role"), "character": item.get("character"), "card": card,
+                      "watch": frozenset(k.strip() for k in watch)}
             if kind == "regex":
                 pattern = re.compile(item["pattern"], re.MULTILINE)
                 names = set(pattern.groupindex)
@@ -61,8 +114,15 @@ def compile_rules(spec: Any) -> RuleSet:
                 entity_line = re.compile(item["entity_line"]) if item.get("entity_line") else None
                 if entity_line is not None and "entity" not in entity_line.groupindex:
                     raise ValueError("entity_line needs an 'entity' group")
-                rules.append(Rule(start=re.compile(item["start"], re.MULTILINE),
-                                  end=re.compile(item["end"], re.MULTILINE), entity_line=entity_line, **common))
+                start = re.compile(item["start"], re.MULTILINE)
+                if start.search("") is not None:  # it would start a block everywhere (PHASE-39: a hung sync)
+                    raise ValueError("start must not match empty text")
+                separator = item.get("separator")
+                if separator is not None and (not isinstance(separator, str) or not 1 <= len(separator) <= 8):
+                    raise ValueError("separator must be a string of 1 to 8 characters")
+                rules.append(Rule(start=start,
+                                  end=re.compile(item["end"], re.MULTILINE), entity_line=entity_line,
+                                  separator=separator, **common))
             else:
                 raise ValueError(f"unknown kind {kind!r}")
         except (KeyError, ValueError, re.error) as exc:
@@ -96,15 +156,59 @@ def _key(rule: Rule, key: str, entity: str | None) -> str:
     return f"{entity}.{key}" if entity else key
 
 
-def parse(ruleset: RuleSet, content: str, role: str | None, character: str | None) -> list[tuple[str, str, str]]:
-    """(rule_id, key, value) pairs found in one message. Later matches of a key win.
+def _past(pos: int, end: int) -> int:
+    """Where the next block search starts: after this block, and always further than the last search (a start and an
+    end that match empty text, as a lookahead does, would otherwise search the same place forever)."""
+    return end if end > pos else pos + 1
+
+
+def needs_card(ruleset: RuleSet) -> bool:
+    return any(rule.card for rule in ruleset.rules)
+
+
+def watched(ruleset: RuleSet) -> dict[str, frozenset[str]]:
+    """Each rule's watched keys (PHASE-39 Q4), for the rules that have some."""
+    return {rule.id: rule.watch for rule in ruleset.rules if rule.watch}
+
+
+def _applies(rule: Rule, role: str | None, character: str | None, card: str | None) -> bool:
+    return not ((rule.role and rule.role != role) or (rule.character and rule.character != character)
+                or (rule.card and rule.card != card))
+
+
+def prose(ruleset: RuleSet, content: str, role: str | None, character: str | None, card: str | None = None) -> str:
+    """The message without what the rules read: each regex match and each block from its start to its end mark
+    (PHASE-39 Q4: whether the story itself says what a bar changed)."""
+    spans: list[tuple[int, int]] = []
+    for rule in ruleset.rules:
+        if not _applies(rule, role, character, card):
+            continue
+        if rule.kind == "regex" and rule.pattern:
+            spans += [m.span() for m in rule.pattern.finditer(content)]
+        elif rule.kind == "block" and rule.start and rule.end:
+            pos = 0
+            while (s := rule.start.search(content, pos)) is not None:
+                e = rule.end.search(content, s.end())
+                spans.append((s.start(), e.end() if e else len(content)))
+                pos = _past(pos, e.end() if e else len(content))
+    out, at = [], 0
+    for a, b in sorted(spans):
+        if a > at:
+            out.append(content[at:a])
+        at = max(at, b)
+    out.append(content[at:])
+    return "".join(out)
+
+
+def parse(ruleset: RuleSet, content: str, role: str | None, character: str | None,
+          card: str | None = None) -> list[tuple[str, str, str]]:
+    """(rule_id, key, value) pairs found in one message. Later matches of a key win. `card`: the chat's character
+    name, for rules bound to one card.
 
     Keys are "<entity>.<key>" when a rule captures an entity (sim bots: one card, many characters)."""
     out: dict[str, tuple[str, str, str]] = {}
     for rule in ruleset.rules:
-        if rule.role and rule.role != role:
-            continue
-        if rule.character and rule.character != character:
+        if not _applies(rule, role, character, card):
             continue
         if rule.kind == "regex" and rule.pattern:
             for m in rule.pattern.finditer(content):
@@ -119,8 +223,8 @@ def parse(ruleset: RuleSet, content: str, role: str | None, character: str | Non
                 e = rule.end.search(content, s.end())
                 block = content[s.end(): e.start() if e else len(content)]
                 entity = s.groupdict().get("entity")
-                for line in block.splitlines():
-                    line = _clean(line)
+                for line in (block.split(rule.separator) if rule.separator else block.splitlines()):
+                    line = _clean(line.replace("\n", " ") if rule.separator else line)
                     if rule.entity_line and (em := rule.entity_line.fullmatch(line.strip())):
                         entity = em.group("entity")
                         continue
@@ -128,5 +232,5 @@ def parse(ruleset: RuleSet, content: str, role: str | None, character: str | Non
                     if m:
                         k = _key(rule, m.group("key").strip(), entity)
                         out[k] = (rule.id, k, m.group("value").strip()[:MAX_VALUE])
-                pos = e.end() if e else len(content)
+                pos = _past(pos, e.end() if e else len(content))
     return list(out.values())

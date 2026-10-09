@@ -34,9 +34,9 @@ from uuid import UUID
 
 import psycopg
 
-from . import spans
-from .packet import POLICIES, clean_text
-from .retrieval import RECORDED, RecallOptions, compile_gathered, filled, gather
+from . import overuse, spans
+from .packet import POLICIES, REST_POLICIES, clean_text
+from .retrieval import RECORDED, RecallOptions, compile_gathered, filled, gather, rested
 
 echo, echoed = spans.reuse, spans.reused
 
@@ -93,18 +93,19 @@ def audit(conn: psycopg.Connection, trace_id: UUID) -> dict[str, Any] | None:
         return None
     status, reply = reply_after(conn, t)
     lines = [dict(e) for e in t.get("lines") or []]
-    summary = {"offered": len(lines), "placed": sum(e["placed"] for e in lines), "reply": status}
+    offered = [e for e in lines if e.get("label") != "hidden"]
+    summary = {"offered": len(offered), "placed": sum(e["placed"] for e in offered), "reply": status}
     if reply is not None:
         request = (t.get("query"), t.get("previous_ai"))
-        for e in lines:
+        for e in offered:
             e["echo"] = round(echo(e.get("content") or e.get("text"), reply, request), 3)
             e["echoed"] = e["echo"] > 0
             if e["echoed"] and e["placed"] and (e.get("marks") or {}).get("hidden_from"):
                 e["possible_leak"] = True
         summary.update(
-            placed_echoed=sum(1 for e in lines if e["placed"] and e["echoed"]),
-            unplaced_echoed=sum(1 for e in lines if not e["placed"] and e["echoed"]),
-            possible_leaks=sum(1 for e in lines if e.get("possible_leak")))
+            placed_echoed=sum(1 for e in offered if e["placed"] and e["echoed"]),
+            unplaced_echoed=sum(1 for e in offered if not e["placed"] and e["echoed"]),
+            possible_leaks=sum(1 for e in offered if e.get("possible_leak")))
     return {"trace": str(t["id"]), "policy": t.get("policy"), "budget_tokens": t.get("budget_tokens"),
             "tokens": t["token_estimate"], "summary": summary, "lines": lines}
 
@@ -128,7 +129,7 @@ def _canon_of(t: dict[str, Any]) -> dict[str, Any]:
 
 def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, policy: str | None = None,
            known_at: datetime | None = None, query: str | None = None, budget: int | None = None,
-           projection: str | None = None, **overrides: Any) -> dict[str, Any] | None:
+           projection: str | None = None, recent: list[Any] | None = None, **overrides: Any) -> dict[str, Any] | None:
     """Compile a recorded request again, as of its time, with its own recall options, generations and
     budget; `policy`, `query` (a probe in place of the request's user message, as the request would have sent
     it), `budget` (tokens) and `overrides` (RecallOptions fields) change what is being tested. `options` gives
@@ -155,6 +156,8 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     recorded = {k: v for k, v in (t.get("recall_options") or {}).items() if k in RECORDED}
     recorded.setdefault("canon_key", None)  # a request from before canon facts read none (ADR 0047)
     recorded.setdefault("lexical_keywords", False)  # nor did one from before the keyword route (ADR 0052)
+    recorded.setdefault("source_clock", False)  # PHASE-42: old packets did not attach source clocks
+    recorded.setdefault("keyword_particles", False)  # PHASE-41: preserve historical keyword matching
     recorded.setdefault("first_cue", False)  # nor one from before the first cue (ADR 0056)
     recorded.setdefault("history_marks", False)  # nor one from before history under its marks (ADR 0038 am. 1)
     recorded.setdefault("name_variants", False)  # nor one from before given and romanized names (ADR 0058)
@@ -177,17 +180,20 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     if query is not None:
         query = clean_text(query)  # as the live request normalizes it
         notes.append("query replaced")
+    if recent is None and policy in REST_POLICIES:  # the requests before it, as it read them (PHASE-34 Q5)
+        recent = overuse.recent(conn, t["conversation_id"], t["head_commit_id"], before=t["created_at"],
+                                n=opts.rest_after + 1)
     g = gather(conn, t["head_commit_id"], t["query"] if query is None else query, t["previous_ai"] or "",
                set(t["in_context"] or []), filled(opts, t["budget_tokens"] if budget is None else budget),
                upto=kept, known_at=known_at or t["created_at"],
-               canon_held=t.get("canon_held") or (), vectors_now=other, **_canon_of(t))
+               canon_held=t.get("canon_held") or (), vectors_now=other, recent=recent, **_canon_of(t))
     if opts.embedder is not None and g.vector_note != "on":
         notes.append(f"vectors {g.vector_note}")  # an embedder that failed now cannot reproduce the request
     if budget is not None:
         notes.append("budget changed")
     c = compile_gathered(g, t["budget_tokens"] if budget is None else budget, policy)
     out = {"trace": str(t["id"]), "status": "ok", "policy": policy, "recorded_policy": t["policy"],
-           "text": c.text, "tokens": c.tokens, "lines": c.ledger, "notes": notes,
+           "text": c.text, "tokens": c.tokens, "lines": c.ledger, "notes": notes, "rested": rested(g, c),
            "vectors": g.vector_note if opts.embedder is not None else "off",
            # lexical recall's outcome (PHASE-18): the whole-message and keyword routes' modes, and how many candidates
            # either found; a candidate found by vectors only has neither score
@@ -221,17 +227,19 @@ def compare(conn: psycopg.Connection, trace_ids: list[UUID], options: RecallOpti
             status = next(r["status"] if r else "missing" for r in runs.values() if r is None or r["status"] != "ok")
             skipped[status] = skipped.get(status, 0) + 1
             continue
-        recorded_placed = {_key(e) for e in a["lines"] if e["placed"]} if a else set()
-        echoed = {_key(e) for e in a["lines"] if e["placed"] and e.get("echoed")} if a else set()
+        recorded = [e for e in a["lines"] if e.get("label") != "hidden"] if a else []
+        recorded_placed = {_key(e) for e in recorded if e["placed"]}
+        echoed = {_key(e) for e in recorded if e["placed"] and e.get("echoed")}
         for p, r in runs.items():
             s = per[p]
-            placed = [e for e in r["lines"] if e["placed"]]
+            offered = [e for e in r["lines"] if e.get("label") != "hidden"]
+            placed = [e for e in offered if e["placed"]]
             keys = {_key(e) for e in placed}
             s["packets"] += 1
             s["tokens"] += r["tokens"]
             for e in placed:
                 s["placed"][e["kind"]] = s["placed"].get(e["kind"], 0) + 1
-            if any(e["kind"] == "excerpt" for e in r["lines"]):
+            if any(e["kind"] == "excerpt" for e in offered):
                 s["excerpt_offered"] += 1
                 s["excerpt_placed"] += any(e["kind"] == "excerpt" for e in placed)
             s["echoed_recorded"] += len(echoed)

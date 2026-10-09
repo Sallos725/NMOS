@@ -4,17 +4,22 @@ with `?lang=en`. `embed=True` returns only the body, without the language switch
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import re
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from html import escape
 from typing import Any
 from urllib.parse import quote
 
-from .entities import norm
+from .entities import USER_NAMES, norm
 from .predicates import REGISTRY
 from .repairs import default_outcome, outcomes
 from .facts import STANDING, earlier, first, participant_entities, symmetric
-from . import scene
+from . import scene, timeline
+from .packet import TURN_POLICIES
+from .readmodel import TURN_TRACES
 from .retrieval import CAST_GOALS, cast_facts
 from .summaries import LAG, WINDOW
 
@@ -33,7 +38,7 @@ pre.mono{white-space:pre-wrap;background:var(--chip);padding:8px 10px;border-rad
 .ref{display:block;font-family:ui-monospace,monospace;font-size:11px;color:var(--muted)}
 table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 th{font-weight:600;color:var(--muted);font-size:12px}
-.chip{display:inline-block;padding:0 6px;border-radius:4px;background:var(--chip);font-size:12px}
+.chip{display:inline-block;padding:0 6px;border-radius:4px;background:var(--chip);font-size:12px;white-space:nowrap}
 .wrap{overflow-x:auto}
 .warn{color:#e8590c} .n{color:var(--muted);font-weight:400;font-size:12px}
 .toc,.who{font-size:13px;line-height:1.9;margin:8px 0}
@@ -41,7 +46,7 @@ details>summary{cursor:pointer;list-style:none} details>summary::-webkit-details
 details>summary h2{display:inline-block} details>summary h2::before{content:"\\25B8  ";color:var(--muted)}
 details[open]>summary h2::before{content:"\\25BE  "}
 details.meta{margin:4px 0 0;font-size:12px} details.meta p{margin:4px 0}
-"""
+""" + timeline.STYLE
 
 LANGS = ("ko", "en")
 
@@ -165,11 +170,44 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
                     "Echo = how much of the line's content reappears in the next reply (a surface measure of use)."),
     "h.kind": ("종류", "Kind"), "h.outcome": ("결과", "Outcome"), "h.echo": ("응답 반영", "Echo"),
     "h.placed": ("배치", "Placed"),
-    "lk.state": ("상태", "state"), "lk.thread": ("약속", "thread"), "lk.fact": ("사실", "fact"),
-    "lk.claim": ("주장", "claim"), "lk.excerpt": ("원문", "excerpt"),
+    "lk.source_time": ("원문 시점", "source clock"),
+    "lk.state": ("상태", "state"), "lk.state_history": ("상태 변화", "state history"), "lk.thread": ("약속", "thread"), "lk.fact": ("사실", "fact"),
+    "lk.claim": ("주장", "claim"), "lk.excerpt": ("원문", "excerpt"), "lk.quote": ("인용", "quote"),
+    # what a line is for, and repetition (PHASE-34 Q1, Q7)
+    "lb.required": ("필수", "required"), "lb.supportive": ("보조", "supportive"), "lb.risky": ("위험", "risky"),
+    "lb.hidden": ("숨김", "hidden"),
+    "rest_counts": ("이 요청에서 쉬느라 빠진 보조 줄 {n}개 · 문턱 아래라 빠진 원문 {m}개 (같은 줄이 {k}번 연속 들어갔는데 "
+                    "답변이 쓰지 않으면 다음 2번 쉽니다).",
+                    "This request left out {n} resting supportive lines and {m} excerpts under the threshold (a line "
+                    "placed {k} times in a row that no reply used rests for the next two requests)."),
+    "overuse": ("반복 (최근 요청 {n}개)", "Repetition (latest {n} requests)"), "toc.overuse": ("반복", "Repetition"),
+    "ov.what": ("무엇", "What"), "ov.value": ("값", "Value"),
+    "ov.repeat": ("직전 요청에도 들어간 줄의 비율", "Lines also placed in the request before"),
+    "ov.stale": ("최근 3번 내리 들어간 줄이 차지한 토큰의 비율", "Tokens on lines placed in each of the three before"),
+    "ov.sup_repeat": ("보조 줄 가운데 직전 요청에도 들어간 비율", "Supportive lines also placed in the request before"),
+    "ov.sup_stale": ("보조 줄 토큰 가운데 최근 3번 내리 들어간 비율", "Supportive tokens on lines placed in each of the three before"),
+    "ov.note": ("필수 줄(상태, 장면 인물, 질문이 가리킨 것, 지금까지의 이야기 등)은 매번 들어가는 게 정상입니다. 반복이 "
+                "문제인 것은 보조 줄입니다.",
+                "Required lines (state, the cast, what the question names, the story so far) belong in every packet; "
+                "repetition matters for supportive lines."),
+    # the source-turn page (PHASE-33 Q7)
+    "turn.title": ("턴 {n}", "Turn {n}"), "turn.prev": ("← 턴 {n}", "← Turn {n}"), "turn.next": ("턴 {n} →", "Turn {n} →"),
+    "turn.none": ("이 턴은 지금 헤드에 없습니다.", "This turn is not on the head."),
+    "toc.source": ("원문", "Source"), "toc.made": ("이 턴의 사실", "Facts from this turn"),
+    "toc.used": ("이 턴을 쓴 패킷 줄", "Packet lines that used it"),
+    "turn.source_note": ("NMOS가 읽은 글(정규화한 본문)입니다. 굵은 글씨는 아래 사실의 근거로 확인된 구절입니다.",
+                         "The text NMOS read (normalized). Bold: the words a fact below was checked against."),
+    "turn.no_facts": ("이 세대가 이 턴에서 만든 사실이 없습니다.", "This generation made no facts from this turn."),
+    "turn.generations": ("세대별 추출: {gens}", "Extractions by generation: {gens}"),
+    "turn.stale": ("편집 전 내용", "before an edit"),
+    "turn.no_uses": ("최근 {n}개 요청 가운데 이 턴을 쓴 줄이 없습니다.", "No line from this turn in the latest {n} requests."),
+    "turn.uses_note": ("최근 {n}개 요청 기준, 새것부터.", "The latest {n} requests, newest first."),
+    "h.evidence": ("근거", "Evidence"), "h.assertion": ("사실", "Fact"),
     "lk.summary": ("요약", "summary"), "lk.cast": ("인물 상태", "cast"),
     "pk.placed": ("들어감", "placed"), "pk.budget": ("예산 부족", "no budget"), "pk.state_cap": ("상태 상한", "state cap"),
     "pk.repeats": ("사실과 중복", "repeats a fact"), "pk.restates": ("앞 줄과 같은 내용", "says an earlier line again"),
+    "pk.mode_withheld": ("기억 모드로 제외", "withheld by memory mode"),
+    "pk.secret_gate": ("비밀 보호로 제외", "withheld by secret gate"),
     "fits_at": ("예산 {n}이면 모두", "all at {n}"),
     "pk.short": ("한 문장으로 줄임", "shortened to one sentence"), "pk.cut": ("잘라서 넣음", "cut to fit"),
     "rp.ok": ("있음", "present"), "rp.pending": ("아직 없음", "not yet"), "rp.changed": ("이후 앞부분이 바뀜", "story changed since"),
@@ -182,6 +220,36 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
                  "This character cannot be found. Memory may have been rebuilt, or the name merged with another."),
     "who.empty": ("이 인물에 대해 추출된 내용이 아직 없습니다.", "Nothing has been extracted about this character yet."),
     "now": ("지금 상태 (<Cast>)", "Current state (<Cast>)"), "toc.now": ("지금 상태", "Current state"),
+    # PHASE-32: memory on a time axis
+    "timeline": ("시간축", "Over time"), "toc.timeline": ("시간축", "Over time"),
+    "people": ("등장인물 (시간축)", "Characters over time"), "toc.people": ("등장인물", "Characters"),
+    # PHASE-39 Q3a: a status window's values over time
+    "status": ("상태창 변화", "Status window over time"), "toc.status": ("상태창 변화", "Status over time"),
+    "tl.status": ("상태창", "Status window"), "tl.steady_status": ("바뀐 적 없는 항목 {n}개", "Unchanged fields ({n})"),
+    "tl.turn": ("그 턴 보기", "Open that turn"),
+    "tl.status_cut": ("항목마다 최근 {n}개 값까지만 그렸어요.", "Each field draws its last {n} values."),
+    "tl.all": ("전체", "Whole chat"), "tl.recent": ("최근 {n}턴", "Last {n} turns"),
+    "tl.now": ("현재", "now"), "tl.now_at": ("현재 t{n}", "now t{n}"),
+    "tl.state": ("사실", "Facts"), "tl.relations": ("이 인물에게서 나가는 관계", "Relationships from them"),
+    "tl.threads": ("스레드", "Threads"), "tl.events": ("사건", "Events"), "tl.n_events": ("{n}건", "{n}"),
+    "tl.threads_n": ("스레드 · 열린 {o} · 닫힌 {c}", "Threads · {o} open · {c} closed"),
+    "tl.close": ("닫기", "Close"),
+    "tl.more": ("+{n}개는 아래 표에 있어요", "+{n} more in the tables below"),
+    "tl.row": ("아래 표에서 보기", "Show in the table below"),
+    "tl.canon": ("설정(canon)에서 시작한 값이에요. 이야기가 바꾸면 그쪽이 이겨요.",
+                 "Starts from the setting (canon); the story wins when it says otherwise."),
+    "tl.owner": ("오너가 고친 값이에요.", "The owner's version."),
+    "tl.hint": ("막대나 눈금을 누르면 여기에 자세히 나와요.", "Select a bar or a mark to see it here."),
+    "tl.hint_tap": ("막대나 눈금을 누르면 바로 아래에 자세히 나와요.", "Tap a bar or a mark to see it right below."),
+    "tl.empty": ("이 기간에 그릴 기억이 없어요.", "Nothing to draw in this window."),
+    "tl.cast_note": ("눈금은 그 인물의 기억이 바뀐 턴이에요. 이름을 누르면 그 인물의 시간축으로 가요.",
+                     "A tick is a turn where that character's memory changed. A name opens their timeline."),
+    "tl.others": ("다른 인물 {n}명", "{n} more characters"), "tl.me": ("나", "you"),
+    "tl.steady": ("변하지 않은 사실 {n}개", "Unchanged facts ({n})"),
+    "tl.steady_canon": ("설정(로어북)에서 온 사실 {n}개", "From the setting (lorebook, card): {n}"),
+    "setting_fold": ("설정(로어북·카드)에서만 온 것 {n}개", "Only from the setting (lorebook, card): {n}"),
+    "tl.steady_canon_rel": ("설정(로어북)에서 온 관계 {n}개", "Relationships from the setting: {n}"),
+    "tl.steady_rel": ("변하지 않은 관계 {n}개", "Unchanged relationships ({n})"), "tl.no_cast": ("아직 인물이 없어요.", "No characters yet."),
     "cs.located_in": ("있는 곳", "Place"), "cs.has_status": ("상태", "Condition"),
     "cs.feels_toward": ("페르소나에 대한 감정", "Feeling toward the persona"), "cs.possesses": ("지닌 것", "Carries"),
     "cs.goal": ("열린 목표", "Open goal"), "h.aspect": ("항목", "Aspect"),
@@ -242,6 +310,12 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "at.alias_held": ("확인되지 않아 보류된 별명: {why} (연결하면 한 사람으로 읽음)",
                       "an alias held, not confirmed: {why} (link it to read them as one person)"),
     "at.repair": ("지금 맞는 항목이 없는 수리", "a repair that matches nothing now"),
+    # PHASE-39 Q4: a watched status value changed while the reply's story did not say so
+    "at.state_added": ("상태창에 생긴 항목, 본문에는 없음", "a status item added that the reply never mentions"),
+    "at.state_dropped": ("상태창에서 사라진 항목, 본문에는 없음", "a status item gone that the reply never mentions"),
+    "at.state_number": ("상태창 숫자가 바뀜, 본문에는 없음", "a status number changed without the reply saying so"),
+    "at.state_reverted": ("다시 쓴 답에서 상태창 값이 예전으로 돌아감",
+                          "back to an earlier value in a rerolled, swiped or edited reply"),
     "at.split": ("아직 한 인물인 이름 분리", "a split whose names are still one entity"),
     "at.ambiguous": ("모호한 이름 (연결 안 함)", "an ambiguous name (not linked)"),
     "at.none": ("확인할 것이 없습니다.", "Nothing needs a look."),
@@ -302,6 +376,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "rk.secret_found_out": ("비밀을 알게 됨", "secret found out"), "rk.secret_keep": ("비밀 유지", "secret still kept"),
     "rk.fact_restore": ("사실 복원", "restore a fact"), "rk.fact_retract": ("사실 철회", "retract a fact"), "rk.fact_correct": ("사실 정정", "correct a fact"),
     "rk.name_split": ("이름 분리", "split two names"),
+    "rk.state_dismiss": ("상태창 확인 표시 넘김", "status flag dismissed"),
     "rs.applied": ("적용됨", "applied"), "rs.unmatched": ("지금 맞는 항목 없음", "matches nothing now"),
     "rs.removed": ("되돌림", "taken back"),
     "h.repair": ("수리", "Repair"), "h.target": ("대상", "Target"), "h.value": ("내용", "Value"), "h.made": ("만든 때", "Made"),
@@ -361,13 +436,82 @@ def query(token: str | None, lang: str) -> str:
     return ("?" + "&".join(parts)) if parts else ""
 
 
+def span_of(value: str | None) -> str | None:
+    """The time window a timeline draws (PHASE-32 Q7): `recent`, or the whole chat."""
+    return "recent" if value == "recent" else None
+
+
+def _with_span(q: str, span: str | None) -> str:
+    return q if span is None else (q + "&" if q else "?") + f"span={span}"
+
+
+def _tl_t(lang: str):
+    """The timeline's translator: a stored value without a string of its own shows as itself."""
+    return lambda key: _t(lang, key) if key in T else key.split(".", 1)[-1]
+
+
+def _tl_switch(path: str, q: str, span: str | None, lang: str, panel: bool = False) -> str:
+    """The two time windows (PHASE-32 Q7): links that keep the token and the language, or in the panel plain choices
+    the plugin answers (`data-span`) by asking for the timeline again."""
+    choices = ((None, _t(lang, "tl.all")), ("recent", _t(lang, "tl.recent").format(n=timeline.RECENT)))
+    links = [f"<b>{_v(name)}</b>" if value == span
+             else f"<span class=\"tl-span\" data-span=\"{value or ''}\">{_v(name)}</span>" if panel
+             else f"<a href=\"{path}{_with_span(q, value)}\">{_v(name)}</a>"
+             for value, name in choices]
+    return f"<p class=\"tl-switch\">{' · '.join(links)}</p>"
+
+
+LAZY = "<div class=\"tl-lazy\"></div>"  # where the plugin puts the timeline when its section is opened (PHASE-32 step 3)
+LAZY_STATUS = "<div class=\"tl-lazy tl-status\"></div>"  # the status window's, asked for as `part=status` (PHASE-39)
+
+
+def character_timeline(conv: dict[str, Any], entity_id: str, view: dict[str, Any], lang: str = "ko",
+                       now: int | None = None, span: str | None = None) -> str:
+    """A character's timeline alone, in the panel's form (PHASE-32 step 3): the plugin asks for it when the section
+    opens. Empty when the entity is gone or is not a character."""
+    entity = next((e for e in view["entities"] if e["id"] == entity_id), None)
+    if entity is None or entity["type"] != "character":
+        return ""
+    return timeline.character(_tl_t(lang), entity_id, view["facts"], view.get("threads", []),
+                              {norm(n) for n in entity["names"]}, now, span,
+                              _tl_switch("", "", span, lang, panel=True), panel=True)
+
+
+def conversation_status(hist: dict[str, list[dict[str, Any]]], now: int | None, lang: str = "ko",
+                        span: str | None = None) -> str:
+    """The status window's lanes alone, in the panel's form (PHASE-39 Q3a), asked for when their section opens."""
+    return timeline.status(_tl_t(lang), hist, now, span, _tl_switch("", "", span, lang, panel=True), panel=True)
+
+
+def conversation_cast(conv: dict[str, Any], cast: dict[str, Any], now: int | None, lang: str = "ko",
+                      span: str | None = None) -> str:
+    """The conversation's cast lines alone, in the panel's form (PHASE-32 step 3); a line opens that character's page."""
+    path = f"/inspector/c/{conv['id']}"
+    return timeline.cast(_tl_t(lang), cast["entities"], cast["facts"], cast.get("scene") or [], now, span,
+                         lambda eid: f"{path}/e/{eid}", _tl_switch("", "", span, lang, panel=True), panel=True)
+
+
 def _t(lang: str, key: str) -> str:
     return T[key][0 if lang == "ko" else 1]
 
 
+# The plugin's icon (`adapters/pocketrisu-plugin/src/icon.ts`): a one-stroke N with a memory node. Inline as a data
+# URI, so the tab shows it whatever address the page is opened at (localhost, LAN, tailnet, behind a proxy's path);
+# a favicon has no text colour to inherit, and a tab or a home screen may lay it on white: it brings its own tile, dark
+# like the Inspector by default (a browser that ignores the media query keeps it), light in a light colour scheme.
+FAVICON = ("data:image/svg+xml," + quote(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" '
+    'stroke-linejoin="round"><style>rect{fill:#18181a}path,circle{stroke:#8ea2ff}circle{fill:#8ea2ff}'
+    '@media (prefers-color-scheme:light){rect{fill:#fbfbfa}path,circle{stroke:#3b5bdb}circle{fill:#3b5bdb}}</style>'
+    '<rect width="24" height="24" rx="5.5" stroke="none"/><g transform="translate(2.4 2.4) scale(.8)">'
+    '<path d="M6 19V5l12 14V9.5"/><circle cx="18" cy="5.5" r="1.75"/></g></svg>',
+    safe=" :/=\"'<>;(),.-{}*@"))  # '#' encoded: in a data URI it would start a fragment
+
+
 def page(title: str, body: str, lang: str = "ko") -> str:
     return (f"<!doctype html><html lang=\"{lang}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" "
-            f"content=\"width=device-width,initial-scale=1\"><title>{escape(title)}</title><style>{STYLE}</style>"
+            f"content=\"width=device-width,initial-scale=1\"><title>{escape(title)}</title>"
+            f"<link rel=\"icon\" type=\"image/svg+xml\" href=\"{escape(FAVICON)}\"><style>{STYLE}</style>"
             f"</head><body><main>{body}</main></body></html>")
 
 
@@ -384,10 +528,22 @@ def _facts_kept(timings: dict[str, Any], lang: str = "en") -> str | None:
     return kept + (f" ({_t(lang, 'fits_at').format(n=timings['fits_at'])})" if timings.get("fits_at") else "")
 
 
-def table(headers: list[str], rows: Iterable[list[str]]) -> str:
+def table(headers: list[str], rows: Iterable[list[str]], ids: Iterable[str] | None = None) -> str:
+    """A table; `ids` give its rows an anchor (`id`), outside the panel only (PHASE-32)."""
     head = "".join(f"<th>{escape(h)}</th>" for h in headers)
-    body = "".join("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows)
+    rows = list(rows)
+    marks = [f" id=\"{_v(i)}\"" for i in ids] if ids is not None else [""] * len(rows)
+    body = "".join(f"<tr{mark}>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row, mark in zip(rows, marks))
     return f"<div class=\"wrap\"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
+
+
+def _setting_fold(lang: str, story: str, setting: str, n: int) -> str:
+    """Rows the setting alone gave (lorebook, card; ADR 0047) folded under one line after the story's own (owner,
+    2026-10-07: a lorebook brings many, often in another language, and buried what the story said)."""
+    if not n:
+        return story
+    return (story + f"<details class=\"fold-setting\"><summary class=\"muted\">"
+            f"{_v(_t(lang, 'setting_fold').format(n=n))}</summary>{setting}</details>")
 
 
 # Matches the "status-block" and "hp" rules in config/parsers.example.json.
@@ -610,9 +766,35 @@ def _processed(m: dict[str, Any], lang: str) -> str:
     return (f"<span class=\"chip\">{_t(lang, 'partial')}</span> " if partial else "") + _v(" · ".join(parts))
 
 
+def _named(a: dict[str, Any], side: str) -> str:
+    """The subject or object as the story names its entity ("서하늘" for a lorebook's "Seo Ha-neul": the resolver already
+    joined them, owner 2026-10-07); the spelling as written when there is no entity or it is a persona placeholder."""
+    ref = a.get(f"{side}_entity") or {}
+    name = ref.get("name") if isinstance(ref, dict) else None
+    return name if name and norm(name) not in USER_NAMES else (a.get(side) or "")
+
+
+def _named_cell(a: dict[str, Any], side: str) -> str:
+    shown, written = _named(a, side), a.get(side) or ""
+    return f"<span title=\"{_v(written)}\">{_v(shown)}</span>" if written and shown != written else _v(shown)
+
+
 def fact_line_text(a: dict[str, Any]) -> str:
-    text = f"{a['subject']} {a['predicate'].replace('_', ' ')}" + (f" {a['object']}" if a.get("object") else "")
+    text = f"{_named(a, 'subject')} {a['predicate'].replace('_', ' ')}" + (f" {_named(a, 'object')}" if a.get("object") else "")
     return f"{text}: {a['value']}" if a.get("value") else text
+
+
+def _items_table(items: list[dict[str, Any]], lang: str) -> str:
+    """Item timelines, those only the setting gave (every step from canon, ADR 0047) folded as the facts' are."""
+    def rows(group: list[dict[str, Any]]) -> str:
+        return table([_t(lang, "h.item"), _t(lang, "h.timeline")],
+                     [[_v(i["item"]), " → ".join(_step(h, lang) for h in i["history"])] for i in group])
+
+    setting = [i for i in items if i["history"] and all(h.get("canon") for h in i["history"])]
+    story = [i for i in items if i not in setting]
+    if not setting:
+        return rows(items)
+    return _setting_fold(lang, rows(story) if story else "", rows(setting), len(setting))
 
 
 def _step(h: dict[str, Any], lang: str) -> str:
@@ -626,10 +808,32 @@ def _step(h: dict[str, Any], lang: str) -> str:
             f"<span class=\"chip\" title=\"{_v(outcome)}\">{_v(_t(lang, f'o.{outcome}'))}</span>")
 
 
+# While a page renders, a turn cell links to its source-turn page (PHASE-33 Q7): "/inspector/c/<id>/t/{turn}?…".
+_TURN_HREF: ContextVar[str | None] = ContextVar("turn_href", default=None)
+
+
+@contextmanager
+def turn_links(conv_id: Any, token: str | None, lang: str) -> Iterator[None]:
+    mark = _TURN_HREF.set(f"/inspector/c/{conv_id}/t/{{turn}}{query(token, lang)}")
+    try:
+        yield
+    finally:
+        _TURN_HREF.reset(mark)
+
+
+def turn_link(turn: Any, text: str | None = None) -> str:
+    """A turn index as a link to its page while a page renders; the plain index otherwise."""
+    shown = _v(turn if text is None else text)
+    href = _TURN_HREF.get()
+    if href is None or not isinstance(turn, int) or isinstance(turn, bool):
+        return shown
+    return f"<a href=\"{href.replace('{turn}', str(turn))}\">{shown}</a>"
+
+
 def _turn(a: dict[str, Any]) -> str:
     if a.get("canon"):  # before turn 0 (ADR 0047): the canon text it came from
         return f"<span class=\"chip\" title=\"{_v(a['canon'])}\">canon</span>"
-    return _v(a["turn"] if a.get("turn") is not None else a["position"])
+    return turn_link(a["turn"]) if a.get("turn") is not None else _v(a["position"])
 
 
 def with_participants(view: dict[str, Any]) -> dict[str, Any]:
@@ -691,7 +895,7 @@ def pairs(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
     def said(f: dict[str, Any], directed: bool) -> str:
-        who = f"{f['subject']} → {f['object']}: " if directed else ""
+        who = f"{_named(f, 'subject')} → {_named(f, 'object')}: " if directed else ""
         text = _v(who + (f.get("value") or "")) + f" <span class=\"muted\">{_turn(f)}</span>"
         if f.get("polarity") == "negative":
             text += f" <span class=\"chip\">{_t(lang, 'negated')}</span>"
@@ -702,6 +906,20 @@ def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
                 text += f" <span class=\"muted\">· {_t(lang, key)}: {_v(was.get('value'))} ({_turn(was)})</span>"
         return text
 
+    def setting_only(p: dict[str, Any]) -> bool:
+        said_all = [f for k in ("relationship", "role", "feels", "speech") for f in p[k]]
+        return bool(said_all) and all(f.get("canon") for f in said_all)
+
+    entries = entries[:100]
+    story = [p for p in entries if not setting_only(p)]
+    setting = [p for p in entries if setting_only(p)]
+    if not setting:
+        return _pairs_rows(entries, lang, said)
+    return _setting_fold(lang, _pairs_rows(story, lang, said) if story else "", _pairs_rows(setting, lang, said),
+                         len(setting))
+
+
+def _pairs_rows(entries: list[dict[str, Any]], lang: str, said: Any) -> str:
     return table([_t(lang, k) for k in ("h.pair", "h.relationship", "h.role", "h.feelings", "h.speech")],
                  [[_v(" ↔ ".join(sorted(p["names"].values()))),
                    # a directed value ("엄마") says who is whose only with its direction; a symmetric one needs it
@@ -710,7 +928,7 @@ def _pairs_table(entries: list[dict[str, Any]], lang: str) -> str:
                                for f in p["relationship"]),
                    "<br>".join(said(f, True) for f in p["role"]),
                    "<br>".join(said(f, True) for f in p["feels"]),
-                   "<br>".join(said(f, True) for f in p["speech"])] for p in entries[:100]])
+                   "<br>".join(said(f, True) for f in p["speech"])] for p in entries])
 
 
 def _job_state(job: dict[str, Any], notes: list[str], lang: str) -> str:
@@ -763,13 +981,23 @@ def _summaries_section(view: dict[str, Any], lang: str, gen: dict[str, Any] | No
                          _v((x["summary"] or {}).get("text") or "")] for x in reversed(view["scenes"])][:200])
 
 
-def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> str:
+def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str, anchors: bool = False) -> str:
+    story = [f for f in facts if not f.get("canon") or f.get("owner")]
+    setting = [f for f in facts if f.get("canon") and not f.get("owner")]
+    if not setting:
+        return _facts_rows(facts, active, lang, anchors)
+    return _setting_fold(lang, _facts_rows(story, active, lang, anchors) if story else "",
+                         _facts_rows(setting, active, lang, anchors), len(setting))
+
+
+def _facts_rows(facts: list[dict[str, Any]], active: str | None, lang: str, anchors: bool = False) -> str:
     t = lambda k: _t(lang, k)
     # A fact whose turn the active generation has not compiled yet comes from an older one (ADR 0014).
     older = f" <span class=\"chip\">{t('older_gen')}</span>"
     return table(
         [t(k) for k in ("h.subject", "h.predicate", "h.object", "h.with", "h.knowledge", "h.turn", "h.versions")],
-        [[_v(f["subject"]), chip(lang, "p", f["predicate"]), _v(f.get("object") or f.get("value")) + _cause(f, lang)
+        [[_named_cell(f, "subject"), chip(lang, "p", f["predicate"]),
+          (_named_cell(f, "object") if f.get("object") else _v(f.get("value"))) + _cause(f, lang)
           + ("" if f.get("owner") else _act("fact_retract", f["id"]) + "".join(_act("fact_correct", f["id"], x) for x in _corrections(f)))
           + (_act("fact_lock", f["id"]) if (f.get("canon") or f.get("owner")) and not f.get("locked") else ""),
           _with(f, lang),
@@ -786,7 +1014,7 @@ def _facts_table(facts: list[dict[str, Any]], active: str | None, lang: str) -> 
           + (f" <span class=\"chip\">{t('legacy')}</span>" if f.get("source") is None else "")
           + _salience(f, lang),
           _v(f.get("versions", 1))]
-         for f in facts])
+         for f in facts], ids=[f"a-{f['id']}" for f in facts] if anchors else None)
 
 
 def _salience(f: dict[str, Any], lang: str) -> str:
@@ -798,7 +1026,7 @@ def _salience(f: dict[str, Any], lang: str) -> str:
     return " " + chip(lang, "s", f["salience"])
 
 
-def _threads_table(threads: list[dict[str, Any]], lang: str) -> str:
+def _threads_table(threads: list[dict[str, Any]], lang: str, anchors: bool = False) -> str:
     """Threads with their status and what closed them (PHASE-7, ADR 0019; PHASE-11, ADR 0039), newest first."""
     def closed(t: dict[str, Any]) -> str:
         c = t.get("closed_by")
@@ -821,7 +1049,7 @@ def _threads_table(threads: list[dict[str, Any]], lang: str) -> str:
                       else _act("thread_reopen", t["id"]) if not (t.get("closed_by") or {}).get("owner") else ""),
                    closed(t), _v(", ".join(str(r["turn"] if r.get("turn") is not None else r["position"])
                                           for r in t.get("restated") or []))]
-                  for t in threads[:100]])
+                  for t in threads[:100]], ids=[f"a-{t['id']}" for t in threads[:100]] if anchors else None)
 
 
 def _unmatched_table(unmatched: list[dict[str, Any]], lang: str) -> str:
@@ -928,7 +1156,7 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
         act = _act("undo", owned[c["fact"]]) if c["fact"] in owned else _act("fact_retract", c["fact"])
         rows.append([_v(_t(lang, "at.disputed")), _v(c["text"]), _v(c.get("turn")), act])
     for rep in repairs:
-        if rep.get("removed_at"):
+        if rep.get("removed_at") or rep.get("kind") == "state_dismiss":  # a dismissed flag that is gone is no problem
             continue
         if rep.get("via"):
             rows.append([_v(_t(lang, "at.split")), _repair_target(rep), "", _undo(rep)])
@@ -936,6 +1164,10 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
             rows.append([_v(_t(lang, "at.repair")), _repair_target(rep), "", _undo(rep)])
     for a in view.get("ambiguous", []):
         rows.append([_v(_t(lang, "at.ambiguous")), _v(f"{a['name']}: " + ", ".join(a.get("candidates") or [])), "", ""])
+    for f in view.get("state_flags", []):  # PHASE-39 Q4, each with its one action: dismiss
+        what = f"{f['key']}: {f['old']} → {f['new']}" + (f" ({f['item']})" if f.get("item") else "")
+        rows.append([_v(_t(lang, f"at.state_{f['reason']}")), _v(what), turn_link(f["turn"]) if f.get("turn") is not None
+                     else "", _act("state_dismiss", f["id"])])
     return rows
 
 
@@ -1106,7 +1338,12 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
            canon_history: dict[str, dict[str, Any]] | None = None,
            canon_held: dict[str, dict[str, Any]] | None = None, canon_read: dict[str, dict[str, Any]] | None = None,
            canon_facts: int = 0, dropped: list[dict[str, Any]] | None = None,
-           endings: dict[str, list[dict[str, Any]]] | None = None) -> str:
+           endings: dict[str, list[dict[str, Any]]] | None = None, overuse: dict[str, Any] | None = None,
+           cast: dict[str, Any] | None = None, span: str | None = None, lazy: bool = False,
+           status: dict[str, list[dict[str, Any]]] | None = None, status_lazy: bool = False,
+           state_flags: list[dict[str, Any]] | None = None) -> str:
+    """One conversation. `cast` (the full memory view's facts and entities, and the current scene's character keys)
+    draws a line per character over the turns (PHASE-32), outside the panel only."""
     t = lambda k: _t(lang, k)
     q = query(token, lang)
     name, path = label(conv), f"/inspector/c/{conv['id']}"
@@ -1116,8 +1353,8 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     active = (((coverage or {}).get("extraction") or {}).get("generation") or {}).get("key")
     # What needs a look comes first; logs of the machinery start folded.
     queue = _attention({"threads": threads or [], "unmatched": unmatched or [], "conflicts": conflicts or [],
-                        "ambiguous": ambiguous or [], "dropped": dropped or [], "endings": endings or {}},
-                       repairs or [], last_turn, lang)
+                        "ambiguous": ambiguous or [], "dropped": dropped or [], "endings": endings or {},
+                        "state_flags": state_flags or []}, repairs or [], last_turn, lang)
     parts: list[Section] = [
         ("attention", t("attention"), len(queue),
          table([t(k) for k in ("h.issue", "h.text", "h.turn", "h.repair")], queue) + f"<p class=\"muted\">{t('at.note')}</p>"
@@ -1127,6 +1364,20 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
                                            for s in state])
          if state else f"<p class=\"muted\">{t('no_state')}</p>{_no_state_example(lang)}", True),
         ("coverage", t("coverage"), None, _coverage_section(coverage or {}, lang), True)]
+    if cast is not None and not embed:
+        parts.insert(1, ("people", t("people"), None, timeline.cast(
+            _tl_t(lang), cast["entities"], cast["facts"], cast.get("scene") or [], last_turn, span,
+            lambda eid: f"{path}/e/{eid}{_with_span(q, span)}", _tl_switch(path, q, span, lang)), True))
+    elif lazy and embed:  # a plugin that asked for it fills this when it is opened (PHASE-32 step 3)
+        parts.insert(1, ("people", t("people"), None, LAZY, False))
+    at = next(i for i, part in enumerate(parts) if part[0] == "state") + 1  # PHASE-39 Q3a: after the current state
+    if status and not embed:
+        changed = sum(1 for entries in status.values() if len(entries) > 1)
+        parts.insert(at, ("status", t("status"), changed, timeline.status(
+            _tl_t(lang), status, last_turn, span, _tl_switch(path, q, span, lang),
+            link=lambda turn: f"{path}/t/{turn}{q}"), True))
+    elif status_lazy and embed:  # the panel asks for the lanes when it opens the section (as the cast)
+        parts.insert(at, ("status", t("status"), None, LAZY_STATUS, False))
     if (coverage or {}).get("usage") is not None:
         parts.append(("usage", t("us.title"), None, _usage_section(coverage["usage"], lang), False))
     if conflicts:
@@ -1155,9 +1406,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     if facts:
         parts.append(("facts", t("facts"), len(facts), _facts_table(facts, active, lang), True))
     if items:
-        parts.append(("items", t("items"), len(items), table(
-            [t("h.item"), t("h.timeline")],
-            [[_v(i["item"]), " → ".join(_step(h, lang) for h in i["history"])] for i in items[:100]]), True))
+        parts.append(("items", t("items"), len(items), _items_table(items[:100], lang), True))
     if entities:
         parts.append(("entities", t("entities"), len(entities), table(
             [t(k) for k in ("h.type", "h.names", "h.mentions", "h.alias_turns", "h.owner_links")],
@@ -1174,6 +1423,9 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     if packet and packet.get("lines"):
         parts.append(("packet", t("packet"), sum(e["placed"] for e in packet["lines"]),
                       _packet_section(packet, traces[0] if traces else {}, lang), True))
+    if overuse and overuse.get("requests", 0) >= 4:
+        parts.append(("overuse", t("overuse").format(n=overuse["requests"]), None, _overuse_section(overuse, lang),
+                      False))
     parts.append(("retrievals", t("retrievals"), len(traces), table(
         [t(k) for k in ("h.when", "h.query", "h.fresh", "h.cand", "h.sel", "h.in_ctx", "h.facts_kept", "h.placed",
                         "h.tokens")] + ["ms"],
@@ -1187,7 +1439,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
          for c in commits]), False))
     parts.append(("members", t("members"), len(members), table(
         [t(k) for k in ("h.position", "h.turn", "h.role", "h.lifecycle", "h.disabled", "h.processed", "h.text")],
-        [[_v(m["position"]), _v(m.get("turn")), _v(m["role"]), chip(lang, "l", m["lifecycle"]),
+        [[_v(m["position"]), turn_link(m.get("turn")), _v(m["role"]), chip(lang, "l", m["lifecycle"]),
           _v(m["disabled"] or ""), _processed(m, lang), _v(m["preview"]) + ("…" if m["length"] > 240 else "")]
          for m in members]), False))
     body = head + sections(lang, parts)
@@ -1198,6 +1450,17 @@ def _placed(trace: dict[str, Any], lang: str) -> str:
     """What a request's packet held by kind (ADR 0027), e.g. "사실 6 · 원문 1"; empty before the ledger."""
     placed = (trace.get("latency_ms") or {}).get("placed") or {}
     return _v(" · ".join(f"{_t(lang, f'lk.{k}')} {n}" for k, n in placed.items() if n))
+
+
+def _overuse_section(o: dict[str, Any], lang: str) -> str:
+    """The chat's repetition over its latest requests (PHASE-34 Q7): the overuse report's placement numbers."""
+    t = lambda k: _t(lang, k)
+    pct = lambda x: "—" if x is None else f"{round(x * 100)}%"
+    rows = [[_v(t("ov.repeat")), _v(pct(o.get("repeat_share")))], [_v(t("ov.stale")), _v(pct(o.get("stale_token_share")))]]
+    if "supportive_repeat_share" in o:
+        rows += [[_v(t("ov.sup_repeat")), _v(pct(o.get("supportive_repeat_share")))],
+                 [_v(t("ov.sup_stale")), _v(pct(o.get("supportive_stale_token_share")))]]
+    return table([t("ov.what"), t("ov.value")], rows) + f"<p class=\"muted\">{_v(t('ov.note'))}</p>"
 
 
 def _packet_section(packet: dict[str, Any], trace: dict[str, Any], lang: str) -> str:
@@ -1216,7 +1479,11 @@ def _packet_section(packet: dict[str, Any], trace: dict[str, Any], lang: str) ->
         if e.get("possible_leak"):
             echo += f" <span class=\"warn\">{_v(t('leak'))}</span>"
         kind = chip(lang, "lk", e["kind"]) + (f" {chip(lang, 'lk', 'cast')}" if e.get("section") == "cast" else "")
-        rows.append([kind, _v(e.get("turn")), _v(e.get("text")), outcome, _v(e.get("tok")), echo])
+        if e.get("label"):  # packet-v14 (PHASE-34 Q1)
+            kind += f" {chip(lang, 'lb', e['label'])}"
+        by_turn = packet.get("policy") in TURN_POLICIES  # the ledger's turn is the message's turn (ADR 0041)
+        rows.append([kind, turn_link(e.get("turn")) if by_turn else _v(e.get("turn")), _v(e.get("text")), outcome,
+                     _v(e.get("tok")), echo])
     timings, options = trace.get("latency_ms") or {}, trace.get("recall_options") or {}
     scene = ""
     if "scene_cast" in timings:  # recorded since packet-v3 (ADR 0034) and the memory mode (ADR 0035)
@@ -1226,6 +1493,10 @@ def _packet_section(packet: dict[str, Any], trace: dict[str, Any], lang: str) ->
             mode.append(t("mode.withheld").format(n=timings["memory_mode_withheld"]))
         scene = (f"<p class=\"muted\">{_v(t('scene').format(cast=', '.join(timings['scene_cast']) or '—',
                                                           mode=' · '.join(mode) or t('mode.default')))}</p>")
+    if "rested" in timings:  # packet-v14 (PHASE-34 Q3, Q4)
+        counts = t("rest_counts").format(n=timings.get("rested") or 0, m=timings.get("below_floor") or 0,
+                                         k=options.get("rest_after") or 2)
+        scene += f"<p class=\"muted\">{_v(counts)}</p>"
     return (f"<p class=\"muted\">{intro}</p>" + scene
             + table([t(k) for k in ("h.kind", "h.turn", "h.text", "h.outcome", "h.tokens", "h.echo")], rows)
             + f"<p class=\"muted\">{_v(t('packet_echo'))}</p>")
@@ -1253,7 +1524,8 @@ def _cast_state(view: dict[str, Any], entity_id: str, r: Any, lang: str) -> str:
 
 
 def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[str, Any]]], token: str | None,
-              active: str | None = None, lang: str = "ko", embed: bool = False) -> str:
+              active: str | None = None, lang: str = "ko", embed: bool = False, now: int | None = None,
+              span: str | None = None, lazy: bool = False) -> str:
     """One character's side of the conversation: what is true of them, what they hold, know and claim.
 
     Read-only regrouping of the same memory view as the detail page; it changes nothing the packet uses.
@@ -1307,24 +1579,31 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
         [t("h.type"), t("h.names"), t("h.mentions"), t("h.alias_turns"), t("h.owner_links")],
         [[chip(lang, "e", entity["type"]), _v(" · ".join(entity["names"])), _v(entity["mentions"]),
           _v(", ".join(str(a["turn"]) for a in entity["aliases"])), _owner_links(entity)]]), True)]
+    if not embed and entity["type"] == "character":  # PHASE-32
+        parts.append(("timeline", t("timeline"), None, timeline.character(
+            _tl_t(lang), entity_id, facts, view.get("threads", []), names, now, span,
+            _tl_switch(f"{conv_path}/e/{entity_id}", q, span, lang)), True))
+    elif lazy and entity["type"] == "character":  # a plugin that asked for it fills this when it is opened
+        parts.append(("timeline", t("timeline"), None, LAZY, False))
     if (r := view.get("resolution")) is not None and entity["type"] == "character" \
             and entity_id != scene.key(r, scene.PERSONA):
         parts.append(("now", _v(t("now")), None, _cast_state(view, entity_id, r, lang), True))
     if conflicts:
         parts.append(("conflicts", t("conflicts"), len(conflicts), _conflicts_table(conflicts, lang), True))
     if threads:
-        parts.append(("threads", t("threads"), len(threads), _threads_table(threads, lang), True))
+        parts.append(("threads", t("threads"), len(threads), _threads_table(threads, lang, anchors=not embed), True))
     if mine_pairs := [p for p in pairs(facts) if entity_id in p["ids"]]:
         parts.append(("pairs", t("pairs"), len(mine_pairs), _pairs_table(mine_pairs, lang), True))
     if held:
         parts.append(("held", t("held"), len(held), table(
             [t("h.item"), t("h.turn"), t("h.timeline")],
-            [[_v(f["object"]), _turn(f), " → ".join(_step(h, lang) for h in f.get("history") or [])] for f in held]),
-            True))
+            [[_v(f["object"]), _turn(f), " → ".join(_step(h, lang) for h in f.get("history") or [])] for f in held],
+            ids=None if embed else [f"a-{f['id']}" for f in held]), True))
     if about:
-        parts.append(("about", t("about"), len(about), _facts_table(about, active, lang), True))
+        parts.append(("about", t("about"), len(about), _facts_table(about, active, lang, anchors=not embed), True))
     if takes_part:
-        parts.append(("takes_part", t("takes_part"), len(takes_part), _facts_table(takes_part, active, lang), True))
+        parts.append(("takes_part", t("takes_part"), len(takes_part),
+                      _facts_table(takes_part, active, lang, anchors=not embed), True))
     if knows:
         parts.append(("knows", t("knows"), len(knows), knowledge(knows), True))
     if hidden:
@@ -1343,4 +1622,80 @@ def character(conv: dict[str, Any], entity_id: str, view: dict[str, list[dict[st
     body = head + sections(lang, parts)
     if len(parts) == 1:
         body += f"<p class=\"muted\">{t('who.empty')}</p>"
+    return body if embed else page(f"NMOS · {title}", body, lang)
+
+
+def _marked(text: str, spans: list[str]) -> str:
+    """The text escaped, with every occurrence of the evidence spans in bold and line breaks kept. An evidence quote
+    the extractor elided ("추오월은… 붓 한 자루를 …") is looked for piece by piece, pieces of 6 characters or more."""
+    found: list[tuple[int, int]] = []
+    pieces = {piece.strip(" \"'“”") for x in spans if x for piece in re.split(r"…|\.\.\.", x)}
+    for span in {x for x in pieces if len(x) >= 6}:
+        start = text.find(span)
+        while start >= 0:
+            found.append((start, start + len(span)))
+            start = text.find(span, start + 1)
+    merged: list[list[int]] = []
+    for a, b in sorted(found):
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    out, at = [], 0
+    for a, b in merged:
+        out += [_v(text[at:a]), f"<b class=\"hl\">{_v(text[a:b])}</b>"]
+        at = b
+    out.append(_v(text[at:]))
+    return "".join(out).replace("\n", "<br>")
+
+
+def source_turn(conv: dict[str, Any], turn: int, messages: list[dict[str, Any]], made: list[dict[str, Any]],
+                generations: list[dict[str, Any]], uses: list[dict[str, Any]], bounds: tuple[int | None, int | None],
+                token: str | None, lang: str = "ko", embed: bool = False, active: str | None = None) -> str:
+    """One turn as the source of memory (PHASE-33 Q7): the text NMOS read, with the words its facts were checked
+    against in bold; what the active generation made of it (current, superseded or ended; the other generations
+    counted); the packet lines of recent requests that came from it; and the turns either side. Read-only."""
+    t = lambda k: _t(lang, k)
+    q = query(token, lang)
+    conv_path = f"/inspector/c/{conv['id']}"
+    title = t("turn.title").format(n=turn)
+    lo, hi = bounds
+    nav = []
+    with turn_links(conv["id"], token, lang):
+        if lo is not None and turn - 1 >= lo:
+            nav.append(turn_link(turn - 1, t("turn.prev").format(n=turn - 1)))
+        if hi is not None and turn + 1 <= hi:
+            nav.append(turn_link(turn + 1, t("turn.next").format(n=turn + 1)))
+        head = (f"<div class=\"top\"><p><a href=\"{conv_path}{q}\">← {_v(label(conv))}</a></p>"
+                f"{'' if embed else _lang_switch(f'{conv_path}/t/{turn}', token, lang)}</div>"
+                f"<h1>{_v(title)}</h1>" + (f"<p>{' · '.join(nav)}</p>" if nav else ""))
+        if not messages:
+            body = head + f"<p class=\"muted\">{t('turn.none')}</p>"
+            return body if embed else page(f"NMOS · {title}", body, lang)
+        evidence = [a.get("evidence") or "" for a in made]
+        source = "".join(
+            f"<p><span class=\"chip\">{_v(m.get('name') or m.get('role') or '?')}</span> "
+            f"<span class=\"muted\">#{_v(m['position'])}</span></p><p>{_marked(m.get('text') or '', evidence)}</p>"
+            for m in messages)
+        source += f"<p class=\"muted\">{_v(t('turn.source_note'))}</p>"
+        rows = [[chip(lang, "o", a.get("outcome") or "current"), _v(fact_line_text(a)), _v(a.get("evidence") or "")]
+                for a in made]
+        facts_body = (table([t("h.outcome"), t("h.assertion"), t("h.evidence")], rows) if rows
+                      else f"<p class=\"muted\">{_v(t('turn.no_facts'))}</p>")
+        if generations:
+            gens = ", ".join(f"{g['extractor_key'][:20]}{' ✓' if g['extractor_key'] == active else ''} "
+                             f"{g['assertions']}" + ("" if g.get("current_window") else f" ({t('turn.stale')})")
+                             for g in generations)
+            facts_body += f"<p class=\"muted\">{_v(t('turn.generations').format(gens=gens))}</p>"
+        if uses:
+            used = table([t("h.when"), t("h.kind"), t("h.outcome"), t("h.text")],
+                         [[timestamp(e.get("created_at")), chip(lang, "lk", e.get("kind")), chip(lang, "pk", e.get("why")),
+                           _v(e.get("text"))] for e in uses[:50]])
+            used += f"<p class=\"muted\">{_v(t('turn.uses_note').format(n=TURN_TRACES))}</p>"
+        else:
+            used = f"<p class=\"muted\">{_v(t('turn.no_uses').format(n=TURN_TRACES))}</p>"
+        parts: list[Section] = [("source", t("toc.source"), len(messages), source, True),
+                                ("made", t("toc.made"), len(made), facts_body, True),
+                                ("used", t("toc.used"), len(uses), used, True)]
+        body = head + sections(lang, parts)
     return body if embed else page(f"NMOS · {title}", body, lang)

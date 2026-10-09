@@ -1,0 +1,513 @@
+{
+  "version": 1,
+  "authored_before_candidate": true,
+  "synthetic_model_calls": 0,
+  "purpose": "Independent adversarial constructed stories; positive recall coverage, preservation guards, and explicitly nongating pronoun extension. Assertions and similarities are authored fixtures, not model measurements.",
+  "cases": [
+    {
+      "id": "S01",
+      "category": "topic 은 to subject 이",
+      "provenance": "constructed deterministic API fixture; not model/host evidence",
+      "messages": [
+        "낡은 수첩을 펼쳤다.",
+        "송태준은 동전 주머니를 묶었다.",
+        "다음 페이지로 넘어갔다.",
+        "창밖으로 구름이 지나갔다.",
+        "마지막 페이지를 확인했다.",
+        "송태준, 백나래의 이름이 명단 끝에 적혀 있었다."
+      ],
+      "answer_index": 1,
+      "queries": [
+        {
+          "id": "S01-a",
+          "query": "송태준이 묶은 것은 무엇이었지?",
+          "expected_quote": "송태준은 동전 주머니를 묶었다.",
+          "answer_index": 1,
+          "expected": "associated_source_placed"
+        },
+        {
+          "id": "S01-b",
+          "query": "하루의 정리가 끝났다. 송태준이 묶은 것은 뭐였지?",
+          "expected_quote": "송태준은 동전 주머니를 묶었다.",
+          "answer_index": 1,
+          "expected": "associated_source_placed"
+        }
+      ],
+      "seed_assertions": [],
+      "persona_name": null,
+      "vector_similarities": {
+        "1": 0.45,
+        "3": 0.01,
+        "5": 0.8
+      }
+    },
+    {
+      "id": "S02",
+      "category": "topic 는 to subject 가; two-syllable name",
+      "provenance": "constructed deterministic API fixture; not model/host evidence",
+      "messages": [
+        "낡은 수첩을 펼쳤다.",
+        "지우는 유리 접시를 닦았다.",
+        "다음 페이지로 넘어갔다.",
+        "창밖으로 구름이 지나갔다.",
+        "마지막 페이지를 확인했다.",
+        "지우, 세린의 이름이 목록 위에 있었다."
+      ],
+      "answer_index": 1,
+      "queries": [
+        {
+          "id": "S02-a",
+          "query": "지우가 닦은 것은 무엇이었지?",
+          "expected_quote": "지우는 유리 접시를 닦았다.",
+          "answer_index": 1,
+          "expected": "associated_source_placed"
+        }
+      ],
+      "seed_assertions": [],
+      "persona_name": null,
+      "vector_similarities": {
+        "1": 0.45,
+        "3": 0.01,
+        "5": 0.8
+      }
+    },
+    {
+      "id": "S03",
+      "category": "object 을 를 and actor association",
+      "provenance": "constructed deterministic API fixture; not model/host evidence",
+      "messages": [
+        "낡은 수첩을 펼쳤다.",
+        "문하린은 오태경을 현관에서 기다렸다.",
+        "다음 페이지로 넘어갔다.",
+        "오태경은 이수아를 서점에서 기다렸다.",
+        "마지막 페이지를 확인했다.",
+        "문하린, 오태경의 이름이 출석부에 있었다."
+      ],
+      "answer_index": 1,
+      "queries": [
+        {
+          "id": "S03-a",
+          "query": "오태경을 기다린 사람은 누구였지?",
+          "expected_quote": "문하린은 오태경을 현관에서 기다렸다.",
+          "answer_index": 1,
+          "expected": "associated_source_placed"
+        },
+        {
+          "id": "S03-b",
+          "query": "문하린이 기다린 사람은 누구였지?",
+          "expected_quote": "문하린은 오태경을 현관에서 기다렸다.",
+          "answer_index": 1,
+          "expected": "associated_source_placed"
+        }
+      ],
+      "seed_assertions": [],
+      "persona_name": null,
+      "vector_similarities": {
+        "1": 0.45,
+        "3": 0.55,
+        "5": 0.8
+      }
+    },
+    {
+      "id": "S04",
+      "category": "recipient 에게 한테",
+      "provenance": "constructed deterministic API fixture; not model/host evidence",
+      "messages": [
+        "낡은 수첩을 펼쳤다.",
+        "최다온에게 남보라가 호박색 봉투를 건넸다.",
+        "다음 페이지로 넘어갔다.",
+        "창밖으로 구름이 지나갔다.",
+        "마지막 페이지를 확인했다.",
+        "최다온, 남보라의 이름이 표지에 남아 있었다."
+      ],
+      "answer_index": 1,
+      "queries": [
+        {
+          "id": "S04-a",
+          "query": "최다온한테 건넨 것은 무엇이었지?",
+          "expected_quote": "최다온에게 남보라가 호박색 봉투를 건넸다.",
+          "answer_index": 1,
+          "expected": "associated_source_placed"
+        },
+        {
+          "id": "S04-b",
+          "query": "남보라가 최다온에게 건넨 것은 무엇이었지?",
+          "expected_quote": "최다온에게 남보라가 호박색 봉투를 건넸다.",
+          "answer_index": 1,
+          "expected": "associated_source_placed"
+        }
+      ],
+      "seed_assertions": [],
+      "persona_name": null,
+      "vector_similarities": {
+        "1": 0.45,
+        "3": 0.01,
+        "5": 0.8
+      }
+    },
+    {
+      "id": "S05",
+      "category": "ambiguous prefix 민서 versus 민서연",
+      "provenance": "constructed deterministic API fixture; not model/host evidence",
+      "messages": [
+        "낡은 수첩을 펼쳤다.",
+        "민서는 남색 리본을 받았다.",
+        "다음 페이지로 넘어갔다.",
+        "민서연은 황금 메달을 받았다.",
+        "마지막 페이지를 확인했다.",
+        "민서, 민서연의 이름이 시상 명단에 나란히 있었다."
+      ],
+      "answer_index": 1,
+      "queries": [
+        {
+          "id": "S05-a",
+          "query": "민서가 받은 것은 무엇이었지?",
+          "expected_quote": "민서는 남색 리본을 받았다.",
+          "answer_index": 1,
+          "expected": "associated_source_placed",
+          "forbidden_associations": [
+            "민서가 황금 메달",
+            "민서는 황금 메달"
+          ]
+        }
+      ],
+      "seed_assertions": [],
+      "persona_name": null,
+      "vector_similarities": {
+        "1": 0.45,
+        "3": 0.55,
+        "5": 0.8
+      }
+    },
+    {
+      "id": "S06",
+      "category": "same derived given name different full names",
+      "provenance": "constructed deterministic API fixture; not model/host evidence",
+      "messages": [
+        "낡은 수첩을 펼쳤다.",
+        "김서윤은 철제 상자를 열었다.",
+        "다음 페이지로 넘어갔다.",
+        "한서윤은 나무 서랍을 열었다.",
+        "마지막 페이지를 확인했다.",
+        "김서윤, 한서윤의 이름이 출석부에 있었다."
+      ],
+      "answer_index": 1,
+      "queries": [
+        {
+          "id": "S06-a",
+          "query": "김서윤이 연 것은 무엇이었지?",
+          "expected_quote": "김서윤은 철제 상자를 열었다.",
+          "answer_index": 1,
+          "expected": "associated_source_placed",
+          "forbidden_associations": [
+            "김서윤은 나무 서랍"
+          ]
+        }
+      ],
+      "seed_assertions": [],
+      "persona_name": null,
+      "vector_similarities": {
+        "1": 0.45,
+        "3": 0.55,
+        "5": 0.8
+      }
+    },
+    {
+      "id": "S07",
+      "category": "wrong actor same action",
+      "provenance": "constructed deterministic API fixture; not model/host evidence",
+      "messages": [
+        "낡은 수첩을 펼쳤다.",
+        "권도진은 장식장 문을 닫았다.",
+        "다음 페이지로 넘어갔다.",
+        "문예솔은 유리병 뚜껑을 닫았다.",
+        "마지막 페이지를 확인했다.",
+        "권도진, 문예솔의 이름이 순번표에 있었다."
+      ],
+      "answer_index": 1,
+      "queries": [
+        {
+          "id": "S07-a",
+          "query": "권도진이 닫은 것은 무엇이었지?",
+          "expected_quote": "권도진은 장식장 문을 닫았다.",
+          "answer_index": 1,
+          "expected": "associated_source_placed",
+          "forbidden_associations": [
+            "권도진은 유리병 뚜껑"
+          ]
+        }
+      ],
+      "seed_assertions": [],
+      "persona_name": null,
+      "vector_similarities": {
+        "1": 0.45,
+        "3": 0.55,
+        "5": 0.8
+      }
+    },
+    {
+      "id": "S08",
+      "category": "name-only distractor and pronoun extension",
+      "provenance": "constructed deterministic API fixture; not model/host evidence",
+      "messages": [
+        "낡은 수첩을 펼쳤다.",
+        "서가윤은 녹색 끈을 잘랐다.",
+        "다음 페이지로 넘어갔다.",
+        "창밖으로 구름이 지나갔다.",
+        "마지막 페이지를 확인했다.",
+        "서가윤, 서가윤, 서가윤이라는 이름만 목록에 반복되어 있었다."
+      ],
+      "answer_index": 1,
+      "queries": [
+        {
+          "id": "S08-a",
+          "query": "서가윤이 자른 것은 무엇이었지?",
+          "expected_quote": "서가윤은 녹색 끈을 잘랐다.",
+          "answer_index": 1,
+          "expected": "associated_source_placed"
+        },
+        {
+          "id": "S08-b",
+          "query": "그가 자른 것은 무엇이었지?",
+          "expected_quote": "서가윤은 녹색 끈을 잘랐다.",
+          "answer_index": 1,
+          "expected": "associated_source_placed",
+          "tier": "extension_observation",
+          "previous_ai": "서가윤이 수첩을 덮었다."
+        }
+      ],
+      "seed_assertions": [],
+      "persona_name": null,
+      "vector_similarities": {
+        "1": 0.45,
+        "3": 0.01,
+        "5": 0.8
+      }
+    },
+    {
+      "id": "S09",
+      "category": "incidental persona narration/non-question",
+      "provenance": "constructed deterministic API fixture; not model/host evidence",
+      "messages": [
+        "낡은 수첩을 펼쳤다.",
+        "윤해린은 돌담연구소 소속의 식물학자였다.",
+        "다음 페이지로 넘어갔다.",
+        "장민호는 회색 지도를 접었다.",
+        "마지막 페이지를 확인했다.",
+        "윤해린, 장민호의 이름이 표지에 있었다."
+      ],
+      "answer_index": 1,
+      "queries": [
+        {
+          "id": "S09-a",
+          "query": "윤해린은 조용히 노트를 읽었다.",
+          "expected": "no_persona_question_bonus",
+          "persona": "윤해린"
+        },
+        {
+          "id": "S09-b",
+          "query": "윤해린은 노트를 읽었다. 장민호가 접은 것은 무엇이었지?",
+          "expected_quote": "장민호는 회색 지도를 접었다.",
+          "answer_index": 3,
+          "expected": "associated_source_placed",
+          "persona": "윤해린"
+        }
+      ],
+      "seed_assertions": [
+        {
+          "message_index": 1,
+          "subject": "{{user}}",
+          "predicate": "identity",
+          "value": "식물학자"
+        },
+        {
+          "message_index": 1,
+          "subject": "{{user}}",
+          "predicate": "member_of",
+          "object": "돌담연구소",
+          "object_type": "organization"
+        }
+      ],
+      "persona_name": "윤해린",
+      "vector_similarities": {
+        "1": 0.45,
+        "3": 0.55,
+        "5": 0.8
+      }
+    },
+    {
+      "id": "S10",
+      "category": "inactive and in-context guard",
+      "provenance": "constructed deterministic API fixture; not model/host evidence",
+      "messages": [
+        "낡은 수첩을 펼쳤다.",
+        "허유진은 자주색 천을 펼쳤다.",
+        "다음 페이지로 넘어갔다.",
+        "창밖으로 구름이 지나갔다.",
+        "마지막 페이지를 확인했다.",
+        "허유진, 고다경의 이름이 목록에 남았다."
+      ],
+      "answer_index": 1,
+      "queries": [
+        {
+          "id": "S10-a",
+          "query": "허유진이 펼친 것은 무엇이었지?",
+          "expected_quote": "허유진은 자주색 천을 펼쳤다.",
+          "answer_index": 1,
+          "expected": "associated_source_placed"
+        },
+        {
+          "id": "S10-b",
+          "query": "허유진이 펼친 것은 무엇이었지?",
+          "expected": "source_absent",
+          "forbid_source_index": 1,
+          "in_context_indices": [
+            1
+          ]
+        },
+        {
+          "id": "S10-c",
+          "query": "허유진이 펼친 것은 무엇이었지?",
+          "expected": "source_absent",
+          "forbid_source_index": 1,
+          "disable_index": 1,
+          "forbidden": [
+            "자주색 천"
+          ]
+        }
+      ],
+      "seed_assertions": [],
+      "persona_name": null,
+      "vector_similarities": {
+        "1": 0.45,
+        "3": 0.01,
+        "5": 0.8
+      }
+    },
+    {
+      "id": "S11",
+      "category": "current vs stale state",
+      "provenance": "constructed deterministic API fixture; not model/host evidence",
+      "messages": [
+        "낡은 수첩을 펼쳤다.",
+        "배도현은 청동 여관에 살았다.",
+        "다음 페이지로 넘어갔다.",
+        "배도현은 자작나무 기숙사로 이사했다.",
+        "마지막 페이지를 확인했다.",
+        "배도현, 안유림의 이름이 거주 명부에 있었다."
+      ],
+      "answer_index": 1,
+      "queries": [
+        {
+          "id": "S11-a",
+          "query": "배도현은 지금 어디 살아?",
+          "expected": "current_state",
+          "required": [
+            "자작나무 기숙사"
+          ],
+          "forbidden": [
+            "청동 여관"
+          ]
+        },
+        {
+          "id": "S11-b",
+          "query": "배도현은 전에 어디 살았지?",
+          "expected": "historical_state",
+          "required": [
+            "청동 여관"
+          ]
+        }
+      ],
+      "seed_assertions": [
+        {
+          "message_index": 1,
+          "subject": "배도현",
+          "predicate": "located_in",
+          "object": "청동 여관",
+          "object_type": "place"
+        },
+        {
+          "message_index": 3,
+          "subject": "배도현",
+          "predicate": "located_in",
+          "object": "자작나무 기숙사",
+          "object_type": "place"
+        }
+      ],
+      "persona_name": null,
+      "vector_similarities": {
+        "1": 0.45,
+        "3": 0.55,
+        "5": 0.8
+      }
+    },
+    {
+      "id": "S12",
+      "category": "hidden secret plus tight budget",
+      "provenance": "constructed deterministic API fixture; not model/host evidence",
+      "messages": [
+        "낡은 수첩을 펼쳤다.",
+        "오세린은 검은 서랍의 열쇠를 숨겼고 정하준에게 비밀로 했다.",
+        "다음 페이지로 넘어갔다.",
+        "창밖으로 구름이 지나갔다.",
+        "마지막 페이지를 확인했다.",
+        "오세린, 정하준의 이름이 목록에 있었다."
+      ],
+      "answer_index": 1,
+      "queries": [
+        {
+          "id": "S12-a",
+          "query": "오세린이 숨긴 것은 무엇이었지?",
+          "expected": "hidden",
+          "mode": {
+            "strict": true,
+            "narrator": null
+          },
+          "forbidden": [
+            "검은 서랍의 열쇠"
+          ]
+        },
+        {
+          "id": "S12-b",
+          "query": "오세린이 숨긴 것은 무엇이었지?",
+          "expected": "hidden",
+          "mode": {
+            "strict": false,
+            "narrator": "정하준"
+          },
+          "forbidden": [
+            "검은 서랍의 열쇠"
+          ]
+        },
+        {
+          "id": "S12-c",
+          "query": "오세린이 숨긴 것은 무엇이었지?",
+          "expected": "budget_only",
+          "budget": 100
+        }
+      ],
+      "seed_assertions": [
+        {
+          "message_index": 1,
+          "subject": "오세린",
+          "predicate": "knows",
+          "value": "검은 서랍의 열쇠를 숨겼다",
+          "knowledge": "limited",
+          "known_by": [
+            "오세린",
+            "{{user}}"
+          ],
+          "hidden_from": [
+            "정하준"
+          ]
+        }
+      ],
+      "persona_name": null,
+      "vector_similarities": {
+        "1": 0.45,
+        "3": 0.01,
+        "5": 0.8
+      }
+    }
+  ]
+}

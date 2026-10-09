@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import time
+from threading import Event
+from types import SimpleNamespace
 
 import pytest
 
@@ -33,18 +35,41 @@ class Slow:
         return [ANSWER for _ in texts]
 
 
-def test_an_embedding_slower_than_the_timeout_arrives_when_the_reads_took_the_difference():
-    """Before: a 200 ms embedder under a 100 ms timeout never gave vectors. Now the reads' 150 ms count too."""
-    emb = Slow(0.2)
+def test_an_embedding_slower_than_the_timeout_arrives_when_the_reads_took_the_difference(monkeypatch):
+    """A call completed during recall's reads remains usable even when its duration exceeded the result wait.
+
+    Events pin the order and a logical clock pins the duration; busy runners cannot change either assertion.
+    The separate timeout test checks the actual bounded wait.
+    """
+    started, release = Event(), Event()
+    clock = SimpleNamespace(now=0.0)
+    monkeypatch.setattr("nmos_sidecar.retrieval.time", SimpleNamespace(perf_counter=lambda: clock.now))
+
+    class Controlled:
+        calls: list[float]
+
+        def __init__(self):
+            self.calls = []
+
+        def embed(self, texts, timeout_s):
+            self.calls.append(timeout_s)
+            started.set()
+            assert release.wait(5), "the simulated reads did not finish"
+            return [ANSWER for _ in texts]
+
+    emb = Controlled()
     pending = QueryEmbedding(emb, "q", timeout_ms=100)
-    time.sleep(0.15)  # recall's reads
-    t0 = time.perf_counter()
-    vec = pending.result()
-    waited = time.perf_counter() - t0
-    assert vec == ANSWER
-    assert waited < 0.1  # the rest of the call, not the whole of it
-    assert pending.call_ms is not None and pending.call_ms >= 190
-    assert emb.calls == [EMBED_CALL_FACTOR * 0.1]  # the call itself is bounded at the factor times the timeout
+    try:
+        assert started.wait(5), "the embedding did not start alongside the reads"
+        assert pending.call_ms is None
+        clock.now = 0.2  # the reads outlast the 100 ms result wait; the call's own budget is 200 ms
+    finally:
+        release.set()
+        pending._thread.join(5)
+    assert not pending._thread.is_alive()
+    assert pending.result() == ANSWER
+    assert pending.call_ms == 200
+    assert emb.calls == [EMBED_CALL_FACTOR * 0.1]
 
 
 def test_the_wait_after_the_reads_is_at_most_the_timeout():
@@ -94,3 +119,88 @@ def test_a_slow_embedder_falls_back_after_the_timeout_not_the_call(migrated):
     assert out["vectors"] == "fallback"
     assert timings["vector_mode"].startswith("fallback: embedding not answered within 100 ms")
     assert timings["embed_wait"] < 1000 and "embed" not in timings
+
+
+def test_http_trickle_obeys_the_total_call_deadline():
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from nmos_sidecar.llm import Embedder
+
+    body = json.dumps({"data": [{"index": 0, "embedding": ANSWER}]}).encode()
+    received = Event()
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            received.set()
+            try:
+                if self.path.startswith("/trickle"):
+                    for byte in body:
+                        self.wfile.write(bytes([byte]))
+                        self.wfile.flush()
+                        time.sleep(0.03)  # activity is always sooner than the 300 ms inactivity timeout
+                else:
+                    self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # expected cancellation closes the socket
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    runner = threading.Thread(target=server.serve_forever, daemon=True)
+    runner.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    pending = None
+    try:
+        fast = QueryEmbedding(Embedder(base + "/fast", "synthetic"), "q", timeout_ms=1000)
+        assert fast.result() == ANSWER
+        fast._thread.join(1)
+        received.clear()
+        pending = QueryEmbedding(Embedder(base + "/trickle", "synthetic"), "q", timeout_ms=50,
+                                 call_timeout_ms=300)
+        assert received.wait(2)
+        with pytest.raises(LLMError, match="not answered within 50 ms"):
+            pending.result()
+        pending._thread.join(0.8)
+        assert not pending._thread.is_alive()  # the original inactivity timeout permits the whole ~1.7 s body
+        with pytest.raises(LLMError, match="total deadline"):
+            pending._future.result()
+    finally:
+        server.shutdown()
+        server.server_close()
+        runner.join(2)
+        if pending is not None:
+            pending._thread.join(3)
+
+
+def test_query_concurrency_is_bounded_and_saturation_fails_open(monkeypatch):
+    import threading
+    from nmos_sidecar import retrieval
+    entered, release = Event(), Event()
+    monkeypatch.setattr(retrieval, "_QUERY_EMBED_SLOTS", threading.BoundedSemaphore(1))
+
+    class Held:
+        def embed(self, texts, timeout_s):
+            entered.set()
+            assert release.wait(5)
+            return [ANSWER]
+
+    first = QueryEmbedding(Held(), "first", timeout_ms=1000)
+    try:
+        assert entered.wait(2)
+        second = QueryEmbedding(Held(), "second", timeout_ms=1000)
+        with pytest.raises(LLMError, match="concurrency limit"):
+            second.result()
+        second._thread.join(1)
+        assert not second._thread.is_alive()
+    finally:
+        release.set()
+        first._thread.join(2)
+    assert first.result() == ANSWER
+    # The failed attempt did not consume a slot and completion returned the original one.
+    assert QueryEmbedding(Slow(0), "third", timeout_ms=1000).result() == ANSWER

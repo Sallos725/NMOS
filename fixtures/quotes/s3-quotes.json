@@ -1,0 +1,221 @@
+{
+ "about": "PHASE-33 Q10 (b): the exact-quote case set on the synthetic bench chat (the S3 set: 32k context, played to turn 100). Every quote is said in turns 1-58, outside the prompt's window at turn 100; `turn` is the source turn as NMOS numbers it (0-based, as the packet and the Inspector show it) and `gold` the words said, verbatim in that turn. Synthetic text only. Run with tools/eval_rp.py against a bench database's recorded request at turn 100 (`trace` added locally).",
+ "cases": [
+  {
+   "name": "q-turn-02",
+   "category": "turn",
+   "turn": 1,
+   "query": "1턴에 오봉순이 복도에서 뭐라고 호통쳤어?",
+   "gold": [
+    "수건은 한 장씩만 쓰라니까"
+   ]
+  },
+  {
+   "name": "q-turn-08",
+   "category": "turn",
+   "turn": 7,
+   "query": "7턴에 이안이 모래시계 얘기하다가 도윤한테 뭐라고 했지?",
+   "gold": [
+    "이미 칠 분 남으셨습니다"
+   ]
+  },
+  {
+   "name": "q-turn-14",
+   "category": "turn",
+   "turn": 13,
+   "query": "13턴에 추오월이 해도 첫째 장을 보고 뭐라고 했어?",
+   "gold": [
+    "이건 끝난 거다"
+   ]
+  },
+  {
+   "name": "q-turn-21",
+   "category": "turn",
+   "turn": 20,
+   "query": "20턴에 수염 선원이 조개 윷 규칙을 뭐라고 설명했지?",
+   "gold": [
+    "한 번 쉬는 거야"
+   ]
+  },
+  {
+   "name": "q-turn-28",
+   "category": "turn",
+   "turn": 27,
+   "query": "27턴에 하람이 등불 소원에 대해 뭐라고 했어?",
+   "gold": [
+    "바다까지 꺼지지 않고 가면 이뤄진대요"
+   ]
+  },
+  {
+   "name": "q-turn-39",
+   "category": "turn",
+   "turn": 38,
+   "query": "38턴에 오봉순이 하람을 놀리면서 뭐라고 했지?",
+   "gold": [
+    "왜 네가 발끈하니"
+   ]
+  },
+  {
+   "name": "q-turn-46",
+   "category": "turn",
+   "turn": 45,
+   "query": "45턴에 곽은비가 등대섬 뒤편 얘기에 뭐라고 대답했어?",
+   "gold": [
+    "아무도 제대로 재 보지 않았을 뿐"
+   ]
+  },
+  {
+   "name": "q-turn-57",
+   "category": "turn",
+   "turn": 56,
+   "query": "56턴에 영감님이 달력을 짜면서 뭐라고 했지?",
+   "gold": [
+    "하루라도 틀어지면 다 밀린다"
+   ]
+  },
+  {
+   "name": "q-first-01",
+   "category": "first",
+   "turn": 0,
+   "query": "도윤이 윤슬포에 처음 내렸을 때 뭐라고 중얼거렸지?",
+   "gold": [
+    "여기가 윤슬포구나"
+   ]
+  },
+  {
+   "name": "q-first-02",
+   "category": "first",
+   "turn": 1,
+   "query": "오봉순이 도윤을 처음 만난 날 해도 얘기를 듣고 뭐라고 했어?",
+   "gold": [
+    "글깨나 읽은 총각이네"
+   ]
+  },
+  {
+   "name": "q-first-03",
+   "category": "first",
+   "turn": 2,
+   "query": "하람이 빵집에서 도윤을 처음 봤을 때 뭐라고 했지?",
+   "gold": [
+    "그렇게 물어보시는 분 처음 봤어요"
+   ]
+  },
+  {
+   "name": "q-first-07",
+   "category": "first",
+   "turn": 6,
+   "query": "무진 선장이 처음 도윤을 쫓아낼 때 뭐라고 했어?",
+   "gold": [
+    "비켜라, 애송이"
+   ]
+  },
+  {
+   "name": "q-first-08",
+   "category": "first",
+   "turn": 7,
+   "query": "이안을 처음 만난 날, 이안이 초록 모래시계에 대해 뭐라고 했지?",
+   "gold": [
+    "한 번 뒤집으면 딱 십오 분이 흐릅니다"
+   ]
+  },
+  {
+   "name": "q-first-12",
+   "category": "first",
+   "turn": 11,
+   "query": "지도방에 처음 갔을 때 도윤이 추오월한테 뭐라고 대답했어?",
+   "gold": [
+    "한 번에 배우겠습니다"
+   ]
+  },
+  {
+   "name": "q-first-16",
+   "category": "first",
+   "turn": 15,
+   "query": "곽은비가 지도방에 처음 왔을 때 도윤한테 뭐라고 했지?",
+   "gold": [
+    "아주 귀한 걸 가지고 오셨다던데요"
+   ]
+  },
+  {
+   "name": "q-first-31",
+   "category": "first",
+   "turn": 30,
+   "query": "첫 수심 측량 나간 날 추 영감이 노 젓는 도윤한테 뭐라고 했어?",
+   "gold": [
+    "벌써 숨이 차군"
+   ]
+  },
+  {
+   "name": "q-said-22",
+   "category": "speaker",
+   "turn": 21,
+   "query": "하람이 창문 얘기에 발끈해서 뭐라고 했지?",
+   "gold": [
+    "이모 여관 사정이니까"
+   ]
+  },
+  {
+   "name": "q-said-24",
+   "category": "speaker",
+   "turn": 23,
+   "query": "추오월이 도윤 머리를 보고 뭐라고 물었어?",
+   "gold": [
+    "머리는 왜 하얗냐"
+   ]
+  },
+  {
+   "name": "q-said-29",
+   "category": "speaker",
+   "turn": 28,
+   "query": "곽은비가 해도 값을 제안했을 때 도윤이 뭐라고 되물었지?",
+   "gold": [
+    "삼백 펠이요"
+   ]
+  },
+  {
+   "name": "q-said-36",
+   "category": "speaker",
+   "turn": 35,
+   "query": "도윤이 이안한테 반 길까지 재는 이유를 뭐라고 말했어?",
+   "gold": [
+    "반 길 틀리면 배 한 척 틀린다"
+   ]
+  },
+  {
+   "name": "q-said-44",
+   "category": "speaker",
+   "turn": 43,
+   "query": "등대섬 뒤 물길을 보고 도윤이 아버지에 대해 뭐라고 말했지?",
+   "gold": [
+    "아버지가 왜 숨기셨을까요"
+   ]
+  },
+  {
+   "name": "q-said-51",
+   "category": "speaker",
+   "turn": 50,
+   "query": "밤에 나가는 조합 배를 보고 이안이 뭐라고 대답했어?",
+   "gold": [
+    "소금마을 쪽으로 간다고 신고가 들어와 있습니다"
+   ]
+  },
+  {
+   "name": "q-said-53",
+   "category": "speaker",
+   "turn": 52,
+   "query": "추를 내리다 열여섯 길이 나왔을 때 도윤이 뭐라고 했지?",
+   "gold": [
+    "절벽이네요"
+   ]
+  },
+  {
+   "name": "q-said-56",
+   "category": "speaker",
+   "turn": 55,
+   "query": "창고에서 밀가루가 새어 나왔을 때 하람이 뭐라고 했어?",
+   "gold": [
+    "밀가루랑 인연이 있나 봐요"
+   ]
+  }
+ ]
+}

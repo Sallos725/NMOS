@@ -493,8 +493,10 @@ def fail(conn: psycopg.Connection, job: dict[str, Any], error: str) -> None:
     with conn.transaction():
         conn.execute(
             "UPDATE job SET status = %s, locked_at = NULL, last_error = %s, updated_at = now(),"
-            " run_after = now() + make_interval(secs => %s) WHERE id = %s AND status = 'running'",
-            ("dead" if dead else "queued", error[:1000], min(600, 15 * 2 ** job["attempts"]), job["id"]),
+            " run_after = now() + make_interval(secs => %s) WHERE id = %s AND status = 'running'"
+            " AND locked_at = %s",
+            ("dead" if dead else "queued", error[:1000], min(600, 15 * 2 ** job["attempts"]), job["id"],
+             job.get("locked_at")),
         )
 
 
@@ -1635,6 +1637,9 @@ def discard(conn: psycopg.Connection, conv: UUID) -> int:
     audit), so no older generation serves a turn meanwhile (ADR 0014), and its extract jobs become
     obsolete, so `schedule_generation` queues every turn again."""
     with conn.transaction():
+        # Serialize with worker commits before taking the snapshot that discards their projections.
+        conn.execute("SELECT id FROM job WHERE conversation_id = %s AND kind IN ('extract', 'canon')"
+                     " ORDER BY id FOR UPDATE", (conv,)).fetchall()
         n = conn.execute(
             "UPDATE extraction x SET discarded_at = now() FROM source_revision sr, source_object so"
             " WHERE sr.id = x.source_revision_id AND so.id = sr.source_object_id AND so.conversation_id = %s"

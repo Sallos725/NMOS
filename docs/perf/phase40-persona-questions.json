@@ -1,0 +1,219 @@
+{
+  "comparison": "packet-v17 baseline versus packet-v18 AGE-18 candidate",
+  "source": {
+    "files_verified": 53,
+    "manifest_sha256": "f41c1f27e60ac0cb2f77fe80bfdc57c8cddf6164d288c93155f2ca4bf621d1a3",
+    "working_tree_bytes_equal": true
+  },
+  "standard_gate": {
+    "cases_per_round": 338,
+    "rounds_per_policy": 3,
+    "benchmark_cases": 314,
+    "baseline_benchmark_passed": [
+      289,
+      289,
+      289
+    ],
+    "candidate_benchmark_passed": [
+      289,
+      289,
+      289
+    ],
+    "benchmark_case_majority": 289,
+    "quote_cases": 24,
+    "baseline_quote_passed": [
+      21,
+      21,
+      21
+    ],
+    "candidate_quote_passed": [
+      21,
+      21,
+      20
+    ],
+    "quote_case_majority": 21,
+    "new_majority_failures": 0,
+    "new_forbidden_phrase_cases": 0,
+    "forbidden_phrase_hits_per_round": 14,
+    "all_runs_hybrid": true
+  },
+  "original_k32_trace_replay": {
+    "cases": 17,
+    "rounds_per_policy": 3,
+    "baseline_passed": [
+      9,
+      9,
+      9
+    ],
+    "candidate_passed": [
+      10,
+      10,
+      10
+    ],
+    "baseline_case_majority": 9,
+    "candidate_case_majority": 10,
+    "company_question_candidate_passed": [
+      true,
+      true,
+      true
+    ],
+    "first_gate_question_candidate_passed": [
+      false,
+      false,
+      false
+    ],
+    "new_majority_failures": 0,
+    "forbidden_phrase_hits": 0,
+    "first_cue_recorded": false,
+    "original_gold_queries_and_trace_options_preserved": true
+  },
+  "current_defaults_k32_diagnostic": {
+    "original_trace_reproduction": false,
+    "cases": 17,
+    "rounds_per_policy": 3,
+    "baseline_passed": [
+      11,
+      12,
+      12
+    ],
+    "candidate_passed": [
+      14,
+      14,
+      14
+    ],
+    "baseline_case_majority": 12,
+    "candidate_case_majority": 14,
+    "company_question_candidate_passed": [
+      true,
+      true,
+      true
+    ],
+    "first_gate_question_candidate_passed": [
+      true,
+      true,
+      true
+    ],
+    "new_majority_failures": 0,
+    "forbidden_phrase_hits": 0,
+    "explicit_options": {
+      "first_cue": true,
+      "lexical_keywords": true,
+      "history_marks": true,
+      "name_variants": true,
+      "excerpt_anchor": "keywords"
+    },
+    "same_original_gold_queries_database_head_and_window": true
+  },
+  "voyage_replay": {
+    "candidate_cases_per_round": 85,
+    "rounds": 3,
+    "hybrid_replays": 255,
+    "over_budget": 0,
+    "hidden_contract_violations": 0,
+    "maximum_tokens": 3979,
+    "budget": 4000,
+    "majority_packet_changes_against_prior_baseline": 0,
+    "independent_semantic_gold": false
+  },
+  "calls_and_data": {
+    "new_embedding_calls": 0,
+    "generative_calls": 0,
+    "original_database_writes": 0,
+    "replay_databases_read_only": true
+  },
+  "final_comparison_replays": {
+    "standard_gate": 2028,
+    "original_k32": 102,
+    "current_defaults_k32": 102,
+    "voyage_candidate": 255,
+    "total": 2487,
+    "prior_voyage_baseline_reused": 255,
+    "exploratory_versions_and_interrupted_runs_excluded": true
+  },
+  "limits": [
+    "No fresh host turn or generative live gate was executed.",
+    "Original old trace has first_cue=False; first-gate remains failed there. Current defaults pass both K32 early probes.",
+    "Voyage traces have no independently annotated semantic gold; unchanged packets and contract checks are not semantic accuracy.",
+    "Existing standard benchmark failures remain.",
+    "Single candidate quote round scored20 rather than21; majority stayed21 and had zero new failing cases."
+  ],
+  "timing_note": "Parallel replay durations are not used as latency measurements.",
+  "latency_synthetic": [
+    {
+      "messages": 10000,
+      "summaries": true,
+      "facts": 5000,
+      "scenes": 624,
+      "retrieve_ms": {
+        "p50": 128.00511589739472,
+        "p95": 223.16329600289464
+      },
+      "packets_with_story": 15,
+      "budget": 4000,
+      "policy": "packet-v17",
+      "packet_tokens_mean": 518,
+      "excerpts_mean": 0.0,
+      "round": 1,
+      "elapsed_s": 22.32,
+      "harness": "bench_story, explicit synthetic persona; 2/5 question types target it",
+      "provider_calls": 0
+    },
+    {
+      "messages": 10000,
+      "summaries": true,
+      "facts": 5000,
+      "scenes": 624,
+      "retrieve_ms": {
+        "p50": 133.83586704730988,
+        "p95": 224.92720989976078
+      },
+      "packets_with_story": 15,
+      "budget": 4000,
+      "policy": "packet-v18",
+      "packet_tokens_mean": 518,
+      "excerpts_mean": 0.0,
+      "round": 1,
+      "elapsed_s": 22.85,
+      "harness": "bench_story, explicit synthetic persona; 2/5 question types target it",
+      "provider_calls": 0
+    },
+    {
+      "messages": 10000,
+      "summaries": true,
+      "facts": 5000,
+      "scenes": 624,
+      "retrieve_ms": {
+        "p50": 133.93992790952325,
+        "p95": 241.28429498523474
+      },
+      "packets_with_story": 15,
+      "budget": 4000,
+      "policy": "packet-v18",
+      "packet_tokens_mean": 518,
+      "excerpts_mean": 0.0,
+      "round": 2,
+      "elapsed_s": 22.42,
+      "harness": "bench_story, explicit synthetic persona; 2/5 question types target it",
+      "provider_calls": 0
+    },
+    {
+      "messages": 10000,
+      "summaries": true,
+      "facts": 5000,
+      "scenes": 624,
+      "retrieve_ms": {
+        "p50": 133.89935495797545,
+        "p95": 247.75127496104687
+      },
+      "packets_with_story": 15,
+      "budget": 4000,
+      "policy": "packet-v17",
+      "packet_tokens_mean": 518,
+      "excerpts_mean": 0.0,
+      "round": 2,
+      "elapsed_s": 22.45,
+      "harness": "bench_story, explicit synthetic persona; 2/5 question types target it",
+      "provider_calls": 0
+    }
+  ]
+}

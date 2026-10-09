@@ -3,8 +3,140 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
-## Unreleased
+## 0.4.0
 
+The third milestone, Stage 7 (forensic recall), with Phases 32–42 and the pre-release audit corrections.
+The owner authorized this release on 2026-10-10. Like every release before 1.0, it is a GitHub pre-release.
+The default is `packet-v18`; extraction stays on `extract-v16` and normalization on `clean-v3`.
+
+### Upgrading from 0.3.0
+
+Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS and back up its data folder).
+
+1. **Docker:** `docker compose pull && docker compose up -d`. At startup migration 0029 adds a repair kind (dismissing
+   a status flag); it is the only schema change. Nothing is extracted or embedded again, so the update itself makes no
+   provider calls.
+2. **Without Docker (Windows, Linux):** the first start of this version moves 0.3.0's `data` folder into the per-user
+   data folder (Phase 37, below). Unpack the new version beside the old one and move `data` into it, or start the new
+   version from the old folder, and don't delete the old folder before the new version has started once. From now on
+   edit the `.env` in the data folder: the one beside NMOS is copied there once, and where the two differ the data
+   folder's wins (the log says so). If start at login is
+   on, turn it off in the old version and on in the new one, and point a systemd unit at the new folder: 0.3.0 does
+   not see the moved data, and started again it starts with an empty database.
+3. **Replace the plugin and the sidecar together**, then reload PocketRisu. The Status tab says whether they match and
+   offers the matching plugin file.
+4. **Memory:** the default packet becomes `packet-v18` (quotes, labels, resting lines, status history and explicit persona questions; Phases 33–40, below).
+   `NMOS_PACKET_POLICY=packet-v12` keeps the packet of 0.3.0.
+5. **Status rules:** rules without `card` are now inactive. Review the preserved JSON in Settings and use the
+   character-specific Apply to rebind it. Existing fully bound rules keep their parser version.
+6. **Switching between Docker and a bundle** does not carry the memory over: move it with an archive (README, "Moving
+   between Docker and a bundle").
+
+### Changes
+
+- **A recalled scene can carry its source's status-window clock** (Phase 42, AGE-78).
+  When an explicit time question recalls an old excerpt or quote, packet-v18 can append the literal date/time
+  from that exact source revision, for up to two sources, using spare packet space only. Existing selected lines
+  stay unchanged. This is the clock shown on the source's status window, not an inferred event occurrence date.
+  Missing/ambiguous stored clocks, full budgets and strict/first-person narrator modes abstain; no date arithmetic.
+  Replay: 291/314 recall and 21/24 quotes unchanged, 85 Voyage request ledger majorities preserved.
+  See `docs/perf/phase42-source-clock.md`; these checks do not score generated answers.
+
+- **Explicit status-window setup** (Phase 39 amendment 2). Status drafts, character targets and preset selection
+  start blank. Importing JSON, saving/selecting a named preset and general settings Save cannot activate rules.
+  A separate Apply binds the draft to the selected character name and preserves other characters' rules.
+  Unbound legacy rules stay visible but inactive until rebound. Presets persist separately and travel in full-install
+  archives. Names are exact display-name bindings, not stable card IDs; state/history still belong to each chat.
+
+- **Korean keyword recall can recover a source missed because of a particle** (Phase 41, AGE-76).
+  Under the default `packet-v18`, an exact word such as a name followed by a supported Korean particle can
+  supply an additional raw excerpt. Existing keyword candidates keep their priority; additions use only
+  remaining candidate slots and lookup time. Word boundaries work across native platforms, and late lookup
+  results are discarded. A full existing list still admits no additions. Historical
+  traces and explicit v16/v17 requests retain the old matching behavior.
+- **Explicit third-person persona questions have a bounded recall route** (`packet-v18`, now the default; Phase 40).
+  A question about the persona's work, location or another supported kind can add at most two matching facts or
+  attributed claims within the existing budgets. An unshared Korean given name works on this route without
+  changing identity or making ordinary narration boost all persona facts. The owner selected `packet-v18` as the 0.4.0 default on 2026-10-09.
+- **Hidden candidates have an audit label.** The Inspector records a packet candidate excluded by a memory mode or
+  secret gate as hidden, with its source, turn and reason instead of copying its body. The diagnostic rows never
+  reach the model or consume packet budget, and do not affect placement, rest or echo statistics. Existing traces
+  are not rewritten; replay can add the missing diagnostic rows while preserving the model-facing packet.
+- **Linux bundles pin the current libxml2 security patch.** Ubuntu's 2026-10-08
+  [USN-8910-1](https://ubuntu.com/security/notices/USN-8910-1) moved Jammy's package from
+  `2.9.13+dfsg-1ubuntu0.13` to `.14`; the build correctly refused the changed package version. The amd64 and arm64
+  pins now match the signed Ubuntu archive. The mismatch guard stays in place; current target smokes are separate evidence.
+- **A bundle adoption preserves a copy whose PostgreSQL might still be running.** Every attempted start is followed
+  by teardown, and the copy is promoted or removed only after PostgreSQL reports it stopped. A stop that cannot be confirmed retains
+  both folders and refuses another attempt until the process is stopped.
+- **Disabled, comment and pre-cut replies do not keep supportive memory awake.** Echo detection now follows live
+  eligible turns and the immutable metadata of historical membership, including its `allBefore` cut. Active replies
+  still count; later edits, undo and reorder do not alter a historical request's reply eligibility.
+
+- **A restore recovers its status after an interrupted startup.** State backfill now finds message revisions without
+  current-rule observations independently of normalized text, in batches of 500. Existing observations stay intact;
+  messages with no matching field are checked once per startup. This also covers text filled by a concurrent worker.
+- **The final archive chunk can be retried after a lost answer.** Its verified identical bytes are acknowledged in
+  the received state without a second write; chunks are still refused once checking or restoring starts.
+- **A persona's full name, given name and one nickname stay one person.** The part-name rule checks the names as
+  written rather than the persona's internal placeholder; a shared given name remains ambiguous.
+- **CI requires its test database.** An unavailable Postgres now fails the suite rather than skipping database tests;
+  local runs may still skip them. The upgrade fixtures now include a database written by v0.3.0 and check migration
+  0029, the status-dismissal constraint and a second migration run.
+- **The embedding wait is editable in the panel.** Settings → Recall tuning → Embedding wait (ms) accepts 100–5,000 ms,
+  with the unchanged default of 300 ms. A sidecar that predates this setting disables the field. A save warns when
+  the wait leaves less than 500 ms of the plugin's deadline, while allowing the save.
+
+- **NMOS that cannot help says so, and the panel offers the fix** (the pre-0.4.0 audit). Once per page, after a reply
+  that went without memory because the sidecar could not be reached, refused the token or refused the host, or because
+  the page is not a secure context, a PocketRisu alert says which and what to do. On a page without Web Crypto
+  (PocketRisu v1.13.0 over plain HTTP on a LAN address) the plugin skips each request with a readable reason, and the
+  Status tab says so first (K6). The Connection settings have a token field, and a refused token or host gets its own
+  fix on the Status tab. A plugin that differs from the sidecar's gets a button that saves the matching file. The
+  bundle's launcher sets `NMOS_INSTALL=bundle`; `/v1/health` and `/v1/config` report it, the panel's Ollama presets
+  fill in `http://127.0.0.1:11434/v1` on a bundle instead of `host.docker.internal`, and the hint for an unreachable
+  sidecar names the bundle's tray or menu bar beside `docker compose up -d`.
+- **Without Docker, the data now lives outside the bundle, and the first start moves it there** (Phase 37, ADR 0060
+  amendment 1). Windows and Linux bundles kept the database, its password, the log and `.env` inside the bundle folder,
+  so the natural update (delete the old folder, unpack the new one) deleted the memory with it. From this version they
+  live in `%LOCALAPPDATA%\NMOS` (Windows) or `~/.local/share/nmos` (Linux; macOS already used Application Support),
+  and replacing the bundle folder keeps them. **The first start of this version moves the `data` folder beside the
+  launcher there**: on one drive by a rename, across drives by a copy that is checked before the old folder is renamed
+  `data.moved` (with a note; nothing is deleted). So when updating from 0.3.0, move `data` into the new folder as
+  before, or start the new version from the old folder, before deleting the old one. A database in both places stops
+  the start and names both. The `.env` beside the launcher is copied into the data folder once and read under it.
+  `NMOS_DATA_DIR` (relative to the bundle: `NMOS_DATA_DIR=data` keeps the old layout) names another folder. On Windows,
+  a user folder with non-English letters on a drive without short names asks once where the data goes.
+- **A name in the message is not a question about everything** (Phase 36, ADR 0070). A
+  message that only names a character made every fact about it required, so none of them could rest. Now how the
+  character stands now or with another, its knowledge boundaries, what the message's words point at, the kind of fact
+  it asks for ("무슨 일을 해", 소속, 성격 …) and facts holding its one-syllable nouns stay required; its other past events
+  and traits may rest when unused. On the owner's trial chat required lines fall from 76 % to 67 % of the packet; the
+  bench answers as `packet-v15` does. `NMOS_PACKET_POLICY=packet-v15` keeps the previous packet.
+- **An excerpt lands on what the question asks, not on when** (`packet-v15`, part of the default above; Phase 35, ADR
+  0069). "하람이가 처음 권해 준 빵이 뭐였어?" found the right scene but showed the sentence that says 처음 about something else; "…온 지
+  얼마 안 됐을 때 … 달 기억나?" showed the sentence with "온 지". Words that say when (처음, 첫날, 예전) and one-syllable function words
+  (온, 지, 때) no longer pick the excerpt's sentence, and a vector chunk gives way to its whole message when the message
+  says more of what the question names. On the bench replay: 289 of 314 against 286, no case lost; S6 (questions while
+  NMOS catches up on a chat) 23 of 25 against 21.
+- **Memory that knows what each line is for, and stops repeating itself** (`packet-v14`, part of the default above;
+  Phase 34, AGE-10, ADR 0068). Every packet line is labeled required, supportive or risky (the Inspector shows the label
+  and how much of the packet came back from the requests before). A supportive line placed in each of the last two
+  requests that no reply used rests for the next two and its room goes to other memory; what the question names, what
+  its own words found, a question about the past and every knowledge boundary never rest. On a 240-turn bench chat
+  supportive lines repeat 23 % less; on the owner's real chat the replies used repeated lines more (0.29 → 0.39) and no
+  repetition was felt. `NMOS_REST_AFTER=3` rests less often; `NMOS_PACKET_POLICY=packet-v12` keeps the packet of 0.3.0.
+- **What someone said, found by its words** (`packet-v13`, part of the default above; Phase 33, ADR 0067). A question
+  about what was said ("그때 뭐라고 했지?", "what did she say on the first night?", turn 12) brings up to two `<Quote>`
+  lines with the words verbatim and their turn: exact-quote questions on the bench chat 4 → 21 of 24. Turns the
+  extractor has not reached yet (a chat NMOS has just met) keep their excerpts as raw evidence. In the Inspector a turn
+  number opens that turn's page: its messages, what was extracted from it and which packets used it.
+- **Memory on a time axis in the Inspector** (Phase 32). A character's page draws its facts, relationships and threads
+  as bars over turns and its events as ticks, each linking to its row below; a tap shows what it was, when and how it
+  ended. The conversation page gets one line per character, the current scene first. The whole chat or the last 25
+  turns. In the plugin's panel the timeline is a closed section, fetched only when opened. What only the setting
+  (lorebook, card) gave folds under its own line in the timeline and the tables, and the tables name a character as
+  the story writes it.
 - **The portable bundles report their version.** Every v0.3.0 bundle (Linux x64 and arm64, macOS, Windows) reported
   version 0.0.0: the bundle build copies the sidecar in as source, without the package metadata the sidecar reads its
   version from. The build now writes that metadata from `apps/sidecar/pyproject.toml` and checks that the bundled
@@ -22,6 +154,52 @@ later, is `docs/KNOWN-ISSUES.md`.
   (`docs/perf/embedders.md`). Picking Voyage says that an account with no payment method has 3 requests a minute, too
   few to embed a chat. An embedding answer that reports `total_tokens` alone (Voyage's) is now counted as its input
   tokens in the model-call usage. No migration, no new generation; the plugin build changes.
+- **Restore an archive from the panel, while NMOS runs** (Phase 38, ADR 0050 amendment 2). Settings → **Restore from
+  an archive…** uploads a `.nmos.zip` in 8 MB chunks, checks it and shows its chats (one already here blocks it; nothing
+  is merged), the settings it adds and the upgrades it needs, then restores it without stopping anything: recall goes
+  on, a sync that would store a new message waits for the restore's commit (1.6 s at 10,000 messages), and the new
+  chats' derived text and jobs follow without a restart. Docker and bundle installs alike: until now a bundle could
+  not restore at all. The command (`archive restore`) is unchanged. `NMOS_RESTORE_MAX_MB` (2048) bounds an upload.
+- **One-line status bars, and a status rule for one card** (Phase 39). A `block` rule with `separator` (`"|"`) reads a
+  status bar written on one line (`☆ [Level: 3 | HP: 40 / 50 | …]`, `[Status:date=…|mood=…]`) field by field, and
+  ending it at `\]\s*$` keeps brackets inside a value; the story's own bracket windows are not read. `card` reads a
+  rule only in the chats of that character name. The guide's "한 줄짜리 상태창" shows how; `config/parsers.example.json`
+  has a `status-bar` rule. Existing rules read as before.
+- **A status window over time** (Phase 39). The Inspector's conversation page draws each status key as a lane of the
+  values it held, the value now beside it and keys that never changed folded; the panel loads it when its section
+  opens. Under `packet-v17` and the default `packet-v18`, a message that names a status key and asks how it changed ("레벨 언제
+  올랐어?") gets that key's last six changes as one `<StateHistory>` line; the replay of the trial install's requests
+  changed none of them.
+- **Changes the story did not make** (Phase 39). A rule's `watch` keys raise a "Needs attention" entry when an item
+  appears in or leaves a list, or a number moves, while the reply's own text says nothing of it, and when a rerolled
+  reply puts a value back to the one before. No model call; each entry can be dismissed, and taken back from the
+  repairs. Measured on two real chats: watching inventory and equipment raised 5 entries in 23 replies, each an item
+  the story never named. **Upgrade:** migration `0029` (a repair kind); archives of `0.3.0` restore as before.
+- **Status rules: three fixes** (found by the pre-0.4.0 audit). A `block` rule whose start matches empty text is
+  refused: it searched the same place forever and hung the sync (every version since Phase 1). A chat restored into an
+  install that already had status values gets its own at the next start (Phase 38's restore left them out). A chat
+  whose character name reaches NMOS after its messages is read again for the rules bound to that card.
+
+### Known limitations and verification
+
+- **Executed recall checks:** the final Phase 41 replay scored 291/314 recall probes and 21/24 exact-quote probes,
+  with no new failed majority across three runs per snapshot. Authored scenarios passed 22/22 questions; fresh
+  model extraction passed six positive questions and one negative control. These measure source-linked memory
+  packets, not final response quality. See `docs/perf/phase41-keyword-particles.md`.
+- **Recall remains incomplete:** 23 replay recall probes and three quote probes still miss. The Korean-particle
+  correction adds candidates only when the existing 50-entry list and lookup deadline have room. Persona questions
+  have a bounded route; general third-person narration and ambiguous names are not universally solved (K32, K40).
+- **Status rules bind exact character display names**, not stable card IDs. Characters with the same name share
+  the applicable rules; status values and history remain separate by conversation. Rename/rebind rules explicitly.
+  Existing rules without `card` are inactive until applied to a character. New configuration starts blank.
+- **Large chats and context:** request deadlines can still lead to a reply without memory (K1–K4); excerpts can
+  carry unrelated replaced values (K39), and summaries/large lorebooks retain their documented limits (K35–K37).
+- **Manual evidence:** final host-response quality and two-week stability are not certified by these tests.
+  The updated PocketRisu 1.14.0 trial connection was confirmed after reload; the full status-configuration UI checks
+  used PocketRisu 1.13.0. Always reload after replacing the plugin.
+- **Native bundles:** macOS is signed ad hoc. There is no built-in updater; it is deferred until after 0.4.0.
+  Back up before the first upgrade from 0.3.0 and follow the data-folder adoption instructions above.
+- The maintained full list is `docs/KNOWN-ISSUES.md`; 1.0's remaining gates are in `docs/ROADMAP-1.0.md`.
 
 ## 0.3.0
 

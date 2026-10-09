@@ -134,6 +134,13 @@ Environment notes: one run environment (headless Chromium, homelab CPU). No mobi
 
 Conclusion: wherever an NMOS V3 plugin can run at all, `crypto.subtle` is available. That is localhost or HTTPS; the plugin cannot run over plain-HTTP LAN. The sidecar-side hashing fallback in the Phase 0B plan is therefore not needed for the plugin. Deployments must use localhost or HTTPS (PocketRisu Remote Access).
 
+*Note 2026-10-08 (PocketRisu v1.13.0; observed in the owner's Phase 38 check, not a spike re-run):* an isolated v1.13.0
+opened over plain HTTP on a LAN address loaded the NMOS plugin and its panel, and the panel's restore failed at
+`crypto.subtle.digest` ("Cannot read properties of undefined (reading 'digest')"). On that build the plugin can load
+where `crypto.subtle` is missing, so the conclusion above holds for `a14c911` only. The plugin now checks for it: without
+it every request is skipped with a message, the Status tab says so first, and a one-time alert follows the first reply
+on a page that went without memory (K6). Deployments must still use localhost or HTTPS.
+
 ---
 
 ## Q6 — `getChatFromIndex()` cost
@@ -575,6 +582,31 @@ database.
 3. **The key is not logged.** Neither the sidecar's log nor the host's `request-logs.db` held the key's private key
    afterwards.
 4. **Not observed:** Safari and iPhone (WebKit did not start on the test host); a native app's file dialog.
+
+## Sending a request body from the plugin frame (2026-10-08, Phase 38 step 2, H23)
+
+Observed on `ghcr.io/pocketrisu/pocketrisu:latest` (v1.13.0, the local image of 2026-09-27), isolated container on
+`http://localhost:6191` with an empty save dir, headless Chromium 1223 and Firefox 1543. A probe plugin (`//@api 3.0`,
+not NMOS) POSTed N MB of deterministic bytes through `risuai.nativeFetch` to a local sink that answered with their
+length and SHA-256. Probe, scripts and output: `fixtures/host/upload-v1.13.0-2026-10-08/` (`results.txt`).
+
+1. **A request body arrives whole on both routes.** A `Uint8Array` and a JSON string `{"data": base64}` of 1, 4, 30
+   and 64 MB reached the sink with every byte, SHA-256 equal to the frame's, on the default route (the browser sends;
+   the sink saw a browser user agent) and on `networkRoute: 'local_network'` (PocketRisu's server sends; user agent
+   `node`). No size limit showed up to 64 MB (89 MB of JSON on the server route).
+2. **A `Blob` is not a body.** `nativeFetch` threw `Invalid body type` at once, on both routes and both browsers; a
+   slice of a file must be read into an `ArrayBuffer` first.
+3. **A `Uint8Array` body is handed over:** after the call the frame's array had length 0 (its buffer transferred).
+4. **base64 in JSON is the faster form in Chromium.** 4 MB: 0.54 s against 1.3 s; 30 MB: 4.4 s against 10.0 s; 64 MB:
+   9.5 s against 22.0 s (both routes alike). Firefox was quicker with both (4 MB: 0.10–0.13 s against 0.15–0.21 s;
+   30 MB: 0.64–0.87 s against 1.3–1.4 s).
+5. **Not observed:** WebKit and mobile browsers (the iPhone is not a target, PHASE-38 Q3).
+6. **A POST without a body is refused** (found running the panel's restore on an isolated v1.13.0, server route,
+   2026-10-08): `nativeFetch` throws `Body is required for POST and PUT requests` before any request leaves. Every
+   other panel POST already sent `{}`; the restore's check and start now do too.
+
+Conclusion: H23. What NMOS does with it: the panel's restore uploads an archive in 8 MB chunks as base64 in JSON, the
+form every panel call already uses (PHASE-38 Q3).
 
 ## Scenario evidence index
 

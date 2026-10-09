@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hmac
 import logging
 import os
 import tempfile
+import threading
 import time
 import dataclasses
 import ipaddress
@@ -27,8 +30,9 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from . import (__version__, archive, audit, canon, canonfacts, dropped, endings, extraction, generations, inspector, ledger,
-               normtext,
-               plugin, preview, readmodel, retention, repairs, reveals, runtime, summaries, vectors)
+               normtext, overuse,
+               plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, statewatch, summaries, uploads,
+               vectors)
 from . import usage as model_usage
 from .config import Settings
 from .db import make_pool
@@ -37,6 +41,8 @@ from .extraction import enqueue_after_apply, job_counts, recent_errors
 from .facts import STANDING, links_of as facts_links_of, memory_view, version_key
 from .ids import uuid7
 from .models import (
+    ArchiveUploadChunk,
+    ArchiveUploadCreate,
     BodiesRequest,
     BodiesResponse,
     CanonSyncRequest, CanonSyncResponse,
@@ -54,7 +60,9 @@ from .reconcile import Entry, plan, plan_append
 from .llm import Embedder
 from .packet import DEFAULT_POLICY, POLICIES, clean_text
 from .retrieval import RecallOptions, prefetched, query_prefix, retrieve
-from .state import current_state, rebuild_state, sync_rules, write_state
+from .state import current_state, rebuild_state, reparse_conversation, sync_rules, write_state
+from .parsers import needs_card, watched
+from .state import history as state_history
 
 log = logging.getLogger("nmos.sidecar")
 
@@ -126,26 +134,30 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     # Runtime-editable part (plugin settings UI): effective settings, parser rules, recall options.
     rt: dict[str, Any] = {}
+    config_lock = threading.RLock()
 
-    def rebuild(overrides: dict[str, Any]) -> None:
+    def configuration(overrides: dict[str, Any]) -> dict[str, Any]:
         cur = runtime.effective(settings, overrides)
         rules = runtime.ruleset(settings, overrides)
         emb = embedder or (Embedder(cur.embed_url, cur.embed_model, cur.embed_api_key)
                            if cur.embed_url and cur.embed_model else None)
         pj = vectors.projection(cur)
         sm = summaries.summarizer(cur)
-        rt.update(settings=cur, rules=rules, overrides=overrides, extractor=extraction.extractor(cur), projection=pj,
+        return dict(settings=cur, rules=rules, overrides=overrides, extractor=extraction.extractor(cur), projection=pj,
                   summarizer=sm, canon=canonfacts.generation(cur), reveal=reveals.generation(cur),
                   recall=RecallOptions(
             top_k=cur.recall_top_k, threshold=cur.recall_threshold, rules_version=rules.version,
             facts_limit=cur.facts_limit, events_limit=cur.events_limit,
             threads_limit=cur.threads_limit, embedder=emb if pj else None, embed_projection=pj.key if pj else "",
             extractor_key=rt.get("active_extractor"), embed_timeout_ms=cur.embed_timeout_ms,
-            lexical_timeout_ms=cur.lexical_timeout_ms,
+            lexical_timeout_ms=cur.lexical_timeout_ms, rest_after=cur.rest_after,
             vector_min_sim=cur.vector_min_sim, query_prefix=query_prefix(cur.embed_model, cur.embed_query_instruction),
             policy=cur.packet_policy if cur.packet_policy in POLICIES else DEFAULT_POLICY,
             summarize_key=sm.key if sm else None, canon_key=rt.get("active_canon") if cur.canon_facts else None,
         ))
+
+    def rebuild(overrides: dict[str, Any]) -> None:
+        rt.update(configuration(overrides))
 
     def activate(conn, before_extractor: str | None, before_projection: str | None,
                  before_summarizer: str | None = None, before_canon: str | None = None) -> int:
@@ -228,10 +240,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         if queued:
             log.info("canon jobs queued conversation=%s jobs=%d", conv_id, queued)
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        # Each startup step commits on its own, the batched backfills batch by batch, so a restart during
-        # a long backfill resumes it instead of starting over (audit A-08).
+    def startup_steps() -> int:
+        """What every start does, idempotent: the stored settings, the derived text, turn data and state the ledger is
+        missing, and each generation's missing jobs. A restore while NMOS runs (PHASE-38 Q4) runs it again for the rows
+        it added. Each step commits on its own, the batched backfills batch by batch, so a restart during a long
+        backfill resumes it instead of starting over (audit A-08)."""
         with psycopg.connect(settings.database_url, row_factory=dict_row, autocommit=True) as conn:
             rebuild(runtime.stored(conn))
             normalized = normtext.backfill(conn)
@@ -248,12 +261,18 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             log.info("generations: extract=%s embed=%s summarize=%s; queued %d missing jobs",
                      rt["active_extractor"], rt["projection"].key if rt["projection"] else None,
                      rt["summarizer"].key if rt["summarizer"] else None, queued)
-        app.state.pool = pool or make_pool(settings.database_url)
         if backfilled:
             log.info("state backfilled: %d observations for rules %s", backfilled, rt["rules"].version)
+        return queued
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        startup_steps()
+        app.state.pool = pool or make_pool(settings.database_url)
         try:
             yield
         finally:
+            spool.close()  # uploads do not outlive the sidecar (PHASE-38)
             if pool is None:
                 app.state.pool.close()
 
@@ -378,6 +397,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         plugins.saw(body.plugin_build)
         conv = ledger.lock_conversation(conn, body.host, body.chat_id, body.character_ref, body.character_name,
                                         body.chat_name, body.persona_name)
+        if conv.card_renamed and needs_card(rt["rules"]):  # rules bound to a card read this chat by its new name
+            reparse_conversation(conn, rt["rules"], conv.id)
         if settings.append_fast_path and conv.head_commit_id is not None:
             fast = append_reconcile(conn, conv, body)
             if fast is not None:
@@ -417,7 +438,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                              "vectors": rt["recall"].embedder is not None},
                 "generations": {"extract": rt["active_extractor"],
                                 "embed": rt["projection"].key if rt["projection"] else None},
-                "plugin": {"expected": plugin.expected(), "seen": plugins.recent()}}
+                "plugin": {"expected": plugin.expected(), "seen": plugins.recent()},
+                "install": settings.install or None}
 
     @app.get(f"/v1/plugin/{plugin.FILENAME}", dependencies=[Depends(auth)])
     def plugin_download():
@@ -795,12 +817,22 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             return {"turns": [t["turn"] for t in turns], "discarded": discarded, "queued": queued,
                     "coverage": coverage_view(conn, conv_id)}
 
-    def repair_rows(conn, conv_id: UUID, live: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Every repair of a chat, newest first, with the item each in force applies to now (ADR 0044)."""
+    def repair_rows(conn, conv_id: UUID, live: list[dict[str, Any]],
+                    flags: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+        """Every repair of a chat, newest first, with the item each in force applies to now (ADR 0044); a status
+        flag's dismissal, the flag while the chat still raises it (`flags`, PHASE-39 Q4)."""
         applied = {str(x["id"]): x["applied"] for x in live}
+        raised = {f["id"] for f in flags or ()}
         rows = conn.execute("SELECT id, kind, target, value, note, created_at, removed_at FROM owner_repair"
                             " WHERE conversation_id = %s ORDER BY created_at DESC, id DESC", (conv_id,)).fetchall()
-        return [{**row, "applied": applied.get(str(row["id"]))} for row in rows]
+        return [{**row, "applied": ((row["target"] or {}).get("id") if (row["target"] or {}).get("id") in raised else None)
+                 if row["kind"] == "state_dismiss" else applied.get(str(row["id"]))} for row in rows]
+
+    def state_flags(conn, conv: dict[str, Any]) -> list[dict[str, Any]]:
+        """A chat's status flags (PHASE-39 Q4), every one, dismissed or not; none without a watched key."""
+        if not watched(rt["rules"]) or conv["head_commit_id"] is None:
+            return []
+        return statewatch.flags_of(conn, conv["head_commit_id"], rt["rules"], conv.get("host_character_name"))
 
     def head_turn(conn, head: UUID) -> int | None:
         return conn.execute("SELECT max(turn) AS t FROM active_membership WHERE commit_id = %s", (head,)).fetchone()["t"]
@@ -875,6 +907,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             if body.kind == "fact_restore":  # a fact a re-extraction dropped, or a held role ending (PHASE-28 Q7)
                 view["dropped"] = (dropped.find(conn, head, rt["active_extractor"], view)
                                    + endings.held(conn, head, rt["active_extractor"], view))
+            if body.kind == "state_dismiss":  # a status flag not yet dismissed (PHASE-39 Q4)
+                off = statewatch.dismissed(repair_rows(conn, conv_id, []))
+                view["state_flags"] = [f for f in state_flags(conn, conv) if f["id"] not in off]
             try:
                 target, value = repairs.plan(body.kind, body.item, view,
                                              head_turn(conn, head), body.outcome, body.character, body.turn,
@@ -890,8 +925,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                     "INSERT INTO owner_repair (id, conversation_id, kind, target, value, note) VALUES (%s, %s, %s, %s, %s, %s)"
                     " RETURNING id, kind, target, value, note, created_at",
                     (uuid7(), conv_id, body.kind, Jsonb(target), Jsonb(value), (body.note or "").strip() or None)).fetchone()
-            applied = next((x["applied"] for x in view_of(conn, head)["repairs"]
-                            if x["id"] == row["id"]), None)
+            applied = target["id"] if body.kind == "state_dismiss" else next(
+                (x["applied"] for x in view_of(conn, head)["repairs"] if x["id"] == row["id"]), None)
         log.info("owner repair conversation=%s repair=%s kind=%s applied=%s", conv_id, row["id"], body.kind,
                  applied is not None)
         return {"repair": row, "applied": applied}
@@ -1033,31 +1068,162 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         chosen = None if result.manifest["scope"] == "install" else len(result.manifest["conversations"])
         return FileResponse(tmp.name, media_type="application/zip", filename=archive.default_name(chosen))
 
+    # --- restore from the panel (PHASE-38; ADR 0050 amendment 2) ------------------------------------------------------
+    spool = uploads.Uploads(settings.restore_max_mb * 1024 * 1024, make_dir=lambda: uploads.spool_dir())
+
+    def upload_error(error: uploads.UploadError) -> HTTPException:
+        return HTTPException(status_code=error.status, detail=error.detail)
+
+    @app.post("/v1/archive/uploads", dependencies=[Depends(auth)])
+    def upload_create(body: ArchiveUploadCreate):
+        """Start an upload of `bytes` bytes, sent in chunks of `chunk_bytes`; it replaces any other upload (Q2)."""
+        try:
+            return spool.create(body.bytes).view()
+        except uploads.UploadError as e:
+            raise upload_error(e) from None
+
+    @app.put("/v1/archive/uploads/{upload_id}/chunks/{index}", dependencies=[Depends(auth)])
+    def upload_chunk(upload_id: str, index: int, body: ArchiveUploadChunk):
+        try:
+            data = base64.b64decode(body.data, validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(status_code=422, detail=f"chunk {index} is not base64") from None
+        try:
+            up = spool.chunk(upload_id, index, data, body.sha256)
+        except uploads.UploadError as e:
+            raise upload_error(e) from None
+        return {"state": up.state, "received": up.received, "bytes": up.size}
+
+    @app.get("/v1/archive/uploads/{upload_id}", dependencies=[Depends(auth)])
+    def upload_status(upload_id: str):
+        try:
+            return spool.get(upload_id).view()
+        except uploads.UploadError as e:
+            raise upload_error(e) from None
+
+    @app.delete("/v1/archive/uploads/{upload_id}", dependencies=[Depends(auth)])
+    def upload_discard(upload_id: str):
+        try:
+            spool.discard(upload_id)
+        except uploads.UploadError as e:
+            raise upload_error(e) from None
+        return {"discarded": True}
+
+    def check_upload(up: uploads.Upload) -> None:
+        try:
+            up.checked = archive.check_archive(str(up.path))
+            up.summary = archive.summary(settings.database_url, up.checked)
+            up.state = "checked"
+        except archive.ArchiveError as e:
+            up.state, up.detail = "refused", str(e)
+        except Exception as e:  # noqa: BLE001 — the panel shows it; the log has the trace
+            log.exception("archive check failed upload=%s", up.id)
+            up.state, up.detail = "refused", f"the archive could not be checked: {e}"
+        log.info("archive upload=%s %s %s", up.id, up.state, up.detail)
+
+    def restore_upload(up: uploads.Upload) -> None:
+        try:
+            done = archive.restore_archive(settings.database_url, up.checked)
+        except archive.ArchiveError as e:
+            up.state, up.detail = "failed", str(e)
+            log.info("archive restore upload=%s refused: %s", up.id, e)
+            return
+        except Exception as e:  # noqa: BLE001
+            log.exception("archive restore failed upload=%s", up.id)
+            up.state, up.detail = "failed", f"the archive could not be restored; none of it was written: {e}"
+            return
+        up.result = dataclasses.asdict(done)
+        try:  # the rows it added get what a start would write for them (Q4)
+            up.result["queued_jobs"] = startup_steps()
+        except Exception as e:  # noqa: BLE001 — the restore is committed; the next start writes them
+            log.exception("after the restore of upload=%s", up.id)
+            up.detail = f"restored; the derived rows will be written at the next start ({e})"
+        up.state = "restored"
+        log.info("archive restored upload=%s conversations=%d rows=%s", up.id, len(done.conversations), done.rows)
+
+    @app.post("/v1/archive/uploads/{upload_id}/check", status_code=202, dependencies=[Depends(auth)])
+    def upload_check(upload_id: str):
+        """Check the whole archive (every file's size, rows and hash; its schema) and summarize what it would bring
+        (Q2); in the background: poll the upload."""
+        try:
+            return spool.run(upload_id, "received", "checking", check_upload).view()
+        except uploads.UploadError as e:
+            raise upload_error(e) from None
+
+    @app.post("/v1/archive/uploads/{upload_id}/restore", status_code=202, dependencies=[Depends(auth)])
+    def upload_restore(upload_id: str):
+        """Restore a checked archive while NMOS runs (Q4): writes that draw a shared id wait; reads go on."""
+        try:
+            return spool.run(upload_id, "checked", "restoring", restore_upload).view()
+        except uploads.UploadError as e:
+            raise upload_error(e) from None
+
     @app.get("/v1/config", dependencies=[Depends(auth)])
     def get_config():
-        return runtime.public_view(rt["settings"], rt["overrides"], rt["rules"])
+        with config_lock:
+            return runtime.public_view(rt["settings"], rt["overrides"], rt["rules"])
+
+    @app.put("/v1/parsers/card", dependencies=[Depends(auth)])
+    def put_parser_card(body: dict[str, Any], request: Request):
+        card = body.get("card")
+        errors = runtime.template_errors(body.get("rules"))
+        if not isinstance(card, str) or not card.strip() or len(card) > 200:
+            errors.append("card must be a character name of 1 to 200 characters")
+        if errors:
+            raise HTTPException(status_code=422, detail=errors)
+        with config_lock:
+            with request.app.state.pool.connection() as conn:
+                runtime.lock_config(conn)
+                overrides = runtime.stored(conn)
+                try:
+                    spec = runtime.bind_card(runtime.parser_spec(settings, overrides, strict=True), card, body["rules"])
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from None
+                overrides[runtime.PARSERS_KEY] = spec
+                prepared = configuration(overrides)
+                runtime.save(conn, {runtime.PARSERS_KEY: spec})
+                rebuild_state(conn, prepared["rules"])
+            # Publish only after the database transaction commits; failed writes leave the live rules alone.
+            rt.update(prepared)
+            return runtime.public_view(rt["settings"], rt["overrides"], rt["rules"])
 
     @app.put("/v1/config", dependencies=[Depends(auth)])
     def put_config(update: dict[str, Any], request: Request):
         clean, errors = runtime.validate_update(update)
         if errors:
             raise HTTPException(status_code=422, detail=errors)
-        clean = runtime.keys_follow_hosts(settings, rt["overrides"], clean)
-        before_ex, before_pj, before_sm, before_cg = rt["extractor"], rt["projection"], rt["summarizer"], rt["canon"]
-        before_backfill = rt["settings"].extract_backfill
-        with request.app.state.pool.connection() as conn:
-            runtime.save(conn, clean)
-            rebuild(runtime.stored(conn))
-            if runtime.PARSERS_KEY in clean:
-                rebuild_state(conn, rt["rules"])
-            queued = activate(conn, before_ex.key if before_ex else None, before_pj.key if before_pj else None,
-                              before_sm.key if before_sm else None, before_cg.key if before_cg else None)
-            ex = rt["extractor"]
-            if ex and before_ex and ex.key == before_ex.key and rt["settings"].extract_backfill != before_backfill:
-                # Same generation, different backfill: queue what the new window is missing now, not at
-                # the next restart (ADR 0008). Idempotent; a smaller backfill queues nothing.
-                queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill)
-        return {**runtime.public_view(rt["settings"], rt["overrides"], rt["rules"]), "queued_jobs": queued}
+        with config_lock:
+            before = dict(rt)
+            before_ex, before_pj, before_sm, before_cg = rt["extractor"], rt["projection"], rt["summarizer"], rt["canon"]
+            before_backfill = rt["settings"].extract_backfill
+            queued = 0
+            try:
+                with request.app.state.pool.connection() as conn:
+                    runtime.lock_config(conn)
+                    latest = runtime.stored(conn)
+                    clean = runtime.keys_follow_hosts(settings, latest, clean)
+                    runtime.save(conn, clean)
+                    overrides = runtime.stored(conn)
+                    prepared = configuration(overrides) if set(clean) - {runtime.PRESETS_KEY} else None
+                    if runtime.PARSERS_KEY in clean:
+                        rebuild_state(conn, prepared["rules"])
+                    # Saving inactive templates (or active parser rules) never schedules extraction work.
+                    if set(clean) - {runtime.PARSERS_KEY, runtime.PRESETS_KEY}:
+                        rt.update(prepared)
+                        queued = activate(conn, before_ex.key if before_ex else None, before_pj.key if before_pj else None,
+                                          before_sm.key if before_sm else None, before_cg.key if before_cg else None)
+                        ex = rt["extractor"]
+                        if ex and before_ex and ex.key == before_ex.key and rt["settings"].extract_backfill != before_backfill:
+                            queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill)
+                        prepared = dict(rt)
+                if set(clean) <= {runtime.PRESETS_KEY}:
+                    rt["overrides"] = overrides
+                else:
+                    rt.update(prepared)
+            except Exception:
+                rt.update(before)
+                raise
+            return {**runtime.public_view(rt["settings"], rt["overrides"], rt["rules"]), "queued_jobs": queued}
 
     def key_for(body: dict[str, Any], kind: str) -> tuple[str, str]:
         """The key a test or model list sends, and a note when the saved one was kept from another host."""
@@ -1107,7 +1273,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                    version=__version__, errors=recent_errors(conn))
 
     def inspector_detail_html(conv_id: UUID, request: Request, token: str | None, lang: str | None,
-                              embed: bool = False) -> str:
+                              embed: bool = False, span: str | None = None, lazy: bool = False,
+                              status_lazy: bool = False) -> str:
         with request.app.state.pool.connection() as conn:
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
@@ -1123,23 +1290,67 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                                               facts_links_of(conn, conv_id))}
             traces = readmodel.traces(conn, conv_id)
             cov = coverage_view(conn, conv_id, usage=True, lost=len(lost))
-            return inspector.detail(conv, current_state(conn, head, rt["rules"].version),
-                                    readmodel.membership(conn, head, ex_key, pj_key),
-                                    readmodel.commits(conn, conv_id), traces,
-                                    view["facts"][:300], token, cov,
-                                    lang=inspector.lang_of(lang), embed=embed, claims=view["claims"],
-                                    other=view["other"], entities=view["entities"], ambiguous=view["ambiguous"],
-                                    conflicts=view["conflicts"], items=view["items"], threads=view["threads"],
-                                    unmatched=view["unmatched"], secrets=view["secrets"],
-                                    unrevealed=view["unrevealed"],
-                                    standing=[f for f in view["facts"] if f["predicate"] in STANDING],
-                                    packet=audit.audit(conn, traces[0]["id"]) if traces else None,
-                                    summaries=summary_view(conn, conv_id, head, view["secrets"]),
-                                    repairs=repair_rows(conn, conv_id, view["repairs"]), last_turn=head_turn(conn, head),
-                                    canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
-                                    canon_held=canon.held(conn, conv_id), canon_read=cov["canon"].get("keys"),
-                                    canon_facts=view.get("canon_facts", 0), dropped=lost,
-                                    endings=role_ends)
+            flags = state_flags(conn, conv)  # PHASE-39 Q4
+            fixed = repair_rows(conn, conv_id, view["repairs"], flags)
+            off = statewatch.dismissed(fixed)
+            with inspector.turn_links(conv_id, token, inspector.lang_of(lang)):  # turn cells lead to their turns
+                html = inspector.detail(conv, current_state(conn, head, rt["rules"].version),
+                                        readmodel.membership(conn, head, ex_key, pj_key),
+                                        readmodel.commits(conn, conv_id), traces,
+                                        view["facts"][:300], token, cov,
+                                        lang=inspector.lang_of(lang), embed=embed, claims=view["claims"],
+                                        other=view["other"], entities=view["entities"], ambiguous=view["ambiguous"],
+                                        conflicts=view["conflicts"], items=view["items"], threads=view["threads"],
+                                        unmatched=view["unmatched"], secrets=view["secrets"],
+                                        unrevealed=view["unrevealed"],
+                                        standing=[f for f in view["facts"] if f["predicate"] in STANDING],
+                                        packet=audit.audit(conn, traces[0]["id"]) if traces else None,
+                                        summaries=summary_view(conn, conv_id, head, view["secrets"]),
+                                        repairs=fixed, last_turn=head_turn(conn, head),
+                                        canon_rows=canon.manifest(conn, conv_id), canon_history=canon.history(conn, conv_id),
+                                        canon_held=canon.held(conn, conv_id), canon_read=cov["canon"].get("keys"),
+                                        canon_facts=view.get("canon_facts", 0), dropped=lost,
+                                        endings=role_ends, span=inspector.span_of(span),
+                                        cast=None if embed else cast_of(view, traces), lazy=lazy,
+                                        overuse=overuse.placement(readmodel.ledgers(conn, conv_id)),
+                                        status=state_history(conn, head, rt["rules"].version)
+                                        if rt["rules"].rules and not embed else None,
+                                        # the panel's closed section needs only to know there is something to draw
+                                        status_lazy=status_lazy and rt["rules"].rules != () and conn.execute(
+                                            "SELECT 1 FROM state_observation WHERE conversation_id = %s"
+                                            " AND rules_version = %s LIMIT 1",
+                                            (conv_id, rt["rules"].version)).fetchone() is not None, state_flags=[f for f in flags if f["id"] not in off])
+            return html
+
+    def inspector_status_html(conv_id: UUID, request: Request, lang: str | None, span: str | None) -> str:
+        """The status window's lanes alone for the panel (PHASE-39 Q3a), asked for when their section opens."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            head = conv["head_commit_id"]
+            hist = state_history(conn, head, rt["rules"].version) if rt["rules"].rules else {}
+            return inspector.conversation_status(hist, head_turn(conn, head), inspector.lang_of(lang),
+                                                 inspector.span_of(span))
+
+    def inspector_cast_html(conv_id: UUID, request: Request, lang: str | None, span: str | None) -> str:
+        """The conversation's cast lines alone for the panel (PHASE-32 step 3), asked for when their section opens."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            view = inspector.with_participants(view_of(conn, conv["head_commit_id"]))
+            return inspector.conversation_cast(conv, cast_of(view, readmodel.traces(conn, conv_id)),
+                                               head_turn(conn, conv["head_commit_id"]), inspector.lang_of(lang),
+                                               inspector.span_of(span))
+
+    def cast_of(view: dict[str, Any], traces: list[dict[str, Any]]) -> dict[str, Any]:
+        """What the conversation page's cast lines draw (PHASE-32): every fact and entity, and the characters of the
+        newest request's scene (its trace records their names), first."""
+        r = view.get("resolution")
+        names = ((traces[0].get("latency_ms") or {}).get("scene_cast") or []) if traces else []
+        return {"facts": view["facts"], "entities": view["entities"],
+                "scene": [scene.key(r, n) for n in names] if r is not None else []}
 
     def summary_view(conn, conv_id: UUID, head: UUID, secrets: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The Inspector's summaries of a chat (PHASE-12 step 6), with the generation and whether packets use them."""
@@ -1151,14 +1362,39 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return view
 
     def inspector_character_html(conv_id: UUID, entity_id: UUID, request: Request, token: str | None,
-                                 lang: str | None, embed: bool = False) -> str:
+                                 lang: str | None, embed: bool = False, span: str | None = None, lazy: bool = False,
+                                 part: bool = False) -> str:
         with request.app.state.pool.connection() as conn:
             conv = readmodel.conversation(conn, conv_id)
             if conv is None or conv["head_commit_id"] is None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             view = inspector.with_participants(view_of(conn, conv["head_commit_id"]))
-            return inspector.character(conv, str(entity_id), view, token, active=rt["active_extractor"],
-                                       lang=inspector.lang_of(lang), embed=embed)
+            with inspector.turn_links(conv_id, token, inspector.lang_of(lang)):
+                if part:  # the timeline alone, for the panel (PHASE-32 step 3)
+                    return inspector.character_timeline(conv, str(entity_id), view, inspector.lang_of(lang),
+                                                        head_turn(conn, conv["head_commit_id"]), inspector.span_of(span))
+                return inspector.character(conv, str(entity_id), view, token, active=rt["active_extractor"],
+                                           lang=inspector.lang_of(lang), embed=embed,
+                                           now=None if embed else head_turn(conn, conv["head_commit_id"]),
+                                           span=inspector.span_of(span), lazy=lazy)
+
+    def inspector_turn_html(conv_id: UUID, turn: int, request: Request, token: str | None, lang: str | None,
+                            embed: bool = False) -> str:
+        """The source-turn page (PHASE-33 Q7): read-only, the same token handling as the other pages."""
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            head = conv["head_commit_id"]
+            messages = readmodel.turn_messages(conn, head, turn)
+            revisions = {str(m["revision_id"]) for m in messages}
+            view = view_of(conn, head)
+            made = [a for a in view.get("assertions") or [] if a.get("turn") == turn]
+            return inspector.source_turn(
+                conv, turn, messages, made, readmodel.turn_generations(conn, [m["revision_id"] for m in messages]),
+                readmodel.turn_uses(conn, conv_id, revisions, {str(a["id"]) for a in made}),
+                readmodel.turn_bounds(conn, head), token, lang=inspector.lang_of(lang), embed=embed,
+                active=rt["active_extractor"])
 
     @app.get("/inspector", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_index(request: Request, token: str | None = None, lang: str | None = None):
@@ -1172,26 +1408,46 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return RedirectResponse("/inspector" + (f"?{q}" if q else ""), status_code=307)
 
     @app.get("/inspector/c/{conv_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
-    def inspector_detail(conv_id: UUID, request: Request, token: str | None = None, lang: str | None = None):
-        return inspector_detail_html(conv_id, request, token, lang)
+    def inspector_detail(conv_id: UUID, request: Request, token: str | None = None, lang: str | None = None,
+                         span: str | None = None):
+        return inspector_detail_html(conv_id, request, token, lang, span=span)
 
     @app.get("/inspector/c/{conv_id}/e/{entity_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
     def inspector_character(conv_id: UUID, entity_id: UUID, request: Request, token: str | None = None,
-                            lang: str | None = None):
-        return inspector_character_html(conv_id, entity_id, request, token, lang)
+                            lang: str | None = None, span: str | None = None):
+        return inspector_character_html(conv_id, entity_id, request, token, lang, span=span)
+
+    @app.get("/inspector/c/{conv_id}/t/{turn}", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def inspector_turn(conv_id: UUID, turn: int, request: Request, token: str | None = None, lang: str | None = None):
+        return inspector_turn_html(conv_id, turn, request, token, lang)
 
     # The same pages as body fragments for the plugin panel, which cannot open a browser tab (H15).
     @app.get("/v1/inspector", dependencies=[Depends(auth)])
     def inspector_index_embed(request: Request, lang: str | None = None):
         return {"html": inspector_index_html(request, None, lang, embed=True)}
 
+    # PHASE-32 step 3: a plugin that can show the timeline asks with `timeline=lazy` (a closed section to fill), then
+    # for the timeline alone with `part=timeline` when that section opens. Without them the answer is as before.
     @app.get("/v1/inspector/c/{conv_id}", dependencies=[Depends(auth)])
-    def inspector_detail_embed(conv_id: UUID, request: Request, lang: str | None = None):
-        return {"html": inspector_detail_html(conv_id, request, None, lang, embed=True)}
+    def inspector_detail_embed(conv_id: UUID, request: Request, lang: str | None = None, timeline: str | None = None,
+                               part: str | None = None, span: str | None = None, status: str | None = None):
+        if part == "timeline":
+            return {"html": inspector_cast_html(conv_id, request, lang, span)}
+        if part == "status":  # PHASE-39 Q3a
+            return {"html": inspector_status_html(conv_id, request, lang, span)}
+        # PHASE-39: a plugin that asks with `status=lazy` gets the status window's section to fill as `part=status`
+        return {"html": inspector_detail_html(conv_id, request, None, lang, embed=True, lazy=timeline == "lazy",
+                                              status_lazy=status == "lazy")}
 
     @app.get("/v1/inspector/c/{conv_id}/e/{entity_id}", dependencies=[Depends(auth)])
-    def inspector_character_embed(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None):
-        return {"html": inspector_character_html(conv_id, entity_id, request, None, lang, embed=True)}
+    def inspector_character_embed(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None,
+                                  timeline: str | None = None, part: str | None = None, span: str | None = None):
+        return {"html": inspector_character_html(conv_id, entity_id, request, None, lang, embed=True, span=span,
+                                                 lazy=timeline == "lazy", part=part == "timeline")}
+
+    @app.get("/v1/inspector/c/{conv_id}/t/{turn}", dependencies=[Depends(auth)])
+    def inspector_turn_embed(conv_id: UUID, turn: int, request: Request, lang: str | None = None):
+        return {"html": inspector_turn_html(conv_id, turn, request, None, lang, embed=True)}
 
     return app
 

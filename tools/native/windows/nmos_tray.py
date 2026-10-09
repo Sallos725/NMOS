@@ -1,5 +1,6 @@
 """NMOS for Windows (Phase 23): a notification-area icon that runs the bundle's services. NMOS.exe starts it with
-pythonw.exe, so there is no console; everything is logged to data/nmos.log.
+pythonw.exe, so there is no console; everything is logged to nmos.log in the data folder (Phase 37: outside the
+bundle, %LOCALAPPDATA%\\NMOS unless the user chose another).
 
 Win32 through ctypes only, so the bundle needs no extra package.
 """
@@ -22,6 +23,7 @@ import nmos_launcher as launcher
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 shell32 = ctypes.WinDLL("shell32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+ole32 = ctypes.WinDLL("ole32")
 
 LRESULT = ctypes.c_ssize_t
 WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
@@ -36,7 +38,8 @@ NIIF_INFO, NIIF_ERROR = 0x1, 0x3
 MF_STRING, MF_GRAYED, MF_CHECKED, MF_SEPARATOR = 0x0, 0x1, 0x8, 0x800
 TPM_RIGHTBUTTON, TPM_NONOTIFY, TPM_RETURNCMD = 0x2, 0x80, 0x100
 IMAGE_ICON, LR_LOADFROMFILE, SM_CXSMICON, SM_CYSMICON = 1, 0x10, 49, 50
-MB_ICONERROR, MB_ICONINFORMATION = 0x10, 0x40
+MB_ICONERROR, MB_ICONINFORMATION, MB_YESNOCANCEL, IDYES, IDNO = 0x10, 0x40, 0x3, 6, 7
+BIF_RETURNONLYFSDIRS, BIF_NEWDIALOGSTYLE, MAX_PATH = 0x1, 0x40, 260
 ERROR_ALREADY_EXISTS = 183
 CLASS_NAME = "NMOSTrayWindow"
 
@@ -48,6 +51,12 @@ class WNDCLASSEXW(ctypes.Structure):
                 ("cbClsExtra", ctypes.c_int), ("cbWndExtra", ctypes.c_int), ("hInstance", wintypes.HINSTANCE),
                 ("hIcon", wintypes.HICON), ("hCursor", wintypes.HANDLE), ("hbrBackground", wintypes.HBRUSH),
                 ("lpszMenuName", wintypes.LPCWSTR), ("lpszClassName", wintypes.LPCWSTR), ("hIconSm", wintypes.HICON)]
+
+
+class BROWSEINFOW(ctypes.Structure):
+    _fields_ = [("hwndOwner", wintypes.HWND), ("pidlRoot", ctypes.c_void_p), ("pszDisplayName", wintypes.LPWSTR),
+                ("lpszTitle", wintypes.LPCWSTR), ("ulFlags", wintypes.UINT), ("lpfn", ctypes.c_void_p),
+                ("lParam", wintypes.LPARAM), ("iImage", ctypes.c_int)]
 
 
 class NOTIFYICONDATAW(ctypes.Structure):
@@ -73,6 +82,11 @@ user32.TrackPopupMenu.argtypes = [wintypes.HMENU, wintypes.UINT, ctypes.c_int, c
                                   wintypes.HWND, wintypes.LPVOID]
 user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 user32.MessageBoxW.argtypes = [wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.UINT]
+shell32.SHBrowseForFolderW.restype = ctypes.c_void_p
+shell32.SHBrowseForFolderW.argtypes = [ctypes.POINTER(BROWSEINFOW)]
+shell32.SHGetPathFromIDListW.argtypes = [ctypes.c_void_p, wintypes.LPWSTR]
+ole32.CoTaskMemFree.argtypes = [ctypes.c_void_p]
+ole32.OleInitialize.argtypes = [wintypes.LPVOID]
 user32.DestroyMenu.argtypes = [wintypes.HMENU]
 user32.DestroyWindow.argtypes = [wintypes.HWND]
 user32.SetForegroundWindow.argtypes = [wintypes.HWND]
@@ -85,6 +99,46 @@ kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWS
 
 def message_box(text: str, error: bool = True) -> None:
     user32.MessageBoxW(None, text, "NMOS", MB_ICONERROR if error else MB_ICONINFORMATION)
+
+
+# --- Q6 of Phase 37: a data folder PostgreSQL can use -----------------------------------------------------------------
+
+def browse_folder() -> Path | None:
+    """The system's folder picker (it can make a new folder); None when cancelled."""
+    ole32.OleInitialize(None)  # the picker's new-folder button needs OLE on this thread
+    name = ctypes.create_unicode_buffer(MAX_PATH)
+    info = BROWSEINFOW(hwndOwner=None, pszDisplayName=ctypes.cast(name, wintypes.LPWSTR),
+                       lpszTitle="NMOS 데이터를 둘 폴더를 골라 주세요 (영문과 숫자로만 된 경로)",
+                       ulFlags=BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE)
+    pidl = shell32.SHBrowseForFolderW(ctypes.byref(info))
+    if not pidl:
+        return None
+    try:
+        path = ctypes.create_unicode_buffer(32768)
+        return Path(path.value) if shell32.SHGetPathFromIDListW(pidl, path) else None
+    finally:
+        ole32.CoTaskMemFree(pidl)
+
+
+def ask_data_dir(base: Path) -> Path | None:
+    """Ask where the data goes, suggesting C:\\NMOS-data; the choice is remembered. None when the user cancels."""
+    text = (f"Windows 사용자 이름에 한글이 있어서, NMOS 데이터베이스를 기본 위치({base})에 둘 수 없어요. 데이터를 둘 "
+            "폴더를 정해 주세요. 한 번 정하면 기억해 두니, 다음 실행이나 업데이트 때는 다시 묻지 않아요.\n\n"
+            f"[예] {launcher.SUGGESTED_DATA_DIR}에 두기\n[아니요] 다른 폴더 고르기\n[취소] 시작하지 않기")
+    while True:
+        answer = user32.MessageBoxW(None, text, "NMOS", MB_YESNOCANCEL | MB_ICONINFORMATION)
+        if answer == IDYES:
+            chosen = launcher.SUGGESTED_DATA_DIR
+        elif answer == IDNO:
+            chosen = browse_folder()
+            if chosen is None:
+                continue
+        else:
+            return None
+        try:
+            return launcher.choose_data_dir(base, chosen)
+        except (ValueError, OSError) as e:
+            message_box(str(e))
 
 
 # --- start at login: this NMOS.exe in the user's Run key ------------------------------------------------------------
@@ -131,8 +185,8 @@ def dashboard_url(services: launcher.Services) -> str:
 # --- the tray ---------------------------------------------------------------------------------------------------------
 
 class Tray:
-    def __init__(self) -> None:
-        self.services = launcher.Services()
+    def __init__(self, services: launcher.Services) -> None:
+        self.services = services
         self.state = "starting"  # starting | running | stopped | failed | stopping
         self.error = ""
         self.autostart = False
@@ -292,7 +346,21 @@ class Tray:
 
 
 def main() -> int:
-    data = launcher.Services().data  # resolves .env and NMOS_DATA_DIR like the services do
+    # One NMOS per bundle folder, said kindly before the launcher's own data-folder lock would refuse it (and before
+    # a second one asks where the data goes).
+    key = hashlib.sha1(str(launcher.ROOT).lower().encode()).hexdigest()[:16]
+    kernel32.CreateMutexW(None, True, f"Local\\NMOS-{key}")
+    if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
+        message_box("NMOS가 이미 실행 중이에요. 작업 표시줄 오른쪽 아래의 NMOS 아이콘을 확인해 주세요.", error=False)
+        return 0
+
+    try:
+        services = launcher.Services()  # resolves .env and the data folder, so the log goes where the data is
+    except launcher.DataLocationNeeded as need:
+        if ask_data_dir(need.base) is None:
+            return 0  # cancelled: nothing is started
+        services = launcher.Services()
+    data = services.data
     log_path = data / "nmos.log"
     if log_path.exists() and log_path.stat().st_size > 5_000_000:
         log_path.replace(data / "nmos.log.1")
@@ -304,14 +372,7 @@ def main() -> int:
     launcher.CHILD_KW = {**no_window, "stdout": log_file, "stderr": subprocess.STDOUT}
     launcher.CHILD_KW_NO_OUTPUT = {**no_window, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
 
-    # One NMOS per bundle folder, said kindly before the launcher's own data-folder lock would refuse it.
-    key = hashlib.sha1(str(launcher.ROOT).lower().encode()).hexdigest()[:16]
-    kernel32.CreateMutexW(None, True, f"Local\\NMOS-{key}")
-    if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
-        message_box("NMOS가 이미 실행 중이에요. 작업 표시줄 오른쪽 아래의 NMOS 아이콘을 확인해 주세요.", error=False)
-        return 0
-
-    tray = Tray()
+    tray = Tray(services)
     tray.create()
     threading.Thread(target=tray.run_services, daemon=True).start()
     tray.loop()

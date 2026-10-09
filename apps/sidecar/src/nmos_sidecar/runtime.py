@@ -9,8 +9,10 @@ host drops it.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import time
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -25,6 +27,7 @@ from .parsers import RuleSet, compile_rules, load_rules
 EDITABLE: dict[str, type] = {
     "llm_url": str, "llm_model": str, "llm_api_key": str, "llm_json_mode": bool,
     "embed_url": str, "embed_model": str, "embed_api_key": str, "embed_query_instruction": str,
+    "embed_timeout_ms": int,  # a slow or remote embedder needs more than the 300 ms default (K34)
     "recall_threshold": float, "vector_min_sim": float, "recall_top_k": int, "facts_limit": int,
     "events_limit": int, "threads_limit": int,
     "extract_backfill": int, "summaries": bool, "canon_facts": bool,
@@ -32,8 +35,74 @@ EDITABLE: dict[str, type] = {
 SECRET = {"llm_api_key", "embed_api_key"}
 KEY_HOSTS = {"llm_api_key": "llm_url", "embed_api_key": "embed_url"}  # each key belongs to its endpoint's host
 RANGES = {"recall_threshold": (0.05, 1.0), "vector_min_sim": (0.0, 1.0), "recall_top_k": (0, 20),
-          "facts_limit": (0, 30), "events_limit": (0, 30), "threads_limit": (0, 10), "extract_backfill": (0, 5000)}
+          "facts_limit": (0, 30), "events_limit": (0, 30), "threads_limit": (0, 10), "extract_backfill": (0, 5000),
+          "embed_timeout_ms": (100, 5000)}
 PARSERS_KEY = "parsers"
+PRESETS_KEY = "parser_presets"
+PARSER_MAX_BYTES = 256_000
+PARSER_MAX_RULES = 100
+
+
+def parser_spec(base: Settings, overrides: dict[str, Any], *, strict: bool = False) -> Any:
+    """The original document remains visible even when legacy rules cannot activate."""
+    if PARSERS_KEY in overrides:
+        return overrides[PARSERS_KEY]
+    if base.parsers_file:
+        try:
+            return json.loads(Path(base.parsers_file).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            if strict:
+                raise ValueError("existing parser file cannot be read; repair it before applying a card") from exc
+    return {"rules": []}
+
+
+def template_errors(rules: Any) -> list[str]:
+    if not isinstance(rules, list) or len(rules) > PARSER_MAX_RULES:
+        return [f"rules must be a list of at most {PARSER_MAX_RULES} rules"]
+    if len(json.dumps(rules, ensure_ascii=False).encode()) > PARSER_MAX_BYTES:
+        return [f"rules must be at most {PARSER_MAX_BYTES} bytes"]
+    return list(compile_rules({"rules": rules}, template=True).errors)
+
+
+def preset_errors(value: Any) -> list[str]:
+    if not isinstance(value, list) or len(value) > 50:
+        return ["presets must be a list of at most 50 presets"]
+    if len(json.dumps(value, ensure_ascii=False).encode()) > PARSER_MAX_BYTES:
+        return [f"presets must be at most {PARSER_MAX_BYTES} bytes"]
+    names: set[str] = set()
+    errors: list[str] = []
+    for item in value:
+        if not isinstance(item, dict):
+            errors.append("preset must be an object")
+            continue
+        name = item.get("name")
+        if not isinstance(name, str) or not 0 < len(name.strip()) <= 100 or name != name.strip():
+            errors.append("preset name must be 1 to 100 characters without surrounding whitespace")
+        elif name in names:
+            errors.append(f"duplicate preset name: {name}")
+        else:
+            names.add(name)
+        errors.extend(template_errors(item.get("rules")))
+    return errors
+
+
+def bind_card(spec: Any, card: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
+    """Replace one exact display-name binding; template IDs are stable within a card namespace."""
+    namespace = "card-" + hashlib.sha256(card.encode()).hexdigest()[:16] + ":"
+    bound = []
+    for index, rule in enumerate(rules):
+        rid = str(rule.get("id") or f"rule{index}")
+        # Reapplying an exported binding is idempotent; each slot remains distinct for duplicate template IDs.
+        marker = f"{namespace}{index}:"
+        bound.append({**rule, "id": rid if rid.startswith(marker) else marker + rid, "card": card})
+    if not isinstance(spec, dict) or not isinstance(spec.get("rules"), list):
+        raise ValueError("existing parser document is malformed; repair it before applying a card")
+    return {**spec, "rules": [r for r in spec["rules"] if not isinstance(r, dict) or r.get("card") != card] + bound}
+
+
+def lock_config(conn: psycopg.Connection) -> None:
+    # Serializes merges even before app_config has a parsers row, and across separate API processes.
+    conn.execute("SELECT pg_advisory_xact_lock(73490392)")
 
 
 def stored(conn: psycopg.Connection) -> dict[str, Any]:
@@ -117,6 +186,10 @@ def validate_update(update: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     clean: dict[str, Any] = {}
     errors: list[str] = []
     for key, value in update.items():
+        if key == PRESETS_KEY:
+            errors.extend(f"parser_presets: {e}" for e in preset_errors(value))
+            clean[key] = value
+            continue
         if key == PARSERS_KEY:
             if value is None:
                 clean[key] = None
@@ -180,18 +253,21 @@ def save(conn: psycopg.Connection, clean: dict[str, Any]) -> None:
 def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -> dict[str, Any]:
     """Settings as the UI sees them. Secrets are reported as set/unset only."""
     return {
+        "install": settings.install or None,  # `bundle` from the portable launcher: the panel's Ollama address
         "llm": {"url": settings.llm_url, "model": settings.llm_model, "api_key_set": bool(settings.llm_api_key),
                 "json_mode": settings.llm_json_mode},
         "embeddings": {"url": settings.embed_url, "model": settings.embed_model,
                        "api_key_set": bool(settings.embed_api_key),
                        "query_instruction": settings.embed_query_instruction},
         "recall": {"threshold": settings.recall_threshold, "vector_min_sim": settings.vector_min_sim,
+                   "embed_timeout_ms": settings.embed_timeout_ms,
                    "top_k": settings.recall_top_k, "facts_limit": settings.facts_limit,
                    "events_limit": settings.events_limit,
                    "threads_limit": settings.threads_limit},
         "extraction": {"backfill": settings.extract_backfill, "summaries": settings.summaries,
                        "canon_facts": settings.canon_facts},
         "parsers": {"rules": overrides.get(PARSERS_KEY) if PARSERS_KEY in overrides else None,
+                    "spec": parser_spec(settings, overrides), "presets": overrides.get(PRESETS_KEY, []),
                     "source": "ui" if PARSERS_KEY in overrides else ("file" if settings.parsers_file else "none"),
                     "active_rules": len(rules.rules), "errors": list(rules.errors)},
         "overridden": sorted(overrides),

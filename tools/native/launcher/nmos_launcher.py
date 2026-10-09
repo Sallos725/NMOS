@@ -5,14 +5,22 @@ Runs under the bundle's own Python. Layout next to this file:
     python/   standalone CPython with the sidecar installed
     pgsql/    portable PostgreSQL 16 with pg_trgm and pgvector
     migrations/, plugin/nmos-pocketrisu.js
-    data/     created on first start (database cluster, logs, generated DB password)
-    .env      optional, same keys as the Docker install's .env
+    .env      optional, same keys as the Docker install's .env (read under the data folder's own .env)
+
+The data (database cluster, logs, generated DB password, .env) lives outside the bundle, in a per-user folder, so
+replacing the bundle folder on an update keeps it (Phase 37): Windows %LOCALAPPDATA%\\NMOS, Linux
+$XDG_DATA_HOME/nmos (~/.local/share/nmos), macOS ~/Library/Application Support/NMOS. NMOS_DATA_DIR names another
+folder (relative to this one: NMOS_DATA_DIR=data keeps it beside the launcher, as 0.3.0 did). A data/ that 0.3.0 left
+beside the launcher is moved to the per-user folder on the first start.
 """
 
 from __future__ import annotations
 
+import errno
+import hashlib
 import os
 import secrets
+import shutil
 import signal
 import socket
 import subprocess
@@ -53,6 +61,16 @@ def pg_bin(name: str) -> str:
     return str(PGSQL / "bin" / f"{name}{EXE}")
 
 
+def short_ascii(path: Path) -> Path | None:
+    """Windows: the 8.3 short form of an existing path when it is all ASCII; None when the drive has no short names."""
+    import ctypes
+
+    buf = ctypes.create_unicode_buffer(32768)
+    if ctypes.windll.kernel32.GetShortPathNameW(str(path), buf, len(buf)) and buf.value.isascii():
+        return Path(buf.value)
+    return None
+
+
 def ascii_path(path: Path) -> Path:
     """Windows: an all-ASCII spelling of an existing path (its 8.3 short form when it has other characters).
 
@@ -61,11 +79,9 @@ def ascii_path(path: Path) -> Path:
     """
     if str(path).isascii():
         return path
-    import ctypes
-
-    buf = ctypes.create_unicode_buffer(32768)
-    if ctypes.windll.kernel32.GetShortPathNameW(str(path), buf, len(buf)) and buf.value.isascii():
-        return Path(buf.value)
+    short = short_ascii(path)
+    if short is not None:
+        return short
     raise SystemExit(
         f"NMOS cannot run its database under {path}: the path has non-English characters and this drive has no short "
         "(8.3) names. Move the NMOS folder to a path with only English letters and digits, such as C:\\NMOS, and "
@@ -137,13 +153,13 @@ def port_in_use(host: str, port: int) -> bool:
     return False
 
 
-def require_free_port(host: str, port: int, what: str, key: str) -> None:
+def require_free_port(host: str, port: int, what: str, key: str, env_file: Path) -> None:
     """Q10: a fixed port in use stops the start with its name; a changed port would break the plugin's URL."""
     if port_in_use(host, port):
         raise SystemExit(
-            f"Port {port} ({what}) is already in use by another program. Close it, or set {key} in .env next to "
-            f"NMOS to a free port.\n"
-            f"포트 {port}({what})를 다른 프로그램이 이미 쓰고 있어요. 그 프로그램을 닫거나, NMOS 폴더의 .env에서 "
+            f"Port {port} ({what}) is already in use by another program. Close it, or set {key} in {env_file} "
+            f"to a free port.\n"
+            f"포트 {port}({what})를 다른 프로그램이 이미 쓰고 있어요. 그 프로그램을 닫거나, {env_file}에서 "
             f"{key}를 비어 있는 포트로 바꿔 주세요.")
 
 
@@ -174,6 +190,255 @@ def restrict_to_this_user(data: Path) -> None:
     marker.touch()
 
 
+# --- where the data lives (Phase 37) ----------------------------------------------------------------------------------
+
+POINTER = "data-location.txt"  # Q6: in the per-user folder, the folder the user chose instead of it
+SUGGESTED_DATA_DIR = Path("C:\\NMOS-data")
+
+
+def user_data_dir(environ: dict[str, str]) -> Path:
+    """Q1: the per-user folder outside the bundle."""
+    if WINDOWS:
+        local = environ.get("LOCALAPPDATA")
+        return (Path(local) if local else Path.home() / "AppData" / "Local") / "NMOS"
+    home = Path(environ.get("HOME") or Path.home())
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / "NMOS"
+    xdg = environ.get("XDG_DATA_HOME", "")
+    return (Path(xdg) if xdg and Path(xdg).is_absolute() else home / ".local" / "share") / "nmos"
+
+
+class DataLocationNeeded(Exception):
+    """Q6: on Windows the per-user folder's path has non-English letters and its drive no short names, so PostgreSQL
+    cannot use it; the user picks another folder (the tray's picker, the console's question)."""
+
+    def __init__(self, base: Path) -> None:
+        super().__init__(str(base))
+        self.base = base
+
+
+def resolve_data_dir(environ: dict[str, str]) -> tuple[Path, bool]:
+    """The data folder, and whether it is the per-user one (True) rather than one NMOS_DATA_DIR names (Q5).
+
+    The per-user one gets the bundle's old data/ (Q3) and .env (Q2); a named one is the user's to manage."""
+    named = environ.get("NMOS_DATA_DIR")
+    if named:
+        return ROOT / Path(named).expanduser(), False  # relative to the bundle; an absolute path stays as it is
+    base = user_data_dir(environ)
+    if WINDOWS:
+        pointer = base / POINTER
+        if pointer.is_file():
+            chosen = pointer.read_text(encoding="utf-8").strip()
+            if chosen:
+                return Path(chosen), True
+        if not str(base).isascii():
+            base.mkdir(parents=True, exist_ok=True)  # only an existing path has a short name
+            if short_ascii(base) is None:
+                raise DataLocationNeeded(base)
+    return base, True
+
+
+def choose_data_dir(base: Path, chosen: Path) -> Path:
+    """Q6: make the folder the user chose and remember it in the per-user folder, so the next start and the next
+    version use it without asking. ValueError (with the reason to show) when PostgreSQL could not use it either."""
+    chosen = chosen.expanduser()
+    if not chosen.is_absolute():
+        raise ValueError(f"{chosen}: a full path is needed, such as {SUGGESTED_DATA_DIR}.\n"
+                         f"{chosen}: {SUGGESTED_DATA_DIR}처럼 드라이브부터 시작하는 전체 경로를 적어 주세요.")
+    made = not chosen.exists()
+    chosen.mkdir(parents=True, exist_ok=True)
+    if not str(chosen).isascii() and short_ascii(chosen) is None:
+        if made:
+            chosen.rmdir()
+        raise ValueError(f"{chosen} has non-English characters too. Choose a folder whose path has only English "
+                         "letters and digits.\n"
+                         f"{chosen}에도 영문이 아닌 글자가 있어요. 영문과 숫자로만 된 경로의 폴더를 골라 주세요.")
+    base.mkdir(parents=True, exist_ok=True)
+    (base / POINTER).write_text(f"{chosen}\n", encoding="utf-8")
+    return chosen
+
+
+def ask_data_dir_in_console(base: Path) -> Path | None:
+    """Q6 for NMOS.bat: ask in the console. None when the user cancels (nothing is started)."""
+    print(f"NMOS cannot keep its database in {base}: the path has non-English characters and the drive has no short "
+          "names. Choose another folder for NMOS's data; it is remembered, so the next start and the next version "
+          "do not ask again.\n"
+          f"Windows 사용자 이름에 한글이 있어서, NMOS 데이터베이스를 기본 위치({base})에 둘 수 없어요. 데이터를 둘 "
+          "폴더를 정해 주세요. 한 번 정하면 기억해 두니, 다음 실행이나 업데이트 때는 다시 묻지 않아요.\n"
+          f"Enter: {SUGGESTED_DATA_DIR} / 다른 경로 입력 / q: 취소", flush=True)
+    while True:
+        try:
+            answer = input("> ").strip().strip('"')
+        except (EOFError, KeyboardInterrupt):
+            return None
+        if answer.lower() in ("q", "quit"):
+            return None
+        try:
+            return choose_data_dir(base, Path(answer) if answer else SUGGESTED_DATA_DIR)
+        except (ValueError, OSError) as e:
+            print(e, flush=True)
+
+
+def pg_running(pgdata: Path) -> bool:
+    pgdata = ascii_path(pgdata) if WINDOWS else pgdata
+    status = subprocess.run([pg_bin("pg_ctl"), "-D", str(pgdata), "status"],
+                            **{**CHILD_KW, "stdout": subprocess.DEVNULL}).returncode
+    if status not in (0, 3):
+        raise SystemExit(f"PostgreSQL's state at {pgdata} could not be determined (pg_ctl status returned {status}). "
+                         "Adoption stopped; the original and any copy were kept.\n"
+                         f"{pgdata}의 PostgreSQL 상태를 확인하지 못해 이전을 중단했어요. 원본과 복사본을 보존했습니다.")
+    return status == 0
+
+
+def tree_digest(root: Path) -> dict[str, tuple[int, str]]:
+    """Every file under root by its relative path: size and SHA-256."""
+    out: dict[str, tuple[int, str]] = {}
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            h = hashlib.sha256()
+            with path.open("rb") as f:
+                for block in iter(lambda: f.read(1 << 20), b""):
+                    h.update(block)
+            out[path.relative_to(root).as_posix()] = (path.stat().st_size, h.hexdigest())
+    return out
+
+
+class CopiedClusterStopUncertain(SystemExit):
+    """The staging copy may still be running, so it must neither be moved nor removed."""
+
+
+def stop_copied_cluster(pgdata: Path) -> None:
+    try:
+        pg = ascii_path(pgdata) if WINDOWS else pgdata
+        subprocess.run([pg_bin("pg_ctl"), "-D", str(pg), "-m", "fast", "-w", "stop"],
+                       **{**CHILD_KW, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL})
+        status = subprocess.run([pg_bin("pg_ctl"), "-D", str(pg), "status"],
+                                **{**CHILD_KW, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL})
+        if status.returncode == 3:  # pg_ctl status: the server is not running; other errors are not that evidence
+            return
+    except BaseException as error:  # interruption during teardown also leaves the process uncertain
+        reason = str(error) or type(error).__name__
+    else:
+        reason = f"pg_ctl status returned {status.returncode}"
+    raise CopiedClusterStopUncertain(
+        f"PostgreSQL on the adoption copy {pgdata} could not be confirmed stopped ({reason}). "
+        "The original and copy were kept. Stop that PostgreSQL, then retry; do not remove the copy while it runs."
+        f"\n복사본({pgdata})의 PostgreSQL이 종료됐는지 확인하지 못했어요. 원본과 복사본을 보존했습니다. "
+        "그 PostgreSQL을 종료한 뒤 다시 시도하세요. 실행 중인 복사본을 지우지 마세요.")
+
+
+def check_copied_cluster(pgdata: Path, password: str, port: int) -> None:
+    """Q3 across drives: PostgreSQL starts on the copy and reads from it; it is stopped again either way."""
+    import psycopg
+
+    require_free_port("127.0.0.1", port, "the NMOS database", "NMOS_DB_PORT", pgdata.parent / ".env")
+    pg = ascii_path(pgdata) if WINDOWS else pgdata
+    try:
+        run([pg_bin("pg_ctl"), "-D", str(pg), "-l", str(pg.parent / "postgres.log"), "-o", f"-p {port}", "-w", "start"])
+        url = f"postgresql://nmos:{password}@127.0.0.1:{port}"
+        with psycopg.connect(f"{url}/postgres") as c:
+            has_nmos = c.execute("SELECT 1 FROM pg_database WHERE datname = 'nmos'").fetchone()
+        if has_nmos:
+            with psycopg.connect(f"{url}/nmos") as c:
+                if not c.execute("SELECT to_regclass('schema_migrations') IS NULL").fetchone()[0]:
+                    c.execute("SELECT count(*) FROM schema_migrations").fetchone()
+    finally:
+        stop_copied_cluster(pgdata)
+
+
+def cross_device(e: OSError) -> bool:
+    return e.errno == errno.EXDEV or getattr(e, "winerror", None) == 17  # ERROR_NOT_SAME_DEVICE
+
+
+def adopt_bundle_data(data: Path, pg_port: int) -> None:
+    """Q3, Q4: the database 0.3.0 kept in data/ beside the launcher moves to the per-user folder on the first start.
+
+    Fails closed: one folder or the other holds the whole database at every step, nothing is deleted but this
+    function's own unfinished copy, and a database in both places stops the start with neither changed."""
+    old = ROOT / "data"
+    if not (old / "pg" / "PG_VERSION").is_file() or old.resolve() == data.resolve():
+        return
+    if (data / "pg" / "PG_VERSION").is_file():
+        raise SystemExit(
+            f"NMOS found a database in two places: {data} (where this version keeps it) and {old} (beside NMOS, where "
+            "0.3.0 and earlier kept it). It will not choose one for you. Keep the one you use: move or rename the "
+            "other folder (for example to data.old), then start NMOS again. Nothing was changed.\n"
+            f"NMOS 데이터베이스가 두 곳에 있어요: {data}(이 버전의 위치)와 {old}(NMOS 옆, 0.3.0까지의 위치). 어느 쪽을 쓸지 "
+            "NMOS가 대신 고르지 않아요. 쓰시던 쪽을 남기고 다른 쪽 폴더를 옮기거나 이름을 바꾼 뒤(예: data.old) 다시 "
+            "실행해 주세요. 아무것도 바뀌지 않았어요.")
+    old_pw = old / "db-password"
+    if not old_pw.is_file():
+        raise SystemExit(f"{old} holds a database but not its password (db-password), so it cannot be moved to {data}. "
+                         "Nothing was changed.\n"
+                         f"{old}에 데이터베이스는 있지만 비밀번호 파일(db-password)이 없어서 {data}로 옮기지 못했어요. "
+                         "아무것도 바뀌지 않았어요.")
+    old_lock = lock_data_dir(old)  # an older NMOS still running on it stops this start here
+    try:
+        if pg_running(old / "pg"):  # left by an earlier run that did not stop it; no launcher holds it (the lock)
+            log(f"stopping the PostgreSQL an earlier run left running on {old}")
+            subprocess.run([pg_bin("pg_ctl"), "-D", str(ascii_path(old / "pg") if WINDOWS else old / "pg"), "-m",
+                            "fast", "-w", "stop"], check=True, **{**CHILD_KW, "stdout": subprocess.DEVNULL})
+        staging = data / "pg.adopting"
+        if staging.exists():
+            stop_copied_cluster(staging)  # a previous start may have left a running copy
+            shutil.rmtree(staging)  # only after pg_ctl confirms it is stopped
+        password = old_pw.read_text(encoding="utf-8").strip()
+        log(f"moving the database from {old} to {data} (Phase 37: the data lives outside the bundle)")
+        write_private(data / "db-password", password)
+        copied = False
+        try:
+            os.rename(old / "pg", data / "pg")  # on one drive the move is this rename
+        except OSError as e:
+            if not cross_device(e):
+                (data / "db-password").unlink(missing_ok=True)
+                raise SystemExit(f"The database in {old} could not be moved to {data}: {e}. Nothing was changed.\n"
+                                 f"{old}의 데이터베이스를 {data}로 옮기지 못했어요: {e}. 아무것도 바뀌지 않았어요.")
+            copied = True
+            try:
+                log("another drive: copying, checking the copy, then keeping the old folder as it is")
+                shutil.copytree(old / "pg", staging)
+                if tree_digest(staging) != tree_digest(old / "pg"):
+                    raise SystemExit("the copy differs from the original")
+                check_copied_cluster(staging, password, pg_port)
+                os.rename(staging, data / "pg")
+            except BaseException as e:
+                if not isinstance(e, CopiedClusterStopUncertain):
+                    shutil.rmtree(staging, ignore_errors=True)
+                    (data / "db-password").unlink(missing_ok=True)
+                reason = e.code if isinstance(e, SystemExit) else repr(e)
+                raise SystemExit(f"The database in {old} could not be copied to {data}: {reason}. {old} is as it was."
+                                 f"\n{old}의 데이터베이스를 {data}로 복사하지 못했어요: {reason}. {old}는 그대로예요.") from e
+        else:
+            try:
+                os.replace(old_pw, data / "db-password")  # the same password: no copy of it is left behind
+            except OSError as e:
+                log(f"{old_pw} stays where it was ({e}); the database's folder has its copy")
+    finally:
+        old_lock.close()
+    retire_old_data(old, data, copied)
+
+
+def retire_old_data(old: Path, data: Path, copied: bool) -> None:
+    """After a move, the old data/ is renamed data.moved with a note; never deleted. A rename that fails is logged:
+    the database is already in the per-user folder (a copy left in both places stops the next start, Q4)."""
+    n = 1
+    while (moved := old.with_name("data.moved" if n == 1 else f"data.moved-{n}")).exists():
+        n += 1
+    try:
+        os.rename(old, moved)
+        (moved / "MOVED.txt").write_text(
+            f"{time.strftime('%Y-%m-%d %H:%M')}: NMOS moved its database from this folder to {data}.\n"
+            + ("This folder still holds a copy of it, kept in case. Once NMOS works, you can delete this folder.\n"
+               "NMOS가 데이터베이스를 이 폴더에서 위 위치로 옮겼어요. 이 폴더에는 만약을 위한 복사본이 남아 있어요. NMOS가 잘 "
+               "되는 걸 확인한 뒤 지워도 돼요.\n" if copied else
+               "What is left here are old logs. You can delete this folder.\n"
+               "NMOS가 데이터베이스를 이 폴더에서 위 위치로 옮겼어요. 여기 남은 건 예전 로그예요. 지워도 돼요.\n"),
+            encoding="utf-8")
+        log(f"the old folder is now {moved}")
+    except OSError as e:
+        log(f"the old folder {old} could not be renamed ({e}); rename or remove it before the next start")
+
+
 def init_cluster(pgdata: Path, password: str, port: int) -> None:
     pwfile = pgdata.parent / "pg-initpw.tmp"
     write_private(pwfile, password)
@@ -197,17 +462,27 @@ class Services:
     """Postgres, migrations, the sidecar and the worker of this bundle: start(), alive(), stop()."""
 
     def __init__(self) -> None:
+        """Raises DataLocationNeeded (Q6) before anything is made when the user has to choose the data folder."""
         os.environ["PYTHONUTF8"] = "1"
         self.env = dict(os.environ)
-        # NMOS_ENV_FILE: the macOS app's .env lives in Application Support, beside its data (the app is read-only).
-        for key, value in read_env_file(Path(os.environ.get("NMOS_ENV_FILE") or ROOT / ".env")).items():
+        beside = read_env_file(ROOT / ".env")
+        self.data, self.per_user = resolve_data_dir({**beside, **self.env})  # NMOS_DATA_DIR: process env, then here
+        self.data.mkdir(mode=0o700, parents=True, exist_ok=True)
+        # Q2: the .env in the data folder survives an update; the one beside the launcher is read under it, and copied
+        # there once so the settings move with the data. NMOS_ENV_FILE: the macOS app names its own.
+        self.env_file = Path(os.environ.get("NMOS_ENV_FILE") or self.data / ".env")
+        self.env_copied = False
+        if self.per_user and not self.env_file.exists() and (ROOT / ".env").is_file():
+            shutil.copy2(ROOT / ".env", self.env_file)
+            self.env_copied = True
+        own = read_env_file(self.env_file)
+        self.shadowed = sorted(k for k, v in beside.items() if k in own and own[k] != v and k not in os.environ)
+        for key, value in [*own.items(), *beside.items()]:
             self.env.setdefault(key, value)
         if sys.platform.startswith("linux"):
             # The bundle carries the libraries Postgres links (build_bundle.vendor_linux_libs), indirect ones too.
             pglib = str(ROOT / "pgsql" / "lib")
             os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(filter(None, [pglib, os.environ.get("LD_LIBRARY_PATH")]))
-        self.data = Path(self.env.get("NMOS_DATA_DIR") or ROOT / "data")
-        self.data.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.pg_port = int(self.env.get("NMOS_DB_PORT", "54390"))  # the key .env.example names
         self.bind = self.env.get("NMOS_SIDECAR_BIND", "127.0.0.1")
         self.port = self.env.get("NMOS_SIDECAR_PORT", "8790")
@@ -239,13 +514,23 @@ class Services:
 
     def _start(self) -> None:
         data = self.data
+        log(f"data folder: {data}")
+        if self.env_copied:
+            log(f"copied the .env beside NMOS to {self.env_file}; NMOS's settings are read there first from now on")
+        if self.shadowed:
+            log(f"the .env beside NMOS sets {', '.join(self.shadowed)} differently; {self.env_file} wins")
         if WINDOWS:
             restrict_to_this_user(data)  # before the lock file and the database are made in it
         self._data_lock = lock_data_dir(data)  # before anything that stop() would undo
-        require_free_port(self.bind, int(self.port), "the NMOS sidecar", "NMOS_SIDECAR_PORT")
+        require_free_port(self.bind, int(self.port), "the NMOS sidecar", "NMOS_SIDECAR_PORT", self.env_file)
         if WINDOWS:
             global PGSQL
-            PGSQL, data = ascii_path(PGSQL), ascii_path(data)
+            PGSQL = ascii_path(PGSQL)
+        if self.per_user:
+            adopt_bundle_data(data, self.pg_port)  # Q3, Q4: under this folder's lock, before anything is made in it
+        self._checkpoint()
+        if WINDOWS:
+            data = ascii_path(data)
         self.pgdata = pgdata = data / "pg"
         pw_path = data / "db-password"
         self._checkpoint()
@@ -265,7 +550,7 @@ class Services:
         if status.returncode == 0:
             log("postgres from an earlier run is still up; using it")
         else:
-            require_free_port("127.0.0.1", self.pg_port, "the NMOS database", "NMOS_DB_PORT")
+            require_free_port("127.0.0.1", self.pg_port, "the NMOS database", "NMOS_DB_PORT", self.env_file)
             self._checkpoint()
             # -p: NMOS_DB_PORT changed after the first start (the port-in-use message says to) wins over the port
             # init_cluster wrote into postgresql.conf.
@@ -291,6 +576,7 @@ class Services:
             "NMOS_DATABASE_URL": f"postgresql://nmos:{password}@127.0.0.1:{self.pg_port}/nmos",
             "NMOS_MIGRATIONS_DIR": str(ROOT / "migrations"),
             "NMOS_PLUGIN_FILE": str(ROOT / "plugin" / "nmos-pocketrisu.js"),
+            "NMOS_INSTALL": "bundle",  # the panel reaches the PC's own Ollama at 127.0.0.1 (no host.docker.internal here)
         })
         env.setdefault("NMOS_CORS_ORIGINS", "http://localhost:6001,http://127.0.0.1:6001")
         py = sys.executable
@@ -364,7 +650,13 @@ def main() -> int:
     for stream in (sys.stdout, sys.stderr):
         if stream is not None:
             stream.reconfigure(encoding="utf-8", errors="backslashreplace")
-    services = Services()
+    try:
+        services = Services()
+    except DataLocationNeeded as need:
+        if ask_data_dir_in_console(need.base) is None:
+            log("no folder was chosen for NMOS's data; nothing was started")
+            return 1
+        services = Services()
     try:
         services.start()
         log("Ctrl+C stops")

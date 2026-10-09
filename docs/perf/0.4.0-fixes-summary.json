@@ -1,0 +1,222 @@
+{
+  "historical": {
+    "before-v16": {
+      "rounds": [
+        {
+          "round": 1,
+          "passed": 289,
+          "total": 314,
+          "forbidden": 14,
+          "quotes_passed": 21,
+          "quotes_total": 24,
+          "skipped": 0,
+          "hybrid": 338
+        },
+        {
+          "round": 2,
+          "passed": 289,
+          "total": 314,
+          "forbidden": 14,
+          "quotes_passed": 20,
+          "quotes_total": 24,
+          "skipped": 0,
+          "hybrid": 338
+        },
+        {
+          "round": 3,
+          "passed": 289,
+          "total": 314,
+          "forbidden": 14,
+          "quotes_passed": 21,
+          "quotes_total": 24,
+          "skipped": 0,
+          "hybrid": 338
+        }
+      ],
+      "majority_passed": 289,
+      "majority_quotes": 21,
+      "unstable_pass_cases": 1
+    },
+    "before-v17": {
+      "rounds": [
+        {
+          "round": 1,
+          "passed": 289,
+          "total": 314,
+          "forbidden": 14,
+          "quotes_passed": 21,
+          "quotes_total": 24,
+          "skipped": 0,
+          "hybrid": 338
+        },
+        {
+          "round": 2,
+          "passed": 289,
+          "total": 314,
+          "forbidden": 14,
+          "quotes_passed": 21,
+          "quotes_total": 24,
+          "skipped": 0,
+          "hybrid": 338
+        },
+        {
+          "round": 3,
+          "passed": 289,
+          "total": 314,
+          "forbidden": 14,
+          "quotes_passed": 21,
+          "quotes_total": 24,
+          "skipped": 0,
+          "hybrid": 338
+        }
+      ],
+      "majority_passed": 289,
+      "majority_quotes": 21,
+      "unstable_pass_cases": 0
+    },
+    "fixed-v16": {
+      "rounds": [
+        {
+          "round": 1,
+          "passed": 289,
+          "total": 314,
+          "forbidden": 14,
+          "quotes_passed": 21,
+          "quotes_total": 24,
+          "skipped": 0,
+          "hybrid": 338
+        },
+        {
+          "round": 2,
+          "passed": 289,
+          "total": 314,
+          "forbidden": 14,
+          "quotes_passed": 21,
+          "quotes_total": 24,
+          "skipped": 0,
+          "hybrid": 338
+        },
+        {
+          "round": 3,
+          "passed": 289,
+          "total": 314,
+          "forbidden": 14,
+          "quotes_passed": 21,
+          "quotes_total": 24,
+          "skipped": 0,
+          "hybrid": 338
+        }
+      ],
+      "majority_passed": 289,
+      "majority_quotes": 21,
+      "unstable_pass_cases": 0,
+      "regressions": [],
+      "improvements": []
+    },
+    "fixed-v17": {
+      "rounds": [
+        {
+          "round": 1,
+          "passed": 289,
+          "total": 314,
+          "forbidden": 14,
+          "quotes_passed": 21,
+          "quotes_total": 24,
+          "skipped": 0,
+          "hybrid": 338
+        },
+        {
+          "round": 2,
+          "passed": 289,
+          "total": 314,
+          "forbidden": 14,
+          "quotes_passed": 21,
+          "quotes_total": 24,
+          "skipped": 0,
+          "hybrid": 338
+        },
+        {
+          "round": 3,
+          "passed": 289,
+          "total": 314,
+          "forbidden": 14,
+          "quotes_passed": 21,
+          "quotes_total": 24,
+          "skipped": 0,
+          "hybrid": 338
+        }
+      ],
+      "majority_passed": 289,
+      "majority_quotes": 21,
+      "unstable_pass_cases": 0,
+      "regressions": [],
+      "improvements": []
+    }
+  },
+  "voyage": {
+    "before-v16": {
+      "cases": 85,
+      "replays": 255,
+      "hybrid": 255,
+      "excluded_changed": 21,
+      "over_budget": 0,
+      "hidden_bad": 0,
+      "hidden_rows": 0,
+      "max_tokens": 3979,
+      "unstable_packets": 4
+    },
+    "before-v17": {
+      "cases": 85,
+      "replays": 255,
+      "hybrid": 255,
+      "excluded_changed": 21,
+      "over_budget": 0,
+      "hidden_bad": 0,
+      "hidden_rows": 0,
+      "max_tokens": 3979,
+      "unstable_packets": 3
+    },
+    "fixed-v16": {
+      "cases": 85,
+      "replays": 255,
+      "hybrid": 255,
+      "excluded_changed": 21,
+      "over_budget": 0,
+      "hidden_bad": 0,
+      "hidden_rows": 0,
+      "max_tokens": 3979,
+      "unstable_packets": 3,
+      "majority_packet_differences": []
+    },
+    "fixed-v17": {
+      "cases": 85,
+      "replays": 255,
+      "hybrid": 255,
+      "excluded_changed": 21,
+      "over_budget": 0,
+      "hidden_bad": 0,
+      "hidden_rows": 0,
+      "max_tokens": 3979,
+      "unstable_packets": 2,
+      "majority_packet_differences": [
+        "77aa07992998ab35"
+      ]
+    },
+    "focus": {
+      "trace_count": 1,
+      "repeats_per_lane": 5,
+      "additional_replays": 10,
+      "before_v17_modal_count": 5,
+      "fixed_v17_modal_count": 4,
+      "modal_packet_equal": true,
+      "remaining_variant": "lexical_found 4 -> 1; the same variation existed in the prior audit",
+      "initial_difference_preserved": true
+    }
+  },
+  "additional_provider_calls": 0,
+  "generative_calls": 0,
+  "original_db_writes": 0,
+  "total_replays": 5086,
+  "source_manifest_sha256": "0f0f26422536636f3a50b222b94e85611c8e1e0557c4a45249c9698da1daa2e5",
+  "source_scope": "53 pinned source files; final workspace differs only in retrieval/uploads comments/docstrings, AST compared equal"
+}

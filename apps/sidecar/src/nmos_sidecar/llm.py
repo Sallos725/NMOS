@@ -3,6 +3,7 @@ except `Embedder.embed` which the request path calls with its own short timeout.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -202,7 +203,26 @@ class Embedder:
         self.api_key = api_key
 
     def embed(self, texts: list[str], timeout_s: float) -> list[list[float]]:
-        return self.embed_metered(texts, timeout_s)[0]
+        """Query transport: one deadline covers the entire HTTP exchange, including a trickling body.
+
+        Called on QueryEmbedding's bounded worker thread. Worker batches retain `embed_metered` and its
+        separate, longer timeout; neither the payload nor embedding generation changes.
+        """
+        started = time.monotonic()
+
+        async def request() -> httpx.Response:
+            async with asyncio.timeout(timeout_s):
+                async with httpx.AsyncClient(timeout=timeout_s) as client:
+                    return await client.post(f"{self.url}/embeddings", json={"model": self.model, "input": texts},
+                                             headers=_headers(self.api_key))
+
+        try:
+            res = asyncio.run(request())
+        except TimeoutError as exc:
+            raise LLMError(f"embedding request exceeded {timeout_s:g} s total deadline") from exc
+        except httpx.HTTPError as exc:
+            raise LLMError(f"embedding request failed: {exc}") from exc
+        return self._decode(res, started)[0]
 
     def embed_metered(self, texts: list[str], timeout_s: float) -> tuple[list[list[float]], dict[str, Any]]:
         """`embed` and the call's usage (`usage_of`; an embedding reports input tokens only, some as the total)."""
@@ -212,6 +232,10 @@ class Embedder:
                              headers=_headers(self.api_key), timeout=timeout_s)
         except httpx.HTTPError as exc:
             raise LLMError(f"embedding request failed: {exc}") from exc
+        return self._decode(res, started)
+
+    @staticmethod
+    def _decode(res: httpx.Response, started: float) -> tuple[list[list[float]], dict[str, Any]]:
         if res.status_code >= 400:
             raise LLMError(f"embedding HTTP {res.status_code}: {res.text[:300]}")
         try:

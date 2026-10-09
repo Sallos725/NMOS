@@ -55,15 +55,15 @@ def chapel_chat() -> SimChat:
 def test_delete_removes_every_row_of_the_chat_and_nothing_else(migrated, db):
     with make_client(migrated, embedder=FakeEmbedder(), **LLM, **EMB) as c:
         c.put("/v1/config", json={"parsers": {"rules": [
-            {"id": "hp", "kind": "regex", "pattern": r"HP\s*(?P<value>\d+/\d+)", "key": "HP"}]}})
+            {"card": "Status test", "id": "hp", "kind": "regex", "pattern": r"HP\s*(?P<value>\d+/\d+)", "key": "HP"}]}})
         gone, kept = chapel_chat(), chapel_chat()
         for chat in (gone, kept):
-            sync(c, chat)
+            sync(c, chat, character_name="Status test")
         drain(migrated)
         drain_embeddings(migrated)
         chat_edit = gone.messages[1]["data"]
         gone.edit(1, chat_edit + " edited")  # a second revision and a divergence commit
-        sync(c, gone)
+        sync(c, gone, character_name="Status test")
         recall(c, gone, "chapel")
         gid, kid = conv_id(c, gone), conv_id(c, kept)
         before_gone, before_kept = rows(db, gid), rows(db, kid)

@@ -143,7 +143,8 @@ def test_a_first_sight_turn_waiting_for_a_retry_holds_the_turns_after_it(migrate
         extraction.fail(conn, first, "HTTP 429")  # queued again, a retry later
         assert claim(conn, handled) is None  # turns 1 and 2 wait
         conn.execute("UPDATE job SET run_after = now() WHERE id = %s", (first["id"],))
-        assert claim(conn, handled)["id"] == first["id"]  # the retry goes first
-        extraction.fail(conn, first | {"attempts": extraction.MAX_ATTEMPTS}, "HTTP 429")  # dead
+        retry = claim(conn, handled)
+        assert retry["id"] == first["id"]  # the retry goes first, under its own claim
+        extraction.fail(conn, retry | {"attempts": extraction.MAX_ATTEMPTS}, "HTTP 429")  # dead
         nxt = claim(conn, handled)
         assert nxt is not None and nxt["id"] > first["id"]

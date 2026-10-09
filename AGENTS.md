@@ -32,8 +32,23 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-33.md` is the latest, approved
-   2026-10-07 as proposed, Stage 7 part 1 (forensic recall), the current phase; `PHASE-31.md`, approved
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-42.md` is the latest, approved
+   2026-10-10 (source status-window clock for already recalled excerpts; bounded pre-release correction);
+   `PHASE-41.md`, approved
+   2026-10-09 (AGE-76: bounded Korean-particle keyword correction and synthetic checks);
+   `PHASE-40.md`, approved
+   2026-10-09 (AGE-18: explicit third-person persona questions; a recall correction beside Phase 39);
+   `PHASE-39.md`, approved
+   2026-10-08 (status windows: one-line bars, card binding, their history, `packet-v17`, flags; ADR 0071); `PHASE-38.md`, approved 2026-10-08 (restore from the panel,
+   high risk); `PHASE-37.md`, approved 2026-10-08 and complete (the
+   bundle's data outside the bundle, high risk); `PHASE-36.md`, approved
+   2026-10-08 and complete (named facts, `packet-v16`, the default);
+   `PHASE-35.md`, approved 2026-10-08 and complete, a correction phase beside Stage 7 (the excerpt anchor,
+   `packet-v15`);
+   `PHASE-34.md`, approved 2026-10-07 and complete 2026-10-08, Stage 7 part 2 (what a line is for, `packet-v14`, in the
+   default through `packet-v16`); `PHASE-33.md`, approved
+   2026-10-07 as proposed and complete 2026-10-08, Stage 7 part 1 (forensic recall); `PHASE-32.md`, approved 2026-10-05
+   as an exception to R7 (memory on a time axis in the Inspector); `PHASE-31.md`, approved
    2026-10-05 (recall that knows what changed), complete with `packet-v12` the default (#264); `PHASE-30.md`, approved 2026-10-04, a correction phase under §7 item 5
    (the first-sight extraction order), complete (#260);
    `PHASE-29.md`, approved 2026-10-04, built on Phase 28's `extract-v16`, and `PHASE-28.md`, approved 2026-10-03,
@@ -99,8 +114,18 @@ If two normative documents appear to conflict:
 | 29 — whose name is it: a confirmation for an alias whose two names are both in the turn (NMO-35 under AGE-24; a correction found by measurement on Phase 28's S1 runs, not a roadmap stage) | complete (2026-10-04, owner 2026-10-07): step 2 merged (#251: inside `extract-v16`, off by default; ADR 0064 amendments) | `PHASE-29.md` |
 | 30 — a chat seen for the first time is extracted in story order: the first-sight window oldest first, live turns behind it (NMO-36 under AGE-24; a correction found by measurement on Phase 28's S1 runs, not a roadmap stage) | complete (2026-10-04, owner 2026-10-07): #260 merged (every generation, no key or prompt change; ADR 0065, D74) | `PHASE-30.md` |
 | 31 — recall that knows what changed: `packet-v12` leaves out a replaced value's excerpt and an ended role in a question about now, and anchors an excerpt on the question's one-character words on a tie (AGE-24, AGE-37 K43; a correction found by the PHASE-28 live gate, not a roadmap stage) | **approved** (2026-10-05); steps 2–3 done (#264: `packet-v12` behind the policy, ADR 0066, D75; replay `docs/perf/phase31-replay.md`); Q1 amended (owner) and replayed; the second reduced live gate met every bar (`docs/perf/phase31-live-gate.md`); **complete**, `packet-v12` the default (owner, 2026-10-05) | `PHASE-31.md` |
-| 33 — forensic recall, part 1 (Stage 7; AGE-10): the source turn, quoted (a speech-cue quote route, turns extraction has not reached, the Inspector's source-turn page, the overuse baseline) | **approved** (2026-10-07, as proposed), **current**; step 2 next | `PHASE-33.md` |
-| 34+ (Stage 7 part 2: labels and the overuse penalty; Stage 8 after 1.0) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
+| 32 — memory on a time axis: a character's facts as bars over turns in the browser Inspector (AGE-39; pulled in before 1.0 by the owner, an exception to R7) | **approved** (2026-10-05; Q2, Q3, Q7 amended by the owner: the panel too in step 3, a detail column, 25 turns); step 2 done (the browser Inspector: `timeline.py`; the panel byte-identical); step 3 (the panel, high risk) in review on a draft PR stacked on #266, after the owner's try and design review; in `0.4.0` (owner, 2026-10-08); step 4: the timings at 10,000 messages measured (criterion 7 met, `docs/perf/inspector-timeline.md`), the owner's look open | `PHASE-32.md` |
+| 33 — forensic recall, part 1 (Stage 7; AGE-10): the source turn, quoted (a speech-cue quote route, turns extraction has not reached, the Inspector's source-turn page, the overuse baseline) | **approved** (2026-10-07, as proposed); steps 2–4 done (baselines; `packet-v13` replayed, quotes 21/24, latency +102 ms at 10k; the source-turn page); **complete** (2026-10-08): in the default through `packet-v14`, the reduced live run dropped by the owner (Q10 d) | `PHASE-33.md`, ADR 0067 |
+| 34 — forensic recall, part 2 (Stage 7; AGE-10): what a line is for (labels: required, supportive, risky; a supportive line no reply used rests; an activation threshold for supportive excerpts) | **approved** (2026-10-07, as proposed); steps 2–5 done (labels, the rest and the threshold, the Inspector's chips; the live run on the owner's chat: echo of repeated lines 0.29 → 0.39, `docs/perf/phase34-rest.md`); **complete** (2026-10-08): `packet-v14` the default (the owner, Q6), in the default through `packet-v15` and `packet-v16` since | `PHASE-34.md`, ADR 0068 |
+| 35 — the excerpt lands on what was asked, not on when (`packet-v15`; AGE-10, from Phase 33's S6 diagnosis; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-08, as proposed); complete: `packet-v15` the default (the owner), no live run | `PHASE-35.md`, ADR 0069 |
+| 36 — a name in the message is not a question about everything (`packet-v16`; AGE-10, from Phase 34's live run; a correction found by measurement, not a roadmap stage) | **approved** (2026-10-08, as proposed; Q1 amended twice on the replay); complete: `packet-v16` the default (the owner) | `PHASE-36.md`, ADR 0070 |
+| 37 — the bundle's data lives outside the bundle: a per-user folder on Windows and Linux, existing data adopted on the first start (a correction found on a user's report, not a roadmap stage; amends PHASE-23 Q3) | **approved** (2026-10-08, as proposed; Q6 amended), high risk; **complete** (2026-10-08): CI green on four targets, the owner's Windows update from a real v0.3.0 bundle passed | `PHASE-37.md`, ADR 0060 amendment 1 |
+| 38 — restore from the panel, while NMOS runs: an archive uploaded in chunks, checked, then restored with the shared ids' sequences held, the startup steps after it (a correction completing Phase 16, not a roadmap stage; amends ADR 0050 amendment 1) | **approved** (2026-10-08, the phase and a live restore; Q1–Q7 answered, Q3 amended), high risk; **complete** (2026-10-08): the owner's desktop restore of the trial install into a fresh one matched the source row for row | `PHASE-38.md` |
+| 39 — status windows NMOS holds: one-line status bars read field by field and bound to a card (step 2), then their history, changes without a cause and the anchor (pulled in by the owner) | **approved** (2026-10-08), in `0.4.0` (the owner); Q3–Q5 decided as proposed; steps 2–5 done; amendment 2 approved (owner, 2026-10-09): blank status draft, explicit card-bound Apply and presets implemented; local sidecar 1,518/plugin 237 tests pass; updated PR checks and host evidence tracked; high risk (migration 0029, packet) | `PHASE-39.md`, ADR 0071 |
+| 40 — explicit third-person questions about the persona (AGE-18 / K32; bounded recall correction) | **approved** (owner, 2026-10-09, after reviewing the proposal and reversing deferral); implementation and zero-call replay done, in `0.4.0`; reduced live host check open; v18 default selected by owner (2026-10-09) | `PHASE-40.md` |
+| 41 — Korean particle boundaries in keyword recall (AGE-76) | **approved** (owner, 2026-10-09: start the bounded correction and synthetic verification); bounded implementation and reduced actual-model verification done; replay/performance complete, native gates tracked on PR #291 and host evidence open; v18 default separately approved | `PHASE-41.md` |
+| 42 — source status-window clock for recalled excerpts | **approved** (owner, 2026-10-10); bounded correction and local copied-data checks done; platform CI gates release publication | `PHASE-42.md` |
+| Stage 8 (after 1.0, R7) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
 ADR 0006/0007, `docs/perf/scale.md`).
@@ -324,7 +349,7 @@ Do not ask questions merely to avoid making an implementation choice already cov
 
 ```bash
 cp .env.example .env && docker compose up -d --build           # postgres 16 + sidecar on 127.0.0.1:8790
-cd apps/sidecar && uv sync && uv run pytest                     # needs compose postgres (127.0.0.1:5436)
+cd apps/sidecar && uv sync && uv run pytest                     # needs compose postgres (127.0.0.1:5436); without it DB tests skip (fail with NMOS_TEST_REQUIRE_DB=1, as CI sets)
 cd adapters/pocketrisu-plugin && npm install && npm test && npm run typecheck && npm run build
 docker compose exec sidecar nmos-migrate                        # apply migrations
 docker compose exec sidecar nmos-rebuild                        # rebuild active_membership from commits
