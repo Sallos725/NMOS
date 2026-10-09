@@ -137,12 +137,14 @@ class Uploads:
         with self.lock:
             if self.items.get(upload_id) is not up:
                 raise UploadError(404, "no such upload (another replaced it)")
-            if up.state != "receiving":
+            if up.state not in ("receiving", "received"):
                 raise UploadError(409, f"the upload is {up.state}, not receiving")
             if hashlib.sha256(data).hexdigest() != sha256:
                 raise UploadError(422, f"chunk {index} arrived changed (its SHA-256 differs); send it again")
             if index == up.next_index - 1 and sha256 == up.last_sha:
-                return up  # the same chunk again: its answer was lost
+                return up  # the same chunk again, including the last: its answer was lost
+            if up.state != "receiving":
+                raise UploadError(409, f"the upload is {up.state}, not receiving")
             if index != up.next_index:
                 raise UploadError(409, f"chunk {index} out of order; the next is {up.next_index}")
             last = up.received + len(data) >= up.size

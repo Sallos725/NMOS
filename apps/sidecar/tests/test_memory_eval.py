@@ -8,7 +8,7 @@ from collections.abc import Iterator
 import psycopg
 import pytest
 
-from conftest import ADMIN_URL, _db_url, make_client
+from conftest import ADMIN_URL, _db_url, connect_admin, make_client
 from memeval import CASES, MODES, Result, run_mode
 from nmos_sidecar.migrate import apply_migrations
 
@@ -16,11 +16,7 @@ from nmos_sidecar.migrate import apply_migrations
 @pytest.fixture(scope="module")
 def results() -> Iterator[dict[str, list[Result]]]:
     names = [f"nmos_eval_{uuid.uuid4().hex[:10]}" for _ in MODES]
-    try:
-        admin = psycopg.connect(ADMIN_URL, autocommit=True)
-    except psycopg.OperationalError as exc:  # pragma: no cover
-        pytest.skip(f"Postgres not reachable at {ADMIN_URL}: {exc}")
-    with admin:
+    with connect_admin() as admin:
         for name in names:
             admin.execute(f'CREATE DATABASE "{name}"')
     try:

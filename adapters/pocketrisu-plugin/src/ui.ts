@@ -7,7 +7,7 @@ import { budgetAdvice } from './budget';
 import type { ChatSwitch } from './chatoff';
 import { PLUGIN_BUILD } from './build';
 import { deadlineAdvice, formatMs } from './deadline';
-import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, endpointForKey, fillProject,
+import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dirtySections, embedWaitTooLong, endpointForKey, fillProject,
   isVertexEndpoint, MAX_DEADLINE_MS, OLLAMA_DOCKER, PANEL_MAX_RESERVED_TOKENS, presetMatches, presetUrl, serviceAccountProject,
   VERTEX_URL, type FormValues, type Section } from './form';
 import { failureKind } from './failure';
@@ -50,7 +50,7 @@ export interface PanelDeps {
 interface ServerConfig {
   llm: { url: string; model: string; api_key_set: boolean; json_mode: boolean };
   embeddings: { url: string; model: string; api_key_set: boolean; query_instruction: string };
-  recall: { threshold: number; vector_min_sim: number; top_k: number; facts_limit: number };
+  recall: { threshold: number; vector_min_sim: number; embed_timeout_ms?: number; top_k: number; facts_limit: number };
   extraction: { backfill: number; summaries?: boolean; canon_facts?: boolean };
   parsers: { rules: unknown; source: string; active_rules: number; errors: string[] };
   queued_jobs?: number;
@@ -1248,6 +1248,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
 
   const threshold = el('input', { type: 'number', step: 0.05, min: 0.05, max: 1 });
   const minSim = el('input', { type: 'number', step: 0.01, min: 0, max: 1 });
+  const embedWait = el('input', { type: 'number', step: 100, min: 100, max: 5000 });  // NMOS_EMBED_TIMEOUT_MS (K34)
   const topK = el('input', { type: 'number', min: 0, max: 20 });
   const factsLimit = el('input', { type: 'number', min: 0, max: 30 });
   const backfill = el('input', { type: 'number', min: 0, max: 5000 });
@@ -1255,7 +1256,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const canonFacts = el('input', { type: 'checkbox' });  // facts read from the canon (ADR 0047)
   settingsView.append(el('div', { class: 'card' },
     el('h2', { text: L('tune.title') }), el('p', { class: 'sub', text: L('tune.sub') }),
-    el('div', { class: 'row' }, field(L('tune.threshold'), threshold), field(L('tune.min_sim'), minSim)),
+    el('div', { class: 'row' }, field(L('tune.threshold'), threshold), field(L('tune.min_sim'), minSim),
+      field(L('tune.embed_wait'), embedWait)),
+    el('p', { class: 'sub', text: L('tune.embed_wait_hint') }),
     el('div', { class: 'row' }, field(L('tune.top_k'), topK), field(L('tune.facts'), factsLimit), field(L('tune.backfill'), backfill)),
     el('div', { class: 'check' }, summaries, el('span', { text: L('tune.summaries') })),
     el('p', { class: 'sub', text: L('tune.summaries_hint') }),
@@ -1381,8 +1384,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       conn: { url: url.value, route: route.value, enabled: enabled.checked, reserved: reserved.value, deadline: deadline.value,
         token: token.value },
       llm: llm.values(), emb: emb.values(),
-      tune: { threshold: threshold.value, minSim: minSim.value, topK: topK.value, facts: factsLimit.value, backfill: backfill.value,
-        summaries: summaries.checked, canonFacts: canonFacts.checked },
+      tune: { threshold: threshold.value, minSim: minSim.value, embedWait: embedWait.value, topK: topK.value,
+        facts: factsLimit.value, backfill: backfill.value, summaries: summaries.checked, canonFacts: canonFacts.checked },
       rules: rules.value,
     };
   }
@@ -1416,6 +1419,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     llm.fill(cfg.llm); emb.fill(cfg.embeddings);
     threshold.value = String(cfg.recall.threshold);
     minSim.value = String(cfg.recall.vector_min_sim);
+    embedWait.value = cfg.recall.embed_timeout_ms === undefined ? '' : String(cfg.recall.embed_timeout_ms);
+    embedWait.disabled = cfg.recall.embed_timeout_ms === undefined;  // a sidecar older than the setting
     topK.value = String(cfg.recall.top_k);
     factsLimit.value = String(cfg.recall.facts_limit);
     backfill.value = String(cfg.extraction.backfill);
@@ -1448,7 +1453,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       baseline = { ...baseline, conn: values().conn };
     }
     const body = configBody(d, v);
-    if (!Object.keys(body).length) { update({ text: L('saved'), kind: 'ok' }); return true; }
+    // Said with any save that touches either value; the save itself goes ahead (audit F20).
+    const tight = (d.includes('tune') || d.includes('conn')) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline)
+      ? ` ${L('tune.embed_wait_tight', { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : '';
+    if (!Object.keys(body).length) { update({ text: L('saved') + tight, kind: tight ? 'warn' : 'ok' }); return true; }
     try {
       const r = await deps.api<ServerConfig>('PUT', '/v1/config', body);
       fillServer(r);
@@ -1456,7 +1464,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       const parts = [r.queued_jobs ? L('saved_queued', { n: r.queued_jobs }) : L('saved')];
       if (r.queued_jobs) deps.hud.background();
       if (d.includes('rules') && r.parsers.active_rules) parts.push(L('saved_rules', { n: r.parsers.active_rules }));
-      update({ text: parts.join(' '), kind: 'ok' });
+      update({ text: parts.join(' ') + tight, kind: tight ? 'warn' : 'ok' });
       return true;
     } catch (error) {
       const text = errorText(lang, error);

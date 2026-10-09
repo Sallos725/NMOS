@@ -25,6 +25,7 @@ from .parsers import RuleSet, compile_rules, load_rules
 EDITABLE: dict[str, type] = {
     "llm_url": str, "llm_model": str, "llm_api_key": str, "llm_json_mode": bool,
     "embed_url": str, "embed_model": str, "embed_api_key": str, "embed_query_instruction": str,
+    "embed_timeout_ms": int,  # a slow or remote embedder needs more than the 300 ms default (K34)
     "recall_threshold": float, "vector_min_sim": float, "recall_top_k": int, "facts_limit": int,
     "events_limit": int, "threads_limit": int,
     "extract_backfill": int, "summaries": bool, "canon_facts": bool,
@@ -32,7 +33,8 @@ EDITABLE: dict[str, type] = {
 SECRET = {"llm_api_key", "embed_api_key"}
 KEY_HOSTS = {"llm_api_key": "llm_url", "embed_api_key": "embed_url"}  # each key belongs to its endpoint's host
 RANGES = {"recall_threshold": (0.05, 1.0), "vector_min_sim": (0.0, 1.0), "recall_top_k": (0, 20),
-          "facts_limit": (0, 30), "events_limit": (0, 30), "threads_limit": (0, 10), "extract_backfill": (0, 5000)}
+          "facts_limit": (0, 30), "events_limit": (0, 30), "threads_limit": (0, 10), "extract_backfill": (0, 5000),
+          "embed_timeout_ms": (100, 5000)}
 PARSERS_KEY = "parsers"
 
 
@@ -187,6 +189,7 @@ def public_view(settings: Settings, overrides: dict[str, Any], rules: RuleSet) -
                        "api_key_set": bool(settings.embed_api_key),
                        "query_instruction": settings.embed_query_instruction},
         "recall": {"threshold": settings.recall_threshold, "vector_min_sim": settings.vector_min_sim,
+                   "embed_timeout_ms": settings.embed_timeout_ms,
                    "top_k": settings.recall_top_k, "facts_limit": settings.facts_limit,
                    "events_limit": settings.events_limit,
                    "threads_limit": settings.threads_limit},

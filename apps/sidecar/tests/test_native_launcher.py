@@ -313,3 +313,118 @@ def test_the_console_asks_again_after_a_bad_answer_and_cancel_starts_nothing(kor
 
     monkeypatch.setattr("builtins.input", eof)  # no console to answer in
     assert launcher.ask_data_dir_in_console(base) is None
+
+
+@pytest.mark.parametrize("failure", ["start", "check"])
+def test_a_copied_cluster_start_attempt_is_always_stopped(bundle, monkeypatch, failure):
+    import psycopg
+    from types import SimpleNamespace
+
+    data = per_user() / "pg.adopting"
+    data.mkdir()
+    calls = []
+    monkeypatch.setattr(launcher, "require_free_port", lambda *args: None)
+
+    def start(args, **kwargs):
+        calls.append("start")
+        if failure == "start":
+            raise SystemExit("injected failed start after launching PostgreSQL")
+
+    def child(args, **kwargs):
+        calls.append(args[-1])
+        return SimpleNamespace(returncode=3 if args[-1] == "status" else 0)
+
+    def connect(*args, **kwargs):
+        raise psycopg.OperationalError("injected check failure")
+
+    monkeypatch.setattr(launcher, "run", start)
+    monkeypatch.setattr(launcher.subprocess, "run", child)
+    monkeypatch.setattr(psycopg, "connect", connect)
+    with pytest.raises(SystemExit if failure == "start" else psycopg.OperationalError):
+        launcher.check_copied_cluster(data, "old-pw", 54390)
+    assert calls == ["start", "stop", "status"]
+    assert data.exists()
+
+
+def test_a_copy_with_uncertain_stop_is_kept_and_the_next_attempt_cannot_delete_it(bundle, monkeypatch):
+    import psycopg
+    from types import SimpleNamespace
+
+    old = old_data(bundle)
+    before = digest(old)
+    data = per_user()
+    rename = os.rename
+    calls = []
+
+    def across_drives(src, dst):
+        calls.append(("rename", Path(src), Path(dst)))
+        if Path(src) == old / "pg":
+            raise OSError(errno.EXDEV, "Invalid cross-device link")
+        rename(src, dst)
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def execute(self, *args):
+            return self
+
+        def fetchone(self):
+            return None  # a copied cluster without the NMOS database still needs teardown
+
+    def child(args, **kwargs):
+        calls.append((args[-1],))
+        return SimpleNamespace(returncode=1 if args[-1] == "stop" else 0)  # still running
+
+    monkeypatch.setattr(os, "rename", across_drives)
+    monkeypatch.setattr(launcher, "require_free_port", lambda *args: None)
+    monkeypatch.setattr(launcher, "run", lambda *args, **kwargs: calls.append(("start",)))
+    monkeypatch.setattr(launcher.subprocess, "run", child)
+    monkeypatch.setattr(psycopg, "connect", lambda *args, **kwargs: Connection())
+    with pytest.raises(SystemExit, match="could not be confirmed stopped"):
+        launcher.adopt_bundle_data(data, 54390)
+    assert digest(old) == before and digest(data / "pg.adopting") == digest(old / "pg")
+    assert not (data / "pg").exists() and not (bundle / "data.moved").exists()
+    kept = digest(data)
+    attempts = calls.count(("start",))
+    with pytest.raises(launcher.CopiedClusterStopUncertain, match="Stop that PostgreSQL"):
+        launcher.adopt_bundle_data(data, 54390)
+    assert digest(old) == before and digest(data) == kept
+    assert calls.count(("start",)) == attempts  # no new start, copy, promotion or retirement
+
+
+@pytest.mark.parametrize("status", [0, 1, 4])
+def test_stale_staging_is_not_removed_unless_pg_ctl_reports_stopped(bundle, monkeypatch, status):
+    from types import SimpleNamespace
+
+    old = old_data(bundle)
+    before = digest(old)
+    data = per_user()
+    shutil.copytree(old / "pg", data / "pg.adopting")
+    kept = digest(data)
+    monkeypatch.setattr(launcher.subprocess, "run", lambda args, **kwargs: SimpleNamespace(returncode=status))
+    with pytest.raises(launcher.CopiedClusterStopUncertain):
+        launcher.adopt_bundle_data(data, 54390)
+    assert digest(old) == before and digest(data) == kept
+    assert not (data / "pg").exists() and not (bundle / "data.moved").exists()
+
+
+@pytest.mark.parametrize("error", [OSError("stop command unavailable"), KeyboardInterrupt()])
+def test_a_staging_stop_error_or_interrupt_preserves_both_folders(bundle, monkeypatch, error):
+    old = old_data(bundle)
+    before = digest(old)
+    data = per_user()
+    shutil.copytree(old / "pg", data / "pg.adopting")
+    kept = digest(data)
+
+    def interrupted(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(launcher.subprocess, "run", interrupted)
+    with pytest.raises(launcher.CopiedClusterStopUncertain):
+        launcher.adopt_bundle_data(data, 54390)
+    assert digest(old) == before and digest(data) == kept
+    assert not (data / "pg").exists() and not (bundle / "data.moved").exists()

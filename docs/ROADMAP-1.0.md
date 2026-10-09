@@ -204,15 +204,18 @@ revealed secret ends), the strict and narrator cases in the memory evaluation, a
 
 *Original §44–55, §78; Track B, B6.* Has: packet ledger, as-of replay, echo, abstention.
 
-**Phases** (decided 2026-10-07, PHASE-33 Q0): Phase 33 (approved 2026-10-07, current) carries the quote route, the
+**Phases** (decided 2026-10-07, PHASE-33 Q0): Phase 33 (approved 2026-10-07, complete 2026-10-08) carries the quote route, the
 turns extraction has not reached, the Inspector's source-turn page and the overuse baseline; Phase 34 carries the
 candidate labels and the overuse penalty. `0.4.0` follows Phase 34.
 
-**Progress** (2026-10-07): the overuse baseline is measured (`docs/perf/phase33-baseline.md`). `packet-v13` (ADR 0067,
-opt-in) answers the exact-quote set with the source turn and the words in 21 of 24 (`packet-v12`: 4), leaves every
-other bench set as it was, and adds 102 ms at p95 to a cued question at 10,000 messages
-(`docs/perf/phase33-replay.md`). The Inspector links every turn to its source-turn page. Left in Phase 33: the
-default decision and the reduced live run on fresh extraction.
+**Progress** (2026-10-09, candidate branch; unreleased): Phases 33–36 are complete and `packet-v16` is the
+candidate's default. The historical Phase 33 replay (`docs/perf/phase33-replay.md`) put the source turn and words in
+21 of 24 exact-quote cases (`packet-v12`: 4), kept the other bench sets and added 102 ms at p95 at 10,000 messages.
+The owner dropped Phase 33's reduced live run (2026-10-08, Q10 d). Phase 34 added the labels and resting lines;
+Phases 35–36 corrected excerpt anchors and which named facts are required. Phase 39's status history and flags are
+implemented, with `packet-v17` opt-in: its default and the owner's watched keys remain decisions. The `0.4.0` release
+gates and publication remain open; historical phase evidence does not establish current-candidate CI or a release.
+
 
 Scope (draft):
 - fast, normal and forensic recall paths;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { configBody, connArgs, dirtySections, OLLAMA_DOCKER, presetUrl, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, VERTEX_URL,
+import { configBody, connArgs, dirtySections, embedWaitTooLong, OLLAMA_DOCKER, presetUrl, endpointForKey, fillProject, isVertexEndpoint, presetMatches, serviceAccountProject, VERTEX_URL,
   type FormValues } from '../src/form';
 import { STRING_KEYS, langOf, t } from '../src/i18n';
 
@@ -7,7 +7,8 @@ const base: FormValues = {
   conn: { url: 'http://127.0.0.1:8790', route: 'auto', enabled: true, reserved: '800', deadline: '3000', token: '' },
   llm: { url: 'http://llm/v1', model: 'm', key: '' },
   emb: { url: '', model: '', key: '' },
-  tune: { threshold: '0.4', minSim: '0.42', topK: '5', facts: '8', backfill: '100', summaries: true, canonFacts: true },
+  tune: { threshold: '0.4', minSim: '0.42', embedWait: '300', topK: '5', facts: '8', backfill: '100', summaries: true,
+    canonFacts: true },
   rules: '',
 };
 
@@ -21,8 +22,21 @@ describe('batch save', () => {
     expect(configBody(dirty, edited)).toEqual({
       llm_url: 'http://llm/v1', llm_model: 'm2',
       recall_threshold: 0.4, vector_min_sim: 0.42, recall_top_k: 3, facts_limit: 8, extract_backfill: 100, summaries: true,
-      canon_facts: true,
+      canon_facts: true, embed_timeout_ms: 300,
     });
+  });
+
+  it('sends the embedding wait only when the sidecar reported one (an older sidecar refuses the key)', () => {
+    const edited = structuredClone(base);
+    edited.tune.embedWait = '1200';
+    expect(configBody(['tune'], edited)).toMatchObject({ embed_timeout_ms: 1200 });
+    edited.tune.embedWait = '';
+    expect(configBody(['tune'], edited)).not.toHaveProperty('embed_timeout_ms');
+    // a wait that leaves the request less than 500 ms of its deadline is said, not refused (audit F20)
+    expect(embedWaitTooLong('2500', '3000')).toBe(false);
+    expect(embedWaitTooLong('2600', '3000')).toBe(true);
+    expect(embedWaitTooLong('3000', '')).toBe(true);  // the default deadline, 3000
+    expect(embedWaitTooLong('', '1000')).toBe(false);  // an older sidecar: no wait to compare
   });
 
   it('sends an API key only when one was typed, and clears parser rules with null', () => {

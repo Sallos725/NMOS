@@ -27,6 +27,8 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0  # no major tags since v8
       - run: uv sync --frozen
       - run: uv run pytest -q
+        env:
+          NMOS_TEST_REQUIRE_DB: "1"  # a Postgres service that never came up fails here, not as skipped tests
 
   plugin:
     runs-on: ubuntu-latest

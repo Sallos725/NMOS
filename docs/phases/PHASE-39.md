@@ -2,7 +2,7 @@
 
 > **Status: approved 2026-10-08 (the owner: the parser rather than a documented limit; the history, the flags and the
 > anchor as directions). Step 2 done (the parser and the guide). **In `0.4.0`** (the owner, 2026-10-08: steps 3–5 too);
-> Q3–Q5 decided as proposed (the owner, 2026-10-08); step 5 done by the record below; steps 3 and 4 in progress.** A
+> Q3–Q5 decided as proposed (the owner, 2026-10-08); steps 2–5 implemented and measured as recorded below; the default policy and watched keys remain owner decisions.** A
 > phase the owner pulled in (R7 allows owner exceptions): NMOS's deterministic state (Phase 1, D10) exists but is barely
 > used.
 
@@ -70,8 +70,12 @@ chooses the keys.
 
 **Found by the pre-0.4.0 audit (2026-10-08), fixed here:** a `block` rule whose start matches empty text looped
 forever (refused now, and every block search moves forward); a restored chat got no state when the install already had
-some (the next start reads every revision no append saw, `normtext.missing`); a chat whose character name arrived
+some (the next start reads message revisions with no current-rule state observation); a chat whose character name arrived
 after its messages was not read by card-bound rules (read again when the name changes).
+The 2026-10-09 follow-up found that normalized text could commit before parsing, or be filled by a worker, so its
+presence was not a durable signal that parsing had finished. `state.sync_rules` now visits message revisions without
+current-rule observations in 500-row keyset batches. It preserves positive observations and the caller's transaction;
+no-match messages are visited once per startup because no parse-completion marker exists in this schema.
 
 ## Acceptance criteria (steps 3–4)
 
@@ -106,7 +110,9 @@ after its messages was not read by card-bound rules (read again when the name ch
 
 1. This spec.
 2. The parser options, their tests, the guide. **Done 2026-10-08.**
-3. History (Q3): 3a the Inspector, 3b `packet-v17`. 4. Flags (Q4). 5. The anchor (Q5): **done by record**
+3. History (Q3): 3a the Inspector, 3b `packet-v17`: **done 2026-10-08**, opt-in.
+4. Flags (Q4): **done 2026-10-08**, no keys watched unless the owner sets them.
+5. The anchor (Q5): **done by record**
    (2026-10-08), no packet change.
 
 ## Acceptance criteria (step 2)

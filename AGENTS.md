@@ -340,7 +340,7 @@ Do not ask questions merely to avoid making an implementation choice already cov
 
 ```bash
 cp .env.example .env && docker compose up -d --build           # postgres 16 + sidecar on 127.0.0.1:8790
-cd apps/sidecar && uv sync && uv run pytest                     # needs compose postgres (127.0.0.1:5436)
+cd apps/sidecar && uv sync && uv run pytest                     # needs compose postgres (127.0.0.1:5436); without it DB tests skip (fail with NMOS_TEST_REQUIRE_DB=1, as CI sets)
 cd adapters/pocketrisu-plugin && npm install && npm test && npm run typecheck && npm run build
 docker compose exec sidecar nmos-migrate                        # apply migrations
 docker compose exec sidecar nmos-rebuild                        # rebuild active_membership from commits

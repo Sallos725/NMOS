@@ -1,7 +1,7 @@
 # Phase 37 — The bundle's data lives outside the bundle
 
 > **Status: approved 2026-10-08 (the owner, as proposed; Q6 amended by the owner before the approval); complete
-> 2026-10-08: every acceptance criterion met.** Steps 2–4 on #285, green on all four targets (on Windows: the smoke's
+> 2026-10-08: every acceptance criterion met.** Historical steps 2–4 on #285 (`c662930`), green on all four targets (on Windows: the smoke's
 > adoption by rename and across C: → D:, the Q6 console question on a drive without short names, the tray, 1,241
 > sidecar tests). Step 5, the owner's Windows check: a real v0.3.0 win-x64 bundle wrote a marker row, its `data/` and
 > `.env` were moved into the new bundle as 0.3.0's guide said, `NMOS.exe` adopted them into the per-user folder (the
@@ -63,8 +63,8 @@ This phase removes the last cause. The other two get their own small fixes (Out 
   its own PR, with the next item).
 - The rollback block in the guide that starts with `dropdb`: made so it cannot be pasted by mistake during an update
   (its own PR).
-- CI upgrade tests from databases written by 0.2.0 and 0.3.0 (`tests/test_upgrade.py` covers 0.1.0-beta.7, .16 and
-  .21 only): their own PR.
+- CI upgrade fixtures are a separate correction: the candidate integrates #286's byte-identical v0.3.0 fixture
+  alongside 0.2.0 and the earlier releases, with migration 0029 verified by the current test.
 - PocketRisu's own `save/` folder, which stays where PocketRisu keeps it.
 
 ## Steps
@@ -101,3 +101,22 @@ This phase removes the last cause. The other two get their own small fixes (Out 
 **High (AGENTS §14).** The guarantee at risk: the user's memory survives every start and every update. The change
 moves stored data on the first start after the update, so it is built to fail closed: one folder or the other is
 whole at every step, nothing is deleted, and two databases stop the start instead of hiding one.
+
+
+## Current candidate verification (2026-10-09)
+
+The historical four-target success at `c662930` is not a current-candidate result. PR #290 at `d4c98bd`, native
+run [37800192235](https://github.com/Sallos725/NMOS/actions/runs/37800192235), macOS job 113390008153, reported 1,288
+passed and one query-embedding timing failure (0.121359208 s against a 0.1 s bound). The earlier #285 failure
+0.10437 s is also historical; neither is a measured native adoption failure. The corrected test synchronizes the
+embedding/reads order instead of widening the scheduling bound. The corrected Linux x64 artifact build and real
+smoke passed, including same-drive and cross-drive adoption (see [the audit](../audits/0.4.0-2026-10-09.md)). Current
+macOS, Windows and Linux arm64 execution remains unverified in this work and part of the release gate.
+
+A separate scoped audit found that an attempted start could escape teardown, or a failed stop leave a running copy
+that adoption promoted or removed. Teardown is now always attempted after a start attempt, and the temporary cluster must
+report stopped before promotion or removal. An uncertain stop preserves the original and staging copy, and a later
+attempt confirms teardown before touching staging. Synthetic start/check/stop/error/interruption regressions cover
+this guarantee. A real native smoke checks successful start, adoption and teardown; it does not establish recovery
+under every real operating-system start/stop failure. Those failure conditions remain unmeasured beyond the injected
+regressions, even if the happy-path smoke passes.

@@ -28,6 +28,31 @@ Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS a
 
 ### Changes
 
+- **Linux bundles pin the current libxml2 security patch.** Ubuntu's 2026-10-08
+  [USN-8910-1](https://ubuntu.com/security/notices/USN-8910-1) moved Jammy's package from
+  `2.9.13+dfsg-1ubuntu0.13` to `.14`; the build correctly refused the changed package version. The amd64 and arm64
+  pins now match the signed Ubuntu archive. The mismatch guard stays in place; current target smokes are separate evidence.
+- **A bundle adoption preserves a copy whose PostgreSQL might still be running.** Every attempted start is followed
+  by teardown, and the copy is promoted or removed only after PostgreSQL reports it stopped. A stop that cannot be confirmed retains
+  both folders and refuses another attempt until the process is stopped.
+- **Disabled, comment and pre-cut replies do not keep supportive memory awake.** Echo detection now follows live
+  eligible turns and the immutable metadata of historical membership, including its `allBefore` cut. Active replies
+  still count; later edits, undo and reorder do not alter a historical request's reply eligibility.
+
+- **A restore recovers its status after an interrupted startup.** State backfill now finds message revisions without
+  current-rule observations independently of normalized text, in batches of 500. Existing observations stay intact;
+  messages with no matching field are checked once per startup. This also covers text filled by a concurrent worker.
+- **The final archive chunk can be retried after a lost answer.** Its verified identical bytes are acknowledged in
+  the received state without a second write; chunks are still refused once checking or restoring starts.
+- **A persona's full name, given name and one nickname stay one person.** The part-name rule checks the names as
+  written rather than the persona's internal placeholder; a shared given name remains ambiguous.
+- **CI requires its test database.** An unavailable Postgres now fails the suite rather than skipping database tests;
+  local runs may still skip them. The upgrade fixtures now include a database written by v0.3.0 and check migration
+  0029, the status-dismissal constraint and a second migration run.
+- **The embedding wait is editable in the panel.** Settings → Recall tuning → Embedding wait (ms) accepts 100–5,000 ms,
+  with the unchanged default of 300 ms. A sidecar that predates this setting disables the field. A save warns when
+  the wait leaves less than 500 ms of the plugin's deadline, while allowing the save.
+
 - **NMOS that cannot help says so, and the panel offers the fix** (the pre-0.4.0 audit). Once per page, after a reply
   that went without memory because the sidecar could not be reached, refused the token or refused the host, or because
   the page is not a secure context, a PocketRisu alert says which and what to do. On a page without Web Crypto

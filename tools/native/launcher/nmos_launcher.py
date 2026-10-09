@@ -298,14 +298,38 @@ def tree_digest(root: Path) -> dict[str, tuple[int, str]]:
     return out
 
 
+class CopiedClusterStopUncertain(SystemExit):
+    """The staging copy may still be running, so it must neither be moved nor removed."""
+
+
+def stop_copied_cluster(pgdata: Path) -> None:
+    try:
+        pg = ascii_path(pgdata) if WINDOWS else pgdata
+        subprocess.run([pg_bin("pg_ctl"), "-D", str(pg), "-m", "fast", "-w", "stop"],
+                       **{**CHILD_KW, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL})
+        status = subprocess.run([pg_bin("pg_ctl"), "-D", str(pg), "status"],
+                                **{**CHILD_KW, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL})
+        if status.returncode == 3:  # pg_ctl status: the server is not running; other errors are not that evidence
+            return
+    except BaseException as error:  # interruption during teardown also leaves the process uncertain
+        reason = str(error) or type(error).__name__
+    else:
+        reason = f"pg_ctl status returned {status.returncode}"
+    raise CopiedClusterStopUncertain(
+        f"PostgreSQL on the adoption copy {pgdata} could not be confirmed stopped ({reason}). "
+        "The original and copy were kept. Stop that PostgreSQL, then retry; do not remove the copy while it runs."
+        f"\n복사본({pgdata})의 PostgreSQL이 종료됐는지 확인하지 못했어요. 원본과 복사본을 보존했습니다. "
+        "그 PostgreSQL을 종료한 뒤 다시 시도하세요. 실행 중인 복사본을 지우지 마세요.")
+
+
 def check_copied_cluster(pgdata: Path, password: str, port: int) -> None:
     """Q3 across drives: PostgreSQL starts on the copy and reads from it; it is stopped again either way."""
     import psycopg
 
     require_free_port("127.0.0.1", port, "the NMOS database", "NMOS_DB_PORT", pgdata.parent / ".env")
     pg = ascii_path(pgdata) if WINDOWS else pgdata
-    run([pg_bin("pg_ctl"), "-D", str(pg), "-l", str(pg.parent / "postgres.log"), "-o", f"-p {port}", "-w", "start"])
     try:
+        run([pg_bin("pg_ctl"), "-D", str(pg), "-l", str(pg.parent / "postgres.log"), "-o", f"-p {port}", "-w", "start"])
         url = f"postgresql://nmos:{password}@127.0.0.1:{port}"
         with psycopg.connect(f"{url}/postgres") as c:
             has_nmos = c.execute("SELECT 1 FROM pg_database WHERE datname = 'nmos'").fetchone()
@@ -314,8 +338,7 @@ def check_copied_cluster(pgdata: Path, password: str, port: int) -> None:
                 if not c.execute("SELECT to_regclass('schema_migrations') IS NULL").fetchone()[0]:
                     c.execute("SELECT count(*) FROM schema_migrations").fetchone()
     finally:
-        subprocess.run([pg_bin("pg_ctl"), "-D", str(pg), "-m", "fast", "-w", "stop"],
-                       **{**CHILD_KW, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL})
+        stop_copied_cluster(pgdata)
 
 
 def cross_device(e: OSError) -> bool:
@@ -346,6 +369,10 @@ def adopt_bundle_data(data: Path, pg_port: int) -> None:
                          "아무것도 바뀌지 않았어요.")
     old_lock = lock_data_dir(old)  # an older NMOS still running on it stops this start here
     try:
+        staging = data / "pg.adopting"
+        if staging.exists():
+            stop_copied_cluster(staging)  # a previous start may have left a running copy
+            shutil.rmtree(staging)  # only after pg_ctl confirms it is stopped
         if pg_running(old / "pg"):  # left by an earlier run that did not stop it; no launcher holds it (the lock)
             log(f"stopping the PostgreSQL an earlier run left running on {old}")
             subprocess.run([pg_bin("pg_ctl"), "-D", str(ascii_path(old / "pg") if WINDOWS else old / "pg"), "-m",
@@ -362,9 +389,7 @@ def adopt_bundle_data(data: Path, pg_port: int) -> None:
                 raise SystemExit(f"The database in {old} could not be moved to {data}: {e}. Nothing was changed.\n"
                                  f"{old}의 데이터베이스를 {data}로 옮기지 못했어요: {e}. 아무것도 바뀌지 않았어요.")
             copied = True
-            staging = data / "pg.adopting"
             try:
-                shutil.rmtree(staging, ignore_errors=True)  # this function's own unfinished copy from a failed start
                 log("another drive: copying, checking the copy, then keeping the old folder as it is")
                 shutil.copytree(old / "pg", staging)
                 if tree_digest(staging) != tree_digest(old / "pg"):
@@ -372,8 +397,9 @@ def adopt_bundle_data(data: Path, pg_port: int) -> None:
                 check_copied_cluster(staging, password, pg_port)
                 os.rename(staging, data / "pg")
             except BaseException as e:
-                shutil.rmtree(staging, ignore_errors=True)
-                (data / "db-password").unlink(missing_ok=True)
+                if not isinstance(e, CopiedClusterStopUncertain):
+                    shutil.rmtree(staging, ignore_errors=True)
+                    (data / "db-password").unlink(missing_ok=True)
                 reason = e.code if isinstance(e, SystemExit) else repr(e)
                 raise SystemExit(f"The database in {old} could not be copied to {data}: {reason}. {old} is as it was."
                                  f"\n{old}의 데이터베이스를 {data}로 복사하지 못했어요: {reason}. {old}는 그대로예요.") from e

@@ -88,3 +88,13 @@ build's demotion to the back.)
 
 **High risk (AGENTS §14):** recall semantics (what a packet carries, now depending on the requests before it) and
 replay of recorded requests.
+
+
+## Correctness follow-up (2026-10-09, unreleased)
+
+Echo detection could read a disabled reply and change which supportive lines rested (invariant 7). Live echo reads
+now require an eligible turn; replay eligibility uses the reconstructed membership's immutable metadata and its
+last `allBefore` cut, not today's lifecycle or turn fields. Synthetic controls cover active, disabled, comment and
+pre-cut replies plus later edit, undo and reorder. The packet policy, default and extraction generation are unchanged.
+The historical replay/live measurements above do not establish fresh replay or live acceptance of this correction;
+those evidence gates remain open.

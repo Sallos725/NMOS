@@ -247,6 +247,13 @@ def test_chunks_come_whole_and_in_order(migrated):
         assert put(c, uid, 0, first).json()["received"] == SMALL  # sent again after a lost answer: not written twice
         assert put(c, uid, 1, second).status_code == 200
         assert put(c, uid, 2, last).json()["state"] == "received"
+        # The final answer can be lost too: only that identical chunk is acknowledged again.
+        assert put(c, uid, 2, last).json()["received"] == len(data)
+        assert put(c, uid, 2, last[:-1]).status_code == 409
+        assert put(c, uid, 3, last).status_code == 409
+        assert c.get(f"/v1/archive/uploads/{uid}").json()["received"] == len(data)
+        (spool,) = SPOOLS
+        assert next(spool.iterdir()).read_bytes() == data
         assert c.post(f"/v1/archive/uploads/{uid}/restore").status_code == 409  # not checked
         assert c.put(f"/v1/archive/uploads/{uid}/chunks/3", json={"data": "!!", "sha256": "0" * 64}).status_code == 422
         assert c.delete(f"/v1/archive/uploads/{uid}").json() == {"discarded": True}
@@ -286,6 +293,20 @@ def test_a_new_upload_replaces_the_others_and_an_old_one_expires(tmp_path):
     with pytest.raises(uploads.UploadError) as e:
         spool.get(b.id)
     assert e.value.status == 404 and not b.path.exists()
+
+
+@pytest.mark.parametrize("state", ["checking", "checked", "restoring", "restored", "refused", "failed"])
+def test_a_last_chunk_retry_is_not_accepted_after_the_check_starts(tmp_path, state):
+    spool = uploads.Uploads(10_000, make_dir=lambda: tmp_path)
+    up = spool.create(3)
+    spool.chunk(up.id, 0, b"abc", sha(b"abc"))
+    assert spool.chunk(up.id, 0, b"abc", sha(b"abc")) is up
+    assert up.path.read_bytes() == b"abc" and up.received == 3 and up.next_index == 1
+    up.state = state
+    with pytest.raises(uploads.UploadError) as error:
+        spool.chunk(up.id, 0, b"abc", sha(b"abc"))
+    assert error.value.status == 409
+    assert up.path.read_bytes() == b"abc"
 
 
 def test_a_finished_or_refused_upload_leaves_no_file(tmp_path):

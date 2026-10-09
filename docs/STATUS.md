@@ -13,6 +13,31 @@ story does not name (read only on the two chats: 5 flags on inventory and equipm
 `docs/perf/phase39-flags.md`). Step 5: the anchor was already in place (no packet change). Open for the owner: the
 default policy, and which keys the trial install watches. All in `0.4.0` (the owner).
 
+**Authorized `0.4.0` gate corrections (2026-10-09, candidate branch work):**
+[audit and evidence boundaries](audits/0.4.0-2026-10-09.md). Missing independent fixes from
+#275 (persona part alias), #279 (CI requires its database), #281 (embedding wait setting and deadline warning), and
+#286 (the byte-identical v0.3.0 database fixture) are integrated; #272's favicon was already in the candidate.
+The fixture upgrades from 0028 through the current 0029 migration, checks the new repair kind and migration
+idempotence; no old migration is changed. The query-embedding regression uses events and a logical duration, while
+the separate test keeps the actual timeout check. Scoped correctness fixes also cover the final upload chunk's lost
+acknowledgement, restored state after interrupted normalization, inactive replies affecting supportive-memory rest,
+and an adoption copy whose PostgreSQL cannot be confirmed stopped. High risk: identity, derived-state recovery,
+inactive-source isolation and preserving stored data during adoption. Defaults, watched keys and generations are
+unchanged. Plugin verification: 222 tests, typecheck and actual dist build passed; the fixed snapshot reproduces the
+same dist. Independent focused fix checks: 44 passed, no skips. The synthetic 10,000-message missing-state scan
+visited each candidate once, kept the existing positive and took a median 1000.978 ms (old code skipped the scan;
+0.718 ms); this is not a host latency gate. The isolated sidecar full suite passed 1,316 tests with no skips, failures
+or errors (DB required on dedicated 55439; actual v0.3.0 upgrade included). Current Linux x64 artifact build
+and smoke passed, including 0028→0029 and real cross-drive adoption; this does not prove every OS failure condition.
+The Linux libxml2 pin was corrected to Ubuntu's verified security patch `.14` for both architectures, keeping the
+version guard; arm64 execution is unverified. Historical measurements above do not claim current gates passed.
+#280's Ubuntu canary remains excluded. The owner requested a follow-up PR on 2026-10-09; release publication remains pending.
+
+**Known-issue priorities (owner, 2026-10-09):** K45–K47 improvements follow `0.4.0`, with their timing relative to
+`1.0.0` undecided; K48 improvements follow `1.0.0`. K49 keeps the approved iPhone restore exclusion. Additional
+K50 accounting is low priority and unscheduled; the partial-usage explanation remains. See `docs/KNOWN-ISSUES.md`.
+These priorities do not change the packet default/watch decisions or complete the remaining live/device gates.
+
 **Phase 38 — Restore from the panel, while NMOS runs: approved 2026-10-08 (the owner: the phase and a live restore), high
 risk (stored data, an HTTP route that writes the database); Q1–Q7 answered (Q3 amended: chunks for the host's proxy,
 the iPhone not a target); complete 2026-10-08 (the owner's restore of the trial install into a fresh one
@@ -25,7 +50,7 @@ checked and summarized first, then restored with the shared ids' sequences held 
 with the startup steps run after it. Aimed at `0.4.0`.
 
 **Phase 37 — The bundle's data lives outside the bundle: approved 2026-10-08 (the owner, as proposed; Q6 amended), high
-risk (stored data, upgrades); complete 2026-10-08 (#285 green on four targets; the owner's Windows check passed).** Spec `docs/phases/PHASE-37.md`, ADR 0060
+risk (stored data, upgrades); complete 2026-10-08 (historical #285 at `c662930` green on four targets; the owner's Windows check passed).** Spec `docs/phases/PHASE-37.md`, ADR 0060
 amendment 1. A user lost their database updating 0.2.0 → 0.3.0 (cause unconfirmed: the Docker install cannot drop it; a
 switch to the new bundle starts empty). On Windows and Linux the bundle kept its database in the folder an update
 replaces; the launcher now keeps it in a per-user folder and moves 0.3.0's `data/` there on the first start (a rename on
@@ -37,7 +62,9 @@ CI asks the Q6 question in the console on a drive without short names (`ci_smoke
 v0.3.0 linux-x64 bundle's data was adopted by the new launcher with its rows and migrations, and the full smoke passed
 on it with the copy across drives (`/dev/shm`) (its version check skipped: v0.3.0 reports 0.0.0, fixed by #269). The owner's
 Windows check (2026-10-08): a real v0.3.0 bundle's data, with a marker row, adopted by `NMOS.exe` into the per-user
-folder, then the bundle folder deleted and a fresh one started on the same data. In `0.4.0`.
+folder, then the bundle folder deleted and a fresh one started on the same data. In `0.4.0`. The current candidate's macOS native run on #290 (`d4c98bd`, run 37800192235/job 113390008153) failed
+one query-embedding timing assertion (1,288 passed, one failed); the historical `c662930` success above remains
+historical. The event-based correction still needs current native confirmation.
 
 **Phase 36 — A name in the message is not a question about everything (`packet-v16`): approved 2026-10-08 (the owner, as
 proposed), a correction phase (AGENTS §7 item 5) beside Phase 34; complete: `packet-v16` the default (the owner; the
@@ -982,7 +1009,7 @@ live request with Voyage, the settings panel on a real host.
 | Deployment | `docker-compose.yml`, `docker/sidecar.Dockerfile`, `.env.example` | postgres 16 + sidecar |
 | Tests | `apps/sidecar/tests` (754), `adapters/pocketrisu-plugin/test` (193; DOM code under `happy-dom`) | all passing; the M0 real-chat evaluation is `docs/perf/m0-baseline.md` (28 owner-confirmed cases; 9 need memory: 5 before Phase 11, 7 now) and, on a second chat, `docs/perf/m0-sample2.md` (17 cases; 8 of the 13 that need memory); deterministic memory evaluation `docs/perf/eval-baseline.md` (with budget pressure since Phase 9) |
 | Performance | `docs/perf/phase0.md`, `docs/perf/scale.md` | Phase 0 targets met. Since beta.10: sidecar append 715 → 156 ms and plugin manifest 175 → 17 ms at 10k (ADR 0010). Real host (PocketRisu v1.12.0): ≈1.5 s at 5k, ≈2.7 s at 10k, ≈4.1 s at 15k per warm generation (host stall after `getChatFromIndex`); default deadline 3 s covers up to ≈10k without extraction and embeddings (D24); with both on (15k facts, 15k vectors) 10k takes ≈3.2 s (A-09); K3 on the real host (2026-09-27): rerolls and last-reply swipes stay on the fast path, an edit of an older message at 10k takes 3.6–3.8 s |
-| Known issues | `docs/KNOWN-ISSUES.md` | K1–K50 (K10, K33, K42 and K43 resolved; K33–K38 recorded 2026-09-29, K39–K40 in Phase 18, K41 in Phase 19, K42 in Phase 21 and resolved in 0.3.0, K43 in the live gate's S3 on `9947d2c`, 2026-10-04, resolved by `packet-v12`; K44 in Phase 33 step 2; K45–K50, recorded 2026-10-09: the limits Phases 33–38 accepted and ADR 0051's uncounted failed calls, each accepted pending the owner) current through the `0.4.0` candidate (2026-10-09), each with workaround and tracking (host, Track B stage); resolved limitations listed |
+| Known issues | `docs/KNOWN-ISSUES.md` | K1–K50 (K10, K33, K42 and K43 resolved; K33–K38 recorded 2026-09-29, K39–K40 in Phase 18, K41 in Phase 19, K42 in Phase 21 and resolved in 0.3.0, K43 in the live gate's S3 on `9947d2c`, 2026-10-04, resolved by `packet-v12`; K44 in Phase 33 step 2; K45–K50, recorded 2026-10-09: the limits Phases 33–38 accepted and ADR 0051's uncounted failed calls; K45–K47 improvements follow 0.4.0 with 1.0 timing undecided, K48 follows 1.0.0, K49 retains the approved iPhone scope exclusion, and extra K50 accounting is low priority and unscheduled) current through the `0.4.0` candidate (2026-10-09), each with workaround and tracking (host, Track B stage); resolved limitations listed |
 | Next work | `docs/ROADMAP-1.0.md`, `docs/proposals/` | Road to 1.0: stages 4–7 of the original roadmap, one release each (R7, 2026-10-01: Stage 8 after 1.0, Stage 6 ends with Phase 20, new phases only for Stage 7; R1, R5, R7 decided, R2–R4 open). Track A (stabilization) A1–A5 done; Track B B1 = Phase 5, B2 = Phase 6 (complete); B3 narrowed = Phase 7 (complete); the rest of B3 and B4–B7 not authorized |
 | Decisions | `docs/adr/0001`–`0071` | gating, branches, token (optional), recall scoring, hybrid tuning, projection generations, knowledge scope, turn extraction, conversation delete, append fast path, item holder; Phase 5: entity identity, assertion semantics, generation fallback; superseded projection retention; Phase 6: item whereabouts, item end; observation compaction; Phase 7: promise threads, event salience; Phase 8: typed participants; Vertex AI service-account keys; persona name; salience by change and revealed names; owner entity links; standing facts first; speech level and address; text PostgreSQL cannot store; host check without a token; per-message window retired; Korean token estimate; Phase 10: secrets, private section, memory mode, budget pressure; plugin build check; Phase 11: relationship pairs, open business, stated causes; Phase 12: scene summaries, story and cast; Phase 13: owner repair; Phase 14: canon sources, names from canon, canon facts and lock; NMOS off for one chat; Phase 15: a packet that fills its budget; Phase 16: NMOS Archive; Phase 17: model-call usage; Phase 18: keyword lexical recall, excerpts that fill their length; Phase 19: `extract-v14`; Phase 20: join preview; Phase 21: first cue; Phase 22: reveal checks; Phase 24: name variants; Phase 25: `role_toward`; Phase 23: portable bundles; the query embedded while recall reads (K34); the chunk cap a setting of the projection (K13); Phase 27: `packet-v11`, the excerpt lands on the answer; Phase 28: `extract-v16`, CURRENT ROLES and a name said two ways (the default); Phase 30: first-sight order; Phase 31: `packet-v12`, recall that knows what changed; Phase 33: `packet-v13`, the words said; Phase 34: `packet-v14`, what a line is for; Phase 35: `packet-v15`, the anchor is what was asked; Phase 36: `packet-v16`, a name is not a question; Phase 39: a status window over time (`packet-v17`, flags; proposed) |
 | Phase specs | `docs/phases/PHASE-0.md`–`PHASE-39.md` | 0–3 met; 4 soft subset met; 5–10 met; 11 met but one criterion partly (owner accepted); 12 met but the latency criterion missed by 3 ms (owner accepted); 13 met but the latency criterion missed by 2 ms (owner accepted); 14 met but the latency criterion missed by 29 ms with a 200-entry lorebook read whole (owner accepted); 15 met (packet fill); 16 met (the owner's iPhone check 2026-10-01; the host's alert is K38); 17 met; 18 met (latency measured over the benchmark's questions, owner accepted); 19 met but for `deepseek-v4.1-flash`'s M0 criterion (owner accepted, K41); 20 met; 21 met; 22 met but the paid run's reveal count missed by one (owner accepted); 23 met (owner Windows and Mac checks 2026-10-02; a second start's notice, the worker after a quit and a real sign-in not run in CI, owner accepted); 24 met; 25 met (the paid run's output tokens 43 % above the estimate, owner accepted); 26 stopped (not merged; Stage 6's criterion reworded); 27 complete (2026-10-02; Q1b the keywords anchor and Q5's bound one-sided by the owner on the measurement); 28 approved (2026-10-03) and 29 approved (2026-10-04), step 2 merged (#251); `extract-v16` the default since 2026-10-04 (28 step 3), the live gate next; 30 approved (2026-10-04), complete (#260); 31 complete (2026-10-05; the second reduced live gate met every bar; `packet-v12` the default); 32 approved (2026-10-05, an exception to R7; in `0.4.0`); 33 complete (2026-10-08; Stage 7 part 1; the reduced live run dropped by the owner, Q10 d); 34 complete (2026-10-08; Stage 7 part 2; `packet-v14` the default, in the default through `packet-v16`); 35 complete (2026-10-08; `packet-v15`); 36 complete (2026-10-08; `packet-v16` the default); 37 complete (2026-10-08); 38 complete (2026-10-08); 39 approved (2026-10-08), steps 2–5 done (the default policy and the watch list open) |

@@ -394,3 +394,99 @@ def test_a_card_bound_rule_reads_a_chat_again_when_its_name_arrives(migrated, ru
         assert values(read(migrated, chat, path), "Gold") == [(0, 0, "100")]
         sync(c, chat, character_name="Card B")  # renamed in the host: no longer this card's chat
         assert read(migrated, chat, path) == {}
+
+
+@pytest.mark.parametrize("interrupted", [False, True], ids=["immediate", "interrupted-restart"])
+def test_panel_restore_recovers_card_state_in_an_existing_install(migrated, database_url_factory, rules,
+                                                                 monkeypatch, interrupted):
+    import base64
+    import hashlib
+    from nmos_sidecar import api, normtext
+    from test_panel_restore import check, restore
+
+    path = rules({"card": "Card A"})
+    existing, restored = SimChat(), SimChat()
+    for chat, gold in ((existing, 10), (restored, 100)):
+        chat.user("시작.")
+        chat.reply(bar(1, gold))
+        chat.user("다음.")
+    with make_client(migrated, parsers_file=path) as source:
+        sync(source, restored, character_name="Card A")
+        data = source.get("/v1/archive").content
+    target = database_url_factory()
+
+    def source_rows():
+        with psycopg.connect(target) as conn:
+            return conn.execute("SELECT id, content, revision_hash FROM source_revision ORDER BY id").fetchall()
+
+    with make_client(target, parsers_file=path) as client:
+        sync(client, existing, character_name="Card A")
+        before = read(target, existing, path)
+        with psycopg.connect(target) as conn:
+            observations = conn.execute("SELECT * FROM state_observation ORDER BY id").fetchall()
+        uid = client.post("/v1/archive/uploads", json={"bytes": len(data)}).json()["id"]
+        sent = client.put(f"/v1/archive/uploads/{uid}/chunks/0", json={
+            "data": base64.b64encode(data).decode(), "sha256": hashlib.sha256(data).hexdigest()})
+        assert sent.status_code == 200 and sent.json()["state"] == "received"
+        assert check(client, uid)["state"] == "checked"
+        with monkeypatch.context() as patch:
+            if interrupted:
+                def fail_before_state(*args, **kwargs):
+                    raise RuntimeError("interrupted before the state backfill")
+                patch.setattr(api, "sync_rules", fail_before_state)
+            result = restore(client, uid)
+        assert result["state"] == "restored"
+        saved_sources = source_rows()
+        if interrupted:
+            assert "next start" in result["detail"]
+            with psycopg.connect(target, row_factory=dict_row) as conn:
+                assert normtext.missing(conn) == []  # text committed before the injected parsing failure
+            assert read(target, restored, path) == {}
+        else:
+            assert values(read(target, restored, path), "Gold") == [(0, 0, "100")]
+        assert read(target, existing, path) == before
+    with make_client(target, parsers_file=path) as client:
+        assert sync(client, restored, character_name="Card A")["status"] == "noop"
+        assert values(read(target, restored, path), "Gold") == [(0, 0, "100")]
+        assert read(target, existing, path) == before
+    assert source_rows() == saved_sources
+    with psycopg.connect(target) as conn:
+        after = conn.execute("SELECT * FROM state_observation WHERE id = ANY(%s) ORDER BY id",
+                             ([row[0] for row in observations],)).fetchall()
+        assert after == observations  # existing positive observations were neither deleted nor replaced
+
+
+def test_missing_state_scan_crosses_no_match_batches_once(migrated, rules, monkeypatch):
+    from nmos_sidecar import state
+
+    path = rules()
+    existing, unmatched = SimChat(), SimChat()
+    existing.user("시작.")
+    existing.reply(bar(1, 10))
+    existing.user("다음.")
+    for i in range(3):
+        unmatched.user(f"말 {i}.")
+        unmatched.reply(f"대답 {i}.")
+    unmatched.user("다음.")
+    with make_client(migrated, parsers_file=path) as client:
+        sync(client, existing)
+        sync(client, unmatched)
+    monkeypatch.setattr(state, "STATE_BACKFILL_BATCH", 2)
+    parsed = []
+    original = state.write_state
+
+    def record(conn, ruleset, conv_id, revision_id, *args):
+        parsed.append(revision_id)
+        return original(conn, ruleset, conv_id, revision_id, *args)
+
+    monkeypatch.setattr(state, "write_state", record)
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        before = conn.execute("SELECT * FROM state_observation ORDER BY id").fetchall()
+        expected = conn.execute("SELECT sr.id FROM source_revision sr JOIN source_object so"
+                                " ON so.id = sr.source_object_id WHERE so.source_kind = 'message'"
+                                " AND NOT EXISTS (SELECT 1 FROM state_observation st WHERE st.source_revision_id = sr.id"
+                                " AND st.rules_version = %s) ORDER BY sr.id", (load_rules(path).version,)).fetchall()
+        assert len(expected) > 2 * state.STATE_BACKFILL_BATCH
+        assert state.sync_rules(conn, load_rules(path)) == 0
+        assert parsed == [row["id"] for row in expected]
+        assert conn.execute("SELECT * FROM state_observation ORDER BY id").fetchall() == before

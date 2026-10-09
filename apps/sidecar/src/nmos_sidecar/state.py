@@ -11,6 +11,7 @@ from psycopg.rows import tuple_row
 from .parsers import RuleSet, needs_card, parse
 
 _UNSET: Any = object()
+STATE_BACKFILL_BATCH = 500
 
 
 def write_state(conn: psycopg.Connection, ruleset: RuleSet, conv_id: UUID, revision_id: UUID,
@@ -33,16 +34,33 @@ def write_state(conn: psycopg.Connection, ruleset: RuleSet, conv_id: UUID, revis
     return len(pairs)
 
 
-def sync_rules(conn: psycopg.Connection, ruleset: RuleSet, unseen: list[UUID] = ()) -> int:
-    """Drop rows from other rule versions and backfill the current version if it is missing; otherwise read the
-    `unseen` revisions, which no append parsed (a restore's rows, `normtext.missing`)."""
+def sync_rules(conn: psycopg.Connection, ruleset: RuleSet) -> int:
+    """Drop other rule versions, then parse messages without an observation under the current rules.
+
+    Normalized text can commit before parsing (or be filled by a worker), so it cannot mark state as complete.
+    A message with no matching field is checked once per invocation; the keyset advances even when parsing yields
+    no observation. Positive observations are preserved, and the caller keeps its transaction boundary.
+    """
     conn.execute("DELETE FROM state_observation WHERE rules_version <> %s", (ruleset.version,))
     if not ruleset.rules:
         return 0
-    has = conn.execute("SELECT 1 FROM state_observation LIMIT 1").fetchone()
-    if has:
-        return _parse(conn, ruleset, "sr.id = ANY(%s)", (list(unseen),)) if unseen else 0
-    return rebuild_state(conn, ruleset)
+    total = 0
+    after: UUID | None = None
+    while True:
+        rows = conn.execute(
+            "SELECT sr.id, sr.content, sr.metadata, so.conversation_id, c.host_character_name FROM source_revision sr"
+            " JOIN source_object so ON so.id = sr.source_object_id JOIN conversation c ON c.id = so.conversation_id"
+            " WHERE so.source_kind = 'message' AND (%s::uuid IS NULL OR sr.id > %s)"
+            " AND NOT EXISTS (SELECT 1 FROM state_observation st WHERE st.source_revision_id = sr.id"
+            " AND st.rules_version = %s) ORDER BY sr.id LIMIT %s",
+            (after, after, ruleset.version, STATE_BACKFILL_BATCH),
+        ).fetchall()
+        for row in rows:
+            total += write_state(conn, ruleset, row["conversation_id"], row["id"], row["content"], row["metadata"],
+                                 row["host_character_name"])
+        if len(rows) < STATE_BACKFILL_BATCH:
+            return total
+        after = rows[-1]["id"]
 
 
 def reparse_conversation(conn: psycopg.Connection, ruleset: RuleSet, conv_id: UUID) -> int:

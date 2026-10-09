@@ -53,7 +53,7 @@ def reply_text(conn: psycopg.Connection, head: UUID, upto_position: int | None,
             "SELECT sr.metadata->>'role' AS role, rt.clean_content FROM active_membership am"
             " JOIN source_revision sr ON sr.id = am.source_revision_id"
             " LEFT JOIN revision_text rt ON rt.source_revision_id = sr.id"
-            " WHERE am.commit_id = %s AND am.position = %s ORDER BY rt.normalizer DESC LIMIT 1",
+            " WHERE am.commit_id = %s AND am.position = %s AND am.turn IS NOT NULL ORDER BY rt.normalizer DESC LIMIT 1",
             (head, upto_position + 1)).fetchone()
         return (row["clean_content"] or "") if row and row["role"] == "char" else None
     # The membership as it stood then, rebuilt from the commits' and appends' ops recorded before it, in the order
@@ -75,13 +75,19 @@ def reply_text(conn: psycopg.Connection, head: UUID, upto_position: int | None,
             members = apply_ops(members, ops)
     if upto_position + 1 >= len(members):
         return None
-    logical, revision_hash = members[upto_position + 1]
     row = conn.execute(
-        "SELECT sr.metadata->>'role' AS role, rt.clean_content FROM source_object so"
-        " JOIN source_revision sr ON sr.source_object_id = so.id AND sr.revision_hash = %s"
-        " LEFT JOIN revision_text rt ON rt.source_revision_id = sr.id"
-        " WHERE so.host_logical_id = %s AND so.conversation_id = %s"
-        " ORDER BY rt.normalizer DESC LIMIT 1", (revision_hash, logical, conv)).fetchone()
+        "WITH m AS (SELECT x.position - 1 AS position, sr.id, sr.metadata FROM"
+        " unnest(%s::text[], %s::text[]) WITH ORDINALITY AS x(logical, hash, position)"
+        " JOIN source_object so ON so.host_logical_id = x.logical AND so.conversation_id = %s"
+        " JOIN source_revision sr ON sr.source_object_id = so.id AND sr.revision_hash = x.hash)"
+        " SELECT m.metadata->>'role' AS role, rt.clean_content FROM m"
+        " LEFT JOIN revision_text rt ON rt.source_revision_id = m.id"
+        " WHERE m.position = %s AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')"
+        " AND coalesce(m.metadata->>'isComment', '') <> 'true'"
+        " AND m.position > (SELECT coalesce(max(position), -1) FROM m WHERE metadata->>'disabled' = 'allBefore')"
+        " ORDER BY rt.normalizer DESC LIMIT 1",
+        ([logical for logical, _ in members], [hashed for _, hashed in members], conv, upto_position + 1),
+    ).fetchone()
     return (row["clean_content"] or "") if row and row["role"] == "char" else None
 
 

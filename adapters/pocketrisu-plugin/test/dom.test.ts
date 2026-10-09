@@ -245,7 +245,9 @@ describe('panel', () => {
       await settle();
       const text = document.getElementById('nmos-panel')!.textContent!;
       expect(text.includes('Memory was recalled without semantic search')).toBe(shown);
-      if (shown) expect(text).toContain('NMOS_EMBED_TIMEOUT_MS');
+      const warning = [...document.querySelectorAll('#nmos-panel .card')]
+        .find((c) => c.textContent!.includes('Memory was recalled without semantic search'));
+      if (shown) expect(warning!.textContent).toContain('raise Embedding wait (ms)');
       document.getElementById('nmos-panel')?.remove();
     }
   });
@@ -302,6 +304,38 @@ describe('panel', () => {
     await settle();
     expect(calls.filter(([method]) => method === 'PUT').at(-1)![2]).toMatchObject({
       embed_url: 'http://host.docker.internal:11434/v1', embed_model: 'qwen3-embedding:0.6b', vector_min_sim: 0.42 });
+  });
+
+  it('sets the embedding wait, and leaves it alone on a sidecar that has no such setting (K34)', async () => {
+    const wait = () => document.querySelector<HTMLInputElement>('#nmos-panel input[type="number"][max="5000"][min="100"]')!;
+    let { d, calls } = deps();
+    await openPanel(d, 'settings');
+    await settle();
+    expect(wait().disabled).toBe(true);  // an older sidecar: nothing to show, nothing sent
+    document.body.replaceChildren();
+    (config.recall as Record<string, number>).embed_timeout_ms = 300;
+    try {
+      ({ d, calls } = deps());
+      await openPanel(d, 'settings');
+      await settle();
+      expect(wait().disabled).toBe(false);
+      expect(wait().value).toBe('300');
+      wait().value = '1000';
+      wait().dispatchEvent(new Event('input', { bubbles: true }));
+      (document.querySelector('#nmos-panel button.primary') as HTMLButtonElement).click();
+      await settle();
+      expect(calls.filter(([method]) => method === 'PUT').at(-1)![2]).toMatchObject({ embed_timeout_ms: 1000 });
+      const bar = () => document.querySelector('#nmos-panel .bar .text')!;
+      expect(bar().textContent).not.toContain('minus 500 ms');
+      wait().value = '2800';  // the deadline is the default 3000: the wait leaves it too little (audit F20)
+      wait().dispatchEvent(new Event('input', { bubbles: true }));
+      (document.querySelector('#nmos-panel button.primary') as HTMLButtonElement).click();
+      await settle();
+      expect(calls.filter(([method]) => method === 'PUT').at(-1)![2]).toMatchObject({ embed_timeout_ms: 2800 });
+      expect(bar().textContent).toContain('minus 500 ms');
+    } finally {
+      delete (config.recall as Record<string, number>).embed_timeout_ms;
+    }
   });
 
   it('exports everything from the settings, with embeddings when asked, and says what it saved (ADR 0050)', async () => {

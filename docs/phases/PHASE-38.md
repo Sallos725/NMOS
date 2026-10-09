@@ -108,3 +108,14 @@ answers both inside the running sidecar.
 **High (AGENTS §14).** The guarantees at risk: a restore never corrupts or merges what the install holds (one
 transaction, refused whole, ids never taken twice), and the route that writes the database is behind the same guard
 as every other write. Requests that write wait for the restore; they fail open on the plugin's deadline.
+
+
+## Correctness follow-up (2026-10-09, unreleased)
+
+A lost acknowledgement of the final chunk made the panel's one retry fail after the spool became `received`.
+Only the verified identical prior final chunk is now acknowledged again; no bytes are appended twice, and retries
+are refused after checking starts. An interrupted post-restore startup could also commit normalized text before
+state parsing, leaving a restored chat without state on every later start. Startup now finds missing current-rule
+observations independently of text, in bounded keyset batches; it preserves existing positive observations and the
+caller transaction. No-match messages are revisited once per startup, without a new schema marker. Synthetic API
+and interruption regressions cover these cases; the owner's earlier successful restore remains historical evidence.

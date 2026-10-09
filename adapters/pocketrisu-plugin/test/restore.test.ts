@@ -69,6 +69,36 @@ describe('the upload', () => {
     await expect(uploadArchive(api, new Blob([bytesOf(5)]), () => {})).rejects.toThrow('timeout');
   });
 
+  it('retries the identical final chunk when the sidecar received it but its answer was lost', async () => {
+    const data = bytesOf(15);
+    const writes: Buffer[] = [];
+    const finalBodies: unknown[] = [];
+    const progress: number[] = [];
+    let received = false;
+    const api = async <T>(method: Method, path: string, body?: unknown): Promise<T> => {
+      if (method === 'POST') return { id: 'u-final', state: 'receiving', chunk_bytes: 10 } as T;
+      const chunk = body as { data: string; sha256: string };
+      const bytes = Buffer.from(chunk.data, 'base64');
+      expect(chunk.sha256).toBe(sha(bytes));
+      if (path.endsWith('/1')) {
+        finalBodies.push(body);
+        if (received) {
+          expect(body).toEqual(finalBodies[0]);
+          return { state: 'received', received: data.length } as T;
+        }
+        received = true;
+        writes.push(bytes);
+        throw new Error('the final acknowledgement was lost');
+      }
+      writes.push(bytes);
+      return { state: 'receiving', received: 10 } as T;
+    };
+    await uploadArchive(api, new Blob([data]), (sent) => progress.push(sent));
+    expect(finalBodies).toHaveLength(2);
+    expect(Buffer.concat(writes)).toEqual(Buffer.from(data));
+    expect(progress).toEqual([0, 10, 15]);
+  });
+
   it('polls until the upload reaches a wanted state', async () => {
     const states: UploadView['state'][] = ['checking', 'checking', 'checked'];
     const api = async <T>(): Promise<T> => ({ id: 'u3', state: states.shift() } as T);
