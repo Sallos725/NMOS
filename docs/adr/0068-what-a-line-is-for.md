@@ -20,7 +20,16 @@ Under `packet-v14` (`packet.LABEL_POLICIES`, `REST_POLICIES`):
 1. **Labels** (Q1), by rule at compile time, on every ledger line. **Required**: the state, the cast, the story-so-far
    summary, Private and Secret lines, a fact, claim or thread the question names, a quote, and the first excerpt (the
    one the budget keeps room for, ADR 0026). **Risky**: a disputed or contradicted line. **Supportive**: the rest (scene
-   summaries, facts and excerpts found by overlap, vectors or the previous reply).
+   summaries, facts and excerpts found by overlap, vectors or the previous reply). **Hidden**: an actual packet
+   candidate withheld by a memory mode or a secret gate, recorded only after packet compilation with its kind,
+   provenance, turn and exclusion reason; never placed and zero packet tokens. Its body and knowledge marks are
+   not copied into this diagnostic row. These rows do not enter the offered/echo or placement/rest statistics.
+   A strict-mode Secret replacement remains a separate, normally placed required line.
+
+   The hidden label and its Inspector chip were missing from the original implementation despite PHASE-34 Q1/Q7.
+   The owner requested their completion on 2026-10-09. The diagnostic boundary is the existing packet-candidate
+   gates, not every raw search or cast-discovery row: upstream selection exclusions are not newly classified.
+   The packet, its budget, the exclusion rules, the default and generation keys are unchanged.
 2. **The rest** (Q2, Q3; `overuse`): a supportive line placed in each of the last `rest_after` requests of the chat
    (`RecallOptions.rest_after`, recorded, `NMOS_REST_AFTER`, 2 by default), none of whose replies echoed it
    (`spans.reuse`, ADR 0027), is **left out** for the next two requests and its slot goes to the next candidate. It does

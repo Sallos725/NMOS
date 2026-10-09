@@ -35,7 +35,7 @@ from .facts import memory_view
 from .generations import Generation
 from .ids import uuid7
 from .llm import NO_CALL, LLMError, metered
-from .packet import Line
+from .packet import Line, hidden_entry
 from .threads import _grams, _overlap, similarity
 
 log = logging.getLogger("nmos.summaries")
@@ -301,7 +301,8 @@ _CURRENT = (
 
 def packet_lines(conn: psycopg.Connection, head: UUID, key: str, secrets: list[dict[str, Any]], query: str,
                  in_context: set[str], upto: int | None = None, known_at: datetime | None = None,
-                 present: frozenset[str] = frozenset()) -> list[Line]:
+                 present: frozenset[str] = frozenset(),
+                 hidden_entries: list[dict[str, Any]] | None = None) -> list[Line]:
     """What a request offers <Story> (ADR 0043): the story so far, and the scene summary the message is about among
     windows older than the prompt's own messages (`in_context`, host ids). A summary that repeats a secret still kept
     from someone is never offered (PHASE-12 Q3). The same choice as `current`, made for the request path: one query
@@ -315,7 +316,14 @@ def packet_lines(conn: psycopg.Connection, head: UUID, key: str, secrets: list[d
     def usable(row: dict[str, Any]) -> bool:
         if row["level"] == "scene":  # its text and coverage are read only when it would be offered
             row.update(conn.execute("SELECT text, coverage FROM summary WHERE id = %s::uuid", (row["id"],)).fetchone())
-        return bool(row["text"]) and not (secrets and held(row, secrets, present))
+        if not row["text"]:
+            return False
+        if secrets and held(row, secrets, present):
+            if hidden_entries is not None:
+                hidden_entries.append(hidden_entry("summary", {"summary": str(row["id"])},
+                                                   row["last_turn"], "secret_gate"))
+            return False
+        return True
 
     out: list[Line] = []
     if story and usable(story):

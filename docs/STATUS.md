@@ -11,7 +11,9 @@ over time; `packet-v17` (not the default) answers "레벨 언제 올랐어?" wit
 recorded requests change, `docs/perf/phase39-history.md`). Step 4: a rule's `watch` keys flag changes the reply's
 story does not name (read only on the two chats: 5 flags on inventory and equipment in 23 replies, each real;
 `docs/perf/phase39-flags.md`). Step 5: the anchor was already in place (no packet change). Open for the owner: the
-default policy, and which keys the trial install watches. All in `0.4.0` (the owner).
+default policy. The owner reaffirmed on 2026-10-09 that watch setup was already approved. A read-only dump of
+the 6113 trial install at 12:40 KST found no `watch` field on either saved rule: application is pending, not approval.
+All in `0.4.0` (the owner).
 
 **Authorized `0.4.0` gate corrections (2026-10-09, candidate branch work):**
 [audit and evidence boundaries](audits/0.4.0-2026-10-09.md). Missing independent fixes from
@@ -30,13 +32,17 @@ visited each candidate once, kept the existing positive and took a median 1000.9
 or errors (DB required on dedicated 55439; actual v0.3.0 upgrade included). Current Linux x64 artifact build
 and smoke passed, including 0028→0029 and real cross-drive adoption; this does not prove every OS failure condition.
 The Linux libxml2 pin was corrected to Ubuntu's verified security patch `.14` for both architectures, keeping the
-version guard; arm64 execution is unverified. Historical measurements above do not claim current gates passed.
+version guard; arm64 smoke execution is unverified. The pre-hidden candidate `a17963f` subsequently passed sidecar,
+plugin and all four native CI jobs (runs 37879393146/37879393148); the arm64 job builds without smoke. These results
+are for that commit, not the hidden follow-up below. Historical measurements above do not claim current gates passed.
 #280's Ubuntu canary remains excluded. The owner requested a follow-up PR on 2026-10-09; release publication remains pending.
 
 **Known-issue priorities (owner, 2026-10-09):** K45–K47 improvements follow `0.4.0`, with their timing relative to
 `1.0.0` undecided; K48 improvements follow `1.0.0`. K49 keeps the approved iPhone restore exclusion. Additional
 K50 accounting is low priority and unscheduled; the partial-usage explanation remains. See `docs/KNOWN-ISSUES.md`.
-These priorities do not change the packet default/watch decisions or complete the remaining live/device gates.
+These priorities do not change the packet default or complete the remaining live/device gates. Watch setup is
+approved as recorded above. The owner reported the mobile timeline UI passed on 2026-10-09; a separate desktop
+browser confirmation has not been recorded in this follow-up.
 
 **Phase 38 — Restore from the panel, while NMOS runs: approved 2026-10-08 (the owner: the phase and a live restore), high
 risk (stored data, an HTTP route that writes the database); Q1–Q7 answered (Q3 amended: chunks for the host's proxy,
@@ -64,7 +70,8 @@ on it with the copy across drives (`/dev/shm`) (its version check skipped: v0.3.
 Windows check (2026-10-08): a real v0.3.0 bundle's data, with a marker row, adopted by `NMOS.exe` into the per-user
 folder, then the bundle folder deleted and a fresh one started on the same data. In `0.4.0`. The current candidate's macOS native run on #290 (`d4c98bd`, run 37800192235/job 113390008153) failed
 one query-embedding timing assertion (1,288 passed, one failed); the historical `c662930` success above remains
-historical. The event-based correction still needs current native confirmation.
+historical. The event-based correction subsequently passed macOS, Windows and Linux x64 native CI at `a17963f`
+(run 37879393148). A later candidate must be judged on its own CI.
 
 **Phase 36 — A name in the message is not a question about everything (`packet-v16`): approved 2026-10-08 (the owner, as
 proposed), a correction phase (AGENTS §7 item 5) beside Phase 34; complete: `packet-v16` the default (the owner; the
@@ -84,8 +91,17 @@ the answer); `0.4.0` next.
 proposed), steps 2–5 done; `packet-v14` the default on 2026-10-08 (the owner, on the live run: echo of repeated lines
 0.29 → 0.39, no repetition felt; `docs/perf/phase34-rest.md`, ADR 0068), in the default through `packet-v15` and
 `packet-v16` since (ADR 0069, 0070); complete 2026-10-08.** Spec `docs/phases/PHASE-34.md`
-(AGE-10): labels (required, supportive, risky), supportive memory that rests after `rest_after` placements no reply
-used, and an activation threshold for supportive excerpts.
+(AGE-10): labels, supportive memory that rests after `rest_after` placements no reply used, and an activation threshold
+for supportive excerpts. **Completion correction, 2026-10-09 (AGE-64):** Q1/Q7 promised `hidden` as the fourth label,
+but it was missing from the original code. On the owner's request, the candidate now records redacted provenance and
+the exclusion reason for candidates withheld by a mode or secret gate, and shows the Inspector's hidden chip.
+These diagnostics never reach the model or affect packet tokens, selection, rest, offered or echo statistics.
+The default remains `packet-v16`; the label applies to v14–v17. See the follow-up evidence in
+`docs/audits/0.4.0-2026-10-09.md`; implementation in a candidate does not mean the running 6113 install was updated.
+The frozen candidate's full sidecar suite passed **1,342 tests, zero skips/failures/errors** in 569.36 seconds on
+dedicated 55439 with the database required, including 26 new hidden regressions. Lead and independent scoped review
+found no unresolved defect. A lexical-only read-only replay of the 6113 copy matched all 84 eligible requests by
+three-run majority (20 changed-prefix exclusions); it contained no hidden candidates and is not a live recall gate.
 
 **Phase 33 — Forensic recall, part 1 (Stage 7): the source turn, quoted: approved 2026-10-07 (the owner: every
 question as proposed); steps 2–4 done (the baselines, `docs/perf/phase33-baseline.md`: the quote set 4 of 24 under

@@ -93,18 +93,19 @@ def audit(conn: psycopg.Connection, trace_id: UUID) -> dict[str, Any] | None:
         return None
     status, reply = reply_after(conn, t)
     lines = [dict(e) for e in t.get("lines") or []]
-    summary = {"offered": len(lines), "placed": sum(e["placed"] for e in lines), "reply": status}
+    offered = [e for e in lines if e.get("label") != "hidden"]
+    summary = {"offered": len(offered), "placed": sum(e["placed"] for e in offered), "reply": status}
     if reply is not None:
         request = (t.get("query"), t.get("previous_ai"))
-        for e in lines:
+        for e in offered:
             e["echo"] = round(echo(e.get("content") or e.get("text"), reply, request), 3)
             e["echoed"] = e["echo"] > 0
             if e["echoed"] and e["placed"] and (e.get("marks") or {}).get("hidden_from"):
                 e["possible_leak"] = True
         summary.update(
-            placed_echoed=sum(1 for e in lines if e["placed"] and e["echoed"]),
-            unplaced_echoed=sum(1 for e in lines if not e["placed"] and e["echoed"]),
-            possible_leaks=sum(1 for e in lines if e.get("possible_leak")))
+            placed_echoed=sum(1 for e in offered if e["placed"] and e["echoed"]),
+            unplaced_echoed=sum(1 for e in offered if not e["placed"] and e["echoed"]),
+            possible_leaks=sum(1 for e in offered if e.get("possible_leak")))
     return {"trace": str(t["id"]), "policy": t.get("policy"), "budget_tokens": t.get("budget_tokens"),
             "tokens": t["token_estimate"], "summary": summary, "lines": lines}
 
@@ -224,17 +225,19 @@ def compare(conn: psycopg.Connection, trace_ids: list[UUID], options: RecallOpti
             status = next(r["status"] if r else "missing" for r in runs.values() if r is None or r["status"] != "ok")
             skipped[status] = skipped.get(status, 0) + 1
             continue
-        recorded_placed = {_key(e) for e in a["lines"] if e["placed"]} if a else set()
-        echoed = {_key(e) for e in a["lines"] if e["placed"] and e.get("echoed")} if a else set()
+        recorded = [e for e in a["lines"] if e.get("label") != "hidden"] if a else []
+        recorded_placed = {_key(e) for e in recorded if e["placed"]}
+        echoed = {_key(e) for e in recorded if e["placed"] and e.get("echoed")}
         for p, r in runs.items():
             s = per[p]
-            placed = [e for e in r["lines"] if e["placed"]]
+            offered = [e for e in r["lines"] if e.get("label") != "hidden"]
+            placed = [e for e in offered if e["placed"]]
             keys = {_key(e) for e in placed}
             s["packets"] += 1
             s["tokens"] += r["tokens"]
             for e in placed:
                 s["placed"][e["kind"]] = s["placed"].get(e["kind"], 0) + 1
-            if any(e["kind"] == "excerpt" for e in r["lines"]):
+            if any(e["kind"] == "excerpt" for e in offered):
                 s["excerpt_offered"] += 1
                 s["excerpt_placed"] += any(e["kind"] == "excerpt" for e in placed)
             s["echoed_recorded"] += len(echoed)

@@ -174,6 +174,7 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "lk.claim": ("주장", "claim"), "lk.excerpt": ("원문", "excerpt"), "lk.quote": ("인용", "quote"),
     # what a line is for, and repetition (PHASE-34 Q1, Q7)
     "lb.required": ("필수", "required"), "lb.supportive": ("보조", "supportive"), "lb.risky": ("위험", "risky"),
+    "lb.hidden": ("숨김", "hidden"),
     "rest_counts": ("이 요청에서 쉬느라 빠진 보조 줄 {n}개 · 문턱 아래라 빠진 원문 {m}개 (같은 줄이 {k}번 연속 들어갔는데 "
                     "답변이 쓰지 않으면 다음 2번 쉽니다).",
                     "This request left out {n} resting supportive lines and {m} excerpts under the threshold (a line "
@@ -204,6 +205,8 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "lk.summary": ("요약", "summary"), "lk.cast": ("인물 상태", "cast"),
     "pk.placed": ("들어감", "placed"), "pk.budget": ("예산 부족", "no budget"), "pk.state_cap": ("상태 상한", "state cap"),
     "pk.repeats": ("사실과 중복", "repeats a fact"), "pk.restates": ("앞 줄과 같은 내용", "says an earlier line again"),
+    "pk.mode_withheld": ("기억 모드로 제외", "withheld by memory mode"),
+    "pk.secret_gate": ("비밀 보호로 제외", "withheld by secret gate"),
     "fits_at": ("예산 {n}이면 모두", "all at {n}"),
     "pk.short": ("한 문장으로 줄임", "shortened to one sentence"), "pk.cut": ("잘라서 넣음", "cut to fit"),
     "rp.ok": ("있음", "present"), "rp.pending": ("아직 없음", "not yet"), "rp.changed": ("이후 앞부분이 바뀜", "story changed since"),

@@ -207,6 +207,9 @@ not the timeline. Criterion 3 is amended accordingly.
    stops step 4 for the owner.
 8. The owner's look in the browser and in the panel, including on the iPhone.
 
+Owner follow-up, 2026-10-09: **mobile UI passed**. The owner did not name a build or device model in this report;
+it records the mobile check and does not infer a separate desktop browser check.
+
 ## Stop conditions
 
 - A lane needs data that `view` does not hold (a new query, column or migration).

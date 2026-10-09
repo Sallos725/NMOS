@@ -2,7 +2,7 @@
 
 > **Status: approved 2026-10-08 (the owner: the parser rather than a documented limit; the history, the flags and the
 > anchor as directions). Step 2 done (the parser and the guide). **In `0.4.0`** (the owner, 2026-10-08: steps 3–5 too);
-> Q3–Q5 decided as proposed (the owner, 2026-10-08); steps 2–5 implemented and measured as recorded below; the default policy and watched keys remain owner decisions.** A
+> Q3–Q5 decided as proposed (the owner, 2026-10-08); steps 2–5 implemented and measured as recorded below; the default policy remains an owner decision. Watch setup approval was reaffirmed by the owner on 2026-10-09; applying it to the trial install is pending, not its approval.** A
 > phase the owner pulled in (R7 allows owner exceptions): NMOS's deterministic state (Phase 1, D10) exists but is barely
 > used.
 
@@ -65,8 +65,8 @@ A flag names the key, both values, the turn and the reason, in "Needs attention"
 nothing. **Measured 2026-10-08** (`docs/perf/phase39-flags.md`), read only, every key watched: the first rules flagged
 15 on the owner's two chats, 7 of them no change without a cause (a place's numbers, money in words, a revert the reply
 names); as merged, card A's inventory and equipment keys raise 5 flags in 23 replies, each an item the story never
-names, and its resources one borderline flag in 66 changes. `watch` goes into the owner's install only when the owner
-chooses the keys.
+names, and its resources one borderline flag in 66 changes. The owner reaffirmed approval to set up `watch` on
+2026-10-09; the trial snapshot still lacks it, so application remains pending.
 
 **Found by the pre-0.4.0 audit (2026-10-08), fixed here:** a `block` rule whose start matches empty text looped
 forever (refused now, and every block search moves forward); a restored chat got no state when the install already had
@@ -104,14 +104,16 @@ no-match messages are visited once per startup because no parse-completion marke
 - Detecting a card's rule automatically (Q1).
 - Computing a game's numbers, or writing anything into PocketRisu (D1).
 - Making `packet-v17` the default before the owner sees its replay; setting `watch` on the owner's install before the
-  owner sees the count.
+  owner sees the count (watch setup was subsequently confirmed approved on 2026-10-09).
 
 ## Steps
 
 1. This spec.
 2. The parser options, their tests, the guide. **Done 2026-10-08.**
 3. History (Q3): 3a the Inspector, 3b `packet-v17`: **done 2026-10-08**, opt-in.
-4. Flags (Q4): **done 2026-10-08**, no keys watched unless the owner sets them.
+4. Flags (Q4): **done 2026-10-08**. The owner reaffirmed watch setup approval on 2026-10-09. A read-only dump of the
+   6113 trial install at 12:40 KST found neither of its two saved rules had a `watch` field; setup is not yet applied
+   in that snapshot. This check did not change the running install.
 5. The anchor (Q5): **done by record**
    (2026-10-08), no packet change.
 

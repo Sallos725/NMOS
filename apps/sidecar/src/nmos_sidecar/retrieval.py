@@ -36,7 +36,7 @@ from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POL
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
                      MAX_EXCERPT_CHARS, MEMORY_KINDS, REPEATS, STORY_POLICIES, TURN_POLICIES, Compiled, Excerpt, Line,
                      StateItem, anchor_rank, clean_text, compile_lines, cut_lines, excerpt, fill, fits_at, kept_counts,
-                     secret_line,
+                     hidden_entry, secret_line,
                      secret_text)
 from .state import current_state, history as state_history
 from .threads import relevant_threads, similarity
@@ -764,6 +764,7 @@ class Gathered:
     canon_names: str | None = None  # the canon manifest whose names the read used (ADR 0046)
     canon_facts: str | None = None  # the canon manifest whose facts it used; None: none (ADR 0047)
     withheld_lines: list[Line] = field(default_factory=list)
+    hidden_entries: list[dict[str, Any]] = field(default_factory=list)
     secret_pairs: set[tuple[frozenset[str], frozenset[str]]] = field(default_factory=set)  # (holders, absent) given a Secret line
     story: list[Line] = field(default_factory=list)  # summaries (packet-v8, ADR 0043)
     cast_lines: list[tuple[str, list[Line]]] = field(default_factory=list)  # each scene character's state (packet-v8)
@@ -936,7 +937,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                 marks=_thread_marks(view, aliases))
         g.story = summaries.packet_lines(conn, head, options.summarize_key, view["secrets"] if view else [], query,
                                          in_context, upto, known_at,
-                                         scene.names(g.cast, r, aliases) if r is not None else frozenset())
+                                         scene.names(g.cast, r, aliases) if r is not None else frozenset(),
+                                         hidden_entries=g.hidden_entries if options.policy in LABEL_POLICIES else None)
         if rest:  # a scene summary is supportive and rests as the others do (a review); the story so far never rests
             awake = [line for line in g.story
                      if '<Summary kind="story"' in line.xml or overuse.key(line.kind, line.ref) not in rest]
@@ -1065,8 +1067,13 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.timings["quote_route"] = round((time.perf_counter() - t0) * 1000, 2)  # ms; `quotes` is the count placed
     if g.withheld_lines:
         # An excerpt that says what the mode withheld would give it back word for word.
-        kept = [e for e in g.ranked
-                if not any(spans.reuse(line.content, e.text) >= REPEATS for line in g.withheld_lines)]
+        kept = []
+        for e in g.ranked:
+            if not any(spans.reuse(line.content, e.text) >= REPEATS for line in g.withheld_lines):
+                kept.append(e)
+            elif options.policy in LABEL_POLICIES:
+                g.hidden_entries.append(hidden_entry("quote" if e.quote else "excerpt",
+                                                     {"revision": e.revision_id}, e.turn, "mode_withheld"))
         g.withheld += len(g.ranked) - len(kept)
         g.ranked = kept
     # The keyword route adds no raw text that repeats a secret still kept from someone (ADR 0052, owner 2026-09-30):
@@ -1093,6 +1100,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                 kept.append(e)
             elif not any(summaries.leaks(form, view["secrets"], present) for form in (e.text, e.short) if form):
                 kept.append(dataclasses.replace(e, cut_ok=False))  # the forms checked are the only ones placed
+            elif options.policy in LABEL_POLICIES:
+                g.hidden_entries.append(hidden_entry("quote" if e.quote else "excerpt",
+                                                     {"revision": e.revision_id}, e.turn, "secret_gate"))
         g.quote_withheld = sum(e.quote for e in g.ranked) - sum(e.quote for e in kept)
         g.keyword_withheld = len(g.ranked) - len(kept) - g.quote_withheld
         g.ranked = kept
@@ -1186,9 +1196,13 @@ def cast_groups(view: dict[str, Any], cast: dict[str, str], r: Any, query: str, 
 
 def compile_gathered(g: Gathered, budget: int, policy: str) -> Compiled:
     """One request's packet from what `gather` offered (the request and its replay compile alike)."""
-    return compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts, policy=policy, lead=g.lead,
-                         note=g.note, story=g.story, cast=g.cast_lines, named=frozenset(g.named),
-                         risky=frozenset(g.risky))
+    compiled = compile_lines(g.ranked, budget, state=g.state, threads=g.threads, facts=g.facts, policy=policy, lead=g.lead,
+                             note=g.note, story=g.story, cast=g.cast_lines, named=frozenset(g.named),
+                             risky=frozenset(g.risky))
+    if policy in LABEL_POLICIES:
+        # Diagnostics never take part in selection, token fitting or the rest/echo calculation.
+        compiled.ledger.extend(dict(e) for e in g.hidden_entries)
+    return compiled
 
 
 def rested(g: Gathered, compiled: Compiled) -> int:
@@ -1219,11 +1233,15 @@ def _moded(lines: list[Line], rows: list[dict[str, Any]], g: Gathered, r: Any, o
         if options.narrator and not scene.narrator_knows(row, options.narrator, r):
             g.withheld += 1
             g.withheld_lines.append(line)
+            if options.policy in LABEL_POLICIES:
+                g.hidden_entries.append(hidden_entry(line.kind, line.ref, line.turn, "mode_withheld"))
             continue
         if options.strict and line.private and r is not None:
             holders, absent = scene.missing(row, g.cast, r)
             g.withheld += 1
             g.withheld_lines.append(line)
+            if options.policy in LABEL_POLICIES:
+                g.hidden_entries.append(hidden_entry(line.kind, line.ref, line.turn, "mode_withheld"))
             pair = (frozenset(holders), frozenset(absent))
             if pair in seen:
                 continue
@@ -1472,7 +1490,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     fit_started = time.perf_counter()
     cut = cut_lines(compiled.ledger)
     fit = fits_at(compile_at, request.budget_tokens) if cut else None
-    memory = {"offered": sum(1 for e in compiled.ledger if e["kind"] in MEMORY_KINDS and e["why"] != "restates"),
+    memory = {"offered": sum(1 for e in compiled.ledger if e["kind"] in MEMORY_KINDS
+                            and e["why"] != "restates" and e.get("label") != "hidden"),
               "cut": cut, "fits_at": fit}
     timings = {**g.timings, "fit": round((time.perf_counter() - fit_started) * 1000, 2),
                "sidecar_total": round((time.perf_counter() - started) * 1000, 2)}

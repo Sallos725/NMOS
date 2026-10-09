@@ -251,7 +251,7 @@ SPAN_POLICIES = frozenset({"packet-v11", "packet-v12", "packet-v13", "packet-v14
 CHANGE_POLICIES = frozenset({"packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
 QUOTE_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # the forensic path's <Quote> lines (PHASE-33, ADR 0067)
 UNEXTRACTED_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # a turn extraction has not reached is raw evidence (PHASE-33 Q5)
-LABEL_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # every ledger line labeled required, supportive or risky (PHASE-34 Q1)
+LABEL_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # PHASE-34 Q1's four labels
 REST_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # an overused supportive line rests; supportive excerpts meet a bar (Q2–Q4)
 ANCHOR_POLICIES = frozenset({"packet-v15", "packet-v16", "packet-v17"})  # an excerpt anchors on what the question asks, not when (PHASE-35)
 NAMED_POLICIES = frozenset({"packet-v16", "packet-v17"})  # a name alone makes only a now or standing fact required (PHASE-36)
@@ -358,7 +358,13 @@ class Compiled:
     text: str
     tokens: int
     excerpts: list[Excerpt]
-    ledger: list[dict[str, Any]]  # one entry per offered line, in offer order
+    ledger: list[dict[str, Any]]  # offered lines in order, then redacted gated-candidate diagnostics
+
+
+def hidden_entry(kind: str, ref: dict[str, Any], turn: int | None, why: str) -> dict[str, Any]:
+    """A gated candidate's provenance, without copying the withheld body or private marks."""
+    return {"kind": kind, "ref": dict(ref), "turn": turn, "text": "", "tok": 0,
+            "placed": False, "why": why, "label": "hidden"}
 
 
 def _entry(kind: str, ref: dict[str, Any], turn: int | None, text: str, content: str = "",

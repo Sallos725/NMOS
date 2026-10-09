@@ -213,7 +213,10 @@ candidate's default. The historical Phase 33 replay (`docs/perf/phase33-replay.m
 21 of 24 exact-quote cases (`packet-v12`: 4), kept the other bench sets and added 102 ms at p95 at 10,000 messages.
 The owner dropped Phase 33's reduced live run (2026-10-08, Q10 d). Phase 34 added the labels and resting lines;
 Phases 35–36 corrected excerpt anchors and which named facts are required. Phase 39's status history and flags are
-implemented, with `packet-v17` opt-in: its default and the owner's watched keys remain decisions. The `0.4.0` release
+implemented, with `packet-v17` opt-in: its default remains a decision. Watch setup was already approved (reaffirmed
+2026-10-09); the 6113 backup's saved rules still lacked it, so application is pending. The owner also requested the
+missing Phase 34 `hidden` label: the candidate now records redacted gate diagnostics and shows the Inspector chip,
+without changing the model-facing packet (AGE-64, `docs/audits/0.4.0-2026-10-09.md`). The `0.4.0` release
 gates and publication remain open; historical phase evidence does not establish current-candidate CI or a release.
 
 

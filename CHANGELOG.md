@@ -28,6 +28,10 @@ Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS a
 
 ### Changes
 
+- **Hidden candidates have an audit label.** The Inspector records a packet candidate excluded by a memory mode or
+  secret gate as hidden, with its source, turn and reason instead of copying its body. The diagnostic rows never
+  reach the model or consume packet budget, and do not affect placement, rest or echo statistics. Existing traces
+  are not rewritten; replay can add the missing diagnostic rows while preserving the model-facing packet.
 - **Linux bundles pin the current libxml2 security patch.** Ubuntu's 2026-10-08
   [USN-8910-1](https://ubuntu.com/security/notices/USN-8910-1) moved Jammy's package from
   `2.9.13+dfsg-1ubuntu0.13` to `.14`; the build correctly refused the changed package version. The amd64 and arm64

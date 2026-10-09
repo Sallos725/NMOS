@@ -10,6 +10,10 @@
 > §48–50, §53; Track B, B6), part 2 of 2 (PHASE-33 Q0). Under AGE-10. Follows Phase 33 (`packet-v13`, ADR 0067, PRs
 > #273, #274, #276); `0.4.0` follows this phase (R7).
 
+**Completion correction, 2026-10-09:** Q1/Q7's `hidden` label was missing from the implementation behind the
+completion statement above. The owner explicitly requested implementation, tests and a PR. The candidate now
+records excluded candidates and shows the hidden chip; follow-up evidence and limits are recorded below.
+
 ## Why now
 
 Phase 33 measured the overuse baseline (`docs/perf/phase33-baseline.md`, Q8). In live play (S1, 240 turns, 340
@@ -98,3 +102,25 @@ last `allBefore` cut, not today's lifecycle or turn fields. Synthetic controls c
 pre-cut replies plus later edit, undo and reorder. The packet policy, default and extraction generation are unchanged.
 The historical replay/live measurements above do not establish fresh replay or live acceptance of this correction;
 those evidence gates remain open.
+
+### Hidden label follow-up (2026-10-09, AGE-64)
+
+An actual candidate rejected by the existing narrator/strict memory mode, excerpt/quote overlap gate, or
+summary/keyword/quote secret gate now receives a `hidden` diagnostic entry under `packet-v14`–`packet-v17`.
+It holds only kind, provenance, turn and reason, with empty text, zero tokens and `placed: false`.
+No hidden body or knowledge marks are copied. Strict mode's required Secret replacement remains a separate row.
+Raw search/cast rows rejected before becoming packet candidates are not newly classified as hidden.
+
+Diagnostics are appended after compilation, never enter selection or budget fitting, and are excluded from
+offered/echo/excerpt-offered statistics and placement/rest counts. The Inspector shows `숨김` / `hidden` and the
+existing source link with the exclusion reason. Default policy, generations, schema and gate decisions are unchanged.
+
+Deterministic and PostgreSQL integration tests cover v14–v17 at budgets 0/10/600, v12/v13 compatibility, all diagnostic
+producers, duplicate prevention, summary selection/read order, the hidden-only API response, and the Inspector.
+New traces reproduce exactly with their recorded mode even after later non-prefix edits. An edited recorded prefix
+still returns `changed`; an older trace without diagnostics can return `reproduced: false` despite an identical
+model-facing packet. Old traces are not rewritten and the existing replay comparison is not relaxed.
+
+Verification and the high-risk scoped self-review/independent review are recorded in
+`docs/audits/0.4.0-2026-10-09.md`. Historical live measurements above do not certify the new audit presentation or
+replace the separate inactive-echo correction's remaining live gate.
