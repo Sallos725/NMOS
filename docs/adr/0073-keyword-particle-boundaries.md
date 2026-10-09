@@ -2,8 +2,10 @@
 
 Status: bounded correction approved by the owner, 2026-10-09 (AGE-76,
 PHASE-41 amendment 1). Shared-deadline implementation, cached-vector replay and
-10k-message measurement are complete; final suite and reduced actual-model
-verification are in progress. Amends ADR 0052 matching/order as bounded below,
+10k-message measurement and reduced actual-model verification are complete.
+Native macOS exposed late SQL cancellation; the client elapsed-time admission
+guard passes regression and full replay checks. Final native/full-suite results
+are tracked against PR #291's head; actual host-answer behavior remains unverified. Amends ADR 0052 matching/order as bounded below,
 not its rarity/time limits or ADR 0068's activation threshold.
 
 ## Context
@@ -43,7 +45,12 @@ particle revisions only to free slots in the existing 50-candidate list. Combine
 fuzzy/exact breadth gates the additions without erasing existing valid hits.
 Exact lookups use only the remaining portion of each word's original 25 ms and
 the one original route deadline. A canceled/broad legacy lookup cannot contribute
-a supplement. A full old list admits no supplement; the owner explicitly accepts
+a supplement. Native macOS measurements found successful supplemental queries
+returning after their configured statement timeout (22 ms returned in 56.197 ms;
+4 ms returned in 23.356 ms). Keep the SQL timeout and additionally reject an exact
+result after its remaining allowance or the route deadline, inside its savepoint.
+A late word result preserves legacy candidates; a route expiry abstains as before.
+This enforces result admission, not immediate server preemption. A full old list admits no supplement; the owner explicitly accepts
 that limitation. This is a bounded ordering amendment, not a global ranking or
 threshold change. Its implementation and evidence must still pass the gate.
 
@@ -74,7 +81,7 @@ Retaining a full existing 50-candidate list admits no additional candidates, so
 this is deliberately narrower than replacing the ranking. The subsequent shared-deadline
 implementation passes all 338 probes by three-run majority without new failures
 or forbidden phrases; recall is 291/314 and quotes 21/24. API p95 on 10k synthetic
-messages rises by 22.003 ms. One of four changed Voyage packet majorities adds
+messages rises by 23.565 ms on final r4 (22.003 ms on r2). One of four changed Voyage packet majorities adds
 weakly relevant context, while retaining the answer evidence: preserving keyword
 order does not freeze the final fused packet. [Full evidence](../perf/phase41-keyword-particles.md).
 One old

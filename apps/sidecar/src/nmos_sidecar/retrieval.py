@@ -527,6 +527,7 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
                     if particle is None or remaining < 1:
                         continue
                     prefixes, pattern = particle
+                    started = time.perf_counter()
                     try:
                         with conn.transaction():  # losing an addition must not discard a valid legacy hit
                             within(remaining, threshold=PARTICLE_PREFILTER)
@@ -534,6 +535,11 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
                             exact_ids = {r["id"] for r in conn.execute(
                                 _PARTICLE_MATCHES, params | {"prefixes": prefixes, "particle": pattern},
                                 prepare=False).fetchall()}
+                            # A backend may deliver a result after its SQL timeout.
+                            # Do not admit it beyond this word's remaining allowance.
+                            finished = time.perf_counter()
+                            if (finished - started) * 1000 >= remaining or (deadline - finished) * 1000 < 1:
+                                raise psycopg.errors.QueryCanceled()
                     except psycopg.errors.QueryCanceled:
                         if (deadline - time.perf_counter()) * 1000 < 1:
                             raise

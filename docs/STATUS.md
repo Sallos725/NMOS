@@ -3,42 +3,41 @@
 ## Current phase
 
 **Phase 41 — AGE-76 Korean-particle keyword correction: approved 2026-10-09.**
-The owner requested the bounded fix followed by synthetic tests, widening the test
-coverage before widening the rule. [Scope and acceptance](phases/PHASE-41.md).
-Phase 39 remains current. The first implementation recovers both original P01
-answers and all 21 independent constructed acceptance queries, with old v17
-behavior preserved. It is rejected for adoption: the full historical replay
-(338 probes, three rounds per snapshot) gained five probes but newly failed one
-recall and two exact-quote probes. Recall was 289/314 to 293/314; quotes were
-21/24 to 19/24, with no increase in reported forbidden counts. Combined match counts changed
-existing keyword weights and ordering; lookup deadlines caused additional loss.
-The first 10k-message lookup also increased latency. The owner then approved
-Phase 41 amendment 1: preserve legacy candidates and fill only unused positions
-within 50, sharing the original deadlines. The frozen r2 implementation passes
-the 338-probe gate three times per snapshot (recall 289 to 291/314, quotes 21/24
-unchanged, no new failed majority or forbidden phrase). P01, independent authored
-cases, old-trace/v17 compatibility, Voyage and persona checks are recorded in
-[the measurement](perf/phase41-keyword-particles.md). The 10k API p50/p95 cost is
-+13.936/+22.003 ms, with no whole-keyword-route timeout. One of four changed
-Voyage packets adds weakly relevant emotional context as required; core combat
-evidence stays present. The first full suite ran 1,491 passed/four failed; default
-and ordinary-excerpt fixture assumptions were corrected with secret assertions
-retained, and all 17 targeted checks pass. The general CI on `05d2825` passes 1,496 sidecar tests and 225 plugin tests.
-The reduced actual-model run used 9 generative calls/28 embedded texts and
-USD 0.25171341 conservatively accounted: positive questions 4/6 to 6/6, the one
-separate negative-selection control retained (packet review 5/7 to 7/7), 42 paired
-replays, no new failure. These are source-linked packets, not generated answers.
-Native macOS then failed 30 tests: the core regex word boundary differs from
-its patched pg_trgm classification. A compact explicit East Asian boundary fix
-passes all 1,500 general CI tests and repeats the full replay/compatibility gates.
-Native macOS now passes 1,498 tests but fails two injected-SQL-delay tests; exact
-boundaries and stories pass. A test-only diagnostic records effective timeouts
-and actual elapsed SQL while retaining the original expectations. Acceptance
-remains open until this deadline question is resolved. Voyage also has one
-unstable packet with reduced useful context; it is recorded, not hidden by scores. See ADR 0073.
-The owner selected **packet-v18 as the 0.4.0 default**; code/default verification
-is implemented and focused tests pass in this unmerged candidate; the full change
-is not accepted. This supersedes older default-decision-pending paragraphs below.
+Phase 39 remains current. The owner approved preserving legacy keyword scores and
+order, then supplementing only free positions within 50, with the original
+word/route budgets. The owner separately selected **packet-v18 as the 0.4.0
+default**; this supersedes older default-pending paragraphs below.
+
+The first candidate was rejected for one recall/two quote regressions. The r2/r3
+correction passed 338 historical probes three times per snapshot: recall
+289 to 291/314, quotes 21/24 unchanged, no new failed majority or forbidden phrase.
+Authored stories improved 11/22 to 22/22 (21 acceptance, one observation), with
+v17 and historical traces unchanged. A separately authorized fresh-model run
+used 9 generative calls/28 embedded texts, USD 0.25171341 conservatively accounted:
+six positive questions improved 4/6 to 6/6; the separate negative-selection
+control stayed valid. These are source-linked packets, not generated answers.
+
+Native macOS exposed two platform issues: locale-dependent CJK word boundaries
+(fixed in r3) and SQL results arriving after their statement timeout. The r4
+admission guard rejects a late supplement while preserving valid legacy hits;
+a whole-route expiry still abstains. All 42 keyword checks pass, including a
+regression that failed before the guard. All 22 authored queries, 66 v17 packets
+and 12 historical packets retain their r3 results. The final r4 historical gate repeats 291/314 recall and 21/24 quotes with no new
+failure or forbidden phrase; all 42 actual-model-data packets remain identical.
+K32 results are unchanged. Required full-suite/native outcomes are tracked against
+the final head in [PR #291 checks](https://github.com/Sallos725/NMOS/pull/291/checks),
+separately from the earlier macOS diagnostic failure. Host evidence remains open.
+
+The bounded design still cannot supplement a full 50-candidate list. Added
+lookups cost time; r4 measured API p95 +23.565 ms at 10k synthetic messages, with zero whole-route
+timeouts in 132 requests.
+Voyage has weakly relevant required context in a changed packet and one unstable
+packet with reduced useful context in r3. All r4 Voyage rounds match the earlier
+r2 majority, but that does not erase the observed instability. No answer oracle exists for those records,
+so hidden/budget compliance is not an accuracy score. [Scope](phases/PHASE-41.md),
+[executed evidence](perf/phase41-keyword-particles.md), ADR 0073. The correction
+has not been deployed to 6113; fresh host answers and two-week stability remain
+unverified. The existing trial install is described below.
 
 **Live deployment update (2026-10-09, 18:44 KST):** fb095aa sidecar and worker
 now run on 6113 with packet-v18 and Armor/Items/Weapons watch. Fresh private DB

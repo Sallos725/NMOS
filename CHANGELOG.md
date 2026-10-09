@@ -31,7 +31,8 @@ Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS a
 - **Korean keyword recall can recover a source missed because of a particle** (Phase 41, AGE-76).
   Under the default `packet-v18`, an exact word such as a name followed by a supported Korean particle can
   supply an additional raw excerpt. Existing keyword candidates keep their priority; additions use only
-  remaining candidate slots and lookup time. A full existing list still admits no additions. Historical
+  remaining candidate slots and lookup time. Word boundaries work across native platforms, and late lookup
+  results are discarded. A full existing list still admits no additions. Historical
   traces and explicit v16/v17 requests retain the old matching behavior.
 - **Explicit third-person persona questions have a bounded recall route** (`packet-v18`, now the default; Phase 40).
   A question about the persona's work, location or another supported kind can add at most two matching facts or

@@ -3,7 +3,9 @@
 Date: 2026-10-09. Baseline: `fb095aa14b378bf03eb5b82f9804fa10b460793b`,
 packet-v18. Status: the first candidate is rejected; the owner approved the
 supplemental-ordering amendment after reviewing its limitation. No release or deployment is established by these experiments.
-A separately authorized reduced actual-model run is in progress.
+The separately authorized reduced actual-model run is complete; final native
+deadline verification is recorded below. Historical intermediate results remain
+labeled by their frozen source snapshot.
 
 ## Fixed evidence and method
 
@@ -173,17 +175,18 @@ the empty-packet assertion and separately check mixed visibility. The secret
 source remains eligible, so a broken secret gate would still fail the test.
 Redacted hidden provenance, zero offered-memory counts and exact replay remain
 asserted. The corrected cases plus older-policy tests pass: 17 passed in 12.35 s.
-Final full-suite verification is pending PR CI; the initial failures are retained.
+The subsequent r2 general CI passed all 1,496 tests; the initial failures are retained.
 
 The lead reviewed the five changed product files and directly relevant callers,
 contracts and tests. Two bounded read-only checks found no additional blocker.
 High risk: memory selection, provenance, inactive/stale-source and secret isolation,
-and historical replay. The product source still exactly matches frozen r2.
+and historical replay. This review covered frozen r2; the later portability and
+deadline changes are reviewed separately below.
 
 The owner separately authorized three actual-provider stories/seven questions,
-up to 18 generative calls, 40 embedded texts and USD 1.50. That run uses fresh
-isolated databases, unchanged story oracles and paired three-run replays; results
-are pending. It does not measure response-model answers or PocketRisu UI behavior.
+up to 18 generative calls, 40 embedded texts and USD 1.50. The completed run used
+fresh isolated databases, unchanged story oracles and paired three-run replays;
+its source-linked results are recorded below. It does not measure response-model answers or PocketRisu UI behavior.
 No trial deployment was made by this correction.
 
 Private local evidence: `/tmp/nmos-age76-evidence/gate/`,
@@ -192,7 +195,7 @@ Private local evidence: `/tmp/nmos-age76-evidence/gate/`,
 credentials and full private packet artifacts are not committed here.
 
 
-## Native portability correction (r3), verification in progress
+## Native portability correction (r3)
 
 General CI on `05d2825` passed 1,496 sidecar tests (427.63 s) and 225 plugin tests,
 typecheck, build and dist equality. Native Linux x64/arm64 passed, but macOS failed
@@ -208,7 +211,7 @@ index, breadth, deadline or downstream selection change accompanies it. New
 controls failed on r2, then the keyword suite passed 57 tests and the final
 boundary controls passed four. The default and C collations cover positive
 Hangul and conflicting Han/kana/Jamo/compatibility/supplementary word boundaries.
-Real macOS CI, full gate replay and performance are pending on r3.
+The subsequent r3 CI, full gate replay and performance results follow below.
 
 The separately authorized fresh-provider run on frozen r2 completed in 396.42 s:
 9 generative calls, 28 embedded texts, USD 0.25171341 conservatively accounted,
@@ -261,8 +264,76 @@ General CI on `262f85a` passes all 1,500 sidecar tests (283.97 s) and the plugin
 checks. Native Linux passes. macOS now passes 1,498 tests, including exact
 boundaries and synthetic stories, but fails two injected-SQL-delay tests:
 supplemental results were returned where the word-slice test expected cancellation.
-The existing log lacks effective timeout and elapsed-query evidence. A test-only
-diagnostic now records legacy results, the exact-query timeout, elapsed execution
-and sleep/cancellation results without weakening the expectations. Instrumentation
-adds a SHOW query, so a pass by itself would not explain the earlier failures.
-Do not accept the correction until this native deadline question is resolved.
+A test-only diagnostic on `53968c6` retained both failures and recorded the
+exact timeout, legacy result, actual elapsed execution and sleep/cancellation:
+
+| Effective exact-query timeout | Elapsed SQL | Outcome |
+|---|---:|---|
+| 22 ms | 56.197 ms | New particle source returned successfully |
+| 4 ms after the legacy lookup | 23.356 ms | New particle source returned successfully |
+| 6 ms under a 10 ms route | 26.241 ms | QueryCanceled, delivered late |
+
+The legacy queries did not return those new IDs, and the selected `pg_sleep`
+column confirmed actual execution. Thus neither a missing timeout setting nor a
+wrong legacy-candidate assumption explains the failures. The deeper backend timer
+cause is unconfirmed; the observed failure is late cancellation/delivery.
+Instrumentation added a SHOW query, but did not make the failures disappear.
+
+## Late-result admission guard (r4)
+
+Retain PostgreSQL statement_timeout. Measure the supplemental operation with the
+monotonic performance clock and reject its result, inside the existing savepoint,
+when the word's remaining allowance or the shared route deadline has elapsed.
+A word-only expiry preserves the legacy candidates and scores; a route expiry
+returns the existing empty timeout result. v16/v17 bypass this branch. This checks
+admission; it cannot guarantee immediate interruption of a slow backend.
+
+A deterministic regression first executed the real exact SQL successfully, then
+advanced the client clock. At 26 ms r3 incorrectly admitted the new source; at
+301 ms the route-expiry control already abstained. After the guard, all 42 keyword
+tests pass (24.52 s), including both deterministic controls and the three original
+real SQL-delay cases. The temporary diagnostic helper is removed. Existing
+connection recovery, source visibility, candidate-cap, breadth, score/order and
+portable-boundary tests remain in place.
+
+Frozen r4 runtime manifest (52 files):
+`dd9eed2eac614c3e3fc81480257888692e7a15acea030e0773cf124235cc32e7`.
+All 338 historical probes were rerun three times per snapshot (2,028 packets):
+recall 289 to 291/314, quotes 21/24 unchanged, zero newly failed majority or
+forbidden phrase, no pass/fail instability. Both gains remain option variants of
+the same butcher question. All 22 authored queries pass three times, with all 66
+candidate packets identical to r3. Explicit v17 stays baseline-identical 66/66;
+original P01 is recovered in both reconstruction lanes and old traces remain 12/12.
+All 42 cached replays of the three fresh-provider stories are identical to r2 in
+text, tokens and ledger. No new provider calls or original-database writes occurred.
+K32 stays 10/17 with original options and 14/17 with current options, all rounds,
+with zero forbidden values and zero new failed majority.
+
+The 510 Voyage replays retain zero hidden/budget violation. r4's 85 candidate
+majorities match r2 exactly and all three r4 rounds agree. The r3-degraded
+`7838ed9fd92c0c1f` packet returns to its r2 3,342-token form. This does not erase
+the earlier timing sensitivity or establish a new accuracy result. The same four
+baseline-to-candidate changes remain, including the previously documented weakly
+relevant required context; no new majority packet appears against r2.
+
+The isolated 10k measurement again ran 132 alternating API requests:
+p50 23.087 to 39.553 ms (+16.466), p95 346.614 to 370.179 ms (+23.565).
+Keyword p50/p95 are 6.70/57.26 to 23.97/88.67 ms. No whole keyword-route timeout
+occurred. All three recorded query plans use revision_text_trgm. This synthetic
+in-process API benchmark compares v17 bypass and v18 on the same frozen r4 source;
+it does not measure host/network latency. The benchmark manifest also includes
+migrations/helpers, so its digest differs from the 52-file runtime manifest:
+`f936a89c4f3e7cc2f2fe52705b4525746d60f1fab0cabbd5aad0324e7cdc62e4`.
+
+The lead reviewed the r4 diff: post-fetch rejection occurs before IDs, breadth or
+weights are admitted; savepoint rollback preserves the legacy result and restores
+connection settings. The new branch remains v18-only. A bounded independent
+read-only review agreed. High risk remains memory selection, provenance,
+stale/inactive/secret isolation and historical replay. Documentation/default
+consistency checks also pass (8 tests). The full sidecar/plugin and four native
+jobs are required on the resulting PR head; their final, head-specific outcomes
+are tracked in [PR #291 checks](https://github.com/Sallos725/NMOS/pull/291/checks).
+Earlier r3 green general CI or failed native diagnostics do not substitute for them.
+No deployment, release, final response-model answer or PocketRisu host check is
+claimed by this correction. The next host evidence uses the updated build after
+its platform checks; the existing 6113 deployment remains fb095aa.

@@ -4,8 +4,9 @@ Status: approved for bounded correction and synthetic verification by the owner,
 2026-10-09, through the explicit orchestrate request to start the discussed fix.
 This correction runs beside Phase 39. It is not a new roadmap stage. The owner
 separately selected packet-v18 as the 0.4.0 default. Implementation, zero-call replay and performance evidence are in
-[the measurement report](../perf/phase41-keyword-particles.md); final suite and
-reduced actual-model verification are in progress. No release or new deployment is implied.
+[the measurement report](../perf/phase41-keyword-particles.md); reduced actual-model verification and final replay/performance are complete.
+Required native/full-suite outcomes are tracked against PR #291's final head;
+fresh host-answer evidence remains separate. No release or new deployment is implied.
 
 ## Evidence
 
@@ -47,7 +48,10 @@ correction option; it does not change the global fuser or excerpt activation bar
 - Run legacy lookups first, preserving their rarity weights and candidate order.
 - Exact particle lookups share the same overall deadline and may use only the
   unspent portion of each word's original 25 ms lookup allowance. A canceled or
-  already broad legacy lookup cannot authorize additional matches.
+  already broad legacy lookup cannot authorize additional matches. Retain SQL
+  cancellation and recheck elapsed time before admitting a supplemental result;
+  late server delivery must not bypass the allowance. This is an admission
+  deadline, not a promise of immediate server-side interruption.
 - Admit supplementary matches only when the combined fuzzy/exact revision count
   passes the original 200-source and half-of-eligible-source limits. A failed
   supplemental breadth check does not erase previously valid legacy matches.

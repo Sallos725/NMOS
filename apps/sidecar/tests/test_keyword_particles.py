@@ -180,61 +180,20 @@ def test_expired_route_abstains_and_restores_connection_settings(client, migrate
         assert conn.execute("SELECT 1 AS n").fetchone()["n"] == 1
 
 
-def deadline_diagnostics(monkeypatch, url: str) -> dict:
-    """Observe only the two SQL-delay tests; preserve their rows and expectations."""
-    import time
-
-    with psycopg.connect(url, row_factory=dict_row) as conn:
-        bodies = {str(row["source_revision_id"]): row["clean_content"] for row in conn.execute(
-            "SELECT source_revision_id, clean_content FROM revision_text").fetchall()}
-    diagnostics = {"sql": []}
-    execute = psycopg.Connection.execute
-
-    def observed(conn, query, params=None, **kwargs):
-        watched = {retrieval._MATCHES: "legacy", retrieval._PARTICLE_MATCHES: "supplement",
-                   "SELECT pg_sleep(0.015)": "legacy_delay"}
-        if not isinstance(query, str) or query not in watched:
-            return execute(conn, query, params, **kwargs)
-        entry = {"kind": watched[query], "word": (params or {}).get("q"),
-                 "statement_timeout": execute(conn, "SHOW statement_timeout").fetchone()["statement_timeout"]}
-        diagnostics["sql"].append(entry)
-        started = time.perf_counter()
-        try:
-            cursor = execute(conn, query, params, **kwargs)
-            rows = cursor.fetchall()
-            entry["result"] = [{"id": str(row.get("id")), "clean": bodies.get(str(row.get("id"))),
-                                "sleep_column": "test_sleep" in row or "pg_sleep" in row,
-                                "sleep_result": row.get("test_sleep", row.get("pg_sleep"))} for row in rows]
-            if rows:
-                cursor.scroll(0, mode="absolute")  # give retrieval the same buffered result, unread
-            return cursor
-        except psycopg.errors.QueryCanceled:
-            entry["result"] = "QueryCanceled"
-            raise
-        finally:
-            entry["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 3)
-
-    monkeypatch.setattr(psycopg.Connection, "execute", observed)
-    return diagnostics
-
-
 @pytest.mark.parametrize("timeout,expected", [(300, "on"), (10, "timeout")])
-def test_particle_sql_shares_keyword_slice_and_route_deadline(client, migrated, monkeypatch, timeout, expected, capsys):
+def test_particle_sql_shares_keyword_slice_and_route_deadline(client, migrated, monkeypatch, timeout, expected):
     chat = story("민지는 은빛 나침반을 감췄다.", "A parrot named Pepper landed.")
     sync(client, chat)
     monkeypatch.setattr(retrieval, "_PARTICLE_MATCHES",
-                        retrieval._PARTICLE_MATCHES.replace("SELECT sr.id", "SELECT sr.id, pg_sleep(0.05) AS test_sleep"))
-    diagnostics = deadline_diagnostics(monkeypatch, migrated)
+                        retrieval._PARTICLE_MATCHES.replace("SELECT sr.id", "SELECT sr.id, pg_sleep(0.05)"))
     with psycopg.connect(migrated, row_factory=dict_row) as conn:
         head = conn.execute("SELECT head_commit_id FROM conversation").fetchone()["head_commit_id"]
         rows, mode = retrieval._keyword_lexical(conn, head, ["민지", "parrot"], -1, timeout, particles=True)
-        with capsys.disabled():
-            print("AGE76 deadline diagnostic:", diagnostics)
-        assert mode == expected, diagnostics
+        assert mode == expected
         if expected == "on":
-            assert len(rows) == 1 and "Pepper" in rows[0]["clean"], diagnostics
+            assert len(rows) == 1 and "Pepper" in rows[0]["clean"]
         else:
-            assert rows == [], diagnostics
+            assert rows == []
         assert conn.execute("SELECT 1 AS n").fetchone()["n"] == 1
 
 
@@ -320,7 +279,7 @@ def test_a_cancelled_legacy_lookup_never_runs_supplement_with_an_incomplete_deno
     assert "민지" not in seen
 
 
-def test_supplement_sql_has_only_the_legacy_words_remaining_slice_and_keeps_legacy_on_timeout(client, migrated, monkeypatch, capsys):
+def test_supplement_sql_has_only_the_legacy_words_remaining_slice_and_keeps_legacy_on_timeout(client, migrated, monkeypatch):
     chat = story("민지는 은빛 나침반을 감췄다.", "민지, 주전자 뚜껑을 닫았다.")
     sync(client, chat)
     real = retrieval._lexical_matches
@@ -332,12 +291,9 @@ def test_supplement_sql_has_only_the_legacy_words_remaining_slice_and_keeps_lega
     monkeypatch.setattr(retrieval, "_lexical_matches", delayed)
     # 20 ms fits a fresh 25 ms slice but not what remains after the legacy lookup.
     monkeypatch.setattr(retrieval, "_PARTICLE_MATCHES",
-                        retrieval._PARTICLE_MATCHES.replace("SELECT sr.id", "SELECT sr.id, pg_sleep(0.020) AS test_sleep"))
-    diagnostics = deadline_diagnostics(monkeypatch, migrated)
+                        retrieval._PARTICLE_MATCHES.replace("SELECT sr.id", "SELECT sr.id, pg_sleep(0.020)"))
     rows, mode = keyword_rows(migrated, ["민지"], particles=True)
-    with capsys.disabled():
-        print("AGE76 remaining-slice diagnostic:", diagnostics)
-    assert mode == "on" and len(rows) == 1 and rows[0]["clean"].startswith("민지,"), diagnostics
+    assert mode == "on" and len(rows) == 1 and rows[0]["clean"].startswith("민지,")
 
 
 @pytest.mark.parametrize("word", ["민지", "나나"])
@@ -417,3 +373,40 @@ def test_cjk_boundary_supplement_contains_assigned_word_characters_only():
         assert start <= end
         assert all(unicodedata.category(chr(code)).startswith("L")
                    or unicodedata.category(chr(code)) in ("Nl", "Nd") for code in range(start, end + 1))
+
+
+@pytest.mark.parametrize("delay,expected_mode", [(0.026, "on"), (0.301, "timeout")])
+def test_late_successful_supplement_obeys_word_and_route_deadlines(client, migrated, monkeypatch, delay, expected_mode):
+    answer = "민지는 은빛 나침반을 감췄다."
+    chat = story(answer, "민지, 주전자 뚜껑을 닫았다.")
+    sync(client, chat)
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        head = conn.execute("SELECT head_commit_id FROM conversation").fetchone()["head_commit_id"]
+        new_id = conn.execute("SELECT id FROM source_revision WHERE content=%s", (answer,)).fetchone()["id"]
+        old, old_mode = retrieval._keyword_lexical(conn, head, ["민지"], -1, 300, particles=False)
+        assert old_mode == "on" and len(old) == 1 and old[0]["id"] != new_id
+        expected = [(row["id"], row["keyword_score"]) for row in old]
+        now = [0.0]
+        delivered = []
+        execute = psycopg.Connection.execute
+
+        def late(conn, query, params=None, **kwargs):
+            cursor = execute(conn, query, params, **kwargs)
+            if query == retrieval._PARTICLE_MATCHES:
+                rows = cursor.fetchall()  # real successful SQL, even when cancellation arrives late
+                delivered.extend(row["id"] for row in rows)
+                if rows:
+                    cursor.scroll(0, mode="absolute")
+                now[0] += delay  # deterministic client elapsed time, independent of OS timers
+            return cursor
+
+        monkeypatch.setattr(retrieval.time, "perf_counter", lambda: now[0])
+        monkeypatch.setattr(psycopg.Connection, "execute", late)
+        rows, mode = retrieval._keyword_lexical(conn, head, ["민지"], -1, 300, particles=True)
+        assert delivered == [new_id]  # the regression concerns rejecting a returned new source
+        assert mode == expected_mode
+        if expected_mode == "on":
+            assert [(row["id"], row["keyword_score"]) for row in rows] == expected
+        else:
+            assert rows == []
+        assert conn.execute("SELECT 1 AS n").fetchone()["n"] == 1

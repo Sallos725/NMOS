@@ -536,7 +536,9 @@ Amendment (Phase 41, ADR 0073, owner 2026-10-09): fresh v18 requests record
 `keyword_particles`. Exact Hangul word-plus-particle matches may fill unused keyword candidate slots after the
 unchanged fuzzy list; existing weights/order and the 50-candidate cap remain. Combined fuzzy/exact breadth gates
 only additions. Lookups share the original route deadline and each word's remaining 25 ms; canceled or broad
-legacy lookups cannot authorize additions. A full old list adds nothing. Missing historical flags replay off,
+legacy lookups cannot authorize additions. Supplement admission also checks elapsed time after the SQL returns,
+so late backend cancellation cannot admit an over-budget addition; this does not promise immediate server interruption.
+A full old list adds nothing. Missing historical flags replay off,
 and v16/v17 bypass the correction. This changes no stored generation, canonical fact or packet activation floor.
 
 **D63 — Excerpts that fill their length (Phase 18, ADR 0053).** `packet-v10` (the default until Phase 27 made `packet-v11`
