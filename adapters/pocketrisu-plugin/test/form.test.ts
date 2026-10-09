@@ -9,7 +9,6 @@ const base: FormValues = {
   emb: { url: '', model: '', key: '' },
   tune: { threshold: '0.4', minSim: '0.42', embedWait: '300', topK: '5', facts: '8', backfill: '100', summaries: true,
     canonFacts: true },
-  rules: '',
 };
 
 describe('batch save', () => {
@@ -39,14 +38,12 @@ describe('batch save', () => {
     expect(embedWaitTooLong('', '1000')).toBe(false);  // an older sidecar: no wait to compare
   });
 
-  it('sends an API key only when one was typed, and clears parser rules with null', () => {
+  it('sends an API key only when one was typed and never includes status rules', () => {
     const edited = structuredClone(base);
     edited.emb = { url: 'http://emb/v1', model: 'e', key: ' sk-1 ' };
-    edited.rules = '   ';
-    const other = structuredClone(base);
-    other.rules = '{"rules": []}';
-    expect(configBody(dirtySections(other, edited), edited)).toEqual({
-      embed_url: 'http://emb/v1', embed_model: 'e', embed_api_key: 'sk-1', parsers: null });
+    expect(configBody(dirtySections(base, edited), edited)).toEqual({
+      embed_url: 'http://emb/v1', embed_model: 'e', embed_api_key: 'sk-1' });
+    expect(configBody(['llm', 'emb', 'tune'], edited)).not.toHaveProperty('parsers');
   });
 
   it('passes unparsable numbers through so the sidecar rejects them instead of resetting', () => {

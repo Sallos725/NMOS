@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:0f1801e59066".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:0319794d06bd".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -133,7 +133,7 @@
   var DEFAULT_RESERVED_TOKENS = 4e3;
   var MAX_RESERVED_TOKENS = 2e4;
   var PANEL_MAX_RESERVED_TOKENS = 8e3;
-  var SECTIONS = ["conn", "llm", "emb", "tune", "rules"];
+  var SECTIONS = ["conn", "llm", "emb", "tune"];
   var VERTEX_URL = "https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi";
   function serviceAccountProject(key) {
     const text2 = key.trim();
@@ -195,7 +195,6 @@
       });
       if (v.tune.embedWait.trim() !== "") body.embed_timeout_ms = num(v.tune.embedWait);
     }
-    if (dirty.includes("rules")) body.parsers = v.rules.trim() ? v.rules : null;
     return body;
   }
   var EMBED_WAIT_MARGIN_MS = 500;
@@ -706,7 +705,57 @@
       'block: reads "key: value" lines between start and end; entity_line splits them per [character] line (sim bots). regex: named groups key/value.'
     ],
     "rules.example": ["\uC608\uC2DC \uB123\uAE30", "Insert example"],
-    "rules.none": ['\uADDC\uCE59 \uC5C6\uC74C \u2014 "\uC608\uC2DC \uB123\uAE30"\uB85C \uC2DC\uC791\uD558\uC138\uC694', 'No rules \u2014 start with "Insert example"'],
+    "rules.none": [
+      "JSON \uD30C\uC77C\uC774\uB098 \uD504\uB9AC\uC14B\uC744 \uC120\uD0DD\uD558\uC138\uC694. \uC801\uC6A9 \uC804\uAE4C\uC9C0 \uD65C\uC131 \uADDC\uCE59\uC740 \uBC14\uB00C\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "Choose a JSON file or preset. Active rules stay unchanged until Apply."
+    ],
+    "rules.scope": [
+      "\uCE90\uB9AD\uD130\uC758 \uD45C\uC2DC \uC774\uB984\uC5D0 \uC815\uD655\uD788 \uC5F0\uACB0\uD569\uB2C8\uB2E4. \uC774\uB984\uC774 \uAC19\uC740 \uCE74\uB4DC\uB294 \uADDC\uCE59\uC744 \uACF5\uC720\uD558\uC9C0\uB9CC \uB300\uD654\uBCC4 \uC0C1\uD0DC\uAC12\uC740 \uB530\uB85C \uC720\uC9C0\uD569\uB2C8\uB2E4.",
+      "Rules match the character display name exactly. Same-name cards share rules; each chat keeps its own state."
+    ],
+    "rules.target": ["\uC801\uC6A9\uD560 \uCE90\uB9AD\uD130 \uC774\uB984", "Target character name"],
+    "rules.choose_target": ["\uC801\uC6A9\uD560 \uCE90\uB9AD\uD130 \uC774\uB984\uC744 \uC9C1\uC811 \uC120\uD0DD\uD558\uAC70\uB098 \uC785\uB825\uD558\uC138\uC694.", "Choose or enter the target character name."],
+    "rules.draft": ["\uADDC\uCE59 JSON \uCD08\uC548", "Rules JSON draft"],
+    "rules.apply": ["\uC774 \uCE90\uB9AD\uD130\uC5D0 \uC801\uC6A9", "Apply to this character"],
+    "rules.disable": ["\uC774 \uCE90\uB9AD\uD130\uC758 \uC0C1\uD0DC\uCC3D \uADDC\uCE59 \uD574\uC81C", "Disable rules for this character"],
+    "rules.prepare_disable": ["\uD574\uC81C\uD560 \uBE48 \uADDC\uCE59 \uC900\uBE44", "Prepare empty rules to disable"],
+    "rules.import": ["JSON \uD30C\uC77C \uC120\uD0DD", "Choose JSON file"],
+    "rules.preset": ["\uC800\uC7A5\uB41C \uD504\uB9AC\uC14B", "Saved preset"],
+    "rules.choose_preset": ["\uD504\uB9AC\uC14B \uC120\uD0DD\u2026", "Choose a preset\u2026"],
+    "rules.preset_name": ["\uD504\uB9AC\uC14B \uC774\uB984", "Preset name"],
+    "rules.save_preset": ["\uD504\uB9AC\uC14B \uC800\uC7A5\xB7\uC5C5\uB370\uC774\uD2B8", "Save or update preset"],
+    "rules.remove_preset": ["\uC120\uD0DD\uD55C \uD504\uB9AC\uC14B \uC0AD\uC81C", "Remove selected preset"],
+    "rules.preview": [
+      "\uB300\uC0C1: {card} \xB7 \uADDC\uCE59 {n}\uAC1C. \uC801\uC6A9\uD558\uBA74 \uC774 \uCE90\uB9AD\uD130\uC758 \uADDC\uCE59\uB9CC \uAD50\uCCB4\uD569\uB2C8\uB2E4.",
+      "Target: {card} \xB7 {n} rules. Apply replaces only this character\u2019s rules."
+    ],
+    "rules.binding": ["{card}: \uC5F0\uACB0\uB41C \uADDC\uCE59 {n}\uAC1C", "{card}: {n} bound rules"],
+    "rules.unbound": [
+      "\uBBF8\uC5F0\uACB0 \uADDC\uCE59 {n}\uAC1C\uB294 \uBE44\uD65C\uC131 \uC0C1\uD0DC\uC785\uB2C8\uB2E4. JSON\uC744 \uD655\uC778\uD558\uACE0 \uCE90\uB9AD\uD130\uC5D0 \uB2E4\uC2DC \uC5F0\uACB0\uD558\uC138\uC694.",
+      "{n} unbound rules are inactive. Review their JSON and bind them to a character."
+    ],
+    "rules.no_active": ["\uC5F0\uACB0\uB41C \uC0C1\uD0DC\uCC3D \uADDC\uCE59\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No bound status rules."],
+    "rules.upgrade": [
+      "\uC774 \uAE30\uB2A5\uC744 \uC4F0\uB824\uBA74 NMOS\uB97C \uC5C5\uB370\uC774\uD2B8\uD558\uC138\uC694. \uAE30\uC874 \uC804\uC5ED \uC800\uC7A5\uC73C\uB85C \uC801\uC6A9\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "Update NMOS to use this feature. The old global save will not be used."
+    ],
+    "rules.stored": ["\uC800\uC7A5\uB41C \uADDC\uCE59 JSON \uBCF4\uAE30", "View stored rules JSON"],
+    "rules.blank": [
+      "\uCD08\uC548\uC774 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4. \uBE48\uCE78\uC740 \uD65C\uC131 \uADDC\uCE59\uC744 \uBCC0\uACBD\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+      "The draft is blank. A blank draft does not change active rules."
+    ],
+    "rules.invalid_json": ["\uC62C\uBC14\uB978 JSON\uC744 \uC785\uB825\uD558\uC138\uC694.", "Enter valid JSON."],
+    "rules.invalid_shape": [
+      "rules \uBC30\uC5F4\uC5D0 \uADDC\uCE59 \uAC1D\uCCB4\uB97C \uB2F4\uC740 JSON\uC774 \uD544\uC694\uD569\uB2C8\uB2E4.",
+      "Use a JSON object with a rules array containing rule objects."
+    ],
+    "rules.loaded": ["\uD30C\uC77C\uC744 \uCD08\uC548\uC73C\uB85C \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4. \uC544\uC9C1 \uC801\uC6A9\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.", "File loaded into the draft; not applied."],
+    "rules.applied": ["{card}\uC5D0 \uADDC\uCE59 {n}\uAC1C\uB97C \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4.", "Applied {n} rules to {card}."],
+    "rules.preset_saved": ["\uD504\uB9AC\uC14B \uBAA9\uB85D\uC744 \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4. \uD65C\uC131 \uADDC\uCE59\uC740 \uADF8\uB300\uB85C\uC785\uB2C8\uB2E4.", "Preset library saved. Active rules are unchanged."],
+    "rules.close_draft": [
+      "\uC544\uC9C1 \uC801\uC6A9\uD558\uC9C0 \uC54A\uC740 \uC0C1\uD0DC\uCC3D \uCD08\uC548\uC774 \uC788\uC2B5\uB2C8\uB2E4. \uC801\uC6A9\uD558\uB824\uBA74 \uCDE8\uC18C \uD6C4 \uC0C1\uD0DC\uCC3D\uC758 \uC801\uC6A9 \uBC84\uD2BC\uC744 \uB204\uB974\uC138\uC694.",
+      "There is an unapplied status draft. Cancel and use its Apply button to activate it."
+    ],
     "rules.from_file": ["\uD30C\uC77C\uC5D0\uC11C \uADDC\uCE59 {n}\uAC1C\uB97C \uC77D\uB294 \uC911 (\uC5EC\uAE30\uC5D0 \uC800\uC7A5\uD558\uBA74 \uB300\uCCB4\uB429\uB2C8\uB2E4)", "Reading {n} rules from a file (saving here replaces them)"],
     // save bar
     "save": ["\uC800\uC7A5", "Save"],
@@ -1935,6 +1984,34 @@ ${revisionHash}`;
     return { cut: r.memory.cut, offered: r.memory.offered, budget: r.budgetTokens, suggest, all };
   }
 
+  // src/parser-form.ts
+  function parserDraft(text2) {
+    if (!text2.trim()) return { ok: false, error: "blank" };
+    let spec;
+    try {
+      spec = JSON.parse(text2);
+    } catch {
+      return { ok: false, error: "json" };
+    }
+    if (!spec || typeof spec !== "object" || Array.isArray(spec) || !("rules" in spec) || !Array.isArray(spec.rules) || spec.rules.some((r) => !r || typeof r !== "object" || Array.isArray(r))) {
+      return { ok: false, error: "shape" };
+    }
+    return { ok: true, rules: spec.rules };
+  }
+  function presetRules(rules) {
+    return rules.map(({ card: _card, ...rule }) => rule);
+  }
+  function parserBindings(spec) {
+    const parsed = parserDraft(JSON.stringify(spec) ?? "");
+    const cards = /* @__PURE__ */ new Map();
+    let unbound = 0;
+    if (parsed.ok) for (const rule of parsed.rules) {
+      if (typeof rule.card !== "string" || !rule.card.trim()) unbound += 1;
+      else cards.set(rule.card, (cards.get(rule.card) ?? 0) + 1);
+    }
+    return { cards: [...cards].map(([name, count2]) => ({ name, count: count2 })), unbound };
+  }
+
   // src/inspector.ts
   var TAGS = /* @__PURE__ */ new Set([
     "DIV",
@@ -2307,8 +2384,7 @@ ${revisionHash}`;
     conn: "conn.title",
     llm: "llm.title",
     emb: "emb.title",
-    tune: "tune.title",
-    rules: "rules.title"
+    tune: "tune.title"
   };
   var CSS = `
 html,body{margin:0;background:${PALETTE.bg}}
@@ -3630,20 +3706,169 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("div", { class: "check" }, canonFacts, el("span", { text: L("tune.canon_facts") })),
       el("p", { class: "sub", text: L("tune.canon_facts_hint") })
     ));
-    const rules = el("textarea", { spellcheck: "false" });
+    const rules = el("textarea", {
+      id: "nmos-parser-draft",
+      spellcheck: "false",
+      "aria-label": L("rules.draft"),
+      placeholder: L("rules.none")
+    });
+    const parserTarget = el("input", {
+      id: "nmos-parser-target",
+      list: "nmos-parser-cards",
+      "aria-label": L("rules.target"),
+      placeholder: L("rules.choose_target")
+    });
+    const parserCards = el("datalist", { id: "nmos-parser-cards" });
+    const parserActive = el("div", { id: "nmos-parser-active", class: "sub", style: "white-space:pre-line" });
+    const parserStored = el("pre", {});
+    const parserPreview = el("p", { id: "nmos-parser-preview", class: "sub" });
+    const parserMessage = el("div", { class: "msg", role: "status" });
+    const parserApply = el("button", { id: "nmos-parser-apply", text: L("rules.apply") });
+    const parserClear = el("button", { text: L("rules.prepare_disable") });
+    const parserFile = el("input", { id: "nmos-parser-file", type: "file", accept: ".json,application/json", style: "display:none" });
+    const parserPick = el("button", { text: L("rules.import") });
+    const parserPreset = el("select", { id: "nmos-parser-preset", "aria-label": L("rules.preset") });
+    const parserName = el("input", { id: "nmos-parser-name", "aria-label": L("rules.preset_name") });
+    const parserSavePreset = el("button", { id: "nmos-parser-save-preset", text: L("rules.save_preset") });
+    const parserRemovePreset = el("button", { id: "nmos-parser-remove-preset", text: L("rules.remove_preset") });
     const example = el("button", { text: L("rules.example") });
+    let parserSupported = false;
+    let parserBusy = false;
+    let parserPresets = [];
+    let appliedDraft = "";
+    let appliedTarget = "";
+    const knownCards = /* @__PURE__ */ new Set();
+    const parserDirty = () => rules.value !== appliedDraft || parserTarget.value !== appliedTarget;
+    function updateParser() {
+      const parsed = parserDraft(rules.value);
+      const target = parserTarget.value.trim();
+      parserApply.disabled = parserBusy || !parserSupported || !target || !parsed.ok;
+      parserApply.textContent = L(parsed.ok && parsed.rules.length === 0 ? "rules.disable" : "rules.apply");
+      parserSavePreset.disabled = parserBusy || !parserSupported || !parserName.value.trim() || !parsed.ok;
+      parserRemovePreset.disabled = parserBusy || !parserSupported || !parserPreset.value;
+      parserPreview.textContent = !target ? L("rules.choose_target") : !parsed.ok ? L(parsed.error === "blank" ? "rules.blank" : parsed.error === "json" ? "rules.invalid_json" : "rules.invalid_shape") : L("rules.preview", { card: target, n: parsed.rules.length });
+    }
+    function fillParsers(cfg) {
+      parserSupported = cfg.parsers.spec !== void 0 && Array.isArray(cfg.parsers.presets);
+      const spec = cfg.parsers.spec ?? cfg.parsers.rules;
+      const bindings = parserBindings(spec);
+      const notes = bindings.cards.map(({ name, count: count2 }) => L("rules.binding", { card: name, n: count2 }));
+      if (bindings.unbound) notes.push(L("rules.unbound", { n: bindings.unbound }));
+      if (!notes.length) notes.push(L("rules.no_active"));
+      if (!parserSupported) notes.push(L("rules.upgrade"));
+      notes.push(...cfg.parsers.errors);
+      parserActive.textContent = notes.join("\n");
+      parserStored.textContent = JSON.stringify(spec ?? { rules: [] }, null, 2);
+      for (const { name } of bindings.cards) knownCards.add(name);
+      parserCards.replaceChildren(...[...knownCards].sort().map((name) => el("option", { value: name })));
+      parserPresets = cfg.parsers.presets ?? [];
+      const selected = parserPreset.value;
+      parserPreset.replaceChildren(
+        el("option", { value: "", text: L("rules.choose_preset") }),
+        ...parserPresets.map((p) => el("option", { value: p.name, text: p.name }))
+      );
+      parserPreset.value = parserPresets.some((p) => p.name === selected) ? selected : "";
+      updateParser();
+    }
+    parserPick.addEventListener("click", () => parserFile.click());
+    parserFile.addEventListener("change", async () => {
+      const file = parserFile.files?.[0];
+      parserFile.value = "";
+      if (!file) return;
+      try {
+        rules.value = await file.text();
+        parserPreset.value = "";
+        say(parserMessage, L("rules.loaded"));
+        updateParser();
+      } catch (error) {
+        say(parserMessage, errorText(lang, error), "err");
+      }
+    });
+    parserPreset.addEventListener("change", () => {
+      const chosen2 = parserPresets.find((p) => p.name === parserPreset.value);
+      if (chosen2) {
+        rules.value = JSON.stringify({ rules: chosen2.rules }, null, 2);
+        parserName.value = chosen2.name;
+      }
+      updateParser();
+    });
+    for (const control of [rules, parserTarget, parserName]) control.addEventListener("input", updateParser);
     example.addEventListener("click", () => {
       rules.value = JSON.stringify(PARSER_EXAMPLE, null, 2);
-      update();
+      updateParser();
+    });
+    parserClear.addEventListener("click", () => {
+      rules.value = JSON.stringify({ rules: [] }, null, 2);
+      updateParser();
+    });
+    parserApply.addEventListener("click", async () => {
+      const parsed = parserDraft(rules.value);
+      const card = parserTarget.value.trim();
+      if (parserBusy || !parserSupported || !card || !parsed.ok) return;
+      const draft = rules.value;
+      const target = parserTarget.value;
+      parserBusy = true;
+      updateParser();
+      try {
+        const cfg = await deps.api("PUT", "/v1/parsers/card", { card, rules: parsed.rules });
+        fillParsers(cfg);
+        appliedDraft = draft;
+        appliedTarget = target;
+        say(parserMessage, L("rules.applied", { card, n: parsed.rules.length }), "ok");
+      } catch (error) {
+        say(parserMessage, errorText(lang, error), "err");
+      } finally {
+        parserBusy = false;
+        updateParser();
+      }
+    });
+    async function savePresets(next, selected) {
+      if (parserBusy || !parserSupported) return;
+      parserBusy = true;
+      updateParser();
+      try {
+        const cfg = await deps.api("PUT", "/v1/config", { parser_presets: next });
+        fillParsers(cfg);
+        parserPreset.value = selected;
+        say(parserMessage, L("rules.preset_saved"), "ok");
+      } catch (error) {
+        say(parserMessage, errorText(lang, error), "err");
+      } finally {
+        parserBusy = false;
+        updateParser();
+      }
+    }
+    parserSavePreset.addEventListener("click", () => {
+      const parsed = parserDraft(rules.value);
+      const name = parserName.value.trim();
+      if (!parsed.ok || !name) return;
+      void savePresets([...parserPresets.filter((p) => p.name !== name), { name, rules: presetRules(parsed.rules) }], name);
+    });
+    parserRemovePreset.addEventListener("click", () => {
+      const name = parserPreset.value;
+      if (name) void savePresets(parserPresets.filter((p) => p.name !== name), "");
     });
     settingsView.append(el(
       "div",
       { class: "card" },
       el("h2", { text: L("rules.title") }),
+      el("p", { class: "sub", text: L("rules.scope") }),
+      parserActive,
+      el("details", {}, el("summary", { text: L("rules.stored") }), parserStored),
+      field(L("rules.target"), parserTarget),
+      parserCards,
+      el("div", { class: "btns" }, parserPick, example),
+      parserFile,
+      field(L("rules.preset"), parserPreset),
+      field(L("rules.draft"), rules),
       el("p", { class: "sub", text: L("rules.sub") }),
-      rules,
-      el("div", { class: "btns" }, example)
+      field(L("rules.preset_name"), parserName),
+      el("div", { class: "btns" }, parserSavePreset, parserRemovePreset),
+      parserPreview,
+      el("div", { class: "btns" }, parserApply, parserClear),
+      parserMessage
     ));
+    updateParser();
     const exportEmbeddings = el("input", { type: "checkbox" });
     const exportAll = el("button", { text: L("exp.all") });
     const exportMsg = el("div", { class: "msg" });
@@ -3789,8 +4014,7 @@ html,body{margin:0;background:${PALETTE.bg}}
           backfill: backfill.value,
           summaries: summaries.checked,
           canonFacts: canonFacts.checked
-        },
-        rules: rules.value
+        }
       };
     }
     let baseline = values();
@@ -3828,8 +4052,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       backfill.value = String(cfg.extraction.backfill);
       summaries.checked = cfg.extraction.summaries !== false;
       canonFacts.checked = cfg.extraction.canon_facts !== false;
-      rules.value = cfg.parsers.source === "ui" ? JSON.stringify(cfg.parsers.rules, null, 2) : "";
-      rules.placeholder = cfg.parsers.source === "file" ? L("rules.from_file", { n: cfg.parsers.active_rules }) : L("rules.none");
+      fillParsers(cfg);
     }
     async function loadAll() {
       await loadConn();
@@ -3839,6 +4062,12 @@ html,body{margin:0;background:${PALETTE.bg}}
       }
       baseline = values();
       update();
+      void deps.api("GET", "/v1/conversations?host=pocketrisu", void 0, 5e3).then((chats) => {
+        if (!Array.isArray(chats)) return;
+        for (const c of chats) if (c.host_character_name?.trim()) knownCards.add(c.host_character_name.trim());
+        parserCards.replaceChildren(...[...knownCards].sort().map((name) => el("option", { value: name })));
+      }).catch(() => {
+      });
     }
     async function saveAll() {
       const d = dirty();
@@ -3854,6 +4083,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       let connComplete = !d.includes("conn");
       try {
         if (d.includes("conn")) {
+          parserSupported = false;
+          updateParser();
           const args = connArgs(v.conn);
           connTotal = Object.keys(args).length;
           for (const [k, value] of Object.entries(args)) {
@@ -3868,6 +4099,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         const body = configBody(d, v);
         const tight = (d.includes("tune") || d.includes("conn")) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline) ? ` ${L("tune.embed_wait_tight", { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : "";
         if (!Object.keys(body).length) {
+          fillServer(await deps.api("GET", "/v1/config", void 0, 5e3));
+          baseline = values();
           update({ text: L("saved") + tight, kind: tight ? "warn" : "ok" });
           return true;
         }
@@ -3876,7 +4109,6 @@ html,body{margin:0;background:${PALETTE.bg}}
         baseline = values();
         const parts = [r.queued_jobs ? L("saved_queued", { n: r.queued_jobs }) : L("saved")];
         if (r.queued_jobs) deps.hud.background();
-        if (d.includes("rules") && r.parsers.active_rules) parts.push(L("saved_rules", { n: r.parsers.active_rules }));
         update({ text: parts.join(" ") + tight, kind: tight ? "warn" : "ok" });
         return true;
       } catch (error) {
@@ -3893,7 +4125,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       void deps.hide();
     }
     close.addEventListener("click", () => {
-      if (!dirty().length || closing) return shut();
+      if (closing) return;
+      if (!dirty().length && !parserDirty()) return shut();
       closing = true;
       const saveClose = el("button", { class: "primary", text: L("save_and_close") });
       const discard = el("button", { text: L("discard_and_close") });
@@ -3911,10 +4144,15 @@ html,body{margin:0;background:${PALETTE.bg}}
       discard.addEventListener("click", shut);
       cancel.addEventListener("click", () => restore2());
       select("settings");
-      bar.replaceChildren(el("span", { class: "text warn", text: L("close_unsaved") }), cancel, discard, saveClose);
+      bar.replaceChildren(
+        el("span", { class: "text warn", text: L(parserDirty() ? "rules.close_draft" : "close_unsaved") }),
+        cancel,
+        discard,
+        ...parserDirty() ? [] : [saveClose]
+      );
     });
     language.addEventListener("change", async () => {
-      if (dirty().length) {
+      if (dirty().length || parserDirty()) {
         language.value = lang;
         select("settings");
         update({ text: L("lang_unsaved"), kind: "warn" });

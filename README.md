@@ -330,7 +330,7 @@ language after a page reload.
   LLM only, Voyage AI for embeddings only, any OpenAI-compatible endpoint), model list, API key and a **connection
   test** that makes a real call; an embedding preset measured with its own similarity bar sets it
   (`docs/perf/embedders.md`);
-  recall tuning; status-window parser rules (validated before saving).
+  recall tuning; status-window JSON drafts and named presets, applied separately to an explicit character.
   For **Google Vertex AI**, pick the service-account JSON key file with **Load key file** (or paste its whole
   content into the LLM's API key field): the endpoint's project is filled from the key, the Gemini models Vertex
   serves are listed, and the sidecar renews the access token itself (ADR 0022). Use a dedicated service account with only
@@ -461,12 +461,24 @@ between the start and end of a code block) and `hp` rule (a `HP: 80/100`-shaped 
 The inspector's Current state section shows this same example while no state has been parsed yet.
 
 `block` rules read `key: value` lines between a start and end pattern; `regex` rules use named groups
-`key`/`value`. Changing rules re-parses history at the next sidecar start.
+`key`/`value`. Every active rule must have a nonblank `card` matching the character display name exactly.
+Replace `Your character name` in the example before using it as `NMOS_PARSERS_FILE`.
+
+The panel starts with a blank target, preset and JSON draft. Import a JSON file or select a saved preset, choose the
+character, then press **Apply to this character**. Only that character's rules are replaced; other bindings stay.
+Importing, editing, saving a preset and the general settings **Save** do not activate the draft. Named presets live
+in the sidecar and are included in full-install archives. **Prepare empty rules to disable**, followed by the target's
+explicit disable action, removes only that binding; a blank draft does nothing.
+
+Existing unbound rules remain visible as inactive JSON and must be explicitly rebound. Fully bound configurations
+keep their parser version. Applying changed rules re-parses stored messages without model calls; file changes are
+read at startup. Binding uses display names, not stable card IDs: same-name cards share rules, but each chat's
+state, history and flags remain scoped to its own messages.
 
 **One-line status bars** (Phase 39). Game-like cards often end a reply with a bar on one line
 (`☆ [Date: 0003-05-17 (Sun) | Time: 06:20 | Level: 3 | HP: 40 / 50 | Items: 물약 ×2]`). A `block` rule with `separator`
 reads it field by field (`key: value` or `key=value`), and `card` reads the rule only in the chats of that character
-name (as PocketRisu shows it; without `card` the rule reads every chat):
+name (as PocketRisu shows it; a missing `card` leaves the rule inactive):
 
 ```json
 {"rules": [

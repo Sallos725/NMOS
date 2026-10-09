@@ -16,7 +16,7 @@ from nmos_sidecar.state import history
 from simchat import SimChat
 from test_sidecar_integration import sync
 
-RULE = {"id": "bar", "kind": "block", "role": "char", "start": r"☆ \[", "end": r"\]\s*$", "separator": "|"}
+RULE = {"card": "Status test", "id": "bar", "kind": "block", "role": "char", "start": r"☆ \[", "end": r"\]\s*$", "separator": "|"}
 
 
 def bar(level: int, gold: int, items: str = "물약 ×2", prose: str = "길을 걷는다.") -> str:
@@ -54,7 +54,7 @@ def test_history_folds_restated_values_and_follows_the_head(migrated, rules):
     chat.user("쉰다.")
     chat.reply(bar(2, 90))  # a provisional tail: not state until the next turn
     with make_client(migrated, parsers_file=path) as c:
-        sync(c, chat)
+        sync(c, chat, character_name="Status test")
         h = read(migrated, chat, path)
         assert values(h, "Level") == [(0, 1, "1"), (2, 2, "2")]
         assert values(h, "Gold") == [(0, 1, "100"), (2, 2, "150")]
@@ -62,14 +62,14 @@ def test_history_folds_restated_values_and_follows_the_head(migrated, rules):
         assert not any(e["redone"] for es in h.values() for e in es)  # not asked for
 
         chat.user("다음.")
-        sync(c, chat)
+        sync(c, chat, character_name="Status test")
         assert values(read(migrated, chat, path, keys=["Gold"]), "Gold") == [(0, 1, "100"), (2, 2, "150"), (3, 3, "90")]
 
         # A reroll of the turn-2 reply: the head's path holds the new bar, marked redone (it holds swipes, H4).
         chat.messages[-3:] = []  # back to the turn-2 reply as the tail
         chat.reroll(bar(2, 120))
         chat.user("다음.")
-        sync(c, chat)
+        sync(c, chat, character_name="Status test")
         h = read(migrated, chat, path, keys=["Gold"], redone=True)
         assert values(h, "Gold") == [(0, 1, "100"), (2, 2, "120")]
         assert [e["redone"] for e in h["Gold"]] == [False, True]
@@ -78,12 +78,12 @@ def test_history_folds_restated_values_and_follows_the_head(migrated, rules):
         chat.messages.pop()
         chat.swipe(0)
         chat.user("다음.")
-        sync(c, chat)
+        sync(c, chat, character_name="Status test")
         assert values(read(migrated, chat, path, keys=["Gold"]), "Gold") == [(0, 1, "100"), (2, 2, "150")]
 
         # An edit of an older bar is a new revision of that message: redone, and the history follows it.
         chat.edit(1, bar(1, 80))
-        sync(c, chat)
+        sync(c, chat, character_name="Status test")
         h = read(migrated, chat, path, keys=["Gold"], redone=True)
         assert values(h, "Gold") == [(0, 0, "80"), (1, 1, "100"), (2, 2, "150")]
         assert h["Gold"][0]["redone"] and not h["Gold"][1]["redone"]
@@ -134,7 +134,7 @@ def test_the_conversation_page_and_the_panel_show_the_status_lanes(migrated, rul
         chat.reply(bar(level, gold))
     chat.user("다음.")
     with make_client(migrated, parsers_file=path) as c:
-        sync(c, chat)
+        sync(c, chat, character_name="Status test")
         conv = c.get("/v1/conversations").json()[0]["id"]
         page = c.get(f"/inspector/c/{conv}?lang=en").text
         assert '<a href="#s-status">Status over time <span class="n">2</span></a>' in page  # Gold and Level changed
@@ -210,7 +210,7 @@ def test_a_watched_key_is_flagged_dismissed_and_back_on_undo(migrated, rules):
     chat.reply(bar(2, 130, "물약 ×2 / 해독제 ×1"))  # (ii)
     chat.user("다음.")
     with make_client(migrated, parsers_file=path) as c:
-        sync(c, chat)
+        sync(c, chat, character_name="Status test")
         conv = c.get("/v1/conversations").json()[0]["id"]
         html = c.get(f"/v1/inspector/c/{conv}?lang=en").json()["html"]
         flagged = re.findall(r'data-repair="state_dismiss:([0-9a-f]{16})"', html)
@@ -254,7 +254,7 @@ def test_a_value_back_to_the_one_before_after_a_reroll_is_flagged(migrated, rule
     chat.reroll(bar(1, 100, prose="쉰다."))  # the rerolled reply forgot the turn before
     chat.user("다음.")
     with make_client(migrated, parsers_file=path) as c:
-        sync(c, chat)
+        sync(c, chat, character_name="Status test")
         conv = c.get("/v1/conversations").json()[0]["id"]
         html = c.get(f"/v1/inspector/c/{conv}?lang=en").json()["html"]
         assert "back to an earlier value in a rerolled, swiped or edited reply" in html and "Gold: 150 → 100" in html
@@ -266,7 +266,7 @@ def test_a_value_back_to_the_one_before_after_a_reroll_is_flagged(migrated, rule
         plain.reply(bar(1, gold, prose=prose))
     plain.user("다음.")
     with make_client(migrated, parsers_file=path) as c:
-        sync(c, plain)
+        sync(c, plain, character_name="Status test")
         conv = next(x["id"] for x in c.get("/v1/conversations").json() if x["host_chat_ref"] == plain.id)
         html = c.get(f"/v1/inspector/c/{conv}?lang=en").json()["html"]
         assert "back to an earlier value" not in html and "a status number changed" in html
@@ -313,7 +313,7 @@ def test_a_question_about_a_key_s_changes_gets_its_history_under_packet_v17(migr
     chat.user("다음.")
     tail = [m["chatId"] for m in chat.messages[-4:]]  # the last bars are in the prompt; the line counts them anyway
     with make_client(migrated, parsers_file=path, packet_policy="packet-v17") as c:
-        sync(c, chat)
+        sync(c, chat, character_name="Status test")
         out = recall(c, chat, "골드 언제 이렇게 줄었지?", in_context=tail, budget=1200)
         text = out["packet"]["text"]
         line = '<StateHistory key="Gold"><At turn="1">120</At><At turn="3">90</At><At turn="4">95</At>' \
@@ -353,12 +353,12 @@ def test_asked_keys_words_and_boundaries():
 def test_a_start_that_matches_empty_text_is_refused_and_zero_width_marks_end():
     from nmos_sidecar.parsers import compile_rules, parse, prose
 
-    refused = compile_rules({"rules": [{"id": "x", "kind": "block", "start": "", "end": ""},
-                                       {"id": "y", "kind": "block", "start": "^", "end": "$"}]})
+    refused = compile_rules({"rules": [{"card": "Status test", "id": "x", "kind": "block", "start": "", "end": ""},
+                                       {"card": "Status test", "id": "y", "kind": "block", "start": "^", "end": "$"}]})
     assert not refused.rules and all("start must not match empty text" in e for e in refused.errors)
-    looking = compile_rules({"rules": [{"id": "z", "kind": "block", "start": "(?=☆)", "end": "(?=☆)|\\]"}]})
-    assert parse(looking, "a ☆ [HP: 3] ☆ [MP: 4] b", "char", None) == []  # ends at once, and the loop ends
-    assert prose(looking, "a ☆ [HP: 3] b", "char", None) == "a ☆ [HP: 3] b"
+    looking = compile_rules({"rules": [{"card": "Status test", "id": "z", "kind": "block", "start": "(?=☆)", "end": "(?=☆)|\\]"}]})
+    assert parse(looking, "a ☆ [HP: 3] ☆ [MP: 4] b", "char", None, "Status test") == []  # ends at once, and the loop ends
+    assert prose(looking, "a ☆ [HP: 3] b", "char", None, "Status test") == "a ☆ [HP: 3] b"
 
 
 def test_chats_no_append_saw_get_their_state_at_the_next_start(migrated, rules):
@@ -369,8 +369,8 @@ def test_chats_no_append_saw_get_their_state_at_the_next_start(migrated, rules):
         chat.reply(bar(1, 100))
         chat.user("다음.")
     with make_client(migrated, parsers_file=path) as c:
-        sync(c, seen)
-        sync(c, restored)
+        sync(c, seen, character_name="Status test")
+        sync(c, restored, character_name="Status test")
     with psycopg.connect(migrated, row_factory=dict_row, autocommit=True) as conn:  # as a restore writes them
         cid = conn.execute("SELECT id FROM conversation WHERE host_chat_ref = %s", (restored.id,)).fetchone()["id"]
         conn.execute("DELETE FROM state_observation WHERE conversation_id = %s", (cid,))
@@ -469,8 +469,8 @@ def test_missing_state_scan_crosses_no_match_batches_once(migrated, rules, monke
         unmatched.reply(f"대답 {i}.")
     unmatched.user("다음.")
     with make_client(migrated, parsers_file=path) as client:
-        sync(client, existing)
-        sync(client, unmatched)
+        sync(client, existing, character_name="Status test")
+        sync(client, unmatched, character_name="Status test")
     monkeypatch.setattr(state, "STATE_BACKFILL_BATCH", 2)
     parsed = []
     original = state.write_state

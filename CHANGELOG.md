@@ -23,10 +23,18 @@ Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS a
    offers the matching plugin file.
 4. **Memory:** the default packet becomes `packet-v18` (quotes, labels, resting lines, status history and explicit persona questions; Phases 33–40, below).
    `NMOS_PACKET_POLICY=packet-v12` keeps the packet of 0.3.0.
-5. **Switching between Docker and a bundle** does not carry the memory over: move it with an archive (README, "Moving
+5. **Status rules:** rules without `card` are now inactive. Review the preserved JSON in Settings and use the
+   character-specific Apply to rebind it. Existing fully bound rules keep their parser version.
+6. **Switching between Docker and a bundle** does not carry the memory over: move it with an archive (README, "Moving
    between Docker and a bundle").
 
 ### Changes
+
+- **Explicit status-window setup** (Phase 39 amendment 2). Status drafts, character targets and preset selection
+  start blank. Importing JSON, saving/selecting a named preset and general settings Save cannot activate rules.
+  A separate Apply binds the draft to the selected character name and preserves other characters' rules.
+  Unbound legacy rules stay visible but inactive until rebound. Presets persist separately and travel in full-install
+  archives. Names are exact display-name bindings, not stable card IDs; state/history still belong to each chat.
 
 - **Korean keyword recall can recover a source missed because of a particle** (Phase 41, AGE-76).
   Under the default `packet-v18`, an exact word such as a name followed by a supported Korean particle can

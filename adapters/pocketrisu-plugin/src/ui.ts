@@ -1,6 +1,6 @@
 // NMOS panel, rendered inside the plugin's own sandboxed iframe (full screen): status, inspector and
-// settings tabs. Plugin-side settings are PocketRisu plugin args; model/recall/parser settings live in
-// the sidecar and are saved together with one request.
+// settings tabs. Plugin-side settings are PocketRisu plugin args. The sidecar saves model/recall settings
+// together; status rules have a separate explicit card-bound Apply (PHASE-39 amendment 2).
 
 import type { StatusInfo } from './core';
 import { budgetAdvice } from './budget';
@@ -11,6 +11,7 @@ import { configBody, connArgs, DEFAULT_DEADLINE_MS, DEFAULT_RESERVED_TOKENS, dir
   isVertexEndpoint, MAX_DEADLINE_MS, OLLAMA_DOCKER, PANEL_MAX_RESERVED_TOKENS, presetMatches, presetUrl, serviceAccountProject,
   VERTEX_URL, type FormValues, type Section } from './form';
 import { failureKind } from './failure';
+import { parserBindings, parserDraft, presetRules, type ParserPreset } from './parser-form';
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
 import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices,
   localTime, markDetail, placeMarks, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
@@ -52,7 +53,8 @@ interface ServerConfig {
   embeddings: { url: string; model: string; api_key_set: boolean; query_instruction: string };
   recall: { threshold: number; vector_min_sim: number; embed_timeout_ms?: number; top_k: number; facts_limit: number };
   extraction: { backfill: number; summaries?: boolean; canon_facts?: boolean };
-  parsers: { rules: unknown; source: string; active_rules: number; errors: string[] };
+  parsers: { rules: unknown; source: string; active_rules: number; errors: string[];
+    spec?: unknown; presets?: ParserPreset[] };
   queued_jobs?: number;
   install?: string | null;
 }
@@ -89,7 +91,7 @@ const PARSER_EXAMPLE = {
 };
 
 const SECTION_TITLE: Record<Section, StringKey> = {
-  conn: 'conn.title', llm: 'llm.title', emb: 'emb.title', tune: 'tune.title', rules: 'rules.title',
+  conn: 'conn.title', llm: 'llm.title', emb: 'emb.title', tune: 'tune.title',
 };
 
 // Opaque on purpose: the host settings page behind the full-screen frame must not show through.
@@ -1265,12 +1267,132 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     el('div', { class: 'check' }, canonFacts, el('span', { text: L('tune.canon_facts') })),
     el('p', { class: 'sub', text: L('tune.canon_facts_hint') })));
 
-  const rules = el('textarea', { spellcheck: 'false' });
+  // Status drafts have their own Apply; the general Save never reads or resets these controls.
+  const rules = el('textarea', { id: 'nmos-parser-draft', spellcheck: 'false', 'aria-label': L('rules.draft'),
+    placeholder: L('rules.none') });
+  const parserTarget = el('input', { id: 'nmos-parser-target', list: 'nmos-parser-cards',
+    'aria-label': L('rules.target'), placeholder: L('rules.choose_target') });
+  const parserCards = el('datalist', { id: 'nmos-parser-cards' });
+  const parserActive = el('div', { id: 'nmos-parser-active', class: 'sub', style: 'white-space:pre-line' });
+  const parserStored = el('pre', {});
+  const parserPreview = el('p', { id: 'nmos-parser-preview', class: 'sub' });
+  const parserMessage = el('div', { class: 'msg', role: 'status' });
+  const parserApply = el('button', { id: 'nmos-parser-apply', text: L('rules.apply') });
+  const parserClear = el('button', { text: L('rules.prepare_disable') });
+  const parserFile = el('input', { id: 'nmos-parser-file', type: 'file', accept: '.json,application/json', style: 'display:none' });
+  const parserPick = el('button', { text: L('rules.import') });
+  const parserPreset = el('select', { id: 'nmos-parser-preset', 'aria-label': L('rules.preset') });
+  const parserName = el('input', { id: 'nmos-parser-name', 'aria-label': L('rules.preset_name') });
+  const parserSavePreset = el('button', { id: 'nmos-parser-save-preset', text: L('rules.save_preset') });
+  const parserRemovePreset = el('button', { id: 'nmos-parser-remove-preset', text: L('rules.remove_preset') });
   const example = el('button', { text: L('rules.example') });
-  example.addEventListener('click', () => { rules.value = JSON.stringify(PARSER_EXAMPLE, null, 2); update(); });
+  let parserSupported = false;
+  let parserBusy = false;
+  let parserPresets: ParserPreset[] = [];
+  let appliedDraft = '';
+  let appliedTarget = '';
+  const knownCards = new Set<string>();
+  const parserDirty = () => rules.value !== appliedDraft || parserTarget.value !== appliedTarget;
+
+  function updateParser(): void {
+    const parsed = parserDraft(rules.value);
+    const target = parserTarget.value.trim();
+    parserApply.disabled = parserBusy || !parserSupported || !target || !parsed.ok;
+    parserApply.textContent = L(parsed.ok && parsed.rules.length === 0 ? 'rules.disable' : 'rules.apply');
+    parserSavePreset.disabled = parserBusy || !parserSupported || !parserName.value.trim() || !parsed.ok;
+    parserRemovePreset.disabled = parserBusy || !parserSupported || !parserPreset.value;
+    parserPreview.textContent = !target ? L('rules.choose_target') : !parsed.ok
+      ? L(parsed.error === 'blank' ? 'rules.blank' : parsed.error === 'json' ? 'rules.invalid_json' : 'rules.invalid_shape')
+      : L('rules.preview', { card: target, n: parsed.rules.length });
+  }
+
+  function fillParsers(cfg: ServerConfig): void {
+    parserSupported = cfg.parsers.spec !== undefined && Array.isArray(cfg.parsers.presets);
+    const spec = cfg.parsers.spec ?? cfg.parsers.rules;
+    const bindings = parserBindings(spec);
+    const notes = bindings.cards.map(({ name, count }) => L('rules.binding', { card: name, n: count }));
+    if (bindings.unbound) notes.push(L('rules.unbound', { n: bindings.unbound }));
+    if (!notes.length) notes.push(L('rules.no_active'));
+    if (!parserSupported) notes.push(L('rules.upgrade'));
+    notes.push(...cfg.parsers.errors);
+    parserActive.textContent = notes.join('\n');
+    parserStored.textContent = JSON.stringify(spec ?? { rules: [] }, null, 2);
+    for (const { name } of bindings.cards) knownCards.add(name);
+    parserCards.replaceChildren(...[...knownCards].sort().map((name) => el('option', { value: name })));
+    parserPresets = cfg.parsers.presets ?? [];
+    const selected = parserPreset.value;
+    parserPreset.replaceChildren(el('option', { value: '', text: L('rules.choose_preset') }),
+      ...parserPresets.map((p) => el('option', { value: p.name, text: p.name })));
+    parserPreset.value = parserPresets.some((p) => p.name === selected) ? selected : '';
+    updateParser();
+  }
+
+  parserPick.addEventListener('click', () => parserFile.click());
+  parserFile.addEventListener('change', async () => {
+    const file = parserFile.files?.[0];
+    parserFile.value = '';
+    if (!file) return;
+    try {
+      rules.value = await file.text();
+      parserPreset.value = '';
+      say(parserMessage, L('rules.loaded'));
+      updateParser();
+    } catch (error) { say(parserMessage, errorText(lang, error), 'err'); }
+  });
+  parserPreset.addEventListener('change', () => {
+    const chosen = parserPresets.find((p) => p.name === parserPreset.value);
+    if (chosen) { rules.value = JSON.stringify({ rules: chosen.rules }, null, 2); parserName.value = chosen.name; }
+    updateParser();
+  });
+  for (const control of [rules, parserTarget, parserName]) control.addEventListener('input', updateParser);
+  example.addEventListener('click', () => { rules.value = JSON.stringify(PARSER_EXAMPLE, null, 2); updateParser(); });
+  parserClear.addEventListener('click', () => { rules.value = JSON.stringify({ rules: [] }, null, 2); updateParser(); });
+  parserApply.addEventListener('click', async () => {
+    const parsed = parserDraft(rules.value);
+    const card = parserTarget.value.trim();
+    if (parserBusy || !parserSupported || !card || !parsed.ok) return;
+    const draft = rules.value;
+    const target = parserTarget.value;
+    parserBusy = true; updateParser();
+    try {
+      const cfg = await deps.api<ServerConfig>('PUT', '/v1/parsers/card', { card, rules: parsed.rules });
+      fillParsers(cfg);
+      appliedDraft = draft; appliedTarget = target;
+      say(parserMessage, L('rules.applied', { card, n: parsed.rules.length }), 'ok');
+    } catch (error) { say(parserMessage, errorText(lang, error), 'err'); }
+    finally { parserBusy = false; updateParser(); }
+  });
+  async function savePresets(next: ParserPreset[], selected: string): Promise<void> {
+    if (parserBusy || !parserSupported) return;
+    parserBusy = true; updateParser();
+    try {
+      const cfg = await deps.api<ServerConfig>('PUT', '/v1/config', { parser_presets: next });
+      fillParsers(cfg);
+      parserPreset.value = selected;
+      say(parserMessage, L('rules.preset_saved'), 'ok');
+    } catch (error) { say(parserMessage, errorText(lang, error), 'err'); }
+    finally { parserBusy = false; updateParser(); }
+  }
+  parserSavePreset.addEventListener('click', () => {
+    const parsed = parserDraft(rules.value);
+    const name = parserName.value.trim();
+    if (!parsed.ok || !name) return;
+    void savePresets([...parserPresets.filter((p) => p.name !== name), { name, rules: presetRules(parsed.rules) }], name);
+  });
+  parserRemovePreset.addEventListener('click', () => {
+    const name = parserPreset.value;
+    if (name) void savePresets(parserPresets.filter((p) => p.name !== name), '');
+  });
   settingsView.append(el('div', { class: 'card' },
-    el('h2', { text: L('rules.title') }), el('p', { class: 'sub', text: L('rules.sub') }),
-    rules, el('div', { class: 'btns' }, example)));
+    el('h2', { text: L('rules.title') }), el('p', { class: 'sub', text: L('rules.scope') }), parserActive,
+    el('details', {}, el('summary', { text: L('rules.stored') }), parserStored),
+    field(L('rules.target'), parserTarget), parserCards,
+    el('div', { class: 'btns' }, parserPick, example), parserFile,
+    field(L('rules.preset'), parserPreset), field(L('rules.draft'), rules),
+    el('p', { class: 'sub', text: L('rules.sub') }),
+    field(L('rules.preset_name'), parserName), el('div', { class: 'btns' }, parserSavePreset, parserRemovePreset),
+    parserPreview, el('div', { class: 'btns' }, parserApply, parserClear), parserMessage));
+  updateParser();
 
   // --- settings tab: export (applied at once; ADR 0050) ------------------------------------------
   const exportEmbeddings = el('input', { type: 'checkbox' });
@@ -1386,7 +1508,6 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       llm: llm.values(), emb: emb.values(),
       tune: { threshold: threshold.value, minSim: minSim.value, embedWait: embedWait.value, topK: topK.value,
         facts: factsLimit.value, backfill: backfill.value, summaries: summaries.checked, canonFacts: canonFacts.checked },
-      rules: rules.value,
     };
   }
   let baseline: FormValues = values();
@@ -1426,8 +1547,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     backfill.value = String(cfg.extraction.backfill);
     summaries.checked = cfg.extraction.summaries !== false;
     canonFacts.checked = cfg.extraction.canon_facts !== false;
-    rules.value = cfg.parsers.source === 'ui' ? JSON.stringify(cfg.parsers.rules, null, 2) : '';
-    rules.placeholder = cfg.parsers.source === 'file' ? L('rules.from_file', { n: cfg.parsers.active_rules }) : L('rules.none');
+    fillParsers(cfg);
   }
 
   async function loadAll(): Promise<void> {
@@ -1435,6 +1555,12 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     try { fillServer(await deps.api<ServerConfig>('GET', '/v1/config', undefined, 5000)); } catch { /* the status tab shows why */ }
     baseline = values();
     update();
+    void deps.api<{ host_character_name?: string | null }[]>('GET', '/v1/conversations?host=pocketrisu', undefined, 5000)
+      .then((chats) => {
+        if (!Array.isArray(chats)) return;
+        for (const c of chats) if (c.host_character_name?.trim()) knownCards.add(c.host_character_name.trim());
+        parserCards.replaceChildren(...[...knownCards].sort().map((name) => el('option', { value: name })));
+      }).catch(() => {});
   }
 
   async function saveAll(): Promise<boolean> {
@@ -1448,6 +1574,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     let connComplete = !d.includes('conn');
     try {
       if (d.includes('conn')) {
+        // The prior connection's capabilities must not enable status writes to a changed sidecar.
+        parserSupported = false; updateParser();
         // First, so the server update below already goes to a changed sidecar address.
         const args = connArgs(v.conn);
         connTotal = Object.keys(args).length;
@@ -1465,13 +1593,18 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       // Said with any save that touches either value; the save itself goes ahead (audit F20).
       const tight = (d.includes('tune') || d.includes('conn')) && embedWaitTooLong(v.tune.embedWait, v.conn.deadline)
         ? ` ${L('tune.embed_wait_tight', { w: v.tune.embedWait.trim(), d: v.conn.deadline.trim() || String(DEFAULT_DEADLINE_MS) })}` : '';
-      if (!Object.keys(body).length) { update({ text: L('saved') + tight, kind: tight ? 'warn' : 'ok' }); return true; }
+      if (!Object.keys(body).length) {
+        // First connection: load its active bindings and capabilities without reopening or applying the draft.
+        fillServer(await deps.api<ServerConfig>('GET', '/v1/config', undefined, 5000));
+        baseline = values();
+        update({ text: L('saved') + tight, kind: tight ? 'warn' : 'ok' });
+        return true;
+      }
       const r = await deps.api<ServerConfig>('PUT', '/v1/config', body);
       fillServer(r);
       baseline = values();
       const parts = [r.queued_jobs ? L('saved_queued', { n: r.queued_jobs }) : L('saved')];
       if (r.queued_jobs) deps.hud.background();
-      if (d.includes('rules') && r.parsers.active_rules) parts.push(L('saved_rules', { n: r.parsers.active_rules }));
       update({ text: parts.join(' ') + tight, kind: tight ? 'warn' : 'ok' });
       return true;
     } catch (error) {
@@ -1492,7 +1625,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     void deps.hide();
   }
   close.addEventListener('click', () => {
-    if (!dirty().length || closing) return shut();
+    if (closing) return;
+    if (!dirty().length && !parserDirty()) return shut();
     closing = true;
     const saveClose = el('button', { class: 'primary', text: L('save_and_close') });
     const discard = el('button', { text: L('discard_and_close') });
@@ -1505,11 +1639,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     discard.addEventListener('click', shut);
     cancel.addEventListener('click', () => restore());
     select('settings');
-    bar.replaceChildren(el('span', { class: 'text warn', text: L('close_unsaved') }), cancel, discard, saveClose);
+    // A status draft must be applied by its own button, never by Save-and-close.
+    bar.replaceChildren(el('span', { class: 'text warn', text: L(parserDirty() ? 'rules.close_draft' : 'close_unsaved') }),
+      cancel, discard, ...(parserDirty() ? [] : [saveClose]));
   });
 
   language.addEventListener('change', async () => {
-    if (dirty().length) {
+    if (dirty().length || parserDirty()) {
       language.value = lang;
       select('settings');
       update({ text: L('lang_unsaved'), kind: 'warn' });

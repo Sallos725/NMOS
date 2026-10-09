@@ -2,7 +2,7 @@
 
 > **Status: approved 2026-10-08 (the owner: the parser rather than a documented limit; the history, the flags and the
 > anchor as directions). Step 2 done (the parser and the guide). **In `0.4.0`** (the owner, 2026-10-08: steps 3–5 too);
-> Q3–Q5 decided as proposed (the owner, 2026-10-08); steps 2–5 implemented and measured as recorded below; the default policy remains an owner decision. Watch setup approval was reaffirmed by the owner on 2026-10-09; applying it to the trial install is pending, not its approval.** A
+> Q3–Q5 decided as proposed (the owner, 2026-10-08); steps 2–5 implemented and measured as recorded below; the owner selected `packet-v18` as default on 2026-10-09 (including v17 behavior) and watch was applied to the trial install. Amendment 2 below is implemented with local regression and isolated-host checks passed; PR CI and deployment are tracked separately.** A
 > phase the owner pulled in (R7 allows owner exceptions): NMOS's deterministic state (Phase 1, D10) exists but is barely
 > used.
 
@@ -24,7 +24,7 @@ recomputes it each turn and gets it wrong in ways a ledger can see. NMOS has rea
 | | Question | Answer |
 |---|---|---|
 | Q1 | How are bars read? | **Decided: the parser, documented.** A `block` rule takes `separator`; the text between start and end is split by it and each field read as `key: value` or `key=value`, each cleaned on its own (a long bar keeps every field). A rule ending at `\]\s*$` keeps brackets inside a value. Detecting rules automatically is not done: cards differ (the owner); the guide shows how. |
-| Q2 | How is a rule bound to a card? | **Decided: `card`, the chat's character name** (`conversation.host_character_name`, the name PocketRisu shows), exactly; without it a rule reads every chat. `character` is unchanged. |
+| Q2 | How is a rule bound to a card? | **Decided: `card`, the chat's character name** (`conversation.host_character_name`, the name PocketRisu shows), exactly. **Amended 2026-10-09:** `card` is mandatory for active rules; legacy unbound rules stay visible but inactive (amendment 2). `character` is unchanged. |
 | Q3 | History (step 3) | **Decided as proposed (the owner, 2026-10-08)**, in two parts. **3a (Inspector):** a "status window" section on the conversation page, drawn by the Phase 32 timeline renderer: one lane per key, a bar per value held, the value now beside it, keys that never changed folded; the panel shows it as it shows the timeline. From the observations NMOS keeps per revision, through the head's membership (D8), so a swipe or an edit shows the values of the path taken. **3b (recall):** a question naming a status key with a "when / how much / since" cue gets one `<StateHistory>` line of that key's last changes (turn → value, at most 6). 3b changes the packet: `packet-v17`, the default only after the owner sees its replay. Details below. |
 | Q4 | Changes without a cause (step 4) | **Decided as proposed (the owner, 2026-10-08)**; measured and refined (details below): deterministic (no model call): a rule lists `watch` keys. Between two consecutive accepted bars, (i) an item added to or dropped from a list value (fields split on `/` or `,`), or (ii) a number in a watched value that changes, is flagged when the reply's prose outside the bar names neither the item nor the key; (iii) a watched value that goes back to an earlier value right after a reroll, a swipe or an edit is flagged too. Flags go to "Needs attention" with both bars and the turn; the owner dismisses them as other entries. Off until measured: false alarms counted read-only on the owner's two game-like chats (23 and 6 replies) and shown before it is on. |
 | Q5 | The anchor (step 5) | **Decided: no packet change (the owner, 2026-10-08, as proposed).** Found 2026-10-08: mostly already the case. State lines are required lines, placed only when their message is no longer in the prompt (`retrieval.py`: `host_logical_id not in in_context`), and a reply waiting for the next turn is not state yet, so a reroll or a swipe already starts from the previous accepted bar. Read only, the host's request log of the owner's install shows both game-like cards keep their bars in the prompt the model receives (10 and 6 bars in recent requests; no display-only stripping). Step 5 is this record; 3b is the only packet change. |
@@ -66,7 +66,7 @@ nothing. **Measured 2026-10-08** (`docs/perf/phase39-flags.md`), read only, ever
 15 on the owner's two chats, 7 of them no change without a cause (a place's numbers, money in words, a revert the reply
 names); as merged, card A's inventory and equipment keys raise 5 flags in 23 replies, each an item the story never
 names, and its resources one borderline flag in 66 changes. The owner reaffirmed approval to set up `watch` on
-2026-10-09; the trial snapshot still lacks it, so application remains pending.
+2026-10-09. A later read-only check confirmed the trial install watches Armor, Items and Weapons on Alternate Hunters V2; Magic Academy: Planita has no watched keys.
 
 **Found by the pre-0.4.0 audit (2026-10-08), fixed here:** a `block` rule whose start matches empty text looped
 forever (refused now, and every block search moves forward); a restored chat got no state when the install already had
@@ -113,7 +113,7 @@ no-match messages are visited once per startup because no parse-completion marke
 3. History (Q3): 3a the Inspector, 3b `packet-v17`: **done 2026-10-08**, opt-in.
 4. Flags (Q4): **done 2026-10-08**. The owner reaffirmed watch setup approval on 2026-10-09. A read-only dump of the
    6113 trial install at 12:40 KST found neither of its two saved rules had a `watch` field; setup is not yet applied
-   in that snapshot. This check did not change the running install.
+   in that snapshot. A later deployment applied the approved watch keys (see above); this earlier check itself did not change the running install.
 5. The anchor (Q5): **done by record**
    (2026-10-08), no packet change.
 
@@ -132,3 +132,70 @@ Low for step 2: a new optional rule field each; existing rules read as before (t
 change rewrites the observations as it always did (the rules' version changes). **High for steps 3–4:** step 4 adds a
 migration (a repair kind; an older archive must still restore), 3b changes what recall places (a new policy, not the
 default), and 3a adds markup to the panel (inside the sanitizer's existing rules).
+
+
+## Amendment 2 — explicit, card-bound status configuration (owner, 2026-10-09)
+
+Approved by the owner's request that status windows must be bound to a character,
+the default remain blank, and a chosen JSON/preset take effect only after Apply.
+This amends Q2's permission for unbound install-wide rules and extends the current
+phase's configuration UI; it does not authorize automatic rule detection or a
+host identity migration.
+
+### Contract
+
+- A fresh installation has no active rules. The panel starts with a blank draft
+  and no chosen target/preset; existing active bindings have a separate summary.
+  Importing JSON, selecting a preset, editing or saving a preset never activates it.
+  The general settings Save must not submit the status draft.
+- Apply requires an explicit nonblank card display name and a valid rules document.
+  The server binds every applied rule to that exact name and replaces only that
+  card's rules, preserving other cards. Concurrent applies must not lose another
+  card's update. Display the target and rule count before application. A blank
+  draft is not a reset; an explicit empty rules document disables only that card.
+- Unbound rules cannot become active through either the new apply path, the old
+  config update or startup files. Existing unbound JSON remains available for
+  review/rebinding, with a visible error; do not silently bind it to the open chat.
+  Excluding legacy unbound observations must not reuse their old rules version.
+  Already bound rule documents retain their prior version and behavior.
+- Binding remains exact `conversation.host_character_name`, not a stable card ID.
+  The UI states this scope. Same-name cards share the rule; every chat's values,
+  history and flags still use that chat's head. Stable-ID support needs its own
+  verified host transport and storage design and is outside this amendment.
+- Named user presets persist separately in existing app_config JSON, so merely
+  saving one cannot change active parser versions, observations or extraction jobs.
+  Include import, selection, explicit preset save, and removal. Presets are
+  templates: applying one always requires the chosen target. Reuse existing
+  archive behavior; no schema, dependency, provider or authentication change.
+- Invalid JSON, absent target and failed server writes leave active configuration
+  unchanged. An unsupported older sidecar cannot fall back to the old global Save.
+  Preserve raw revisions and the running 6113 settings; no deployment in this work.
+
+### Verification
+
+1. Fresh blank UI/config; import/preset selection produces no active-config write;
+   general Save and closing/saving unrelated settings cannot apply a draft.
+2. Server rejects unbound activation. Card A apply leaves Card B rules and values
+   intact; same-card chats keep separate values, history and flags. Empty apply
+   disables A only. Failed apply preserves configuration and derived state.
+3. Preset save/reload/removal survives restart and archive restore without
+   changing active rules, parser versions or jobs. Bad JSON/type/size/duplicate
+   preset names are rejected before mutation.
+4. File-backed and legacy unbound rules are visible but unbound rules stay
+   inactive; already bound documents retain versions. Source revisions are never
+   rewritten. Test concurrent per-card applies and the ordinary restore/startup
+   path. Use isolated databases only and no model calls.
+5. Plugin DOM/pure tests, typecheck/build, scoped sidecar tests then full CI on the
+   updated PR. Existing AGE-76 evidence remains tied to its frozen source; any
+   claim about the new integrated build names the checks actually rerun. Native
+   host interaction with this new UI remains an explicit evidence boundary.
+
+High risk: status-source scope, derived-state rebuild, existing configuration and
+restore compatibility. The lead reviews both sides of the apply contract and the
+failure/concurrency paths before reporting completion.
+
+
+Amendment 2 implementation evidence (2026-10-09): sidecar 1,518 tests and plugin 237 tests pass;
+typecheck/build pass. The real isolated PocketRisu v1.13.0 panel passed nine interactions, with no provider
+calls or production writes. [Report](../perf/phase39-configuration.md). Updated-head CI is recorded on PR #291;
+these checks do not establish deployment or generated-answer behavior on the owner's host.

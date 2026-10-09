@@ -78,10 +78,10 @@ def test_parsers_from_ui_rebuild_state(client):
     chat.user("start")
     chat.reply("<status>\n[하나]\n장소: 성당\n</status>")
     chat.user("go on")
-    sync(client, chat)
+    sync(client, chat, character_name="Status test")
     bad = client.put("/v1/config", json={"parsers": "{not json"})
     assert bad.status_code == 422
-    rules = {"rules": [{"id": "r", "kind": "block", "start": "<status>", "end": "</status>",
+    rules = {"rules": [{"card": "Status test", "id": "r", "kind": "block", "start": "<status>", "end": "</status>",
                         "entity_line": r"\[(?P<entity>[^\]]+)\]"}]}
     view = client.put("/v1/config", json={"parsers": rules}).json()
     assert view["parsers"]["source"] == "ui" and view["parsers"]["active_rules"] == 1

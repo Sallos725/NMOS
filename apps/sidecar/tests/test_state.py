@@ -16,9 +16,9 @@ from test_sidecar_integration import recall, sync
 
 RULES = {
     "rules": [
-        {"id": "status", "kind": "block", "start": r"```status", "end": r"```", "role": "char"},
-        {"id": "hp", "kind": "regex", "pattern": r"❤️\s*(?P<value>\d+/\d+)", "key": "HP"},
-        {"id": "broken", "kind": "regex", "pattern": r"(unclosed"},
+        {"card": "Status test", "id": "status", "kind": "block", "start": r"```status", "end": r"```", "role": "char"},
+        {"card": "Status test", "id": "hp", "kind": "regex", "pattern": r"❤️\s*(?P<value>\d+/\d+)", "key": "HP"},
+        {"card": "Status test", "id": "broken", "kind": "regex", "pattern": r"(unclosed"},
     ]
 }
 
@@ -28,17 +28,17 @@ STATUS = "The rain keeps falling.\n```status\n장소: 폐허가 된 성당\n시�
 def test_parser_rules_block_and_regex():
     ruleset = compile_rules(RULES)
     assert len(ruleset.rules) == 2 and ruleset.errors and "broken" in ruleset.errors[0]
-    pairs = {k: v for _, k, v in parse(ruleset, STATUS, "char", None)}
+    pairs = {k: v for _, k, v in parse(ruleset, STATUS, "char", None, "Status test")}
     assert pairs == {"장소": "폐허가 된 성당", "시간": "새벽 3시", "기분": "불안", "HP": "42/100"}
-    assert parse(ruleset, STATUS, "user", None) == [("hp", "HP", "42/100")]  # block rule is char-only
+    assert parse(ruleset, STATUS, "user", None, "Status test") == [("hp", "HP", "42/100")]  # block rule is char-only
 
 
 @pytest.mark.parametrize("spec", [[], None, {}, {"rules": None}, {"rules": {}}, {"rules": [None]},
-    {"rules": [{"kind": "regex", "pattern": None, "key": "HP"}]},
-    {"rules": [{"kind": "block", "start": 7, "end": "END"}]},
-    {"rules": [{"kind": "block", "start": "START", "end": None}]},
-    {"rules": [{"kind": "block", "start": "START", "end": "END", "entity_line": []}]},
-    {"rules": [{"kind": "regex", "pattern": "(?P<value>.+)", "key": 7}]}])
+    {"rules": [{"card": "Status test", "kind": "regex", "pattern": None, "key": "HP"}]},
+    {"rules": [{"card": "Status test", "kind": "block", "start": 7, "end": "END"}]},
+    {"rules": [{"card": "Status test", "kind": "block", "start": "START", "end": None}]},
+    {"rules": [{"card": "Status test", "kind": "block", "start": "START", "end": "END", "entity_line": []}]},
+    {"rules": [{"card": "Status test", "kind": "regex", "pattern": "(?P<value>.+)", "key": 7}]}])
 def test_malformed_parser_structure_is_reported_without_crashing(spec):
     ruleset = compile_rules(spec)
     assert ruleset.errors and not ruleset.rules
@@ -48,10 +48,10 @@ def test_parser_file_skips_malformed_rules_but_keeps_valid_ones(tmp_path, caplog
     from nmos_sidecar.parsers import load_rules
 
     path = tmp_path / "rules.json"
-    path.write_text(json.dumps({"rules": [None, {"kind": "regex", "pattern": None}, RULES["rules"][1]]}))
+    path.write_text(json.dumps({"rules": [None, {"card": "Status test", "kind": "regex", "pattern": None}, RULES["rules"][1]]}))
     ruleset = load_rules(str(path))
     assert len(ruleset.errors) == 2 and len(ruleset.rules) == 1
-    assert parse(ruleset, STATUS, "char", None) == [("hp", "HP", "42/100")]
+    assert parse(ruleset, STATUS, "char", None, "Status test") == [("hp", "HP", "42/100")]
     assert "parser rule skipped" in caplog.text
     assert compile_rules({"rules": []}).errors == ()
 
@@ -63,13 +63,13 @@ def test_bad_parser_config_keeps_saved_rules_and_state(client, migrated):
     chat.user("Begin.")
     chat.reply(STATUS)
     chat.user("Next.")
-    conv = sync(client, chat)["conversation_id"]
+    conv = sync(client, chat, character_name="Status test")["conversation_id"]
     before_config = client.get("/v1/config").json()["parsers"]
     before_state = client.get(f"/v1/conversations/{conv}/state").json()
     assert before_state
     with psycopg.connect(migrated, row_factory=dict_row) as conn:
         before_rows = conn.execute("SELECT * FROM state_observation ORDER BY source_revision_id, key").fetchall()
-    for bad in [[], {"rules": None}, {"rules": [None]}, {"rules": [{"kind": "regex", "pattern": None}]}]:
+    for bad in [[], {"rules": None}, {"rules": [None]}, {"rules": [{"card": "Status test", "kind": "regex", "pattern": None}]}]:
         rejected = client.put("/v1/config", json={"parsers": bad})
         assert rejected.status_code == 422 and "parsers" in rejected.text
         assert client.get("/v1/config").json()["parsers"] == before_config
@@ -104,7 +104,7 @@ def test_state_follows_membership_and_is_injected_out_of_context(state_client, m
     chat.user("Let us begin.")
     chat.reply(STATUS)
     fill(chat, 6)
-    sync(state_client, chat)
+    sync(state_client, chat, character_name="Status test")
     text = packet(state_client, chat)
     # the reply at position 1 answers the first user message: turn 0 (packet-v7, ADR 0041)
     assert '<Item key="장소" as_of_turn="0">폐허가 된 성당</Item>' in text
@@ -113,18 +113,18 @@ def test_state_follows_membership_and_is_injected_out_of_context(state_client, m
     # A later status window supersedes the earlier one.
     chat.reply(STATUS.replace("폐허가 된 성당", "지하 묘지").replace("42/100", "30/100"))
     chat.user("next")
-    sync(state_client, chat)
+    sync(state_client, chat, character_name="Status test")
     later = packet(state_client, chat, tail=0)
     assert "지하 묘지" in later and "폐허가 된 성당" not in later
 
     # Deleting it brings the earlier value back (synchronous invalidation, D8).
     chat.delete(len(chat.messages) - 2)
-    sync(state_client, chat)
+    sync(state_client, chat, character_name="Status test")
     assert "폐허가 된 성당" in packet(state_client, chat, tail=0)
 
     # Editing the source message changes the state; the old value never returns.
     chat.edit(1, STATUS.replace("폐허가 된 성당", "종탑"))
-    sync(state_client, chat)
+    sync(state_client, chat, character_name="Status test")
     edited = packet(state_client, chat, tail=0)
     assert "종탑" in edited and "폐허가 된 성당" not in edited
 
@@ -133,7 +133,7 @@ def test_state_follows_membership_and_is_injected_out_of_context(state_client, m
 
     # 'Cut Messages for AI' hides it.
     chat.disable(2, "allBefore")
-    sync(state_client, chat)
+    sync(state_client, chat, character_name="Status test")
     assert "<State>" not in packet(state_client, chat, tail=0)
 
     # Rebuildable.
@@ -148,10 +148,10 @@ def test_provisional_tail_state_waits_for_acceptance(state_client):
     chat = SimChat()
     chat.user("start")
     chat.reply(STATUS)
-    sync(state_client, chat)
+    sync(state_client, chat, character_name="Status test")
     assert "<State>" not in packet(state_client, chat, tail=0)  # reply not yet accepted (D5)
     chat.user("continue")
-    sync(state_client, chat)
+    sync(state_client, chat, character_name="Status test")
     assert "<State>" in packet(state_client, chat, tail=0)
 
 
@@ -160,7 +160,7 @@ def test_state_respects_budget(state_client):
     chat.user("start")
     chat.reply(STATUS)
     chat.user("go")
-    sync(state_client, chat)
+    sync(state_client, chat, character_name="Status test")
     out = recall(state_client, chat, "x", budget=70)["packet"]
     assert out["token_estimate"] <= 70
 
@@ -170,7 +170,7 @@ def test_inspector_and_read_apis(state_client):
     chat.user("<b>hello</b> & bye")
     chat.reply(STATUS)
     chat.user("next")
-    sync(state_client, chat)
+    sync(state_client, chat, character_name="Status test")
     recall(state_client, chat, "hello")
     convs = state_client.get("/v1/conversations").json()
     conv_id = convs[0]["id"]
@@ -194,13 +194,13 @@ def test_clean_text_keeps_visible_text_only():
 
 def test_sim_bot_state_is_scoped_per_character():
     ruleset = compile_rules({"rules": [
-        {"id": "roster", "kind": "block", "start": r"<status>", "end": r"</status>",
+        {"card": "Status test", "id": "roster", "kind": "block", "start": r"<status>", "end": r"</status>",
          "entity_line": r"[\[【■]\s*(?P<entity>[^\]】]+?)\s*[\]】]?"},
-        {"id": "inline", "kind": "regex", "pattern": r"(?P<entity>\S+)의 호감도\s*[:：]\s*(?P<value>\d+)", "key": "호감도"},
+        {"card": "Status test", "id": "inline", "kind": "regex", "pattern": r"(?P<entity>\S+)의 호감도\s*[:：]\s*(?P<value>\d+)", "key": "호감도"},
     ]})
     content = ("오늘의 교실.\n<status>\n[하나]\nHP: 30/100\n기분: 불안\n[카이토]\nHP: 80/100\n기분: 평온\n</status>\n"
                "하나의 호감도: 42 / 카이토의 호감도: 17")
-    pairs = {k: v for _, k, v in parse(ruleset, content, "char", None)}
+    pairs = {k: v for _, k, v in parse(ruleset, content, "char", None, "Status test")}
     assert pairs == {"하나.HP": "30/100", "하나.기분": "불안", "카이토.HP": "80/100", "카이토.기분": "평온",
                      "하나.호감도": "42", "카이토.호감도": "17"}
 
@@ -257,18 +257,18 @@ EQUALS = "선실로 돌아왔다.\n[Status:date=0712-03-21|time=07:05|location=3
 
 def test_a_one_line_status_bar_is_read_field_by_field():
     ruleset = compile_rules({"rules": [
-        {"id": "bar", "kind": "block", "role": "char", "start": r"☆ \[", "end": r"\]", "separator": "|"},
-        {"id": "eq", "kind": "block", "role": "char", "start": r"\[Status:", "end": r"\]", "separator": "|"},
+        {"card": "Status test", "id": "bar", "kind": "block", "role": "char", "start": r"☆ \[", "end": r"\]", "separator": "|"},
+        {"card": "Status test", "id": "eq", "kind": "block", "role": "char", "start": r"\[Status:", "end": r"\]", "separator": "|"},
     ]})
     assert not ruleset.errors
-    assert {k: v for _, k, v in parse(ruleset, BAR, "char", None)} == {
+    assert {k: v for _, k, v in parse(ruleset, BAR, "char", None, "Status test")} == {
         "Date": "0003-05-17 (Sun)", "Time": "06:20", "Level": "3", "HP": "40 / 50", "Items": "물약 ×2 / 해독제 ×1",
         "Gold": "1,200"}  # the story's own bracket window ([Notice: … | To: …]) is not the bar
-    assert {k: v for _, k, v in parse(ruleset, EQUALS, "char", None)} == {
+    assert {k: v for _, k, v in parse(ruleset, EQUALS, "char", None, "Status test")} == {
         "date": "0712-03-21", "time": "07:05", "location": "3번 선실", "mood": "느긋", "wind": "없음"}
     # A bar longer than one value's limit still gives every field (each is cleaned on its own).
     long = "☆ [" + " | ".join(f"Skill{i}: {'x' * 40}" for i in range(30)) + "]"
-    assert len(parse(ruleset, long, "char", None)) == 30
+    assert len(parse(ruleset, long, "char", None, "Status test")) == 30
 
 
 def test_a_rule_bound_to_a_card_reads_only_its_chats():
@@ -278,7 +278,7 @@ def test_a_rule_bound_to_a_card_reads_only_its_chats():
     assert parse(ruleset, BAR, "char", None, "Card B") == []
     assert parse(ruleset, BAR, "char", None) == []
     bad = compile_rules({"rules": [
-        {"id": "s", "kind": "block", "start": "a", "end": "b", "separator": ""},
+        {"card": "Status test", "id": "s", "kind": "block", "start": "a", "end": "b", "separator": ""},
         {"id": "c", "kind": "block", "start": "a", "end": "b", "card": " "}]})
     assert not bad.rules and len(bad.errors) == 2
 
@@ -310,7 +310,7 @@ def test_a_card_bound_rule_follows_the_chat_s_character_name(migrated, tmp_path)
 
 def test_a_bar_ending_at_the_line_s_end_keeps_brackets_inside_a_value():
     ruleset = compile_rules({"rules": [
-        {"id": "bar", "kind": "block", "start": r"☆ \[", "end": r"\]\s*$", "separator": "|"}]})
+        {"card": "Status test", "id": "bar", "kind": "block", "start": r"☆ \[", "end": r"\]\s*$", "separator": "|"}]})
     content = "등대 계단 위.\n***☆ [Location: 항구 마을 [낡은 등대] 꼭대기 | Level: 7]\n[Memo| None ]"
-    assert {k: v for _, k, v in parse(ruleset, content, "char", None)} == {
+    assert {k: v for _, k, v in parse(ruleset, content, "char", None, "Status test")} == {
         "Location": "항구 마을 [낡은 등대] 꼭대기", "Level": "7"}

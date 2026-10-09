@@ -8,6 +8,7 @@ import hmac
 import logging
 import os
 import tempfile
+import threading
 import time
 import dataclasses
 import ipaddress
@@ -133,15 +134,16 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     # Runtime-editable part (plugin settings UI): effective settings, parser rules, recall options.
     rt: dict[str, Any] = {}
+    config_lock = threading.RLock()
 
-    def rebuild(overrides: dict[str, Any]) -> None:
+    def configuration(overrides: dict[str, Any]) -> dict[str, Any]:
         cur = runtime.effective(settings, overrides)
         rules = runtime.ruleset(settings, overrides)
         emb = embedder or (Embedder(cur.embed_url, cur.embed_model, cur.embed_api_key)
                            if cur.embed_url and cur.embed_model else None)
         pj = vectors.projection(cur)
         sm = summaries.summarizer(cur)
-        rt.update(settings=cur, rules=rules, overrides=overrides, extractor=extraction.extractor(cur), projection=pj,
+        return dict(settings=cur, rules=rules, overrides=overrides, extractor=extraction.extractor(cur), projection=pj,
                   summarizer=sm, canon=canonfacts.generation(cur), reveal=reveals.generation(cur),
                   recall=RecallOptions(
             top_k=cur.recall_top_k, threshold=cur.recall_threshold, rules_version=rules.version,
@@ -153,6 +155,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             policy=cur.packet_policy if cur.packet_policy in POLICIES else DEFAULT_POLICY,
             summarize_key=sm.key if sm else None, canon_key=rt.get("active_canon") if cur.canon_facts else None,
         ))
+
+    def rebuild(overrides: dict[str, Any]) -> None:
+        rt.update(configuration(overrides))
 
     def activate(conn, before_extractor: str | None, before_projection: str | None,
                  before_summarizer: str | None = None, before_canon: str | None = None) -> int:
@@ -1155,29 +1160,70 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
 
     @app.get("/v1/config", dependencies=[Depends(auth)])
     def get_config():
-        return runtime.public_view(rt["settings"], rt["overrides"], rt["rules"])
+        with config_lock:
+            return runtime.public_view(rt["settings"], rt["overrides"], rt["rules"])
+
+    @app.put("/v1/parsers/card", dependencies=[Depends(auth)])
+    def put_parser_card(body: dict[str, Any], request: Request):
+        card = body.get("card")
+        errors = runtime.template_errors(body.get("rules"))
+        if not isinstance(card, str) or not card.strip() or len(card) > 200:
+            errors.append("card must be a character name of 1 to 200 characters")
+        if errors:
+            raise HTTPException(status_code=422, detail=errors)
+        with config_lock:
+            with request.app.state.pool.connection() as conn:
+                runtime.lock_config(conn)
+                overrides = runtime.stored(conn)
+                try:
+                    spec = runtime.bind_card(runtime.parser_spec(settings, overrides, strict=True), card, body["rules"])
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from None
+                overrides[runtime.PARSERS_KEY] = spec
+                prepared = configuration(overrides)
+                runtime.save(conn, {runtime.PARSERS_KEY: spec})
+                rebuild_state(conn, prepared["rules"])
+            # Publish only after the database transaction commits; failed writes leave the live rules alone.
+            rt.update(prepared)
+            return runtime.public_view(rt["settings"], rt["overrides"], rt["rules"])
 
     @app.put("/v1/config", dependencies=[Depends(auth)])
     def put_config(update: dict[str, Any], request: Request):
         clean, errors = runtime.validate_update(update)
         if errors:
             raise HTTPException(status_code=422, detail=errors)
-        clean = runtime.keys_follow_hosts(settings, rt["overrides"], clean)
-        before_ex, before_pj, before_sm, before_cg = rt["extractor"], rt["projection"], rt["summarizer"], rt["canon"]
-        before_backfill = rt["settings"].extract_backfill
-        with request.app.state.pool.connection() as conn:
-            runtime.save(conn, clean)
-            rebuild(runtime.stored(conn))
-            if runtime.PARSERS_KEY in clean:
-                rebuild_state(conn, rt["rules"])
-            queued = activate(conn, before_ex.key if before_ex else None, before_pj.key if before_pj else None,
-                              before_sm.key if before_sm else None, before_cg.key if before_cg else None)
-            ex = rt["extractor"]
-            if ex and before_ex and ex.key == before_ex.key and rt["settings"].extract_backfill != before_backfill:
-                # Same generation, different backfill: queue what the new window is missing now, not at
-                # the next restart (ADR 0008). Idempotent; a smaller backfill queues nothing.
-                queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill)
-        return {**runtime.public_view(rt["settings"], rt["overrides"], rt["rules"]), "queued_jobs": queued}
+        with config_lock:
+            before = dict(rt)
+            before_ex, before_pj, before_sm, before_cg = rt["extractor"], rt["projection"], rt["summarizer"], rt["canon"]
+            before_backfill = rt["settings"].extract_backfill
+            queued = 0
+            try:
+                with request.app.state.pool.connection() as conn:
+                    runtime.lock_config(conn)
+                    latest = runtime.stored(conn)
+                    clean = runtime.keys_follow_hosts(settings, latest, clean)
+                    runtime.save(conn, clean)
+                    overrides = runtime.stored(conn)
+                    prepared = configuration(overrides) if set(clean) - {runtime.PRESETS_KEY} else None
+                    if runtime.PARSERS_KEY in clean:
+                        rebuild_state(conn, prepared["rules"])
+                    # Saving inactive templates (or active parser rules) never schedules extraction work.
+                    if set(clean) - {runtime.PARSERS_KEY, runtime.PRESETS_KEY}:
+                        rt.update(prepared)
+                        queued = activate(conn, before_ex.key if before_ex else None, before_pj.key if before_pj else None,
+                                          before_sm.key if before_sm else None, before_cg.key if before_cg else None)
+                        ex = rt["extractor"]
+                        if ex and before_ex and ex.key == before_ex.key and rt["settings"].extract_backfill != before_backfill:
+                            queued += extraction.schedule_generation(conn, ex.key, rt["settings"].extract_backfill)
+                        prepared = dict(rt)
+                if set(clean) <= {runtime.PRESETS_KEY}:
+                    rt["overrides"] = overrides
+                else:
+                    rt.update(prepared)
+            except Exception:
+                rt.update(before)
+                raise
+            return {**runtime.public_view(rt["settings"], rt["overrides"], rt["rules"]), "queued_jobs": queued}
 
     def key_for(body: dict[str, Any], kind: str) -> tuple[str, str]:
         """The key a test or model list sends, and a note when the saved one was kept from another host."""

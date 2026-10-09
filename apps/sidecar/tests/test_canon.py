@@ -146,9 +146,9 @@ def test_a_request_records_its_canon_and_replays_with_it_even_when_the_texts_arr
 def test_canon_reaches_no_message_pipeline_and_goes_with_the_chat(migrated):
     chat = a_chat()
     with make_client(migrated) as c:
-        sync(c, chat)
+        sync(c, chat, character_name="Status test")
         # A card holding a status block: a state rule must not read canon, on sync or on a rebuild.
-        rules = {"rules": [{"id": "r", "kind": "block", "start": "<status>", "end": "</status>",
+        rules = {"rules": [{"card": "Status test", "id": "r", "kind": "block", "start": "<status>", "end": "</status>",
                             "entity_line": r"\[(?P<entity>[^\]]+)\]"}]}
         assert c.put("/v1/config", json={"parsers": rules}).status_code == 200
         push(c, chat, {"card:desc": ("<status>\n[하나]\n장소: 성당\n</status>", {})})

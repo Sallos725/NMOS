@@ -49,7 +49,7 @@ from nmos_sidecar.migrate import apply_migrations  # noqa: E402
 
 TIMELINE = hasattr(inspector, "character_timeline")  # PHASE-32
 STATUS = hasattr(inspector, "conversation_status")  # PHASE-39
-BAR_RULE = {"id": "bar", "kind": "block", "role": "char", "start": r"☆ \[", "end": r"\]\s*$", "separator": "|"}
+BAR_RULE = {"card": "Status benchmark", "id": "bar", "kind": "block", "role": "char", "start": r"☆ \[", "end": r"\]\s*$", "separator": "|"}
 HEAVY = "주인공"
 
 
@@ -168,7 +168,7 @@ def run(n: int, fixture: str, warmup: int, runs: int) -> dict:
             settings["parsers_file"] = str(rules)
         with TestClient(create_app(Settings(**settings))) as c, \
                 psycopg.connect(url, row_factory=dict_row, autocommit=True) as db:
-            sync(c, chat)
+            sync(c, chat, character_name="Status benchmark" if fixture == "bar" else None)
             conv = db.execute("SELECT id, head_commit_id FROM conversation").fetchone()
             key = add_generation(db, conv["head_commit_id"], "bench-model", None)
             if fixture == "heavy":

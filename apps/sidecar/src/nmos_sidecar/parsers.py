@@ -65,12 +65,16 @@ def _version_spec(spec: Any) -> Any:
                               if isinstance(r, dict) and _watch_ok(r.get("watch", [])) else r for r in spec["rules"]]}
 
 
-def compile_rules(spec: Any) -> RuleSet:
+def compile_rules(spec: Any, *, template: bool = False) -> RuleSet:
     if not isinstance(spec, dict):
         return RuleSet(rules=(), version="none", errors=("parser spec must be an object with a rules list",))
     if not isinstance(spec.get("rules"), list):
         return RuleSet(rules=(), version="none", errors=("rules must be a list",))
-    raw = json.dumps(_version_spec(spec), sort_keys=True, ensure_ascii=False)
+    version_spec = _version_spec(spec)
+    # Already-bound documents keep their generation. A legacy global rule no longer contributes observations.
+    if not template and any(isinstance(r, dict) and not r.get("card") for r in spec["rules"]):
+        version_spec = {"card_binding_required": 1, "spec": version_spec}
+    raw = json.dumps(version_spec, sort_keys=True, ensure_ascii=False)
     items = spec["rules"]
     rules: list[Rule] = []
     errors: list[str] = []
@@ -90,6 +94,8 @@ def compile_rules(spec: Any) -> RuleSet:
             if item.get("entity_line") is not None and not isinstance(item["entity_line"], str):
                 raise ValueError("entity_line must be a regex string")
             card = item.get("card")
+            if not template and card is None:
+                raise ValueError("card is required; bind this rule to a character name")
             if card is not None and (not isinstance(card, str) or not card.strip()):
                 raise ValueError("card must be a character name")
             watch = item.get("watch", [])

@@ -1,0 +1,55 @@
+{
+  "scope": "actual isolated PocketRisu, real plugin iframe and real sidecar; no generated responses",
+  "checks": [
+    {
+      "name": "fresh_blank",
+      "pass": true
+    },
+    {
+      "name": "invalid_to_valid_connection_without_panel_reopen",
+      "pass": true
+    },
+    {
+      "name": "chooser_draft_only",
+      "pass": true
+    },
+    {
+      "name": "apply_A_preserves_B",
+      "pass": true
+    },
+    {
+      "name": "preset_save_no_activation",
+      "pass": true
+    },
+    {
+      "name": "invalid_JSON_preserves_active",
+      "pass": true
+    },
+    {
+      "name": "server_rejected_regex_preserves_active_and_draft",
+      "pass": true
+    },
+    {
+      "name": "preset_reload_select_no_activation",
+      "pass": true
+    },
+    {
+      "name": "390px_desktop_Chromium_viewport_no_horizontal_overflow",
+      "pass": true,
+      "measurements": {
+        "viewport": 390,
+        "document": 390,
+        "panel": 390
+      },
+      "limitation": "desktop Chromium viewport simulation, not mobile Safari"
+    }
+  ],
+  "host": "http://localhost:6192",
+  "sidecar": "http://127.0.0.1:8842",
+  "plugin_sha256": "0693c727a1b9789f262c50ede54b70006b8dc346f7e926603a6e1d8f3e2fac32",
+  "host_version": "PocketRisu v1.13.0",
+  "host_image": "sha256:e3fc431541a918649e6a8b55274f0fe2c498310e176f8a7477fc0fcc19d69b88",
+  "plugin_build": "0319794d06bd",
+  "production_writes": 0,
+  "provider_calls": 0
+}

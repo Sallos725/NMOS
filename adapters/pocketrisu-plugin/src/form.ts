@@ -1,6 +1,6 @@
 // Settings form model: which sections changed, and the single sidecar update they add up to.
 
-export type Section = 'conn' | 'llm' | 'emb' | 'tune' | 'rules';
+export type Section = 'conn' | 'llm' | 'emb' | 'tune';
 
 /** Request-path deadline when the plugin arg is unset (0). 3 s: on PocketRisu v1.12.0 a warm
  *  generation needs ≈1.5 s at 5,000 messages and ≈2.7 s at 10,000 (docs/perf/scale.md). */
@@ -17,7 +17,7 @@ export const DEFAULT_RESERVED_TOKENS = 4000;
 export const MAX_RESERVED_TOKENS = 20_000;
 /** The largest budget the panel saves (ADR 0049): recall grows up to it, and a larger one recalls as it does. */
 export const PANEL_MAX_RESERVED_TOKENS = 8000;
-export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune', 'rules'];
+export const SECTIONS: Section[] = ['conn', 'llm', 'emb', 'tune'];
 
 /** Google Vertex AI's OpenAI-compatible endpoint; `{project}` comes from the pasted key (ADR 0022). */
 export const VERTEX_URL = 'https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/endpoints/openapi';
@@ -79,7 +79,6 @@ export interface FormValues {
   emb: ModelValues;
   tune: { threshold: string; minSim: string; embedWait: string; topK: string; facts: string; backfill: string;
     summaries: boolean; canonFacts: boolean };
-  rules: string;
 }
 
 /** Sections whose values differ from the last loaded or saved baseline. */
@@ -112,7 +111,6 @@ export function configBody(dirty: Section[], v: FormValues): Record<string, unkn
     // empty when the sidecar is older than the setting: sending it would be refused as not editable
     if (v.tune.embedWait.trim() !== '') body.embed_timeout_ms = num(v.tune.embedWait);
   }
-  if (dirty.includes('rules')) body.parsers = v.rules.trim() ? v.rules : null;
   return body;
 }
 

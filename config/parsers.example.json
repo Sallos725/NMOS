@@ -5,13 +5,15 @@
       "kind": "block",
       "role": "char",
       "start": "```status",
-      "end": "```"
+      "end": "```",
+      "card": "Your character name"
     },
     {
       "id": "hp",
       "kind": "regex",
       "pattern": "HP\\s*[:：]\\s*(?P<value>\\d+\\s*/\\s*\\d+)",
-      "key": "HP"
+      "key": "HP",
+      "card": "Your character name"
     },
     {
       "id": "status-bar",
@@ -20,12 +22,17 @@
       "start": "☆ \\[",
       "end": "\\]\\s*$",
       "separator": "|",
-      "watch": ["Items", "Gold"]
+      "watch": [
+        "Items",
+        "Gold"
+      ],
+      "card": "Your character name"
     },
     {
       "id": "html-status",
       "kind": "regex",
-      "pattern": "<span class=\"stat-(?P<key>[a-z]+)\">(?P<value>[^<]+)</span>"
+      "pattern": "<span class=\"stat-(?P<key>[a-z]+)\">(?P<value>[^<]+)</span>",
+      "card": "Your character name"
     }
   ]
 }

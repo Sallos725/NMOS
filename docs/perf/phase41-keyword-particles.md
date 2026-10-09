@@ -362,3 +362,16 @@ particle SQL after twelve executions. The production 25 ms allowance, dedicated
 cancellation/admission tests, synthetic API stories and measured replay/performance
 budgets stay unchanged. Index/preparation correctness does not promise twelve
 successive sub-25 ms scheduling outcomes on native CI. No product source changed.
+
+
+## Final AGE-76 platform gate
+
+At `0c39265` (r4 runtime unchanged), general CI
+[37934550605](https://github.com/Sallos725/NMOS/actions/runs/37934550605) and native CI
+[37934550887](https://github.com/Sallos725/NMOS/actions/runs/37934550887) both passed.
+Sidecar: 1,502 tests on general Linux x64, native macOS arm64 and native Windows x64;
+plugin: 225 tests plus typecheck/build equality. All four native target jobs passed;
+Linux arm64 builds and smokes but does not run the full pytest suite. Windows finished
+1,502 tests in 1,119.97 s; macOS in 395.87 s. These outcomes cover AGE-76 before the
+separate Phase 39 amendment 2 status-configuration change. The newer integrated
+source requires its own checks and cannot inherit this head's CI result.

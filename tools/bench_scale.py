@@ -62,9 +62,11 @@ def post(client: TestClient, path: str, body: dict) -> tuple[dict, float]:
     return res.json(), ms
 
 
-def sync(client: TestClient, chat: SimChat) -> dict[str, float]:
+def sync(client: TestClient, chat: SimChat, *, character_name: str | None = None) -> dict[str, float]:
     """The plugin flow; harness-side hashing happens before the clock starts."""
     manifest = chat.manifest()
+    if character_name is not None:
+        manifest["character_name"] = character_name
     out, reconcile_ms = post(client, "/v1/sync/reconcile", manifest)
     timings = {"reconcile": reconcile_ms, "bodies": 0.0, "chunks": 0}
     if out["status"] == "needs_bodies":

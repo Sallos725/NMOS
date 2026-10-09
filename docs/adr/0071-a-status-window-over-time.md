@@ -1,6 +1,6 @@
 # 0071 — A status window over time (`packet-v17`, status flags)
 
-Status: proposed 2026-10-08 (`docs/phases/PHASE-39.md` Q3–Q5, decided by the owner as proposed; AGE-43). Adds the
+Status: accepted 2026-10-08 (`docs/phases/PHASE-39.md` Q3–Q5, decided by the owner as proposed; AGE-43). Adds the
 policy `packet-v17` on top of `packet-v16`, not the default; adds the owner repair kind `state_dismiss` (migration
 0029). No prompt or generation key changes; the parser observations are unchanged (a rule's `watch` does not change
 the rules' version).
@@ -43,3 +43,25 @@ value, so it could not say when something changed, and it never noticed the bar 
   above (`docs/perf/phase39-flags.md`).
 - Migration 0029 only widens `owner_repair`'s kind check; an archive made at 0028 restores and is migrated as before.
 - Whether `packet-v17` becomes the default, and which keys the owner's install watches, are the owner's choices.
+
+
+## Amendment 1 — explicit card-bound configuration (2026-10-09)
+
+Accepted by the owner (PHASE-39 amendment 2). Active rules require a nonblank exact character display name.
+A fresh install and the panel's target/preset/JSON draft start empty. Legacy unbound documents remain available for
+review but cannot activate, including on startup and through the old configuration API. Their effective parser
+version changes so old global observations cannot be reused; already-bound document versions remain unchanged.
+
+The panel separates active bindings from drafts. Import and preset selection only populate a draft. General Save
+excludes status rules. A dedicated card Apply validates the template, binds every rule to its explicit target,
+namespaces rule IDs, and replaces only that card's rules in a serialized database transaction with state rebuild.
+An explicit empty rules array disables the selected card; a blank draft is not a reset. Invalid or failed applies
+leave saved rules and derived state intact. A missing new endpoint never falls back to global configuration Save.
+
+Named presets are inactive templates in a separate existing app_config key and are included in install archives.
+Saving templates cannot change active parser versions or queue extraction. No migration, new provider or host data
+mutation is involved. The exact-name contract is not stable-ID isolation: same-name cards share rules. State values,
+history and flags remain bound to each conversation's head. Stable-ID support needs separate host/storage evidence.
+
+The owner selected packet-v18 as default (inheriting v17) and watch for the trial install on 2026-10-09; neither is
+reset by the blank status draft. This amendment is high risk for source scope and derived-state/configuration integrity.

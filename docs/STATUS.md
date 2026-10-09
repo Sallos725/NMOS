@@ -2,6 +2,16 @@
 
 ## Current phase
 
+**Phase 39 amendment 2 — status configuration UX and required card binding:
+approved by the owner, 2026-10-09.** Blank initial draft, explicit JSON/preset
+selection and Apply to a named card; other cards preserved. Presets remain
+separate from active rules. Unbound legacy rules remain reviewable but inactive;
+existing bound rules keep their behavior. Implementation and local verification are done:
+sidecar 1,518 tests and plugin 237 tests pass, including config rollback and preset archive restore.
+The isolated PocketRisu v1.13.0 panel passed nine real UI checks (desktop Chromium, also a 390 px viewport).
+Updated-head CI is tracked in PR #291; deployment and owner-environment checks remain separate. The current 6113 rules are both bound by name, and no live settings change
+is included. [Scope](phases/PHASE-39.md#amendment-2--explicit-card-bound-status-configuration-owner-2026-10-09).
+
 **Phase 41 — AGE-76 Korean-particle keyword correction: approved 2026-10-09.**
 Phase 39 remains current. The owner approved preserving legacy keyword scores and
 order, then supplementing only free positions within 50, with the original
@@ -24,9 +34,11 @@ a whole-route expiry still abstains. All 42 keyword checks pass, including a
 regression that failed before the guard. All 22 authored queries, 66 v17 packets
 and 12 historical packets retain their r3 results. The final r4 historical gate repeats 291/314 recall and 21/24 quotes with no new
 failure or forbidden phrase; all 42 actual-model-data packets remain identical.
-K32 results are unchanged. Required full-suite/native outcomes are tracked against
-the final head in [PR #291 checks](https://github.com/Sallos725/NMOS/pull/291/checks),
-separately from the earlier macOS diagnostic failure. Host evidence remains open.
+K32 results are unchanged. At `0c39265`, general CI 37934550605 and all four native
+jobs in 37934550887 passed: sidecar 1,502 tests on Linux x64/macOS/Windows,
+plugin 225 tests (arm64 Linux uses build/smoke). This precedes the status-configuration
+amendment above; its newer source needs separate [PR #291 checks](https://github.com/Sallos725/NMOS/pull/291/checks).
+Host evidence remains open.
 
 The bounded design still cannot supplement a full 50-candidate list. Added
 lookups cost time; r4 measured API p95 +23.565 ms at 10k synthetic messages, with zero whole-route
