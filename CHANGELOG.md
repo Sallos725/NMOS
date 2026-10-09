@@ -28,6 +28,10 @@ Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS a
 
 ### Changes
 
+- **Explicit third-person persona questions have a bounded recall route** (`packet-v18`, opt-in; Phase 40).
+  A question about the persona's work, location or another supported kind can add at most two matching facts or
+  attributed claims within the existing budgets. An unshared Korean given name works on this route without
+  changing identity or making ordinary narration boost all persona facts. The default remains `packet-v16`.
 - **Hidden candidates have an audit label.** The Inspector records a packet candidate excluded by a memory mode or
   secret gate as hidden, with its source, turn and reason instead of copying its body. The diagnostic rows never
   reach the model or consume packet budget, and do not affect placement, rest or echo statistics. Existing traces

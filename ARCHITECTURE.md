@@ -689,6 +689,13 @@ for a message that names a key and asks how it changed (required; not the defaul
 keys: a change the reply's prose does not name goes to "Needs attention", deterministic, nothing stored; a dismissal is
 an owner repair (`state_dismiss`, migration 0029). The replay of the trial install's requests changes none.
 
+**D81 — Questions about the persona (`packet-v18`; ADR 0072; Phase 40, AGE-18).** Explicit third-person questions
+can rank at most two matching facts or attributed claims about the resolved persona between a current-query
+name mention and a previous-reply name mention,
+sharing the cap across both. An unshared Korean given name is accepted only on this route; ordinary persona
+mentions, entity resolution and Cast are unchanged. Existing history, event, rest, mode and token rules apply.
+The owner includes the correction in `0.4.0`; zero-call replay found no new majority failure (see `docs/perf/phase40-persona-questions.md`). The reduced live check and adoption are open; the default remains `packet-v16`.
+
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.
 

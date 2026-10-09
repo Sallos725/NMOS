@@ -32,7 +32,9 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-39.md` is the latest, approved
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-40.md` is the latest, approved
+   2026-10-09 (AGE-18: explicit third-person persona questions; a recall correction beside Phase 39);
+   `PHASE-39.md`, approved
    2026-10-08 (status windows: one-line bars, card binding, their history, `packet-v17`, flags; ADR 0071); `PHASE-38.md`, approved 2026-10-08 (restore from the panel,
    high risk); `PHASE-37.md`, approved 2026-10-08 and complete (the
    bundle's data outside the bundle, high risk); `PHASE-36.md`, approved
@@ -116,6 +118,7 @@ If two normative documents appear to conflict:
 | 37 — the bundle's data lives outside the bundle: a per-user folder on Windows and Linux, existing data adopted on the first start (a correction found on a user's report, not a roadmap stage; amends PHASE-23 Q3) | **approved** (2026-10-08, as proposed; Q6 amended), high risk; **complete** (2026-10-08): CI green on four targets, the owner's Windows update from a real v0.3.0 bundle passed | `PHASE-37.md`, ADR 0060 amendment 1 |
 | 38 — restore from the panel, while NMOS runs: an archive uploaded in chunks, checked, then restored with the shared ids' sequences held, the startup steps after it (a correction completing Phase 16, not a roadmap stage; amends ADR 0050 amendment 1) | **approved** (2026-10-08, the phase and a live restore; Q1–Q7 answered, Q3 amended), high risk; **complete** (2026-10-08): the owner's desktop restore of the trial install into a fresh one matched the source row for row | `PHASE-38.md` |
 | 39 — status windows NMOS holds: one-line status bars read field by field and bound to a card (step 2), then their history, changes without a cause and the anchor (pulled in by the owner) | **approved** (2026-10-08), in `0.4.0` (the owner); Q3–Q5 decided as proposed; steps 2–5 done (history lanes, `packet-v17` not the default, `watch` flags measured, the anchor by record), high risk (migration 0029, packet) | `PHASE-39.md`, ADR 0071 |
+| 40 — explicit third-person questions about the persona (AGE-18 / K32; bounded recall correction) | **approved** (owner, 2026-10-09, after reviewing the proposal and reversing deferral); implementation and zero-call replay done, in `0.4.0`; reduced live check and default decision open | `PHASE-40.md` |
 | Stage 8 (after 1.0, R7) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,

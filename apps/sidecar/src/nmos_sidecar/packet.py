@@ -267,16 +267,18 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
 # packet-v17 is packet-v16 that holds a status window's history (PHASE-39 Q3b): a message that names a status key and
 # asks about change (`retrieval.STATE_CHANGE_CUE`) gets, inside <State>, a <StateHistory> line of that key's last
 # changes (at most STATE_HISTORY_MAX, oldest first, each its turn and value), required as <State>'s items are.
+# packet-v18 adds bounded facts/claims for explicit third-person persona questions (PHASE-40).
+# The policy is opt-in; its generation, compiler budget and global default are unchanged.
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
             "packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14",
-            "packet-v15", "packet-v16", "packet-v17")
+            "packet-v15", "packet-v16", "packet-v17", "packet-v18")
 DEFAULT_POLICY = "packet-v16"  # the owner, 2026-10-08, on the replay (PHASE-36 Q3)
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
              "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2,
              "packet-v11": 1.2, "packet-v12": 1.2, "packet-v13": 1.2, "packet-v14": 1.2,
-             "packet-v15": 1.2, "packet-v16": 1.2, "packet-v17": 1.2}  # estimated tokens per non-ASCII char
+             "packet-v15": 1.2, "packet-v16": 1.2, "packet-v17": 1.2, "packet-v18": 1.2}  # estimated tokens per non-ASCII char
 _V8 = ("packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15",
-       "packet-v16", "packet-v17")  # packet-v8 and what builds on it
+       "packet-v16", "packet-v17", "packet-v18")  # packet-v8 and what builds on it
 PRIVATE_POLICIES = frozenset({"packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 FOLD_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})
 ABOUT_POLICIES = frozenset({"packet-v4", "packet-v5", "packet-v6", "packet-v7", *_V8})  # promises the message is about first (ADR 0019 am. 1)
@@ -285,17 +287,18 @@ CAUSE_POLICIES = frozenset({"packet-v6", "packet-v7", *_V8})  # facts and claims
 TURN_POLICIES = frozenset({"packet-v7", *_V8})  # excerpts and state carry their message's turn index (ADR 0041)
 STORY_POLICIES = frozenset(_V8)  # summaries in a <Story> section (ADR 0043)
 CAST_POLICIES = frozenset(_V8)  # each scene character's state in a <Cast> section (ADR 0043)
-FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # recall grows with the budget (ADR 0049)
-GROW_POLICIES = frozenset({"packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # an excerpt grows to its length from its best sentence (ADR 0053)
-SPAN_POLICIES = frozenset({"packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
-CHANGE_POLICIES = frozenset({"packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
-QUOTE_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # the forensic path's <Quote> lines (PHASE-33, ADR 0067)
-UNEXTRACTED_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # a turn extraction has not reached is raw evidence (PHASE-33 Q5)
-LABEL_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # PHASE-34 Q1's four labels
-REST_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16", "packet-v17"})  # an overused supportive line rests; supportive excerpts meet a bar (Q2–Q4)
-ANCHOR_POLICIES = frozenset({"packet-v15", "packet-v16", "packet-v17"})  # an excerpt anchors on what the question asks, not when (PHASE-35)
-NAMED_POLICIES = frozenset({"packet-v16", "packet-v17"})  # a name alone makes only a now or standing fact required (PHASE-36)
-STATE_HISTORY_POLICIES = frozenset({"packet-v17"})  # a status key's last changes for a question about them (PHASE-39 Q3b)
+FILL_POLICIES = frozenset({"packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18"})  # recall grows with the budget (ADR 0049)
+GROW_POLICIES = frozenset({"packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18"})  # an excerpt grows to its length from its best sentence (ADR 0053)
+SPAN_POLICIES = frozenset({"packet-v11", "packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18"})  # a word hit with a qualifying vector excerpts within its chunk (ADR 0063)
+CHANGE_POLICIES = frozenset({"packet-v12", "packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18"})  # replaced values, ended roles, the one-character tie-break (PHASE-31)
+QUOTE_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18"})  # the forensic path's <Quote> lines (PHASE-33, ADR 0067)
+UNEXTRACTED_POLICIES = frozenset({"packet-v13", "packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18"})  # a turn extraction has not reached is raw evidence (PHASE-33 Q5)
+LABEL_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18"})  # PHASE-34 Q1's four labels
+REST_POLICIES = frozenset({"packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18"})  # an overused supportive line rests; supportive excerpts meet a bar (Q2–Q4)
+ANCHOR_POLICIES = frozenset({"packet-v15", "packet-v16", "packet-v17", "packet-v18"})  # an excerpt anchors on what the question asks, not when (PHASE-35)
+NAMED_POLICIES = frozenset({"packet-v16", "packet-v17", "packet-v18"})  # a name alone makes only a now or standing fact required (PHASE-36)
+STATE_HISTORY_POLICIES = frozenset({"packet-v17", "packet-v18"})  # a status key's last changes for a question about them (PHASE-39 Q3b)
+PERSONA_QUESTION_POLICIES = frozenset({"packet-v18"})  # explicit persona questions (PHASE-40)
 STATE_HISTORY_MAX = 6  # changes on one <StateHistory> line
 STATE_HISTORY_KEYS = 2  # keys one message gets a line for
 EXCERPT_FLOOR = 0.5  # packet-v14: an excerpt after the first needs this share of the best fused score, or a word hit

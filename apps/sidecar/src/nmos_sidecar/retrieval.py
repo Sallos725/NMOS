@@ -30,7 +30,7 @@ from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
 from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POLICIES, CAST_POLICIES, CAUSE_POLICIES,
                      CHANGE_POLICIES, CONTENTS, LABEL_POLICIES, STATE_HISTORY_KEYS, STATE_HISTORY_MAX,
-                     STATE_HISTORY_POLICIES,
+                     STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES,
                      QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
@@ -780,6 +780,21 @@ class Gathered:
     cast_lines: list[tuple[str, list[Line]]] = field(default_factory=list)  # each scene character's state (packet-v8)
 
 
+def persona_question_names(r: Any) -> frozenset[str]:
+    """Resolved persona spellings, plus an unshared Korean given name, for PHASE-40 questions only."""
+    if r is None:
+        return frozenset()
+    entity = r.entity("character", "{{user}}")
+    if not entity:
+        return frozenset()
+    others = [e for e in r.entities() if e["id"] != entity["id"]]
+    held = {norm(n) for e in others for n in e["names"]}
+    derived = {g for e in others if e["type"] == "character" for n in e["names"]
+               if (g := variants.given(norm(n)))}
+    names = {norm(n) for n in r.persona_names if r.status("character", n) == "resolved"} - held
+    return frozenset(names | {g for n in names if (g := variants.given(n)) and g not in held | derived})
+
+
 def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, in_context: set[str],
            options: RecallOptions, upto: int | None = None, known_at: datetime | None = None,
            canon_manifest: str | None = None, canon_exact: bool = False, canon_held: Iterable[str] = (),
@@ -872,6 +887,10 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                view["threads"], g, r, options)
         if options.facts_limit > 0:
             causes = options.policy in CAUSE_POLICIES
+            persona_questions = options.policy in PERSONA_QUESTION_POLICIES
+            persona_entity = (r.entity("character", "{{user}}") or {}).get("id") if persona_questions and r else None
+            question_names = persona_question_names(r) if persona_questions else frozenset()
+            persona_added: set[str] = set()  # one cap across narrated facts and attributed claims
             # packet-v9 ranks every candidate once: the configured limit's share is its head (relevant_facts keeps
             # its order and event cap at any limit), and the added slots go to what no one is kept from (ADR 0049).
             grow = options.fill_facts > 0
@@ -887,7 +906,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                     options.events_limit, persona, scene.names(g.cast, r, aliases), causes=causes,
                                     first_cue=first, window_start=start, marks=options.history_marks, aliases=aliases,
                                     named=g.named, named_by_words=options.policy in NAMED_POLICIES, risky=contradicted,
-                                    keep=(lambda f: bool(_rested([f], "fact", rest, g))) if rest else None)
+                                    keep=(lambda f: bool(_rested([f], "fact", rest, g))) if rest else None,
+                                    persona_questions=persona_questions, persona_entity=persona_entity,
+                                    persona_query_names=question_names, persona_added=persona_added)
             if options.policy in LABEL_POLICIES:  # before the limits: a risky fact never takes an ordinary one's slot
                 ranked = _risky_last(ranked, view, g.named)
             if changes:  # an ended role answers a question about the past, not about now (PHASE-31 Q2); the facts
@@ -898,6 +919,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                               if not now_or_kept(f))
                 ranked = [f for f in ranked if now_or_kept(f)]
             facts = _grown(ranked[:options.facts_limit], ranked, options.fill_facts)
+            persona_added.intersection_update(str(f["id"]) for f in facts)
             if changes:
                 selected = list(facts)
             # Claims after facts, so the budget serves narration first (ADR 0013).
@@ -905,7 +927,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                     len(view["claims"]) if grow or rest else claims_limit, persona=persona,
                                     causes=causes, first_cue=first, window_start=start, marks=options.history_marks,
                                     aliases=aliases, named=g.named, named_by_words=options.policy in NAMED_POLICIES,
-                                    risky=contradicted)
+                                    risky=contradicted, persona_questions=persona_questions,
+                                    persona_entity=persona_entity, persona_query_names=question_names,
+                                    persona_added=persona_added)
             ranked = _rested(ranked, "claim", rest, g)
             if options.policy in LABEL_POLICIES:
                 ranked = _risky_last(ranked, view, g.named)

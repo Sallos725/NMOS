@@ -19,6 +19,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from .entities import USER_NAMES, Resolution, resolve
 from .packet import Line
+from .keywords import keywords
 from .predicates import HOLDER_PER_ITEM, REGISTRY, stored_knowledge, whereabouts
 from . import canon, canonfacts
 from .repairs import (IN_FORCE, REPAIR_COLUMNS, apply_facts, apply_locks, live, quoted_turns, secret_events,
@@ -779,6 +780,60 @@ FIRST_CUE = re.compile(r"(처음|최초|예전|옛날|원래|초반|첫(\s|번|�
 HISTORY_CUE = re.compile(FIRST_CUE.pattern + r"|전에|이전|첫\s?날|\bbefore\b|\bused to\b|\bpreviously\b", re.IGNORECASE)
 
 
+# PHASE-40: a question must identify its subject, not merely mention the persona somewhere.
+# Keep this deliberately narrower than a natural-language parser: uncertain clauses abstain.
+_PERSONA_WH = re.compile(r"(?:^|\s)(?:무슨|무엇|어떤|누구|뭐|어디)(?!론가)|\b(?:what|where|who|which)\b", re.I)
+_PERSONA_GENERIC = frozenset({"처음", "최초", "예전", "이전", "원래", "초반", "이름", "혼자", "before", "first",
+                               "time", "originally", "previously", "job", "identity", "일을", "일이", "하는", "다니는"})
+
+
+def _persona_questions(query: str, names: set[str], other_names: set[str]) -> list[tuple[frozenset[str], tuple[str, ...]]]:
+    """Explicit same-clause subject questions, with predicate and content cues (read side only)."""
+    questions = []
+    for part in re.finditer(r"([^.!?;\n。！？]+)([.!?;\n。！？]|$)", _norm(query)):
+        clause = part.group(1).strip(" \"'“”‘’")
+        if not _PERSONA_WH.search(clause):
+            continue
+        if any(re.search(r"(?<!\w)" + re.escape(n) + r"(?=$|\W|[은는이가의])", clause)
+               for n in other_names if len(n) >= 2):
+            continue
+        for name in sorted(names, key=len, reverse=True):
+            n = re.escape(name)
+            korean = re.match(r"^" + n + r"(?P<particle>은|는|이|가|의)\s+(?P<body>.*)$", clause)
+            english = re.fullmatch(
+                r"(?:where (?:is|was) " + n + r"(?: (?:now|before|previously|originally))?"
+                r"|where (?:does|did) " + n + r" (?:live|stay)"
+                r"|who (?:is|was) " + n + r"|what (?:does|did) " + n + r" (?:do(?: for a living)?|have|own|possess|know)"
+                r"|what (?:is|was) " + n + r"['’]s (?:job|identity|personality|guild)"
+                r"|what happened to " + n + r")", clause)
+            if not korean and not english:
+                continue
+            body = korean.group("body") if korean else clause.replace(name, " ")
+            if korean and re.search(r"(?:인지|는지|냐고|라고)\s", body):
+                continue  # an indirect/reported question can have a different, unnamed subject
+            if korean and part.group(2) not in ("?", "？") and not re.search(r"(?:까|니|냐|지|어|해|야|더라|요)$", body):
+                continue
+            if korean and korean.group("particle") == "의" and not re.match(
+                    r"^(?:직업|정체|성격|외모|소속|길드|출신|특징)(?:은|는|이|가)?\s", body):
+                continue  # "the persona's friend" is another subject, not the persona.
+            if korean and re.search(r"(?:친구|동료|아내|남편|선생|딸|아들|그녀)(?:은|는|이|가)\s", body):
+                continue
+            # Narration followed by a question about somebody else is not a persona question.
+            if korean and re.search(r"(?:지만|면서|그리고|그러고|(?:[가-힣]+고))\s", body.replace("가지고", "").replace("갖고", "")):
+                continue
+            predicates = set(asked_predicates(clause))
+            if re.search(r"어디|\bwhere\b", body):
+                predicates.add("located_in")
+            if re.search(r"가지고|갖고|소유|\b(?:have|own|possess)\b", body):
+                predicates.add("possesses")
+            if re.search(r"회사|\bcompany\b", body):
+                predicates.update(("member_of", "identity"))
+            words = tuple(w for w in keywords(body) if w not in _PERSONA_GENERIC and w not in names)
+            questions.append((frozenset(predicates), words))
+            break
+    return questions
+
+
 def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in_context: set[str],
                    limit: int, events_limit: int | None = None,
                    persona: frozenset[str] = frozenset(), present: frozenset[str] = frozenset(),
@@ -787,7 +842,11 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
                    aliases: Mapping[str, frozenset[str]] | None = None,
                    named: set[str] | None = None, named_by_words: bool = False,
                    risky: frozenset[str] | None = None,
-                   keep: Callable[[dict[str, Any]], bool] | None = None) -> list[dict[str, Any]]:
+                   keep: Callable[[dict[str, Any]], bool] | None = None, *,
+                   persona_questions: bool = False, persona_entity: str | None = None,
+                   persona_query_names: frozenset[str] | None = None,
+                   persona_added: set[str] | None = None,
+                   _question_facts: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
     """Facts about entities mentioned now, then lexically related ones; never from in-context sources.
 
     A fact hidden from a character who is being addressed counts as a strong mention: it is the one the
@@ -803,8 +862,14 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     `minor` one needs the lexical bar: a name mention alone does not bring it (ADR 0020). Unlabeled
     events (older generations) rank as before.
 
+    With `persona_questions` (packet-v18, PHASE-40), an explicit same-clause question about the resolved
+    `persona_entity` can offer at most two matching subject facts at mention score 1.5, between a name in
+    the current question (2) and the previous reply (1). `persona_query_names` is a caller-validated,
+    unambiguous name set, separate from ordinary mentions. `persona_added` shares the cap across fact/claim
+    selections. The normal fact/event quotas, history ordering and token budget still apply.
+
     The persona's names (`USER_NAMES` and `persona`, the resolver's `persona_names`; ADR 0023) are never
-    a mention: the persona is in every chat, and a user who narrates it by name writes that name in every
+    an ordinary mention: the persona is in every chat, and a user who narrates it by name writes that name in every
     message. A first-person question still brings the persona's own facts.
 
     With `causes` (packet-v6, ADR 0040) a stated cause counts as part of the fact's words, and when the message asks
@@ -837,6 +902,33 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
     asked = asked_predicates(query) if named_by_words else frozenset()
     nouns = asked_nouns(query) if named_by_words else ()
     user = USER_NAMES | persona
+    matches: list[dict[str, Any]] = []
+    if persona_questions and persona_entity:
+        # Classify explicit answers before risk ordering and rest, including already lexical candidates.
+        persona_names = ({_norm(n) for n in persona_query_names} if persona_query_names is not None
+                         else _widened(list(persona), aliases)) - USER_NAMES
+        other_names = {_norm(f[role]) for f in facts for role in ("subject", "object")
+                       if f.get(role) and f.get(role + "_type") == "character"
+                       and f.get(role + "_entity", {}).get("id") != persona_entity}
+        persona_names -= other_names
+        questions = _persona_questions(query, persona_names, other_names)
+        matches = [f for f in facts if f.get("subject_entity", {}).get("id") == persona_entity
+                   and any(f["predicate"] in predicates or any(
+                       w in _norm((f.get("object") or "") + " " + (f.get("value") or "")) for w in words)
+                           for predicates, words in questions)]
+        if named is not None:
+            named.update(str(f["id"]) for f in matches)
+        extra_limit = max(0, 2 - len(persona_added or ()))
+        if matches and extra_limit:
+            # Resolve the small question set with the same history, context, rest and event rules.
+            # The recursive pass cannot open another persona route. Only its winners gain a mention
+            # in the full selection, so a chat with many matching persona facts never gains every slot.
+            targets = relevant_facts(matches, query, previous_ai, in_context, min(extra_limit, limit),
+                                     events_limit, persona=persona, present=present, causes=causes,
+                                     first_cue=first_cue, window_start=window_start, marks=marks, aliases=aliases,
+                                     named=named, named_by_words=named_by_words, risky=risky, keep=keep,
+                                     _question_facts=frozenset(str(f["id"]) for f in matches))
+            _question_facts = frozenset(str(f["id"]) for f in targets)
     scored = []
     for f in facts:
         if f["host_logical_id"] in in_context and not f.get("held_off"):  # a lock holds against the story (ADR 0047)
@@ -845,6 +937,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         names = [n for n in _widened(f.get("names") or [f["subject"], f.get("object")], aliases)
                  if len(n) >= 2 and n not in user]
         mention = 2.0 if any(n in q for n in names) else (1.0 if any(n in ai for n in names) else 0.0)
+        if _question_facts and str(f["id"]) in _question_facts:
+            mention = max(mention, 1.5)
         hidden = [n for n in _widened(f.get("hidden_from") or [], aliases) if len(n) >= 2 and n not in user]
         grams = _grams(fact_text(f) + (f" {f['because']}" if causes and f.get("because") else ""))
         lexical = len(grams & q_grams) / max(1, len(q_grams))
@@ -891,6 +985,8 @@ def relevant_facts(facts: list[dict[str, Any]], query: str, previous_ai: str, in
         if f["predicate"] == "event" and kept_events is not None and id(f) not in kept_events:
             continue
         out.append(f)
+    if persona_questions and persona_added is not None:
+        persona_added.update(str(f["id"]) for f in out if str(f["id"]) in _question_facts)
     return out
 
 

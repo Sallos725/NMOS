@@ -29,7 +29,7 @@ def dropped(monkeypatch, policy: str) -> Gathered:
     return g
 
 
-@pytest.mark.parametrize("policy", ["packet-v14", "packet-v15", "packet-v16", "packet-v17"])
+@pytest.mark.parametrize("policy", ["packet-v14", "packet-v15", "packet-v16", "packet-v17", "packet-v18"])
 @pytest.mark.parametrize("budget", [0, 10, 600])
 def test_hidden_provenance_never_changes_packet_budget_or_rest(monkeypatch, policy, budget):
     g = dropped(monkeypatch, policy)

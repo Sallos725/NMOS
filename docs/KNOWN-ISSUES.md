@@ -40,7 +40,7 @@ without a PocketRisu change.
 | K29 | A reveal in the turns first extracted together can be missed (narrowed by Phase 30) | Memory | "Extract all history" after connecting a chat with secrets (ADR 0033 amendment 2) |
 | K30 | A summary can say a secret in other words | Memory | since 0.2.0 (Phase 12, ADR 0042, 0043); summaries off for a chat where it matters |
 | K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases); since 0.3.0 a given name with a common family name, and a Hangul spelling of a romanized name (Phase 24, ADR 0058) |
-| K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | recorded, not scheduled (`docs/perf/m0-sample2.md`); canon did not change it; two rules measured in Phase 24, neither gained without a loss |
+| K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | corrected in opt-in packet-v18 (AGE-18 / Phase 40); replay improves both target questions with current options, reduced live check/adoption pending; v16/v17 unchanged |
 | K34 | A request whose query embedding does not answer in 300 ms recalls without vectors | Recall | measured (Phase 15): 70 % of the owner's production requests; the Status tab says so since Phase 15, the progress display since Phase 17; reduced in 0.3.0 (ADR 0061): the embedding runs while recall reads, so it has the reads' time (≈100–300 ms) and the 300 ms after them |
 | K35 | "The story so far" is written from every scene summary, with no cap on its input | Memory | recorded, not scheduled |
 | K36 | A chat whose large lorebook NMOS has read almost whole recalls more slowly | Performance | measured, accepted (Phase 14, owner 2026-09-29) |
@@ -370,6 +370,16 @@ above; sample 2's M0 cases were unchanged with canon facts on.
 first-person question gained one sample-2 case and lost one, lost two synthetic cases with three stale values placed,
 and one restored copy's who-probe; giving the bonus only to the persona's facts that share words with the message
 gained nothing. The persona has many more facts than anyone else, so a bonus for all of them crowds the others out.
+*2026-10-09:* the owner requested a correction (AGE-18). The current selection path still omits facts on synthetic
+third-person identity/location questions that do not meet the lexical bar. This differs from AGE-58's repaired
+identity split. After reviewing the bounded question-specific route in `docs/phases/PHASE-40.md`, the owner
+briefly deferred AGE-18, then explicitly brought it back into 0.4.0. Opt-in `packet-v18` now ranks at most two
+question-matching persona facts/claims, within existing budgets. On the original 17 sample-2 probes, three-round
+case majority improves 9 to 10 with the old trace options retained. With explicitly recorded current options,
+it improves 12 to 14; both original company and first-gate questions pass 3/3. No new majority failure was found
+in the 338-probe gate. Old `first_cue=False` still misses the first gate; unsupported grammar and tight budgets
+remain limits. See `docs/perf/phase40-persona-questions.md`. Reduced live verification, deployment and default
+adoption are pending; this does not claim v16/v17 or all persona questions are fixed.
 
 **K33 — The packet stops at ≈2,000–3,000 tokens** (resolved in 0.3.0; listed under [Resolved](#resolved)). Recall has fixed limits (5 excerpts of at most 480
 characters, 8 facts, 3 events, 3 threads), so a larger **기억 예산(토큰) / Memory budget (tokens)** leaves most of
