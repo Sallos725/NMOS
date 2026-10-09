@@ -23,10 +23,16 @@ cases, old-trace/v17 compatibility, Voyage and persona checks are recorded in
 Voyage packets adds weakly relevant emotional context as required; core combat
 evidence stays present. The first full suite ran 1,491 passed/four failed; default
 and ordinary-excerpt fixture assumptions were corrected with secret assertions
-retained, and all 17 targeted checks pass. Final full CI remains open. Three
-actual-model stories/seven questions are authorized separately (18 generative
-calls, 40 embedded texts, USD 1.50 maximum) and running; no result is claimed yet.
-The scoped review found no additional blocker. See ADR 0073.
+retained, and all 17 targeted checks pass. The general CI on `05d2825` passes 1,496 sidecar tests and 225 plugin tests.
+The reduced actual-model run used 9 generative calls/28 embedded texts and
+USD 0.25171341 conservatively accounted: positive questions 4/6 to 6/6, the one
+separate negative-selection control retained (packet review 5/7 to 7/7), 42 paired
+replays, no new failure. These are source-linked packets, not generated answers.
+Native macOS then failed 30 tests: the core regex word boundary differs from
+its patched pg_trgm classification. A compact explicit East Asian boundary fix
+passes focused Linux/default and C-collation controls; full replays, performance
+and real native CI are being rerun on this correction. Do not treat the earlier
+Linux results as proof of macOS behavior. See ADR 0073.
 The owner selected **packet-v18 as the 0.4.0 default**; code/default verification
 is implemented and focused tests pass in this unmerged candidate; the full change
 is not accepted. This supersedes older default-decision-pending paragraphs below.

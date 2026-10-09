@@ -190,3 +190,40 @@ Private local evidence: `/tmp/nmos-age76-evidence/gate/`,
 `/tmp/nmos-age76-evidence/scenarios/`, and
 `/tmp/nmos-age76-evidence/regression-diagnosis/`. Raw chat excerpts, database
 credentials and full private packet artifacts are not committed here.
+
+
+## Native portability correction (r3), verification in progress
+
+General CI on `05d2825` passed 1,496 sidecar tests (427.63 s) and 225 plugin tests,
+typecheck, build and dist equality. Native Linux x64/arm64 passed, but macOS failed
+30 tests with 1,466 passing. The direct exact-boundary query returned no Hangul
+hits despite the index checks passing. The native build already corrects macOS's
+word classification in pg_trgm; PostgreSQL core regex still used libc boundaries.
+
+The correction replaces locale-dependent word markers with explicit start/end
+or non-word guards: existing POSIX alnum/underscore plus 51 compact Unicode 15
+assigned East Asian letter/number ranges. It excludes punctuation, emoji and
+unassigned gaps, and keeps other scripts' existing locale semantics. No scoring,
+index, breadth, deadline or downstream selection change accompanies it. New
+controls failed on r2, then the keyword suite passed 57 tests and the final
+boundary controls passed four. The default and C collations cover positive
+Hangul and conflicting Han/kana/Jamo/compatibility/supplementary word boundaries.
+Real macOS CI, full gate replay and performance are pending on r3.
+
+The separately authorized fresh-provider run on frozen r2 completed in 396.42 s:
+9 generative calls, 28 embedded texts, USD 0.25171341 conservatively accounted,
+within USD 1.50. All calls reported usage; no provider error or automatic retry.
+Six positive questions improved from 4/6 to 6/6; P01's two missing-answer forms
+both changed 0/3 to 3/3. The separate unknown-neighbor negative-selection control
+passed both policies. Its empty positive oracle remains unscored, not rewritten.
+All 42 paired replays retained source attribution and budget. The company and
+first-gate answers remain; the wrong-actor source was not injected. P01 Q01 adds
+a weakly relevant required name-list excerpt while retaining both answer facts.
+This is another instance of the documented noise limitation.
+
+The lead checked all placed excerpts against the accepted raw revisions on the
+isolated databases. An independent read-only review agreed. This live set has no
+hidden lines and does not establish hidden-gate coverage or persona-event quota
+competition; those remain separate unit/replay checks. No final response model
+or PocketRisu UI was used. Query vectors are now durable, so r3 can re-evaluate
+this exact fresh extraction without any additional provider calls.

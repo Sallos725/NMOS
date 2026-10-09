@@ -102,6 +102,29 @@ _SOURCE_PARTICLES = (
 )
 
 
+# PostgreSQL's locale-dependent word boundaries exclude CJK letters on macOS,
+# unlike its patched pg_trgm. Supplement POSIX alnum/underscore with Unicode 15
+# assigned letters, letter numbers and decimal digits in these East Asian blocks:
+# Han (including supplementary extensions), Hangul/Jamo, kana, Bopomofo, Yi,
+# Tangut, Khitan, Nushu, and compatibility/halfwidth/fullwidth forms. These are
+# assigned-character ranges, not whole blocks: punctuation/emoji remain boundaries.
+# Other scripts retain the database locale's existing alnum classification.
+_CJK_WORD_RANGES = (
+    "\u1100-\u11ff\u3005-\u3007\u3021-\u3029\u3031-\u3035\u3038-\u303c"
+    "\u3041-\u3096\u309d-\u309f\u30a1-\u30fa\u30fc-\u30ff\u3105-\u312f"
+    "\u3131-\u318e\u31a0-\u31bf\u31f0-\u31ff\u3400-\u4dbf\u4e00-\ua48c"
+    "\ua960-\ua97c\uac00-\ud7a3\ud7b0-\ud7c6\ud7cb-\ud7fb\uf900-\ufa6d"
+    "\ufa70-\ufad9\uff10-\uff19\uff21-\uff3a\uff41-\uff5a\uff66-\uffbe"
+    "\uffc2-\uffc7\uffca-\uffcf\uffd2-\uffd7\uffda-\uffdc\U00016fe0-\U00016fe1"
+    "\U00016fe3\U00017000-\U000187f7\U00018800-\U00018cd5\U00018d00-\U00018d08\U0001aff0-\U0001aff3"
+    "\U0001aff5-\U0001affb\U0001affd-\U0001affe\U0001b000-\U0001b122\U0001b132\U0001b150-\U0001b152"
+    "\U0001b155\U0001b164-\U0001b167\U0001b170-\U0001b2fb\U00020000-\U0002a6df\U0002a700-\U0002b739"
+    "\U0002b740-\U0002b81d\U0002b820-\U0002cea1\U0002ceb0-\U0002ebe0\U0002f800-\U0002fa1d\U00030000-\U0003134a"
+    "\U00031350-\U000323af"
+)
+_NON_WORD = "[^[:alnum:]_" + _CJK_WORD_RANGES + "]"
+
+
 def particle_lookup(word: str) -> tuple[list[str], str] | None:
     """Cheap index guards and the exact PostgreSQL word/particle boundary check.
 
@@ -112,4 +135,4 @@ def particle_lookup(word: str) -> tuple[list[str], str] | None:
     if len(word) < MIN_HANGUL or not _HANGUL.fullmatch(word):
         return None
     return ([word + "%", "% " + word + "%"],
-            r"\m" + word + "(" + "|".join(_SOURCE_PARTICLES) + r")\M")
+            "(^|" + _NON_WORD + ")" + word + "(" + "|".join(_SOURCE_PARTICLES) + ")($|" + _NON_WORD + ")")

@@ -20,7 +20,13 @@ raw source was intact and should be available to the keyword route.
 - Under v18, allow an existing Hangul keyword followed by one explicit particle
   from a bounded list, with word boundaries on both sides. No arbitrary prefix,
   question-ending, morphology, name join, or per-scenario word is added.
-- Use an index candidate filter followed by the exact boundary check. Keep fuzzy
+- Use an index candidate filter followed by the exact boundary check.
+  PostgreSQL's locale-dependent word markers failed on native macOS even though
+  the separately patched pg_trgm index handled Hangul. The boundary now uses
+  POSIX alnum/underscore plus compact, explicit Unicode 15 assigned East Asian
+  letter/number ranges. Punctuation and emoji remain boundaries; other scripts
+  retain the configured locale's existing alnum semantics. This does not change
+  normalizer output or the index candidate prefilter. Keep fuzzy
   admission at 0.8, the excerpt floor at 0.5, and all active/accepted/cut/context,
   stale, secret, count, rarity and deadline rules. The candidate query plan and
   measured cost are acceptance requirements, not assumed from an index name.

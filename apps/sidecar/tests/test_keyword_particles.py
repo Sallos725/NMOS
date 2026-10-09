@@ -298,7 +298,6 @@ def test_supplement_sql_has_only_the_legacy_words_remaining_slice_and_keeps_lega
 
 @pytest.mark.parametrize("word", ["민지", "나나"])
 def test_coarse_envelope_covers_unicode_boundaries_and_repeated_syllables(client, migrated, word):
-    from nmos_sidecar.keywords import _SOURCE_PARTICLES
     from nmos_sidecar.packet import clean_text
 
     positives = [f"{word}는 나침반을 감췄다.", f"어느 날 {word}는 나침반을 감췄다.",
@@ -315,13 +314,62 @@ def test_coarse_envelope_covers_unicode_boundaries_and_repeated_syllables(client
     sync(client, chat)
     with psycopg.connect(migrated, row_factory=dict_row) as conn:
         head = conn.execute("SELECT head_commit_id FROM conversation").fetchone()["head_commit_id"]
-        pattern = r"\m" + word + "(" + "|".join(_SOURCE_PARTICLES) + r")\M"
-        oracle = conn.execute("SELECT rt.clean_content AS clean FROM active_membership am JOIN source_revision sr"
+        oracle = conn.execute("SELECT rt.clean_content AS clean, word_similarity(%s,rt.clean_content)>=0.8::real AS fuzzy"
+                              " FROM active_membership am JOIN source_revision sr"
                               " ON sr.id=am.source_revision_id JOIN revision_text rt ON rt.source_revision_id=sr.id"
-                              " AND rt.normalizer='clean-v3' WHERE am.commit_id=%s AND sr.lifecycle='accepted'"
-                              " AND (word_similarity(%s,rt.clean_content)>=0.8::real OR rt.clean_content ~ %s)",
-                              (head, word, pattern)).fetchall()
+                              " AND rt.normalizer='clean-v3' WHERE am.commit_id=%s AND sr.lifecycle='accepted'",
+                              (word, head)).fetchall()
     rows, mode = keyword_rows(migrated, [word], particles=True)
-    assert mode == "on" and {r["clean"] for r in rows} == {r["clean"] for r in oracle}
-    assert {clean_text(body) for body in positives} <= {r["clean"] for r in rows}
+    # The fuzzy SQL result plus authored exact-source gold is independent of
+    # PostgreSQL locale classification and the production boundary representation.
+    expected = {r["clean"] for r in oracle if r["fuzzy"]} | {clean_text(body) for body in positives}
+    assert mode == "on" and {r["clean"] for r in rows} == expected
     assert not (set(negatives) & {r["clean"] for r in rows})
+
+
+@pytest.mark.parametrize("collation", ["default", "C"])
+def test_exact_particle_boundaries_do_not_depend_on_cjk_locale_classes(db, collation):
+    from nmos_sidecar.keywords import particle_lookup
+
+    _, pattern = particle_lookup("민지")
+    # C emulates the missing CJK word classes without requiring a macOS runner.
+    expression = 'body COLLATE "C"' if collation == "C" else "body"
+    punctuation = [" ", "\n", "\u2003", "(", ")", "【", "】", "。", "、", "・", "゛", "･", "🍀", "\u3097"]
+    positives = ["민지는"] + [f"{mark}민지는{mark}" for mark in punctuation]
+    # Assigned letters from BMP/supplementary Han, Hangul/Jamo and kana,
+    # including compatibility/halfwidth forms and Unicode 15 extensions.
+    letters = ["A", "z", "0", "_", "가", "ᄀ", "ㄱ", "ㆎ", "ꥠ", "ힰ", "漢", "㐀", "豈",
+               "𠀀", "𰀀", "𱍐", "あ", "カ", "𛄀", "𚿰", "ｶ", "ﾡ", "Ａ", "９", "ㄅ", "ꀀ", "𗀀", "𛅰", "\u11ff", "\u4dbf", "\U0001b167", "\U0002fa1d", "\U000323af"]
+    if collation == "default":
+        letters += ["é", "Ω", "Ж"]  # other scripts retain the database locale's alnum classification
+    negatives = [body for letter in letters for body in (f"{letter}민지는", f"민지는{letter}")]
+    rows = db.execute(f"SELECT body, {expression} ~ %(pattern)s AS matched "
+                      "FROM unnest(%(bodies)s::text[]) AS body",
+                      {"pattern": pattern, "bodies": positives + negatives}).fetchall()
+    assert {row["body"] for row in rows if row["matched"]} == set(positives)
+
+
+def test_particle_query_keeps_exact_boundaries_with_ascii_database_classification(client, migrated, monkeypatch):
+    chat = story("민지는 은빛 나침반을 감췄다.", "漢민지는 황금 열쇠를 감췄다.")
+    sync(client, chat)
+    monkeypatch.setattr(retrieval, "_PARTICLE_MATCHES", retrieval._PARTICLE_MATCHES.replace(
+        "hit.clean_content ~", 'hit.clean_content COLLATE "C" ~'))
+    rows, mode = lookup(migrated, "민지")
+    assert mode == "on" and [row["clean"] for row in rows] == ["민지는 은빛 나침반을 감췄다."]
+
+
+def test_cjk_boundary_supplement_contains_assigned_word_characters_only():
+    import unicodedata
+    from nmos_sidecar.keywords import _CJK_WORD_RANGES
+
+    assert len(_CJK_WORD_RANGES.encode("utf-8")) < 1024
+    index = 0
+    while index < len(_CJK_WORD_RANGES):
+        start = end = ord(_CJK_WORD_RANGES[index])
+        index += 1
+        if index < len(_CJK_WORD_RANGES) and _CJK_WORD_RANGES[index] == "-":
+            end = ord(_CJK_WORD_RANGES[index + 1])
+            index += 2
+        assert start <= end
+        assert all(unicodedata.category(chr(code)).startswith("L")
+                   or unicodedata.category(chr(code)) in ("Nl", "Nd") for code in range(start, end + 1))
