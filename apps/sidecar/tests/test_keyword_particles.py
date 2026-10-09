@@ -142,7 +142,7 @@ def test_particle_correction_keeps_source_visibility_filters(client, migrated, k
         assert answer not in out["packet"]["text"]
 
 
-def test_particle_lookup_uses_selective_trigram_prefilters_and_is_never_prepared(client, migrated):
+def test_particle_lookup_uses_selective_trigram_prefilters_and_is_never_prepared(client, migrated, monkeypatch):
     from nmos_sidecar.keywords import particle_lookup
 
     chat = story("민지는 은빛 나침반을 감췄다.", "차건혁은 주전자 뚜껑을 닫았다.")
@@ -163,8 +163,11 @@ def test_particle_lookup_uses_selective_trigram_prefilters_and_is_never_prepared
             index = [n for n in nodes(plan) if n.get("Index Name") == "revision_text_trgm"]
             assert index and any("~~" in n["Index Cond"] for n in index)
             assert all(n["Actual Rows"] < len(chat.messages) // 2 for n in index)
+        # This loop checks index/preparation behavior; deadline behavior has dedicated tests.
+        # Native scheduling can exhaust a 25 ms slice even for this small fixture.
+        monkeypatch.setattr(retrieval, "KEYWORD_SLICE_MS", 1000)
         for _ in range(12):
-            rows, mode = retrieval._keyword_lexical(conn, head, ["민지"], -1, 300, particles=True)
+            rows, mode = retrieval._keyword_lexical(conn, head, ["민지"], -1, 1000, particles=True)
             assert mode == "on" and len(rows) == 1
         assert not conn.execute("SELECT 1 FROM pg_prepared_statements WHERE strpos(statement, 'LIKE ANY') > 0").fetchall()
 

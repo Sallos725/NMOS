@@ -350,3 +350,15 @@ product deadlines or the candidate-preservation assertion. The deterministic
 late-success controls and both original route/word SQL-delay controls remain.
 This is a test-only correction; the frozen r4 runtime and all replay/performance
 evidence are unchanged.
+
+
+On `47c01c3`, native macOS passed 1,501 tests including all real SQL-delay and
+late-success deadline controls. One index/prepared-statement test returned an
+empty result during its twelve keyword lookups; index/selectivity assertions had
+already passed. The log does not establish that iteration's exact timing cause.
+That test now gives only its preparation-check loop a 1,000 ms test-local
+word/route allowance. It still asserts every expected source and no prepared
+particle SQL after twelve executions. The production 25 ms allowance, dedicated
+cancellation/admission tests, synthetic API stories and measured replay/performance
+budgets stay unchanged. Index/preparation correctness does not promise twelve
+successive sub-25 ms scheduling outcomes on native CI. No product source changed.
