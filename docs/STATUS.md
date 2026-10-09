@@ -1,5 +1,32 @@
 # NMOS Status
 
+## Release v0.4.0 — owner authorized 2026-10-10
+
+The owner requested the main merge, tag, publication and cleanup of integrated PRs/branches.
+PR #291 carries Stage 7, Phases 32–41 and the approved audit corrections; #280 remains excluded.
+The release metadata is 0.4.0, with `packet-v18`, `extract-v16`, `clean-v3` and migrations through 0029.
+The tag workflow must pass CI, four native builds and publication before the release is reported published.
+All pre-1.0 releases are GitHub pre-releases. No future phase is unlocked by this release decision.
+
+The deployed code candidate `adf0baa` passed CI [37941055331](https://github.com/Sallos725/NMOS/actions/runs/37941055331)
+and native [37941055301](https://github.com/Sallos725/NMOS/actions/runs/37941055301): sidecar 1,518 tests on
+Linux x64, macOS and Windows; plugin 237 tests; Linux arm64 build/smoke (no full pytest there).
+The release metadata/build fingerprint change is checked separately on PR #291 and the tag workflow.
+
+6113 runs that candidate with `packet-v18` and the existing card-bound Armor/Items/Weapons watch settings.
+The stopped originals, private database dump and PocketRisu save backup are retained. Deployment checks preserved
+all 11 inspected database table hashes, 423 raw revisions, settings and generation keys. PocketRisu on 6131 is
+1.14.0; the owner confirmed the HTTPS panel connected normally after reload. Its transient null-version error's
+root cause was not established. The nine status-configuration UI checks used isolated PocketRisu 1.13.0.
+
+Final replay: 291/314 recall, 21/24 quotes; authored scenarios 22/22; fresh extraction six positive questions
+and one negative control passed. These are packet checks, not final-answer accuracy. Known remaining misses,
+name-based rule binding and capacity/time bounds are in the 0.4.0 changelog. Fresh host-answer scoring and the
+1.0 two-week stability gate remain open; the release authorization does not turn them into passed tests.
+
+This summary supersedes the earlier candidate, deployment, default-pending and release-authorization notes below;
+those dated notes are retained as history.
+
 ## Current phase
 
 **Phase 39 amendment 2 — status configuration UX and required card binding:
@@ -9,8 +36,8 @@ separate from active rules. Unbound legacy rules remain reviewable but inactive;
 existing bound rules keep their behavior. Implementation and local verification are done:
 sidecar 1,518 tests and plugin 237 tests pass, including config rollback and preset archive restore.
 The isolated PocketRisu v1.13.0 panel passed nine real UI checks (desktop Chromium, also a 390 px viewport).
-Updated-head CI is tracked in PR #291; deployment and owner-environment checks remain separate. The current 6113 rules are both bound by name, and no live settings change
-is included. [Scope](phases/PHASE-39.md#amendment-2--explicit-card-bound-status-configuration-owner-2026-10-09).
+Updated-head CI and all four native builds passed on `adf0baa`; it is deployed on 6113.
+The current 6113 rules are both bound by name; deployment preserved live settings. Final host-answer checks remain separate. [Scope](phases/PHASE-39.md#amendment-2--explicit-card-bound-status-configuration-owner-2026-10-09).
 
 **Phase 41 — AGE-76 Korean-particle keyword correction: approved 2026-10-09.**
 Phase 39 remains current. The owner approved preserving legacy keyword scores and
@@ -48,10 +75,10 @@ packet with reduced useful context in r3. All r4 Voyage rounds match the earlier
 r2 majority, but that does not erase the observed instability. No answer oracle exists for those records,
 so hidden/budget compliance is not an accuracy score. [Scope](phases/PHASE-41.md),
 [executed evidence](perf/phase41-keyword-particles.md), ADR 0073. The correction
-has not been deployed to 6113; fresh host answers and two-week stability remain
-unverified. The existing trial install is described below.
+is deployed on 6113 at `adf0baa`; fresh host answers and two-week stability remain
+unverified. The current trial install is described above.
 
-**Live deployment update (2026-10-09, 18:44 KST):** fb095aa sidecar and worker
+**Historical deployment (2026-10-09, 18:44 KST; superseded by `adf0baa` above):** fb095aa sidecar and worker
 now run on 6113 with packet-v18 and Armor/Items/Weapons watch. Fresh private DB
 backup and startup comparison preserved all 11 inspected table hashes, config,
 source revisions and generations. Health and initial worker logs were normal.
@@ -80,7 +107,7 @@ a 14:26 KST natural retrieve subsequently recorded that exact plugin fingerprint
 Live read-only checks found six current watch flags, matching the Inspector. Repository default remains
 v16. All in `0.4.0` (the owner).
 
-**Integrated PR and trial deployment (2026-10-09):** PR #291 now targets `main` and includes the contents of
+**Historical integrated PR and trial deployment (2026-10-09; superseded above):** PR #291 now targets `main` and includes the contents of
 20 PRs (#266, #272–#279, #281–#291); #280 remains excluded. The deployed runtime commit `1e86796` passed
 sidecar/plugin and all four native CI jobs (37883424269/37883424276). The later documentation HEAD `fc588ec`
 also passed CI (37886118924/37886118946); Linux arm64's actual Smoke step passed (job 113676391801), while its
@@ -93,9 +120,8 @@ dump are retained; no main merge or release tag was made. See the audit record f
 worker leases and canon rebuild races, unextracted recall slots and event rest quotas, malformed parser settings,
 panel save failures, labels under a tiny budget, normalization CPU, query HTTP deadlines and idle upload cleanup.
 This candidate changes no schema, extractor/normalizer output, provider payload or global packet default.
-High risk: original data preservation, claim ownership, derived-memory recovery and recall selection. The 6113
-runtime remains `1e86796`; these new corrections have not been deployed. Verification and release boundaries
-are recorded in the linked follow-up; a local fix does not complete a fresh live gate or authorize a release.
+High risk: original data preservation, claim ownership, derived-memory recovery and recall selection. These corrections are now deployed on 6113 at `adf0baa`. Verification boundaries
+are recorded in the linked follow-up; the owner separately authorized release on 2026-10-10.
 
 **Authorized `0.4.0` gate corrections (2026-10-09, candidate branch work):**
 [audit and evidence boundaries](audits/0.4.0-2026-10-09.md). Missing independent fixes from

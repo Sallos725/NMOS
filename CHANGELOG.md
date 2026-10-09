@@ -3,7 +3,11 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
-## Unreleased
+## 0.4.0
+
+The third milestone, Stage 7 (forensic recall), with Phases 32–41 and the pre-release audit corrections.
+The owner authorized this release on 2026-10-10. Like every release before 1.0, it is a GitHub pre-release.
+The default is `packet-v18`; extraction stays on `extract-v16` and normalization on `clean-v3`.
 
 ### Upgrading from 0.3.0
 
@@ -155,7 +159,7 @@ Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS a
   has a `status-bar` rule. Existing rules read as before.
 - **A status window over time** (Phase 39). The Inspector's conversation page draws each status key as a lane of the
   values it held, the value now beside it and keys that never changed folded; the panel loads it when its section
-  opens. Under `packet-v17` (not the default) a message that names a status key and asks how it changed ("레벨 언제
+  opens. Under `packet-v17` and the default `packet-v18`, a message that names a status key and asks how it changed ("레벨 언제
   올랐어?") gets that key's last six changes as one `<StateHistory>` line; the replay of the trial install's requests
   changed none of them.
 - **Changes the story did not make** (Phase 39). A rule's `watch` keys raise a "Needs attention" entry when an item
@@ -167,6 +171,27 @@ Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS a
   refused: it searched the same place forever and hung the sync (every version since Phase 1). A chat restored into an
   install that already had status values gets its own at the next start (Phase 38's restore left them out). A chat
   whose character name reaches NMOS after its messages is read again for the rules bound to that card.
+
+### Known limitations and verification
+
+- **Executed recall checks:** the final Phase 41 replay scored 291/314 recall probes and 21/24 exact-quote probes,
+  with no new failed majority across three runs per snapshot. Authored scenarios passed 22/22 questions; fresh
+  model extraction passed six positive questions and one negative control. These measure source-linked memory
+  packets, not final response quality. See `docs/perf/phase41-keyword-particles.md`.
+- **Recall remains incomplete:** 23 replay recall probes and three quote probes still miss. The Korean-particle
+  correction adds candidates only when the existing 50-entry list and lookup deadline have room. Persona questions
+  have a bounded route; general third-person narration and ambiguous names are not universally solved (K32, K40).
+- **Status rules bind exact character display names**, not stable card IDs. Characters with the same name share
+  the applicable rules; status values and history remain separate by conversation. Rename/rebind rules explicitly.
+  Existing rules without `card` are inactive until applied to a character. New configuration starts blank.
+- **Large chats and context:** request deadlines can still lead to a reply without memory (K1–K4); excerpts can
+  carry unrelated replaced values (K39), and summaries/large lorebooks retain their documented limits (K35–K37).
+- **Manual evidence:** final host-response quality and two-week stability are not certified by these tests.
+  The updated PocketRisu 1.14.0 trial connection was confirmed after reload; the full status-configuration UI checks
+  used PocketRisu 1.13.0. Always reload after replacing the plugin.
+- **Native bundles:** macOS is signed ad hoc. There is no built-in updater; it is deferred until after 0.4.0.
+  Back up before the first upgrade from 0.3.0 and follow the data-folder adoption instructions above.
+- The maintained full list is `docs/KNOWN-ISSUES.md`; 1.0's remaining gates are in `docs/ROADMAP-1.0.md`.
 
 ## 0.3.0
 

@@ -1,6 +1,6 @@
 {
   "name": "nmos-pocketrisu-plugin",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "NMOS thin host adapter for PocketRisu (V3 plugin)",
