@@ -91,3 +91,25 @@ def keywords(query: str) -> list[str]:
         if w not in chosen:
             chosen.append(w)
     return chosen
+
+
+# Source-side suffixes are particles only, not question/verb endings. The exact
+# word boundary is checked after an indexed candidate prefilter (PHASE-41).
+_SOURCE_PARTICLES = (
+    "에게서", "한테서", "에서는", "에게는", "한테는", "으로는", "로는", "에서도",
+    "에게", "한테", "에서", "으로", "이랑", "하고", "처럼", "까지", "부터", "보다", "마다", "밖에", "이나", "이며",
+    "은", "는", "이", "가", "을", "를", "의", "에", "도", "만", "로", "와", "과", "랑",
+)
+
+
+def particle_lookup(word: str) -> tuple[list[str], str] | None:
+    """Cheap index guards and the exact PostgreSQL word/particle boundary check.
+
+    The coarse trigram branch also covers every other word boundary. These two
+    LIKE guards avoid repeatedly scoring long messages at common start/space
+    occurrences; neither their prefix matches nor the coarse score admits a row.
+    """
+    if len(word) < MIN_HANGUL or not _HANGUL.fullmatch(word):
+        return None
+    return ([word + "%", "% " + word + "%"],
+            r"\m" + word + "(" + "|".join(_SOURCE_PARTICLES) + r")\M")

@@ -1,4 +1,4 @@
-"""PHASE-40: the opt-in persona route through sync, fact selection, trace and replay."""
+"""PHASE-40: the persona route through sync, fact selection, trace and replay."""
 from __future__ import annotations
 
 import uuid
@@ -16,8 +16,8 @@ from test_semantics import row
 from test_sidecar_integration import sync
 
 
-def test_v18_inherits_v17_without_changing_the_default():
-    assert packet.DEFAULT_POLICY == "packet-v16"
+def test_v18_inherits_v17_and_is_the_owner_selected_default():
+    assert packet.DEFAULT_POLICY == "packet-v18"
     assert "packet-v18" in packet.POLICIES
     for name, policies in vars(packet).items():
         if name.endswith("_POLICIES") and "packet-v17" in policies:

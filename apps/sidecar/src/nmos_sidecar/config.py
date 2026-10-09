@@ -73,8 +73,10 @@ class Settings:
     embed_query_instruction: str = field(default_factory=lambda: os.environ.get("NMOS_EMBED_QUERY_INSTRUCTION", "auto"))
     trace_retention_days: int = field(default_factory=lambda: int(os.environ.get("NMOS_TRACE_RETENTION_DAYS", "30")))
     # Packet compiler (ADR 0027, 0032, 0034, 0036, 0038, 0040, 0041, 0043, 0049, 0053, 0063, 0066, 0067, 0068). Empty or
-    # unknown: `packet.DEFAULT_POLICY` (packet-v14: packet-v13 that knows what each line is for — labels, and supportive
-    # memory that rests after `rest_after` placements no reply used; packet-v13: packet-v12 with the quote route for
+    # unknown: `packet.DEFAULT_POLICY` (packet-v18: explicit persona questions and bounded Korean particle recall;
+    # packet-v17: status history; packet-v16: named facts by words; packet-v15: content anchors;
+    # packet-v14: packet-v13 that knows what each line is for — labels, and supportive memory that rests after
+    # `rest_after` placements no reply used; packet-v13: packet-v12 with the quote route for
     # what was said and room for the turns extraction has not reached; packet-v12: packet-v11 that knows what changed —
     # an older excerpt of a replaced value and an ended role are left out of a question about now, an excerpt's anchor
     # breaks a tie on the question's one-character words; packet-v11: packet-v10 whose excerpt lands on the answer — a

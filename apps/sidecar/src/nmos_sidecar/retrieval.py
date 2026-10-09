@@ -41,7 +41,7 @@ from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POL
 from .state import current_state, history as state_history
 from .threads import relevant_threads, similarity
 from .vectors import vector_candidates
-from .keywords import keywords
+from .keywords import keywords, particle_lookup
 
 CANDIDATE_LIMIT = 50
 # packet-v17 (PHASE-39 Q3b): a message that asks how a status value changed: the past (HISTORY_CUE), when, how much,
@@ -106,6 +106,9 @@ RRF_K = 60
 # this word_similarity bar, near an exact match of the word. A keyword in more than BROAD_LIMIT head messages, or in
 # more than half of them, names what every scene holds (a main character) and is dropped.
 KEYWORD_THRESHOLD = 0.8
+# Index envelope only: a whole two-syllable keyword before a particle retains
+# at least two of its three boundary trigrams. Exact admission is checked below.
+PARTICLE_PREFILTER = 0.6
 # Each keyword's lookup gets at most this long; a word that takes longer is as common as a dropped one (a two-syllable
 # word's three trigrams can leave the index thousands of long messages to recheck), so it is dropped and the other
 # keywords still run (measured at 10,000 messages: 2–3 ms for a rare word, 37 ms for one capped at 201 matches).
@@ -253,6 +256,7 @@ class RecallOptions:
     summarize_key: str | None = None  # summaries of this generation in <Story> (packet-v8, ADR 0043); None: off
     canon_key: str | None = None  # canon facts of this generation (ADR 0047); None: off
     lexical_keywords: bool = True  # the keyword route (ADR 0052); a trace that did not record it replays with it off
+    keyword_particles: bool = True  # PHASE-41: v18 exact Korean particle hits; old traces default off
     first_cue: bool = True  # how it started, when the message asks (ADR 0056); a trace without it replays with it off
     history_marks: bool = True  # earlier versions only under marks that cover them (ADR 0038 amendment 1); same replay rule
     name_variants: bool = True  # a given name, a Hangul spelling of a romanized name (ADR 0058); same replay rule
@@ -269,7 +273,7 @@ class RecallOptions:
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
 RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit", "vector_min_sim", "query_prefix",
             "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator", "summarize_key", "canon_key",
-            "lexical_keywords", "first_cue", "history_marks", "name_variants", "excerpt_anchor", "rest_after")
+            "lexical_keywords", "keyword_particles", "first_cue", "history_marks", "name_variants", "excerpt_anchor", "rest_after")
 CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
@@ -365,10 +369,7 @@ def _apply(conn: psycopg.Connection, settings: dict[str, str]) -> None:
 # an edit or a deletion makes a new head commit (D4), until the next autoanalyze. It could also plan a known head
 # through revision_text's primary key, checking every revision. `hit` has no other condition (the normalizer is checked
 # after it), so the trigram index is its only way in with sequential scans off.
-_MATCHES = """
-    WITH hit AS MATERIALIZED (
-        SELECT source_revision_id, normalizer FROM revision_text WHERE %(q)s <%% clean_content
-    )
+_MATCHES_HEAD = """
     SELECT sr.id
     FROM hit
     JOIN active_membership am ON am.source_revision_id = hit.source_revision_id
@@ -379,6 +380,23 @@ _MATCHES = """
       AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
       AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
       AND hit.normalizer = %(norm)s
+    """
+_MATCHES = """
+    WITH hit AS MATERIALIZED (
+        SELECT source_revision_id, normalizer FROM revision_text WHERE %(q)s <%% clean_content
+    )
+    """ + _MATCHES_HEAD + " LIMIT %(limit)s"
+# Exact-particle lookup only, after legacy keyword lookups (PHASE-41). The
+# coarse trigram envelope covers every word boundary; two cheap LIKE guards
+# avoid expensive trigram rechecks for common start/space-prefixed occurrences.
+# Both boundaries and the finite particle suffix are checked before counting.
+_PARTICLE_MATCHES = """
+    WITH hit AS MATERIALIZED (
+        SELECT source_revision_id, normalizer, clean_content FROM revision_text
+        WHERE clean_content LIKE ANY(%(prefixes)s) OR %(q)s <%% clean_content
+    )
+    """ + _MATCHES_HEAD + """
+      AND hit.clean_content ~ %(particle)s
     LIMIT %(limit)s
     """
 
@@ -425,10 +443,12 @@ def _lexical_candidates(conn: psycopg.Connection, head: UUID, ids: list[UUID], q
 
 
 def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut: int, timeout_ms: int,
-                     upto: int | None = None) -> tuple[list[dict[str, Any]], str]:
+                     upto: int | None = None, *, particles: bool = False) -> tuple[list[dict[str, Any]], str]:
     """The keyword route (ADR 0052): messages holding the message's keywords, scored by the keywords' rarity
     (log of messages over matches, summed), best first, and the trace mode: "on", "none" (no keyword), "too_broad"
-    (every keyword dropped as too common) or "timeout". All keywords share one budget of `timeout_ms`."""
+    (every keyword dropped as too common) or "timeout". All keywords share one budget of `timeout_ms`.
+    With particles, exact additions spend only each word's unused slice and follow the unchanged legacy list.
+    """
     if not words:
         return [], "none"
     counted: list[int] = []
@@ -451,14 +471,21 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
 
     deadline = time.perf_counter() + timeout_ms / 1000  # every statement of the route runs before it
 
-    def within(most: float | None = None) -> None:
+    def within(most: float | None = None, *, threshold: float | None = None) -> None:
         """This connection's statement timeout: what is left of the route's budget (at most `most` ms)."""
         left = (deadline - time.perf_counter()) * 1000
         if left < 1:
             raise psycopg.errors.QueryCanceled()
-        _apply(conn, {"statement_timeout": str(max(1, int(left if most is None else min(left, most))))})
+        settings = {"statement_timeout": str(max(1, int(left if most is None else min(left, most))))}
+        if threshold is not None:
+            settings["pg_trgm.word_similarity_threshold"] = str(threshold)
+        _apply(conn, settings)
 
     weights: dict[Any, float] = {}
+    additions: dict[Any, float] = {}
+    # Only complete, non-broad legacy lookups can supply a trustworthy combined
+    # denominator. Each supplemental lookup spends the same word's unused slice.
+    supplements: list[tuple[str, set[UUID], float]] = []
     found = dropped = 0
     try:
         with conn.transaction():  # savepoint: a cancelled statement does not abort the request
@@ -467,8 +494,9 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
             _apply(conn, {"pg_trgm.word_similarity_threshold": str(KEYWORD_THRESHOLD), "enable_seqscan": "off",
                           "enable_indexscan": "off"})
             for word in words:
+                started = time.perf_counter() if particles else 0.0
                 try:
-                    with conn.transaction():  # a word past its slice is dropped; the others still run
+                    with conn.transaction():  # the original legacy lookup and its original slice
                         within(KEYWORD_SLICE_MS)
                         ids = _lexical_matches(conn, head, word, cut, BROAD_LIMIT + 1, upto)
                 except psycopg.errors.QueryCanceled:
@@ -477,7 +505,10 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
                     found += 1
                     dropped += 1
                     continue
+                remaining = KEYWORD_SLICE_MS - (time.perf_counter() - started) * 1000 if particles else 0.0
                 if not ids:
+                    if particles:
+                        supplements.append((word, set(), remaining))
                     continue
                 found += 1
                 within()
@@ -485,11 +516,47 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
                 if len(ids) > BROAD_LIMIT or len(ids) * 2 > n:
                     dropped += 1
                     continue
-                weight = math.log(n / len(ids))  # at least log 2: a keyword in more than half is dropped above
+                weight = math.log(n / len(ids))  # the original rarity and order are preserved
                 for i in ids:
                     weights[i] = weights.get(i, 0.0) + weight
+                if particles:
+                    supplements.append((word, set(ids), remaining))
+            if particles and len(weights) < CANDIDATE_LIMIT:
+                for word, legacy_ids, remaining in supplements:
+                    particle = particle_lookup(word)
+                    if particle is None or remaining < 1:
+                        continue
+                    prefixes, pattern = particle
+                    try:
+                        with conn.transaction():  # losing an addition must not discard a valid legacy hit
+                            within(remaining, threshold=PARTICLE_PREFILTER)
+                            params = _matches_params(head, word, cut, BROAD_LIMIT + 1, upto)
+                            exact_ids = {r["id"] for r in conn.execute(
+                                _PARTICLE_MATCHES, params | {"prefixes": prefixes, "particle": pattern},
+                                prepare=False).fetchall()}
+                    except psycopg.errors.QueryCanceled:
+                        if (deadline - time.perf_counter()) * 1000 < 1:
+                            raise
+                        found += 1
+                        dropped += 1
+                        continue
+                    if not exact_ids:
+                        continue
+                    found += 1
+                    combined = legacy_ids | exact_ids
+                    if len(combined) > BROAD_LIMIT:
+                        dropped += 1  # already broad; no full-head count is needed
+                        continue
+                    within()
+                    n = total()
+                    if len(combined) * 2 > n:
+                        dropped += 1
+                        continue
+                    weight = math.log(n / len(combined))
+                    for i in exact_ids - weights.keys():
+                        additions[i] = additions.get(i, 0.0) + weight
             rows = []
-            if weights:
+            if weights or additions:
                 within()
                 rows = conn.execute(
                     """
@@ -500,16 +567,17 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
                     JOIN source_object so ON so.id = sr.source_object_id
                     JOIN revision_text rt ON rt.source_revision_id = sr.id AND rt.normalizer = %(norm)s
                     WHERE am.commit_id = %(head)s AND sr.id = ANY(%(ids)s)
-                    """, {"head": head, "ids": list(weights), "norm": NORMALIZER_VERSION}).fetchall()
+                    """, {"head": head, "ids": list(weights.keys() | additions.keys()), "norm": NORMALIZER_VERSION}).fetchall()
             _apply(conn, dict(previous))
     except psycopg.errors.QueryCanceled:
         return [], "timeout"
-    if not weights:
+    if not weights and not additions:
         return [], "too_broad" if found and dropped == found else "on"
     for r in rows:
-        r["keyword_score"] = round(weights[r["id"]], 4)
-    # deterministic whatever order the index returned matches in: score, then the later message, then the id
-    rows.sort(key=lambda r: (-r["keyword_score"], -r["position"], str(r["id"])))
+        r["keyword_score"] = round((weights if r["id"] in weights else additions)[r["id"]], 4)
+    # Keep the original list and weights first, then fill only its unused slots.
+    # Within each tier: score, later message, id, independent of index scan order.
+    rows.sort(key=lambda r: (r["id"] not in weights, -r["keyword_score"], -r["position"], str(r["id"])))
     return rows[:CANDIDATE_LIMIT], "on"
 
 
@@ -843,7 +911,8 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         if options.lexical_keywords:
             t0 = time.perf_counter()
             keyword, g.keyword_note = _keyword_lexical(conn, head, keywords(query), cut, options.lexical_timeout_ms,
-                                                       upto)
+                                                       upto, particles=options.keyword_particles
+                                                       and options.policy == "packet-v18")
             g.timings["keywords"] = round((time.perf_counter() - t0) * 1000, 2)
     # State, facts, threads, the scene and the summaries are read before the excerpts are chosen: none of them depends
     # on the candidates, and the query embedding answers meanwhile (ADR 0061). The excerpts follow, then what the

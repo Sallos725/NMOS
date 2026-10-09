@@ -204,7 +204,8 @@ def test_mode_hidden_trace_replays_after_source_edit_and_mode_change(migrated, d
         assert changed["status"] == "changed" and "reproduced" not in changed
 
 
-def test_narrator_hidden_only_response_offers_no_memory(migrated):
+@pytest.mark.parametrize("plain_in_context", [True, False])
+def test_narrator_hidden_rows_never_count_as_offered_memory(migrated, plain_in_context):
     from conftest import make_client
     from test_generations import LLM, conv_id
     from test_scene import _complete, _secret_chat
@@ -214,11 +215,26 @@ def test_narrator_hidden_only_response_offers_no_memory(migrated):
         chat = _secret_chat(migrated, client, _complete)
         cid = conv_id(client, chat)
         client.put(f"/v1/conversations/{cid}/memory-mode", json={"narrator": "노엘"})
-        out = recall(client, chat, "루카, 수업 작전 기억나?", in_context=[])
+        # Particle recall can find the separate, non-secret nod reply. Holding
+        # that source in context leaves only hidden candidates, as this test's
+        # original fixture intended; the other branch checks mixed visibility.
+        held = [chat.messages[1]["chatId"]] if plain_in_context else []
+        out = recall(client, chat, "루카, 수업 작전 기억나?", in_context=held)
         trace = client.get(f"/v1/trace/{out['trace_id']}").json()
-        assert out["packet"]["text"] == "" and out["packet"]["token_estimate"] == 0
-        assert out["memory"] == {"offered": 0, "cut": 0, "fits_at": None}
-        assert trace["lines"] and all(e["label"] == "hidden" for e in trace["lines"])
+        hidden = [e for e in trace["lines"] if e.get("label") == "hidden"]
+        assert hidden and all(e["why"] in {"mode_withheld", "secret_gate"} and not e["placed"] and e["tok"] == 0
+                              and not e["text"] and "content" not in e and "marks" not in e for e in hidden)
+        assert "엄마 몰래 수업 보기" not in out["packet"]["text"] and "엄마 몰래 수업 보기" not in str(hidden)
+        if plain_in_context:
+            assert out["packet"]["text"] == "" and out["packet"]["token_estimate"] == 0
+            assert out["memory"] == {"offered": 0, "cut": 0, "fits_at": None}
+            assert all(e["label"] == "hidden" for e in trace["lines"])
+        else:
+            visible = [e for e in trace["lines"] if e.get("placed")]
+            assert len(visible) == 1 and visible[0]["kind"] == "excerpt"
+            assert "루카가 고개를 끄덕였다." in visible[0]["text"]
+            # MEMORY_KINDS counts derived memory, not raw excerpts or hidden rows.
+            assert out["memory"] == {"offered": 0, "cut": 0, "fits_at": None}
         assert client.get(f"/v1/trace/{out['trace_id']}/replay").json()["reproduced"] is True
 
 

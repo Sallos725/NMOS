@@ -268,11 +268,11 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
 # asks about change (`retrieval.STATE_CHANGE_CUE`) gets, inside <State>, a <StateHistory> line of that key's last
 # changes (at most STATE_HISTORY_MAX, oldest first, each its turn and value), required as <State>'s items are.
 # packet-v18 adds bounded facts/claims for explicit third-person persona questions (PHASE-40).
-# The policy is opt-in; its generation, compiler budget and global default are unchanged.
+# The owner selected it as the default; the extractor generation and compiler budget are unchanged.
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
             "packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14",
             "packet-v15", "packet-v16", "packet-v17", "packet-v18")
-DEFAULT_POLICY = "packet-v16"  # the owner, 2026-10-08, on the replay (PHASE-36 Q3)
+DEFAULT_POLICY = "packet-v18"  # the owner, 2026-10-09; PHASE-40/41
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
              "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2,
              "packet-v11": 1.2, "packet-v12": 1.2, "packet-v13": 1.2, "packet-v14": 1.2,

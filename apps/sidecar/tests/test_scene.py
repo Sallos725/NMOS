@@ -171,8 +171,10 @@ def test_strict_mode_withholds_and_a_narrator_drops_what_they_do_not_know(migrat
         told_by_noel = recall(c, chat, "노엘, 출근 준비는? 루카는 수업 작전 기억나?", in_context=[])["packet"]["text"]
         assert "엄마 몰래 수업 보기" not in told_by_noel and "<Secret" not in told_by_noel
         assert "노엘 event: 출근 준비" in told_by_noel and "told in the first person by 노엘" in told_by_noel
-        # With nothing the narrator knows, there is no packet at all.
-        assert recall(c, chat, "루카, 수업 작전 기억나?", in_context=[])["packet"]["text"] == ""
+        # The separate, unmarked nod reply can now match a particle boundary.
+        # Holding it in context leaves only the narrator's withheld secret.
+        held = [chat.messages[1]["chatId"]]
+        assert recall(c, chat, "루카, 수업 작전 기억나?", in_context=held)["packet"]["text"] == ""
         c.put(f"/v1/conversations/{conv}/memory-mode", json={"strict": False, "narrator": "{{user}}"})
         told_by_user = recall(c, chat, "루카, 수업 작전 기억나?", in_context=[])["packet"]["text"]
         assert "엄마 몰래 수업 보기" in told_by_user  # the user's character is a holder

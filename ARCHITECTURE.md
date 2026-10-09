@@ -532,6 +532,12 @@ question endings off, names kept whole, question and stop words out) are each lo
 a keyword in more than 200 or more than half of the head messages, or not found within its 25 ms slice, is dropped;
 scores sum `log(messages / matches)` under the lexical timeout. A keyword hit is its own admission signal in fusion. An excerpt only this route found is
 left out when it repeats a secret still kept from someone. Recorded as `lexical_keywords`; older traces replay without it.
+Amendment (Phase 41, ADR 0073, owner 2026-10-09): fresh v18 requests record
+`keyword_particles`. Exact Hangul word-plus-particle matches may fill unused keyword candidate slots after the
+unchanged fuzzy list; existing weights/order and the 50-candidate cap remain. Combined fuzzy/exact breadth gates
+only additions. Lookups share the original route deadline and each word's remaining 25 ms; canceled or broad
+legacy lookups cannot authorize additions. A full old list adds nothing. Missing historical flags replay off,
+and v16/v17 bypass the correction. This changes no stored generation, canonical fact or packet activation floor.
 
 **D63 — Excerpts that fill their length (Phase 18, ADR 0053).** `packet-v10` (the default until Phase 27 made `packet-v11`
 the default, D72; available as `NMOS_PACKET_POLICY=packet-v10`) is `packet-v9` whose excerpt
@@ -694,7 +700,8 @@ can rank at most two matching facts or attributed claims about the resolved pers
 name mention and a previous-reply name mention,
 sharing the cap across both. An unshared Korean given name is accepted only on this route; ordinary persona
 mentions, entity resolution and Cast are unchanged. Existing history, event, rest, mode and token rules apply.
-The owner includes the correction in `0.4.0`; zero-call replay found no new majority failure (see `docs/perf/phase40-persona-questions.md`). The reduced live check and adoption are open; the default remains `packet-v16`.
+The owner includes the correction in `0.4.0`; zero-call replay found no new majority failure (see `docs/perf/phase40-persona-questions.md`). The reduced live host answer check is open. After actual-model synthetic verification and
+6113 trial deployment, the owner selected `packet-v18` as the 0.4.0 default (2026-10-09).
 
 **D12 — MCP is optional deep recall**, never the correctness mechanism. Tools are read-only
 and bound server-side to `(conversation, worldline, principal)` via a scope token.

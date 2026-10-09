@@ -21,17 +21,22 @@ Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS a
    not see the moved data, and started again it starts with an empty database.
 3. **Replace the plugin and the sidecar together**, then reload PocketRisu. The Status tab says whether they match and
    offers the matching plugin file.
-4. **Memory:** the default packet becomes `packet-v16` (quotes, labels and resting lines; Phases 33–36, below).
+4. **Memory:** the default packet becomes `packet-v18` (quotes, labels, resting lines, status history and explicit persona questions; Phases 33–40, below).
    `NMOS_PACKET_POLICY=packet-v12` keeps the packet of 0.3.0.
 5. **Switching between Docker and a bundle** does not carry the memory over: move it with an archive (README, "Moving
    between Docker and a bundle").
 
 ### Changes
 
-- **Explicit third-person persona questions have a bounded recall route** (`packet-v18`, opt-in; Phase 40).
+- **Korean keyword recall can recover a source missed because of a particle** (Phase 41, AGE-76).
+  Under the default `packet-v18`, an exact word such as a name followed by a supported Korean particle can
+  supply an additional raw excerpt. Existing keyword candidates keep their priority; additions use only
+  remaining candidate slots and lookup time. A full existing list still admits no additions. Historical
+  traces and explicit v16/v17 requests retain the old matching behavior.
+- **Explicit third-person persona questions have a bounded recall route** (`packet-v18`, now the default; Phase 40).
   A question about the persona's work, location or another supported kind can add at most two matching facts or
   attributed claims within the existing budgets. An unshared Korean given name works on this route without
-  changing identity or making ordinary narration boost all persona facts. The default remains `packet-v16`.
+  changing identity or making ordinary narration boost all persona facts. The owner selected `packet-v18` as the 0.4.0 default on 2026-10-09.
 - **Hidden candidates have an audit label.** The Inspector records a packet candidate excluded by a memory mode or
   secret gate as hidden, with its source, turn and reason instead of copying its body. The diagnostic rows never
   reach the model or consume packet budget, and do not affect placement, rest or echo statistics. Existing traces
@@ -81,7 +86,7 @@ Back up first (README, "Upgrade, backup and rollback"; for a bundle, quit NMOS a
   the start and names both. The `.env` beside the launcher is copied into the data folder once and read under it.
   `NMOS_DATA_DIR` (relative to the bundle: `NMOS_DATA_DIR=data` keeps the old layout) names another folder. On Windows,
   a user folder with non-English letters on a drive without short names asks once where the data goes.
-- **`packet-v16` is the default: a name in the message is not a question about everything** (Phase 36, ADR 0070). A
+- **A name in the message is not a question about everything** (Phase 36, ADR 0070). A
   message that only names a character made every fact about it required, so none of them could rest. Now how the
   character stands now or with another, its knowledge boundaries, what the message's words point at, the kind of fact
   it asks for ("무슨 일을 해", 소속, 성격 …) and facts holding its one-syllable nouns stay required; its other past events

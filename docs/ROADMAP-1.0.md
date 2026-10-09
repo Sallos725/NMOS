@@ -208,13 +208,13 @@ revealed secret ends), the strict and narrator cases in the memory evaluation, a
 turns extraction has not reached, the Inspector's source-turn page and the overuse baseline; Phase 34 carries the
 candidate labels and the overuse penalty. `0.4.0` follows Phase 34.
 
-**Progress** (2026-10-09, candidate branch; unreleased): Phases 33–36 are complete and `packet-v16` is the
-candidate's default. The historical Phase 33 replay (`docs/perf/phase33-replay.md`) put the source turn and words in
+**Progress** (2026-10-09, candidate branch; unreleased): Phases 33–36 are complete. The owner selected `packet-v18`
+as the 0.4.0 default after the Phase 40 correction and trial deployment. The historical Phase 33 replay (`docs/perf/phase33-replay.md`) put the source turn and words in
 21 of 24 exact-quote cases (`packet-v12`: 4), kept the other bench sets and added 102 ms at p95 at 10,000 messages.
 The owner dropped Phase 33's reduced live run (2026-10-08, Q10 d). Phase 34 added the labels and resting lines;
 Phases 35–36 corrected excerpt anchors and which named facts are required. Phase 39's status history and flags are
-implemented, with `packet-v17` opt-in: its default remains a decision. Watch setup was already approved (reaffirmed
-2026-10-09); the 6113 backup's saved rules still lacked it, so application is pending. The owner also requested the
+implemented and inherited by v18. The 6113 trial has v18 and the approved Armor/Items/Weapons watch setup
+(see `STATUS.md` for deployment evidence). The owner also requested the
 missing Phase 34 `hidden` label: the candidate now records redacted gate diagnostics and shows the Inspector chip,
 without changing the model-facing packet (AGE-64, `docs/audits/0.4.0-2026-10-09.md`). The `0.4.0` release
 gates and publication remain open; historical phase evidence does not establish current-candidate CI or a release.

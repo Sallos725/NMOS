@@ -4,7 +4,7 @@ Status: approved for implementation and measurement, 2026-10-09. After reviewing
 the question-limited proposal and briefly deferring it, the owner explicitly brought
 AGE-18 / K32 back into 0.4.0, before the two-week real-use period. Implementation and zero-call replay are done; see
 [measurement](../perf/phase40-persona-questions.md). The reduced live check remains open;
-default promotion is not approved. Phase 39 remains current.
+default promotion to packet-v18 was approved by the owner on 2026-10-09. Phase 39 remains current.
 This is a recall correction beside it, not a roadmap stage.
 
 ## Evidence and cause
@@ -54,7 +54,8 @@ no persona-name bonus. Do not simply substitute the persona name with `my`/`내`
    The cap is a proposed measurement parameter, not an established optimum.
 4. Implement behind a new `packet-v18`, based on v17. Keep v16/v17 and old-trace
    replay unchanged. Neither the global default nor the 6113 policy changes merely
-   because the experimental implementation exists.
+   because the experimental implementation exists. Subsequent owner decisions:
+   deploy v18 to 6113 (2026-10-09, done) and select v18 for the 0.4.0 default.
 
 ### Evidence-guided details (before candidate replay)
 

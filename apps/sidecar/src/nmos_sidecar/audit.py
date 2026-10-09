@@ -156,6 +156,7 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     recorded = {k: v for k, v in (t.get("recall_options") or {}).items() if k in RECORDED}
     recorded.setdefault("canon_key", None)  # a request from before canon facts read none (ADR 0047)
     recorded.setdefault("lexical_keywords", False)  # nor did one from before the keyword route (ADR 0052)
+    recorded.setdefault("keyword_particles", False)  # PHASE-41: preserve historical keyword matching
     recorded.setdefault("first_cue", False)  # nor one from before the first cue (ADR 0056)
     recorded.setdefault("history_marks", False)  # nor one from before history under its marks (ADR 0038 am. 1)
     recorded.setdefault("name_variants", False)  # nor one from before given and romanized names (ADR 0058)

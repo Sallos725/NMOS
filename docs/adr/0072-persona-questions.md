@@ -1,8 +1,8 @@
 # 0072 — Explicit questions about the persona (`packet-v18`)
 
 Status: implementation scope accepted by the owner, 2026-10-09 (AGE-18,
-PHASE-40); zero-call replay and synthetic latency measured, reduced live check and
-default decision pending. See [evidence](../perf/phase40-persona-questions.md). Amends ADR 0023 decision 4
+PHASE-40); zero-call replay and synthetic latency measured, reduced live host answer check pending. The owner selected packet-v18 as the
+0.4.0 default on 2026-10-09, after the actual-model synthetic check and trial deployment. See [evidence](../perf/phase40-persona-questions.md). Amends ADR 0023 decision 4
 only for the question route below. Resolution, extraction generations and ordinary
 persona-name mentions are unchanged.
 
@@ -17,8 +17,9 @@ is an attributed identity claim, not a narrated fact.
 
 ## Decision
 
-- Add opt-in `packet-v18`, inheriting every v17 capability. The repository default
-  remains v16 and existing v16/v17 traces keep their rules.
+- Add `packet-v18`, inheriting every v17 capability. Initially opt-in; the owner
+  selected it as the 0.4.0 default on 2026-10-09. Explicit v16/v17 overrides and
+  existing traces keep their rules.
 - Require an explicit question whose subject is the resolved persona in the same
   clause. Recognize bounded Korean/English forms for the person's identity/work,
   membership, traits, knowledge, location, possessions and past events. Indirect
@@ -46,5 +47,5 @@ mention bonus. A full candidate pool, a tight token budget, unsupported question
 grammar or missing extracted evidence may still prevent an answer. A synthetic
 success alone is insufficient: PHASE-40 requires original K32 improvement and
 three-round replay without a new failed or forbidden case, followed by the relevant
-live check. No extraction repair, default promotion or release completion is claimed
-by this decision record.
+live check. Default promotion is the recorded owner decision above. No extraction repair,
+host answer-quality gate completion or release completion is claimed by it.
