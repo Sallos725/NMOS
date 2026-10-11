@@ -260,8 +260,8 @@ Done when:
 - stages 4–7: met; Stage 7 released in `v0.4.0`.
 - Phase 23: met; `v0.3.0` and `v0.4.0` each carry the four portable bundles.
 - evaluation against `0.1.x`: not yet run as one category-by-category comparison on a release candidate.
-- upgrades: fixtures from `v0.1.0-beta.7`, `.16`, `.21`, `v0.2.0` and `v0.3.0` pass to the latest migration (0029);
-  a `v0.4.0` fixture is still to be recorded.
+- upgrades: met; fixtures from `v0.1.0-beta.7`, `.16`, `.21`, `v0.2.0`, `v0.3.0` and `v0.4.0` pass to the latest
+  migration (0029). The `v0.4.0` fixture applies nothing today and is checked by the first migration after it.
 - two quiet weeks: not started; its start commit and date are the owner's to set. Phase 43 and the Phase 41
   amendments merged on 2026-10-11 are heavy changes in this sense.
 - known issues: K45–K50 have the owner's timing (AGE-56); the other open rows are not yet classified as host limits,
