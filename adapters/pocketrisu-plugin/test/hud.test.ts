@@ -37,6 +37,12 @@ describe('request outcome', () => {
     expect(view(s, 10 + OUTCOME_MS, 'ko')).toBeNull();
   });
 
+  it('a request skipped for want of the user turn says so', () => {
+    const done = run([[{ type: 'request-start' }, 0], [{ type: 'request-end', outcome: 'skipped', chars: 0, conversationId: null }, 1]]);
+    expect(view(done, 2, 'ko')).toEqual({ kind: 'warn', text: '⚠ 건너뜀: 이번 메시지를 프롬프트에서 못 찾음', fraction: null });
+    expect(view(done, 2, 'en')?.text).toBe('⚠ Skipped: this message is not in the prompt');
+  });
+
   it('an abandoned request clears the running pill but not a finished one', () => {
     expect(view(run([[{ type: 'request-start' }, 0], [{ type: 'request-abandon' }, 1]]), 1, 'ko')).toBeNull();
     const done = run([[{ type: 'request-end', outcome: 'injected', chars: 5, conversationId: null }, 0], [{ type: 'request-abandon' }, 1]]);

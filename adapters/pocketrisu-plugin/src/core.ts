@@ -104,7 +104,7 @@ export interface LastRequest {
   packetChars: number;
   /** The memory text this request carried, for the status tab; kept in memory only. */
   packet: string;
-  outcome: 'injected' | 'nothing-relevant' | 'failed';
+  outcome: 'injected' | 'nothing-relevant' | 'failed' | 'skipped';
   error?: string;
   /** The deadline this request had. */
   deadlineMs: number;
@@ -414,8 +414,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
 
       const chat = await within(host.currentChat(), deadline, 'the host chat read');
       const messages: HostMessage[] = Array.isArray(chat?.message) ? chat!.message : [];
-      const turn = userTurnIndex(prompt, messages); // D13: the chat's latest user turn is in this prompt
-      if (!chat?.id || turn < 0) {
+      if (!chat?.id) {
         emit({ type: 'request-abandon' });
         return prompt;
       }
@@ -423,6 +422,18 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       // Switched off for this chat (ADR 0048): nothing of it is read further or sent, and no packet goes in.
       if (settings.offChats?.includes(chat.id)) {
         emit({ type: 'request-end', outcome: 'chat-off', chars: 0, conversationId: null });
+        return prompt;
+      }
+      const turn = userTurnIndex(prompt, messages); // D13: the chat's latest user turn is in this prompt
+      if (turn < 0) {
+        // No memory without the turn to put it before; said where the owner looks, never silently (it was).
+        const reason = 'the latest user message was not found in the prompt';
+        host.warn('[NMOS] memory skipped for this request:', reason, { promptMessages: prompt.length,
+          chatMessages: messages.length });
+        last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: 0, packet: '', outcome: 'skipped',
+          error: reason, deadlineMs: settings.deadlineMs };
+        emit({ type: 'request-end', outcome: 'skipped', chars: 0, error: reason,
+          conversationId: conversations.get(chat.id) ?? null });
         return prompt;
       }
 

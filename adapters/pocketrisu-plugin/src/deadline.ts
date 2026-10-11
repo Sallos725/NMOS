@@ -15,7 +15,7 @@ export interface DeadlineAdvice {
 }
 
 export interface RequestTiming {
-  outcome: 'injected' | 'nothing-relevant' | 'failed';
+  outcome: 'injected' | 'nothing-relevant' | 'failed' | 'skipped';
   ms: number;
   deadlineMs: number;
   error?: string;

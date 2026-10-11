@@ -3,6 +3,13 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
+## Unreleased
+
+- **A request NMOS skips because the prompt does not hold the latest user message is no longer silent.** The
+  progress display shows "⚠ Skipped: this message is not in the prompt", the Status tab's last request says so,
+  and the console logs the reason. Before, the display cleared and the Status tab kept the previous request's
+  result. The request still goes out unchanged.
+
 ## 0.4.0
 
 The third milestone, Stage 7 (forensic recall), with Phases 32–42 and the pre-release audit corrections.

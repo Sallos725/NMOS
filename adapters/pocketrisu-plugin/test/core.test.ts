@@ -706,8 +706,8 @@ describe('activity events (progress display)', () => {
     expect(hasPacket(out)).toBe(true);
   });
 
-  it('announces a cached reuse too, and a prompt without a user turn is abandoned', async () => {
-    const { host } = fakeHost(withConversation);
+  it('announces a cached reuse too, and says when a prompt without the user turn is skipped', async () => {
+    const { host, warn } = fakeHost(withConversation);
     const events: ActivityEvent[] = [];
     const adapter = createAdapter(host, (e) => events.push(e));
     await adapter.beforeRequest(prompt, 'model');
@@ -715,8 +715,14 @@ describe('activity events (progress display)', () => {
     expect(events.slice(2)).toEqual([{ type: 'request-start' },
       { type: 'request-end', outcome: 'injected', chars: PACKET.length, conversationId: 'conv-1', reused: true, vectors: null }]);
     events.length = 0;
-    await adapter.beforeRequest([{ role: 'system', content: 'narrator' }, { role: 'user', content: 'unrelated text' }], 'model');
-    expect(events).toEqual([{ type: 'request-start' }, { type: 'request-abandon' }]);
+    const unrelated = [{ role: 'system', content: 'narrator' }, { role: 'user', content: 'unrelated text' }] as PromptMessage[];
+    expect(await adapter.beforeRequest(unrelated, 'model')).toEqual(unrelated);
+    // Not silent: a skipped request shows on the HUD and the status tab, with the reason in the console.
+    expect(events).toEqual([{ type: 'request-start' }, { type: 'request-end', outcome: 'skipped', chars: 0,
+      error: expect.stringContaining('not found in the prompt'), conversationId: 'conv-1' }]);
+    expect((await adapter.status()).last).toMatchObject({ outcome: 'skipped', packetChars: 0 });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('memory skipped'), expect.stringContaining('not found'),
+      expect.objectContaining({ promptMessages: 2 }));
   });
 
   it('announces background work after a reply, for the conversation it knows', async () => {
