@@ -44,6 +44,14 @@ GigaTrans original-only derived text and the GT-CTRL button marker are deferred 
 
 ## Current phase
 
+**Phase 43 — status windows by their shape, per chat, told as changes: approved 2026-10-11 (Q1–Q6 as recommended); step 2 (S4, the packet) implemented, in review.**
+A built-in detector replaces card-name-bound regex setup, the panel shows the open chat only, and the packet carries
+core status values plus changes even when the prompt strips status bars. Prototype detector on the trial install's
+copy: equal to the bound rules on every reply of both configured cards, no recurring false block. Six owner
+questions answered as recommended. [Spec](phases/PHASE-43.md).
+S4 on the trial install's copy: the current date reached 15 of 15 replayed requests of the card it was missing from
+(0 before), its status told in 280 instead of 469 characters, the 23-key card's in 790 instead of 1,805.
+
 **Phase 41 amendment 2 — no supplemental lookup a legacy lookup already covers: approved by the owner, 2026-10-11.**
 A read-only replay of the trial install's live packet-v18 requests (a private restored copy) measured the particle
 supplement at about +30 ms median on the keyword route and found that it changed one request's candidates of 33
