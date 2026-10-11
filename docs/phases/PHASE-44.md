@@ -58,8 +58,10 @@ Production runs v1.14.0 (`package.json` in the running container, 2026-10-12). T
 S1. **One read-only tool, `nmos_recall(question)`**, registered as `plugin:nmos`.
 - Its schema has a single string field (at most 300 characters). It has no conversation, chat, character or
   principal argument the model could write.
-- The plugin binds `(conversation, worldline, principal)` from the current host snapshot, as `/v1/retrieve` does,
-  and sends the scope with the question (D12).
+- The plugin takes the scope from the current host snapshot and the turn's retrieve: `chat_id`, `active_commit`
+  (the worldline head) and `manifest_hash`, the same fields `RetrieveRequest` sends today. The sidecar resolves the
+  conversation and the principal from them, as it does for `/v1/retrieve`, and refuses a scope whose head is no
+  longer current (D12).
 - The tool description says that the packet comes first, that this is a lookup for a specific missing record, and
   that an unchanged query that already failed should not be repeated.
 
@@ -70,8 +72,10 @@ S2. **A sidecar recall endpoint on the forensic path.**
 
 S3. **Offered only when it can help.**
 - `getToolList` returns an empty list unless the panel toggle is on (Q4) and NMOS is on for the chat.
-- It also needs the turn's `/v1/retrieve` response to say that the archive holds candidates the packet did not
-  place. That flag rides on the retrieve response, and the plugin keeps it locally (H-f).
+- It also needs the turn's `/v1/retrieve` response to show that the archive holds more than the packet placed.
+  `RetrieveResponse.memory.cut` (memory lines left out for the budget, ADR 0036) already says so for memory lines.
+  Whether excerpts and quote candidates need a flag of their own is decided in step 1. The plugin keeps the signal
+  locally (H-f).
 
 S4. **Fail open, bounded.**
 - A recall error or timeout returns a short fixed text ("NMOS has no record for this" / "NMOS memory is
