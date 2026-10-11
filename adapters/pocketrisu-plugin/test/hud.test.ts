@@ -37,6 +37,12 @@ describe('request outcome', () => {
     expect(view(s, 10 + OUTCOME_MS, 'ko')).toBeNull();
   });
 
+  it('a request that sent host-rewritten replies to memory says how many', () => {
+    const done = run([[{ type: 'request-start' }, 0], [{ type: 'request-end', outcome: 'injected', chars: 12, rewritten: 2,
+      conversationId: null }, 1]]);
+    expect(view(done, 2, 'ko')?.text).toBe('✓ 기억 주입 (12자) · 스크립트 수정 2개 반영');
+  });
+
   it('an abandoned request clears the running pill but not a finished one', () => {
     expect(view(run([[{ type: 'request-start' }, 0], [{ type: 'request-abandon' }, 1]]), 1, 'ko')).toBeNull();
     const done = run([[{ type: 'request-end', outcome: 'injected', chars: 5, conversationId: null }, 0], [{ type: 'request-abandon' }, 1]]);

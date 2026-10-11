@@ -419,6 +419,7 @@ const STRINGS = {
   'hud.done': ['✓ 처리 완료', '✓ Processing done'],
   'hud.reused': [' · 재사용', ' · reused'],
   'hud.lexical': [' · 어휘 검색만', ' · lexical only'],
+  'hud.rewritten': [' · 스크립트 수정 {n}개 반영', ' · {n} script-edited replies picked up'],
   'hud.made.facts': ['사실 {n}개 추가', 'facts +{n}'],
   'hud.made.summaries': ['요약 {n}개 추가', 'summaries +{n}'],
   // progress display: panel

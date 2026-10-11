@@ -5,13 +5,28 @@ import type { Body, HostChat, HostMessage, ManifestMessage, ReconcileRequest } f
 export const HASH_FORMAT_VERSION = 1;
 const SPECIAL_COMMENT = /\{\{specialcomment::[^]*?::\}\}/g;
 
-export function selectedContent(message: HostMessage | undefined): string {
+function selectedSwipe(message: HostMessage | undefined): string | undefined {
   const swipes = message?.swipes;
   const id = message?.swipeId;
-  if (Array.isArray(swipes) && Number.isInteger(id) && (id as number) >= 0 && (id as number) < swipes.length) {
-    return swipes[id as number] ?? '';
-  }
-  return message?.data ?? '';
+  return Array.isArray(swipes) && Number.isInteger(id) && (id as number) >= 0 && (id as number) < swipes.length
+    ? swipes[id as number] ?? '' : undefined;
+}
+
+/**
+ * The text PocketRisu shows and sends: `data`. A swipe switch copies the chosen swipe into it (HOST-FACTS S3), while
+ * Lua `setChat`, trigger `modifychat`, a continue and the reparse after a generation rewrite `data` alone and leave the
+ * swipe as generated. Read from the swipe, memory kept a reply the model no longer saw (a status bar a trigger had
+ * corrected). Only a message without `data` falls back to its selected swipe.
+ */
+export function selectedContent(message: HostMessage | undefined): string {
+  if (typeof message?.data === 'string') return message.data;
+  return selectedSwipe(message) ?? '';
+}
+
+/** Whether the host rewrote this message after it was generated: its `data` is not its selected swipe. */
+export function rewritten(message: HostMessage): boolean {
+  const swipe = selectedSwipe(message);
+  return swipe !== undefined && typeof message.data === 'string' && message.data !== swipe;
 }
 
 export function revisionMetadata(message: HostMessage): Record<string, unknown> {
@@ -51,6 +66,8 @@ export function hashPayload(message: HostMessage): Record<string, unknown> {
 /** Bodies by `bodyKey`, built only for the keys the sidecar asks for. */
 export interface Bodies {
   get(key: string): Body | undefined;
+  /** Whether the message behind `key` was rewritten by the host after it was generated (`rewritten`). */
+  rewritten(key: string): boolean;
 }
 
 export interface BuiltManifest {
@@ -129,6 +146,10 @@ function finish(chat: HostChat, messages: HostMessage[], entries: ManifestMessag
       const e = entries[i] as ManifestMessage;
       return { host_logical_id: e.host_logical_id, revision_hash: e.revision_hash,
         content: normalizeText(selectedContent(m)), metadata: revisionMetadata(m) };
+    },
+    rewritten(key) {
+      const i = index.get(key);
+      return i !== undefined && rewritten(messages[i] as HostMessage);
     },
   };
   return {

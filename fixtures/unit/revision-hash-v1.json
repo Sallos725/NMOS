@@ -85,9 +85,9 @@
       "swipeCount": 2,
       "specialComments": []
     },
-    "content": "A",
-    "canonical": "{\"chatId\":\"c3\",\"disabled\":null,\"generationId\":\"g3\",\"isComment\":null,\"name\":null,\"otherUser\":null,\"role\":\"char\",\"saying\":null,\"selectedContent\":\"A\",\"swipeId\":0,\"v\":1}",
-    "revision_hash": "a6d568a1d2553566ef32540161048c56cb58afc968d093d1536618bfb11fdd82"
+    "content": "B",
+    "canonical": "{\"chatId\":\"c3\",\"disabled\":null,\"generationId\":\"g3\",\"isComment\":null,\"name\":null,\"otherUser\":null,\"role\":\"char\",\"saying\":null,\"selectedContent\":\"B\",\"swipeId\":0,\"v\":1}",
+    "revision_hash": "19169b26f7de687c8079864b9bd52945aec48316ab1c52adb576b338b319a3e0"
   },
   {
     "metadata": {

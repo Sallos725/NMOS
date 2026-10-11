@@ -3,6 +3,14 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
+## Unreleased
+
+- **Memory reads the reply the model is sent, after a trigger or Lua rewrote it.** The plugin took a rerolled reply's
+  text from its selected swipe, which a trigger (`modifychat`), Lua `setChat`, a continue or the reparse after a
+  generation do not update; memory then kept a reply, status bar included, the model no longer saw. It now reads
+  `data`, the text PocketRisu shows and sends. Replies already rewritten are sent again once, which re-extracts them,
+  and the progress display says " · N script-edited replies picked up" when that happens.
+
 ## 0.4.0
 
 The third milestone, Stage 7 (forensic recall), with Phases 32–42 and the pre-release audit corrections.

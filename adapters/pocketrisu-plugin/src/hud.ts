@@ -25,7 +25,9 @@ export type ActivityEvent =
   | { type: 'request-abandon' }
   | { type: 'request-end'; outcome: Outcome; chars: number; error?: string; deadlineMs?: number; conversationId: string | null;
       /** A packet kept from an earlier identical request (a reroll), and whether its recall searched vectors (K34). */
-      reused?: boolean; vectors?: Vectors | null }
+      reused?: boolean; vectors?: Vectors | null;
+      /** Replies the host rewrote after generating them, sent to memory by this request. */
+      rewritten?: number }
   | { type: 'background'; conversationId: string | null };
 
 export type HudEvent = ActivityEvent | { type: 'coverage'; coverage: Coverage } | { type: 'reset' };
@@ -33,7 +35,7 @@ export type HudEvent = ActivityEvent | { type: 'coverage'; coverage: Coverage } 
 export interface HudState {
   request: null | { phase: 'running' }
     | { phase: 'done'; outcome: Outcome; chars: number; error?: string; deadlineMs?: number; until: number;
-        reused?: boolean; vectors?: Vectors | null };
+        reused?: boolean; vectors?: Vectors | null; rewritten?: number };
   /** `since`: what the chat held when the work was first seen; `made`: what it added by the end (PHASE-17 Q6). */
   // `failedSince`: failures already there when the work was first seen; `failed`: the ones it added.
   progress: null | { coverage: Coverage; since: Produced | null; failedSince: number }
@@ -57,7 +59,8 @@ export function reduce(state: HudState, event: HudEvent, now: number): HudState 
       return state.request?.phase === 'running' ? { ...state, request: null } : state;
     case 'request-end':
       return { ...state, request: { phase: 'done', outcome: event.outcome, chars: event.chars, error: event.error,
-        deadlineMs: event.deadlineMs, until: now + OUTCOME_MS, reused: event.reused, vectors: event.vectors } };
+        deadlineMs: event.deadlineMs, until: now + OUTCOME_MS, reused: event.reused, vectors: event.vectors,
+        rewritten: event.rewritten } };
     case 'coverage': {
       const shown = state.progress && 'coverage' in state.progress ? state.progress : null;
       if (pending(event.coverage) > 0) {
@@ -84,11 +87,14 @@ export function view(state: HudState, now: number, lang: Lang): HudView | null {
   if (r?.phase === 'done' && now < r.until) {
     if (r.outcome === 'injected') {
       // Served, but reduced or from an earlier request: said plainly, not as a warning (PHASE-17 Q5).
-      const how = [r.reused ? t(lang, 'hud.reused') : '', r.vectors === 'fallback' ? t(lang, 'hud.lexical') : '']
-        .filter(Boolean).join('');
+      const how = [r.reused ? t(lang, 'hud.reused') : '', r.vectors === 'fallback' ? t(lang, 'hud.lexical') : '',
+        r.rewritten ? t(lang, 'hud.rewritten', { n: r.rewritten }) : ''].filter(Boolean).join('');
       return { kind: 'ok', text: t(lang, 'hud.injected', { n: r.chars }) + how, fraction: null };
     }
-    if (r.outcome === 'nothing-relevant') return { kind: 'muted', text: t(lang, 'hud.nothing'), fraction: null };
+    if (r.outcome === 'nothing-relevant') {
+      return { kind: 'muted', text: t(lang, 'hud.nothing') + (r.rewritten ? t(lang, 'hud.rewritten', { n: r.rewritten }) : ''),
+        fraction: null };
+    }
     if (r.outcome === 'chat-off') return { kind: 'muted', text: t(lang, 'hud.chat_off'), fraction: null };
     const reason = r.error?.startsWith('deadline')
       ? t(lang, 'hud.reason.deadline', { s: Math.round((r.deadlineMs ?? 0) / 100) / 10 })

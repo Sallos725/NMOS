@@ -363,11 +363,15 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
     }
   }
 
+  /** `rewritten`: how many of the bodies sent were replies the host rewrote after generating them (a trigger, Lua). */
   async function sync(settings: Settings, manifest: ReconcileRequest, bodies: Bodies, deadline: number) {
     const request = { ...manifest, plugin_build: PLUGIN_BUILD };  // the sidecar tells an outdated plugin (ADR 0037)
     let result = await call<ReconcileResult>(settings, '/v1/sync/reconcile', request, deadline);
+    let rewritten = 0;
     if (result.status === 'needs_bodies') {
-      const needed = (result.needed_bodies ?? []).map((n) => bodies.get(bodyKey(n.host_logical_id, n.revision_hash)));
+      const keys = (result.needed_bodies ?? []).map((n) => bodyKey(n.host_logical_id, n.revision_hash));
+      rewritten = keys.filter((k) => bodies.rewritten(k)).length;
+      const needed = keys.map((k) => bodies.get(k));
       if (needed.some((b) => !b)) throw new Error('sidecar asked for an unknown body');
       // Chunked so a first sync of a long chat makes durable progress even when it cannot finish
       // inside one request's deadline; the next request continues from what the sidecar stored.
@@ -385,7 +389,7 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       }
     }
     if (result.status === 'needs_bodies') throw new Error('sidecar still needs bodies');
-    return result;
+    return { ...result, rewritten };
   }
 
   async function beforeRequest(prompt: PromptMessage[], mode: unknown): Promise<PromptMessage[]> {
@@ -498,7 +502,8 @@ export function createAdapter(host: HostPort, onActivity?: (event: ActivityEvent
       const outcome = packet ? 'injected' : 'nothing-relevant';
       last = { at: Date.now(), ms: Math.round(host.now() - started), packetChars: packet.length, packet, outcome,
         deadlineMs: settings.deadlineMs, budgetTokens: settings.reservedMemoryTokens, memory, vectors };
-      emit({ type: 'request-end', outcome, chars: packet.length, vectors, conversationId: synced.conversation_id ?? null });
+      emit({ type: 'request-end', outcome, chars: packet.length, vectors, conversationId: synced.conversation_id ?? null,
+        ...(synced.rewritten > 0 ? { rewritten: synced.rewritten } : {}) });
       return injectPacket(prompt, packet, settings.injectPosition, turn);
     } catch (error) {
       // Cache the miss briefly so host retries of this request (H2) do not wait out the deadline again.
