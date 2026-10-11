@@ -9,7 +9,7 @@
 
 ## Where NMOS stands
 
-| Original stage | Content (§84) | State after `v0.2.0` (2026-09-28) plus `main` (2026-09-29) |
+| Original stage | Content (§84) | State on 2026-10-11 (`v0.4.0` released 2026-10-10) |
 |---|---|---|
 | 0 — Host adapter spike | plugin, injection, no fork | done |
 | 1 — Source ledger | immutable revisions, reconcile, worldlines | done |
@@ -17,12 +17,12 @@
 | 3 — Retrieval core | SQL, lexical, vector, RRF, packet, traces | done |
 | 4 — Epistemic engine | observer model, knowledge projection, principal ACL, false beliefs, private thoughts | done, released in `v0.2.0` (Phase 10; K11 rewritten to what remains) |
 | 5 — Narrative engine | causal links, open threads, scenes, episodes, arcs, dynamic character state | done, released in `v0.2.0` (Phases 11–12) |
-| 6 — Verification and repair | transition verifier, conflict queue, inspector, entity merge/split, canon locking | in progress: owner repair (Phase 13), canon sources (Phase 14) and export and restore (Phase 16) on `main`, Phase 20 the last phase; transition rules and conflict queue after 1.0 (R7) |
-| 7 — Forensic recall | raw-history search, evidence traversal, exact quotes | partial: packet ledger and as-of replay (Phase 9); not authorized |
+| 6 — Verification and repair | transition verifier, conflict queue, inspector, entity merge/split, canon locking | done as narrowed by R7, released in `v0.3.0` (Phases 13, 14, 16, 20); transition rules and conflict queue after 1.0 (R7) |
+| 7 — Forensic recall | raw-history search, evidence traversal, exact quotes | done, released in `v0.4.0` (Phases 33–36; packet ledger and as-of replay from Phase 9) |
 | 8 — PocketRisu bridge | partial chat reads, mutation events | not started; after 1.0 (R7) |
 
-Stages 0–3 are the foundation and are done. Stages 4, 5 and 6 are done (Stage 6 met its criteria on 2026-10-01); Stage 7 is what
-remains before 1.0 (R7).
+Stages 0–3 are the foundation and are done. Stages 4–7 are done (Stage 6 met its criteria on 2026-10-01, Stage 7 was
+released in `v0.4.0` on 2026-10-10); what remains before 1.0 is the gate below (R7).
 Phase 15 (a packet that fills its budget, `docs/phases/PHASE-15.md`) is not a stage of this roadmap: it is P1 of
 `docs/proposals/PUBLIC-RELEASE-AND-BENCHMARK.md`, approved 2026-09-29, and was done after Phase 14 and before Phase 16
 (complete 2026-09-29). Phase 17 (the cost of NMOS's own model calls and fallbacks told apart in the HUD,
@@ -79,7 +79,8 @@ original design, and most recent phases (15, 17, 18, 19) were outside it. So:
   Phase 1 but could not read the common one-line bar; the owner chose the parser over a documented limit, then its
   history, the flags for changes the story did not make, and the anchor, all in `0.4.0`.
 
-The road left is Stage 7 (`0.4.0`), publishing Phase 23's bundles with a tagged release, and two quiet weeks on production.
+The road left is the 1.0 gate below: its evaluation, upgrade and known-issue checks, and two quiet weeks on production.
+Stage 7 shipped in `v0.4.0` (2026-10-10), and `v0.3.0` and `v0.4.0` carry Phase 23's four bundles.
 
 ## Measuring progress (M0, before the first stage)
 
@@ -208,16 +209,14 @@ revealed secret ends), the strict and narrator cases in the memory evaluation, a
 turns extraction has not reached, the Inspector's source-turn page and the overuse baseline; Phase 34 carries the
 candidate labels and the overuse penalty. `0.4.0` follows Phase 34.
 
-**Progress** (2026-10-09, candidate branch; unreleased): Phases 33–36 are complete. The owner selected `packet-v18`
-as the 0.4.0 default after the Phase 40 correction and trial deployment. The historical Phase 33 replay (`docs/perf/phase33-replay.md`) put the source turn and words in
-21 of 24 exact-quote cases (`packet-v12`: 4), kept the other bench sets and added 102 ms at p95 at 10,000 messages.
-The owner dropped Phase 33's reduced live run (2026-10-08, Q10 d). Phase 34 added the labels and resting lines;
-Phases 35–36 corrected excerpt anchors and which named facts are required. Phase 39's status history and flags are
-implemented and inherited by v18. The 6113 trial has v18 and the approved Armor/Items/Weapons watch setup
-(see `STATUS.md` for deployment evidence). The owner also requested the
-missing Phase 34 `hidden` label: the candidate now records redacted gate diagnostics and shows the Inspector chip,
-without changing the model-facing packet (AGE-64, `docs/audits/0.4.0-2026-10-09.md`). The `0.4.0` release
-gates and publication remain open; historical phase evidence does not establish current-candidate CI or a release.
+**Done (2026-10-10, released in `v0.4.0`).** Phases 33–36 carry the quote route, candidate labels with the overuse
+penalty, excerpt anchors and which named facts are required; `packet-v18` is the default. The historical Phase 33
+replay (`docs/perf/phase33-replay.md`) put the source turn and words in 21 of 24 exact-quote cases (`packet-v12`: 4),
+kept the other bench sets and added 102 ms at p95 at 10,000 messages; the release's final replay was 291/314 recall
+and 21/24 quotes (`STATUS.md`). The owner dropped Phase 33's reduced live run (2026-10-08, Q10 d). Phase 34's
+`hidden` label is recorded in redacted gate diagnostics and shown in the Inspector, without changing the
+model-facing packet (AGE-64, `docs/audits/0.4.0-2026-10-09.md`). Fresh host-answer scoring is not part of these
+criteria and remains open under the 1.0 gate.
 
 
 Scope (draft):
@@ -256,6 +255,17 @@ Done when:
 - an upgrade from a `v0.1.0-beta.21` database and from each `0.x.0` works (`tests/test_upgrade.py`);
 - two weeks on the owner's production with no heavy change;
 - every open known issue is a host limit or an accepted trade-off.
+
+**Standing on 2026-10-11** (Linear AGE-13 tracks the evidence):
+- stages 4–7: met; Stage 7 released in `v0.4.0`.
+- Phase 23: met; `v0.3.0` and `v0.4.0` each carry the four portable bundles.
+- evaluation against `0.1.x`: not yet run as one category-by-category comparison on a release candidate.
+- upgrades: fixtures from `v0.1.0-beta.7`, `.16`, `.21`, `v0.2.0` and `v0.3.0` pass to the latest migration (0029);
+  a `v0.4.0` fixture is still to be recorded.
+- two quiet weeks: not started; its start commit and date are the owner's to set. Phase 43 and the Phase 41
+  amendments merged on 2026-10-11 are heavy changes in this sense.
+- known issues: K45–K50 have the owner's timing (AGE-56); the other open rows are not yet classified as host limits,
+  accepted trade-offs or work.
 
 ## After 1.0
 

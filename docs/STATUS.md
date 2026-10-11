@@ -23,10 +23,16 @@ The product runtime is byte-identical to `73f420f`, whose
 scheduling correction and earlier CI failures are recorded in
 [Phase 42 evidence](perf/phase42-source-clock.md); no failed run is erased.
 
-The trial install still uses the pre-release candidate `adf0baa`, which passed
+**Installs on 2026-10-11** (read from the running containers' `/v1/health`, no writes): the owner's production
+install runs the `v0.4.0` runtime (`:edge` at `6b6cbb2`, #292, documentation only after the tag; up since
+2026-10-10 02:19 KST). The trial install (6113) ran official `v0.4.0` from 2026-10-10 02:21 KST (Linear AGE-55) and
+since 2026-10-11 18:13 KST runs `main` at `1696474` (Phase 43 steps 2–4, Phase 41 amendments 2–3, #294, #296) with
+`packet-v18`; its panel loaded the matching plugin build. The checks of that update are not recorded here.
+
+Before the release the trial install ran the pre-release candidate `adf0baa`, which passed
 [CI](https://github.com/Sallos725/NMOS/actions/runs/37941055331) and
-[native checks](https://github.com/Sallos725/NMOS/actions/runs/37941055301).
-6113 runs that candidate with `packet-v18` and the existing card-bound Armor/Items/Weapons watch settings.
+[native checks](https://github.com/Sallos725/NMOS/actions/runs/37941055301),
+with `packet-v18` and the existing card-bound Armor/Items/Weapons watch settings.
 The stopped originals, private database dump and PocketRisu save backup are retained. Deployment checks preserved
 all 11 inspected database table hashes, 423 raw revisions, settings and generation keys. PocketRisu on 6131 is
 1.14.0; the owner confirmed the HTTPS panel connected normally after reload. Its transient null-version error's
@@ -44,7 +50,7 @@ GigaTrans original-only derived text and the GT-CTRL button marker are deferred 
 
 ## Current phase
 
-**Phase 43 — status windows by their shape, per chat, told as changes: approved 2026-10-11 (Q1–Q6 as recommended); steps 2–4 implemented, in review (#298, #299; stacked on #295, #293).**
+**Phase 43 — status windows by their shape, per chat, told as changes: approved 2026-10-11 (Q1–Q6 as recommended); steps 2–4 merged 2026-10-11 (#298 `a8f2421`, #299 `ff4cec0`), high risk; step 5 (A1–A5 recorded against the merged code) open. On the trial install, not in production.**
 A built-in detector replaces card-name-bound regex setup, the panel shows the open chat only, and the packet carries
 core status values plus changes even when the prompt strips status bars. Prototype detector on the trial install's
 copy: equal to the bound rules on every reply of both configured cards, no recurring false block. Six owner
@@ -59,7 +65,7 @@ and no packet. Keywords of four or more syllables already reach the 0.8 fuzzy th
 (n/(n + 1)); their supplemental lookups are no longer issued. Zero exceptions on the live copy and eight gate
 copies; the cached-vector gate gives identical majority packet text for 338/338 probes (312/338 passing in both
 lanes); the full local suite passes 1,534 tests; the supplement's median cost falls to about 6 ms on the live
-replay. Native CI on the PR head is required. Not deployed. A faster legacy lookup restricted to the head's
+replay. Merged 2026-10-11 (#293 `d73c44c`); on the trial install, not in production. A faster legacy lookup restricted to the head's
 revisions is measured but not proposed until a 1k–10k-message check and the gate.
 [Scope](phases/PHASE-41.md#amendment-2--no-supplemental-lookup-a-legacy-lookup-already-covers),
 [evidence](perf/phase41-keyword-particles.md#amendment-2--live-requests-and-the-redundant-lookups).
@@ -73,7 +79,12 @@ Same matches (all recorded live keywords, unit tests); recorded live requests: k
 p50 141.3 → 27.5 ms, keyword candidates 231 → 285; a 41-message chat beside a 10,000-message one: whole-message
 timeouts 6/30 → 0, p95 418 → 117 ms; the 10,000-message chat unchanged. Gate and native CI on the PR.
 [Scope](phases/PHASE-41.md#amendment-3--a-short-head-is-looked-up-by-its-own-revisions),
-[evidence](perf/head-first-lookup.md). Not deployed.
+[evidence](perf/head-first-lookup.md). Merged 2026-10-11 (#295 `515a20f`); on the trial install, not in production.
+
+**Plugin corrections merged 2026-10-11, high risk:** a request skipped for want of the user turn now shows as skipped
+in the HUD and status tab instead of passing silently (#294 `983d99d`); memory reads the reply text the host sends,
+not the generated swipe, so a reply a script rewrote is stored as rewritten (#296 `1696474`). On the trial install,
+not in production.
 
 **Phase 39 amendment 2 — status configuration UX and required card binding:
 approved by the owner, 2026-10-09.** Blank initial draft, explicit JSON/preset

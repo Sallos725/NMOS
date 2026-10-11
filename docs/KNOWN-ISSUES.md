@@ -40,14 +40,14 @@ without a PocketRisu change.
 | K29 | A reveal in the turns first extracted together can be missed (narrowed by Phase 30) | Memory | "Extract all history" after connecting a chat with secrets (ADR 0033 amendment 2) |
 | K30 | A summary can say a secret in other words | Memory | since 0.2.0 (Phase 12, ADR 0042, 0043); summaries off for a chat where it matters |
 | K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases); since 0.3.0 a given name with a common family name, and a Hangul spelling of a romanized name (Phase 24, ADR 0058) |
-| K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | corrected in opt-in packet-v18 (AGE-18 / Phase 40); replay improves both target questions with current options, reduced live check/adoption pending; v16/v17 unchanged |
+| K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | corrected in packet-v18 (AGE-18 / Phase 40), the default since 0.4.0; replay improves both target questions; real-use check open; v16/v17 unchanged |
 | K34 | A request whose query embedding does not answer in 300 ms recalls without vectors | Recall | measured (Phase 15): 70 % of the owner's production requests; the Status tab says so since Phase 15, the progress display since Phase 17; reduced in 0.3.0 (ADR 0061): the embedding runs while recall reads, so it has the reads' time (≈100–300 ms) and the 300 ms after them |
 | K35 | "The story so far" is written from every scene summary, with no cap on its input | Memory | recorded, not scheduled |
 | K36 | A chat whose large lorebook NMOS has read almost whole recalls more slowly | Performance | measured, accepted (Phase 14, owner 2026-09-29) |
 | K37 | A story that changes who someone is, against the card or a lorebook, is not flagged | Memory | by decision (ADR 0047 amendment 1); needs a model check |
 | K38 | On an iPhone the host may alert "The server has been updated…" after the panel's Export saved its file; Android not tried | Host | host (the alert); evidence (Android) |
 | K39 | A grown excerpt can carry a value the story has since replaced | Recall | measured, accepted (Phase 18, owner 2026-09-30) |
-| K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | measured; a lower threshold found less, 0.8 kept (2026-09-30) |
+| K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | reduced in 0.4.0 under packet-v18 (Phase 41, ADR 0073): a keyword followed by a particle fills free keyword positions; 0.8 kept |
 | K41 | Re-extracted with `extract-v14`, `deepseek-v4.1-flash` passed fewer M0 cases | Memory | measured, accepted (Phase 19, owner 2026-09-30) |
 | K44 | A form of address used before the first one extracted is not remembered | Memory | recorded (Phase 33 Q6, 2026-10-07): an extraction cause, for a later generation |
 | K45 | A supportive memory line placed twice that no reply used rests for two requests, and a later question that needs it without naming it finds it missing | Recall | improvement deferred beyond 0.4.0; timing relative to 1.0.0 undecided (owner, 2026-10-09; ADR 0068, 0070) |
@@ -440,6 +440,9 @@ of 0.8 differ (`docs/perf/lexical-recall.md`, "K40"). A
 main character's name matched almost every message once its particles counted, and was dropped as too broad; the
 rare words that answer questions stand alone often enough to be found at 0.8. The threshold stays 0.8.
 *Workaround:* none needed; vectors and the whole-message route still answer.
+*0.4.0 (Phase 41, ADR 0073):* under `packet-v18` a Hangul keyword followed by one particle is looked up
+separately and fills only free positions of the keyword list, so legacy scores and order are kept; since amendment 2
+(2026-10-11) only keywords of two or three syllables are looked up this way.
 
 **K43 — A question about what someone lent can miss the item once it has changed hands** (resolved in 0.3.0; listed
 under [Resolved](#resolved)). Measured in the live gate's
