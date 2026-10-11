@@ -133,6 +133,43 @@ def history(conn: psycopg.Connection, head_commit_id: UUID, rules_version: str, 
     return out
 
 
+def windows(conn: psycopg.Connection, head_commit_id: UUID, rules_version: str, upto: int | None = None,
+            last: int = 10) -> list[dict[str, Any]]:
+    """The last `last` status windows along the head, oldest first (PHASE-43 S4): each reply holding observations under
+    `rules_version`, from the bars `current_state` reads (D8: via membership; accepted, active, visible), as
+    {position, turn, host_logical_id, values: {key: value}}."""
+    rows = conn.execute(
+        """
+        WITH m AS (
+            SELECT am.position, am.turn, sr.id, sr.lifecycle, sr.metadata, so.host_logical_id
+            FROM active_membership am
+            JOIN source_revision sr ON sr.id = am.source_revision_id
+            JOIN source_object so ON so.id = sr.source_object_id
+            WHERE am.commit_id = %(head)s AND am.position <= %(upto)s
+        ), obs AS (
+            SELECT st.key, st.value, st.id AS observation_id, m.position, m.turn, m.host_logical_id
+            FROM state_observation st
+            JOIN m ON m.id = st.source_revision_id
+            WHERE st.rules_version = %(version)s
+              AND m.lifecycle = 'accepted'
+              AND m.position > (SELECT coalesce(max(position), -1) FROM m WHERE metadata->>'disabled' = 'allBefore')
+              AND coalesce(m.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
+        )
+        SELECT key, value, position, turn, host_logical_id FROM obs
+        WHERE position IN (SELECT DISTINCT position FROM obs ORDER BY position DESC LIMIT %(last)s)
+        ORDER BY position, observation_id
+        """,
+        {"head": head_commit_id, "version": rules_version, "upto": 2**31 - 1 if upto is None else upto, "last": last},
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        if not out or out[-1]["position"] != r["position"]:
+            out.append({"position": r["position"], "turn": r["turn"], "host_logical_id": r["host_logical_id"],
+                        "values": {}})
+        out[-1]["values"][r["key"]] = r["value"]
+    return out
+
+
 def current_state(conn: psycopg.Connection, head_commit_id: UUID, rules_version: str,
                   upto: int | None = None) -> list[dict[str, Any]]:
     """Latest value per key from accepted, active, visible revisions of the head (D8: via membership);

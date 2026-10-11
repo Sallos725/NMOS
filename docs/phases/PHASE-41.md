@@ -62,6 +62,37 @@ correction option; it does not change the global fuser or excerpt activation bar
   than expanding the cap or replacing existing candidates. Shared-deadline
   implementation, all probes and performance must pass before adoption.
 
+### Amendment 2 — no supplemental lookup a legacy lookup already covers
+
+Approved by the owner, 2026-10-11, after a read-only measurement of the trial
+install's live requests (a private restored copy, packet-v18 with the option
+recorded) showed the supplement's real cost and that most of its lookups were
+redundant. Performance only: the candidate list, scores and packets must not change.
+
+- A Hangul keyword of n syllables shares n of its n + 1 trigrams with the same
+  word followed by a particle, so its word similarity there is n/(n + 1): 0.8 at
+  four syllables, which the legacy 0.8 lookup already admits. Words of four or
+  more syllables therefore get no supplemental lookup; two and three syllables
+  keep it unchanged.
+- Executed check before adoption: on the live copy and the eight historical gate
+  copies, every exact-particle row of a 4+ syllable keyword is also a legacy row,
+  and two/three syllables show the misses the supplement exists for.
+- Acceptance: the four-syllable regression test issues no particle SQL and keeps
+  the legacy list; all keyword and AGE-76 tests pass; the cached-vector historical
+  gate gives the same packet text for every probe as the current main source with
+  the option on; the full suite and the four native jobs pass on the PR head.
+
+### Amendment 3 — a short head is looked up by its own revisions
+
+Approved by the owner, 2026-10-11 ("전부 승인", after amendment 2's live measurement showed legacy keyword lookups lost to
+the 25 ms slice). Performance with an accuracy consequence: the same matches, found in time more often. Amends ADR 0052
+(amendment 1); the particle supplement keeps its index-first query.
+
+- A head of at most 500 messages and 100,000 characters is read by its revision ids and rechecked there; larger
+  heads keep the index-first lookup.
+- Acceptance: identical matches in unit tests and on every recorded live keyword; the cached-vector gate with no
+  newly failed probe or forbidden phrase; no regression on a 10,000-message chat; full suite and native jobs.
+
 ## Acceptance and evidence
 
 - A1: original P01 query and target-only query recover the right actor/action's
