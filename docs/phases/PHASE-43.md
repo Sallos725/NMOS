@@ -127,6 +127,11 @@ Its edited head stopped the 23-key card's old requests from replaying, so its cu
 16 request positions instead: the whole status 1,805 characters (p50) against 790 told as changes, 23 keys to 7; the
 9-key card 469 against 280. Packet tokens on the 9-key card rose by 91 at the median (286 → 377).
 
+Zero-call gate (cached vectors, 338 probes × 3 rounds, this step against its base #295): majority packet text identical
+for 338/338, 312/338 passing in every round of both lanes. The eight gate copies hold no status rule or observation
+(checked), so the step cannot reach them; the round-to-round variation in both lanes is the lexical route's timing.
+Local full suite: 1,542 passed; the two documentation-pointer failures of that run are fixed (the latest phase is 43).
+
 ## Out of scope
 
 Extraction prompts, generations, embeddings, provider calls; host-side preset changes; inferring dates or durations;
