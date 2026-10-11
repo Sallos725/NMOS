@@ -74,12 +74,16 @@ not detected. This is one install's data; acceptance needs a wider synthetic fal
 
 S4 details fixed by this record:
 - The previous window is the latest earlier head reply with an observation under the same rules version. The first
-  window has no previous one: core keys' current values only, no change marks.
+  window has no previous one: every key is new and told, without change marks (corrected in step 2: with only core
+  keys, a chat's first status would have been left out).
 - Unchanged keys that are not core are left out (not shown as `+0`).
 - Change forms: an integer `44 (−1)`; `a / b` with both parts numeric, the change of the first part; a list (split on
   ` / ` or `, `, at least three items) as `+ added / − removed` by item name, a `×N` quantity as its change; any other
   value as the new value. Dates and times are text: no arithmetic (Phase 42's boundary).
-- Core keys: pinned ∪ keys changed in at least 5 of the last 10 windows (fewer windows: at least half of them).
+- Core keys: pinned ∪ scene keys (date, time, place: Phase 42's clock names plus location/place, also under an
+  entity) ∪ keys changed in at least 5 of the last 10 windows (fewer windows: at least half of them). Scene keys were
+  added in step 2: a story's date changes once in many turns, so by change rate alone it was left out, which is the
+  incident this phase corrects. A list's whole value is told when the message asks about it or the key is core.
 - The in-context filter is dropped only with the option on, under `packet-v18`, for a chat with active rules; v16/v17
   and historical traces (option missing: off) keep today's behavior.
 
@@ -106,6 +110,22 @@ S4 details fixed by this record:
 - A4. The incident shape: a request whose prompt holds no status window gets the correct current date from NMOS.
 - A5. Panel: the open chat's window only; other bindings collapsed; old card rules unchanged; restore and archive
   carry the new binding.
+
+## Step 2 evidence (S4)
+
+Tests: change forms, core keys, the first window, a list told as its change and whole when asked; the incident's
+shape (the latest bar's message in context, the date still placed) under `packet-v18`, withheld under `packet-v17`
+and in a trace replayed without the option; a history question draws its key once.
+
+Trial install's copy (read-only, no provider calls), the same requests replayed with the option off and on:
+
+| Card | Replayed requests | Current date placed | `<State>` characters (p50) | Keys told (p50) |
+|---|---:|---:|---:|---:|
+| 9-key card | 15 | 0 → 15 | 0 → 279 (max 465) | 0 → 5 |
+
+Its edited head stopped the 23-key card's old requests from replaying, so its current head was measured at the last
+16 request positions instead: the whole status 1,805 characters (p50) against 790 told as changes, 23 keys to 7; the
+9-key card 469 against 280. Packet tokens on the 9-key card rose by 91 at the median (286 → 377).
 
 ## Out of scope
 
