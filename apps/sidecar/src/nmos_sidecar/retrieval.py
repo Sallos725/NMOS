@@ -23,7 +23,7 @@ from psycopg.types.json import Jsonb
 
 from .entities import norm
 from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
-from . import overuse, quotes, scene, spans, summaries, variants, source_time
+from . import overuse, quotes, scene, spans, statechange, summaries, variants, source_time
 from .ids import uuid7
 from .ledger import find_conversation
 from .llm import Embedder, LLMError
@@ -38,7 +38,7 @@ from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POL
                      StateItem, anchor_rank, clean_text, compile_lines, cut_lines, excerpt, fill, fits_at, kept_counts,
                      hidden_entry, secret_line,
                      secret_text)
-from .state import current_state, history as state_history
+from .state import current_state, history as state_history, windows as state_windows
 from .threads import relevant_threads, similarity
 from .vectors import vector_candidates
 from .keywords import keywords, particle_lookup
@@ -265,6 +265,10 @@ class RecallOptions:
     lexical_keywords: bool = True  # the keyword route (ADR 0052); a trace that did not record it replays with it off
     source_clock: bool = True  # PHASE-42: source-status clock on temporal questions; old traces default off
     keyword_particles: bool = True  # PHASE-41: v18 exact Korean particle hits; old traces default off
+    # PHASE-43 S4: under packet-v18, the status as core values and changes, placed even when its bar's message is in
+    # context (presets strip status bars from the prompt); old traces default off. `state_pins`: keys always told.
+    state_changes: bool = True
+    state_pins: tuple[str, ...] = ()
     first_cue: bool = True  # how it started, when the message asks (ADR 0056); a trace without it replays with it off
     history_marks: bool = True  # earlier versions only under marks that cover them (ADR 0038 amendment 1); same replay rule
     name_variants: bool = True  # a given name, a Hangul spelling of a romanized name (ADR 0058); same replay rule
@@ -281,7 +285,7 @@ class RecallOptions:
 # What a trace records of its RecallOptions, so a replay compiles with the same ones (ADR 0027).
 RECORDED = ("top_k", "threshold", "facts_limit", "events_limit", "threads_limit", "vector_min_sim", "query_prefix",
             "embed_timeout_ms", "lexical_timeout_ms", "strict", "narrator", "summarize_key", "canon_key",
-            "lexical_keywords", "keyword_particles", "source_clock", "first_cue", "history_marks", "name_variants", "excerpt_anchor", "rest_after")
+            "lexical_keywords", "keyword_particles", "state_changes", "state_pins", "source_clock", "first_cue", "history_marks", "name_variants", "excerpt_anchor", "rest_after")
 CAST_MAX = 4  # scene characters with a <Cast> group (PHASE-12 Q4)
 CAST_GOALS, CAST_ITEMS = 2, 3
 CAST_PREDICATES = ("located_in", "has_status", "feels_toward", "possesses")
@@ -966,8 +970,16 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
     # memory mode withheld is taken out of them.
     if options.rules_version != "none":
         held = current_state(conn, head, options.rules_version, upto)
-        g.state = [StateItem(key=r["key"], value=r["value"], turn=r["turn"] if by_turn else r["position"])
-                   for r in held if r["host_logical_id"] not in in_context]
+        if options.state_changes and options.policy == "packet-v18":
+            # PHASE-43 S4: what the status is now, told as changes; its bar is often stripped from the prompt, so
+            # "in context" (judged by the prose) is no reason to leave it out
+            told = statechange.tell(state_windows(conn, head, options.rules_version, upto, statechange.CORE_WINDOWS),
+                                    frozenset(options.state_pins),
+                                    frozenset(asked_keys(query, [r["key"] for r in held])), by_turn)
+            g.state = [StateItem(key=t.key, value=t.value, turn=t.turn, since_previous=t.since_previous) for t in told]
+        else:
+            g.state = [StateItem(key=r["key"], value=r["value"], turn=r["turn"] if by_turn else r["position"])
+                       for r in held if r["host_logical_id"] not in in_context]
         # Sim bots track many characters: state of characters mentioned right now gets the budget first.
         g.state.sort(key=lambda i: ("." in i.key and i.key.split(".", 1)[0] in focus), reverse=True)
         if options.policy in STATE_HISTORY_POLICIES and held and STATE_CHANGE_CUE.search(query):
@@ -979,6 +991,9 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                      history=tuple((_turn_of(e, by_turn), e["value"])
                                                    for e in lines[k][-STATE_HISTORY_MAX:]))
                            for k in asked if lines.get(k)]
+            if options.state_changes and options.policy == "packet-v18":  # a key's history line says its value too
+                drawn = {k for k in asked if lines.get(k)}
+                g.state = [i for i in g.state if i.history or i.key not in drawn]
     view = None
     names_of: dict[int, Any] = {}  # one mapping of name variants per view, whichever path asks first (ADR 0058)
     changes = options.policy in CHANGE_POLICIES and not HISTORY_CUE.search(query)  # packet-v12, PHASE-31 Q1/Q2

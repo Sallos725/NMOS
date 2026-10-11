@@ -357,11 +357,15 @@ class StateItem:
     turn: int | None  # as for Excerpt.turn
     # packet-v17 (PHASE-39 Q3b): the key's last changes, oldest first, each (turn, value); the item is then that line
     history: tuple[tuple[int | None, str], ...] = ()
+    # PHASE-43 S4: how the value changed since the previous status window ("−1", "+물약 · −열쇠"); with an empty `value`
+    # the change alone is told (a list the message did not ask about)
+    since_previous: str | None = None
 
     @property
     def text(self) -> str:
         if not self.history:
-            return f"{self.key}: {self.value}"
+            mark = f" ({self.since_previous})" if self.since_previous else ""
+            return f"{self.key}: {self.value}{mark}" if self.value else f"{self.key}:{mark}"
         return f"{self.key}: " + " → ".join(f"t{t}: {v}" if t is not None else v for t, v in self.history)
 
 
@@ -369,7 +373,10 @@ def _state_line(i: StateItem) -> str:
     if i.history:
         return (f"    <StateHistory key={quoteattr(i.key)}>"
                 + "".join(f"<At{_turn('turn', t)}>{escape(v)}</At>" for t, v in i.history) + "</StateHistory>")
-    return f"    <Item key={quoteattr(i.key)}{_turn('as_of_turn', i.turn)}>{escape(i.value)}</Item>"
+    mark = f" since_previous={quoteattr(i.since_previous)}" if i.since_previous else ""
+    if not i.value:
+        return f"    <Item key={quoteattr(i.key)}{_turn('as_of_turn', i.turn)}{mark}/>"
+    return f"    <Item key={quoteattr(i.key)}{_turn('as_of_turn', i.turn)}{mark}>{escape(i.value)}</Item>"
 
 
 def state_block(items: list[StateItem]) -> list[str]:

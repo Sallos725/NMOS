@@ -128,8 +128,9 @@ def test_state_follows_membership_and_is_injected_out_of_context(state_client, m
     edited = packet(state_client, chat, tail=0)
     assert "종탑" in edited and "폐허가 된 성당" not in edited
 
-    # In-context state is not repeated.
-    assert "<State>" not in packet(state_client, chat, tail=len(chat.messages))
+    # In context, it is still told under the default (PHASE-43 S4: presets strip status bars from the prompt, and the
+    # prose decides "in context"); packet-v17 and old traces keep withholding it (test_state_changes.py).
+    assert "<State>" in packet(state_client, chat, tail=len(chat.messages))
 
     # 'Cut Messages for AI' hides it.
     chat.disable(2, "allBefore")
