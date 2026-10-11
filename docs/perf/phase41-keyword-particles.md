@@ -431,6 +431,10 @@ such lookup took 49.7 ms (EXPLAIN ANALYZE) and returned nothing new.
 
 `particle_lookup` returns nothing for a keyword of more than three syllables, so no
 supplemental statement is issued for it. Two- and three-syllable keywords are unchanged.
+Beyond time, two edge behaviors change, both only for 4+ syllable keywords: a supplement that ran
+out the shared route deadline used to make the whole keyword route abstain ("timeout", legacy hits
+dropped), and a cancelled supplement counted toward the trace's "too_broad" label. Neither can happen
+now; the gate below observed no packet difference from either.
 
 - A new test for a four- and a five-syllable name with particles fails on `main`
   (the particle statement runs) and passes after the change, with the legacy list,
