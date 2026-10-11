@@ -32,7 +32,8 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-42.md` is the latest, approved
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-43.md` is the latest, approved
+   2026-10-11 (status windows by their shape, per chat, told as changes; high risk); `PHASE-42.md`, approved
    2026-10-10 (source status-window clock for already recalled excerpts; bounded pre-release correction);
    `PHASE-41.md`, approved
    2026-10-09 (AGE-76: bounded Korean-particle keyword correction and synthetic checks);
