@@ -8,8 +8,8 @@ import { t, type Lang } from './i18n';
 export const OUTCOME_MS = 4000;
 export const DONE_MS = 3000;
 
-/** `chat-off`: NMOS is switched off for this chat (ADR 0048). */
-export type Outcome = 'injected' | 'nothing-relevant' | 'failed' | 'chat-off';
+/** `chat-off`: NMOS is switched off for this chat (ADR 0048). `skipped`: the prompt did not hold the user turn (D13). */
+export type Outcome = 'injected' | 'nothing-relevant' | 'failed' | 'chat-off' | 'skipped';
 
 export interface Counts { done: number; total: number; pending: number; failed: number }
 /** Facts and summaries the active generations hold for the chat (PHASE-17 Q6); `null` from older sidecars. */
@@ -96,6 +96,7 @@ export function view(state: HudState, now: number, lang: Lang): HudView | null {
         fraction: null };
     }
     if (r.outcome === 'chat-off') return { kind: 'muted', text: t(lang, 'hud.chat_off'), fraction: null };
+    if (r.outcome === 'skipped') return { kind: 'warn', text: t(lang, 'hud.skipped', { r: t(lang, 'hud.reason.no_turn') }), fraction: null };
     const reason = r.error?.startsWith('deadline')
       ? t(lang, 'hud.reason.deadline', { s: Math.round((r.deadlineMs ?? 0) / 100) / 10 })
       : t(lang, 'hud.reason.error');

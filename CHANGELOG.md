@@ -5,6 +5,29 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Status windows can be tracked without writing a rule** (Phase 43 steps 3–4). On a chat's Inspector page,
+  "Status window (this chat)" shows what was found and offers Track, pins and Stop tracking; Settings folds every card's
+  rules and keeps hand-written rules under Advanced. NMOS finds a status bar by its shape
+  (`[… key=value | key: value …]`, at least three fields) in a chat's last replies and offers it; tracking it binds the key
+  set to the card, beside the card's other rules, so later chats of that card are read too. Pinned keys are told every
+  time. Nothing is tracked until it is confirmed.
+- **The current status reaches the model even when the preset strips status bars** (Phase 43 step 2). Under the default
+  `packet-v18`, the status block holds the date, time and place, the keys that change often, and whatever the last status
+  window changed, told as changes (`HP 150 / 200 (−30)`, `+횃불 · −열쇠`); an inventory is shown whole only when asked. It
+  is placed even when the last reply is in the prompt, since many presets remove its status bar. On the trial install the
+  current date reached every replayed request of a card where it had reached none, in less space than the whole status.
+- **The Korean-particle keyword supplement skips words it cannot help** (Phase 41 amendment 2). A keyword of four
+  or more syllables already matches with a particle attached, so no extra lookup is made for it. Recall results are
+  unchanged; the supplement's median cost on recorded requests falls from about 30 ms to about 6 ms.
+- **Lexical and keyword recall look a short chat up by its own messages** (Phase 41 amendment 3, ADR 0052 amendment 1).
+  A chat of up to 500 messages and 100,000 characters no longer rechecks other chats' long messages, so its lookups
+  finish inside their time limits instead of being dropped. The same messages match. On the trial install's recorded
+  requests the whole-message route's median fell from about 141 ms to 28 ms and the keyword route found 23 % more
+  candidates; larger chats keep the previous lookup.
+- **A request NMOS skips because the prompt does not hold the latest user message is no longer silent.** The
+  progress display shows "⚠ Skipped: this message is not in the prompt", the Status tab's last request says so,
+  and the console logs the reason. Before, the display cleared and the Status tab kept the previous request's
+  result. The request still goes out unchanged.
 - **Memory reads the reply the model is sent, after a trigger or Lua rewrote it.** The plugin took a rerolled reply's
   text from its selected swipe, which a trigger (`modifychat`), Lua `setChat`, a continue or the reparse after a
   generation do not update; memory then kept a reply, status bar included, the model no longer saw. It now reads

@@ -65,3 +65,21 @@ history and flags remain bound to each conversation's head. Stable-ID support ne
 
 The owner selected packet-v18 as default (inheriting v17) and watch for the trial install on 2026-10-09; neither is
 reset by the blank status draft. This amendment is high risk for source scope and derived-state/configuration integrity.
+
+## Amendment 1 — the status told as core values and changes (PHASE-43 S4, owner 2026-10-11)
+
+Under `packet-v18`, with the recorded recall option `state_changes` (and `state_pins`), `<State>` holds the core keys'
+current values and only the keys the last status window changed, each with `since_previous` (`−1`, `+3`; a fraction's
+first part; a list as `+ added · − removed · name ×n (±k)` by item name). Core keys are pins, scene keys (date, time,
+place) and keys that changed in at least half of the last ten windows. A list is told whole only when the message asks
+about it or the key is core; unchanged other keys are left out. The block is placed even when the bar's message is in
+context, because presets strip status bars from the prompt and "in context" is judged by the prose. Dates and times
+stay text. Old traces replay with the option off; `packet-v16` and `packet-v17` are unchanged.
+
+## Amendment 2 — a window found by its shape (PHASE-43 S1–S2, owner 2026-10-11)
+
+A `shape` rule names a status window by its key set instead of a regex; the detector finds outermost bracketed blocks of
+`key=value` / `key: value` fields (labels and nested brackets allowed) and a block is read when it holds at least three
+and 60 % of the set. Detection is offered per chat and never configures by itself; tracking binds the key set to the
+card beside its other rules (PHASE-39 amendment 2's explicit binding, now one confirmation). Pins per card are kept in
+`app_config.status_pins`, outside the rules, so pinning does not change the rules' version or rebuild state.

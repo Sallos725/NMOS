@@ -32,7 +32,8 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-42.md` is the latest, approved
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-43.md` is the latest, approved
+   2026-10-11 (status windows by their shape, per chat, told as changes; high risk); `PHASE-42.md`, approved
    2026-10-10 (source status-window clock for already recalled excerpts; bounded pre-release correction);
    `PHASE-41.md`, approved
    2026-10-09 (AGE-76: bounded Korean-particle keyword correction and synthetic checks);
@@ -125,6 +126,7 @@ If two normative documents appear to conflict:
 | 40 — explicit third-person questions about the persona (AGE-18 / K32; bounded recall correction) | **approved** (owner, 2026-10-09, after reviewing the proposal and reversing deferral); implementation and zero-call replay done, in `0.4.0`; reduced live host check open; v18 default selected by owner (2026-10-09) | `PHASE-40.md` |
 | 41 — Korean particle boundaries in keyword recall (AGE-76) | **approved** (owner, 2026-10-09: start the bounded correction and synthetic verification); bounded implementation and reduced actual-model verification done; replay/performance complete, native gates tracked on PR #291 and host evidence open; v18 default separately approved | `PHASE-41.md` |
 | 42 — source status-window clock for recalled excerpts | **approved** (owner, 2026-10-10); bounded correction, copied-data checks and required CI done; included in v0.4.0, with publication gated by the tag workflow | `PHASE-42.md` |
+| 43 — status windows by their shape, per chat, told as changes (a correction found by the Phase 41 live check; amends PHASE-39 amendment 2) | **approved** (owner, 2026-10-11, Q1–Q6 as recommended); steps 2–4 implemented and in review (#298: status as core values and changes; #299: detector, track/pin endpoints, chat-page card); high risk | `PHASE-43.md` |
 | Stage 8 (after 1.0, R7) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,

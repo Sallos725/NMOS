@@ -207,6 +207,31 @@ def test_particle_prefilter_accepts_only_existing_hangul_keyword_shape():
         assert particle_lookup(word) is None
 
 
+def test_particle_lookup_is_only_for_words_the_fuzzy_threshold_misses():
+    from nmos_sidecar.keywords import particle_lookup
+
+    assert particle_lookup("민지") and particle_lookup("차건혁")
+    for word in ["남궁서윤", "바스락거림", "아리스토텔레스"]:
+        assert particle_lookup(word) is None
+
+
+@pytest.mark.parametrize("name", ["남궁서윤", "바스락거림"])
+def test_four_syllable_particle_hits_are_legacy_hits_without_particle_sql(client, migrated, monkeypatch, name):
+    # A word of n syllables shares n of its n + 1 trigrams with itself plus a particle: 0.8 at four.
+    bodies = [f"{name}은 은빛 나침반을 감췄다.", f"어느 날 {name}에게서 편지가 왔다.", f"({name}처럼) 웃었다."]
+    chat = SimChat()
+    for body in bodies:
+        chat.user("흰 구름이 흘렀다.")
+        chat.reply(body)
+    chat.user("계속")
+    sync(client, chat)
+    old, _ = lookup(migrated, name, particles=False)
+    monkeypatch.setattr(retrieval, "_PARTICLE_MATCHES", "SELECT 1 / 0")  # never issued for this word
+    new, mode = lookup(migrated, name)
+    assert mode == "on" and {r["clean"] for r in old} == set(bodies)
+    assert [(r["id"], r["keyword_score"]) for r in new] == [(r["id"], r["keyword_score"]) for r in old]
+
+
 def keyword_rows(url: str, words: list[str], *, particles: bool):
     with psycopg.connect(url, row_factory=dict_row) as conn:
         head = conn.execute("SELECT head_commit_id FROM conversation").fetchone()["head_commit_id"]
@@ -266,10 +291,10 @@ def test_a_cancelled_legacy_lookup_never_runs_supplement_with_an_incomplete_deno
     seen = []
     particle = retrieval.particle_lookup
 
-    def cancel_name(conn, head, query, cut, limit, upto=None):
+    def cancel_name(conn, head, query, cut, limit, upto=None, head_ids=None):
         if query == "민지":
             raise psycopg.errors.QueryCanceled()
-        return real(conn, head, query, cut, limit, upto)
+        return real(conn, head, query, cut, limit, upto, head_ids)
 
     def watched(word):
         seen.append(word)
@@ -289,8 +314,8 @@ def test_supplement_sql_has_only_the_legacy_words_remaining_slice_and_keeps_lega
     clock = retrieval.time.perf_counter
     consumed = [0.0]
 
-    def delayed(conn, head, query, cut, limit, upto=None):
-        ids = real(conn, head, query, cut, limit, upto)
+    def delayed(conn, head, query, cut, limit, upto=None, head_ids=None):
+        ids = real(conn, head, query, cut, limit, upto, head_ids)
         consumed[0] += 0.015  # a completed lookup used 15 ms; OS sleep can overshoot and cancel it
         return ids
 

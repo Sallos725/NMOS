@@ -39,6 +39,8 @@ RANGES = {"recall_threshold": (0.05, 1.0), "vector_min_sim": (0.0, 1.0), "recall
           "embed_timeout_ms": (100, 5000)}
 PARSERS_KEY = "parsers"
 PRESETS_KEY = "parser_presets"
+STATUS_PINS_KEY = "status_pins"  # PHASE-43: {card: [status keys told every time]}
+PINS_MAX = 40
 PARSER_MAX_BYTES = 256_000
 PARSER_MAX_RULES = 100
 
@@ -313,3 +315,21 @@ def list_models(url: str, api_key: str, kind: str = "llm") -> dict[str, Any]:
         return {"ok": False, "error": str(exc)[:300], "models": []}
     except (httpx.HTTPError, ValueError, AttributeError) as exc:
         return {"ok": False, "error": str(exc)[:300], "models": []}
+
+
+def pins_errors(card: Any, keys: Any) -> list[str]:
+    errors = []
+    if not isinstance(card, str) or not card.strip() or len(card) > 200:
+        errors.append("card must be a character name of 1 to 200 characters")
+    if not isinstance(keys, list) or len(keys) > PINS_MAX or not all(
+            isinstance(k, str) and 0 < len(k.strip()) <= 60 for k in keys):
+        errors.append(f"keys must be a list of at most {PINS_MAX} status keys")
+    return errors
+
+
+def pins_by_card(overrides: dict[str, Any]) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    value = overrides.get(STATUS_PINS_KEY)
+    if not isinstance(value, dict):
+        return ()
+    return tuple(sorted((card, tuple(k.strip() for k in keys)) for card, keys in value.items()
+                        if isinstance(card, str) and not pins_errors(card, keys)))

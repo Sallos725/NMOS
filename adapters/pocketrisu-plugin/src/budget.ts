@@ -21,7 +21,7 @@ export interface BudgetAdvice {
 }
 
 export interface RequestMemory {
-  outcome: 'injected' | 'nothing-relevant' | 'failed';
+  outcome: 'injected' | 'nothing-relevant' | 'failed' | 'skipped';
   budgetTokens?: number;
   memory?: MemoryFit | null;
 }

@@ -62,6 +62,12 @@ interface ServerConfig {
 /** `minSim`: the vector similarity bar measured for the preset's model (`docs/perf/embedders.md`); `hint`: said when
  *  the preset is picked. */
 interface Preset { label: string | StringKey; url: string; model?: string; minSim?: number; hint?: StringKey }
+/** `GET /v1/conversations/<id>/status/candidates` (PHASE-43 S2): status windows found by their shape in the chat. */
+interface StatusCandidates {
+  card: string | null;
+  candidates: { keys: string[]; count: number; values: Record<string, string>; tracked: boolean; rule_id: string | null }[];
+  pins: string[];
+}
 /** `GET /v1/conversations/<id>/memory-mode` (ADR 0035). */
 interface MemoryMode { strict: boolean; narrator: string | null; characters: string[] }
 
@@ -343,7 +349,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     if (s.last) {
       const kind = s.last.outcome === 'injected' ? 'ok' : s.last.outcome === 'failed' ? 'err' : 'muted';
       const what = s.last.outcome === 'injected' ? L('outcome.injected', { n: s.last.packetChars })
-        : s.last.outcome === 'nothing-relevant' ? L('outcome.nothing') : L('outcome.failed');
+        : s.last.outcome === 'nothing-relevant' ? L('outcome.nothing')
+        : s.last.outcome === 'skipped' ? L('outcome.skipped') : L('outcome.failed');
       lastCard.append(el('div', { class: 'line' }, el('span', { class: `dot ${kind}` }), el('span', { text: what })),
         el('div', { class: 'muted', text: `${L('status.ago', { n: Math.round((Date.now() - s.last.at) / 1000) })} · ${s.last.ms}ms` }));
       if (s.last.packet) lastCard.append(el('details', { class: 'help' },
@@ -505,6 +512,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const linkCard = el('div', { class: 'card', style: 'display:none' });
   // On a conversation's page: how memory treats what only some characters know (ADR 0035).
   const modeCard = el('div', { class: 'card', style: 'display:none' });
+  const statusCard = el('div', { id: 'nmos-status-windows', class: 'card', style: 'display:none' });
   // The owner's repairs (ADR 0044): the threads picked for closing together, and the close controls on the page now,
   // by thread (one can show twice: under Threads and under Needs attention; its controls stay in step).
   const picked = new Set<string>();
@@ -513,7 +521,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const bulkClose = el('button');
   const bulkBar = el('div', { class: 'btns', style: 'display:none' }, bulkClose);
   inspectorView.append(el('div', { class: 'btns inspbar' }, inspectorBack, inspectorRefresh), actions, actionMsg,
-    bulkBar, modeCard, linkCard, inspectorBody, inspectorAddress);
+    bulkBar, modeCard, statusCard, linkCard, inspectorBody, inspectorAddress);
   function updateBulk(): void {
     bulkBar.style.display = picked.size ? '' : 'none';
     bulkClose.textContent = L('rp.bulk', { n: picked.size });
@@ -778,7 +786,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     actions.style.display = conversation ? '' : 'none';
     const shownEntity = inspectorEntity(path);
     if (!shownEntity) linkCard.style.display = 'none';
-    if (!conversation || shownEntity) modeCard.style.display = 'none';
+    if (!conversation || shownEntity) { modeCard.style.display = 'none'; statusCard.style.display = 'none'; }
     if (again) {
       inspectorBody.classList.add('busy'); // the old page stays until the new one is there
     } else {
@@ -803,7 +811,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (keep) restore(keep);
       else root.scrollTop = 0;
       if (shownEntity) void showLinks(shownEntity.conversation, shownEntity.entity, load);
-      else if (conversation) void showMode(conversation, load);
+      else if (conversation) { void showMode(conversation, load); void showStatusWindows(conversation, load); }
     } catch (error) {
       if (load !== loads) return;
       shownPath = null;
@@ -845,6 +853,68 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       el('div', { class: 'row' }, field(L('mode.narrator'), narrator)), el('p', { class: 'sub', text: L('mode.narrator_sub') }),
       el('div', { class: 'btns' }, save), msg);
     modeCard.style.display = '';
+  }
+  /** This chat's status windows (PHASE-43 S3): what was found by its shape, tracked on the owner's confirmation (Q1)
+   *  for the card (Q2), with pins (Q3). Only this chat: every card's rules stay under Settings, folded. */
+  async function showStatusWindows(conversation: string, load: number): Promise<void> {
+    let found: StatusCandidates;
+    try {
+      found = await deps.api<StatusCandidates>('GET', `/v1/conversations/${conversation}/status/candidates`, undefined, 15_000);
+    } catch {
+      statusCard.style.display = 'none'; // an older sidecar finds no windows
+      return;
+    }
+    if (load !== loads) return;
+    if (!found || !Array.isArray(found.candidates)) { statusCard.style.display = 'none'; return; }
+    const msg = el('div', { class: 'msg', role: 'status' });
+    const card = found.card;
+    const act = async (button: HTMLButtonElement, method: Method, path: string, body: unknown, done: string) => {
+      button.disabled = true;
+      try {
+        await deps.api(method, path, body, 30_000);
+        await showStatusWindows(conversation, load);
+        say(statusCard.querySelector('.msg') as HTMLElement, done, 'ok');
+      } catch (error) { say(msg, errorText(lang, error), 'err'); button.disabled = false; }
+    };
+    const rows = found.candidates.map((c) => {
+      const preview = c.keys.slice(0, 8).map((k) => `${k}: ${c.values[k] ?? ''}`).join(' · ')
+        + (c.keys.length > 8 ? ' …' : '');
+      const head = el('div', { class: 'line' }, el('span', { class: `dot ${c.tracked ? 'ok' : 'muted'}` }),
+        el('span', { text: L(c.tracked ? 'sw.tracked' : 'sw.found', { n: c.keys.length, c: c.count }) }));
+      const box = el('div', { class: 'sw-window' }, head, el('div', { class: 'sub', text: preview }));
+      if (!card) return box;
+      if (!c.tracked) {
+        const track = el('button', { class: 'primary', text: L('sw.track') });
+        track.addEventListener('click', () => void act(track, 'POST', '/v1/parsers/card/track', { card, keys: c.keys },
+          L('sw.tracked_now', { card })));
+        box.append(el('div', { class: 'btns' }, track));
+        return box;
+      }
+      const pins = c.keys.map((k) => {
+        const box = el('input', { type: 'checkbox', value: k });
+        box.checked = found.pins.includes(k);
+        return el('label', { class: 'check' }, box, el('span', { text: `📌 ${k}` }));
+      });
+      const savePins = el('button', { text: L('sw.save_pins') });
+      savePins.addEventListener('click', () => void act(savePins, 'PUT', '/v1/parsers/card/pins', {
+        card, keys: pins.map((p) => p.querySelector('input') as HTMLInputElement).filter((i) => i.checked).map((i) => i.value),
+      }, L('sw.pins_saved')));
+      const buttons = el('div', { class: 'btns' }, savePins);
+      if (c.rule_id) {
+        const untrack = el('button', { text: L('sw.untrack') });
+        untrack.addEventListener('click', () => void act(untrack, 'POST', '/v1/parsers/card/untrack',
+          { card, rule_id: c.rule_id }, L('sw.untracked')));
+        buttons.append(untrack);
+      } else {
+        box.append(el('p', { class: 'sub', text: L('sw.by_rule') }));
+      }
+      box.append(el('p', { class: 'sub', text: L('sw.pins_sub') }), el('div', { class: 'pins' }, ...pins), buttons);
+      return box;
+    });
+    statusCard.replaceChildren(el('h2', { text: L('sw.title') }),
+      el('p', { class: 'sub', text: card ? L('sw.sub', { card }) : L('sw.no_card') }),
+      ...(rows.length ? rows : [el('p', { class: 'muted', text: L('sw.none') })]), msg);
+    statusCard.style.display = '';
   }
   /** A join, split or undo shown before it is made (PHASE-20 Q9): the preview in `spot`, then the owner's confirm
    * sends the preview's fingerprint; a 409 (memory changed since) shows the new preview instead. `reextract`, for an
@@ -1383,15 +1453,19 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const name = parserPreset.value;
     if (name) void savePresets(parserPresets.filter((p) => p.name !== name), '');
   });
+  // PHASE-43 S3: a chat's status window is set up on its own Inspector page; here every card's rules, folded, and the
+  // hand-written rules under advanced.
   settingsView.append(el('div', { class: 'card' },
-    el('h2', { text: L('rules.title') }), el('p', { class: 'sub', text: L('rules.scope') }), parserActive,
-    el('details', {}, el('summary', { text: L('rules.stored') }), parserStored),
-    field(L('rules.target'), parserTarget), parserCards,
-    el('div', { class: 'btns' }, parserPick, example), parserFile,
-    field(L('rules.preset'), parserPreset), field(L('rules.draft'), rules),
-    el('p', { class: 'sub', text: L('rules.sub') }),
-    field(L('rules.preset_name'), parserName), el('div', { class: 'btns' }, parserSavePreset, parserRemovePreset),
-    parserPreview, el('div', { class: 'btns' }, parserApply, parserClear), parserMessage));
+    el('h2', { text: L('rules.title') }), el('p', { class: 'sub', text: L('rules.where') }),
+    el('details', {}, el('summary', { text: L('rules.all_cards') }), parserActive,
+      el('details', {}, el('summary', { text: L('rules.stored') }), parserStored)),
+    el('details', {}, el('summary', { text: L('rules.advanced') }), el('p', { class: 'sub', text: L('rules.scope') }),
+      field(L('rules.target'), parserTarget), parserCards,
+      el('div', { class: 'btns' }, parserPick, example), parserFile,
+      field(L('rules.preset'), parserPreset), field(L('rules.draft'), rules),
+      el('p', { class: 'sub', text: L('rules.sub') }),
+      field(L('rules.preset_name'), parserName), el('div', { class: 'btns' }, parserSavePreset, parserRemovePreset),
+      parserPreview, el('div', { class: 'btns' }, parserApply, parserClear)), parserMessage));
   updateParser();
 
   // --- settings tab: export (applied at once; ADR 0050) ------------------------------------------
