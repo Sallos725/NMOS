@@ -95,6 +95,10 @@ def keywords(query: str) -> list[str]:
 
 # Source-side suffixes are particles only, not question/verb endings. The exact
 # word boundary is checked after an indexed candidate prefilter (PHASE-41).
+# A word of n syllables shares n of its n + 1 trigrams with the same word plus a particle, so a word of four or more
+# syllables reaches the 0.8 fuzzy threshold there and its legacy lookup already finds every exact particle hit
+# (PHASE-41 amendment 2, measured on the live copy and the gate databases); only two or three syllables need one.
+PARTICLE_MAX = 3
 _SOURCE_PARTICLES = (
     "에게서", "한테서", "에서는", "에게는", "한테는", "으로는", "로는", "에서도",
     "에게", "한테", "에서", "으로", "이랑", "하고", "처럼", "까지", "부터", "보다", "마다", "밖에", "이나", "이며",
@@ -132,7 +136,7 @@ def particle_lookup(word: str) -> tuple[list[str], str] | None:
     LIKE guards avoid repeatedly scoring long messages at common start/space
     occurrences; neither their prefix matches nor the coarse score admits a row.
     """
-    if len(word) < MIN_HANGUL or not _HANGUL.fullmatch(word):
+    if not MIN_HANGUL <= len(word) <= PARTICLE_MAX or not _HANGUL.fullmatch(word):
         return None
     return ([word + "%", "% " + word + "%"],
             "(^|" + _NON_WORD + ")" + word + "(" + "|".join(_SOURCE_PARTICLES) + ")($|" + _NON_WORD + ")")

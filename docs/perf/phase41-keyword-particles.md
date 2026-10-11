@@ -375,3 +375,91 @@ Linux arm64 builds and smokes but does not run the full pytest suite. Windows fi
 1,502 tests in 1,119.97 s; macOS in 395.87 s. These outcomes cover AGE-76 before the
 separate Phase 39 amendment 2 status-configuration change. The newer integrated
 source requires its own checks and cannot inherit this head's CI result.
+
+
+## Amendment 2 — live requests and the redundant lookups
+
+Date: 2026-10-11. Source: `main` at `6b6cbb2` (v0.4.0 runtime, byte-identical to the
+trial install's sidecar). The trial install's database was dumped and restored into a
+private, throwaway PostgreSQL container; every measurement below ran read-only there
+or on the existing gate copies. No provider calls, no writes to the trial install.
+Private chat text stays outside the repository.
+
+### What the supplement cost and delivered on live requests
+
+33 of the 38 packet-v18 requests recorded since the option shipped replay (five have a
+changed prefix). Replayed three times with the option on and off, vectors off:
+
+| Keyword route | Option off | Option on |
+|---|---:|---:|
+| p50 | 60.7 ms | 92.5 ms |
+| p95 | 141.5 ms | 156.6 ms |
+
+The whole-message lexical route took ~145 ms either way, and the two slowest live
+requests (1.1 s) spent ~625 ms in the quote route: those costs predate Phase 41.
+The live corpus is small (634 revisions) but long (median 3.5k characters, p90 17k,
+largest 695k), which the synthetic 10k benchmark did not represent.
+
+The option changed the keyword candidates of one request of 33 (one added candidate,
+all rounds); every request's majority packet text was identical with the option on
+and off. Three requests flipped between one and six legacy candidates across rounds
+with the option on *and* off: pre-existing legacy timing sensitivity, not caused here.
+With the word slice and route budget relaxed (1,000/10,000 ms), particle lookups over
+the live copy and the gate copies would add 7 candidates in 5 requests; at the real
+deadlines 1 survives. 37 of the 187 supplemental statements issued across the
+normal- and relaxed-deadline runs were cancelled.
+
+### The redundant lookups
+
+A Hangul keyword of n syllables followed by a particle has word similarity n/(n + 1)
+with itself (n of its n + 1 trigrams), which is 0.8 at four syllables: the legacy 0.8
+lookup already admits it. Checked with no statement timeout over all revisions of the
+live copy and the eight gate copies, for every Hangul keyword of every recorded query:
+
+| Syllables | Keywords | Exact-particle rows | Not a legacy row | Lowest word similarity |
+|---|---:|---:|---:|---:|
+| 2 | 306 | 6,271 | 4,487 | 0.667 |
+| 3 | 650 | 6,237 | 4,738 | 0.75 |
+| 4 | 568 | 676 | 0 | 0.8 |
+| 5 | 188 | 75 | 0 | 0.833 |
+| 6+ | 32 | 4 | 0 | 1.0 |
+
+On the live requests 83 of 146 eligible keywords had four or more syllables. One
+such lookup took 49.7 ms (EXPLAIN ANALYZE) and returned nothing new.
+
+### The change and its evidence
+
+`particle_lookup` returns nothing for a keyword of more than three syllables, so no
+supplemental statement is issued for it. Two- and three-syllable keywords are unchanged.
+Beyond time, two edge behaviors change, both only for 4+ syllable keywords: a supplement that ran
+out the shared route deadline used to make the whole keyword route abstain ("timeout", legacy hits
+dropped), and a cancelled supplement counted toward the trace's "too_broad" label. Neither can happen
+now; the gate below observed no packet difference from either.
+
+- A new test for a four- and a five-syllable name with particles fails on `main`
+  (the particle statement runs) and passes after the change, with the legacy list,
+  scores and order identical. All 57 keyword-particle and AGE-76 tests pass;
+  the full local suite passes 1,534 tests.
+- Cached-vector historical gate, both lanes with the recorded option on, 338 probes
+  three rounds each (2,028 packets, zero embedding calls): majority packet text
+  identical for 338/338 probes; 312/338 pass in every round of both lanes (291 recall,
+  21 quotes). Three probes varied across rounds on `main` and none with the change.
+- Live requests, option on, three alternating rounds (99 replays per lane):
+
+| Keyword route | Option off | On, `main` | On, amendment 2 |
+|---|---:|---:|---:|
+| p50 | 60 ms | 89.9 ms | 66.2 ms |
+| p95 | 140 ms | 154.1 ms | 145.0 ms |
+
+The supplement's median cost falls from about 30 ms to about 6 ms per request. This is
+a replay on a private copy without network or host time, not a host latency figure.
+
+### Found on the way, not changed here
+
+Legacy keyword lookups lose words to the 25 ms slice on long-message data: 217 legacy
+statements were cancelled across the loss-measurement runs above. A query shape that
+restricts the index candidates to the head's revisions before the trigram recheck returned
+identical rows for all 521 recorded live keywords and cut lookups over 25 ms from
+310/1,042 to 52/1,042, but its plan rechecks every head revision, the plan ADR 0052
+replaced for being linear in the chat. It needs a 1k–10k-message measurement and the
+gate before it can be proposed; it is not part of this amendment.

@@ -3,6 +3,12 @@
 Each release's "Known limitations" describe that release. The current list, with what was resolved
 later, is `docs/KNOWN-ISSUES.md`.
 
+## Unreleased
+
+- **The Korean-particle keyword supplement skips words it cannot help** (Phase 41 amendment 2). A keyword of four
+  or more syllables already matches with a particle attached, so no extra lookup is made for it. Recall results are
+  unchanged; the supplement's median cost on recorded requests falls from about 30 ms to about 6 ms.
+
 ## 0.4.0
 
 The third milestone, Stage 7 (forensic recall), with Phases 32–42 and the pre-release audit corrections.
