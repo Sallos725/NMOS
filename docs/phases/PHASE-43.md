@@ -132,6 +132,24 @@ for 338/338, 312/338 passing in every round of both lanes. The eight gate copies
 (checked), so the step cannot reach them; the round-to-round variation in both lanes is the lexical route's timing.
 Local full suite: 1,542 passed; the two documentation-pointer failures of that run are fixed (the latest phase is 43).
 
+## Step 3 evidence (S1–S2)
+
+The detector (`statusshape.py`) and a `shape` rule kind read a window by its key set: a block counts when it holds at
+least three of the set's keys and at least 60 % of them; values are cleaned as every rule cleans them. A sidecar that
+predates the kind reports it as an unknown kind and skips it. Endpoints:
+`GET /v1/conversations/{id}/status/candidates` (read only: the head's last 30 replies, key sets seen twice or more,
+whether the card already reads them, the card's pins), `POST /v1/parsers/card/track` and `/untrack` (the card's other
+rules kept, the same key set tracked once), `PUT /v1/parsers/card/pins` (`app_config.status_pins`; reading unchanged).
+A request takes its card's pins as the recorded `state_pins`.
+
+- A1, with the shipped parser on the trial install's copy, each card's recurring key set as the panel would offer it:
+  the 23-key card 1,127/1,127 values equal to its bound block rule, the 9-key card 126/126 (two chats), a card with no
+  rule read 6 values.
+- A2 (synthetic): quoted `a=b | c=d` prose, a markdown table, a one-field bracket, a lorebook-data block, wiki and
+  markdown links, a log prefix and a bracketed thought with sentence punctuation in its keys are not windows.
+- Tests: looking at candidates writes no configuration; track keeps the card's regex rule and is idempotent; a
+  second chat of the card is read without asking again; pins reach the packet and its replay; untrack keeps the rest.
+
 ## Out of scope
 
 Extraction prompts, generations, embeddings, provider calls; host-side preset changes; inferring dates or durations;

@@ -269,6 +269,9 @@ class RecallOptions:
     # context (presets strip status bars from the prompt); old traces default off. `state_pins`: keys always told.
     state_changes: bool = True
     state_pins: tuple[str, ...] = ()
+    # PHASE-43 S2: each card's pinned status keys, from the configuration; a request takes its card's as `state_pins`
+    # (recorded). Not recorded itself.
+    pins_by_card: tuple[tuple[str, tuple[str, ...]], ...] = ()
     first_cue: bool = True  # how it started, when the message asks (ADR 0056); a trace without it replays with it off
     history_marks: bool = True  # earlier versions only under marks that cover them (ADR 0038 amendment 1); same replay rule
     name_variants: bool = True  # a given name, a Hangul spelling of a romanized name (ADR 0058); same replay rule
@@ -1647,7 +1650,7 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     # The head, its manifest hash and its end in one statement, and every read below bounded by that end: recall
     # takes no conversation lock, and a concurrent sync's append extends the head commit in place (D4).
     snap = conn.execute(
-        "SELECT head_commit_id, head_manifest_hash, (SELECT max(position) FROM active_membership am"
+        "SELECT head_commit_id, head_manifest_hash, host_character_name, (SELECT max(position) FROM active_membership am"
         " WHERE am.commit_id = c.head_commit_id) AS head_end FROM conversation c WHERE c.id = %s", (conv.id,)).fetchone()
     head, upto = snap["head_commit_id"], snap["head_end"]
     fresh = (request.active_commit is None or request.active_commit == head) and (
@@ -1657,7 +1660,8 @@ def retrieve(conn: psycopg.Connection, request: Any, options: RecallOptions) -> 
     # steer lexical scores, fact relevance or excerpt focus either.
     query = clean_text(request.query or "")
     previous_ai = clean_text(request.previous_ai or "")
-    options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator)
+    options = dataclasses.replace(options, strict=conv.memory_strict, narrator=conv.memory_narrator,
+                                  state_pins=dict(options.pins_by_card).get(snap["host_character_name"] or "", ()))
     in_context = set(request.in_context_ids)
     history = (overuse.recent(conn, conv.id, head, n=options.rest_after + 1)
                if options.policy in REST_POLICIES and fresh else None)

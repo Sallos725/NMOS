@@ -61,7 +61,8 @@ from .llm import Embedder
 from .packet import DEFAULT_POLICY, POLICIES, clean_text
 from .retrieval import RecallOptions, prefetched, query_prefix, retrieve
 from .state import current_state, rebuild_state, reparse_conversation, sync_rules, write_state
-from .parsers import needs_card, watched
+from . import statusshape
+from .parsers import _clean as clean_value, needs_card, parse as parse_rules, watched
 from .state import history as state_history
 
 log = logging.getLogger("nmos.sidecar")
@@ -154,6 +155,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             vector_min_sim=cur.vector_min_sim, query_prefix=query_prefix(cur.embed_model, cur.embed_query_instruction),
             policy=cur.packet_policy if cur.packet_policy in POLICIES else DEFAULT_POLICY,
             summarize_key=sm.key if sm else None, canon_key=rt.get("active_canon") if cur.canon_facts else None,
+            pins_by_card=runtime.pins_by_card(overrides),
         ))
 
     def rebuild(overrides: dict[str, Any]) -> None:
@@ -1186,6 +1188,118 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             # Publish only after the database transaction commits; failed writes leave the live rules alone.
             rt.update(prepared)
             return runtime.public_view(rt["settings"], rt["overrides"], rt["rules"])
+
+    # --- PHASE-43 S2: status windows found by their shape --------------------------------------------------------
+    CANDIDATE_REPLIES = 30  # the head's last replies a chat's status windows are looked for in
+    _BOUND_ID = re.compile(r"^(?:card-[0-9a-f]{16}:\d+:)+")
+
+    def apply_card_rules(request: Request, card: str, change) -> dict[str, Any]:
+        """Rewrite one card's bound rules with `change(rules) -> rules` (template form, ids without their binding prefix),
+        as the card Apply does: saved, state rebuilt, published after the commit."""
+        with config_lock:
+            with request.app.state.pool.connection() as conn:
+                runtime.lock_config(conn)
+                overrides = runtime.stored(conn)
+                try:
+                    spec = runtime.parser_spec(settings, overrides, strict=True)
+                    if not isinstance(spec, dict) or not isinstance(spec.get("rules"), list):
+                        raise ValueError("existing parser document is malformed; repair it before applying a card")
+                    current = [{k: v for k, v in r.items() if k != "card"} | {"id": _BOUND_ID.sub("", str(r.get("id", "")))}
+                               for r in spec["rules"] if isinstance(r, dict) and r.get("card") == card]
+                    rules = change(current)
+                    errors = runtime.template_errors(rules)
+                    if errors:
+                        raise HTTPException(status_code=422, detail=errors)
+                    spec = runtime.bind_card(spec, card, rules)
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from None
+                overrides[runtime.PARSERS_KEY] = spec
+                prepared = configuration(overrides)
+                runtime.save(conn, {runtime.PARSERS_KEY: spec})
+                rebuild_state(conn, prepared["rules"])
+            rt.update(prepared)
+            return runtime.public_view(rt["settings"], rt["overrides"], rt["rules"])
+
+    @app.get("/v1/conversations/{conversation_id}/status/candidates", dependencies=[Depends(auth)])
+    def status_candidates(conversation_id: UUID, request: Request):
+        """The status windows found by their shape in the chat's last replies, at least twice with the same keys
+        (PHASE-43 S1/S2). Read only: nothing is tracked until the owner confirms one (Q1)."""
+        with request.app.state.pool.connection() as conn:
+            conv = conn.execute("SELECT head_commit_id, host_character_name FROM conversation WHERE id = %s",
+                                (conversation_id,)).fetchone()
+            if conv is None:
+                raise HTTPException(status_code=404, detail="unknown conversation")
+            rows = conn.execute(
+                "SELECT sr.content FROM active_membership am JOIN source_revision sr ON sr.id = am.source_revision_id"
+                " WHERE am.commit_id = %s AND sr.lifecycle = 'accepted' AND sr.metadata->>'role' = 'char'"
+                " ORDER BY am.position DESC LIMIT %s", (conv["head_commit_id"], CANDIDATE_REPLIES)).fetchall()
+        card = conv["host_character_name"]
+        groups: dict[frozenset[str], dict[str, Any]] = {}
+        for r in reversed(rows):  # oldest first: the last example and values win
+            for block in statusshape.blocks(r["content"] or ""):
+                g = groups.setdefault(block.keys, {"keys": [k for k, _ in block.fields], "count": 0})
+                g["count"] += 1
+                g["values"] = {k: clean_value(v)[:200] for k, v in block.fields}
+                g["example"] = r["content"] or ""
+        rules = rt["rules"]
+        out = []
+        for keys, g in groups.items():
+            if g["count"] < 2:
+                continue
+            read = {k for _, k, _ in parse_rules(rules, g["example"], "char", None, card)} if card else set()
+            shape = next((r.id for r in rules.rules if r.kind == "shape" and r.card == card
+                          and statusshape.covers(frozenset(r.keys), keys)), None)
+            out.append({"keys": g["keys"], "count": g["count"], "values": g["values"],
+                        "tracked": statusshape.covers(frozenset(read), keys), "rule_id": shape})
+        out.sort(key=lambda c: -c["count"])
+        pins = dict(runtime.pins_by_card(rt["overrides"])).get(card or "", ())
+        return {"card": card, "candidates": out, "pins": list(pins)}
+
+    @app.post("/v1/parsers/card/track", dependencies=[Depends(auth)])
+    def track_status(body: dict[str, Any], request: Request):
+        """Track a detected status window on its card (Q1: the owner's confirmation; Q2: the card and its key set). The
+        card's other rules stay (Q5). Tracking the same key set again changes nothing."""
+        card, keys = body.get("card"), body.get("keys")
+        if not isinstance(card, str) or not card.strip() or len(card) > 200:
+            raise HTTPException(status_code=422, detail="card must be a character name of 1 to 200 characters")
+
+        def add(rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            if any(r.get("kind") == "shape" and set(r.get("keys") or []) == set(keys or []) for r in rules):
+                return rules
+            return rules + [{"id": "status", "kind": "shape", "role": "char", "keys": keys}]
+        return apply_card_rules(request, card, add)
+
+    @app.post("/v1/parsers/card/untrack", dependencies=[Depends(auth)])
+    def untrack_status(body: dict[str, Any], request: Request):
+        """Stop tracking one detected status window of a card; its other rules stay."""
+        card, rule_id = body.get("card"), body.get("rule_id")
+        if not isinstance(card, str) or not card.strip() or not isinstance(rule_id, str):
+            raise HTTPException(status_code=422, detail="card and rule_id are required")
+        short = _BOUND_ID.sub("", rule_id)
+        return apply_card_rules(request, card, lambda rules: [
+            r for r in rules if not (r.get("kind") == "shape" and r.get("id") == short)])
+
+    @app.put("/v1/parsers/card/pins", dependencies=[Depends(auth)])
+    def put_status_pins(body: dict[str, Any], request: Request):
+        """A card's pinned status keys, told every time (PHASE-43 Q3). Reading is unchanged: nothing is rebuilt."""
+        card, keys = body.get("card"), body.get("keys")
+        errors = runtime.pins_errors(card, keys)
+        if errors:
+            raise HTTPException(status_code=422, detail=errors)
+        with config_lock:
+            with request.app.state.pool.connection() as conn:
+                runtime.lock_config(conn)
+                overrides = runtime.stored(conn)
+                pins = dict(overrides.get(runtime.STATUS_PINS_KEY) or {})
+                if keys:
+                    pins[card] = list(dict.fromkeys(k.strip() for k in keys))
+                else:
+                    pins.pop(card, None)
+                overrides[runtime.STATUS_PINS_KEY] = pins
+                runtime.save(conn, {runtime.STATUS_PINS_KEY: pins or None})
+                prepared = configuration(overrides)
+            rt.update(prepared)
+            return {"card": card, "pins": pins.get(card, [])}
 
     @app.put("/v1/config", dependencies=[Depends(auth)])
     def put_config(update: dict[str, Any], request: Request):

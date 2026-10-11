@@ -75,3 +75,11 @@ place) and keys that changed in at least half of the last ten windows. A list is
 about it or the key is core; unchanged other keys are left out. The block is placed even when the bar's message is in
 context, because presets strip status bars from the prompt and "in context" is judged by the prose. Dates and times
 stay text. Old traces replay with the option off; `packet-v16` and `packet-v17` are unchanged.
+
+## Amendment 2 — a window found by its shape (PHASE-43 S1–S2, owner 2026-10-11)
+
+A `shape` rule names a status window by its key set instead of a regex; the detector finds outermost bracketed blocks of
+`key=value` / `key: value` fields (labels and nested brackets allowed) and a block is read when it holds at least three
+and 60 % of the set. Detection is offered per chat and never configures by itself; tracking binds the key set to the
+card beside its other rules (PHASE-39 amendment 2's explicit binding, now one confirmation). Pins per card are kept in
+`app_config.status_pins`, outside the rules, so pinning does not change the rules' version or rebuild state.
