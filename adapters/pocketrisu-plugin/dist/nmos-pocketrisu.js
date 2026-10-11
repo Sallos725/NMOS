@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:5105809be9d6".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:2755262f9ca8".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -700,6 +700,35 @@
     ],
     // settings: parser rules
     "rules.title": ["\uC0C1\uD0DC\uCC3D \uADDC\uCE59", "Status-window rules"],
+    "rules.where": [
+      "\uCC44\uD305\uC758 \uC0C1\uD0DC\uCC3D\uC740 \uC778\uC2A4\uD399\uD130\uC758 \uADF8 \uCC44\uD305 \uD398\uC774\uC9C0\uC5D0\uC11C \uCC3E\uC544 \uCF2D\uB2C8\uB2E4. \uC544\uB798\uB294 \uBAA8\uB4E0 \uCE74\uB4DC\uC758 \uADDC\uCE59\uACFC \uC9C1\uC811 \uC4F0\uB294 \uADDC\uCE59\uC785\uB2C8\uB2E4.",
+      "A chat's status window is found and turned on from that chat's Inspector page. Below: every card's rules, and rules written by hand."
+    ],
+    "rules.all_cards": ["\uBAA8\uB4E0 \uCE74\uB4DC\uC758 \uC0C1\uD0DC\uCC3D \uADDC\uCE59", "Every card's status rules"],
+    "rules.advanced": ["\uACE0\uAE09: \uADDC\uCE59 \uC9C1\uC811 \uC4F0\uAE30 (JSON)", "Advanced: write rules by hand (JSON)"],
+    "sw.title": ["\uC0C1\uD0DC\uCC3D (\uC774 \uCC44\uD305)", "Status window (this chat)"],
+    "sw.sub": [
+      '\uB2F5\uC7A5 \uB05D\uC758 [\uD0A4=\uAC12 | \uD0A4: \uAC12 \u2026] \uBAA8\uC591\uC744 \uCC3E\uC2B5\uB2C8\uB2E4. \uCF1C\uBA74 \uCE74\uB4DC "{card}"\uC758 \uB2E4\uB978 \uCC44\uD305\uC5D0\uC11C\uB3C4 \uAC19\uC740 \uBAA8\uC591\uC744 \uC77D\uC2B5\uB2C8\uB2E4.',
+      'Looks for [key=value | key: value \u2026] at the end of replies. Once on, other chats of the card "{card}" with the same window are read too.'
+    ],
+    "sw.no_card": [
+      "\uC774 \uCC44\uD305\uC758 \uCE90\uB9AD\uD130 \uC774\uB984\uC744 \uC544\uC9C1 \uBAB0\uB77C\uC11C \uCF24 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uD55C \uBC88 \uB300\uD654\uD55C \uB4A4 \uB2E4\uC2DC \uC5EC\uC138\uC694.",
+      "This chat's character name is not known yet; send a message, then open this page again."
+    ],
+    "sw.none": ["\uC0C1\uD0DC\uCC3D \uBAA8\uC591\uC774 \uBCF4\uC774\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 (\uAC19\uC740 \uBAA8\uC591\uC774 \uB2F5\uC7A5 2\uBC88 \uC774\uC0C1 \uD544\uC694).", "No status window found (the same shape in at least two replies)."],
+    "sw.found": ["\uD0A4 {n}\uAC1C\uC9DC\uB9AC \uC0C1\uD0DC\uCC3D \xB7 \uB2F5\uC7A5 {c}\uBC88", "A {n}-key status window \xB7 in {c} replies"],
+    "sw.tracked": ["\uCD94\uC801 \uC911 \xB7 \uD0A4 {n}\uAC1C \xB7 \uB2F5\uC7A5 {c}\uBC88", "Tracked \xB7 {n} keys \xB7 in {c} replies"],
+    "sw.track": ["\uCD94\uC801", "Track"],
+    "sw.tracked_now": ['\uCD94\uC801\uD569\uB2C8\uB2E4. \uCE74\uB4DC "{card}"\uC758 \uCC44\uD305\uC5D0\uC11C \uC774 \uC0C1\uD0DC\uCC3D\uC744 \uC77D\uC2B5\uB2C8\uB2E4.', 'Tracking: chats of "{card}" read this window.'],
+    "sw.untrack": ["\uCD94\uC801 \uD574\uC81C", "Stop tracking"],
+    "sw.untracked": ["\uCD94\uC801\uC744 \uD574\uC81C\uD588\uC2B5\uB2C8\uB2E4.", "No longer tracked."],
+    "sw.by_rule": ["\uCE74\uB4DC\uC5D0 \uC9C1\uC811 \uC4F4 \uADDC\uCE59\uC73C\uB85C \uC77D\uACE0 \uC788\uC2B5\uB2C8\uB2E4 (\uC124\uC815 \u2192 \uACE0\uAE09).", "Read by a rule written for the card (Settings \u2192 advanced)."],
+    "sw.pins_sub": [
+      "\u{1F4CC} \uACE0\uC815\uD55C \uD0A4\uB294 \uBC14\uB00C\uC9C0 \uC54A\uC544\uB3C4 \uB9E4\uBC88 \uAE30\uC5B5\uC5D0 \uB123\uC2B5\uB2C8\uB2E4. \uB0A0\uC9DC\xB7\uC2DC\uAC04\xB7\uC7A5\uC18C\uB294 \uB298 \uB123\uC2B5\uB2C8\uB2E4.",
+      "Pinned keys are told every time, changed or not. Date, time and place always are."
+    ],
+    "sw.save_pins": ["\uACE0\uC815 \uC800\uC7A5", "Save pins"],
+    "sw.pins_saved": ["\uACE0\uC815\uD55C \uD0A4\uB97C \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4.", "Pins saved."],
     "rules.sub": [
       'block: \uC2DC\uC791~\uB05D \uC0AC\uC774\uC758 "\uD0A4: \uAC12" \uC904\uC744 \uC77D\uC2B5\uB2C8\uB2E4. entity_line\uC73C\uB85C [\uC778\uBB3C] \uC904\uB9C8\uB2E4 \uC778\uBB3C\uBCC4\uB85C \uB098\uB215\uB2C8\uB2E4 (\uC2DC\uBBAC\uBD07). regex: key/value \uC774\uB984 \uADF8\uB8F9.',
       'block: reads "key: value" lines between start and end; entity_line splits them per [character] line (sim bots). regex: named groups key/value.'
@@ -2840,6 +2869,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     );
     const linkCard = el("div", { class: "card", style: "display:none" });
     const modeCard = el("div", { class: "card", style: "display:none" });
+    const statusCard = el("div", { id: "nmos-status-windows", class: "card", style: "display:none" });
     const picked = /* @__PURE__ */ new Set();
     const chosen = /* @__PURE__ */ new Map();
     let closers = /* @__PURE__ */ new Map();
@@ -2851,6 +2881,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       actionMsg,
       bulkBar,
       modeCard,
+      statusCard,
       linkCard,
       inspectorBody,
       inspectorAddress
@@ -3125,7 +3156,10 @@ html,body{margin:0;background:${PALETTE.bg}}
       actions.style.display = conversation ? "" : "none";
       const shownEntity = inspectorEntity(path);
       if (!shownEntity) linkCard.style.display = "none";
-      if (!conversation || shownEntity) modeCard.style.display = "none";
+      if (!conversation || shownEntity) {
+        modeCard.style.display = "none";
+        statusCard.style.display = "none";
+      }
       if (again) {
         inspectorBody.classList.add("busy");
       } else {
@@ -3146,7 +3180,10 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (keep) restore(keep);
         else root.scrollTop = 0;
         if (shownEntity) void showLinks(shownEntity.conversation, shownEntity.entity, load);
-        else if (conversation) void showMode(conversation, load);
+        else if (conversation) {
+          void showMode(conversation, load);
+          void showStatusWindows(conversation, load);
+        }
       } catch (error) {
         if (load !== loads) return;
         shownPath = null;
@@ -3207,6 +3244,89 @@ html,body{margin:0;background:${PALETTE.bg}}
         msg
       );
       modeCard.style.display = "";
+    }
+    async function showStatusWindows(conversation, load) {
+      let found;
+      try {
+        found = await deps.api("GET", `/v1/conversations/${conversation}/status/candidates`, void 0, 15e3);
+      } catch {
+        statusCard.style.display = "none";
+        return;
+      }
+      if (load !== loads) return;
+      if (!found || !Array.isArray(found.candidates)) {
+        statusCard.style.display = "none";
+        return;
+      }
+      const msg = el("div", { class: "msg", role: "status" });
+      const card = found.card;
+      const act = async (button, method, path, body, done) => {
+        button.disabled = true;
+        try {
+          await deps.api(method, path, body, 3e4);
+          await showStatusWindows(conversation, load);
+          say(statusCard.querySelector(".msg"), done, "ok");
+        } catch (error) {
+          say(msg, errorText(lang, error), "err");
+          button.disabled = false;
+        }
+      };
+      const rows = found.candidates.map((c) => {
+        const preview = c.keys.slice(0, 8).map((k) => `${k}: ${c.values[k] ?? ""}`).join(" \xB7 ") + (c.keys.length > 8 ? " \u2026" : "");
+        const head = el(
+          "div",
+          { class: "line" },
+          el("span", { class: `dot ${c.tracked ? "ok" : "muted"}` }),
+          el("span", { text: L(c.tracked ? "sw.tracked" : "sw.found", { n: c.keys.length, c: c.count }) })
+        );
+        const box = el("div", { class: "sw-window" }, head, el("div", { class: "sub", text: preview }));
+        if (!card) return box;
+        if (!c.tracked) {
+          const track = el("button", { class: "primary", text: L("sw.track") });
+          track.addEventListener("click", () => void act(
+            track,
+            "POST",
+            "/v1/parsers/card/track",
+            { card, keys: c.keys },
+            L("sw.tracked_now", { card })
+          ));
+          box.append(el("div", { class: "btns" }, track));
+          return box;
+        }
+        const pins = c.keys.map((k) => {
+          const box2 = el("input", { type: "checkbox", value: k });
+          box2.checked = found.pins.includes(k);
+          return el("label", { class: "check" }, box2, el("span", { text: `\u{1F4CC} ${k}` }));
+        });
+        const savePins = el("button", { text: L("sw.save_pins") });
+        savePins.addEventListener("click", () => void act(savePins, "PUT", "/v1/parsers/card/pins", {
+          card,
+          keys: pins.map((p) => p.querySelector("input")).filter((i) => i.checked).map((i) => i.value)
+        }, L("sw.pins_saved")));
+        const buttons = el("div", { class: "btns" }, savePins);
+        if (c.rule_id) {
+          const untrack = el("button", { text: L("sw.untrack") });
+          untrack.addEventListener("click", () => void act(
+            untrack,
+            "POST",
+            "/v1/parsers/card/untrack",
+            { card, rule_id: c.rule_id },
+            L("sw.untracked")
+          ));
+          buttons.append(untrack);
+        } else {
+          box.append(el("p", { class: "sub", text: L("sw.by_rule") }));
+        }
+        box.append(el("p", { class: "sub", text: L("sw.pins_sub") }), el("div", { class: "pins" }, ...pins), buttons);
+        return box;
+      });
+      statusCard.replaceChildren(
+        el("h2", { text: L("sw.title") }),
+        el("p", { class: "sub", text: card ? L("sw.sub", { card }) : L("sw.no_card") }),
+        ...rows.length ? rows : [el("p", { class: "muted", text: L("sw.none") })],
+        msg
+      );
+      statusCard.style.display = "";
     }
     const previewRound = /* @__PURE__ */ new WeakMap();
     function nextRound(spot) {
@@ -3852,20 +3972,31 @@ html,body{margin:0;background:${PALETTE.bg}}
       "div",
       { class: "card" },
       el("h2", { text: L("rules.title") }),
-      el("p", { class: "sub", text: L("rules.scope") }),
-      parserActive,
-      el("details", {}, el("summary", { text: L("rules.stored") }), parserStored),
-      field(L("rules.target"), parserTarget),
-      parserCards,
-      el("div", { class: "btns" }, parserPick, example),
-      parserFile,
-      field(L("rules.preset"), parserPreset),
-      field(L("rules.draft"), rules),
-      el("p", { class: "sub", text: L("rules.sub") }),
-      field(L("rules.preset_name"), parserName),
-      el("div", { class: "btns" }, parserSavePreset, parserRemovePreset),
-      parserPreview,
-      el("div", { class: "btns" }, parserApply, parserClear),
+      el("p", { class: "sub", text: L("rules.where") }),
+      el(
+        "details",
+        {},
+        el("summary", { text: L("rules.all_cards") }),
+        parserActive,
+        el("details", {}, el("summary", { text: L("rules.stored") }), parserStored)
+      ),
+      el(
+        "details",
+        {},
+        el("summary", { text: L("rules.advanced") }),
+        el("p", { class: "sub", text: L("rules.scope") }),
+        field(L("rules.target"), parserTarget),
+        parserCards,
+        el("div", { class: "btns" }, parserPick, example),
+        parserFile,
+        field(L("rules.preset"), parserPreset),
+        field(L("rules.draft"), rules),
+        el("p", { class: "sub", text: L("rules.sub") }),
+        field(L("rules.preset_name"), parserName),
+        el("div", { class: "btns" }, parserSavePreset, parserRemovePreset),
+        parserPreview,
+        el("div", { class: "btns" }, parserApply, parserClear)
+      ),
       parserMessage
     ));
     updateParser();

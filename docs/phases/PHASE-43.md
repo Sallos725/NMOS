@@ -150,6 +150,18 @@ A request takes its card's pins as the recorded `state_pins`.
 - Tests: looking at candidates writes no configuration; track keeps the card's regex rule and is idempotent; a
   second chat of the card is read without asking again; pins reach the packet and its replay; untrack keeps the rest.
 
+## Step 4 evidence (S3)
+
+The Inspector's chat page gets a "Status window (this chat)" card beside the memory mode: each window found (its key
+count, how many replies, a preview of its values), Track for one not read yet, and for a tracked one the 📌 pins, Save
+pins and Stop tracking (a window read by a hand-written card rule says so and offers pins only). Without the chat's
+character name nothing can be bound and no button is shown; an older sidecar shows no card. Settings keeps one line on
+where a chat's window is set up, every card's rules and the stored JSON folded, and the hand-written rules (draft,
+presets, Apply) under "Advanced". Bindings and pins live in `app_config`, which archives and restores carry whole.
+
+Tests (plugin): the card offers, tracks with the card and key set, saves pins, untracks with the rule id; looking
+sends no write; no character name, no buttons; an older sidecar, no card; Settings folds both sections.
+
 ## Out of scope
 
 Extraction prompts, generations, embeddings, provider calls; host-side preset changes; inferring dates or durations;

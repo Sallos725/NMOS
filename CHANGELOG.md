@@ -5,7 +5,9 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-- **Status windows can be tracked without writing a rule** (Phase 43 step 3). NMOS finds a status bar by its shape
+- **Status windows can be tracked without writing a rule** (Phase 43 steps 3–4). On a chat's Inspector page,
+  "Status window (this chat)" shows what was found and offers Track, pins and Stop tracking; Settings folds every card's
+  rules and keeps hand-written rules under Advanced. NMOS finds a status bar by its shape
   (`[… key=value | key: value …]`, at least three fields) in a chat's last replies and offers it; tracking it binds the key
   set to the card, beside the card's other rules, so later chats of that card are read too. Pinned keys are told every
   time. Nothing is tracked until it is confirmed.
