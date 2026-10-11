@@ -4,7 +4,7 @@ Status: **draft**, 2026-10-12. Written at the owner's request after a read-only 
 memory plugin ("plugin D"). It reopens a recorded decision: **R5** (`docs/ROADMAP-1.0.md`, 2026-10-01) took read-only
 MCP out of the 1.0 scope, and **R7** says a new phase before 1.0 is a Stage 7 item unless the owner pulls it in by
 name. **Q0 answered (owner, 2026-10-12): (a).** Implementation waits for after 1.0. Only step 1 runs now (zero-call
-evidence, no product change). R5 stands for 1.0. `docs/STATUS.md` and `AGENTS.md` §0/§2 are not changed. Linear:
+evidence, no product change). R5 stands for 1.0. `docs/STATUS.md` and `AGENTS.md` list it as a stopped draft, not as the current phase. Linear:
 AGE-TBD.
 
 **Step 1 done, 2026-10-12: the go/no-go was not met, so the phase stops here** (`docs/perf/phase44-zero-call.md`).

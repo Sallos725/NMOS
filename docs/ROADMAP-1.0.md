@@ -227,6 +227,9 @@ Scope (draft):
 - no read-only MCP. **R5**, decided 2026-10-01 (owner): MCP leaves the 1.0 scope (recorded, not built). The
   packet already carries memory into the prompt and forensic recall is reached through the panel, so a tool the
   response model calls adds nothing the stage needs.
+  Measured on 2026-10-12 (`docs/phases/PHASE-44.md` step 1, `docs/perf/phase44-zero-call.md`, zero model calls):
+  a tool asking the probe verbatim answers 4 of the 27 replay misses, each equally answered by a larger default
+  budget; R5 stands.
 
 Done when:
 - an exact-quote case set ("what did Hana say the first night?") is answered with the source turn;
