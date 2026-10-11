@@ -479,6 +479,42 @@ describe('body upload', () => {
   });
 });
 
+describe('host-rewritten replies', () => {
+  it('sends the text the host shows, not the generated swipe, and says so once on the HUD', async () => {
+    const rewrittenChat: HostChat = { id: 'rw', message: [
+      { role: 'user', data: 'Hello there', chatId: 'u0' },
+      // Generated with 9월 18일, then a trigger rewrote `data`; the swipe still holds the generated reply.
+      { role: 'char', data: 'Reply. [Status:date=9월 4일]', swipes: ['First.', 'Reply. [Status:date=9월 18일]'], swipeId: 1,
+        chatId: 'c1', generationInfo: { generationId: 'c1' } },
+      { role: 'user', data: 'Where did we hide the lantern?', chatId: 'u1' },
+    ] };
+    const sent: any[] = [];
+    let known = false;
+    const { host } = fakeHost((path, body) => {
+      if (path === '/v1/sync/reconcile') {
+        return { status: 200, json: known ? { status: 'noop', active_commit: 'c', manifest_hash: 'm' }
+          : { status: 'needs_bodies', active_commit: null, manifest_hash: 'm', needed_bodies: body.messages.map((m: any) =>
+            ({ host_logical_id: m.host_logical_id, revision_hash: m.revision_hash })) } };
+      }
+      if (path === '/v1/sync/bodies') {
+        sent.push(...body.bodies); known = true;
+        return { status: 200, json: { ok: true, reconcile: { status: 'applied', active_commit: 'c', manifest_hash: 'm' } } };
+      }
+      return { status: 200, json: { freshness: 'fresh', packet: { text: PACKET } } };
+    }, { deadlineMs: 5000 });
+    host.currentChat = async () => structuredClone(rewrittenChat);
+    const events: ActivityEvent[] = [];
+    const adapter = createAdapter(host, (e) => events.push(e));
+    await adapter.beforeRequest(prompt, 'model');
+    expect(sent.find((b) => b.host_logical_id === 'c1').content).toBe('Reply. [Status:date=9월 4일]');
+    expect(events.at(-1)).toMatchObject({ type: 'request-end', outcome: 'injected', rewritten: 1 });
+    events.length = 0;
+    await adapter.beforeRequest([...prompt, { role: 'user', content: 'Where did we hide the lantern?' }], 'model');
+    // Already known to the sidecar: no body is sent and nothing is announced again.
+    expect(events.at(-1)).not.toHaveProperty('rewritten');
+  });
+});
+
 describe('status', () => {
   it('reports connection, features and the last request', async () => {
     const { host } = fakeHost((path, body) => path === '/v1/health'

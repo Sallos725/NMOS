@@ -28,6 +28,11 @@ later, is `docs/KNOWN-ISSUES.md`.
   progress display shows "⚠ Skipped: this message is not in the prompt", the Status tab's last request says so,
   and the console logs the reason. Before, the display cleared and the Status tab kept the previous request's
   result. The request still goes out unchanged.
+- **Memory reads the reply the model is sent, after a trigger or Lua rewrote it.** The plugin took a rerolled reply's
+  text from its selected swipe, which a trigger (`modifychat`), Lua `setChat`, a continue or the reparse after a
+  generation do not update; memory then kept a reply, status bar included, the model no longer saw. It now reads
+  `data`, the text PocketRisu shows and sends. Replies already rewritten are sent again once, which re-extracts them,
+  and the progress display says " · N script-edited replies picked up" when that happens.
 
 ## 0.4.0
 

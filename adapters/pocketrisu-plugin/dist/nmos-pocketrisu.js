@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:1746f3f65154".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:e4f9e15aeea2".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -825,6 +825,7 @@
     "hud.done": ["\u2713 \uCC98\uB9AC \uC644\uB8CC", "\u2713 Processing done"],
     "hud.reused": [" \xB7 \uC7AC\uC0AC\uC6A9", " \xB7 reused"],
     "hud.lexical": [" \xB7 \uC5B4\uD718 \uAC80\uC0C9\uB9CC", " \xB7 lexical only"],
+    "hud.rewritten": [" \xB7 \uC2A4\uD06C\uB9BD\uD2B8 \uC218\uC815 {n}\uAC1C \uBC18\uC601", " \xB7 {n} script-edited replies picked up"],
     "hud.made.facts": ["\uC0AC\uC2E4 {n}\uAC1C \uCD94\uAC00", "facts +{n}"],
     "hud.made.summaries": ["\uC694\uC57D {n}\uAC1C \uCD94\uAC00", "summaries +{n}"],
     // progress display: panel
@@ -862,13 +863,18 @@
   // src/manifest.ts
   var HASH_FORMAT_VERSION = 1;
   var SPECIAL_COMMENT = /\{\{specialcomment::[^]*?::\}\}/g;
-  function selectedContent(message) {
+  function selectedSwipe(message) {
     const swipes = message?.swipes;
     const id = message?.swipeId;
-    if (Array.isArray(swipes) && Number.isInteger(id) && id >= 0 && id < swipes.length) {
-      return swipes[id] ?? "";
-    }
-    return message?.data ?? "";
+    return Array.isArray(swipes) && Number.isInteger(id) && id >= 0 && id < swipes.length ? swipes[id] ?? "" : void 0;
+  }
+  function selectedContent(message) {
+    if (typeof message?.data === "string") return message.data;
+    return selectedSwipe(message) ?? "";
+  }
+  function rewritten(message) {
+    const swipe = selectedSwipe(message);
+    return swipe !== void 0 && typeof message.data === "string" && message.data !== swipe;
   }
   function revisionMetadata(message) {
     const data = typeof message.data === "string" ? message.data : "";
@@ -961,6 +967,10 @@ ${revisionHash}`;
           content: normalizeText(selectedContent(m)),
           metadata: revisionMetadata(m)
         };
+      },
+      rewritten(key) {
+        const i = index.get(key);
+        return i !== void 0 && rewritten(messages[i]);
       }
     };
     return {
@@ -1329,8 +1339,11 @@ ${revisionHash}`;
     async function sync(settings, manifest, bodies, deadline) {
       const request = { ...manifest, plugin_build: PLUGIN_BUILD };
       let result = await call(settings, "/v1/sync/reconcile", request, deadline);
+      let rewritten2 = 0;
       if (result.status === "needs_bodies") {
-        const needed = (result.needed_bodies ?? []).map((n) => bodies.get(bodyKey(n.host_logical_id, n.revision_hash)));
+        const keys = (result.needed_bodies ?? []).map((n) => bodyKey(n.host_logical_id, n.revision_hash));
+        rewritten2 = keys.filter((k) => bodies.rewritten(k)).length;
+        const needed = keys.map((k) => bodies.get(k));
         if (needed.some((b) => !b)) throw new Error("sidecar asked for an unknown body");
         for (let i = 0; i < needed.length; i += BODY_CHUNK) {
           const last2 = i + BODY_CHUNK >= needed.length;
@@ -1348,7 +1361,7 @@ ${revisionHash}`;
         }
       }
       if (result.status === "needs_bodies") throw new Error("sidecar still needs bodies");
-      return result;
+      return { ...result, rewritten: rewritten2 };
     }
     async function beforeRequest(prompt, mode) {
       const started = host.now();
@@ -1504,7 +1517,14 @@ ${revisionHash}`;
           memory,
           vectors
         };
-        emit({ type: "request-end", outcome, chars: packet.length, vectors, conversationId: synced.conversation_id ?? null });
+        emit({
+          type: "request-end",
+          outcome,
+          chars: packet.length,
+          vectors,
+          conversationId: synced.conversation_id ?? null,
+          ...synced.rewritten > 0 ? { rewritten: synced.rewritten } : {}
+        });
         return injectPacket(prompt, packet, settings.injectPosition, turn);
       } catch (error) {
         if (key && epoch === since) remember(key, "", FAILURE_TTL_MS, true);
@@ -1678,7 +1698,8 @@ ${revisionHash}`;
           deadlineMs: event.deadlineMs,
           until: now + OUTCOME_MS,
           reused: event.reused,
-          vectors: event.vectors
+          vectors: event.vectors,
+          rewritten: event.rewritten
         } };
       case "coverage": {
         const shown = state.progress && "coverage" in state.progress ? state.progress : null;
@@ -1707,10 +1728,20 @@ ${revisionHash}`;
     if (r?.phase === "running") return { kind: "busy", text: t(lang, "hud.recalling"), fraction: null, icon: true };
     if (r?.phase === "done" && now < r.until) {
       if (r.outcome === "injected") {
-        const how = [r.reused ? t(lang, "hud.reused") : "", r.vectors === "fallback" ? t(lang, "hud.lexical") : ""].filter(Boolean).join("");
+        const how = [
+          r.reused ? t(lang, "hud.reused") : "",
+          r.vectors === "fallback" ? t(lang, "hud.lexical") : "",
+          r.rewritten ? t(lang, "hud.rewritten", { n: r.rewritten }) : ""
+        ].filter(Boolean).join("");
         return { kind: "ok", text: t(lang, "hud.injected", { n: r.chars }) + how, fraction: null };
       }
-      if (r.outcome === "nothing-relevant") return { kind: "muted", text: t(lang, "hud.nothing"), fraction: null };
+      if (r.outcome === "nothing-relevant") {
+        return {
+          kind: "muted",
+          text: t(lang, "hud.nothing") + (r.rewritten ? t(lang, "hud.rewritten", { n: r.rewritten }) : ""),
+          fraction: null
+        };
+      }
       if (r.outcome === "chat-off") return { kind: "muted", text: t(lang, "hud.chat_off"), fraction: null };
       if (r.outcome === "skipped") return { kind: "warn", text: t(lang, "hud.skipped", { r: t(lang, "hud.reason.no_turn") }), fraction: null };
       const reason = r.error?.startsWith("deadline") ? t(lang, "hud.reason.deadline", { s: Math.round((r.deadlineMs ?? 0) / 100) / 10 }) : t(lang, "hud.reason.error");

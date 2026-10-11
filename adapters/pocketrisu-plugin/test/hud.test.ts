@@ -37,6 +37,12 @@ describe('request outcome', () => {
     expect(view(s, 10 + OUTCOME_MS, 'ko')).toBeNull();
   });
 
+  it('a request that sent host-rewritten replies to memory says how many', () => {
+    const done = run([[{ type: 'request-start' }, 0], [{ type: 'request-end', outcome: 'injected', chars: 12, rewritten: 2,
+      conversationId: null }, 1]]);
+    expect(view(done, 2, 'ko')?.text).toBe('✓ 기억 주입 (12자) · 스크립트 수정 2개 반영');
+  });
+
   it('a request skipped for want of the user turn says so', () => {
     const done = run([[{ type: 'request-start' }, 0], [{ type: 'request-end', outcome: 'skipped', chars: 0, conversationId: null }, 1]]);
     expect(view(done, 2, 'ko')).toEqual({ kind: 'warn', text: '⚠ 건너뜀: 이번 메시지를 프롬프트에서 못 찾음', fraction: null });
