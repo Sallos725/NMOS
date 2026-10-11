@@ -1,8 +1,8 @@
 # Phase 43 — Status windows by their shape, per chat, told as changes
 
-Status: **proposed** 2026-10-11, not approved. Drafted at the owner's request after the Phase 41 live check.
-It would amend Phase 39 amendment 2 (explicit card-bound status configuration) and ADR 0071. Not a roadmap
-stage; a correction phase beside the current one (AGENTS.md §7.5) once approved.
+Status: **approved** by the owner, 2026-10-11 ("추천대로 승인"): Q1–Q6 as recommended (answers below). Drafted at
+the owner's request after the Phase 41 live check. Amends Phase 39 amendment 2 (explicit card-bound status
+configuration) and ADR 0071. Not a roadmap stage; a correction phase beside the current one (AGENTS.md §7.5).
 
 ## Why
 
@@ -50,7 +50,40 @@ Two prototype fixes were needed: brackets inside a value (`Location: … [a plac
 blocks, and five values differed until the parser's tag cleaning was applied. Lorebook-data blocks in replies were
 not detected. This is one install's data; acceptance needs a wider synthetic false-positive set (A2).
 
-## Questions for the owner
+## Answers (owner, 2026-10-11: as recommended)
+
+- Q1: confirmed once in the panel; nothing starts tracking by itself.
+- Q2: a confirmation binds the detected key set to the card, so a new chat of that card where the same keys appear
+  is tracked too (a card binding, as today, plus the key set).
+- Q3: core keys are the pinned keys plus the keys that changed in at least half of the last ten status windows.
+- Q4: always placed; no literal prompt check.
+- Q5: existing card-bound rules stay as they are; the panel offers to track a detected window beside them.
+- Q6: bindings, key sets and pins live in the existing `app_config` parser JSON; no migration.
+
+## Steps
+
+1. This record (approval, answers, step order).
+2. **S4 first**, alone: the packet's status as core values plus changes, placed even when the source message is in
+   context, under a recorded `packet-v18` option (`state_changes`). Works with today's card-bound rules; it is the
+   correction for the date the model could not see.
+3. S1–S2: the sidecar's detector (a `shape` rule kind), a read-only candidates endpoint and explicit track/untrack/pin
+   endpoints. Detection never writes configuration; only the track call does.
+4. S3: the panel shows the open chat only, offers detected windows and pins; other bindings collapsed; JSON under
+   advanced.
+5. Evidence A1–A5 recorded against the shipped code.
+
+S4 details fixed by this record:
+- The previous window is the latest earlier head reply with an observation under the same rules version. The first
+  window has no previous one: core keys' current values only, no change marks.
+- Unchanged keys that are not core are left out (not shown as `+0`).
+- Change forms: an integer `44 (−1)`; `a / b` with both parts numeric, the change of the first part; a list (split on
+  ` / ` or `, `, at least three items) as `+ added / − removed` by item name, a `×N` quantity as its change; any other
+  value as the new value. Dates and times are text: no arithmetic (Phase 42's boundary).
+- Core keys: pinned ∪ keys changed in at least 5 of the last 10 windows (fewer windows: at least half of them).
+- The in-context filter is dropped only with the option on, under `packet-v18`, for a chat with active rules; v16/v17
+  and historical traces (option missing: off) keep today's behavior.
+
+## Questions for the owner (answered above)
 
 - Q1. Confirm in the panel (recommended), or start tracking automatically after N recurrences?
 - Q2. After confirmation, bind to this chat only, or also to new chats where the same key set appears

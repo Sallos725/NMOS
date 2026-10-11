@@ -44,11 +44,11 @@ GigaTrans original-only derived text and the GT-CTRL button marker are deferred 
 
 ## Current phase
 
-**Phase 43 — status windows by their shape, per chat, told as changes: proposed 2026-10-11, not approved.**
+**Phase 43 — status windows by their shape, per chat, told as changes: approved 2026-10-11 (Q1–Q6 as recommended); step 2 (S4, the packet) next.**
 A built-in detector replaces card-name-bound regex setup, the panel shows the open chat only, and the packet carries
 core status values plus changes even when the prompt strips status bars. Prototype detector on the trial install's
 copy: equal to the bound rules on every reply of both configured cards, no recurring false block. Six owner
-questions open. [Proposal](phases/PHASE-43.md).
+questions answered as recommended. [Spec](phases/PHASE-43.md).
 
 **Phase 42 — source status-window clock: approved 2026-10-10.** The owner asked to correct past-scene time recall before release if feasible and authorized existing measured-data access. The correction is included in the v0.4.0 tag; its publication is gated by the tag workflow above. [Scope](phases/PHASE-42.md). Current clock storage works; the source-clock supplement is implemented. Local replay passes with 291/314 recall and 21/24 quotes unchanged; copied Voyage replay preserves original ledger majorities for all 85 requests. Full local suite: 1,528 passed; final focused module: 13 passed, including three subsequently added boundaries. Final required CI passed the combined 1,531-test tree. An existing S06 source-selection fixture failed twice on general CI while Linux/macOS native suites passed; its semantic check now has a test-local scheduling allowance, with product deadlines and dedicated cancellation tests unchanged. Exact runner timing was not logged; a controlled delay reproduced the assertion. [Evidence](perf/phase42-source-clock.md). No date arithmetic or inferred event timestamp is claimed.
 
