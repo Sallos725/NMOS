@@ -291,10 +291,10 @@ def test_a_cancelled_legacy_lookup_never_runs_supplement_with_an_incomplete_deno
     seen = []
     particle = retrieval.particle_lookup
 
-    def cancel_name(conn, head, query, cut, limit, upto=None):
+    def cancel_name(conn, head, query, cut, limit, upto=None, head_ids=None):
         if query == "민지":
             raise psycopg.errors.QueryCanceled()
-        return real(conn, head, query, cut, limit, upto)
+        return real(conn, head, query, cut, limit, upto, head_ids)
 
     def watched(word):
         seen.append(word)
@@ -314,8 +314,8 @@ def test_supplement_sql_has_only_the_legacy_words_remaining_slice_and_keeps_lega
     clock = retrieval.time.perf_counter
     consumed = [0.0]
 
-    def delayed(conn, head, query, cut, limit, upto=None):
-        ids = real(conn, head, query, cut, limit, upto)
+    def delayed(conn, head, query, cut, limit, upto=None, head_ids=None):
+        ids = real(conn, head, query, cut, limit, upto, head_ids)
         consumed[0] += 0.015  # a completed lookup used 15 ms; OS sleep can overshoot and cancel it
         return ids
 
