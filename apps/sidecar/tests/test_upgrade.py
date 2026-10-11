@@ -55,10 +55,14 @@ def test_a_database_of_an_earlier_release_upgrades_and_keeps_working(dump, datab
         per_message = conn.execute(
             "SELECT EXISTS (SELECT 1 FROM extraction e JOIN projection_generation g ON g.key = e.extractor_key"
             " WHERE coalesce(g.spec->>'unit', 'message') = 'message')").fetchone()[0]
-        if dump.stem == "v0.3.0":
-            assert conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == "0028_reveal_checks.sql"
+        written = conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
+    if dump.stem == "v0.3.0":
+        assert written == "0028_reveal_checks.sql"
+    if dump.stem == "v0.4.0":
+        assert written == "0029_state_dismiss.sql"
     applied = apply_migrations(database_url)
-    assert applied and applied[-1] == LATEST
+    # A release at the latest schema has nothing to apply; it still has to start and go on below.
+    assert (applied and applied[-1] == LATEST) if written < LATEST else applied == []
     if dump.stem == "v0.3.0":
         assert applied[0] == "0029_state_dismiss.sql"
     with psycopg.connect(database_url) as conn:

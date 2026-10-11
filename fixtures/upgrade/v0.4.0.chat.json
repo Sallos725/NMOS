@@ -1,0 +1,181 @@
+{
+ "ref": "v0.4.0",
+ "chats": [
+  {
+   "id": "4ea648f9-bc84-454a-8ea8-73a62c7c5a56",
+   "messages": [
+    {
+     "role": "user",
+     "data": "We should rest somewhere safe.",
+     "chatId": "d64c8320-c697-417d-8710-c617cfbef277"
+    },
+    {
+     "role": "char",
+     "data": "Mina is in the old chapel. Mina has the brass key.",
+     "chatId": "c3123f08-0ddc-4b65-9c30-74aebc6bf998",
+     "generationInfo": {
+      "generationId": "c3123f08-0ddc-4b65-9c30-74aebc6bf998"
+     }
+    },
+    {
+     "role": "user",
+     "data": "Is Rin with you?",
+     "chatId": "d52a5b71-d751-42b5-881c-9e41613da06d"
+    },
+    {
+     "role": "char",
+     "data": "Rin is Mina's rival. Rin went to the lighthouse.",
+     "chatId": "ebb131db-f700-4f22-8925-9a0ee091f6c1",
+     "generationInfo": {
+      "generationId": "ebb131db-f700-4f22-8925-9a0ee091f6c1"
+     }
+    },
+    {
+     "role": "user",
+     "data": "What did Mina say before she left?",
+     "chatId": "446ba4a4-a027-4318-be2c-c1f2f0255af1"
+    },
+    {
+     "role": "char",
+     "data": "Mina promised Takumi to return before the bell rings.",
+     "chatId": "50d9cad5-21f7-42e7-ba75-48efb3baa723",
+     "generationInfo": {
+      "generationId": "50d9cad5-21f7-42e7-ba75-48efb3baa723"
+     }
+    },
+    {
+     "role": "user",
+     "data": "Let's check the market.",
+     "chatId": "20e8e3dc-7aa3-4e1a-920b-965dcde740fc"
+    },
+    {
+     "role": "char",
+     "data": "Idle reply about lanterns and rain.",
+     "chatId": "2ecc70c8-321f-4631-b645-82e61876d467",
+     "generationInfo": {
+      "generationId": "2ecc70c8-321f-4631-b645-82e61876d467"
+     }
+    },
+    {
+     "role": "user",
+     "data": "Any news from the harbor?",
+     "chatId": "b7dcaefc-6d75-4505-b8e6-47e00f7672b4",
+     "disabled": true
+    },
+    {
+     "role": "char",
+     "data": "Rin has the silver compass. The gulls are loud today.",
+     "chatId": "a76d3054-750f-4478-b87d-9d0b752e8fa6",
+     "generationInfo": {
+      "generationId": "a76d3054-750f-4478-b87d-9d0b752e8fa6"
+     }
+    },
+    {
+     "role": "user",
+     "data": "Where do we meet tonight?",
+     "chatId": "d32437bc-74de-42bc-96d0-83adb4ebe195"
+    },
+    {
+     "role": "char",
+     "data": "Mina moved to the bell tower.",
+     "chatId": "60c09464-a3cb-40a7-a206-4138535a589b",
+     "generationInfo": {
+      "generationId": "60c09464-a3cb-40a7-a206-4138535a589b"
+     }
+    },
+    {
+     "role": "user",
+     "data": "Where is Mina now?",
+     "chatId": "be443e90-4d48-4d1d-b636-3882189eafc8"
+    },
+    {
+     "role": "char",
+     "data": "Mina keeps the brass key close.",
+     "chatId": "0274889a-af3b-4e04-983d-155a37e41975",
+     "generationInfo": {
+      "generationId": "0274889a-af3b-4e04-983d-155a37e41975"
+     }
+    },
+    {
+     "role": "user",
+     "data": "And the compass?",
+     "chatId": "8e91bc3b-9a23-4e2a-ad24-5778a255d320"
+    },
+    {
+     "role": "char",
+     "data": "Rin has the silver compass.",
+     "chatId": "d4ea17dc-8a1e-4a34-8986-d45d37cbb27e",
+     "generationInfo": {
+      "generationId": "d4ea17dc-8a1e-4a34-8986-d45d37cbb27e"
+     },
+     "swipes": [
+      "Rin has the silver compass.",
+      "Rin carries the silver compass and a map."
+     ],
+     "swipeId": 0
+    },
+    {
+     "role": "user",
+     "data": "Let's go.",
+     "chatId": "7df9fd76-8ad3-401c-94ab-c3dd71276e90"
+    }
+   ]
+  },
+  {
+   "id": "e181f244-c5a5-4b93-a7ab-771cf3f44576",
+   "messages": [
+    {
+     "role": "user",
+     "data": "We should rest somewhere safe.",
+     "chatId": "490c1c84-1110-4688-9240-1c03d7c4ed6b"
+    },
+    {
+     "role": "char",
+     "data": "Mina is in the old chapel. Mina has the brass key.",
+     "chatId": "c20e6ac4-4d9f-4ed0-872e-61c7c9ae0079",
+     "generationInfo": {
+      "generationId": "c3123f08-0ddc-4b65-9c30-74aebc6bf998"
+     }
+    },
+    {
+     "role": "user",
+     "data": "Is Rin with you?",
+     "chatId": "6ad9c28e-e130-4423-b0fc-fa1861d0859d"
+    },
+    {
+     "role": "char",
+     "data": "Rin is Mina's rival. Rin went to the lighthouse.",
+     "chatId": "3a91d72d-83af-46df-9cd6-5b4c314617eb",
+     "generationInfo": {
+      "generationId": "ebb131db-f700-4f22-8925-9a0ee091f6c1"
+     }
+    },
+    {
+     "role": "user",
+     "data": "What did Mina say before she left?",
+     "chatId": "a1a10fdb-f53f-4e1c-a8bd-fdd7544fb6d3"
+    },
+    {
+     "role": "char",
+     "data": "Mina promised Takumi to return before the bell rings.",
+     "chatId": "2d3bc64b-12c4-400e-a3a0-615cc99647b2",
+     "generationInfo": {
+      "generationId": "50d9cad5-21f7-42e7-ba75-48efb3baa723"
+     }
+    },
+    {
+     "role": "char",
+     "isComment": true,
+     "disabled": true,
+     "chatId": "9d97f962-d538-4ce1-8c64-26aca1b41724",
+     "data": "{{specialcomment::branchedfrom::4ea648f9-bc84-454a-8ea8-73a62c7c5a56::Harbor route::50d9cad5-21f7-42e7-ba75-48efb3baa723::}}"
+    },
+    {
+     "role": "user",
+     "data": "Rin moved to the market.",
+     "chatId": "8abe6b83-57bf-464e-b2b2-01c6f0716087"
+    }
+   ]
+  }
+ ]
+}
