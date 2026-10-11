@@ -32,7 +32,7 @@ normalized text and the parsed state are recomputed from the rest.
    | Part | Tables | When |
    |---|---|---|
    | ledger | `conversation`, `host_observation`, `observation_base`, `source_object`, `source_revision` (messages and canon), `worldline_commit`, `worldline_append`, `active_membership`, `canon_manifest`, `canon_applied`, `entity_link`, `owner_repair`, `retrieval_trace`, and every `projection_generation` | always |
-   | settings | `app_config`: the editable settings but the keys, and the parser rules | the whole install |
+   | settings | `app_config`: the editable settings but the keys, the parser rules and presets, and the pinned status keys (PHASE-43) | the whole install |
    | projections | `extraction`, `assertion` (message facts and canon reads), `summary` | by default |
    | embeddings | `revision_embedding` | when asked |
 
@@ -40,7 +40,7 @@ normalized text and the parsed state are recomputed from the rest.
    Chosen conversations take their own rows only; a branch keeps its link column as stored (PHASE-16 Q2 governs
    restore). Every generation goes in, since rows of any conversation may name any of them and they are small.
 4. **No credential, ever** (Q7, K21). Settings are an allowlist (`runtime.EDITABLE` without `runtime.SECRET`, plus
-   the parser rules), so a key saved in the panel never qualifies. An endpoint setting whose URL has a user, a
+   the parser rules and presets and the pinned status keys), so a key saved in the panel never qualifies. An endpoint setting whose URL has a user, a
    password, a query string (`?key=`) or a fragment is left out and named in `omitted_settings`. A generation whose
    endpoint has a user or a password refuses the export (its key hashes it; it cannot be left out). Every string of
    every row, decoded (so an escaped quote or backslash still matches), and of the manifest is checked against every
