@@ -44,6 +44,18 @@ GigaTrans original-only derived text and the GT-CTRL button marker are deferred 
 
 ## Current phase
 
+**Phase 41 amendment 2 — no supplemental lookup a legacy lookup already covers: approved by the owner, 2026-10-11.**
+A read-only replay of the trial install's live packet-v18 requests (a private restored copy) measured the particle
+supplement at about +30 ms median on the keyword route and found that it changed one request's candidates of 33
+and no packet. Keywords of four or more syllables already reach the 0.8 fuzzy threshold with a particle attached
+(n/(n + 1)); their supplemental lookups are no longer issued. Zero exceptions on the live copy and eight gate
+copies; the cached-vector gate gives identical majority packet text for 338/338 probes (312/338 passing in both
+lanes); the full local suite passes 1,534 tests; the supplement's median cost falls to about 6 ms on the live
+replay. Native CI on the PR head is required. Not deployed. A faster legacy lookup restricted to the head's
+revisions is measured but not proposed until a 1k–10k-message check and the gate.
+[Scope](phases/PHASE-41.md#amendment-2--no-supplemental-lookup-a-legacy-lookup-already-covers),
+[evidence](perf/phase41-keyword-particles.md#amendment-2--live-requests-and-the-redundant-lookups).
+
 **Phase 42 — source status-window clock: approved 2026-10-10.** The owner asked to correct past-scene time recall before release if feasible and authorized existing measured-data access. The correction is included in the v0.4.0 tag; its publication is gated by the tag workflow above. [Scope](phases/PHASE-42.md). Current clock storage works; the source-clock supplement is implemented. Local replay passes with 291/314 recall and 21/24 quotes unchanged; copied Voyage replay preserves original ledger majorities for all 85 requests. Full local suite: 1,528 passed; final focused module: 13 passed, including three subsequently added boundaries. Final required CI passed the combined 1,531-test tree. An existing S06 source-selection fixture failed twice on general CI while Linux/macOS native suites passed; its semantic check now has a test-local scheduling allowance, with product deadlines and dedicated cancellation tests unchanged. Exact runner timing was not logged; a controlled delay reproduced the assertion. [Evidence](perf/phase42-source-clock.md). No date arithmetic or inferred event timestamp is claimed.
 
 **Phase 39 amendment 2 — status configuration UX and required card binding:

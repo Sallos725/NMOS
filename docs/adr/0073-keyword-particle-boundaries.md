@@ -54,6 +54,15 @@ This enforces result admission, not immediate server preemption. A full old list
 that limitation. This is a bounded ordering amendment, not a global ranking or
 threshold change. Its implementation and evidence must still pass the gate.
 
+Amendment 2 (owner approved, 2026-10-11, PHASE-41 amendment 2): a keyword of four
+or more Hangul syllables gets no supplemental lookup. With a particle attached its
+word similarity is n/(n + 1) ≥ 0.8, so the legacy lookup already returns every
+exact-particle hit and the supplement could only spend time. Two- and three-syllable
+keywords, the cases this ADR exists for, are unchanged. Checked on the trial
+install's live copy and the gate copies before adoption: zero exact-particle rows
+outside the legacy result for 4+ syllables. Candidates, scores and packets are
+unchanged; only the time is saved. [Evidence](../perf/phase41-keyword-particles.md#amendment-2--live-requests-and-the-redundant-lookups).
+
 ## Measurement boundary
 
 The original P01 query embeddings were not persisted. Reconstructed recorded
