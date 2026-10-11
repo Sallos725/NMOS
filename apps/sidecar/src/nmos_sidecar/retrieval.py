@@ -113,6 +113,13 @@ PARTICLE_PREFILTER = 0.6
 # word's three trigrams can leave the index thousands of long messages to recheck), so it is dropped and the other
 # keywords still run (measured at 10,000 messages: 2–3 ms for a rare word, 37 ms for one capped at 201 matches).
 KEYWORD_SLICE_MS = 25
+# A head of at most this many messages and characters is looked up by its own revisions (ADR 0052 amendment 1): the
+# trigram index spans every chat's revisions, and rechecking another chat's long messages took a short chat's keyword
+# past its slice. Restricted, the planner rechecks every head revision instead, so the cost follows the head's text: on a
+# trial install's recorded requests, heads under 100,000 characters went from 72 of 245 word lookups over 25 ms to 0,
+# larger ones from 75 of 276 to 257. Past 500 messages the id list itself costs ~1 ms a statement per 500 more.
+HEAD_FIRST_MAX = 500
+HEAD_FIRST_CHARS = 100_000
 QWEN3_QUERY_INSTRUCTION = ("Instruct: Given a question or remark from a role-play chat, retrieve the earlier story "
                            "passage that answers or relates to it\nQuery: ")
 # Candidates must match the user's message; the previous AI turn only breaks ties in ranking
@@ -340,7 +347,8 @@ _RESTORED = ("enable_seqscan", "enable_indexscan", "statement_timeout")  # the t
 
 
 def _lexical(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, cut: int,
-             threshold: float, timeout_ms: int, upto: int | None = None) -> tuple[list[dict[str, Any]], str]:
+             threshold: float, timeout_ms: int, upto: int | None = None,
+             ids: list[UUID] | None = None) -> tuple[list[dict[str, Any]], str]:
     """Lexical candidates over the normalized projection (#9) and the trace mode: "on", "too_broad"
     (more than BROAD_LIMIT matches) or "timeout". Recall abstains from lexical candidates in the last two."""
     try:
@@ -350,7 +358,7 @@ def _lexical(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str,
             wanted = {"pg_trgm.word_similarity_threshold": str(threshold), "enable_seqscan": "off",
                       "enable_indexscan": "off", "statement_timeout": str(timeout_ms)}
             _apply(conn, wanted)
-            matches = _lexical_matches(conn, head, query, cut, BROAD_LIMIT + 1, upto)
+            matches = _lexical_matches(conn, head, query, cut, BROAD_LIMIT + 1, upto, ids)
             rows = _lexical_candidates(conn, head, matches, query, previous_ai) if len(matches) <= BROAD_LIMIT else None
             _apply(conn, dict(previous))
             return (rows, "on") if rows is not None else ([], "too_broad")
@@ -402,20 +410,47 @@ _PARTICLE_MATCHES = """
     """
 
 
-def _matches_params(head: UUID, query: str, cut: int, limit: int, upto: int | None = None) -> dict[str, Any]:
+def _matches_params(head: UUID, query: str, cut: int, limit: int, upto: int | None = None,
+                    ids: list[UUID] | None = None) -> dict[str, Any]:
     return {"head": head, "q": query, "cut": cut, "limit": limit, "norm": NORMALIZER_VERSION,
-            "upto": 2**31 - 1 if upto is None else upto}
+            "upto": 2**31 - 1 if upto is None else upto, "ids": ids}
+
+
+_HIT_WHERE = re.compile(r"FROM revision_text\s+WHERE ([^\n]*)")
+
+
+def _head_first(sql: str) -> str:
+    """`sql`'s lookup over the head's own revisions (`ids`) instead of the trigram index, the rest of the statement
+    unchanged: the head filters after it still decide, so the matches are the same and no other chat's message is
+    rechecked. The revisions are read first behind an `OFFSET 0` fence: left to the planner, the index path came back
+    with its statistics and rechecked a 10,000-message chat for a 41-message one."""
+    return _HIT_WHERE.sub(lambda m: "FROM (SELECT * FROM revision_text WHERE source_revision_id = ANY(%(ids)s::uuid[])"
+                                    f" OFFSET 0) AS revision_text WHERE {m[1]}", sql, count=1)
+
+
+def _head_ids(conn: psycopg.Connection, head: UUID, cut: int, upto: int | None = None) -> list[UUID] | None:
+    """The revisions a lookup may find on the head (after the cut, up to `upto`), or None past HEAD_FIRST_MAX messages
+    or HEAD_FIRST_CHARS characters: then the index-first lookup is the cheaper one."""
+    rows = conn.execute(
+        "SELECT am.source_revision_id AS id, coalesce(rt.clean_chars, 0) AS chars FROM active_membership am"
+        " LEFT JOIN revision_text rt ON rt.source_revision_id = am.source_revision_id AND rt.normalizer = %s"
+        " WHERE am.commit_id = %s AND am.position > %s AND am.position <= %s LIMIT %s",
+        (NORMALIZER_VERSION, head, cut, 2**31 - 1 if upto is None else upto, HEAD_FIRST_MAX + 1)).fetchall()
+    if len(rows) > HEAD_FIRST_MAX or sum(r["chars"] for r in rows) > HEAD_FIRST_CHARS:
+        return None
+    return [r["id"] for r in rows]
 
 
 def _lexical_matches(conn: psycopg.Connection, head: UUID, query: str, cut: int, limit: int,
-                     upto: int | None = None) -> list[UUID]:
+                     upto: int | None = None, ids: list[UUID] | None = None) -> list[UUID]:
     """Active head revisions the query matches (`<%`), at most `limit`: the statement stops there, after checking the
     trigram index's candidates up to that many head matches (candidates of other chats and earlier revisions are checked
     too, then left out), so a broad query is dropped by its slice or the timeout. Never prepared on the server: after
     five runs Postgres may plan a prepared statement without its parameters, and without the word it cannot tell that
     the trigram index is the narrow way in. Either slow plan took a keyword past its slice, which dropped it as if it
     were too common, and a replay could find what its request had not (ADR 0027)."""
-    return [r["id"] for r in conn.execute(_MATCHES, _matches_params(head, query, cut, limit, upto),
+    sql = _MATCHES if ids is None else _head_first(_MATCHES)
+    return [r["id"] for r in conn.execute(sql, _matches_params(head, query, cut, limit, upto, ids),
                                           prepare=False).fetchall()]
 
 
@@ -444,7 +479,8 @@ def _lexical_candidates(conn: psycopg.Connection, head: UUID, ids: list[UUID], q
 
 
 def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut: int, timeout_ms: int,
-                     upto: int | None = None, *, particles: bool = False) -> tuple[list[dict[str, Any]], str]:
+                     upto: int | None = None, *, particles: bool = False,
+                     head_ids: list[UUID] | None = None) -> tuple[list[dict[str, Any]], str]:
     """The keyword route (ADR 0052): messages holding the message's keywords, scored by the keywords' rarity
     (log of messages over matches, summed), best first, and the trace mode: "on", "none" (no keyword), "too_broad"
     (every keyword dropped as too common) or "timeout". All keywords share one budget of `timeout_ms`.
@@ -499,7 +535,7 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
                 try:
                     with conn.transaction():  # the original legacy lookup and its original slice
                         within(KEYWORD_SLICE_MS)
-                        ids = _lexical_matches(conn, head, word, cut, BROAD_LIMIT + 1, upto)
+                        ids = _lexical_matches(conn, head, word, cut, BROAD_LIMIT + 1, upto, head_ids)
                 except psycopg.errors.QueryCanceled:
                     if (deadline - time.perf_counter()) * 1000 < 1:
                         raise  # the route's budget, not the word's slice, ran out
@@ -532,6 +568,8 @@ def _keyword_lexical(conn: psycopg.Connection, head: UUID, words: list[str], cut
                     try:
                         with conn.transaction():  # losing an addition must not discard a valid legacy hit
                             within(remaining, threshold=PARTICLE_PREFILTER)
+                            # Index-first even for a short head: kept to the head's revisions, the planner rechecks
+                            # every one of them with the boundary pattern and the word's slice runs out.
                             params = _matches_params(head, word, cut, BROAD_LIMIT + 1, upto)
                             exact_ids = {r["id"] for r in conn.execute(
                                 _PARTICLE_MATCHES, params | {"prefixes": prefixes, "particle": pattern},
@@ -913,14 +951,15 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             else:
                 pending = QueryEmbedding(options.embedder, text, options.embed_timeout_ms)
         cut = _cut(conn, head, upto)
+        head_ids = _head_ids(conn, head, cut, upto)  # ADR 0052 amendment 1: a short head is looked up by its revisions
         lexical, g.lexical_note = _lexical(conn, head, query, previous_ai, cut, options.threshold,
-                                           options.lexical_timeout_ms, upto)
+                                           options.lexical_timeout_ms, upto, head_ids)
         g.timings["lexical"] = round((time.perf_counter() - started) * 1000, 2)
         if options.lexical_keywords:
             t0 = time.perf_counter()
             keyword, g.keyword_note = _keyword_lexical(conn, head, keywords(query), cut, options.lexical_timeout_ms,
                                                        upto, particles=options.keyword_particles
-                                                       and options.policy == "packet-v18")
+                                                       and options.policy == "packet-v18", head_ids=head_ids)
             g.timings["keywords"] = round((time.perf_counter() - t0) * 1000, 2)
     # State, facts, threads, the scene and the summaries are read before the excerpts are chosen: none of them depends
     # on the candidates, and the query embedding answers meanwhile (ADR 0061). The excerpts follow, then what the

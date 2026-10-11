@@ -51,3 +51,22 @@ names a pet scored 0.32 against the message that answers it; each of its two nou
   because a whole-message timeout seen in every run on `main` did not occur on this branch; not attributed to this
   change.) Measured again in step 5.
 - Verbs and one-syllable-particle forms can still take a slot; the rules are fixed lists and can be retuned.
+
+## Amendment 1 — a short head is looked up by its own revisions
+
+Owner approved 2026-10-11 (PHASE-41 amendment 3), after a read-only replay of the trial install's live requests.
+The trigram index spans every chat's revisions. The whole-message and keyword lookups (`_MATCHES`) find index
+candidates first and keep the head's afterwards, so a short chat's lookup rechecked another chat's long messages: on the
+trial install's copy 310 of 1,042 keyword lookups took over the 25 ms slice and were dropped as if too common, and a
+41-message chat beside a 10,000-message one lost its whole-message route to the 300 ms deadline.
+
+- A head of at most `HEAD_FIRST_MAX` (500) messages and `HEAD_FIRST_CHARS` (100,000) characters after the cut is read
+  by its revision ids behind an `OFFSET 0` fence and rechecked there. Larger heads keep the index-first lookup: the
+  restricted lookup rechecks every head revision, so its cost follows the head's characters (measured: under 100,000
+  characters never over 25 ms; above it, worse than the index in most lookups).
+- The head filters after the lookup are unchanged, so the matches are the same; only time changes, and with it which
+  lookups finish inside their slice and deadline.
+- The particle supplement (ADR 0073) stays index-first: restricted, its boundary pattern rechecked every head revision
+  and ran out the word's slice, losing a supplemented answer on the gate.
+- No recorded option: the change cannot alter a match, only whether a lookup finishes in time, which replays never
+  reproduced exactly. [Evidence](../perf/head-first-lookup.md).
