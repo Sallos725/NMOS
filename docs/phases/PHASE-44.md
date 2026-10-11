@@ -1,10 +1,19 @@
 # Phase 44 — A recall tool the response model can call (read-only MCP)
 
-Status: **draft**, 2026-10-12. Not approved. Written at the owner's request after a read-only survey of a recently
-published memory plugin ("plugin D"). It reopens a recorded decision: **R5** (`docs/ROADMAP-1.0.md`, 2026-10-01)
-took read-only MCP out of the 1.0 scope, and **R7** says a new phase before 1.0 is a Stage 7 item unless the owner
-pulls it in by name. Q0 is that decision. Nothing here is built. `docs/STATUS.md` and `AGENTS.md` §0/§2 are not
-changed by this draft. Linear: AGE-TBD.
+Status: **draft**, 2026-10-12. Written at the owner's request after a read-only survey of a recently published
+memory plugin ("plugin D"). It reopens a recorded decision: **R5** (`docs/ROADMAP-1.0.md`, 2026-10-01) took read-only
+MCP out of the 1.0 scope, and **R7** says a new phase before 1.0 is a Stage 7 item unless the owner pulls it in by
+name. **Q0 answered (owner, 2026-10-12): (a).** Implementation waits for after 1.0. Only step 1 runs now (zero-call
+evidence, no product change). R5 stands for 1.0. `docs/STATUS.md` and `AGENTS.md` §0/§2 are not changed. Linear:
+AGE-TBD.
+
+**Step 1 done, 2026-10-12: the go/no-go was not met, so the phase stops here** (`docs/perf/phase44-zero-call.md`).
+- A tool asking the probe verbatim answered 4 of the 27 misses (A1 needs 14), and each of those 4 is equally answered
+  by a larger default budget.
+- Of the 23 misses left, 14 fail on a forbidden phrase already placed, which no recall tool can remove. The other 9
+  have the gold in the source text.
+- So even with perfect rewording the tool would reach 13 of 27.
+- Steps 2–4 do not run on this evidence. The draft stays as the record behind R5.
 
 ## Why
 
@@ -128,7 +137,7 @@ S7. **Setup in the panel.**
    - Prototype the S2 recall as an evaluation script, not product code.
    - Run it on the latest replay databases, with each missed probe's question as the tool query.
    - Count how many misses would place the gold. Record the result in `docs/perf/phase44-zero-call.md`.
-   - Go or no-go: fewer than half of the 26 misses answered stops the phase and is reported.
+   - Go or no-go: fewer than half of the misses answered stops the phase and is reported.
 2. **Host spike on an isolated v1.14.0.**
    - Use a stub plugin MCP and a stub tool-capable model.
    - Confirm H-b to H-g live, and how many requests a call adds.
@@ -140,7 +149,10 @@ S7. **Setup in the panel.**
 
 ## Acceptance
 
-- A1. Step 1: the tool path places the gold for at least 13 of the 26 probes the default packet misses.
+- A1. Step 1: the tool path places the gold for at least half of the probes the default packet misses in step 1's
+  own baseline run (26 when drafted, from the recorded 291/314 and 21/24; that run's baseline gave 27, so the bar is
+  14).
+  **Not met: 4 of 27** (`docs/perf/phase44-zero-call.md`).
 - A2. With the toggle off, the packet is byte-identical to `main` for every replay probe, and no tool is listed.
 - A3. Scope: tests show that a call cannot reach these, whatever the question says:
   - another conversation;
