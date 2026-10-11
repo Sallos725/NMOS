@@ -9,7 +9,7 @@ import pytest
 from psycopg.rows import dict_row
 
 from conftest import make_client
-from nmos_sidecar import parsers, statusshape
+from nmos_sidecar import archive, parsers, statusshape
 from simchat import SimChat
 from test_sidecar_integration import recall, sync
 
@@ -122,3 +122,26 @@ def test_track_untrack_and_pins(migrated, tmp_path):
         assert view["parsers"]["active_rules"] == 1
         assert '"mood"' in json.dumps(c.get("/v1/config").json()["parsers"]["rules"])
         assert "<State>" not in recall(c, chat, "다음.", budget=1200)["packet"]["text"]
+
+
+def test_a_tracked_window_and_its_pins_come_back_with_a_restored_archive(migrated, database_url_factory, tmp_path):
+    """PHASE-43 A5: the binding and the pins live in `app_config`, which an archive carries and a restore puts back."""
+    chat = story()
+    with make_client(migrated, packet_policy="packet-v18") as c:
+        sync(c, chat, character_name=CARD)
+        [cand] = c.get(f"/v1/conversations/{conversation(migrated, chat)}/status/candidates").json()["candidates"]
+        assert c.post("/v1/parsers/card/track", json={"card": CARD, "keys": cand["keys"]}).status_code == 200
+        assert c.put("/v1/parsers/card/pins", json={"card": CARD, "keys": ["items"]}).status_code == 200
+        before = recall(c, chat, "다음.", budget=1200)["packet"]["text"]
+    assert '<Item key="items"' in before
+    source = tmp_path / f"a{archive.SUFFIX}"
+    archive.export_file(migrated, str(source))
+    target = database_url_factory()
+    archive.restore_file(target, str(source))
+    with make_client(target, packet_policy="packet-v18") as c:
+        found = c.get(f"/v1/conversations/{conversation(target, chat)}/status/candidates").json()
+        assert found["pins"] == ["items"]
+        [cand] = found["candidates"]
+        assert cand["tracked"] and cand["rule_id"]
+        assert sync(c, chat, character_name=CARD)["status"] == "noop"
+        assert recall(c, chat, "다음.", budget=1200)["packet"]["text"] == before

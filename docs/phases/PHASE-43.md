@@ -70,7 +70,7 @@ not detected. This is one install's data; acceptance needs a wider synthetic fal
    endpoints. Detection never writes configuration; only the track call does.
 4. S3: the panel shows the open chat only, offers detected windows and pins; other bindings collapsed; JSON under
    advanced.
-5. Evidence A1–A5 recorded against the shipped code.
+5. Evidence A1–A5 recorded against the shipped code (done 2026-10-11, [below](#step-5-evidence-a1a5-against-the-merged-code)).
 
 S4 details fixed by this record:
 - The previous window is the latest earlier head reply with an observation under the same rules version. The first
@@ -157,10 +157,54 @@ count, how many replies, a preview of its values), Track for one not read yet, a
 pins and Stop tracking (a window read by a hand-written card rule says so and offers pins only). Without the chat's
 character name nothing can be bound and no button is shown; an older sidecar shows no card. Settings keeps one line on
 where a chat's window is set up, every card's rules and the stored JSON folded, and the hand-written rules (draft,
-presets, Apply) under "Advanced". Bindings and pins live in `app_config`, which archives and restores carry whole.
+presets, Apply) under "Advanced". Bindings and pins live in `app_config`; an archive carries the bindings with the parser rules, and the pins since
+step 5 (below).
 
 Tests (plugin): the card offers, tracks with the card and key set, saves pins, untracks with the rule id; looking
 sends no write; no character name, no buttons; an older sidecar, no card; Settings folds both sections.
+
+## Step 5 evidence (A1–A5 against the merged code)
+
+Code: `main` at `1696474` (Phase 41 amendments 2–3, this phase's steps 2–4, #294, #296), plus the archive correction
+under A5. Data: a private restored copy of the trial install's backup taken just before its 2026-10-11 update (11
+chats, 141 recorded requests, migration 0029), read in read-only sessions. No provider calls; the copy and the
+scripts were removed afterwards.
+
+- **A1.** Each card's recurring key set, as the panel would offer it, read by a `shape` rule against the card's bound
+  block rule on every reply of its head: the 23-key card 1,127/1,127 values equal on 49 replies, the 9-key card 90/90
+  on 10 (one chat on this copy; step 3's copy had two). No value was read by one rule only, and each card showed one
+  key set. Over all 11 chats three key sets recur: the two bound windows and a three-key date, time and location
+  window of a card without a rule, which is a status window and not a false block.
+- **A2.** The synthetic false-positive set (seven texts) and the detector tests pass (`test_status_shape.py`).
+- **A3.** Every recorded request replayed under `packet-v18` with `state_changes` off and on, lexical only in both
+  lanes (the `<State>` block does not depend on vectors):
+
+  | Requests | Replayable | `<State>` characters (p50) | Keys told (p50) | Packet tokens (p50) |
+  |---|---:|---:|---:|---:|
+  | 9-key card | 9 of 11 | 0 → 277 (max 464) | 0 → 5 | 205 → 270 |
+  | 23-key card, with status observations under the request's rules version | 10 | 0 → 966 | 0 → 7.5 | 2,635 → 3,113 |
+  | Chats without a status rule | 35 of 39 | packet text byte-identical, 35/35 | | |
+
+  With the option off nothing is told on these requests, because the bar's message was in context. The 23-key card's
+  other 19 replayable requests after its rule have no observations under their recorded rules version on the copy,
+  so neither lane tells a status there; its 49 requests from before the rule are outside the comparison.
+  Historical gate, cached query vectors, zero provider calls, 338 probes × 3 alternating rounds, `v0.4.0`
+  (`41f410d`) against `1696474`, both `packet-v18` with the recorded particle option on: 312/338 in every round of both
+  lanes (291/314 recall, 21/24 quotes), no changed majority result, no new forbidden phrase; the majority result,
+  tokens, held and placed counts are equal for 338/338. Tokens varied from round to round on 20 probes with `v0.4.0`
+  and 4 with `1696474` (the lexical route's timing; test runs shared the host during parts of rounds 1–2). The gate
+  copies hold no status rule, so this phase cannot reach them: the gate measures the merges of 2026-10-11 together.
+- **A4.** On every replayed request of both cards whose head held a date, time or place key, the value placed with the
+  option on equals the latest bar's value as of the request: 19/19 requests, 57/57 keys (27 on the 9-key card, 30 on
+  the 23-key card). With the option off none was placed.
+- **A5.** Plugin: 244 tests and the typecheck pass (the card offers, tracks with the card and key set, saves pins and
+  untracks; looking writes nothing; an older sidecar shows no card; Settings folds both sections). A new archive and
+  restore check of a tracked window and its pins **failed on `1696474`**: the export's list of settings
+  (`archive.SETTINGS`) held the parser rules but not `status_pins`, so a restored install kept the binding and lost the
+  pins. The key is now on the list; the restored install has the pins and compiles the same packet as the source. A
+  real panel check on a host remains the owner's, on the trial install where the matching plugin build is loaded.
+
+Tests on this branch: the full sidecar suite, 1,555 passed (local PostgreSQL); plugin 244 passed with the typecheck.
 
 ## Out of scope
 
