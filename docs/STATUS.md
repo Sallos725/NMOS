@@ -58,6 +58,15 @@ revisions is measured but not proposed until a 1k–10k-message check and the ga
 
 **Phase 42 — source status-window clock: approved 2026-10-10.** The owner asked to correct past-scene time recall before release if feasible and authorized existing measured-data access. The correction is included in the v0.4.0 tag; its publication is gated by the tag workflow above. [Scope](phases/PHASE-42.md). Current clock storage works; the source-clock supplement is implemented. Local replay passes with 291/314 recall and 21/24 quotes unchanged; copied Voyage replay preserves original ledger majorities for all 85 requests. Full local suite: 1,528 passed; final focused module: 13 passed, including three subsequently added boundaries. Final required CI passed the combined 1,531-test tree. An existing S06 source-selection fixture failed twice on general CI while Linux/macOS native suites passed; its semantic check now has a test-local scheduling allowance, with product deadlines and dedicated cancellation tests unchanged. Exact runner timing was not logged; a controlled delay reproduced the assertion. [Evidence](perf/phase42-source-clock.md). No date arithmetic or inferred event timestamp is claimed.
 
+**Phase 41 amendment 3 — a short head is looked up by its own revisions: approved by the owner, 2026-10-11.**
+ADR 0052 amendment 1. Heads of at most 500 messages and 100,000 characters read their revision ids behind an
+`OFFSET 0` fence instead of rechecking every chat's trigram candidates; the particle supplement stays index-first.
+Same matches (all recorded live keywords, unit tests); recorded live requests: keyword p50 89.5 → 59.4 ms, whole-message
+p50 141.3 → 27.5 ms, keyword candidates 231 → 285; a 41-message chat beside a 10,000-message one: whole-message
+timeouts 6/30 → 0, p95 418 → 117 ms; the 10,000-message chat unchanged. Gate and native CI on the PR.
+[Scope](phases/PHASE-41.md#amendment-3--a-short-head-is-looked-up-by-its-own-revisions),
+[evidence](perf/head-first-lookup.md). Not deployed.
+
 **Phase 39 amendment 2 — status configuration UX and required card binding:
 approved by the owner, 2026-10-09.** Blank initial draft, explicit JSON/preset
 selection and Apply to a named card; other cards preserved. Presets remain

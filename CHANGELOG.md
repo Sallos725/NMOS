@@ -8,6 +8,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 - **The Korean-particle keyword supplement skips words it cannot help** (Phase 41 amendment 2). A keyword of four
   or more syllables already matches with a particle attached, so no extra lookup is made for it. Recall results are
   unchanged; the supplement's median cost on recorded requests falls from about 30 ms to about 6 ms.
+- **Lexical and keyword recall look a short chat up by its own messages** (Phase 41 amendment 3, ADR 0052 amendment 1).
+  A chat of up to 500 messages and 100,000 characters no longer rechecks other chats' long messages, so its lookups
+  finish inside their time limits instead of being dropped. The same messages match. On the trial install's recorded
+  requests the whole-message route's median fell from about 141 ms to 28 ms and the keyword route found 23 % more
+  candidates; larger chats keep the previous lookup.
 
 ## 0.4.0
 

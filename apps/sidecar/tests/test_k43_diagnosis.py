@@ -59,6 +59,7 @@ def gather(lexical, vector=(), top_k=5, in_context=()):
     opts = retrieval.RecallOptions(top_k=top_k, facts_limit=0, threads_limit=0, policy="packet-v11")
     with patch.object(retrieval, "_head_last", return_value=None), \
          patch.object(retrieval, "_cut", return_value=-1), \
+         patch.object(retrieval, "_head_ids", return_value=None), \
          patch.object(retrieval, "_lexical", return_value=(lexical, "on")), \
          patch.object(retrieval, "_keyword_lexical", return_value=([], "none")), \
          patch.object(retrieval, "QueryEmbedding") as pending, \
@@ -178,6 +179,7 @@ def test_capture_uses_frozen_vector_and_records_actual_gather_and_fitter_without
     with patch.object(diag.audit, "_trace", return_value=trace), \
          patch.object(retrieval, "_head_last", return_value=None), \
          patch.object(retrieval, "_cut", return_value=-1), \
+         patch.object(retrieval, "_head_ids", return_value=None), \
          patch.object(retrieval, "_lexical", return_value=([c], "on")), \
          patch.object(retrieval, "_keyword_lexical", return_value=([], "none")), \
          patch.object(retrieval, "vector_candidates", return_value=[vector_row]), \

@@ -82,6 +82,17 @@ redundant. Performance only: the candidate list, scores and packets must not cha
   gate gives the same packet text for every probe as the current main source with
   the option on; the full suite and the four native jobs pass on the PR head.
 
+### Amendment 3 — a short head is looked up by its own revisions
+
+Approved by the owner, 2026-10-11 ("전부 승인", after amendment 2's live measurement showed legacy keyword lookups lost to
+the 25 ms slice). Performance with an accuracy consequence: the same matches, found in time more often. Amends ADR 0052
+(amendment 1); the particle supplement keeps its index-first query.
+
+- A head of at most 500 messages and 100,000 characters is read by its revision ids and rechecked there; larger
+  heads keep the index-first lookup.
+- Acceptance: identical matches in unit tests and on every recorded live keyword; the cached-vector gate with no
+  newly failed probe or forbidden phrase; no regression on a 10,000-message chat; full suite and native jobs.
+
 ## Acceptance and evidence
 
 - A1: original P01 query and target-only query recover the right actor/action's

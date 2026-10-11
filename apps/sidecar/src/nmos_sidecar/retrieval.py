@@ -116,8 +116,8 @@ KEYWORD_SLICE_MS = 25
 # A head of at most this many messages and characters is looked up by its own revisions (ADR 0052 amendment 1): the
 # trigram index spans every chat's revisions, and rechecking another chat's long messages took a short chat's keyword
 # past its slice. Restricted, the planner rechecks every head revision instead, so the cost follows the head's text: on a
-# trial install's recorded requests, heads under 100,000 characters went from 72 of 245 word lookups over 25 ms to 4,
-# larger ones from 48 of 172 to 101. Past 500 messages the id list itself costs ~1 ms a statement per 500 more.
+# trial install's recorded requests, heads under 100,000 characters went from 72 of 245 word lookups over 25 ms to 0,
+# larger ones from 75 of 276 to 257. Past 500 messages the id list itself costs ~1 ms a statement per 500 more.
 HEAD_FIRST_MAX = 500
 HEAD_FIRST_CHARS = 100_000
 QWEN3_QUERY_INSTRUCTION = ("Instruct: Given a question or remark from a role-play chat, retrieve the earlier story "
