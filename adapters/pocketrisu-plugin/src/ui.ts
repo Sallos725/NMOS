@@ -349,7 +349,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     if (s.last) {
       const kind = s.last.outcome === 'injected' ? 'ok' : s.last.outcome === 'failed' ? 'err' : 'muted';
       const what = s.last.outcome === 'injected' ? L('outcome.injected', { n: s.last.packetChars })
-        : s.last.outcome === 'nothing-relevant' ? L('outcome.nothing') : L('outcome.failed');
+        : s.last.outcome === 'nothing-relevant' ? L('outcome.nothing')
+        : s.last.outcome === 'skipped' ? L('outcome.skipped') : L('outcome.failed');
       lastCard.append(el('div', { class: 'line' }, el('span', { class: `dot ${kind}` }), el('span', { text: what })),
         el('div', { class: 'muted', text: `${L('status.ago', { n: Math.round((Date.now() - s.last.at) / 1000) })} · ${s.last.ms}ms` }));
       if (s.last.packet) lastCard.append(el('details', { class: 'help' },

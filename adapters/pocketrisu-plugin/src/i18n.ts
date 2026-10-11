@@ -120,6 +120,8 @@ const STRINGS = {
   'outcome.injected': ['기억 {n}자를 넣었습니다', 'Injected {n} characters of memory'],
   'outcome.nothing': ['관련된 기억이 없었습니다', 'Nothing relevant to inject'],
   'outcome.failed': ['건너뜀 (원래 요청은 그대로 보냄)', 'Skipped (the request went out unchanged)'],
+  'outcome.skipped': ['건너뜀: 이번 메시지를 프롬프트에서 찾지 못했습니다 (원래 요청은 그대로 보냄)',
+    'Skipped: this message was not found in the prompt (the request went out unchanged)'],
   // inspector view
   'insp.loading': ['인스펙터를 불러오는 중…', 'Loading the inspector…'],
   'insp.back': ['← 뒤로', '← Back'],
@@ -433,6 +435,7 @@ const STRINGS = {
   'hud.skipped': ['⚠ 건너뜀: {r}', '⚠ Skipped: {r}'],
   'hud.reason.deadline': ['제한 시간 {s}초 초과 · 눌러서 늘리기', 'over the {s} s deadline · tap to raise'],
   'hud.reason.error': ['사이드카 오류', 'sidecar error'],
+  'hud.reason.no_turn': ['이번 메시지를 프롬프트에서 못 찾음', 'this message is not in the prompt'],
   'hud.extract': ['추출 {d}/{n}', 'Facts {d}/{n}'],
   'hud.embed': ['임베딩 {d}/{n}', 'Embeddings {d}/{n}'],
   'hud.summarize': ['요약 {n}개 남음', 'summaries to write: {n}'],

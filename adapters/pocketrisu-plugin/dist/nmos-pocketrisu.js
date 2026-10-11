@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:2755262f9ca8".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:1746f3f65154".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -410,6 +410,10 @@
     "outcome.injected": ["\uAE30\uC5B5 {n}\uC790\uB97C \uB123\uC5C8\uC2B5\uB2C8\uB2E4", "Injected {n} characters of memory"],
     "outcome.nothing": ["\uAD00\uB828\uB41C \uAE30\uC5B5\uC774 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4", "Nothing relevant to inject"],
     "outcome.failed": ["\uAC74\uB108\uB700 (\uC6D0\uB798 \uC694\uCCAD\uC740 \uADF8\uB300\uB85C \uBCF4\uB0C4)", "Skipped (the request went out unchanged)"],
+    "outcome.skipped": [
+      "\uAC74\uB108\uB700: \uC774\uBC88 \uBA54\uC2DC\uC9C0\uB97C \uD504\uB86C\uD504\uD2B8\uC5D0\uC11C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4 (\uC6D0\uB798 \uC694\uCCAD\uC740 \uADF8\uB300\uB85C \uBCF4\uB0C4)",
+      "Skipped: this message was not found in the prompt (the request went out unchanged)"
+    ],
     // inspector view
     "insp.loading": ["\uC778\uC2A4\uD399\uD130\uB97C \uBD88\uB7EC\uC624\uB294 \uC911\u2026", "Loading the inspector\u2026"],
     "insp.back": ["\u2190 \uB4A4\uB85C", "\u2190 Back"],
@@ -813,6 +817,7 @@
     "hud.skipped": ["\u26A0 \uAC74\uB108\uB700: {r}", "\u26A0 Skipped: {r}"],
     "hud.reason.deadline": ["\uC81C\uD55C \uC2DC\uAC04 {s}\uCD08 \uCD08\uACFC \xB7 \uB20C\uB7EC\uC11C \uB298\uB9AC\uAE30", "over the {s} s deadline \xB7 tap to raise"],
     "hud.reason.error": ["\uC0AC\uC774\uB4DC\uCE74 \uC624\uB958", "sidecar error"],
+    "hud.reason.no_turn": ["\uC774\uBC88 \uBA54\uC2DC\uC9C0\uB97C \uD504\uB86C\uD504\uD2B8\uC5D0\uC11C \uBABB \uCC3E\uC74C", "this message is not in the prompt"],
     "hud.extract": ["\uCD94\uCD9C {d}/{n}", "Facts {d}/{n}"],
     "hud.embed": ["\uC784\uBCA0\uB529 {d}/{n}", "Embeddings {d}/{n}"],
     "hud.summarize": ["\uC694\uC57D {n}\uAC1C \uB0A8\uC74C", "summaries to write: {n}"],
@@ -1368,14 +1373,38 @@ ${revisionHash}`;
         announced = true;
         const chat = await within(host.currentChat(), deadline, "the host chat read");
         const messages = Array.isArray(chat?.message) ? chat.message : [];
-        const turn = userTurnIndex(prompt, messages);
-        if (!chat?.id || turn < 0) {
+        if (!chat?.id) {
           emit({ type: "request-abandon" });
           return prompt;
         }
         chatId = chat.id;
         if (settings.offChats?.includes(chat.id)) {
           emit({ type: "request-end", outcome: "chat-off", chars: 0, conversationId: null });
+          return prompt;
+        }
+        const turn = userTurnIndex(prompt, messages);
+        if (turn < 0) {
+          const reason = "the latest user message was not found in the prompt";
+          host.warn("[NMOS] memory skipped for this request:", reason, {
+            promptMessages: prompt.length,
+            chatMessages: messages.length
+          });
+          last = {
+            at: Date.now(),
+            ms: Math.round(host.now() - started),
+            packetChars: 0,
+            packet: "",
+            outcome: "skipped",
+            error: reason,
+            deadlineMs: settings.deadlineMs
+          };
+          emit({
+            type: "request-end",
+            outcome: "skipped",
+            chars: 0,
+            error: reason,
+            conversationId: conversations.get(chat.id) ?? null
+          });
           return prompt;
         }
         const t0 = host.now();
@@ -1683,6 +1712,7 @@ ${revisionHash}`;
       }
       if (r.outcome === "nothing-relevant") return { kind: "muted", text: t(lang, "hud.nothing"), fraction: null };
       if (r.outcome === "chat-off") return { kind: "muted", text: t(lang, "hud.chat_off"), fraction: null };
+      if (r.outcome === "skipped") return { kind: "warn", text: t(lang, "hud.skipped", { r: t(lang, "hud.reason.no_turn") }), fraction: null };
       const reason = r.error?.startsWith("deadline") ? t(lang, "hud.reason.deadline", { s: Math.round((r.deadlineMs ?? 0) / 100) / 10 }) : t(lang, "hud.reason.error");
       return { kind: "warn", text: t(lang, "hud.skipped", { r: reason }), fraction: null };
     }
@@ -2668,7 +2698,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       const lastCard = el("div", { class: "card" }, el("h2", { text: L("status.last") }));
       if (s.last) {
         const kind = s.last.outcome === "injected" ? "ok" : s.last.outcome === "failed" ? "err" : "muted";
-        const what = s.last.outcome === "injected" ? L("outcome.injected", { n: s.last.packetChars }) : s.last.outcome === "nothing-relevant" ? L("outcome.nothing") : L("outcome.failed");
+        const what = s.last.outcome === "injected" ? L("outcome.injected", { n: s.last.packetChars }) : s.last.outcome === "nothing-relevant" ? L("outcome.nothing") : s.last.outcome === "skipped" ? L("outcome.skipped") : L("outcome.failed");
         lastCard.append(
           el("div", { class: "line" }, el("span", { class: `dot ${kind}` }), el("span", { text: what })),
           el("div", { class: "muted", text: `${L("status.ago", { n: Math.round((Date.now() - s.last.at) / 1e3) })} \xB7 ${s.last.ms}ms` })

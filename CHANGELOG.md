@@ -24,6 +24,10 @@ later, is `docs/KNOWN-ISSUES.md`.
   finish inside their time limits instead of being dropped. The same messages match. On the trial install's recorded
   requests the whole-message route's median fell from about 141 ms to 28 ms and the keyword route found 23 % more
   candidates; larger chats keep the previous lookup.
+- **A request NMOS skips because the prompt does not hold the latest user message is no longer silent.** The
+  progress display shows "⚠ Skipped: this message is not in the prompt", the Status tab's last request says so,
+  and the console logs the reason. Before, the display cleared and the Status tab kept the previous request's
+  result. The request still goes out unchanged.
 
 ## 0.4.0
 
