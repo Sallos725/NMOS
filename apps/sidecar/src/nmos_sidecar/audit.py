@@ -158,6 +158,8 @@ def replay(conn: psycopg.Connection, trace_id: UUID, options: RecallOptions, pol
     recorded.setdefault("lexical_keywords", False)  # nor did one from before the keyword route (ADR 0052)
     recorded.setdefault("source_clock", False)  # PHASE-42: old packets did not attach source clocks
     recorded.setdefault("keyword_particles", False)  # PHASE-41: preserve historical keyword matching
+    recorded.setdefault("state_changes", False)  # PHASE-43 S4: old packets withheld in-context status and told it whole
+    recorded.setdefault("state_pins", ())
     recorded.setdefault("first_cue", False)  # nor one from before the first cue (ADR 0056)
     recorded.setdefault("history_marks", False)  # nor one from before history under its marks (ADR 0038 am. 1)
     recorded.setdefault("name_variants", False)  # nor one from before given and romanized names (ADR 0058)

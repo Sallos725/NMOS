@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **The current status reaches the model even when the preset strips status bars** (Phase 43 step 2). Under the default
+  `packet-v18`, the status block holds the date, time and place, the keys that change often, and whatever the last status
+  window changed, told as changes (`HP 150 / 200 (−30)`, `+횃불 · −열쇠`); an inventory is shown whole only when asked. It
+  is placed even when the last reply is in the prompt, since many presets remove its status bar. On the trial install the
+  current date reached every replayed request of a card where it had reached none, in less space than the whole status.
 - **The Korean-particle keyword supplement skips words it cannot help** (Phase 41 amendment 2). A keyword of four
   or more syllables already matches with a particle attached, so no extra lookup is made for it. Recall results are
   unchanged; the supplement's median cost on recorded requests falls from about 30 ms to about 6 ms.
