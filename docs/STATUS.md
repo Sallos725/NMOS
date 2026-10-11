@@ -44,7 +44,7 @@ GigaTrans original-only derived text and the GT-CTRL button marker are deferred 
 
 ## Current phase
 
-**Phase 43 — status windows by their shape, per chat, told as changes: approved 2026-10-11 (Q1–Q6 as recommended); step 2 (S4, the packet) implemented, in review.**
+**Phase 43 — status windows by their shape, per chat, told as changes: approved 2026-10-11 (Q1–Q6 as recommended); steps 2–4 implemented, in review (#298, #299; stacked on #295, #293).**
 A built-in detector replaces card-name-bound regex setup, the panel shows the open chat only, and the packet carries
 core status values plus changes even when the prompt strips status bars. Prototype detector on the trial install's
 copy: equal to the bound rules on every reply of both configured cards, no recurring false block. Six owner

@@ -5,6 +5,12 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Status windows can be tracked without writing a rule** (Phase 43 steps 3–4). On a chat's Inspector page,
+  "Status window (this chat)" shows what was found and offers Track, pins and Stop tracking; Settings folds every card's
+  rules and keeps hand-written rules under Advanced. NMOS finds a status bar by its shape
+  (`[… key=value | key: value …]`, at least three fields) in a chat's last replies and offers it; tracking it binds the key
+  set to the card, beside the card's other rules, so later chats of that card are read too. Pinned keys are told every
+  time. Nothing is tracked until it is confirmed.
 - **The current status reaches the model even when the preset strips status bars** (Phase 43 step 2). Under the default
   `packet-v18`, the status block holds the date, time and place, the keys that change often, and whatever the last status
   window changed, told as changes (`HP 150 / 200 (−30)`, `+횃불 · −열쇠`); an inventory is shown whole only when asked. It

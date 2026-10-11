@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import statusshape
+
 log = logging.getLogger("nmos.parsers")
 
 KV_LINE = re.compile(r"^\s*[-*•·]?\s*(?P<key>[^:：=|｜\n]{1,60}?)\s*[:：=|｜]\s*(?P<value>.+?)\s*$")
@@ -19,7 +21,7 @@ MAX_VALUE = 500
 @dataclass(frozen=True)
 class Rule:
     id: str
-    kind: str  # "regex" | "block"
+    kind: str  # "regex" | "block" | "shape"
     pattern: re.Pattern[str] | None = None
     start: re.Pattern[str] | None = None
     end: re.Pattern[str] | None = None
@@ -35,6 +37,8 @@ class Rule:
     card: str | None = None
     # PHASE-39 Q4: keys whose changes without a cause in the reply are flagged ("Needs attention"); reading is unchanged.
     watch: frozenset[str] = frozenset()
+    # PHASE-43 S1: shape rules: the key set of a status window found by its shape (statusshape), read without a regex.
+    keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -123,6 +127,12 @@ def compile_rules(spec: Any, *, template: bool = False) -> RuleSet:
                 rules.append(Rule(start=start,
                                   end=re.compile(item["end"], re.MULTILINE), entity_line=entity_line,
                                   separator=separator, **common))
+            elif kind == "shape":
+                keys = item.get("keys")
+                if (not isinstance(keys, list) or not statusshape.MIN_FIELDS <= len(keys) <= 60
+                        or not all(isinstance(k, str) and 0 < len(k.strip()) <= statusshape.KEY_MAX for k in keys)):
+                    raise ValueError(f"keys must be a list of {statusshape.MIN_FIELDS} to 60 field names")
+                rules.append(Rule(keys=tuple(dict.fromkeys(k.strip() for k in keys)), **common))
             else:
                 raise ValueError(f"unknown kind {kind!r}")
         except (KeyError, ValueError, re.error) as exc:
@@ -191,6 +201,8 @@ def prose(ruleset: RuleSet, content: str, role: str | None, character: str | Non
                 e = rule.end.search(content, s.end())
                 spans.append((s.start(), e.end() if e else len(content)))
                 pos = _past(pos, e.end() if e else len(content))
+        elif rule.kind == "shape":
+            spans += [(b.start, b.end) for b in statusshape.blocks(content) if statusshape.matches(b, frozenset(rule.keys))]
     out, at = [], 0
     for a, b in sorted(spans):
         if a > at:
@@ -233,4 +245,12 @@ def parse(ruleset: RuleSet, content: str, role: str | None, character: str | Non
                         k = _key(rule, m.group("key").strip(), entity)
                         out[k] = (rule.id, k, m.group("value").strip()[:MAX_VALUE])
                 pos = _past(pos, e.end() if e else len(content))
+        elif rule.kind == "shape":
+            wanted = frozenset(rule.keys)
+            for block in statusshape.blocks(content):
+                if statusshape.matches(block, wanted):
+                    for key, value in block.fields:
+                        if key in wanted:
+                            k = _key(rule, key, None)
+                            out[k] = (rule.id, k, _clean(value)[:MAX_VALUE])
     return list(out.values())
