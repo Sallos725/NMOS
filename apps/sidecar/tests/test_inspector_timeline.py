@@ -124,6 +124,23 @@ def test_the_character_page_draws_bars_that_link_to_their_rows():
     assert 'span=recent' in page  # the window switch
 
 
+def test_a_possession_lane_draws_what_is_held_only():
+    """Owner, 2026-10-11: "compass (not)" is no possession. A lost item's lane ends where it was lost; an item only
+    ever denied has no lane; an item held instead has its own."""
+    lost = fact(10, HANA, "possesses", [step(2, "compass", "ended", closed_turn=6),
+                                        step(6, "compass", "current", polarity="negative")],
+                object="compass", polarity="negative", turn=6)
+    denied = fact(11, HANA, "possesses", [step(3, "sword", "current", polarity="negative")],
+                  object="sword", polarity="negative", turn=3)
+    instead = fact(12, HANA, "possesses", [step(6, "map", "current")], object="map", turn=6)
+    page = inspector.character(CONV, "e1", view([lost, denied, instead]), None, lang="en", now=10)
+    lanes = page.split('id="s-timeline"')[1].split('<aside class="tl-side"')[0]
+    assert "(not)" not in lanes and "sword" not in lanes
+    assert ": compass" in lanes and ": map" in lanes
+    # 11 turns (0–10): the map held 6–10, the compass 2–5 and then ended.
+    assert sorted(bars(page)) == [("tl-bar", "54.545", "45.455"), ("tl-bar past", "18.182", "36.363")]
+
+
 def test_the_panel_gets_none_of_it():
     """PHASE-32 Q2: the panel's sanitizer drops `style`, so `embed` stays as it was: no timeline, no row anchors."""
     located = fact(10, HANA, "located_in", [step(2, "library", "superseded"), step(7, "harbor", "current")])

@@ -294,8 +294,15 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
 
     own = own_entries(names)
 
+    def spans(f: dict[str, Any]) -> list[dict[str, Any]]:
+        """A lane's spans. A held thing's lane draws while it is held: "no longer has it" ends the lane, and a lane of
+        denials alone is none (owner, 2026-10-11: "compass (not)" is no possession; anything held instead has its own
+        lane)."""
+        segs = segments(f, hi, own)
+        return [s for s in segs if not s["negative"]] if f["predicate"] == "possesses" else segs
+
     def latest(f: dict[str, Any]) -> int:
-        return max((s["start"] for s in segments(f, hi, own)), default=-1)
+        return max((s["start"] for s in spans(f)), default=-1)
 
     theirs = [f for f in facts if mine(f) and f.get("predicate") not in ("event", "knows")]
     state = sorted((f for f in theirs if f["predicate"] not in RELATIONS), key=latest, reverse=True)
@@ -307,13 +314,13 @@ def character(t: T, entity_id: str, facts: list[dict[str, Any]], threads: list[d
         """Lanes in order, capped; with `split`, the lanes that never changed (one entry, still current) apart."""
         changed, steady = [], []
         for f in rows:
-            segs = [s for s in segments(f, hi, own) if s["end"] >= lo]
+            segs = [s for s in spans(f) if s["end"] >= lo]
             if not segs:
                 continue
             # unchanged in the window drawn: one span, still current, and (for the recent window) begun before it
             quiet = len(segs) == 1 and segs[0]["outcome"] == "current" and (lo == 0 or segs[0]["start"] < lo)
             if lo == 0:
-                quiet = quiet and len(segments(f, hi, own)) == 1
+                quiet = quiet and len(spans(f)) == 1
             (steady if split and quiet else changed).append((f, segs))
         if len(changed) + len(steady) <= FOLD_OVER:  # few lanes: nothing to fold away
             changed, steady = changed + steady, []
