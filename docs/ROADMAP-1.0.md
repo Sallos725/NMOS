@@ -267,8 +267,9 @@ Done when:
   migration (0029). The `v0.4.0` fixture applies nothing today and is checked by the first migration after it.
 - two quiet weeks: not started; its start commit and date are the owner's to set. Phase 43 and the Phase 41
   amendments merged on 2026-10-11 are heavy changes in this sense.
-- known issues: K45–K50 have the owner's timing (AGE-56); the other open rows are not yet classified as host limits,
-  accepted trade-offs or work.
+- known issues: classified by the owner on 2026-10-12 (AGE-82, `docs/KNOWN-ISSUES.md`). Every open row is a host limit
+  or an accepted trade-off except K45–K47, whose timing before or after 1.0 is still open (AGE-56). K8 and K23 moved
+  to Resolved.
 
 ## After 1.0
 
