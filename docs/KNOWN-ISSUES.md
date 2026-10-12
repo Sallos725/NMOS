@@ -1,6 +1,6 @@
 # NMOS Known Issues
 
-Current as of the `0.4.0` candidate (2026-10-09). This is the single list of what does not work, or works
+Current as of the `0.4.0` candidate (2026-10-09); the 1.0 gate classification below is from 2026-10-12. This is the single list of what does not work, or works
 only partly, in the current release. Each release's "Known limitations" in `CHANGELOG.md` describes
 that release at the time; entries fixed later are listed under [Resolved](#resolved) below.
 
@@ -13,49 +13,60 @@ without a PocketRisu change.
 | K1 | Long chats wait before the reply; beyond ≈10,000 messages (or near it with extraction and embeddings on) memory needs a higher deadline | Performance | host |
 | K2 | The first generations in a long chat NMOS has not seen yet go without memory | Performance | by design (chunked first sync) |
 | K3 | After an edit or deletion of an older message, a long chat takes the slow sync path | Performance | protocol change (not planned) |
-| K4 | Phones were not measured | Performance | evidence |
+| K4 | Phones were not measured | Performance | accepted (owner, 2026-10-12, AGE-82): only the plugin runs on a phone, the sidecar does the heavy work; the iPhone panel was checked for K38 |
 | K5 | Every generation hangs after installing, updating or disabling the plugin until reload | Host | host (H13) |
 | K6 | PocketRisu must be opened at `localhost` or HTTPS; over plain HTTP on a LAN address every request goes without memory | Host | browser rule |
-| K7 | Tested on one PocketRisu build only; no group chats | Host | evidence / host (H11) |
-| K8 | A new name with no stated alias is a new entity, and a wrong alias joins two, until the owner joins or splits them | Memory | closed 2026-10-01 (owner decision): the owner joins (ADR 0025) and splits (ADR 0044, 0.2.0) in the panel; automatic detection not planned |
-| K9 | A destroyed or used-up item keeps its last holder in turns not extracted by `extract-v6` | Memory | fixed for new turns in beta.13 (ADR 0017); older turns: "extract all history" |
+| K7 | Tested on PocketRisu 1.12–1.14 only; no group chats | Host | accepted (owner, 2026-10-12, AGE-82); group chats are out of scope (H11) |
+| K9 | A destroyed or used-up item keeps its last holder in turns not extracted by `extract-v6` | Memory | fixed for new turns in beta.13 (ADR 0017); older turns: "extract all history"; the rest accepted (owner, 2026-10-12, AGE-82) |
 | K11 | A secret is kept by instruction, not isolation: the model can still voice it | Memory | 0.2.0: Private section, strict and narrator modes (Phase 10); hard POV not planned |
-| K12 | A word in more than 200 messages brings no lexical excerpts | Recall | reduced in 0.3.0 (Phase 18, ADR 0052): each keyword is looked up alone and only a broad one is dropped |
+| K12 | A word in more than 200 messages brings no lexical excerpts | Recall | reduced in 0.3.0 (Phase 18, ADR 0052): each keyword is looked up alone and only a broad one is dropped; the rest accepted (owner, 2026-10-12, AGE-82) |
 | K13 | Very long messages are only partly embedded and extracted | Recall | accepted limit (#13); the embedding cap is a setting since 0.3.0, `NMOS_EMBED_MAX_CHUNKS` (default 8 chunks, 5,600 characters, as before; ADR 0062) |
 | K14 | Rare over-injection into an auxiliary call; transformed input gets no memory | Gating | accepted (ADR 0001) |
-| K15 | Thresholds and extraction quality are checked on limited data | Quality | evaluation (A5 baseline) |
+| K15 | Thresholds and extraction quality are checked on limited data | Quality | accepted (owner, 2026-10-12, AGE-82): the 1.0 comparison against 0.1.x is its check |
 | K16 | NMOS does not notice a chat deleted in PocketRisu | Data | host (H10) |
 | K17 | Storage grows with abandoned branches | Data | O5 decided: superseded vectors pruned (ADR 0015), observations compacted (ADR 0018); abandoned branches kept |
 | K18 | Changing a model or endpoint re-processes history at the provider's cost | Data | LLM: bounded to the recent window since beta.11 (ADR 0014); embeddings: by design |
 | K19 | Plugin and sidecar versions are not checked against each other | Setup | shown, not enforced, since 0.2.0 (ADR 0037) |
 | K20 | Small UI delays: bot name, menu language | UI | not planned |
 | K21 | API keys and the auth token are stored in plain text | Security | host (H12) |
-| K22 | What becomes a fact depends on the extraction model's labels | Memory | measured per model (`docs/perf/phase5-extraction.md`, `phase7-extraction.md`, `phase8-extraction.md`) |
-| K23 | A thread (promise, goal, question, threat, debt) stays open until the story ends it in words extraction recognizes, or the owner closes it | Memory | closed 2026-10-01 (owner decision): the owner closes threads in the panel (Phase 13, ADR 0044); automatic closing not planned |
+| K22 | What becomes a fact depends on the extraction model's labels | Memory | measured per model (`docs/perf/phase5-extraction.md`, `phase7-extraction.md`, `phase8-extraction.md`); accepted by design (owner, 2026-10-12, AGE-82) |
 | K24 | A relationship change recorded under the other predicate leaves both lines current | Memory | the direction case closed in 0.2.0 (ADR 0038); the predicate case shown with turns by design |
-| K25 | A speech level or form of address can still be missed or cut | Memory | ranking (ADR 0026) and `addresses` (ADR 0028); turns before `extract-v10`: "Extract all history" |
+| K25 | A speech level or form of address can still be missed or cut | Memory | ranking (ADR 0026) and `addresses` (ADR 0028); turns before `extract-v10`: "Extract all history"; the rest accepted (owner, 2026-10-12, AGE-82) |
 | K26 | The packet's token estimate over-counts Korean, so the reserve is under-used | Recall | reduced by `packet-v2` (ADR 0032, owner decision); still conservative by design |
-| K27 | Before `extract-v11` / `clean-v3`: an OOC note or memory-like markup inside a reply could become a fact | Memory | fixed in 0.2.0 (audit A-12); older turns: "Extract all history" |
+| K27 | Before `extract-v11` / `clean-v3`: an OOC note or memory-like markup inside a reply could become a fact | Memory | fixed in 0.2.0 (audit A-12); older turns: "Extract all history"; the rest accepted (owner, 2026-10-12, AGE-82) |
 | K28 | Taking turns in one chat from two tabs or devices makes memory of the messages one of them lacks drop out and come back | Data | host (H10); not planned (audit A-13) |
-| K29 | A reveal in the turns first extracted together can be missed (narrowed by Phase 30) | Memory | "Extract all history" after connecting a chat with secrets (ADR 0033 amendment 2) |
-| K30 | A summary can say a secret in other words | Memory | since 0.2.0 (Phase 12, ADR 0042, 0043); summaries off for a chat where it matters |
-| K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases); since 0.3.0 a given name with a common family name, and a Hangul spelling of a romanized name (Phase 24, ADR 0058) |
-| K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | corrected in packet-v18 (AGE-18 / Phase 40), the default since 0.4.0; replay improves both target questions; real-use check open; v16/v17 unchanged |
-| K34 | A request whose query embedding does not answer in 300 ms recalls without vectors | Recall | measured (Phase 15): 70 % of the owner's production requests; the Status tab says so since Phase 15, the progress display since Phase 17; reduced in 0.3.0 (ADR 0061): the embedding runs while recall reads, so it has the reads' time (≈100–300 ms) and the 300 ms after them |
-| K35 | "The story so far" is written from every scene summary, with no cap on its input | Memory | recorded, not scheduled |
+| K29 | A reveal in the turns first extracted together can be missed (narrowed by Phase 30) | Memory | "Extract all history" after connecting a chat with secrets (ADR 0033 amendment 2); the rest accepted (owner, 2026-10-12, AGE-82) |
+| K30 | A summary can say a secret in other words | Memory | since 0.2.0 (Phase 12, ADR 0042, 0043); summaries off for a chat where it matters; the rest accepted (owner, 2026-10-12, AGE-82) |
+| K31 | A character called by the given name alone (no surname) is not a mention of that character, unless the lorebook lists it | Recall | reduced in 0.2.0 (Phase 14, ADR 0046: lorebook keys as aliases); since 0.3.0 a given name with a common family name, and a Hangul spelling of a romanized name (Phase 24, ADR 0058); the rest accepted (owner, 2026-10-12, AGE-82) |
+| K32 | A persona narrated in the third person does not bring its own facts unless asked in the first person | Recall | corrected in packet-v18 (AGE-18 / Phase 40), the default since 0.4.0; replay improves both target questions; real-use check open; v16/v17 unchanged; the rest accepted (owner, 2026-10-12, AGE-82) |
+| K34 | A request whose query embedding does not answer in 300 ms recalls without vectors | Recall | measured (Phase 15): 70 % of the owner's production requests; the Status tab says so since Phase 15, the progress display since Phase 17; reduced in 0.3.0 (ADR 0061): the embedding runs while recall reads, so it has the reads' time (≈100–300 ms) and the 300 ms after them; the rest accepted (owner, 2026-10-12, AGE-82) |
+| K35 | "The story so far" is written from every scene summary, with no cap on its input | Memory | measured and accepted (owner, 2026-10-12, AGE-82): about 5,800 input tokens at 231 turns; a cap after 1.0 |
 | K36 | A chat whose large lorebook NMOS has read almost whole recalls more slowly | Performance | measured, accepted (Phase 14, owner 2026-09-29) |
-| K37 | A story that changes who someone is, against the card or a lorebook, is not flagged | Memory | by decision (ADR 0047 amendment 1); needs a model check |
+| K37 | A story that changes who someone is, against the card or a lorebook, is not flagged | Memory | by decision (ADR 0047 amendment 1); accepted (owner, 2026-10-12, AGE-82): a model check would cost on every turn; after 1.0 |
 | K38 | On an iPhone the host may alert "The server has been updated…" after the panel's Export saved its file; Android not tried | Host | host (the alert); evidence (Android) |
 | K39 | A grown excerpt can carry a value the story has since replaced | Recall | measured, accepted (Phase 18, owner 2026-09-30) |
-| K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | reduced in 0.4.0 under packet-v18 (Phase 41, ADR 0073): a keyword followed by a particle fills free keyword positions; 0.8 kept |
+| K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | reduced in 0.4.0 under packet-v18 (Phase 41, ADR 0073): a keyword followed by a particle fills free keyword positions; 0.8 kept; the rest accepted (owner, 2026-10-12, AGE-82) |
 | K41 | Re-extracted with `extract-v14`, `deepseek-v4.1-flash` passed fewer M0 cases | Memory | measured, accepted (Phase 19, owner 2026-09-30) |
-| K44 | A form of address used before the first one extracted is not remembered | Memory | recorded (Phase 33 Q6, 2026-10-07): an extraction cause, for a later generation |
+| K44 | A form of address used before the first one extracted is not remembered | Memory | after 1.0 (owner, 2026-10-12, AGE-82): an extraction cause (Phase 33 Q6); a new generation re-extracts everything and restarts the two quiet weeks |
 | K45 | A supportive memory line placed twice that no reply used rests for two requests, and a later question that needs it without naming it finds it missing | Recall | improvement deferred beyond 0.4.0; timing relative to 1.0.0 undecided (owner, 2026-10-09; ADR 0068, 0070) |
 | K46 | An excerpt after the first below half the best excerpt's score, with no word hit, is not offered | Recall | improvement deferred beyond 0.4.0; timing relative to 1.0.0 undecided (owner, 2026-10-09; ADR 0068 item 3) |
 | K47 | Few quote lines name their speaker, and a question about what was said is recognized by a fixed list of speech words | Recall | improvement deferred beyond 0.4.0; timing relative to 1.0.0 undecided (owner, 2026-10-09; ADR 0067) |
 | K48 | Recall's cue and function-word lists are Korean (with a few English phrases) | Recall | improvement deferred until after 1.0.0 (owner, 2026-10-09; ADR 0067, 0069) |
 | K49 | Restoring an archive from the panel on an iPhone is not a target and was not measured | Data | scope exclusion approved 2026-10-08 (PHASE-38 Q3); behavior unmeasured |
 | K50 | Model calls that failed or were retried are not in the panel's model-use line | Setup | low priority, additional accounting not scheduled (owner preference, 2026-10-09; ADR 0051) |
+
+**1.0 gate classification (owner, 2026-10-12, Linear AGE-82, all as recommended).** The gate asks that every open
+row is a host limit or an accepted trade-off (`docs/ROADMAP-1.0.md`).
+- **Host limits:** K1 K5 K6 K16 K21 K28 K38.
+- **Accepted by design:** K2 K3 K11 K13 K14 K17 K18 K19 K20 K24 K26 K36 K39 K41 K49 K50.
+- **Accepted on this classification:** K4 K7 K15 K22 K35 K37.
+- **Fixed or reduced, the rest accepted:** K9 K12 K25 K27 K29 K30 K31 K32 K34 K40.
+- **After 1.0:** K44 (a new extraction generation re-extracts everything and restarts the two quiet weeks) and K48.
+- **Owner decisions that closed a row:** K8 and K23, now under [Resolved](#resolved).
+- **Timing still open in Linear AGE-56:** K45, K46 and K47.
+
+The rule behind the recommendations: anything fixed before 1.0 moves the start of the two quiet weeks, so a limit that
+loses no data and gives no wrong answer is accepted and improved after 1.0.
 
 **Owner priorities (2026-10-09):** improve K45–K47 after `0.4.0`; whether those improvements belong before or after
 `1.0.0` remains undecided. K48 improvements wait until after `1.0.0`. The owner expressed little need for additional
@@ -130,9 +141,12 @@ plugin says so: a card at the top of the Status tab, and a one-time PocketRisu a
 that went without memory. *Workaround:* PocketRisu Remote Access (HTTPS) or an SSH tunnel to `http://localhost:6001`
 (README "Requirements").
 
-**K7 — One tested host build; no group chats.** Behavior is verified on PocketRisu `a14c911`
-(v1.12.0) only. Upstream RisuAI uses the same V3 plugin API but is untested. That build has no
-group-chat type (H11), so group-chat scenarios (S13) could not be run.
+**K7 — PocketRisu 1.12–1.14 only; no group chats.** The host spikes ran on PocketRisu `a14c911` (v1.12.0). Later
+checks ran on v1.13.0 (the isolated test hosts and the owner's Phase 38 check, `docs/HOST-FACTS.md`). The owner's
+trial host runs v1.14.0 (`docs/STATUS.md`), and so does production (`docs/phases/PHASE-44.md`). Upstream RisuAI uses
+the same V3 plugin API but is untested. The spike build has no group-chat type (H11), so group-chat scenarios (S13)
+were never run. **Accepted for 1.0
+(owner, 2026-10-12, AGE-82):** group chats are out of scope.
 
 **K38 — On an iPhone the host may alert after Export.** The panel's Export buttons save the file as a Blob from the
 plugin's frame (H21). On the owner's iPhone (PocketRisu v1.13.0 added to the home screen, 2026-10-01) **Export
@@ -148,7 +162,7 @@ nothing, open `/v1/archive` on the sidecar in a browser that reaches it, or run
 
 ## Memory
 
-**K8 — Names can still split.** Since 0.1.0-beta.12 facts are keyed by entity (ADR 0012): names are
+**K8 — Names can still split.** *Resolved by owner decision (2026-10-01), moved to [Resolved](#resolved) on 2026-10-12 (AGE-82): the owner joins and splits names in the panel. The description stays for reference.* Since 0.1.0-beta.12 facts are keyed by entity (ADR 0012): names are
 joined when the story states both in one turn ("하나(Hana)") or a character introduces their own
 nickname, and extraction is shown the chat's earlier names so it reuses them ("해안 지도" stays "해안
 지도" 3/3 in the real-model check). A new name with neither — the model writing "지도" for a hinted
@@ -207,7 +221,7 @@ as actual narration becomes a fact (ADR 0013). On the tested model (`deepseek-v4
 inferred a negation from a clue the narration did not state (`docs/perf/phase5-extraction.md`). Other
 models were not measured. *Workaround:* check the Inspector's "not actual" list if a fact is missing. Since Phase 8 extraction also lists who else an event, goal, knowledge fact or destroyed item involves; in the Phase 8 check it agreed with a manual review in 83 of 87 assertions (`docs/perf/phase8-extraction.md`). Since Phase 7 each event is also labeled major or minor, which decides whether a mention alone brings it into the packet (4 of 4 major scenes 3/3; minor scenes never labeled major; `docs/perf/phase7-extraction.md`). With `extract-v8` turning points told only in words (a change of speech level or form of address, an admission) were labeled minor on the owner's chats; `extract-v9` names these categories (ADR 0024, `docs/perf/extract-v9.md`). An admission is still often recorded as the past act and labeled minor. Turns extracted before `extract-v9` keep their labels until "Extract all history".
 
-**K23 — Threads stay open until the story closes them.** Since 0.1.0-beta.14 (ADR 0019) a
+**K23 — Threads stay open until the story closes them.** *Resolved by owner decision (2026-10-01), moved to [Resolved](#resolved) on 2026-10-12 (AGE-82): the owner closes threads in the panel. The description stays for reference.* Since 0.1.0-beta.14 (ADR 0019) a
 promise is an open thread until a turn keeps it (`fulfilled`) or breaks, withdraws or releases it; since `extract-v13`
 (ADR 0039, 0.2.0) goals, questions, threats and debts are threads too, ended by `resolved`. Three cases leave one
 open: the story forgets it (nothing closes a thread because it is old); the closing turn was extracted by a generation
@@ -253,6 +267,13 @@ fails, the last story made from still-current scenes keeps serving and covers le
 are shorter than the cap; the owner's chats are far from it. Not measured on a long real chat.
 *Workaround:* none needed below several hundred turns; turn summaries off for a very long chat if the story stops
 updating.
+*Measured 2026-10-12 (read-only, no model calls; AGE-82).* The input each recorded story call reported:
+- the owner's longest production chat: 2,022 tokens at turn 63;
+- the 240-turn synthetic bench chats: 5,817 and 5,933 tokens at turn 231.
+
+Scene summaries averaged about 270 characters (at most 366) against the 1,200-character cap. The input grows by
+about 23 tokens a turn: about 23,000 at 1,000 turns. A 128,000-token context is reached only past 5,000 turns. Of the
+production story jobs on record, none failed: 2 done, 9 superseded. **Accepted for 1.0 (owner, 2026-10-12):** a cap on the story's input comes after 1.0.
 
 **K37 — A changed identity against canon is not flagged.** A story line that says someone is something other than the
 card or a lorebook entry says supersedes canon's statement from its turn, as a changed place does, without a listing in
@@ -624,6 +645,8 @@ Not issues, but often reported as one:
 
 | Was listed in | Issue | Resolved in |
 |---|---|---|
+| 0.1.x–0.4.0 (K23) | A thread (promise, goal, question, threat, debt) stays open until the story ends it in words extraction recognizes, or the owner closes it | closed by owner decision 2026-10-01 (moved here 2026-10-12, AGE-82): the owner closes threads in the panel (Phase 13, ADR 0044); automatic closing not planned |
+| 0.1.x–0.4.0 (K8) | A new name with no stated alias is a new entity, and a wrong alias joins two, until the owner joins or splits them | closed by owner decision 2026-10-01 (moved here 2026-10-12, AGE-82): the owner joins (ADR 0025) and splits (ADR 0044, 0.2.0) in the panel; automatic detection not planned |
 | (not listed; K43, recorded 2026-10-04) | A question about what someone lent could miss the item once it had changed hands | 0.3.0 — `packet-v12` (Phase 31 Q3, ADR 0066): the excerpt's anchor breaks a tie on the question's one-character words; S3 6/6 live twice |
 | (not listed; K42, recorded 2026-10-01) | A standing fact's earlier versions were printed under the current version's knowledge marks | 0.3.0 — history entries keep their marks (ADR 0038 amendment 1) |
 | (not listed; K33, recorded 2026-09-29) | The packet stopped at ≈2,000–3,000 tokens whatever the memory budget | 0.3.0 — `packet-v9` (Phase 15, ADR 0049): excerpts and facts grow with the budget up to 8,000 |
