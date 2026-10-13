@@ -2,7 +2,27 @@
 
 Status: **draft**, 2026-10-12. A correction found by measurement under AGE-86 (the recall weaknesses left after
 `packet-v18`), not a roadmap stage. It addresses K47 inside Stage 7's forensic recall (the quote route of Phase 33,
-ADR 0067). Not approved for implementation. **High risk:**
+ADR 0067). Not approved for implementation. **Q1 answered (owner, 2026-10-13): (a), speakers only.**
+
+**Step 3 run before approval, 2026-10-13: its pass rule is met, narrowly.** The owner approved the paid copy
+measurement (plan A, about $50; spent $49.64). It ran on the local experiment branch: `extract-v16` against
+`extract-v16` plus speakers. Each arm was extracted three times on Gemini 3.8 Flash, then each run was replayed under
+`packet-v18` for three rounds.
+
+| set | `extract-v16` runs | speakers runs |
+|---|---|---|
+| quotes, 24 cases | 19 / 19 / 19 | 19 / 20 / 20 |
+| daily play (S1), 100 cases | 97 / 96 / 96 | 97 / 95 / 95 |
+
+- **By the majority over runs:** 0 cases lost, 1 gained. The gain is a quotes case that passes in 3 of 3 speakers
+  runs and 0 of 3 `extract-v16` runs.
+- **Single-run flips:** four cases flipped in one run only. One quotes case and two daily-play cases failed in one
+  speakers run each. One daily-play case passed in one run of each arm.
+- **Smaller gain than the measured pair:** speakers plus the "how known" field gained 2 quotes cases, speakers alone
+  gained 1.
+- **Cost:** the extraction cost per call rose by about 8 % on the quotes database.
+
+**High risk:**
 - a new extractor generation;
 - a migration on stored derived data;
 - a change to what the quote route places.
