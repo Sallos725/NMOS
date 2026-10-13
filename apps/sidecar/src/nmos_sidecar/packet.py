@@ -271,10 +271,11 @@ def grown_excerpt(content: str, query: str, words: list[str], max_chars: int = M
 # The owner selected it as the default; the extractor generation and compiler budget are unchanged.
 # packet-v19 is packet-v18 whose budget adds no fact or claim slots for a question that names no one and shares no
 # fact's words (PHASE-46): a small-talk question keeps the configured limits instead of 30 facts and 8 claims.
+# The owner made it the default on 2026-10-13 (ADR 0075).
 POLICIES = ("packet-v0", "packet-v1", "packet-v2", "packet-v3", "packet-v4", "packet-v5", "packet-v6", "packet-v7",
             "packet-v8", "packet-v9", "packet-v10", "packet-v11", "packet-v12", "packet-v13", "packet-v14",
             "packet-v15", "packet-v16", "packet-v17", "packet-v18", "packet-v19")
-DEFAULT_POLICY = "packet-v18"  # the owner, 2026-10-09; PHASE-40/41
+DEFAULT_POLICY = "packet-v19"  # the owner, 2026-10-13; PHASE-46 (packet-v18 2026-10-09, PHASE-40/41)
 NON_ASCII = {"packet-v0": 1.5, "packet-v1": 1.5, "packet-v2": 1.2, "packet-v3": 1.2, "packet-v4": 1.2, "packet-v5": 1.2,
              "packet-v6": 1.2, "packet-v7": 1.2, "packet-v8": 1.2, "packet-v9": 1.2, "packet-v10": 1.2,
              "packet-v11": 1.2, "packet-v12": 1.2, "packet-v13": 1.2, "packet-v14": 1.2,

@@ -10,8 +10,8 @@ from nmos_sidecar.retrieval import unrelated_question
 from test_packet_fill import secrets_chat
 
 
-def test_v19_inherits_v18_and_is_not_the_default():
-    assert packet.DEFAULT_POLICY == "packet-v18" and "packet-v19" in packet.POLICIES
+def test_v19_inherits_v18_and_is_the_owner_selected_default():
+    assert packet.DEFAULT_POLICY == "packet-v19" and "packet-v19" in packet.POLICIES  # the owner, 2026-10-13
     for name, policies in vars(packet).items():
         if name.endswith("_POLICIES") and "packet-v18" in policies:
             assert "packet-v19" in policies, name

@@ -1,6 +1,7 @@
 # Phase 46 — Small talk keeps the configured limits (`packet-v19`)
 
-Status: **approved** (owner, 2026-10-13); measured, every criterion met. A correction found by the 1.0 gate's evaluation against `0.1.x`. Not a
+Status: **approved** (owner, 2026-10-13); measured, every criterion met; **`packet-v19` the default** (owner,
+2026-10-13, Q1; ADR 0075). A correction found by the 1.0 gate's evaluation against `0.1.x`. Not a
 roadmap stage. The owner chose to fix it narrowly rather than accept it. The default switch is a separate decision
 (Q1). Linear AGE-13.
 
@@ -41,7 +42,7 @@ sets, so `packet-v19` keeps their behavior:
 - the status as core values and changes (PHASE-43 S4), `STATUS_CHANGE_POLICIES`;
 - the source clock (PHASE-42), `SOURCE_CLOCK_POLICIES`.
 
-S3. **`packet-v18` stays the default until Q1.**
+S3. **`packet-v19` is the default** (Q1, ADR 0075).
 
 ## Out of scope
 
@@ -51,7 +52,7 @@ S3. **`packet-v18` stays the default until Q1.**
 
 ## Questions for the owner
 
-- **Q1 — the default.** Make `packet-v19` the default once the measurements below hold. A packet-policy change is a
+- **Q1 — the default. Answered (owner, 2026-10-13): yes.** Make `packet-v19` the default once the measurements below hold. A packet-policy change is a
   heavy change for the two quiet weeks, so it goes in before the 1.0 candidate is deployed, not after.
 
 ## Measurement (zero calls, `AGENTS.md §7.6` recall-only gate)
