@@ -22,7 +22,7 @@ from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from .entities import norm
-from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, memory_view, relevant_facts, thread_entry
+from .facts import FIRST_CUE, FUNCTION_SYLLABLES, HISTORY_CUE, LIVE, STANDING, WHY, claim_entry, fact_entry, lexically_related, memory_view, relevant_facts, thread_entry
 from . import overuse, quotes, scene, spans, statechange, summaries, variants, source_time
 from .ids import uuid7
 from .ledger import find_conversation
@@ -30,7 +30,8 @@ from .llm import Embedder, LLMError
 from .normtext import NORMALIZER_VERSION
 from .packet import (ABOUT_POLICIES, ANCHOR_POLICIES, BEFORE_POLICIES, NAMED_POLICIES, CAST_POLICIES, CAUSE_POLICIES,
                      CHANGE_POLICIES, CONTENTS, LABEL_POLICIES, STATE_HISTORY_KEYS, STATE_HISTORY_MAX,
-                     STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES,
+                     STATE_HISTORY_POLICIES, PERSONA_QUESTION_POLICIES, RELATED_FILL_POLICIES, SOURCE_CLOCK_POLICIES,
+                     STATUS_CHANGE_POLICIES, KEYWORD_PARTICLE_POLICIES,
                      QUOTE_POLICIES, UNEXTRACTED_POLICIES, REST_POLICIES, EXCERPT_FLOOR,
                      CUE_GROW_CHARS,
                      DEFAULT_POLICY, FILL_FACTS_MAX, GROW_POLICIES, SPAN_POLICIES, grown_excerpt,
@@ -265,8 +266,9 @@ class RecallOptions:
     lexical_keywords: bool = True  # the keyword route (ADR 0052); a trace that did not record it replays with it off
     source_clock: bool = True  # PHASE-42: source-status clock on temporal questions; old traces default off
     keyword_particles: bool = True  # PHASE-41: v18 exact Korean particle hits; old traces default off
-    # PHASE-43 S4: under packet-v18, the status as core values and changes, placed even when its bar's message is in
-    # context (presets strip status bars from the prompt); old traces default off. `state_pins`: keys always told.
+    # PHASE-43 S4: under STATUS_CHANGE_POLICIES (packet-v18, -v19), the status as core values and changes, placed
+    # even when its bar's message is in context (presets strip status bars from the prompt); old traces default off.
+    # `state_pins`: keys always told.
     state_changes: bool = True
     state_pins: tuple[str, ...] = ()
     # PHASE-43 S2: each card's pinned status keys, from the configuration; a request takes its card's as `state_pins`
@@ -310,6 +312,13 @@ def filled(options: RecallOptions, budget: int) -> RecallOptions:
     return dataclasses.replace(options, top_k=math.floor(options.top_k * f),
                                fill_facts=math.floor(options.facts_limit * min(f, FILL_FACTS_MAX)) - options.facts_limit,
                                excerpt_chars=math.floor(MAX_EXCERPT_CHARS * f))
+
+
+def unrelated_question(query: str, named: set[str], facts: list[dict[str, Any]]) -> bool:
+    """A question (it ends with a question mark) that names no one (`named`, the facts its names select) and shares no
+    fact's words at the lexical bar (PHASE-46). Narration without a name is not one: measured on the trial install, a
+    rule without the question mark changed 14 of 80 real requests."""
+    return query.rstrip().endswith(("?", "？")) and not named and not lexically_related(facts, query)
 
 
 def _grown(base: list[dict[str, Any]], ranked: list[dict[str, Any]], extra: int) -> list[dict[str, Any]]:
@@ -966,14 +975,14 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             t0 = time.perf_counter()
             keyword, g.keyword_note = _keyword_lexical(conn, head, keywords(query), cut, options.lexical_timeout_ms,
                                                        upto, particles=options.keyword_particles
-                                                       and options.policy == "packet-v18", head_ids=head_ids)
+                                                       and options.policy in KEYWORD_PARTICLE_POLICIES, head_ids=head_ids)
             g.timings["keywords"] = round((time.perf_counter() - t0) * 1000, 2)
     # State, facts, threads, the scene and the summaries are read before the excerpts are chosen: none of them depends
     # on the candidates, and the query embedding answers meanwhile (ADR 0061). The excerpts follow, then what the
     # memory mode withheld is taken out of them.
     if options.rules_version != "none":
         held = current_state(conn, head, options.rules_version, upto)
-        if options.state_changes and options.policy == "packet-v18":
+        if options.state_changes and options.policy in STATUS_CHANGE_POLICIES:
             # PHASE-43 S4: what the status is now, told as changes; its bar is often stripped from the prompt, so
             # "in context" (judged by the prose) is no reason to leave it out
             told = statechange.tell(state_windows(conn, head, options.rules_version, upto, statechange.CORE_WINDOWS),
@@ -994,7 +1003,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                      history=tuple((_turn_of(e, by_turn), e["value"])
                                                    for e in lines[k][-STATE_HISTORY_MAX:]))
                            for k in asked if lines.get(k)]
-            if options.state_changes and options.policy == "packet-v18":  # a key's history line says its value too
+            if options.state_changes and options.policy in STATUS_CHANGE_POLICIES:  # a key's history line says its value too
                 drawn = {k for k in asked if lines.get(k)}
                 g.state = [i for i in g.state if i.history or i.key not in drawn]
     view = None
@@ -1043,16 +1052,20 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
                                     keep=(lambda f: bool(_rested([f], "fact", rest, g))) if rest else None,
                                     persona_questions=persona_questions, persona_entity=persona_entity,
                                     persona_query_names=question_names, persona_added=persona_added)
+            # packet-v19 (PHASE-46): a question that names no one and shares no fact's words gets no added fact or
+            # claim slots; the configured limits still choose (small talk took 30 facts and 8 claims at 4,000 tokens)
+            fill_facts = 0 if options.fill_facts and options.policy in RELATED_FILL_POLICIES and unrelated_question(
+                query, g.named, view["facts"] + view["claims"]) else options.fill_facts
             if options.policy in LABEL_POLICIES:  # before the limits: a risky fact never takes an ordinary one's slot
                 ranked = _risky_last(ranked, view, g.named)
             if changes:  # an ended role answers a question about the past, not about now (PHASE-31 Q2); the facts
                 # after it take its slot
                 def now_or_kept(f: dict[str, Any]) -> bool:
                     return not _ended_role(f) or ended_role_kept(f, view["facts"], query, r, aliases)
-                g.ended = sum(1 for f in _grown(ranked[:options.facts_limit], ranked, options.fill_facts)
+                g.ended = sum(1 for f in _grown(ranked[:options.facts_limit], ranked, fill_facts)
                               if not now_or_kept(f))
                 ranked = [f for f in ranked if now_or_kept(f)]
-            facts = _grown(ranked[:options.facts_limit], ranked, options.fill_facts)
+            facts = _grown(ranked[:options.facts_limit], ranked, fill_facts)
             persona_added.intersection_update(str(f["id"]) for f in facts)
             if changes:
                 selected = list(facts)
@@ -1068,7 +1081,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
             if options.policy in LABEL_POLICIES:
                 ranked = _risky_last(ranked, view, g.named)
             claims = _grown(ranked[:claims_limit], ranked,
-                            max(1, (options.facts_limit + options.fill_facts) // 2) - claims_limit)
+                            max(1, (options.facts_limit + fill_facts) // 2) - claims_limit)
             g.risky = ({str(f["id"]) for f in facts + claims if f.get("disputed_by")}
                        | {str(c["fact"]) for c in view.get("conflicts") or [] if c.get("fact") is not None})
             # How the cast stand with each other takes the budget before threads (ADR 0026).
@@ -1274,7 +1287,7 @@ def gather(conn: psycopg.Connection, head: UUID, query: str, previous_ai: str, i
         g.quote_withheld = sum(e.quote for e in g.ranked) - sum(e.quote for e in kept)
         g.keyword_withheld = len(g.ranked) - len(kept) - g.quote_withheld
         g.ranked = kept
-    if (options.policy == "packet-v18" and options.source_clock and source_time.CUE.search(query)
+    if (options.policy in SOURCE_CLOCK_POLICIES and options.source_clock and source_time.CUE.search(query)
             and options.rules_version != "none" and g.ranked and not options.strict and not options.narrator):
         started_clock = time.perf_counter()
         clocks = source_time.read(conn, head, options.rules_version,
