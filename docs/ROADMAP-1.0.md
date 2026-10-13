@@ -256,7 +256,7 @@ Done when:
 - Phase 23 is complete: a release carries a bundle for each PocketRisu portable target;
 - no evaluation category is worse than in `0.1.x`;
 - an upgrade from a `v0.1.0-beta.21` database and from each `0.x.0` works (`tests/test_upgrade.py`);
-- two weeks on the owner's production with no heavy change;
+- two weeks on the owner's production with no heavy change (counted on the trial install, owner 2026-10-13);
 - every open known issue is a host limit or an accepted trade-off.
 
 **Standing on 2026-10-11** (Linear AGE-13 tracks the evidence):
@@ -268,8 +268,12 @@ Done when:
   it the default on 2026-10-13: met.
 - upgrades: met; fixtures from `v0.1.0-beta.7`, `.16`, `.21`, `v0.2.0`, `v0.3.0` and `v0.4.0` pass to the latest
   migration (0029). The `v0.4.0` fixture applies nothing today and is checked by the first migration after it.
-- two quiet weeks: not started; its start commit and date are the owner's to set. Phase 43 and the Phase 41
-  amendments merged on 2026-10-11 are heavy changes in this sense.
+- two quiet weeks: **started 2026-10-13 14:47 KST** on the 1.0 candidate `main` at `6d3f2f7`, earliest end
+  2026-10-27. The owner counts them on the trial install (6113), where the owner has played every day since 2026-10-08;
+  production (6003) had no request after 2026-10-02 (owner, 2026-10-13, option a). It runs with the build's defaults
+  (`packet-v19`, `extract-v16`), the owner's models (Gemini 3.8 Flash, `voyage-4-large`) and no experiment switch;
+  the experiment schema was removed so an archive of it restores into an official build (checked on a copy). A
+  heavy change (a packet policy, an extraction generation, a migration) restarts the count.
 - known issues: classified by the owner on 2026-10-12 (AGE-82, `docs/KNOWN-ISSUES.md`). Every open row is a host limit
   or an accepted trade-off; K45–K47 were accepted for 1.0 and put after it on 2026-10-13 (AGE-56). K8 and K23 moved
   to Resolved.

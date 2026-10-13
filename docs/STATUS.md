@@ -23,6 +23,10 @@ The product runtime is byte-identical to `73f420f`, whose
 scheduling correction and earlier CI failures are recorded in
 [Phase 42 evidence](perf/phase42-source-clock.md); no failed run is erased.
 
+**Two quiet weeks (1.0 gate), from 2026-10-13 14:47 KST:** the trial install (6113) runs the 1.0 candidate `main` at
+`6d3f2f7` with the build's defaults (`packet-v19`, `extract-v16`) and no experiment switch; the owner counts the two
+weeks there (`docs/ROADMAP-1.0.md`). Production (6003) still runs the `v0.4.0` runtime and is unused since 2026-10-02.
+
 **Installs on 2026-10-11** (read from the running containers' `/v1/health`, no writes): the owner's production
 install runs the `v0.4.0` runtime (`:edge` at `6b6cbb2`, #292, documentation only after the tag; up since
 2026-10-10 02:19 KST). The trial install (6113) ran official `v0.4.0` from 2026-10-10 02:21 KST (Linear AGE-55) and
