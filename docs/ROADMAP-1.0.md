@@ -268,7 +268,7 @@ Done when:
 - two quiet weeks: not started; its start commit and date are the owner's to set. Phase 43 and the Phase 41
   amendments merged on 2026-10-11 are heavy changes in this sense.
 - known issues: classified by the owner on 2026-10-12 (AGE-82, `docs/KNOWN-ISSUES.md`). Every open row is a host limit
-  or an accepted trade-off except K45–K47, whose timing before or after 1.0 is still open (AGE-56). K8 and K23 moved
+  or an accepted trade-off; K45–K47 were accepted for 1.0 and put after it on 2026-10-13 (AGE-56). K8 and K23 moved
   to Resolved.
 
 ## After 1.0
