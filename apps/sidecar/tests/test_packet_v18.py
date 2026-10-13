@@ -17,7 +17,7 @@ from test_sidecar_integration import sync
 
 
 def test_v18_inherits_v17_and_is_the_owner_selected_default():
-    assert packet.DEFAULT_POLICY == "packet-v18"
+    assert packet.DEFAULT_POLICY == "packet-v19"  # PHASE-46 builds on v18
     assert "packet-v18" in packet.POLICIES
     for name, policies in vars(packet).items():
         if name.endswith("_POLICIES") and "packet-v17" in policies:

@@ -60,7 +60,7 @@ def test_default_api_records_the_correction_and_new_trace_replays(client, migrat
     sync(client, chat)
     out = recall(client, chat, "차건혁이 닫은 것은 무엇이었지?", budget=4000)
     trace = client.get(f"/v1/trace/{out['trace_id']}").json()
-    assert trace["policy"] == "packet-v18"
+    assert trace["policy"] == "packet-v19"
     with psycopg.connect(migrated, row_factory=dict_row) as conn:
         row = conn.execute("SELECT recall_options FROM retrieval_trace WHERE id=%s", (out["trace_id"],)).fetchone()
         assert row["recall_options"]["keyword_particles"] is True

@@ -3,6 +3,9 @@
 Status: **draft**, 2026-10-12. A correction found by measurement under AGE-86 (the recall weaknesses left after
 `packet-v18`), not a roadmap stage. It addresses K47 inside Stage 7's forensic recall (the quote route of Phase 33,
 ADR 0067). Not approved for implementation. **Q1 answered (owner, 2026-10-13): (a), speakers only.**
+**Held (owner, 2026-10-13)** after step 3: one quotes case gained does not justify a generation of its own, so the
+speakers go into `main` with the next extractor-generation change, and the re-extraction and its risk happen once.
+Merged as the record of the measurement, like PHASE-44.
 
 **Step 3 run before approval, 2026-10-13: its pass rule is met, narrowly.** The owner approved the paid copy
 measurement (plan A, about $50; spent $49.64). It ran on the local experiment branch: `extract-v16` against

@@ -741,6 +741,12 @@ FUNCTION_SYLLABLES = frozenset(
     "그 이 저 제 내 네 너 나 걔 얘 쟤 두 세 첫 건 곳 쪽 번".split())
 
 
+def lexically_related(facts: list[dict[str, Any]], query: str) -> bool:
+    """Whether a fact shares the message's words at LEXICAL_BAR, the bar that makes an unmentioned fact relevant."""
+    q_grams = _grams(query)
+    return any(len(_grams(fact_text(f)) & q_grams) / max(1, len(q_grams)) >= LEXICAL_BAR for f in facts)
+
+
 def asked_nouns(query: str) -> tuple[str, ...]:
     """The question's one-syllable Hangul words that can name something (빵, 달): what a short question asks about
     (PHASE-35 Q2; PHASE-36 Q1, amended: a fact holding one is named by its character's name)."""
