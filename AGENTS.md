@@ -32,7 +32,8 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-44.md` is the latest, a draft
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-46.md` is the latest, approved
+   2026-10-13: small talk keeps the configured limits, `packet-v19`, not yet the default; `PHASE-44.md`, a draft
    stopped at its zero-call step on 2026-10-12 (a read-only recall tool; R5 stands; not approved for implementation);
    `PHASE-43.md`, approved 2026-10-11 (status windows by their shape, per chat, told as changes; high risk); `PHASE-42.md`, approved
    2026-10-10 (source status-window clock for already recalled excerpts; bounded pre-release correction);
@@ -129,6 +130,7 @@ If two normative documents appear to conflict:
 | 42 — source status-window clock for recalled excerpts | **approved** (owner, 2026-10-10); bounded correction, copied-data checks and required CI done; included in v0.4.0, with publication gated by the tag workflow | `PHASE-42.md` |
 | 43 — status windows by their shape, per chat, told as changes (a correction found by the Phase 41 live check; amends PHASE-39 amendment 2) | **approved** (owner, 2026-10-11, Q1–Q6 as recommended); steps 2–4 implemented and in review (#298: status as core values and changes; #299: detector, track/pin endpoints, chat-page card); high risk | `PHASE-43.md` |
 | 44 — a read-only recall tool the response model can call (MCP; reopened R5 as Q0) | **draft**; Q0 (a) (owner, 2026-10-12): build after 1.0, step 1 only; step 1 run: go/no-go not met (4 of 27 misses, equal to a larger budget), so the phase stops; not approved for implementation | `PHASE-44.md`, `docs/perf/phase44-zero-call.md` |
+| 46 — small talk keeps the configured limits: no budget-filled facts or claims for a question that names no one and shares no fact's words (`packet-v19`; a correction found by the 1.0 gate's comparison with `0.1.x`, not a roadmap stage) | **approved** (owner, 2026-10-13); measured: 0 lost, the two small-talk probes back, no category below `0.1.x` (`docs/perf/phase46-related-fill.md`); default switch open (Q1) | `PHASE-46.md` |
 | Stage 8 (after 1.0, R7) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,

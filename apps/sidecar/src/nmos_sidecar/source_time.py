@@ -10,7 +10,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 import psycopg
 
-from .packet import Compiled, Excerpt, NON_ASCII, PACKET_CLOSE, estimate_tokens
+from .packet import Compiled, Excerpt, NON_ASCII, PACKET_CLOSE, SOURCE_CLOCK_POLICIES, estimate_tokens
 
 CUE = re.compile(r"언제|날짜|시각|시간|며칠|몇\s*(?:년|월|일|시)|\b(?:when|date|time|day)\b", re.I)
 KEYS = {"date": "date", "날짜": "date", "time": "time", "시간": "time", "시각": "time"}
@@ -85,7 +85,7 @@ def read(conn: psycopg.Connection, head: UUID, rules_version: str, revisions: li
 def supplement(compiled: Compiled, ranked: list[Excerpt], clocks: dict[str, Clock],
                budget: int, policy: str) -> Compiled:
     """Use spare space only, after original selection; a missing clock never changes a chosen line."""
-    if not compiled.text or not clocks or policy != 'packet-v18':
+    if not compiled.text or not clocks or policy not in SOURCE_CLOCK_POLICIES:
         return compiled
     placed = {e.revision_id for e in compiled.excerpts}
     seen: set[str] = set()

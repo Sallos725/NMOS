@@ -262,7 +262,10 @@ Done when:
 **Standing on 2026-10-11** (Linear AGE-13 tracks the evidence):
 - stages 4–7: met; Stage 7 released in `v0.4.0`.
 - Phase 23: met; `v0.3.0` and `v0.4.0` each carry the four portable bundles.
-- evaluation against `0.1.x`: not yet run as one category-by-category comparison on a release candidate.
+- evaluation against `0.1.x`: run on 2026-10-13 on the candidate `bdae2eb`, zero calls, 338 probes ×3
+  (`docs/perf/phase46-related-fill.md`): `packet-v1` 273, `packet-v18` 315, every category equal or better except
+  `irrelevant` (20 → 16, the budget fill). `packet-v19` (Phase 46) gives 319 with no category worse; met once it is the
+  default.
 - upgrades: met; fixtures from `v0.1.0-beta.7`, `.16`, `.21`, `v0.2.0`, `v0.3.0` and `v0.4.0` pass to the latest
   migration (0029). The `v0.4.0` fixture applies nothing today and is checked by the first migration after it.
 - two quiet weeks: not started; its start commit and date are the owner's to set. Phase 43 and the Phase 41
