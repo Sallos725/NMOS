@@ -48,9 +48,9 @@ without a PocketRisu change.
 | K40 | A keyword of two or three syllables is not found where a particle is attached to it | Recall | reduced in 0.4.0 under packet-v18 (Phase 41, ADR 0073): a keyword followed by a particle fills free keyword positions; 0.8 kept; the rest accepted (owner, 2026-10-12, AGE-82) |
 | K41 | Re-extracted with `extract-v14`, `deepseek-v4.1-flash` passed fewer M0 cases | Memory | measured, accepted (Phase 19, owner 2026-09-30) |
 | K44 | A form of address used before the first one extracted is not remembered | Memory | after 1.0 (owner, 2026-10-12, AGE-82): an extraction cause (Phase 33 Q6); a new generation re-extracts everything and restarts the two quiet weeks |
-| K45 | A supportive memory line placed twice that no reply used rests for two requests, and a later question that needs it without naming it finds it missing | Recall | improvement deferred beyond 0.4.0; timing relative to 1.0.0 undecided (owner, 2026-10-09; ADR 0068, 0070) |
-| K46 | An excerpt after the first below half the best excerpt's score, with no word hit, is not offered | Recall | improvement deferred beyond 0.4.0; timing relative to 1.0.0 undecided (owner, 2026-10-09; ADR 0068 item 3) |
-| K47 | Few quote lines name their speaker, and a question about what was said is recognized by a fixed list of speech words | Recall | improvement deferred beyond 0.4.0; timing relative to 1.0.0 undecided (owner, 2026-10-09; ADR 0067) |
+| K45 | A supportive memory line placed twice that no reply used rests for two requests, and a later question that needs it without naming it finds it missing | Recall | accepted for 1.0, improved after it (owner, 2026-10-13, AGE-56; earlier 2026-10-09; ADR 0068, 0070) |
+| K46 | An excerpt after the first below half the best excerpt's score, with no word hit, is not offered | Recall | accepted for 1.0, improved after it (owner, 2026-10-13, AGE-56; earlier 2026-10-09; ADR 0068 item 3) |
+| K47 | Few quote lines name their speaker, and a question about what was said is recognized by a fixed list of speech words | Recall | accepted for 1.0, improved after it (owner, 2026-10-13, AGE-56; a speaker fix is drafted in PHASE-45, held; earlier 2026-10-09; ADR 0067) |
 | K48 | Recall's cue and function-word lists are Korean (with a few English phrases) | Recall | improvement deferred until after 1.0.0 (owner, 2026-10-09; ADR 0067, 0069) |
 | K49 | Restoring an archive from the panel on an iPhone is not a target and was not measured | Data | scope exclusion approved 2026-10-08 (PHASE-38 Q3); behavior unmeasured |
 | K50 | Model calls that failed or were retried are not in the panel's model-use line | Setup | low priority, additional accounting not scheduled (owner preference, 2026-10-09; ADR 0051) |
@@ -61,15 +61,15 @@ row is a host limit or an accepted trade-off (`docs/ROADMAP-1.0.md`).
 - **Accepted by design:** K2 K3 K11 K13 K14 K17 K18 K19 K20 K24 K26 K36 K39 K41 K49 K50.
 - **Accepted on this classification:** K4 K7 K15 K22 K35 K37.
 - **Fixed or reduced, the rest accepted:** K9 K12 K25 K27 K29 K30 K31 K32 K34 K40.
-- **After 1.0:** K44 (a new extraction generation re-extracts everything and restarts the two quiet weeks) and K48.
+- **After 1.0:** K44 (a new extraction generation re-extracts everything and restarts the two quiet weeks), K45, K46,
+  K47 (owner, 2026-10-13, AGE-56) and K48.
 - **Owner decisions that closed a row:** K8 and K23, now under [Resolved](#resolved).
-- **Timing still open in Linear AGE-56:** K45, K46 and K47.
 
 The rule behind the recommendations: anything fixed before 1.0 moves the start of the two quiet weeks, so a limit that
 loses no data and gives no wrong answer is accepted and improved after 1.0.
 
-**Owner priorities (2026-10-09):** improve K45–K47 after `0.4.0`; whether those improvements belong before or after
-`1.0.0` remains undecided. K48 improvements wait until after `1.0.0`. The owner expressed little need for additional
+**Owner priorities (2026-10-09, timing decided 2026-10-13):** improve K45–K47 after `0.4.0`; on 2026-10-13 the owner
+put them after `1.0.0` (AGE-56). K48 improvements wait until after `1.0.0`. The owner expressed little need for additional
 K49/K50 work: K49 keeps the approved iPhone restore exclusion; K50 keeps its partial-usage explanation, with
 additional accounting unscheduled. These are scope and priority records, not claims that the limitations are fixed
 or that unmeasured behavior was verified. No new implementation is authorized by this deferral.
