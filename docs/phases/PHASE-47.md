@@ -1,7 +1,8 @@
 # Phase 47 — "Not a character": the owner leaves a name out of the cast and the relationships
 
 Status: **draft**, 2026-10-14. A correction found by tester feedback, not a roadmap stage. Not approved for
-implementation. Questions Q1–Q3 are open.
+implementation. **Q1–Q3 answered (owner, 2026-10-14): all as recommended.** Approval to implement is a separate
+decision and has not been given.
 
 **High risk if built** (`AGENTS.md §14`):
 - a migration on stored owner input (`owner_repair`'s kind check);
@@ -86,7 +87,7 @@ the extractor not to (a hint in the prompt) is a new generation and the full liv
 
 ## Questions for the owner
 
-- **Q1 — one action or two.** A monster or an object filed as a person (the owner's example: a monster in one
+- **Q1 — one action or two. Answered (owner, 2026-10-14): (a).** A monster or an object filed as a person (the owner's example: a monster in one
   chat's memory) needs `cast`; a simulation bot card's name needs `memory`.
   - (a) Two scopes, one button. **Recommended:** **캐릭터가 아님** applies `cast` by default, because it never loses a
     fact and the monster case is the common one. The preview then offers **기억에서도 제외 / Also leave its facts out**
@@ -94,9 +95,9 @@ the extractor not to (a hint in the prompt) is a new generation and the full liv
   - (b) `cast` only in this phase. The bot card's facts keep filling the packet, so it does not fully solve the case
     that started this phase.
   - (c) `memory` only. Erases a monster's history. Not recommended.
-- **Q2 — what the button is called and where it lives.** Recommended: **캐릭터가 아님** on the character page and on
+- **Q2 — what the button is called and where it lives. Answered (owner, 2026-10-14): as recommended.** Recommended: **캐릭터가 아님** on the character page and on
   relationship rows only, with no bulk select in this phase.
-- **Q3 — the gate.** The change touches memory selection but no prompt, generation or worker (`AGENTS.md §7.6`,
+- **Q3 — the gate. Answered (owner, 2026-10-14): the zero-call replay only.** The change touches memory selection but no prompt, generation or worker (`AGENTS.md §7.6`,
   recall only). Recommended: the zero-call replay gate, then no live run. Say if the owner wants a reduced live run.
 
 ## Steps
