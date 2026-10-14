@@ -962,6 +962,11 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 raise HTTPException(status_code=404, detail="conversation not found")
             return coverage_view(conn, conv_id, usage)
 
+    def retryable() -> dict[str, Any]:
+        """The generation each job kind runs now (None when off): only their failed jobs can run again."""
+        return {"extract": rt["extractor"], "embed": rt["projection"], "canon": rt["canon"],
+                "summarize": rt["summarizer"], "reveal": rt["reveal"]}
+
     def coverage_view(conn, conv_id: UUID, usage: bool = False, lost: int | None = None) -> dict[str, Any]:
         """With `usage` (the panel's chat card and the Inspector, not the HUD's polls): the model usage, and how many facts
         a re-extraction dropped (PHASE-22 Q6; `lost`: counted already)."""
@@ -976,6 +981,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 lost = len(dropped.find(conn, head["head_commit_id"], ex_key, view_of(conn, head["head_commit_id"]))) \
                     if head and head["head_commit_id"] else 0
             spent["dropped"] = lost
+            # what to show beside a failed count: the errors of the jobs "retry failed" would run again
+            spent["failed_errors"] = extraction.failed_errors(conn, conv_id, [g.key for g in retryable().values() if g])
         compiled = extraction.coverage(conn, ex_key, conv_id).get(conv_id)
         return {
             "extraction": {"generation": generations.describe(conn, ex_key), **(compiled or {}),
@@ -1014,6 +1021,22 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             }
             log.info("extract history conversation=%s queued=%s", conv_id, queued)
             return {"queued": queued, "coverage": coverage_view(conn, conv_id)}
+
+    @app.post("/v1/conversations/{conv_id}/retry-failed", dependencies=[Depends(auth)])
+    def retry_failed_jobs(conv_id: UUID, request: Request):
+        """Run this chat's failed jobs again, and only those (owner, 2026-10-14): unlike "extract all history" it
+        queues no turn that never failed, so it calls the model only for what failed (D22)."""
+        gens = retryable()
+        with request.app.state.pool.connection() as conn:
+            if readmodel.conversation(conn, conv_id) is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            if gens["extract"] is None and gens["embed"] is None:
+                raise HTTPException(status_code=409, detail="fact extraction and embeddings are both off")
+            with conn.transaction():
+                retried = {kind: extraction.revive_failed(conn, kind, gen.key, conv_id) if gen else 0
+                           for kind, gen in gens.items()}
+            log.info("retry failed conversation=%s retried=%s", conv_id, retried)
+            return {"retried": retried, "coverage": coverage_view(conn, conv_id)}
 
     @app.post("/v1/conversations/{conv_id}/rebuild", dependencies=[Depends(auth)])
     def rebuild_memory(conv_id: UUID, request: Request):

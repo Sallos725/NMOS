@@ -234,7 +234,8 @@ visible in the Inspector.
 **D22 — NMOS never ingests a chat by itself; history and rebuild are explicit (ADR 0008).** A chat
 enters the ledger only when the user generates in it with the plugin on. First sight extracts the
 latest `NMOS_EXTRACT_BACKFILL` turns; the rest of a chat is extracted on request
-(`POST /v1/conversations/{id}/extract-history`). A rebuild (`POST /v1/conversations/{id}/rebuild`)
+(`POST /v1/conversations/{id}/extract-history`, which also runs failed jobs again); only the failed jobs run again with
+`POST /v1/conversations/{id}/retry-failed` (owner, 2026-10-14), so no turn that never failed is queued. A rebuild (`POST /v1/conversations/{id}/rebuild`)
 marks the chat's active-generation extractions discarded (kept for audit) and re-extracts every turn.
 
 **D23 — The owner can delete a conversation (ADR 0009).** `POST /v1/conversations/{id}/delete`

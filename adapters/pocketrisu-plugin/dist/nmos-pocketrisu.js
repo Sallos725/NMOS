@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:e4f9e15aeea2".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:3041b7f08ba8".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -421,13 +421,16 @@
     "tl.owner": ["\uC624\uB108\uAC00 \uACE0\uCE5C \uAC12\uC774\uC5D0\uC694.", "The owner's version."],
     "insp.browser": ["\uBE0C\uB77C\uC6B0\uC800\uC5D0\uC11C \uC9C1\uC811 \uC5F4 \uC218\uB3C4 \uC788\uC2B5\uB2C8\uB2E4: {url}", "Also available in a browser: {url}"],
     "act.history": ["\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C", "Extract all history"],
+    "act.retry": ["\uC2E4\uD328\uD55C \uC791\uC5C5 \uB2E4\uC2DC \uC2DC\uB3C4", "Retry failed"],
+    "act.retry_done": ["\uC2E4\uD328\uD55C \uC791\uC5C5 {n}\uAC1C\uB97C \uB2E4\uC2DC \uB3CC\uB9BD\uB2C8\uB2E4.", "Running {n} failed jobs again."],
+    "act.retry_none": ["\uB2E4\uC2DC \uB3CC\uB9B4 \uC2E4\uD328\uD55C \uC791\uC5C5\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "No failed job to retry."],
     "act.rebuild": ["\uAE30\uC5B5 \uC7AC\uAD6C\uCD95", "Rebuild memory"],
     "act.rebuild_confirm": ["\uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC7AC\uAD6C\uCD95\uD569\uB2C8\uB2E4", "Click again to rebuild"],
     "act.delete": ["\uB300\uD654 \uC0AD\uC81C", "Delete conversation"],
     "act.delete_confirm": ["\uD55C \uBC88 \uB354 \uB204\uB974\uBA74 \uC601\uAD6C \uC0AD\uC81C\uD569\uB2C8\uB2E4", "Click again to delete for good"],
     "act.sub": [
-      "\uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C: \uCC98\uC74C \uC5F0\uACB0\uD560 \uB54C \uAC74\uB108\uB6F4 \uC774 \uCC44\uD305\uC758 \uC774\uC804 \uD134\uAE4C\uC9C0 \uC0AC\uC2E4\uC744 \uCD94\uCD9C\uD558\uACE0 \uC784\uBCA0\uB529\uD569\uB2C8\uB2E4. \uAE30\uC5B5 \uC7AC\uAD6C\uCD95: \uC774 \uCC44\uD305\uC758 \uC0AC\uC2E4\uC744 \uBC84\uB9AC\uACE0 \uBAA8\uB4E0 \uD134\uC744 \uB2E4\uC2DC \uCD94\uCD9C\uD569\uB2C8\uB2E4(\uC6D0\uBB38\uC740 \uADF8\uB300\uB85C). \uC720\uB8CC API\uB294 \uD134\uB9C8\uB2E4 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4. \uB300\uD654 \uC0AD\uC81C: NMOS\uC5D0 \uC800\uC7A5\uB41C \uC774 \uCC44\uD305\uC758 \uBAA8\uB4E0 \uAE30\uB85D(\uC6D0\uBB38 \uD3EC\uD568)\uC744 \uC9C0\uC6C1\uB2C8\uB2E4. \uB418\uB3CC\uB9B4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. PocketRisu\uC758 \uCC44\uD305\uC740 \uADF8\uB300\uB85C\uC774\uACE0, \uADF8 \uCC44\uD305\uC5D0\uC11C \uB2E4\uC2DC \uC0DD\uC131\uD558\uBA74 \uC0C8 \uB300\uD654\uB85C \uCC98\uC74C\uBD80\uD130 \uAE30\uB85D\uB429\uB2C8\uB2E4.",
-      "Extract all history: extract facts and embeddings for the older turns of this chat that the first sync skipped. Rebuild memory: discard this chat's facts and extract every turn again (raw messages stay). Paid APIs cost money per turn. Delete conversation: delete everything NMOS stored for this chat, raw messages included. This cannot be undone. The chat in PocketRisu stays; generating in it again records it as a new conversation from scratch."
+      "\uC2E4\uD328\uD55C \uC791\uC5C5 \uB2E4\uC2DC \uC2DC\uB3C4: \uC774 \uCC44\uD305\uC5D0\uC11C \uC2E4\uD328\uB85C \uB05D\uB09C \uC791\uC5C5\uB9CC \uB2E4\uC2DC \uB3CC\uB9BD\uB2C8\uB2E4(\uADF8\uB9CC\uD07C \uBAA8\uB378\uC744 \uD638\uCD9C\uD569\uB2C8\uB2E4). \uC2E4\uD328\uAC00 \uC788\uC744 \uB54C\uB9CC \uBCF4\uC785\uB2C8\uB2E4. \uACFC\uAC70 \uC804\uCCB4 \uCD94\uCD9C: \uCC98\uC74C \uC5F0\uACB0\uD560 \uB54C \uAC74\uB108\uB6F4 \uC774 \uCC44\uD305\uC758 \uC774\uC804 \uD134\uAE4C\uC9C0 \uC0AC\uC2E4\uC744 \uCD94\uCD9C\uD558\uACE0 \uC784\uBCA0\uB529\uD569\uB2C8\uB2E4. \uAE30\uC5B5 \uC7AC\uAD6C\uCD95: \uC774 \uCC44\uD305\uC758 \uC0AC\uC2E4\uC744 \uBC84\uB9AC\uACE0 \uBAA8\uB4E0 \uD134\uC744 \uB2E4\uC2DC \uCD94\uCD9C\uD569\uB2C8\uB2E4(\uC6D0\uBB38\uC740 \uADF8\uB300\uB85C). \uC720\uB8CC API\uB294 \uD134\uB9C8\uB2E4 \uBE44\uC6A9\uC774 \uB4ED\uB2C8\uB2E4. \uB300\uD654 \uC0AD\uC81C: NMOS\uC5D0 \uC800\uC7A5\uB41C \uC774 \uCC44\uD305\uC758 \uBAA8\uB4E0 \uAE30\uB85D(\uC6D0\uBB38 \uD3EC\uD568)\uC744 \uC9C0\uC6C1\uB2C8\uB2E4. \uB418\uB3CC\uB9B4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. PocketRisu\uC758 \uCC44\uD305\uC740 \uADF8\uB300\uB85C\uC774\uACE0, \uADF8 \uCC44\uD305\uC5D0\uC11C \uB2E4\uC2DC \uC0DD\uC131\uD558\uBA74 \uC0C8 \uB300\uD654\uB85C \uCC98\uC74C\uBD80\uD130 \uAE30\uB85D\uB429\uB2C8\uB2E4.",
+      "Retry failed: run only this chat's jobs that failed for good again (as many model calls). Shown only when something failed. Extract all history: extract facts and embeddings for the older turns of this chat that the first sync skipped. Rebuild memory: discard this chat's facts and extract every turn again (raw messages stay). Paid APIs cost money per turn. Delete conversation: delete everything NMOS stored for this chat, raw messages included. This cannot be undone. The chat in PocketRisu stays; generating in it again records it as a new conversation from scratch."
     ],
     "act.help": ["\uC774 \uBC84\uD2BC\uB4E4\uC740?", "What do these do?"],
     "act.working": ["\uC694\uCCAD \uC911\u2026", "Requesting\u2026"],
@@ -2918,6 +2921,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     const inspectorRefresh = el("button", { text: L("refresh") });
     const inspectorAddress = el("p", { class: "sub mono" });
     const historyButton = el("button", { text: L("act.history") });
+    const retryButton = el("button", { text: L("act.retry"), style: "display:none" });
     const rebuildButton = el("button", { text: L("act.rebuild") });
     const deleteButton = el("button", { text: L("act.delete") });
     const exportButton = el("button", { text: L("exp.chat") });
@@ -2925,7 +2929,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     const actions = el(
       "div",
       {},
-      el("div", { class: "btns" }, historyButton, rebuildButton, exportButton, deleteButton),
+      el("div", { class: "btns" }, retryButton, historyButton, rebuildButton, exportButton, deleteButton),
       el("details", { class: "sub help" }, el("summary", { text: L("act.help") }), el("p", { text: L("act.sub") }))
     );
     const linkCard = el("div", { class: "card", style: "display:none" });
@@ -3236,6 +3240,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (load !== loads) return;
         const page = safeFragment(r.html);
         enhance(page);
+        retryButton.style.display = page.querySelector(".has-failed") ? "" : "none";
         inspectorBody.replaceChildren(page);
         shownPath = path;
         if (keep) restore(keep);
@@ -3248,6 +3253,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       } catch (error) {
         if (load !== loads) return;
         shownPath = null;
+        retryButton.style.display = "none";
         inspectorBody.replaceChildren(el("div", { class: "card err", text: errorText(lang, error) }));
       } finally {
         if (load === loads) inspectorBody.classList.remove("busy");
@@ -3619,6 +3625,29 @@ html,body{margin:0;background:${PALETTE.bg}}
     function actionError(error) {
       return /HTTP 409/.test(error instanceof Error ? error.message : String(error)) ? L("act.off") : errorText(lang, error);
     }
+    retryButton.addEventListener("click", async () => {
+      const conversation = actionConversation;
+      if (!conversation) return;
+      disarm();
+      retryButton.disabled = true;
+      say(actionMsg, L("act.working"));
+      try {
+        const r = await deps.api(
+          "POST",
+          `/v1/conversations/${conversation}/retry-failed`,
+          {},
+          3e4
+        );
+        const n = Object.values(r.retried ?? {}).reduce((a, b) => a + (Number(b) || 0), 0);
+        say(actionMsg, n ? L("act.retry_done", { n }) : L("act.retry_none"), "ok");
+        if (n) deps.hud.background(conversation);
+        await showInspector();
+      } catch (error) {
+        say(actionMsg, actionError(error), "err");
+      } finally {
+        retryButton.disabled = false;
+      }
+    });
     historyButton.addEventListener("click", async () => {
       const conversation = actionConversation;
       if (!conversation) return;

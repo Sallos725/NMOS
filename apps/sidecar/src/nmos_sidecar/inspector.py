@@ -86,6 +86,26 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "older_only": ("이전 세대에서 읽음", "served by an older generation"),
     "older_gen": ("이전 세대", "older generation"), "truncated": ("대상 잘림", "target truncated"),
     "partially_embedded": ("일부만 임베딩", "partially embedded"),
+    # Why coverage is short (owner, 2026-10-14): each reason says what, if anything, the reader can do.
+    "cov.failed": ("실패 {n}", "{n} failed"), "cov.pending": ("처리 중 {n}", "{n} in progress"),
+    "cov.not_queued": ("대기열 밖 {n}", "{n} not queued"),
+    "cov.long": ("긴 메시지 {n}: 앞부분만", "{n} long: start only"),
+    "cov.long_title": ("긴 메시지는 앞부분까지만 임베딩합니다(설계상 상한, K13). 기다리거나 다시 시도해도 바뀌지 않습니다.",
+                       "A long message is embedded up to a cap (by design, K13); waiting or retrying changes nothing."),
+    "start_only": ("앞부분만", "start only"),
+    "start_only_title": ("메시지가 길어서 앞부분까지만 처리했습니다(설계상 상한). 다시 시도해도 바뀌지 않습니다.",
+                         "The message is long, so only its start was processed (by design); a retry changes nothing."),
+    "cov.failed_note": ("실패한 작업 {n}개. 마지막 오류:", "{n} failed jobs. Last errors:"),
+    "cov.failed_hint": ("패널의 [실패한 작업 다시 시도]로 실패한 것만 다시 돌릴 수 있습니다. 같은 오류가 반복되면 설정 탭에서"
+                        " 모델 주소와 키를 확인하세요.",
+                        "The panel's [Retry failed] runs only the failed ones again. If the same error comes back, check"
+                        " the model address and key in Settings."),
+    "cov.not_queued_hint": ("대기열 밖: 처음 동기화할 때 최근 턴만 처리해서 남은 과거이거나, 모델을 바꾸기 전 세대가 읽어 둔"
+                            " 턴입니다(그 턴은 이전 결과로 계속 쓰입니다). 패널의 [과거 전체 추출]로 지금 모델로 채울 수"
+                            " 있습니다(모델 호출 비용이 듭니다).",
+                            "Not queued: the past left out when the chat was first synced (recent turns only), or turns an"
+                            " earlier generation read (still used as they are). The panel's [Extract all history] fills them"
+                            " in with the current model (model calls cost money)."),
     "facts": ("현재 사실", "Current facts"),
     "negated": ("부정", "negated"), "legacy": ("이전 형식", "legacy"), "disputed": ("충돌", "disputed"),
     "conflicts": ("충돌 (이야기끼리, 원전과, 고정한 사실과)", "Conflicts (within the story, with canon, with a lock)"),
@@ -604,12 +624,29 @@ def _generation(gen: dict[str, Any] | None, lang: str) -> str:
             f"{_v(gen['model'])} @ {_v(gen['endpoint'])}")
 
 
+def _left(stats: dict[str, Any], done_key: str) -> dict[str, int]:
+    """What keeps coverage short, by reason: failed for good, queued or running, never queued (the rest)."""
+    failed, pending = int(stats.get("failed") or 0), int(stats.get("pending") or 0)
+    rest = stats.get("not_queued", stats["eligible"] - stats[done_key] - pending - failed)
+    return {"failed": failed, "pending": pending, "not_queued": max(0, int(rest))}
+
+
 def _percent(stats: dict[str, Any] | None, done_key: str, lang: str) -> str:
-    """Coverage of the active generation; partial coverage is never shown as complete (#8)."""
+    """Coverage of the active generation; partial coverage is never shown as complete (#8), and says why it is
+    partial. A long message embedded up to the chunk cap (`partial`, K13) is a note: no wait or retry changes it."""
     if not stats or any(key not in stats for key in (done_key, "eligible", "percent", "complete")):
         return "<span class=\"muted\">—</span>"
     text = f"{stats[done_key]}/{stats['eligible']} ({stats['percent']}%)"
-    return text if stats["complete"] else f"<span class=\"chip\">{_t(lang, 'partial')}</span> {text}"
+    long = int(stats.get("partial") or 0)
+    if long:
+        text += (f" <span class=\"muted\" title=\"{_v(_t(lang, 'cov.long_title'))}\">"
+                 f"· {_v(_t(lang, 'cov.long').format(n=long))}</span>")
+    if stats[done_key] >= stats["eligible"]:
+        return text
+    left = _left(stats, done_key)
+    chips = [f"<span class=\"chip{' warn' if k == 'failed' else ''}\">{_v(_t(lang, f'cov.{k}').format(n=n))}</span>"
+             for k, n in left.items() if n]
+    return " ".join(chips or [f"<span class=\"chip\">{_t(lang, 'partial')}</span>"]) + f" {text}"
 
 
 def _errors(errors: list[dict[str, Any]], lang: str) -> str:
@@ -715,7 +752,27 @@ def _coverage_section(cov: dict[str, Any], lang: str) -> str:
                         f"{t('partially_embedded')} {emb.get('partial', 0)}")])
     if not rows:
         return f"<p class=\"muted\">{t('no_generation')}</p>"
-    return table([t("h.projection"), t("h.generation"), t("h.coverage"), t("h.detail")], rows)
+    return table([t("h.projection"), t("h.generation"), t("h.coverage"), t("h.detail")], rows) + _coverage_notes(cov, lang)
+
+
+def _coverage_notes(cov: dict[str, Any], lang: str) -> str:
+    """What the reader can do about short coverage (owner, 2026-10-14): failed work with its last errors and the
+    panel's retry, the past outside the queue and "extract all history". `has-failed` shows the panel's retry button."""
+    t = lambda k: _t(lang, k)
+    shown = [(cov.get(k) or {}, d) for k, d in (("extraction", "compiled"), ("embeddings", "embedded"))]
+    shown = [(s, d) for s, d in shown if s.get("generation") and d in s and "eligible" in s]
+    failed = sum(_left(s, d)["failed"] for s, d in shown) + sum(
+        int((cov.get(k) or {}).get("failed") or 0) for k in ("canon", "summaries"))
+    out = []
+    if failed:
+        errors = "".join(f"<p><span class=\"chip\">{_v(e['kind'])}</span> {_v(e['error'])}</p>"
+                         for e in cov.get("failed_errors") or [])  # no list tags: the panel keeps only a few
+        out.append(f"<div class=\"has-failed\"><p class=\"warn\">{_v(t('cov.failed_note').format(n=failed))}</p>"
+                   + errors
+                   + f"<p class=\"muted\">{_v(t('cov.failed_hint'))}</p></div>")
+    if any(_left(s, d)["not_queued"] for s, d in shown):
+        out.append(f"<p class=\"muted\">{_v(t('cov.not_queued_hint'))}</p>")
+    return "".join(out)
 
 
 def _usage_section(usage: dict[str, Any], lang: str) -> str:
@@ -763,7 +820,9 @@ def _processed(m: dict[str, Any], lang: str) -> str:
             done = m[key] >= clean
             parts.append(f"{_t(lang, key_label)} {_t(lang, 'full') if done else f'{m[key]:,}/{clean:,}'}")
     partial = any(m.get(k) is not None and m[k] < clean for k in ("embedded_chars", "extracted_chars"))
-    return (f"<span class=\"chip\">{_t(lang, 'partial')}</span> " if partial else "") + _v(" · ".join(parts))
+    chip = (f"<span class=\"chip\" title=\"{_v(_t(lang, 'start_only_title'))}\">{_t(lang, 'start_only')}</span> "
+            if partial else "")  # a cap by design (K13), not work left
+    return chip + _v(" · ".join(parts))
 
 
 def _named(a: dict[str, Any], side: str) -> str:

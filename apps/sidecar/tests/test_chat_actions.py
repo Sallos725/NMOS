@@ -92,8 +92,40 @@ def test_actions_refuse_unknown_chats_and_disabled_providers(client, migrated):
     cid = conv_id(client, chat)
     missing = "00000000-0000-7000-8000-000000000000"
     assert client.post(f"/v1/conversations/{missing}/rebuild").status_code == 404
+    assert client.post(f"/v1/conversations/{missing}/retry-failed").status_code == 404
     assert client.post(f"/v1/conversations/{cid}/rebuild").status_code == 409
     assert client.post(f"/v1/conversations/{cid}/extract-history").status_code == 409
+    assert client.post(f"/v1/conversations/{cid}/retry-failed").status_code == 409
+
+
+def test_retry_failed_requeues_the_dead_jobs_only(migrated, db):
+    """The panel's "retry failed" (owner, 2026-10-14): a dead job of this chat runs again, an old turn's too, and
+    nothing else is queued, unlike "extract all history"."""
+    with make_client(migrated, extract_backfill=2, **LLM) as c:
+        chat = history_chat()
+        sync(c, chat)
+        cid = conv_id(c, chat)
+        c.post(f"/v1/conversations/{cid}/extract-history")
+        # One recent turn and one older than the backfill fail for good; the rest are extracted.
+        dead = [r["id"] for r in db.execute(
+            "(SELECT id FROM job WHERE kind = 'extract' ORDER BY priority LIMIT 1)"
+            " UNION ALL (SELECT id FROM job WHERE kind = 'extract' ORDER BY priority DESC LIMIT 1)")]
+        db.execute("UPDATE job SET status = 'dead', attempts = 5, last_error = 'HTTP 401 <bad key>' WHERE id = ANY(%s)",
+                   (dead,))
+        drain(migrated)
+        cov = c.get(f"/v1/conversations/{cid}/coverage", params={"usage": "true"}).json()
+        assert cov["extraction"]["failed"] == 2
+        assert [e["error"] for e in cov["failed_errors"]] == ["HTTP 401 <bad key>"] * 2
+        assert "failed_errors" not in c.get(f"/v1/conversations/{cid}/coverage").json()  # the HUD's polls
+        out = c.post(f"/v1/conversations/{cid}/retry-failed").json()
+        assert out["retried"]["extract"] == 2 and sum(out["retried"].values()) == 2
+        assert out["coverage"]["extraction"]["pending"] == 2
+        rows = db.execute("SELECT id, attempts, last_error FROM job WHERE status = 'queued'").fetchall()
+        assert sorted(r["id"] for r in rows) == sorted(dead) and all(r["attempts"] == 0 for r in rows)
+        assert all(r["last_error"] is None for r in rows)
+        drain(migrated)
+        assert c.get(f"/v1/conversations/{cid}/coverage").json()["extraction"]["complete"]
+        assert c.post(f"/v1/conversations/{cid}/retry-failed").json()["retried"]["extract"] == 0
 
 
 def test_mass_delete_hides_facts_and_a_restored_range_reuses_its_extractions(migrated, db):
@@ -148,3 +180,15 @@ def test_extract_history_retries_failed_turns(migrated, db):
             " FROM job j WHERE j.status = 'queued'"
             " ORDER BY j.priority, CASE WHEN j.priority >= %s THEN j.id ELSE -j.id END", (extraction.RECENT_PRIORITY,))]
         assert order[:2] == [6, 7] and order[2:] == [0, 1, 2, 3, 4, 5]
+
+
+def test_failed_errors_leave_out_an_earlier_generation(migrated, db):
+    """No retry runs an earlier generation's dead job, and no count shows it: its error is not shown either."""
+    with make_client(migrated, extract_backfill=2, **LLM) as c:
+        chat = history_chat()
+        sync(c, chat)
+        cid = conv_id(c, chat)
+        db.execute("UPDATE job SET status = 'dead', last_error = 'old model gone',"
+                   " payload = jsonb_set(payload, '{generation}', '\"extract:earlier\"') WHERE kind = 'extract'")
+        cov = c.get(f"/v1/conversations/{cid}/coverage", params={"usage": "true"}).json()
+        assert cov["failed_errors"] == [] and c.post(f"/v1/conversations/{cid}/retry-failed").json()["retried"]["extract"] == 0

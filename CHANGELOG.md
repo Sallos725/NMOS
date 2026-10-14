@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **The Inspector says why coverage is short, and a chat's failed work can be run again on its own.** The "partial" chip
+  is replaced by its reasons: failed (with the chat's last errors), in progress, and not queued (the past the first sync
+  left out). A long message embedded up to the chunk cap (K13) is a note beside a full count, no longer shown as
+  unfinished. On a chat's page in the panel, **Retry failed** appears while something failed and queues those jobs
+  again, and only those (`POST /v1/conversations/{id}/retry-failed`); **Extract all history** still fills in the past.
 - **Status windows can be tracked without writing a rule** (Phase 43 steps 3–4). On a chat's Inspector page,
   "Status window (this chat)" shows what was found and offers Track, pins and Stop tracking; Settings folds every card's
   rules and keeps hand-written rules under Advanced. NMOS finds a status bar by its shape
