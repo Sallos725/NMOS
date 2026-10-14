@@ -32,7 +32,8 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-46.md` is the latest, approved
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-47.md` is the latest, a draft
+   of 2026-10-14: the owner leaves a name out of the cast and relationships, `entity_exclude`; `PHASE-46.md`, approved
    2026-10-13: small talk keeps the configured limits, `packet-v19`, the default; `PHASE-45.md`, a draft
    of 2026-10-12: speakers recorded at extraction for the quote route, K47; held by the owner on 2026-10-13;
    `PHASE-44.md`, a draft
