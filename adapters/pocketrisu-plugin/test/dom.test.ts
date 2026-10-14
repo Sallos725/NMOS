@@ -500,6 +500,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
           state.stale -= 1;
           throw new Error(`${path} -> HTTP 409: [object Object]`);
         }
+        if (path.endsWith('/retry-failed')) return { retried: { extract: 1, embed: 1, canon: 0 } } as T;
         if (path.endsWith('/reextract')) {
           if (state.failReextract > 0) { state.failReextract -= 1; throw new Error(`${path} -> HTTP 409: fact extraction is off`); }
           return { turns: (body as { turns?: number[] }).turns ?? [4, 5] } as T;
@@ -543,6 +544,24 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     expect(path).toBe(`/v1/archive?conversation=${id}`);
     expect(name).toMatch(/^nmos-chat-\d{8}-\d{6}\.nmos\.zip$/);
     expect(panel().textContent).toContain('Saved 0.5 MB.');
+  });
+
+  it('offers "Retry failed" only while the page shows failed work, and posts it (owner, 2026-10-14)', async () => {
+    const { d, calls, state } = deps();
+    await openChat(d);
+    expect(button('Retry failed').style.display).toBe('none');
+    state.html = '<div class="has-failed"><p class="warn">2 failed jobs.</p></div>';
+    button('Refresh').click();
+    await settle();
+    expect(button('Retry failed').style.display).toBe('');
+    button('Retry failed').click();
+    await settle();
+    expect(posts(calls).map(([, path]) => path)).toEqual([`/v1/conversations/${id}/retry-failed`]);
+    expect(panel().textContent).toContain('Running 2 failed jobs again.');
+    state.html = '<p>all done</p>';
+    button('Refresh').click();
+    await settle();
+    expect(button('Retry failed').style.display).toBe('none');
   });
 
   it('puts a button on each line the page marks and posts that repair', async () => {

@@ -500,11 +500,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const inspectorAddress = el('p', { class: 'sub mono' });
   // Per-chat actions (D22, ADR 0009) on a conversation page: they run in the sidecar.
   const historyButton = el('button', { text: L('act.history') });
+  // Only on a page that shows failed work (the sidecar marks it `has-failed`, owner 2026-10-14): it runs those again.
+  const retryButton = el('button', { text: L('act.retry'), style: 'display:none' });
   const rebuildButton = el('button', { text: L('act.rebuild') });
   const deleteButton = el('button', { text: L('act.delete') });
   const exportButton = el('button', { text: L('exp.chat') });
   const actionMsg = el('div', { class: 'msg' });
-  const actions = el('div', {}, el('div', { class: 'btns' }, historyButton, rebuildButton, exportButton, deleteButton),
+  const actions = el('div', {}, el('div', { class: 'btns' }, retryButton, historyButton, rebuildButton, exportButton, deleteButton),
     el('details', { class: 'sub help' }, el('summary', { text: L('act.help') }), el('p', { text: L('act.sub') })));
   // The message sits outside the actions so a result stays visible after a delete returns to the list.
   // Back and Refresh stay in reach while reading far down a page.
@@ -806,6 +808,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (load !== loads) return;
       const page = safeFragment(r.html);
       enhance(page);
+      retryButton.style.display = page.querySelector('.has-failed') ? '' : 'none';
       inspectorBody.replaceChildren(page);
       shownPath = path;
       if (keep) restore(keep);
@@ -815,6 +818,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     } catch (error) {
       if (load !== loads) return;
       shownPath = null;
+      retryButton.style.display = 'none';
       inspectorBody.replaceChildren(el('div', { class: 'card err', text: errorText(lang, error) }));
     } finally {
       if (load === loads) inspectorBody.classList.remove('busy');
@@ -1126,6 +1130,21 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     return /HTTP 409/.test(error instanceof Error ? error.message : String(error)) ? L('act.off') : errorText(lang, error);
   }
   interface ActionResult { queued: { extract?: number; embed?: number }; discarded?: number }
+  retryButton.addEventListener('click', async () => {
+    const conversation = actionConversation;
+    if (!conversation) return;
+    disarm();
+    retryButton.disabled = true;
+    say(actionMsg, L('act.working'));
+    try {
+      const r = await deps.api<{ retried?: Record<string, number> }>('POST',
+        `/v1/conversations/${conversation}/retry-failed`, {}, 30_000);
+      const n = Object.values(r.retried ?? {}).reduce((a, b) => a + (Number(b) || 0), 0);
+      say(actionMsg, n ? L('act.retry_done', { n }) : L('act.retry_none'), 'ok');
+      if (n) deps.hud.background(conversation);
+      await showInspector();
+    } catch (error) { say(actionMsg, actionError(error), 'err'); } finally { retryButton.disabled = false; }
+  });
   historyButton.addEventListener('click', async () => {
     const conversation = actionConversation;
     if (!conversation) return;

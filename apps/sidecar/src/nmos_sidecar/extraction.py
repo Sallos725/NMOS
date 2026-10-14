@@ -1632,6 +1632,23 @@ def retry_failed(conn: psycopg.Connection, kind: str, key: str, conv: UUID) -> i
                         " AND conversation_id = %s AND payload->>'generation' = %s", (kind, conv, key)).rowcount
 
 
+def revive_failed(conn: psycopg.Connection, kind: str, key: str, conv: UUID) -> int:
+    """The panel's "retry failed" (owner, 2026-10-14): dead jobs of this chat and generation are queued again as they
+    were, an old turn's too, and nothing else is. Unlike `retry_failed` no scheduling run is needed, which would queue
+    only the backfill window or, with `history`, every missing turn. A job whose target left the head ends obsolete."""
+    return conn.execute("UPDATE job SET status = 'queued', attempts = 0, run_after = now(), locked_at = NULL,"
+                        " last_error = NULL, updated_at = now() WHERE kind = %s AND status = 'dead'"
+                        " AND conversation_id = %s AND payload->>'generation' = %s", (kind, conv, key)).rowcount
+
+
+def failed_errors(conn: psycopg.Connection, conv: UUID, keys: list[str], limit: int = 3) -> list[dict[str, Any]]:
+    """This chat's jobs of these generations that failed for good, newest first, each with its last error cut as in
+    `recent_errors`. An earlier generation's dead job is left out: no retry runs it, and no count shows it."""
+    return conn.execute("SELECT kind, updated_at, left(last_error, 300) AS error FROM job WHERE conversation_id = %s"
+                        " AND status = 'dead' AND last_error IS NOT NULL AND payload->>'generation' = ANY(%s)"
+                        " ORDER BY updated_at DESC, id DESC LIMIT %s", (conv, keys, limit)).fetchall()
+
+
 def discard(conn: psycopg.Connection, conv: UUID) -> int:
     """Per-chat rebuild (D22): this chat's extractions of every generation stop counting (kept for
     audit), so no older generation serves a turn meanwhile (ADR 0014), and its extract jobs become

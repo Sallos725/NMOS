@@ -408,3 +408,43 @@ def test_the_dashboard_is_the_inspector_with_the_version_and_the_failed_jobs(mig
         assert "새로고침" in c.get("/dashboard", params={"token": "test-token"}).text
         c.headers["Authorization"] = "Bearer test-token"
         assert '<form class="refresh"' not in c.get("/v1/inspector").json()["html"]
+
+
+def test_unfinished_coverage_says_why():
+    """"일부" alone left the reader guessing (owner, 2026-10-14): the chip names what is left and why."""
+    from nmos_sidecar import inspector
+    stats = {"eligible": 10, "compiled": 4, "pending": 2, "failed": 1, "not_queued": 3, "percent": 40.0,
+             "complete": False}
+    ko = inspector._percent(stats, "compiled", "ko")
+    assert "4/10 (40.0%)" in ko and "일부" not in ko
+    assert '<span class="chip warn">실패 1</span>' in ko and "처리 중 2" in ko and "대기열 밖 3" in ko
+    en = inspector._percent(stats, "compiled", "en")
+    assert "1 failed" in en and "2 in progress" in en and "3 not queued" in en
+    # Embedding stats carry no `not_queued`: what is neither done, pending nor failed is outside the queue.
+    emb = {"eligible": 10, "embedded": 9, "pending": 0, "failed": 0, "partial": 0, "percent": 90.0, "complete": False}
+    assert "대기열 밖 1" in inspector._percent(emb, "embedded", "ko")
+
+
+def test_long_messages_embedded_in_part_are_not_shown_as_unfinished():
+    """A message past the chunk cap is embedded up to it by design (K13): waiting or retrying changes nothing, so it is
+    a note beside a full count, not a chip that reads as work left."""
+    from nmos_sidecar import inspector
+    emb = {"eligible": 10, "embedded": 10, "pending": 0, "failed": 0, "partial": 3, "percent": 100.0, "complete": False}
+    ko = inspector._percent(emb, "embedded", "ko")
+    assert "10/10 (100.0%)" in ko and "chip" not in ko and "긴 메시지 3" in ko and "일부" not in ko
+    assert "앞부분만" in inspector._processed({"length": 9000, "clean_chars": 8000, "embedded_chars": 5600}, "ko")
+    assert "일부" not in inspector._processed({"length": 9000, "clean_chars": 8000, "embedded_chars": 5600}, "ko")
+
+
+def test_failed_work_shows_its_last_error_and_the_way_out():
+    from nmos_sidecar import inspector
+    cov = {"extraction": {"generation": {"key": "k", "model": "m", "endpoint": "e"}, "eligible": 4, "compiled": 1,
+                          "pending": 0, "failed": 1, "not_queued": 2, "historical_only": 0, "target_truncated": 0,
+                          "percent": 25.0, "complete": False},
+           "failed_errors": [{"kind": "extract", "error": "HTTP 401 <bad key>"}]}
+    html = inspector._coverage_section(cov, "ko")
+    assert 'class="has-failed' in html and "HTTP 401 &lt;bad key&gt;" in html
+    assert "실패한 작업 다시 시도" in html and "과거 전체 추출" in html
+    quiet = inspector._coverage_section({"extraction": {**cov["extraction"], "failed": 0, "not_queued": 0,
+                                                        "compiled": 4, "percent": 100.0, "complete": True}}, "ko")
+    assert "has-failed" not in quiet and "다시 시도" not in quiet
