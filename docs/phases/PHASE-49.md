@@ -1,7 +1,8 @@
 # Phase 49 — A translation plugin's markup: memory reads the original text only
 
 Status: **draft**, 2026-10-15 (AGE-79). An owner request, not a roadmap stage. Not approved for implementation.
-Q1–Q4 open.
+**Q1–Q3 answered (owner, 2026-10-15): Q1 hidden as far as possible (stricter than recommended), Q2 (a), Q3 (a).
+Q4 open.**
 **After 1.0.0** (R7; the two quiet weeks on the trial install run from 2026-10-13 to at least 2026-10-27): nothing of
 this phase lands on the trial install or in a `0.4.x` release. The owner deferred it past `0.4.0` on 2026-10-10
 (`docs/STATUS.md`); the prototype of that time was not adopted.
@@ -9,7 +10,7 @@ this phase lands on the trial install or in a `0.4.x` release. The owner deferre
 The owner asked (2026-10-15) for memory to work with a translation plugin that keeps the text the model wrote and
 shows a translation beside it. The plugin writes both into the message: the translation, then the original inside an
 element of its own, and a button marker after it. Shape (AGE-79; this spec writes the plugin's tag names as
-`‹ORIG›` and `‹CTRL/›` until Q1 says whether the names may appear here):
+`‹ORIG›` and `‹CTRL/›`; Q1 keeps the real names out of every document):
 
 ```
 translation ‹ORIG› original ‹/ORIG›‹CTRL/›
@@ -106,13 +107,19 @@ S5. **What this does not change.**
 
 ## Questions for the owner
 
-- **Q1 — the plugin's name in the public repository.** The tag names must appear in the matcher; they already appear
-  in `docs/STATUS.md` (the 2026-10-10 deferral note).
-  - (a) **Recommended:** the tag names in the matcher and its tests only. The spec, the ADR, `CHANGELOG.md`,
-    `docs/KNOWN-ISSUES.md`, branches, commits and PR titles say "a translation plugin (AGE-79)".
-  - (b) As (a), and the changelog names the plugin, so its users can find that NMOS reads it.
-  - (c) The tag names here as well (this spec's `‹ORIG›` and `‹CTRL/›` replaced by the real ones).
+- **Q1 — the plugin's name in the public repository. Answered (owner, 2026-10-15): hidden as far as possible**
+  (stricter than the recommended (a); the options were (a) the tag names in the matcher and its tests, (b) also in
+  the changelog, (c) also in this spec).
+  - The tag name is written once, as one constant in `packet.py`; no comment or docstring names the plugin.
+  - Tests and fixtures build their markup from that constant, never the literal; no test, fixture or file name says it.
+  - Every document (this spec, the ADR, `CHANGELOG.md`, `docs/KNOWN-ISSUES.md`, the README, `docs/guide.ko.md`), every
+    branch, commit and PR says "a translation plugin (AGE-79)". The plugin's users cannot find the support by its name;
+    the owner accepts that.
+  - The 2026-10-10 deferral note in `docs/STATUS.md` named the tags; it is reworded in this phase's first PR. Git
+    history keeps the old wording (public history is not rewritten).
+  - Linear (private) may name the plugin.
 - **Q2 — when the re-derivation is paid** (S3; `AGENTS.md §13`: at most one extractor generation per milestone).
+  **Answered (owner, 2026-10-15): (a).**
   - (a) **Recommended:** with the next extractor generation after 1.0.0 (Phase 45's `extract-v17`, Phase 48's
     variant or whichever comes first). The re-extraction is paid once for both; summaries and canon are the only
     extra calls (summaries over every chat's whole history). Steps 2–4 can land before it with `NORMALIZER_VERSION` unchanged (nothing re-derives), and `clean-v4`
@@ -122,7 +129,8 @@ S5. **What this does not change.**
     generation through ADR 0014's fallback. The cost follows the tagged turns only, but every untagged turn shows as
     "served by an older generation" in the Inspector until the next generation, and summaries, canon and embeddings
     still re-derive in full. Not recommended.
-- **Q3 — how step 2 sees a real message.** Real tagged messages have never been checked (Why 3).
+- **Q3 — how step 2 sees a real message.** Real tagged messages have never been checked (Why 3). **Answered (owner,
+  2026-10-15): (a); the owner offered to run it.**
   - (a) **Recommended:** the owner opens one chat with the plugin on, sends one message and reports its shape only:
     the tag names and attributes, their order, the markers, whether the user's message is wrapped too, which language
     each part is in, and whether that request got memory (the Inspector's request list, K14). No chat content leaves
