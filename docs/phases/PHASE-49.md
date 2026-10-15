@@ -1,11 +1,12 @@
 # Phase 49 — A translation plugin's markup: memory reads the original text only
 
-Status: **draft**, 2026-10-15 (AGE-79). An owner request, not a roadmap stage. Not approved for implementation.
+Status: **closed** (owner, 2026-10-15, Q6 (a)): `clean-v3` stays; nothing is built. The Q5 measurement showed that the
+original only makes recall worse for an owner who asks in Korean, and `clean-v3` already drops the button marker. Drafted
+2026-10-15 (AGE-79), an owner request, not a roadmap stage.
 **Q1–Q4 answered (owner, 2026-10-15): Q1 hidden as far as possible (stricter than recommended), Q2 (a), Q3 (a),
 Q4 as recommended.** **Q5 (raised by step 2: the input is Korean, the original English) answered (owner, 2026-10-15): (d), measure
 first; step 3 waits for that measurement.** **The recall half measured (2026-10-15): the original only finds 4 of 12
-Korean questions, the translation only 12, both (`clean-v3`) 12 ("Q5 measurement" below). Q6 open.**
-Approval to implement is a separate decision and has not been given.
+Korean questions, the translation only 12, both (`clean-v3`) 12 ("Q5 measurement" below). Q6 answered: (a), close.**
 **After 1.0.0** (R7; the two quiet weeks on the trial install run from 2026-10-13 to at least 2026-10-27): nothing of
 this phase lands on the trial install or in a `0.4.x` release. The owner deferred it past `0.4.0` on 2026-10-10
 (`docs/STATUS.md`); the prototype of that time was not adopted.
@@ -166,7 +167,9 @@ S5. **What this does not change.**
     under (a), (b) and (c) (each a normalizer variant on the copy only), and a few Korean questions the owner writes
     about them, scored for recall. About 90 extractions at about $0.024, about $2–3, estimated again and approved
     before the run. The answer decides S1; if it is (c), this phase closes with nothing to build.
-- **Q6 — after the recall half** (raised by the Q5 measurement: (a) 4 / 12, (b) 12 / 12, (c) 12 / 12).
+- **Q6 — after the recall half** (raised by the Q5 measurement: (a) 4 / 12, (b) 12 / 12, (c) 12 / 12). **Answered (owner,
+  2026-10-15): (a), close as `clean-v3`.** Steps 3–5 are not run. Recall across languages (memory in one language, the
+  question in another), where the vector route did not make up the difference, is noted for after 1.0.0.
   - (a) **Recommended:** close the phase as (c). `clean-v3` stays: it already drops the button marker, recalls best
     for Korean questions, and needs no new generation, re-extraction or re-embedding for anyone. The cost it keeps is
     that a tagged turn's extraction reads both texts (about twice the input on those turns, under a cent each on the
