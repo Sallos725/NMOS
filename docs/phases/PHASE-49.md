@@ -2,7 +2,8 @@
 
 Status: **draft**, 2026-10-15 (AGE-79). An owner request, not a roadmap stage. Not approved for implementation.
 **Q1–Q4 answered (owner, 2026-10-15): Q1 hidden as far as possible (stricter than recommended), Q2 (a), Q3 (a),
-Q4 as recommended.** Approval to implement is a separate decision and has not been given.
+Q4 as recommended.** **Q5 (raised by step 2: the input is Korean, the original English) open; step 3 waits for it.**
+Approval to implement is a separate decision and has not been given.
 **After 1.0.0** (R7; the two quiet weeks on the trial install run from 2026-10-13 to at least 2026-10-27): nothing of
 this phase lands on the trial install or in a `0.4.x` release. The owner deferred it past `0.4.0` on 2026-10-10
 (`docs/STATUS.md`); the prototype of that time was not adopted.
@@ -146,6 +147,22 @@ S5. **What this does not change.**
     (c), that check, the synthetic stub tests of step 3 and one paid run on a synthetic tagged chat (estimated and
     approved first) replace the full live gate.
 
+- **Q5 — which text of a tagged reply memory reads, when the input is in the translation's language** (raised by
+  step 2). Under `clean-v3` a turn holds the Korean input, the Korean translation and the English original.
+  - (a) The original only, as S1. The text the model wrote, without a translation's losses, and half the extraction
+    input of a tagged turn. But the input, the recall query and the names typed are Korean: the lexical and keyword
+    routes and name matching meet English memory (one name in two scripts), and only the vector route crosses
+    languages.
+  - (b) The translation only. Memory in the input's language; but it reads a machine translation (units converted,
+    details smoothed), and the model, which wrote the original, gets memory in another language.
+  - (c) Both, as now. Nothing changes (the marker is already dropped): every route matches either language; a tagged
+    turn costs about twice the extraction input, and a translation's wording can become a fact of its own.
+  - (d) **Recommended: measure before choosing.** No argument settles (a)–(c); the losses are in recall, which only a
+    measurement shows. Once the owner's tagged chat has about 30 tagged turns: a private copy, the same turns extracted
+    under (a), (b) and (c) (each a normalizer variant on the copy only), and a few Korean questions the owner writes
+    about them, scored for recall. About 90 extractions at about $0.024, about $2–3, estimated again and approved
+    before the run. The answer decides S1; if it is (c), this phase closes with nothing to build.
+
 ## Steps
 
 1. This spec, and the owner's answers.
@@ -169,9 +186,10 @@ S5. **What this does not change.**
    number); `CHANGELOG.md`'s upgrade note with S3's cost; `docs/KNOWN-ISSUES.md` (S5: gating and language);
    the README and `docs/guide.ko.md`; `docs/STATUS.md`.
 
-## Step 2 evidence (partial, 2026-10-15)
+## Step 2 evidence (2026-10-15)
 
-One reply, captured by the owner from a chat with the plugin on. Shape only; no content enters the repository.
+One reply captured by the owner, then one new chat on the trial install with NMOS on (two inputs, each reply
+translated before the next input), read there read-only. Shape and counts only; no content enters the repository.
 
 ```
 {translation}
@@ -187,10 +205,17 @@ One reply, captured by the owner from a chat with the plugin on. Shape only; no 
   inline image tags; `clean-v3` removes the image tags and keeps both parts (checked on a synthetic rebuild of the
   shape, 2026-10-15).
 - The shape matches S1.
-- **Open:** whether the user's messages are wrapped too and in which language each part is, which language the owner
-  asks in, and whether such a request gets memory (K14). If the owner asks in Korean and the user's message stays
-  Korean, the language stop condition applies: memory made from the English original only would be matched against
-  Korean questions and Korean names, where `clean-v3` still holds the Korean translation. Step 3 waits for that answer.
+- **The input is not translated** (the plugin does not support it, owner). Both inputs were typed in Korean and stored
+  unwrapped; the owner sometimes types in English.
+- **Gating is not affected (K14).** Both requests were recognized and retrieved (`retrieval_trace`: fresh, every route
+  run); the packets were empty only because the chat was new.
+- **The ledger holds the reply as translated.** The reply was first observed at the next request, after the
+  translation ran, so it is one revision with the element (open, close and marker in the expected order, the tag
+  spelled as in AGE-79). A reply translated after the next request would arrive as an edit of that reply (K3), and its
+  turn would be extracted again.
+- **The language stop condition applies.** A turn is a Korean input and an English original; the translation is the
+  only Korean of the reply. `clean-v4` would make the reply's memory English while the input, the recall query and
+  the names the owner types stay Korean. Q5.
 
 ## Acceptance criteria
 
