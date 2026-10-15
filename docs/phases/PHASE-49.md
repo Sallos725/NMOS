@@ -2,7 +2,8 @@
 
 Status: **draft**, 2026-10-15 (AGE-79). An owner request, not a roadmap stage. Not approved for implementation.
 **Q1–Q4 answered (owner, 2026-10-15): Q1 hidden as far as possible (stricter than recommended), Q2 (a), Q3 (a),
-Q4 as recommended.** **Q5 (raised by step 2: the input is Korean, the original English) open; step 3 waits for it.**
+Q4 as recommended.** **Q5 (raised by step 2: the input is Korean, the original English) answered (owner, 2026-10-15): (d), measure
+first; step 3 waits for that measurement.**
 Approval to implement is a separate decision and has not been given.
 **After 1.0.0** (R7; the two quiet weeks on the trial install run from 2026-10-13 to at least 2026-10-27): nothing of
 this phase lands on the trial install or in a `0.4.x` release. The owner deferred it past `0.4.0` on 2026-10-10
@@ -148,7 +149,9 @@ S5. **What this does not change.**
     approved first) replace the full live gate.
 
 - **Q5 — which text of a tagged reply memory reads, when the input is in the translation's language** (raised by
-  step 2). Under `clean-v3` a turn holds the Korean input, the Korean translation and the English original.
+  step 2). **Answered (owner, 2026-10-15): (d), as recommended.** The comparison runs once the owner's tagged chat
+  has about 30 tagged turns (counted read-only on the trial install); its estimate is approved again before the run.
+  Under `clean-v3` a turn holds the Korean input, the Korean translation and the English original.
   - (a) The original only, as S1. The text the model wrote, without a translation's losses, and half the extraction
     input of a tagged turn. But the input, the recall query and the names typed are Korean: the lexical and keyword
     routes and name matching meet English memory (one name in two scripts), and only the vector route crosses
@@ -169,7 +172,7 @@ S5. **What this does not change.**
 2. **The real shape** (Q3), before any code. Record the shape only (no content): tag names, attributes, order,
    markers, user messages, languages, whether the request got memory. If it differs from S1, amend this spec and ask
    again.
-3. **`clean-v4` behind the version, not active.** The rule in `clean_text` under a new version name, with
+3. **`clean-v4` behind the version, not active** (after Q5's measurement decides which text it keeps). The rule in `clean_text` under a new version name, with
    `NORMALIZER_VERSION` still `clean-v3` (no key changes, nothing re-derives), and tests with synthetic text:
    - one element; several; attributes; the tag name in other cases; markers only; markers between elements;
    - an unclosed opening, a stray close, a nested element, empty originals: each equal to `clean-v3`;
