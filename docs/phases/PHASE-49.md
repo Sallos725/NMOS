@@ -3,7 +3,8 @@
 Status: **draft**, 2026-10-15 (AGE-79). An owner request, not a roadmap stage. Not approved for implementation.
 **Q1–Q4 answered (owner, 2026-10-15): Q1 hidden as far as possible (stricter than recommended), Q2 (a), Q3 (a),
 Q4 as recommended.** **Q5 (raised by step 2: the input is Korean, the original English) answered (owner, 2026-10-15): (d), measure
-first; step 3 waits for that measurement.**
+first; step 3 waits for that measurement.** **The recall half measured (2026-10-15): the original only finds 4 of 12
+Korean questions, the translation only 12, both (`clean-v3`) 12 ("Q5 measurement" below). Q6 open.**
 Approval to implement is a separate decision and has not been given.
 **After 1.0.0** (R7; the two quiet weeks on the trial install run from 2026-10-13 to at least 2026-10-27): nothing of
 this phase lands on the trial install or in a `0.4.x` release. The owner deferred it past `0.4.0` on 2026-10-10
@@ -165,6 +166,16 @@ S5. **What this does not change.**
     under (a), (b) and (c) (each a normalizer variant on the copy only), and a few Korean questions the owner writes
     about them, scored for recall. About 90 extractions at about $0.024, about $2–3, estimated again and approved
     before the run. The answer decides S1; if it is (c), this phase closes with nothing to build.
+- **Q6 — after the recall half** (raised by the Q5 measurement: (a) 4 / 12, (b) 12 / 12, (c) 12 / 12).
+  - (a) **Recommended:** close the phase as (c). `clean-v3` stays: it already drops the button marker, recalls best
+    for Korean questions, and needs no new generation, re-extraction or re-embedding for anyone. The cost it keeps is
+    that a tagged turn's extraction reads both texts (about twice the input on those turns, under a cent each on the
+    trial host's model). AGE-79 is closed with this measurement as its answer.
+  - (b) Run the extraction half for (b) against (c) first: the 48 tagged turns extracted once under each on a copy,
+    their facts compared (count, duplicates, contradictions, Korean and English names), about $2, its estimate approved
+    again before the run. Worth it only if the doubled extraction input matters, or translation-only facts might be
+    cleaner.
+  - Dropped: (a) original only, the draft's S1.
 
 ## Steps
 
@@ -219,6 +230,43 @@ translated before the next input), read there read-only. Shape and counts only; 
 - **The language stop condition applies.** A turn is a Korean input and an English original; the translation is the
   only Korean of the reply. `clean-v4` would make the reply's memory English while the input, the recall query and
   the names the owner types stay Korean. Q5.
+
+## Q5 measurement: the recall half (2026-10-15)
+
+Numbers only; the chat, the questions and the answers stay on the owner's machine.
+
+- **The chat.** The owner's tagged chat was filled from 14 to 50 turns on an isolated clone of the trial host (its own
+  PocketRisu and sidecar, a restored copy of the trial database; the trial install untouched), with the owner's preset,
+  toggles, modules, model bindings and persona. Turns 15–50 were written by a model playing the persona, one input in
+  three in English, as the owner's own inputs are mixed (9 Korean, 5 English). 49 of 50 replies carry the element.
+  Cost about $4.8 (owner-approved cap $16).
+- **The arms.** Three copies of the database after turn 50. In two, the normalized text of the 48 tagged replies was
+  replaced by `clean_text` of (a) the original only or (b) the translation only, and those replies embedded again with
+  the trial host's embedding model (under $0.05); (c) is `clean-v3` as it stands (both). Facts are the same in every
+  arm (extracted from `clean-v3`): this half measures recall routes only.
+- **The probes.** 12 Korean questions about facts stated in turns 7–43 (5 names, 3 promises, 2 places, 1 number,
+  1 object; 3 of them first stated in an input), drafted from the transcript and approved by the owner. Each replays the
+  last request (`audit.replay`, probe in place of the message, `packet-v19`) three times per arm.
+- **The context.** The preset's 150k context holds the whole 50-turn chat, so every message was in the prompt and no
+  arm placed any excerpt. The replay therefore keeps only the last 12 messages in context (a long chat whose early turns
+  fell out), the case memory is for.
+- **Scored.** "Found": a placed excerpt or quote from the answer's turn (majority of three; all three rounds agreed in
+  every case). "With the answer": the answer's words (Korean or English) in a placed excerpt.
+
+| Arm | Found | With the answer | Packet (mean) |
+|---|---|---|---|
+| (a) original only | 4 / 12 | 2 / 12 | 2.3k tokens |
+| (b) translation only | 12 / 12 | 6 / 12 | 3.2k tokens |
+| (c) both (`clean-v3`) | 12 / 12 | 8 / 12 | 2.8k tokens |
+
+- (a) misses 8 of 12. Two of its 4 are questions whose answer is in a Korean input, which no arm changes. The vector
+  route, the only one that crosses languages, did not make up the difference.
+- (b) finds every turn but holds the answer less often than (c): where the translation spells a name differently from
+  turn to turn, the English original in (c) still carries it.
+- **Reading:** for an owner who asks in Korean, S1 as drafted (the original only) makes recall worse, the outcome the
+  language stop condition named. (c), which is `clean-v3` today and already drops the button marker, recalls best.
+- **Limits:** one chat, one simulated context size, 12 questions; English questions not measured; the extraction half
+  (what facts each arm yields) not run. Q6.
 
 ## Acceptance criteria
 
