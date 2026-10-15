@@ -169,6 +169,29 @@ S5. **What this does not change.**
    number); `CHANGELOG.md`'s upgrade note with S3's cost; `docs/KNOWN-ISSUES.md` (S5: gating and language);
    the README and `docs/guide.ko.md`; `docs/STATUS.md`.
 
+## Step 2 evidence (partial, 2026-10-15)
+
+One reply, captured by the owner from a chat with the plugin on. Shape only; no content enters the repository.
+
+```
+{translation}
+‹ORIG›
+{original}
+‹/ORIG›
+‹CTRL/›
+```
+
+- One element per reply; the opening tag has no attributes and is spelled as in AGE-79; the close follows the
+  original on its own line; the button marker follows the close on its own line.
+- **The original is English and the translation Korean.** Both parts hold the same markdown headings and the same
+  inline image tags; `clean-v3` removes the image tags and keeps both parts (checked on a synthetic rebuild of the
+  shape, 2026-10-15).
+- The shape matches S1.
+- **Open:** whether the user's messages are wrapped too and in which language each part is, which language the owner
+  asks in, and whether such a request gets memory (K14). If the owner asks in Korean and the user's message stays
+  Korean, the language stop condition applies: memory made from the English original only would be matched against
+  Korean questions and Korean names, where `clean-v3` still holds the Korean translation. Step 3 waits for that answer.
+
 ## Acceptance criteria
 
 1. For every revision without the markup on the copies, `clean-v4` equals `clean-v3` byte for byte.
