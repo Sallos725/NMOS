@@ -28,8 +28,8 @@ Memory should read the original only, and nothing of the marker.
 
 1. **Today both texts become memory.** `clean-v3` (`packet.clean_text`) has no rule for this markup; its generic
    tag rule removes the tags and keeps every word. Called on 2026-10-15 with synthetic text:
-   `번역문 ‹ORIG› original text ‹/ORIG›‹CTRL/›` → `번역문 original text`. An unclosed element and a separator
-   marker (`‹SEP/›`, another marker of the same kind) are stripped the same way. So for a tagged message:
+   `번역문 ‹ORIG› original text ‹/ORIG›‹CTRL/›` → `번역문 original text`. An unclosed element, and any other
+   self-closing marker the plugin may write, are stripped the same way. So for a tagged message:
    - extraction reads the story twice, in two wordings, and a translation's own wording (a name spelled differently,
      a mistranslated line) can become a fact of its own or contradict the original's;
    - an excerpt can quote both copies, and spend its length on the duplicate;
@@ -60,7 +60,8 @@ content and before every `clean-v3` step:
   translation" rule.
 - **Then every `clean-v3` step runs on the result**, so an original that holds a reasoning block, HTML, an inline
   image or memory markup is still cleaned.
-- **No new marker rule.** The button and separator markers already fall to the generic tag rule (Why 1).
+- **No new marker rule.** The button marker, and any other self-closing marker of the plugin's, already falls to the
+  generic tag rule (Why 1).
 - **Any role.** The rule follows the markup, not who wrote the message. Step 2 checks what the plugin does to user
   messages; if it wraps them the other way round (what the user typed outside the element), stop and ask.
 
