@@ -32,7 +32,8 @@ Read these files in this order before changing code:
 1. `AGENTS.md` — workflow and implementation-agent rules.
 2. `ARCHITECTURE.md` — stable architecture contract, invariants, verified facts, decisions.
 3. `docs/STATUS.md` — current phase and open owner decisions.
-4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-47.md` is the latest, a draft
+4. `docs/phases/PHASE-N.md` — the phase spec for the code you touch (`PHASE-48.md` is the latest, a draft
+   of 2026-10-15: replies only, an owner switch that leaves the user's messages out of memory, after 1.0; `PHASE-47.md`, a draft
    of 2026-10-14: the owner leaves a name out of the cast and relationships, `entity_exclude`; `PHASE-46.md`, approved
    2026-10-13: small talk keeps the configured limits, `packet-v19`, the default; `PHASE-45.md`, a draft
    of 2026-10-12: speakers recorded at extraction for the quote route, K47; held by the owner on 2026-10-13;
@@ -136,6 +137,7 @@ If two normative documents appear to conflict:
 | 45 — who said it: speakers recorded at extraction (`extract-v17`), read by the quote route (K47; AGE-86; a correction found by measurement, not a roadmap stage) | **draft** (2026-10-12), **held** (owner, 2026-10-13): Q1 (a) speakers only; step 3 measured (+1 quotes case, 0 lost) too small for a generation of its own, so it goes in with the next extractor-generation change; not approved for implementation; high risk (generation, migration, quote route) | `PHASE-45.md` |
 | 46 — small talk keeps the configured limits: no budget-filled facts or claims for a question that names no one and shares no fact's words (`packet-v19`; a correction found by the 1.0 gate's comparison with `0.1.x`, not a roadmap stage) | **approved** (owner, 2026-10-13); measured: 0 lost, the two small-talk probes back, no category below `0.1.x` (`docs/perf/phase46-related-fill.md`); **complete**, `packet-v19` the default (owner, Q1) | `PHASE-46.md`, ADR 0075 |
 | 47 — "not a character": the owner leaves a name out of the cast and the relationships (`entity_exclude` repair; tester feedback, a correction, not a roadmap stage) | **draft** (2026-10-14); Q1–Q3 answered as recommended (owner, 2026-10-14; Q1: one action, two scopes); not approved for implementation; high risk (migration on owner input, memory selection, identity) | `PHASE-47.md` |
+| 48 — replies only: an owner switch that leaves the user's messages out of memory (`replies_only`; an owner request, not a roadmap stage; after 1.0) | **draft** (2026-10-15); Q1–Q5 open; not approved for implementation; high risk (memory selection, an extractor generation variant, the off path byte-identical) | `PHASE-48.md` |
 | Stage 8 (after 1.0, R7) | **not authorized** | `docs/ROADMAP-1.0.md`, `docs/proposals/TRACK-B-PHASE-5-PLUS.md` |
 
 Before any further Phase 4/5 feature work, the stabilization issues #6–#14 had to land (D19–D21,
