@@ -2,7 +2,8 @@
 
 Status: **draft**, 2026-10-15. An owner request, not a roadmap stage. Not approved for implementation.
 **Q1–Q5 answered (owner, 2026-10-15): Q1 as recommended, Q2 per chat (not as recommended), Q3 decided by the
-switch's purpose, Q4 under the rules after 1.0.0, Q5 approved. Q6 (raised by Q2) is open.** Approval to implement is
+switch's purpose, Q4 under the rules after 1.0.0, Q5 approved. Q6 (raised by Q2) answered (owner, 2026-10-15): (a), with
+the choice the owner's.** Approval to implement is
 a separate decision and has not been given.
 **After 1.0.0** (R7; the two quiet weeks on the trial install run from 2026-10-13 to at least 2026-10-27): nothing of
 this phase lands on the trial install or in a `0.4.x` release.
@@ -50,7 +51,7 @@ S1. **A per-chat flag** (Q2), `conversation.replies_only boolean NOT NULL DEFAUL
 memory mode (ADR 0035: `memory_strict`, `memory_narrator`, migration `0021`). Migration `0030` is reserved by the held
 Phase 45 and Phase 47 takes the next free number when it is built; this phase takes the next one after. The panel's
 **This chat** card (Status tab, ADR 0048) gets a toggle, **AI 답장만 기억 / Remember AI replies only**. Turning it on asks
-first, with the recent window's turn count and that it re-extracts them at the provider's cost, and the Q6 choice.
+first, with the recent window's turn count and that it re-extracts them at the provider's cost, and the Q6 choice: the recent window only, or the whole history too, each with its turn count.
 Turning it off says that the chat's earlier memory comes back at once (S3). Korean first, English beside it
 (`i18n.ts`). The plugin stays light (`nmos-plugin-stays-light`): the counts are the sidecar's.
 
@@ -70,8 +71,9 @@ S3. **Extraction (write side).**
   What reads the turn's text (`MIN_CONTENT_CHARS`, `name_pairs`, `revealed`, `normalize`, `coverage_of`) reads the
   reply. A turn with no reply yet extracts nothing.
 - **Turning it on** queues the chat's recent window under the variant, at the provider's cost.
-- **Older turns** of a flagged chat follow Q6: ADR 0014's fallback would otherwise serve them from the default
-  generation, which read the user's messages.
+- **Older turns** of a flagged chat are never served by a generation that read the user's messages (Q6): ADR 0014's
+  fallback, for that chat, considers only replies-only generations. Until the owner extracts them, those turns have no
+  facts; their raw replies still come back as excerpts.
 - **Turning it off** serves the default generation again at once: its extractions are kept (ADR 0015 keeps superseded
   LLM extractions), so nothing is re-extracted. The variant's rows are kept too, so turning it on again re-extracts only
   turns added or changed since.
@@ -118,7 +120,9 @@ schema.
   the flag off (identical to `main`, three rounds) and on (which probes change). The extraction part: a reduced paid
   run instead of the full live gate, on one gate chat's copy with the flag on, its probes scored; the cost estimated and
   approved before the run (with Q3's comparison arm in the estimate).
-- **Q6 — older turns of a flagged chat (open; raised by Q2).** Beyond the recent window, ADR 0014 serves a turn from
+- **Q6 — older turns of a flagged chat (raised by Q2). Answered (owner, 2026-10-15): (a), as long as the owner has
+  the choice.** Turning the switch on asks: the recent window only, or the whole history too, each with its turn
+  count; the owner can also extract the history later from the Inspector. Beyond the recent window, ADR 0014 serves a turn from
   the default generation, which read the user's messages, so the directions would stay in the chat's older memory.
   - (a) **Recommended:** no fallback to a generation that read the user's messages. A flagged chat's older turns have
     no facts until they are extracted under the variant; turning the switch on offers **"전체 기록도 다시 추출"**
@@ -161,7 +165,8 @@ schema.
    the gating decision are the same as with it off, and a second chat without the flag is unchanged.
 3. With the flag on, the stub extractor's fact quoted from the user's message is refused and its fact quoted from the
    reply is kept.
-4. Switching on queues the chat's recent window (and the history only as Q6 says); switching off queues nothing and
+4. Switching on queues the chat's recent window, and the whole history only when the owner chooses it (Q6); a
+   flagged chat's older turns never show a fact from a generation that read the user's messages; switching off queues nothing and
    serves the default generation at once; neither queues an embedding job.
 5. A retrieve at 10,000 messages costs at most +5 ms p50 over `main` with the flag on.
 6. Step 4's count of facts the switch drops, and Q3's comparison, are reported before the switch is offered in a
