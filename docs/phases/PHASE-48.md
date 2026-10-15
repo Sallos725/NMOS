@@ -6,7 +6,10 @@ switch's purpose, Q4 under the rules after 1.0.0, Q5 approved. Q6 (raised by Q2)
 the choice the owner's.** Approval to implement is
 a separate decision and has not been given.
 **After 1.0.0** (R7; the two quiet weeks on the trial install run from 2026-10-13 to at least 2026-10-27): nothing of
-this phase lands on the trial install or in a `0.4.x` release.
+this phase lands on the trial install or in a `0.4.x` release. The release that carries it is decided after 1.0.0; a
+minor release (`1.1.0`) is proposed, since a migration, a panel control and a generation variant are not a patch.
+**Implementation design added 2026-10-15** (below, before the steps), with step 4's read-only count
+(`docs/perf/phase48-user-messages.md`).
 
 The owner asked (2026-10-15) for a switch: when it is on, memory comes from the AI's replies only. Asked whether that
 meant leaving out only some user messages (out-of-character lines, instructions to the model) or all of them, the
@@ -132,6 +135,95 @@ schema.
     paid, but the old directions keep reaching the packet until the history is extracted.
   - (c) Turning it on always queues the whole history. Clean at once, but a long chat's cost is paid without a choice.
 
+## Implementation design (2026-10-15)
+
+Written before approval, so the build after 1.0.0 starts from known edits. It does not authorize them. Paths are as
+of `main` `7d89a39`; the build re-checks them.
+
+**Measured first** (`docs/perf/phase48-user-messages.md`, read only, the trial install's 10 chats): 4 of 632 served
+facts (0.6 %) have evidence found only in a user message; 210 of 817 recorded excerpts (26 %) are user messages, in 88
+of 109 packets with excerpts (81 %). On this data the switch shows on the read side. Whether these chats are full
+impersonation was not checked, so the paid run uses a chat the owner names as one.
+
+D1. **The flag.** Migration (next free number when built; `0030` is reserved by Phase 45 and Phase 47 takes the next):
+`ALTER TABLE conversation ADD COLUMN replies_only boolean NOT NULL DEFAULT false`. No backfill, no rewrite. Archives
+already export `conversation` rows (`archive.py` `Table("conversation", …)`); step 2 proves the column round-trips.
+
+D2. **The API.** `GET /v1/conversations/{id}/replies-only` → `{on, recent_turns, history_turns}` (the counts the
+confirm shows: turns the recent window would re-extract, and the rest of the head). `PUT` with `{on, history}` where
+`history` is `"recent"` or `"all"` (Q6). Its own endpoint, not a field of the memory mode (ADR 0035), so memory-mode
+clients are unchanged. The PUT is one transaction: set the flag, then queue (D6). A 409 when fact extraction is off and
+the flag is turned on: the read side alone would serve the default generation's facts, the case Q6 rules out.
+
+D3. **One eligibility clause for recall.** Every recall SQL that now repeats the eligibility predicates (`disabled`,
+`isComment`) gets the same clause, `AND NOT (%(replies)s AND sr.metadata->>'role' = 'user')`:
+- `retrieval._MATCHES_HEAD` (lexical; its users `_MATCHES` and the count beside it);
+- the keyword route's query (`holds`, near the end of `retrieval.py`);
+- `retrieval._turn_messages` and `retrieval._first_met` (the source-turn quotes and "at first", PHASE-21/33);
+- `vectors.vector_candidates`.
+`RecallOptions` gets `replies_only`, set per request where the memory mode is already set
+(`dataclasses.replace(options, strict=conv.memory_strict, …)` in the retrieve path). The parameter is a plain boolean,
+so the plans stay the same when it is false; step 2's latency check covers the true case.
+
+D4. **The per-chat extractor key.**
+- The variant is `generations.make(...)` with the default extractor's spec plus `members: "replies"`, built beside
+  `extraction.extractor(settings)` and kept in the runtime as `rt["extractor_replies"]`.
+- **A trap to close first:** `projection_generation.activated_at` defaults to `now()` (migration `0008`), so merely
+  registering the variant (`generations.ensure`) would make it the most recently activated generation, and
+  `generations.active(conn, "extract")` would return it for the whole install. `active()` and every "most recently
+  activated" ordering must leave out generations whose spec has `members` (`spec->>'members' IS NULL`); the variant is
+  registered with `ensure` and never `activate`d. A test pins it: after the variant is registered, the active key and
+  every unflagged chat's packet are unchanged.
+- A helper `extractor_key(conn, conv)` returns the variant key for a flagged chat and the active key otherwise. The
+  reads that now take `rt["active_extractor"]` (about 18 in `api.py`: memory view, Inspector pages, held aliases,
+  dropped facts, coverage, preview) take it, and so does the retrieve path's `RecallOptions.extractor_key`.
+- **Fallback (Q6).** The fact read (`facts.ACTIVE_ASSERTIONS_TEMPLATE`, window `w`) and the serving read
+  (`extraction.SERVING_EXTRACTIONS`) choose per turn among all generations. Both get
+  `AND (g.spec->>'members' = 'replies') = %(replies)s`: a flagged chat sees only replies-only generations (of any
+  compiler, so a later compiler's variant can still fall back to an earlier variant), and an unflagged chat never sees
+  a variant's rows. Coverage counts the same way, so a flagged chat's not-yet-extracted history shows as not covered.
+
+D5. **The extractor's input** (Q3 (b)). `load_context` loads members and context as now; for the variant,
+`members` keeps the turn's `char` messages and `context` keeps the earlier turns' `char` messages only. Leaving the
+earlier turns' user messages in CONTEXT would bring the directions back one turn later, which Q3 rules out. Everything
+that reads the turn text (`turn_text`, `shown_target`, `MIN_CONTENT_CHARS`, `name_pairs`, `revealed`, `normalize`,
+`coverage_of`) then reads the replies without further change. The extraction row's `members` still lists the whole
+turn (provenance), and its `coverage` records that the user's message was left out. A turn with no reply returns no
+call. The prompt text is unchanged; only its input is, which is why the spec field, not a compiler bump, makes the key.
+
+D6. **Queueing.** `extraction.schedule_generation(conn, key, backfill, conv, history=…)` already queues one chat:
+turning the flag on calls it with the variant key and `history=(history == "all")`. Every other place that queues a
+chat's extraction (first sight and live turns after a sync, `extract-history`, the per-chat rebuild) takes
+`extractor_key(conn, conv)`. Turning the flag off queues nothing: the default generation's kept rows serve at once
+(ADR 0015), and the variant's rows stay for the next time.
+
+D7. **The worker.** `claim` already matches `kind || '|' || generation` against a list. `worker.handlers` becomes a
+map keyed by `(kind, key)` with the variant's extract handler beside the default one, both on the same model client;
+`run_once` dispatches by the job's kind and generation. A job of a key no handler has still waits, as now.
+
+D8. **Summaries and reveal checks.** The summary generation (`summaries.summarizer`) and the reveal-check generation
+(`reveals.generation`) read turns too: each gets the same spec field and its own variant, scheduled per chat the same
+way, with replies-only turn input, and the same rule as D4 keeps each variant out of
+`generations.active` and out of an unflagged chat's reads. Canon facts read the lorebook, not turns, and are unchanged.
+
+D9. **The panel.** The **This chat** card (ADR 0048, `ui.ts`) gets the toggle. Turning it on opens a confirm with
+the two counts from D2 and two choices, **최근 N턴만 다시 추출** and **전체 기록까지 다시 추출 (N턴)**, and the cost note.
+Turning it off says the earlier memory is back at once. Strings in `i18n.ts`, Korean first. The plugin only calls the
+two endpoints; counts and queueing are the sidecar's.
+
+D10. **What is not touched.** Embeddings and their projection key; the recall query and gating; the packet policy;
+raw rows; the Inspector's message list (it still shows the user's messages, with no "used" mark in this phase).
+
+**Test list by step.**
+- Step 2 (D1–D3, D9): the flag defaults off and round-trips through an archive; with it off, every route returns what
+  `main` returns on the same synthetic chat; with it on, no `user` revision on any of the five routes; another chat in
+  the same database unchanged; no embedding job queued by either switch; the confirm's counts.
+- Step 3 (D4–D8): the activation trap (above); the per-chat key in the retrieve path and the API reads; fallback both
+  ways (a flagged chat never serves a default row; an unflagged chat never serves a variant row, including after the
+  flag is turned off); the stub extractor's quote from a user message refused and from the reply kept; CONTEXT without
+  user messages; on → off → on queues the window, nothing, then only new or changed turns; summaries and reveal
+  checks under their variants; the worker running both extract keys.
+
 ## Steps
 
 1. This spec, and the owner's answers.
@@ -150,8 +242,9 @@ schema.
    - another chat's facts, coverage and jobs are unchanged by one chat's switch;
    - a flagged chat's older turns follow Q6.
 4. **Measurement.**
-   - A read-only count on a copy: of the current facts, how many have evidence found only in a user message (the
-     size of what the switch drops). Numbers only.
+   - A read-only count: of the current facts, how many have evidence found only in a user message (the size of what
+     the switch drops). Numbers only. **Done 2026-10-15 on the trial install's database, read only**
+     (`docs/perf/phase48-user-messages.md`): 4 of 632 facts; 210 of 817 excerpts. Repeated on the paid run's chat.
    - The zero-call replay of Q5.
    - The reduced paid run of Q5 with Q3's comparison arm, after the owner approves its estimate.
 5. **Docs.** An ADR (next free number), `docs/KNOWN-ISSUES.md` (a reply that leans on the user's message loses that
