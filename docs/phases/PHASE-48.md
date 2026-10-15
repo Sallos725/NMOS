@@ -55,7 +55,8 @@ memory mode (ADR 0035: `memory_strict`, `memory_narrator`, migration `0021`). Mi
 Phase 45 and Phase 47 takes the next free number when it is built; this phase takes the next one after. The panel's
 **This chat** card (Status tab, ADR 0048) gets a toggle, **AI 답장만 기억 / Remember AI replies only**. Turning it on asks
 first, with the recent window's turn count and that it re-extracts them at the provider's cost, and the Q6 choice: the recent window only, or the whole history too, each with its turn count.
-Turning it off says that the chat's earlier memory comes back at once (S3). Korean first, English beside it
+Turning it off says that the chat's earlier memory comes back at once and that turns written while it was on are
+extracted again the usual way (S3). Korean first, English beside it
 (`i18n.ts`). The plugin stays light (`nmos-plugin-stays-light`): the counts are the sidecar's.
 
 S2. **Recall (read side).** For a chat with the flag on, a user message is not a candidate on any route (lexical,
@@ -77,9 +78,11 @@ S3. **Extraction (write side).**
 - **Older turns** of a flagged chat are never served by a generation that read the user's messages (Q6): ADR 0014's
   fallback, for that chat, considers only replies-only generations. Until the owner extracts them, those turns have no
   facts; their raw replies still come back as excerpts.
-- **Turning it off** serves the default generation again at once: its extractions are kept (ADR 0015 keeps superseded
-  LLM extractions), so nothing is re-extracted. The variant's rows are kept too, so turning it on again re-extracts only
-  turns added or changed since.
+- **Turning it off** serves the default generation again at once for every turn it had extracted: its extractions
+  are kept (ADR 0015 keeps superseded LLM extractions). Turns added while the switch was on have only the variant's
+  rows, which an unflagged chat does not read, so turning it off queues the default generation for those turns only
+  (a cost bounded by how long the switch was on). The variant's rows are kept too, so turning it on again re-extracts
+  only turns added or changed since.
 
 S4. **Summaries.** For a flagged chat, a scene summary reads the replies only, under a summary generation variant with
 the same spec field, so summaries made from both sides are not served for it.
@@ -102,7 +105,7 @@ schema.
   summaries, built in that order (steps 2–3).
 - **Q2 — one switch or one per chat. Answered (owner, 2026-10-15): per chat** (recommended was one for the install).
   This is what makes S3's per-chat key, the worker's two generations at once, Q6 and the migration part of the phase.
-  It also makes turning the switch off free (S3).
+  It also makes turning the switch off cheap: only turns written while it was on are extracted again (S3, D6).
 - **Q3 — what the extractor sees of the user's message. Decided by the switch's purpose (owner, 2026-10-15): (b),
   nothing of it.** The owner asked for the difference to be settled for full impersonation:
   - (a) *Shown as context, not a source.* Helps only when the reply leans on words it does not repeat ("그 제안",
@@ -153,10 +156,11 @@ D2. **The API.** `GET /v1/conversations/{id}/replies-only` → `{on, recent_turn
 confirm shows: turns the recent window would re-extract, and the rest of the head). `PUT` with `{on, history}` where
 `history` is `"recent"` or `"all"` (Q6). Its own endpoint, not a field of the memory mode (ADR 0035), so memory-mode
 clients are unchanged. The PUT is one transaction: set the flag, then queue (D6). A 409 when fact extraction is off and
-the flag is turned on: the read side alone would serve the default generation's facts, the case Q6 rules out.
+the flag is turned on: nothing could extract the variant, so the chat would serve no facts at all.
 
 D3. **One eligibility clause for recall.** Every recall SQL that now repeats the eligibility predicates (`disabled`,
-`isComment`) gets the same clause, `AND NOT (%(replies)s AND sr.metadata->>'role' = 'user')`:
+`isComment`) gets the same clause, `AND NOT (%(replies)s AND coalesce(sr.metadata->>'role', '') = 'user')` (coalesced like the predicates beside it: an
+uncoalesced NULL role would turn the whole condition NULL and drop the row):
 - `retrieval._MATCHES_HEAD` (lexical; its users `_MATCHES` and the count beside it);
 - the keyword route's query (`holds`, near the end of `retrieval.py`);
 - `retrieval._turn_messages` and `retrieval._first_met` (the source-turn quotes and "at first", PHASE-21/33);
@@ -179,7 +183,8 @@ D4. **The per-chat extractor key.**
   dropped facts, coverage, preview) take it, and so does the retrieve path's `RecallOptions.extractor_key`.
 - **Fallback (Q6).** The fact read (`facts.ACTIVE_ASSERTIONS_TEMPLATE`, window `w`) and the serving read
   (`extraction.SERVING_EXTRACTIONS`) choose per turn among all generations. Both get
-  `AND (g.spec->>'members' = 'replies') = %(replies)s`: a flagged chat sees only replies-only generations (of any
+  `AND coalesce(g.spec->>'members' = 'replies', false) = %(replies)s` (every existing generation has no `members`, so
+without the `coalesce` the comparison is NULL and an unflagged chat would serve no facts): a flagged chat sees only replies-only generations (of any
   compiler, so a later compiler's variant can still fall back to an earlier variant), and an unflagged chat never sees
   a variant's rows. Coverage counts the same way, so a flagged chat's not-yet-extracted history shows as not covered.
 
@@ -194,8 +199,9 @@ call. The prompt text is unchanged; only its input is, which is why the spec fie
 D6. **Queueing.** `extraction.schedule_generation(conn, key, backfill, conv, history=…)` already queues one chat:
 turning the flag on calls it with the variant key and `history=(history == "all")`. Every other place that queues a
 chat's extraction (first sight and live turns after a sync, `extract-history`, the per-chat rebuild) takes
-`extractor_key(conn, conv)`. Turning the flag off queues nothing: the default generation's kept rows serve at once
-(ADR 0015), and the variant's rows stay for the next time.
+`extractor_key(conn, conv)`. Turning the flag off queues the default generation for the head's turns that have a
+live variant row and no live default row (the turns written while it was on); every other turn's kept default row
+serves at once (ADR 0015). The variant's rows stay for the next time.
 
 D7. **The worker.** `claim` already matches `kind || '|' || generation` against a list. `worker.handlers` becomes a
 map keyed by `(kind, key)` with the variant's extract handler beside the default one, both on the same model client;
@@ -208,7 +214,8 @@ way, with replies-only turn input, and the same rule as D4 keeps each variant ou
 
 D9. **The panel.** The **This chat** card (ADR 0048, `ui.ts`) gets the toggle. Turning it on opens a confirm with
 the two counts from D2 and two choices, **최근 N턴만 다시 추출** and **전체 기록까지 다시 추출 (N턴)**, and the cost note.
-Turning it off says the earlier memory is back at once. Strings in `i18n.ts`, Korean first. The plugin only calls the
+Turning it off says the earlier memory is back at once and how many turns written while it was on are extracted
+again. Strings in `i18n.ts`, Korean first. The plugin only calls the
 two endpoints; counts and queueing are the sidecar's.
 
 D10. **What is not touched.** Embeddings and their projection key; the recall query and gating; the packet policy;
@@ -221,10 +228,14 @@ raw rows; the Inspector's message list (it still shows the user's messages, with
 - Step 3 (D4–D8): the activation trap (above); the per-chat key in the retrieve path and the API reads; fallback both
   ways (a flagged chat never serves a default row; an unflagged chat never serves a variant row, including after the
   flag is turned off); the stub extractor's quote from a user message refused and from the reply kept; CONTEXT without
-  user messages; on → off → on queues the window, nothing, then only new or changed turns; summaries and reveal
+  user messages; on → off → on queues the window, then only the turns written while it was on (default generation), then only new or
+  changed turns (variant); summaries and reveal
   checks under their variants; the worker running both extract keys.
 
 ## Steps
+
+Step 2 can ship on its own: on the measured data the switch shows mostly on the read side. Whether step 3 is built
+is decided at implementation approval, after the paid run on a chat the owner names as full impersonation.
 
 1. This spec, and the owner's answers.
 2. **The flag and recall.** The migration, the API (read and set, like the memory mode), the read-side predicate on
@@ -259,8 +270,9 @@ raw rows; the Inspector's message list (it still shows the user's messages, with
 3. With the flag on, the stub extractor's fact quoted from the user's message is refused and its fact quoted from the
    reply is kept.
 4. Switching on queues the chat's recent window, and the whole history only when the owner chooses it (Q6); a
-   flagged chat's older turns never show a fact from a generation that read the user's messages; switching off queues nothing and
-   serves the default generation at once; neither queues an embedding job.
+   flagged chat's older turns never show a fact from a generation that read the user's messages; switching off queues the
+   default generation only for turns written while it was on and serves the rest at once; neither queues an embedding
+   job.
 5. A retrieve at 10,000 messages costs at most +5 ms p50 over `main` with the flag on.
 6. Step 4's count of facts the switch drops, and Q3's comparison, are reported before the switch is offered in a
    release.
