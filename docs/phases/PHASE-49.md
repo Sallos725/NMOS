@@ -1,8 +1,8 @@
 # Phase 49 — A translation plugin's markup: memory reads the original text only
 
 Status: **draft**, 2026-10-15 (AGE-79). An owner request, not a roadmap stage. Not approved for implementation.
-**Q1–Q3 answered (owner, 2026-10-15): Q1 hidden as far as possible (stricter than recommended), Q2 (a), Q3 (a).
-Q4 open.**
+**Q1–Q4 answered (owner, 2026-10-15): Q1 hidden as far as possible (stricter than recommended), Q2 (a), Q3 (a),
+Q4 as recommended.** Approval to implement is a separate decision and has not been given.
 **After 1.0.0** (R7; the two quiet weeks on the trial install run from 2026-10-13 to at least 2026-10-27): nothing of
 this phase lands on the trial install or in a `0.4.x` release. The owner deferred it past `0.4.0` on 2026-10-10
 (`docs/STATUS.md`); the prototype of that time was not adopted.
@@ -138,7 +138,8 @@ S5. **What this does not change.**
   - (b) An agent installs the plugin in the isolated PocketRisu harness (not the trial install during the quiet
     weeks, not production). The plugin's own translation calls need its provider and key, which are the owner's.
 - **Q4 — the gate.** `AGENTS.md §7.6` asks a generation-key change for the full live gate, but no gate chat has a
-  tagged message, so the gate cannot see what this phase changes.
+  tagged message, so the gate cannot see what this phase changes. **Answered (owner, 2026-10-15): as recommended,
+  the zero-call byte-identity check and the bundled generation's full live gate.**
   - **Recommended:** under Q2 (a), the bundled generation's full live gate covers the re-extraction, and this phase
     adds a zero-call check that is decisive for every other message: on the gate databases' copies and a copy of the
     trial install, `clean-v4` equals `clean-v3` byte for byte for every revision without the markup. Under Q2 (b) or
