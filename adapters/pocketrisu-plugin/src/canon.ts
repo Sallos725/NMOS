@@ -3,6 +3,7 @@
 
 import { canonicalJson, normalizeText } from './canonical';
 import { sha256Hex } from './hash';
+import { stripNoteBlocks } from './notes';
 import type { HostChat, PromptMessage } from './types';
 
 /** A lorebook entry as `getCurrentLorebookEntries()` returns it (H19). */
@@ -87,7 +88,10 @@ export function canonTexts(card: HostCard | null, chat: HostChat, lore: HostLore
     const index = Number.isInteger(chat.fmIndex) ? Number(chat.fmIndex) : -1;
     add('card:greeting', index < 0 ? card.firstMessage : card.alternateGreetings?.[index], { field: 'greeting', index });
   }
-  add('note', chat.note);
+  if (typeof chat.note === 'string') { // NMOS's own sections are not canon; the metadata names them (PHASE-50 S5)
+    const note = stripNoteBlocks(chat.note);
+    add('note', note.text, note.blocks.length ? { nmos_blocks: note.blocks } : {});
+  }
   if (persona) add('persona', persona.personaPrompt, { name: text(persona.name) || undefined, persona_id: persona.id });
   const local = Array.isArray(chat.localLore) ? chat.localLore : [];
   const global = Array.isArray(card?.globalLore) ? card!.globalLore! : [];
