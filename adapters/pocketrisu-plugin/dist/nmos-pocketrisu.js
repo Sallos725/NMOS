@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:a8e0c6fd8ee8".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:a9b4b54e4da5".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -3822,7 +3822,7 @@ html,body{margin:0;background:${PALETTE.bg}}
             "POST",
             `/v1/conversations/${conversation}/notes`,
             { sections, chars: Number(length.value), secrets: secrets.checked, lang },
-            18e4
+            3e5
           );
           if (actionConversation !== conversation) return;
           results.replaceChildren(...r.sections.map((section) => noteSection(section, msg)));

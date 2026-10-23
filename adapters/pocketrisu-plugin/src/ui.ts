@@ -1227,7 +1227,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       results.replaceChildren();
       try {
         const r = await deps.api<NotesResult>('POST', `/v1/conversations/${conversation}/notes`,
-          { sections, chars: Number(length.value), secrets: secrets.checked, lang }, 180_000); // one model call
+          { sections, chars: Number(length.value), secrets: secrets.checked, lang }, 300_000); // a call and one retry
         if (actionConversation !== conversation) return;
         results.replaceChildren(...r.sections.map((section) => noteSection(section, msg)));
         say(msg, L('notes.done'), 'ok');

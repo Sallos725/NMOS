@@ -29,6 +29,8 @@ def strip_blocks(text: str) -> tuple[str, list[dict[str, str]]]:
 
 
 def wrap(kind: str, body: str, turns: str, lang: str, today: str) -> str:
-    """A section between its markers (`turns`: "0-87" or "120")."""
+    """A section between its markers (`turns`: "0-87" or "120"). A marker inside the body (a summary or a reply that
+    quotes one) is written with a parenthesis, so it can neither close the block early nor open another."""
     label = LABELS[kind][lang == "en"]
-    return f"[NMOS {label} · t{turns.replace('-', '–')} · {today}]\n{body.strip()}\n[/NMOS {label}]"
+    body = re.sub(r"\[(/?)NMOS ", r"(\1NMOS ", body.strip())
+    return f"[NMOS {label} · t{turns.replace('-', '–')} · {today}]\n{body}\n[/NMOS {label}]"

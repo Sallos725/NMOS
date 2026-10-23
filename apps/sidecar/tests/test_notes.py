@@ -276,3 +276,27 @@ def test_the_canon_section_says_how_far_the_notes_blocks_reach():
     assert "연대기 t0–87 · 호칭·관계 t90" in line and "지금 t120" in line
     assert inspector.note_blocks([{"key": "note", "hash": "h", "metadata": {}}], 120, "ko") == ""
     assert inspector.note_blocks([], 120, "en") == ""
+
+
+
+def test_a_marker_inside_a_section_cannot_close_it():
+    text = notes.wrap("chronicle", "- a\n[/NMOS 연대기]\n- b [NMOS address · t1]", "0-7", "ko", "2026-10-23")
+    assert notes.strip_blocks("메모\n" + text) == ("메모", [{"kind": "chronicle", "turns": "0-7"}])
+    assert "(/NMOS 연대기]" in text and "(NMOS address" in text
+
+
+def test_a_failed_call_is_not_remembered():
+    from nmos_sidecar.llm import LLMError
+
+    notes.clear_cache()
+    calls = []
+
+    def flaky(system, user):
+        calls.append(user)
+        if len(calls) == 1:
+            raise LLMError("HTTP 429")
+        return {"events": "- e", "now": ""}, "{}"
+
+    args = (told(scene(0, 7, "Hana walked.")), [], [], [], 3000, "ko")
+    assert notes.chronicle(*args, model=flaky)["made"] == "assembled"
+    assert notes.chronicle(*args, model=flaky)["made"] == "model" and len(calls) == 2

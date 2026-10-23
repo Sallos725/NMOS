@@ -12,6 +12,7 @@ Nothing is stored and no packet reads these sections: they are views of memory, 
 from __future__ import annotations
 
 import hashlib
+import threading
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -116,7 +117,8 @@ INPUT_CHARS = 40_000  # the newest scene summaries the chronicle reads (PHASE-50
 NOW_MAX = 30  # "now" facts in the chronicle's input
 NOW_PREDICATES = frozenset({"located_in", "has_status"})
 CACHE_MAX = 64
-_CACHE: OrderedDict[str, dict[str, Any]] = OrderedDict()
+_CACHE: OrderedDict[str, dict[str, Any]] = OrderedDict()  # model-written chronicles only, by their whole input
+_CACHE_LOCK = threading.Lock()  # requests run in the server's thread pool
 THREAD_WORDS = {"ko": {"promise": "약속", "goal": "목표", "question": "질문", "threat": "위협", "debt": "빚",
                        "since": "t{t}부터", "events": "사건", "now": "지금", "open": "열린 일"},
                 "en": {"promise": "promise", "goal": "goal", "question": "question", "threat": "threat", "debt": "debt",
@@ -146,7 +148,8 @@ language of the chat.
 
 
 def clear_cache() -> None:
-    _CACHE.clear()
+    with _CACHE_LOCK:
+        _CACHE.clear()
 
 
 def _tw(lang: str, key: str) -> str:
@@ -231,10 +234,13 @@ def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts:
     tail = f"\n\n## {_tw(lang, 'open')}\n" + "\n".join(opened) if opened else ""
     budget = max(500, chars - len(tail))
     user = _input(newest, story, shown, now, open_secrets, told_secrets)
-    key = hashlib.sha256(f"{lang}|{chars}|{told_secrets}|{model is not None}|{user}".encode()).hexdigest()
-    if (hit := _CACHE.get(key)) is not None:
-        _CACHE.move_to_end(key)
-        return {**hit, "cached": True}
+    which = getattr(getattr(model, "__self__", None), "model", "") if model is not None else ""
+    key = hashlib.sha256(f"{lang}|{chars}|{told_secrets}|{which}|{user}".encode()).hexdigest()
+    with _CACHE_LOCK:
+        hit = _CACHE.get(key) if model is not None else None
+        if hit is not None:
+            _CACHE.move_to_end(key)
+            return {**hit, "cached": True}
 
     def assembled() -> str:
         events = [f"- (t{r['first_turn']}–{r['last_turn']}) {r['text']}" for r in newest]
@@ -266,9 +272,11 @@ def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts:
                 f"- {content(s)}" for s in told_now)
     out = {"body": (body or assembled()) + tail, "turns": turns, "made": made, "cached": False, "held": held,
            "reason": ""}
-    _CACHE[key] = out
-    while len(_CACHE) > CACHE_MAX:
-        _CACHE.popitem(last=False)
+    if made == "model":  # an assembled text costs nothing, and a failed call is tried again next time
+        with _CACHE_LOCK:
+            _CACHE[key] = out
+            while len(_CACHE) > CACHE_MAX:
+                _CACHE.popitem(last=False)
     return out
 
 
