@@ -73,11 +73,21 @@ def test_changed_lists_a_canon_value_the_story_replaced_and_nothing_else():
 
 
 def test_changed_leaves_out_what_is_kept_from_someone_unless_asked():
-    who = fact("Hana", "identity", value="smuggler", knowledge="limited", hidden_from=["Kaito"],
-               history=[canon_entry("Hana", "identity", value="lighthouse keeper")])
-    assert notes.changed_lines([who], "ko") == []
-    assert notes.changed_lines([who], "ko", secrets=True) == [
-        "- Hana 정체: 설정 lighthouse keeper → 지금 smuggler (t5) (비밀: Kaito는 모름)"]
+    where = fact("Hana", "located_in", obj="smugglers' cave", knowledge="limited", hidden_from=["Kaito"],
+                 history=[canon_entry("Hana", "located_in", obj="harbor town")])
+    assert notes.changed_lines([where], "ko") == []
+    assert notes.changed_lines([where], "ko", secrets=True) == [
+        "- Hana 위치: 설정 harbor town → 지금 smugglers' cave (t5) (비밀: Kaito는 모름)"]
+
+
+def test_changed_leaves_out_identity_and_says_a_line_once():
+    """A card's identity told again in other words is not a change (ADR 0047 amendment 1); two canon texts saying the
+    same old value give one line."""
+    who = fact("Hana", "identity", value="등대지기", history=[canon_entry("Hana", "identity", value="lighthouse keeper")])
+    moved = fact("Hana", "located_in", obj="old mill", turn=1,
+                 history=[canon_entry("Hana", "located_in", obj="harbor town"),
+                          {**canon_entry("Hana", "located_in", obj="harbor town"), "canon": "lore:hana"}])
+    assert notes.changed_lines([who, moved], "ko") == ["- Hana 위치: 설정 harbor town → 지금 old mill (t1)"]
 
 
 def test_an_items_holder_is_a_change_of_who_holds_it():
@@ -227,7 +237,7 @@ def test_the_endpoint_lists_what_the_story_changed_of_the_card(migrated):
     changed = got["changed"]["text"]
     assert changed.startswith("[NMOS changed · t") and changed.endswith("[/NMOS changed]")
     assert "Hana location: setting harbor town → now old mill" in changed
-    assert "Hana identity: setting lighthouse keeper → now smuggler" in changed
+    assert "identity" not in changed  # a card's identity said again is not a change (ADR 0047 amendment 1)
     assert "sister" not in changed  # the story did not change it
     assert "Hana ↔ Kaito" in got["address"]["text"] and got["changed"]["made"] == "facts"
 

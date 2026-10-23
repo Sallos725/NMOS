@@ -161,6 +161,10 @@ three details; the owner's decisions stand.
   (H15), so a Copy button must be the panel's own: the panel shows each section the API returns in a read-only box
   with Copy. There is no `/inspector/c/{id}/notes` page; the Inspector's canon section shows which NMOS sections the
   note carries and how far each reaches.
+- **S3: no `identity`, at most 30 lines.** On the test install's copy (zero-call check, 2026-10-23) 57 of one chat's 68
+  "changed" lines were a card's English identity told again in Korean or another true description ("Records clerk" →
+  "중앙도서관 기록계"): the reason ADR 0047 amendment 1 already leaves `identity` out of the canon conflicts. It is left
+  out here too; a line is said once (two canon texts or two spellings gave the same line) and at most 30, newest first.
 - **S7: no 409.** A section with nothing to say comes back empty with its reason (`no_scenes` for a chronicle before
   the first scene summary, `none` otherwise), so the other sections still come.
 

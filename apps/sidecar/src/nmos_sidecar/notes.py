@@ -28,10 +28,13 @@ from .llm import ChatModel, LLMError, metered
 from .summaries import content, held as summary_held, leaks
 
 PAIRS_MAX = 30  # address lines at most
+CHANGED_MAX = 30  # changed lines at most, newest first
 PAIRWISE = frozenset({"relationship", "role_toward", "feels_toward", "addresses"})
 # A canon value a story fact can replace: single-valued predicates and an item's holder (PHASE-50 S3). A multi-valued
-# one accumulates, so NMOS cannot tell a change from an addition there.
-CHANGEABLE = frozenset(p for p, d in REGISTRY.items() if d.cardinality == "single") | HOLDER_PER_ITEM
+# one accumulates, so NMOS cannot tell a change from an addition there. `identity` is left out, as from the canon
+# conflicts (ADR 0047 amendment 1): on the test install's copy 57 of a chat's 68 lines were a card's English identity
+# told again in Korean or another true description ("Records clerk" → "중앙도서관 기록계"), not a change.
+CHANGEABLE = (frozenset(p for p, d in REGISTRY.items() if d.cardinality == "single") | HOLDER_PER_ITEM) - {"identity"}
 WORDS = {
     "ko": {"located_in": "위치", "has_status": "상태", "identity": "정체", "relationship": "관계", "role_toward": "역할",
            "feels_toward": "감정", "addresses": "호칭", "possesses": "소지자", "destroyed": "소멸",
@@ -74,7 +77,7 @@ def changed_lines(facts: list[dict[str, Any]], lang: str, secrets: bool = False)
     """Each canon value a current story fact replaced or ended (a canon entry of its history), newest first. With
     `secrets` off, nothing kept from someone."""
     out: list[str] = []
-    seen: set[tuple[Any, ...]] = set()
+    seen: set[str] = set()
     for f in facts:
         if f.get("canon") or f["predicate"] not in CHANGEABLE or (kept(f) and not secrets):
             continue
@@ -82,15 +85,14 @@ def changed_lines(facts: list[dict[str, Any]], lang: str, secrets: bool = False)
             if not h.get("canon") or h.get("outcome") not in ("superseded", "ended") or (kept(h) and not secrets):
                 continue
             old, new = _said(h, lang), _said(f, lang)
-            key = (f["predicate"], h.get("subject"), h.get("object"), old, new)
-            if old == new or key in seen:
-                continue
-            seen.add(key)
             line = f"- {_head(f, lang)}: {_w(lang, 'setting')} {old} → {_w(lang, 'now')} {new} (t{f.get('turn')})"
+            if old == new or line in seen:  # the same line from two canon texts, or two spellings of one name
+                continue
+            seen.add(line)
             if f.get("repair"):
                 line += f" ({_w(lang, 'fixed')})"
             out.append(line + (_secret_mark(f, lang) if kept(f) else ""))
-    return out
+    return out[:CHANGED_MAX]
 
 
 def address_lines(facts: list[dict[str, Any]], lang: str, secrets: bool = False) -> list[str]:
