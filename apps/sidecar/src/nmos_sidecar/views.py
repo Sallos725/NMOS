@@ -19,22 +19,24 @@ from .facts import symmetric
 from .inspector import _close, _v
 from .summaries import content
 
+# The hub's blocks are flex rows that always end flush: each block grows to fill what its row leaves (PHASE-52 D1).
 STYLE = """
 .nmos .v{font-size:var(--t-body,16px);line-height:1.65;color:var(--c-text);max-width:980px}
 .nmos .v a{color:inherit;text-decoration:none}
 .nmos .v-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px;margin:0 0 14px}
 .nmos .v-h1{font-size:var(--t-h1,20px);font-weight:600;margin:0;color:var(--c-text-strong)}
 .nmos .v-cap{font-size:var(--t-caption,13px);color:var(--c-text-muted)}
-.nmos .v-blocks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.nmos .v-block{display:flex;flex-direction:column;gap:2px;background:var(--c-raised);border-radius:var(--r-block,12px);padding:14px 16px;min-height:84px;cursor:pointer;border:1px solid transparent}
+.nmos .v-blocks{display:flex;flex-wrap:wrap;gap:10px}
+.nmos .v-block{display:flex;flex-direction:column;gap:2px;background:var(--c-raised);border-radius:var(--r-block,12px);padding:14px 16px;min-height:84px;cursor:pointer;border:1px solid transparent;flex:1 1 140px;min-width:0;box-sizing:border-box}
 .nmos .v-block:hover{border-color:var(--c-line-hover)}
-.nmos .v-wide{grid-column:1/-1;min-height:0;border-left:3px solid var(--c-ok);border-radius:0 var(--r-block,12px) var(--r-block,12px) 0}
+.nmos .v-wide,.nmos .v-big{flex-basis:100%}
+.nmos .v-wide{min-height:0;border-left:3px solid var(--c-ok);border-radius:0 var(--r-block,12px) var(--r-block,12px) 0}
 .nmos .v-wide.warn{border-left-color:var(--c-warn)} .nmos .v-wide.err{border-left-color:var(--c-err)}
 .nmos .v-wide.off,.nmos .v-wide.idle{border-left-color:var(--c-text-ghost)}
 .nmos .v-bt{font-size:var(--t-body,16px);font-weight:600;color:var(--c-text-strong)}
 .nmos .v-bs{font-size:var(--t-secondary,14px);color:var(--c-text-soft)}
 .nmos .v-attn .v-bt{color:var(--c-warn)}
-.nmos .v-now{display:none;font-size:var(--t-secondary,14px);color:var(--c-text-soft);margin-top:6px}
+.nmos .v-now{display:block;font-size:var(--t-secondary,14px);color:var(--c-text-soft);margin-top:6px}
 .nmos .v-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
 .nmos .v-chips a{font-size:var(--t-caption,13px);padding:3px 10px;border-radius:var(--r-control,6px);background:var(--c-raised);color:var(--c-text-soft)}
 .nmos .v-sec{margin:22px 0 0}
@@ -42,7 +44,8 @@ STYLE = """
 .nmos .v-h2.v-small{font-size:var(--t-secondary,14px);margin-top:12px}
 .nmos .v-n{font-size:var(--t-caption,13px);font-weight:400;color:var(--c-text-muted);margin-left:6px}
 .nmos .v-line{padding:8px 0;border-top:1px solid var(--c-line)}
-.nmos .v-line .rp{display:none} .nmos .v-line.open .rp{display:block;margin-top:6px}
+.nmos .v-line .rp{display:none} .nmos .v-line.open .rp{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0 0}
+.nmos .v-line .rp .rp-ask{font-size:var(--t-secondary,14px);color:var(--c-text-muted)}
 .nmos .v-meta{font-size:var(--t-caption,13px);color:var(--c-text-muted)}
 .nmos .v a.v-name{color:var(--c-link)}
 .nmos .v-text{color:var(--c-text-soft);margin:0}
@@ -62,7 +65,7 @@ STYLE = """
 .nmos .v-filter input{width:100%;margin:0 0 8px}
 .nmos .v-foot{margin:28px 0 0;padding-top:10px;border-top:1px solid var(--c-line);font-size:var(--t-caption,13px);color:var(--c-text-muted)}
 .nmos .v-foot a{color:var(--c-text-soft)}
-@media (min-width:700px){.nmos .v-blocks{grid-template-columns:repeat(3,minmax(0,1fr))}.nmos .v-big{grid-row:span 2}.nmos .v-now{display:block}}
+@media (min-width:700px){.nmos .v-block:not(.v-wide):not(.v-big){flex-basis:240px}}
 """
 
 T: dict[str, tuple[str, str]] = {

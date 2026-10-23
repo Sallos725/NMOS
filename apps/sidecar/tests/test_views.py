@@ -357,3 +357,15 @@ def test_chat_text_is_escaped_on_every_screen():
     for html in pages:
         assert "<img" not in html and "onerror=alert(1)>" not in html
     assert "&lt;img" in pages[0] and "&lt;img" in pages[3]
+
+
+def test_the_hub_rows_end_flush_and_a_thread_offers_only_its_kinds_endings():
+    """Blocks grow to fill their row, whatever their number (iPhone and desktop); a goal is not offered "paid"."""
+    assert ".nmos .v-blocks{display:flex;flex-wrap:wrap" in views.STYLE and "flex:1 1 140px" in views.STYLE
+    assert "grid-row:span" not in views.STYLE
+    from nmos_sidecar import repairs
+    assert repairs.offered("goal") == ("achieved", "abandoned", "failed")
+    assert repairs.offered("promise") == ("kept", "broken") and repairs.offered("debt") == ("paid", "abandoned")
+    for kind in ("promise", "goal", "question", "threat", "debt", "other"):
+        assert repairs.offered(kind)[0] == repairs.default_outcome(kind)
+        assert set(repairs.offered(kind)) <= set(repairs.outcomes(kind))

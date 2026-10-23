@@ -67,9 +67,11 @@ const hub = `<div class="v v-hub"><div class="v-blocks">`
 
 function deps(opts: { views?: boolean; css?: string } = {}) {
   const calls: [string, string][] = [];
+  const bodies: unknown[] = [];
   const d: PanelDeps = {
-    api: async <T>(method: 'GET' | 'POST' | 'PUT', path: string) => {
+    api: async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown) => {
       calls.push([method, path]);
+      if (method === 'POST') bodies.push(body);
       if (path === '/v1/views/style') return { css: opts.css ?? '.nmos .v{font-size:16px}' } as T;
       if (path.startsWith('/v1/views/hub')) return { html: hub, conversation: id } as T;
       if (path.startsWith(`/v1/inspector/c/${id}`)) return { html: '<h1>Chat page</h1>' } as T;
@@ -99,7 +101,7 @@ function deps(opts: { views?: boolean; css?: string } = {}) {
     chat: createChatSwitch({ getArg: async () => '', setArg: async () => {}, currentChatId: async () => 'host-chat-1' }),
     download: async () => 0,
   };
-  return { d, calls };
+  return { d, calls, bodies };
 }
 
 const settle = async () => { for (let i = 0; i < 6; i += 1) await new Promise((r) => setTimeout(r, 0)); };
@@ -164,7 +166,7 @@ describe('the hub (PHASE-52 D1)', () => {
   });
 
   it('opens the memory document without today\'s action row, and a tapped line shows its repair', async () => {
-    const { d } = deps();
+    const { d, bodies } = deps();
     await openPanel(d, 'status');
     await settle();
     panel().querySelector<HTMLAnchorElement>(`a[href="/views/c/${id}/memory"]`)!.click();
@@ -179,6 +181,13 @@ describe('the hub (PHASE-52 D1)', () => {
     expect(row.classList.contains('open')).toBe(true);
     row.click();
     expect(row.classList.contains('open')).toBe(false);
+    // a close is a question and one button an ending: no bulk box, no preselected ending
+    expect(row.querySelector('.rp .rp-ask')?.textContent).toBe('How did it end?');
+    expect(Array.from(row.querySelectorAll('.rp button')).map((b) => b.textContent)).toEqual(['achieved', 'abandoned']);
+    expect(row.querySelector('.rp input, .rp select')).toBeNull();
+    row.querySelectorAll<HTMLButtonElement>('.rp button')[1]!.click();
+    await settle();
+    expect(bodies).toContainEqual({ kind: 'thread_close', item: '5', outcome: 'abandoned' });
   });
 
   it('places a person\'s circles and opens a mark\'s card', async () => {

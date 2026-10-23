@@ -566,6 +566,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   function closeControls(action: RepairAction): Node[] {
     const item = action.item;
     const choices = closeOutcomes(action.extra);
+    if (inspectorPath.startsWith('/v1/views/')) { // the new screens: one button an ending, no bulk box (PHASE-52)
+      const ends = (choices.length ? choices : ['']).map((o) => {
+        const b = el('button', { class: 'mini', text: o ? outcomeLabel(o) : L('rp.thread_close') });
+        b.addEventListener('click', () => void repairNow(action, b, o ? { outcome: o } : {}));
+        return b;
+      });
+      return [el('span', { class: 'rp-ask', text: L('rp.how_ended') }), ...ends];
+    }
     let c = closers.get(item);
     if (!c) closers.set(item, c = { first: choices[0], boxes: [], selects: [] });
     const group = c;

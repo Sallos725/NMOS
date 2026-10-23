@@ -15,7 +15,7 @@ from urllib.parse import quote
 
 from .entities import USER_NAMES, norm
 from .predicates import REGISTRY
-from .repairs import default_outcome, outcomes
+from .repairs import offered
 from .facts import STANDING, earlier, first, participant_entities, symmetric
 from . import scene, timeline
 from .packet import TURN_POLICIES
@@ -1173,9 +1173,8 @@ def _undo(rep: dict[str, Any]) -> str:
 
 
 def _close(th: dict[str, Any]) -> str:
-    """A close button with the outcomes of the thread's kind, its default first (ADR 0044 item 3)."""
-    first = default_outcome(th["kind"])
-    return _act("thread_close", th["id"], ",".join([first] + [o for o in outcomes(th["kind"]) if o != first]))
+    """A close button with the endings of the thread's kind, its default first (ADR 0044 item 3, PHASE-52)."""
+    return _act("thread_close", th["id"], ",".join(offered(th["kind"])))
 
 
 def _who_to(t: dict[str, Any]) -> str:
