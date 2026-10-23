@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:398d4d71256e".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:b44bb4ff0eb6".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -595,14 +595,15 @@
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
     "rp.select": ["\uC77C\uAD04 \uB2EB\uAE30\uC5D0 \uB123\uAE30", "Select to close"],
     "rp.outcome": ["\uB2EB\uB294 \uACB0\uACFC", "Outcome"],
-    "oc.kept": ["\uC9C0\uD0B4", "kept"],
+    "oc.kept": ["\uC9C0\uCF1C\uC9D0", "kept"],
     "oc.broken": ["\uAE68\uC9D0", "broken"],
-    "oc.achieved": ["\uC774\uB8F8", "achieved"],
+    "oc.achieved": ["\uC774\uB904\uC9D0", "achieved"],
     "oc.abandoned": ["\uADF8\uB9CC\uB460", "abandoned"],
     "oc.failed": ["\uC2E4\uD328", "failed"],
     "oc.answered": ["\uB2F5\uC774 \uB098\uC634", "answered"],
     "oc.averted": ["\uD53C\uD568", "averted"],
     "oc.paid": ["\uAC1A\uC74C", "paid"],
+    "rp.how_ended": ["\uC5B4\uB5BB\uAC8C \uB05D\uB0AC\uB098\uC694?", "How did it end?"],
     "rp.bulk": ["\uACE0\uB978 \uC2A4\uB808\uB4DC {n}\uAC1C \uB2EB\uAE30", "Close {n} selected threads"],
     "rp.bulk_done": ["\uC2A4\uB808\uB4DC {n}\uAC1C\uB97C \uB2EB\uC558\uC2B5\uB2C8\uB2E4.", "Closed {n} threads."],
     "rp.bulk_failed": ["{n}\uAC1C\uB294 \uB2EB\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4:", "{n} could not be closed:"],
@@ -3081,6 +3082,14 @@ html,body{margin:0;background:${PALETTE.bg}}
     function closeControls(action) {
       const item = action.item;
       const choices = closeOutcomes(action.extra);
+      if (inspectorPath.startsWith("/v1/views/")) {
+        const ends = (choices.length ? choices : [""]).map((o) => {
+          const b = el("button", { class: "mini", text: o ? outcomeLabel(o) : L("rp.thread_close") });
+          b.addEventListener("click", () => void repairNow(action, b, o ? { outcome: o } : {}));
+          return b;
+        });
+        return [el("span", { class: "rp-ask", text: L("rp.how_ended") }), ...ends];
+      }
       let c = closers.get(item);
       if (!c) closers.set(item, c = { first: choices[0], boxes: [], selects: [] });
       const group = c;
