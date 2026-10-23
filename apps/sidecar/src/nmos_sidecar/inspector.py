@@ -1139,6 +1139,19 @@ def _secret_status(s: dict[str, Any], lang: str) -> str:
 STALE_TURNS = 30  # an open thread not restated for this long is suggested for closing (PHASE-13 Q6)
 
 
+def last_said(th: dict[str, Any]) -> int | None:
+    """The last turn a thread was opened or restated at."""
+    seen = [th.get("turn")] + [r.get("turn") for r in th.get("restated") or []]
+    return max((x for x in seen if x is not None), default=None)
+
+
+def stale(th: dict[str, Any], last_turn: int | None) -> bool:
+    """An open thread not said again for more than STALE_TURNS: the Inspector suggests closing it (PHASE-13 Q6), and
+    the author's note leaves it out (PHASE-50 amendment 3)."""
+    latest = last_said(th)
+    return th["status"] == "open" and last_turn is not None and latest is not None and latest < last_turn - STALE_TURNS
+
+
 def _act(kind: str, item: Any, extra: str | None = None) -> str:
     """Where the panel puts a repair button (ADR 0044); nothing shows in a browser tab (H15)."""
     value = f"{kind}:{item}" + (f":{_enc(extra)}" if extra else "")
@@ -1181,11 +1194,9 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
     rows: list[list[str]] = []
     if last_turn is not None:
         for th in view.get("threads", []):
-            seen = [th.get("turn")] + [r.get("turn") for r in th.get("restated") or []]
-            latest = max((x for x in seen if x is not None), default=None)
-            if th["status"] == "open" and latest is not None and latest < last_turn - STALE_TURNS:
+            if stale(th, last_turn):
                 rows.append([_v(_t(lang, "at.stale").format(n=STALE_TURNS)),
-                             _v(_who_to(th) + f": {th.get('text') or ''}"), _v(latest),
+                             _v(_who_to(th) + f": {th.get('text') or ''}"), _v(last_said(th)),
                              _close(th)])
     for u in view.get("unmatched", []):
         rows.append([_v(_t(lang, "at.unmatched")), _v(fact_line_text(u)), _turn(u), ""])

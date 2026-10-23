@@ -22,7 +22,7 @@ from typing import Any
 from .config import Settings
 from .entities import norm
 from .facts import symmetric
-from .inspector import _named, pairs
+from .inspector import _named, pairs, stale
 from .llm import ChatModel, LLMError, metered
 from .noteblocks import strip_blocks, wrap  # noqa: F401  (the API's names for them)
 from .predicates import HOLDER_PER_ITEM, REGISTRY
@@ -185,9 +185,11 @@ def _input(scenes: list[dict[str, Any]], story: dict[str, Any] | None, threads: 
 
 def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts: list[dict[str, Any]],
               secrets: list[dict[str, Any]], chars: int, model: Callable[..., tuple[Any, ...]] | None,
-              told_secrets: bool = False) -> dict[str, Any]:
+              told_secrets: bool = False, last_turn: int | None = None) -> dict[str, Any]:
     """The chronicle's Markdown (PHASE-50 S2): Events and Now from the model, or assembled from the summaries when there
-    is no model or its replies fail; Open threads always from the stored threads.
+    is no model or its replies fail; Open threads always from the stored threads. An open thread not said again for
+    more than STALE_TURNS (the Inspector's "needs a look") is left out of both, and counted (amendment 3): NMOS cannot
+    yet tell an old promise that still matters from one long done, and the note is read every turn.
 
     With `told_secrets` off, nothing kept from someone goes in. A scene summary or story is left out when the packet
     would hold it with every character a secret is kept from in the scene (`summaries.held`: it repeats a secret at
@@ -215,8 +217,10 @@ def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts:
     story = (told or {}).get("story")
     if story is not None and holds(story):
         story, held = None, held + 1
+    old = [t for t in threads if stale(t, last_turn) and (told_secrets or not kept(t))]
     if not scenes:
-        return {"body": "", "turns": "", "made": "none", "cached": False, "held": held, "reason": "no_scenes"}
+        return {"body": "", "turns": "", "made": "none", "cached": False, "held": held, "reason": "no_scenes",
+                "stale": len(old)}
     newest: list[dict[str, Any]] = []
     size = 0
     for row in reversed(scenes):
@@ -225,7 +229,7 @@ def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts:
             break
         newest.insert(0, row)
     story = story if story is not None and newest[0]["first_turn"] > 0 else None  # only for turns the scenes leave out
-    shown = [t for t in threads if told_secrets or not kept(t)]
+    shown = [t for t in threads if (told_secrets or not kept(t)) and not stale(t, last_turn)]
     now = [f for f in facts if f["predicate"] in NOW_PREDICATES and not f.get("canon")
            and (told_secrets or not kept(f))][:NOW_MAX]
     first, last = (story or newest[0])["first_turn"], newest[-1]["last_turn"]
@@ -269,7 +273,7 @@ def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts:
             ask = user + "\n\nYOUR LAST ANSWER TOLD THESE SECRETS; write it again without them:\n" + "\n".join(
                 f"- {content(s)}" for s in told_now)
     out = {"body": f"{title}\n{body or assembled()}{tail}", "turns": f"{first}-{last}", "made": made, "cached": False,
-           "held": held, "reason": ""}
+           "held": held, "reason": "", "stale": len(old)}
     if made == "model":  # an assembled text costs nothing, and a failed call is tried again next time
         with _CACHE_LOCK:
             _CACHE[key] = out
@@ -315,10 +319,10 @@ def make(ask: Ask, view: dict[str, Any], told: dict[str, Any] | None, last_turn:
     for kind in ask.sections:
         if kind == "chronicle":
             c = chronicle(told, view.get("threads") or [], facts, view.get("secrets") or [], ask.chars,
-                          model if ask.model else None, ask.secrets)
+                          model if ask.model else None, ask.secrets, last_turn)
             body = c["body"]
             info.append({"kind": kind, "made": c["made"], "cached": c["cached"], "held": c["held"],
-                         "reason": c["reason"], "turns": c["turns"], "chars": len(body)})
+                         "reason": c["reason"], "turns": c["turns"], "chars": len(body), "stale": c["stale"]})
         else:
             lines = changed_lines(facts, ask.secrets) if kind == "changed" else address_lines(facts, ask.secrets)
             body = f"{CHANGED_HEAD if kind == 'changed' else ADDRESS_HEAD}\n" + "\n".join(lines) if lines else ""

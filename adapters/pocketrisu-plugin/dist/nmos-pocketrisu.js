@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:8717e3f0b575".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:1774ac70c012".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -493,6 +493,10 @@
     "notes.part_none": ["{part}: \uC801\uC744 \uAC83\uC774 \uC5C6\uC74C", "{part}: nothing to write"],
     "notes.part_no_scenes": ["{part}: \uC544\uC9C1 \uC7A5\uBA74 \uC694\uC57D\uC774 \uC5C6\uC74C (8\uD134\uB9C8\uB2E4 \uD558\uB098, \uADF8 \uB4A4 4\uD134\uC774 \uC9C0\uB098\uBA74 \uB9CC\uB4E4\uC5B4\uC9D0)", "{part}: no scene summary yet (one per 8 turns, made 4 turns later)"],
     "notes.part_made": ["{part}: {how}", "{part}: {how}"],
+    "notes.stale": [
+      '30\uD134 \uB118\uAC8C \uB2E4\uC2DC \uC5B8\uAE09\uB418\uC9C0 \uC54A\uC740 \uC5F4\uB9B0 \uC77C {n}\uAC1C\uB294 \uB123\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uB05D\uB09C \uC77C\uC778\uC9C0\uB294 \uC778\uC2A4\uD399\uD130\uC758 "\uD655\uC778 \uD544\uC694"\uC5D0\uC11C \uD655\uC778\uD558\uACE0 \uB2EB\uC744 \uC218 \uC788\uC5B4\uC694.',
+      'Left out {n} open threads not mentioned again for more than 30 turns. Check or close them under "Needs a look" in the Inspector.'
+    ],
     "notes.copy": ["\uBCF5\uC0AC", "Copy"],
     "notes.copied": ["\uBCF5\uC0AC\uD588\uC2B5\uB2C8\uB2E4.", "Copied."],
     "notes.copy_hint": ["\uC5EC\uAE30\uC11C\uB294 \uC790\uB3D9 \uBCF5\uC0AC\uAC00 \uB9C9\uD600 \uC788\uC5B4\uC11C \uB0B4\uC6A9\uC744 \uC120\uD0DD\uD574 \uB450\uC5C8\uC2B5\uB2C8\uB2E4. \uC9C1\uC811 \uBCF5\uC0AC\uD574 \uC8FC\uC138\uC694.", "Copying is blocked here, so the text is selected: copy it yourself."],
@@ -3844,7 +3848,13 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (p.held) bits.push(L("notes.held", { n: p.held }));
         return L("notes.part_made", { part, how: bits.join(", ") });
       };
-      const about = el("ul", { class: "sub" }, ...r.sections.map((p) => el("li", { text: how(p) })));
+      const stale = r.sections.reduce((n, p) => n + (p.stale ?? 0), 0);
+      const about = el(
+        "ul",
+        { class: "sub" },
+        ...r.sections.map((p) => el("li", { text: how(p) })),
+        ...stale ? [el("li", { text: L("notes.stale", { n: stale }) })] : []
+      );
       if (!r.text) return el("div", {}, about);
       const box = el("textarea", {
         readonly: true,

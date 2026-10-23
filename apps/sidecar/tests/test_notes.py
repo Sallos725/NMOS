@@ -352,3 +352,15 @@ def test_the_canon_section_says_the_note_holds_nmos_note():
     assert "t87 기준" in line and "지금 t120" in line
     assert inspector.note_blocks([{"key": "note", "hash": "h", "metadata": {}}], 120, "ko") == ""
     assert inspector.note_blocks([], 120, "en") == ""
+
+
+
+def test_an_open_thread_not_said_again_for_30_turns_is_left_out_and_counted():
+    """As the Inspector's "needs a look" (PHASE-13 Q6): from the note's Open threads and from the model's input."""
+    notes.clear_cache()
+    old = {**THREADS[0], "text": "fight at four", "turn": 2, "restated": []}
+    kept_alive = {**THREADS[0], "text": "pay the debt", "turn": 6, "restated": [{"turn": 40, "position": 40}]}
+    w = Writer({"events": "- e", "now": ""})
+    out = notes.chronicle(told(scene(0, 7, "Hana walked.")), [old, kept_alive], [], [], 3000, model=w, last_turn=50)
+    assert out["stale"] == 1 and "fight at four" not in out["body"] and "fight at four" not in w.calls[0][1]
+    assert "- Hana → Kaito: pay the debt (promise, since t6)" in out["body"]

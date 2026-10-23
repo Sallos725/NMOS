@@ -1138,7 +1138,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     return /HTTP 409/.test(error instanceof Error ? error.message : String(error)) ? L('act.off') : errorText(lang, error);
   }
   interface ActionResult { queued: { extract?: number; embed?: number }; discarded?: number }
-  interface NotePart { kind: string; made: string; cached: boolean; held: number; reason: string }
+  interface NotePart { kind: string; made: string; cached: boolean; held: number; reason: string; stale?: number }
   interface NotesResult { text: string; chars: number; sections: NotePart[]; last_turn: number | null }
   retryButton.addEventListener('click', async () => {
     const conversation = actionConversation;
@@ -1249,7 +1249,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (p.held) bits.push(L('notes.held', { n: p.held }));
       return L('notes.part_made', { part, how: bits.join(', ') });
     };
-    const about = el('ul', { class: 'sub' }, ...r.sections.map((p) => el('li', { text: how(p) })));
+    const stale = r.sections.reduce((n, p) => n + (p.stale ?? 0), 0);
+    const about = el('ul', { class: 'sub' }, ...r.sections.map((p) => el('li', { text: how(p) })),
+      ...(stale ? [el('li', { text: L('notes.stale', { n: stale }) })] : []));
     if (!r.text) return el('div', {}, about);
     // Korean names in it read badly in monospace (the owner's design rules): the box keeps the panel's font.
     const box = el('textarea', { readonly: true, rows: 14, spellcheck: 'false', style: 'font-family:inherit',

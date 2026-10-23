@@ -243,6 +243,18 @@ which the model reads, is better in English Markdown. So:
   them would need another model call and could change what the story model calls someone. The assembled chronicle
   keeps the scene summaries in the chat's language under the English headings.
 
+## Amendment 3 (owner, 2026-10-23): an open thread not said again for 30 turns stays out
+
+On the test install's copy the longest chat (76 turns) had 34 open threads, 21 of them not said again for more than
+30 turns: a same-afternoon appointment from turn 2 beside a lifelong debt from turn 6. Many open threads are done
+without the story saying so (the extractor reported no end), and the note would tell the story model, every turn,
+that they are still open. NMOS cannot yet tell an old thread that still matters from one long done: threads have no
+importance (`salience` is for events only, ADR 0020). So, as the Inspector already does for "needs a look"
+(`inspector.stale`, `STALE_TURNS` = 30, PHASE-13 Q6), an open thread whose last opening or restatement is more than 30
+turns back is left out of the note's Open threads and of the chronicle's input; the panel says how many, and that they
+can be checked or closed in the Inspector. A thread the story mentions again counts as recent again. Telling which
+threads matter is Phase 51 (a draft), after 1.0.0 with the next extractor generation.
+
 ## Steps 2–4 evidence (2026-10-23)
 
 Built on `claude/author-notes-story-summary-f721b1` (PR #315), plan

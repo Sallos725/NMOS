@@ -170,6 +170,8 @@ const STRINGS = {
   'notes.part_none': ['{part}: 적을 것이 없음', '{part}: nothing to write'],
   'notes.part_no_scenes': ['{part}: 아직 장면 요약이 없음 (8턴마다 하나, 그 뒤 4턴이 지나면 만들어짐)', '{part}: no scene summary yet (one per 8 turns, made 4 turns later)'],
   'notes.part_made': ['{part}: {how}', '{part}: {how}'],
+  'notes.stale': ['30턴 넘게 다시 언급되지 않은 열린 일 {n}개는 넣지 않았습니다. 끝난 일인지는 인스펙터의 "확인 필요"에서 확인하고 닫을 수 있어요.',
+    'Left out {n} open threads not mentioned again for more than 30 turns. Check or close them under "Needs a look" in the Inspector.'],
   'notes.copy': ['복사', 'Copy'],
   'notes.copied': ['복사했습니다.', 'Copied.'],
   'notes.copy_hint': ['여기서는 자동 복사가 막혀 있어서 내용을 선택해 두었습니다. 직접 복사해 주세요.', 'Copying is blocked here, so the text is selected: copy it yourself.'],

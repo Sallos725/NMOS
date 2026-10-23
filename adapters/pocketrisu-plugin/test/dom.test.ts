@@ -504,7 +504,8 @@ describe('owner repairs in the panel (ADR 0044)', () => {
         if (path.endsWith('/notes')) {  // PHASE-50
           return { last_turn: 12, chars: 60, text: '[NMOS note · t12 · 2026-10-23]\n## Address and standing\n- Hana ↔ Kaito: x\n[/NMOS note]',
             sections: [{ kind: 'chronicle', made: 'none', cached: false, held: 0, reason: 'no_scenes' },
-              { kind: 'address', made: 'facts', cached: false, held: 0, reason: '' }] } as T;
+              { kind: 'address', made: 'facts', cached: false, held: 0, reason: '' },
+              { kind: 'changed', made: 'facts', cached: false, held: 0, reason: 'none', stale: 0 }].map((p, i) => (i ? p : { ...p, stale: 21 })) } as T;
         }
         if (path.endsWith('/reextract')) {
           if (state.failReextract > 0) { state.failReextract -= 1; throw new Error(`${path} -> HTTP 409: fact extraction is off`); }
@@ -555,6 +556,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     expect(shown.map((b) => b.value)).toEqual(['[NMOS note · t12 · 2026-10-23]\n## Address and standing\n- Hana ↔ Kaito: x\n[/NMOS note]']);
     expect(panel().textContent).toContain('chronicle: no scene summary yet');
     expect(panel().textContent).toContain('address and standing: straight from memory');
+    expect(panel().textContent).toContain('Left out 21 open threads not mentioned again for more than 30 turns');
     expect(button('Copy')).toBeTruthy();
   });
 
