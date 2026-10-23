@@ -89,3 +89,98 @@ def test_address_gives_one_line_per_pair():
     assert "Hana→Kaito 감정 trust (비밀: Kaito는 모름)" in notes.address_lines([rel, calls, feels], "ko", secrets=True)[0]
     sister = fact("Hana", "relationship", obj="Kaito", value="sister")
     assert notes.address_lines([sister], "en") == ["- Hana ↔ Kaito: Hana→Kaito relationship sister"]
+
+
+
+def scene(first, last, text):
+    return {"window": None, "summary": {"id": f"s{first}", "first_turn": first, "last_turn": last, "text": text}}
+
+
+def told(*scenes, story=None):
+    """`summaries.current` as the chronicle reads it."""
+    return {"scenes": list(scenes), "story": story}
+
+
+THREADS = [
+    {"kind": "promise", "by": "Hana", "to": "Kaito", "text": "meet at the lighthouse", "turn": 3, "status": "open",
+     "closed_by": None, "knowledge": None, "hidden_from": None},
+    {"kind": "goal", "by": "Hana", "to": None, "text": "find the bell", "turn": 1, "status": "achieved",
+     "closed_by": {"turn": 9}, "knowledge": None, "hidden_from": None},
+]
+SECRET = {"open": ["Kaito"], "holders": ["Hana"], "text": "Hana identity: smuggler", "turn": 2, "position": 2}
+OPEN_LINE = "- Hana → Kaito: meet at the lighthouse (약속, t3부터)"
+
+
+class Writer:
+    """A stand-in model: its replies in order, the prompts it saw."""
+
+    def __init__(self, *replies):
+        self.replies, self.calls = list(replies), []
+
+    def __call__(self, system, user):
+        self.calls.append(user)
+        return self.replies.pop(0), "{}"
+
+
+def test_assembled_without_a_model_open_threads_from_the_store():
+    notes.clear_cache()
+    out = notes.chronicle(told(scene(0, 7, "Hana went to the mill."), scene(8, 15, "Hana found the bell.")),
+                          THREADS, [], [], 3000, "ko", model=None)
+    assert out["made"] == "assembled" and out["turns"] == "0-15"
+    assert out["body"].endswith("## 열린 일\n" + OPEN_LINE)
+    assert "- Hana: find the bell → achieved (t9)" in out["body"] and "Hana found the bell." in out["body"]
+
+
+def test_nothing_to_tell_before_the_first_scene_summary():
+    out = notes.chronicle(told(), THREADS, [], [], 3000, "ko", model=Writer())
+    assert out["body"] == "" and out["reason"] == "no_scenes"
+
+
+def test_a_scene_that_tells_a_kept_secret_is_left_out():
+    notes.clear_cache()
+    out = notes.chronicle(told(scene(0, 7, "Hana walked."), scene(8, 15, "Hana is a smuggler, she told no one.")),
+                          [], [], [SECRET], 3000, "ko", model=None)
+    assert "smuggler" not in out["body"] and out["held"] == 1 and "Hana walked." in out["body"]
+
+
+def test_the_model_writes_events_and_now_the_store_writes_open_threads():
+    notes.clear_cache()
+    w = Writer({"events": "- Hana went to the mill (t0–7).", "now": "- Hana is at the mill."})
+    out = notes.chronicle(told(scene(0, 7, "Hana went to the mill.")), THREADS, [], [], 3000, "ko", model=w)
+    assert out["made"] == "model" and len(w.calls) == 1
+    assert out["body"].startswith("## 사건\n- Hana went to the mill (t0–7).\n\n## 지금\n- Hana is at the mill.")
+    assert out["body"].endswith("## 열린 일\n" + OPEN_LINE)
+    assert "- Hana: find the bell → achieved (t9)" in w.calls[0]  # the model is told how each thread ended
+
+
+def test_a_reply_that_tells_a_secret_is_asked_again_then_assembled():
+    notes.clear_cache()
+    bad = {"events": "- Hana is a smuggler.", "now": ""}
+    w = Writer(bad, bad)
+    out = notes.chronicle(told(scene(0, 7, "Hana walked.")), [], [], [SECRET], 3000, "ko", model=w)
+    assert len(w.calls) == 2 and "YOUR LAST ANSWER TOLD" in w.calls[1]
+    assert out["made"] == "assembled" and "smuggler" not in out["body"]
+
+
+def test_with_secrets_asked_for_the_model_is_told_it_may_write_them():
+    notes.clear_cache()
+    w = Writer({"events": "- Hana is a smuggler (Kaito does not know).", "now": ""})
+    out = notes.chronicle(told(scene(0, 7, "Hana is a smuggler.")), [], [], [SECRET], 3000, "ko", model=w,
+                          told_secrets=True)
+    assert out["made"] == "model" and "smuggler" in out["body"] and out["held"] == 0
+    assert "SECRETS:" in w.calls[0] and "never write" not in w.calls[0]
+
+
+def test_asked_twice_with_nothing_changed_the_model_answers_once():
+    notes.clear_cache()
+    w = Writer({"events": "- e", "now": "- n"})
+    args = (told(scene(0, 7, "Hana walked.")), [], [], [], 3000, "ko")
+    first, second = notes.chronicle(*args, model=w), notes.chronicle(*args, model=w)
+    assert len(w.calls) == 1 and second["body"] == first["body"] and second["cached"] and not first["cached"]
+
+
+def test_an_empty_reply_is_not_asked_again():
+    notes.clear_cache()
+    w = Writer({"events": "", "now": ""})
+    out = notes.chronicle(told(scene(0, 7, "Hana walked.")), [], [], [], 3000, "ko", model=w)
+    assert len(w.calls) == 1 and out["made"] == "assembled" and "Hana walked." in out["body"]

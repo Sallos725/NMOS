@@ -11,12 +11,18 @@ Nothing is stored and no packet reads these sections: they are views of memory, 
 
 from __future__ import annotations
 
+import hashlib
+from collections import OrderedDict
+from collections.abc import Callable
 from typing import Any
 
+from .entities import norm
 from .facts import symmetric
 from .inspector import _named, pairs
 from .noteblocks import KINDS, LABELS, strip_blocks, wrap  # noqa: F401  (the API's names for them)
 from .predicates import HOLDER_PER_ITEM, REGISTRY
+from .llm import LLMError, metered
+from .summaries import content, leaks
 
 PAIRS_MAX = 30  # address lines at most
 PAIRWISE = frozenset({"relationship", "role_toward", "feels_toward", "addresses"})
@@ -101,4 +107,164 @@ def address_lines(facts: list[dict[str, Any]], lang: str, secrets: bool = False)
                             + (_secret_mark(f, lang) if kept(f) else ""))
         if bits:
             out.append(f"- {' ↔ '.join(sorted(p['names'].values()))}: " + " · ".join(bits))
+    return out
+
+
+INPUT_CHARS = 40_000  # the newest scene summaries the chronicle reads (PHASE-50 Q2 (a)); older turns by the story so far
+NOW_MAX = 30  # "now" facts in the chronicle's input
+NOW_PREDICATES = frozenset({"located_in", "has_status"})
+CACHE_MAX = 64
+_CACHE: OrderedDict[str, dict[str, Any]] = OrderedDict()
+THREAD_WORDS = {"ko": {"promise": "약속", "goal": "목표", "question": "질문", "threat": "위협", "debt": "빚",
+                       "since": "t{t}부터", "events": "사건", "now": "지금", "open": "열린 일"},
+                "en": {"promise": "promise", "goal": "goal", "question": "question", "threat": "threat", "debt": "debt",
+                       "since": "since t{t}", "events": "Events", "now": "Now", "open": "Open threads"}}
+
+CHRONICLE_PROMPT = """You write a chronicle of a role-play chat, for its author's note: the user pastes it so that the
+model writing the story keeps what happened in mind. You get SCENES (summaries in order, each with its turns), maybe
+the STORY SO FAR (it covers turns before the first scene given), THREADS (promises, goals, questions, threats and
+debts, each with its state and, when it ended, its outcome) and NOW (where characters are and how they are).
+
+Write two parts in the language of the chat:
+- "events": the events in order, one line each starting with "- ": how it began, how it went, and how it ended or that
+  it is still open, with its turns like (t12–20). A thread is told in the state THREADS gives it: never call an open one
+  ended, never give an ended one another outcome.
+- "now": where things stand, one line each starting with "- ".
+Together at most {chars} characters. Only what the input says: no guesses, no judgments, no out-of-character notes.
+{secrets}
+Answer with JSON only: {{"events": "...", "now": "..."}}"""
+SECRETS_KEPT = """
+If OPEN SECRETS are listed, never write a secret's content, not even in other words or as a hint, and leave out the
+object or act it is about: the note is read in every scene, in front of the characters it is kept from.
+"""
+SECRETS_TOLD = """
+SECRETS are listed: you may write them, each marked with who does not know it, like "(Kaito does not know)", in the
+language of the chat.
+"""
+
+
+def clear_cache() -> None:
+    _CACHE.clear()
+
+
+def _tw(lang: str, key: str) -> str:
+    return THREAD_WORDS["en" if lang == "en" else "ko"].get(key, key)
+
+
+def _cut_lines(text: str, cap: int) -> str:
+    """At most `cap` characters, at a line end when one is in the last third."""
+    text = text.strip()
+    if len(text) <= cap:
+        return text
+    head = text[:cap]
+    end = head.rfind("\n")
+    return head[:end].rstrip() if end >= cap * 2 // 3 else head.rstrip()
+
+
+def _thread_line(t: dict[str, Any], lang: str) -> str:
+    who = f"{t['by']} → {t['to']}" if t.get("to") else str(t["by"])
+    if t["status"] == "open":
+        return f"- {who}: {t['text']} ({_tw(lang, t['kind'])}, {_tw(lang, 'since').format(t=t.get('turn'))})"
+    closed = (t.get("closed_by") or {}).get("turn")
+    return f"- {who}: {t['text']} → {t['status']}" + (f" (t{closed})" if closed is not None else "")
+
+
+def _input(scenes: list[dict[str, Any]], story: dict[str, Any] | None, threads: list[dict[str, Any]],
+           now: list[dict[str, Any]], secrets: list[dict[str, Any]], told_secrets: bool) -> str:
+    lines: list[str] = []
+    if secrets:
+        lines += ["SECRETS:" if told_secrets else "OPEN SECRETS (never write their content):"]
+        lines += [f"- {', '.join(s['holders'])} keep from {', '.join(s['open'])}: {content(s)}" for s in secrets] + [""]
+    if story is not None:
+        lines += [f"STORY SO FAR (turns {story['first_turn']}–{story['last_turn']}): {story['text']}", ""]
+    lines += ["SCENES:"] + [f"[turns {s['first_turn']}–{s['last_turn']}] {s['text']}" for s in scenes] + [""]
+    lines += ["THREADS:"] + [_thread_line(t, "en") for t in threads] + [""]
+    lines += ["NOW:"] + [f"- {_head(f, 'en')}: {_said(f, 'en')}" for f in now]
+    return "\n".join(lines)
+
+
+def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts: list[dict[str, Any]],
+              secrets: list[dict[str, Any]], chars: int, lang: str, model: Callable[..., tuple[Any, ...]] | None,
+              told_secrets: bool = False) -> dict[str, Any]:
+    """The chronicle's body, without its markers (PHASE-50 S2): Events and Now from the model, or assembled from the
+    summaries when there is no model or its replies fail; Open threads always from the stored threads.
+
+    With `told_secrets` off, nothing kept from someone goes in: a scene summary or story that repeats an open secret at
+    LEAK_NEAR is left out (the note is read in every scene, so every secret counts as near), and so is a reply that
+    does (asked once more, then the assembled text)."""
+    open_secrets = [s for s in secrets if s.get("open")]
+    everyone = frozenset(norm(n) for s in open_secrets for n in s["open"])
+
+    def tells(text: str) -> list[dict[str, Any]]:
+        return [] if told_secrets else leaks(text, open_secrets, everyone)
+
+    held = 0
+    scenes: list[dict[str, Any]] = []
+    for x in (told or {}).get("scenes") or []:
+        row = x.get("summary")
+        if row is None:
+            continue
+        if tells(row["text"]):
+            held += 1
+        else:
+            scenes.append(row)
+    story = (told or {}).get("story")
+    if story is not None and tells(story["text"]):
+        story, held = None, held + 1
+    if not scenes:
+        return {"body": "", "turns": "", "made": "none", "cached": False, "held": held, "reason": "no_scenes"}
+    newest: list[dict[str, Any]] = []
+    size = 0
+    for row in reversed(scenes):
+        size += len(row["text"]) + 20
+        if size > INPUT_CHARS and newest:
+            break
+        newest.insert(0, row)
+    story = story if story is not None and newest[0]["first_turn"] > 0 else None  # only for turns the scenes leave out
+    shown = [t for t in threads if told_secrets or not kept(t)]
+    now = [f for f in facts if f["predicate"] in NOW_PREDICATES and not f.get("canon")
+           and (told_secrets or not kept(f))][:NOW_MAX]
+    turns = f"{(story or newest[0])['first_turn']}-{newest[-1]['last_turn']}"
+    opened = [_thread_line(t, lang) for t in shown if t["status"] == "open"]
+    tail = f"\n\n## {_tw(lang, 'open')}\n" + "\n".join(opened) if opened else ""
+    budget = max(500, chars - len(tail))
+    user = _input(newest, story, shown, now, open_secrets, told_secrets)
+    key = hashlib.sha256(f"{lang}|{chars}|{told_secrets}|{model is not None}|{user}".encode()).hexdigest()
+    if (hit := _CACHE.get(key)) is not None:
+        _CACHE.move_to_end(key)
+        return {**hit, "cached": True}
+
+    def assembled() -> str:
+        events = [f"- (t{r['first_turn']}–{r['last_turn']}) {r['text']}" for r in newest]
+        if story is not None:
+            events.insert(0, f"- (t{story['first_turn']}–{story['last_turn']}) {story['text']}")
+        events += [_thread_line(t, lang) for t in shown if t["status"] != "open"]
+        nows = [f"- {_head(f, lang)}: {_said(f, lang)}" for f in now]
+        body = f"## {_tw(lang, 'events')}\n" + "\n".join(events)
+        return _cut_lines(body + (f"\n\n## {_tw(lang, 'now')}\n" + "\n".join(nows) if nows else ""), budget)
+
+    made, body = "assembled", ""
+    if model is not None:
+        system = CHRONICLE_PROMPT.format(chars=budget, secrets=SECRETS_TOLD if told_secrets else SECRETS_KEPT)
+        ask = user
+        for _ in range(2):
+            try:
+                parsed, _, _ = metered(model, system, ask)
+            except LLMError:
+                break
+            events, nows = str(parsed.get("events") or "").strip(), str(parsed.get("now") or "").strip()
+            told_now = tells(events + "\n" + nows)
+            if events and not told_now:
+                text = f"## {_tw(lang, 'events')}\n{events}" + (f"\n\n## {_tw(lang, 'now')}\n{nows}" if nows else "")
+                made, body = "model", _cut_lines(text, budget)
+                break
+            if not told_now:  # an empty reply: the assembled text
+                break
+            ask = user + "\n\nYOUR LAST ANSWER TOLD THESE SECRETS; write it again without them:\n" + "\n".join(
+                f"- {content(s)}" for s in told_now)
+    out = {"body": (body or assembled()) + tail, "turns": turns, "made": made, "cached": False, "held": held,
+           "reason": ""}
+    _CACHE[key] = out
+    while len(_CACHE) > CACHE_MAX:
+        _CACHE.popitem(last=False)
     return out
