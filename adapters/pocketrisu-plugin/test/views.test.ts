@@ -79,12 +79,13 @@ function deps(opts: { views?: boolean; css?: string } = {}) {
         return { html: '<div class="v"><span class="has-failed"></span><a data-act="retry">Retry failed</a></div>' } as T;
       }
       if (path.endsWith('/retry-failed')) return { retried: { extract: 2 } } as T;
+      if (path.endsWith('/entities')) return [] as T;
       if (path.startsWith('/v1/views/chats')) {
         return { html: '<div class="v"><div class="v-filter"></div><div class="v-line v-chat"><a href="#">Harbor</a></div>'
           + '<div class="v-line v-chat"><a href="#">Mill</a></div></div>' } as T;
       }
       if (path.startsWith('/v1/inspector')) return { html: `<a href="/inspector/c/${id}">chat</a>` } as T;
-      if (path.endsWith('/memory-mode')) throw new Error('404');
+      if (path.endsWith('/memory-mode')) return { strict: false, narrator: null, characters: ['Hana'] } as T;
       if (path.includes('/status/candidates')) throw new Error('404');
       return {} as T;
     },
@@ -214,5 +215,45 @@ describe('the hub (PHASE-52 D1)', () => {
     box.dispatchEvent(new Event('input'));
     const shown = Array.from(panel().querySelectorAll<HTMLElement>('.v-chat')).filter((r) => r.style.display !== 'none');
     expect(shown.map((r) => r.textContent)).toEqual(['Mill']);
+  });
+
+  it('hides the tab bar and opens settings as groups, each with its own cards', async () => {
+    const { d } = deps();
+    await openPanel(d, 'status');
+    await settle();
+    expect(panel().querySelector<HTMLElement>('nav.tabs')!.style.display).toBe('none');
+    panel().querySelector<HTMLAnchorElement>('a[data-act="settings"]')!.click();
+    await settle();
+    const groups = Array.from(panel().querySelectorAll<HTMLButtonElement>('.groups button')).map((b) => b.dataset.group);
+    expect(groups).toEqual(['connection', 'models', 'memory', 'chat', 'rules', 'display', 'backup']);
+    panel().querySelector<HTMLButtonElement>('.groups button[data-group="models"]')!.click();
+    const shown = Array.from(panel().querySelectorAll<HTMLElement>('[data-group]'))
+      .filter((c) => !c.closest('.groups') && c.style.display !== 'none').map((c) => c.querySelector('h2')?.textContent);
+    expect(shown).toEqual(['Fact extraction LLM', 'Semantic recall embeddings']);
+  });
+
+  it('gathers this chat\'s tools on one settings page', async () => {
+    const { d, calls } = deps();
+    await openPanel(d, 'status');
+    await settle();
+    panel().querySelector<HTMLAnchorElement>('a[data-act="settings"]')!.click();
+    await settle();
+    panel().querySelector<HTMLButtonElement>('.groups button[data-group="chat"]')!.click();
+    await settle();
+    expect(calls).toContainEqual(['GET', `/v1/conversations/${id}/memory-mode`]);
+    const page = panel().querySelector<HTMLElement>('[data-group="chat"]:not(button)')!;
+    expect(page.style.display).toBe('');
+    expect(Array.from(page.querySelectorAll('button')).map((b) => b.textContent)).toContain('Extract all history');
+  });
+
+  it('goes home from settings', async () => {
+    const { d } = deps();
+    await openPanel(d, 'status');
+    await settle();
+    panel().querySelector<HTMLAnchorElement>('a[data-act="settings"]')!.click();
+    await settle();
+    Array.from(panel().querySelectorAll('button')).find((b) => b.textContent === '← NMOS')!.click();
+    await settle();
+    expect(panel().textContent).toContain('Memory doc');
   });
 });
