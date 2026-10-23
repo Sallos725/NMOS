@@ -822,6 +822,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (load !== loads) return;
       if (path.startsWith('/v1/views/hub')) hubConversation = r.conversation ?? null;
       const page = safeFragment(r.html);
+      placeMarks(page); // a person's circles (PHASE-52 D4)
       enhance(page);
       retryButton.style.display = page.querySelector('.has-failed') ? '' : 'none';
       inspectorBody.replaceChildren(page);

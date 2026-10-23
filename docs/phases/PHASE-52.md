@@ -54,7 +54,9 @@ know and do not know, and the timeline.
 
 D4. **The timeline, in circles** (owner, 2026-10-23). A large ring marks a major event (`salience` `major`) or a change
 of relationship; a small dot, any other change. When a lane would hold more marks than its width allows, neighbouring
-turns merge into one mark labelled "×N", so a lane never holds more than 60 marks, at 76 turns or at 1,000. Tapping a
+turns merge into one mark: the chat's turns are cut into 30 equal spans and a span's changes are one mark, so a lane
+holds at most 30 marks, over 3 % of its width apart (a phone too), at 76 turns or at 1,000. A merged mark is drawn
+larger, and its card says how many ("t30–32 · ×3"): a "×N" label beside every mark overlapped on a phone's width. Tapping a
 mark opens its card under the lane. The timeline is still drawn only when its section is opened (PHASE-32 step 3, the
 iPhone's memory).
 
@@ -124,7 +126,7 @@ D9. **The browser Inspector** (`/inspector`) shows the same screens as the panel
 - Body text 16 px; no text under 13 px outside details.
 - The memory screen holds no table and no identifier (generation key, commit, endpoint); they appear only under details.
 - The hub is one request; memory, person and working are one request each.
-- A timeline lane never draws more than 60 marks (test).
+- A timeline lane never draws more than 30 marks, none over another (test).
 - Every action today's panel offers is reachable in the new one (the evidence lists them, old place → new place).
 - The plugin's gzipped size grows by at most 20 %.
 - The owner's check on an iPhone and a desktop.

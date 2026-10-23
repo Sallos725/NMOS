@@ -607,3 +607,25 @@ tr:target td{background:var(--chip)}
   .tl-axis .tl-track span.odd,.tl-axis .tl-track span.near{display:none}
   .tl-end{display:none} .tl-last{display:inline}}
 """
+
+
+
+CIRCLES = 30  # slots of a circle lane (PHASE-52 D4): marks stay over 3 % of the lane apart, apart on a phone too
+
+
+def circles(marks: list[tuple[int, bool, str]], first: int, last: int, slots: int = CIRCLES) -> list[dict[str, Any]]:
+    """A person's changes as circle marks (PHASE-52 D4): the chat's turns `first`–`last` cut into `slots` equal spans,
+    the changes of one span one mark, so at most `slots` marks at any length and none on top of another. A mark is
+    major when any change in it is."""
+    if not marks:
+        return []
+    marks = sorted(marks, key=lambda m: m[0])
+    width = max(1, -(-(max(last, first) - first + 1) // slots))
+    out: dict[int, dict[str, Any]] = {}
+    for turn, major, text in marks:
+        b = out.setdefault((turn - first) // width, {"lo": turn, "hi": turn, "count": 0, "major": False, "texts": []})
+        b["hi"] = max(b["hi"], turn)
+        b["count"] += 1
+        b["major"] = b["major"] or major
+        b["texts"].append(text)
+    return [out[k] for k in sorted(out)]

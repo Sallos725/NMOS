@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:ba91f7a82e93".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:77cb06abfa7f".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -3332,6 +3332,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (load !== loads) return;
         if (path.startsWith("/v1/views/hub")) hubConversation = r.conversation ?? null;
         const page = safeFragment(r.html);
+        placeMarks(page);
         enhance(page);
         retryButton.style.display = page.querySelector(".has-failed") ? "" : "none";
         inspectorBody.replaceChildren(page);

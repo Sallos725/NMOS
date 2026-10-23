@@ -1556,11 +1556,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         trace = conn.execute("SELECT latency_ms FROM retrieval_trace WHERE conversation_id = %s"
                              " ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
         cast = [str(n) for n in ((trace or {}).get("latency_ms") or {}).get("scene_cast") or []]
-        entities = {}
-        for e in view["entities"]:
-            if e.get("type") == "character":
-                for n in [e.get("name"), *(e.get("names") or [])]:
-                    entities.setdefault(str(n or "").casefold(), str(e["id"]))
+        entities = character_ids(view)
         if not cast:  # no request yet: the characters most mentioned
             cast = [e["name"] for e in view["entities"] if e.get("type") == "character"][:6]
         now = [{"name": name, "said": said} for name in cast if (said := views.now_said(view["facts"], name))]
@@ -1577,6 +1573,63 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "story": told.get("story"), "scenes": list(reversed(scenes)),
                 "secrets": view["secrets"], "changes": notes.changes(view["facts"], secrets=True),
                 "facts": len(view["facts"]), "attention": len(queue), "entities": entities}
+
+    def character_ids(view: dict[str, Any]) -> dict[str, str]:
+        """Each character's names (casefolded) to their entity id: the links of the panel's screens (PHASE-52)."""
+        out: dict[str, str] = {}
+        for e in view["entities"]:
+            if e.get("type") == "character":
+                for n in [e.get("name"), *(e.get("names") or [])]:
+                    out.setdefault(str(n or "").casefold(), str(e["id"]))
+        return out
+
+    def person_data(conn, conv: dict[str, Any], entity_id: UUID) -> dict[str, Any]:
+        """A person's sheet (PHASE-52 D3, D4), from the view the Inspector's character page reads."""
+        cid, head = conv["id"], conv["head_commit_id"]
+        view = inspector.with_participants(view_of(conn, head))
+        e = next((x for x in view["entities"] if str(x["id"]) == str(entity_id)), None)
+        if e is None:
+            raise HTTPException(status_code=404, detail="person not found")
+        last = head_turn(conn, head) or 0
+        names = {norm(n) for n in [e.get("name"), *(e.get("names") or [])] if n}
+        eid = str(e["id"])
+        marks, seen = [], set()
+        for f in view["facts"]:
+            if str((f.get("subject_entity") or {}).get("id")) != eid:
+                continue
+            major = (f["predicate"] == "event" and f.get("salience") == "major") \
+                or f["predicate"] in ("relationship", "role_toward")
+            for h in f.get("history") or [f]:
+                turn = h.get("turn")
+                if h.get("canon") or not isinstance(turn, int) or norm(h.get("subject")) not in names:
+                    continue
+                text = " ".join(str(x) for x in (h["predicate"].replace("_", " "), h.get("object"), h.get("value")) if x)
+                if (turn, text) not in seen:
+                    seen.add((turn, text))
+                    marks.append((turn, major, text))
+        open_ = [th for th in view["threads"] if th["status"] == "open" and not inspector.stale(th, last)
+                 and (norm(th.get("by")) in names or norm(th.get("to")) in names)]
+        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
+                         "turns": last},
+                "entity": {"id": eid, "name": e.get("name"), "names": list(e.get("names") or [])},
+                "now": views.now_said(view["facts"], str(e.get("name") or "")),
+                "pairs": [p for p in inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING])
+                          if eid in {str(i) for i in p["ids"]}],
+                "threads": open_,
+                "knows": [s for s in view["secrets"] if s.get("open") and names & {norm(n) for n in s.get("holders") or []}],
+                "kept": [s for s in view["secrets"] if names & {norm(n) for n in s.get("open") or []}],
+                "marks": marks, "first": 0, "last": last, "entities": character_ids(view)}
+
+    @app.get("/v1/views/c/{conv_id}/person/{entity_id}", dependencies=[Depends(auth)])
+    def views_person(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None):
+        return {"html": view_page(request, conv_id,
+                                  lambda conn, conv, lg: views.person(person_data(conn, conv, entity_id), lg), lang)}
+
+    @app.get("/views/c/{conv_id}/person/{entity_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def views_person_page(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None):
+        return views.full_page("NMOS", view_page(
+            request, conv_id, lambda conn, conv, lg: views.person(person_data(conn, conv, entity_id), lg), lang),
+            inspector.lang_of(lang))
 
     def view_page(request: Request, conv_id: UUID, build: Any, lang: str | None) -> str:
         with request.app.state.pool.connection() as conn:

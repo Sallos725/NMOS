@@ -160,3 +160,70 @@ def test_the_memory_endpoint(migrated):
         assert 'id="s-now"' in r.json()["html"]
         assert c.get(f"/views/c/{cid}/memory").status_code == 200
         assert c.get("/v1/views/c/00000000-0000-0000-0000-000000000000/memory").status_code == 404
+
+
+
+# --- a person's sheet and the timeline in circles (PHASE-52 D3, D4) ---------------------------------------------------
+
+from nmos_sidecar import timeline  # noqa: E402
+
+
+def test_circles_merge_so_marks_stay_apart_and_keep_a_major_mark():
+    marks = [(t, t == 503, f"change {t}") for t in range(1000)]
+    out = timeline.circles(marks, 0, 999)
+    assert len(out) <= 30 and sum(b["count"] for b in out) == 1000
+    assert [b for b in out if b["major"]] and any(b["lo"] <= 503 <= b["hi"] for b in out if b["major"])
+    crowded = timeline.circles([(t, False, "x") for t in range(30, 40)], 0, 75)  # ten turns close together
+    assert len(crowded) <= 4
+    few = timeline.circles([(3, False, "a"), (3, True, "b"), (9, False, "c")], 0, 12)
+    assert [(b["lo"], b["hi"], b["count"], b["major"]) for b in few] == [(3, 3, 2, True), (9, 9, 1, False)]
+
+
+def person_data(**over):
+    d = memory_data()
+    data = {"conv": d["conv"], "entity": {"id": HANA, "name": "Hana", "names": ["Hana", "Hanachan"]},
+            "now": ["the lighthouse", "wet coat"], "pairs": d["pairs"], "threads": d["threads"][:2],
+            "knows": [d["secrets"][0]], "kept": [], "marks": [(2, False, "Hana identity: smuggler"),
+                                                               (9, True, "Hana meets Kaito")],
+            "first": 0, "last": 12, "entities": d["entities"]}
+    data.update(over)
+    return data
+
+
+def test_a_persons_sheet():
+    html = views.person(person_data(), "ko")
+    assert re.findall(r'class="v-sec" id="(s-[a-z]+)"', html) == ["s-now", "s-rels", "s-threads", "s-knows", "s-time"]
+    assert "Hanachan" in html and "<table" not in html and "<svg" not in html
+    marks = re.findall(r'<span class="v-mark( major)?" data-l="([0-9.]+)"', html)
+    merged = views.person(person_data(marks=[(30, False, "a"), (31, False, "b"), (32, False, "c")], last=76), "ko")
+    assert 'class="v-mark n2"' in merged and 'data-k="t30–32 · ×3"' in merged
+    assert [(bool(m), float(l)) for m, l in marks] == [(False, 16.667), (True, 75.0)]  # turns 2 and 9 of 0–12
+    assert 'data-v="Hana meets Kaito"' in html and f'href="/views/c/{CID}/memory"' in html
+
+
+def test_the_person_endpoint(migrated):
+    chat = SimChat("views-person")
+    chat.user("Hello.")
+    chat.reply("Hana waits at the lighthouse.")
+    with make_client(migrated) as c:
+        sync(c, chat)
+        cid = c.get("/v1/views/hub", params={"chat": chat.id}).json()["conversation"]
+        missing = c.get(f"/v1/views/c/{cid}/person/0190f3a4-1b2c-7d3e-8f40-00000000000a")
+        assert missing.status_code == 404 and missing.json()["detail"] == "person not found"
+
+
+
+def test_a_person_with_facts_has_a_sheet_and_circles(migrated):
+    from test_canon_facts import Model, drain, story
+    from test_generations import LLM
+
+    chat, model = story(), Model()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        drain(migrated, model)
+        cid = c.get("/v1/views/hub", params={"chat": chat.id}).json()["conversation"]
+        hana = next(e for e in c.get(f"/v1/conversations/{cid}/entities").json() if e["name"] == "Hana")
+        html = c.get(f"/v1/views/c/{cid}/person/{hana['id']}").json()["html"]
+        memory = c.get(f"/v1/views/c/{cid}/memory").json()["html"]
+    assert ">Hana<" in html and 'class="v-mark' in html and "old mill" in html
+    assert f'/views/c/{cid}/person/{hana["id"]}' in memory

@@ -47,6 +47,15 @@ STYLE = """
 .nmos .v-note{font-size:var(--t-caption,13px);color:var(--c-text-muted);margin:6px 0 0}
 .nmos .v-more>summary{cursor:pointer;list-style:none;font-size:var(--t-secondary,14px);color:var(--c-text-muted);padding:6px 0}
 .nmos .v-more>summary::-webkit-details-marker{display:none}
+.nmos .v-tl{position:relative;height:56px;margin:8px 4px 0}
+.nmos .v-tl .tl-row{position:relative;height:56px}
+.nmos .v-tl .v-axis{position:absolute;left:0;right:0;top:20px;border-top:1px solid var(--c-line-strong)}
+.nmos .v-mark{position:absolute;top:16px;width:9px;height:9px;margin-left:-4px;border-radius:50%;background:var(--c-text-soft);cursor:pointer}
+.nmos .v-mark.major{top:10px;width:20px;height:20px;margin-left:-10px;background:transparent;border:2px solid var(--c-text-strong)}
+.nmos .v-mark.n2{top:14px;width:13px;height:13px;margin-left:-6px} .nmos .v-mark.n4{top:12px;width:17px;height:17px;margin-left:-8px}
+.nmos .v-mark.major.n2,.nmos .v-mark.major.n4{top:8px;width:24px;height:24px;margin-left:-12px}
+.nmos .v-mark.sel{border-color:var(--c-accent);background:var(--c-accent)}
+.nmos .v-ends{display:flex;justify-content:space-between;font-size:var(--t-caption,13px);color:var(--c-text-muted)}
 .nmos .v-foot{margin:28px 0 0;padding-top:10px;border-top:1px solid var(--c-line);font-size:var(--t-caption,13px);color:var(--c-text-muted)}
 .nmos .v-foot a{color:var(--c-text-soft)}
 @media (min-width:700px){.nmos .v-blocks{grid-template-columns:repeat(3,minmax(0,1fr))}.nmos .v-big{grid-row:span 2}.nmos .v-now{display:block}}
@@ -96,6 +105,17 @@ T: dict[str, tuple[str, str]] = {
     "scenes": ("장면 요약 {n}개", "{n} scene summaries"),
     "facts": ("모든 사실 {n}", "All facts {n}"),
     "details": ("자세히", "Details"),
+    "s-rels": ("관계", "Relationships"),
+    "s-threads": ("약속 · 목표", "Promises and goals"),
+    "s-knows": ("아는 것 · 모르는 것", "Knows and does not know"),
+    "s-time": ("시간축", "Timeline"),
+    "aka": ("다른 이름: {names}", "Also called: {names}"),
+    "knows": ("알고 있음", "knows"),
+    "unaware": ("모름 · {who}이(가) 숨김", "does not know · kept by {who}"),
+    "back_memory": ("기억으로", "Back to memory"),
+    "tl_hint": ("점을 누르면 그 턴의 변화가 보여요. 큰 원은 큰 사건이나 관계 변화예요.",
+                "Tap a mark for its changes. A ring is a major event or a change of relationship."),
+    "now_turn": ("지금 t{t}", "now t{t}"),
     "promise": ("약속", "promise"), "goal": ("목표", "goal"), "question": ("질문", "question"),
     "threat": ("위협", "threat"), "debt": ("빚", "debt"),
     "located_in": ("위치", "location"), "has_status": ("상태", "status"), "relationship": ("관계", "relationship"),
@@ -111,6 +131,11 @@ def t(lang: str, key: str, **kw: Any) -> str:
     return text.format(**kw) if kw else text
 
 
+# The browser page places the timeline's marks itself; in the panel, `placeMarks` does (it runs no page script).
+PLACE = ("document.querySelectorAll('[data-l]').forEach(function(m){var l=Number(m.getAttribute('data-l'));"
+         "if(l>=0&&l<=100)m.style.left=l+'%';});")
+
+
 def full_page(title: str, body: str, lang: str = "ko") -> str:
     """A screen as a page of its own, for the browser: the panel's root class, so the same stylesheet applies."""
     root = ".nmos{" + tokens.css_vars() + ";background:var(--c-bg);color:var(--c-text);min-height:100vh;padding:20px 16px;" \
@@ -118,7 +143,7 @@ def full_page(title: str, body: str, lang: str = "ko") -> str:
     return (f"<!doctype html><html lang=\"{lang}\"><head><meta charset=\"utf-8\">"
             "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
             f"<title>{_v(title)}</title><style>body{{margin:0}}{root}{STYLE}</style></head>"
-            f"<body><div class=\"nmos\">{body}</div></body></html>")
+            f"<body><div class=\"nmos\">{body}</div><script>{PLACE}</script></body></html>")
 
 
 def _block(title: str, sub: str, href: str | None = None, act: str | None = None, cls: str = "",
@@ -283,3 +308,57 @@ def memory(d: dict[str, Any], lang: str) -> str:
     cap = " · ".join(str(x) for x in (conv.get("character"), f"t{conv['turns']}" if conv.get("turns") is not None else None) if x)
     return (f'<div class="v v-doc"><div class="v-head"><h1 class="v-h1">{_v(conv.get("name") or t(lang, "memory"))}</h1>'
             f'<span class="v-cap">{_v(cap)}</span></div>{chips}{body}{foot}</div>')
+
+
+
+def _marks(d: dict[str, Any]) -> str:
+    """The person's changes as circles on one lane (PHASE-52 D4), placed by `data-l` as today's timeline is, with the
+    texts the panel's mark card shows."""
+    from .timeline import circles
+    first, last = d.get("first", 0) or 0, d.get("last", 0) or 0
+    span = max(last - first, 1)
+    marks = []
+    for b in circles(d.get("marks") or [], first, last):
+        mid = (b["lo"] + b["hi"]) / 2
+        left = round(min(max((mid - first) / span * 100, 0), 100), 3)
+        when = (f"t{b['lo']}" if b["lo"] == b["hi"] else f"t{b['lo']}–{b['hi']}") + (f" · ×{b['count']}" if b["count"] > 1 else "")
+        text = " / ".join(b["texts"])[:400]
+        size = "" if b["count"] < 2 else " n2" if b["count"] < 4 else " n4"  # a merged mark is larger; its count in its card
+        marks.append(f'<span class="v-mark{" major" if b["major"] else ""}{size}" data-l="{left:g}" data-k="{_v(when)}" '
+                     f'data-v="{_v(text)}" data-s="{_v(when)}"></span>')
+    return ('<div class="tl v-tl"><div class="tl-row"><span class="v-axis"></span>' + "".join(marks) + "</div></div>")
+
+
+def person(d: dict[str, Any], lang: str) -> str:
+    """A person's sheet (PHASE-52 D3): now, relationships, promises and goals, what they know and do not, the timeline."""
+    conv, e, ents = d["conv"], d["entity"], d.get("entities") or {}
+    cid = conv["id"]
+    nm = lambda name: name_link(cid, ents, name)  # noqa: E731
+    nothing = f'<p class="v-text">{_v(t(lang, "none_yet"))}</p>'
+    aka = [n for n in e.get("names") or [] if n != e.get("name")]
+    now = f'<p class="v-text">{" · ".join(_v(x) for x in d.get("now") or [])}</p>' if d.get("now") else nothing
+    rels = []
+    for p in d.get("pairs") or []:
+        other = [n for i, n in p["names"].items() if i != e["id"]]
+        bits = [f.get("value") for f in p["relationship"]]
+        bits += [f'{t(lang, pred)} "{f.get("value")}"' if pred == "addresses" else f"{t(lang, pred)} {f.get('value')}"
+                 for k, pred in (("role", "role_toward"), ("feels", "feels_toward"), ("speech", "addresses"))
+                 for f in p[k] if (f.get("subject_entity") or {}).get("id") == e["id"]]
+        rels.append(line(" · ".join([nm(o) for o in other] + [_v(b) for b in bits if b])))
+    threads = [line(f"{_v(th['text'])}" + (f" → {nm(th['to'])}" if th.get("to") and th.get("by") == e.get("name") else ""),
+                    _v(f"{t(lang, th['kind']) if th['kind'] in T else th['kind']} · {t(lang, 'since', t=th.get('turn'))}"),
+                    _close(th)) for th in d.get("threads") or []]
+    knows = [line(_v(content(s)), _v(t(lang, "knows") + f" · t{s.get('turn')}")) for s in d.get("knows") or []]
+    knows += [line(_v(content(s)), _v(t(lang, "unaware", who=", ".join(s.get("holders") or [])) + f" · t{s.get('turn')}"))
+              for s in d.get("kept") or []]
+    time = (_marks(d) + f'<div class="v-ends"><span>t{d.get("first", 0)}</span>'
+            f'<span>{_v(t(lang, "now_turn", t=d.get("last", 0)))}</span></div>'
+            f'<p class="v-note">{_v(t(lang, "tl_hint"))}</p>') if d.get("marks") else nothing
+    body = (section("s-now", lang, now) + section("s-rels", lang, more(rels, lang) or nothing, len(rels))
+            + section("s-threads", lang, more(threads, lang) or nothing, len(threads))
+            + section("s-knows", lang, more(knows, lang) or nothing, len(knows)) + section("s-time", lang, time))
+    cap = t(lang, "aka", names=", ".join(aka)) if aka else ""
+    return (f'<div class="v v-doc"><div class="v-head"><h1 class="v-h1">{_v(e.get("name"))}</h1>'
+            f'<span class="v-cap">{_v(cap)}</span></div>{body}'
+            f'<div class="v-foot"><a href="/views/c/{cid}/memory">{_v(t(lang, "back_memory"))}</a> · '
+            f'<a href="/inspector/c/{cid}/e/{e["id"]}">{_v(t(lang, "details"))}</a></div></div>')

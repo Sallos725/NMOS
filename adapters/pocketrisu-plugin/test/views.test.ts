@@ -50,10 +50,14 @@ const memory = `<div class="v v-doc"><div class="v-sec" id="s-open"><h2 class="v
   + `<div class="v-line">Hana: find the bell<div class="v-meta">goal</div>`
   + `<span class="rp" data-repair="thread_close:5:achieved,abandoned"></span></div></div></div>`;
 
+const person = `<div class="v v-doc"><div class="v-sec" id="s-time"><div class="tl v-tl"><div class="tl-row">`
+  + `<span class="v-mark major" data-l="75" data-k="t9" data-v="Hana meets Kaito" data-s="t9"></span></div></div></div></div>`;
+
 const hub = `<div class="v v-hub"><div class="v-blocks">`
   + `<a class="v-block v-wide ok" href="/inspector/c/${id}"><span class="v-bt">Working</span></a>`
   + `<a class="v-block v-big" href="/inspector/c/${id}"><span class="v-bt">Memory</span></a>`
   + `<a class="v-block" href="/views/c/${id}/memory"><span class="v-bt">Memory doc</span></a>`
+  + `<a class="v-block" href="/views/c/${id}/person/0190f3a4-1b2c-7d3e-8f40-00000000000a"><span class="v-bt">Hana</span></a>`
   + `<a class="v-block" data-act="settings"><span class="v-bt">Settings</span></a>`
   + `<a class="v-block" data-act="notes"><span class="v-bt">Author's note</span></a></div></div>`;
 
@@ -66,6 +70,7 @@ function deps(opts: { views?: boolean; css?: string } = {}) {
       if (path.startsWith('/v1/views/hub')) return { html: hub, conversation: id } as T;
       if (path.startsWith(`/v1/inspector/c/${id}`)) return { html: '<h1>Chat page</h1>' } as T;
       if (path.startsWith(`/v1/views/c/${id}/memory`)) return { html: memory } as T;
+      if (path.includes('/person/')) return { html: person } as T;
       if (path.startsWith('/v1/inspector')) return { html: `<a href="/inspector/c/${id}">chat</a>` } as T;
       if (path.endsWith('/memory-mode')) throw new Error('404');
       if (path.includes('/status/candidates')) throw new Error('404');
@@ -161,5 +166,17 @@ describe('the hub (PHASE-52 D1)', () => {
     expect(row.classList.contains('open')).toBe(true);
     row.click();
     expect(row.classList.contains('open')).toBe(false);
+  });
+
+  it('places a person\'s circles and opens a mark\'s card', async () => {
+    const { d } = deps();
+    await openPanel(d, 'status');
+    await settle();
+    panel().querySelector<HTMLAnchorElement>('a[href*="/person/"]')!.click();
+    await settle();
+    const mark = panel().querySelector<HTMLElement>('.v-mark')!;
+    expect(mark.style.left).toBe('75%');
+    mark.click();
+    expect(panel().querySelector('.tl-card')!.textContent).toContain('Hana meets Kaito');
   });
 });
