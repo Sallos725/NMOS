@@ -130,14 +130,14 @@ first (stylesheet, hub, a link and Back) as amended after reading the sanitizer.
 
 - **Sidecar** (`views.py`, `tokens.py`, `timeline.circles`, `api.py`): `/v1/views/style`, `/v1/views/hub`,
   `/v1/views/c/{id}/memory`, `…/person/{entity}`, `…/working`, `/v1/views/chats`, each also a browser page under
-  `/views/…`; `features.views`. `tests/test_views.py`: 25 tests (tokens against the fixture, every rule under `.nmos`, the
+  `/views/…`; `features.views`. `tests/test_views.py`: 26 tests (tokens against the fixture, every rule under `.nmos`, the
   hub's blocks and states, the memory document's order, folds, links and repair markers, the person's sheet and its
-  circles, rings at most five, working in words with retry, the chat list, every endpoint). The whole sidecar suite:
+  circles, rings at most five, working in words with retry, the chat list, chat text escaped on every screen, every endpoint). The whole sidecar suite:
   1,621 passed before the last two fixes; the touched files' tests after them.
 - **Plugin** (`ui.ts`, `inspector.ts`, `i18n.ts`): the hub first with a sidecar that has the screens, the stylesheet
   injected once (refused with `@import`/`url(`), `/views` paths, `data-act` limited to notes, settings, backup and
   retry, a tapped line's repair, the chat filter, the tab bar gone, settings in seven groups with "this chat" gathering
-  its tools, the type scale (nothing under 13 px). `test/views.test.ts`: 18 tests; all 264 plugin tests pass. Gzipped
+  its tools, the type scale (nothing under 13 px). `test/views.test.ts`: 15 tests; all 264 plugin tests pass. Gzipped
   build 69,576 bytes against 66,986 (+3.9 %; the budget is +20 %).
 - **On the test install** (6131/6113, test-only) since 2026-10-23 22:36 KST, `trial-phase52-a3071ab`; the database
   fingerprint is identical before and after each deploy. The biggest chat (153 messages): hub 99 ms, memory 69 ms

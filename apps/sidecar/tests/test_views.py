@@ -333,3 +333,27 @@ def test_rings_stay_rare():
     marks = [(t, True, "major") for t in range(0, 76, 2)]  # every change major, as a lead's can be
     out = timeline.circles(marks, 0, 75)
     assert sum(1 for b in out if b["major"]) == 5
+
+
+def test_chat_text_is_escaped_on_every_screen():
+    """`/views/…` pages reach a browser without the plugin's sanitizer, so everything from a chat is escaped."""
+    bad = '<img src=x onerror=alert(1)>"'
+    pair = memory_data()["pairs"][0]
+    mem = memory_data(conv={"id": CID, "name": bad, "character": bad, "turns": 13},
+                      now=[{"name": bad, "entity": None, "said": [bad]}], threads=[thread(1, bad)],
+                      pairs=[{**pair, "relationship": [{**pair["relationship"][0], "value": bad}],
+                              "speech": [{**pair["speech"][0], "value": bad}]}],
+                      story={"first_turn": 0, "last_turn": 7, "text": bad},
+                      secrets=[{"id": 9, "text": bad, "holders": [bad], "open": [bad], "turn": 2}])
+    pages = [views.memory(mem, "ko"),
+             views.person(person_data(entity={"id": HANA, "name": bad, "names": [bad]}, now=[bad],
+                                      threads=[thread(1, bad)], marks=[(2, True, bad)]), "ko"),
+             views.working(working_data(reply={**working_data()["reply"],
+                                               "lines": [{"kind": "fact", "text": bad, "placed": True}]}), "ko"),
+             views.chats([{"id": CID, "host_chat_name": bad, "host_character_name": bad, "messages": 1,
+                           "last_retrieval": None, "created_at": "2026-10-01T00:00:00+00:00", "failed": 0}], "ko"),
+             views.hub(hub_data(conv={"id": CID, "name": bad, "character": bad, "turns": 3},
+                                memory={"cast": 1, "open": 0, "stale": 0, "changed": 0, "now": [bad]}), "ko")]
+    for html in pages:
+        assert "<img" not in html and "onerror=alert(1)>" not in html
+    assert "&lt;img" in pages[0] and "&lt;img" in pages[3]
