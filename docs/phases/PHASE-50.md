@@ -148,6 +148,22 @@ process, keyed by its input's fingerprint (the ids of the summaries and facts it
 outcomes), the options and, for the chronicle, the generation: asking again with nothing changed makes no call.
 Nothing is stored in the database; these are views, not memory, and no packet reads them.
 
+## Amendment 1 (2026-10-23, from the code, before step 2)
+
+Reading the code for the implementation plan (`docs/superpowers/plans/2026-10-23-phase50-author-notes.md`) changed
+three details; the owner's decisions stand.
+- **S2: Open threads come from the store.** The chronicle's Open threads part is rendered from the stored threads (who,
+  what, kind, since when), not written by the model; the model writes Events and Now (`{"events": …, "now": …}`), told
+  each thread's stored state and outcome. A part that is not the model's cannot misstate a thread, so the thread-state
+  check is not needed. Status-window values are not in the input; "Now" comes from the current `located_in` and
+  `has_status` facts.
+- **S6: the panel shows the texts.** The panel inserts the Inspector's HTML as a fragment and runs none of its scripts
+  (H15), so a Copy button must be the panel's own: the panel shows each section the API returns in a read-only box
+  with Copy. There is no `/inspector/c/{id}/notes` page; the Inspector's canon section shows which NMOS sections the
+  note carries and how far each reaches.
+- **S7: no 409.** A section with nothing to say comes back empty with its reason (`no_scenes` for a chronicle before
+  the first scene summary, `none` otherwise), so the other sections still come.
+
 ## Out of scope
 
 - Writing the author's note through the host (no observed host write; S1 is copy-paste).
