@@ -21,6 +21,21 @@ settings groups. Colours and type come from one tokens fixture both languages ch
 
 ---
 
+## Amendment before Task 1 (2026-10-23, after reading the sanitizer)
+
+- **Order:** a thin slice first — Task 2's stylesheet and helpers, `/v1/views/style` injected by the panel, the hub
+  (Task 3) as one sidecar page with one link into an existing Inspector page and back, `features.views` gating, a
+  390 px screenshot — then the tokens (Task 1) and the other screens on top.
+- **Inside the sanitizer** (`safeFragment`: `DIV P H1 H2 SPAN B BR A TABLE… DETAILS SUMMARY`; attributes `class`,
+  `title`, `open`, section ids, Inspector hrefs, `data-repair`, `data-l`/`data-w`, `data-span`, the mark texts): blocks
+  are `<a href="/views/…">`; the plugin's actions are `<a data-act="notes|settings|backup">` (the one attribute added,
+  values fixed, tested to drop anything else); no `ul`/`li`/`h3`/`button`/`input`/`svg`; the chat filter's input is
+  created by the plugin at a `.v-filter` slot; the circle timeline is `div.v-mark` placed by `data-l` with the mark
+  attributes `markDetail` reads.
+- **CSS:** every rule of `views.STYLE` starts with `.nmos ` (a test); the browser pages wrap their body in
+  `<div class="nmos">`; the panel injects the stylesheet only when it holds no `@import` and no `url(`, and its own
+  screens (connection error, fallback) need none of it.
+
 ## File structure
 
 | File | Change |

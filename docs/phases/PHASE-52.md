@@ -87,9 +87,14 @@ D9. **The browser Inspector** (`/inspector`) shows the same screens as the panel
 - **New read endpoints** beside the Inspector's: `GET /v1/views/hub?conversation=<id>` (JSON: the working line, counts,
   the "now" preview, needs-a-look count, usage today), `GET /v1/views/c/{id}/memory`, `…/person/{entity}`,
   `…/working`, and `GET /v1/views/chats`. The existing `/v1/inspector/…` pages stay, restyled, as **details**.
-- **One set of design tokens**: `fixtures/unit/design-tokens-v1.json` (colours, type scale, spacing), read by the
-  plugin's build (`palette.ts` takes its values from it) and by the sidecar's stylesheet, and checked in both
-  languages' tests, as the other shared fixtures are.
+- **One set of design tokens**: `fixtures/unit/design-tokens-v1.json` (colours, type scale, spacing), that the
+  plugin's `palette.ts` and the sidecar's stylesheet are checked against in both languages' tests, as the other shared
+  fixtures are.
+- **The panel's sanitizer stays the boundary** (`inspector.ts` `safeFragment`: a fixed set of tags and attributes;
+  no `button`, `input`, `svg` or `style`). The new pages stay inside it: blocks are links, a plugin action is the one
+  added attribute `data-act` with a fixed set of values, the chat filter's input is the plugin's, and the circle timeline
+  is positioned `div`s (`data-l`) as today's timeline is. The views stylesheet scopes every rule under `.nmos`, and the
+  panel refuses one holding `@import` or `url(`.
 - **Compatibility.** `/v1/health` reports `features.views`. A new plugin with an older sidecar falls back to today's
   Inspector screens; an older plugin with a newer sidecar keeps working with the restyled Inspector pages.
 - **Budget.** The plugin build is 262,839 bytes (66,986 gzipped) on `8717e3f0b575`; this phase may add at most 20 % to
