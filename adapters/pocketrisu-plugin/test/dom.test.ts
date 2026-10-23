@@ -501,6 +501,12 @@ describe('owner repairs in the panel (ADR 0044)', () => {
           throw new Error(`${path} -> HTTP 409: [object Object]`);
         }
         if (path.endsWith('/retry-failed')) return { retried: { extract: 1, embed: 1, canon: 0 } } as T;
+        if (path.endsWith('/notes')) {  // PHASE-50
+          return { last_turn: 12, sections: [
+            { kind: 'chronicle', text: '', made: 'none', cached: false, held: 0, reason: 'no_scenes', chars: 0 },
+            { kind: 'address', text: '[NMOS address · t12 · 2026-10-23]\n- Hana ↔ Kaito: x\n[/NMOS address]', made: 'facts',
+              cached: false, held: 0, reason: '', chars: 18 }] } as T;
+        }
         if (path.endsWith('/reextract')) {
           if (state.failReextract > 0) { state.failReextract -= 1; throw new Error(`${path} -> HTTP 409: fact extraction is off`); }
           return { turns: (body as { turns?: number[] }).turns ?? [4, 5] } as T;
@@ -534,6 +540,23 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     link.click();
     await settle();
   }
+
+  it('makes the sections for the author\'s note and shows each to copy (PHASE-50)', async () => {
+    const { d, calls } = deps();
+    await openChat(d);
+    button("For the author's note").click();
+    const boxes = [...panel().querySelectorAll<HTMLInputElement>('input[type=checkbox][value]')];
+    expect(boxes.map((b) => [b.value, b.checked])).toEqual([['chronicle', true], ['changed', true], ['address', true]]);
+    boxes[1]!.click(); // not "changed"
+    button('Make').click();
+    await settle();
+    expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/notes`,
+      { sections: ['chronicle', 'address'], chars: 3000, secrets: false, lang: 'en' }]);
+    const shown = [...panel().querySelectorAll<HTMLTextAreaElement>('textarea[readonly]')];
+    expect(shown.map((b) => b.value)).toEqual(['[NMOS address · t12 · 2026-10-23]\n- Hana ↔ Kaito: x\n[/NMOS address]']);
+    expect(panel().textContent).toContain('No scene summary yet');
+    expect(button('Copy')).toBeTruthy();
+  });
 
   it('exports the chat on its page (ADR 0050)', async () => {
     const { d, calls } = deps();

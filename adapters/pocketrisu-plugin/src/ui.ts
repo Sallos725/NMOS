@@ -15,6 +15,7 @@ import { parserBindings, parserDraft, presetRules, type ParserPreset } from './p
 import { langOf, STRING_KEYS, t, type Lang, type StringKey } from './i18n';
 import { aliasPair, closeOutcomes, entityNamed, inspectorApiPath, inspectorConversation, inspectorEntity, linkChoices,
   localTime, markDetail, placeMarks, previewText, repairAction, safeFragment, sectionTarget, splitChoices } from './inspector';
+import { copyText } from './notes';
 import type { EntityRow, Preview, RepairAction } from './inspector';
 import { alpha, PALETTE, paletteVars } from './palette';
 import { routeFor } from './route';
@@ -505,8 +506,13 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const rebuildButton = el('button', { text: L('act.rebuild') });
   const deleteButton = el('button', { text: L('act.delete') });
   const exportButton = el('button', { text: L('exp.chat') });
+  // PHASE-50: sections for the chat's author's note. The sidecar writes them; the panel shows and copies them, since it
+  // runs none of a page's scripts.
+  const notesButton = el('button', { text: L('notes.open') });
+  const notesCard = el('div', { class: 'card', style: 'display:none' });
   const actionMsg = el('div', { class: 'msg' });
-  const actions = el('div', {}, el('div', { class: 'btns' }, retryButton, historyButton, rebuildButton, exportButton, deleteButton),
+  const actions = el('div', {}, el('div', { class: 'btns' }, retryButton, historyButton, rebuildButton, exportButton, notesButton,
+    deleteButton),
     el('details', { class: 'sub help' }, el('summary', { text: L('act.help') }), el('p', { text: L('act.sub') })));
   // The message sits outside the actions so a result stays visible after a delete returns to the list.
   // Back and Refresh stay in reach while reading far down a page.
@@ -522,7 +528,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   let closers = new Map<string, { first?: string; boxes: HTMLInputElement[]; selects: HTMLSelectElement[] }>();
   const bulkClose = el('button');
   const bulkBar = el('div', { class: 'btns', style: 'display:none' }, bulkClose);
-  inspectorView.append(el('div', { class: 'btns inspbar' }, inspectorBack, inspectorRefresh), actions, actionMsg,
+  inspectorView.append(el('div', { class: 'btns inspbar' }, inspectorBack, inspectorRefresh), actions, actionMsg, notesCard,
     bulkBar, modeCard, statusCard, linkCard, inspectorBody, inspectorAddress);
   function updateBulk(): void {
     bulkBar.style.display = picked.size ? '' : 'none';
@@ -780,6 +786,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     const conversation = inspectorConversation(path);
     if (conversation !== actionConversation) {
       actionConversation = conversation;
+      notesCard.replaceChildren(); // another chat's sections never stay on screen
+      notesCard.style.display = 'none';
       say(actionMsg, '');
       disarm();
       picked.clear();
@@ -1130,6 +1138,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     return /HTTP 409/.test(error instanceof Error ? error.message : String(error)) ? L('act.off') : errorText(lang, error);
   }
   interface ActionResult { queued: { extract?: number; embed?: number }; discarded?: number }
+  interface NoteSection { kind: string; text: string; made: string; cached: boolean; held: number; reason: string; chars: number }
+  interface NotesResult { sections: NoteSection[]; last_turn: number | null }
   retryButton.addEventListener('click', async () => {
     const conversation = actionConversation;
     if (!conversation) return;
@@ -1186,6 +1196,69 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     } catch (error) { say(actionMsg, errorText(lang, error), 'err'); } finally { deleteButton.disabled = false; }
   });
 
+  notesButton.addEventListener('click', () => {
+    const conversation = actionConversation;
+    if (!conversation) return;
+    if (notesCard.style.display !== 'none') return void (notesCard.style.display = 'none');
+    if (!notesCard.childElementCount) buildNotes(conversation);
+    notesCard.style.display = '';
+  });
+  /** The form: which sections, the chronicle's length, whether secrets go in (PHASE-50 S1). */
+  function buildNotes(conversation: string): void {
+    const pick = (key: StringKey, kind: string) => {
+      const box = el('input', { type: 'checkbox', value: kind });
+      box.checked = true;
+      return { box, row: el('div', { class: 'check' }, box, el('span', { text: L(key) })) };
+    };
+    const kinds = [pick('notes.chronicle', 'chronicle'), pick('notes.changed', 'changed'), pick('notes.address', 'address')];
+    const length = el('select', { 'aria-label': L('notes.length') },
+      el('option', { value: '3000', text: L('notes.short') }), el('option', { value: '6000', text: L('notes.long') }));
+    const secrets = el('input', { type: 'checkbox' });
+    const warn = el('p', { class: 'sub', text: L('notes.secrets_warn'), style: 'display:none' });
+    secrets.addEventListener('change', () => { warn.style.display = secrets.checked ? '' : 'none'; });
+    const make = el('button', { class: 'primary', text: L('notes.make') });
+    const msg = el('div', { class: 'msg' });
+    const results = el('div');
+    make.addEventListener('click', async () => {
+      const sections = kinds.filter((k) => k.box.checked).map((k) => k.box.value);
+      if (!sections.length) return say(msg, L('notes.pick'), 'warn');
+      make.disabled = true;
+      say(msg, L('act.working'));
+      results.replaceChildren();
+      try {
+        const r = await deps.api<NotesResult>('POST', `/v1/conversations/${conversation}/notes`,
+          { sections, chars: Number(length.value), secrets: secrets.checked, lang }, 180_000); // one model call
+        if (actionConversation !== conversation) return;
+        results.replaceChildren(...r.sections.map((section) => noteSection(section, msg)));
+        say(msg, L('notes.done'), 'ok');
+      } catch (error) { say(msg, errorText(lang, error), 'err'); } finally { make.disabled = false; }
+    });
+    notesCard.replaceChildren(el('h2', { text: L('notes.title') }), el('p', { class: 'sub', text: L('notes.sub') }),
+      ...kinds.map((k) => k.row), el('div', { class: 'row' }, field(L('notes.length'), length)),
+      el('div', { class: 'check' }, secrets, el('span', { text: L('notes.secrets') })), warn,
+      el('div', { class: 'btns' }, make), msg, results);
+  }
+  /** One section: how it was made, its text in a box, and Copy (PHASE-50 S6). */
+  function noteSection(section: NoteSection, msg: HTMLElement): HTMLElement {
+    const title = el('h2', { text: L(`notes.h.${section.kind}` as StringKey) });
+    if (!section.text) {
+      return el('div', {}, title, el('p', { class: 'sub', text: L(section.reason === 'no_scenes' ? 'notes.no_scenes' : 'notes.none') }));
+    }
+    const about = [L(`notes.made_${section.made}` as StringKey)];
+    if (section.cached) about.push(L('notes.cached'));
+    if (section.held) about.push(L('notes.held', { n: section.held }));
+    about.push(L('notes.chars', { n: section.chars }));
+    // Korean reads badly in monospace (the owner's design rules): the box keeps the panel's font.
+    const box = el('textarea', { readonly: true, rows: 10, spellcheck: 'false', style: 'font-family:inherit',
+      'aria-label': L(`notes.h.${section.kind}` as StringKey) });
+    box.value = section.text;
+    const copy = el('button', { text: L('notes.copy') });
+    copy.addEventListener('click', async () => {
+      const copied = await copyText(box, navigator.clipboard);
+      say(msg, L(copied ? 'notes.copied' : 'notes.copy_hint'), copied ? 'ok' : 'warn');
+    });
+    return el('div', {}, title, el('p', { class: 'sub', text: about.join(' · ') }), box, el('div', { class: 'btns' }, copy));
+  }
   exportButton.addEventListener('click', async () => {
     const conversation = actionConversation;
     if (!conversation) return;
