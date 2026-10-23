@@ -123,6 +123,40 @@ D9. **The browser Inspector** (`/inspector`) shows the same screens as the panel
 7. **Check**: screenshots at 390 px and 1,100 px on the test install's copy (synthetic names in anything committed),
    the owner's check on an iPhone and a desktop, every action of today's panel reachable (a list in the evidence).
 
+## Steps 2–7 evidence (2026-10-23)
+
+Built on PR #316 (stacked on #315), plan `docs/superpowers/plans/2026-10-23-phase52-panel-overhaul.md`, a thin slice
+first (stylesheet, hub, a link and Back) as amended after reading the sanitizer.
+
+- **Sidecar** (`views.py`, `tokens.py`, `timeline.circles`, `api.py`): `/v1/views/style`, `/v1/views/hub`,
+  `/v1/views/c/{id}/memory`, `…/person/{entity}`, `…/working`, `/v1/views/chats`, each also a browser page under
+  `/views/…`; `features.views`. `tests/test_views.py`: 25 tests (tokens against the fixture, every rule under `.nmos`, the
+  hub's blocks and states, the memory document's order, folds, links and repair markers, the person's sheet and its
+  circles, rings at most five, working in words with retry, the chat list, every endpoint). The whole sidecar suite:
+  1,621 passed before the last two fixes; the touched files' tests after them.
+- **Plugin** (`ui.ts`, `inspector.ts`, `i18n.ts`): the hub first with a sidecar that has the screens, the stylesheet
+  injected once (refused with `@import`/`url(`), `/views` paths, `data-act` limited to notes, settings, backup and
+  retry, a tapped line's repair, the chat filter, the tab bar gone, settings in seven groups with "this chat" gathering
+  its tools, the type scale (nothing under 13 px). `test/views.test.ts`: 18 tests; all 264 plugin tests pass. Gzipped
+  build 69,576 bytes against 66,986 (+3.9 %; the budget is +20 %).
+- **On the test install** (6131/6113, test-only) since 2026-10-23 22:36 KST, `trial-phase52-a3071ab`; the database
+  fingerprint is identical before and after each deploy. The biggest chat (153 messages): hub 99 ms, memory 69 ms
+  (59 KB), working 101 ms, a person 61 ms, chats 4 ms; today's Inspector chat page 165 ms and 551 KB.
+- **What the test install's data changed** (screenshots at 390 px, not committed): the scene's cast named one person
+  twice (one line per entity now); a lead's lane was all rings, since 41 of their 72 events were "major" (at most five
+  rings now, and a relationship ring only where it replaced another); merged-count labels overlapped on a phone (a
+  merged mark is larger, its count in its card); a person's relationships showed a bare name when the feelings ran the
+  other way (both directions now); the memory just sent carried English predicate names (the panel's words now). Two
+  names of one character that NMOS keeps as two entities still show twice: that is the memory's, fixed by a join.
+- **Where today's actions went:** Status tab → settings, connection (sidecar, plugin file, this chat on/off); Inspector
+  list → other chats; a chat's page → memory (now, threads, people, so far, secrets, changed) and details (everything
+  else, unchanged); Retry failed → working; Extract all history, Rebuild, Export this chat, Delete → settings, this
+  chat; memory mode, this chat's status windows → settings, this chat; author's note → its hub block; closing a thread →
+  tap its line in memory; the other repairs (correct, lock, retract, secrets, aliases, undo) → details, as before;
+  joins and splits → a person's details; every settings card → its group.
+- **Left for the owner:** re-import the plugin (`~/nmos-eval/p32-try/nmos-pocketrisu.js`, build `398d4d71256e`) on
+  6131 and check on an iPhone and a desktop.
+
 ## Acceptance criteria
 
 - Body text 16 px; no text under 13 px outside details.
