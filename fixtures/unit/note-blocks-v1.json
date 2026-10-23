@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "about": "NMOS's sections in a chat's author's note (PHASE-50 S5): what is left of the note without them, and each one's kind and turns. The sidecar's notes.strip_blocks and the plugin's stripNoteBlocks both read this file.",
+  "cases": [
+    {"name": "no block", "note": "지금은 한겨울 밤이다.", "text": "지금은 한겨울 밤이다.", "blocks": []},
+    {"name": "one block after the owner's text",
+     "note": "지금은 한겨울 밤이다.\n\n[NMOS 연대기 · t0–87 · 2026-10-23]\n## 사건\n- 하나가 등대에 갔다.\n[/NMOS 연대기]\n",
+     "text": "지금은 한겨울 밤이다.", "blocks": [{"kind": "chronicle", "turns": "0-87"}]},
+    {"name": "two blocks, English, text between",
+     "note": "[NMOS changed · t120 · 2026-10-23]\n- a\n[/NMOS changed]\nKeep this.\n[NMOS address · t120 · 2026-10-23]\n- b\n[/NMOS address]",
+     "text": "Keep this.", "blocks": [{"kind": "changed", "turns": "120"}, {"kind": "address", "turns": "120"}]},
+    {"name": "an unclosed marker stays", "note": "[NMOS 연대기 · t0–3 · 2026-10-23]\n열린 채로",
+     "text": "[NMOS 연대기 · t0–3 · 2026-10-23]\n열린 채로", "blocks": []},
+    {"name": "only a block", "note": "[NMOS 호칭·관계 · t5 · 2026-10-23]\n- x\n[/NMOS 호칭·관계]", "text": "",
+     "blocks": [{"kind": "address", "turns": "5"}]},
+    {"name": "a closing marker of another kind does not close", "note": "[NMOS 연대기 · t0–3 · 2026-10-23]\n- a\n[/NMOS 호칭·관계]",
+     "text": "[NMOS 연대기 · t0–3 · 2026-10-23]\n- a\n[/NMOS 호칭·관계]", "blocks": []}
+  ]
+}
