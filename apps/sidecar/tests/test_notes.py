@@ -264,3 +264,15 @@ def test_the_endpoint_writes_the_chronicle_from_the_scene_summaries(migrated, mo
     assert first["made"] == "model" and first["turns"] == "0-7" and not first["cached"] and again["cached"]
     assert first["text"] == ("[NMOS chronicle · t0–7 · " + first["text"].split(" · ")[2].split("]")[0] + "]\n"
                              "## Events\n- Turns began and replies followed (t0–7).\n[/NMOS chronicle]")
+
+
+
+def test_the_canon_section_says_how_far_the_notes_blocks_reach():
+    from nmos_sidecar import inspector
+
+    rows = [{"key": "note", "hash": "h", "metadata": {"nmos_blocks": [{"kind": "chronicle", "turns": "0-87"},
+                                                                      {"kind": "address", "turns": "90"}]}}]
+    line = inspector.note_blocks(rows, 120, "ko")
+    assert "연대기 t0–87 · 호칭·관계 t90" in line and "지금 t120" in line
+    assert inspector.note_blocks([{"key": "note", "hash": "h", "metadata": {}}], 120, "ko") == ""
+    assert inspector.note_blocks([], 120, "en") == ""

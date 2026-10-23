@@ -22,6 +22,7 @@ from .packet import TURN_POLICIES
 from .readmodel import TURN_TRACES
 from .retrieval import CAST_GOALS, cast_facts
 from .summaries import LAG, WINDOW
+from .noteblocks import LABELS as NOTE_LABELS
 
 STYLE = """
 :root{color-scheme:light dark;--bg:#fbfbfa;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e3e0;--chip:#efefec;--accent:#3b5bdb}
@@ -362,6 +363,8 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
                  "보낸 원전의 사실은 패킷에 다시 넣지 않습니다.",
                  "{n} facts read from the canon are in memory. The story supersedes them from the turn it says something "
                  "new. Facts of canon the host already sent are not sent again."),
+    "cn.blocks": ("작가 노트의 NMOS 정리 (원전으로 읽지 않음): {blocks} · 지금 t{now}",
+                  "NMOS sections in the author's note (not read as canon): {blocks} · now t{now}"),
     "canon_row": ("원전 사실", "Canon facts"),
     "us.title": ("모델 사용량", "Model usage"), "toc.usage": ("사용량", "Usage"),
     "us.intro": ("이 채팅의 기억에 NMOS가 부른 모델 호출과, 제공자가 보고한 토큰이에요. 추정하지 않아요. 다시 만들면서 버린 결과의 "
@@ -1280,6 +1283,18 @@ def _repairs_table(repairs: list[dict[str, Any]], lang: str) -> str:
             + f"<p class=\"muted\">{_v(_t(lang, 'or.note'))}</p>")
 
 
+def note_blocks(rows: list[dict[str, Any]], now: int | None, lang: str) -> str:
+    """Which NMOS sections the author's note carries and how far each reaches (PHASE-50 S6), from the note's manifest
+    metadata (the plugin leaves the sections out of the note's canon text and names them there); empty without one."""
+    note = next((r for r in rows if r.get("key") == "note"), None)
+    blocks = ((note or {}).get("metadata") or {}).get("nmos_blocks") or []
+    if not blocks:
+        return ""
+    said = " · ".join(f"{NOTE_LABELS.get(b.get('kind'), (b.get('kind'),) * 2)[lang == 'en']} "
+                      f"t{str(b.get('turns') or '').replace('-', '–')}" for b in blocks if isinstance(b, dict))
+    return f"<p class=\"muted\">{_v(_t(lang, 'cn.blocks').format(blocks=said, now=now))}</p>"
+
+
 def _canon_table(rows: list[dict[str, Any]], history: dict[str, dict[str, Any]], held: dict[str, dict[str, Any]],
                  lang: str, read: dict[str, dict[str, Any]] | None = None) -> str:
     """The chat's canon in force (ADR 0045): what each text is, how long, since when and in how many versions,
@@ -1460,6 +1475,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     if canon_rows:
         parts.append(("canon", t("canon"), len(canon_rows),
                       _canon_table(canon_rows, canon_history or {}, canon_held or {}, lang, canon_read)
+                      + note_blocks(canon_rows, last_turn, lang)
                       + (f"<p class=\"muted\">{_v(t('cn.facts').format(n=canon_facts))}</p>" if canon_read is not None
                          else ""), False))
     if facts:
