@@ -1,6 +1,7 @@
 # Phase 50 — Notes for the author's note: the chronicle, what changed from the setting, how the characters stand
 
 Status: **approved**, 2026-10-23 (AGE-88). An owner request, not a roadmap stage.
+**R8 (owner, 2026-10-23, AGE-90): in `0.5.0`.** It reaches the owner's install with `0.5.0`'s plan, not on its own after the quiet weeks; Q4's `1.1.0` is superseded (`docs/ROADMAP-1.0.md` R8).
 The shape below (S1–S7) was agreed with the owner in the design conversation of 2026-10-23.
 **Q1–Q5 answered (owner, 2026-10-23): all as recommended.** **Implementation approved (owner, 2026-10-23):** built
 now, tried on the test install (6131/6113) first, and deployed to the install the owner uses only after the quiet weeks

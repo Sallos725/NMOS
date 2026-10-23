@@ -1,6 +1,7 @@
 # Phase 51 — How long a thread lasts: a horizon recorded at extraction
 
 Status: **draft**, 2026-10-23 (AGE-89). An owner request that came out of Phase 50 (amendment 3), not a roadmap stage. Not
+**R8 (owner, 2026-10-23, AGE-90): approved for implementation in `0.5.0`,** with Phase 45 as `extract-v17`; the "after 1.0.0" below is superseded (`docs/ROADMAP-1.0.md` R8).
 approved for implementation. **Q1–Q6 answered (owner, 2026-10-23): all as recommended.**
 **After 1.0.0**, with the next extractor-generation change: it is an extraction change (a "heavy change" under
 `docs/ROADMAP-1.0.md`), and Phase 45 (speakers, held on 2026-10-13 for the same reason) waits for that generation too,

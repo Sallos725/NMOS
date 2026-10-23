@@ -1,6 +1,7 @@
 # Phase 48 — Replies only: a per-chat switch that leaves the user's messages out of memory
 
 Status: **draft**, 2026-10-15 (AGE-87). An owner request, not a roadmap stage. Not approved for implementation.
+**R8 (owner, 2026-10-23, AGE-90): approved for implementation in `0.5.0`,** built on `extract-v17` (Phases 45 and 51); the "after 1.0.0" below is superseded (`docs/ROADMAP-1.0.md` R8).
 **Q1–Q5 answered (owner, 2026-10-15): Q1 as recommended, Q2 per chat (not as recommended), Q3 decided by the
 switch's purpose, Q4 under the rules after 1.0.0, Q5 approved. Q6 (raised by Q2) answered (owner, 2026-10-15): (a), with
 the choice the owner's.** Approval to implement is

@@ -38,7 +38,8 @@ approved 2026-09-30, complete 2026-10-01) is not a stage either: it ships the ch
 |---|---|
 | `0.1.x` | the feature set of the betas; `v0.1.0-beta.21` was the last, and only urgent fixes followed |
 | `0.2.0` … `0.4.0` | one per stage, in the order of R1, when that stage meets its done criteria (`0.3.0` Stage 6, `0.4.0` Stage 7). `v0.2.0` (2026-09-28) was cut early at the owner's request: it carries Stages 4 and 5 together, plus the Stage 6 work then on `main` |
-| `1.0.0` | the 1.0 gate below |
+| `0.5.0` | R8: the owner's features pulled in before 1.0 (Phases 45, 47, 48, 50, 51 and the panel's UI/UX overhaul), with one extractor generation (`extract-v17`) |
+| `1.0.0` | the 1.0 gate below, on `0.5.0`'s build (R8) |
 
 Every version before 1.0.0 is a GitHub pre-release. Between versions the owner runs `:edge` (a build of
 every `main` merge; `AGENTS.md` §13). Each stage ships at most one new extractor generation.
@@ -79,8 +80,22 @@ original design, and most recent phases (15, 17, 18, 19) were outside it. So:
   Phase 1 but could not read the common one-line bar; the owner chose the parser over a documented limit, then its
   history, the flags for changes the story did not make, and the anchor, all in `0.4.0`.
 
-The road left is the 1.0 gate below: its evaluation, upgrade and known-issue checks, and two quiet weeks on production.
-Stage 7 shipped in `v0.4.0` (2026-10-10), and `v0.3.0` and `v0.4.0` carry Phase 23's four bundles.
+**R8 — `0.5.0` before `1.0.0`.** Decided 2026-10-23 (owner, AGE-90). The owner wants the features below in hand before
+1.0, and 1.0 to mark a release that has been quiet as built:
+- **`0.5.0` carries, pulled in by name:** Phase 50 (a note for the author's note, AGE-88), the panel's UI/UX overhaul
+  (its spec to come), Phase 51 (how long a thread lasts, AGE-89) with Phase 45 (speakers, held on 2026-10-13 until the
+  next extractor generation) as one generation `extract-v17`, Phase 47 ("not a character") and Phase 48 (replies only,
+  AGE-87). Each still follows its own spec: approval to implement is given by this decision (owner, 2026-10-23), and
+  every paid measurement is estimated and approved first (`AGENTS.md`).
+- **The two quiet weeks are counted again on `0.5.0`'s build.** The count started on 2026-10-13 on the candidate
+  `6d3f2f7` stands as a record that the candidate was quiet; `0.5.0` adds a generation and migrations, heavy changes
+  that restart the count. If the two weeks on `0.5.0` pass and the gate's other conditions hold for that build (the
+  evaluation against `0.1.x`, the upgrades, the known issues), the same build is tagged `1.0.0`.
+- **One extractor generation in `0.5.0`** (`extract-v17`, Phases 45 and 51), as "each stage ships at most one" above;
+  Phase 48's replies-only variant is built on it and changes no chat that does not turn it on.
+
+The road left is `0.5.0` (R8), then the 1.0 gate below on its build. Stage 7 shipped in `v0.4.0` (2026-10-10), and
+`v0.3.0` and `v0.4.0` carry Phase 23's four bundles.
 
 ## Measuring progress (M0, before the first stage)
 
@@ -256,7 +271,8 @@ Done when:
 - Phase 23 is complete: a release carries a bundle for each PocketRisu portable target;
 - no evaluation category is worse than in `0.1.x`;
 - an upgrade from a `v0.1.0-beta.21` database and from each `0.x.0` works (`tests/test_upgrade.py`);
-- two weeks on the owner's production with no heavy change (counted on the trial install, owner 2026-10-13);
+- two weeks on the owner's production with no heavy change, on `0.5.0`'s build (R8; the first count, on the
+  candidate `6d3f2f7` from 2026-10-13, is kept as a record);
 - every open known issue is a host limit or an accepted trade-off.
 
 **Standing on 2026-10-11** (Linear AGE-13 tracks the evidence):

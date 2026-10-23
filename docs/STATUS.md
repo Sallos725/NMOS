@@ -60,6 +60,12 @@ A translation plugin's original-only derived text and its button marker are defe
 
 ## Current phase
 
+**R8 — `0.5.0` before `1.0.0` (owner, 2026-10-23, AGE-90).** `0.5.0` carries Phases 45, 47, 48, 50, 51 and the panel's
+UI/UX overhaul (its spec to come, AGE-92), with one extractor generation `extract-v17` (Phases 45 and 51); each is
+approved for implementation by this decision and still follows its own spec, paid measurements estimated first. The two
+quiet weeks are counted again on `0.5.0`'s build, and the same build is tagged `1.0.0` if they and the gate's other
+conditions hold. The count on the candidate `6d3f2f7` (from 2026-10-13) is kept as a record. [Roadmap R8](ROADMAP-1.0.md).
+
 **Phase 50 — notes for the author's note (a chronicle, what changed from the setting, address and standing), made on
 request for the owner to paste: approved 2026-10-23 (Q1–Q5 as recommended; AGE-88), high risk (canon, secrets).** An
 owner request beside the 1.0 gate, not a roadmap stage. Built now and tried on the test install (6131/6113) first; it

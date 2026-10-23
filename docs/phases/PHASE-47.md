@@ -1,6 +1,7 @@
 # Phase 47 — "Not a character": the owner leaves a name out of the cast and the relationships
 
 Status: **draft**, 2026-10-14. A correction found by tester feedback, not a roadmap stage. Not approved for
+**R8 (owner, 2026-10-23, AGE-91/AGE-90): approved for implementation in `0.5.0`** (`docs/ROADMAP-1.0.md` R8).
 implementation. **Q1–Q3 answered (owner, 2026-10-14): all as recommended.** Approval to implement is a separate
 decision and has not been given.
 
