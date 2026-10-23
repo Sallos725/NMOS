@@ -18,6 +18,12 @@ characters address and stand toward each other**.
 - **secrets:** the author's note reaches every prompt verbatim with no secret gate (HOST-FACTS H19), so these sections
   are a surface the read-time gate of ADR 0042 amendment 3 cannot protect (S4).
 
+Invariants it touches (`AGENTS.md §3`): **the response model never writes canonical memory** (a model-written chronicle
+pasted into the note and read as canon would do exactly that; S5 keeps it out); **the plugin never mutates host chat
+data** (kept: the owner pastes, NMOS writes nothing to the host); **raw evidence is never destroyed** (Q1 (a) stores the
+note's canon text without NMOS's own blocks; the host's note is untouched and the metadata records the blocks);
+**every automatic semantic claim has provenance** (each line carries its turn).
+
 ## Why
 
 1. **The story so far is short by construction** (read from the code, `main` at `6d593d4`). A scene summary covers 8
@@ -72,8 +78,9 @@ S2. **The chronicle** (owner, 2026-10-23: a model call, with an assembled fallba
   Events, ended threads with their outcomes under Events, the cast and status values as Now, the open threads as Open
   threads. The page says it was assembled without a model.
 
-S3. **The two sections without a model.** Both are read from the facts the chat's head serves now (the same reads the
-Inspector's memory view makes), rendered as short lines in the language of the panel, with the turn each value was
+S3. **The two sections without a model.** Both are read from stored facts, with no model call: the facts the chat's
+head serves now (the same reads the Inspector's memory view makes) and, for the first section, the canon facts of the
+manifest in force (`canonfacts.rows`), joined on predicate and subject (and object, where `per_object`). They are rendered as short lines in the language of the panel, with the turn each value was
 stated (`t42`; `설정` for canon).
 - **Changed from the setting.** For each canon fact of a predicate whose newer value supersedes the older
   (`cardinality == "single"`, per subject or per (subject, object) as `per_object` says, and an item's holder,
@@ -88,8 +95,8 @@ stated (`t42`; `설정` for canon).
   (ADR 0058) is one character.
 
 S4. **Secrets** (owner, 2026-10-23: left out by default, the owner's choice per request).
-- **Off (default).** No section carries a line that is secret or private (`Line.private`, `kind == "secret"`), and no
-  fact whose `knows`/`hidden_from` keeps it from someone. For the chronicle, every secret still kept from someone is
+- **Off (default).** No section carries a line that is secret or private (`Line.private`, `kind == "secret"`) or a
+  fact that is the content of one of the chat's secrets still kept from someone (`summaries.head_secrets`). For the chronicle, every secret still kept from someone is
   listed in the prompt as one it must not tell, as `summaries.secrets_block` does, but all of them, not a window's;
   the reply is then checked with `summaries.leaks` at the stricter bar (`LEAK_NEAR` = 0.3) for every secret, since the
   author's note is read in every scene. A held reply is retried once with the held secrets named; held again, the
@@ -112,7 +119,9 @@ canon, superseding nothing), and since canon is read per text (`canonfacts`: eac
   (`canon.sync`), so the sidecar cannot leave the blocks out before the hash. Q1 (a), recommended: the plugin removes
   every marked block from the note before it hashes and sends it, and records each block's kind and turn in the note
   entry's metadata (`nmos_blocks: [{"kind": "chronicle", "turns": "0-87"}, …]`); a new paste then changes the
-  manifest's metadata, not the note's revision, and no canon read follows. The sidecar also removes marked blocks from
+  manifest's metadata, not the note's revision, and no canon read follows: `canonfacts.schedule` queues only
+  revisions in force that are not read yet, and a read's window depends on the manifest only through `names_tag`,
+  which reads the card's name hash and the persona's name, not the note's metadata. The sidecar also removes marked blocks from
   a canon text before `canonfacts` reads it, so an older plugin that sends them whole costs a read but never puts them
   in canon.
 - A note without a marker hashes and reads exactly as on `main` (the off path is byte-identical).
