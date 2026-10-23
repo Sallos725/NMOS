@@ -326,3 +326,10 @@ def test_ledger_lines_in_plain_words():
     assert views.plain("Aina knows: the plan", "ko") == "Aina 앎: the plan"
     assert views.plain("story 0–71: Ian met Aina.", "ko") == "t0–71: Ian met Aina."
     assert views.plain("Aina located in: room 301", "en") == "Aina located in: room 301"
+
+
+
+def test_rings_stay_rare():
+    marks = [(t, True, "major") for t in range(0, 76, 2)]  # every change major, as a lead's can be
+    out = timeline.circles(marks, 0, 75)
+    assert sum(1 for b in out if b["major"]) == 5

@@ -56,7 +56,9 @@ D4. **The timeline, in circles** (owner, 2026-10-23). A large ring marks a major
 of relationship; a small dot, any other change. When a lane would hold more marks than its width allows, neighbouring
 turns merge into one mark: the chat's turns are cut into 30 equal spans and a span's changes are one mark, so a lane
 holds at most 30 marks, over 3 % of its width apart (a phone too), at 76 turns or at 1,000. A merged mark is drawn
-larger, and its card says how many ("t30–32 · ×3"): a "×N" label beside every mark overlapped on a phone's width. Tapping a
+larger, and its card says how many ("t30–32 · ×3"): a "×N" label beside every mark overlapped on a phone's width.
+At most five rings a lane: the spans with the most major events or relationship changes. On the test install 41 of a
+lead's 72 events were "major", and a lane of rings marks nothing. Tapping a
 mark opens its card under the lane. The timeline is still drawn only when its section is opened (PHASE-32 step 3, the
 iPhone's memory).
 
