@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:1774ac70c012".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:3d5894ce847a".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2191,6 +2191,7 @@ ${revisionHash}`;
   var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
   var TURN = "/t/(?:0|[1-9][0-9]{0,6})";
   var SECTION = /^s-[a-z]{1,20}$/;
+  var ACTS = /* @__PURE__ */ new Set(["notes", "settings", "backup"]);
   function inspectorApiPath(href) {
     const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, "i").exec(href ?? "");
     return m ? `/v1/inspector${m[1] ?? ""}` : null;
@@ -2260,6 +2261,8 @@ ${revisionHash}`;
   var MARK_TEXT_MAX = 400;
   function keepAttribute(name, value) {
     switch (name) {
+      case "data-act":
+        return ACTS.has(value);
       case "class":
       case "title":
       case "open":
@@ -2991,6 +2994,8 @@ html,body{margin:0;background:${PALETTE.bg}}
     const exportButton = el("button", { text: L("exp.chat") });
     const notesButton = el("button", { text: L("notes.open") });
     const notesCard = el("div", { class: "card", style: "display:none" });
+    let notesFor = null;
+    let hubConversation = null;
     const actionMsg = el("div", { class: "msg" });
     const actions = el(
       "div",
@@ -3291,6 +3296,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         actionConversation = conversation;
         notesCard.replaceChildren();
         notesCard.style.display = "none";
+        notesFor = null;
         say(actionMsg, "");
         disarm();
         picked.clear();
@@ -3314,8 +3320,14 @@ html,body{margin:0;background:${PALETTE.bg}}
       inspectorAddress.textContent = direct ? L("insp.browser", { url: `${base}/inspector${lang === "en" ? "?lang=en" : ""}` }) : "";
       try {
         const query = [conversation ? "timeline=lazy&status=lazy" : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
-        const r = await deps.api("GET", `${path}${query ? `?${query}` : ""}`, void 0, 15e3);
+        const r = await deps.api(
+          "GET",
+          `${path}${query ? `${path.includes("?") ? "&" : "?"}${query}` : ""}`,
+          void 0,
+          15e3
+        );
         if (load !== loads) return;
+        if (path.startsWith("/v1/views/hub")) hubConversation = r.conversation ?? null;
         const page = safeFragment(r.html);
         enhance(page);
         retryButton.style.display = page.querySelector(".has-failed") ? "" : "none";
@@ -3650,6 +3662,11 @@ html,body{margin:0;background:${PALETTE.bg}}
     }
     inspectorBody.addEventListener("click", (event) => {
       const clicked = event.target instanceof Element ? event.target : null;
+      const act = clicked?.closest("[data-act]")?.getAttribute("data-act");
+      if (act) {
+        event.preventDefault();
+        return void doAct(act);
+      }
       const choice = clicked?.closest(".tl-span[data-span]");
       const box = choice?.closest(".tl-lazy");
       if (choice && box) return void loadTimeline(box, choice.getAttribute("data-span") ?? "");
@@ -3784,6 +3801,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       notesCard.style.display = "";
     });
     function buildNotes(conversation) {
+      notesFor = conversation;
       const pick = (key, kind) => {
         const box = el("input", { type: "checkbox", value: kind });
         box.checked = true;
@@ -3817,7 +3835,7 @@ html,body{margin:0;background:${PALETTE.bg}}
             { sections, chars: Number(length.value), secrets: secrets.checked },
             3e5
           );
-          if (actionConversation !== conversation) return;
+          if (notesFor !== conversation) return;
           results.replaceChildren(noteResult(r, msg));
           say(msg, r.text ? L("notes.done") : L("notes.part_none", { part: L("notes.title") }), r.text ? "ok" : "warn");
         } catch (error) {
@@ -4282,7 +4300,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     ));
     settingsView.append(el(
       "div",
-      { class: "card" },
+      { class: "card", id: "nmos-backup" },
       el("h2", { text: L("exp.title") }),
       el("p", { class: "sub", text: L("exp.sub") }),
       el("div", { class: "check" }, exportEmbeddings, el("span", { text: L("exp.embeddings") })),
@@ -4584,7 +4602,56 @@ html,body{margin:0;background:${PALETTE.bg}}
     tabStatus.addEventListener("click", () => select("status"));
     tabInspector.addEventListener("click", () => select("inspector"));
     tabSettings.addEventListener("click", () => select("settings"));
+    function doAct(act) {
+      if (act === "settings" || act === "backup") {
+        select("settings");
+        if (act === "backup") document.getElementById("nmos-backup")?.scrollIntoView({ block: "start" });
+        return;
+      }
+      if (act === "notes" && hubConversation) {
+        notesCard.replaceChildren();
+        buildNotes(hubConversation);
+        notesCard.style.display = "";
+        notesCard.scrollIntoView({ block: "start" });
+      }
+    }
+    async function hubPath() {
+      let chat = null;
+      let off = false;
+      let allOff = false;
+      try {
+        ({ id: chat, off } = await deps.chat.current());
+      } catch {
+      }
+      try {
+        allOff = !(await deps.status()).enabled;
+      } catch {
+      }
+      const q = [chat ? `chat=${encodeURIComponent(chat)}` : "", off ? "off=true" : "", allOff ? "all_off=true" : ""].filter(Boolean).join("&");
+      return `/v1/views/hub${q ? `?${q}` : ""}`;
+    }
+    async function viewsStyle() {
+      if (document.getElementById("nmos-views-style")) return;
+      try {
+        const r = await deps.api("GET", "/v1/views/style", void 0, 5e3);
+        if (typeof r.css === "string" && !/@import|url\s*\(/i.test(r.css)) {
+          document.head.append(el("style", { id: "nmos-views-style", text: r.css }));
+        }
+      } catch {
+      }
+    }
     document.body.append(root);
+    let viewsOn = false;
+    try {
+      viewsOn = !!(await deps.status()).features?.views;
+    } catch {
+      viewsOn = false;
+    }
+    if (viewsOn) {
+      await viewsStyle();
+      inspectorPath = await hubPath();
+      if (tab === "status") tab = "inspector";
+    }
     select(tab);
     await loadAll();
     return { root, select };

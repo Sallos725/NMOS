@@ -510,6 +510,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   // runs none of a page's scripts.
   const notesButton = el('button', { text: L('notes.open') });
   const notesCard = el('div', { class: 'card', style: 'display:none' });
+  let notesFor: string | null = null; // the chat the note form is for: a page's, or the hub's
+  let hubConversation: string | null = null; // the chat the hub is about (PHASE-52), from its answer
   const actionMsg = el('div', { class: 'msg' });
   const actions = el('div', {}, el('div', { class: 'btns' }, retryButton, historyButton, rebuildButton, exportButton, notesButton,
     deleteButton),
@@ -788,6 +790,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       actionConversation = conversation;
       notesCard.replaceChildren(); // another chat's sections never stay on screen
       notesCard.style.display = 'none';
+      notesFor = null;
       say(actionMsg, '');
       disarm();
       picked.clear();
@@ -812,8 +815,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       // A chat's and a character's page get a closed timeline section, filled when it is opened (PHASE-32 step 3), and
       // a chat's page one for its status window (PHASE-39); a sidecar without them ignores the ask.
       const query = [conversation ? 'timeline=lazy&status=lazy' : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
-      const r = await deps.api<{ html: string }>('GET', `${path}${query ? `?${query}` : ''}`, undefined, 15_000);
+      const r = await deps.api<{ html: string; conversation?: string | null }>('GET',
+        `${path}${query ? `${path.includes('?') ? '&' : '?'}${query}` : ''}`, undefined, 15_000);
       if (load !== loads) return;
+      if (path.startsWith('/v1/views/hub')) hubConversation = r.conversation ?? null;
       const page = safeFragment(r.html);
       enhance(page);
       retryButton.style.display = page.querySelector('.has-failed') ? '' : 'none';
@@ -1085,6 +1090,11 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   }
   inspectorBody.addEventListener('click', (event) => {
     const clicked = event.target instanceof Element ? event.target : null;
+    const act = clicked?.closest('[data-act]')?.getAttribute('data-act');
+    if (act) {
+      event.preventDefault();
+      return void doAct(act);
+    }
     const choice = clicked?.closest('.tl-span[data-span]');
     const box = choice?.closest<HTMLElement>('.tl-lazy');
     if (choice && box) return void loadTimeline(box, choice.getAttribute('data-span') ?? '');
@@ -1205,6 +1215,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   });
   /** The form: which sections, the chronicle's length, whether secrets go in (PHASE-50 S1). */
   function buildNotes(conversation: string): void {
+    notesFor = conversation;
     const pick = (key: StringKey, kind: string) => {
       const box = el('input', { type: 'checkbox', value: kind });
       box.checked = true;
@@ -1228,7 +1239,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       try {
         const r = await deps.api<NotesResult>('POST', `/v1/conversations/${conversation}/notes`,
           { sections, chars: Number(length.value), secrets: secrets.checked }, 300_000); // a call and one retry
-        if (actionConversation !== conversation) return;
+        if (notesFor !== conversation) return;
         results.replaceChildren(noteResult(r, msg));
         say(msg, r.text ? L('notes.done') : L('notes.part_none', { part: L('notes.title') }), r.text ? 'ok' : 'warn');
       } catch (error) { say(msg, errorText(lang, error), 'err'); } finally { make.disabled = false; }
@@ -1572,7 +1583,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const exportMsg = el('div', { class: 'msg' });
   exportAll.addEventListener('click', () => void exportTo(exportAll, exportMsg,
     `/v1/archive${exportEmbeddings.checked ? '?embeddings=true' : ''}`, 'all'));
-  settingsView.append(el('div', { class: 'card' },
+  settingsView.append(el('div', { class: 'card', id: 'nmos-backup' },
     el('h2', { text: L('exp.title') }), el('p', { class: 'sub', text: L('exp.sub') }),
     el('div', { class: 'check' }, exportEmbeddings, el('span', { text: L('exp.embeddings') })),
     el('div', { class: 'btns' }, exportAll), exportMsg));
@@ -1846,7 +1857,51 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   tabInspector.addEventListener('click', () => select('inspector'));
   tabSettings.addEventListener('click', () => select('settings'));
 
+  /** What a hub block asks the plugin to do itself (PHASE-52 D1): the settings, the backup card, the note form. */
+  function doAct(act: string): void {
+    if (act === 'settings' || act === 'backup') {
+      select('settings');
+      if (act === 'backup') document.getElementById('nmos-backup')?.scrollIntoView({ block: 'start' });
+      return;
+    }
+    if (act === 'notes' && hubConversation) {
+      notesCard.replaceChildren();
+      buildNotes(hubConversation);
+      notesCard.style.display = '';
+      notesCard.scrollIntoView({ block: 'start' });
+    }
+  }
+  /** The hub for the chat open in the host (PHASE-52): with what only the plugin knows, this chat off or every chat. */
+  async function hubPath(): Promise<string> {
+    let chat: string | null = null;
+    let off = false;
+    let allOff = false;
+    try { ({ id: chat, off } = await deps.chat.current()); } catch { /* the hub says it does not know the chat */ }
+    try { allOff = !(await deps.status()).enabled; } catch { /* the hub says nothing about the switch */ }
+    const q = [chat ? `chat=${encodeURIComponent(chat)}` : '', off ? 'off=true' : '', allOff ? 'all_off=true' : '']
+      .filter(Boolean).join('&');
+    return `/v1/views/hub${q ? `?${q}` : ''}`;
+  }
+  /** The sidecar's stylesheet for its screens, once per page; one that could load anything is refused. */
+  async function viewsStyle(): Promise<void> {
+    if (document.getElementById('nmos-views-style')) return;
+    try {
+      const r = await deps.api<{ css?: unknown }>('GET', '/v1/views/style', undefined, 5000);
+      if (typeof r.css === 'string' && !/@import|url\s*\(/i.test(r.css)) {
+        document.head.append(el('style', { id: 'nmos-views-style', text: r.css }));
+      }
+    } catch { /* the pages still read without it */ }
+  }
+
   document.body.append(root);
+  // A sidecar with the new screens (PHASE-52) opens on its hub; one without keeps today's.
+  let viewsOn = false;
+  try { viewsOn = !!(await deps.status()).features?.views; } catch { viewsOn = false; }
+  if (viewsOn) {
+    await viewsStyle();
+    inspectorPath = await hubPath();
+    if (tab === 'status') tab = 'inspector';
+  }
   select(tab);
   await loadAll();
   return { root, select };

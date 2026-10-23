@@ -10,6 +10,8 @@ const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const TURN = '/t/(?:0|[1-9][0-9]{0,6})';
 // Section folds and the contents that links to them (`s-facts`, `#s-facts`).
 const SECTION = /^s-[a-z]{1,20}$/;
+// What a page of the sidecar's may ask the plugin to do itself (PHASE-52): nothing else survives in `data-act`.
+export const ACTS = new Set(['notes', 'settings', 'backup']);
 
 /** The sidecar API path for an inspector link (`/inspector`, `/inspector/c/<id>`, `/inspector/c/<id>/e/<id>`,
  * `/inspector/c/<id>/t/<turn>`), or null. */
@@ -128,6 +130,7 @@ const MARK_TEXT_MAX = 400;
  * repair can be made (ADR 0044) and the timeline's marks (PHASE-32). */
 export function keepAttribute(name: string, value: string): boolean {
   switch (name) {
+    case 'data-act': return ACTS.has(value);
     case 'class': case 'title': case 'open': return true;
     case 'id': return SECTION.test(value);
     case 'href': return inspectorApiPath(value) !== null || sectionTarget(value) !== null;
