@@ -1,7 +1,9 @@
 # Phase 50 — Notes for the author's note: the chronicle, what changed from the setting, how the characters stand
 
-Status: **draft**, 2026-10-23. An owner request, not a roadmap stage. Not approved for implementation.
-The shape below (S1–S7) was agreed with the owner in the design conversation of 2026-10-23; Q1–Q5 are open.
+Status: **draft**, 2026-10-23 (AGE-88). An owner request, not a roadmap stage. Not approved for implementation.
+The shape below (S1–S7) was agreed with the owner in the design conversation of 2026-10-23.
+**Q1–Q5 answered (owner, 2026-10-23): all as recommended.** Approval to implement is a separate decision and has not
+been given.
 **After 1.0.0** (R7; the two quiet weeks on the trial install run from 2026-10-13 to at least 2026-10-27): nothing of
 this phase lands on the trial install or in a `0.4.x` release. A minor release (`1.1.0`) is proposed.
 
@@ -159,7 +161,7 @@ Nothing is stored in the database; these are views, not memory, and no packet re
 
 ## Questions for the owner
 
-- **Q1 — where the marked blocks are left out of canon.**
+- **Q1 — where the marked blocks are left out of canon. Answered (owner, 2026-10-23): (a).**
   - (a) **Recommended:** the plugin removes them before the hash (S5), and the sidecar also removes them before a canon
     read. A paste costs no canon read, and an older plugin can only cost a read, never pollute. The stored canon text
     of the note then leaves out NMOS's own blocks; the metadata records that they were there and which turns they
@@ -170,18 +172,18 @@ Nothing is stored in the database; these are views, not memory, and no packet re
   - (c) No marker handling: the sections are offered for a new chat's note only. Simplest; the same-chat use the owner
     asked for would pollute canon and pay a canon read per paste.
 - **Q2 — long chats (the chronicle).** At 1,200 characters a scene, 40,000 characters of input hold about 33 scenes
-  (264 turns).
+  (264 turns). **Answered (owner, 2026-10-23): (a).**
   - (a) **Recommended:** one call always; the newest scene summaries up to the input cap, and the older part through
     the story so far and the threads' outcomes. Predictable cost; old detail is the threads'.
   - (b) Chapters on demand: groups of 8 scenes summarized first, cached in the process; one call per chapter on the
     first request after a restart (a 1,000-turn chat: about 16 calls, then 1).
   - (c) Chapters as a stored summary level made by the worker: no extra calls per click, but a projection change
     with a migration.
-- **Q3 — the model.** (a) **Recommended:** the extraction model and endpoint, as summaries use (ADR 0042 item 4).
+- **Q3 — the model. Answered (owner, 2026-10-23): (a).** (a) **Recommended:** the extraction model and endpoint, as summaries use (ADR 0042 item 4).
   (b) A separate setting for a stronger writer. Can be added later without changing the rest.
-- **Q4 — release.** After 1.0.0, a minor release (`1.1.0`): plugin controls, a canon read change and a new endpoint
+- **Q4 — release. Answered (owner, 2026-10-23): as proposed.** After 1.0.0, a minor release (`1.1.0`): plugin controls, a canon read change and a new endpoint
   are not a patch.
-- **Q5 — measurement.** Zero-call checks first: S5's off path byte-identical on a copy of every gate chat's canon; a
+- **Q5 — measurement. Answered (owner, 2026-10-23): approved as proposed.** Zero-call checks first: S5's off path byte-identical on a copy of every gate chat's canon; a
   re-paste stores no revision and queues no canon job; the two fact sections and the fallback on every gate chat's
   copy, each checked against the Inspector's memory view (every changed value and every pair listed is served there,
   none secret with secrets off). Then one paid sample on a test copy: the chronicle at both lengths, secrets off, for
@@ -191,7 +193,7 @@ Nothing is stored in the database; these are views, not memory, and no packet re
 
 ## Steps
 
-1. **Spec** (this file): Q1–Q5 answered, approval to implement.
+1. **Spec** (this file): Q1–Q5 answered (2026-10-23); approval to implement.
 2. **Sidecar, no model:** the two fact sections (S3), the assembled chronicle (S2 fallback), the API, the cache and the
    Inspector page, the marker removal before a canon read (S5), with tests on synthetic chats only (public
    repository): a superseded canon value listed and an unchanged one not, a multi-valued predicate never listed, the
