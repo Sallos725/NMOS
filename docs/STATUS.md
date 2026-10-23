@@ -60,6 +60,12 @@ A translation plugin's original-only derived text and its button marker are defe
 
 ## Current phase
 
+**Phase 50 — notes for the author's note (a chronicle, what changed from the setting, address and standing), made on
+request for the owner to paste: approved 2026-10-23 (Q1–Q5 as recommended; AGE-88), high risk (canon, secrets).** An
+owner request beside the 1.0 gate, not a roadmap stage. Built now and tried on the test install (6131/6113) first; it
+reaches the install the owner uses only after the quiet weeks end (2026-10-27 at the earliest), the owner asked again
+before that deploy. [Spec](phases/PHASE-50.md).
+
 **Phase 43 — status windows by their shape, per chat, told as changes: approved 2026-10-11 (Q1–Q6 as recommended); steps 2–4 merged 2026-10-11 (#298 `a8f2421`, #299 `ff4cec0`), high risk; step 5 done 2026-10-11: A1–A5 measured on the merged code, and an archive correction (pinned status keys were left out of archives; high risk, restore compatibility). Steps 2–4 are on the trial install, not in production; the correction is on neither.**
 [Step 5 evidence](phases/PHASE-43.md#step-5-evidence-a1a5-against-the-merged-code).
 A built-in detector replaces card-name-bound regex setup, the panel shows the open chat only, and the packet carries

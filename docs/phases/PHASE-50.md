@@ -1,11 +1,13 @@
 # Phase 50 — Notes for the author's note: the chronicle, what changed from the setting, how the characters stand
 
-Status: **draft**, 2026-10-23 (AGE-88). An owner request, not a roadmap stage. Not approved for implementation.
+Status: **approved**, 2026-10-23 (AGE-88). An owner request, not a roadmap stage.
 The shape below (S1–S7) was agreed with the owner in the design conversation of 2026-10-23.
-**Q1–Q5 answered (owner, 2026-10-23): all as recommended.** Approval to implement is a separate decision and has not
-been given.
-**After 1.0.0** (R7; the 1.0 gate's two quiet weeks run from 2026-10-13 to at least 2026-10-27, on the install the
-owner uses): nothing of this phase lands on that install or in a `0.4.x` release. A minor release (`1.1.0`) is proposed.
+**Q1–Q5 answered (owner, 2026-10-23): all as recommended.** **Implementation approved (owner, 2026-10-23):** built
+now, tried on the test install (6131/6113) first, and deployed to the install the owner uses only after the quiet weeks
+end (2026-10-27 at the earliest), with the owner asked again before that deploy.
+**Not before the quiet weeks end** (the 1.0 gate's two quiet weeks run from 2026-10-13 to at least 2026-10-27, on the
+install the owner uses): nothing of this phase lands on that install before then. It adds no packet policy, extraction
+generation or migration, so by `docs/ROADMAP-1.0.md` it would not restart the count; the owner still chose to wait. A minor release (`1.1.0`) is proposed.
 
 The owner read a request's `<Story>` section (`<Summary kind="story" turns="0-87">`) and found that it summarized
 88 turns so briefly that important events were missing. The owner asked for a way to get, on request, a fuller account
@@ -193,7 +195,7 @@ Nothing is stored in the database; these are views, not memory, and no packet re
 
 ## Steps
 
-1. **Spec** (this file): Q1–Q5 answered (2026-10-23); approval to implement.
+1. **Spec** (this file): Q1–Q5 answered and implementation approved (2026-10-23).
 2. **Sidecar, no model:** the two fact sections (S3), the assembled chronicle (S2 fallback), the API, the cache and the
    Inspector page, the marker removal before a canon read (S5), with tests on synthetic chats only (public
    repository): a superseded canon value listed and an unchanged one not, a multi-valued predicate never listed, the
