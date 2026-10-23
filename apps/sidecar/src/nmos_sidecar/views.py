@@ -11,6 +11,7 @@ root, so it cannot reach the host's page.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from . import tokens
@@ -54,7 +55,7 @@ STYLE = """
 .nmos .v-mark{position:absolute;top:16px;width:9px;height:9px;margin-left:-4px;border-radius:50%;background:var(--c-text-soft);cursor:pointer}
 .nmos .v-mark.major{top:10px;width:20px;height:20px;margin-left:-10px;background:transparent;border:2px solid var(--c-text-strong)}
 .nmos .v-mark.n2{top:14px;width:13px;height:13px;margin-left:-6px} .nmos .v-mark.n4{top:12px;width:17px;height:17px;margin-left:-8px}
-.nmos .v-mark.major.n2,.nmos .v-mark.major.n4{top:8px;width:24px;height:24px;margin-left:-12px}
+.nmos .v-mark.major.n2,.nmos .v-mark.major.n4{top:10px;width:20px;height:20px;margin-left:-10px}
 .nmos .v-mark.sel{border-color:var(--c-accent);background:var(--c-accent)}
 .nmos .v-ends{display:flex;justify-content:space-between;font-size:var(--t-caption,13px);color:var(--c-text-muted)}
 .nmos .v-warn{color:var(--c-warn)}
@@ -243,12 +244,12 @@ def hub(data: dict[str, Any], lang: str) -> str:
 NOW = ("located_in", "has_status")
 
 
-def now_said(facts: list[dict[str, Any]], name: str) -> list[str]:
-    """Where a character is and how, as the story says now (canon left out)."""
-    key = name.casefold()
+def now_said(facts: list[dict[str, Any]], name: str | list[str]) -> list[str]:
+    """Where a character is and how, as the story says now (canon left out); `name` may be all their names."""
+    keys = {n.casefold() for n in ([name] if isinstance(name, str) else name)}
     said = [f.get("object") or f.get("value") for f in facts if f["predicate"] in NOW and not f.get("canon")
             and f.get("polarity") != "negative"
-            and key in {str(f.get("subject") or "").casefold(),
+            and keys & {str(f.get("subject") or "").casefold(),
                         str((f.get("subject_entity") or {}).get("name") or "").casefold()}]
     return list(dict.fromkeys(str(s) for s in said if s))
 
@@ -375,12 +376,14 @@ def person(d: dict[str, Any], lang: str) -> str:
     now = f'<p class="v-text">{" · ".join(_v(x) for x in d.get("now") or [])}</p>' if d.get("now") else nothing
     rels = []
     for p in d.get("pairs") or []:
-        other = [n for i, n in p["names"].items() if i != e["id"]]
-        bits = [f.get("value") for f in p["relationship"]]
-        bits += [f'{t(lang, pred)} "{f.get("value")}"' if pred == "addresses" else f"{t(lang, pred)} {f.get('value')}"
-                 for k, pred in (("role", "role_toward"), ("feels", "feels_toward"), ("speech", "addresses"))
-                 for f in p[k] if (f.get("subject_entity") or {}).get("id") == e["id"]]
-        rels.append(line(" · ".join([nm(o) for o in other] + [_v(b) for b in bits if b])))
+        other = [n for i, n in p["names"].items() if str(i) != str(e["id"])]
+        rel = [str(f.get("value")) for f in p["relationship"] if f.get("value")]
+        bits = []
+        for k, pred in (("role", "role_toward"), ("feels", "feels_toward"), ("speech", "addresses")):
+            for f in p[k]:
+                value = f'"{f.get("value")}"' if pred == "addresses" else f.get("value")
+                bits.append(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, pred)} {value}")
+        rels.append(line(" · ".join([nm(o) for o in other] + [_v(r) for r in rel]), _v(" · ".join(bits))))
     threads = [line(f"{_v(th['text'])}" + (f" → {nm(th['to'])}" if th.get("to") and th.get("by") == e.get("name") else ""),
                     _v(f"{t(lang, th['kind']) if th['kind'] in T else th['kind']} · {t(lang, 'since', t=th.get('turn'))}"),
                     _close(th)) for th in d.get("threads") or []]
@@ -399,6 +402,28 @@ def person(d: dict[str, Any], lang: str) -> str:
             f'<div class="v-foot"><a href="/views/c/{cid}/memory">{_v(t(lang, "back_memory"))}</a> · '
             f'<a href="/inspector/c/{cid}/e/{e["id"]}">{_v(t(lang, "details"))}</a></div></div>')
 
+
+
+PHRASES = {"located in": "located_in", "has status": "has_status", "possesses": "possesses", "knows": "knows",
+           "relationship": "relationship", "role toward": "role_toward", "feels toward": "feels_toward",
+           "addresses": "addresses", "identity": "identity", "has trait": "has_trait", "member of": "member_of",
+           "world fact": "world_fact", "event": "event", "goal": "goal", "promised": "promised", "owes": "owes",
+           "question": "question", "threat": "threat"}
+PLAIN_KO = {"knows": "앎", "identity": "정체", "has_trait": "특징", "member_of": "소속", "world_fact": "세계",
+            "event": "사건", "promised": "약속", "owes": "빚"}
+
+
+def plain(text: str, lang: str) -> str:
+    """A ledger line in the panel's words (PHASE-52 D5): the predicate's English name after the subject in the
+    chat's language, and "story 0–71:" as "t0–71:"."""
+    text = re.sub(r"^(story|scene) (\d+[–-]\d+):", r"t\2:", text)
+    if lang == "en":
+        return text
+    for phrase, pred in PHRASES.items():
+        word = PLAIN_KO.get(pred) or (T[pred][0] if pred in T else None)
+        if word and f" {phrase}" in text:
+            return text.replace(f" {phrase}", f" {word}", 1)
+    return text
 
 
 KIND_ORDER = ("state", "summary", "cast", "thread", "fact", "claim", "secret", "excerpt", "quote")
@@ -420,7 +445,7 @@ def working(d: dict[str, Any], lang: str) -> str:
         reply = line(_v(head), _v(str(r.get("at") or "")[:16].replace("T", " ")))
         groups = []
         for kind in KIND_ORDER + tuple(sorted({x.get("kind") for x in placed} - set(KIND_ORDER) - {None})):
-            items = [line(_v(x.get("text") or ""), _v(t(lang, "echoed")) if x.get("echoed") else "")
+            items = [line(_v(plain(x.get("text") or "", lang)), _v(t(lang, "echoed")) if x.get("echoed") else "")
                      for x in placed if x.get("kind") == kind]
             if items:
                 label = t(lang, f"k_{kind}") if f"k_{kind}" in T else kind

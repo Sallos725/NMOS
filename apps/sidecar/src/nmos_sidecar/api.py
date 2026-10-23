@@ -1517,16 +1517,17 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         state = "off" if off or all_off else "ok"  # without a model NMOS still recalls excerpts: not an error
         cast = [str(n) for n in lat.get("scene_cast") or []]
         threads = [th for th in view["threads"] if th["status"] == "open"]
+        people = scene_now(view, cast)
         return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
                          "turns": last},
                 "working": {"state": state, "all_off": all_off, "reply": reply,
                             "no_extraction": not (cur.llm_url and cur.llm_model),
                             "failed": sum(int(p.get("failed") or 0) for p in parts),
                             "pending": sum(int(p.get("pending") or 0) for p in parts)},
-                "memory": {"cast": len(cast), "open": sum(1 for th in threads if not inspector.stale(th, last)),
+                "memory": {"cast": len(people), "open": sum(1 for th in threads if not inspector.stale(th, last)),
                            "stale": sum(1 for th in threads if inspector.stale(th, last)),
                            "changed": len(notes.changed_lines(view["facts"], secrets=True)),
-                           "now": views.now_lines(view["facts"], cast)},
+                           "now": [" · ".join([x["name"], *x["said"]]) for x in people if x["said"]]},
                 "attention": len(queue),
                 "usage": {"calls": int((((cov.get("usage") or {}).get("total") or {}).get("calls")) or 0)},
                 "chats": chats}
@@ -1560,7 +1561,7 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         entities = character_ids(view)
         if not cast:  # no request yet: the characters most mentioned
             cast = [e["name"] for e in view["entities"] if e.get("type") == "character"][:6]
-        now = [{"name": name, "said": said} for name in cast if (said := views.now_said(view["facts"], name))]
+        now = [x for x in scene_now(view, cast) if x["said"]]
         threads = [th for th in view["threads"] if th["status"] == "open"]
         key = rt.get("active_summarizer")
         told = summaries.current(conn, cid, head, key) if key else {"scenes": [], "story": None}
@@ -1574,6 +1575,25 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "story": told.get("story"), "scenes": list(reversed(scenes)),
                 "secrets": view["secrets"], "changes": notes.changes(view["facts"], secrets=True),
                 "facts": len(view["facts"]), "attention": len(queue), "entities": entities}
+
+    def scene_now(view: dict[str, Any], cast: list[str]) -> list[dict[str, Any]]:
+        """Each character of the scene once, with where and how they are now (PHASE-52): the scene's cast may name
+        one person twice, a short and a full name, so it is read by entity, with all of their names."""
+        ids = character_ids(view)
+        by_id = {str(e["id"]): e for e in view["entities"] if e.get("type") == "character"}
+        out, seen = [], set()
+        for name in cast:
+            eid = ids.get(name.casefold())
+            if eid is not None and eid in seen:
+                continue
+            seen.add(eid)
+            e = by_id.get(eid) if eid else None
+            names = [str(n) for n in [e.get("name"), *(e.get("names") or [])] if n] if e else [name]
+            out.append({"name": e.get("name") if e else name, "said": views.now_said(view["facts"], names)})
+        return out
+
+    def _said_differs(a: dict[str, Any], b: dict[str, Any]) -> bool:
+        return (a.get("value"), a.get("object"), a.get("polarity")) != (b.get("value"), b.get("object"), b.get("polarity"))
 
     def character_ids(view: dict[str, Any]) -> dict[str, str]:
         """Each character's names (casefolded) to their entity id: the links of the panel's screens (PHASE-52)."""
@@ -1598,16 +1618,19 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         for f in view["facts"]:
             if str((f.get("subject_entity") or {}).get("id")) != eid:
                 continue
-            major = (f["predicate"] == "event" and f.get("salience") == "major") \
-                or f["predicate"] in ("relationship", "role_toward")
-            for h in f.get("history") or [f]:
+            event_major = f["predicate"] == "event" and f.get("salience") == "major"
+            history = f.get("history") or [f]
+            for i, h in enumerate(history):
                 turn = h.get("turn")
                 if h.get("canon") or not isinstance(turn, int) or norm(h.get("subject")) not in names:
                     continue
+                # a ring: a major event, or a relationship or role that replaced an earlier one (not its first word)
+                changed = f["predicate"] in ("relationship", "role_toward") and i > 0 \
+                    and _said_differs(history[i - 1], h)
                 text = " ".join(str(x) for x in (h["predicate"].replace("_", " "), h.get("object"), h.get("value")) if x)
                 if (turn, text) not in seen:
                     seen.add((turn, text))
-                    marks.append((turn, major, text))
+                    marks.append((turn, event_major or changed, text))
         open_ = [th for th in view["threads"] if th["status"] == "open" and not inspector.stale(th, last)
                  and (norm(th.get("by")) in names or norm(th.get("to")) in names)]
         return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),

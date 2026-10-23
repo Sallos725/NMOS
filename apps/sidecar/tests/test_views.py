@@ -253,7 +253,7 @@ def test_working_says_it_in_words_not_xml():
     html = views.working(working_data(), "ko")
     assert re.findall(r'class="v-sec" id="(s-[a-z]+)"', html) == ["s-reply", "s-sent", "s-work", "s-usage"]
     assert "<Fact" not in html and "&lt;Fact" not in html and "<table" not in html
-    assert "Hana located in: old mill" in html and "left out" not in html  # only what was placed
+    assert "Hana 위치: old mill" in html and "left out" not in html  # only what was placed, in plain words
     assert "13/13" in html and "176" in html and "has-failed" not in html and 'data-act="retry"' not in html
 
 
@@ -311,3 +311,18 @@ def test_without_a_model_the_hub_still_says_working():
     html = views.hub(hub_data(working={"state": "ok", "reply": {"placed": 3, "ms": 100}, "failed": 0, "pending": 0,
                                        "no_extraction": True}), "ko")
     assert "v-block v-wide ok" in html and "사실 추출 꺼짐" in html
+
+
+
+def test_now_matches_any_of_a_characters_names():
+    facts = [{"subject": "Viola", "predicate": "located_in", "object": "room 301", "subject_entity": {"name": "Viola del Marcia"}},
+             {"subject": "Viola del Marcia", "predicate": "has_status", "value": "tired"}]
+    assert views.now_said(facts, ["Viola del Marcia", "Viola"]) == ["room 301", "tired"]
+
+
+
+def test_ledger_lines_in_plain_words():
+    assert views.plain("Aina located in: room 301", "ko") == "Aina 위치: room 301"
+    assert views.plain("Aina knows: the plan", "ko") == "Aina 앎: the plan"
+    assert views.plain("story 0–71: Ian met Aina.", "ko") == "t0–71: Ian met Aina."
+    assert views.plain("Aina located in: room 301", "en") == "Aina located in: room 301"
