@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createChatSwitch } from '../src/chatoff';
-import { keepAttribute, safeFragment } from '../src/inspector';
+import { inspectorApiPath, inspectorConversation, inspectorEntity, keepAttribute, safeFragment } from '../src/inspector';
 import { PALETTE } from '../src/palette';
 import { openPanel, type PanelDeps } from '../src/ui';
 
@@ -30,9 +30,30 @@ describe('the sanitizer and the plugin\'s actions', () => {
   });
 });
 
+describe('view paths (PHASE-52)', () => {
+  const e = '0190f3a4-1b2c-7d3e-8f40-00000000000a';
+  it('map the new screens to the sidecar, and only them', () => {
+    expect(inspectorApiPath(`/views/c/${id}/memory`)).toBe(`/v1/views/c/${id}/memory`);
+    expect(inspectorApiPath(`/views/c/${id}/memory#s-open`)).toBe(`/v1/views/c/${id}/memory`);
+    expect(inspectorApiPath(`/views/c/${id}/person/${e}`)).toBe(`/v1/views/c/${id}/person/${e}`);
+    expect(inspectorApiPath(`/views/c/${id}/working`)).toBe(`/v1/views/c/${id}/working`);
+    expect(inspectorApiPath('/views/chats')).toBe('/v1/views/chats');
+    for (const bad of [`/views/c/${id}/delete`, '/views/c/x/memory', '//evil/views/chats', `/views/c/${id}/person/x`]) {
+      expect(inspectorApiPath(bad)).toBeNull();
+    }
+    expect(inspectorConversation(`/v1/views/c/${id}/memory`)).toBe(id);
+    expect(inspectorEntity(`/v1/views/c/${id}/person/${e}`)).toEqual({ conversation: id, entity: e });
+  });
+});
+
+const memory = `<div class="v v-doc"><div class="v-sec" id="s-open"><h2 class="v-h2">Open threads</h2>`
+  + `<div class="v-line">Hana: find the bell<div class="v-meta">goal</div>`
+  + `<span class="rp" data-repair="thread_close:5:achieved,abandoned"></span></div></div></div>`;
+
 const hub = `<div class="v v-hub"><div class="v-blocks">`
   + `<a class="v-block v-wide ok" href="/inspector/c/${id}"><span class="v-bt">Working</span></a>`
   + `<a class="v-block v-big" href="/inspector/c/${id}"><span class="v-bt">Memory</span></a>`
+  + `<a class="v-block" href="/views/c/${id}/memory"><span class="v-bt">Memory doc</span></a>`
   + `<a class="v-block" data-act="settings"><span class="v-bt">Settings</span></a>`
   + `<a class="v-block" data-act="notes"><span class="v-bt">Author's note</span></a></div></div>`;
 
@@ -44,6 +65,7 @@ function deps(opts: { views?: boolean; css?: string } = {}) {
       if (path === '/v1/views/style') return { css: opts.css ?? '.nmos .v{font-size:16px}' } as T;
       if (path.startsWith('/v1/views/hub')) return { html: hub, conversation: id } as T;
       if (path.startsWith(`/v1/inspector/c/${id}`)) return { html: '<h1>Chat page</h1>' } as T;
+      if (path.startsWith(`/v1/views/c/${id}/memory`)) return { html: memory } as T;
       if (path.startsWith('/v1/inspector')) return { html: `<a href="/inspector/c/${id}">chat</a>` } as T;
       if (path.endsWith('/memory-mode')) throw new Error('404');
       if (path.includes('/status/candidates')) throw new Error('404');
@@ -121,5 +143,23 @@ describe('the hub (PHASE-52 D1)', () => {
     await settle();
     expect(calls.some(([, p]) => p.startsWith('/v1/views'))).toBe(false);
     expect(panel().querySelector(`a[href="/inspector/c/${id}"]`)).not.toBeNull();
+  });
+
+  it('opens the memory document without today\'s action row, and a tapped line shows its repair', async () => {
+    const { d } = deps();
+    await openPanel(d, 'status');
+    await settle();
+    panel().querySelector<HTMLAnchorElement>(`a[href="/views/c/${id}/memory"]`)!.click();
+    await settle();
+    const row = panel().querySelector<HTMLElement>('.v-line')!;
+    expect(row).not.toBeNull();
+    const historyButton = Array.from(panel().querySelectorAll('button')).find((b) => b.textContent === 'Extract all history');
+    expect(historyButton?.closest<HTMLElement>('div[style*="display: none"]') ?? null).not.toBeNull();
+    expect(row.querySelector('.rp button')).not.toBeNull(); // the controls are there, shown by CSS when open
+    expect(row.classList.contains('open')).toBe(false);
+    row.click();
+    expect(row.classList.contains('open')).toBe(true);
+    row.click();
+    expect(row.classList.contains('open')).toBe(false);
   });
 });

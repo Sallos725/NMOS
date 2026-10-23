@@ -83,3 +83,80 @@ def test_the_hub_endpoint_and_the_feature(migrated):
         assert unknown["conversation"] is None and "다른 채팅" in unknown["html"] and ">기억<" not in unknown["html"]
         page = c.get("/views/hub", params={"chat": chat.id})
         assert page.status_code == 200 and '<div class="nmos">' in page.text and "<style>" in page.text
+
+
+
+# --- memory, one document (PHASE-52 D2) --------------------------------------------------------------------------------
+
+CID = "0190f3a4-1b2c-7d3e-8f40-123456789abc"
+HANA, KAITO = "0190f3a4-1b2c-7d3e-8f40-00000000000a", "0190f3a4-1b2c-7d3e-8f40-00000000000b"
+
+
+def thread(i, text, *, by="Hana", to=None, kind="goal", turn=5, **kw):
+    return {"id": i, "kind": kind, "by": by, "to": to, "text": text, "turn": turn, "status": "open", "restated": [],
+            "knowledge": None, "hidden_from": None, **kw}
+
+
+def memory_data(**over):
+    rel = {"subject": "Hana", "predicate": "relationship", "object": "Kaito", "value": "childhood friend", "turn": 3,
+           "position": 3, "subject_entity": {"id": HANA, "name": "Hana"}, "object_entity": {"id": KAITO, "name": "Kaito"}}
+    calls = {**rel, "subject": "Kaito", "object": "Hana", "predicate": "addresses", "value": "누나",
+             "subject_entity": {"id": KAITO, "name": "Kaito"}, "object_entity": {"id": HANA, "name": "Hana"}}
+    moved = {"subject": "Hana", "predicate": "located_in", "object": "old mill", "value": None, "turn": 9,
+             "position": 9, "polarity": "positive", "subject_entity": {"id": HANA, "name": "Hana"}}
+    data = {"conv": {"id": CID, "name": "Harbor", "character": "Hana", "turns": 13},
+            "now": [{"name": "Hana", "entity": HANA, "said": ["the lighthouse", "wet coat"]},
+                    {"name": "Kaito", "entity": KAITO, "said": ["the pier"]}],
+            "threads": [thread(i, f"goal {i}") for i in range(1, 6)], "stale": 2,
+            "pairs": [{"ids": (HANA, KAITO), "names": {HANA: "Hana", KAITO: "Kaito"}, "relationship": [rel],
+                       "role": [], "feels": [], "speech": [calls], "position": 3}],
+            "story": {"first_turn": 0, "last_turn": 7, "text": "Hana went to the lighthouse."},
+            "scenes": [{"first_turn": 0, "last_turn": 7, "text": "Scene one."}],
+            "secrets": [{"id": 9, "text": "Hana identity: smuggler", "holders": ["Hana"], "open": ["Kaito"], "turn": 2}],
+            "changes": [{"fact": moved, "old": "harbor town", "new": "old mill"}],
+            "facts": 138, "attention": 1, "entities": {"hana": HANA, "kaito": KAITO}}
+    data.update(over)
+    return data
+
+
+def test_memory_is_one_document_in_the_decided_order():
+    html = views.memory(memory_data(), "ko")
+    ids = re.findall(r'class="v-sec" id="(s-[a-z]+)"', html)
+    assert ids == ["s-now", "s-open", "s-people", "s-sofar", "s-secrets", "s-changed"]
+    assert "<table" not in html and "extract-" not in html
+    assert re.findall(r'<a href="#(s-[a-z]+)">', html)[:6] == ids  # the jump row
+
+
+def test_lists_show_three_and_fold_the_rest_and_say_what_was_left_out():
+    html = views.memory(memory_data(), "ko")
+    opened = html.split('id="s-open"')[1].split('class="v-sec"')[0]
+    shown, folded = opened.split('<details class="v-more">')
+    assert shown.count('class="v-line') == 3 and folded.count('class="v-line') == 2 and "2개 더 보기" in folded
+    assert "30턴 넘게 언급 없는 열린 일 2개" in opened
+
+
+def test_names_lead_to_their_person_and_lines_carry_their_repairs():
+    html = views.memory(memory_data(), "ko")
+    assert f'href="/views/c/{CID}/person/{HANA}"' in html
+    assert html.count('data-repair="thread_close:') == 5
+    assert '&quot;누나&quot;' in html and "harbor town" in html and "old mill" in html
+
+
+def test_secrets_are_the_owners_to_see():
+    html = views.memory(memory_data(), "ko")
+    secrets = html.split('id="s-secrets"')[1].split('class="v-sec"')[0]
+    assert "smuggler" in secrets and "Kaito" in secrets
+
+
+def test_the_memory_endpoint(migrated):
+    chat = SimChat("views-memory")
+    chat.user("Hello.")
+    chat.reply("Hana waits at the lighthouse.")
+    with make_client(migrated) as c:
+        sync(c, chat)
+        cid = c.get("/v1/views/hub", params={"chat": chat.id}).json()["conversation"]
+        r = c.get(f"/v1/views/c/{cid}/memory")
+        assert r.status_code == 200, r.text
+        assert 'id="s-now"' in r.json()["html"]
+        assert c.get(f"/views/c/{cid}/memory").status_code == 200
+        assert c.get("/v1/views/c/00000000-0000-0000-0000-000000000000/memory").status_code == 404

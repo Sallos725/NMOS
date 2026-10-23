@@ -17,18 +17,22 @@ export const ACTS = new Set(['notes', 'settings', 'backup']);
  * `/inspector/c/<id>/t/<turn>`), or null. */
 export function inspectorApiPath(href: string | null): string | null {
   const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, 'i').exec(href ?? '');
-  return m ? `/v1/inspector${m[1] ?? ''}` : null;
+  if (m) return `/v1/inspector${m[1] ?? ''}`;
+  const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|person/${UUID}))(?:#|$)`, 'i').exec(href ?? '');
+  return v ? `/v1/views${v[1]}` : null; // the panel's new screens (PHASE-52)
 }
 
 /** The conversation id of an inspector conversation, character or source-turn API path, or null. */
 export function inspectorConversation(path: string): string | null {
-  const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, 'i').exec(path);
+  const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, 'i').exec(path)
+    ?? new RegExp(`^/v1/views/c/(${UUID})/(?:memory|working|person/${UUID})$`, 'i').exec(path);
   return m ? (m[1] as string) : null;
 }
 
 /** The conversation and entity of an inspector character API path, or null. */
 export function inspectorEntity(path: string): { conversation: string; entity: string } | null {
-  const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, 'i').exec(path);
+  const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, 'i').exec(path)
+    ?? new RegExp(`^/v1/views/c/(${UUID})/person/(${UUID})$`, 'i').exec(path);
   return m ? { conversation: m[1] as string, entity: m[2] as string } : null;
 }
 

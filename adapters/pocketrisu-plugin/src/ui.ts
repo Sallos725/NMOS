@@ -796,10 +796,12 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       picked.clear();
       updateBulk();
     }
-    actions.style.display = conversation ? '' : 'none';
+    // The new screens (PHASE-52) keep their actions where the design puts them: not today's row on top.
+    const isView = path.startsWith('/v1/views/');
+    actions.style.display = conversation && !isView ? '' : 'none';
     const shownEntity = inspectorEntity(path);
     if (!shownEntity) linkCard.style.display = 'none';
-    if (!conversation || shownEntity) { modeCard.style.display = 'none'; statusCard.style.display = 'none'; }
+    if (!conversation || shownEntity || isView) { modeCard.style.display = 'none'; statusCard.style.display = 'none'; }
     if (again) {
       inspectorBody.classList.add('busy'); // the old page stays until the new one is there
     } else {
@@ -827,7 +829,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (keep) restore(keep);
       else root.scrollTop = 0;
       if (shownEntity) void showLinks(shownEntity.conversation, shownEntity.entity, load);
-      else if (conversation) { void showMode(conversation, load); void showStatusWindows(conversation, load); }
+      else if (conversation && !isView) { void showMode(conversation, load); void showStatusWindows(conversation, load); }
     } catch (error) {
       if (load !== loads) return;
       shownPath = null;
@@ -1095,6 +1097,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       event.preventDefault();
       return void doAct(act);
     }
+    // A line of a new screen shows its repair when tapped (PHASE-52 D2), not on every line at once.
+    const row = clicked?.closest('.v-line');
+    if (row && !clicked?.closest('a, button, select, input, label, .rp')) return void row.classList.toggle('open');
     const choice = clicked?.closest('.tl-span[data-span]');
     const box = choice?.closest<HTMLElement>('.tl-lazy');
     if (choice && box) return void loadTimeline(box, choice.getAttribute('data-span') ?? '');

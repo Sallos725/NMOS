@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:3d5894ce847a".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:ba91f7a82e93".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2194,14 +2194,16 @@ ${revisionHash}`;
   var ACTS = /* @__PURE__ */ new Set(["notes", "settings", "backup"]);
   function inspectorApiPath(href) {
     const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, "i").exec(href ?? "");
-    return m ? `/v1/inspector${m[1] ?? ""}` : null;
+    if (m) return `/v1/inspector${m[1] ?? ""}`;
+    const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|person/${UUID}))(?:#|$)`, "i").exec(href ?? "");
+    return v ? `/v1/views${v[1]}` : null;
   }
   function inspectorConversation(path) {
-    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, "i").exec(path);
+    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/(?:memory|working|person/${UUID})$`, "i").exec(path);
     return m ? m[1] : null;
   }
   function inspectorEntity(path) {
-    const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path);
+    const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/person/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
   var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|undo|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
@@ -3302,10 +3304,11 @@ html,body{margin:0;background:${PALETTE.bg}}
         picked.clear();
         updateBulk();
       }
-      actions.style.display = conversation ? "" : "none";
+      const isView = path.startsWith("/v1/views/");
+      actions.style.display = conversation && !isView ? "" : "none";
       const shownEntity = inspectorEntity(path);
       if (!shownEntity) linkCard.style.display = "none";
-      if (!conversation || shownEntity) {
+      if (!conversation || shownEntity || isView) {
         modeCard.style.display = "none";
         statusCard.style.display = "none";
       }
@@ -3336,7 +3339,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (keep) restore(keep);
         else root.scrollTop = 0;
         if (shownEntity) void showLinks(shownEntity.conversation, shownEntity.entity, load);
-        else if (conversation) {
+        else if (conversation && !isView) {
           void showMode(conversation, load);
           void showStatusWindows(conversation, load);
         }
@@ -3667,6 +3670,8 @@ html,body{margin:0;background:${PALETTE.bg}}
         event.preventDefault();
         return void doAct(act);
       }
+      const row = clicked?.closest(".v-line");
+      if (row && !clicked?.closest("a, button, select, input, label, .rp")) return void row.classList.toggle("open");
       const choice = clicked?.closest(".tl-span[data-span]");
       const box = choice?.closest(".tl-lazy");
       if (choice && box) return void loadTimeline(box, choice.getAttribute("data-span") ?? "");

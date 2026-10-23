@@ -1542,6 +1542,58 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             data = hub_data(conn, conv, off, all_off)
         return views.hub(data, inspector.lang_of(lang)), (data["conv"] or {}).get("id")
 
+    def memory_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
+        """What the panel's memory screen holds (PHASE-52 D2), from what the Inspector's chat page reads."""
+        cid, head = conv["id"], conv["head_commit_id"]
+        view = inspector.with_participants(view_of(conn, head))
+        last = head_turn(conn, head)
+        lost, role_ends, flags, fixed = attention_inputs(conn, conv, head, view)
+        off_keys = statewatch.dismissed(fixed)
+        queue = inspector._attention({"threads": view["threads"], "unmatched": view["unmatched"],
+                                      "conflicts": view["conflicts"], "ambiguous": view["ambiguous"],
+                                      "dropped": lost, "endings": role_ends,
+                                      "state_flags": [f for f in flags if f["id"] not in off_keys]}, fixed, last, "ko")
+        trace = conn.execute("SELECT latency_ms FROM retrieval_trace WHERE conversation_id = %s"
+                             " ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
+        cast = [str(n) for n in ((trace or {}).get("latency_ms") or {}).get("scene_cast") or []]
+        entities = {}
+        for e in view["entities"]:
+            if e.get("type") == "character":
+                for n in [e.get("name"), *(e.get("names") or [])]:
+                    entities.setdefault(str(n or "").casefold(), str(e["id"]))
+        if not cast:  # no request yet: the characters most mentioned
+            cast = [e["name"] for e in view["entities"] if e.get("type") == "character"][:6]
+        now = [{"name": name, "said": said} for name in cast if (said := views.now_said(view["facts"], name))]
+        threads = [th for th in view["threads"] if th["status"] == "open"]
+        key = rt.get("active_summarizer")
+        told = summaries.current(conn, cid, head, key) if key else {"scenes": [], "story": None}
+        scenes = [x["summary"] for x in told["scenes"] if x.get("summary")]
+        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
+                         "turns": last},
+                "now": now,
+                "threads": [th for th in threads if not inspector.stale(th, last)],
+                "stale": sum(1 for th in threads if inspector.stale(th, last)),
+                "pairs": inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING]),
+                "story": told.get("story"), "scenes": list(reversed(scenes)),
+                "secrets": view["secrets"], "changes": notes.changes(view["facts"], secrets=True),
+                "facts": len(view["facts"]), "attention": len(queue), "entities": entities}
+
+    def view_page(request: Request, conv_id: UUID, build: Any, lang: str | None) -> str:
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            return build(conn, conv, inspector.lang_of(lang))
+
+    @app.get("/v1/views/c/{conv_id}/memory", dependencies=[Depends(auth)])
+    def views_memory(conv_id: UUID, request: Request, lang: str | None = None):
+        return {"html": view_page(request, conv_id, lambda conn, conv, lg: views.memory(memory_data(conn, conv), lg), lang)}
+
+    @app.get("/views/c/{conv_id}/memory", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def views_memory_page(conv_id: UUID, request: Request, lang: str | None = None):
+        return views.full_page("NMOS", view_page(
+            request, conv_id, lambda conn, conv, lg: views.memory(memory_data(conn, conv), lg), lang), inspector.lang_of(lang))
+
     @app.get("/v1/views/style", dependencies=[Depends(auth)])
     def views_style():
         """The stylesheet of the panel's new screens (PHASE-52), injected by the panel once: every rule under `.nmos`."""

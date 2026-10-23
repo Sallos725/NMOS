@@ -14,7 +14,9 @@ from __future__ import annotations
 from typing import Any
 
 from . import tokens
-from .inspector import _v
+from .facts import symmetric
+from .inspector import _close, _v
+from .summaries import content
 
 STYLE = """
 .nmos .v{font-size:var(--t-body,16px);line-height:1.65;color:var(--c-text);max-width:980px}
@@ -32,6 +34,21 @@ STYLE = """
 .nmos .v-bs{font-size:var(--t-secondary,14px);color:var(--c-text-soft)}
 .nmos .v-attn .v-bt{color:var(--c-warn)}
 .nmos .v-now{display:none;font-size:var(--t-secondary,14px);color:var(--c-text-soft);margin-top:6px}
+.nmos .v-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
+.nmos .v-chips a{font-size:var(--t-caption,13px);padding:3px 10px;border-radius:var(--r-control,6px);background:var(--c-raised);color:var(--c-text-soft)}
+.nmos .v-sec{margin:22px 0 0}
+.nmos .v-h2{font-size:var(--t-h2,17px);font-weight:600;margin:0 0 6px;color:var(--c-text-strong)}
+.nmos .v-n{font-size:var(--t-caption,13px);font-weight:400;color:var(--c-text-muted);margin-left:6px}
+.nmos .v-line{padding:8px 0;border-top:1px solid var(--c-line)}
+.nmos .v-line .rp{display:none} .nmos .v-line.open .rp{display:block;margin-top:6px}
+.nmos .v-meta{font-size:var(--t-caption,13px);color:var(--c-text-muted)}
+.nmos .v a.v-name{color:var(--c-link)}
+.nmos .v-text{color:var(--c-text-soft);margin:0}
+.nmos .v-note{font-size:var(--t-caption,13px);color:var(--c-text-muted);margin:6px 0 0}
+.nmos .v-more>summary{cursor:pointer;list-style:none;font-size:var(--t-secondary,14px);color:var(--c-text-muted);padding:6px 0}
+.nmos .v-more>summary::-webkit-details-marker{display:none}
+.nmos .v-foot{margin:28px 0 0;padding-top:10px;border-top:1px solid var(--c-line);font-size:var(--t-caption,13px);color:var(--c-text-muted)}
+.nmos .v-foot a{color:var(--c-text-soft)}
 @media (min-width:700px){.nmos .v-blocks{grid-template-columns:repeat(3,minmax(0,1fr))}.nmos .v-big{grid-row:span 2}.nmos .v-now{display:block}}
 """
 
@@ -61,6 +78,29 @@ T: dict[str, tuple[str, str]] = {
     "backup_sub": ("내보내기 · 복원", "Export · restore"),
     "chats": ("다른 채팅", "Other chats"),
     "chats_sub": ("NMOS가 아는 채팅 {n}", "{n} chats NMOS knows"),
+    "s-now": ("지금", "Now"),
+    "s-open": ("열린 일", "Open threads"),
+    "s-people": ("사람들", "People"),
+    "s-sofar": ("지금까지", "So far"),
+    "s-secrets": ("비밀", "Secrets"),
+    "s-changed": ("바뀐 설정", "Changed from the setting"),
+    "more": ("{n}개 더 보기", "{n} more"),
+    "stale": ("30턴 넘게 언급 없는 열린 일 {n}개는 여기 넣지 않았어요. 자세히에서 확인하거나 닫을 수 있어요.",
+              "{n} open threads not mentioned for over 30 turns are left out here; check or close them in details."),
+    "since": ("t{t}부터", "since t{t}"),
+    "none_yet": ("아직 없어요", "Nothing yet"),
+    "kept": ("{who}에게 숨김", "kept from {who}"),
+    "by": ("{who}이(가) 앎", "known by {who}"),
+    "was": ("설정 {old} → 지금 {new}", "setting {old} → now {new}"),
+    "story": ("지금까지의 이야기", "The story so far"),
+    "scenes": ("장면 요약 {n}개", "{n} scene summaries"),
+    "facts": ("모든 사실 {n}", "All facts {n}"),
+    "details": ("자세히", "Details"),
+    "promise": ("약속", "promise"), "goal": ("목표", "goal"), "question": ("질문", "question"),
+    "threat": ("위협", "threat"), "debt": ("빚", "debt"),
+    "located_in": ("위치", "location"), "has_status": ("상태", "status"), "relationship": ("관계", "relationship"),
+    "role_toward": ("역할", "role"), "feels_toward": ("감정", "feels"), "addresses": ("호칭", "calls"),
+    "possesses": ("소지자", "held by"), "destroyed": ("소멸", "destroyed"),
 }
 
 ACTS = ("notes", "settings", "backup")  # what the plugin does itself; its sanitizer keeps only these values
@@ -120,7 +160,8 @@ def hub(data: dict[str, Any], lang: str) -> str:
         m = data.get("memory") or {}
         now = "".join(f'<span class="v-now">{_v(x)}</span>' for x in (m.get("now") or [])[:2])
         blocks.append(_block(t(lang, "memory"), t(lang, "memory_sub", c=m.get("cast", 0), o=m.get("open", 0),
-                                                  g=m.get("changed", 0)), href=detail, cls="v-big", extra=now))
+                                                  g=m.get("changed", 0)), href=f"/views/c/{cid}/memory", cls="v-big",
+                             extra=now))
         if data.get("attention"):
             blocks.append(_block(t(lang, "attention"), str(data["attention"]), href=f"{detail}#s-attention",
                                  cls="v-attn"))
@@ -141,17 +182,104 @@ def hub(data: dict[str, Any], lang: str) -> str:
 NOW = ("located_in", "has_status")
 
 
+def now_said(facts: list[dict[str, Any]], name: str) -> list[str]:
+    """Where a character is and how, as the story says now (canon left out)."""
+    key = name.casefold()
+    said = [f.get("object") or f.get("value") for f in facts if f["predicate"] in NOW and not f.get("canon")
+            and f.get("polarity") != "negative"
+            and key in {str(f.get("subject") or "").casefold(),
+                        str((f.get("subject_entity") or {}).get("name") or "").casefold()}]
+    return list(dict.fromkeys(str(s) for s in said if s))
+
+
 def now_lines(facts: list[dict[str, Any]], cast: list[str]) -> list[str]:
     """Where each character of the scene is and how (the newest request's cast, in its order): "Hana · the lighthouse ·
     tired". Characters with neither are left out."""
-    out = []
-    for name in cast:
-        key = name.casefold()
-        said = [f.get("object") or f.get("value") for f in facts if f["predicate"] in NOW and not f.get("canon")
-                and f.get("polarity") != "negative"
-                and key in {str(f.get("subject") or "").casefold(),
-                            str((f.get("subject_entity") or {}).get("name") or "").casefold()}]
-        said = [s for s in said if s]
-        if said:
-            out.append(" · ".join([name, *dict.fromkeys(said)]))
-    return out
+    return [" · ".join([name, *said]) for name in cast if (said := now_said(facts, name))]
+
+
+
+def section(key: str, lang: str, body: str, count: int | None = None) -> str:
+    n = f'<span class="v-n">{count}</span>' if count is not None else ""
+    return f'<div class="v-sec" id="{key}"><h2 class="v-h2">{_v(t(lang, key))}{n}</h2>{body}</div>'
+
+
+def line(main: str, meta: str = "", extra: str = "") -> str:
+    """One item: its text (already escaped), a muted line under it, and what the panel adds (a repair marker)."""
+    return f'<div class="v-line">{main}{f"<div class=\'v-meta\'>{meta}</div>" if meta else ""}{extra}</div>'
+
+
+def more(items: list[str], lang: str, n: int = 3) -> str:
+    """The first `n` items, the rest under one fold."""
+    if len(items) <= n:
+        return "".join(items)
+    return "".join(items[:n]) + (f'<details class="v-more"><summary>{_v(t(lang, "more", n=len(items) - n))}</summary>'
+                                 f'{"".join(items[n:])}</details>')
+
+
+def name_link(cid: str, entities: dict[str, str], name: str | None) -> str:
+    """A character's name, leading to their sheet when NMOS knows them."""
+    eid = entities.get(str(name or "").casefold())
+    return f'<a class="v-name" href="/views/c/{cid}/person/{eid}">{_v(name)}</a>' if eid else _v(name)
+
+
+def _named(f: dict[str, Any], side: str) -> str:
+    e = f.get(f"{side}_entity") or {}
+    return str(e.get("name") or f.get(side) or "")
+
+
+def memory(d: dict[str, Any], lang: str) -> str:
+    """A chat's memory as one document (PHASE-52 D2): now, open threads, people, so far, secrets, changed from the
+    setting; at the foot, the way into everything else."""
+    conv, ents = d["conv"], d.get("entities") or {}
+    cid = conv["id"]
+    nm = lambda name: name_link(cid, ents, name)  # noqa: E731
+    keys = ["s-now", "s-open", "s-people", "s-sofar", "s-secrets", "s-changed"]
+    chips = '<div class="v-chips">' + "".join(f'<a href="#{k}">{_v(t(lang, k))}</a>' for k in keys) + "</div>"
+    nothing = f'<p class="v-text">{_v(t(lang, "none_yet"))}</p>'
+    now = [line(nm(x["name"]), " · ".join(_v(s) for s in x["said"])) for x in d.get("now") or []]
+    threads = d.get("threads") or []
+    opened = [line(f"{nm(th['by'])}{' → ' + nm(th['to']) if th.get('to') else ''}: {_v(th['text'])}",
+                   _v(f"{t(lang, th['kind']) if th['kind'] in T else th['kind']} · {t(lang, 'since', t=th.get('turn'))}"),
+                   _close(th)) for th in threads]
+    stale = f'<p class="v-note">{_v(t(lang, "stale", n=d["stale"]))}</p>' if d.get("stale") else ""
+    people = []
+    for p in d.get("pairs") or []:
+        names = sorted(p["names"].values())
+        rel = [f.get("value") for f in p["relationship"]]
+        head = " ↔ ".join(nm(n) for n in names) + (f" · {_v(', '.join(str(r) for r in rel if r))}" if rel else "")
+        bits = []
+        for k, pred in (("role", "role_toward"), ("feels", "feels_toward"), ("speech", "addresses")):
+            for f in p[k]:
+                value = f'"{f.get("value")}"' if pred == "addresses" else f.get("value")
+                bits.append(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, pred)} {value}")
+        if len(p["relationship"]) > 1 or any(not symmetric(f.get("value")) for f in p["relationship"]):
+            bits = [f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, 'relationship')} {f.get('value')}"
+                    for f in p["relationship"]] + bits
+        people.append(line(head, _v(" · ".join(bits))))
+    story, scenes = d.get("story"), d.get("scenes") or []
+    sofar = (f'<p class="v-text">{_v(story["text"])}</p><div class="v-meta">{_v(t(lang, "story"))} · '
+             f't{story["first_turn"]}–{story["last_turn"]}</div>') if story else ""
+    if scenes:
+        sofar += (f'<details class="v-more"><summary>{_v(t(lang, "scenes", n=len(scenes)))}</summary>'
+                  + "".join(line(_v(s["text"]), f"t{s['first_turn']}–{s['last_turn']}") for s in scenes) + "</details>")
+    secrets = [line(_v(content(s)), _v(" · ".join(x for x in (
+        t(lang, "by", who=", ".join(s.get("holders") or [])) if s.get("holders") else "",
+        t(lang, "kept", who=", ".join(s.get("open") or [])), f"t{s.get('turn')}") if x)))
+        for s in d.get("secrets") or [] if s.get("open")]
+    changed = [line(f"{nm(_named(c['fact'], 'subject'))} {_v(t(lang, c['fact']['predicate']) if c['fact']['predicate'] in T else c['fact']['predicate'])}",
+                    _v(t(lang, "was", old=c["old"], new=c["new"]) + f" · t{c['fact'].get('turn')}"))
+               for c in d.get("changes") or []]
+    body = (section("s-now", lang, more(now, lang, 6) or nothing)
+            + section("s-open", lang, (more(opened, lang) or nothing) + stale, len(threads))
+            + section("s-people", lang, more(people, lang) or nothing, len(people))
+            + section("s-sofar", lang, sofar or nothing)
+            + section("s-secrets", lang, more(secrets, lang) or nothing, len(secrets))
+            + section("s-changed", lang, more(changed, lang) or nothing, len(changed)))
+    detail = f"/inspector/c/{cid}"
+    foot = (f'<div class="v-foot"><a href="{detail}#s-facts">{_v(t(lang, "facts", n=d.get("facts", 0)))}</a>'
+            + (f' · <a href="{detail}#s-attention">{_v(t(lang, "attention"))} {d["attention"]}</a>' if d.get("attention") else "")
+            + f' · <a href="{detail}">{_v(t(lang, "details"))}</a></div>')
+    cap = " · ".join(str(x) for x in (conv.get("character"), f"t{conv['turns']}" if conv.get("turns") is not None else None) if x)
+    return (f'<div class="v v-doc"><div class="v-head"><h1 class="v-h1">{_v(conv.get("name") or t(lang, "memory"))}</h1>'
+            f'<span class="v-cap">{_v(cap)}</span></div>{chips}{body}{foot}</div>')
