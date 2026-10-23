@@ -15,7 +15,7 @@ import ipaddress
 import re
 from urllib.parse import quote
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -30,7 +30,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from . import (__version__, archive, audit, canon, canonfacts, dropped, endings, extraction, generations, inspector, ledger,
-               normtext, overuse,
+               normtext, notes, overuse,
                plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, statewatch, summaries, uploads,
                vectors)
 from . import usage as model_usage
@@ -1037,6 +1037,29 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                            for kind, gen in gens.items()}
             log.info("retry failed conversation=%s retried=%s", conv_id, retried)
             return {"retried": retried, "coverage": coverage_view(conn, conv_id)}
+
+    @app.post("/v1/conversations/{conv_id}/notes", dependencies=[Depends(auth)])
+    def author_notes(conv_id: UUID, body: dict[str, Any], request: Request):
+        """Sections for the chat's author's note (PHASE-50), made on request for the owner to paste: nothing is
+        stored and no packet reads them. Only the chronicle calls a model, after the database connection is back."""
+        try:
+            ask = notes.Ask.of(body)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            head = conv["head_commit_id"]
+            view = view_of(conn, head)
+            last = head_turn(conn, head)
+            key = rt.get("active_summarizer")
+            told = summaries.current(conn, conv_id, head, key) if key and "chronicle" in ask.sections else None
+        model = notes.model_for(rt["settings"]) if ask.model and "chronicle" in ask.sections else None
+        out = notes.make(ask, view, told, last, model, date.today().isoformat())
+        log.info("author notes conversation=%s sections=%s made=%s", conv_id, ",".join(ask.sections),
+                 ",".join(s["made"] for s in out["sections"]))
+        return out
 
     @app.post("/v1/conversations/{conv_id}/rebuild", dependencies=[Depends(auth)])
     def rebuild_memory(conv_id: UUID, request: Request):

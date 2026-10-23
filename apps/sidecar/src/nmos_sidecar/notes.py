@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 from collections import OrderedDict
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from .entities import norm
@@ -21,7 +22,8 @@ from .facts import symmetric
 from .inspector import _named, pairs
 from .noteblocks import KINDS, LABELS, strip_blocks, wrap  # noqa: F401  (the API's names for them)
 from .predicates import HOLDER_PER_ITEM, REGISTRY
-from .llm import LLMError, metered
+from .config import Settings
+from .llm import ChatModel, LLMError, metered
 from .summaries import content, leaks
 
 PAIRS_MAX = 30  # address lines at most
@@ -268,3 +270,53 @@ def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts:
     while len(_CACHE) > CACHE_MAX:
         _CACHE.popitem(last=False)
     return out
+
+
+
+@dataclass(frozen=True)
+class Ask:
+    """What the owner asked for (PHASE-50 S7)."""
+    sections: tuple[str, ...]
+    chars: int
+    secrets: bool
+    model: bool
+    lang: str
+
+    @classmethod
+    def of(cls, body: dict[str, Any]) -> "Ask":
+        sections = tuple(dict.fromkeys(body.get("sections") or ()))
+        if not sections or any(s not in KINDS for s in sections):
+            raise ValueError(f"sections must be some of {', '.join(KINDS)}")
+        chars = int(body.get("chars", 3000))
+        if chars not in (3000, 6000):
+            raise ValueError("chars must be 3000 or 6000")
+        return cls(sections, chars, bool(body.get("secrets", False)), bool(body.get("model", True)),
+                   "en" if body.get("lang") == "en" else "ko")
+
+
+def model_for(settings: Settings) -> Callable[..., tuple[Any, ...]] | None:
+    """The extraction model and endpoint (PHASE-50 Q3), or None when none is configured."""
+    if not (settings.llm_url and settings.llm_model):
+        return None
+    return ChatModel(settings.llm_url, settings.llm_model, settings.llm_api_key, settings.llm_timeout_s,
+                     settings.llm_json_mode).complete_metered
+
+
+def make(ask: Ask, view: dict[str, Any], told: dict[str, Any] | None, last_turn: int | None,
+         model: Callable[..., tuple[Any, ...]] | None, today: str) -> dict[str, Any]:
+    """Every section asked for, each between its markers; one with nothing to say is empty, with its reason."""
+    facts = view.get("facts") or []
+    out = []
+    for kind in ask.sections:
+        if kind == "chronicle":
+            c = chronicle(told, view.get("threads") or [], facts, view.get("secrets") or [], ask.chars, ask.lang,
+                          model if ask.model else None, ask.secrets)
+            body, turns, made, cached, held, reason = (c["body"], c["turns"], c["made"], c["cached"], c["held"],
+                                                       c["reason"])
+        else:
+            lines = (changed_lines if kind == "changed" else address_lines)(facts, ask.lang, ask.secrets)
+            body, turns, made, cached, held = "\n".join(lines), str(last_turn or 0), "facts", False, 0
+            reason = "" if lines else "none"
+        out.append({"kind": kind, "text": wrap(kind, body, turns, ask.lang, today) if body else "", "turns": turns,
+                    "made": made, "cached": cached, "held": held, "reason": reason, "chars": len(body)})
+    return {"sections": out, "last_turn": last_turn}

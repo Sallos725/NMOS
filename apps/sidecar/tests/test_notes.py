@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from conftest import make_client
 from nmos_sidecar import notes
 from test_canon import push
 from test_canon_facts import Model, canon_texts, drain, story
+from test_canon_facts import view as canon_view
 from test_generations import LLM
 from test_sidecar_integration import sync
 
@@ -184,3 +187,80 @@ def test_an_empty_reply_is_not_asked_again():
     w = Writer({"events": "", "now": ""})
     out = notes.chronicle(told(scene(0, 7, "Hana walked.")), [], [], [], 3000, "ko", model=w)
     assert len(w.calls) == 1 and out["made"] == "assembled" and "Hana walked." in out["body"]
+
+
+
+def test_ask_refuses_what_it_does_not_know():
+    for bad in ({"sections": []}, {"sections": ["poem"]}, {"sections": ["changed"], "chars": 100}, {}):
+        with pytest.raises(ValueError):
+            notes.Ask.of(bad)
+    assert notes.Ask.of({"sections": ["changed", "changed"]}) == notes.Ask(("changed",), 3000, False, True, "ko")
+
+
+def test_make_wraps_each_section_and_says_why_one_is_empty():
+    view = {"facts": [fact("Hana", "relationship", obj="Kaito", value="sister")], "threads": [], "secrets": []}
+    out = notes.make(notes.Ask.of({"sections": ["chronicle", "changed", "address"], "lang": "en"}), view, told(), 12,
+                     None, "2026-10-23")
+    got = {s["kind"]: s for s in out["sections"]}
+    assert [s["kind"] for s in out["sections"]] == ["chronicle", "changed", "address"] and out["last_turn"] == 12
+    assert (got["chronicle"]["text"], got["chronicle"]["reason"]) == ("", "no_scenes")
+    assert (got["changed"]["text"], got["changed"]["reason"]) == ("", "none")
+    assert got["address"]["text"] == ("[NMOS address · t12 · 2026-10-23]\n- Hana ↔ Kaito: Hana→Kaito relationship sister"
+                                      "\n[/NMOS address]")
+    assert got["address"]["made"] == "facts" and notes.strip_blocks(got["address"]["text"])[0] == ""
+
+
+def test_the_endpoint_lists_what_the_story_changed_of_the_card(migrated):
+    chat, model = story(), Model()
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        push(c, chat, canon_texts())
+        drain(migrated, model)
+        cid = canon_view(migrated, chat)["conversation"]
+        r = c.post(f"/v1/conversations/{cid}/notes", json={"sections": ["changed", "address"], "lang": "en"})
+        assert r.status_code == 200, r.text
+        got = {s["kind"]: s for s in r.json()["sections"]}
+    changed = got["changed"]["text"]
+    assert changed.startswith("[NMOS changed · t") and changed.endswith("[/NMOS changed]")
+    assert "Hana location: setting harbor town → now old mill" in changed
+    assert "Hana identity: setting lighthouse keeper → now smuggler" in changed
+    assert "sister" not in changed  # the story did not change it
+    assert "Hana ↔ Kaito" in got["address"]["text"] and got["changed"]["made"] == "facts"
+
+
+def test_the_endpoint_says_no_and_not_found(migrated):
+    with make_client(migrated) as c:
+        missing = "/v1/conversations/00000000-0000-0000-0000-000000000000/notes"
+        assert c.post(missing, json={"sections": ["changed"]}).status_code == 404
+        assert c.post(missing, json={"sections": ["poem"]}).status_code == 422
+
+
+
+def test_the_endpoint_writes_the_chronicle_from_the_scene_summaries(migrated, monkeypatch):
+    from test_generations import conv_id
+    from test_summaries import ON, drain as drain_summaries, story_chat
+
+    asked: list[str] = []
+
+    class Fake:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def complete_metered(self, system, user):
+            asked.append(user)
+            return {"events": "- Turns began and replies followed (t0–7).", "now": ""}, "{}", None
+
+    monkeypatch.setattr(notes, "ChatModel", Fake)
+    notes.clear_cache()
+    chat = story_chat(13)
+    with make_client(migrated, **ON) as c:
+        sync(c, chat)
+        drain_summaries(migrated)
+        cid = conv_id(c, chat)
+        body = {"sections": ["chronicle"], "lang": "en"}
+        first = c.post(f"/v1/conversations/{cid}/notes", json=body).json()["sections"][0]
+        again = c.post(f"/v1/conversations/{cid}/notes", json=body).json()["sections"][0]
+    assert len(asked) == 1 and "[turns 0–7] Turn 0 begins" in asked[0]
+    assert first["made"] == "model" and first["turns"] == "0-7" and not first["cached"] and again["cached"]
+    assert first["text"] == ("[NMOS chronicle · t0–7 · " + first["text"].split(" · ")[2].split("]")[0] + "]\n"
+                             "## Events\n- Turns began and replies followed (t0–7).\n[/NMOS chronicle]")
