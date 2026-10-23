@@ -57,7 +57,7 @@
  ],
  "id": "2005e877e830e059f6dab3f9d9cf9e3ee288795786070433555dbdbbea884f22",
  "with_note_blocks": {
-  "note": "PHASE-50 S5: the author's note entry names NMOS's sections in its metadata (an array of objects).",
+  "note": "PHASE-50 S5: the author's note entry names NMOS's blocks in its metadata (an array of objects).",
   "text": "지금은 한겨울 밤이다.",
   "entries": [
    {
@@ -66,12 +66,10 @@
     "metadata": {
      "nmos_blocks": [
       {
-       "kind": "chronicle",
-       "turns": "0-87"
+       "turn": "87"
       },
       {
-       "kind": "address",
-       "turns": "120"
+       "turn": "120"
       }
      ]
     }
@@ -84,6 +82,6 @@
     }
    }
   ],
-  "id": "1d3be32e1f7d93c36501bc6b3eb9943a6d0c1923326be61e1348b0130a9c1efa"
+  "id": "946e7f286cdb3b8f8965a1f615c2ce840ef82df0bb50c839938e14eb8ca983da"
  }
 }

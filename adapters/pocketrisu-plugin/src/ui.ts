@@ -1138,8 +1138,8 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
     return /HTTP 409/.test(error instanceof Error ? error.message : String(error)) ? L('act.off') : errorText(lang, error);
   }
   interface ActionResult { queued: { extract?: number; embed?: number }; discarded?: number }
-  interface NoteSection { kind: string; text: string; made: string; cached: boolean; held: number; reason: string; chars: number }
-  interface NotesResult { sections: NoteSection[]; last_turn: number | null }
+  interface NotePart { kind: string; made: string; cached: boolean; held: number; reason: string }
+  interface NotesResult { text: string; chars: number; sections: NotePart[]; last_turn: number | null }
   retryButton.addEventListener('click', async () => {
     const conversation = actionConversation;
     if (!conversation) return;
@@ -1227,10 +1227,10 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       results.replaceChildren();
       try {
         const r = await deps.api<NotesResult>('POST', `/v1/conversations/${conversation}/notes`,
-          { sections, chars: Number(length.value), secrets: secrets.checked, lang }, 300_000); // a call and one retry
+          { sections, chars: Number(length.value), secrets: secrets.checked }, 300_000); // a call and one retry
         if (actionConversation !== conversation) return;
-        results.replaceChildren(...r.sections.map((section) => noteSection(section, msg)));
-        say(msg, L('notes.done'), 'ok');
+        results.replaceChildren(noteResult(r, msg));
+        say(msg, r.text ? L('notes.done') : L('notes.part_none', { part: L('notes.title') }), r.text ? 'ok' : 'warn');
       } catch (error) { say(msg, errorText(lang, error), 'err'); } finally { make.disabled = false; }
     });
     notesCard.replaceChildren(el('h2', { text: L('notes.title') }), el('p', { class: 'sub', text: L('notes.sub') }),
@@ -1238,26 +1238,30 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       el('div', { class: 'check' }, secrets, el('span', { text: L('notes.secrets') })), warn,
       el('div', { class: 'btns' }, make), msg, results);
   }
-  /** One section: how it was made, its text in a box, and Copy (PHASE-50 S6). */
-  function noteSection(section: NoteSection, msg: HTMLElement): HTMLElement {
-    const title = el('h2', { text: L(`notes.h.${section.kind}` as StringKey) });
-    if (!section.text) {
-      return el('div', {}, title, el('p', { class: 'sub', text: L(section.reason === 'no_scenes' ? 'notes.no_scenes' : 'notes.none') }));
-    }
-    const about = [L(`notes.made_${section.made}` as StringKey)];
-    if (section.cached) about.push(L('notes.cached'));
-    if (section.held) about.push(L('notes.held', { n: section.held }));
-    about.push(L('notes.chars', { n: section.chars }));
-    // Korean reads badly in monospace (the owner's design rules): the box keeps the panel's font.
-    const box = el('textarea', { readonly: true, rows: 10, spellcheck: 'false', style: 'font-family:inherit',
-      'aria-label': L(`notes.h.${section.kind}` as StringKey) });
-    box.value = section.text;
-    const copy = el('button', { text: L('notes.copy') });
+  /** The note: how each part was made, the one text in a box, and Copy (PHASE-50 S6, amendment 2). */
+  function noteResult(r: NotesResult, msg: HTMLElement): HTMLElement {
+    const how = (p: NotePart): string => {
+      const part = L(`notes.part.${p.kind}` as StringKey);
+      if (p.reason === 'no_scenes') return L('notes.part_no_scenes', { part });
+      if (p.reason === 'none') return L('notes.part_none', { part });
+      const bits = [L(`notes.made_${p.made}` as StringKey)];
+      if (p.cached) bits.push(L('notes.cached'));
+      if (p.held) bits.push(L('notes.held', { n: p.held }));
+      return L('notes.part_made', { part, how: bits.join(', ') });
+    };
+    const about = el('ul', { class: 'sub' }, ...r.sections.map((p) => el('li', { text: how(p) })));
+    if (!r.text) return el('div', {}, about);
+    // Korean names in it read badly in monospace (the owner's design rules): the box keeps the panel's font.
+    const box = el('textarea', { readonly: true, rows: 14, spellcheck: 'false', style: 'font-family:inherit',
+      'aria-label': L('notes.result') });
+    box.value = r.text;
+    const copy = el('button', { class: 'primary', text: L('notes.copy') });
     copy.addEventListener('click', async () => {
       const copied = await copyText(box, navigator.clipboard);
       say(msg, L(copied ? 'notes.copied' : 'notes.copy_hint'), copied ? 'ok' : 'warn');
     });
-    return el('div', {}, title, el('p', { class: 'sub', text: about.join(' · ') }), box, el('div', { class: 'btns' }, copy));
+    return el('div', {}, el('h2', { text: L('notes.result') }), about,
+      el('p', { class: 'sub', text: L('notes.chars', { n: r.chars }) }), box, el('div', { class: 'btns' }, copy));
   }
   exportButton.addEventListener('click', async () => {
     const conversation = actionConversation;

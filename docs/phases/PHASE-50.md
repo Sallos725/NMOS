@@ -228,6 +228,21 @@ three details; the owner's decisions stand.
 5. **Measurement** (Q5) and the owner's check on a real host: paste each section, reload, a request, the canon
    unchanged.
 
+## Amendment 2 (owner, 2026-10-23): one English Markdown note
+
+Seeing three boxes, the owner judged that a user would not know what to do with them, and that the author's note,
+which the model reads, is better in English Markdown. So:
+- **One block, one box.** The parts the owner picks go into one text between `[NMOS note · t<turn> · <date>]` and
+  `[/NMOS note]`, in this order: a header (`# Story memory (NMOS, as of turn N)` and one line saying the latest messages
+  take precedence), `## Chronicle (tA–B)`, `## Now`, `## Open threads`, `## Changed from the setting`,
+  `## Address and standing`; a part with nothing to say is left out. The panel shows the one text with one Copy button
+  and, under it, how each part was made. The note entry's metadata names each block by its turn
+  (`nmos_blocks: [{"turn": "87"}]`). This replaces S5's per-section markers and S1/S6's per-section boxes.
+- **English.** The chronicle's model writes English whatever the chat's language; the labels of the other two parts
+  are English. Names, titles, places and quoted words (a form of address) stay as the chat writes them: translating
+  them would need another model call and could change what the story model calls someone. The assembled chronicle
+  keeps the scene summaries in the chat's language under the English headings.
+
 ## Steps 2–4 evidence (2026-10-23)
 
 Built on `claude/author-notes-story-summary-f721b1` (PR #315), plan

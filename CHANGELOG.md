@@ -5,15 +5,16 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
-- **Sections for the author's note, made on request** (Phase 50). On a chat's page in the panel, **For the author's
-  note** makes up to three sections to paste into the chat's author's note: a **chronicle** of the events so far, how they
-  went and how they ended (one call to the extraction model, 3,000 or 6,000 characters, with a text assembled from the
-  scene summaries when there is no model or its reply cannot be used; the open threads always come from memory), **what
-  changed from the setting** (values the card or lorebook states that the story has since replaced) and **address and
-  standing** (what each pair calls each other, their relationship, roles and feelings). The last two call no model.
-  Secrets are left out unless asked for. Each section sits between `[NMOS …]` lines; NMOS does not read what is between
-  them as the setting, so pasting or replacing one starts no canon read (`POST /v1/conversations/{id}/notes`). The
-  Inspector's canon section says which sections the note carries and up to which turn.
+- **A note for the author's note, made on request** (Phase 50). On a chat's page in the panel, **For the author's
+  note** makes one text to paste into the chat's author's note, in English Markdown (names and forms of address as the
+  chat writes them). It holds the parts picked: a **chronicle** of the events so far, how they went and how they ended
+  (one call to the extraction model, 3,000 or 6,000 characters, with a text assembled from the scene summaries when
+  there is no model or its reply cannot be used; the open threads always come from memory), **what changed from the
+  setting** (values the card or lorebook states that the story has since replaced) and **address and standing** (what
+  each pair calls each other, their relationship, roles and feelings). The last two call no model. Secrets are left
+  out unless asked for. The text sits between `[NMOS note …]` and `[/NMOS note]`; NMOS does not read what is between
+  them as the setting, so pasting or replacing it starts no canon read (`POST /v1/conversations/{id}/notes`). The
+  Inspector's canon section says whether the note holds it and as of which turn.
 - **The Inspector says why coverage is short, and a chat's failed work can be run again on its own.** The "partial" chip
   is replaced by its reasons: failed (with the chat's last errors), in progress, and not queued (the past the first sync
   left out). A long message embedded up to the chunk cap (K13) is a note beside a full count, no longer shown as

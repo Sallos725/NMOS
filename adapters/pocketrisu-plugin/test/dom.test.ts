@@ -502,10 +502,9 @@ describe('owner repairs in the panel (ADR 0044)', () => {
         }
         if (path.endsWith('/retry-failed')) return { retried: { extract: 1, embed: 1, canon: 0 } } as T;
         if (path.endsWith('/notes')) {  // PHASE-50
-          return { last_turn: 12, sections: [
-            { kind: 'chronicle', text: '', made: 'none', cached: false, held: 0, reason: 'no_scenes', chars: 0 },
-            { kind: 'address', text: '[NMOS address · t12 · 2026-10-23]\n- Hana ↔ Kaito: x\n[/NMOS address]', made: 'facts',
-              cached: false, held: 0, reason: '', chars: 18 }] } as T;
+          return { last_turn: 12, chars: 60, text: '[NMOS note · t12 · 2026-10-23]\n## Address and standing\n- Hana ↔ Kaito: x\n[/NMOS note]',
+            sections: [{ kind: 'chronicle', made: 'none', cached: false, held: 0, reason: 'no_scenes' },
+              { kind: 'address', made: 'facts', cached: false, held: 0, reason: '' }] } as T;
         }
         if (path.endsWith('/reextract')) {
           if (state.failReextract > 0) { state.failReextract -= 1; throw new Error(`${path} -> HTTP 409: fact extraction is off`); }
@@ -541,7 +540,7 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     await settle();
   }
 
-  it('makes the sections for the author\'s note and shows each to copy (PHASE-50)', async () => {
+  it('makes one note for the author\'s note and shows it to copy (PHASE-50)', async () => {
     const { d, calls } = deps();
     await openChat(d);
     button("For the author's note").click();
@@ -551,10 +550,11 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     button('Make').click();
     await settle();
     expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/notes`,
-      { sections: ['chronicle', 'address'], chars: 3000, secrets: false, lang: 'en' }]);
+      { sections: ['chronicle', 'address'], chars: 3000, secrets: false }]);
     const shown = [...panel().querySelectorAll<HTMLTextAreaElement>('textarea[readonly]')];
-    expect(shown.map((b) => b.value)).toEqual(['[NMOS address · t12 · 2026-10-23]\n- Hana ↔ Kaito: x\n[/NMOS address]']);
-    expect(panel().textContent).toContain('No scene summary yet');
+    expect(shown.map((b) => b.value)).toEqual(['[NMOS note · t12 · 2026-10-23]\n## Address and standing\n- Hana ↔ Kaito: x\n[/NMOS note]']);
+    expect(panel().textContent).toContain('chronicle: no scene summary yet');
+    expect(panel().textContent).toContain('address and standing: straight from memory');
     expect(button('Copy')).toBeTruthy();
   });
 

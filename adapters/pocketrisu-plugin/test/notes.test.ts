@@ -19,7 +19,7 @@ describe('NMOS note blocks (PHASE-50 S5)', () => {
     const chat: HostChat = { id: 'c', note: doc.cases[1].note, message: [] };
     const note = canonTexts(null, chat, [], null).find((t) => t.key === 'note')!;
     expect(note.text).toBe('지금은 한겨울 밤이다.');
-    expect(note.metadata).toEqual({ nmos_blocks: [{ kind: 'chronicle', turns: '0-87' }] });
+    expect(note.metadata).toEqual({ nmos_blocks: [{ turn: '87' }] });
     const plain = canonTexts(null, { ...chat, note: '  그냥 메모\n' }, [], null).find((t) => t.key === 'note')!;
     expect(plain).toEqual({ key: 'note', text: '  그냥 메모\n', metadata: {} });
     expect(canonTexts(null, { ...chat, note: doc.cases[4].note }, [], null).find((t) => t.key === 'note')).toBeUndefined();
@@ -29,7 +29,7 @@ describe('NMOS note blocks (PHASE-50 S5)', () => {
 describe('copying a section (PHASE-50 S6)', () => {
   it('copies, and selects the text where the clipboard is refused', async () => {
     const box = document.createElement('textarea');
-    box.value = '[NMOS 연대기 · t0–1 · 2026-10-23]\n- a\n[/NMOS 연대기]';
+    box.value = '[NMOS note · t1 · 2026-10-23]\n- a\n[/NMOS note]';
     document.body.append(box);
     let copied = '';
     expect(await copyText(box, { writeText: async (t: string) => { copied = t; } })).toBe(true);

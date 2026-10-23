@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:a9b4b54e4da5".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:8717e3f0b575".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -49,22 +49,9 @@
   }
 
   // src/notes.ts
-  var LABELS = {
-    "\uC5F0\uB300\uAE30": "chronicle",
-    chronicle: "chronicle",
-    "\uC124\uC815 \uBCC0\uACBD\uC810": "changed",
-    changed: "changed",
-    "\uD638\uCE6D\xB7\uAD00\uACC4": "address",
-    address: "address"
-  };
-  var escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  var LABEL = Object.keys(LABELS).map(escape).join("|");
-  var BLOCK = new RegExp(`\\[NMOS (${LABEL})(?: \xB7 t(\\d+)(?:\u2013(\\d+))?)?(?: \xB7 [^\\]\\n]*)?\\]\\n?[\\s\\S]*?\\[/NMOS \\1\\]\\n?`, "g");
+  var BLOCK = /\[NMOS note(?: · t(\d+))?(?: · [^\]\n]*)?\]\n?[\s\S]*?\[\/NMOS note\]\n?/g;
   function stripNoteBlocks(text2) {
-    const blocks = [];
-    for (const m of text2.matchAll(BLOCK)) {
-      blocks.push({ kind: LABELS[m[1]], turns: m[2] ? m[2] + (m[3] ? `-${m[3]}` : "") : "" });
-    }
+    const blocks = [...text2.matchAll(BLOCK)].map((m) => ({ turn: m[1] ?? "" }));
     if (!blocks.length) return { text: text2, blocks };
     return { text: text2.replace(BLOCK, "\n\n").replace(/\n{3,}/g, "\n\n").trim(), blocks };
   }
@@ -481,12 +468,12 @@
     // notes for the author's note (PHASE-50)
     "notes.open": ["\uC791\uAC00\uC758 \uB178\uD2B8\uC6A9 \uC815\uB9AC", "For the author's note"],
     "notes.title": ["\uC791\uAC00\uC758 \uB178\uD2B8\uC6A9 \uC815\uB9AC", "For the author's note"],
-    "notes.h.chronicle": ["\uC5F0\uB300\uAE30", "Chronicle"],
-    "notes.h.changed": ["\uC124\uC815 \uBCC0\uACBD\uC810", "Changed from the setting"],
-    "notes.h.address": ["\uD638\uCE6D\xB7\uAD00\uACC4", "Address and standing"],
+    "notes.part.chronicle": ["\uC5F0\uB300\uAE30", "chronicle"],
+    "notes.part.changed": ["\uC124\uC815 \uBCC0\uACBD\uC810", "changed from the setting"],
+    "notes.part.address": ["\uD638\uCE6D\xB7\uAD00\uACC4", "address and standing"],
     "notes.sub": [
-      "\uC774 \uCC44\uD305\uC758 \uAE30\uC5B5\uC73C\uB85C \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC744 \uC815\uB9AC\uB97C \uB9CC\uB4ED\uB2C8\uB2E4. \uC791\uAC00\uC758 \uB178\uD2B8\uB294 \uB9E4 \uC694\uCCAD\uC5D0 \uD568\uAED8 \uAC00\uBBC0\uB85C, \uBD99\uC5EC\uB123\uC740 \uAE38\uC774\uB9CC\uD07C \uB9E4 \uD134 \uD1A0\uD070\uC774 \uB4ED\uB2C8\uB2E4. [NMOS \u2026] \uC904\uAE4C\uC9C0 \uD1B5\uC9F8\uB85C \uBD99\uC5EC\uB123\uC5B4\uC57C NMOS\uAC00 \uADF8 \uBD80\uBD84\uC744 \uC6D0\uC804(\uC124\uC815)\uC73C\uB85C \uC77D\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
-      "Makes sections from this chat's memory to paste into its author's note. The note goes with every request, so what you paste is paid on every turn. Paste each with its [NMOS \u2026] lines, so NMOS does not read it as the setting."
+      "\uC774 \uCC44\uD305\uC758 \uAE30\uC5B5\uC73C\uB85C \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC744 \uAE00 \uD558\uB098\uB97C \uB9CC\uB4ED\uB2C8\uB2E4. \uBAA8\uB378\uC774 \uC77D\uAE30 \uC88B\uAC8C \uC601\uC5B4 \uB9C8\uD06C\uB2E4\uC6B4\uC73C\uB85C \uC4F0\uACE0, \uC774\uB984\uACFC \uD638\uCE6D\uC740 \uCC44\uD305\uC5D0 \uC801\uD78C \uADF8\uB300\uB85C \uB461\uB2C8\uB2E4. \uACB0\uACFC\uB97C [NMOS note \u2026] \uC904\uBD80\uD130 [/NMOS note] \uC904\uAE4C\uC9C0 \uD1B5\uC9F8\uB85C \uBCF5\uC0AC\uD574 \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC73C\uC138\uC694(\uC804\uC5D0 \uBD99\uC778 \uAC83\uC774 \uC788\uC73C\uBA74 \uADF8 \uBE14\uB85D\uC744 \uC9C0\uC6B0\uACE0 \uC0C8\uB85C \uBD99\uC774\uBA74 \uB429\uB2C8\uB2E4). \uADF8\uB798\uC57C NMOS\uAC00 \uADF8 \uBD80\uBD84\uC744 \uC6D0\uC804(\uC124\uC815)\uC73C\uB85C \uC77D\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC791\uAC00\uC758 \uB178\uD2B8\uB294 \uB9E4 \uC694\uCCAD\uC5D0 \uD568\uAED8 \uAC00\uBBC0\uB85C, \uBD99\uC5EC\uB123\uC740 \uAE38\uC774\uB9CC\uD07C \uB9E4 \uD134 \uD1A0\uD070\uC774 \uB4ED\uB2C8\uB2E4.",
+      "Makes one text from this chat's memory to paste into its author's note: English Markdown, which the model reads well, with names and forms of address as the chat writes them. Copy it whole, from the [NMOS note \u2026] line to the [/NMOS note] line, into the author's note (replace the block you pasted before, if any), so NMOS does not read it as the setting. The note goes with every request, so what you paste is paid on every turn."
     ],
     "notes.chronicle": ["\uC5F0\uB300\uAE30: \uC9C0\uAE08\uAE4C\uC9C0\uC758 \uC0AC\uAC74\uACFC \uACB0\uACFC (\uBAA8\uB378 1\uD68C \uD638\uCD9C)", "Chronicle: the events so far and how they ended (one model call)"],
     "notes.changed": ["\uC124\uC815 \uBCC0\uACBD\uC810: \uCE74\uB4DC\xB7\uB85C\uC5B4\uBD81\uACFC \uB2EC\uB77C\uC9C4 \uAC83", "Changed from the setting: what the card or lorebook no longer says right"],
@@ -501,7 +488,11 @@
     ],
     "notes.make": ["\uB9CC\uB4E4\uAE30", "Make"],
     "notes.pick": ["\uD558\uB098 \uC774\uC0C1 \uACE0\uB974\uC138\uC694.", "Pick at least one."],
-    "notes.done": ["\uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4. \uAC01 \uC0C1\uC790\uB97C \uBCF5\uC0AC\uD574 \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC73C\uC138\uC694.", "Done. Copy each box into the author's note."],
+    "notes.done": ["\uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4. \uC544\uB798 \uC0C1\uC790\uB97C \uD1B5\uC9F8\uB85C \uBCF5\uC0AC\uD574 \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC73C\uC138\uC694.", "Done. Copy the box below, whole, into the author's note."],
+    "notes.result": ["\uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC744 \uAE00", "To paste into the author's note"],
+    "notes.part_none": ["{part}: \uC801\uC744 \uAC83\uC774 \uC5C6\uC74C", "{part}: nothing to write"],
+    "notes.part_no_scenes": ["{part}: \uC544\uC9C1 \uC7A5\uBA74 \uC694\uC57D\uC774 \uC5C6\uC74C (8\uD134\uB9C8\uB2E4 \uD558\uB098, \uADF8 \uB4A4 4\uD134\uC774 \uC9C0\uB098\uBA74 \uB9CC\uB4E4\uC5B4\uC9D0)", "{part}: no scene summary yet (one per 8 turns, made 4 turns later)"],
+    "notes.part_made": ["{part}: {how}", "{part}: {how}"],
     "notes.copy": ["\uBCF5\uC0AC", "Copy"],
     "notes.copied": ["\uBCF5\uC0AC\uD588\uC2B5\uB2C8\uB2E4.", "Copied."],
     "notes.copy_hint": ["\uC5EC\uAE30\uC11C\uB294 \uC790\uB3D9 \uBCF5\uC0AC\uAC00 \uB9C9\uD600 \uC788\uC5B4\uC11C \uB0B4\uC6A9\uC744 \uC120\uD0DD\uD574 \uB450\uC5C8\uC2B5\uB2C8\uB2E4. \uC9C1\uC811 \uBCF5\uC0AC\uD574 \uC8FC\uC138\uC694.", "Copying is blocked here, so the text is selected: copy it yourself."],
@@ -510,9 +501,7 @@
     "notes.made_facts": ["\uAE30\uC5B5\uC5D0\uC11C \uBC14\uB85C (\uD638\uCD9C \uC5C6\uC74C)", "straight from memory (no call)"],
     "notes.cached": ["\uC774\uC804\uACFC \uAC19\uC544\uC11C \uB2E4\uC2DC \uBD80\uB974\uC9C0 \uC54A\uC74C", "unchanged, not asked again"],
     "notes.held": ["\uBE44\uBC00 \uB54C\uBB38\uC5D0 \uBE80 \uC694\uC57D {n}\uAC1C", "{n} summaries left out for secrets"],
-    "notes.chars": ["{n}\uC790", "{n} characters"],
-    "notes.none": ["\uC801\uC744 \uAC83\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.", "Nothing to write."],
-    "notes.no_scenes": ["\uC544\uC9C1 \uC7A5\uBA74 \uC694\uC57D\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uC7A5\uBA74 \uC694\uC57D\uC740 8\uD134\uB9C8\uB2E4 \uD558\uB098, \uADF8 \uB4A4 4\uD134\uC774 \uC9C0\uB098\uBA74 \uB9CC\uB4E4\uC5B4\uC9D1\uB2C8\uB2E4.", "No scene summary yet: one is made per 8 turns, 4 turns after they end."],
+    "notes.chars": ["\uC804\uCCB4 {n}\uC790", "{n} characters in all"],
     "exp.title": ["\uB0B4\uBCF4\uB0B4\uAE30", "Export"],
     "exp.sub": [
       "NMOS\uAC00 \uAE30\uC5B5\uD558\uB294 \uBAA8\uB4E0 \uB300\uD654\uC640 \uC124\uC815(API \uD0A4\uB294 \uBE7C\uACE0)\uC744 .nmos.zip \uD30C\uC77C \uD558\uB098\uB85C \uC800\uC7A5\uD569\uB2C8\uB2E4. \uCC44\uD305 \uC6D0\uBB38\uC774 \uB4E4\uC5B4 \uC788\uC73C\uB2C8 \uCC44\uD305\uCC98\uB7FC \uBCF4\uAD00\uD558\uC138\uC694.",
@@ -3821,12 +3810,12 @@ html,body{margin:0;background:${PALETTE.bg}}
           const r = await deps.api(
             "POST",
             `/v1/conversations/${conversation}/notes`,
-            { sections, chars: Number(length.value), secrets: secrets.checked, lang },
+            { sections, chars: Number(length.value), secrets: secrets.checked },
             3e5
           );
           if (actionConversation !== conversation) return;
-          results.replaceChildren(...r.sections.map((section) => noteSection(section, msg)));
-          say(msg, L("notes.done"), "ok");
+          results.replaceChildren(noteResult(r, msg));
+          say(msg, r.text ? L("notes.done") : L("notes.part_none", { part: L("notes.title") }), r.text ? "ok" : "warn");
         } catch (error) {
           say(msg, errorText(lang, error), "err");
         } finally {
@@ -3845,29 +3834,40 @@ html,body{margin:0;background:${PALETTE.bg}}
         results
       );
     }
-    function noteSection(section, msg) {
-      const title = el("h2", { text: L(`notes.h.${section.kind}`) });
-      if (!section.text) {
-        return el("div", {}, title, el("p", { class: "sub", text: L(section.reason === "no_scenes" ? "notes.no_scenes" : "notes.none") }));
-      }
-      const about = [L(`notes.made_${section.made}`)];
-      if (section.cached) about.push(L("notes.cached"));
-      if (section.held) about.push(L("notes.held", { n: section.held }));
-      about.push(L("notes.chars", { n: section.chars }));
+    function noteResult(r, msg) {
+      const how = (p) => {
+        const part = L(`notes.part.${p.kind}`);
+        if (p.reason === "no_scenes") return L("notes.part_no_scenes", { part });
+        if (p.reason === "none") return L("notes.part_none", { part });
+        const bits = [L(`notes.made_${p.made}`)];
+        if (p.cached) bits.push(L("notes.cached"));
+        if (p.held) bits.push(L("notes.held", { n: p.held }));
+        return L("notes.part_made", { part, how: bits.join(", ") });
+      };
+      const about = el("ul", { class: "sub" }, ...r.sections.map((p) => el("li", { text: how(p) })));
+      if (!r.text) return el("div", {}, about);
       const box = el("textarea", {
         readonly: true,
-        rows: 10,
+        rows: 14,
         spellcheck: "false",
         style: "font-family:inherit",
-        "aria-label": L(`notes.h.${section.kind}`)
+        "aria-label": L("notes.result")
       });
-      box.value = section.text;
-      const copy = el("button", { text: L("notes.copy") });
+      box.value = r.text;
+      const copy = el("button", { class: "primary", text: L("notes.copy") });
       copy.addEventListener("click", async () => {
         const copied = await copyText(box, navigator.clipboard);
         say(msg, L(copied ? "notes.copied" : "notes.copy_hint"), copied ? "ok" : "warn");
       });
-      return el("div", {}, title, el("p", { class: "sub", text: about.join(" \xB7 ") }), box, el("div", { class: "btns" }, copy));
+      return el(
+        "div",
+        {},
+        el("h2", { text: L("notes.result") }),
+        about,
+        el("p", { class: "sub", text: L("notes.chars", { n: r.chars }) }),
+        box,
+        el("div", { class: "btns" }, copy)
+      );
     }
     exportButton.addEventListener("click", async () => {
       const conversation = actionConversation;
