@@ -61,6 +61,8 @@ describe('canon texts (ADR 0045)', () => {
     const doc = JSON.parse(readFileSync(new URL('../../../fixtures/unit/canon-manifest-v1.json', import.meta.url), 'utf8'));
     expect(await canonManifestId(doc.entries)).toBe(doc.id);
     expect(await canonManifestId([...doc.entries].reverse())).toBe(doc.id);
+    // PHASE-50: the note's metadata names NMOS's sections, an array of objects
+    expect(await canonManifestId(doc.with_note_blocks.entries)).toBe(doc.with_note_blocks.id);
   });
 
   it('held by a prompt are the texts in it, as the host activated them (H19)', () => {

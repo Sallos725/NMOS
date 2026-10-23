@@ -56,6 +56,9 @@ def test_the_manifest_id_is_the_same_in_both_languages():
     assert canon.manifest_id(doc["entries"]) == doc["id"]
     assert canon.manifest_id(list(reversed(doc["entries"]))) == doc["id"]  # key order, whatever the host's order
     assert doc["entries"][1]["hash"] == canon.content_hash(doc["texts"]["card:desc"].replace("\r\n", "\n"))
+    blocks = doc["with_note_blocks"]  # PHASE-50: the note's metadata names NMOS's sections
+    assert canon.manifest_id(blocks["entries"]) == blocks["id"] == canon.manifest_id(list(reversed(blocks["entries"])))
+    assert blocks["entries"][0]["hash"] == canon.content_hash(blocks["text"])
 
 
 def test_canon_is_stored_once_and_its_manifest_made_the_canon_in_force(migrated):

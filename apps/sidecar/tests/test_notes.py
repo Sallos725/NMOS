@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import psycopg
 import pytest
+from psycopg.rows import dict_row
 
 from conftest import make_client
 from nmos_sidecar import notes
@@ -95,8 +97,10 @@ def test_address_gives_one_line_per_pair():
 
 
 
-def scene(first, last, text):
-    return {"window": None, "summary": {"id": f"s{first}", "first_turn": first, "last_turn": last, "text": text}}
+def scene(first, last, text, told=("smuggler",)):
+    """A current scene summary; `told`: the secrets its prompt listed (`coverage.secrets`, by `secret_key`)."""
+    return {"window": None, "summary": {"id": f"s{first}", "first_turn": first, "last_turn": last, "text": text,
+                                        "coverage": {"secrets": list(told)}}}
 
 
 def told(*scenes, story=None):
@@ -300,3 +304,34 @@ def test_a_failed_call_is_not_remembered():
     args = (told(scene(0, 7, "Hana walked.")), [], [], [], 3000, "ko")
     assert notes.chronicle(*args, model=flaky)["made"] == "assembled"
     assert notes.chronicle(*args, model=flaky)["made"] == "model" and len(calls) == 2
+
+
+
+def test_a_scene_written_before_a_secret_it_should_keep_is_left_out():
+    """As the packet holds it (ADR 0042 amendment 2): its prompt did not list the secret, so it may tell it in other
+    words that the trigram check does not catch."""
+    notes.clear_cache()
+    out = notes.chronicle(told(scene(0, 7, "Hana walked."), scene(8, 15, "Hana went home.", told=())),
+                          [], [], [SECRET], 3000, "ko", model=None)
+    assert out["held"] == 1 and "Hana walked." in out["body"] and "Hana went home." not in out["body"]
+
+
+def test_pasting_or_replacing_a_section_reads_no_canon_again(migrated):
+    """With the plugin's metadata (the note's text without its sections), a new paste changes the manifest only."""
+    chat, model = story(), Model()
+    note = "Hana is in the harbor town."
+    with make_client(migrated, **LLM) as c:
+        sync(c, chat)
+        push(c, chat, {**canon_texts(), "note": (note, {})})
+        drain(migrated, model)
+        calls = len(model.canon_calls())
+        for turns in ("0-7", "0-15"):
+            out = push(c, chat, {**canon_texts(), "note": (note, {"nmos_blocks": [{"kind": "chronicle", "turns": turns}]})})
+            assert out["applied"] and out["needed"] == []
+            assert drain(migrated, model) == 0
+    assert len(model.canon_calls()) == calls
+    with psycopg.connect(migrated, row_factory=dict_row) as conn:
+        notes_rows = conn.execute("SELECT count(*) AS n FROM source_revision sr JOIN source_object so"
+                                  " ON so.id = sr.source_object_id WHERE so.host_logical_id = 'canon:note'").fetchone()
+        manifests = conn.execute("SELECT count(*) AS n FROM canon_manifest").fetchone()
+    assert notes_rows["n"] == 1 and manifests["n"] == 3

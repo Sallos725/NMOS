@@ -25,7 +25,7 @@ from .noteblocks import KINDS, LABELS, strip_blocks, wrap  # noqa: F401  (the AP
 from .predicates import HOLDER_PER_ITEM, REGISTRY
 from .config import Settings
 from .llm import ChatModel, LLMError, metered
-from .summaries import content, leaks
+from .summaries import content, held as summary_held, leaks
 
 PAIRS_MAX = 30  # address lines at most
 PAIRWISE = frozenset({"relationship", "role_toward", "feels_toward", "addresses"})
@@ -194,14 +194,18 @@ def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts:
     """The chronicle's body, without its markers (PHASE-50 S2): Events and Now from the model, or assembled from the
     summaries when there is no model or its replies fail; Open threads always from the stored threads.
 
-    With `told_secrets` off, nothing kept from someone goes in: a scene summary or story that repeats an open secret at
-    LEAK_NEAR is left out (the note is read in every scene, so every secret counts as near), and so is a reply that
-    does (asked once more, then the assembled text)."""
+    With `told_secrets` off, nothing kept from someone goes in. A scene summary or story is left out when the packet
+    would hold it with every character a secret is kept from in the scene (`summaries.held`: it repeats a secret at
+    LEAK_NEAR, or was written before a secret it should have been told about; the note is read in every scene), and a
+    reply is refused when it repeats one at LEAK_NEAR (asked once more, then the assembled text)."""
     open_secrets = [s for s in secrets if s.get("open")]
     everyone = frozenset(norm(n) for s in open_secrets for n in s["open"])
 
     def tells(text: str) -> list[dict[str, Any]]:
         return [] if told_secrets else leaks(text, open_secrets, everyone)
+
+    def holds(row: dict[str, Any]) -> bool:
+        return not told_secrets and bool(summary_held(row, open_secrets, everyone))
 
     held = 0
     scenes: list[dict[str, Any]] = []
@@ -209,12 +213,12 @@ def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts:
         row = x.get("summary")
         if row is None:
             continue
-        if tells(row["text"]):
+        if holds(row):
             held += 1
         else:
             scenes.append(row)
     story = (told or {}).get("story")
-    if story is not None and tells(story["text"]):
+    if story is not None and holds(story):
         story, held = None, held + 1
     if not scenes:
         return {"body": "", "turns": "", "made": "none", "cached": False, "held": held, "reason": "no_scenes"}
