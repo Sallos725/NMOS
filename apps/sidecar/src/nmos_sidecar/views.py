@@ -57,6 +57,8 @@ STYLE = """
 .nmos .v-mark.major.n2,.nmos .v-mark.major.n4{top:8px;width:24px;height:24px;margin-left:-12px}
 .nmos .v-mark.sel{border-color:var(--c-accent);background:var(--c-accent)}
 .nmos .v-ends{display:flex;justify-content:space-between;font-size:var(--t-caption,13px);color:var(--c-text-muted)}
+.nmos .v-warn{color:var(--c-warn)}
+.nmos .v-filter input{width:100%;margin:0 0 8px}
 .nmos .v-foot{margin:28px 0 0;padding-top:10px;border-top:1px solid var(--c-line);font-size:var(--t-caption,13px);color:var(--c-text-muted)}
 .nmos .v-foot a{color:var(--c-text-soft)}
 @media (min-width:700px){.nmos .v-blocks{grid-template-columns:repeat(3,minmax(0,1fr))}.nmos .v-big{grid-row:span 2}.nmos .v-now{display:block}}
@@ -132,6 +134,11 @@ T: dict[str, tuple[str, str]] = {
     "w_counts": ("실패 {f} · 대기 {p}", "failed {f} · waiting {p}"),
     "w_made": ("{n}개 만듦", "{n} made"),
     "retry": ("실패한 작업 다시 시도", "Retry failed"),
+    "c_title": ("다른 채팅", "Other chats"),
+    "c_open": ("지금 열린 채팅", "open now"),
+    "c_msgs": ("메시지 {n}", "{n} messages"),
+    "c_failed": ("실패 {n}", "{n} failed"),
+    "c_unnamed": ("(이름 없는 채팅)", "(unnamed chat)"),
     "u_calls": ("모델 호출", "Model calls"), "u_tokens": ("토큰 (입력 · 출력)", "Tokens (in · out)"),
     "promise": ("약속", "promise"), "goal": ("목표", "goal"), "question": ("질문", "question"),
     "threat": ("위협", "threat"), "debt": ("빚", "debt"),
@@ -150,7 +157,11 @@ def t(lang: str, key: str, **kw: Any) -> str:
 
 # The browser page places the timeline's marks itself; in the panel, `placeMarks` does (it runs no page script).
 PLACE = ("document.querySelectorAll('[data-l]').forEach(function(m){var l=Number(m.getAttribute('data-l'));"
-         "if(l>=0&&l<=100)m.style.left=l+'%';});")
+         "if(l>=0&&l<=100)m.style.left=l+'%';});"
+         "document.querySelectorAll('.v-filter').forEach(function(f){var i=document.createElement('input');i.type='search';"
+         "f.appendChild(i);i.addEventListener('input',function(){var q=i.value.toLowerCase();"
+         "document.querySelectorAll('.v-chat').forEach(function(r){r.style.display="
+         "r.textContent.toLowerCase().indexOf(q)<0?'none':'';});});});")
 
 
 def full_page(title: str, body: str, lang: str = "ko") -> str:
@@ -211,10 +222,10 @@ def hub(data: dict[str, Any], lang: str) -> str:
         blocks.append(_block(t(lang, "usage"), t(lang, "usage_sub", n=(data.get("usage") or {}).get("calls", 0)),
                              href=f"/views/c/{cid}/working#s-usage"))
     else:
-        blocks.append(_block(title, sub, href="/inspector", cls=f"v-wide {state}"))
+        blocks.append(_block(title, sub, href="/views/chats", cls=f"v-wide {state}"))
     blocks.append(_block(t(lang, "settings"), t(lang, "settings_sub"), act="settings"))
     blocks.append(_block(t(lang, "backup"), t(lang, "backup_sub"), act="backup"))
-    blocks.append(_block(t(lang, "chats"), t(lang, "chats_sub", n=data.get("chats", 0)), href="/inspector"))
+    blocks.append(_block(t(lang, "chats"), t(lang, "chats_sub", n=data.get("chats", 0)), href="/views/chats"))
     cap = " · ".join(str(x) for x in ((conv or {}).get("name"), (conv or {}).get("character"),
                                      f"t{conv['turns']}" if conv and conv.get("turns") is not None else None) if x)
     return (f'<div class="v v-hub"><div class="v-head"><h1 class="v-h1">NMOS</h1>'
@@ -430,3 +441,22 @@ def working(d: dict[str, Any], lang: str) -> str:
     return (f'<div class="v v-doc"><div class="v-head"><h1 class="v-h1">{_v(t(lang, "ok") if not failed else t(lang, "warn"))}</h1>'
             f'<span class="v-cap">{_v(conv.get("name") or "")}</span></div>{body}'
             f'<div class="v-foot"><a href="/inspector/c/{cid}">{_v(t(lang, "details"))}</a></div></div>')
+
+
+
+def chats(rows: list[dict[str, Any]], lang: str, current: str | None = None) -> str:
+    """The chats NMOS knows (PHASE-52 D7), the most recently used first; each opens its hub. The search box is put in
+    `.v-filter` by the panel (its sanitizer keeps no input) or by the browser page's script."""
+    items = []
+    for r in rows:
+        cid = str(r["id"])
+        when = r.get("last_retrieval") or r.get("created_at")
+        iso = when.isoformat() if hasattr(when, "isoformat") else str(when or "")
+        meta = [r.get("host_character_name") or "", t(lang, "c_msgs", n=r.get("messages") or 0)]
+        failed = f' · <span class="v-warn">{_v(t(lang, "c_failed", n=r["failed"]))}</span>' if r.get("failed") else ""
+        now = f' · <b>{_v(t(lang, "c_open"))}</b>' if cid == current else ""
+        main = f'<a class="v-name" href="/views/hub?conversation={cid}">{_v(r.get("host_chat_name") or t(lang, "c_unnamed"))}</a>'
+        items.append(f'<div class="v-line v-chat">{main}<div class="v-meta">{_v(" · ".join(m for m in meta if m))} · '
+                     f'<span class="ts" title="{_v(iso)}">{_v(iso[:16].replace("T", " "))}</span>{failed}{now}</div></div>')
+    return (f'<div class="v v-doc"><div class="v-head"><h1 class="v-h1">{_v(t(lang, "c_title"))}</h1>'
+            f'<span class="v-cap">{len(rows)}</span></div><div class="v-filter"></div>{"".join(items)}</div>')

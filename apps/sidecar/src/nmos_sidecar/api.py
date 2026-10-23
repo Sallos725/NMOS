@@ -1642,6 +1642,24 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "usage": {"calls": int(total.get("calls") or 0), "input": int(total.get("input") or 0),
                           "output": int(total.get("output") or 0)}}
 
+    def chats_html(request: Request, lang: str | None, current: str | None = None) -> str:
+        """The chats NMOS knows with their failed jobs of the active generations (PHASE-52 D7)."""
+        with request.app.state.pool.connection() as conn:
+            rows = readmodel.list_conversations(conn)
+            keys = [g.key for g in retryable().values() if g]
+            failed = {r["conversation_id"]: r["n"] for r in conn.execute(
+                "SELECT conversation_id, count(*) AS n FROM job WHERE status = 'dead' AND payload->>'generation' = ANY(%s)"
+                " GROUP BY conversation_id", (keys,)).fetchall()} if keys else {}
+        return views.chats([{**r, "failed": failed.get(r["id"], 0)} for r in rows], inspector.lang_of(lang), current)
+
+    @app.get("/v1/views/chats", dependencies=[Depends(auth)])
+    def views_chats(request: Request, lang: str | None = None, current: str | None = None):
+        return {"html": chats_html(request, lang, current)}
+
+    @app.get("/views/chats", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def views_chats_page(request: Request, lang: str | None = None):
+        return views.full_page("NMOS", chats_html(request, lang), inspector.lang_of(lang))
+
     @app.get("/v1/views/c/{conv_id}/working", dependencies=[Depends(auth)])
     def views_working(conv_id: UUID, request: Request, lang: str | None = None):
         return {"html": view_page(request, conv_id, lambda conn, conv, lg: views.working(working_data(conn, conv), lg), lang)}

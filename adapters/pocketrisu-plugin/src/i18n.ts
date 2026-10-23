@@ -148,6 +148,7 @@ const STRINGS = {
   'exp.chat': ['이 대화 내보내기', 'Export this chat'],
   // notes for the author's note (PHASE-50)
   'notes.open': ['작가의 노트용 정리', "For the author's note"],
+  'chats.search': ['이름이나 캐릭터로 찾기', 'Search by name or character'],
   'notes.title': ['작가의 노트용 정리', "For the author's note"],
   'notes.part.chronicle': ['연대기', 'chronicle'],
   'notes.part.changed': ['설정 변경점', 'changed from the setting'],

@@ -38,6 +38,8 @@ describe('view paths (PHASE-52)', () => {
     expect(inspectorApiPath(`/views/c/${id}/person/${e}`)).toBe(`/v1/views/c/${id}/person/${e}`);
     expect(inspectorApiPath(`/views/c/${id}/working`)).toBe(`/v1/views/c/${id}/working`);
     expect(inspectorApiPath('/views/chats')).toBe('/v1/views/chats');
+    expect(inspectorApiPath(`/views/hub?conversation=${id}`)).toBe(`/v1/views/hub?conversation=${id}`);
+    expect(inspectorApiPath('/views/hub?conversation=x&evil=1')).toBeNull();
     for (const bad of [`/views/c/${id}/delete`, '/views/c/x/memory', '//evil/views/chats', `/views/c/${id}/person/x`]) {
       expect(inspectorApiPath(bad)).toBeNull();
     }
@@ -58,6 +60,7 @@ const hub = `<div class="v v-hub"><div class="v-blocks">`
   + `<a class="v-block v-big" href="/inspector/c/${id}"><span class="v-bt">Memory</span></a>`
   + `<a class="v-block" href="/views/c/${id}/memory"><span class="v-bt">Memory doc</span></a>`
   + `<a class="v-block" href="/views/c/${id}/working"><span class="v-bt">Working page</span></a>`
+  + `<a class="v-block" href="/views/chats"><span class="v-bt">Other chats</span></a>`
   + `<a class="v-block" href="/views/c/${id}/person/0190f3a4-1b2c-7d3e-8f40-00000000000a"><span class="v-bt">Hana</span></a>`
   + `<a class="v-block" data-act="settings"><span class="v-bt">Settings</span></a>`
   + `<a class="v-block" data-act="notes"><span class="v-bt">Author's note</span></a></div></div>`;
@@ -76,6 +79,10 @@ function deps(opts: { views?: boolean; css?: string } = {}) {
         return { html: '<div class="v"><span class="has-failed"></span><a data-act="retry">Retry failed</a></div>' } as T;
       }
       if (path.endsWith('/retry-failed')) return { retried: { extract: 2 } } as T;
+      if (path.startsWith('/v1/views/chats')) {
+        return { html: '<div class="v"><div class="v-filter"></div><div class="v-line v-chat"><a href="#">Harbor</a></div>'
+          + '<div class="v-line v-chat"><a href="#">Mill</a></div></div>' } as T;
+      }
       if (path.startsWith('/v1/inspector')) return { html: `<a href="/inspector/c/${id}">chat</a>` } as T;
       if (path.endsWith('/memory-mode')) throw new Error('404');
       if (path.includes('/status/candidates')) throw new Error('404');
@@ -194,5 +201,18 @@ describe('the hub (PHASE-52 D1)', () => {
     panel().querySelector<HTMLAnchorElement>('a[data-act="retry"]')!.click();
     await settle();
     expect(calls).toContainEqual(['POST', `/v1/conversations/${id}/retry-failed`]);
+  });
+
+  it('filters the chat list by what is typed', async () => {
+    const { d } = deps();
+    await openPanel(d, 'status');
+    await settle();
+    panel().querySelector<HTMLAnchorElement>('a[href="/views/chats"]')!.click();
+    await settle();
+    const box = panel().querySelector<HTMLInputElement>('.v-filter input')!;
+    box.value = 'mill';
+    box.dispatchEvent(new Event('input'));
+    const shown = Array.from(panel().querySelectorAll<HTMLElement>('.v-chat')).filter((r) => r.style.display !== 'none');
+    expect(shown.map((r) => r.textContent)).toEqual(['Mill']);
   });
 });

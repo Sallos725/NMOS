@@ -711,6 +711,17 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   /** Adapt a page to the panel: times in the viewer's zone, the character links as a drop-down. */
   function enhance(page: DocumentFragment): void {
     closers = new Map();
+    // The chat list's search box (PHASE-52 D7): the sidecar marks where; the sanitizer keeps no input of its own.
+    for (const slot of Array.from(page.querySelectorAll('.v-filter'))) {
+      const box = el('input', { type: 'search', placeholder: L('chats.search'), 'aria-label': L('chats.search') });
+      box.addEventListener('input', () => {
+        const q = box.value.trim().toLowerCase();
+        for (const row of Array.from(inspectorBody.querySelectorAll<HTMLElement>('.v-chat'))) {
+          row.style.display = !q || (row.textContent ?? '').toLowerCase().includes(q) ? '' : 'none';
+        }
+      });
+      slot.append(box);
+    }
     // The timeline is asked for only when its section is opened, so a chat page never holds it unasked (an iPhone's
     // Safari reloads a page under memory pressure; PHASE-32 step 3). The listener goes with the page it is on.
     for (const box of Array.from(page.querySelectorAll<HTMLElement>('details > .tl-lazy'))) {

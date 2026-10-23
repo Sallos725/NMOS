@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:8e31c4c6f26d".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:403f9fee8490".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -467,6 +467,7 @@
     "exp.chat": ["\uC774 \uB300\uD654 \uB0B4\uBCF4\uB0B4\uAE30", "Export this chat"],
     // notes for the author's note (PHASE-50)
     "notes.open": ["\uC791\uAC00\uC758 \uB178\uD2B8\uC6A9 \uC815\uB9AC", "For the author's note"],
+    "chats.search": ["\uC774\uB984\uC774\uB098 \uCE90\uB9AD\uD130\uB85C \uCC3E\uAE30", "Search by name or character"],
     "notes.title": ["\uC791\uAC00\uC758 \uB178\uD2B8\uC6A9 \uC815\uB9AC", "For the author's note"],
     "notes.part.chronicle": ["\uC5F0\uB300\uAE30", "chronicle"],
     "notes.part.changed": ["\uC124\uC815 \uBCC0\uACBD\uC810", "changed from the setting"],
@@ -2195,7 +2196,7 @@ ${revisionHash}`;
   function inspectorApiPath(href) {
     const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, "i").exec(href ?? "");
     if (m) return `/v1/inspector${m[1] ?? ""}`;
-    const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|person/${UUID}))(?:#|$)`, "i").exec(href ?? "");
+    const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, "i").exec(href ?? "");
     return v ? `/v1/views${v[1]}` : null;
   }
   function inspectorConversation(path) {
@@ -3223,6 +3224,16 @@ html,body{margin:0;background:${PALETTE.bg}}
     }
     function enhance(page) {
       closers = /* @__PURE__ */ new Map();
+      for (const slot of Array.from(page.querySelectorAll(".v-filter"))) {
+        const box = el("input", { type: "search", placeholder: L("chats.search"), "aria-label": L("chats.search") });
+        box.addEventListener("input", () => {
+          const q = box.value.trim().toLowerCase();
+          for (const row of Array.from(inspectorBody.querySelectorAll(".v-chat"))) {
+            row.style.display = !q || (row.textContent ?? "").toLowerCase().includes(q) ? "" : "none";
+          }
+        });
+        slot.append(box);
+      }
       for (const box of Array.from(page.querySelectorAll("details > .tl-lazy"))) {
         const section = box.parentElement;
         section.addEventListener("toggle", () => {

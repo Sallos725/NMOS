@@ -279,3 +279,28 @@ def test_the_working_endpoint(migrated):
         r = c.get(f"/v1/views/c/{cid}/working")
         assert r.status_code == 200, r.text
         assert 'id="s-work"' in r.json()["html"]
+
+
+
+# --- other chats (PHASE-52 D7) ------------------------------------------------------------------------------------------
+
+def test_the_chats_are_a_list_to_search_with_failures_marked():
+    rows = [{"id": CID, "host_chat_name": "Harbor", "host_character_name": "Hana", "messages": 26,
+             "last_retrieval": "2026-10-23T12:00:00+00:00", "created_at": "2026-10-01T00:00:00+00:00", "failed": 0},
+            {"id": KAITO, "host_chat_name": None, "host_character_name": "Kaito", "messages": 4,
+             "last_retrieval": None, "created_at": "2026-10-02T00:00:00+00:00", "failed": 2}]
+    html = views.chats(rows, "ko", current=CID)
+    assert html.count('class="v-line v-chat"') == 2 and '<div class="v-filter"></div>' in html
+    assert f'href="/views/hub?conversation={CID}"' in html and "지금 열린 채팅" in html
+    assert 'title="2026-10-23T12:00:00+00:00"' in html and "실패 2" in html and "<table" not in html
+
+
+def test_the_chats_endpoint(migrated):
+    chat = SimChat("views-chats")
+    chat.user("Hello.")
+    chat.reply("Hi.")
+    with make_client(migrated) as c:
+        sync(c, chat)
+        out = c.get("/v1/views/chats").json()
+        assert 'class="v-line v-chat"' in out["html"]
+        assert c.get("/views/chats").status_code == 200
