@@ -4,8 +4,8 @@ Status: **draft**, 2026-10-23 (AGE-88). An owner request, not a roadmap stage. N
 The shape below (S1–S7) was agreed with the owner in the design conversation of 2026-10-23.
 **Q1–Q5 answered (owner, 2026-10-23): all as recommended.** Approval to implement is a separate decision and has not
 been given.
-**After 1.0.0** (R7; the two quiet weeks on the trial install run from 2026-10-13 to at least 2026-10-27): nothing of
-this phase lands on the trial install or in a `0.4.x` release. A minor release (`1.1.0`) is proposed.
+**After 1.0.0** (R7; the 1.0 gate's two quiet weeks run from 2026-10-13 to at least 2026-10-27, on the install the
+owner uses): nothing of this phase lands on that install or in a `0.4.x` release. A minor release (`1.1.0`) is proposed.
 
 The owner read a request's `<Story>` section (`<Summary kind="story" turns="0-87">`) and found that it summarized
 88 turns so briefly that important events were missing. The owner asked for a way to get, on request, a fuller account
