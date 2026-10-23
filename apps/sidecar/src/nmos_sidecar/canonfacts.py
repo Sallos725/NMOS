@@ -32,7 +32,7 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import generations, normtext, notes
+from . import generations, normtext, noteblocks
 from .canon import MACRO, MACRO_SQL
 from .config import Settings
 from .generations import Generation
@@ -284,7 +284,7 @@ def process(conn: psycopg.Connection, job: dict[str, Any], complete: Callable[[s
         return "obsolete"
     text = named(normtext.get(conn, rid)["clean_content"], src["character"], src["user"])
     if src["key"] == "note":  # NMOS's own sections are not canon (PHASE-50 S5): an older plugin sends them whole
-        text = notes.strip_blocks(text)[0]
+        text = noteblocks.strip_blocks(text)[0]
     pieces, unread = parts(text)
     done = {r["window_hash"] for r in conn.execute(
         "SELECT window_hash FROM extraction WHERE source_revision_id = %s AND extractor_key = %s"
