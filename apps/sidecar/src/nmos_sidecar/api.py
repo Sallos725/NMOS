@@ -1514,12 +1514,13 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             "placed": sum(int(v or 0) for v in placed.values()) if isinstance(placed, dict) else int(placed or 0),
             "ms": lat.get("sidecar_total")}
         cur = rt["settings"]
-        state = "off" if off or all_off else ("ok" if cur.llm_url and cur.llm_model else "err")
+        state = "off" if off or all_off else "ok"  # without a model NMOS still recalls excerpts: not an error
         cast = [str(n) for n in lat.get("scene_cast") or []]
         threads = [th for th in view["threads"] if th["status"] == "open"]
         return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
                          "turns": last},
                 "working": {"state": state, "all_off": all_off, "reply": reply,
+                            "no_extraction": not (cur.llm_url and cur.llm_model),
                             "failed": sum(int(p.get("failed") or 0) for p in parts),
                             "pending": sum(int(p.get("pending") or 0) for p in parts)},
                 "memory": {"cast": len(cast), "open": sum(1 for th in threads if not inspector.stale(th, last)),

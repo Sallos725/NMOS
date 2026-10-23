@@ -74,6 +74,7 @@ T: dict[str, tuple[str, str]] = {
     "not_placed": ("최근 답장에 들어간 기억이 없어요", "The last reply went without memory"),
     "no_reply": ("아직 이 채팅에서 받은 요청이 없어요", "No request from this chat yet"),
     "failed": ("실패 {f} · 대기 {p}", "Failed {f} · waiting {p}"),
+    "no_extraction": ("사실 추출 꺼짐 (모델 없음)", "fact extraction off (no model)"),
     "off_chat": ("이 채팅은 NMOS가 꺼져 있어요", "NMOS is off for this chat"),
     "off_all": ("NMOS가 전체적으로 꺼져 있어요", "NMOS is off for every chat"),
     "unknown": ("아직 이 채팅의 기록이 없어요", "NMOS has no record of this chat yet"),
@@ -182,6 +183,13 @@ def _block(title: str, sub: str, href: str | None = None, act: str | None = None
 
 
 def _working(w: dict[str, Any], lang: str) -> tuple[str, str]:
+    title, sub = _working_line(w, lang)
+    if w.get("no_extraction") and w.get("state") == "ok":
+        sub += " · " + t(lang, "no_extraction")
+    return title, sub
+
+
+def _working_line(w: dict[str, Any], lang: str) -> tuple[str, str]:
     state = w.get("state") or "idle"
     if state == "off":
         return t(lang, "off"), t(lang, "off_all" if w.get("all_off") else "off_chat")

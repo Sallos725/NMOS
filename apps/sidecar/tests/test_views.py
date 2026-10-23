@@ -304,3 +304,10 @@ def test_the_chats_endpoint(migrated):
         out = c.get("/v1/views/chats").json()
         assert 'class="v-line v-chat"' in out["html"]
         assert c.get("/views/chats").status_code == 200
+
+
+
+def test_without_a_model_the_hub_still_says_working():
+    html = views.hub(hub_data(working={"state": "ok", "reply": {"placed": 3, "ms": 100}, "failed": 0, "pending": 0,
+                                       "no_extraction": True}), "ko")
+    assert "v-block v-wide ok" in html and "사실 추출 꺼짐" in html
