@@ -26,32 +26,33 @@ from .summaries import LAG, WINDOW
 STYLE = """
 :root{color-scheme:light dark;--bg:#fbfbfa;--fg:#1d1d1f;--muted:#6b6b70;--line:#e3e3e0;--chip:#efefec;--accent:#3b5bdb}
 @media (prefers-color-scheme:dark){:root{--bg:#18181a;--fg:#ececec;--muted:#9a9aa0;--line:#2c2c30;--chip:#26262a;--accent:#8ea2ff}}
-body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Noto Sans KR",sans-serif}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif}
 main{max-width:1100px;margin:0 auto;padding:24px 16px}
-h1{font-size:20px;margin:0 0 4px} h2{font-size:15px;margin:28px 0 8px}
+h1{font-size:20px;margin:0 0 4px} h2{font-size:17px;margin:28px 0 8px}
 a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
-.muted{color:var(--muted)} .mono{font-family:ui-monospace,monospace;font-size:12px}
+.muted{color:var(--muted)} .mono{font-family:ui-monospace,monospace;font-size:13px}
 pre.mono{white-space:pre-wrap;background:var(--chip);padding:8px 10px;border-radius:6px;margin:4px 0 0}
 .top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:12px}
 .refresh{margin:0} .refresh button{font:inherit;color:var(--fg);background:var(--chip);border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer}
 .lang{font-size:13px;white-space:nowrap}
-.ref{display:block;font-family:ui-monospace,monospace;font-size:11px;color:var(--muted)}
+.ref{display:block;font-family:ui-monospace,monospace;font-size:13px;color:var(--muted)}
 table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-th{font-weight:600;color:var(--muted);font-size:12px}
-.chip{display:inline-block;padding:0 6px;border-radius:4px;background:var(--chip);font-size:12px;white-space:nowrap}
+th{font-weight:600;color:var(--muted);font-size:13px}
+.chip{display:inline-block;padding:0 6px;border-radius:4px;background:var(--chip);font-size:13px;white-space:nowrap}
 .wrap{overflow-x:auto}
-.warn{color:#e8590c} .n{color:var(--muted);font-weight:400;font-size:12px}
+.warn{color:#e8590c} .n{color:var(--muted);font-weight:400;font-size:13px}
 .toc,.who{font-size:13px;line-height:1.9;margin:8px 0}
 details>summary{cursor:pointer;list-style:none} details>summary::-webkit-details-marker{display:none}
 details>summary h2{display:inline-block} details>summary h2::before{content:"\\25B8  ";color:var(--muted)}
 details[open]>summary h2::before{content:"\\25BE  "}
-details.meta{margin:4px 0 0;font-size:12px} details.meta p{margin:4px 0}
+details.meta{margin:4px 0 0;font-size:13px} details.meta p{margin:4px 0}
 """ + timeline.STYLE
 
 LANGS = ("ko", "en")
 
 T: dict[str, tuple[str, str]] = {  # key: (ko, en)
     "title": ("NMOS 인스펙터", "NMOS inspector"),
+    "new_views": ("새 화면으로 보기 (채팅 목록 · 허브 · 기억)", "Open the new screens (chats · hub · memory)"),
     "intro": ("원장(source ledger) 읽기 전용 화면입니다. 백그라운드 작업:", "Read-only view of the source ledger. Background jobs:"),
     "empty": ("없음", "empty"),
     "none": ("없음", "none"),
@@ -448,6 +449,11 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
 }
 
 
+def q_lang(lang: str) -> str:
+    """The query that keeps the page's language on a link."""
+    return "?lang=en" if lang == "en" else ""
+
+
 def lang_of(value: str | None) -> str:
     return value if value in LANGS else "ko"
 
@@ -686,8 +692,11 @@ def index(conversations: list[dict[str, Any]], token: str | None, jobs: dict[str
         + f'<input type="hidden" name="lang" value="{_v(lang)}">'
         + f'<button type="submit">{_t(lang, "refresh")}</button></form>')
     ver = f"<span class=\"muted\">{_t(lang, 'version')} {_v(version)}</span>" if version else ""
+    # the panel's new screens (PHASE-52 D9), in the browser too; the panel opens them from its hub
+    views_link = "" if embed else f"<p><a href=\"/views/chats{q_lang(lang)}\">{_t(lang, 'new_views')}</a></p>"
     body = (f"<div class=\"top\"><h1>{_t(lang, 'title')}</h1>{ver}{refresh}{switch}</div>"
             f"<p class=\"muted\">{_t(lang, 'intro')} {queue}</p>"
+            f"{views_link}"
             f"<p>{_t(lang, 'extractor')}: {_generation(gens.get('extraction'), lang)}<br>"
             f"{_t(lang, 'projection')}: {_generation(gens.get('embeddings'), lang)}"
             + (f"<br>{_t(lang, 'sm.generation')}: {_generation(gens['summaries'], lang)}" if gens.get("summaries") else "")

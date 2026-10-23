@@ -552,10 +552,10 @@ def cast(t: T, entities: list[dict[str, Any]], facts: list[dict[str, Any]], scen
 
 STYLE = """
 .tl{margin:8px 0 22px}
-.tl .tl-h{font-size:12px;font-weight:500;letter-spacing:.04em;color:var(--muted);margin:18px 0 4px 6px;cursor:pointer;
+.tl .tl-h{font-size:13px;font-weight:500;letter-spacing:.04em;color:var(--muted);margin:18px 0 4px 6px;cursor:pointer;
   list-style:none} .tl .tl-h::-webkit-details-marker{display:none}
 .tl .tl-h::before{content:"\\25BE  "} .tl details:not([open])>.tl-h::before{content:"\\25B8  "}
-.tl-switch{font-size:13px;margin:0 0 10px 6px} .tl-hint{font-size:12px;margin:0 0 8px 6px}
+.tl-switch{font-size:13px;margin:0 0 10px 6px} .tl-hint{font-size:13px;margin:0 0 8px 6px}
 .tl-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:28px;align-items:start}
 .tl-row{display:grid;grid-template-columns:220px minmax(0,1fr);gap:14px;align-items:center;padding:4px 6px;
   border-radius:6px;color:inherit}
@@ -564,9 +564,9 @@ a.tl-row:hover{background:var(--chip);text-decoration:none}
 .tl-lab{font-size:13px;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tl-lab .tl-k{color:var(--muted)} .tl-lab .tl-val{color:var(--fg);margin-left:7px} .tl-lab .tl-val.canon{color:var(--muted)}
 .tl-cast .tl-lab{color:var(--fg)}
-.tl-last{display:none;color:var(--muted);font-size:12px}
-.tl-end{font-size:12px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
-.tl-me{font-size:11px;color:var(--accent);margin-left:6px}
+.tl-last{display:none;color:var(--muted);font-size:13px}
+.tl-end{font-size:13px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.tl-me{font-size:13px;color:var(--accent);margin-left:6px}
 .tl-track{position:relative;height:26px;min-width:0}
 .tl-rule{position:absolute;left:0;right:0;top:13px;height:1px;background:var(--line)}
 .tl-bar{position:absolute;top:5px;height:16px;min-width:6px;border-radius:4px;overflow:hidden;box-sizing:border-box;
@@ -584,14 +584,14 @@ a.tl-row:hover{background:var(--chip);text-decoration:none}
 .tl .tl-dot[aria-pressed="true"]{background:transparent} .tl .tl-dot[aria-pressed="true"]::after{background:var(--accent)}
 .tl-tick{position:absolute;top:5px;width:2px;height:16px;margin-left:-1px;border-radius:1px;background:var(--fg);opacity:.7}
 .tl-axis .tl-track{height:20px}
-.tl-axis .tl-track span{position:absolute;top:2px;font-size:11px;color:var(--muted);transform:translateX(-50%);white-space:nowrap}
+.tl-axis .tl-track span{position:absolute;top:2px;font-size:13px;color:var(--muted);transform:translateX(-50%);white-space:nowrap}
 .tl-axis .tl-track span.first{transform:none} .tl-axis .tl-track span.last{transform:translateX(-100%)}
 .tl-side{border-left:1px solid var(--line);padding-left:18px;font-size:13px;position:sticky;top:12px}
 .tl-side p{margin:3px 0} .tl-side .v{font-size:22px;font-weight:600;line-height:1.3;margin:6px 0;overflow-wrap:anywhere}
 .tl-hist{margin:10px 0;padding-left:20px;color:var(--muted)} .tl-hist .cur{color:var(--fg)}
 .tl-x{display:none}
-.tl-more{font-size:12px;margin:2px 6px}
-.tl-fold>summary,.tl-others>summary{font-size:12px;color:var(--muted);margin:8px 0 2px 6px;cursor:pointer}
+.tl-more{font-size:13px;margin:2px 6px}
+.tl-fold>summary,.tl-others>summary{font-size:13px;color:var(--muted);margin:8px 0 2px 6px;cursor:pointer}
 tr:target td{background:var(--chip)}
 .fold-setting>summary{margin:10px 0 4px;cursor:pointer;font-size:13px}
 @media (max-width:720px){.tl-grid{grid-template-columns:minmax(0,1fr)}
