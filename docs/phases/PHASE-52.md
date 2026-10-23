@@ -148,6 +148,11 @@ first (stylesheet, hub, a link and Back) as amended after reading the sanitizer.
   merged mark is larger, its count in its card); a person's relationships showed a bare name when the feelings ran the
   other way (both directions now); the memory just sent carried English predicate names (the panel's words now). Two
   names of one character that NMOS keeps as two entities still show twice: that is the memory's, fixed by a join.
+- **The owner's first look** (2026-10-23, desktop and iPhone): the hub's grid left holes at two and three columns
+  (blocks now grow to fill their row, so every row ends flush whatever their number); a close's preselected ending
+  ("이룸") read like a name and a goal was offered "paid" (a close is now "How did it end?" with one button per
+  ending of the thread's kind: a goal achieved, abandoned or failed; a question answered or abandoned; a threat
+  averted or failed; a debt paid or abandoned; a promise kept or broken; the repair accepts what it did).
 - **Where today's actions went:** Status tab → settings, connection (sidecar, plugin file, this chat on/off); Inspector
   list → other chats; a chat's page → memory (now, threads, people, so far, secrets, changed) and details (everything
   else, unchanged); Retry failed → working; Extract all history, Rebuild, Export this chat, Delete → settings, this
