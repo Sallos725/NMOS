@@ -1620,6 +1620,37 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 "kept": [s for s in view["secrets"] if names & {norm(n) for n in s.get("open") or []}],
                 "marks": marks, "first": 0, "last": last, "entities": character_ids(view)}
 
+    def working_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
+        """The panel's working screen (PHASE-52 D5): the newest request's ledger, processing and usage."""
+        cid = conv["id"]
+        cov = coverage_view(conn, cid, usage=True)
+        trace = conn.execute("SELECT id, created_at, latency_ms, token_estimate FROM retrieval_trace"
+                             " WHERE conversation_id = %s ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
+        reply = None
+        if trace is not None:
+            a = audit.audit(conn, trace["id"]) or {}
+            reply = {"at": trace["created_at"].isoformat(), "ms": (trace["latency_ms"] or {}).get("sidecar_total"),
+                     "tokens": trace["token_estimate"],
+                     "lines": [{"kind": x.get("kind"), "text": x.get("text"), "placed": bool(x.get("placed")),
+                                "echoed": bool(x.get("echoed"))} for x in a.get("lines") or [] if x.get("label") != "hidden"]}
+        total = (cov.get("usage") or {}).get("total") or {}
+        summaries_ = {**(cov.get("summaries") or {}), "produced": (cov.get("produced") or {}).get("summaries", 0)}
+        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name")}, "reply": reply,
+                "work": {"extraction": cov.get("extraction") or {}, "embeddings": cov.get("embeddings") or {},
+                         "summaries": summaries_, "canon": cov.get("canon") or {}},
+                "errors": [str(e.get("error") if isinstance(e, dict) else e) for e in cov.get("failed_errors") or []],
+                "usage": {"calls": int(total.get("calls") or 0), "input": int(total.get("input") or 0),
+                          "output": int(total.get("output") or 0)}}
+
+    @app.get("/v1/views/c/{conv_id}/working", dependencies=[Depends(auth)])
+    def views_working(conv_id: UUID, request: Request, lang: str | None = None):
+        return {"html": view_page(request, conv_id, lambda conn, conv, lg: views.working(working_data(conn, conv), lg), lang)}
+
+    @app.get("/views/c/{conv_id}/working", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def views_working_page(conv_id: UUID, request: Request, lang: str | None = None):
+        return views.full_page("NMOS", view_page(
+            request, conv_id, lambda conn, conv, lg: views.working(working_data(conn, conv), lg), lang), inspector.lang_of(lang))
+
     @app.get("/v1/views/c/{conv_id}/person/{entity_id}", dependencies=[Depends(auth)])
     def views_person(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None):
         return {"html": view_page(request, conv_id,

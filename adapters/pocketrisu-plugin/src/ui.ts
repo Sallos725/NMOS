@@ -1870,12 +1870,26 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (act === 'backup') document.getElementById('nmos-backup')?.scrollIntoView({ block: 'start' });
       return;
     }
+    if (act === 'retry') return void retryFrom(inspectorConversation(inspectorPath));
     if (act === 'notes' && hubConversation) {
       notesCard.replaceChildren();
       buildNotes(hubConversation);
       notesCard.style.display = '';
       notesCard.scrollIntoView({ block: 'start' });
     }
+  }
+  /** Run a chat's failed jobs again from the working screen (PHASE-52 D5), as today's Retry failed does. */
+  async function retryFrom(conversation: string | null): Promise<void> {
+    if (!conversation) return;
+    say(actionMsg, L('act.working'));
+    try {
+      const r = await deps.api<{ retried?: Record<string, number> }>('POST',
+        `/v1/conversations/${conversation}/retry-failed`, {}, 30_000);
+      const n = Object.values(r.retried ?? {}).reduce((a, b) => a + (Number(b) || 0), 0);
+      say(actionMsg, n ? L('act.retry_done', { n }) : L('act.retry_none'), 'ok');
+      if (n) deps.hud.background(conversation);
+      await showInspector();
+    } catch (error) { say(actionMsg, actionError(error), 'err'); }
   }
   /** The hub for the chat open in the host (PHASE-52): with what only the plugin knows, this chat off or every chat. */
   async function hubPath(): Promise<string> {

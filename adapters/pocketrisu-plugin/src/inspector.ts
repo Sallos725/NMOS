@@ -11,7 +11,7 @@ const TURN = '/t/(?:0|[1-9][0-9]{0,6})';
 // Section folds and the contents that links to them (`s-facts`, `#s-facts`).
 const SECTION = /^s-[a-z]{1,20}$/;
 // What a page of the sidecar's may ask the plugin to do itself (PHASE-52): nothing else survives in `data-act`.
-export const ACTS = new Set(['notes', 'settings', 'backup']);
+export const ACTS = new Set(['notes', 'settings', 'backup', 'retry']);
 
 /** The sidecar API path for an inspector link (`/inspector`, `/inspector/c/<id>`, `/inspector/c/<id>/e/<id>`,
  * `/inspector/c/<id>/t/<turn>`), or null. */

@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:77cb06abfa7f".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:8e31c4c6f26d".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -2191,7 +2191,7 @@ ${revisionHash}`;
   var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
   var TURN = "/t/(?:0|[1-9][0-9]{0,6})";
   var SECTION = /^s-[a-z]{1,20}$/;
-  var ACTS = /* @__PURE__ */ new Set(["notes", "settings", "backup"]);
+  var ACTS = /* @__PURE__ */ new Set(["notes", "settings", "backup", "retry"]);
   function inspectorApiPath(href) {
     const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, "i").exec(href ?? "");
     if (m) return `/v1/inspector${m[1] ?? ""}`;
@@ -4614,11 +4614,30 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (act === "backup") document.getElementById("nmos-backup")?.scrollIntoView({ block: "start" });
         return;
       }
+      if (act === "retry") return void retryFrom(inspectorConversation(inspectorPath));
       if (act === "notes" && hubConversation) {
         notesCard.replaceChildren();
         buildNotes(hubConversation);
         notesCard.style.display = "";
         notesCard.scrollIntoView({ block: "start" });
+      }
+    }
+    async function retryFrom(conversation) {
+      if (!conversation) return;
+      say(actionMsg, L("act.working"));
+      try {
+        const r = await deps.api(
+          "POST",
+          `/v1/conversations/${conversation}/retry-failed`,
+          {},
+          3e4
+        );
+        const n = Object.values(r.retried ?? {}).reduce((a, b) => a + (Number(b) || 0), 0);
+        say(actionMsg, n ? L("act.retry_done", { n }) : L("act.retry_none"), "ok");
+        if (n) deps.hud.background(conversation);
+        await showInspector();
+      } catch (error) {
+        say(actionMsg, actionError(error), "err");
       }
     }
     async function hubPath() {

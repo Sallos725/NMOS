@@ -20,7 +20,7 @@ describe('design tokens (PHASE-52 D8)', () => {
 
 describe('the sanitizer and the plugin\'s actions', () => {
   it('keeps data-act only for the three actions the plugin does', () => {
-    for (const ok of ['notes', 'settings', 'backup']) expect(keepAttribute('data-act', ok)).toBe(true);
+    for (const ok of ['notes', 'settings', 'backup', 'retry']) expect(keepAttribute('data-act', ok)).toBe(true);
     for (const bad of ['', 'delete', 'javascript:x', 'settings ']) expect(keepAttribute('data-act', bad)).toBe(false);
     const part = safeFragment('<a class="v-block" data-act="settings" onclick="x()">S</a><a data-act="rebuild">R</a>');
     const links = Array.from(part.querySelectorAll('a'));
@@ -57,6 +57,7 @@ const hub = `<div class="v v-hub"><div class="v-blocks">`
   + `<a class="v-block v-wide ok" href="/inspector/c/${id}"><span class="v-bt">Working</span></a>`
   + `<a class="v-block v-big" href="/inspector/c/${id}"><span class="v-bt">Memory</span></a>`
   + `<a class="v-block" href="/views/c/${id}/memory"><span class="v-bt">Memory doc</span></a>`
+  + `<a class="v-block" href="/views/c/${id}/working"><span class="v-bt">Working page</span></a>`
   + `<a class="v-block" href="/views/c/${id}/person/0190f3a4-1b2c-7d3e-8f40-00000000000a"><span class="v-bt">Hana</span></a>`
   + `<a class="v-block" data-act="settings"><span class="v-bt">Settings</span></a>`
   + `<a class="v-block" data-act="notes"><span class="v-bt">Author's note</span></a></div></div>`;
@@ -71,6 +72,10 @@ function deps(opts: { views?: boolean; css?: string } = {}) {
       if (path.startsWith(`/v1/inspector/c/${id}`)) return { html: '<h1>Chat page</h1>' } as T;
       if (path.startsWith(`/v1/views/c/${id}/memory`)) return { html: memory } as T;
       if (path.includes('/person/')) return { html: person } as T;
+      if (path.startsWith(`/v1/views/c/${id}/working`)) {
+        return { html: '<div class="v"><span class="has-failed"></span><a data-act="retry">Retry failed</a></div>' } as T;
+      }
+      if (path.endsWith('/retry-failed')) return { retried: { extract: 2 } } as T;
       if (path.startsWith('/v1/inspector')) return { html: `<a href="/inspector/c/${id}">chat</a>` } as T;
       if (path.endsWith('/memory-mode')) throw new Error('404');
       if (path.includes('/status/candidates')) throw new Error('404');
@@ -178,5 +183,16 @@ describe('the hub (PHASE-52 D1)', () => {
     expect(mark.style.left).toBe('75%');
     mark.click();
     expect(panel().querySelector('.tl-card')!.textContent).toContain('Hana meets Kaito');
+  });
+
+  it('retries a chat\'s failed work from the working screen', async () => {
+    const { d, calls } = deps();
+    await openPanel(d, 'status');
+    await settle();
+    panel().querySelector<HTMLAnchorElement>(`a[href="/views/c/${id}/working"]`)!.click();
+    await settle();
+    panel().querySelector<HTMLAnchorElement>('a[data-act="retry"]')!.click();
+    await settle();
+    expect(calls).toContainEqual(['POST', `/v1/conversations/${id}/retry-failed`]);
   });
 });

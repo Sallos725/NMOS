@@ -38,6 +38,7 @@ STYLE = """
 .nmos .v-chips a{font-size:var(--t-caption,13px);padding:3px 10px;border-radius:var(--r-control,6px);background:var(--c-raised);color:var(--c-text-soft)}
 .nmos .v-sec{margin:22px 0 0}
 .nmos .v-h2{font-size:var(--t-h2,17px);font-weight:600;margin:0 0 6px;color:var(--c-text-strong)}
+.nmos .v-h2.v-small{font-size:var(--t-secondary,14px);margin-top:12px}
 .nmos .v-n{font-size:var(--t-caption,13px);font-weight:400;color:var(--c-text-muted);margin-left:6px}
 .nmos .v-line{padding:8px 0;border-top:1px solid var(--c-line)}
 .nmos .v-line .rp{display:none} .nmos .v-line.open .rp{display:block;margin-top:6px}
@@ -116,6 +117,22 @@ T: dict[str, tuple[str, str]] = {
     "tl_hint": ("점을 누르면 그 턴의 변화가 보여요. 큰 원은 큰 사건이나 관계 변화예요.",
                 "Tap a mark for its changes. A ring is a major event or a change of relationship."),
     "now_turn": ("지금 t{t}", "now t{t}"),
+    "s-reply": ("이번 답장", "This reply"),
+    "s-sent": ("방금 들어간 기억", "The memory just sent"),
+    "s-work": ("처리", "Processing"),
+    "s-usage": ("사용량", "Usage"),
+    "reply_ok": ("기억이 들어갔어요 · {n}줄 · 약 {tok}토큰 · {s}초", "Memory went in · {n} lines · about {tok} tokens · {s}s"),
+    "reply_none": ("이 답장에는 들어간 기억이 없어요", "No memory went into this reply"),
+    "echoed": ("답장에 반영된 것 같아요", "the reply seems to use it"),
+    "k_state": ("상태", "Status"), "k_summary": ("이야기 요약", "Story"), "k_cast": ("등장인물", "Cast"),
+    "k_thread": ("약속 · 목표", "Promises and goals"), "k_fact": ("사실", "Facts"), "k_claim": ("주장", "Claims"),
+    "k_secret": ("비밀", "Secrets"), "k_excerpt": ("원문 발췌", "Excerpts"), "k_quote": ("인용", "Quotes"),
+    "w_extraction": ("사실 추출", "Fact extraction"), "w_embeddings": ("검색용 임베딩", "Search embeddings"),
+    "w_summaries": ("장면 요약", "Scene summaries"), "w_canon": ("설정(원전) 읽기", "Reading the setting"),
+    "w_counts": ("실패 {f} · 대기 {p}", "failed {f} · waiting {p}"),
+    "w_made": ("{n}개 만듦", "{n} made"),
+    "retry": ("실패한 작업 다시 시도", "Retry failed"),
+    "u_calls": ("모델 호출", "Model calls"), "u_tokens": ("토큰 (입력 · 출력)", "Tokens (in · out)"),
     "promise": ("약속", "promise"), "goal": ("목표", "goal"), "question": ("질문", "question"),
     "threat": ("위협", "threat"), "debt": ("빚", "debt"),
     "located_in": ("위치", "location"), "has_status": ("상태", "status"), "relationship": ("관계", "relationship"),
@@ -123,7 +140,7 @@ T: dict[str, tuple[str, str]] = {
     "possesses": ("소지자", "held by"), "destroyed": ("소멸", "destroyed"),
 }
 
-ACTS = ("notes", "settings", "backup")  # what the plugin does itself; its sanitizer keeps only these values
+ACTS = ("notes", "settings", "backup", "retry")  # what the plugin does itself; its sanitizer keeps only these values
 
 
 def t(lang: str, key: str, **kw: Any) -> str:
@@ -181,7 +198,7 @@ def hub(data: dict[str, Any], lang: str) -> str:
     if conv is not None:
         cid = conv["id"]
         detail = f"/inspector/c/{cid}"
-        blocks.append(_block(title, sub, href=detail, cls=f"v-wide {state}"))
+        blocks.append(_block(title, sub, href=f"/views/c/{cid}/working", cls=f"v-wide {state}"))
         m = data.get("memory") or {}
         now = "".join(f'<span class="v-now">{_v(x)}</span>' for x in (m.get("now") or [])[:2])
         blocks.append(_block(t(lang, "memory"), t(lang, "memory_sub", c=m.get("cast", 0), o=m.get("open", 0),
@@ -192,7 +209,7 @@ def hub(data: dict[str, Any], lang: str) -> str:
                                  cls="v-attn"))
         blocks.append(_block(t(lang, "notes"), t(lang, "notes_sub"), act="notes"))
         blocks.append(_block(t(lang, "usage"), t(lang, "usage_sub", n=(data.get("usage") or {}).get("calls", 0)),
-                             href=f"{detail}#s-usage"))
+                             href=f"/views/c/{cid}/working#s-usage"))
     else:
         blocks.append(_block(title, sub, href="/inspector", cls=f"v-wide {state}"))
     blocks.append(_block(t(lang, "settings"), t(lang, "settings_sub"), act="settings"))
@@ -362,3 +379,54 @@ def person(d: dict[str, Any], lang: str) -> str:
             f'<span class="v-cap">{_v(cap)}</span></div>{body}'
             f'<div class="v-foot"><a href="/views/c/{cid}/memory">{_v(t(lang, "back_memory"))}</a> · '
             f'<a href="/inspector/c/{cid}/e/{e["id"]}">{_v(t(lang, "details"))}</a></div></div>')
+
+
+
+KIND_ORDER = ("state", "summary", "cast", "thread", "fact", "claim", "secret", "excerpt", "quote")
+
+
+def working(d: dict[str, Any], lang: str) -> str:
+    """Whether NMOS is working for this chat, in plain words (PHASE-52 D5): this reply, the memory just sent as lines
+    grouped by kind, processing with retry, usage; the machinery is under details."""
+    conv = d["conv"]
+    cid = conv["id"]
+    r = d.get("reply")
+    if r is None:
+        reply = f'<p class="v-text">{_v(t(lang, "no_reply"))}</p>'
+        sent = f'<p class="v-text">{_v(t(lang, "none_yet"))}</p>'
+    else:
+        placed = [x for x in r.get("lines") or [] if x.get("placed")]
+        head = t(lang, "reply_ok", n=len(placed), tok=f"{r.get('tokens') or 0:,}", s=f"{(r.get('ms') or 0) / 1000:.1f}") \
+            if placed else t(lang, "reply_none")
+        reply = line(_v(head), _v(str(r.get("at") or "")[:16].replace("T", " ")))
+        groups = []
+        for kind in KIND_ORDER + tuple(sorted({x.get("kind") for x in placed} - set(KIND_ORDER) - {None})):
+            items = [line(_v(x.get("text") or ""), _v(t(lang, "echoed")) if x.get("echoed") else "")
+                     for x in placed if x.get("kind") == kind]
+            if items:
+                label = t(lang, f"k_{kind}") if f"k_{kind}" in T else kind
+                groups.append(f'<h2 class="v-h2 v-small">{_v(label)}'
+                              f'<span class="v-n">{len(items)}</span></h2>{more(items, lang)}')
+        sent = "".join(groups) or f'<p class="v-text">{_v(t(lang, "reply_none"))}</p>'
+    w = d.get("work") or {}
+    rows = []
+    failed = 0
+    for key, done, due in (("extraction", "compiled", "eligible"), ("embeddings", "embedded", "eligible"),
+                           ("summaries", None, None), ("canon", "read", "wanted")):
+        x = w.get(key) or {}
+        failed += int(x.get("failed") or 0)
+        main = f"{t(lang, 'w_' + key)} · " + (f"{x.get(done, 0)}/{x.get(due, 0)}" if done else t(lang, "w_made", n=x.get("produced", 0)))
+        rows.append(line(_v(main), _v(t(lang, "w_counts", f=x.get("failed", 0), p=x.get("pending", 0)))))
+    retry = ""
+    if failed:
+        errs = "".join(f'<p class="v-note">{_v(str(e)[:200])}</p>' for e in (d.get("errors") or [])[:3])
+        retry = (f'<span class="has-failed"></span>{errs}'
+                 f'<p><a class="v-name" data-act="retry">{_v(t(lang, "retry"))}</a></p>')
+    u = d.get("usage") or {}
+    usage = (line(_v(f"{t(lang, 'u_calls')} · {u.get('calls', 0):,}"))
+             + line(_v(f"{t(lang, 'u_tokens')} · {u.get('input', 0):,} · {u.get('output', 0):,}")))
+    body = (section("s-reply", lang, reply) + section("s-sent", lang, sent) + section("s-work", lang, "".join(rows) + retry)
+            + section("s-usage", lang, usage))
+    return (f'<div class="v v-doc"><div class="v-head"><h1 class="v-h1">{_v(t(lang, "ok") if not failed else t(lang, "warn"))}</h1>'
+            f'<span class="v-cap">{_v(conv.get("name") or "")}</span></div>{body}'
+            f'<div class="v-foot"><a href="/inspector/c/{cid}">{_v(t(lang, "details"))}</a></div></div>')

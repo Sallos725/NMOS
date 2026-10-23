@@ -46,7 +46,8 @@ def test_the_hub_is_blocks_in_order_and_needs_a_look_only_when_there_is_somethin
     assert blocks == ["작동 중", "기억", "작가의 노트", "사용량", "설정", "백업", "다른 채팅"]
     assert "확인 필요" not in html and "<table" not in html
     assert 'data-act="notes"' in html and 'data-act="settings"' in html and 'data-act="backup"' in html
-    assert "/inspector/c/0190f3a4-1b2c-7d3e-8f40-123456789abc" in html
+    assert "/views/c/0190f3a4-1b2c-7d3e-8f40-123456789abc/working" in html
+    assert "/views/c/0190f3a4-1b2c-7d3e-8f40-123456789abc/memory" in html
     flagged = views.hub(hub_data(attention=2), "en")
     assert "Needs a look" in flagged and re.search(r"Needs a look</span>\s*<span class=\"v-bs\">2", flagged)
 
@@ -227,3 +228,54 @@ def test_a_person_with_facts_has_a_sheet_and_circles(migrated):
         memory = c.get(f"/v1/views/c/{cid}/memory").json()["html"]
     assert ">Hana<" in html and 'class="v-mark' in html and "old mill" in html
     assert f'/views/c/{cid}/person/{hana["id"]}' in memory
+
+
+
+# --- working, in plain words (PHASE-52 D5) -----------------------------------------------------------------------------
+
+def working_data(**over):
+    data = {"conv": {"id": CID, "name": "Harbor", "character": "Hana", "turns": 13},
+            "reply": {"at": "2026-10-23T12:00:00+00:00", "ms": 1206.2, "tokens": 1980,
+                      "lines": [{"kind": "fact", "text": "Hana located in: old mill", "placed": True, "echoed": True},
+                                {"kind": "fact", "text": "Kaito has status: tired", "placed": True},
+                                {"kind": "thread", "text": "Hana → Kaito promised: meet at the lighthouse", "placed": True},
+                                {"kind": "fact", "text": "left out", "placed": False}]},
+            "work": {"extraction": {"compiled": 13, "eligible": 13, "failed": 0, "pending": 0},
+                     "embeddings": {"embedded": 27, "eligible": 27, "failed": 0, "pending": 0},
+                     "summaries": {"produced": 2, "failed": 0, "pending": 0},
+                     "canon": {"read": 10, "wanted": 10, "failed": 0, "pending": 0}},
+            "errors": [], "usage": {"calls": 176, "input": 387955, "output": 84996}}
+    data.update(over)
+    return data
+
+
+def test_working_says_it_in_words_not_xml():
+    html = views.working(working_data(), "ko")
+    assert re.findall(r'class="v-sec" id="(s-[a-z]+)"', html) == ["s-reply", "s-sent", "s-work", "s-usage"]
+    assert "<Fact" not in html and "&lt;Fact" not in html and "<table" not in html
+    assert "Hana located in: old mill" in html and "left out" not in html  # only what was placed
+    assert "13/13" in html and "176" in html and "has-failed" not in html and 'data-act="retry"' not in html
+
+
+def test_working_offers_retry_when_something_failed():
+    html = views.working(working_data(work={**working_data()["work"],
+                                            "extraction": {"compiled": 11, "eligible": 13, "failed": 2, "pending": 0}},
+                                      errors=["HTTP 429: rate limited"]), "ko")
+    assert 'class="has-failed"' in html and 'data-act="retry"' in html and "HTTP 429" in html
+
+
+def test_working_without_a_request_yet():
+    html = views.working(working_data(reply=None), "ko")
+    assert "아직 이 채팅에서 받은 요청이 없어요" in html
+
+
+def test_the_working_endpoint(migrated):
+    chat = SimChat("views-working")
+    chat.user("Hello.")
+    chat.reply("Hana waits at the lighthouse.")
+    with make_client(migrated) as c:
+        sync(c, chat)
+        cid = c.get("/v1/views/hub", params={"chat": chat.id}).json()["conversation"]
+        r = c.get(f"/v1/views/c/{cid}/working")
+        assert r.status_code == 200, r.text
+        assert 'id="s-work"' in r.json()["html"]
