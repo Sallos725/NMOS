@@ -228,6 +228,37 @@ three details; the owner's decisions stand.
 5. **Measurement** (Q5) and the owner's check on a real host: paste each section, reload, a request, the canon
    unchanged.
 
+## Steps 2–4 evidence (2026-10-23)
+
+Built on `claude/author-notes-story-summary-f721b1` (PR #315), plan
+`docs/superpowers/plans/2026-10-23-phase50-author-notes.md`.
+
+- **Sidecar.** `noteblocks.py` (the markers; no imports from the sidecar, since the canon reader needs it and `facts`
+  imports `canonfacts`), `notes.py` (the sections, the chronicle, `Ask`, `make`), `canonfacts.process` (a `note` loses
+  its blocks before a read), `POST /v1/conversations/{id}/notes`, the Inspector canon section's `note_blocks` line.
+  `tests/test_notes.py`: 27 tests: the shared marker fixture, a marker inside a body, the canon guard against an older
+  plugin, a paste that stores no revision and reads no canon (criterion 2), the two fact sections (identity left out,
+  secrets off and on), the chronicle (open threads from the store, a held summary by `summaries.held` as the packet
+  holds it, a reply that tells a secret asked again then assembled, an empty reply, a failed call not cached, the
+  cache), the endpoint (the canon scenario's changes, the chronicle from real scene summaries with a stand-in model,
+  404/422). The whole sidecar suite: 1,593 passed before the review fixes; the touched files' tests after them.
+- **Plugin.** `notes.ts` (`stripNoteBlocks`, `copyText`), `canon.ts` (the note without its blocks, `nmos_blocks` in its
+  metadata), the panel's form and result boxes (`ui.ts`, `i18n.ts`). 249 tests with typecheck; the canon manifest
+  fixture's `with_note_blocks` entry gives the same id in both languages. Build `a9b4b54e4da5`.
+- **Review** (scoped self-review, high risk: canon/provenance and secrets). Fixed: a failed model call was cached; the
+  cache had no lock; a marker inside a body could close its block early; the panel's timeout was shorter than a call
+  and its retry; summaries were held by the trigram check alone, not by `summaries.held` as the packet holds them.
+- **Test install** (6131/6113, test-only): image `nmos-sidecar:trial-phase50-2dca211` since 2026-10-23 20:52 KST, the
+  build's defaults as the candidate ran (backups `~/nmos-eval/p32-try/backup-20261023-2051-phase50` and `-2052-`;
+  the candidate's containers kept stopped as `*-prev-candidate-6d3f2f7`). The database fingerprint (revisions,
+  assertions, extractions, canon manifests, settings, generations, schema) is identical before and after. The plugin
+  build is in `~/nmos-eval/p32-try/nmos-pocketrisu.js`; until it is re-imported, 6131 runs the older plugin, which the
+  sidecar's canon guard covers.
+- **Zero-call check (Q5)** on all 14 chats there: every request answered (5–96 ms); "changed" gave at most 12 lines
+  after `identity` was left out (68 before on one chat), "address" at most 30 pairs, the assembled chronicle 1,174–2,971
+  characters on the four chats with scene summaries. The chronicle's paid sample waits for the owner's approval of its
+  estimate.
+
 ## Acceptance criteria
 
 - A note without a marker gives the same canon hash, manifest and canon facts as on `main` (test).
