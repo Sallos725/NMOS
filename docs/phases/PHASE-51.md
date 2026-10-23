@@ -1,7 +1,7 @@
 # Phase 51 — How long a thread lasts: a horizon recorded at extraction
 
 Status: **draft**, 2026-10-23 (AGE-89). An owner request that came out of Phase 50 (amendment 3), not a roadmap stage. Not
-approved for implementation.
+approved for implementation. **Q1–Q6 answered (owner, 2026-10-23): all as recommended.**
 **After 1.0.0**, with the next extractor-generation change: it is an extraction change (a "heavy change" under
 `docs/ROADMAP-1.0.md`), and Phase 45 (speakers, held on 2026-10-13 for the same reason) waits for that generation too,
 so both are proposed as one generation and one re-extraction (Q5).
@@ -61,28 +61,28 @@ example of each. The generation is `extract-v17`, together with Phase 45's speak
 
 ## Questions for the owner
 
-- **Q1 — what to record.**
+- **Q1 — what to record. Answered (owner, 2026-10-23): (a).**
   - (a) **Recommended:** the horizon (`scene`/`arc`/`lasting`). It decides when a thread may leave the note and the
     "needs a look" list, which is what the owner saw go wrong.
   - (b) Importance (`major`/`minor`), as events have. It ranks, but an important appointment for this afternoon is
     still over tomorrow.
   - (c) Both: two fields, a larger prompt change.
-- **Q2 — where it is stored.** (a) **Recommended:** `assertion.salience`, its vocabulary by predicate: no migration.
+- **Q2 — where it is stored. Answered (owner, 2026-10-23): (a).** (a) **Recommended:** `assertion.salience`, its vocabulary by predicate: no migration.
   (b) A new column `horizon`: clearer, but a migration on stored derived data (high risk, restore compatibility).
-- **Q3 — who reads it.** (a) **Recommended:** the Inspector and the author's note first; the packet unchanged. (b)
+- **Q3 — who reads it. Answered (owner, 2026-10-23): (a).** (a) **Recommended:** the Inspector and the author's note first; the packet unchanged. (b)
   Also the packet: an open `lasting` thread ranks before others on a tie, a `scene` thread past its horizon drops out.
   That is a packet policy (`packet-v20`) and needs the recall replay gate.
-- **Q4 — how long each lasts.** (a) **Recommended:** `scene` 10 turns, `arc` 30, `lasting` never, unlabeled 30.
+- **Q4 — how long each lasts. Answered (owner, 2026-10-23): (a).** (a) **Recommended:** `scene` 10 turns, `arc` 30, `lasting` never, unlabeled 30.
   (b) Other numbers; the step 3 measurement can suggest them.
-- **Q5 — the generation.** (a) **Recommended:** one `extract-v17` with Phase 45's speakers, one re-extraction and one
+- **Q5 — the generation. Answered (owner, 2026-10-23): (a).** (a) **Recommended:** one `extract-v17` with Phase 45's speakers, one re-extraction and one
   live gate. (b) A generation of its own (a second re-extraction).
-- **Q6 — older turns.** Rows from before `extract-v17` have no horizon and keep the 30-turn rule; only the recent
+- **Q6 — older turns. Answered (owner, 2026-10-23): (a).** Rows from before `extract-v17` have no horizon and keep the 30-turn rule; only the recent
   window is re-extracted by the generation change. (a) **Recommended:** as is; the owner can run "Extract all history"
   on a chat to label all of it. (b) Re-extract every chat's whole history (cost per chat, estimated first).
 
 ## Steps
 
-1. **Spec** (this file): Q1–Q6 answered, approval to implement (after 1.0.0).
+1. **Spec** (this file): Q1–Q6 answered (2026-10-23); approval to implement (after 1.0.0).
 2. **Read side**, no model: `threads.fold` carries the horizon, `inspector.stale` by horizon, the author's note and the
    Inspector use it; tests on synthetic threads; unlabeled threads behave exactly as on `main`.
 3. **Measurement before the generation** (paid, estimated first): on a test-install copy, the horizon prompt on the
