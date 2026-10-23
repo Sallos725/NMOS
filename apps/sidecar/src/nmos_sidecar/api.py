@@ -30,7 +30,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from . import (__version__, archive, audit, canon, canonfacts, dropped, endings, extraction, generations, inspector, ledger,
-               normtext, notes, overuse,
+               normtext, notes, overuse, views,
                plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, statewatch, summaries, uploads,
                vectors)
 from . import usage as model_usage
@@ -437,7 +437,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return {"ok": True, "service": "nmos-sidecar", "version": __version__,
                 "features": {"state": bool(rt["rules"].rules),
                              "extraction": bool(rt["settings"].llm_url and rt["settings"].llm_model),
-                             "vectors": rt["recall"].embedder is not None},
+                             "vectors": rt["recall"].embedder is not None,
+                             "views": True},  # PHASE-52: the panel's new screens
                 "generations": {"extract": rt["active_extractor"],
                                 "embed": rt["projection"].key if rt["projection"] else None},
                 "plugin": {"expected": plugin.expected(), "seen": plugins.recent()},
@@ -1443,15 +1444,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             ex_key = rt["active_extractor"]
             pj_key = rt["projection"].key if rt["projection"] else None
             view = inspector.with_participants(view_of(conn, head))
-            lost = dropped.find(conn, head, ex_key, view)  # PHASE-22 Q6
-            role_ends = {"automatic": endings.automatic(conn, view, head_turn(conn, head)),  # PHASE-28 Q7
-                         "held": endings.held(conn, head, ex_key, view),
-                         "aliases_held": endings.held_aliases(conn, head, ex_key, view,  # PHASE-29 Q5
-                                                              facts_links_of(conn, conv_id))}
+            lost, role_ends, flags, fixed = attention_inputs(conn, conv, head, view)
             traces = readmodel.traces(conn, conv_id)
             cov = coverage_view(conn, conv_id, usage=True, lost=len(lost))
-            flags = state_flags(conn, conv)  # PHASE-39 Q4
-            fixed = repair_rows(conn, conv_id, view["repairs"], flags)
             off = statewatch.dismissed(fixed)
             with inspector.turn_links(conv_id, token, inspector.lang_of(lang)):  # turn cells lead to their turns
                 html = inspector.detail(conv, current_state(conn, head, rt["rules"].version),
@@ -1481,6 +1476,88 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                             " AND rules_version = %s LIMIT 1",
                                             (conv_id, rt["rules"].version)).fetchone() is not None, state_flags=[f for f in flags if f["id"] not in off])
             return html
+
+    def attention_inputs(conn, conv: dict[str, Any], head: UUID, view: dict[str, Any]) -> tuple[Any, ...]:
+        """What "needs a look" is made of besides the view (the Inspector's chat page and the panel's hub, PHASE-52):
+        dropped facts (PHASE-22 Q6), role endings (PHASE-28 Q7, PHASE-29 Q5), status flags (PHASE-39 Q4) and the
+        owner's repairs with the flags'."""
+        ex_key = rt["active_extractor"]
+        lost = dropped.find(conn, head, ex_key, view)
+        role_ends = {"automatic": endings.automatic(conn, view, head_turn(conn, head)),
+                     "held": endings.held(conn, head, ex_key, view),
+                     "aliases_held": endings.held_aliases(conn, head, ex_key, view, facts_links_of(conn, conv["id"]))}
+        flags = state_flags(conn, conv)
+        return lost, role_ends, flags, repair_rows(conn, conv["id"], view["repairs"], flags)
+
+    def hub_data(conn, conv: dict[str, Any] | None, off: bool, all_off: bool) -> dict[str, Any]:
+        """What the panel's hub says (PHASE-52 D1), from what the Inspector's chat page reads."""
+        chats = conn.execute("SELECT count(*) AS n FROM conversation").fetchone()["n"]
+        if conv is None or conv["head_commit_id"] is None:
+            return {"conv": None, "working": {"state": "off" if off or all_off else "idle", "all_off": all_off},
+                    "chats": chats}
+        cid, head = conv["id"], conv["head_commit_id"]
+        view = inspector.with_participants(view_of(conn, head))
+        last = head_turn(conn, head)
+        lost, role_ends, flags, fixed = attention_inputs(conn, conv, head, view)
+        off_keys = statewatch.dismissed(fixed)
+        queue = inspector._attention({"threads": view["threads"], "unmatched": view["unmatched"],
+                                      "conflicts": view["conflicts"], "ambiguous": view["ambiguous"],
+                                      "dropped": lost, "endings": role_ends,
+                                      "state_flags": [f for f in flags if f["id"] not in off_keys]}, fixed, last, "ko")
+        cov = coverage_view(conn, cid, usage=True, lost=len(lost))
+        parts = [cov.get(k) or {} for k in ("extraction", "embeddings", "canon", "summaries")]
+        trace = conn.execute("SELECT latency_ms FROM retrieval_trace WHERE conversation_id = %s"
+                             " ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
+        lat = (trace or {}).get("latency_ms") or {}
+        placed = lat.get("placed")
+        reply = None if trace is None else {
+            "placed": sum(int(v or 0) for v in placed.values()) if isinstance(placed, dict) else int(placed or 0),
+            "ms": lat.get("sidecar_total")}
+        cur = rt["settings"]
+        state = "off" if off or all_off else ("ok" if cur.llm_url and cur.llm_model else "err")
+        cast = [str(n) for n in lat.get("scene_cast") or []]
+        threads = [th for th in view["threads"] if th["status"] == "open"]
+        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
+                         "turns": last},
+                "working": {"state": state, "all_off": all_off, "reply": reply,
+                            "failed": sum(int(p.get("failed") or 0) for p in parts),
+                            "pending": sum(int(p.get("pending") or 0) for p in parts)},
+                "memory": {"cast": len(cast), "open": sum(1 for th in threads if not inspector.stale(th, last)),
+                           "stale": sum(1 for th in threads if inspector.stale(th, last)),
+                           "changed": len(notes.changed_lines(view["facts"], secrets=True)),
+                           "now": views.now_lines(view["facts"], cast)},
+                "attention": len(queue),
+                "usage": {"calls": int((((cov.get("usage") or {}).get("total") or {}).get("calls")) or 0)},
+                "chats": chats}
+
+    def hub_html(request: Request, chat: str | None, conversation: UUID | None, lang: str | None, off: bool,
+                 all_off: bool) -> tuple[str, str | None]:
+        with request.app.state.pool.connection() as conn:
+            conv = None
+            if conversation is not None:
+                conv = readmodel.conversation(conn, conversation)
+            elif chat:
+                found = readmodel.list_conversations(conn, host_chat_ref=chat)
+                conv = readmodel.conversation(conn, found[0]["id"]) if found else None
+            data = hub_data(conn, conv, off, all_off)
+        return views.hub(data, inspector.lang_of(lang)), (data["conv"] or {}).get("id")
+
+    @app.get("/v1/views/style", dependencies=[Depends(auth)])
+    def views_style():
+        """The stylesheet of the panel's new screens (PHASE-52), injected by the panel once: every rule under `.nmos`."""
+        return {"css": views.STYLE}
+
+    @app.get("/v1/views/hub", dependencies=[Depends(auth)])
+    def views_hub(request: Request, chat: str | None = None, conversation: UUID | None = None, lang: str | None = None,
+                  off: bool = False, all_off: bool = False):
+        html, cid = hub_html(request, chat, conversation, lang, off, all_off)
+        return {"html": html, "conversation": cid}
+
+    @app.get("/views/hub", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def views_hub_page(request: Request, chat: str | None = None, conversation: UUID | None = None,
+                       lang: str | None = None):
+        return views.full_page("NMOS", hub_html(request, chat, conversation, lang, False, False)[0],
+                               inspector.lang_of(lang))
 
     def inspector_status_html(conv_id: UUID, request: Request, lang: str | None, span: str | None) -> str:
         """The status window's lanes alone for the panel (PHASE-39 Q3a), asked for when their section opens."""
