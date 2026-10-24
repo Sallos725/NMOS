@@ -1,6 +1,6 @@
 # Phase 48 — Replies only: a per-chat switch that leaves the user's messages out of memory
 
-Status: **draft**, 2026-10-15 (AGE-87). An owner request, not a roadmap stage. Not approved for implementation.
+Status: **step 2 built**, 2026-10-24 (recall); step 3 waits for the owner. Was: **draft**, 2026-10-15 (AGE-87). An owner request, not a roadmap stage. Not approved for implementation.
 **R8 (owner, 2026-10-23, AGE-90): approved for implementation in `0.5.0`,** built on `extract-v17` (Phases 45 and 51); the "after 1.0.0" below is superseded (`docs/ROADMAP-1.0.md` R8).
 **Q1–Q5 answered (owner, 2026-10-15): Q1 as recommended, Q2 per chat (not as recommended), Q3 decided by the
 switch's purpose, Q4 under the rules after 1.0.0, Q5 approved. Q6 (raised by Q2) answered (owner, 2026-10-15): (a), with
@@ -11,6 +11,30 @@ this phase lands on the trial install or in a `0.4.x` release. The release that 
 minor release (`1.1.0`) is proposed, since a migration, a panel control and a generation variant are not a patch.
 **Implementation design added 2026-10-15** (below, before the steps), with step 4's read-only count
 (`docs/perf/phase48-user-messages.md`).
+
+**Step 2 built, 2026-10-24** (branch `claude/phase48-replies-only`, stacked on Phase 47 for the migration number;
+ADR 0077). Evidence:
+- **Sidecar.** `conversation.replies_only` (migration `0032`); `GET`/`PUT /v1/conversations/{id}/replies-only`
+  (`{on}`; step 2 queues nothing, so it has no counts and no confirm); `RecallOptions.replies_only`, set where the
+  memory mode is and recorded with each request (`RECORDED`), so a replay reads the flag its request had. One clause,
+  `REPLIES_ONLY`, beside the eligibility predicates of D3's routes: the lexical scoring (`_lexical_candidates`, so a
+  user message takes no reply's candidate slot), the keyword route's rows, the quote route's own search
+  (`_quote_messages`), named turns (`_turn_messages`), first meetings (`_first_met`) and `vectors.vector_candidates`.
+  `tests/test_replies_only.py` (5): the flag defaults off and is per chat; with it on, no user message is an excerpt
+  and the reply still is, another chat's packet is byte-identical, and off again restores the packet at once; the quote
+  route and named turns leave user messages out; switching queues no job, the trace records the flag and its replay
+  reproduces; an archive round-trips the flag. The whole sidecar suite: 1,658 passed (the 2 failures were STATUS's
+  ranges, fixed).
+- **Panel.** "AI 답장만 기억 / Remember AI replies only" in the chat's memory-mode card: applied at once, said in a
+  line, undone the same way; none on an older sidecar. One plugin test; all 268 pass.
+- **Gate** (zero calls; every probe, bench 314 and quotes 24, `packet-v19`, three rounds each, eval embedder,
+  throwaway copies migrated to `0032`): with the flag off, Phase 47's code against this branch: bench 300/314 and
+  quotes 19/24 on both, none lost, none gained (acceptance 1). With the flag on in every replay: none lost, quotes
+  19 → 20 (`q-first-07`, a case known to flip); 111 of the 331 packets stable over rounds changed.
+- **Cost** (acceptance 5): the story bench at 10,000 messages, three alternating runs, p50 medians 153.4 ms (Phase 47),
+  153.2 ms (flag off), 153.1 ms (flag on).
+- **Step 3 not built**: the spec decides it "at implementation approval, after the paid run on a chat the owner names
+  as full impersonation"; until then facts and summaries still read both sides (K51).
 
 The owner asked (2026-10-15) for a switch: when it is on, memory comes from the AI's replies only. Asked whether that
 meant leaving out only some user messages (out-of-character lines, instructions to the model) or all of them, the
