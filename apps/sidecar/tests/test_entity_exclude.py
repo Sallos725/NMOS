@@ -185,3 +185,27 @@ def test_the_person_sheet_offers_it_and_says_when_it_is_marked(migrated):
         exclude(c, cid, "Gloomfang")
         sheet = c.get(f"/v1/views/c/{cid}/person/{ents['Gloomfang']['id']}").json()["html"]
         assert "entity_exclude" not in sheet and "캐릭터 아님으로 표시됨" in sheet
+
+
+def test_cast_takes_its_cast_group_out_of_the_packet_and_keeps_every_fact_line(migrated):
+    """Acceptance 2: its <Character> group goes; its facts are still told, word for word, in <Facts>."""
+    import re
+    from test_sidecar_integration import recall
+    with make_client(migrated, **LLM) as c:
+        sim = SimChat()
+        sim.user("We set out.")
+        sim.reply(TURN)
+        sim.user("What does SYSTEM-GM say now?")
+        sync(c, sim, character_name="Hana", persona_name="Rowan")
+        drain(migrated, complete)
+        cid = conv_id(c, sim)
+
+        def packet():
+            return recall(c, sim, "What does SYSTEM-GM say now?", budget=2000)["packet"]["text"]
+
+        before = packet()
+        exclude(c, cid, "SYSTEM-GM")
+        after = packet()
+    facts = lambda t: sorted(re.findall(r"<Fact [^>]*>[^<]*</Fact>", t))  # noqa: E731
+    assert '<Character name="SYSTEM-GM">' in before and '<Character name="SYSTEM-GM">' not in after
+    assert facts(after) == facts(before) and "SYSTEM-GM has status: online" in after
