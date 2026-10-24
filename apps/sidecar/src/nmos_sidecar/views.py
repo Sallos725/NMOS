@@ -352,8 +352,18 @@ def memory(d: dict[str, Any], lang: str) -> str:
 
 
 
-def _event(turn: int, text: str, major: bool) -> str:
-    return (f'<div class="v-ev{" major" if major else ""}"><span class="v-t">t{turn}</span><span class="v-d"></span>'
+def change_text(text: str, predicate: str | None, lang: str) -> str:
+    """A person's change in the panel's words: an event as it is, anything else after its kind ("위치: …")."""
+    if not predicate or predicate == "event":
+        return text
+    label = (T[predicate][0 if lang == "ko" else 1] if predicate in T
+             else PLAIN_KO.get(predicate) if lang == "ko" else None) or predicate.replace("_", " ")
+    return f"{label}: {text}"
+
+
+def _event(m: tuple[Any, ...], major: bool, lang: str) -> str:
+    text = change_text(str(m[2]), m[3] if len(m) > 3 else None, lang)
+    return (f'<div class="v-ev{" major" if major else ""}"><span class="v-t">t{m[0]}</span><span class="v-d"></span>'
             f'<span class="v-x">{_v(text)}</span></div>')
 
 
@@ -374,8 +384,8 @@ def _timeline(d: dict[str, Any], lang: str) -> str:
     for b in spans:
         if b["major"]:
             lead.add(next(i for i, m in enumerate(marks) if b["lo"] <= m[0] <= b["hi"] and m[1]))
-    head = [_event(m[0], m[2], True) for i, m in enumerate(marks) if i in lead]
-    rest = [_event(m[0], m[2], False) for i, m in enumerate(marks) if i not in lead]
+    head = [_event(m, True, lang) for i, m in enumerate(marks) if i in lead]
+    rest = [_event(m, False, lang) for i, m in enumerate(marks) if i not in lead]
     return ('<div class="v-mini" aria-hidden="true"><span class="v-axis"></span>' + "".join(pins) + "</div>"
             f'<div class="v-ends"><span>t{first}</span><span>{_v(t(lang, "now_turn", t=last))}</span></div>'
             + more(head + rest, lang, n=len(head) or 3))

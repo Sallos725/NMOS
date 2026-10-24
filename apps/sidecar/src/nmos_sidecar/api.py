@@ -1627,10 +1627,10 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 # a ring: a major event, or a relationship or role that replaced an earlier one (not its first word)
                 changed = f["predicate"] in ("relationship", "role_toward") and i > 0 \
                     and _said_differs(history[i - 1], h)
-                text = " ".join(str(x) for x in (h["predicate"].replace("_", " "), h.get("object"), h.get("value")) if x)
-                if (turn, text) not in seen:
-                    seen.add((turn, text))
-                    marks.append((turn, event_major or changed, text))
+                text = " → ".join(str(x) for x in (h.get("object"), h.get("value")) if x)
+                if text and (turn, f["predicate"], text) not in seen:
+                    seen.add((turn, f["predicate"], text))
+                    marks.append((turn, event_major or changed, text, f["predicate"]))
         open_ = [th for th in view["threads"] if th["status"] == "open" and not inspector.stale(th, last)
                  and (norm(th.get("by")) in names or norm(th.get("to")) in names)]
         return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),

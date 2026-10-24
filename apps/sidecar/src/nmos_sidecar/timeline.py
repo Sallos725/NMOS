@@ -618,17 +618,20 @@ def circles(marks: list[tuple[int, bool, str]], first: int, last: int, slots: in
             rings: int = RINGS) -> list[dict[str, Any]]:
     """A person's changes as circle marks (PHASE-52 D4): the chat's turns `first`–`last` cut into `slots` equal spans,
     the changes of one span one mark, so at most `slots` marks at any length and none on top of another. The `rings`
-    spans with the most major changes are major (the later on a tie), the rest dots."""
+    spans with the most major changes are major (the later on a tie, never two side by side), the rest dots."""
     if not marks:
         return []
     marks = sorted(marks, key=lambda m: m[0])
     width = max(1, -(-(max(last, first) - first + 1) // slots))
     out: dict[int, dict[str, Any]] = {}
-    for turn, major, text in marks:
+    for turn, major, text, *_ in marks:
         b = out.setdefault((turn - first) // width, {"lo": turn, "hi": turn, "count": 0, "majors": 0, "texts": []})
         b["hi"] = max(b["hi"], turn)
         b["count"] += 1
         b["majors"] += int(major)
         b["texts"].append(text)
-    keep = {k for k in sorted((k for k in out if out[k]["majors"]), key=lambda k: (out[k]["majors"], k), reverse=True)[:rings]}
+    keep: set[int] = set()
+    for k in sorted((k for k in out if out[k]["majors"]), key=lambda k: (out[k]["majors"], k), reverse=True):
+        if len(keep) < rings and k - 1 not in keep and k + 1 not in keep:  # two rings side by side read as one blot
+            keep.add(k)
     return [{**out[k], "major": k in keep} for k in sorted(out)]

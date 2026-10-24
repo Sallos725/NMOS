@@ -385,3 +385,15 @@ def test_the_hub_rows_end_flush_and_a_thread_offers_only_its_kinds_endings():
     for kind in ("promise", "goal", "question", "threat", "debt", "other"):
         assert repairs.offered(kind)[0] == repairs.default_outcome(kind)
         assert set(repairs.offered(kind)) <= set(repairs.outcomes(kind))
+
+
+def test_a_persons_changes_read_in_the_panels_words_and_rings_never_touch():
+    marks = [(3, True, "Hana meets Kaito", "event"), (5, False, "old mill", "located_in"),
+             (8, True, "Kaito → lover", "relationship"), (9, False, "tired", "mood_of_day")]
+    html = views.person(person_data(marks=marks, last=12), "ko")
+    texts = re.findall(r'<span class="v-x">([^<]*)</span>', html)
+    assert texts == ["Hana meets Kaito", "관계: Kaito → lover", "위치: old mill", "mood of day: tired"]
+    assert "event " not in html and "located_in" not in html
+    spans = timeline.circles([(t, True, "x") for t in range(30)], 0, 29)  # every span major
+    ringed = [i for i, b in enumerate(spans) if b["major"]]
+    assert len(ringed) == 5 and all(b - a > 1 for a, b in zip(ringed, ringed[1:]))
