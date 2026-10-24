@@ -608,8 +608,8 @@ def test_the_inspector_marks_where_each_repair_can_be_made_and_lists_what_needs_
         cid = setup(c, migrated, chat)
         t, s = thread(c, cid), secret(c, cid)
         page = c.get(f"/inspector/c/{cid}", params={"lang": "en"}).text
-        # a goal: its default outcome first, then the others its kind may close with
-        assert f'data-repair="thread_close:{t["id"]}:achieved,abandoned,failed,answered,averted,paid"' in page
+        # a goal: its default ending first, then the others a goal can have (PHASE-52)
+        assert f'data-repair="thread_close:{t["id"]}:achieved,abandoned,failed"' in page
         assert f'data-repair="secret_found_out:{s["id"]}:Kaito"' in page
         located = fact(c, cid, "Kaito", "located_in")
         assert f'data-repair="fact_retract:{located["id"]}"' in page and f'data-repair="fact_correct:{located["id"]}:object"' in page

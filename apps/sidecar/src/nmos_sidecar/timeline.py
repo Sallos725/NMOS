@@ -552,10 +552,10 @@ def cast(t: T, entities: list[dict[str, Any]], facts: list[dict[str, Any]], scen
 
 STYLE = """
 .tl{margin:8px 0 22px}
-.tl .tl-h{font-size:12px;font-weight:500;letter-spacing:.04em;color:var(--muted);margin:18px 0 4px 6px;cursor:pointer;
+.tl .tl-h{font-size:13px;font-weight:500;letter-spacing:.04em;color:var(--muted);margin:18px 0 4px 6px;cursor:pointer;
   list-style:none} .tl .tl-h::-webkit-details-marker{display:none}
 .tl .tl-h::before{content:"\\25BE  "} .tl details:not([open])>.tl-h::before{content:"\\25B8  "}
-.tl-switch{font-size:13px;margin:0 0 10px 6px} .tl-hint{font-size:12px;margin:0 0 8px 6px}
+.tl-switch{font-size:13px;margin:0 0 10px 6px} .tl-hint{font-size:13px;margin:0 0 8px 6px}
 .tl-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:28px;align-items:start}
 .tl-row{display:grid;grid-template-columns:220px minmax(0,1fr);gap:14px;align-items:center;padding:4px 6px;
   border-radius:6px;color:inherit}
@@ -564,9 +564,9 @@ a.tl-row:hover{background:var(--chip);text-decoration:none}
 .tl-lab{font-size:13px;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tl-lab .tl-k{color:var(--muted)} .tl-lab .tl-val{color:var(--fg);margin-left:7px} .tl-lab .tl-val.canon{color:var(--muted)}
 .tl-cast .tl-lab{color:var(--fg)}
-.tl-last{display:none;color:var(--muted);font-size:12px}
-.tl-end{font-size:12px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
-.tl-me{font-size:11px;color:var(--accent);margin-left:6px}
+.tl-last{display:none;color:var(--muted);font-size:13px}
+.tl-end{font-size:13px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.tl-me{font-size:13px;color:var(--accent);margin-left:6px}
 .tl-track{position:relative;height:26px;min-width:0}
 .tl-rule{position:absolute;left:0;right:0;top:13px;height:1px;background:var(--line)}
 .tl-bar{position:absolute;top:5px;height:16px;min-width:6px;border-radius:4px;overflow:hidden;box-sizing:border-box;
@@ -584,14 +584,14 @@ a.tl-row:hover{background:var(--chip);text-decoration:none}
 .tl .tl-dot[aria-pressed="true"]{background:transparent} .tl .tl-dot[aria-pressed="true"]::after{background:var(--accent)}
 .tl-tick{position:absolute;top:5px;width:2px;height:16px;margin-left:-1px;border-radius:1px;background:var(--fg);opacity:.7}
 .tl-axis .tl-track{height:20px}
-.tl-axis .tl-track span{position:absolute;top:2px;font-size:11px;color:var(--muted);transform:translateX(-50%);white-space:nowrap}
+.tl-axis .tl-track span{position:absolute;top:2px;font-size:13px;color:var(--muted);transform:translateX(-50%);white-space:nowrap}
 .tl-axis .tl-track span.first{transform:none} .tl-axis .tl-track span.last{transform:translateX(-100%)}
 .tl-side{border-left:1px solid var(--line);padding-left:18px;font-size:13px;position:sticky;top:12px}
 .tl-side p{margin:3px 0} .tl-side .v{font-size:22px;font-weight:600;line-height:1.3;margin:6px 0;overflow-wrap:anywhere}
 .tl-hist{margin:10px 0;padding-left:20px;color:var(--muted)} .tl-hist .cur{color:var(--fg)}
 .tl-x{display:none}
-.tl-more{font-size:12px;margin:2px 6px}
-.tl-fold>summary,.tl-others>summary{font-size:12px;color:var(--muted);margin:8px 0 2px 6px;cursor:pointer}
+.tl-more{font-size:13px;margin:2px 6px}
+.tl-fold>summary,.tl-others>summary{font-size:13px;color:var(--muted);margin:8px 0 2px 6px;cursor:pointer}
 tr:target td{background:var(--chip)}
 .fold-setting>summary{margin:10px 0 4px;cursor:pointer;font-size:13px}
 @media (max-width:720px){.tl-grid{grid-template-columns:minmax(0,1fr)}
@@ -607,3 +607,31 @@ tr:target td{background:var(--chip)}
   .tl-axis .tl-track span.odd,.tl-axis .tl-track span.near{display:none}
   .tl-end{display:none} .tl-last{display:inline}}
 """
+
+
+
+CIRCLES = 30  # slots of a circle lane (PHASE-52 D4): marks stay over 3 % of the lane apart, apart on a phone too
+RINGS = 5  # rings a lane draws at most: on the test install a lead's events were 57 % "major", and a ring is rare or nothing
+
+
+def circles(marks: list[tuple[int, bool, str]], first: int, last: int, slots: int = CIRCLES,
+            rings: int = RINGS) -> list[dict[str, Any]]:
+    """A person's changes as circle marks (PHASE-52 D4): the chat's turns `first`–`last` cut into `slots` equal spans,
+    the changes of one span one mark, so at most `slots` marks at any length and none on top of another. The `rings`
+    spans with the most major changes are major (the later on a tie, never two side by side), the rest dots."""
+    if not marks:
+        return []
+    marks = sorted(marks, key=lambda m: m[0])
+    width = max(1, -(-(max(last, first) - first + 1) // slots))
+    out: dict[int, dict[str, Any]] = {}
+    for turn, major, text, *_ in marks:
+        b = out.setdefault((turn - first) // width, {"lo": turn, "hi": turn, "count": 0, "majors": 0, "texts": []})
+        b["hi"] = max(b["hi"], turn)
+        b["count"] += 1
+        b["majors"] += int(major)
+        b["texts"].append(text)
+    keep: set[int] = set()
+    for k in sorted((k for k in out if out[k]["majors"]), key=lambda k: (out[k]["majors"], k), reverse=True):
+        if len(keep) < rings and k - 1 not in keep and k + 1 not in keep:  # two rings side by side read as one blot
+            keep.add(k)
+    return [{**out[k], "major": k in keep} for k in sorted(out)]

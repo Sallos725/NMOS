@@ -105,26 +105,26 @@ const SECTION_TITLE: Record<Section, StringKey> = {
 const CSS = `
 html,body{margin:0;background:${PALETTE.bg}}
 .nmos{${paletteVars()}}
-.nmos{position:fixed;inset:0;overflow:auto;background:var(--c-bg);font:13.5px/1.6 system-ui,-apple-system,"Noto Sans KR",sans-serif;color:var(--c-text);-webkit-font-smoothing:antialiased}
+.nmos{position:fixed;inset:0;overflow:auto;background:var(--c-bg);font:16px/1.65 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;color:var(--c-text);-webkit-font-smoothing:antialiased}
 .nmos *{box-sizing:border-box}
 .nmos .wrap{max-width:760px;margin:0 auto;padding:20px 16px 32px}
 .nmos header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
-.nmos h1{font-size:17px;font-weight:600;letter-spacing:-0.01em;margin:0;flex:1;white-space:nowrap;color:var(--c-text-strong)}
+.nmos h1{font-size:20px;font-weight:600;letter-spacing:-0.01em;margin:0;flex:1;white-space:nowrap;color:var(--c-text-strong)}
 .nmos .tabs{display:flex;gap:6px;border-bottom:1px solid var(--c-line);margin:8px 0 8px}
-.nmos .tabs button{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:9px 14px;color:var(--c-text-muted);font-size:13px;font-weight:500;transition:all .15s ease}
+.nmos .tabs button{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:9px 14px;color:var(--c-text-muted);font-size:15px;font-weight:500;transition:all .15s ease}
 .nmos .tabs button:hover:not(:disabled){background:none;border-bottom-color:transparent;color:var(--c-text)}
 .nmos .tabs button.on,.nmos .tabs button.on:hover:not(:disabled){color:var(--c-text-strong);border-bottom-color:var(--c-accent)}
 .nmos .card{background:var(--c-surface);border:1px solid var(--c-line);border-radius:6px;padding:18px 20px;margin:16px 0}
-.nmos h2{font-size:13.5px;font-weight:600;letter-spacing:-0.005em;color:var(--c-text-strong);margin:0 0 4px}
-.nmos .sub{color:var(--c-text-muted);font-size:12px;line-height:1.55;margin:0 0 14px}
-.nmos label{display:block;font-size:11.5px;font-weight:500;color:var(--c-text-muted);margin:12px 0 5px;letter-spacing:0.02em}
-.nmos input,.nmos select,.nmos textarea{width:100%;background:var(--c-sunken);color:var(--c-text);border:1px solid var(--c-line-strong);border-radius:4px;padding:8px 11px;font:inherit;font-size:12.5px;transition:border-color .15s ease}
+.nmos h2{font-size:17px;font-weight:600;letter-spacing:-0.005em;color:var(--c-text-strong);margin:0 0 4px}
+.nmos .sub{color:var(--c-text-muted);font-size:14px;line-height:1.55;margin:0 0 14px}
+.nmos label{display:block;font-size:13px;font-weight:500;color:var(--c-text-muted);margin:12px 0 5px;letter-spacing:0.02em}
+.nmos input,.nmos select,.nmos textarea{width:100%;background:var(--c-sunken);color:var(--c-text);border:1px solid var(--c-line-strong);border-radius:4px;padding:9px 12px;font:inherit;font-size:16px;transition:border-color .15s ease}
 .nmos input:focus,.nmos select:focus,.nmos textarea:focus{border-color:${alpha('accent', 0.6)};outline:none;box-shadow:0 0 0 2px ${alpha('accent', 0.25)}}
-.nmos header select{width:auto;padding:5px 9px;font-size:12px;border-radius:4px}
-.nmos textarea{min-height:160px;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6}
+.nmos header select{width:auto;padding:5px 9px;font-size:14px;border-radius:4px}
+.nmos textarea{min-height:160px;font-family:ui-monospace,monospace;font-size:14px;line-height:1.6}
 .nmos .row{display:flex;gap:12px;flex-wrap:wrap}.nmos .row>*{flex:1;min-width:140px}
 .nmos .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
-.nmos button{background:var(--c-raised);color:var(--c-text);border:1px solid var(--c-line-strong);border-radius:4px;padding:6px 13px;font:inherit;font-size:12.5px;cursor:pointer;transition:all .15s ease}
+.nmos button{background:var(--c-raised);color:var(--c-text);border:1px solid var(--c-line-strong);border-radius:4px;padding:8px 14px;font:inherit;font-size:15px;cursor:pointer;transition:all .15s ease}
 .nmos button:hover:not(:disabled){background:var(--c-raised-hover);color:var(--c-text-strong);border-color:var(--c-line-hover)}
 .nmos button:focus-visible{outline:2px solid ${alpha('accent', 0.6)};outline-offset:1px}
 .nmos button.primary{background:var(--c-accent);border-color:var(--c-accent);color:#fff}
@@ -132,17 +132,17 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos button.danger{background:${alpha('err', 0.15)};border-color:${alpha('err', 0.4)};color:var(--c-err)}
 .nmos button.danger:hover:not(:disabled){background:${alpha('err', 0.25)};border-color:${alpha('err', 0.55)};color:var(--c-text-strong)}
 .nmos button:disabled{opacity:.4;cursor:default}
-.nmos .msg{margin-top:10px;font-size:12.5px;white-space:pre-wrap}
+.nmos .msg{margin-top:10px;font-size:14px;white-space:pre-wrap}
 .nmos .ok{color:var(--c-ok)}.nmos .err{color:var(--c-err)}.nmos .warn{color:var(--c-warn)}.nmos .muted{color:var(--c-text-muted)}
-.nmos .check{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--c-text-soft)}.nmos .check input{width:auto}
-.nmos .preview{margin:8px 0;padding:8px 10px;border-left:3px solid var(--c-line);font-size:12.5px;line-height:1.6}.nmos .preview>b{display:block;margin-bottom:4px}
+.nmos .check{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;color:var(--c-text-soft)}.nmos .check input{width:auto}
+.nmos .preview{margin:8px 0;padding:8px 10px;border-left:3px solid var(--c-line);font-size:14px;line-height:1.6}.nmos .preview>b{display:block;margin-bottom:4px}
 .nmos .line{display:flex;align-items:baseline;gap:8px;margin:5px 0}
 .nmos .dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--c-text-ghost);transform:translateY(-1px)}
 .nmos .dot.ok{background:var(--c-ok)}.nmos .dot.err{background:var(--c-err)}.nmos .dot.warn{background:var(--c-warn)}
 .nmos .pills{display:flex;gap:8px;flex-wrap:wrap}
-.nmos .pill{border:1px solid var(--c-line-strong);border-radius:4px;padding:3px 10px;font-size:12px;color:var(--c-text-muted)}
+.nmos .pill{border:1px solid var(--c-line-strong);border-radius:4px;padding:3px 10px;font-size:13px;color:var(--c-text-muted)}
 .nmos .pill.on{border-color:${alpha('ok', 0.4)};background:${alpha('ok', 0.08)};color:var(--c-ok)}
-.nmos .mono{font-family:ui-monospace,monospace;font-size:12px;word-break:break-all}
+.nmos .mono{font-family:ui-monospace,monospace;font-size:13px;word-break:break-all}
 .nmos.wide>.wrap{max-width:1100px}
 .nmos .insp{margin-top:14px}.nmos .insp+.sub{margin-top:18px}
 .nmos .insp h1{font-size:16px;font-weight:600;margin:4px 0;color:var(--c-text-strong)}
@@ -150,18 +150,18 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}.nmos .insp .top p{margin:0}
 .nmos .insp a{color:var(--c-link);text-decoration:none;cursor:pointer}
 .nmos .insp a:hover{text-decoration:underline}
-.nmos .insp .tl{margin:6px 0 16px}.nmos .insp .tl .tl-h{font-size:11.5px;font-weight:500;letter-spacing:.04em;color:var(--c-text-muted);margin:16px 0 4px;cursor:pointer;list-style:none}
+.nmos .insp .tl{margin:6px 0 16px}.nmos .insp .tl .tl-h{font-size:13px;font-weight:500;letter-spacing:.04em;color:var(--c-text-muted);margin:16px 0 4px;cursor:pointer;list-style:none}
 .nmos .insp .tl .tl-h::-webkit-details-marker{display:none}.nmos .insp .tl .tl-h::before{content:"\\25BE  "}.nmos .insp .tl details:not([open])>.tl-h::before{content:"\\25B8  "}
-.nmos .insp .tl-switch{font-size:12.5px;margin:0 0 8px}.nmos .insp .tl-span{color:var(--c-link);cursor:pointer}
-.nmos .insp .tl-hint{font-size:11.5px;color:var(--c-text-faint);margin:0 0 8px}
+.nmos .insp .tl-switch{font-size:14px;margin:0 0 8px}.nmos .insp .tl-span{color:var(--c-link);cursor:pointer}
+.nmos .insp .tl-hint{font-size:13px;color:var(--c-text-faint);margin:0 0 8px}
 .nmos .insp .tl-row{display:grid;grid-template-columns:112px minmax(0,1fr);gap:8px;align-items:center;padding:3px 0;color:inherit}.nmos .insp a.tl-line{text-decoration:none;border-radius:6px}
 .nmos .insp .tl-cast .tl-row{display:block}
-.nmos .insp .tl-lab{display:block;font-size:12.5px;line-height:1.3;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;max-height:2.6em}
+.nmos .insp .tl-lab{display:block;font-size:14px;line-height:1.3;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;max-height:2.6em}
 .nmos .insp .tl-cast .tl-lab{white-space:nowrap;margin-bottom:2px}
-.nmos .insp .tl-lab .tl-k{display:block;font-size:11px;color:var(--c-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nmos .insp .tl-lab .tl-k{display:block;font-size:13px;color:var(--c-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nmos .insp .tl-lab .tl-val{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nmos .insp .tl-lab .tl-val.canon{color:var(--c-text-muted)}
-.nmos .insp .tl-last{color:var(--c-text-faint);font-size:11.5px}.nmos .insp .tl-end{display:none}
-.nmos .insp .tl-me{font-size:10.5px;color:var(--c-link);margin-left:6px}
+.nmos .insp .tl-last{color:var(--c-text-faint);font-size:13px}.nmos .insp .tl-end{display:none}
+.nmos .insp .tl-me{font-size:13px;color:var(--c-link);margin-left:6px}
 .nmos .insp .tl-track{display:block;position:relative;height:26px}
 .nmos .insp .tl-rule{position:absolute;left:0;right:0;top:13px;height:1px;background:var(--c-line)}
 .nmos .insp .tl-bar{position:absolute;top:5px;height:16px;min-width:6px;border-radius:4px;overflow:hidden;box-sizing:border-box;background:var(--c-raised);border:1px solid var(--c-text-faint);cursor:pointer}
@@ -177,38 +177,41 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp .tl .tl-dot.sel{background:transparent}.nmos .insp .tl .tl-dot.sel::after{background:var(--c-accent)}
 .nmos .insp .tl-tick{position:absolute;top:5px;width:2px;height:16px;margin-left:-1px;border-radius:1px;background:var(--c-text-soft)}
 .nmos .insp .tl-axis .tl-track{height:18px}
-.nmos .insp .tl-axis .tl-track span{position:absolute;top:0;font-size:10.5px;color:var(--c-text-faint);transform:translateX(-50%);white-space:nowrap}
+.nmos .insp .tl-axis .tl-track span{position:absolute;top:0;font-size:13px;color:var(--c-text-faint);transform:translateX(-50%);white-space:nowrap}
 .nmos .insp .tl-axis .tl-track span.first{transform:none}.nmos .insp .tl-axis .tl-track span.last{transform:translateX(-100%)}
 .nmos .insp .tl-axis .tl-track span.odd,.nmos .insp .tl-axis .tl-track span.near{display:none}
-.nmos .insp .tl-card{margin:6px 0 10px;padding:10px 12px;border-radius:8px;background:var(--c-raised);font-size:12.5px}
+.nmos .insp .tl-card{margin:6px 0 10px;padding:10px 12px;border-radius:8px;background:var(--c-raised);font-size:14px}
 .nmos .insp .tl-card p{margin:2px 0}.nmos .insp .tl-card .v{font-size:17px;font-weight:600;line-height:1.35;color:var(--c-text-strong);overflow-wrap:anywhere}
 .nmos .insp .tl-hist{margin-top:8px;color:var(--c-text-muted)}.nmos .insp .tl-hist .cur{color:var(--c-text-strong)}
-.nmos .insp .tl-more{font-size:11.5px;color:var(--c-text-faint);margin:2px 0}
-.nmos .insp .tl-fold>summary,.nmos .insp .tl-others>summary{font-size:12px;color:var(--c-text-muted);margin:8px 0 2px;cursor:pointer}
-.nmos .insp .ref{display:block;font-family:ui-monospace,monospace;font-size:10.5px;color:var(--c-text-faint)}
+.nmos .insp .tl-more{font-size:13px;color:var(--c-text-faint);margin:2px 0}
+.nmos .insp .tl-fold>summary,.nmos .insp .tl-others>summary{font-size:13px;color:var(--c-text-muted);margin:8px 0 2px;cursor:pointer}
+.nmos .insp .ref{display:block;font-family:ui-monospace,monospace;font-size:13px;color:var(--c-text-faint)}
 .nmos .insp .wrap{max-width:none;margin:0;padding:0;overflow-x:auto}
-.nmos .insp table{width:100%;border-collapse:collapse;font-size:12.5px}
+.nmos .insp table{width:100%;border-collapse:collapse;font-size:14px}
 .nmos .insp th,.nmos .insp td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--c-line);vertical-align:top}
-.nmos .insp th{font-weight:500;color:var(--c-text-faint);font-size:11.5px;letter-spacing:0.02em;white-space:nowrap}
+.nmos .insp th{font-weight:500;color:var(--c-text-faint);font-size:13px;letter-spacing:0.02em;white-space:nowrap}
 .nmos .insp tr:hover td{background:rgba(255,255,255,0.02)}
-.nmos .insp .chip{display:inline-block;padding:1px 6px;border-radius:3px;background:var(--c-raised);border:1px solid var(--c-line);font-size:11.5px;color:var(--c-text-soft)}
+.nmos .insp .chip{display:inline-block;padding:1px 6px;border-radius:3px;background:var(--c-raised);border:1px solid var(--c-line);font-size:13px;color:var(--c-text-soft)}
 .nmos .insp span.rp{display:inline-flex;flex-wrap:wrap;align-items:center;gap:5px;margin-left:6px;vertical-align:middle}
-.nmos .insp span.rp input,.nmos .insp span.rp select{width:auto;padding:3px 7px;font-size:11.5px;border-radius:3px}
+.nmos .insp span.rp input,.nmos .insp span.rp select{width:auto;padding:3px 7px;font-size:13px;border-radius:3px}
 .nmos .insp span.rp input[type=text]{width:12em}.nmos .insp span.rp input.turn{width:7em}
-.nmos button.mini{padding:2px 8px;font-size:11.5px;border-radius:3px}
+.nmos button.mini{padding:2px 8px;font-size:13px;border-radius:3px}
+.nmos .groups{display:flex;flex-direction:column;gap:8px;margin:8px 0}
+.nmos .groups button.group{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:14px 16px;border-radius:12px;font-size:16px}
+.nmos .groups button.group .sub{margin:0}
 .nmos .inspbar{position:sticky;top:0;z-index:1;background:var(--c-bg);padding:10px 0;margin-top:4px}
 .nmos .help{margin:8px 0 0}.nmos .help summary{cursor:pointer;color:var(--c-text-muted)}.nmos .help p{margin:6px 0 0}
-.nmos .packet{margin:8px 0 0;max-height:420px;overflow:auto;background:var(--c-sunken);border:1px solid var(--c-line);border-radius:4px;padding:12px;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6;color:var(--c-text-soft);white-space:pre-wrap;word-break:break-word}
+.nmos .packet{margin:8px 0 0;max-height:420px;overflow:auto;background:var(--c-sunken);border:1px solid var(--c-line);border-radius:4px;padding:12px;font-family:ui-monospace,monospace;font-size:13px;line-height:1.6;color:var(--c-text-soft);white-space:pre-wrap;word-break:break-word}
 .nmos .insp.busy{opacity:.5;transition:opacity .15s}
 .nmos .insp details>summary{cursor:pointer;list-style:none}.nmos .insp details>summary::-webkit-details-marker{display:none}
 .nmos .insp details>summary h2{display:inline-block}
 .nmos .insp details>summary h2::before{content:"▸ ";color:var(--c-text-ghost)}.nmos .insp details[open]>summary h2::before{content:"▾ "}
-.nmos .insp .n{color:var(--c-text-muted);font-weight:400;font-size:11.5px}
-.nmos .insp .toc{font-size:12.5px;line-height:1.9;margin:8px 0}.nmos .insp a.warn{color:var(--c-warn)}
+.nmos .insp .n{color:var(--c-text-muted);font-weight:400;font-size:13px}
+.nmos .insp .toc{font-size:14px;line-height:1.9;margin:8px 0}.nmos .insp a.warn{color:var(--c-warn)}
 .nmos .insp .who{display:flex;align-items:center;gap:8px;margin:10px 0}.nmos .insp .who select{width:auto;min-width:180px;padding:5px 8px}
-.nmos .insp details.meta{font-size:11.5px;margin-top:2px;color:var(--c-text-muted)}.nmos .insp details.meta p{margin:4px 0}
+.nmos .insp details.meta{font-size:13px;margin-top:2px;color:var(--c-text-muted)}.nmos .insp details.meta p{margin:4px 0}
 .nmos .bar{position:sticky;bottom:0;background:${alpha('surface', 0.95)};backdrop-filter:blur(12px);border-top:1px solid var(--c-line-strong);padding:12px max(16px,calc((100% - 760px) / 2 + 16px));display:flex;align-items:center;gap:10px;flex-wrap:wrap;z-index:10}
-.nmos .bar .text{flex:1;min-width:160px;font-size:12.5px}
+.nmos .bar .text{flex:1;min-width:160px;font-size:14px}
 `;
 
 type Attrs = Record<string, string | number | boolean | undefined>;
@@ -287,8 +290,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const tabStatus = el('button', { text: L('tab.status') });
   const tabInspector = el('button', { text: L('tab.inspector') });
   const tabSettings = el('button', { text: L('tab.settings') });
-  wrap.append(el('header', {}, el('h1', { text: L('title') }), language, close),
-    el('nav', { class: 'tabs' }, tabStatus, tabInspector, tabSettings));
+  const title = el('h1', { text: L('title') });
+  const tabs = el('nav', { class: 'tabs' }, tabStatus, tabInspector, tabSettings);
+  wrap.append(el('header', {}, title, language, close), tabs);
   const statusView = el('div');
   const inspectorView = el('div');
   const settingsView = el('div');
@@ -510,6 +514,9 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   // runs none of a page's scripts.
   const notesButton = el('button', { text: L('notes.open') });
   const notesCard = el('div', { class: 'card', style: 'display:none' });
+  let notesFor: string | null = null; // the chat the note form is for: a page's, or the hub's
+  let hubConversation: string | null = null; // the chat the hub is about (PHASE-52), from its answer
+  let viewsOn = false; // the sidecar has the new screens (PHASE-52): hub first, settings in groups
   const actionMsg = el('div', { class: 'msg' });
   const actions = el('div', {}, el('div', { class: 'btns' }, retryButton, historyButton, rebuildButton, exportButton, notesButton,
     deleteButton),
@@ -559,6 +566,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   function closeControls(action: RepairAction): Node[] {
     const item = action.item;
     const choices = closeOutcomes(action.extra);
+    if (inspectorPath.startsWith('/v1/views/')) { // the new screens: one button an ending, no bulk box (PHASE-52)
+      const ends = (choices.length ? choices : ['']).map((o) => {
+        const b = el('button', { class: 'mini', text: o ? outcomeLabel(o) : L('rp.thread_close') });
+        b.addEventListener('click', () => void repairNow(action, b, o ? { outcome: o } : {}));
+        return b;
+      });
+      return [el('span', { class: 'rp-ask', text: L('rp.how_ended') }), ...ends];
+    }
     let c = closers.get(item);
     if (!c) closers.set(item, c = { first: choices[0], boxes: [], selects: [] });
     const group = c;
@@ -709,6 +724,17 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   /** Adapt a page to the panel: times in the viewer's zone, the character links as a drop-down. */
   function enhance(page: DocumentFragment): void {
     closers = new Map();
+    // The chat list's search box (PHASE-52 D7): the sidecar marks where; the sanitizer keeps no input of its own.
+    for (const slot of Array.from(page.querySelectorAll('.v-filter'))) {
+      const box = el('input', { type: 'search', placeholder: L('chats.search'), 'aria-label': L('chats.search') });
+      box.addEventListener('input', () => {
+        const q = box.value.trim().toLowerCase();
+        for (const row of Array.from(inspectorBody.querySelectorAll<HTMLElement>('.v-chat'))) {
+          row.style.display = !q || (row.textContent ?? '').toLowerCase().includes(q) ? '' : 'none';
+        }
+      });
+      slot.append(box);
+    }
     // The timeline is asked for only when its section is opened, so a chat page never holds it unasked (an iPhone's
     // Safari reloads a page under memory pressure; PHASE-32 step 3). The listener goes with the page it is on.
     for (const box of Array.from(page.querySelectorAll<HTMLElement>('details > .tl-lazy'))) {
@@ -788,15 +814,18 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       actionConversation = conversation;
       notesCard.replaceChildren(); // another chat's sections never stay on screen
       notesCard.style.display = 'none';
+      notesFor = null;
       say(actionMsg, '');
       disarm();
       picked.clear();
       updateBulk();
     }
-    actions.style.display = conversation ? '' : 'none';
+    // The new screens (PHASE-52) keep their actions where the design puts them: not today's row on top.
+    const isView = path.startsWith('/v1/views/');
+    actions.style.display = conversation && !isView ? '' : 'none';
     const shownEntity = inspectorEntity(path);
     if (!shownEntity) linkCard.style.display = 'none';
-    if (!conversation || shownEntity) { modeCard.style.display = 'none'; statusCard.style.display = 'none'; }
+    if (!conversation || shownEntity || isView) { modeCard.style.display = 'none'; statusCard.style.display = 'none'; }
     if (again) {
       inspectorBody.classList.add('busy'); // the old page stays until the new one is there
     } else {
@@ -812,9 +841,12 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       // A chat's and a character's page get a closed timeline section, filled when it is opened (PHASE-32 step 3), and
       // a chat's page one for its status window (PHASE-39); a sidecar without them ignores the ask.
       const query = [conversation ? 'timeline=lazy&status=lazy' : '', lang === 'en' ? 'lang=en' : ''].filter(Boolean).join('&');
-      const r = await deps.api<{ html: string }>('GET', `${path}${query ? `?${query}` : ''}`, undefined, 15_000);
+      const r = await deps.api<{ html: string; conversation?: string | null }>('GET',
+        `${path}${query ? `${path.includes('?') ? '&' : '?'}${query}` : ''}`, undefined, 15_000);
       if (load !== loads) return;
+      if (path.startsWith('/v1/views/hub')) hubConversation = r.conversation ?? null;
       const page = safeFragment(r.html);
+      placeMarks(page); // a person's circles (PHASE-52 D4)
       enhance(page);
       retryButton.style.display = page.querySelector('.has-failed') ? '' : 'none';
       inspectorBody.replaceChildren(page);
@@ -822,7 +854,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       if (keep) restore(keep);
       else root.scrollTop = 0;
       if (shownEntity) void showLinks(shownEntity.conversation, shownEntity.entity, load);
-      else if (conversation) { void showMode(conversation, load); void showStatusWindows(conversation, load); }
+      else if (conversation && !isView) { void showMode(conversation, load); void showStatusWindows(conversation, load); }
     } catch (error) {
       if (load !== loads) return;
       shownPath = null;
@@ -1085,6 +1117,14 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   }
   inspectorBody.addEventListener('click', (event) => {
     const clicked = event.target instanceof Element ? event.target : null;
+    const act = clicked?.closest('[data-act]')?.getAttribute('data-act');
+    if (act) {
+      event.preventDefault();
+      return void doAct(act);
+    }
+    // A line of a new screen shows its repair when tapped (PHASE-52 D2), not on every line at once.
+    const row = clicked?.closest('.v-line');
+    if (row && !clicked?.closest('a, button, select, input, label, .rp')) return void row.classList.toggle('open');
     const choice = clicked?.closest('.tl-span[data-span]');
     const box = choice?.closest<HTMLElement>('.tl-lazy');
     if (choice && box) return void loadTimeline(box, choice.getAttribute('data-span') ?? '');
@@ -1205,6 +1245,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   });
   /** The form: which sections, the chronicle's length, whether secrets go in (PHASE-50 S1). */
   function buildNotes(conversation: string): void {
+    notesFor = conversation;
     const pick = (key: StringKey, kind: string) => {
       const box = el('input', { type: 'checkbox', value: kind });
       box.checked = true;
@@ -1228,7 +1269,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
       try {
         const r = await deps.api<NotesResult>('POST', `/v1/conversations/${conversation}/notes`,
           { sections, chars: Number(length.value), secrets: secrets.checked }, 300_000); // a call and one retry
-        if (actionConversation !== conversation) return;
+        if (notesFor !== conversation) return;
         results.replaceChildren(noteResult(r, msg));
         say(msg, r.text ? L('notes.done') : L('notes.part_none', { part: L('notes.title') }), r.text ? 'ok' : 'warn');
       } catch (error) { say(msg, errorText(lang, error), 'err'); } finally { make.disabled = false; }
@@ -1572,7 +1613,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   const exportMsg = el('div', { class: 'msg' });
   exportAll.addEventListener('click', () => void exportTo(exportAll, exportMsg,
     `/v1/archive${exportEmbeddings.checked ? '?embeddings=true' : ''}`, 'all'));
-  settingsView.append(el('div', { class: 'card' },
+  settingsView.append(el('div', { class: 'card', id: 'nmos-backup' },
     el('h2', { text: L('exp.title') }), el('p', { class: 'sub', text: L('exp.sub') }),
     el('div', { class: 'check' }, exportEmbeddings, el('span', { text: L('exp.embeddings') })),
     el('div', { class: 'btns' }, exportAll), exportMsg));
@@ -1831,6 +1872,7 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
 
   function select(next: Tab): void {
     shown = next;
+    if (viewsOn && next === 'settings') showGroups();
     const views: [Tab, HTMLElement, HTMLElement][] = [
       ['status', statusView, tabStatus], ['inspector', inspectorView, tabInspector], ['settings', settingsView, tabSettings]];
     for (const [name, view, button] of views) {
@@ -1846,7 +1888,134 @@ async function render(deps: PanelDeps, lang: Lang, tab: Tab): Promise<{ root: HT
   tabInspector.addEventListener('click', () => select('inspector'));
   tabSettings.addEventListener('click', () => select('settings'));
 
+  /** What a hub block asks the plugin to do itself (PHASE-52 D1): the settings, the backup card, the note form. */
+  function doAct(act: string): void {
+    if (act === 'settings' || act === 'backup') {
+      select('settings');
+      if (act === 'backup') openGroup('backup');
+      return;
+    }
+    if (act === 'retry') return void retryFrom(inspectorConversation(inspectorPath));
+    if (act === 'notes' && hubConversation) {
+      notesCard.replaceChildren();
+      buildNotes(hubConversation);
+      notesCard.style.display = '';
+      notesCard.scrollIntoView({ block: 'start' });
+    }
+  }
+  /** The hub again, for the chat open in the host now (PHASE-52): from the title, or from settings. */
+  async function goHome(): Promise<void> {
+    visited.length = 0;
+    inspectorPath = await hubPath();
+    select('inspector');
+  }
+  // --- settings in groups (PHASE-52 D6): a list of groups, each opening its own cards ----------------------------
+  const GROUPS = ['connection', 'models', 'memory', 'chat', 'rules', 'display', 'backup'] as const;
+  type Group = typeof GROUPS[number];
+  const groupList = el('div', { class: 'groups' });
+  const settingsTop = el('div', { class: 'btns inspbar', style: 'display:none' });
+  const chatPage = el('div', { 'data-group': 'chat', style: 'display:none' });
+  function groupSettings(): void {
+    const byTitle: Record<string, Group> = {
+      [L('hud.title')]: 'display', [L('conn.title')]: 'connection', [L('llm.title')]: 'models', [L('emb.title')]: 'models',
+      [L('tune.title')]: 'memory', [L('rules.title')]: 'rules', [L('exp.title')]: 'backup', [L('rst.title')]: 'backup' };
+    for (const card of Array.from(settingsView.children) as HTMLElement[]) {
+      const group = byTitle[card.querySelector('h2')?.textContent ?? ''];
+      if (group) card.dataset.group = group;
+    }
+    // Today's Status tab is the connection page; this chat's tools are their own page.
+    statusView.dataset.group = 'connection';
+    settingsView.prepend(settingsTop, groupList, statusView, chatPage);
+    const home = el('button', { text: L('home') });
+    home.addEventListener('click', () => void goHome());
+    const back = el('button', { text: L('grp.back') });
+    back.addEventListener('click', () => showGroups());
+    settingsTop.replaceChildren(home, back);
+    groupList.replaceChildren(...GROUPS.map((g) => {
+      const b = el('button', { class: 'group', 'data-group': g },
+        el('b', { text: L(`grp.${g}` as StringKey) }), el('span', { class: 'sub', text: L(`grp.${g}_sub` as StringKey) }));
+      b.addEventListener('click', () => openGroup(g));
+      return b;
+    }));
+  }
+  function pages(): HTMLElement[] {
+    return (Array.from(settingsView.querySelectorAll<HTMLElement>('[data-group]')))
+      .filter((x) => x.parentElement === settingsView);
+  }
+  function showGroups(): void {
+    settingsTop.style.display = '';
+    settingsTop.lastElementChild instanceof HTMLElement && (settingsTop.lastElementChild.style.display = 'none');
+    groupList.style.display = '';
+    for (const page of pages()) page.style.display = 'none';
+  }
+  function openGroup(group: Group): void {
+    settingsTop.style.display = '';
+    settingsTop.lastElementChild instanceof HTMLElement && (settingsTop.lastElementChild.style.display = '');
+    groupList.style.display = 'none';
+    for (const page of pages()) page.style.display = page.dataset.group === group ? '' : 'none';
+    if (group === 'connection') void refreshStatus();
+    if (group === 'chat') showChatPage();
+  }
+  /** This chat's tools in one place (PHASE-52 D6): its memory mode, status windows and actions, for the hub's chat. */
+  function showChatPage(): void {
+    if (!hubConversation) {
+      chatPage.replaceChildren(el('div', { class: 'card muted', text: L('grp.chat_none') }));
+      return;
+    }
+    actionConversation = hubConversation;
+    disarm();
+    chatPage.replaceChildren(modeCard, statusCard, el('div', { class: 'card' }, actions, actionMsg));
+    actions.style.display = '';
+    void showMode(hubConversation, loads);
+    void showStatusWindows(hubConversation, loads);
+  }
+  /** Run a chat's failed jobs again from the working screen (PHASE-52 D5), as today's Retry failed does. */
+  async function retryFrom(conversation: string | null): Promise<void> {
+    if (!conversation) return;
+    say(actionMsg, L('act.working'));
+    try {
+      const r = await deps.api<{ retried?: Record<string, number> }>('POST',
+        `/v1/conversations/${conversation}/retry-failed`, {}, 30_000);
+      const n = Object.values(r.retried ?? {}).reduce((a, b) => a + (Number(b) || 0), 0);
+      say(actionMsg, n ? L('act.retry_done', { n }) : L('act.retry_none'), 'ok');
+      if (n) deps.hud.background(conversation);
+      await showInspector();
+    } catch (error) { say(actionMsg, actionError(error), 'err'); }
+  }
+  /** The hub for the chat open in the host (PHASE-52): with what only the plugin knows, this chat off or every chat. */
+  async function hubPath(): Promise<string> {
+    let chat: string | null = null;
+    let off = false;
+    let allOff = false;
+    try { ({ id: chat, off } = await deps.chat.current()); } catch { /* the hub says it does not know the chat */ }
+    try { allOff = !(await deps.status()).enabled; } catch { /* the hub says nothing about the switch */ }
+    const q = [chat ? `chat=${encodeURIComponent(chat)}` : '', off ? 'off=true' : '', allOff ? 'all_off=true' : '']
+      .filter(Boolean).join('&');
+    return `/v1/views/hub${q ? `?${q}` : ''}`;
+  }
+  /** The sidecar's stylesheet for its screens, once per page; one that could load anything is refused. */
+  async function viewsStyle(): Promise<void> {
+    if (document.getElementById('nmos-views-style')) return;
+    try {
+      const r = await deps.api<{ css?: unknown }>('GET', '/v1/views/style', undefined, 5000);
+      if (typeof r.css === 'string' && !/@import|url\s*\(/i.test(r.css)) {
+        document.head.append(el('style', { id: 'nmos-views-style', text: r.css }));
+      }
+    } catch { /* the pages still read without it */ }
+  }
+
   document.body.append(root);
+  // A sidecar with the new screens (PHASE-52) opens on its hub; one without keeps today's.
+  try { viewsOn = !!(await deps.status()).features?.views; } catch { viewsOn = false; }
+  if (viewsOn) {
+    await viewsStyle();
+    inspectorPath = await hubPath();
+    if (tab === 'status') tab = 'inspector';
+    tabs.style.display = 'none';
+    title.style.cursor = 'pointer';
+    title.addEventListener('click', () => void goHome());
+    groupSettings();
+  }
   select(tab);
   await loadAll();
   return { root, select };

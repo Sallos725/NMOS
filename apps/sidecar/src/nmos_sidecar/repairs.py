@@ -53,6 +53,17 @@ def outcomes(kind: str) -> tuple[str, ...]:
     return PROMISE_OUTCOMES if kind == "promise" else OUTCOMES
 
 
+# The endings the panel offers a thread of each kind, the default first: the extractor's own (`resolved` in
+# extraction.py), with "abandoned" for a question or debt that is dropped. `outcomes` still accepts all of them.
+OFFERED = {"promise": ("kept", "broken"), "goal": ("achieved", "abandoned", "failed"),
+           "question": ("answered", "abandoned"), "threat": ("averted", "failed"), "debt": ("paid", "abandoned")}
+
+
+def offered(kind: str) -> tuple[str, ...]:
+    """The endings the panel offers for closing a thread of this kind, the default first (PHASE-52)."""
+    return OFFERED.get(kind) or (default_outcome(kind),) + tuple(o for o in outcomes(kind) if o != default_outcome(kind))
+
+
 def default_outcome(kind: str) -> str:
     return {"promise": "kept", "question": "answered", "threat": "averted", "debt": "paid"}.get(kind, "achieved")
 

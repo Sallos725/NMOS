@@ -30,7 +30,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from . import (__version__, archive, audit, canon, canonfacts, dropped, endings, extraction, generations, inspector, ledger,
-               normtext, notes, overuse,
+               normtext, notes, overuse, views,
                plugin, preview, readmodel, retention, repairs, reveals, runtime, scene, statewatch, summaries, uploads,
                vectors)
 from . import usage as model_usage
@@ -437,7 +437,8 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
         return {"ok": True, "service": "nmos-sidecar", "version": __version__,
                 "features": {"state": bool(rt["rules"].rules),
                              "extraction": bool(rt["settings"].llm_url and rt["settings"].llm_model),
-                             "vectors": rt["recall"].embedder is not None},
+                             "vectors": rt["recall"].embedder is not None,
+                             "views": True},  # PHASE-52: the panel's new screens
                 "generations": {"extract": rt["active_extractor"],
                                 "embed": rt["projection"].key if rt["projection"] else None},
                 "plugin": {"expected": plugin.expected(), "seen": plugins.recent()},
@@ -1443,15 +1444,9 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
             ex_key = rt["active_extractor"]
             pj_key = rt["projection"].key if rt["projection"] else None
             view = inspector.with_participants(view_of(conn, head))
-            lost = dropped.find(conn, head, ex_key, view)  # PHASE-22 Q6
-            role_ends = {"automatic": endings.automatic(conn, view, head_turn(conn, head)),  # PHASE-28 Q7
-                         "held": endings.held(conn, head, ex_key, view),
-                         "aliases_held": endings.held_aliases(conn, head, ex_key, view,  # PHASE-29 Q5
-                                                              facts_links_of(conn, conv_id))}
+            lost, role_ends, flags, fixed = attention_inputs(conn, conv, head, view)
             traces = readmodel.traces(conn, conv_id)
             cov = coverage_view(conn, conv_id, usage=True, lost=len(lost))
-            flags = state_flags(conn, conv)  # PHASE-39 Q4
-            fixed = repair_rows(conn, conv_id, view["repairs"], flags)
             off = statewatch.dismissed(fixed)
             with inspector.turn_links(conv_id, token, inspector.lang_of(lang)):  # turn cells lead to their turns
                 html = inspector.detail(conv, current_state(conn, head, rt["rules"].version),
@@ -1481,6 +1476,266 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                                             " AND rules_version = %s LIMIT 1",
                                             (conv_id, rt["rules"].version)).fetchone() is not None, state_flags=[f for f in flags if f["id"] not in off])
             return html
+
+    def attention_inputs(conn, conv: dict[str, Any], head: UUID, view: dict[str, Any]) -> tuple[Any, ...]:
+        """What "needs a look" is made of besides the view (the Inspector's chat page and the panel's hub, PHASE-52):
+        dropped facts (PHASE-22 Q6), role endings (PHASE-28 Q7, PHASE-29 Q5), status flags (PHASE-39 Q4) and the
+        owner's repairs with the flags'."""
+        ex_key = rt["active_extractor"]
+        lost = dropped.find(conn, head, ex_key, view)
+        role_ends = {"automatic": endings.automatic(conn, view, head_turn(conn, head)),
+                     "held": endings.held(conn, head, ex_key, view),
+                     "aliases_held": endings.held_aliases(conn, head, ex_key, view, facts_links_of(conn, conv["id"]))}
+        flags = state_flags(conn, conv)
+        return lost, role_ends, flags, repair_rows(conn, conv["id"], view["repairs"], flags)
+
+    def hub_data(conn, conv: dict[str, Any] | None, off: bool, all_off: bool) -> dict[str, Any]:
+        """What the panel's hub says (PHASE-52 D1), from what the Inspector's chat page reads."""
+        chats = conn.execute("SELECT count(*) AS n FROM conversation").fetchone()["n"]
+        if conv is None or conv["head_commit_id"] is None:
+            return {"conv": None, "working": {"state": "off" if off or all_off else "idle", "all_off": all_off},
+                    "chats": chats}
+        cid, head = conv["id"], conv["head_commit_id"]
+        view = inspector.with_participants(view_of(conn, head))
+        last = head_turn(conn, head)
+        lost, role_ends, flags, fixed = attention_inputs(conn, conv, head, view)
+        off_keys = statewatch.dismissed(fixed)
+        queue = inspector._attention({"threads": view["threads"], "unmatched": view["unmatched"],
+                                      "conflicts": view["conflicts"], "ambiguous": view["ambiguous"],
+                                      "dropped": lost, "endings": role_ends,
+                                      "state_flags": [f for f in flags if f["id"] not in off_keys]}, fixed, last, "ko")
+        cov = coverage_view(conn, cid, usage=True, lost=len(lost))
+        parts = [cov.get(k) or {} for k in ("extraction", "embeddings", "canon", "summaries")]
+        trace = conn.execute("SELECT latency_ms FROM retrieval_trace WHERE conversation_id = %s"
+                             " ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
+        lat = (trace or {}).get("latency_ms") or {}
+        placed = lat.get("placed")
+        reply = None if trace is None else {
+            "placed": sum(int(v or 0) for v in placed.values()) if isinstance(placed, dict) else int(placed or 0),
+            "ms": lat.get("sidecar_total")}
+        cur = rt["settings"]
+        state = "off" if off or all_off else "ok"  # without a model NMOS still recalls excerpts: not an error
+        cast = [str(n) for n in lat.get("scene_cast") or []]
+        threads = [th for th in view["threads"] if th["status"] == "open"]
+        people = scene_now(view, cast)
+        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
+                         "turns": last},
+                "working": {"state": state, "all_off": all_off, "reply": reply,
+                            "no_extraction": not (cur.llm_url and cur.llm_model),
+                            "failed": sum(int(p.get("failed") or 0) for p in parts),
+                            "pending": sum(int(p.get("pending") or 0) for p in parts)},
+                "memory": {"cast": len(people), "open": sum(1 for th in threads if not inspector.stale(th, last)),
+                           "stale": sum(1 for th in threads if inspector.stale(th, last)),
+                           "changed": len(notes.changed_lines(view["facts"], secrets=True)),
+                           "now": [" · ".join([x["name"], *x["said"]]) for x in people if x["said"]]},
+                "attention": len(queue),
+                "usage": {"calls": int((((cov.get("usage") or {}).get("total") or {}).get("calls")) or 0)},
+                "chats": chats}
+
+    def hub_html(request: Request, chat: str | None, conversation: UUID | None, lang: str | None, off: bool,
+                 all_off: bool) -> tuple[str, str | None]:
+        with request.app.state.pool.connection() as conn:
+            conv = None
+            if conversation is not None:
+                conv = readmodel.conversation(conn, conversation)
+            elif chat:
+                found = readmodel.list_conversations(conn, host_chat_ref=chat)
+                conv = readmodel.conversation(conn, found[0]["id"]) if found else None
+            data = hub_data(conn, conv, off, all_off)
+        return views.hub(data, inspector.lang_of(lang)), (data["conv"] or {}).get("id")
+
+    def memory_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
+        """What the panel's memory screen holds (PHASE-52 D2), from what the Inspector's chat page reads."""
+        cid, head = conv["id"], conv["head_commit_id"]
+        view = inspector.with_participants(view_of(conn, head))
+        last = head_turn(conn, head)
+        lost, role_ends, flags, fixed = attention_inputs(conn, conv, head, view)
+        off_keys = statewatch.dismissed(fixed)
+        queue = inspector._attention({"threads": view["threads"], "unmatched": view["unmatched"],
+                                      "conflicts": view["conflicts"], "ambiguous": view["ambiguous"],
+                                      "dropped": lost, "endings": role_ends,
+                                      "state_flags": [f for f in flags if f["id"] not in off_keys]}, fixed, last, "ko")
+        trace = conn.execute("SELECT latency_ms FROM retrieval_trace WHERE conversation_id = %s"
+                             " ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
+        cast = [str(n) for n in ((trace or {}).get("latency_ms") or {}).get("scene_cast") or []]
+        entities = character_ids(view)
+        if not cast:  # no request yet: the characters most mentioned
+            cast = [e["name"] for e in view["entities"] if e.get("type") == "character"][:6]
+        now = [x for x in scene_now(view, cast) if x["said"]]
+        threads = [th for th in view["threads"] if th["status"] == "open"]
+        key = rt.get("active_summarizer")
+        told = summaries.current(conn, cid, head, key) if key else {"scenes": [], "story": None}
+        scenes = [x["summary"] for x in told["scenes"] if x.get("summary")]
+        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
+                         "turns": last},
+                "now": now,
+                "threads": [th for th in threads if not inspector.stale(th, last)],
+                "stale": sum(1 for th in threads if inspector.stale(th, last)),
+                "pairs": inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING]),
+                "story": told.get("story"), "scenes": list(reversed(scenes)),
+                "secrets": view["secrets"], "changes": notes.changes(view["facts"], secrets=True),
+                "facts": len(view["facts"]), "attention": len(queue), "entities": entities}
+
+    def scene_now(view: dict[str, Any], cast: list[str]) -> list[dict[str, Any]]:
+        """Each character of the scene once, with where and how they are now (PHASE-52): the scene's cast may name
+        one person twice, a short and a full name, so it is read by entity, with all of their names."""
+        ids = character_ids(view)
+        by_id = {str(e["id"]): e for e in view["entities"] if e.get("type") == "character"}
+        out, seen = [], set()
+        for name in cast:
+            eid = ids.get(name.casefold())
+            if eid is not None and eid in seen:
+                continue
+            seen.add(eid)
+            e = by_id.get(eid) if eid else None
+            names = [str(n) for n in [e.get("name"), *(e.get("names") or [])] if n] if e else [name]
+            out.append({"name": e.get("name") if e else name, "said": views.now_said(view["facts"], names)})
+        return out
+
+    def _said_differs(a: dict[str, Any], b: dict[str, Any]) -> bool:
+        return (a.get("value"), a.get("object"), a.get("polarity")) != (b.get("value"), b.get("object"), b.get("polarity"))
+
+    def character_ids(view: dict[str, Any]) -> dict[str, str]:
+        """Each character's names (casefolded) to their entity id: the links of the panel's screens (PHASE-52)."""
+        out: dict[str, str] = {}
+        for e in view["entities"]:
+            if e.get("type") == "character":
+                for n in [e.get("name"), *(e.get("names") or [])]:
+                    out.setdefault(str(n or "").casefold(), str(e["id"]))
+        return out
+
+    def person_data(conn, conv: dict[str, Any], entity_id: UUID) -> dict[str, Any]:
+        """A person's sheet (PHASE-52 D3, D4), from the view the Inspector's character page reads."""
+        cid, head = conv["id"], conv["head_commit_id"]
+        view = inspector.with_participants(view_of(conn, head))
+        e = next((x for x in view["entities"] if str(x["id"]) == str(entity_id)), None)
+        if e is None:
+            raise HTTPException(status_code=404, detail="person not found")
+        last = head_turn(conn, head) or 0
+        names = {norm(n) for n in [e.get("name"), *(e.get("names") or [])] if n}
+        eid = str(e["id"])
+        marks, seen = [], set()
+        for f in view["facts"]:
+            if str((f.get("subject_entity") or {}).get("id")) != eid:
+                continue
+            event_major = f["predicate"] == "event" and f.get("salience") == "major"
+            history = f.get("history") or [f]
+            for i, h in enumerate(history):
+                turn = h.get("turn")
+                if h.get("canon") or not isinstance(turn, int) or norm(h.get("subject")) not in names:
+                    continue
+                # a ring: a major event, or a relationship or role that replaced an earlier one (not its first word)
+                changed = f["predicate"] in ("relationship", "role_toward") and i > 0 \
+                    and _said_differs(history[i - 1], h)
+                text = " → ".join(str(x) for x in (h.get("object"), h.get("value")) if x)
+                if text and (turn, f["predicate"], text) not in seen:
+                    seen.add((turn, f["predicate"], text))
+                    marks.append((turn, event_major or changed, text, f["predicate"]))
+        open_ = [th for th in view["threads"] if th["status"] == "open" and not inspector.stale(th, last)
+                 and (norm(th.get("by")) in names or norm(th.get("to")) in names)]
+        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name"), "character": conv.get("host_character_name"),
+                         "turns": last},
+                "entity": {"id": eid, "name": e.get("name"), "names": list(e.get("names") or [])},
+                "now": views.now_said(view["facts"], str(e.get("name") or "")),
+                "pairs": [p for p in inspector.pairs([f for f in view["facts"] if f["predicate"] in STANDING])
+                          if eid in {str(i) for i in p["ids"]}],
+                "threads": open_,
+                "knows": [s for s in view["secrets"] if s.get("open") and names & {norm(n) for n in s.get("holders") or []}],
+                "kept": [s for s in view["secrets"] if names & {norm(n) for n in s.get("open") or []}],
+                "marks": marks, "first": 0, "last": last, "entities": character_ids(view)}
+
+    def working_data(conn, conv: dict[str, Any]) -> dict[str, Any]:
+        """The panel's working screen (PHASE-52 D5): the newest request's ledger, processing and usage."""
+        cid = conv["id"]
+        cov = coverage_view(conn, cid, usage=True)
+        trace = conn.execute("SELECT id, created_at, latency_ms, token_estimate FROM retrieval_trace"
+                             " WHERE conversation_id = %s ORDER BY created_at DESC LIMIT 1", (cid,)).fetchone()
+        reply = None
+        if trace is not None:
+            a = audit.audit(conn, trace["id"]) or {}
+            reply = {"at": trace["created_at"].isoformat(), "ms": (trace["latency_ms"] or {}).get("sidecar_total"),
+                     "tokens": trace["token_estimate"],
+                     "lines": [{"kind": x.get("kind"), "text": x.get("text"), "placed": bool(x.get("placed")),
+                                "echoed": bool(x.get("echoed"))} for x in a.get("lines") or [] if x.get("label") != "hidden"]}
+        total = (cov.get("usage") or {}).get("total") or {}
+        summaries_ = {**(cov.get("summaries") or {}), "produced": (cov.get("produced") or {}).get("summaries", 0)}
+        return {"conv": {"id": str(cid), "name": conv.get("host_chat_name")}, "reply": reply,
+                "work": {"extraction": cov.get("extraction") or {}, "embeddings": cov.get("embeddings") or {},
+                         "summaries": summaries_, "canon": cov.get("canon") or {}},
+                "errors": [str(e.get("error") if isinstance(e, dict) else e) for e in cov.get("failed_errors") or []],
+                "usage": {"calls": int(total.get("calls") or 0), "input": int(total.get("input") or 0),
+                          "output": int(total.get("output") or 0)}}
+
+    def chats_html(request: Request, lang: str | None, current: str | None = None) -> str:
+        """The chats NMOS knows with their failed jobs of the active generations (PHASE-52 D7)."""
+        with request.app.state.pool.connection() as conn:
+            rows = readmodel.list_conversations(conn)
+            keys = [g.key for g in retryable().values() if g]
+            failed = {r["conversation_id"]: r["n"] for r in conn.execute(
+                "SELECT conversation_id, count(*) AS n FROM job WHERE status = 'dead' AND payload->>'generation' = ANY(%s)"
+                " GROUP BY conversation_id", (keys,)).fetchall()} if keys else {}
+        return views.chats([{**r, "failed": failed.get(r["id"], 0)} for r in rows], inspector.lang_of(lang), current)
+
+    @app.get("/v1/views/chats", dependencies=[Depends(auth)])
+    def views_chats(request: Request, lang: str | None = None, current: str | None = None):
+        return {"html": chats_html(request, lang, current)}
+
+    @app.get("/views/chats", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def views_chats_page(request: Request, lang: str | None = None):
+        return views.full_page("NMOS", chats_html(request, lang), inspector.lang_of(lang))
+
+    @app.get("/v1/views/c/{conv_id}/working", dependencies=[Depends(auth)])
+    def views_working(conv_id: UUID, request: Request, lang: str | None = None):
+        return {"html": view_page(request, conv_id, lambda conn, conv, lg: views.working(working_data(conn, conv), lg), lang)}
+
+    @app.get("/views/c/{conv_id}/working", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def views_working_page(conv_id: UUID, request: Request, lang: str | None = None):
+        return views.full_page("NMOS", view_page(
+            request, conv_id, lambda conn, conv, lg: views.working(working_data(conn, conv), lg), lang), inspector.lang_of(lang))
+
+    @app.get("/v1/views/c/{conv_id}/person/{entity_id}", dependencies=[Depends(auth)])
+    def views_person(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None):
+        return {"html": view_page(request, conv_id,
+                                  lambda conn, conv, lg: views.person(person_data(conn, conv, entity_id), lg), lang)}
+
+    @app.get("/views/c/{conv_id}/person/{entity_id}", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def views_person_page(conv_id: UUID, entity_id: UUID, request: Request, lang: str | None = None):
+        return views.full_page("NMOS", view_page(
+            request, conv_id, lambda conn, conv, lg: views.person(person_data(conn, conv, entity_id), lg), lang),
+            inspector.lang_of(lang))
+
+    def view_page(request: Request, conv_id: UUID, build: Any, lang: str | None) -> str:
+        with request.app.state.pool.connection() as conn:
+            conv = readmodel.conversation(conn, conv_id)
+            if conv is None or conv["head_commit_id"] is None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            return build(conn, conv, inspector.lang_of(lang))
+
+    @app.get("/v1/views/c/{conv_id}/memory", dependencies=[Depends(auth)])
+    def views_memory(conv_id: UUID, request: Request, lang: str | None = None):
+        return {"html": view_page(request, conv_id, lambda conn, conv, lg: views.memory(memory_data(conn, conv), lg), lang)}
+
+    @app.get("/views/c/{conv_id}/memory", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def views_memory_page(conv_id: UUID, request: Request, lang: str | None = None):
+        return views.full_page("NMOS", view_page(
+            request, conv_id, lambda conn, conv, lg: views.memory(memory_data(conn, conv), lg), lang), inspector.lang_of(lang))
+
+    @app.get("/v1/views/style", dependencies=[Depends(auth)])
+    def views_style():
+        """The stylesheet of the panel's new screens (PHASE-52), injected by the panel once: every rule under `.nmos`."""
+        return {"css": views.STYLE}
+
+    @app.get("/v1/views/hub", dependencies=[Depends(auth)])
+    def views_hub(request: Request, chat: str | None = None, conversation: UUID | None = None, lang: str | None = None,
+                  off: bool = False, all_off: bool = False):
+        html, cid = hub_html(request, chat, conversation, lang, off, all_off)
+        return {"html": html, "conversation": cid}
+
+    @app.get("/views/hub", response_class=HTMLResponse, dependencies=[Depends(auth)])
+    def views_hub_page(request: Request, chat: str | None = None, conversation: UUID | None = None,
+                       lang: str | None = None):
+        return views.full_page("NMOS", hub_html(request, chat, conversation, lang, False, False)[0],
+                               inspector.lang_of(lang))
 
     def inspector_status_html(conv_id: UUID, request: Request, lang: str | None, span: str | None) -> str:
         """The status window's lanes alone for the panel (PHASE-39 Q3a), asked for when their section opens."""

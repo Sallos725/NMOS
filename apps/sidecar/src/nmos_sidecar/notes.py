@@ -73,11 +73,12 @@ def _head(f: dict[str, Any]) -> str:
     return f"{_named(f, 'subject')} — {_w(f['predicate'])}"
 
 
-def changed_lines(facts: list[dict[str, Any]], secrets: bool = False) -> list[str]:
-    """Each canon value a current story fact replaced or ended (a canon entry of its history), newest first. With
-    `secrets` off, nothing kept from someone."""
-    out: list[str] = []
-    seen: set[str] = set()
+def changes(facts: list[dict[str, Any]], secrets: bool = False) -> list[dict[str, Any]]:
+    """Each canon value a current story fact replaced or ended (a canon entry of its history), newest first, said once:
+    the fact, what the setting said and what it is now. With `secrets` off, nothing kept from someone. The author's
+    note (`changed_lines`) and the panel's memory screen (PHASE-52) word them each their own way."""
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
     for f in facts:
         if f.get("canon") or f["predicate"] not in CHANGEABLE or (kept(f) and not secrets):
             continue
@@ -85,14 +86,19 @@ def changed_lines(facts: list[dict[str, Any]], secrets: bool = False) -> list[st
             if not h.get("canon") or h.get("outcome") not in ("superseded", "ended") or (kept(h) and not secrets):
                 continue
             old, new = _said(h), _said(f)
-            line = f"- {_head(f)}: was {old} → now {new} (t{f.get('turn')})"
-            if old == new or line in seen:  # the same line from two canon texts, or two spellings of one name
+            key = (_head(f), old, new, f.get("turn"))
+            if old == new or key in seen:  # the same line from two canon texts, or two spellings of one name
                 continue
-            seen.add(line)
-            if f.get("repair"):
-                line += " (fixed by the owner)"
-            out.append(line + (_secret_mark(f) if kept(f) else ""))
+            seen.add(key)
+            out.append({"fact": f, "old": old, "new": new})
     return out[:CHANGED_MAX]
+
+
+def changed_lines(facts: list[dict[str, Any]], secrets: bool = False) -> list[str]:
+    """`changes` as the author's note says them (English)."""
+    return [f"- {_head(c['fact'])}: was {c['old']} → now {c['new']} (t{c['fact'].get('turn')})"
+            + (" (fixed by the owner)" if c["fact"].get("repair") else "")
+            + (_secret_mark(c["fact"]) if kept(c["fact"]) else "") for c in changes(facts, secrets)]
 
 
 def address_lines(facts: list[dict[str, Any]], secrets: bool = False) -> list[str]:

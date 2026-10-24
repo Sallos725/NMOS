@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:1774ac70c012".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:b44bb4ff0eb6".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -467,6 +467,25 @@
     "exp.chat": ["\uC774 \uB300\uD654 \uB0B4\uBCF4\uB0B4\uAE30", "Export this chat"],
     // notes for the author's note (PHASE-50)
     "notes.open": ["\uC791\uAC00\uC758 \uB178\uD2B8\uC6A9 \uC815\uB9AC", "For the author's note"],
+    "chats.search": ["\uC774\uB984\uC774\uB098 \uCE90\uB9AD\uD130\uB85C \uCC3E\uAE30", "Search by name or character"],
+    // the panel's shell (PHASE-52): home and the settings groups
+    "home": ["\u2190 NMOS", "\u2190 NMOS"],
+    "grp.back": ["\u2190 \uC124\uC815", "\u2190 Settings"],
+    "grp.connection": ["\uC5F0\uACB0", "Connection"],
+    "grp.connection_sub": ["\uC0AC\uC774\uB4DC\uCE74 \uC8FC\uC18C \xB7 \uD1A0\uD070 \xB7 \uC5F0\uACB0 \uC0C1\uD0DC \xB7 \uC774 \uCC44\uD305 \uCF1C\uAE30/\uB044\uAE30", "Sidecar address \xB7 token \xB7 status \xB7 this chat on or off"],
+    "grp.models": ["\uBAA8\uB378", "Models"],
+    "grp.models_sub": ["\uC0AC\uC2E4 \uCD94\uCD9C \uBAA8\uB378 \xB7 \uAC80\uC0C9\uC6A9 \uC784\uBCA0\uB529", "Fact extraction \xB7 search embeddings"],
+    "grp.memory": ["\uAE30\uC5B5 \uB3D9\uC791", "How memory works"],
+    "grp.memory_sub": ["\uAC80\uC0C9 \uAE30\uC900 \xB7 \uB123\uB294 \uC591", "Recall thresholds \xB7 how much goes in"],
+    "grp.chat": ["\uC774 \uCC44\uD305", "This chat"],
+    "grp.chat_sub": ["\uAE30\uC5B5 \uBAA8\uB4DC \xB7 \uC774 \uCC44\uD305\uC758 \uC0C1\uD0DC\uCC3D \xB7 \uACFC\uAC70 \uCD94\uCD9C \xB7 \uC7AC\uAD6C\uCD95 \xB7 \uB0B4\uBCF4\uB0B4\uAE30 \xB7 \uC0AD\uC81C", "Memory mode \xB7 status windows \xB7 history \xB7 rebuild \xB7 export \xB7 delete"],
+    "grp.chat_none": ["NMOS\uAC00 \uC544\uC9C1 \uC774 \uCC44\uD305\uC744 \uBAB0\uB77C\uC694. \uCC44\uD305\uC5D0\uC11C \uD55C \uBC88 \uB2F5\uC7A5\uC744 \uBC1B\uC73C\uBA74 \uC0DD\uACA8\uC694.", "NMOS does not know this chat yet; it does after one reply."],
+    "grp.rules": ["\uC0C1\uD0DC\uCC3D \uADDC\uCE59", "Status window rules"],
+    "grp.rules_sub": ["\uCE74\uB4DC\uBCC4 \uADDC\uCE59 \xB7 \uC9C1\uC811 \uC4F4 \uADDC\uCE59", "Rules per card \xB7 hand-written rules"],
+    "grp.display": ["\uD654\uBA74", "Display"],
+    "grp.display_sub": ["\uCC44\uD305 \uD654\uBA74\uC758 \uC9C4\uD589 \uD45C\uC2DC", "The progress display on the chat screen"],
+    "grp.backup": ["\uBC31\uC5C5", "Backup"],
+    "grp.backup_sub": ["\uC804\uCCB4 \uB0B4\uBCF4\uB0B4\uAE30 \xB7 \uBCF5\uC6D0", "Export everything \xB7 restore"],
     "notes.title": ["\uC791\uAC00\uC758 \uB178\uD2B8\uC6A9 \uC815\uB9AC", "For the author's note"],
     "notes.part.chronicle": ["\uC5F0\uB300\uAE30", "chronicle"],
     "notes.part.changed": ["\uC124\uC815 \uBCC0\uACBD\uC810", "changed from the setting"],
@@ -576,14 +595,15 @@
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
     "rp.select": ["\uC77C\uAD04 \uB2EB\uAE30\uC5D0 \uB123\uAE30", "Select to close"],
     "rp.outcome": ["\uB2EB\uB294 \uACB0\uACFC", "Outcome"],
-    "oc.kept": ["\uC9C0\uD0B4", "kept"],
+    "oc.kept": ["\uC9C0\uCF1C\uC9D0", "kept"],
     "oc.broken": ["\uAE68\uC9D0", "broken"],
-    "oc.achieved": ["\uC774\uB8F8", "achieved"],
+    "oc.achieved": ["\uC774\uB904\uC9D0", "achieved"],
     "oc.abandoned": ["\uADF8\uB9CC\uB460", "abandoned"],
     "oc.failed": ["\uC2E4\uD328", "failed"],
     "oc.answered": ["\uB2F5\uC774 \uB098\uC634", "answered"],
     "oc.averted": ["\uD53C\uD568", "averted"],
     "oc.paid": ["\uAC1A\uC74C", "paid"],
+    "rp.how_ended": ["\uC5B4\uB5BB\uAC8C \uB05D\uB0AC\uB098\uC694?", "How did it end?"],
     "rp.bulk": ["\uACE0\uB978 \uC2A4\uB808\uB4DC {n}\uAC1C \uB2EB\uAE30", "Close {n} selected threads"],
     "rp.bulk_done": ["\uC2A4\uB808\uB4DC {n}\uAC1C\uB97C \uB2EB\uC558\uC2B5\uB2C8\uB2E4.", "Closed {n} threads."],
     "rp.bulk_failed": ["{n}\uAC1C\uB294 \uB2EB\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4:", "{n} could not be closed:"],
@@ -2191,16 +2211,19 @@ ${revisionHash}`;
   var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
   var TURN = "/t/(?:0|[1-9][0-9]{0,6})";
   var SECTION = /^s-[a-z]{1,20}$/;
+  var ACTS = /* @__PURE__ */ new Set(["notes", "settings", "backup", "retry"]);
   function inspectorApiPath(href) {
     const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, "i").exec(href ?? "");
-    return m ? `/v1/inspector${m[1] ?? ""}` : null;
+    if (m) return `/v1/inspector${m[1] ?? ""}`;
+    const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, "i").exec(href ?? "");
+    return v ? `/v1/views${v[1]}` : null;
   }
   function inspectorConversation(path) {
-    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, "i").exec(path);
+    const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/(?:memory|working|person/${UUID})$`, "i").exec(path);
     return m ? m[1] : null;
   }
   function inspectorEntity(path) {
-    const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path);
+    const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/person/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
   var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|undo|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
@@ -2260,6 +2283,8 @@ ${revisionHash}`;
   var MARK_TEXT_MAX = 400;
   function keepAttribute(name, value) {
     switch (name) {
+      case "data-act":
+        return ACTS.has(value);
       case "class":
       case "title":
       case "open":
@@ -2546,26 +2571,26 @@ ${revisionHash}`;
   var CSS = `
 html,body{margin:0;background:${PALETTE.bg}}
 .nmos{${paletteVars()}}
-.nmos{position:fixed;inset:0;overflow:auto;background:var(--c-bg);font:13.5px/1.6 system-ui,-apple-system,"Noto Sans KR",sans-serif;color:var(--c-text);-webkit-font-smoothing:antialiased}
+.nmos{position:fixed;inset:0;overflow:auto;background:var(--c-bg);font:16px/1.65 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;color:var(--c-text);-webkit-font-smoothing:antialiased}
 .nmos *{box-sizing:border-box}
 .nmos .wrap{max-width:760px;margin:0 auto;padding:20px 16px 32px}
 .nmos header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
-.nmos h1{font-size:17px;font-weight:600;letter-spacing:-0.01em;margin:0;flex:1;white-space:nowrap;color:var(--c-text-strong)}
+.nmos h1{font-size:20px;font-weight:600;letter-spacing:-0.01em;margin:0;flex:1;white-space:nowrap;color:var(--c-text-strong)}
 .nmos .tabs{display:flex;gap:6px;border-bottom:1px solid var(--c-line);margin:8px 0 8px}
-.nmos .tabs button{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:9px 14px;color:var(--c-text-muted);font-size:13px;font-weight:500;transition:all .15s ease}
+.nmos .tabs button{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:9px 14px;color:var(--c-text-muted);font-size:15px;font-weight:500;transition:all .15s ease}
 .nmos .tabs button:hover:not(:disabled){background:none;border-bottom-color:transparent;color:var(--c-text)}
 .nmos .tabs button.on,.nmos .tabs button.on:hover:not(:disabled){color:var(--c-text-strong);border-bottom-color:var(--c-accent)}
 .nmos .card{background:var(--c-surface);border:1px solid var(--c-line);border-radius:6px;padding:18px 20px;margin:16px 0}
-.nmos h2{font-size:13.5px;font-weight:600;letter-spacing:-0.005em;color:var(--c-text-strong);margin:0 0 4px}
-.nmos .sub{color:var(--c-text-muted);font-size:12px;line-height:1.55;margin:0 0 14px}
-.nmos label{display:block;font-size:11.5px;font-weight:500;color:var(--c-text-muted);margin:12px 0 5px;letter-spacing:0.02em}
-.nmos input,.nmos select,.nmos textarea{width:100%;background:var(--c-sunken);color:var(--c-text);border:1px solid var(--c-line-strong);border-radius:4px;padding:8px 11px;font:inherit;font-size:12.5px;transition:border-color .15s ease}
+.nmos h2{font-size:17px;font-weight:600;letter-spacing:-0.005em;color:var(--c-text-strong);margin:0 0 4px}
+.nmos .sub{color:var(--c-text-muted);font-size:14px;line-height:1.55;margin:0 0 14px}
+.nmos label{display:block;font-size:13px;font-weight:500;color:var(--c-text-muted);margin:12px 0 5px;letter-spacing:0.02em}
+.nmos input,.nmos select,.nmos textarea{width:100%;background:var(--c-sunken);color:var(--c-text);border:1px solid var(--c-line-strong);border-radius:4px;padding:9px 12px;font:inherit;font-size:16px;transition:border-color .15s ease}
 .nmos input:focus,.nmos select:focus,.nmos textarea:focus{border-color:${alpha("accent", 0.6)};outline:none;box-shadow:0 0 0 2px ${alpha("accent", 0.25)}}
-.nmos header select{width:auto;padding:5px 9px;font-size:12px;border-radius:4px}
-.nmos textarea{min-height:160px;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6}
+.nmos header select{width:auto;padding:5px 9px;font-size:14px;border-radius:4px}
+.nmos textarea{min-height:160px;font-family:ui-monospace,monospace;font-size:14px;line-height:1.6}
 .nmos .row{display:flex;gap:12px;flex-wrap:wrap}.nmos .row>*{flex:1;min-width:140px}
 .nmos .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
-.nmos button{background:var(--c-raised);color:var(--c-text);border:1px solid var(--c-line-strong);border-radius:4px;padding:6px 13px;font:inherit;font-size:12.5px;cursor:pointer;transition:all .15s ease}
+.nmos button{background:var(--c-raised);color:var(--c-text);border:1px solid var(--c-line-strong);border-radius:4px;padding:8px 14px;font:inherit;font-size:15px;cursor:pointer;transition:all .15s ease}
 .nmos button:hover:not(:disabled){background:var(--c-raised-hover);color:var(--c-text-strong);border-color:var(--c-line-hover)}
 .nmos button:focus-visible{outline:2px solid ${alpha("accent", 0.6)};outline-offset:1px}
 .nmos button.primary{background:var(--c-accent);border-color:var(--c-accent);color:#fff}
@@ -2573,17 +2598,17 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos button.danger{background:${alpha("err", 0.15)};border-color:${alpha("err", 0.4)};color:var(--c-err)}
 .nmos button.danger:hover:not(:disabled){background:${alpha("err", 0.25)};border-color:${alpha("err", 0.55)};color:var(--c-text-strong)}
 .nmos button:disabled{opacity:.4;cursor:default}
-.nmos .msg{margin-top:10px;font-size:12.5px;white-space:pre-wrap}
+.nmos .msg{margin-top:10px;font-size:14px;white-space:pre-wrap}
 .nmos .ok{color:var(--c-ok)}.nmos .err{color:var(--c-err)}.nmos .warn{color:var(--c-warn)}.nmos .muted{color:var(--c-text-muted)}
-.nmos .check{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--c-text-soft)}.nmos .check input{width:auto}
-.nmos .preview{margin:8px 0;padding:8px 10px;border-left:3px solid var(--c-line);font-size:12.5px;line-height:1.6}.nmos .preview>b{display:block;margin-bottom:4px}
+.nmos .check{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;color:var(--c-text-soft)}.nmos .check input{width:auto}
+.nmos .preview{margin:8px 0;padding:8px 10px;border-left:3px solid var(--c-line);font-size:14px;line-height:1.6}.nmos .preview>b{display:block;margin-bottom:4px}
 .nmos .line{display:flex;align-items:baseline;gap:8px;margin:5px 0}
 .nmos .dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--c-text-ghost);transform:translateY(-1px)}
 .nmos .dot.ok{background:var(--c-ok)}.nmos .dot.err{background:var(--c-err)}.nmos .dot.warn{background:var(--c-warn)}
 .nmos .pills{display:flex;gap:8px;flex-wrap:wrap}
-.nmos .pill{border:1px solid var(--c-line-strong);border-radius:4px;padding:3px 10px;font-size:12px;color:var(--c-text-muted)}
+.nmos .pill{border:1px solid var(--c-line-strong);border-radius:4px;padding:3px 10px;font-size:13px;color:var(--c-text-muted)}
 .nmos .pill.on{border-color:${alpha("ok", 0.4)};background:${alpha("ok", 0.08)};color:var(--c-ok)}
-.nmos .mono{font-family:ui-monospace,monospace;font-size:12px;word-break:break-all}
+.nmos .mono{font-family:ui-monospace,monospace;font-size:13px;word-break:break-all}
 .nmos.wide>.wrap{max-width:1100px}
 .nmos .insp{margin-top:14px}.nmos .insp+.sub{margin-top:18px}
 .nmos .insp h1{font-size:16px;font-weight:600;margin:4px 0;color:var(--c-text-strong)}
@@ -2591,18 +2616,18 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}.nmos .insp .top p{margin:0}
 .nmos .insp a{color:var(--c-link);text-decoration:none;cursor:pointer}
 .nmos .insp a:hover{text-decoration:underline}
-.nmos .insp .tl{margin:6px 0 16px}.nmos .insp .tl .tl-h{font-size:11.5px;font-weight:500;letter-spacing:.04em;color:var(--c-text-muted);margin:16px 0 4px;cursor:pointer;list-style:none}
+.nmos .insp .tl{margin:6px 0 16px}.nmos .insp .tl .tl-h{font-size:13px;font-weight:500;letter-spacing:.04em;color:var(--c-text-muted);margin:16px 0 4px;cursor:pointer;list-style:none}
 .nmos .insp .tl .tl-h::-webkit-details-marker{display:none}.nmos .insp .tl .tl-h::before{content:"\\25BE  "}.nmos .insp .tl details:not([open])>.tl-h::before{content:"\\25B8  "}
-.nmos .insp .tl-switch{font-size:12.5px;margin:0 0 8px}.nmos .insp .tl-span{color:var(--c-link);cursor:pointer}
-.nmos .insp .tl-hint{font-size:11.5px;color:var(--c-text-faint);margin:0 0 8px}
+.nmos .insp .tl-switch{font-size:14px;margin:0 0 8px}.nmos .insp .tl-span{color:var(--c-link);cursor:pointer}
+.nmos .insp .tl-hint{font-size:13px;color:var(--c-text-faint);margin:0 0 8px}
 .nmos .insp .tl-row{display:grid;grid-template-columns:112px minmax(0,1fr);gap:8px;align-items:center;padding:3px 0;color:inherit}.nmos .insp a.tl-line{text-decoration:none;border-radius:6px}
 .nmos .insp .tl-cast .tl-row{display:block}
-.nmos .insp .tl-lab{display:block;font-size:12.5px;line-height:1.3;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;max-height:2.6em}
+.nmos .insp .tl-lab{display:block;font-size:14px;line-height:1.3;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;max-height:2.6em}
 .nmos .insp .tl-cast .tl-lab{white-space:nowrap;margin-bottom:2px}
-.nmos .insp .tl-lab .tl-k{display:block;font-size:11px;color:var(--c-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nmos .insp .tl-lab .tl-k{display:block;font-size:13px;color:var(--c-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nmos .insp .tl-lab .tl-val{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nmos .insp .tl-lab .tl-val.canon{color:var(--c-text-muted)}
-.nmos .insp .tl-last{color:var(--c-text-faint);font-size:11.5px}.nmos .insp .tl-end{display:none}
-.nmos .insp .tl-me{font-size:10.5px;color:var(--c-link);margin-left:6px}
+.nmos .insp .tl-last{color:var(--c-text-faint);font-size:13px}.nmos .insp .tl-end{display:none}
+.nmos .insp .tl-me{font-size:13px;color:var(--c-link);margin-left:6px}
 .nmos .insp .tl-track{display:block;position:relative;height:26px}
 .nmos .insp .tl-rule{position:absolute;left:0;right:0;top:13px;height:1px;background:var(--c-line)}
 .nmos .insp .tl-bar{position:absolute;top:5px;height:16px;min-width:6px;border-radius:4px;overflow:hidden;box-sizing:border-box;background:var(--c-raised);border:1px solid var(--c-text-faint);cursor:pointer}
@@ -2618,38 +2643,41 @@ html,body{margin:0;background:${PALETTE.bg}}
 .nmos .insp .tl .tl-dot.sel{background:transparent}.nmos .insp .tl .tl-dot.sel::after{background:var(--c-accent)}
 .nmos .insp .tl-tick{position:absolute;top:5px;width:2px;height:16px;margin-left:-1px;border-radius:1px;background:var(--c-text-soft)}
 .nmos .insp .tl-axis .tl-track{height:18px}
-.nmos .insp .tl-axis .tl-track span{position:absolute;top:0;font-size:10.5px;color:var(--c-text-faint);transform:translateX(-50%);white-space:nowrap}
+.nmos .insp .tl-axis .tl-track span{position:absolute;top:0;font-size:13px;color:var(--c-text-faint);transform:translateX(-50%);white-space:nowrap}
 .nmos .insp .tl-axis .tl-track span.first{transform:none}.nmos .insp .tl-axis .tl-track span.last{transform:translateX(-100%)}
 .nmos .insp .tl-axis .tl-track span.odd,.nmos .insp .tl-axis .tl-track span.near{display:none}
-.nmos .insp .tl-card{margin:6px 0 10px;padding:10px 12px;border-radius:8px;background:var(--c-raised);font-size:12.5px}
+.nmos .insp .tl-card{margin:6px 0 10px;padding:10px 12px;border-radius:8px;background:var(--c-raised);font-size:14px}
 .nmos .insp .tl-card p{margin:2px 0}.nmos .insp .tl-card .v{font-size:17px;font-weight:600;line-height:1.35;color:var(--c-text-strong);overflow-wrap:anywhere}
 .nmos .insp .tl-hist{margin-top:8px;color:var(--c-text-muted)}.nmos .insp .tl-hist .cur{color:var(--c-text-strong)}
-.nmos .insp .tl-more{font-size:11.5px;color:var(--c-text-faint);margin:2px 0}
-.nmos .insp .tl-fold>summary,.nmos .insp .tl-others>summary{font-size:12px;color:var(--c-text-muted);margin:8px 0 2px;cursor:pointer}
-.nmos .insp .ref{display:block;font-family:ui-monospace,monospace;font-size:10.5px;color:var(--c-text-faint)}
+.nmos .insp .tl-more{font-size:13px;color:var(--c-text-faint);margin:2px 0}
+.nmos .insp .tl-fold>summary,.nmos .insp .tl-others>summary{font-size:13px;color:var(--c-text-muted);margin:8px 0 2px;cursor:pointer}
+.nmos .insp .ref{display:block;font-family:ui-monospace,monospace;font-size:13px;color:var(--c-text-faint)}
 .nmos .insp .wrap{max-width:none;margin:0;padding:0;overflow-x:auto}
-.nmos .insp table{width:100%;border-collapse:collapse;font-size:12.5px}
+.nmos .insp table{width:100%;border-collapse:collapse;font-size:14px}
 .nmos .insp th,.nmos .insp td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--c-line);vertical-align:top}
-.nmos .insp th{font-weight:500;color:var(--c-text-faint);font-size:11.5px;letter-spacing:0.02em;white-space:nowrap}
+.nmos .insp th{font-weight:500;color:var(--c-text-faint);font-size:13px;letter-spacing:0.02em;white-space:nowrap}
 .nmos .insp tr:hover td{background:rgba(255,255,255,0.02)}
-.nmos .insp .chip{display:inline-block;padding:1px 6px;border-radius:3px;background:var(--c-raised);border:1px solid var(--c-line);font-size:11.5px;color:var(--c-text-soft)}
+.nmos .insp .chip{display:inline-block;padding:1px 6px;border-radius:3px;background:var(--c-raised);border:1px solid var(--c-line);font-size:13px;color:var(--c-text-soft)}
 .nmos .insp span.rp{display:inline-flex;flex-wrap:wrap;align-items:center;gap:5px;margin-left:6px;vertical-align:middle}
-.nmos .insp span.rp input,.nmos .insp span.rp select{width:auto;padding:3px 7px;font-size:11.5px;border-radius:3px}
+.nmos .insp span.rp input,.nmos .insp span.rp select{width:auto;padding:3px 7px;font-size:13px;border-radius:3px}
 .nmos .insp span.rp input[type=text]{width:12em}.nmos .insp span.rp input.turn{width:7em}
-.nmos button.mini{padding:2px 8px;font-size:11.5px;border-radius:3px}
+.nmos button.mini{padding:2px 8px;font-size:13px;border-radius:3px}
+.nmos .groups{display:flex;flex-direction:column;gap:8px;margin:8px 0}
+.nmos .groups button.group{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:14px 16px;border-radius:12px;font-size:16px}
+.nmos .groups button.group .sub{margin:0}
 .nmos .inspbar{position:sticky;top:0;z-index:1;background:var(--c-bg);padding:10px 0;margin-top:4px}
 .nmos .help{margin:8px 0 0}.nmos .help summary{cursor:pointer;color:var(--c-text-muted)}.nmos .help p{margin:6px 0 0}
-.nmos .packet{margin:8px 0 0;max-height:420px;overflow:auto;background:var(--c-sunken);border:1px solid var(--c-line);border-radius:4px;padding:12px;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6;color:var(--c-text-soft);white-space:pre-wrap;word-break:break-word}
+.nmos .packet{margin:8px 0 0;max-height:420px;overflow:auto;background:var(--c-sunken);border:1px solid var(--c-line);border-radius:4px;padding:12px;font-family:ui-monospace,monospace;font-size:13px;line-height:1.6;color:var(--c-text-soft);white-space:pre-wrap;word-break:break-word}
 .nmos .insp.busy{opacity:.5;transition:opacity .15s}
 .nmos .insp details>summary{cursor:pointer;list-style:none}.nmos .insp details>summary::-webkit-details-marker{display:none}
 .nmos .insp details>summary h2{display:inline-block}
 .nmos .insp details>summary h2::before{content:"\u25B8 ";color:var(--c-text-ghost)}.nmos .insp details[open]>summary h2::before{content:"\u25BE "}
-.nmos .insp .n{color:var(--c-text-muted);font-weight:400;font-size:11.5px}
-.nmos .insp .toc{font-size:12.5px;line-height:1.9;margin:8px 0}.nmos .insp a.warn{color:var(--c-warn)}
+.nmos .insp .n{color:var(--c-text-muted);font-weight:400;font-size:13px}
+.nmos .insp .toc{font-size:14px;line-height:1.9;margin:8px 0}.nmos .insp a.warn{color:var(--c-warn)}
 .nmos .insp .who{display:flex;align-items:center;gap:8px;margin:10px 0}.nmos .insp .who select{width:auto;min-width:180px;padding:5px 8px}
-.nmos .insp details.meta{font-size:11.5px;margin-top:2px;color:var(--c-text-muted)}.nmos .insp details.meta p{margin:4px 0}
+.nmos .insp details.meta{font-size:13px;margin-top:2px;color:var(--c-text-muted)}.nmos .insp details.meta p{margin:4px 0}
 .nmos .bar{position:sticky;bottom:0;background:${alpha("surface", 0.95)};backdrop-filter:blur(12px);border-top:1px solid var(--c-line-strong);padding:12px max(16px,calc((100% - 760px) / 2 + 16px));display:flex;align-items:center;gap:10px;flex-wrap:wrap;z-index:10}
-.nmos .bar .text{flex:1;min-width:160px;font-size:12.5px}
+.nmos .bar .text{flex:1;min-width:160px;font-size:14px}
 `;
   function el(tag, attrs = {}, ...children) {
     const node = document.createElement(tag);
@@ -2715,10 +2743,9 @@ html,body{margin:0;background:${PALETTE.bg}}
     const tabStatus = el("button", { text: L("tab.status") });
     const tabInspector = el("button", { text: L("tab.inspector") });
     const tabSettings = el("button", { text: L("tab.settings") });
-    wrap.append(
-      el("header", {}, el("h1", { text: L("title") }), language, close),
-      el("nav", { class: "tabs" }, tabStatus, tabInspector, tabSettings)
-    );
+    const title = el("h1", { text: L("title") });
+    const tabs = el("nav", { class: "tabs" }, tabStatus, tabInspector, tabSettings);
+    wrap.append(el("header", {}, title, language, close), tabs);
     const statusView = el("div");
     const inspectorView = el("div");
     const settingsView = el("div");
@@ -2991,6 +3018,9 @@ html,body{margin:0;background:${PALETTE.bg}}
     const exportButton = el("button", { text: L("exp.chat") });
     const notesButton = el("button", { text: L("notes.open") });
     const notesCard = el("div", { class: "card", style: "display:none" });
+    let notesFor = null;
+    let hubConversation = null;
+    let viewsOn = false;
     const actionMsg = el("div", { class: "msg" });
     const actions = el(
       "div",
@@ -3052,6 +3082,14 @@ html,body{margin:0;background:${PALETTE.bg}}
     function closeControls(action) {
       const item = action.item;
       const choices = closeOutcomes(action.extra);
+      if (inspectorPath.startsWith("/v1/views/")) {
+        const ends = (choices.length ? choices : [""]).map((o) => {
+          const b = el("button", { class: "mini", text: o ? outcomeLabel(o) : L("rp.thread_close") });
+          b.addEventListener("click", () => void repairNow(action, b, o ? { outcome: o } : {}));
+          return b;
+        });
+        return [el("span", { class: "rp-ask", text: L("rp.how_ended") }), ...ends];
+      }
       let c = closers.get(item);
       if (!c) closers.set(item, c = { first: choices[0], boxes: [], selects: [] });
       const group = c;
@@ -3216,6 +3254,16 @@ html,body{margin:0;background:${PALETTE.bg}}
     }
     function enhance(page) {
       closers = /* @__PURE__ */ new Map();
+      for (const slot of Array.from(page.querySelectorAll(".v-filter"))) {
+        const box = el("input", { type: "search", placeholder: L("chats.search"), "aria-label": L("chats.search") });
+        box.addEventListener("input", () => {
+          const q = box.value.trim().toLowerCase();
+          for (const row of Array.from(inspectorBody.querySelectorAll(".v-chat"))) {
+            row.style.display = !q || (row.textContent ?? "").toLowerCase().includes(q) ? "" : "none";
+          }
+        });
+        slot.append(box);
+      }
       for (const box of Array.from(page.querySelectorAll("details > .tl-lazy"))) {
         const section = box.parentElement;
         section.addEventListener("toggle", () => {
@@ -3291,15 +3339,17 @@ html,body{margin:0;background:${PALETTE.bg}}
         actionConversation = conversation;
         notesCard.replaceChildren();
         notesCard.style.display = "none";
+        notesFor = null;
         say(actionMsg, "");
         disarm();
         picked.clear();
         updateBulk();
       }
-      actions.style.display = conversation ? "" : "none";
+      const isView = path.startsWith("/v1/views/");
+      actions.style.display = conversation && !isView ? "" : "none";
       const shownEntity = inspectorEntity(path);
       if (!shownEntity) linkCard.style.display = "none";
-      if (!conversation || shownEntity) {
+      if (!conversation || shownEntity || isView) {
         modeCard.style.display = "none";
         statusCard.style.display = "none";
       }
@@ -3314,9 +3364,16 @@ html,body{margin:0;background:${PALETTE.bg}}
       inspectorAddress.textContent = direct ? L("insp.browser", { url: `${base}/inspector${lang === "en" ? "?lang=en" : ""}` }) : "";
       try {
         const query = [conversation ? "timeline=lazy&status=lazy" : "", lang === "en" ? "lang=en" : ""].filter(Boolean).join("&");
-        const r = await deps.api("GET", `${path}${query ? `?${query}` : ""}`, void 0, 15e3);
+        const r = await deps.api(
+          "GET",
+          `${path}${query ? `${path.includes("?") ? "&" : "?"}${query}` : ""}`,
+          void 0,
+          15e3
+        );
         if (load !== loads) return;
+        if (path.startsWith("/v1/views/hub")) hubConversation = r.conversation ?? null;
         const page = safeFragment(r.html);
+        placeMarks(page);
         enhance(page);
         retryButton.style.display = page.querySelector(".has-failed") ? "" : "none";
         inspectorBody.replaceChildren(page);
@@ -3324,7 +3381,7 @@ html,body{margin:0;background:${PALETTE.bg}}
         if (keep) restore(keep);
         else root.scrollTop = 0;
         if (shownEntity) void showLinks(shownEntity.conversation, shownEntity.entity, load);
-        else if (conversation) {
+        else if (conversation && !isView) {
           void showMode(conversation, load);
           void showStatusWindows(conversation, load);
         }
@@ -3650,6 +3707,13 @@ html,body{margin:0;background:${PALETTE.bg}}
     }
     inspectorBody.addEventListener("click", (event) => {
       const clicked = event.target instanceof Element ? event.target : null;
+      const act = clicked?.closest("[data-act]")?.getAttribute("data-act");
+      if (act) {
+        event.preventDefault();
+        return void doAct(act);
+      }
+      const row = clicked?.closest(".v-line");
+      if (row && !clicked?.closest("a, button, select, input, label, .rp")) return void row.classList.toggle("open");
       const choice = clicked?.closest(".tl-span[data-span]");
       const box = choice?.closest(".tl-lazy");
       if (choice && box) return void loadTimeline(box, choice.getAttribute("data-span") ?? "");
@@ -3784,6 +3848,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       notesCard.style.display = "";
     });
     function buildNotes(conversation) {
+      notesFor = conversation;
       const pick = (key, kind) => {
         const box = el("input", { type: "checkbox", value: kind });
         box.checked = true;
@@ -3817,7 +3882,7 @@ html,body{margin:0;background:${PALETTE.bg}}
             { sections, chars: Number(length.value), secrets: secrets.checked },
             3e5
           );
-          if (actionConversation !== conversation) return;
+          if (notesFor !== conversation) return;
           results.replaceChildren(noteResult(r, msg));
           say(msg, r.text ? L("notes.done") : L("notes.part_none", { part: L("notes.title") }), r.text ? "ok" : "warn");
         } catch (error) {
@@ -3942,7 +4007,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("p", { class: "sub", text: L("conn.hint") }),
       el("p", { class: "sub", text: L("conn.deadline_hint") })
     ));
-    function modelSection(kind, title, sub, presets, onPreset) {
+    function modelSection(kind, title2, sub, presets, onPreset) {
       const preset = el("select", {}, ...presets.map((p, i) => el("option", {
         value: String(i),
         text: p.label.includes(".") ? L(p.label) : p.label
@@ -4037,7 +4102,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       settingsView.append(el(
         "div",
         { class: "card" },
-        el("h2", { text: L(title) }),
+        el("h2", { text: L(title2) }),
         el("p", { class: "sub", text: L(sub) }),
         field(L("model.provider"), preset),
         field(L("model.endpoint"), endpoint),
@@ -4282,7 +4347,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     ));
     settingsView.append(el(
       "div",
-      { class: "card" },
+      { class: "card", id: "nmos-backup" },
       el("h2", { text: L("exp.title") }),
       el("p", { class: "sub", text: L("exp.sub") }),
       el("div", { class: "check" }, exportEmbeddings, el("span", { text: L("exp.embeddings") })),
@@ -4567,6 +4632,7 @@ html,body{margin:0;background:${PALETTE.bg}}
     });
     function select(next) {
       shown = next;
+      if (viewsOn && next === "settings") showGroups();
       const views = [
         ["status", statusView, tabStatus],
         ["inspector", inspectorView, tabInspector],
@@ -4584,7 +4650,149 @@ html,body{margin:0;background:${PALETTE.bg}}
     tabStatus.addEventListener("click", () => select("status"));
     tabInspector.addEventListener("click", () => select("inspector"));
     tabSettings.addEventListener("click", () => select("settings"));
+    function doAct(act) {
+      if (act === "settings" || act === "backup") {
+        select("settings");
+        if (act === "backup") openGroup("backup");
+        return;
+      }
+      if (act === "retry") return void retryFrom(inspectorConversation(inspectorPath));
+      if (act === "notes" && hubConversation) {
+        notesCard.replaceChildren();
+        buildNotes(hubConversation);
+        notesCard.style.display = "";
+        notesCard.scrollIntoView({ block: "start" });
+      }
+    }
+    async function goHome() {
+      visited.length = 0;
+      inspectorPath = await hubPath();
+      select("inspector");
+    }
+    const GROUPS = ["connection", "models", "memory", "chat", "rules", "display", "backup"];
+    const groupList = el("div", { class: "groups" });
+    const settingsTop = el("div", { class: "btns inspbar", style: "display:none" });
+    const chatPage = el("div", { "data-group": "chat", style: "display:none" });
+    function groupSettings() {
+      const byTitle = {
+        [L("hud.title")]: "display",
+        [L("conn.title")]: "connection",
+        [L("llm.title")]: "models",
+        [L("emb.title")]: "models",
+        [L("tune.title")]: "memory",
+        [L("rules.title")]: "rules",
+        [L("exp.title")]: "backup",
+        [L("rst.title")]: "backup"
+      };
+      for (const card of Array.from(settingsView.children)) {
+        const group = byTitle[card.querySelector("h2")?.textContent ?? ""];
+        if (group) card.dataset.group = group;
+      }
+      statusView.dataset.group = "connection";
+      settingsView.prepend(settingsTop, groupList, statusView, chatPage);
+      const home = el("button", { text: L("home") });
+      home.addEventListener("click", () => void goHome());
+      const back = el("button", { text: L("grp.back") });
+      back.addEventListener("click", () => showGroups());
+      settingsTop.replaceChildren(home, back);
+      groupList.replaceChildren(...GROUPS.map((g) => {
+        const b = el(
+          "button",
+          { class: "group", "data-group": g },
+          el("b", { text: L(`grp.${g}`) }),
+          el("span", { class: "sub", text: L(`grp.${g}_sub`) })
+        );
+        b.addEventListener("click", () => openGroup(g));
+        return b;
+      }));
+    }
+    function pages() {
+      return Array.from(settingsView.querySelectorAll("[data-group]")).filter((x) => x.parentElement === settingsView);
+    }
+    function showGroups() {
+      settingsTop.style.display = "";
+      settingsTop.lastElementChild instanceof HTMLElement && (settingsTop.lastElementChild.style.display = "none");
+      groupList.style.display = "";
+      for (const page of pages()) page.style.display = "none";
+    }
+    function openGroup(group) {
+      settingsTop.style.display = "";
+      settingsTop.lastElementChild instanceof HTMLElement && (settingsTop.lastElementChild.style.display = "");
+      groupList.style.display = "none";
+      for (const page of pages()) page.style.display = page.dataset.group === group ? "" : "none";
+      if (group === "connection") void refreshStatus();
+      if (group === "chat") showChatPage();
+    }
+    function showChatPage() {
+      if (!hubConversation) {
+        chatPage.replaceChildren(el("div", { class: "card muted", text: L("grp.chat_none") }));
+        return;
+      }
+      actionConversation = hubConversation;
+      disarm();
+      chatPage.replaceChildren(modeCard, statusCard, el("div", { class: "card" }, actions, actionMsg));
+      actions.style.display = "";
+      void showMode(hubConversation, loads);
+      void showStatusWindows(hubConversation, loads);
+    }
+    async function retryFrom(conversation) {
+      if (!conversation) return;
+      say(actionMsg, L("act.working"));
+      try {
+        const r = await deps.api(
+          "POST",
+          `/v1/conversations/${conversation}/retry-failed`,
+          {},
+          3e4
+        );
+        const n = Object.values(r.retried ?? {}).reduce((a, b) => a + (Number(b) || 0), 0);
+        say(actionMsg, n ? L("act.retry_done", { n }) : L("act.retry_none"), "ok");
+        if (n) deps.hud.background(conversation);
+        await showInspector();
+      } catch (error) {
+        say(actionMsg, actionError(error), "err");
+      }
+    }
+    async function hubPath() {
+      let chat = null;
+      let off = false;
+      let allOff = false;
+      try {
+        ({ id: chat, off } = await deps.chat.current());
+      } catch {
+      }
+      try {
+        allOff = !(await deps.status()).enabled;
+      } catch {
+      }
+      const q = [chat ? `chat=${encodeURIComponent(chat)}` : "", off ? "off=true" : "", allOff ? "all_off=true" : ""].filter(Boolean).join("&");
+      return `/v1/views/hub${q ? `?${q}` : ""}`;
+    }
+    async function viewsStyle() {
+      if (document.getElementById("nmos-views-style")) return;
+      try {
+        const r = await deps.api("GET", "/v1/views/style", void 0, 5e3);
+        if (typeof r.css === "string" && !/@import|url\s*\(/i.test(r.css)) {
+          document.head.append(el("style", { id: "nmos-views-style", text: r.css }));
+        }
+      } catch {
+      }
+    }
     document.body.append(root);
+    try {
+      viewsOn = !!(await deps.status()).features?.views;
+    } catch {
+      viewsOn = false;
+    }
+    if (viewsOn) {
+      await viewsStyle();
+      inspectorPath = await hubPath();
+      if (tab === "status") tab = "inspector";
+      tabs.style.display = "none";
+      title.style.cursor = "pointer";
+      title.addEventListener("click", () => void goHome());
+      groupSettings();
+    }
     select(tab);
     await loadAll();
     return { root, select };

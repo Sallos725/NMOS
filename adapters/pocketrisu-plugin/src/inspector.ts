@@ -10,23 +10,30 @@ const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const TURN = '/t/(?:0|[1-9][0-9]{0,6})';
 // Section folds and the contents that links to them (`s-facts`, `#s-facts`).
 const SECTION = /^s-[a-z]{1,20}$/;
+// What a page of the sidecar's may ask the plugin to do itself (PHASE-52): nothing else survives in `data-act`.
+export const ACTS = new Set(['notes', 'settings', 'backup', 'retry']);
 
 /** The sidecar API path for an inspector link (`/inspector`, `/inspector/c/<id>`, `/inspector/c/<id>/e/<id>`,
  * `/inspector/c/<id>/t/<turn>`), or null. */
 export function inspectorApiPath(href: string | null): string | null {
   const m = new RegExp(`^/inspector(/c/${UUID}(?:/e/${UUID}|${TURN})?)?(?:[?#]|$)`, 'i').exec(href ?? '');
-  return m ? `/v1/inspector${m[1] ?? ''}` : null;
+  if (m) return `/v1/inspector${m[1] ?? ''}`;
+  const v = new RegExp(`^/views(/chats|/c/${UUID}/(?:memory|working|person/${UUID})|/hub\\?conversation=${UUID})(?:#|$)`, 'i')
+    .exec(href ?? '');
+  return v ? `/v1/views${v[1]}` : null; // the panel's new screens (PHASE-52)
 }
 
 /** The conversation id of an inspector conversation, character or source-turn API path, or null. */
 export function inspectorConversation(path: string): string | null {
-  const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, 'i').exec(path);
+  const m = new RegExp(`^/v1/inspector/c/(${UUID})(?:/e/${UUID}|${TURN})?$`, 'i').exec(path)
+    ?? new RegExp(`^/v1/views/c/(${UUID})/(?:memory|working|person/${UUID})$`, 'i').exec(path);
   return m ? (m[1] as string) : null;
 }
 
 /** The conversation and entity of an inspector character API path, or null. */
 export function inspectorEntity(path: string): { conversation: string; entity: string } | null {
-  const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, 'i').exec(path);
+  const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, 'i').exec(path)
+    ?? new RegExp(`^/v1/views/c/(${UUID})/person/(${UUID})$`, 'i').exec(path);
   return m ? { conversation: m[1] as string, entity: m[2] as string } : null;
 }
 
@@ -128,6 +135,7 @@ const MARK_TEXT_MAX = 400;
  * repair can be made (ADR 0044) and the timeline's marks (PHASE-32). */
 export function keepAttribute(name: string, value: string): boolean {
   switch (name) {
+    case 'data-act': return ACTS.has(value);
     case 'class': case 'title': case 'open': return true;
     case 'id': return SECTION.test(value);
     case 'href': return inspectorApiPath(value) !== null || sectionTarget(value) !== null;
