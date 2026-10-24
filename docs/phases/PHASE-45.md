@@ -35,6 +35,27 @@ in both its sets, failed in one round).
 **Step 3 started and stopped, 2026-10-24: $0 spent.** Every call was refused (403): the Vertex project's billing is
 disabled. The run waits for the owner.
 
+**Step 3 met its pass rule, 2026-10-25** (rerun on the owner's other Vertex key, same model, endpoint and prices).
+Private copies of the quotes and daily-play (S1) gate databases, each extracted three times per arm on Gemini 3.8 Flash
+(`extract-v16` against `extract-v17`), every probe replayed under `packet-v19` three rounds; a case passes a run by the
+majority of its rounds and an arm by the majority of its runs. Spend $59.41 (the cap was raised to $90 for steps 3 of
+both phases: about $4.5 a copy against $3.3 on 2026-10-13). Jobs that died on the first pass (a lane cap set too low
+for the second quotes group, and Vertex 429 storms) were requeued and extracted; every copy finished complete.
+
+| set | `extract-v16` runs | `extract-v17` runs | majority |
+|---|---|---|---|
+| quotes, 24 cases | 19 / 19 / 19 | 20 / 18 / 18 | 19 → 20 |
+| daily play (S1), 100 cases | 97 / 97 / 96 | 97 / 97 / 95 | 97 = 97 |
+
+- **By the majority over runs:** none lost; one gained, `q-first-01` (3 of 3 `extract-v17` runs, 0 of 3 `extract-v16`
+  runs), the case the 2026-10-13 measurement gained too.
+- **Single-run flips:** `q-first-03`, `q-first-16`, `q-said-56` and `q-turn-46` each failed in one `extract-v17` run
+  (all three rounds of that run), passing in the other two and in every `extract-v16` run; `q-turn-46` flipped the same
+  way on 2026-10-13. Extraction variance shows more on the quotes set under `extract-v17`.
+- **Speaker-labelled quote lines placed:** 36 → 380 over the runs and rounds; 6,693 speaker lines stored.
+- **The hand check of 20 stored speakers** (stop condition): every one names who says the line in its turn, from the
+  narration or the turn-taking; none is invented. The persona is written as `{{user}}` or by name; both resolve.
+
 **Step 3 run before approval, 2026-10-13: its pass rule is met, narrowly.** The owner approved the paid copy
 measurement (plan A, about $50; spent $49.64). It ran on the local experiment branch: `extract-v16` against
 `extract-v16` plus speakers. Each arm was extracted three times on Gemini 3.8 Flash, then each run was replayed under
