@@ -12,6 +12,7 @@ names that canon and holds a quarter of the entries, the card and the persona in
     cd apps/sidecar && BENCH_SUMMARIES=0 uv run python ../../tools/bench_story.py 10000  # summaries off
     cd apps/sidecar && BENCH_REPAIRS=100 uv run python ../../tools/bench_story.py 10000  # with 100 repairs
     cd apps/sidecar && BENCH_EXCLUDES=100 uv run python ../../tools/bench_story.py 10000  # with 100 exclusions (PHASE-47)
+    cd apps/sidecar && BENCH_REPLIES_ONLY=1 uv run python ../../tools/bench_story.py 10000  # replies only (PHASE-48)
     cd apps/sidecar && BENCH_CANON=200 uv run python ../../tools/bench_story.py 10000  # with a 200-entry lorebook
     cd apps/sidecar && BENCH_BUDGET=4000 uv run python ../../tools/bench_story.py 10000  # another memory budget
     cd apps/sidecar && NMOS_PACKET_POLICY=packet-v8 uv run python ../../tools/bench_story.py 10000  # another policy
@@ -306,6 +307,9 @@ def bench(n: int) -> dict:
                 result["repairs"] = add_repairs(db, conv, head, generations.active(db, "extract"), wanted)
             if (excludes := int(os.environ.get("BENCH_EXCLUDES", "0"))) and "entity_exclude" in getattr(repairs, "KINDS", ()):
                 result["excludes"] = add_excludes(db, conv, head, generations.active(db, "extract"), excludes)
+            if os.environ.get("BENCH_REPLIES_ONLY") == "1":  # PHASE-48: the chat remembers the AI's replies only
+                db.execute("UPDATE conversation SET replies_only = true WHERE id = %s", (conv,))
+                result["replies_only"] = True
             if held:
                 result["canon"] = {"lore": lore, "texts": held["texts"], "facts": held["facts"],
                                    "held": len(held["held"])}

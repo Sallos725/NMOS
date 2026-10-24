@@ -5,6 +5,11 @@ later, is `docs/KNOWN-ISSUES.md`.
 
 ## Unreleased
 
+- **Remember AI replies only** (Phase 48, recall). For a chat where the AI writes your character's words and actions
+  too, a toggle in the chat's settings ("AI 답장만 기억") leaves your own messages out of recall: none of them is an
+  excerpt or a quote, so directions to the model ("write it long", "next scene") stop coming back as memory. Off again,
+  the chat recalls as before at once. It queues nothing. Facts and summaries still come from both sides for now (K51).
+  Migration `0032`.
 - **"Not a character"** (Phase 47). On a character's page, on a relationship row, or at the foot of a person's sheet,
   the panel marks a name as not a character: a monster, or a status-window or game-master bot card. It leaves the
   people, the relationships, the author's note's address lines and the packet's `<Cast>`, and every fact about it stays,
