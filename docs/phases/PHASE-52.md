@@ -62,6 +62,14 @@ lead's 72 events were "major", and a lane of rings marks nothing. Tapping a
 mark opens its card under the lane. The timeline is still drawn only when its section is opened (PHASE-32 step 3, the
 iPhone's memory).
 
+D4 amendment 2 (owner, 2026-10-24): **an overview bar and lines.** Even merged into 30, the circles sat about 12 px
+apart on a phone, too close to read or to tap. The bar is now an overview only, with nothing to tap: the 30 spans as
+dots, and at most five rings, never two side by side. Under it, the person's changes are lines (turn, ring or dot,
+text). Each ring's first major change comes first, then the rest under one "N more" fold, as in the memory document;
+each list is in turn order. Without a ring, the first three show. A change reads in the panel's words: an event as it
+is, anything else after its kind ("위치: …", "관계: … → …"). The mark card and the placing of marks by tap are gone
+from the new screens; today's Inspector keeps its own timeline.
+
 D5. **Working, in plain words.** First, whether this reply got its memory (how long it took, how many lines and
 characters), with "the memory just sent" shown as readable lines, not the packet's XML. Then processing (fact
 extraction, search embeddings, scene summaries, reading the setting: done of due, failed, waiting, with "Retry
