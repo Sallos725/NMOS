@@ -1,9 +1,43 @@
 # Phase 47 — "Not a character": the owner leaves a name out of the cast and the relationships
 
-Status: **draft**, 2026-10-14. A correction found by tester feedback, not a roadmap stage. Not approved for
+Status: **built** (steps 2–4), 2026-10-24, on `claude/phase47-not-a-character`. Was: **draft**, 2026-10-14. A correction found by tester feedback, not a roadmap stage. Not approved for
 **R8 (owner, 2026-10-23, AGE-91/AGE-90): approved for implementation in `0.5.0`** (`docs/ROADMAP-1.0.md` R8).
 implementation. **Q1–Q3 answered (owner, 2026-10-14): all as recommended.** Approval to implement is a separate
 decision and has not been given.
+
+**Steps 2–4 built, 2026-10-24** (branch `claude/phase47-not-a-character`, stacked on `extract-v17` for the migration
+number; ADR 0076). Evidence:
+- **Sidecar.** `entity_exclude` (migration `0031`) with `scope` `cast` or `memory`; `repairs.exclusions` resolves each
+  name on every read; `memory_view` returns `excluded` and marks the entities. `cast` filters the people, every
+  relationship pair (`inspector.pairs`, the Inspector, the panel's memory and person screens, the author's note's
+  address lines), the `<Cast>` groups and the narrator list; `scene.cast`, quote speakers, name variants and the
+  extractor's hints are unchanged. `memory` drops the entity's own rows and the standing it is one end of before the
+  folds. Guards: the persona, the chat's own character, an unknown name, an entity already left out (422). A preview
+  counts both scopes; the action carries its scope's fingerprint; undo is previewed. `tests/test_entity_exclude.py`
+  (9): cast keeps every fact and leaves pairs and the narrator list; memory drops own facts and standing and keeps
+  another's event naming it; the guards; the preview and its fingerprint (a cast fingerprint on a memory action is
+  409); undo and a replay as of before; an entity named by id is stored by name and survives a rebuild; the person
+  sheet; with nothing in force the view is unchanged; a `<Cast>` group goes while every `<Fact>` line stays word for
+  word (it moves to `<Facts>`).
+- **Panel.** "캐릭터 아님 / not a character" on a character's Inspector page, on pair rows (each end but the persona,
+  named) and at the foot of the person sheet; the confirm states what `cast` does and offers "기억에서도 제외" as an
+  unticked box with the facts it would hide; the undo is previewed as a split's. `test/exclude.test.ts` (3); all 267
+  plugin tests pass; gzipped build 70,252 bytes (+676).
+- **Gate** (zero calls; every probe, bench 314 and quotes 24, under `packet-v19`, three rounds each, the eval
+  embedder; throwaway copies of the gate databases migrated to `0031`):
+  - acceptance 1, no exclusion, `extract-v17`'s code against this branch, each replay as of its trace: bench 300/314
+    and quotes 19/24 on both, none lost, none gained;
+  - step 4, replayed as of now, without and with one `cast` exclusion per chat (13 chats, each its least-mentioned
+    character with a fact of its own): bench 301/314 and quotes 19/24 on both, none lost; the `<Fact>` lines of all 338
+    packets identical, and no packet changed at all (none of those names had a `<Cast>` group; the test above covers
+    one that has).
+- **Cost** (acceptance 6): the work exclusions add (resolving them, the memory filter, the marked entity list, the
+  pair filter) takes 0.19 ms on a 1,021-row view with 0 or with 100 exclusions. The story bench at 10,000 messages
+  (`BENCH_EXCLUDES`, three alternating runs) gave p50 medians of 151 ms (`extract-v17`), 157 ms (this branch, none)
+  and 164 ms (100 exclusions, a quarter of them `memory`, which also changes what is read), with ±8 ms between runs of
+  the same arm: within the noise, the +5 ms bar is not shown to be crossed or met by the bench; the isolated cost is.
+- **Not done:** the rendered check on the synthetic PocketRisu instance (step 3's last item); it is the owner's check
+  on the test install once deployed.
 
 **High risk if built** (`AGENTS.md §14`):
 - a migration on stored owner input (`owner_repair`'s kind check);

@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:b44bb4ff0eb6".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:e440c4d5f8a5".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -593,6 +593,14 @@
     "rp.state_dismiss": ["\uAD1C\uCC2E\uC74C", "Dismiss"],
     // a status flag the owner looked at (PHASE-39 Q4)
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
+    "rp.entity_exclude": ["{n}: \uCE90\uB9AD\uD130 \uC544\uB2D8", "{n}: not a character"],
+    "ex.cast": [
+      "\uC778\uBB3C \uBAA9\uB85D\uACFC \uAD00\uACC4\uC5D0\uC11C \uBE60\uC838\uC694 (\uAD00\uACC4 {p}\uAC1C). \uC0AC\uC2E4\uC740 \uADF8\uB300\uB85C \uB0A8\uC544\uC694.",
+      "It leaves the cast and the relationships ({p}). Every fact stays."
+    ],
+    "ex.also": ["\uAE30\uC5B5\uC5D0\uC11C\uB3C4 \uC81C\uC678: \uC774 \uC774\uB984\uC774 \uC8FC\uC778\uACF5\uC778 \uC0AC\uC2E4 {f}\uAC1C\uB3C4 \uAC00\uB824\uC694", "Also leave it out of memory: hides {f} facts about it"],
+    "ex.confirm": ["\uCE90\uB9AD\uD130 \uC544\uB2D8\uC73C\uB85C \uD45C\uC2DC", "Mark not a character"],
+    "ex.done": ["\uCE90\uB9AD\uD130 \uC544\uB2D8\uC73C\uB85C \uD45C\uC2DC\uD588\uC5B4\uC694.", "Marked not a character."],
     "rp.select": ["\uC77C\uAD04 \uB2EB\uAE30\uC5D0 \uB123\uAE30", "Select to close"],
     "rp.outcome": ["\uB2EB\uB294 \uACB0\uACFC", "Outcome"],
     "oc.kept": ["\uC9C0\uCF1C\uC9D0", "kept"],
@@ -2226,7 +2234,7 @@ ${revisionHash}`;
     const m = new RegExp(`^/v1/inspector/c/(${UUID})/e/(${UUID})$`, "i").exec(path) ?? new RegExp(`^/v1/views/c/(${UUID})/person/(${UUID})$`, "i").exec(path);
     return m ? { conversation: m[1], entity: m[2] } : null;
   }
-  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|undo|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
+  var REPAIR = /^(thread_close|thread_reopen|secret_found_out|secret_keep|fact_retract|fact_correct|fact_lock|fact_restore|state_dismiss|entity_exclude|undo|alias_join):(-?[0-9a-f-]{1,64})(?::([A-Za-z0-9%._~,-]{1,600}))?$/;
   function repairAction(value) {
     const m = value ? REPAIR.exec(value) : null;
     if (!m?.[1] || !m[2]) return null;
@@ -3073,7 +3081,9 @@ html,body{margin:0;background:${PALETTE.bg}}
       const spot = el("div");
       button.addEventListener("click", () => {
         if (action.kind === "fact_correct") correctForm(action, button);
-        else if (action.kind === "undo" && action.extra === "name_split") void undoSplit(action, button, spot);
+        else if (action.kind === "undo" && (action.extra === "name_split" || action.extra === "entity_exclude")) {
+          void undoSplit(action, button, spot);
+        } else if (action.kind === "entity_exclude") void notACharacter(action, button, spot);
         else if (action.kind === "alias_join") void aliasJoin(action, button, spot);
         else void repairNow(action, button);
       });
@@ -3174,6 +3184,51 @@ html,body{margin:0;background:${PALETTE.bg}}
         say(actionMsg, L("link.done", { a: pair.name, b: pair.same_as }), "ok");
         await showInspector();
       });
+    }
+    async function notACharacter(action, button, spot) {
+      const conversation = inspectorConversation(inspectorPath);
+      if (!conversation) return;
+      const path = `/v1/conversations/${conversation}/repairs`;
+      const body = { kind: "entity_exclude", item: action.item };
+      const preview = (scope) => deps.api("POST", `${path}/preview`, { ...body, scope }, 15e3);
+      button.disabled = true;
+      let p;
+      try {
+        p = await preview("cast");
+      } catch (error) {
+        say(actionMsg, errorText(lang, error), "err");
+        button.disabled = false;
+        return;
+      }
+      const also = el("input", { type: "checkbox", "aria-label": L("ex.also", { f: p.scopes.memory.facts }) });
+      const ok = el("button", { class: "mini", text: L("ex.confirm") });
+      const cancel = el("button", { class: "mini", text: L("cancel") });
+      cancel.addEventListener("click", () => {
+        spot.replaceChildren();
+        button.disabled = false;
+      });
+      ok.addEventListener("click", async () => {
+        ok.disabled = true;
+        const scope = also.checked ? "memory" : "cast";
+        try {
+          const expect = scope === "cast" ? p.fingerprint : (await preview("memory")).fingerprint;
+          await deps.api("POST", path, { ...body, scope, expect }, 15e3);
+          spot.replaceChildren();
+          say(actionMsg, L("ex.done"), "ok");
+          await showInspector();
+        } catch (error) {
+          say(actionMsg, errorText(lang, error), "err");
+          ok.disabled = false;
+        }
+      });
+      spot.replaceChildren(el(
+        "div",
+        { class: "preview" },
+        el("b", { text: L("pv.title") }),
+        el("div", { text: L("ex.cast", { p: p.scopes.cast.pairs }) }),
+        el("div", { class: "check" }, also, el("span", { text: L("ex.also", { f: p.scopes.memory.facts }) })),
+        el("div", { class: "btns" }, ok, cancel)
+      ));
     }
     async function undoSplit(action, button, spot) {
       const conversation = inspectorConversation(inspectorPath);

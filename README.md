@@ -305,7 +305,9 @@ language after a page reload.
   a turn).
   The Inspector's lines carry the owner's **repairs** (ADR 0044): close a thread with an outcome (tick several to
   close them together) or reopen one, mark a secret found out or still kept by a character, retract or correct a
-  fact, and on an entity's page split two names the story joined. A repair survives rebuilds and new extractor
+  fact, on an entity's page split two names the story joined, and mark a name **not a character** (a monster, a
+  status-window bot: it leaves the people and the relationships, its facts stay unless you also leave it out of
+  memory; ADR 0076). A repair survives rebuilds and new extractor
   generations, is listed under **Repairs** with **Undo**, and each chat's page starts with **Needs attention** (old
   open threads, ends that matched no thread, disputed whereabouts, repairs that match nothing now, splits still
   joined through another name, ambiguous names, and facts a re-extraction dropped: narrated facts of a turn that the

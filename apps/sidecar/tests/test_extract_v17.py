@@ -117,7 +117,8 @@ def test_an_archive_carries_the_speakers_and_horizons_and_names_its_schema(migra
     extracted(migrated, "extract-v17")
     source = tmp_path / f"a{archive.SUFFIX}"
     archive.export_file(migrated, str(source))
-    assert read(source.read_bytes())[0]["schema"]["level"] == "0030_extract_v17.sql"
+    from test_upgrade import LATEST
+    assert read(source.read_bytes())[0]["schema"]["level"] == LATEST >= "0030_extract_v17.sql"
     target = database_url_factory()
     archive.restore_file(target, str(source))
     query = ("SELECT e.speakers, a.salience FROM extraction e JOIN assertion a ON a.extraction_id = e.id"
