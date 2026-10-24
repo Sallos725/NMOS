@@ -20,6 +20,10 @@ and the route is unchanged (`tests/test_quote_speakers.py`); `extract-v15`'s and
 keys are byte-identical to `main`'s before this step (checked against `origin/main`'s code). Steps 3–5 are paid and
 wait for the owner, with Q2 and Q3.
 
+**Q2 and Q3 answered, paid steps approved (owner, 2026-10-24):** Q2 Gemini 3.8 Flash for the live gate (comparable to
+step 3); Q3 `extract-v17` becomes the default when the live gate passes; step 3 here and PHASE-51's step 3 approved
+together, capped at $70, after acceptance 1's zero-call replay.
+
 **Step 3 run before approval, 2026-10-13: its pass rule is met, narrowly.** The owner approved the paid copy
 measurement (plan A, about $50; spent $49.64). It ran on the local experiment branch: `extract-v16` against
 `extract-v16` plus speakers. Each arm was extracted three times on Gemini 3.8 Flash, then each run was replayed under
