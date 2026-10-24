@@ -22,7 +22,8 @@ wait for the owner, with Q2 and Q3.
 
 **Q2 and Q3 answered, paid steps approved (owner, 2026-10-24):** Q2 Gemini 3.8 Flash for the live gate (comparable to
 step 3); Q3 `extract-v17` becomes the default when the live gate passes; step 3 here and PHASE-51's step 3 approved
-together, capped at $70, after acceptance 1's zero-call replay.
+together, capped at $70, after acceptance 1's zero-call replay. **Raised to $90 (owner, 2026-10-24)** when the first
+group cost about $4.5 a copy against $3.3 on 2026-10-13 (more calls per turn), which projected step 3 to about $67.
 
 **Acceptance 1 met, 2026-10-24 (zero calls).** Every gate probe (bench 314, quotes 24) replayed under `packet-v19`
 with `extract-v16` in use. The replays ran on throwaway copies of the gate databases migrated to `0030`, so `main`'s
