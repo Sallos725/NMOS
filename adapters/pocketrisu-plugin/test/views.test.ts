@@ -73,7 +73,7 @@ function deps(opts: { views?: boolean; css?: string } = {}) {
   const d: PanelDeps = {
     api: async <T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown) => {
       calls.push([method, path]);
-      if (method === 'POST') bodies.push(body);
+      if (method !== 'GET') bodies.push(body);
       if (path === '/v1/views/style') return { css: opts.css ?? '.nmos .v{font-size:16px}' } as T;
       if (path.startsWith('/v1/views/hub')) return { html: hub, conversation: id } as T;
       if (path.startsWith(`/v1/inspector/c/${id}`)) return { html: '<h1>Chat page</h1>' } as T;
@@ -90,6 +90,7 @@ function deps(opts: { views?: boolean; css?: string } = {}) {
       }
       if (path.startsWith('/v1/inspector')) return { html: `<a href="/inspector/c/${id}">chat</a>` } as T;
       if (path.endsWith('/memory-mode')) return { strict: false, narrator: null, characters: ['Hana'] } as T;
+      if (path.endsWith('/replies-only')) return { on: method === 'PUT' ? (body as { on: boolean }).on : false } as T;
       if (path.includes('/status/candidates')) throw new Error('404');
       return {} as T;
     },
@@ -256,6 +257,25 @@ describe('the hub (PHASE-52 D1)', () => {
     const page = panel().querySelector<HTMLElement>('[data-group="chat"]:not(button)')!;
     expect(page.style.display).toBe('');
     expect(Array.from(page.querySelectorAll('button')).map((b) => b.textContent)).toContain('Extract all history');
+  });
+
+  it('turns "remember AI replies only" on for this chat and says so (PHASE-48)', async () => {
+    const { d, calls, bodies } = deps();
+    await openPanel(d, 'status');
+    await settle();
+    panel().querySelector<HTMLAnchorElement>('a[data-act="settings"]')!.click();
+    await settle();
+    panel().querySelector<HTMLButtonElement>('.groups button[data-group="chat"]')!.click();
+    await settle();
+    expect(calls).toContainEqual(['GET', `/v1/conversations/${id}/replies-only`]);
+    const box = panel().querySelector<HTMLInputElement>('input[aria-label="Remember AI replies only"]')!;
+    expect(box.checked).toBe(false);
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    await settle();
+    expect(calls).toContainEqual(['PUT', `/v1/conversations/${id}/replies-only`]);
+    expect(bodies).toContainEqual({ on: true });
+    expect(panel().textContent).toContain("recalls from the AI's replies only");
   });
 
   it('goes home from settings', async () => {

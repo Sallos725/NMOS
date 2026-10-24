@@ -96,7 +96,8 @@ def process_embed(conn: psycopg.Connection, job: dict[str, Any], embedder: Embed
 
 
 def vector_candidates(conn: psycopg.Connection, head: UUID, query_vec: list[float], projection_key: str, cut: int,
-                      limit: int = 50, upto: int | None = None, known_at: Any = None) -> list[dict[str, Any]]:
+                      limit: int = 50, upto: int | None = None, known_at: Any = None,
+                      replies: bool = False) -> list[dict[str, Any]]:
     """Best chunk per eligible head revision by cosine similarity, most similar first. With `upto` and
     `known_at`, as of an earlier request (ADR 0027): vectors written after it are not searched (rows from
     before migration 0020 have no time and count as known)."""
@@ -117,13 +118,14 @@ def vector_candidates(conn: psycopg.Connection, head: UUID, query_vec: list[floa
               AND (%(known_at)s::timestamptz IS NULL OR re.created_at IS NULL OR re.created_at <= %(known_at)s)
               AND coalesce(sr.metadata->>'disabled', '') NOT IN ('true', 'allBefore')
               AND coalesce(sr.metadata->>'isComment', 'false') <> 'true'
+              AND NOT (%(replies)s AND coalesce(sr.metadata->>'role', '') = 'user')  -- PHASE-48 D3
             ORDER BY sr.id, re.embedding <=> %(q)s::vector
         )
         SELECT * FROM best ORDER BY sim DESC LIMIT %(limit)s
         """,
         {"q": vector_literal(query_vec), "projection": projection_key, "dim": len(query_vec), "head": head, "cut": cut,
          "limit": limit, "norm": normtext.NORMALIZER_VERSION, "upto": 2**31 - 1 if upto is None else upto,
-         "known_at": known_at},
+         "known_at": known_at, "replies": replies},
     ).fetchall()
 
 
