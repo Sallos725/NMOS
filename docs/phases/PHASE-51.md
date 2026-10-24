@@ -16,6 +16,18 @@ since it was last said.
 - a change to what memory selects (the Inspector's "needs a look", the author's note, and, if Q3 says so, the
   packet's threads).
 
+**Step 2 built, 2026-10-24** (branch `claude/extract-v17`, with Phase 45): a thread takes its opening row's horizon
+(a restatement with another one changes it); `inspector.stale` is by horizon (`HORIZON_TURNS`: scene 10, arc 30,
+lasting never, none 30), and the Inspector's "needs a look", the author's note and the panel's memory follow it; the
+Inspector's threads and the memory screen name the horizon. A parity test runs 2,000 random threads without a horizon
+through the old and the new rule: the same. `extract-v17` asks for `horizon` beside `outcome` and `because` (S4) and
+stores it only under that compiler; `extract-v16`'s prompt and key are unchanged. Step 3 (paid) waits for the owner.
+
+**Amendment 1 (2026-10-24): a migration after all.** S2 and Q2 (a) assumed `assertion.salience` takes the horizon
+without a migration; migration `0016` limits it to `major`/`minor` by a check. Migration `0030`, which Phase 45 needs
+anyway for `extraction.speakers`, widens the check to the horizon words. No new column, so Q2's choice stands; the
+restore rule is the one of any migration (an archive of `0030` is refused by an older build as newer).
+
 ## Why
 
 1. **Every thread weighs the same.** `salience` (`major`/`minor`) is asked for `event` only (ADR 0020, ADR 0024);

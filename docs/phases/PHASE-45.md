@@ -8,6 +8,18 @@ ADR 0067). Not approved for implementation. **Q1 answered (owner, 2026-10-13): (
 speakers go into `main` with the next extractor-generation change, and the re-extraction and its risk happen once.
 Merged as the record of the measurement, like PHASE-44.
 
+**Step 2 built, 2026-10-24** (branch `claude/extract-v17`, with Phase 51 in the same generation): `extract-v17` is
+selectable and not the default. It lists the TARGET turn's quoted lines (`[Q1] …`, up to 30, 80 characters each, the
+quote route's own `quotes_in`) and asks for `speakers` by number; "?" and unknown numbers are dropped, so a line whose
+speaker the turn does not show is not stored. Migration `0030` adds `extraction.speakers`; archives carry it (round-trip
+test). The quote route reads a stored speaker only where the line's own sentence names nobody, only from extractions of
+the generation in use (live at the request's time, so a replay reads what was known), and not when two extractions
+disagree; `{{user}}` is the persona. A question naming a speaker gets that speaker's other lines of the message after
+their line, within `QUOTE_CHARS`, the line as placed today kept whole (S4). With `extract-v16` in use nothing is stored
+and the route is unchanged (`tests/test_quote_speakers.py`); `extract-v15`'s and `extract-v16`'s prompts and generation
+keys are byte-identical to `main`'s before this step (checked against `origin/main`'s code). Steps 3–5 are paid and
+wait for the owner, with Q2 and Q3.
+
 **Step 3 run before approval, 2026-10-13: its pass rule is met, narrowly.** The owner approved the paid copy
 measurement (plan A, about $50; spent $49.64). It ran on the local experiment branch: `extract-v16` against
 `extract-v16` plus speakers. Each arm was extracted three times on Gemini 3.8 Flash, then each run was replayed under
