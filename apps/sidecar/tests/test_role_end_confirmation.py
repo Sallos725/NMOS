@@ -34,7 +34,7 @@ def ctx(context, members):
 def test_the_confirmation_prompt_is_the_measured_v3_text_and_in_the_v16_fingerprint():
     assert hashlib.sha256(X.ROLE_CONFIRM_SYSTEM.encode()).hexdigest() == (
         "c5fe766ad7541573ce74e09f6f5282b8d6f4592602bd933f5bd331c85f986413")  # v4 measured and withdrawn
-    assert X.CONFIRMS == {"extract-v16"} and X.CONFIRM_TURNS == 2
+    assert X.CONFIRMS == {"extract-v16", "extract-v17"} and X.CONFIRM_TURNS == 2
 
 
 def test_the_user_message_holds_the_role_the_two_preceding_turns_whole_and_the_target():
