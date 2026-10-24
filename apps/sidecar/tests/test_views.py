@@ -195,11 +195,27 @@ def test_a_persons_sheet():
     html = views.person(person_data(), "ko")
     assert re.findall(r'class="v-sec" id="(s-[a-z]+)"', html) == ["s-now", "s-rels", "s-threads", "s-knows", "s-time"]
     assert "Hanachan" in html and "<table" not in html and "<svg" not in html
-    marks = re.findall(r'<span class="v-mark( major)?" data-l="([0-9.]+)"', html)
-    merged = views.person(person_data(marks=[(30, False, "a"), (31, False, "b"), (32, False, "c")], last=76), "ko")
-    assert 'class="v-mark n2"' in merged and 'data-k="t30–32 · ×3"' in merged
-    assert [(bool(m), float(l)) for m, l in marks] == [(False, 16.667), (True, 75.0)]  # turns 2 and 9 of 0–12
-    assert 'data-v="Hana meets Kaito"' in html and f'href="/views/c/{CID}/memory"' in html
+    pins = re.findall(r'<span class="v-pin( major)?" data-l="([0-9.]+)"></span>', html)
+    assert [(bool(m), float(l)) for m, l in pins] == [(False, 16.667), (True, 75.0)]  # turns 2 and 9 of 0–12
+    assert 'class="v-mini" aria-hidden="true"' in html and "data-v=" not in html  # a bar to look at, not to tap
+    # the ring's change leads, then the rest in turn order
+    events = re.findall(r'<div class="v-ev( major)?"><span class="v-t">t(\d+)</span><span class="v-d"></span>'
+                        r'<span class="v-x">([^<]*)</span>', html)
+    assert events == [(" major", "9", "Hana meets Kaito"), ("", "2", "Hana identity: smuggler")]
+    assert f'href="/views/c/{CID}/memory"' in html
+
+
+def test_a_persons_timeline_leads_with_at_most_five_and_folds_the_rest():
+    marks = [(t, True, f"change {t}") for t in range(0, 76, 2)]  # a lead's: every change major
+    html = views.person(person_data(marks=marks, last=75), "ko")
+    timeline = html.split('id="s-time"')[1]
+    shown, folded = timeline.split('<details class="v-more">')
+    assert shown.count('class="v-ev major"') == 5 and shown.count('class="v-ev"') == 0
+    assert folded.count('class="v-ev"') == len(marks) - 5 and "33개 더 보기" in folded
+    turns = [int(x) for x in re.findall(r'class="v-ev major"><span class="v-t">t(\d+)<', shown)]
+    assert turns == sorted(turns) and len(set(turns)) == 5
+    quiet = views.person(person_data(marks=[(t, False, f"minor {t}") for t in range(5)], last=12), "ko")
+    assert quiet.split('id="s-time"')[1].split('<details')[0].count('class="v-ev"') == 3  # no rings: the first three
 
 
 def test_the_person_endpoint(migrated):
@@ -226,7 +242,7 @@ def test_a_person_with_facts_has_a_sheet_and_circles(migrated):
         hana = next(e for e in c.get(f"/v1/conversations/{cid}/entities").json() if e["name"] == "Hana")
         html = c.get(f"/v1/views/c/{cid}/person/{hana['id']}").json()["html"]
         memory = c.get(f"/v1/views/c/{cid}/memory").json()["html"]
-    assert ">Hana<" in html and 'class="v-mark' in html and "old mill" in html
+    assert ">Hana<" in html and 'class="v-ev' in html and 'class="v-pin' in html and "old mill" in html
     assert f'/views/c/{cid}/person/{hana["id"]}' in memory
 
 

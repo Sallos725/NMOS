@@ -52,14 +52,15 @@ STYLE = """
 .nmos .v-note{font-size:var(--t-caption,13px);color:var(--c-text-muted);margin:6px 0 0}
 .nmos .v-more>summary{cursor:pointer;list-style:none;font-size:var(--t-secondary,14px);color:var(--c-text-muted);padding:6px 0}
 .nmos .v-more>summary::-webkit-details-marker{display:none}
-.nmos .v-tl{position:relative;height:56px;margin:8px 4px 0}
-.nmos .v-tl .tl-row{position:relative;height:56px}
-.nmos .v-tl .v-axis{position:absolute;left:0;right:0;top:20px;border-top:1px solid var(--c-line-strong)}
-.nmos .v-mark{position:absolute;top:16px;width:9px;height:9px;margin-left:-4px;border-radius:50%;background:var(--c-text-soft);cursor:pointer}
-.nmos .v-mark.major{top:10px;width:20px;height:20px;margin-left:-10px;background:transparent;border:2px solid var(--c-text-strong)}
-.nmos .v-mark.n2{top:14px;width:13px;height:13px;margin-left:-6px} .nmos .v-mark.n4{top:12px;width:17px;height:17px;margin-left:-8px}
-.nmos .v-mark.major.n2,.nmos .v-mark.major.n4{top:10px;width:20px;height:20px;margin-left:-10px}
-.nmos .v-mark.sel{border-color:var(--c-accent);background:var(--c-accent)}
+.nmos .v-mini{position:relative;height:20px;margin:10px 7px 2px}
+.nmos .v-mini .v-axis{position:absolute;left:0;right:0;top:9px;border-top:2px solid var(--c-line-strong)}
+.nmos .v-pin{position:absolute;top:7px;width:6px;height:6px;margin-left:-3px;border-radius:50%;background:var(--c-text-faint)}
+.nmos .v-pin.major{top:3px;width:14px;height:14px;margin-left:-7px;box-sizing:border-box;border:2px solid var(--c-text-strong);background:var(--c-bg)}
+.nmos .v-ev{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--c-line)}
+.nmos .v-ev .v-t{flex:none;min-width:52px;font-size:var(--t-caption,13px);color:var(--c-text-muted);padding-top:3px}
+.nmos .v-ev .v-d{flex:none;width:8px;height:8px;margin:9px 2px 0;border-radius:50%;background:var(--c-text-faint)}
+.nmos .v-ev.major .v-d{width:12px;height:12px;margin:7px 0 0;box-sizing:border-box;border:2px solid var(--c-text-strong);background:transparent}
+.nmos .v-ev .v-x{color:var(--c-text-soft);min-width:0} .nmos .v-ev.major .v-x{color:var(--c-text-strong)}
 .nmos .v-ends{display:flex;justify-content:space-between;font-size:var(--t-caption,13px);color:var(--c-text-muted)}
 .nmos .v-warn{color:var(--c-warn)}
 .nmos .v-filter input{width:100%;margin:0 0 8px}
@@ -121,8 +122,8 @@ T: dict[str, tuple[str, str]] = {
     "knows": ("알고 있음", "knows"),
     "unaware": ("모름 · {who}이(가) 숨김", "does not know · kept by {who}"),
     "back_memory": ("기억으로", "Back to memory"),
-    "tl_hint": ("점을 누르면 그 턴의 변화가 보여요. 큰 원은 큰 사건이나 관계 변화예요.",
-                "Tap a mark for its changes. A ring is a major event or a change of relationship."),
+    "tl_hint": ("굵은 원은 큰 사건이나 관계 변화예요. 위 막대는 그 일들이 언제쯤이었는지 보여줘요.",
+                "Rings are major events or relationship changes; the bar above shows when they happened."),
     "now_turn": ("지금 t{t}", "now t{t}"),
     "s-reply": ("이번 답장", "This reply"),
     "s-sent": ("방금 들어간 기억", "The memory just sent"),
@@ -351,22 +352,33 @@ def memory(d: dict[str, Any], lang: str) -> str:
 
 
 
-def _marks(d: dict[str, Any]) -> str:
-    """The person's changes as circles on one lane (PHASE-52 D4), placed by `data-l` as today's timeline is, with the
-    texts the panel's mark card shows."""
+def _event(turn: int, text: str, major: bool) -> str:
+    return (f'<div class="v-ev{" major" if major else ""}"><span class="v-t">t{turn}</span><span class="v-d"></span>'
+            f'<span class="v-x">{_v(text)}</span></div>')
+
+
+def _timeline(d: dict[str, Any], lang: str) -> str:
+    """The person's changes (PHASE-52 D4, amendment 2): an overview bar to look at, not to tap (the chat's span in 30
+    parts, at most five rings where the most major changes are), then the changes as lines, a ring's first major
+    change first, the rest under one fold, each list in turn order."""
     from .timeline import circles
     first, last = d.get("first", 0) or 0, d.get("last", 0) or 0
     span = max(last - first, 1)
-    marks = []
-    for b in circles(d.get("marks") or [], first, last):
-        mid = (b["lo"] + b["hi"]) / 2
-        left = round(min(max((mid - first) / span * 100, 0), 100), 3)
-        when = (f"t{b['lo']}" if b["lo"] == b["hi"] else f"t{b['lo']}–{b['hi']}") + (f" · ×{b['count']}" if b["count"] > 1 else "")
-        text = " / ".join(b["texts"])[:400]
-        size = "" if b["count"] < 2 else " n2" if b["count"] < 4 else " n4"  # a merged mark is larger; its count in its card
-        marks.append(f'<span class="v-mark{" major" if b["major"] else ""}{size}" data-l="{left:g}" data-k="{_v(when)}" '
-                     f'data-v="{_v(text)}" data-s="{_v(when)}"></span>')
-    return ('<div class="tl v-tl"><div class="tl-row"><span class="v-axis"></span>' + "".join(marks) + "</div></div>")
+    marks = sorted(d.get("marks") or [], key=lambda m: m[0])
+    spans = circles(marks, first, last)
+    pins = []
+    for b in spans:
+        left = round(min(max(((b["lo"] + b["hi"]) / 2 - first) / span * 100, 0), 100), 3)
+        pins.append(f'<span class="v-pin{" major" if b["major"] else ""}" data-l="{left:g}"></span>')
+    lead = set()
+    for b in spans:
+        if b["major"]:
+            lead.add(next(i for i, m in enumerate(marks) if b["lo"] <= m[0] <= b["hi"] and m[1]))
+    head = [_event(m[0], m[2], True) for i, m in enumerate(marks) if i in lead]
+    rest = [_event(m[0], m[2], False) for i, m in enumerate(marks) if i not in lead]
+    return ('<div class="v-mini" aria-hidden="true"><span class="v-axis"></span>' + "".join(pins) + "</div>"
+            f'<div class="v-ends"><span>t{first}</span><span>{_v(t(lang, "now_turn", t=last))}</span></div>'
+            + more(head + rest, lang, n=len(head) or 3))
 
 
 def person(d: dict[str, Any], lang: str) -> str:
@@ -393,9 +405,7 @@ def person(d: dict[str, Any], lang: str) -> str:
     knows = [line(_v(content(s)), _v(t(lang, "knows") + f" · t{s.get('turn')}")) for s in d.get("knows") or []]
     knows += [line(_v(content(s)), _v(t(lang, "unaware", who=", ".join(s.get("holders") or [])) + f" · t{s.get('turn')}"))
               for s in d.get("kept") or []]
-    time = (_marks(d) + f'<div class="v-ends"><span>t{d.get("first", 0)}</span>'
-            f'<span>{_v(t(lang, "now_turn", t=d.get("last", 0)))}</span></div>'
-            f'<p class="v-note">{_v(t(lang, "tl_hint"))}</p>') if d.get("marks") else nothing
+    time = (_timeline(d, lang) + f'<p class="v-note">{_v(t(lang, "tl_hint"))}</p>') if d.get("marks") else nothing
     body = (section("s-now", lang, now) + section("s-rels", lang, more(rels, lang) or nothing, len(rels))
             + section("s-threads", lang, more(threads, lang) or nothing, len(threads))
             + section("s-knows", lang, more(knows, lang) or nothing, len(knows)) + section("s-time", lang, time))

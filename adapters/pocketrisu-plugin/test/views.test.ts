@@ -52,8 +52,10 @@ const memory = `<div class="v v-doc"><div class="v-sec" id="s-open"><h2 class="v
   + `<div class="v-line">Hana: find the bell<div class="v-meta">goal</div>`
   + `<span class="rp" data-repair="thread_close:5:achieved,abandoned"></span></div></div></div>`;
 
-const person = `<div class="v v-doc"><div class="v-sec" id="s-time"><div class="tl v-tl"><div class="tl-row">`
-  + `<span class="v-mark major" data-l="75" data-k="t9" data-v="Hana meets Kaito" data-s="t9"></span></div></div></div></div>`;
+const person = `<div class="v v-doc"><div class="v-sec" id="s-time"><div class="v-mini" aria-hidden="true">`
+  + `<span class="v-axis"></span><span class="v-pin major" data-l="75"></span></div>`
+  + `<div class="v-ev major"><span class="v-t">t9</span><span class="v-d"></span><span class="v-x">Hana meets Kaito</span>`
+  + `</div></div></div>`;
 
 const hub = `<div class="v v-hub"><div class="v-blocks">`
   + `<a class="v-block v-wide ok" href="/inspector/c/${id}"><span class="v-bt">Working</span></a>`
@@ -190,16 +192,17 @@ describe('the hub (PHASE-52 D1)', () => {
     expect(bodies).toContainEqual({ kind: 'thread_close', item: '5', outcome: 'abandoned' });
   });
 
-  it('places a person\'s circles and opens a mark\'s card', async () => {
+  it('places a person\'s overview bar and lists the changes as lines (PHASE-52 D4)', async () => {
     const { d } = deps();
     await openPanel(d, 'status');
     await settle();
     panel().querySelector<HTMLAnchorElement>('a[href*="/person/"]')!.click();
     await settle();
-    const mark = panel().querySelector<HTMLElement>('.v-mark')!;
-    expect(mark.style.left).toBe('75%');
-    mark.click();
-    expect(panel().querySelector('.tl-card')!.textContent).toContain('Hana meets Kaito');
+    const pin = panel().querySelector<HTMLElement>('.v-mini .v-pin.major')!;
+    expect(pin.style.left).toBe('75%');
+    expect(panel().querySelector('.v-ev.major .v-x')!.textContent).toBe('Hana meets Kaito');
+    pin.click();
+    expect(panel().querySelector('.tl-card')).toBeNull(); // the bar is to look at; the lines carry the changes
   });
 
   it('retries a chat\'s failed work from the working screen', async () => {
