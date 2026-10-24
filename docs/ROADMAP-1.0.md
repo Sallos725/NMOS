@@ -92,7 +92,9 @@ original design, and most recent phases (15, 17, 18, 19) were outside it. So:
   that restart the count. If the two weeks on `0.5.0` pass and the gate's other conditions hold for that build (the
   evaluation against `0.1.x`, the upgrades, the known issues), the same build is tagged `1.0.0`.
 - **One extractor generation in `0.5.0`** (`extract-v17`, Phases 45 and 51), as "each stage ships at most one" above;
-  Phase 48's replies-only variant is built on it and changes no chat that does not turn it on.
+  Phase 48's replies-only variant is built on it and changes no chat that does not turn it on. **Amended (owner,
+  2026-10-24):** `0.5.0` carries Phase 48's step 2 (the flag and recall, no extractor variant); its step 3 waits for a
+  real full-impersonation chat to measure (K51).
 
 The road left is `0.5.0` (R8), then the 1.0 gate below on its build. Stage 7 shipped in `v0.4.0` (2026-10-10), and
 `v0.3.0` and `v0.4.0` carry Phase 23's four bundles.

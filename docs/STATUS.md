@@ -69,7 +69,8 @@ Done so far: Phase 50 (#315) and Phase 52 (#316) merged 2026-10-24. `extract-v17
 2026-10-24 on `claude/extract-v17`, selectable and not the default, migration `0030`; its paid measurements and live
 gate wait for the owner. Phase 47 ("not a character", ADR 0076): steps 2–4 built 2026-10-24, stacked on
 `extract-v17` (migration `0031`). Phase 48 (remember AI replies only, ADR 0077): step 2, the flag and recall, built
-2026-10-24 on Phase 47 (migration `0032`); step 3 (extraction and summaries) waits for the owner. Then the release.
+2026-10-24 on Phase 47 (migration `0032`); step 3 (extraction and summaries) deferred by the owner until a real
+full-impersonation chat can be measured (K51). Then the release.
 
 **Phase 50 — notes for the author's note (a chronicle, what changed from the setting, address and standing), made on
 request for the owner to paste: approved 2026-10-23 (Q1–Q5 as recommended; AGE-88), high risk (canon, secrets).** An

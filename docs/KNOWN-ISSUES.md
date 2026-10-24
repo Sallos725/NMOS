@@ -54,7 +54,7 @@ without a PocketRisu change.
 | K48 | Recall's cue and function-word lists are Korean (with a few English phrases) | Recall | improvement deferred until after 1.0.0 (owner, 2026-10-09; ADR 0067, 0069) |
 | K49 | Restoring an archive from the panel on an iPhone is not a target and was not measured | Data | scope exclusion approved 2026-10-08 (PHASE-38 Q3); behavior unmeasured |
 | K50 | Model calls that failed or were retried are not in the panel's model-use line | Setup | low priority, additional accounting not scheduled (owner preference, 2026-10-09; ADR 0051) |
-| K51 | "Remember AI replies only" leaves user messages out of recall, but facts and summaries are still made from both sides | Memory | step 3 of PHASE-48 (extraction and summaries under the flag) decided separately; ADR 0077 |
+| K51 | "Remember AI replies only" leaves user messages out of recall, but facts and summaries are still made from both sides | Memory | accepted for `0.5.0` (owner, 2026-10-24): PHASE-48 step 3 is built once a real full-impersonation chat can be measured; ADR 0077 |
 
 **1.0 gate classification (owner, 2026-10-12, Linear AGE-82, all as recommended).** The gate asks that every open
 row is a host limit or an accepted trade-off (`docs/ROADMAP-1.0.md`).

@@ -1,6 +1,8 @@
 # Phase 48 — Replies only: a per-chat switch that leaves the user's messages out of memory
 
-Status: **step 2 built**, 2026-10-24 (recall); step 3 waits for the owner. Was: **draft**, 2026-10-15 (AGE-87). An owner request, not a roadmap stage. Not approved for implementation.
+Status: **step 2 built**, 2026-10-24 (recall). **Step 3 deferred (owner, 2026-10-24):** `0.5.0` carries step 2
+only; step 3 is built when there is a real full-impersonation chat to measure it on (the owner has none; a synthetic
+chat was offered and declined as a weaker basis), so the spec's step 3 condition stands. Was: **draft**, 2026-10-15 (AGE-87). An owner request, not a roadmap stage. Not approved for implementation.
 **R8 (owner, 2026-10-23, AGE-90): approved for implementation in `0.5.0`,** built on `extract-v17` (Phases 45 and 51); the "after 1.0.0" below is superseded (`docs/ROADMAP-1.0.md` R8).
 **Q1–Q5 answered (owner, 2026-10-15): Q1 as recommended, Q2 per chat (not as recommended), Q3 decided by the
 switch's purpose, Q4 under the rules after 1.0.0, Q5 approved. Q6 (raised by Q2) answered (owner, 2026-10-15): (a), with
@@ -34,7 +36,8 @@ ADR 0077). Evidence:
 - **Cost** (acceptance 5): the story bench at 10,000 messages, three alternating runs, p50 medians 153.4 ms (Phase 47),
   153.2 ms (flag off), 153.1 ms (flag on).
 - **Step 3 not built**: the spec decides it "at implementation approval, after the paid run on a chat the owner names
-  as full impersonation"; until then facts and summaries still read both sides (K51).
+  as full impersonation". The owner has no such chat and chose (2026-10-24) to ship step 2 in `0.5.0` and build step 3
+  once a real full-impersonation chat can be measured; until then facts and summaries still read both sides (K51).
 
 The owner asked (2026-10-15) for a switch: when it is on, memory comes from the AI's replies only. Asked whether that
 meant leaving out only some user messages (out-of-character lines, instructions to the model) or all of them, the
