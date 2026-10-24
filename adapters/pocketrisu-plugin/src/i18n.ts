@@ -255,6 +255,11 @@ const STRINGS = {
   'rp.state_dismiss': ['괜찮음', 'Dismiss'],  // a status flag the owner looked at (PHASE-39 Q4)
   'rp.undo': ['되돌리기', 'Undo'],
   'rp.entity_exclude': ['{n}: 캐릭터 아님', '{n}: not a character'],
+  'ro.title': ['AI 답장만 기억', 'Remember AI replies only'],
+  'ro.sub': ['AI가 내 캐릭터의 말과 행동까지 쓰는 채팅(풀사칭)용이에요. 켜면 내가 보낸 메시지는 기억을 찾을 때 쓰이지 않아요. 지금은 회상에만 적용돼요.',
+    'For chats where the AI writes your character too (full impersonation). When on, your own messages are not used to recall memory. For now it applies to recall only.'],
+  'ro.on': ['켰어요. 이 채팅은 이제 AI 답장에서만 기억을 찾아요.', 'On. This chat now recalls from the AI\'s replies only.'],
+  'ro.off': ['껐어요. 이 채팅의 기억은 원래대로 돌아왔어요.', 'Off. This chat recalls as before.'],
   'ex.cast': ['인물 목록과 관계에서 빠져요 (관계 {p}개). 사실은 그대로 남아요.',
     'It leaves the cast and the relationships ({p}). Every fact stays.'],
   'ex.also': ['기억에서도 제외: 이 이름이 주인공인 사실 {f}개도 가려요', 'Also leave it out of memory: hides {f} facts about it'],

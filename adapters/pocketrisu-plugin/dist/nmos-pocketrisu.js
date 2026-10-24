@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:e440c4d5f8a5".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:61d37f51b28b".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -594,6 +594,13 @@
     // a status flag the owner looked at (PHASE-39 Q4)
     "rp.undo": ["\uB418\uB3CC\uB9AC\uAE30", "Undo"],
     "rp.entity_exclude": ["{n}: \uCE90\uB9AD\uD130 \uC544\uB2D8", "{n}: not a character"],
+    "ro.title": ["AI \uB2F5\uC7A5\uB9CC \uAE30\uC5B5", "Remember AI replies only"],
+    "ro.sub": [
+      "AI\uAC00 \uB0B4 \uCE90\uB9AD\uD130\uC758 \uB9D0\uACFC \uD589\uB3D9\uAE4C\uC9C0 \uC4F0\uB294 \uCC44\uD305(\uD480\uC0AC\uCE6D)\uC6A9\uC774\uC5D0\uC694. \uCF1C\uBA74 \uB0B4\uAC00 \uBCF4\uB0B8 \uBA54\uC2DC\uC9C0\uB294 \uAE30\uC5B5\uC744 \uCC3E\uC744 \uB54C \uC4F0\uC774\uC9C0 \uC54A\uC544\uC694. \uC9C0\uAE08\uC740 \uD68C\uC0C1\uC5D0\uB9CC \uC801\uC6A9\uB3FC\uC694.",
+      "For chats where the AI writes your character too (full impersonation). When on, your own messages are not used to recall memory. For now it applies to recall only."
+    ],
+    "ro.on": ["\uCF30\uC5B4\uC694. \uC774 \uCC44\uD305\uC740 \uC774\uC81C AI \uB2F5\uC7A5\uC5D0\uC11C\uB9CC \uAE30\uC5B5\uC744 \uCC3E\uC544\uC694.", "On. This chat now recalls from the AI's replies only."],
+    "ro.off": ["\uAED0\uC5B4\uC694. \uC774 \uCC44\uD305\uC758 \uAE30\uC5B5\uC740 \uC6D0\uB798\uB300\uB85C \uB3CC\uC544\uC654\uC5B4\uC694.", "Off. This chat recalls as before."],
     "ex.cast": [
       "\uC778\uBB3C \uBAA9\uB85D\uACFC \uAD00\uACC4\uC5D0\uC11C \uBE60\uC838\uC694 (\uAD00\uACC4 {p}\uAC1C). \uC0AC\uC2E4\uC740 \uADF8\uB300\uB85C \uB0A8\uC544\uC694.",
       "It leaves the cast and the relationships ({p}). Every fact stays."
@@ -3498,9 +3505,44 @@ html,body{margin:0;background:${PALETTE.bg}}
         el("div", { class: "row" }, field(L("mode.narrator"), narrator)),
         el("p", { class: "sub", text: L("mode.narrator_sub") }),
         el("div", { class: "btns" }, save2),
-        msg
+        msg,
+        ...await repliesOnly(conversation)
       );
       modeCard.style.display = "";
+    }
+    async function repliesOnly(conversation) {
+      let on;
+      try {
+        on = (await deps.api("GET", `/v1/conversations/${conversation}/replies-only`, void 0, 15e3)).on;
+      } catch {
+        return [];
+      }
+      const box = el("input", { type: "checkbox", "aria-label": L("ro.title") });
+      box.checked = on;
+      const msg = el("div", { class: "msg" });
+      box.addEventListener("change", async () => {
+        box.disabled = true;
+        try {
+          const r = await deps.api(
+            "PUT",
+            `/v1/conversations/${conversation}/replies-only`,
+            { on: box.checked },
+            15e3
+          );
+          box.checked = r.on;
+          say(msg, L(r.on ? "ro.on" : "ro.off"), "ok");
+        } catch (error) {
+          box.checked = !box.checked;
+          say(msg, errorText(lang, error), "err");
+        } finally {
+          box.disabled = false;
+        }
+      });
+      return [
+        el("div", { class: "check" }, box, el("span", { text: L("ro.title") })),
+        el("p", { class: "sub", text: L("ro.sub") }),
+        msg
+      ];
     }
     async function showStatusWindows(conversation, load) {
       let found;

@@ -46,7 +46,7 @@ from .models import (
     BodiesRequest,
     BodiesResponse,
     CanonSyncRequest, CanonSyncResponse,
-    EntityLinkRequest, ExpectRequest, MemoryModeRequest, ReextractRequest, RepairRequest,
+    EntityLinkRequest, ExpectRequest, MemoryModeRequest, ReextractRequest, RepairRequest, RepliesOnlyRequest,
     OutputRequest,
     Packet,
     ReconcileRequest,
@@ -629,6 +629,27 @@ def create_app(settings: Settings | None = None, pool: ConnectionPool | None = N
                 names = [e["name"] for e in view_of(conn, conv["head_commit_id"])["entities"]
                          if e["type"] == "character" and not e.get("persona") and not e.get("excluded")]  # PHASE-47
             return {"strict": conv["memory_strict"], "narrator": conv["memory_narrator"], "characters": names}
+
+    @app.get("/v1/conversations/{conv_id}/replies-only", dependencies=[Depends(auth)])
+    def get_replies_only(conv_id: UUID, request: Request):
+        """Whether this chat remembers the AI's replies only (PHASE-48 D2, step 2: recall)."""
+        with request.app.state.pool.connection() as conn:
+            row = conn.execute("SELECT replies_only FROM conversation WHERE id = %s", (conv_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        return {"on": row["replies_only"]}
+
+    @app.put("/v1/conversations/{conv_id}/replies-only", dependencies=[Depends(auth)])
+    def put_replies_only(conv_id: UUID, body: RepliesOnlyRequest, request: Request):
+        """Set it (PHASE-48 S1): owner input, read by every request of the chat from then on and recorded with each
+        trace. It queues nothing: recall leaves the user's messages out at once, and embeddings stay as they are."""
+        with request.app.state.pool.connection() as conn, conn.transaction():
+            row = conn.execute("UPDATE conversation SET replies_only = %s WHERE id = %s RETURNING replies_only",
+                               (body.on, conv_id)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        log.info("replies only conversation=%s on=%s", conv_id, row["replies_only"])
+        return {"on": row["replies_only"]}
 
     @app.put("/v1/conversations/{conv_id}/memory-mode", dependencies=[Depends(auth)])
     def put_memory_mode(conv_id: UUID, body: MemoryModeRequest, request: Request):

@@ -54,6 +54,7 @@ without a PocketRisu change.
 | K48 | Recall's cue and function-word lists are Korean (with a few English phrases) | Recall | improvement deferred until after 1.0.0 (owner, 2026-10-09; ADR 0067, 0069) |
 | K49 | Restoring an archive from the panel on an iPhone is not a target and was not measured | Data | scope exclusion approved 2026-10-08 (PHASE-38 Q3); behavior unmeasured |
 | K50 | Model calls that failed or were retried are not in the panel's model-use line | Setup | low priority, additional accounting not scheduled (owner preference, 2026-10-09; ADR 0051) |
+| K51 | "Remember AI replies only" leaves user messages out of recall, but facts and summaries are still made from both sides | Memory | accepted for `0.5.0` (owner, 2026-10-24): PHASE-48 step 3 is built once a real full-impersonation chat can be measured; ADR 0077 |
 
 **1.0 gate classification (owner, 2026-10-12, Linear AGE-82, all as recommended).** The gate asks that every open
 row is a host limit or an accepted trade-off (`docs/ROADMAP-1.0.md`).
@@ -610,6 +611,14 @@ any, so when a later chunk fails the earlier calls are not kept and the retry ma
 because its turn changed while the model answered is not counted either. The line therefore undercounts most while a
 provider keeps failing.
 *Workaround:* check the provider's own usage; the progress display counts failed jobs (`⚠ 실패 N`).
+
+**K51 — "Remember AI replies only" covers recall, not yet extraction.** With the flag on (PHASE-48 step 2, ADR 0077),
+no user message of the chat is an excerpt or a quote. The extractor still reads each turn whole, the user's message
+with the reply, and scene summaries read both sides, so a direction the model took for a fact ("{{user}}가 거절하게"
+read as a refusal) can still be told as a fact or appear in `<Story>`. On the trial install's data that was 4 of 632
+facts (0.6 %, `docs/perf/phase48-user-messages.md`).
+*Workaround:* retract such a fact from the Inspector; PHASE-48's step 3 (an extractor variant that sees the reply only)
+removes the cause.
 
 ## Security
 
