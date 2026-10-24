@@ -24,6 +24,16 @@ wait for the owner, with Q2 and Q3.
 step 3); Q3 `extract-v17` becomes the default when the live gate passes; step 3 here and PHASE-51's step 3 approved
 together, capped at $70, after acceptance 1's zero-call replay.
 
+**Acceptance 1 met, 2026-10-24 (zero calls).** Every gate probe (bench 314, quotes 24) replayed under `packet-v19`
+with `extract-v16` in use. The replays ran on throwaway copies of the gate databases migrated to `0030`, so `main`'s
+code (`82081b9`) and this branch's read the same rows: three rounds each, with the eval embedder. By the majority:
+bench 300/314 on both, quotes 19/24 on both, none lost, none gained; mean tokens 2,041 and 2,040. Per round, both
+sides vary as the lexical route does (`main` 319/319/319, the branch 319/317/319: one irrelevant-question case of S2,
+in both its sets, failed in one round).
+
+**Step 3 started and stopped, 2026-10-24: $0 spent.** Every call was refused (403): the Vertex project's billing is
+disabled. The run waits for the owner.
+
 **Step 3 run before approval, 2026-10-13: its pass rule is met, narrowly.** The owner approved the paid copy
 measurement (plan A, about $50; spent $49.64). It ran on the local experiment branch: `extract-v16` against
 `extract-v16` plus speakers. Each arm was extracted three times on Gemini 3.8 Flash, then each run was replayed under
