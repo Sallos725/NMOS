@@ -133,7 +133,7 @@ def test_lists_show_three_and_fold_the_rest_and_say_what_was_left_out():
     opened = html.split('id="s-open"')[1].split('class="v-sec"')[0]
     shown, folded = opened.split('<details class="v-more">')
     assert shown.count('class="v-line') == 3 and folded.count('class="v-line') == 2 and "2개 더 보기" in folded
-    assert "30턴 넘게 언급 없는 열린 일 2개" in opened
+    assert "한동안 언급 없는 열린 일 2개" in opened
 
 
 def test_names_lead_to_their_person_and_lines_carry_their_repairs():

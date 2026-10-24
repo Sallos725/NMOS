@@ -103,9 +103,10 @@ T: dict[str, tuple[str, str]] = {
     "s-secrets": ("비밀", "Secrets"),
     "s-changed": ("바뀐 설정", "Changed from the setting"),
     "more": ("{n}개 더 보기", "{n} more"),
-    "stale": ("30턴 넘게 언급 없는 열린 일 {n}개는 여기 넣지 않았어요. 자세히에서 확인하거나 닫을 수 있어요.",
-              "{n} open threads not mentioned for over 30 turns are left out here; check or close them in details."),
+    "stale": ("한동안 언급 없는 열린 일 {n}개는 여기 넣지 않았어요. 자세히에서 확인하거나 닫을 수 있어요.",
+              "{n} open threads not mentioned for a while are left out here; check or close them in details."),
     "since": ("t{t}부터", "since t{t}"),
+    "hz.scene": ("이번 장면", "this scene"), "hz.arc": ("이야기 줄기", "storyline"), "hz.lasting": ("오래 감", "lasting"),
     "none_yet": ("아직 없어요", "Nothing yet"),
     "kept": ("{who}에게 숨김", "kept from {who}"),
     "by": ("{who}이(가) 앎", "known by {who}"),
@@ -283,6 +284,13 @@ def more(items: list[str], lang: str, n: int = 3) -> str:
                                  f'{"".join(items[n:])}</details>')
 
 
+def thread_meta(th: dict[str, Any], lang: str) -> str:
+    """A thread's kind, how long it is meant to last when known (PHASE-51), and since when."""
+    kind = t(lang, th["kind"]) if th["kind"] in T else th["kind"]
+    horizon = t(lang, f"hz.{th['horizon']}") if th.get("horizon") in ("scene", "arc", "lasting") else None
+    return " · ".join(x for x in (kind, horizon, t(lang, "since", t=th.get("turn"))) if x)
+
+
 def name_link(cid: str, entities: dict[str, str], name: str | None) -> str:
     """A character's name, leading to their sheet when NMOS knows them."""
     eid = entities.get(str(name or "").casefold())
@@ -306,7 +314,7 @@ def memory(d: dict[str, Any], lang: str) -> str:
     now = [line(nm(x["name"]), " · ".join(_v(s) for s in x["said"])) for x in d.get("now") or []]
     threads = d.get("threads") or []
     opened = [line(f"{nm(th['by'])}{' → ' + nm(th['to']) if th.get('to') else ''}: {_v(th['text'])}",
-                   _v(f"{t(lang, th['kind']) if th['kind'] in T else th['kind']} · {t(lang, 'since', t=th.get('turn'))}"),
+                   _v(thread_meta(th, lang)),
                    _close(th)) for th in threads]
     stale = f'<p class="v-note">{_v(t(lang, "stale", n=d["stale"]))}</p>' if d.get("stale") else ""
     people = []
@@ -410,7 +418,7 @@ def person(d: dict[str, Any], lang: str) -> str:
                 bits.append(f"{_named(f, 'subject')}→{_named(f, 'object')} {t(lang, pred)} {value}")
         rels.append(line(" · ".join([nm(o) for o in other] + [_v(r) for r in rel]), _v(" · ".join(bits))))
     threads = [line(f"{_v(th['text'])}" + (f" → {nm(th['to'])}" if th.get("to") and th.get("by") == e.get("name") else ""),
-                    _v(f"{t(lang, th['kind']) if th['kind'] in T else th['kind']} · {t(lang, 'since', t=th.get('turn'))}"),
+                    _v(thread_meta(th, lang)),
                     _close(th)) for th in d.get("threads") or []]
     knows = [line(_v(content(s)), _v(t(lang, "knows") + f" · t{s.get('turn')}")) for s in d.get("knows") or []]
     knows += [line(_v(content(s)), _v(t(lang, "unaware", who=", ".join(s.get("holders") or [])) + f" · t{s.get('turn')}"))

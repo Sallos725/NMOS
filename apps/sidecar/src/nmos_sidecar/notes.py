@@ -194,8 +194,8 @@ def chronicle(told: dict[str, Any] | None, threads: list[dict[str, Any]], facts:
               told_secrets: bool = False, last_turn: int | None = None) -> dict[str, Any]:
     """The chronicle's Markdown (PHASE-50 S2): Events and Now from the model, or assembled from the summaries when there
     is no model or its replies fail; Open threads always from the stored threads. An open thread not said again for
-    more than STALE_TURNS (the Inspector's "needs a look") is left out of both, and counted (amendment 3): NMOS cannot
-    yet tell an old promise that still matters from one long done, and the note is read every turn.
+    longer than its horizon allows (`inspector.stale`, the Inspector's "needs a look") is left out of both, and
+    counted (amendment 3): the note is read every turn, and a lasting thread (PHASE-51) never goes stale.
 
     With `told_secrets` off, nothing kept from someone goes in. A scene summary or story is left out when the packet
     would hold it with every character a secret is kept from in the scene (`summaries.held`: it repeats a secret at
