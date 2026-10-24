@@ -1,0 +1,57 @@
+{
+ "version": 1,
+ "about": "NMOS's note in a chat's author's note (PHASE-50 S5): what is left of the note without it, and the turn each block was made at. The sidecar's noteblocks.strip_blocks and the plugin's stripNoteBlocks both read this file.",
+ "cases": [
+  {
+   "name": "no block",
+   "note": "지금은 한겨울 밤이다.",
+   "text": "지금은 한겨울 밤이다.",
+   "blocks": []
+  },
+  {
+   "name": "a block after the owner's text",
+   "note": "지금은 한겨울 밤이다.\n\n[NMOS note · t87 · 2026-10-23]\n# Story memory (NMOS, as of turn 87)\n## Chronicle (t0–87)\n- Hana went to the lighthouse.\n[/NMOS note]\n",
+   "text": "지금은 한겨울 밤이다.",
+   "blocks": [
+    {
+     "turn": "87"
+    }
+   ]
+  },
+  {
+   "name": "text between two blocks",
+   "note": "[NMOS note · t120 · 2026-10-23]\n- a\n[/NMOS note]\nKeep this.\n[NMOS note · t130 · 2026-10-24]\n- b\n[/NMOS note]",
+   "text": "Keep this.",
+   "blocks": [
+    {
+     "turn": "120"
+    },
+    {
+     "turn": "130"
+    }
+   ]
+  },
+  {
+   "name": "an unclosed marker stays",
+   "note": "[NMOS note · t3 · 2026-10-23]\n열린 채로",
+   "text": "[NMOS note · t3 · 2026-10-23]\n열린 채로",
+   "blocks": []
+  },
+  {
+   "name": "only a block",
+   "note": "[NMOS note · t5 · 2026-10-23]\n- x\n[/NMOS note]",
+   "text": "",
+   "blocks": [
+    {
+     "turn": "5"
+    }
+   ]
+  },
+  {
+   "name": "another closing marker does not close",
+   "note": "[NMOS note · t3 · 2026-10-23]\n- a\n[/NMOS other]",
+   "text": "[NMOS note · t3 · 2026-10-23]\n- a\n[/NMOS other]",
+   "blocks": []
+  }
+ ]
+}

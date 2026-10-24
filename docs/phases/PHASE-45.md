@@ -1,6 +1,7 @@
 # Phase 45 — Who said it: speakers recorded at extraction, read by the quote route
 
 Status: **draft**, 2026-10-12. A correction found by measurement under AGE-86 (the recall weaknesses left after
+**R8 (owner, 2026-10-23, AGE-89/AGE-90): un-held and approved for implementation in `0.5.0`,** in one extractor generation `extract-v17` with Phase 51 (`docs/ROADMAP-1.0.md` R8).
 `packet-v18`), not a roadmap stage. It addresses K47 inside Stage 7's forensic recall (the quote route of Phase 33,
 ADR 0067). Not approved for implementation. **Q1 answered (owner, 2026-10-13): (a), speakers only.**
 **Held (owner, 2026-10-13)** after step 3: one quotes case gained does not justify a generation of its own, so the

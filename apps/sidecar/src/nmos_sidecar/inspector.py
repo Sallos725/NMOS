@@ -362,6 +362,8 @@ T: dict[str, tuple[str, str]] = {  # key: (ko, en)
                  "보낸 원전의 사실은 패킷에 다시 넣지 않습니다.",
                  "{n} facts read from the canon are in memory. The story supersedes them from the turn it says something "
                  "new. Facts of canon the host already sent are not sent again."),
+    "cn.blocks": ("작가 노트에 NMOS 정리가 들어 있습니다 (원전으로 읽지 않음): {turns} 기준 · 지금 t{now}",
+                  "The author's note holds NMOS's note (not read as canon): as of {turns} · now t{now}"),
     "canon_row": ("원전 사실", "Canon facts"),
     "us.title": ("모델 사용량", "Model usage"), "toc.usage": ("사용량", "Usage"),
     "us.intro": ("이 채팅의 기억에 NMOS가 부른 모델 호출과, 제공자가 보고한 토큰이에요. 추정하지 않아요. 다시 만들면서 버린 결과의 "
@@ -1137,6 +1139,19 @@ def _secret_status(s: dict[str, Any], lang: str) -> str:
 STALE_TURNS = 30  # an open thread not restated for this long is suggested for closing (PHASE-13 Q6)
 
 
+def last_said(th: dict[str, Any]) -> int | None:
+    """The last turn a thread was opened or restated at."""
+    seen = [th.get("turn")] + [r.get("turn") for r in th.get("restated") or []]
+    return max((x for x in seen if x is not None), default=None)
+
+
+def stale(th: dict[str, Any], last_turn: int | None) -> bool:
+    """An open thread not said again for more than STALE_TURNS: the Inspector suggests closing it (PHASE-13 Q6), and
+    the author's note leaves it out (PHASE-50 amendment 3)."""
+    latest = last_said(th)
+    return th["status"] == "open" and last_turn is not None and latest is not None and latest < last_turn - STALE_TURNS
+
+
 def _act(kind: str, item: Any, extra: str | None = None) -> str:
     """Where the panel puts a repair button (ADR 0044); nothing shows in a browser tab (H15)."""
     value = f"{kind}:{item}" + (f":{_enc(extra)}" if extra else "")
@@ -1179,11 +1194,9 @@ def _attention(view: dict[str, Any], repairs: list[dict[str, Any]], last_turn: i
     rows: list[list[str]] = []
     if last_turn is not None:
         for th in view.get("threads", []):
-            seen = [th.get("turn")] + [r.get("turn") for r in th.get("restated") or []]
-            latest = max((x for x in seen if x is not None), default=None)
-            if th["status"] == "open" and latest is not None and latest < last_turn - STALE_TURNS:
+            if stale(th, last_turn):
                 rows.append([_v(_t(lang, "at.stale").format(n=STALE_TURNS)),
-                             _v(_who_to(th) + f": {th.get('text') or ''}"), _v(latest),
+                             _v(_who_to(th) + f": {th.get('text') or ''}"), _v(last_said(th)),
                              _close(th)])
     for u in view.get("unmatched", []):
         rows.append([_v(_t(lang, "at.unmatched")), _v(fact_line_text(u)), _turn(u), ""])
@@ -1278,6 +1291,17 @@ def _repairs_table(repairs: list[dict[str, Any]], lang: str) -> str:
                   [[chip(lang, "rk", rep["kind"]), _repair_target(rep), _repair_value(rep, lang), timestamp(rep["created_at"]),
                     state(rep)] for rep in repairs[:200]])
             + f"<p class=\"muted\">{_v(_t(lang, 'or.note'))}</p>")
+
+
+def note_blocks(rows: list[dict[str, Any]], now: int | None, lang: str) -> str:
+    """Whether the author's note carries NMOS's note and as of which turn (PHASE-50 S6), from the note's manifest
+    metadata (the plugin leaves the block out of the note's canon text and names it there); empty without one."""
+    note = next((r for r in rows if r.get("key") == "note"), None)
+    blocks = [b for b in ((note or {}).get("metadata") or {}).get("nmos_blocks") or [] if isinstance(b, dict)]
+    if not blocks:
+        return ""
+    turns = ", ".join(f"t{b.get('turn') or '?'}" for b in blocks)
+    return f"<p class=\"muted\">{_v(_t(lang, 'cn.blocks').format(turns=turns, now=now))}</p>"
 
 
 def _canon_table(rows: list[dict[str, Any]], history: dict[str, dict[str, Any]], held: dict[str, dict[str, Any]],
@@ -1460,6 +1484,7 @@ def detail(conv: dict[str, Any], state: list[dict[str, Any]], members: list[dict
     if canon_rows:
         parts.append(("canon", t("canon"), len(canon_rows),
                       _canon_table(canon_rows, canon_history or {}, canon_held or {}, lang, canon_read)
+                      + note_blocks(canon_rows, last_turn, lang)
                       + (f"<p class=\"muted\">{_v(t('cn.facts').format(n=canon_facts))}</p>" if canon_read is not None
                          else ""), False))
     if facts:

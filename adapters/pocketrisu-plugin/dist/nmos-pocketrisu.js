@@ -17,7 +17,7 @@
 "use strict";
 (() => {
   // src/build.ts
-  var PLUGIN_BUILD = true ? "nmos-build:3041b7f08ba8".replace("nmos-build:", "") : "dev";
+  var PLUGIN_BUILD = true ? "nmos-build:1774ac70c012".replace("nmos-build:", "") : "dev";
 
   // src/canonical.ts
   function normalizeText(value) {
@@ -46,6 +46,26 @@
   async function sha256HexOf(bytes) {
     const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
     return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // src/notes.ts
+  var BLOCK = /\[NMOS note(?: · t(\d+))?(?: · [^\]\n]*)?\]\n?[\s\S]*?\[\/NMOS note\]\n?/g;
+  function stripNoteBlocks(text2) {
+    const blocks = [...text2.matchAll(BLOCK)].map((m) => ({ turn: m[1] ?? "" }));
+    if (!blocks.length) return { text: text2, blocks };
+    return { text: text2.replace(BLOCK, "\n\n").replace(/\n{3,}/g, "\n\n").trim(), blocks };
+  }
+  async function copyText(box, clipboard) {
+    try {
+      if (!clipboard) throw new Error("no clipboard");
+      await clipboard.writeText(box.value);
+      return true;
+    } catch {
+      box.focus();
+      box.select();
+      box.setSelectionRange(0, box.value.length);
+      return false;
+    }
   }
 
   // src/canon.ts
@@ -80,7 +100,10 @@
       const index = Number.isInteger(chat.fmIndex) ? Number(chat.fmIndex) : -1;
       add("card:greeting", index < 0 ? card.firstMessage : card.alternateGreetings?.[index], { field: "greeting", index });
     }
-    add("note", chat.note);
+    if (typeof chat.note === "string") {
+      const note = stripNoteBlocks(chat.note);
+      add("note", note.text, note.blocks.length ? { nmos_blocks: note.blocks } : {});
+    }
     if (persona) add("persona", persona.personaPrompt, { name: text(persona.name) || void 0, persona_id: persona.id });
     const local = Array.isArray(chat.localLore) ? chat.localLore : [];
     const global = Array.isArray(card?.globalLore) ? card.globalLore : [];
@@ -442,6 +465,47 @@
     ],
     // export (ADR 0050)
     "exp.chat": ["\uC774 \uB300\uD654 \uB0B4\uBCF4\uB0B4\uAE30", "Export this chat"],
+    // notes for the author's note (PHASE-50)
+    "notes.open": ["\uC791\uAC00\uC758 \uB178\uD2B8\uC6A9 \uC815\uB9AC", "For the author's note"],
+    "notes.title": ["\uC791\uAC00\uC758 \uB178\uD2B8\uC6A9 \uC815\uB9AC", "For the author's note"],
+    "notes.part.chronicle": ["\uC5F0\uB300\uAE30", "chronicle"],
+    "notes.part.changed": ["\uC124\uC815 \uBCC0\uACBD\uC810", "changed from the setting"],
+    "notes.part.address": ["\uD638\uCE6D\xB7\uAD00\uACC4", "address and standing"],
+    "notes.sub": [
+      "\uC774 \uCC44\uD305\uC758 \uAE30\uC5B5\uC73C\uB85C \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC744 \uAE00 \uD558\uB098\uB97C \uB9CC\uB4ED\uB2C8\uB2E4. \uBAA8\uB378\uC774 \uC77D\uAE30 \uC88B\uAC8C \uC601\uC5B4 \uB9C8\uD06C\uB2E4\uC6B4\uC73C\uB85C \uC4F0\uACE0, \uC774\uB984\uACFC \uD638\uCE6D\uC740 \uCC44\uD305\uC5D0 \uC801\uD78C \uADF8\uB300\uB85C \uB461\uB2C8\uB2E4. \uACB0\uACFC\uB97C [NMOS note \u2026] \uC904\uBD80\uD130 [/NMOS note] \uC904\uAE4C\uC9C0 \uD1B5\uC9F8\uB85C \uBCF5\uC0AC\uD574 \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC73C\uC138\uC694(\uC804\uC5D0 \uBD99\uC778 \uAC83\uC774 \uC788\uC73C\uBA74 \uADF8 \uBE14\uB85D\uC744 \uC9C0\uC6B0\uACE0 \uC0C8\uB85C \uBD99\uC774\uBA74 \uB429\uB2C8\uB2E4). \uADF8\uB798\uC57C NMOS\uAC00 \uADF8 \uBD80\uBD84\uC744 \uC6D0\uC804(\uC124\uC815)\uC73C\uB85C \uC77D\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC791\uAC00\uC758 \uB178\uD2B8\uB294 \uB9E4 \uC694\uCCAD\uC5D0 \uD568\uAED8 \uAC00\uBBC0\uB85C, \uBD99\uC5EC\uB123\uC740 \uAE38\uC774\uB9CC\uD07C \uB9E4 \uD134 \uD1A0\uD070\uC774 \uB4ED\uB2C8\uB2E4.",
+      "Makes one text from this chat's memory to paste into its author's note: English Markdown, which the model reads well, with names and forms of address as the chat writes them. Copy it whole, from the [NMOS note \u2026] line to the [/NMOS note] line, into the author's note (replace the block you pasted before, if any), so NMOS does not read it as the setting. The note goes with every request, so what you paste is paid on every turn."
+    ],
+    "notes.chronicle": ["\uC5F0\uB300\uAE30: \uC9C0\uAE08\uAE4C\uC9C0\uC758 \uC0AC\uAC74\uACFC \uACB0\uACFC (\uBAA8\uB378 1\uD68C \uD638\uCD9C)", "Chronicle: the events so far and how they ended (one model call)"],
+    "notes.changed": ["\uC124\uC815 \uBCC0\uACBD\uC810: \uCE74\uB4DC\xB7\uB85C\uC5B4\uBD81\uACFC \uB2EC\uB77C\uC9C4 \uAC83", "Changed from the setting: what the card or lorebook no longer says right"],
+    "notes.address": ["\uD638\uCE6D\xB7\uAD00\uACC4: \uC11C\uB85C \uBB50\uB77C\uACE0 \uBD80\uB974\uACE0 \uC5B4\uB5A4 \uC0AC\uC774\uC778\uC9C0", "Address and standing: what they call each other and how they stand"],
+    "notes.length": ["\uC5F0\uB300\uAE30 \uAE38\uC774", "Chronicle length"],
+    "notes.short": ["\uC9E7\uAC8C (3,000\uC790)", "Short (3,000 characters)"],
+    "notes.long": ["\uAE38\uAC8C (6,000\uC790)", "Long (6,000 characters)"],
+    "notes.secrets": ["\uBE44\uBC00 \uD3EC\uD568 (\uB204\uAC00 \uBAA8\uB974\uB294\uC9C0 \uD45C\uC2DC)", "Include secrets (marked with who does not know)"],
+    "notes.secrets_warn": [
+      "\uC791\uAC00\uC758 \uB178\uD2B8\uB294 \uBAA8\uB4E0 \uC7A5\uBA74\uC5D0 \uB4E4\uC5B4\uAC11\uB2C8\uB2E4. \uBE44\uBC00\uC744 \uB123\uC73C\uBA74 \uBAA8\uB974\uB294 \uCE90\uB9AD\uD130 \uC55E\uC5D0\uC11C \uBAA8\uB378\uC774 \uD758\uB9B4 \uC218 \uC788\uC5B4\uC694.",
+      "The author's note reaches every scene. With secrets in it, the model can let one slip in front of a character it is kept from."
+    ],
+    "notes.make": ["\uB9CC\uB4E4\uAE30", "Make"],
+    "notes.pick": ["\uD558\uB098 \uC774\uC0C1 \uACE0\uB974\uC138\uC694.", "Pick at least one."],
+    "notes.done": ["\uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4. \uC544\uB798 \uC0C1\uC790\uB97C \uD1B5\uC9F8\uB85C \uBCF5\uC0AC\uD574 \uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC73C\uC138\uC694.", "Done. Copy the box below, whole, into the author's note."],
+    "notes.result": ["\uC791\uAC00\uC758 \uB178\uD2B8\uC5D0 \uBD99\uC5EC\uB123\uC744 \uAE00", "To paste into the author's note"],
+    "notes.part_none": ["{part}: \uC801\uC744 \uAC83\uC774 \uC5C6\uC74C", "{part}: nothing to write"],
+    "notes.part_no_scenes": ["{part}: \uC544\uC9C1 \uC7A5\uBA74 \uC694\uC57D\uC774 \uC5C6\uC74C (8\uD134\uB9C8\uB2E4 \uD558\uB098, \uADF8 \uB4A4 4\uD134\uC774 \uC9C0\uB098\uBA74 \uB9CC\uB4E4\uC5B4\uC9D0)", "{part}: no scene summary yet (one per 8 turns, made 4 turns later)"],
+    "notes.part_made": ["{part}: {how}", "{part}: {how}"],
+    "notes.stale": [
+      '30\uD134 \uB118\uAC8C \uB2E4\uC2DC \uC5B8\uAE09\uB418\uC9C0 \uC54A\uC740 \uC5F4\uB9B0 \uC77C {n}\uAC1C\uB294 \uB123\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uB05D\uB09C \uC77C\uC778\uC9C0\uB294 \uC778\uC2A4\uD399\uD130\uC758 "\uD655\uC778 \uD544\uC694"\uC5D0\uC11C \uD655\uC778\uD558\uACE0 \uB2EB\uC744 \uC218 \uC788\uC5B4\uC694.',
+      'Left out {n} open threads not mentioned again for more than 30 turns. Check or close them under "Needs a look" in the Inspector.'
+    ],
+    "notes.copy": ["\uBCF5\uC0AC", "Copy"],
+    "notes.copied": ["\uBCF5\uC0AC\uD588\uC2B5\uB2C8\uB2E4.", "Copied."],
+    "notes.copy_hint": ["\uC5EC\uAE30\uC11C\uB294 \uC790\uB3D9 \uBCF5\uC0AC\uAC00 \uB9C9\uD600 \uC788\uC5B4\uC11C \uB0B4\uC6A9\uC744 \uC120\uD0DD\uD574 \uB450\uC5C8\uC2B5\uB2C8\uB2E4. \uC9C1\uC811 \uBCF5\uC0AC\uD574 \uC8FC\uC138\uC694.", "Copying is blocked here, so the text is selected: copy it yourself."],
+    "notes.made_model": ["\uBAA8\uB378\uC774 \uC500", "written by the model"],
+    "notes.made_assembled": ["\uBAA8\uB378 \uC5C6\uC774 \uC870\uB9BD (\uBAA8\uB378\uC774 \uC5C6\uAC70\uB098 \uB2F5\uC774 \uC4F8 \uC218 \uC5C6\uC5C8\uC74C)", "assembled without a model (no model, or its reply could not be used)"],
+    "notes.made_facts": ["\uAE30\uC5B5\uC5D0\uC11C \uBC14\uB85C (\uD638\uCD9C \uC5C6\uC74C)", "straight from memory (no call)"],
+    "notes.cached": ["\uC774\uC804\uACFC \uAC19\uC544\uC11C \uB2E4\uC2DC \uBD80\uB974\uC9C0 \uC54A\uC74C", "unchanged, not asked again"],
+    "notes.held": ["\uBE44\uBC00 \uB54C\uBB38\uC5D0 \uBE80 \uC694\uC57D {n}\uAC1C", "{n} summaries left out for secrets"],
+    "notes.chars": ["\uC804\uCCB4 {n}\uC790", "{n} characters in all"],
     "exp.title": ["\uB0B4\uBCF4\uB0B4\uAE30", "Export"],
     "exp.sub": [
       "NMOS\uAC00 \uAE30\uC5B5\uD558\uB294 \uBAA8\uB4E0 \uB300\uD654\uC640 \uC124\uC815(API \uD0A4\uB294 \uBE7C\uACE0)\uC744 .nmos.zip \uD30C\uC77C \uD558\uB098\uB85C \uC800\uC7A5\uD569\uB2C8\uB2E4. \uCC44\uD305 \uC6D0\uBB38\uC774 \uB4E4\uC5B4 \uC788\uC73C\uB2C8 \uCC44\uD305\uCC98\uB7FC \uBCF4\uAD00\uD558\uC138\uC694.",
@@ -2925,11 +2989,22 @@ html,body{margin:0;background:${PALETTE.bg}}
     const rebuildButton = el("button", { text: L("act.rebuild") });
     const deleteButton = el("button", { text: L("act.delete") });
     const exportButton = el("button", { text: L("exp.chat") });
+    const notesButton = el("button", { text: L("notes.open") });
+    const notesCard = el("div", { class: "card", style: "display:none" });
     const actionMsg = el("div", { class: "msg" });
     const actions = el(
       "div",
       {},
-      el("div", { class: "btns" }, retryButton, historyButton, rebuildButton, exportButton, deleteButton),
+      el(
+        "div",
+        { class: "btns" },
+        retryButton,
+        historyButton,
+        rebuildButton,
+        exportButton,
+        notesButton,
+        deleteButton
+      ),
       el("details", { class: "sub help" }, el("summary", { text: L("act.help") }), el("p", { text: L("act.sub") }))
     );
     const linkCard = el("div", { class: "card", style: "display:none" });
@@ -2944,6 +3019,7 @@ html,body{margin:0;background:${PALETTE.bg}}
       el("div", { class: "btns inspbar" }, inspectorBack, inspectorRefresh),
       actions,
       actionMsg,
+      notesCard,
       bulkBar,
       modeCard,
       statusCard,
@@ -3213,6 +3289,8 @@ html,body{margin:0;background:${PALETTE.bg}}
       const conversation = inspectorConversation(path);
       if (conversation !== actionConversation) {
         actionConversation = conversation;
+        notesCard.replaceChildren();
+        notesCard.style.display = "none";
         say(actionMsg, "");
         disarm();
         picked.clear();
@@ -3698,6 +3776,109 @@ html,body{margin:0;background:${PALETTE.bg}}
         deleteButton.disabled = false;
       }
     });
+    notesButton.addEventListener("click", () => {
+      const conversation = actionConversation;
+      if (!conversation) return;
+      if (notesCard.style.display !== "none") return void (notesCard.style.display = "none");
+      if (!notesCard.childElementCount) buildNotes(conversation);
+      notesCard.style.display = "";
+    });
+    function buildNotes(conversation) {
+      const pick = (key, kind) => {
+        const box = el("input", { type: "checkbox", value: kind });
+        box.checked = true;
+        return { box, row: el("div", { class: "check" }, box, el("span", { text: L(key) })) };
+      };
+      const kinds = [pick("notes.chronicle", "chronicle"), pick("notes.changed", "changed"), pick("notes.address", "address")];
+      const length = el(
+        "select",
+        { "aria-label": L("notes.length") },
+        el("option", { value: "3000", text: L("notes.short") }),
+        el("option", { value: "6000", text: L("notes.long") })
+      );
+      const secrets = el("input", { type: "checkbox" });
+      const warn = el("p", { class: "sub", text: L("notes.secrets_warn"), style: "display:none" });
+      secrets.addEventListener("change", () => {
+        warn.style.display = secrets.checked ? "" : "none";
+      });
+      const make = el("button", { class: "primary", text: L("notes.make") });
+      const msg = el("div", { class: "msg" });
+      const results = el("div");
+      make.addEventListener("click", async () => {
+        const sections = kinds.filter((k) => k.box.checked).map((k) => k.box.value);
+        if (!sections.length) return say(msg, L("notes.pick"), "warn");
+        make.disabled = true;
+        say(msg, L("act.working"));
+        results.replaceChildren();
+        try {
+          const r = await deps.api(
+            "POST",
+            `/v1/conversations/${conversation}/notes`,
+            { sections, chars: Number(length.value), secrets: secrets.checked },
+            3e5
+          );
+          if (actionConversation !== conversation) return;
+          results.replaceChildren(noteResult(r, msg));
+          say(msg, r.text ? L("notes.done") : L("notes.part_none", { part: L("notes.title") }), r.text ? "ok" : "warn");
+        } catch (error) {
+          say(msg, errorText(lang, error), "err");
+        } finally {
+          make.disabled = false;
+        }
+      });
+      notesCard.replaceChildren(
+        el("h2", { text: L("notes.title") }),
+        el("p", { class: "sub", text: L("notes.sub") }),
+        ...kinds.map((k) => k.row),
+        el("div", { class: "row" }, field(L("notes.length"), length)),
+        el("div", { class: "check" }, secrets, el("span", { text: L("notes.secrets") })),
+        warn,
+        el("div", { class: "btns" }, make),
+        msg,
+        results
+      );
+    }
+    function noteResult(r, msg) {
+      const how = (p) => {
+        const part = L(`notes.part.${p.kind}`);
+        if (p.reason === "no_scenes") return L("notes.part_no_scenes", { part });
+        if (p.reason === "none") return L("notes.part_none", { part });
+        const bits = [L(`notes.made_${p.made}`)];
+        if (p.cached) bits.push(L("notes.cached"));
+        if (p.held) bits.push(L("notes.held", { n: p.held }));
+        return L("notes.part_made", { part, how: bits.join(", ") });
+      };
+      const stale = r.sections.reduce((n, p) => n + (p.stale ?? 0), 0);
+      const about = el(
+        "ul",
+        { class: "sub" },
+        ...r.sections.map((p) => el("li", { text: how(p) })),
+        ...stale ? [el("li", { text: L("notes.stale", { n: stale }) })] : []
+      );
+      if (!r.text) return el("div", {}, about);
+      const box = el("textarea", {
+        readonly: true,
+        rows: 14,
+        spellcheck: "false",
+        style: "font-family:inherit",
+        "aria-label": L("notes.result")
+      });
+      box.value = r.text;
+      const copy = el("button", { class: "primary", text: L("notes.copy") });
+      copy.addEventListener("click", async () => {
+        const copied = await copyText(box, navigator.clipboard);
+        say(msg, L(copied ? "notes.copied" : "notes.copy_hint"), copied ? "ok" : "warn");
+      });
+      return el(
+        "div",
+        {},
+        el("h2", { text: L("notes.result") }),
+        about,
+        el("p", { class: "sub", text: L("notes.chars", { n: r.chars }) }),
+        box,
+        el("div", { class: "btns" }, copy)
+      );
+    }
     exportButton.addEventListener("click", async () => {
       const conversation = actionConversation;
       if (!conversation) return;

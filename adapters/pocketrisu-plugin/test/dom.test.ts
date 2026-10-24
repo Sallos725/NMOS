@@ -501,6 +501,12 @@ describe('owner repairs in the panel (ADR 0044)', () => {
           throw new Error(`${path} -> HTTP 409: [object Object]`);
         }
         if (path.endsWith('/retry-failed')) return { retried: { extract: 1, embed: 1, canon: 0 } } as T;
+        if (path.endsWith('/notes')) {  // PHASE-50
+          return { last_turn: 12, chars: 60, text: '[NMOS note · t12 · 2026-10-23]\n## Address and standing\n- Hana ↔ Kaito: x\n[/NMOS note]',
+            sections: [{ kind: 'chronicle', made: 'none', cached: false, held: 0, reason: 'no_scenes' },
+              { kind: 'address', made: 'facts', cached: false, held: 0, reason: '' },
+              { kind: 'changed', made: 'facts', cached: false, held: 0, reason: 'none', stale: 0 }].map((p, i) => (i ? p : { ...p, stale: 21 })) } as T;
+        }
         if (path.endsWith('/reextract')) {
           if (state.failReextract > 0) { state.failReextract -= 1; throw new Error(`${path} -> HTTP 409: fact extraction is off`); }
           return { turns: (body as { turns?: number[] }).turns ?? [4, 5] } as T;
@@ -534,6 +540,25 @@ describe('owner repairs in the panel (ADR 0044)', () => {
     link.click();
     await settle();
   }
+
+  it('makes one note for the author\'s note and shows it to copy (PHASE-50)', async () => {
+    const { d, calls } = deps();
+    await openChat(d);
+    button("For the author's note").click();
+    const boxes = [...panel().querySelectorAll<HTMLInputElement>('input[type=checkbox][value]')];
+    expect(boxes.map((b) => [b.value, b.checked])).toEqual([['chronicle', true], ['changed', true], ['address', true]]);
+    boxes[1]!.click(); // not "changed"
+    button('Make').click();
+    await settle();
+    expect(posts(calls).at(-1)).toEqual(['POST', `/v1/conversations/${id}/notes`,
+      { sections: ['chronicle', 'address'], chars: 3000, secrets: false }]);
+    const shown = [...panel().querySelectorAll<HTMLTextAreaElement>('textarea[readonly]')];
+    expect(shown.map((b) => b.value)).toEqual(['[NMOS note · t12 · 2026-10-23]\n## Address and standing\n- Hana ↔ Kaito: x\n[/NMOS note]']);
+    expect(panel().textContent).toContain('chronicle: no scene summary yet');
+    expect(panel().textContent).toContain('address and standing: straight from memory');
+    expect(panel().textContent).toContain('Left out 21 open threads not mentioned again for more than 30 turns');
+    expect(button('Copy')).toBeTruthy();
+  });
 
   it('exports the chat on its page (ADR 0050)', async () => {
     const { d, calls } = deps();

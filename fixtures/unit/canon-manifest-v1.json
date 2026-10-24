@@ -55,5 +55,33 @@
    }
   }
  ],
- "id": "2005e877e830e059f6dab3f9d9cf9e3ee288795786070433555dbdbbea884f22"
+ "id": "2005e877e830e059f6dab3f9d9cf9e3ee288795786070433555dbdbbea884f22",
+ "with_note_blocks": {
+  "note": "PHASE-50 S5: the author's note entry names NMOS's blocks in its metadata (an array of objects).",
+  "text": "지금은 한겨울 밤이다.",
+  "entries": [
+   {
+    "key": "note",
+    "hash": "6bb12936514d1d08119c3a6d4916a1087f6444a4396c3f718df466ffeeb65836",
+    "metadata": {
+     "nmos_blocks": [
+      {
+       "turn": "87"
+      },
+      {
+       "turn": "120"
+      }
+     ]
+    }
+   },
+   {
+    "key": "card:desc",
+    "hash": "0f614c2ce3d97cfbacf62614e31e0ddd8768f3f4b4cda8bc255a5eb102704fb4",
+    "metadata": {
+     "field": "desc"
+    }
+   }
+  ],
+  "id": "946e7f286cdb3b8f8965a1f615c2ce840ef82df0bb50c839938e14eb8ca983da"
+ }
 }
