@@ -6,6 +6,9 @@
 -- Derived data like the rest of the row: an export carries it with the extraction, and a re-extraction writes it again.
 
 ALTER TABLE extraction ADD COLUMN speakers jsonb;
+-- The quote route looks speakers up by the turn's messages on every question about words (`retrieval._quote_speakers`):
+-- only rows that hold speakers are indexed, so while another generation is in use the index is empty and the lookup free.
+CREATE INDEX extraction_speakers_members ON extraction USING gin (members) WHERE speakers IS NOT NULL;
 
 -- Phase 51 (S2, amendment 1): a thread's horizon is stored in `assertion.salience`, whose vocabulary is by predicate
 -- (`major`/`minor` for an event, `scene`/`arc`/`lasting` for a predicate that opens a thread). Migration 0016 allowed
